@@ -120,3 +120,29 @@
 - `VirtualDecisionItem` type export를 추가했습니다.
 - `src/paper/riskEngine.ts`, `src/paper/orderEngine.ts`, `src/paper/ledger.ts`와 테스트를 추가했습니다.
 - PR-05에서 `MarketPacketBuilder`가 만든 packet을 바로 `PaperOrderEngine` 입력으로 사용할 수 있습니다.
+
+## PR-05: Market Packet Builder with Mock Data
+
+### Review 1: Scope and Safety
+
+- 범위는 mock/draft candidate를 compact `market_packet`으로 변환하는 builder에 한정했습니다.
+- `tossctl` collector, Codex CLI provider, MCP tool, scheduler는 추가하지 않았습니다.
+- scope 검색에서 `child_process`, `spawn`, `exec`, `tossctl`, `codex exec`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, broker/live path, file IO가 `src/market`에 없음을 확인했습니다.
+- raw draft candidate의 extra sensitive field는 packet output에 포함하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- max candidates trimming test 통과.
+- packet expiry from TTL test 통과.
+- missing `sourceRefs` warning and exclusion test 통과.
+- virtual portfolio snapshot inclusion test 통과.
+- sensitive extra field drop test 통과.
+- mock packet fixture generation test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/market/packetBuilder.ts`와 테스트를 추가했습니다.
+- builder output은 `marketPacketSchema`로 검증됩니다.
+- PR-06에서 Codex CLI provider가 이 packet을 input으로 사용할 수 있습니다.
