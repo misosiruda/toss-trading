@@ -114,6 +114,58 @@ test("VirtualRiskEngine rejects stale decisions", () => {
   assert.ok(risk.rejectCodes.includes("VIRTUAL_DECISION_STALE"));
 });
 
+test("VirtualRiskEngine approves hold decisions without candidate price", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet({
+      candidates: [
+        {
+          market: "US",
+          symbol: "TSLA",
+          name: "Tesla",
+          ranking: 1,
+          reasonCodes: ["RANKING"],
+          sourceRefs: ["external_ranking_001"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        }
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({
+      market: "US",
+      symbol: "TSLA",
+      action: "VIRTUAL_HOLD",
+      budgetKrw: 0,
+      thesis: "Paper-only hold fixture.",
+      riskFactors: [],
+      dataRefs: ["external_ranking_001"]
+    }),
+    policy: { now }
+  });
+
+  assert.equal(risk.approved, true);
+  assert.equal(risk.rejectCodes.includes("VIRTUAL_PRICE_MISSING"), false);
+});
+
+test("VirtualRiskEngine rejects decisions outside packet candidates", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({
+      symbol: "999999",
+      action: "VIRTUAL_HOLD",
+      budgetKrw: 0,
+      thesis: "Paper-only hold fixture.",
+      riskFactors: [],
+      dataRefs: ["external_snapshot_missing"]
+    }),
+    policy: { now }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_CANDIDATE_NOT_FOUND"));
+});
+
 test("PaperOrderEngine fills valid virtual buy decisions", () => {
   const result = new PaperOrderEngine().execute({
     packet: packet(),
@@ -127,6 +179,41 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
   assert.equal(result.portfolio.cashKrw, 930_000);
   assert.equal(result.portfolio.positions[0]?.quantity, 1);
   assert.equal(result.portfolio.positions[0]?.averagePriceKrw, 70_000);
+});
+
+test("PaperOrderEngine records approved holds without mutating portfolio", () => {
+  const startingPortfolio = portfolio();
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          market: "US",
+          symbol: "TSLA",
+          name: "Tesla",
+          ranking: 1,
+          reasonCodes: ["RANKING"],
+          sourceRefs: ["external_ranking_001"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        }
+      ]
+    }),
+    portfolio: startingPortfolio,
+    decision: decision({
+      market: "US",
+      symbol: "TSLA",
+      action: "VIRTUAL_HOLD",
+      budgetKrw: 0,
+      thesis: "Paper-only hold fixture.",
+      riskFactors: [],
+      dataRefs: ["external_ranking_001"]
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade, null);
+  assert.deepEqual(result.portfolio, startingPortfolio);
 });
 
 test("PaperOrderEngine updates virtual position on sell", () => {

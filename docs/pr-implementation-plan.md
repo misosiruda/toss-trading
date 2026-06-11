@@ -632,6 +632,35 @@
 - official Toss Open API adapter
 - `tossctl` live call inside the paper run workflow
 
+## PR-21: Local Env Loading and Paper Hold Risk
+
+목표:
+
+- 로컬 `.env`만으로 read-only TossInvest 수집과 Codex CLI paper run을 실행할 수 있게 합니다.
+- 가격이 없는 `VIRTUAL_HOLD` 판단이 불필요하게 risk reject로 기록되지 않게 합니다.
+
+작업 범위:
+
+- CLI/MCP entrypoint `.env` auto-load
+- `CODEX_EXEC_PATH`, `TOSSINVEST_CLI_PATH`, `TOSSCTL_AUTH_HELPER_PYTHON` local env 문서화
+- `VIRTUAL_HOLD`는 packet 후보 존재와 freshness를 검증하되 가격 필수 조건에서는 제외
+- packet 밖 종목은 `VIRTUAL_CANDIDATE_NOT_FOUND`로 fail-closed
+
+검증:
+
+- `.env` 없이도 safe defaults 유지
+- `.env`가 있으면 CLI 실행 경로 설정 반영
+- 가격 없는 HOLD approved
+- packet 밖 decision rejected
+- full test suite
+
+제외:
+
+- live order placement
+- official Toss Open API adapter
+- `.env` commit
+- real secret 관리
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

@@ -130,12 +130,10 @@ Paper-only virtual simulation. This is not financial advice, not a performance g
 ```
 
 TossInvest read-only 조회 결과를 이미 수집했다면 아래처럼 저장된 `market_packet` 기반 paper-only 경로를 실행할 수 있습니다.
+CLI와 MCP server 진입점은 프로젝트 루트의 `.env`를 자동으로 읽습니다. `.env`는 Git에서 제외되므로 로컬의 `TOSSINVEST_CLI_PATH`, `TOSSCTL_AUTH_HELPER_PYTHON`, `CODEX_EXEC_PATH` 같은 실행 경로를 넣어도 repository에 올라가지 않습니다.
 
 ```powershell
 $dataDir = "data/paper"
-$env:TOSSINVEST_CLI_ENABLED = "true"
-$env:TOSSINVEST_CLI_PATH = "$env:LOCALAPPDATA\Programs\tossctl\tossctl.exe"
-$env:TOSSINVEST_CLI_COLLECTION_COMMANDS = "market.ranking;market.signals;quote.batch:005930|000660"
 npm run tossinvest:collect -- --data-dir $dataDir
 npm run market:ingest -- --data-dir $dataDir
 npm run paper:run-from-market-packet:dry -- --data-dir $dataDir
@@ -144,8 +142,6 @@ npm run paper:run-from-market-packet:dry -- --data-dir $dataDir
 Codex CLI 판단을 사용할 때도 이 경로는 paper-only `virtual_decision`만 저장하고 실제 주문을 만들지 않습니다.
 
 ```powershell
-$env:AI_DECISION_ENABLED = "true"
-$env:CODEX_OUTPUT_SCHEMA_PATH = "schemas/virtual-decision.schema.json"
 npm run paper:run-from-market-packet -- --data-dir data/paper
 ```
 

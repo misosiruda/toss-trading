@@ -27,6 +27,7 @@ export class VirtualRiskEngine {
     const checkedRules = [
       "packet_freshness",
       "decision_freshness",
+      "candidate_presence",
       "candidate_price",
       "cash_limit",
       "budget_limit",
@@ -43,7 +44,11 @@ export class VirtualRiskEngine {
     }
 
     const candidate = findCandidate(input.packet, input.decision);
-    if (!candidate?.lastPriceKrw) {
+    if (!candidate) {
+      rejectCodes.push("VIRTUAL_CANDIDATE_NOT_FOUND");
+    }
+
+    if (input.decision.action !== "VIRTUAL_HOLD" && !candidate?.lastPriceKrw) {
       rejectCodes.push("VIRTUAL_PRICE_MISSING");
     }
 

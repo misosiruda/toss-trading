@@ -93,6 +93,16 @@ VIRTUAL_INITIAL_CASH_KRW=1000000
 
 `AI_DECISION_ENABLED=false`가 기본값입니다. scheduled AI decision을 켜기 전에 storage, schema, dry-run 검증을 먼저 구현해야 합니다.
 
+로컬 실행에서는 CLI와 MCP server 진입점이 프로젝트 루트 `.env`를 자동으로 읽습니다. `CODEX_EXEC_PATH`는 Windows 전역 환경 변수일 필요가 없고, 이 프로젝트의 `.env`에만 둘 수 있습니다. Windows Store alias가 `Access is denied`를 반환하는 경우에는 `codex` alias 대신 실제 Codex binary 경로를 사용합니다.
+
+예시:
+
+```env
+CODEX_EXEC_PATH=C:\Users\<user>\AppData\Local\OpenAI\Codex\bin\<version>\codex.exe
+```
+
+`.env`는 Git에서 제외됩니다. real account data, brokerage credential, API key는 넣지 않습니다.
+
 ## Market Packet
 
 `market_packet`은 automated paper decision run에서 Codex가 받는 유일한 입력입니다.

@@ -1,3 +1,5 @@
+import "../config/loadEnv.js";
+
 import { PAPER_DECISION_PROMPT_VERSION } from "../ai/decisionPrompt.js";
 import { runStoredPaperReplay } from "../replay/paperReplay.js";
 

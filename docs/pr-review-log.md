@@ -556,3 +556,29 @@
 - `paper:run-from-market-packet`, `paper:run-from-market-packet:dry` npm scripts를 추가했습니다.
 - README demo에 TossInvest 조회 기반 paper-only 실행 경로를 추가했습니다.
 - PR 계획 문서에 PR-20 범위를 추가했습니다.
+
+## PR-21: Local Env Loading and Paper Hold Risk
+
+### Review 1: Scope and Safety
+
+- 범위는 local `.env` loading, local 실행 경로 문서화, paper-only HOLD risk 처리 보정에 한정했습니다.
+- `.env`는 Git ignored 상태를 유지하고, `.env.example`에는 safe defaults만 둡니다.
+- `TRADING_ENABLED=false`, `BROKER_PROVIDER=mock`, `CODEX_EXEC_SANDBOX=read-only` 경계를 유지합니다.
+- live order path, official Toss Open API adapter, MCP-triggered collector/AI execution은 추가하지 않았습니다.
+- `VIRTUAL_HOLD`는 주문을 만들지 않으므로 candidate price 필수 조건에서 제외하되, packet 밖 종목은 fail-closed 처리합니다.
+
+### Review 2: Tests and Validation
+
+- `npm test` 성공.
+- `.env` load unit test 통과.
+- 가격 없는 `VIRTUAL_HOLD` approved test 통과.
+- packet 밖 decision rejected test 통과.
+- `PaperOrderEngine`이 approved hold에서 portfolio를 변경하지 않는 test 통과.
+- local `.env`만으로 `tossinvest:collect`, `market:ingest`, `paper:run-from-market-packet` smoke 성공.
+
+### Review 3: Diff and Integration
+
+- `src/config/loadEnv.ts`와 tests를 추가했습니다.
+- env를 사용하는 CLI entrypoint와 MCP server entrypoint에서 `.env`를 자동으로 읽습니다.
+- `.env.example`, README, Codex CLI paper trading 문서에 local env 사용 방식을 반영했습니다.
+- `src/paper/riskEngine.ts`는 `VIRTUAL_CANDIDATE_NOT_FOUND`와 HOLD price exemption을 구분합니다.

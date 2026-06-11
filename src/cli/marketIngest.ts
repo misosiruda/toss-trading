@@ -1,3 +1,5 @@
+import "../config/loadEnv.js";
+
 import { ingestMarketDataFromStoredTossInvestSources } from "../workflows/marketDataIngestion.js";
 
 const positionalArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));

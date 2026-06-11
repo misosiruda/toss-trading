@@ -1,3 +1,5 @@
+import "../config/loadEnv.js";
+
 import {
   collectTossInvestReadOnlySources,
   parseTossInvestCollectionConfig

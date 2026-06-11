@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import "./config/loadEnv.js";
 import { startVirtualPortfolioMcpServer } from "./mcp/server.js";
 
 export const runtimeInfo = {

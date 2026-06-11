@@ -1,3 +1,5 @@
+import "../config/loadEnv.js";
+
 import { startLocalOperationsServer } from "../api/localOperationsServer.js";
 
 const positionalArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));

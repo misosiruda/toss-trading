@@ -1,3 +1,5 @@
+import "../config/loadEnv.js";
+
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import {
   runPaperDecisionOnce,
