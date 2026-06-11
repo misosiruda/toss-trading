@@ -160,6 +160,7 @@ export type VirtualPosition = z.infer<typeof virtualPositionSchema>;
 export type VirtualPortfolio = z.infer<typeof virtualPortfolioSchema>;
 export type MarketCandidate = z.infer<typeof marketCandidateSchema>;
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
+export type VirtualDecisionItem = z.infer<typeof virtualDecisionItemSchema>;
 export type VirtualDecision = z.infer<typeof virtualDecisionSchema>;
 export type VirtualRiskDecision = z.infer<typeof virtualRiskDecisionSchema>;
 export type VirtualTrade = z.infer<typeof virtualTradeSchema>;

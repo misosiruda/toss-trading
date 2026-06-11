@@ -93,3 +93,30 @@
 - `src/storage`에 `JsonFileStore`, `JsonlStore`, file-backed repository classes를 추가했습니다.
 - `src/security/masking.ts`에 masking helper를 추가했습니다.
 - PR-04에서 `VirtualRiskEngine`과 `PaperOrderEngine`이 같은 repository contract를 사용할 수 있습니다.
+
+## PR-04: Paper Trading Core
+
+### Review 1: Scope and Safety
+
+- 범위는 `VirtualRiskEngine`, `PaperOrderEngine`, `VirtualLedger`에 한정했습니다.
+- broker adapter, `OrderRouter`, MCP tool, Codex CLI provider, `tossctl` collector는 추가하지 않았습니다.
+- scope 검색에서 `child_process`, `spawn`, `exec`, `tossctl`, `codex exec`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, broker/live order path가 없음을 확인했습니다.
+- `PaperOrderEngine`은 `MarketPacket` candidate price와 `VirtualPortfolio`만 사용하며 외부 API를 호출하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- virtual cash 부족 reject test 통과.
+- max symbol exposure reject test 통과.
+- stale decision reject test 통과.
+- valid `VIRTUAL_BUY` virtual fill test 통과.
+- `VIRTUAL_SELL` virtual position update test 통과.
+- rejected decision portfolio no-mutation test 통과.
+- `VirtualLedger` immutable record test 통과.
+
+### Review 3: Diff and Integration
+
+- `VirtualDecisionItem` type export를 추가했습니다.
+- `src/paper/riskEngine.ts`, `src/paper/orderEngine.ts`, `src/paper/ledger.ts`와 테스트를 추가했습니다.
+- PR-05에서 `MarketPacketBuilder`가 만든 packet을 바로 `PaperOrderEngine` 입력으로 사용할 수 있습니다.
