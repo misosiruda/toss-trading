@@ -500,3 +500,31 @@
 - `get_scheduler_status`는 `paper-scheduler-state.json`과 `paper-run.lock`만 읽고 실행을 호출하지 않습니다.
 - `get_source_health`는 `tossinvest-sources.jsonl` 상태와 corrupt line count를 요약합니다.
 - `get_market_packets`는 `market-packets.jsonl`의 최근 packet을 제한 개수만큼 반환합니다.
+
+## PR-19: Local Operations API
+
+### Review 1: Scope and Safety
+
+- 범위는 local dashboard/API가 사용할 read-only HTTP API에 한정했습니다.
+- Node built-in `http`만 사용했고 외부 server dependency는 추가하지 않았습니다.
+- API는 `GET`/`HEAD`만 허용하며 mutation method는 `405 method_not_allowed`로 거부합니다.
+- live order endpoint, live broker adapter, official Toss API adapter, collector trigger, Codex CLI trigger는 추가하지 않았습니다.
+- 모든 JSON 응답은 `maskObject`를 거쳐 account/order-like 문자열을 masking합니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- `/health`와 `/virtual/portfolio` JSON response test 통과.
+- `/virtual/decisions` sensitive text masking test 통과.
+- `/paper/report`와 `/scheduler/status` read-only endpoint test 통과.
+- mutation method reject와 `/place_order` 404 test 통과.
+- `node dist/cli/localOperationsApi.js --data-dir <temp-dir> --host 127.0.0.1 --port <temp-port>` smoke에서 `/health` 응답을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/api/localOperationsServer.ts`와 tests를 추가했습니다.
+- `src/cli/localOperationsApi.ts`와 `ops:api` npm script를 추가했습니다.
+- `.env.example`에 `OPS_API_HOST=127.0.0.1`, `OPS_API_PORT=8787` safe local defaults를 추가했습니다.
+- endpoints는 `/health`, `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/scheduler/status`만 제공합니다.
+- API는 local paper store와 scheduler state file만 읽고 runtime state를 변경하지 않습니다.

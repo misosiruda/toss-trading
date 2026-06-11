@@ -1,0 +1,214 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type {
+  VirtualDecision,
+  VirtualPortfolio,
+  VirtualTrade
+} from "../domain/schemas.js";
+import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
+import {
+  createStoragePaths,
+  FileVirtualDecisionStore,
+  FileVirtualPortfolioStore,
+  FileVirtualTradeStore
+} from "../storage/repositories.js";
+import { createLocalOperationsServer } from "./localOperationsServer.js";
+
+const now = new Date("2026-06-11T09:00:00+09:00");
+
+async function createTempStorageBaseDir(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "toss-trading-api-test-"));
+}
+
+async function startTestServer(
+  storageBaseDir: string
+): Promise<{ server: Server; baseUrl: string }> {
+  const server = createLocalOperationsServer({
+    storageBaseDir,
+    now: () => now
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}`
+  };
+}
+
+async function stopTestServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+async function fetchJson(
+  baseUrl: string,
+  path: string,
+  init?: RequestInit
+): Promise<{ response: Response; payload: Record<string, unknown> }> {
+  const response = await fetch(`${baseUrl}${path}`, init);
+  const payload = (await response.json()) as Record<string, unknown>;
+  return { response, payload };
+}
+
+test("local operations API serves health and virtual portfolio JSON", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(portfolio());
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const health = await fetchJson(baseUrl, "/health");
+    const portfolioResponse = await fetchJson(baseUrl, "/virtual/portfolio");
+
+    assert.equal(health.response.status, 200);
+    assert.match(
+      health.response.headers.get("content-type") ?? "",
+      /application\/json/
+    );
+    assert.equal(health.payload["mode"], "paper_only");
+    assert.equal(health.payload["readOnly"], true);
+    assert.equal(health.payload["tradingEnabled"], false);
+    assert.equal(portfolioResponse.payload["sourceStatus"], "ok");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API returns decisions and masks sensitive text", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualDecisionStore(paths.virtualDecisionsPath).append(decision());
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/virtual/decisions?limit=1");
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["count"], 1);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves paper report and scheduler status", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const schedulerPaths = createPaperSchedulerPaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(portfolio());
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append(trade());
+  await writeFile(
+    schedulerPaths.statePath,
+    `${JSON.stringify({ dayKey: "2026-06-11", runsUsed: 1 })}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const report = await fetchJson(baseUrl, "/paper/report?date=2026-06-11");
+    const scheduler = await fetchJson(baseUrl, "/scheduler/status");
+    const schedulerState = scheduler.payload["schedulerState"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(report.response.status, 200);
+    assert.equal(report.payload["title"], "Paper Trading Daily Report");
+    assert.match(String(report.payload["disclaimer"]), /cannot place live orders/);
+    assert.equal(scheduler.response.status, 200);
+    assert.equal(scheduler.payload["stateStatus"], "ok");
+    assert.equal(scheduler.payload["lockStatus"], "missing");
+    assert.equal(schedulerState["runsUsed"], 1);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API rejects mutation methods and has no live order endpoint", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const mutation = await fetchJson(baseUrl, "/virtual/portfolio", {
+      method: "POST"
+    });
+    const liveOrder = await fetchJson(baseUrl, "/place_order");
+
+    assert.equal(mutation.response.status, 405);
+    assert.equal(mutation.payload["readOnly"], true);
+    assert.equal(liveOrder.response.status, 404);
+    assert.equal(liveOrder.payload["error"], "not_found");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+function portfolio(): VirtualPortfolio {
+  return {
+    portfolioId: "virtual_default",
+    cashKrw: 900_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        quantity: 2,
+        averagePriceKrw: 70_000,
+        marketValueKrw: 150_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ],
+    updatedAt: "2026-06-11T09:00:00+09:00"
+  };
+}
+
+function decision(): VirtualDecision {
+  return {
+    packetId: "packet_api_001",
+    summary: "Paper-only decision",
+    decisions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        action: "VIRTUAL_BUY",
+        confidence: 0.8,
+        budgetKrw: 70_000,
+        thesis: "Paper thesis references order ord_abcdef123456",
+        riskFactors: ["Do not expose account 1234-5678-901234"],
+        dataRefs: ["tossinvest_cli:market.ranking:0:0"],
+        expiresAt: "2026-06-11T09:05:00+09:00"
+      }
+    ]
+  };
+}
+
+function trade(): VirtualTrade {
+  return {
+    tradeId: "trade_api_001",
+    packetId: "packet_api_001",
+    decisionId: "decision_api_001",
+    market: "KR",
+    symbol: "005930",
+    action: "VIRTUAL_BUY",
+    quantity: 1,
+    priceKrw: 70_000,
+    amountKrw: 70_000,
+    status: "VIRTUAL_FILLED",
+    executedAt: "2026-06-11T09:01:00+09:00"
+  };
+}
