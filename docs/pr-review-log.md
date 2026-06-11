@@ -173,3 +173,30 @@
 - `src/ai/processRunner.ts`, `src/ai/runBudget.ts`, `src/ai/codexCliDecisionProvider.ts`와 tests를 추가했습니다.
 - provider output은 `virtualDecisionSchema`로 검증됩니다.
 - PR-07에서 `MarketPacketBuilder`, `CodexCliDecisionProvider`, `PaperOrderEngine`을 연결할 수 있습니다.
+
+## PR-07: End-to-End Paper Decision CLI
+
+### Review 1: Scope and Safety
+
+- 범위는 mock packet, decision provider, paper order engine, local stores를 연결하는 paper-only run-once workflow에 한정했습니다.
+- `tossctl` collector, live broker adapter, MCP tool, scheduler는 추가하지 않았습니다.
+- scope 검색에서 `tossctl`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, `workspace-write`, `danger-full-access`, broker/live order path가 `src/workflows`와 `src/cli`에 없음을 확인했습니다.
+- CLI dry-run은 `StaticDecisionProvider`를 사용하며 실제 Codex CLI를 호출하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- mocked Codex provider end-to-end test 통과.
+- failed provider leaves existing portfolio unchanged test 통과.
+- successful run writes virtual trade and audit event chain test 통과.
+- `npm run paper:run-once:dry -- <temp-dir>` 성공.
+- dry-run report가 `Paper trading report`와 `not financial advice` 문구를 포함함을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/paperRunOnce.ts`와 tests를 추가했습니다.
+- `src/cli/paperRunOnce.ts` CLI wrapper를 추가했습니다.
+- `paper:run-once`와 `paper:run-once:dry` npm scripts를 추가했습니다.
+- temp data dir에 `audit-events.jsonl`, `virtual-decisions.jsonl`, `virtual-portfolio.json`, `virtual-trades.jsonl`이 생성됨을 확인했습니다.
+- repo 내부 `data/`는 생성되지 않았습니다.
