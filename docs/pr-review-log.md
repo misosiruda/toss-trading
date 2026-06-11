@@ -714,3 +714,29 @@
 - `dashboard/styles.css`는 evidence section, risk factor list, decision context line 스타일을 추가했습니다.
 - `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-26 렌더링 요소까지 확장했습니다.
 - PR-26 계획과 검토 기록을 문서에 반영했습니다.
+
+## PR-27: Dashboard Partial Failure UX and Runbook
+
+### Review 1: Scope and Safety
+
+- 범위는 dashboard의 read-only endpoint 조회 실패 표시와 README dashboard 설명 갱신에 한정했습니다.
+- dashboard는 endpoint를 독립적으로 조회하되 기존 same-origin GET fetch만 사용합니다.
+- 실패한 endpoint가 있어도 collection, ingestion, paper run, Codex CLI run을 자동으로 재시도하거나 실행하지 않습니다.
+- local operations server endpoint나 저장소 mutation 경로는 변경하지 않았습니다.
+- live order path와 report/decision editing UI는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- dashboard asset test에서 `fetchEndpointData`와 `endpointFailures` helper를 확인합니다.
+- dashboard script에 `POST`, `PUT`, `DELETE` 문자열이 없는지 기존 검증을 유지합니다.
+- full test suite로 API read-only 경계와 dashboard asset serving을 확인합니다.
+- browser normal load에서 상태 pill이 정상 연결 상태로 표시되는지 확인합니다.
+- README endpoint 목록이 dashboard fetch 목록과 일치하는지 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `dashboard/app.js`는 endpoint별 실패를 `{ error }`로 격리하고 가능한 데이터는 계속 렌더링합니다.
+- 실패 endpoint가 있으면 header status를 `부분 연결`로 표시하고 오류 배너에 endpoint key를 표시합니다.
+- `src/api/localOperationsServer.test.ts`의 dashboard asset test를 partial failure helper까지 확장했습니다.
+- README dashboard 설명에 `/audit/events`와 부분 실패 표시 동작을 반영했습니다.
+- PR-27 계획과 검토 기록을 문서에 반영했습니다.

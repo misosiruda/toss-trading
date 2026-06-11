@@ -815,6 +815,35 @@
 - investment advice wording
 - live order placement
 
+## PR-27: Dashboard Partial Failure UX and Runbook
+
+목표:
+
+- dashboard 조회 중 일부 read-only endpoint가 실패해도 나머지 데이터를 계속 볼 수 있게 하고, 로컬 실행 문서를 실제 endpoint 목록에 맞춥니다.
+
+작업 범위:
+
+- independent dashboard endpoint fetch
+- partial failure status pill
+- failed endpoint error banner
+- README dashboard endpoint list update
+- dashboard asset test update
+
+검증:
+
+- dashboard script still uses read-only fetch only
+- dashboard asset test covers partial failure helpers
+- full test suite
+- browser verification for normal dashboard load
+
+제외:
+
+- retry loop
+- dashboard-triggered collection
+- dashboard-triggered paper run
+- endpoint mutation
+- live order placement
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

@@ -151,7 +151,7 @@ npm run paper:run-from-market-packet -- --data-dir data/paper
 npm run dashboard -- --data-dir data/paper
 ```
 
-기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/source/health`, `/market/packets` 같은 read-only endpoint만 호출합니다.
+기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/source/health`, `/market/packets`, `/audit/events` 같은 read-only endpoint만 호출합니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
 ## Roadmap
 

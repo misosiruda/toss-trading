@@ -46,29 +46,48 @@ async function loadDashboard() {
   hideError();
   setStatus("api-status", "loading", "새로고침 중");
 
-  const entries = await Promise.all(
-    Object.entries(endpoints).map(async ([key, path]) => {
-      return [key, await fetchJson(path)];
-    })
-  );
-  const data = Object.fromEntries(entries);
+  const data = await fetchEndpointData();
+  const failures = endpointFailures(data);
 
   renderDashboard(data);
-  setStatus("api-status", "ok", "연결됨");
+  if (failures.length) {
+    setStatus("api-status", "degraded", "부분 연결");
+    showError(`부분 조회 실패: ${failures.join(", ")}`);
+  } else {
+    setStatus("api-status", "ok", "연결됨");
+  }
+}
+
+async function fetchEndpointData() {
+  const entries = await Promise.all(
+    Object.entries(endpoints).map(async ([key, path]) => {
+      try {
+        return [key, await fetchJson(path)];
+      } catch (error) {
+        return [key, { error: endpointErrorMessage(path, error) }];
+      }
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
+function endpointFailures(data) {
+  return Object.entries(data)
+    .filter(([, value]) => value?.error)
+    .map(([key]) => key);
 }
 
 async function fetchJson(path) {
-  try {
-    const response = await fetch(path, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`${path} returned ${response.status}`);
-    }
-    return await response.json();
-  } catch (error) {
-    setStatus("api-status", "error", "연결 실패");
-    showError(error instanceof Error ? error.message : String(error));
-    throw error;
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`${path} returned ${response.status}`);
   }
+  return await response.json();
+}
+
+function endpointErrorMessage(path, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${path}: ${message}`;
 }
 
 function renderDashboard(data) {

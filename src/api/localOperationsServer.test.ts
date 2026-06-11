@@ -121,6 +121,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /\/virtual\/portfolio/);
     assert.match(script.text, /\/paper\/report/);
     assert.match(script.text, /\/audit\/events/);
+    assert.match(script.text, /fetchEndpointData/);
+    assert.match(script.text, /endpointFailures/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderDecisionTimeline/);
     assert.match(script.text, /decisionOutcomeRow/);
