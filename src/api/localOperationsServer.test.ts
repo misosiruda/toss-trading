@@ -7,13 +7,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  MarketPacket,
   VirtualDecision,
   VirtualPortfolio,
   VirtualTrade
 } from "../domain/schemas.js";
+import type { TossInvestCliCollectResult } from "../collectors/tossInvestCliCollector.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import {
   createStoragePaths,
+  FileMarketPacketStore,
+  FileTossInvestSourceStore,
   FileVirtualDecisionStore,
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
@@ -63,6 +67,15 @@ async function fetchJson(
   return { response, payload };
 }
 
+async function fetchText(
+  baseUrl: string,
+  path: string
+): Promise<{ response: Response; text: string }> {
+  const response = await fetch(`${baseUrl}${path}`);
+  const text = await response.text();
+  return { response, text };
+}
+
 test("local operations API serves health and virtual portfolio JSON", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
@@ -82,6 +95,52 @@ test("local operations API serves health and virtual portfolio JSON", async () =
     assert.equal(health.payload["readOnly"], true);
     assert.equal(health.payload["tradingEnabled"], false);
     assert.equal(portfolioResponse.payload["sourceStatus"], "ok");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves read-only dashboard assets", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const html = await fetchText(baseUrl, "/dashboard");
+    const script = await fetchText(baseUrl, "/dashboard/app.js");
+
+    assert.equal(html.response.status, 200);
+    assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(html.text, /가상 투자 대시보드/);
+    assert.equal(script.response.status, 200);
+    assert.match(script.text, /\/virtual\/portfolio/);
+    assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves source health and market packets", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileTossInvestSourceStore(paths.tossInvestSourcesPath).append(
+    sourceResult()
+  );
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(marketPacket());
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const source = await fetchJson(baseUrl, "/source/health");
+    const packets = await fetchJson(baseUrl, "/market/packets?limit=1");
+    const byCommandKey = source.payload["byCommandKey"] as Record<string, unknown>;
+    const packetRecords = packets.payload["packets"] as Array<Record<string, unknown>>;
+
+    assert.equal(source.response.status, 200);
+    assert.equal(source.payload["readOnly"], true);
+    assert.equal(source.payload["status"], "ok");
+    assert.equal(byCommandKey["market.ranking"], 1);
+    assert.equal(packets.response.status, 200);
+    assert.equal(packets.payload["count"], 1);
+    assert.equal(packetRecords[0]?.["packetId"], "packet_api_001");
   } finally {
     await stopTestServer(server);
   }
@@ -210,5 +269,49 @@ function trade(): VirtualTrade {
     amountKrw: 70_000,
     status: "VIRTUAL_FILLED",
     executedAt: "2026-06-11T09:01:00+09:00"
+  };
+}
+
+function sourceResult(): TossInvestCliCollectResult {
+  return {
+    status: "ok",
+    commandKey: "market.ranking",
+    data: { items: [{ symbol: "005930" }] },
+    metadata: {
+      source: "tossinvest_cli",
+      sourceKind: "unofficial_read_only",
+      official: false,
+      commandKey: "market.ranking",
+      collectedAt: "2026-06-11T09:00:00+09:00"
+    },
+    error: null
+  };
+}
+
+function marketPacket(): MarketPacket {
+  return {
+    packetId: "packet_api_001",
+    mode: "paper_only",
+    generatedAt: "2026-06-11T09:00:00+09:00",
+    expiresAt: "2026-06-11T09:05:00+09:00",
+    virtualPortfolio: portfolio(),
+    candidates: [
+      {
+        market: "KR",
+        symbol: "005930",
+        name: "Sample Corp",
+        lastPriceKrw: 70_000,
+        ranking: 1,
+        reasonCodes: ["RANKING"],
+        sourceRefs: ["tossinvest_cli:market.ranking:0:0"],
+        collectedAt: "2026-06-11T09:00:00+09:00",
+        staleAfter: "2026-06-11T09:05:00+09:00"
+      }
+    ],
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
   };
 }

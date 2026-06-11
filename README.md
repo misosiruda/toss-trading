@@ -145,6 +145,14 @@ Codex CLI 판단을 사용할 때도 이 경로는 paper-only `virtual_decision`
 npm run paper:run-from-market-packet -- --data-dir data/paper
 ```
 
+가상 투자 상태는 같은 local operations server에서 read-only dashboard로 볼 수 있습니다.
+
+```powershell
+npm run dashboard -- --data-dir data/paper
+```
+
+기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/source/health`, `/market/packets` 같은 read-only endpoint만 호출합니다.
+
 ## Roadmap
 
 1. Documentation and architecture

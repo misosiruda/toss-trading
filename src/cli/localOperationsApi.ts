@@ -14,6 +14,7 @@ await startLocalOperationsServer({
 });
 
 console.log(`Local operations API listening on http://${host}:${port}`);
+console.log(`Paper dashboard available at http://${host}:${port}/dashboard`);
 console.log("mode=paper_only read_only=true");
 
 function readArgValue(name: string): string | undefined {

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Toss Trading Paper Dashboard</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">paper_only</p>
+        <h1>가상 투자 대시보드</h1>
+      </div>
+      <div class="header-status">
+        <span id="api-status" class="status-pill neutral">연결 확인 중</span>
+        <button id="refresh-button" class="icon-button" type="button" aria-label="새로고침" title="새로고침">
+          ↻
+        </button>
+      </div>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="metric-grid" aria-label="가상 포트폴리오 요약">
+        <div class="metric-panel">
+          <span class="metric-label">가상 순자산</span>
+          <strong id="metric-net-worth">-</strong>
+        </div>
+        <div class="metric-panel">
+          <span class="metric-label">현금</span>
+          <strong id="metric-cash">-</strong>
+        </div>
+        <div class="metric-panel">
+          <span class="metric-label">보유 종목</span>
+          <strong id="metric-positions">-</strong>
+        </div>
+        <div class="metric-panel">
+          <span class="metric-label">데이터 상태</span>
+          <strong id="metric-source">-</strong>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <section class="panel wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">portfolio</p>
+              <h2>보유 포지션</h2>
+            </div>
+            <span id="portfolio-updated" class="subtle">-</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>종목</th>
+                  <th>수량</th>
+                  <th>평균가</th>
+                  <th>평가금액</th>
+                  <th>손익</th>
+                </tr>
+              </thead>
+              <tbody id="positions-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">source</p>
+              <h2>조회 데이터</h2>
+            </div>
+            <span id="source-status" class="status-pill neutral">-</span>
+          </div>
+          <dl id="source-summary" class="definition-list"></dl>
+        </section>
+
+        <section class="panel wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ai decisions</p>
+              <h2>AI 판단 근거</h2>
+            </div>
+            <span id="decision-count" class="subtle">-</span>
+          </div>
+          <div id="decision-list" class="decision-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">risk</p>
+              <h2>리스크 요약</h2>
+            </div>
+          </div>
+          <dl id="risk-summary" class="definition-list"></dl>
+        </section>
+
+        <section class="panel wide">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ledger</p>
+              <h2>최근 가상 체결</h2>
+            </div>
+            <span id="trade-count" class="subtle">-</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>시간</th>
+                  <th>종목</th>
+                  <th>액션</th>
+                  <th>가격</th>
+                  <th>금액</th>
+                </tr>
+              </thead>
+              <tbody id="trades-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">packets</p>
+              <h2>Market Packet</h2>
+            </div>
+          </div>
+          <div id="packet-list" class="packet-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="error-banner" class="error-banner" hidden></div>
+    <script src="/dashboard/app.js" type="module"></script>
+  </body>
+</html>

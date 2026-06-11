@@ -582,3 +582,33 @@
 - env를 사용하는 CLI entrypoint와 MCP server entrypoint에서 `.env`를 자동으로 읽습니다.
 - `.env.example`, README, Codex CLI paper trading 문서에 local env 사용 방식을 반영했습니다.
 - `src/paper/riskEngine.ts`는 `VIRTUAL_CANDIDATE_NOT_FOUND`와 HOLD price exemption을 구분합니다.
+
+## PR-22: Read-only Paper Dashboard Foundation
+
+### Review 1: Scope and Safety
+
+- 범위는 local read-only dashboard foundation과 dashboard에 필요한 read-only HTTP endpoint 확장에 한정했습니다.
+- dashboard는 same-origin GET endpoint만 호출하며 `POST`, `PUT`, `DELETE` 같은 mutation method를 사용하지 않습니다.
+- local operations server는 기존처럼 non-GET/HEAD 요청을 `405 method_not_allowed`로 거부합니다.
+- dashboard-triggered collection, dashboard-triggered Codex run, live order endpoint, official Toss Open API adapter는 추가하지 않았습니다.
+- UI는 paper-only 상태와 AI 판단 근거를 표시하지만 실주문처럼 오해될 수 있는 buy/sell 실행 버튼을 제공하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm test` 성공.
+- dashboard asset serving test 통과.
+- dashboard script에 mutation method 문자열이 없는지 test에서 확인했습니다.
+- `/source/health` read-only response test 통과.
+- `/market/packets` read-only response test 통과.
+- `/place_order` 404와 mutation method 405 기존 test가 계속 통과했습니다.
+- Chrome headless desktop screenshot에서 portfolio, source, AI decision, risk panel 렌더링을 확인했습니다.
+- Chrome headless mobile screenshot에서 주요 패널과 긴 source command 줄바꿈을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `dashboard/index.html`, `dashboard/styles.css`, `dashboard/app.js`를 추가했습니다.
+- `src/api/localOperationsServer.ts`는 `/dashboard`, `/dashboard/app.js`, `/dashboard/styles.css` 정적 asset을 제공합니다.
+- local API에 `/source/health`, `/market/packets`를 추가해 MCP read-only 조회와 HTTP dashboard 조회의 관측 범위를 맞췄습니다.
+- `src/cli/localOperationsApi.ts`는 dashboard URL을 로그로 출력합니다.
+- `package.json`에 `dashboard` script를 추가했습니다.
+- README와 PR 계획 문서에 dashboard 실행 방법과 PR-22 범위를 반영했습니다.

@@ -661,6 +661,43 @@
 - `.env` commit
 - real secret 관리
 
+## PR-22: Read-only Paper Dashboard Foundation
+
+목표:
+
+- 사용자가 가상 투자 상태와 AI 판단 근거를 브라우저에서 바로 확인할 수 있는 local dashboard를 추가합니다.
+
+작업 범위:
+
+- `dashboard` static assets
+- local operations server의 dashboard asset serving
+- `npm run dashboard`
+- portfolio summary
+- positions table
+- recent AI decisions with thesis, risk factors, data refs
+- recent virtual trades
+- risk summary
+- TossInvest source health
+- recent market packets
+- HTTP API read-only endpoints for source health and market packets
+
+검증:
+
+- dashboard assets are served by GET/HEAD only
+- dashboard script does not call mutation methods
+- source health endpoint is read-only
+- market packet endpoint is read-only
+- full test suite
+- desktop and mobile browser screenshots
+
+제외:
+
+- dashboard-triggered collection
+- dashboard-triggered Codex run
+- live order placement
+- authentication/session
+- external network exposure
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

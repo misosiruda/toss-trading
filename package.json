@@ -17,6 +17,7 @@
     "paper:run-from-market-packet": "npm run build && node dist/cli/paperRunFromMarketPacket.js",
     "paper:run-from-market-packet:dry": "npm run build && node dist/cli/paperRunFromMarketPacket.js --dry-run",
     "ops:api": "npm run build && node dist/cli/localOperationsApi.js",
+    "dashboard": "npm run build && node dist/cli/localOperationsApi.js",
     "tossinvest:collect": "npm run build && node dist/cli/tossInvestCollect.js",
     "market:ingest": "npm run build && node dist/cli/marketIngest.js",
     "start": "node dist/index.js"

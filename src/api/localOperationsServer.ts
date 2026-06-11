@@ -5,12 +5,15 @@ import {
   type Server,
   type ServerResponse
 } from "node:http";
+import { join } from "node:path";
 
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import { maskObject } from "../security/masking.js";
 import {
   createStoragePaths,
+  FileMarketPacketStore,
+  FileTossInvestSourceStore,
   FileVirtualDecisionStore,
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
@@ -64,6 +67,16 @@ async function handleRequest(
     }
 
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const dashboardAsset = readDashboardAsset(url.pathname);
+    if (dashboardAsset) {
+      await writeDashboardAsset(
+        response,
+        dashboardAsset,
+        request.method === "HEAD"
+      );
+      return;
+    }
+
     const payload = await routeRequest(url, options);
     if (!payload) {
       writeJson(response, 404, {
@@ -104,6 +117,10 @@ async function routeRequest(
       });
     case "/scheduler/status":
       return readSchedulerStatus(options.storageBaseDir);
+    case "/source/health":
+      return readSourceHealth(options.storageBaseDir);
+    case "/market/packets":
+      return readMarketPackets(options.storageBaseDir, readLimit(url));
     default:
       return null;
   }
@@ -190,6 +207,62 @@ async function readSchedulerStatus(
   };
 }
 
+async function readSourceHealth(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const result = await new FileTossInvestSourceStore(
+    paths.tossInvestSourcesPath
+  ).readAll();
+  const byStatus: Record<string, number> = { ok: 0, degraded: 0, blocked: 0 };
+  const byCommandKey: Record<string, number> = {};
+  let lastCollectedAt: string | null = null;
+
+  for (const source of result.records) {
+    byStatus[source.status] = (byStatus[source.status] ?? 0) + 1;
+    byCommandKey[source.commandKey] = (byCommandKey[source.commandKey] ?? 0) + 1;
+    const collectedAt = source.metadata.collectedAt;
+    if (!lastCollectedAt || Date.parse(collectedAt) > Date.parse(lastCollectedAt)) {
+      lastCollectedAt = collectedAt;
+    }
+  }
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status:
+      result.corruptLineCount > 0 ||
+      (byStatus.degraded ?? 0) > 0 ||
+      (byStatus.blocked ?? 0) > 0
+        ? "degraded"
+        : result.records.length > 0
+          ? "ok"
+          : "unknown",
+    totalCount: result.records.length,
+    byStatus,
+    byCommandKey,
+    lastCollectedAt,
+    corruptLineCount: result.corruptLineCount
+  };
+}
+
+async function readMarketPackets(
+  storageBaseDir: string,
+  limit: number
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const result = await new FileMarketPacketStore(paths.marketPacketsPath).readAll();
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    packets: takeRecent(result.records, limit),
+    count: Math.min(result.records.length, limit),
+    totalCount: result.records.length,
+    corruptLineCount: result.corruptLineCount
+  };
+}
+
 function isReadOnlyMethod(method: string | undefined): boolean {
   return method === "GET" || method === "HEAD";
 }
@@ -237,6 +310,48 @@ async function readJsonFile(
     }
     throw error;
   }
+}
+
+interface DashboardAsset {
+  fileName: string;
+  contentType: string;
+}
+
+function readDashboardAsset(pathname: string): DashboardAsset | null {
+  switch (pathname) {
+    case "/":
+    case "/dashboard":
+    case "/dashboard/":
+      return {
+        fileName: "index.html",
+        contentType: "text/html; charset=utf-8"
+      };
+    case "/dashboard/app.js":
+      return {
+        fileName: "app.js",
+        contentType: "text/javascript; charset=utf-8"
+      };
+    case "/dashboard/styles.css":
+      return {
+        fileName: "styles.css",
+        contentType: "text/css; charset=utf-8"
+      };
+    default:
+      return null;
+  }
+}
+
+async function writeDashboardAsset(
+  response: ServerResponse,
+  asset: DashboardAsset,
+  headOnly = false
+): Promise<void> {
+  const body = await readFile(join(process.cwd(), "dashboard", asset.fileName));
+  response.writeHead(200, {
+    "content-type": asset.contentType,
+    "cache-control": "no-store"
+  });
+  response.end(headOnly ? undefined : body);
 }
 
 function writeJson(
