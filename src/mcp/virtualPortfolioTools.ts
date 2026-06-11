@@ -1,9 +1,15 @@
+import { readFile } from "node:fs/promises";
+
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Market } from "../domain/schemas.js";
+import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
+import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import { maskObject } from "../security/masking.js";
 import {
   createStoragePaths,
+  FileMarketPacketStore,
+  FileTossInvestSourceStore,
   FileVirtualDecisionStore,
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
@@ -14,7 +20,11 @@ export const virtualPortfolioToolNames = [
   "get_virtual_positions",
   "get_virtual_decisions",
   "get_virtual_trades",
-  "get_virtual_performance"
+  "get_virtual_performance",
+  "get_paper_report",
+  "get_scheduler_status",
+  "get_source_health",
+  "get_market_packets"
 ] as const;
 
 export type VirtualPortfolioToolName = (typeof virtualPortfolioToolNames)[number];
@@ -36,6 +46,18 @@ const limitInputSchema = {
       type: "integer",
       minimum: 1,
       maximum: 100
+    }
+  },
+  additionalProperties: false
+} as const;
+
+const reportInputSchema = {
+  type: "object",
+  properties: {
+    date: {
+      type: "string",
+      minLength: 10,
+      maxLength: 10
     }
   },
   additionalProperties: false
@@ -82,6 +104,26 @@ export function listVirtualPortfolioTools(): Tool[] {
       "get_virtual_performance",
       "Read derived paper-only virtual portfolio metrics without claiming investment performance.",
       emptyInputSchema
+    ),
+    readOnlyTool(
+      "get_paper_report",
+      "Read the local paper trading daily report for operations review.",
+      reportInputSchema
+    ),
+    readOnlyTool(
+      "get_scheduler_status",
+      "Read local paper scheduler state and lock metadata without triggering a run.",
+      emptyInputSchema
+    ),
+    readOnlyTool(
+      "get_source_health",
+      "Read stored TossInvest read-only source health summary.",
+      emptyInputSchema
+    ),
+    readOnlyTool(
+      "get_market_packets",
+      "Read recent stored paper-only market packets.",
+      limitInputSchema
     )
   ];
 }
@@ -126,6 +168,30 @@ export async function callVirtualPortfolioTool(
           repositories.tradeStore
         )
       );
+    case "get_paper_report": {
+      const date = readDateArg(toolArgs);
+      if (typeof date !== "string") {
+        return errorResult(date.error);
+      }
+      return jsonResult(
+        await buildPaperDailyReport({
+          storageBaseDir: context.storageBaseDir,
+          date,
+          generatedAt: new Date()
+        })
+      );
+    }
+    case "get_scheduler_status":
+      return jsonResult(await readSchedulerStatus(context.storageBaseDir));
+    case "get_source_health":
+      return jsonResult(await readSourceHealth(repositories.sourceStore));
+    case "get_market_packets": {
+      const limit = readLimit(toolArgs);
+      if (typeof limit === "string") {
+        return errorResult(limit);
+      }
+      return jsonResult(await readMarketPackets(repositories.packetStore, limit));
+    }
   }
 }
 
@@ -152,7 +218,9 @@ function createReadOnlyRepositories(storageBaseDir: string) {
   return {
     portfolioStore: new FileVirtualPortfolioStore(paths.virtualPortfolioPath),
     decisionStore: new FileVirtualDecisionStore(paths.virtualDecisionsPath),
-    tradeStore: new FileVirtualTradeStore(paths.virtualTradesPath)
+    tradeStore: new FileVirtualTradeStore(paths.virtualTradesPath),
+    sourceStore: new FileTossInvestSourceStore(paths.tossInvestSourcesPath),
+    packetStore: new FileMarketPacketStore(paths.marketPacketsPath)
   };
 }
 
@@ -274,6 +342,84 @@ async function readVirtualPerformance(
   };
 }
 
+async function readSchedulerStatus(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createPaperSchedulerPaths(storageBaseDir);
+  const [state, lock] = await Promise.all([
+    readJsonFile(paths.statePath),
+    readJsonFile(paths.lockPath)
+  ]);
+
+  return {
+    tool: "get_scheduler_status",
+    mode: "paper_only",
+    readOnly: true,
+    statePath: paths.statePath,
+    lockPath: paths.lockPath,
+    stateStatus: state.status,
+    lockStatus: lock.status,
+    schedulerState: state.value,
+    lock: lock.value,
+    disclaimer: virtualDisclaimer()
+  };
+}
+
+async function readSourceHealth(
+  sourceStore: FileTossInvestSourceStore
+): Promise<Record<string, unknown>> {
+  const result = await sourceStore.readAll();
+  const byStatus: Record<string, number> = { ok: 0, degraded: 0, blocked: 0 };
+  const byCommandKey: Record<string, number> = {};
+  let lastCollectedAt: string | null = null;
+
+  for (const source of result.records) {
+    byStatus[source.status] = (byStatus[source.status] ?? 0) + 1;
+    byCommandKey[source.commandKey] = (byCommandKey[source.commandKey] ?? 0) + 1;
+    const collectedAt = source.metadata.collectedAt;
+    if (!lastCollectedAt || Date.parse(collectedAt) > Date.parse(lastCollectedAt)) {
+      lastCollectedAt = collectedAt;
+    }
+  }
+
+  return {
+    tool: "get_source_health",
+    mode: "paper_only",
+    readOnly: true,
+    status:
+      result.corruptLineCount > 0 ||
+      (byStatus.degraded ?? 0) > 0 ||
+      (byStatus.blocked ?? 0) > 0
+        ? "degraded"
+        : result.records.length > 0
+          ? "ok"
+          : "unknown",
+    totalCount: result.records.length,
+    byStatus,
+    byCommandKey,
+    lastCollectedAt,
+    corruptLineCount: result.corruptLineCount,
+    disclaimer: virtualDisclaimer()
+  };
+}
+
+async function readMarketPackets(
+  packetStore: FileMarketPacketStore,
+  limit: number
+): Promise<Record<string, unknown>> {
+  const result = await packetStore.readAll();
+  return {
+    tool: "get_market_packets",
+    mode: "paper_only",
+    readOnly: true,
+    packets: takeRecent(result.records, limit),
+    count: Math.min(result.records.length, limit),
+    totalCount: result.records.length,
+    corruptLineCount: result.corruptLineCount,
+    disclaimer: virtualDisclaimer()
+  };
+}
+
 function jsonResult(value: unknown): CallToolResult {
   return {
     content: [
@@ -327,6 +473,19 @@ function readLimit(args: Record<string, unknown>): number | string {
   return raw;
 }
 
+function readDateArg(args: Record<string, unknown>): string | { error: string } {
+  const raw = args["date"];
+  if (raw === undefined) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return { error: "`date` must use YYYY-MM-DD format" };
+  }
+
+  return raw;
+}
+
 function readMarketArg(args: Record<string, unknown>): Market | null {
   const raw = args["market"];
   if (raw === "KR" || raw === "US") {
@@ -347,6 +506,26 @@ function readSymbolArg(args: Record<string, unknown>): string | null {
 
 function takeRecent<T>(records: T[], limit: number): T[] {
   return records.slice(-limit).reverse();
+}
+
+async function readJsonFile(
+  filePath: string
+): Promise<{ status: "missing" | "ok" | "corrupt"; value: unknown | null }> {
+  try {
+    return { status: "ok", value: JSON.parse(await readFile(filePath, "utf8")) };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing", value: null };
+    }
+    if (error instanceof SyntaxError) {
+      return { status: "corrupt", value: null };
+    }
+    throw error;
+  }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function virtualDisclaimer(): string {

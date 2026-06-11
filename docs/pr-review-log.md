@@ -472,3 +472,31 @@
 - `src/cli/paperReplay.ts`와 `paper:replay` npm script를 추가했습니다.
 - 저장소 wrapper는 latest market packet과 matching latest decision만 읽어 replay input을 구성합니다.
 - historical downloader, backtest 성과 주장, live scheduler integration은 추가하지 않았습니다.
+
+## PR-18: MCP Operations Extension
+
+### Review 1: Scope and Safety
+
+- 범위는 운영 조회용 MCP read-only tool 확장에 한정했습니다.
+- 추가 tool은 `get_paper_report`, `get_scheduler_status`, `get_source_health`, `get_market_packets`입니다.
+- 모든 추가 tool은 local store 또는 local state file read만 수행하며 scheduler run, collector run, Codex CLI 실행을 트리거하지 않습니다.
+- tool annotations는 기존 helper를 통해 `readOnlyHint=true`, `destructiveHint=false`를 유지합니다.
+- 범위 검색에서 `place_order`, `run_tossctl`, `run_codex_exec`는 부정 테스트와 기존 문서 기록에만 나타나며 enabled registry에는 포함되지 않음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- MCP tool list read-only/exclusion test 통과.
+- `get_paper_report` handler test 통과.
+- `get_scheduler_status` state/lock read test 통과.
+- `get_source_health` source status summary test 통과.
+- `get_market_packets` recent packet limit test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/mcp/virtualPortfolioTools.ts`에 운영 조회 tool을 추가했습니다.
+- `get_paper_report`는 기존 `buildPaperDailyReport`를 재사용합니다.
+- `get_scheduler_status`는 `paper-scheduler-state.json`과 `paper-run.lock`만 읽고 실행을 호출하지 않습니다.
+- `get_source_health`는 `tossinvest-sources.jsonl` 상태와 corrupt line count를 요약합니다.
+- `get_market_packets`는 `market-packets.jsonl`의 최근 packet을 제한 개수만큼 반환합니다.
