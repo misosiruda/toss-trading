@@ -637,3 +637,29 @@
 - expired decision은 metadata에서 빨간 강조로 표시합니다.
 - `dashboard/styles.css`는 desktop/mobile filter layout과 decision group summary 스타일을 추가했습니다.
 - `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-23 UI 요소까지 확장했습니다.
+
+## PR-24: AI Decision Risk and Trade Linkage
+
+### Review 1: Scope and Safety
+
+- 범위는 AI decision card에 read-only audit/trade outcome을 연결하는 데 한정했습니다.
+- `/audit/events`는 local audit JSONL을 읽기만 하며 `maskObject`를 거쳐 응답합니다.
+- dashboard는 `/audit/events`, `/virtual/trades`, 기존 read-only endpoint만 호출하고 mutation method를 추가하지 않았습니다.
+- Risk Engine 결과를 표시만 하며 risk policy, decision, portfolio, ledger를 수정하지 않습니다.
+- live order path, dashboard-triggered paper run, collector trigger는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm test` 성공.
+- `/audit/events` endpoint test에서 recent event count와 masking을 확인했습니다.
+- dashboard asset test에서 `/audit/events` fetch와 `decisionOutcomeRow` 렌더링 경로를 확인했습니다.
+- Chrome headless desktop screenshot에서 decision card의 `risk APPROVED`와 `no virtual trade` badge를 확인했습니다.
+- Chrome DevTools Protocol 측정에서 mobile `innerWidth=390`, `document.scrollWidth=390`, decision card width가 viewport 안에 있음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/api/localOperationsServer.ts`에 `/audit/events` read-only endpoint를 추가했습니다.
+- `src/api/localOperationsServer.test.ts`에 masked audit events test를 추가했습니다.
+- `dashboard/app.js`는 decision item과 recent audit/trade records를 packet, market, symbol, action 기준으로 연결합니다.
+- `dashboard/styles.css`는 risk/trade outcome badge와 모바일 줄바꿈 보정을 추가했습니다.
+- PR-24 계획과 검토 기록을 문서에 반영했습니다.

@@ -349,6 +349,7 @@ th.numeric {
 
 .decision-item,
 .packet-item {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-muted);
@@ -374,11 +375,46 @@ th.numeric {
 .decision-meta {
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .decision-meta.expired {
   color: var(--red);
   font-weight: 700;
+}
+
+.decision-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.outcome-badge {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 8px;
+}
+
+.outcome-badge.ok {
+  border-color: #b7dfc8;
+  background: #eaf7ef;
+  color: var(--green);
+}
+
+.outcome-badge.error {
+  border-color: #f3b8b3;
+  background: #fff0ee;
+  color: var(--red);
 }
 
 .decision-text {
@@ -397,6 +433,8 @@ th.numeric {
 }
 
 .tag {
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #ffffff;
@@ -439,9 +477,19 @@ th.numeric {
 }
 
 @media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
   .app-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .dashboard-shell {
+    max-width: 100vw;
+    overflow-x: hidden;
+    padding: 20px 12px 40px;
   }
 
   .header-status {
@@ -453,6 +501,11 @@ th.numeric {
     grid-template-columns: 1fr;
   }
 
+  .metric-panel,
+  .panel {
+    max-width: calc(100vw - 24px);
+  }
+
   .panel-heading,
   .decision-topline,
   .decision-toolbar {
@@ -460,9 +513,18 @@ th.numeric {
     flex-direction: column;
   }
 
-  .filter-field,
-  .filter-field input,
   .segmented-control {
+    width: 100%;
+  }
+
+  .filter-field {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .filter-field input {
+    min-width: 0;
     width: 100%;
   }
 
@@ -474,6 +536,17 @@ th.numeric {
   .segment-button {
     min-width: 0;
     padding: 0 6px;
+  }
+
+  .decision-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-meta,
+  .decision-text,
+  .tag,
+  .outcome-badge {
+    word-break: break-word;
   }
 
   .definition-list {

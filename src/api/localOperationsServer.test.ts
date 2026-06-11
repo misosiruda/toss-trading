@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type {
+  AuditEvent,
   MarketPacket,
   VirtualDecision,
   VirtualPortfolio,
@@ -16,6 +17,7 @@ import type { TossInvestCliCollectResult } from "../collectors/tossInvestCliColl
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import {
   createStoragePaths,
+  FileAuditLog,
   FileMarketPacketStore,
   FileTossInvestSourceStore,
   FileVirtualDecisionStore,
@@ -115,7 +117,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="symbol-filter"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /\/virtual\/portfolio/);
+    assert.match(script.text, /\/audit\/events/);
     assert.match(script.text, /renderDecisionTimeline/);
+    assert.match(script.text, /decisionOutcomeRow/);
     assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
@@ -144,6 +148,28 @@ test("local operations API serves source health and market packets", async () =>
     assert.equal(packets.response.status, 200);
     assert.equal(packets.payload["count"], 1);
     assert.equal(packetRecords[0]?.["packetId"], "packet_api_001");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves recent masked audit events", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append(auditEvent());
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/audit/events?limit=1");
+    const events = result.payload["events"] as Array<Record<string, unknown>>;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["count"], 1);
+    assert.equal(events[0]?.["eventType"], "VIRTUAL_RISK_APPROVED");
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
   } finally {
     await stopTestServer(server);
   }
@@ -316,5 +342,16 @@ function marketPacket(): MarketPacket {
       maxBudgetPerSymbolKrw: 100_000,
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
     }
+  };
+}
+
+function auditEvent(): AuditEvent {
+  return {
+    eventId: "audit_api_001",
+    eventType: "VIRTUAL_RISK_APPROVED",
+    actor: "system",
+    summary: "KR:005930 VIRTUAL_BUY ord_abcdef123456",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:02:00+09:00"
   };
 }

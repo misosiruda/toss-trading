@@ -12,6 +12,7 @@ import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import { maskObject } from "../security/masking.js";
 import {
   createStoragePaths,
+  FileAuditLog,
   FileMarketPacketStore,
   FileTossInvestSourceStore,
   FileVirtualDecisionStore,
@@ -121,6 +122,8 @@ async function routeRequest(
       return readSourceHealth(options.storageBaseDir);
     case "/market/packets":
       return readMarketPackets(options.storageBaseDir, readLimit(url));
+    case "/audit/events":
+      return readAuditEvents(options.storageBaseDir, readLimit(url));
     default:
       return null;
   }
@@ -257,6 +260,23 @@ async function readMarketPackets(
     mode: "paper_only",
     readOnly: true,
     packets: takeRecent(result.records, limit),
+    count: Math.min(result.records.length, limit),
+    totalCount: result.records.length,
+    corruptLineCount: result.corruptLineCount
+  };
+}
+
+async function readAuditEvents(
+  storageBaseDir: string,
+  limit: number
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const result = await new FileAuditLog(paths.auditLogPath).readAll();
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    events: takeRecent(result.records, limit),
     count: Math.min(result.records.length, limit),
     totalCount: result.records.length,
     corruptLineCount: result.corruptLineCount

@@ -4,6 +4,8 @@ const state = {
     action: "ALL",
     symbol: ""
   },
+  auditEvents: [],
+  trades: [],
   refreshStartedAt: null
 };
 
@@ -15,7 +17,8 @@ const endpoints = {
   report: "/paper/report",
   scheduler: "/scheduler/status",
   source: "/source/health",
-  packets: "/market/packets?limit=5"
+  packets: "/market/packets?limit=5",
+  audit: "/audit/events?limit=100"
 };
 
 document.getElementById("refresh-button")?.addEventListener("click", () => {
@@ -86,11 +89,13 @@ function renderDashboard(data) {
 
   renderPositions(portfolio?.positions ?? []);
   renderSourceSummary(source, data.scheduler);
+  state.auditEvents = data.audit?.events ?? [];
+  state.trades = data.trades?.trades ?? [];
   state.decisionItems = flattenDecisionRecords(data.decisions?.decisions ?? []);
   updateFilterControls();
   renderDecisionTimeline();
   renderRiskSummary(report.riskSummary, report.decisionOutcome);
-  renderTrades(data.trades?.trades ?? []);
+  renderTrades(state.trades);
   renderPackets(data.packets?.packets ?? []);
 }
 
@@ -174,6 +179,7 @@ function renderDecisionTimeline() {
 
     top.append(symbol, meta);
     article.append(top);
+    article.append(decisionOutcomeRow(item));
     article.append(paragraph(item.thesis));
 
     if (item.riskFactors?.length) {
@@ -189,6 +195,66 @@ function renderDecisionTimeline() {
     article.append(packet);
     list.append(article);
   }
+}
+
+function decisionOutcomeRow(item) {
+  const row = document.createElement("div");
+  row.className = "decision-outcome";
+  const riskEvent = findRiskEvent(item);
+  const trade = findTrade(item);
+
+  row.append(
+    outcomeBadge(
+      riskEvent
+        ? riskEvent.eventType.replace("VIRTUAL_RISK_", "risk ")
+        : "risk not found",
+      riskEvent?.eventType
+    ),
+    outcomeBadge(
+      trade ? `${trade.status} ${formatKrw(trade.amountKrw)}` : "no virtual trade",
+      trade?.status
+    )
+  );
+  return row;
+}
+
+function outcomeBadge(label, status) {
+  const badge = document.createElement("span");
+  badge.className = `outcome-badge ${outcomeClass(status)}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function outcomeClass(status) {
+  if (status === "VIRTUAL_RISK_APPROVED" || status === "VIRTUAL_FILLED") {
+    return "ok";
+  }
+  if (status === "VIRTUAL_RISK_REJECTED" || status === "VIRTUAL_REJECTED") {
+    return "error";
+  }
+  return "neutral";
+}
+
+function findRiskEvent(item) {
+  const summary = `${item.market}:${item.symbol} ${item.action}`;
+  return state.auditEvents.find((event) => {
+    return (
+      (event.eventType === "VIRTUAL_RISK_APPROVED" ||
+        event.eventType === "VIRTUAL_RISK_REJECTED") &&
+      String(event.summary ?? "").startsWith(summary)
+    );
+  });
+}
+
+function findTrade(item) {
+  return state.trades.find((trade) => {
+    return (
+      trade.packetId === item.packetId &&
+      trade.market === item.market &&
+      trade.symbol === item.symbol &&
+      trade.action === item.action
+    );
+  });
 }
 
 function filterDecisionItems(items) {

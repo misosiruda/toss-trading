@@ -727,6 +727,35 @@
 - decision mutation
 - live order placement
 
+## PR-24: AI Decision Risk and Trade Linkage
+
+목표:
+
+- AI 판단 카드에서 Risk Engine 승인/거절 상태와 가상 체결 여부를 함께 확인할 수 있게 합니다.
+
+작업 범위:
+
+- read-only audit events HTTP endpoint
+- dashboard decision card risk outcome badge
+- dashboard decision card virtual trade outcome badge
+- audit event masking validation
+- mobile overflow measurement
+
+검증:
+
+- `/audit/events` is read-only and masked
+- dashboard script still uses read-only fetch only
+- full test suite
+- desktop and mobile browser screenshots
+- mobile viewport `scrollWidth` check
+
+제외:
+
+- risk decision mutation
+- stored risk policy editing
+- dashboard-triggered paper run
+- live order placement
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
