@@ -146,3 +146,30 @@
 - `src/market/packetBuilder.ts`와 테스트를 추가했습니다.
 - builder output은 `marketPacketSchema`로 검증됩니다.
 - PR-06에서 Codex CLI provider가 이 packet을 input으로 사용할 수 있습니다.
+
+## PR-06: Codex CLI Decision Provider Dry Run
+
+### Review 1: Scope and Safety
+
+- 범위는 `codex exec` command wrapper, process runner abstraction, in-memory daily run budget에 한정했습니다.
+- 실제 Codex CLI는 테스트에서 호출하지 않고 `FakeRunner`로만 검증했습니다.
+- `sandbox` config type은 `"read-only"`만 허용합니다.
+- scope 검색에서 `tossctl`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, `workspace-write`, `danger-full-access`, broker/live order path가 `src/ai`에 없음을 확인했습니다.
+- `--search`는 config가 true일 때만 추가되고, 기본 테스트는 `--search`가 포함되지 않음을 확인합니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- provider disabled mode does not execute test 통과.
+- command args include `exec --sandbox read-only --output-schema` test 통과.
+- timeout returns `AI_DECISION_FAILED` test 통과.
+- invalid JSON output no decision test 통과.
+- valid JSON output parse test 통과.
+- daily run budget limit test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/ai/processRunner.ts`, `src/ai/runBudget.ts`, `src/ai/codexCliDecisionProvider.ts`와 tests를 추가했습니다.
+- provider output은 `virtualDecisionSchema`로 검증됩니다.
+- PR-07에서 `MarketPacketBuilder`, `CodexCliDecisionProvider`, `PaperOrderEngine`을 연결할 수 있습니다.
