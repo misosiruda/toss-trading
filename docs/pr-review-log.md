@@ -44,3 +44,28 @@
 - `package.json`, `package-lock.json`, `tsconfig.json`, `src/index.ts`, `src/index.test.ts`만 runtime scaffold로 추가했습니다.
 - `dist/`와 `node_modules/`는 `.gitignore`에 의해 추적되지 않습니다.
 - PR-02에서 domain schema를 추가할 수 있는 `src/` 기반이 준비되었습니다.
+
+## PR-02: Domain Schemas and Validation
+
+### Review 1: Scope and Safety
+
+- 범위는 domain schema, validation helper, fixture test에 한정했습니다.
+- local store, Codex CLI 호출, `tossctl` collector, MCP tool은 추가하지 않았습니다.
+- scope 검색에서 `child_process`, `spawn`, `exec`, `tossctl`, `codex exec`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, file IO 사용이 없음을 확인했습니다.
+- `virtual_decision`은 `VIRTUAL_*` action만 허용하며 live action string인 `BUY`는 reject합니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- valid `MarketPacket` fixture validation 통과.
+- invalid action reject test 통과.
+- missing `dataRefs` reject test 통과.
+- non-hold decision risk factor requirement test 통과.
+- stale timestamp helper reject test 통과.
+
+### Review 3: Diff and Integration
+
+- `zod`를 runtime dependency로 추가했습니다.
+- `src/domain/schemas.ts`와 `src/domain/schemas.test.ts`를 추가했습니다.
+- PR-03에서 local store와 audit log가 같은 schema를 사용할 수 있습니다.
