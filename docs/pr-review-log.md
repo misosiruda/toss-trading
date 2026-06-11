@@ -528,3 +528,31 @@
 - `.env.example`에 `OPS_API_HOST=127.0.0.1`, `OPS_API_PORT=8787` safe local defaults를 추가했습니다.
 - endpoints는 `/health`, `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/scheduler/status`만 제공합니다.
 - API는 local paper store와 scheduler state file만 읽고 runtime state를 변경하지 않습니다.
+
+## PR-20: Stored Market Packet Paper Run
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 latest `market_packet`을 paper-only AI decision과 virtual order simulation에 연결하는 workflow/CLI에 한정했습니다.
+- workflow는 `market-packets.jsonl`을 읽고 기존 `PaperOrderEngine`으로만 가상 체결을 수행합니다.
+- stale packet은 provider 호출 전에 fail-closed 처리합니다.
+- `virtual_decision.packetId`가 selected packet과 다르면 decision/trade를 저장하지 않습니다.
+- workflow 내부에서 `tossctl` 호출, collector 실행, MCP trigger, live order path, official API adapter는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- stored packet success path가 decision/trade/portfolio/audit을 기록하는 test 통과.
+- stale packet이 provider 호출 전에 실패하는 test 통과.
+- packet mismatch가 decision/trade 저장 없이 실패하는 test 통과.
+- dry-run provider가 stored candidate에서 paper decision을 만드는 test 통과.
+- provider failure가 paper order를 만들지 않는 test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/paperRunFromMarketPacket.ts`와 tests를 추가했습니다.
+- `src/cli/paperRunFromMarketPacket.ts`를 추가했습니다.
+- `paper:run-from-market-packet`, `paper:run-from-market-packet:dry` npm scripts를 추가했습니다.
+- README demo에 TossInvest 조회 기반 paper-only 실행 경로를 추가했습니다.
+- PR 계획 문서에 PR-20 범위를 추가했습니다.

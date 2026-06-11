@@ -107,20 +107,51 @@ export function parseTossInvestCollectionConfig(input: {
   timeoutSeconds?: string;
   commands?: string;
 }): TossInvestCollectionConfig {
-  const commandKeys = splitCsv(input.commands ?? "market.ranking,market.signals");
+  const commandSpecs = splitCommandSpecs(
+    input.commands ?? "market.ranking,market.signals"
+  );
   return {
     enabled: input.enabled === "true",
     tossctlPath: input.tossctlPath ?? "tossctl",
     timeoutMs: Number(input.timeoutSeconds ?? 30) * 1000,
-    commands: commandKeys.map((commandKey) => ({ commandKey }))
+    commands: commandSpecs.map(parseCommandSpec)
   };
 }
 
-function splitCsv(value: string): string[] {
+function splitCommandSpecs(value: string): string[] {
+  const delimiter = value.includes(";") ? ";" : ",";
   return value
-    .split(",")
+    .split(delimiter)
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function parseCommandSpec(spec: string): TossInvestCliCollectInput {
+  const separatorIndex = findCommandArgSeparator(spec);
+  if (separatorIndex === -1) {
+    return { commandKey: spec };
+  }
+
+  const commandKey = spec.slice(0, separatorIndex).trim();
+  const rawArgs = spec.slice(separatorIndex + 1);
+  const args = rawArgs
+    .split(/[|,]/)
+    .map((arg) => arg.trim())
+    .filter((arg) => arg.length > 0);
+
+  return args.length > 0 ? { commandKey, args } : { commandKey };
+}
+
+function findCommandArgSeparator(spec: string): number {
+  const colon = spec.indexOf(":");
+  const equals = spec.indexOf("=");
+  if (colon === -1) {
+    return equals;
+  }
+  if (equals === -1) {
+    return colon;
+  }
+  return Math.min(colon, equals);
 }
 
 function incrementStatusCount(

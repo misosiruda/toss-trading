@@ -601,6 +601,37 @@
 - external network exposure
 - live trading API
 
+## PR-20: Stored Market Packet Paper Run
+
+목표:
+
+- 저장된 TossInvest 기반 `market_packet`을 Codex CLI 판단과 paper order simulation에 연결합니다.
+
+작업 범위:
+
+- latest `market-packets.jsonl` loading
+- stale packet fail-closed guard
+- `virtual_decision.packetId` mismatch guard
+- `paper:run-from-market-packet` CLI
+- dry-run provider for stored packet path validation
+- decision/trade/portfolio/audit persistence
+
+검증:
+
+- stored packet fixture produces virtual trade and portfolio update
+- stale packet does not call AI provider
+- packet mismatch does not save decision or trade
+- provider failure creates no paper order
+- CLI dry-run works from stored packet
+
+제외:
+
+- live order placement
+- live scheduler integration
+- MCP-triggered AI execution
+- official Toss Open API adapter
+- `tossctl` live call inside the paper run workflow
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

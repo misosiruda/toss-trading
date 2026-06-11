@@ -87,7 +87,7 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
 - 실제 Toss Securities Open API adapter는 구현하지 않았습니다.
-- `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector와 normalizer까지만 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
+- `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
 - scheduler는 one-shot gate이며 OS service나 실시간 trading loop를 설치하지 않습니다.
@@ -127,6 +127,26 @@ approved_count: 1
 rejected_count: 0
 
 Paper-only virtual simulation. This is not financial advice, not a performance guarantee, and cannot place live orders.
+```
+
+TossInvest read-only 조회 결과를 이미 수집했다면 아래처럼 저장된 `market_packet` 기반 paper-only 경로를 실행할 수 있습니다.
+
+```powershell
+$dataDir = "data/paper"
+$env:TOSSINVEST_CLI_ENABLED = "true"
+$env:TOSSINVEST_CLI_PATH = "$env:LOCALAPPDATA\Programs\tossctl\tossctl.exe"
+$env:TOSSINVEST_CLI_COLLECTION_COMMANDS = "market.ranking;market.signals;quote.batch:005930|000660"
+npm run tossinvest:collect -- --data-dir $dataDir
+npm run market:ingest -- --data-dir $dataDir
+npm run paper:run-from-market-packet:dry -- --data-dir $dataDir
+```
+
+Codex CLI 판단을 사용할 때도 이 경로는 paper-only `virtual_decision`만 저장하고 실제 주문을 만들지 않습니다.
+
+```powershell
+$env:AI_DECISION_ENABLED = "true"
+$env:CODEX_OUTPUT_SCHEMA_PATH = "schemas/virtual-decision.schema.json"
+npm run paper:run-from-market-packet -- --data-dir data/paper
 ```
 
 ## Roadmap

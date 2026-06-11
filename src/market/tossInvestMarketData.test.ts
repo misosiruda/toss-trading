@@ -125,6 +125,37 @@ test("malformed tossctl output returns degraded normalization", () => {
   assert.match(result.warnings.join("\n"), /malformed ranking output/);
 });
 
+test("quote batch normalizes KRW last price and skips USD last price as KRW", () => {
+  const result = normalizeTossInvestCollectorResults(
+    [
+      source("quote.batch", [
+        {
+          symbol: "005930",
+          name: "Samsung Electronics",
+          market: "KOSPI",
+          currency: "KRW",
+          last: 303_000
+        },
+        {
+          symbol: "TSLA",
+          name: "Tesla",
+          market: "NASDAQ",
+          currency: "USD",
+          last: 386.71
+        }
+      ])
+    ],
+    normalizationOptions()
+  );
+  const samsung = result.candidates.find((candidate) => candidate.symbol === "005930");
+  const tesla = result.candidates.find((candidate) => candidate.symbol === "TSLA");
+
+  assert.equal(result.status, "ok");
+  assert.equal(samsung?.lastPriceKrw, 303_000);
+  assert.equal(tesla?.lastPriceKrw, undefined);
+  assert.equal(tesla?.market, "US");
+});
+
 test("stale tossctl source is excluded from candidates", () => {
   const result = normalizeTossInvestCollectorResults(
     [

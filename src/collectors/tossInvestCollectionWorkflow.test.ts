@@ -183,3 +183,17 @@ test("collection config parser keeps safe disabled default", () => {
     ["market.ranking", "market.signals"]
   );
 });
+
+test("collection config parser supports command args for quote batch", () => {
+  const config = parseTossInvestCollectionConfig({
+    enabled: "true",
+    commands: "market.ranking;market.signals;quote.batch:005930|000660"
+  });
+
+  assert.equal(config.enabled, true);
+  assert.deepEqual(config.commands, [
+    { commandKey: "market.ranking" },
+    { commandKey: "market.signals" },
+    { commandKey: "quote.batch", args: ["005930", "000660"] }
+  ]);
+});

@@ -230,14 +230,18 @@ function createCandidatePatch(
     patch.name = name;
   }
 
-  const lastPriceKrw = readMoney(record, [
+  const explicitLastPriceKrw = readMoney(record, [
     "lastPriceKrw",
     "currentPriceKrw",
-    "priceKrw",
+    "priceKrw"
+  ]);
+  const lastPriceKrw = explicitLastPriceKrw ?? readKrwQuoteMoney(record, [
     "lastPrice",
     "currentPrice",
     "price",
-    "close"
+    "close",
+    "last",
+    "reference_price"
   ]);
   if (lastPriceKrw !== undefined) {
     patch.lastPriceKrw = lastPriceKrw;
@@ -457,6 +461,18 @@ function readMoney(record: JsonRecord, keys: string[]): number | undefined {
   }
 
   return Math.round(value);
+}
+
+function readKrwQuoteMoney(
+  record: JsonRecord,
+  keys: string[]
+): number | undefined {
+  const currency = readString(record, ["currency"]);
+  if (currency && currency.toUpperCase() !== "KRW") {
+    return undefined;
+  }
+
+  return readMoney(record, keys);
 }
 
 function readPositiveInt(record: JsonRecord, keys: string[]): number | undefined {
