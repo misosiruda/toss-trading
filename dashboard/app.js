@@ -1,4 +1,9 @@
 const state = {
+  decisionItems: [],
+  filters: {
+    action: "ALL",
+    symbol: ""
+  },
   refreshStartedAt: null
 };
 
@@ -15,6 +20,20 @@ const endpoints = {
 
 document.getElementById("refresh-button")?.addEventListener("click", () => {
   void loadDashboard().catch(() => undefined);
+});
+
+document.querySelectorAll("[data-action-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.filters.action = button.getAttribute("data-action-filter") ?? "ALL";
+    updateFilterControls();
+    renderDecisionTimeline();
+  });
+});
+
+document.getElementById("symbol-filter")?.addEventListener("input", (event) => {
+  const target = event.target;
+  state.filters.symbol = target instanceof HTMLInputElement ? target.value : "";
+  renderDecisionTimeline();
 });
 
 void loadDashboard().catch(() => undefined);
@@ -67,7 +86,9 @@ function renderDashboard(data) {
 
   renderPositions(portfolio?.positions ?? []);
   renderSourceSummary(source, data.scheduler);
-  renderDecisions(data.decisions?.decisions ?? []);
+  state.decisionItems = flattenDecisionRecords(data.decisions?.decisions ?? []);
+  updateFilterControls();
+  renderDecisionTimeline();
   renderRiskSummary(report.riskSummary, report.decisionOutcome);
   renderTrades(data.trades?.trades ?? []);
   renderPackets(data.packets?.packets ?? []);
@@ -105,25 +126,35 @@ function renderSourceSummary(source, scheduler) {
   appendDefinition(list, "스케줄러", scheduler?.stateStatus ?? "unknown");
 }
 
-function renderDecisions(records) {
+function flattenDecisionRecords(records) {
+  return records.flatMap((record, recordIndex) =>
+    (record.decisions ?? []).map((decision, decisionIndex) => ({
+      ...decision,
+      packetId: record.packetId,
+      summary: record.summary,
+      recordIndex,
+      decisionIndex
+    }))
+  );
+}
+
+function renderDecisionTimeline() {
   const list = document.getElementById("decision-list");
   clear(list);
 
-  const items = records.flatMap((record) =>
-    (record.decisions ?? []).map((decision) => ({
-      ...decision,
-      packetId: record.packetId,
-      summary: record.summary
-    }))
+  const filteredItems = filterDecisionItems(state.decisionItems);
+  setText(
+    "decision-count",
+    `${filteredItems.length}/${state.decisionItems.length} items`
   );
-  setText("decision-count", `${items.length} items`);
+  renderDecisionGroups(filteredItems);
 
-  if (!items.length) {
+  if (!filteredItems.length) {
     list.append(emptyState("AI 판단 기록 없음"));
     return;
   }
 
-  for (const item of items.slice(0, 10)) {
+  for (const item of filteredItems.slice(0, 10)) {
     const article = document.createElement("article");
     article.className = "decision-item";
 
@@ -136,7 +167,10 @@ function renderDecisions(records) {
 
     const meta = document.createElement("div");
     meta.className = "decision-meta";
-    meta.textContent = `confidence ${formatPercent(item.confidence)} · budget ${formatKrw(item.budgetKrw)}`;
+    meta.textContent = `confidence ${formatPercent(item.confidence)} · budget ${formatKrw(item.budgetKrw)} · ${decisionFreshness(item.expiresAt)}`;
+    if (isExpired(item.expiresAt)) {
+      meta.classList.add("expired");
+    }
 
     top.append(symbol, meta);
     article.append(top);
@@ -155,6 +189,78 @@ function renderDecisions(records) {
     article.append(packet);
     list.append(article);
   }
+}
+
+function filterDecisionItems(items) {
+  const action = state.filters.action;
+  const symbol = state.filters.symbol.trim().toUpperCase();
+  return items.filter((item) => {
+    if (action !== "ALL" && item.action !== `VIRTUAL_${action}`) {
+      return false;
+    }
+    const fullSymbol = `${item.market}:${item.symbol}`.toUpperCase();
+    const shortSymbol = String(item.symbol).toUpperCase();
+    if (
+      symbol &&
+      !fullSymbol.includes(symbol) &&
+      !shortSymbol.includes(symbol)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function renderDecisionGroups(items) {
+  const groups = document.getElementById("decision-groups");
+  clear(groups);
+
+  const bySymbol = new Map();
+  for (const item of items) {
+    const key = `${item.market}:${item.symbol}`;
+    const current = bySymbol.get(key) ?? { total: 0, buy: 0, sell: 0, hold: 0 };
+    current.total += 1;
+    if (item.action === "VIRTUAL_BUY") {
+      current.buy += 1;
+    } else if (item.action === "VIRTUAL_SELL") {
+      current.sell += 1;
+    } else if (item.action === "VIRTUAL_HOLD") {
+      current.hold += 1;
+    }
+    bySymbol.set(key, current);
+  }
+
+  for (const [symbol, summary] of Array.from(bySymbol.entries()).slice(0, 8)) {
+    const item = document.createElement("div");
+    item.className = "decision-group";
+    const title = document.createElement("strong");
+    title.textContent = symbol;
+    const meta = document.createElement("span");
+    meta.textContent = `${summary.total} total · B ${summary.buy} · S ${summary.sell} · H ${summary.hold}`;
+    item.append(title, meta);
+    groups.append(item);
+  }
+}
+
+function updateFilterControls() {
+  const counts = countActions(state.decisionItems);
+  document.querySelectorAll("[data-action-filter]").forEach((button) => {
+    const filter = button.getAttribute("data-action-filter") ?? "ALL";
+    button.classList.toggle("active", filter === state.filters.action);
+    const count = counts[filter] ?? 0;
+    button.textContent = filter === "ALL" ? `All ${count}` : `${titleCase(filter)} ${count}`;
+  });
+}
+
+function countActions(items) {
+  const counts = { ALL: items.length, BUY: 0, SELL: 0, HOLD: 0 };
+  for (const item of items) {
+    const action = String(item.action ?? "").replace("VIRTUAL_", "");
+    if (action in counts) {
+      counts[action] += 1;
+    }
+  }
+  return counts;
 }
 
 function renderRiskSummary(riskSummary, decisionOutcome) {
@@ -377,6 +483,25 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+function decisionFreshness(expiresAt) {
+  return isExpired(expiresAt)
+    ? `expired ${formatDateTime(expiresAt)}`
+    : `expires ${formatDateTime(expiresAt)}`;
+}
+
+function isExpired(value) {
+  if (!value) {
+    return false;
+  }
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.getTime() < Date.now();
+}
+
+function titleCase(value) {
+  const lower = String(value).toLowerCase();
+  return `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
 }
 
 function summarizeRecord(value) {

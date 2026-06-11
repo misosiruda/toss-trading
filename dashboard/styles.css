@@ -259,9 +259,92 @@ th.numeric {
 }
 
 .decision-list,
-.packet-list {
+.packet-list,
+.decision-groups {
   display: grid;
   gap: 12px;
+}
+
+.decision-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 4px;
+}
+
+.segment-button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.segment-button.active {
+  background: #ffffff;
+  color: var(--blue);
+  box-shadow: 0 1px 4px rgba(18, 32, 53, 0.12);
+}
+
+.filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-field input {
+  width: 180px;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.filter-field input:focus {
+  border-color: var(--blue);
+  outline: 2px solid rgba(34, 94, 168, 0.14);
+}
+
+.decision-groups {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 12px;
+}
+
+.decision-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.decision-group strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.decision-group span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .decision-item,
@@ -291,6 +374,11 @@ th.numeric {
 .decision-meta {
   color: var(--muted);
   font-size: 13px;
+}
+
+.decision-meta.expired {
+  color: var(--red);
+  font-weight: 700;
 }
 
 .decision-text {
@@ -366,9 +454,26 @@ th.numeric {
   }
 
   .panel-heading,
-  .decision-topline {
+  .decision-topline,
+  .decision-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .filter-field,
+  .filter-field input,
+  .segmented-control {
+    width: 100%;
+  }
+
+  .segmented-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segment-button {
+    min-width: 0;
+    padding: 0 6px;
   }
 
   .definition-list {

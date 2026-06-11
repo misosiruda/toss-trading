@@ -84,6 +84,19 @@
             </div>
             <span id="decision-count" class="subtle">-</span>
           </div>
+          <div class="decision-toolbar">
+            <div class="segmented-control" aria-label="액션 필터">
+              <button class="segment-button active" type="button" data-action-filter="ALL">All</button>
+              <button class="segment-button" type="button" data-action-filter="BUY">Buy</button>
+              <button class="segment-button" type="button" data-action-filter="SELL">Sell</button>
+              <button class="segment-button" type="button" data-action-filter="HOLD">Hold</button>
+            </div>
+            <label class="filter-field">
+              <span>종목</span>
+              <input id="symbol-filter" type="search" autocomplete="off" placeholder="005930, TSLA" />
+            </label>
+          </div>
+          <div id="decision-groups" class="decision-groups"></div>
           <div id="decision-list" class="decision-list"></div>
         </section>
 

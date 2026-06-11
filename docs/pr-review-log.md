@@ -612,3 +612,28 @@
 - `src/cli/localOperationsApi.ts`는 dashboard URL을 로그로 출력합니다.
 - `package.json`에 `dashboard` script를 추가했습니다.
 - README와 PR 계획 문서에 dashboard 실행 방법과 PR-22 범위를 반영했습니다.
+
+## PR-23: AI Decision Timeline Filters
+
+### Review 1: Scope and Safety
+
+- 범위는 dashboard의 AI decision 탐색성 개선에 한정했습니다.
+- action filter와 symbol filter는 client-side view state만 바꾸며 저장 데이터, paper run, collector, Codex CLI를 실행하지 않습니다.
+- dashboard script는 기존 read-only endpoint fetch만 사용하고 mutation method를 추가하지 않았습니다.
+- live order path, decision mutation, Risk Engine bypass는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm test` 성공.
+- dashboard asset test에서 action filter markup과 symbol filter markup을 확인했습니다.
+- dashboard script에 `renderDecisionTimeline`이 포함되고 mutation method 문자열이 없는지 확인했습니다.
+- Chrome headless desktop screenshot에서 action counts, symbol filter, per-symbol summary, expired indicator를 확인했습니다.
+- Chrome headless mobile screenshot에서 filter control을 2열 layout으로 표시해 버튼 잘림을 방지했습니다.
+
+### Review 3: Diff and Integration
+
+- `dashboard/index.html`에 segmented action filter, symbol search, decision group 영역을 추가했습니다.
+- `dashboard/app.js`는 decision records를 flatten한 뒤 action/symbol filter, action counts, per-symbol summary를 렌더링합니다.
+- expired decision은 metadata에서 빨간 강조로 표시합니다.
+- `dashboard/styles.css`는 desktop/mobile filter layout과 decision group summary 스타일을 추가했습니다.
+- `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-23 UI 요소까지 확장했습니다.

@@ -698,6 +698,35 @@
 - authentication/session
 - external network exposure
 
+## PR-23: AI Decision Timeline Filters
+
+목표:
+
+- AI 판단 이력을 action과 symbol 기준으로 빠르게 좁혀보고, 종목별 판단 분포를 확인할 수 있게 합니다.
+
+작업 범위:
+
+- action segmented control: All, Buy, Sell, Hold
+- symbol search filter
+- filtered decision count
+- per-symbol action summary
+- expired decision indicator
+- responsive filter layout
+
+검증:
+
+- dashboard script still uses read-only fetch only
+- dashboard asset test covers action and symbol filter markup
+- full test suite
+- desktop and mobile browser screenshots
+
+제외:
+
+- dashboard-triggered trading action
+- dashboard-triggered paper run
+- decision mutation
+- live order placement
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
