@@ -10,6 +10,10 @@ import {
   virtualTradeSchema,
   type VirtualTrade
 } from "../domain/schemas.js";
+import {
+  tossInvestCliCollectResultSchema,
+  type TossInvestCliCollectResult
+} from "../collectors/tossInvestCliCollector.js";
 import { JsonFileStore } from "./fileStore.js";
 import { JsonlStore, type JsonlReadResult } from "./jsonlStore.js";
 
@@ -19,6 +23,7 @@ export interface StoragePaths {
   virtualPortfolioPath: string;
   virtualDecisionsPath: string;
   virtualTradesPath: string;
+  tossInvestSourcesPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -27,7 +32,8 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     auditLogPath: join(baseDir, "audit-events.jsonl"),
     virtualPortfolioPath: join(baseDir, "virtual-portfolio.json"),
     virtualDecisionsPath: join(baseDir, "virtual-decisions.jsonl"),
-    virtualTradesPath: join(baseDir, "virtual-trades.jsonl")
+    virtualTradesPath: join(baseDir, "virtual-trades.jsonl"),
+    tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl")
   };
 }
 
@@ -99,6 +105,26 @@ export class FileVirtualTradeStore {
   }
 
   readAll(): Promise<JsonlReadResult<VirtualTrade>> {
+    return this.store.readAll();
+  }
+}
+
+export class FileTossInvestSourceStore {
+  private readonly store: JsonlStore<TossInvestCliCollectResult>;
+
+  constructor(filePath: string) {
+    this.store = new JsonlStore(
+      filePath,
+      tossInvestCliCollectResultSchema,
+      "tossInvestCliCollectResult"
+    );
+  }
+
+  append(result: TossInvestCliCollectResult): Promise<void> {
+    return this.store.append(result);
+  }
+
+  readAll(): Promise<JsonlReadResult<TossInvestCliCollectResult>> {
     return this.store.readAll();
   }
 }

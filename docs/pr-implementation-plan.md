@@ -404,6 +404,203 @@
 - backtest overclaim
 - live account reporting
 
+## PR-13: TossInvest Collector Execution CLI
+
+목표:
+
+- `tossinvest-cli` read-only collector를 실제 backend command에서 실행할 수 있게 합니다.
+
+작업 범위:
+
+- env 기반 collector config
+- command allowlist validation
+- selected command batch 실행
+- collected source JSONL store
+- masked source payload persistence
+- collection summary CLI
+
+검증:
+
+- disabled config는 실행하지 않음
+- allowlisted commands만 실행
+- mutation command는 저장/실행되지 않음
+- failed/degraded source도 summary와 audit 가능 형태로 저장
+- real `tossctl` dependency 없이 mocked runner tests
+
+제외:
+
+- `tossctl auth login`
+- account/order/portfolio command
+- MCP raw collector execution
+
+## PR-14: Market Data Ingestion Workflow
+
+목표:
+
+- 저장된 read-only collector 결과를 `market_packet`으로 만드는 ingestion workflow를 구현합니다.
+
+작업 범위:
+
+- source store read
+- collector result validation
+- TossInvest normalizer 연결
+- market packet store
+- ingestion audit events
+- CLI command
+
+검증:
+
+- stored source fixture에서 market packet 생성
+- stale/degraded source warning 유지
+- empty candidates fail-closed
+- repo-local `data/` 생성 없음
+
+제외:
+
+- live `tossctl` 호출
+- Codex decision 실행
+- live trading signal 생성
+
+## PR-15: AI Decision Prompt and Schema Pack
+
+목표:
+
+- Codex CLI가 더 일관된 paper-only 판단을 내리도록 prompt/schema pack을 고정합니다.
+
+작업 범위:
+
+- prompt template
+- virtual decision JSON schema artifact
+- prompt version metadata
+- provider prompt injection
+- hallucination guard text
+- hold-first / risk-first instruction
+
+검증:
+
+- prompt includes paper-only and no-command boundaries
+- prompt requires dataRefs from packet
+- output schema path support works
+- provider command test 업데이트
+
+제외:
+
+- real Codex CLI call in tests
+- trading recommendation wording
+- live signal generation
+
+## PR-16: Paper Portfolio Analytics
+
+목표:
+
+- 가상 포트폴리오 분석 지표를 별도 계산 계층으로 분리합니다.
+
+작업 범위:
+
+- cash/position exposure
+- symbol allocation
+- virtual realized/unrealized placeholder metrics
+- decision-to-trade linkage summary
+- report integration
+
+검증:
+
+- exposure calculation
+- allocation totals
+- trade linkage summary
+- no performance guarantee wording
+
+제외:
+
+- 실계좌 PnL
+- 수익률 보장 표현
+- broker reconciliation
+
+## PR-17: Replay and Backfill Simulation
+
+목표:
+
+- 저장된 market packet과 decision fixture로 paper simulation을 재현할 수 있게 합니다.
+
+작업 범위:
+
+- market packet JSONL store
+- replay input loading
+- deterministic replay runner
+- prompt version comparison metadata
+- replay CLI
+
+검증:
+
+- same fixture produces same virtual trade result
+- invalid/stale packet rejected
+- replay does not call `tossctl` or Codex CLI
+
+제외:
+
+- historical market data downloader
+- backtest performance claim
+- live scheduler integration
+
+## PR-18: MCP Operations Extension
+
+목표:
+
+- 운영 조회용 MCP tool을 paper system 상태까지 확장합니다.
+
+작업 범위:
+
+- `get_paper_report`
+- `get_scheduler_status`
+- `get_source_health`
+- `get_market_packets`
+- approval-required paper run trigger는 별도 문서화만
+
+검증:
+
+- tools are read-only
+- no raw `tossctl`
+- no raw `codex exec`
+- no live order tool
+- handler unit tests
+
+제외:
+
+- MCP에서 collector 직접 실행
+- MCP에서 Codex CLI 직접 실행
+- live order placement
+
+## PR-19: Local Operations API
+
+목표:
+
+- local dashboard/API가 사용할 수 있는 read-only HTTP API를 추가합니다.
+
+작업 범위:
+
+- Node HTTP server
+- `/health`
+- `/virtual/portfolio`
+- `/virtual/decisions`
+- `/virtual/trades`
+- `/paper/report`
+- `/scheduler/status`
+- read-only JSON responses
+
+검증:
+
+- endpoints return JSON
+- mutation HTTP methods rejected
+- no live order endpoint
+- no secret/account data in sample responses
+
+제외:
+
+- 브라우저 UI
+- authentication/session
+- external network exposure
+- live trading API
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

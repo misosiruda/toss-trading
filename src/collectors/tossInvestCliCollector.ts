@@ -2,6 +2,7 @@ import {
   NodeProcessRunner,
   type ProcessRunner
 } from "../ai/processRunner.js";
+import { z } from "zod";
 
 export const tossInvestReadOnlyCommandKeys = [
   "market.index",
@@ -61,7 +62,48 @@ export interface TossInvestCliCollectorError {
     | "COMMAND_FAILED"
     | "INVALID_JSON";
   message: string;
-  stderr?: string;
+  stderr?: string | undefined;
+}
+
+export const tossInvestCliCollectorErrorSchema = z
+  .object({
+    code: z.enum([
+      "COLLECTOR_DISABLED",
+      "COMMAND_NOT_ALLOWED",
+      "MUTATION_BLOCKED",
+      "COMMAND_TIMEOUT",
+      "COMMAND_FAILED",
+      "INVALID_JSON"
+    ]),
+    message: z.string().min(1),
+    stderr: z.string().optional()
+  })
+  .strict();
+
+export const tossInvestCliSourceMetadataSchema = z
+  .object({
+    source: z.literal("tossinvest_cli"),
+    sourceKind: z.literal("unofficial_read_only"),
+    official: z.literal(false),
+    commandKey: z.string().min(1),
+    collectedAt: z.string().min(1)
+  })
+  .strict();
+
+export const tossInvestCliCollectResultSchema = z
+  .object({
+    status: z.enum(["ok", "blocked", "degraded"]),
+    commandKey: z.string().min(1),
+    data: z.unknown().nullable(),
+    metadata: tossInvestCliSourceMetadataSchema,
+    error: tossInvestCliCollectorErrorSchema.nullable()
+  })
+  .strict();
+
+export function isTossInvestReadOnlyCommandKey(
+  commandKey: string
+): commandKey is TossInvestReadOnlyCommandKey {
+  return allowedCommandKeys.has(commandKey);
 }
 
 const allowedCommandKeys = new Set<string>(tossInvestReadOnlyCommandKeys);

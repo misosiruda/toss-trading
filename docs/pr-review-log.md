@@ -335,3 +335,31 @@
 - report는 decision outcome, virtual trade summary, rejected risk summary, source status summary를 포함합니다.
 - masking helper가 ISO date를 보존하면서 account/order-like 값을 계속 masking하도록 조정했습니다.
 - README에 paper-only demo와 anonymized sample output을 추가했습니다.
+
+## PR-13: TossInvest Collector Execution CLI
+
+### Review 1: Scope and Safety
+
+- 범위는 read-only TossInvest collection CLI, env config, source JSONL store, masked persistence에 한정했습니다.
+- `TOSSINVEST_CLI_ENABLED=false` 기본값을 유지하며 disabled 상태에서는 runner를 호출하지 않습니다.
+- command key allowlist를 통과한 command만 collector에 전달하고 mutation command는 저장/실행 전에 skip합니다.
+- raw `tossctl` MCP tool, raw `codex exec` MCP tool, live order path는 추가하지 않았습니다.
+- scope 검색에서 account/order/auth 관련 문자열은 blocklist, 테스트 fixture, 문서 제외 범위로만 나타남을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- disabled collection no runner/no source save test 통과.
+- allowlisted command save and masking test 통과.
+- mutation command skip before runner execution test 통과.
+- degraded command result persistence test 통과.
+- `npm run tossinvest:collect -- <temp-dir>`는 safe default에서 skipped로 종료하고 audit만 기록했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/collectors/tossInvestCollectionWorkflow.ts`와 tests를 추가했습니다.
+- `src/cli/tossInvestCollect.ts`와 `tossinvest:collect` npm script를 추가했습니다.
+- `tossinvest-sources.jsonl` store를 `createStoragePaths`에 추가했습니다.
+- collector result schema와 `isTossInvestReadOnlyCommandKey` guard를 추가했습니다.
+- `.env.example`에 collection command와 timeout 설정을 추가했습니다.
