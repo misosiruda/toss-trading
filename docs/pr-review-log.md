@@ -69,3 +69,27 @@
 - `zod`를 runtime dependency로 추가했습니다.
 - `src/domain/schemas.ts`와 `src/domain/schemas.test.ts`를 추가했습니다.
 - PR-03에서 local store와 audit log가 같은 schema를 사용할 수 있습니다.
+
+## PR-03: Local Store and Audit Log
+
+### Review 1: Scope and Safety
+
+- 범위는 local persistent store, append-only audit log, masking helper에 한정했습니다.
+- Codex CLI provider, `tossctl` collector, MCP tool, paper order engine은 추가하지 않았습니다.
+- scope 검색에서 `child_process`, `spawn`, `exec`, `tossctl`, `codex exec`, `place_order`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, live broker path가 `src`에 없음을 확인했습니다.
+- local runtime state는 caller-provided path에만 쓰며 repo root의 `data/`나 `logs/`는 생성하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- audit append/read test 통과.
+- virtual portfolio read/write test 통과.
+- corrupted JSONL line handling test 통과.
+- sensitive text/object masking tests 통과.
+
+### Review 3: Diff and Integration
+
+- `src/storage`에 `JsonFileStore`, `JsonlStore`, file-backed repository classes를 추가했습니다.
+- `src/security/masking.ts`에 masking helper를 추가했습니다.
+- PR-04에서 `VirtualRiskEngine`과 `PaperOrderEngine`이 같은 repository contract를 사용할 수 있습니다.
