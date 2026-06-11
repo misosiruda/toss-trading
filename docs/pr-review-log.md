@@ -444,3 +444,31 @@
 - decision/trade linkage는 packetId, market, symbol, action 기준으로 연결합니다.
 - `src/reports/paperDailyReport.ts`가 analytics section을 렌더링하도록 통합했습니다.
 - 외부 API, collector, Codex CLI, broker path와는 연결하지 않았습니다.
+
+## PR-17: Replay and Backfill Simulation
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 `market_packet`과 `virtual_decision`을 재생하는 paper-only replay에 한정했습니다.
+- replay runner는 `PaperOrderEngine`만 사용하며 process runner, `tossctl`, Codex CLI provider를 주입받지 않습니다.
+- replay는 stored wrapper에서도 `virtual-portfolio.json`이나 `virtual-trades.jsonl`을 쓰지 않고 읽은 fixture로 결과만 반환합니다.
+- stale packet과 packet mismatch는 simulation 전에 fail-closed로 처리합니다.
+- 범위 검색에서 `tossctl`, `codex exec`, raw execution tool, live order flag, process spawn/exec 문자열이 PR-17 파일에 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- same fixture deterministic replay test 통과.
+- stale market packet reject test 통과.
+- packet mismatch reject test 통과.
+- stored replay no-mutation test 통과.
+- `npm run paper:replay -- --data-dir <temp-dir>`가 temp fixture에서 paper replay summary를 출력하고 repo 내부 `data/`를 생성하지 않음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/paperReplay.ts`와 tests를 추가했습니다.
+- replay result는 prompt version, risk decisions, virtual trades, rejected count, initial/final portfolio를 포함합니다.
+- `src/cli/paperReplay.ts`와 `paper:replay` npm script를 추가했습니다.
+- 저장소 wrapper는 latest market packet과 matching latest decision만 읽어 replay input을 구성합니다.
+- historical downloader, backtest 성과 주장, live scheduler integration은 추가하지 않았습니다.
