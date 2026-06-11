@@ -252,3 +252,30 @@
 - `normalizeTossInvestCollectorResults`는 source별 `sourceRefs`, `reasonCodes`, `collectedAt`, `staleAfter`를 생성합니다.
 - `buildMarketPacketFromTossInvestData`는 정규화 결과와 기존 `MarketPacketBuilder`를 결합하고 warning을 병합합니다.
 - 기존 `runPaperDecisionOnce` 기본 경로는 mock packet 그대로 유지되어 live data dependency가 생기지 않았습니다.
+
+## PR-10: MCP Read-only Virtual Portfolio Tools
+
+### Review 1: Scope and Safety
+
+- 범위는 MCP stdio server scaffold와 virtual portfolio 조회 tool 5개에 한정했습니다.
+- enabled tool은 `get_virtual_portfolio`, `get_virtual_positions`, `get_virtual_decisions`, `get_virtual_trades`, `get_virtual_performance`뿐입니다.
+- 각 tool은 local store read만 수행하고 `readOnlyHint=true`, `destructiveHint=false` annotation을 설정합니다.
+- MCP에서 `tossctl`, Codex CLI, broker adapter, order routing을 호출하는 tool은 추가하지 않았습니다.
+- scope 검색에서 금지 tool 이름은 테스트의 exclusion/error 검증에만 나타나며 실제 registry에는 포함되지 않음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm install @modelcontextprotocol/sdk` 성공.
+- `npm run build` 성공.
+- `npm test` 성공.
+- tool list가 read-only이고 `place_order`, `run_tossctl`, `run_codex_exec`를 포함하지 않는 test 통과.
+- `get_virtual_positions`, `get_virtual_decisions`, `get_virtual_performance` handler unit tests 통과.
+- sensitive text masking과 unknown/forbidden tool error result test 통과.
+
+### Review 3: Diff and Integration
+
+- `@modelcontextprotocol/sdk` dependency를 추가했습니다.
+- `src/mcp/server.ts`에서 SDK `Server`, `StdioServerTransport`, `tools/list`, `tools/call` handler를 연결했습니다.
+- `src/mcp/virtualPortfolioTools.ts`에서 local virtual portfolio/decision/trade store 조회 tool을 구현했습니다.
+- `src/index.ts` 실행 경로는 MCP stdio server를 시작하고, import 시 기존 `getRuntimeInfo`는 유지합니다.
+- stdout은 MCP transport에만 사용하고 start failure는 stderr로 보고합니다.
