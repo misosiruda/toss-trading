@@ -390,3 +390,30 @@
 - `market-packets.jsonl` store를 `createStoragePaths`에 추가했습니다.
 - ingestion 설정용 source/packet TTL, max candidates, max new positions env 예시를 추가했습니다.
 - CLI 검증은 repo 외부 temp dir에서만 수행했고 repo 내부 `data/`는 생성되지 않았습니다.
+
+## PR-15: AI Decision Prompt and Schema Pack
+
+### Review 1: Scope and Safety
+
+- 범위는 Codex CLI paper decision prompt 분리, prompt version metadata, output JSON schema artifact에 한정했습니다.
+- real Codex CLI 호출, live signal generation, live order path는 추가하지 않았습니다.
+- prompt는 stdin `market_packet`만 사용하고 shell command, broker API, `tossctl`, real order 생성을 금지합니다.
+- prompt는 weak/stale/missing evidence에서 `VIRTUAL_HOLD`를 선호하도록 명시합니다.
+- scope 검색에서 financial advice/recommendation/performance guarantee는 금지 문구로만 존재함을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- provider command가 prompt version과 guarded prompt를 포함하는 test 통과.
+- prompt boundary wording test 통과.
+- `schemas/virtual-decision.schema.json` action enum/additionalProperties test 통과.
+- output schema path가 `schemas/virtual-decision.schema.json`으로 연결됨을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/ai/decisionPrompt.ts`를 추가했습니다.
+- `CodexCliDecisionProvider`가 prompt pack과 `promptVersion` preview를 사용하도록 변경했습니다.
+- `schemas/virtual-decision.schema.json` artifact를 추가했습니다.
+- `.env.example`에 `CODEX_OUTPUT_SCHEMA_PATH` 기본 예시를 추가했습니다.
+- 기존 provider disabled, timeout, invalid JSON, budget guard 동작은 유지됩니다.

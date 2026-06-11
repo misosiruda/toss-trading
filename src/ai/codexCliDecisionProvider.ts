@@ -11,6 +11,10 @@ import {
   NodeProcessRunner,
   type ProcessRunner
 } from "./processRunner.js";
+import {
+  buildPaperDecisionPrompt,
+  PAPER_DECISION_PROMPT_VERSION
+} from "./decisionPrompt.js";
 
 export interface CodexCliDecisionProviderConfig {
   enabled: boolean;
@@ -20,6 +24,8 @@ export interface CodexCliDecisionProviderConfig {
   maxRunsPerDay: number;
   allowWebSearch: boolean;
   outputSchemaPath?: string;
+  prompt?: string;
+  promptVersion?: string;
   now?: () => Date;
 }
 
@@ -39,6 +45,7 @@ export interface CodexCliDecisionFailure {
 export interface CodexCliCommandPreview {
   command: string;
   args: string[];
+  promptVersion: string;
 }
 
 export class CodexCliDecisionProvider {
@@ -123,12 +130,13 @@ export class CodexCliDecisionProvider {
       this.config.sandbox,
       ...this.optionalOutputSchemaArgs(),
       ...this.optionalWebSearchArgs(),
-      "You are a paper-trading analyst. Use only the market_packet from stdin. Return virtual_decision JSON only. Do not run commands. Do not create real orders."
+      this.config.prompt ?? buildPaperDecisionPrompt()
     ];
 
     return {
       command: this.config.codexPath,
-      args
+      args,
+      promptVersion: this.config.promptVersion ?? PAPER_DECISION_PROMPT_VERSION
     };
   }
 

@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import type { MarketPacket } from "../domain/schemas.js";
 import { CodexCliDecisionProvider } from "./codexCliDecisionProvider.js";
+import {
+  buildPaperDecisionPrompt,
+  PAPER_DECISION_PROMPT_VERSION
+} from "./decisionPrompt.js";
 import { InMemoryDailyRunBudget } from "./runBudget.js";
 import type {
   ProcessRunOptions,
@@ -91,7 +96,7 @@ function provider(
       timeoutMs: 300_000,
       maxRunsPerDay: 3,
       allowWebSearch: false,
-      outputSchemaPath: "schemas/virtual_decision.schema.json",
+      outputSchemaPath: "schemas/virtual-decision.schema.json",
       now: () => new Date("2026-06-11T09:00:00Z"),
       ...overrides
     },
@@ -131,10 +136,50 @@ test("provider builds read-only codex exec command with output schema", async ()
     "--sandbox",
     "read-only",
     "--output-schema",
-    "schemas/virtual_decision.schema.json"
+    "schemas/virtual-decision.schema.json"
   ]);
   assert.equal(runner.calls[0]?.args.includes("--search"), false);
+  assert.equal(result.command?.promptVersion, PAPER_DECISION_PROMPT_VERSION);
+  assert.match(runner.calls[0]?.args.at(-1) ?? "", /Use only the market_packet/);
+  assert.match(runner.calls[0]?.args.at(-1) ?? "", /Do not run shell commands/);
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetId":"packet_001"/);
+});
+
+test("paper decision prompt requires paper-only guarded output", () => {
+  const prompt = buildPaperDecisionPrompt();
+
+  assert.match(prompt, /paper-only trading analyst/);
+  assert.match(prompt, /Return only a virtual_decision JSON object/);
+  assert.match(prompt, /do not call tossctl/);
+  assert.match(prompt, /Do not run shell commands/);
+  assert.match(prompt, /Prefer VIRTUAL_HOLD/);
+  assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
+  assert.match(prompt, /Never present the output as financial advice/);
+});
+
+test("virtual decision output schema artifact constrains actions", async () => {
+  const raw = await readFile("schemas/virtual-decision.schema.json", "utf8");
+  const schema = JSON.parse(raw) as {
+    additionalProperties?: boolean;
+    properties?: {
+      decisions?: {
+        items?: {
+          additionalProperties?: boolean;
+          properties?: {
+            action?: { enum?: string[] };
+          };
+        };
+      };
+    };
+  };
+
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties?.decisions?.items?.additionalProperties, false);
+  assert.deepEqual(schema.properties?.decisions?.items?.properties?.action?.enum, [
+    "VIRTUAL_BUY",
+    "VIRTUAL_SELL",
+    "VIRTUAL_HOLD"
+  ]);
 });
 
 test("timeout is reported as AI_DECISION_FAILED", async () => {

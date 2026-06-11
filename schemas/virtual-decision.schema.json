@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.toss-trading/schemas/virtual-decision.schema.json",
+  "title": "VirtualDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packetId", "summary", "decisions"],
+  "properties": {
+    "packetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decisions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "market",
+          "action",
+          "confidence",
+          "budgetKrw",
+          "thesis",
+          "riskFactors",
+          "dataRefs",
+          "expiresAt"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "market": {
+            "type": "string",
+            "enum": ["KR", "US"]
+          },
+          "action": {
+            "type": "string",
+            "enum": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "budgetKrw": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "thesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "riskFactors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "dataRefs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
