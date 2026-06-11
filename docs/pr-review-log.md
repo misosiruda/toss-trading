@@ -226,3 +226,29 @@
 - collector result는 `ok`, `blocked`, `degraded` 상태와 `unofficial_read_only` metadata를 포함합니다.
 - 실패한 수집은 exception 대신 degraded/blocked result로 반환되어 PR-09 normalizer에서 source 상태를 판단할 수 있습니다.
 - PR-09에서 sample `tossctl` JSON fixture를 이 collector output contract에 맞춰 `MarketPacketBuilder` 입력으로 변환할 수 있습니다.
+
+## PR-09: Market Packet from TossInvest Data
+
+### Review 1: Scope and Safety
+
+- 범위는 collector result JSON을 `MarketCandidateDraft`로 정규화하고 `MarketPacketBuilder`에 연결하는 helper에 한정했습니다.
+- live `tossctl` 실행, Codex CLI 실행, MCP tool, live broker adapter, order routing은 추가하지 않았습니다.
+- normalizer는 `market.ranking`, `market.signals`, `quote.get`, `quote.batch`의 이미 수집된 JSON만 입력으로 받습니다.
+- stale source는 candidate에서 제외하고 degraded warning으로 남깁니다.
+- scope 검색에서 `run_tossctl`, `execute_tossctl`, `run_codex_exec`, `place_order`, `TradingSignal`, `OrderIntent`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, `child_process`, `spawn`, `exec`, `tossctlPath`, `runner.run`이 `src/market`, `src/workflows`, `src/cli`, `package.json`에 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- sample `tossctl` ranking/signals/quote JSON fixture parse test 통과.
+- malformed output degraded test 통과.
+- stale source excluded test 통과.
+- generated packet compactness and sensitive raw field exclusion test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/market/tossInvestMarketData.ts`와 테스트를 추가했습니다.
+- `normalizeTossInvestCollectorResults`는 source별 `sourceRefs`, `reasonCodes`, `collectedAt`, `staleAfter`를 생성합니다.
+- `buildMarketPacketFromTossInvestData`는 정규화 결과와 기존 `MarketPacketBuilder`를 결합하고 warning을 병합합니다.
+- 기존 `runPaperDecisionOnce` 기본 경로는 mock packet 그대로 유지되어 live data dependency가 생기지 않았습니다.
