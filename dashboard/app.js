@@ -94,9 +94,68 @@ function renderDashboard(data) {
   state.decisionItems = flattenDecisionRecords(data.decisions?.decisions ?? []);
   updateFilterControls();
   renderDecisionTimeline();
+  renderDailyReport(report);
   renderRiskSummary(report.riskSummary, report.decisionOutcome);
   renderTrades(state.trades);
   renderPackets(data.packets?.packets ?? []);
+}
+
+function renderDailyReport(report) {
+  setText(
+    "report-date",
+    report?.date
+      ? `${report.date} · generated ${formatDateTime(report.generatedAt)}`
+      : "-"
+  );
+  setText(
+    "report-decision-items",
+    String(report?.decisionOutcome?.decisionItemCount ?? 0)
+  );
+  setText(
+    "report-average-confidence",
+    formatPercent(report?.decisionOutcome?.averageConfidence)
+  );
+  setText(
+    "report-trade-total",
+    `${report?.tradeSummary?.tradeCount ?? 0}건`
+  );
+  setText(
+    "report-risk-result",
+    `${report?.riskSummary?.approvedCount ?? 0} 승인 / ${report?.riskSummary?.rejectedCount ?? 0} 거절`
+  );
+  setText(
+    "report-source-result",
+    `${report?.sourceStatus?.status ?? "unknown"} · warnings ${report?.sourceStatus?.warningCount ?? 0}`
+  );
+  setText("report-disclaimer", report?.disclaimer ?? "-");
+
+  const detail = document.getElementById("report-detail");
+  clear(detail);
+  appendDefinition(
+    detail,
+    "가상 매수",
+    formatKrw(report?.tradeSummary?.virtualBuyAmountKrw)
+  );
+  appendDefinition(
+    detail,
+    "가상 매도",
+    formatKrw(report?.tradeSummary?.virtualSellAmountKrw)
+  );
+  appendDefinition(
+    detail,
+    "대상 종목",
+    (report?.tradeSummary?.symbols ?? []).join(", ") || "none"
+  );
+  appendDefinition(
+    detail,
+    "최근 Risk Reject",
+    (report?.riskSummary?.recentRejectedSummaries ?? []).join(" | ") || "none"
+  );
+  appendDefinition(
+    detail,
+    "Source Warning",
+    (report?.sourceStatus?.warnings ?? []).join(" | ") || "none"
+  );
 }
 
 function renderPositions(positions) {

@@ -663,3 +663,29 @@
 - `dashboard/app.js`는 decision item과 recent audit/trade records를 packet, market, symbol, action 기준으로 연결합니다.
 - `dashboard/styles.css`는 risk/trade outcome badge와 모바일 줄바꿈 보정을 추가했습니다.
 - PR-24 계획과 검토 기록을 문서에 반영했습니다.
+
+## PR-25: Dashboard Daily Paper Report
+
+### Review 1: Scope and Safety
+
+- 범위는 기존 `/paper/report` 응답을 dashboard에서 더 명확히 표시하는 데 한정했습니다.
+- 새 HTTP endpoint, collector trigger, Codex CLI trigger, paper run trigger는 추가하지 않았습니다.
+- dashboard는 기존 same-origin GET endpoint만 사용하고 mutation method를 추가하지 않았습니다.
+- 리포트는 paper-only summary와 disclaimer를 표시하며 투자 조언이나 수익 보장 표현을 추가하지 않았습니다.
+- live account reporting, live order path, report editing UI는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- dashboard asset test에서 daily report heading/detail markup을 확인합니다.
+- dashboard asset test에서 `/paper/report` fetch와 `renderDailyReport` 렌더링 경로를 확인합니다.
+- dashboard script에 `POST`, `PUT`, `DELETE` 문자열이 없는지 기존 검증을 유지합니다.
+- full test suite로 API read-only 경계와 기존 dashboard asset serving을 함께 확인합니다.
+- desktop/mobile screenshot으로 report panel layout을 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `dashboard/index.html`에 `오늘 리포트` panel을 추가했습니다.
+- `dashboard/app.js`는 report decision/trade/risk/source KPI와 detail list를 렌더링합니다.
+- `dashboard/styles.css`는 report panel grid와 모바일 1열 전환을 추가했습니다.
+- `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-25 UI 요소까지 확장했습니다.
+- PR-25 계획과 검토 기록을 문서에 반영했습니다.

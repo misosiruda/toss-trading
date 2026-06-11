@@ -113,11 +113,15 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(html.response.status, 200);
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
     assert.match(html.text, /가상 투자 대시보드/);
+    assert.match(html.text, /id="daily-report-heading"/);
+    assert.match(html.text, /id="report-detail"/);
     assert.match(html.text, /data-action-filter="BUY"/);
     assert.match(html.text, /id="symbol-filter"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /\/virtual\/portfolio/);
+    assert.match(script.text, /\/paper\/report/);
     assert.match(script.text, /\/audit\/events/);
+    assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderDecisionTimeline/);
     assert.match(script.text, /decisionOutcomeRow/);
     assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);

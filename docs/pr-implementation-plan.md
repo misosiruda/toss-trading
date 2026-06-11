@@ -756,6 +756,35 @@
 - dashboard-triggered paper run
 - live order placement
 
+## PR-25: Dashboard Daily Paper Report
+
+목표:
+
+- `/paper/report`의 일일 가상 투자 요약을 dashboard 첫 화면에서 한 번에 파악할 수 있게 합니다.
+
+작업 범위:
+
+- daily report panel
+- decision/trade/risk/source KPI summary
+- report detail list
+- report disclaimer display
+- dashboard asset test update
+
+검증:
+
+- dashboard script still uses read-only fetch only
+- dashboard asset test covers daily report markup and renderer
+- full test suite
+- desktop and mobile browser screenshots
+
+제외:
+
+- dashboard-triggered report generation mutation
+- dashboard-triggered paper run
+- report editing
+- live account reporting
+- live order placement
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
