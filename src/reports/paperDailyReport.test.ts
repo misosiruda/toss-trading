@@ -55,6 +55,8 @@ test("daily paper report summarizes portfolio, decisions, risk, and sources", as
 
   assert.equal(report.mode, "paper_only");
   assert.equal(report.portfolio.virtualNetWorthKrw, 1_020_000);
+  assert.equal(report.analytics.positionAllocationRatio, 0.068627);
+  assert.equal(report.analytics.decisionTradeLinkage.linkedDecisionItemCount, 1);
   assert.equal(report.decisionOutcome.decisionRecordCount, 1);
   assert.equal(report.decisionOutcome.byAction["VIRTUAL_BUY"], 1);
   assert.equal(report.tradeSummary.tradeCount, 1);
@@ -76,6 +78,8 @@ test("rendered sample report masks sensitive values and avoids live-order wordin
 
   assert.match(rendered, /Paper Trading Daily Report/);
   assert.match(rendered, /date: 2026-06-11/);
+  assert.match(rendered, /Portfolio Analytics/);
+  assert.match(rendered, /decision_trade_linkage/);
   assert.match(rendered, /Paper-only virtual simulation/);
   assert.equal(rendered.includes("1234-5678-901234"), false);
   assert.equal(rendered.includes("ord_abcdef123456"), false);

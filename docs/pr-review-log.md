@@ -417,3 +417,30 @@
 - `schemas/virtual-decision.schema.json` artifact를 추가했습니다.
 - `.env.example`에 `CODEX_OUTPUT_SCHEMA_PATH` 기본 예시를 추가했습니다.
 - 기존 provider disabled, timeout, invalid JSON, budget guard 동작은 유지됩니다.
+
+## PR-16: Paper Portfolio Analytics
+
+### Review 1: Scope and Safety
+
+- 범위는 local virtual portfolio/decision/trade 객체 기반 analytics 계산과 daily report 통합에 한정했습니다.
+- 실계좌 PnL, broker reconciliation, performance guarantee, live account reporting은 추가하지 않았습니다.
+- realized PnL은 broker-grade fills/cost basis가 필요하므로 명시적 `null` placeholder로 유지했습니다.
+- analytics disclaimer는 paper-only virtual simulation이며 investment performance가 아니라고 명시합니다.
+- scope 검색에서 성과/조언 관련 표현은 부정문 disclaimer와 placeholder 설명으로만 존재함을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- exposure/allocation calculation test 통과.
+- realized PnL placeholder and unrealized PnL summary test 통과.
+- decision-to-trade linkage test 통과.
+- daily report analytics integration test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/analytics/paperPortfolioAnalytics.ts`와 tests를 추가했습니다.
+- analytics는 cash allocation, position allocation, market exposure, symbol allocation을 계산합니다.
+- decision/trade linkage는 packetId, market, symbol, action 기준으로 연결합니다.
+- `src/reports/paperDailyReport.ts`가 analytics section을 렌더링하도록 통합했습니다.
+- 외부 API, collector, Codex CLI, broker path와는 연결하지 않았습니다.

@@ -1,4 +1,8 @@
 import type { AuditEvent, VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
+import {
+  buildPaperPortfolioAnalytics,
+  type PaperPortfolioAnalytics
+} from "../analytics/paperPortfolioAnalytics.js";
 import { maskSensitiveText } from "../security/masking.js";
 import {
   createStoragePaths,
@@ -20,6 +24,7 @@ export interface PaperDailyReport {
   mode: "paper_only";
   generatedAt: string;
   portfolio: PaperPortfolioSummary;
+  analytics: PaperPortfolioAnalytics;
   decisionOutcome: PaperDecisionOutcomeSummary;
   tradeSummary: PaperTradeSummary;
   riskSummary: PaperRiskSummary;
@@ -86,6 +91,11 @@ export async function buildPaperDailyReport(
     mode: "paper_only",
     generatedAt: options.generatedAt.toISOString(),
     portfolio: summarizePortfolio(portfolio),
+    analytics: buildPaperPortfolioAnalytics({
+      portfolio,
+      decisions: decisions.records,
+      trades: dailyTrades
+    }),
     decisionOutcome: summarizeDecisions(decisions.records),
     tradeSummary: summarizeTrades(dailyTrades, trades.corruptLineCount),
     riskSummary: summarizeRisk(dailyAudit),
@@ -108,6 +118,17 @@ export function renderPaperDailyReport(report: PaperDailyReport): string {
     `position_count: ${report.portfolio.positionCount}`,
     `position_market_value_krw: ${report.portfolio.positionMarketValueKrw}`,
     `virtual_net_worth_krw: ${formatNullable(report.portfolio.virtualNetWorthKrw)}`,
+    "",
+    "## Portfolio Analytics",
+    `cash_allocation_ratio: ${formatNullable(report.analytics.cashAllocationRatio)}`,
+    `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
+    `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
+    `symbol_allocations: ${report.analytics.symbolAllocations
+      .map((allocation) => `${allocation.market}:${allocation.symbol}:${allocation.allocationRatio ?? "null"}`)
+      .join(", ") || "none"}`,
+    `unrealized_pnl_krw: ${formatNullable(report.analytics.virtualPnl.unrealizedPnlKrw)}`,
+    `realized_pnl_krw: ${formatNullable(report.analytics.virtualPnl.realizedPnlKrw)}`,
+    `decision_trade_linkage: ${JSON.stringify(report.analytics.decisionTradeLinkage)}`,
     "",
     "## Decision Outcome",
     `decision_records: ${report.decisionOutcome.decisionRecordCount}`,
