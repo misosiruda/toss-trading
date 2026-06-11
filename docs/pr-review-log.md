@@ -308,3 +308,30 @@
 - 실패한 run은 `SCHEDULED_PAPER_RUN_FAILED` audit event를 남기고 backoff를 적용합니다.
 - `src/cli/paperSchedulerRun.ts`와 `paper:scheduler:run`, `paper:scheduler:run:dry` scripts를 추가했습니다.
 - dry-run은 repo 외부 temp dir에만 runtime state를 생성했고 repo 내부 `data/`는 생성되지 않았습니다.
+
+## PR-12: Reports and Portfolio Polish
+
+### Review 1: Scope and Safety
+
+- 범위는 local paper state 기반 daily report, report CLI, README demo 갱신에 한정했습니다.
+- live account reporting, performance guarantee, backtest overclaim, live order path는 추가하지 않았습니다.
+- report는 `VirtualPortfolio`, `VirtualDecisionStore`, `VirtualTradeStore`, `AuditLog`만 읽습니다.
+- report disclaimer는 paper-only, not financial advice, not a performance guarantee, cannot place live orders를 명시합니다.
+- scope 검색에서 live order/raw execution tool 문자열은 README의 disabled policy와 테스트/부정문 설명으로만 나타남을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- daily paper report fixture summary test 통과.
+- rendered sample report masking and disclaimer test 통과.
+- ISO calendar date가 account masking에 오탐되지 않는 test 통과.
+- `npm run paper:report -- <temp-dir> --date <date>` 성공.
+
+### Review 3: Diff and Integration
+
+- `src/reports/paperDailyReport.ts`와 테스트를 추가했습니다.
+- `src/cli/paperDailyReport.ts`와 `paper:report` npm script를 추가했습니다.
+- report는 decision outcome, virtual trade summary, rejected risk summary, source status summary를 포함합니다.
+- masking helper가 ISO date를 보존하면서 account/order-like 값을 계속 masking하도록 조정했습니다.
+- README에 paper-only demo와 anonymized sample output을 추가했습니다.

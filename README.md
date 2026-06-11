@@ -85,12 +85,49 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 
 ## Current Status
 
-- 문서화 및 아키텍처 기준선 작성 단계입니다.
+- TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
 - 실제 Toss Securities Open API adapter는 구현하지 않았습니다.
-- `tossinvest-cli` fork 연동은 구현하지 않았고, 문서상 read-only intelligence source 후보로만 정의했습니다.
-- Codex CLI paper trading은 문서화 단계이며, 아직 backend worker로 구현하지 않았습니다.
+- `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector와 normalizer까지만 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
+- Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
+- MCP server는 virtual portfolio 조회 tool만 노출합니다.
+- scheduler는 one-shot gate이며 OS service나 실시간 trading loop를 설치하지 않습니다.
+- daily paper report CLI는 local virtual state를 요약하고 투자 조언/성과 보장 문구를 포함하지 않습니다.
 - 실거래 기능은 비활성화 상태를 기본으로 전제합니다.
 - 현재 문서에는 real account data, real API keys, real brokerage credentials가 없습니다.
+
+## Paper-only Demo
+
+아래 명령은 실제 주문을 만들지 않고 mock packet과 static decision으로 가상 포트폴리오만 갱신합니다.
+
+```powershell
+npm install
+$dataDir = Join-Path $env:TEMP "toss-trading-paper-demo"
+npm run paper:scheduler:run:dry -- $dataDir
+npm run paper:report -- $dataDir --date 2026-06-11
+```
+
+샘플 출력은 다음 형태입니다.
+
+```text
+# Paper Trading Daily Report
+
+date: 2026-06-11
+mode: paper_only
+
+## Portfolio
+portfolio_present: true
+position_count: 1
+
+## Decision Outcome
+decision_items: 1
+by_action: {"VIRTUAL_BUY":1}
+
+## Virtual Risk
+approved_count: 1
+rejected_count: 0
+
+Paper-only virtual simulation. This is not financial advice, not a performance guarantee, and cannot place live orders.
+```
 
 ## Roadmap
 

@@ -3,7 +3,9 @@ const sensitiveKeyPattern =
 
 export function maskSensitiveText(value: string): string {
   return value
-    .replace(/\b\d{3,6}-\d{2,6}-\d{2,8}\b/g, "****-****-****")
+    .replace(/\b\d{3,6}-\d{2,6}-\d{2,8}\b/g, (match) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(match) ? match : "****-****-****"
+    )
     .replace(/\b(ord|exec)_[A-Za-z0-9_-]{6,}\b/g, "$1_****")
     .replace(/\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "***.***.***");
 }
