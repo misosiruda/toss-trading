@@ -1,0 +1,155 @@
+# Example Codex MCP configuration for this repository.
+# Copy to .codex/config.toml only after the MCP server exists.
+# Safe defaults:
+# - mock provider
+# - trading disabled
+# - optional external intelligence disabled
+# - Codex CLI paper decisions disabled by default
+# - read-only tools enabled
+# - risky trading tools disabled
+# - operational tools require prompt approval
+
+[mcp_servers.personal-trading-ops]
+command = "node"
+args = ["./dist/index.js"]
+cwd = "."
+
+startup_timeout_sec = 20
+tool_timeout_sec = 30
+enabled = true
+
+default_tools_approval_mode = "prompt"
+
+env_vars = [
+  "BROKER_PROVIDER",
+  "TRADING_ENABLED",
+  "TOSSINVEST_CLI_ENABLED",
+  "TOSSINVEST_CLI_READ_ONLY",
+  "TOSSINVEST_CLI_PATH",
+  "TOSSINVEST_CLI_ALLOWED_COMMANDS",
+  "TOSSINVEST_CLI_BLOCK_MUTATIONS",
+  "AI_DECISION_PROVIDER",
+  "AI_DECISION_MODE",
+  "AI_DECISION_ENABLED",
+  "CODEX_EXEC_PATH",
+  "CODEX_EXEC_SANDBOX",
+  "CODEX_EXEC_TIMEOUT_SECONDS",
+  "CODEX_DECISION_MAX_RUNS_PER_DAY",
+  "CODEX_DECISION_MAX_SYMBOLS",
+  "CODEX_DECISION_ALLOW_WEB_SEARCH",
+  "PAPER_TRADING_ENABLED",
+  "VIRTUAL_INITIAL_CASH_KRW",
+  "MAX_ORDER_AMOUNT_KRW",
+  "ALLOWED_MARKETS",
+  "ALLOWED_SYMBOLS",
+  "REQUIRE_PREVIEW",
+  "PREVIEW_TTL_SECONDS"
+]
+
+enabled_tools = [
+  "get_account_summary",
+  "get_positions",
+  "get_cash_balance",
+  "get_screened_candidates",
+  "get_candidate_detail",
+  "get_latest_signals",
+  "get_signal_detail",
+  "get_risk_decisions",
+  "get_strategy_status",
+  "get_open_orders",
+  "get_recent_executions",
+  "get_audit_events",
+  "preview_order",
+  "pause_strategy",
+  "resume_strategy",
+  "emergency_stop"
+]
+
+disabled_tools = [
+  "place_order",
+  "place_market_order",
+  "run_tossctl",
+  "execute_tossctl",
+  "run_codex_exec",
+  "execute_codex_cli",
+  "place_toss_order",
+  "sync_watchlist",
+  "enable_live_trading",
+  "update_risk_policy",
+  "update_strategy_threshold",
+  "transfer_cash",
+  "withdraw"
+]
+
+[mcp_servers.personal-trading-ops.env]
+BROKER_PROVIDER = "mock"
+TRADING_ENABLED = "false"
+TOSSINVEST_CLI_ENABLED = "false"
+TOSSINVEST_CLI_READ_ONLY = "true"
+TOSSINVEST_CLI_PATH = "tossctl"
+TOSSINVEST_CLI_ALLOWED_COMMANDS = "market.index,market.ranking,market.signals,market.screener,market.hours,market.fx,quote.get,quote.batch,quote.chart,quote.trades,quote.orderbook,quote.limits,quote.warnings,quote.flows,quote.commission,push.listen"
+TOSSINVEST_CLI_BLOCK_MUTATIONS = "true"
+AI_DECISION_PROVIDER = "codex_cli"
+AI_DECISION_MODE = "paper_only"
+AI_DECISION_ENABLED = "false"
+CODEX_EXEC_PATH = "codex"
+CODEX_EXEC_SANDBOX = "read-only"
+CODEX_EXEC_TIMEOUT_SECONDS = "300"
+CODEX_DECISION_MAX_RUNS_PER_DAY = "3"
+CODEX_DECISION_MAX_SYMBOLS = "20"
+CODEX_DECISION_ALLOW_WEB_SEARCH = "false"
+PAPER_TRADING_ENABLED = "true"
+VIRTUAL_INITIAL_CASH_KRW = "1000000"
+MAX_ORDER_AMOUNT_KRW = "100000"
+ALLOWED_MARKETS = "KR,US"
+ALLOWED_SYMBOLS = "005930,AAPL,MSFT,NVDA"
+REQUIRE_PREVIEW = "true"
+PREVIEW_TTL_SECONDS = "60"
+
+[mcp_servers.personal-trading-ops.tools.get_account_summary]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_positions]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_cash_balance]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_screened_candidates]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_candidate_detail]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_latest_signals]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_signal_detail]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_risk_decisions]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_strategy_status]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_open_orders]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_recent_executions]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.get_audit_events]
+approval_mode = "approve"
+
+[mcp_servers.personal-trading-ops.tools.preview_order]
+approval_mode = "prompt"
+
+[mcp_servers.personal-trading-ops.tools.pause_strategy]
+approval_mode = "prompt"
+
+[mcp_servers.personal-trading-ops.tools.resume_strategy]
+approval_mode = "prompt"
+
+[mcp_servers.personal-trading-ops.tools.emergency_stop]
+approval_mode = "prompt"
