@@ -200,3 +200,29 @@
 - `paper:run-once`와 `paper:run-once:dry` npm scripts를 추가했습니다.
 - temp data dir에 `audit-events.jsonl`, `virtual-decisions.jsonl`, `virtual-portfolio.json`, `virtual-trades.jsonl`이 생성됨을 확인했습니다.
 - repo 내부 `data/`는 생성되지 않았습니다.
+
+## PR-08: Read-only TossInvest CLI Collector
+
+### Review 1: Scope and Safety
+
+- 범위는 `tossctl` read-only command allowlist wrapper에 한정했습니다.
+- MCP tool, live broker adapter, order routing, Codex CLI decision workflow 변경은 추가하지 않았습니다.
+- collector는 `commandKey` enum-style allowlist만 받고 raw shell command string을 받지 않습니다.
+- `order`, `auth`, `config`, `watchlist`, `transactions`, `account`, `portfolio`, `orders` group과 `--execute` argv를 실행 전에 차단합니다.
+- scope 검색에서 `run_tossctl`, `execute_tossctl`, `run_codex_exec`, `place_order`, `TradingSignal`, `OrderIntent`, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`, `workspace-write`, `danger-full-access`가 `src`와 `package.json`에 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- allowlisted command가 `--output json`과 함께 실행되는 test 통과.
+- non-allowlisted `order.place` command가 runner 실행 전에 차단되는 test 통과.
+- `--execute` argv가 runner 실행 전에 차단되는 test 통과.
+- disabled collector, timeout, invalid JSON degraded 상태 test 통과.
+
+### Review 3: Diff and Integration
+
+- `src/collectors/tossInvestCliCollector.ts`와 테스트를 추가했습니다.
+- collector result는 `ok`, `blocked`, `degraded` 상태와 `unofficial_read_only` metadata를 포함합니다.
+- 실패한 수집은 exception 대신 degraded/blocked result로 반환되어 PR-09 normalizer에서 source 상태를 판단할 수 있습니다.
+- PR-09에서 sample `tossctl` JSON fixture를 이 collector output contract에 맞춰 `MarketPacketBuilder` 입력으로 변환할 수 있습니다.
