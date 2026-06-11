@@ -279,3 +279,32 @@
 - `src/mcp/virtualPortfolioTools.ts`에서 local virtual portfolio/decision/trade store 조회 tool을 구현했습니다.
 - `src/index.ts` 실행 경로는 MCP stdio server를 시작하고, import 시 기존 `getRuntimeInfo`는 유지합니다.
 - stdout은 MCP transport에만 사용하고 start failure는 stderr로 보고합니다.
+
+## PR-11: Scheduler and Run Budget
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only one-shot scheduler gate, daily budget, lock file, failure backoff, manual run command에 한정했습니다.
+- OS-level service installer, cloud deployment, live trading scheduler, 실시간 무한 루프는 추가하지 않았습니다.
+- scheduler는 호출 시 실행 여부만 판단하고 backend trading loop를 소유하지 않습니다.
+- manual/scheduled command도 기존 `runPaperDecisionOnce` paper-only workflow를 호출하며 live order path를 만들지 않습니다.
+- scope 검색에서 `place_order`, `run_tossctl`, `run_codex_exec`, live trading flag, `setInterval`, `while (true)`, process spawn/exec가 PR-11 범위에 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- max runs per KST day enforced test 통과.
+- concurrent lock blocked test 통과.
+- failed run audit and backoff test 통과.
+- disabled scheduler does not run provider job test 통과.
+- scheduled trigger before market close skip test 통과.
+- `npm run paper:scheduler:run:dry -- <temp-dir>` 성공.
+
+### Review 3: Diff and Integration
+
+- `src/scheduler/paperRunScheduler.ts`와 테스트를 추가했습니다.
+- scheduler state는 `paper-scheduler-state.json`, lock은 `paper-run.lock`에 저장됩니다.
+- 실패한 run은 `SCHEDULED_PAPER_RUN_FAILED` audit event를 남기고 backoff를 적용합니다.
+- `src/cli/paperSchedulerRun.ts`와 `paper:scheduler:run`, `paper:scheduler:run:dry` scripts를 추가했습니다.
+- dry-run은 repo 외부 temp dir에만 runtime state를 생성했고 repo 내부 `data/`는 생성되지 않았습니다.

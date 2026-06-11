@@ -10,6 +10,8 @@
     "prepaper:run-once": "npm run build",
     "paper:run-once": "node dist/cli/paperRunOnce.js",
     "paper:run-once:dry": "npm run build && node dist/cli/paperRunOnce.js --dry-run",
+    "paper:scheduler:run": "npm run build && node dist/cli/paperSchedulerRun.js",
+    "paper:scheduler:run:dry": "npm run build && node dist/cli/paperSchedulerRun.js --dry-run",
     "start": "node dist/index.js"
   },
   "engines": {
