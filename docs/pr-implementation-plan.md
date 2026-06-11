@@ -785,6 +785,36 @@
 - live account reporting
 - live order placement
 
+## PR-26: AI Decision Evidence Layout
+
+목표:
+
+- AI 판단 카드에서 Buy/Sell/Hold 판단 근거, 리스크 요인, 데이터 참조, 판단 속성을 분리해 읽을 수 있게 합니다.
+
+작업 범위:
+
+- decision rationale section
+- action-specific evidence heading
+- risk factor list
+- data ref tag group
+- decision context line
+- dashboard asset test update
+
+검증:
+
+- dashboard script still uses existing read-only decision data
+- dashboard asset test covers rationale renderer
+- full test suite
+- desktop and mobile browser screenshots
+
+제외:
+
+- AI decision mutation
+- dashboard-triggered Codex run
+- new decision schema fields
+- investment advice wording
+- live order placement
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

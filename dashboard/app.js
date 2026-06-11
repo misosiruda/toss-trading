@@ -239,19 +239,7 @@ function renderDecisionTimeline() {
     top.append(symbol, meta);
     article.append(top);
     article.append(decisionOutcomeRow(item));
-    article.append(paragraph(item.thesis));
-
-    if (item.riskFactors?.length) {
-      article.append(tagList(item.riskFactors, "risk"));
-    }
-    if (item.dataRefs?.length) {
-      article.append(tagList(item.dataRefs, "data"));
-    }
-
-    const packet = document.createElement("p");
-    packet.className = "decision-meta";
-    packet.textContent = `${item.packetId} · expires ${formatDateTime(item.expiresAt)}`;
-    article.append(packet);
+    article.append(decisionRationale(item));
     list.append(article);
   }
 }
@@ -314,6 +302,61 @@ function findTrade(item) {
       trade.action === item.action
     );
   });
+}
+
+function decisionRationale(item) {
+  const wrap = document.createElement("div");
+  wrap.className = "decision-rationale";
+  wrap.append(
+    evidenceBlock(`${actionLabel(item.action)} 판단 근거`, paragraph(item.thesis)),
+    evidenceBlock(
+      "Risk Factors",
+      item.riskFactors?.length
+        ? bulletList(item.riskFactors)
+        : paragraph("none")
+    ),
+    evidenceBlock(
+      "Data Refs",
+      item.dataRefs?.length ? tagList(item.dataRefs, "data") : paragraph("none")
+    ),
+    evidenceBlock(
+      "Decision Context",
+      detailLine([
+        `confidence ${formatPercent(item.confidence)}`,
+        `budget ${formatKrw(item.budgetKrw)}`,
+        decisionFreshness(item.expiresAt),
+        item.packetId
+      ])
+    )
+  );
+  return wrap;
+}
+
+function evidenceBlock(title, content) {
+  const block = document.createElement("section");
+  block.className = "evidence-block";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  block.append(heading, content);
+  return block;
+}
+
+function bulletList(values) {
+  const list = document.createElement("ul");
+  list.className = "evidence-list";
+  for (const value of values) {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.append(item);
+  }
+  return list;
+}
+
+function detailLine(values) {
+  const node = document.createElement("p");
+  node.className = "decision-meta detail-line";
+  node.textContent = values.filter(Boolean).join(" · ");
+  return node;
 }
 
 function filterDecisionItems(items) {
@@ -448,10 +491,14 @@ function renderPackets(packets) {
 
 function actionPill(action) {
   const pill = document.createElement("span");
-  const normalized = String(action ?? "").replace("VIRTUAL_", "").toLowerCase();
+  const normalized = actionLabel(action).toLowerCase();
   pill.className = `action-pill ${normalized}`;
-  pill.textContent = String(action ?? "UNKNOWN").replace("VIRTUAL_", "");
+  pill.textContent = actionLabel(action);
   return pill;
+}
+
+function actionLabel(action) {
+  return String(action ?? "UNKNOWN").replace("VIRTUAL_", "");
 }
 
 function tagList(values, prefix) {

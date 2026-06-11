@@ -689,3 +689,28 @@
 - `dashboard/styles.css`는 report panel grid와 모바일 1열 전환을 추가했습니다.
 - `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-25 UI 요소까지 확장했습니다.
 - PR-25 계획과 검토 기록을 문서에 반영했습니다.
+
+## PR-26: AI Decision Evidence Layout
+
+### Review 1: Scope and Safety
+
+- 범위는 dashboard decision card의 설명성 개선에 한정했습니다.
+- 새 decision schema field를 만들지 않고 기존 `thesis`, `riskFactors`, `dataRefs`, `confidence`, `budgetKrw`, `expiresAt`, `packetId`만 표시합니다.
+- AI decision, risk decision, trade, portfolio, report 데이터를 수정하지 않습니다.
+- dashboard-triggered Codex run, paper run, live order path는 추가하지 않았습니다.
+- Buy/Sell/Hold 판단 근거를 표시하지만 투자 조언이나 성과 보장 문구를 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- dashboard asset test에서 `decisionRationale` renderer와 `Risk Factors` section을 확인합니다.
+- dashboard script에 `POST`, `PUT`, `DELETE` 문자열이 없는지 기존 검증을 유지합니다.
+- full test suite로 API read-only 경계와 dashboard asset serving을 확인합니다.
+- desktop/mobile screenshot에서 decision evidence layout과 줄바꿈을 확인합니다.
+- mobile viewport에서 가로 overflow가 없는지 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `dashboard/app.js`는 decision card 본문을 rationale/evidence block으로 구조화했습니다.
+- `dashboard/styles.css`는 evidence section, risk factor list, decision context line 스타일을 추가했습니다.
+- `src/api/localOperationsServer.test.ts`의 dashboard asset test를 PR-26 렌더링 요소까지 확장했습니다.
+- PR-26 계획과 검토 기록을 문서에 반영했습니다.

@@ -124,6 +124,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderDecisionTimeline/);
     assert.match(script.text, /decisionOutcomeRow/);
+    assert.match(script.text, /decisionRationale/);
+    assert.match(script.text, /Risk Factors/);
     assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);

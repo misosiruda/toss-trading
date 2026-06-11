@@ -473,6 +473,45 @@ th.numeric {
   overflow-wrap: anywhere;
 }
 
+.decision-rationale {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.evidence-block {
+  min-width: 0;
+}
+
+.evidence-block h3 {
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.evidence-list li {
+  overflow-wrap: anywhere;
+}
+
+.detail-line {
+  margin-top: 0;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
@@ -600,6 +639,7 @@ th.numeric {
 
   .decision-meta,
   .decision-text,
+  .evidence-list,
   .tag,
   .outcome-badge {
     word-break: break-word;
