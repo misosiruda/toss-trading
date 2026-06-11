@@ -363,3 +363,30 @@
 - `tossinvest-sources.jsonl` store를 `createStoragePaths`에 추가했습니다.
 - collector result schema와 `isTossInvestReadOnlyCommandKey` guard를 추가했습니다.
 - `.env.example`에 collection command와 timeout 설정을 추가했습니다.
+
+## PR-14: Market Data Ingestion Workflow
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 `tossinvest-sources.jsonl`을 읽어 paper-only `market_packet`을 생성/저장하는 workflow에 한정했습니다.
+- live `tossctl` 호출, Codex CLI 호출, live `TradingSignal`, live `OrderIntent`, order routing은 추가하지 않았습니다.
+- source가 stale/degraded/corrupt이거나 valid candidate가 없으면 empty packet을 저장하지 않고 fail-closed합니다.
+- workflow는 local store read/write와 audit event만 수행합니다.
+- scope 검색에서 raw process execution, raw MCP tool, live order/signal 관련 문자열이 PR-14 범위에 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build` 성공.
+- `npm test` 성공.
+- stored TossInvest source fixture에서 packet 생성/저장 test 통과.
+- all stale source fail-closed test 통과.
+- corrupt source line warning/failure test 통과.
+- `npm run market:ingest -- <temp-dir>`가 temp source fixture에서 `market-packets.jsonl`을 생성함을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/marketDataIngestion.ts`와 tests를 추가했습니다.
+- `src/cli/marketIngest.ts`와 `market:ingest` npm script를 추가했습니다.
+- `market-packets.jsonl` store를 `createStoragePaths`에 추가했습니다.
+- ingestion 설정용 source/packet TTL, max candidates, max new positions env 예시를 추가했습니다.
+- CLI 검증은 repo 외부 temp dir에서만 수행했고 repo 내부 `data/`는 생성되지 않았습니다.

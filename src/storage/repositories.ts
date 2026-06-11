@@ -3,6 +3,8 @@ import { join } from "node:path";
 import {
   auditEventSchema,
   type AuditEvent,
+  marketPacketSchema,
+  type MarketPacket,
   virtualDecisionSchema,
   type VirtualDecision,
   virtualPortfolioSchema,
@@ -24,6 +26,7 @@ export interface StoragePaths {
   virtualDecisionsPath: string;
   virtualTradesPath: string;
   tossInvestSourcesPath: string;
+  marketPacketsPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -33,7 +36,8 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     virtualPortfolioPath: join(baseDir, "virtual-portfolio.json"),
     virtualDecisionsPath: join(baseDir, "virtual-decisions.jsonl"),
     virtualTradesPath: join(baseDir, "virtual-trades.jsonl"),
-    tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl")
+    tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl"),
+    marketPacketsPath: join(baseDir, "market-packets.jsonl")
   };
 }
 
@@ -125,6 +129,22 @@ export class FileTossInvestSourceStore {
   }
 
   readAll(): Promise<JsonlReadResult<TossInvestCliCollectResult>> {
+    return this.store.readAll();
+  }
+}
+
+export class FileMarketPacketStore {
+  private readonly store: JsonlStore<MarketPacket>;
+
+  constructor(filePath: string) {
+    this.store = new JsonlStore(filePath, marketPacketSchema, "marketPacket");
+  }
+
+  append(packet: MarketPacket): Promise<void> {
+    return this.store.append(packet);
+  }
+
+  readAll(): Promise<JsonlReadResult<MarketPacket>> {
     return this.store.readAll();
   }
 }
