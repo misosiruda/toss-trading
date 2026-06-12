@@ -7,12 +7,15 @@ import test from "node:test";
 import type {
   AuditEvent,
   HistoricalMarketSnapshot,
+  VirtualDecision,
   VirtualPortfolio
 } from "../domain/schemas.js";
+import { createVirtualDecisionHash } from "../paper/decisionHash.js";
 import {
   createStoragePaths,
   FileAuditLog,
   FileHistoricalMarketSnapshotStore,
+  FileVirtualDecisionStore,
   FileVirtualPortfolioStore
 } from "./repositories.js";
 
@@ -38,6 +41,31 @@ function portfolio(): VirtualPortfolio {
     cashKrw: 1_000_000,
     positions: [],
     updatedAt: "2026-06-11T09:00:00+09:00"
+  };
+}
+
+function virtualDecision(): VirtualDecision {
+  return {
+    packetId: "packet_001",
+    packetHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    promptVersion: "paper-v8",
+    modelId: "codex-cli-static",
+    schemaVersion: "virtual-decision.v1",
+    policyVersion: "paper-policy.v1",
+    summary: "Paper-only decision hash storage fixture.",
+    decisions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        action: "VIRTUAL_BUY",
+        confidence: 0.7,
+        budgetKrw: 70_000,
+        thesis: "Packet source supports a paper-only virtual buy.",
+        riskFactors: ["Paper-only fixture risk."],
+        dataRefs: ["source_005930"],
+        expiresAt: "2026-06-11T09:05:00+09:00"
+      }
+    ]
   };
 }
 
@@ -84,6 +112,24 @@ test("virtual portfolio store writes and reads current portfolio", async () => {
   const loaded = await store.read();
   assert.equal(loaded?.portfolioId, "virtual_default");
   assert.equal(loaded?.cashKrw, 1_000_000);
+});
+
+test("virtual decision store appends backend generated decision hash", async () => {
+  const paths = await createTempStoragePaths();
+  const store = new FileVirtualDecisionStore(paths.virtualDecisionsPath);
+  const decision = virtualDecision();
+
+  await store.append(decision);
+
+  const result = await store.readAll();
+  assert.equal(decision.decisionHash, undefined);
+  assert.equal(result.corruptLineCount, 0);
+  assert.equal(result.records.length, 1);
+  const stored = result.records[0];
+  assert.ok(stored);
+  assert.equal(stored.packetId, "packet_001");
+  assert.match(stored.decisionHash ?? "", /^sha256:[a-f0-9]{64}$/);
+  assert.equal(stored.decisionHash, createVirtualDecisionHash(stored));
 });
 
 test("jsonl store reports corrupted lines without dropping valid records", async () => {

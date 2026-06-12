@@ -216,6 +216,7 @@ export const virtualDecisionSchema = z
   .object({
     packetId: nonEmptyStringSchema,
     packetHash: nonEmptyStringSchema.optional(),
+    decisionHash: nonEmptyStringSchema.optional(),
     promptVersion: nonEmptyStringSchema.optional(),
     modelId: nonEmptyStringSchema.optional(),
     schemaVersion: nonEmptyStringSchema.optional(),

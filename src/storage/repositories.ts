@@ -19,6 +19,7 @@ import {
   tossInvestCliCollectResultSchema,
   type TossInvestCliCollectResult
 } from "../collectors/tossInvestCliCollector.js";
+import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
 import { JsonFileStore } from "./fileStore.js";
 import { JsonlStore, type JsonlReadResult } from "./jsonlStore.js";
 
@@ -145,7 +146,7 @@ export class FileVirtualDecisionStore {
   }
 
   append(decision: VirtualDecision): Promise<void> {
-    return this.store.append(decision);
+    return this.store.append(bindVirtualDecisionHash(decision));
   }
 
   readAll(): Promise<JsonlReadResult<VirtualDecision>> {

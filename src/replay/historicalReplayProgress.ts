@@ -21,11 +21,12 @@ import {
   type VirtualRiskDecision,
   type VirtualTrade
 } from "../domain/schemas.js";
-import type { SimulatedTick } from "./simulatedClock.js";
+import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
 import {
   markPortfolioToMarket,
   pricePointsFromMarketPacket
 } from "../portfolio/markToMarket.js";
+import type { SimulatedTick } from "./simulatedClock.js";
 
 export const HISTORICAL_REPLAY_PROGRESS_DISCLAIMER =
   "Paper-only historical replay progress. This is not financial advice, not a performance guarantee, and cannot place live orders.";
@@ -276,7 +277,10 @@ export class HistoricalReplayProgressRecorder {
               this.maxRecentEvents
             ),
       recentPackets: takeRecent(update.packets, this.maxRecentPackets),
-      recentDecisions: takeRecent(update.decisions, this.maxRecentRecords),
+      recentDecisions: takeRecent(
+        update.decisions.map(bindVirtualDecisionHash),
+        this.maxRecentRecords
+      ),
       recentRiskDecisions: takeRecent(update.riskDecisions, this.maxRecentRecords),
       recentTrades: takeRecent(update.trades, this.maxRecentRecords),
       performance,
