@@ -1576,11 +1576,48 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-52: Batch Replay Run Metadata
+
+목표:
+
+- 반복 batch replay에서 개별 실행 결과를 나중에 집계할 수 있도록 run identity, window, configuration metadata를 구조화합니다.
+- 기존 single historical replay의 `historical-replay-run-metadata.json`을 batch runner가 재사용할 수 있는 manifest로 확장합니다.
+
+작업 범위:
+
+- `historicalReplayRunMetadata` schema에 `identity`, `window`, `configuration` 추가
+- `runId`, optional `batchId`, optional `runIndex` 저장
+- explicit/random window source, selected month, seed, timezone offset 저장
+- clock, sampling policy, initial cash, packet/risk constraint configuration 저장
+- historical replay workflow option에 batch metadata context 추가
+- historical replay CLI의 `--batch-id`, `--batch-run-index`, `--run-id` 옵션 추가
+- Batch Run Metadata 문서 추가
+
+검증:
+
+- workflow가 `historical-replay-run-metadata.json`에 batch identity를 저장함
+- random window selection metadata가 run metadata에 저장됨
+- CLI batch flags가 metadata 파일까지 전달됨
+- 기존 positional/named option parsing이 유지됨
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- 반복 batch 실행 loop
+- batch run directory layout 생성
+- regime classification
+- aggregate report
+- dashboard batch view
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-52: Batch Replay Run Metadata
 - PR-53: Batch Replay Runner
 - PR-54: Regime Classifier
 - PR-55: Batch Aggregate Report

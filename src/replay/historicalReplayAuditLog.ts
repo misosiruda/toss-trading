@@ -7,6 +7,7 @@ import {
   isoDateTimeSchema,
   marketPacketSchema,
   parseWithSchema,
+  virtualActionSchema,
   virtualDecisionSchema,
   virtualRiskDecisionSchema,
   virtualTradeSchema
@@ -37,9 +38,83 @@ export const historicalReplayAuditLogPathsSchema = z
   })
   .strict();
 
+export const historicalReplayRunIdentitySchema = z
+  .object({
+    runId: z.string().trim().min(1),
+    batchId: z.string().trim().min(1).nullable(),
+    runIndex: z.number().int().nonnegative().nullable()
+  })
+  .strict();
+
+export const historicalReplayRunWindowSchema = z
+  .object({
+    source: z.enum(["explicit", "random_window"]),
+    startAt: isoDateTimeSchema,
+    endAt: isoDateTimeSchema,
+    rangeStart: isoDateTimeSchema.nullable(),
+    rangeEnd: isoDateTimeSchema.nullable(),
+    seed: z.string().trim().min(1).nullable(),
+    selectedMonth: z.string().trim().min(1).nullable(),
+    localStartDate: z.string().trim().min(1).nullable(),
+    localEndDate: z.string().trim().min(1).nullable(),
+    windowMonths: z.number().int().positive().nullable(),
+    timezoneOffsetMinutes: z.number().int()
+  })
+  .strict();
+
+export const historicalReplayRunConfigurationSchema = z
+  .object({
+    clock: z
+      .object({
+        startAt: isoDateTimeSchema,
+        endAt: isoDateTimeSchema,
+        stepSeconds: z.number().int().positive(),
+        speedMultiplier: z.number().positive()
+      })
+      .strict(),
+    samplingPolicy: z
+      .object({
+        everyNSteps: z.number().int().positive().nullable(),
+        candidateChangedOnly: z.boolean(),
+        decisionFrequency: z.enum([
+          "every_tick",
+          "once_per_day",
+          "once_per_week"
+        ]),
+        maxDecisionCalls: z.number().int().positive().nullable(),
+        timezoneOffsetMinutes: z.number().int()
+      })
+      .strict()
+      .nullable(),
+    initialCashKrw: z.number().int().nonnegative(),
+    packetIdPrefix: z.string().trim().min(1),
+    packetExpiresInSeconds: z.number().int().positive(),
+    maxCandidates: z.number().int().positive(),
+    maxSnapshotAgeSeconds: z.number().int().nonnegative(),
+    constraints: z
+      .object({
+        maxNewPositions: z.number().int().nonnegative(),
+        maxBudgetPerSymbolKrw: z.number().int().nonnegative(),
+        allowedActions: z.array(virtualActionSchema).min(1)
+      })
+      .strict()
+  })
+  .strict();
+
+export const historicalReplayRunMetadataContextSchema = z
+  .object({
+    identity: historicalReplayRunIdentitySchema,
+    window: historicalReplayRunWindowSchema,
+    configuration: historicalReplayRunConfigurationSchema
+  })
+  .strict();
+
 export const historicalReplayRunMetadataSchema = z
   .object({
     mode: z.literal("paper_only"),
+    identity: historicalReplayRunIdentitySchema,
+    window: historicalReplayRunWindowSchema,
+    configuration: historicalReplayRunConfigurationSchema,
     status: historicalReplayAuditStatusSchema,
     startedAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema,
@@ -64,6 +139,18 @@ export const historicalReplayPortfolioTimelineRecordSchema = z
 export type HistoricalReplayAuditLogPaths = z.infer<
   typeof historicalReplayAuditLogPathsSchema
 >;
+export type HistoricalReplayRunIdentity = z.infer<
+  typeof historicalReplayRunIdentitySchema
+>;
+export type HistoricalReplayRunWindow = z.infer<
+  typeof historicalReplayRunWindowSchema
+>;
+export type HistoricalReplayRunConfiguration = z.infer<
+  typeof historicalReplayRunConfigurationSchema
+>;
+export type HistoricalReplayRunMetadataContext = z.infer<
+  typeof historicalReplayRunMetadataContextSchema
+>;
 export type HistoricalReplayRunMetadata = z.infer<
   typeof historicalReplayRunMetadataSchema
 >;
@@ -75,6 +162,7 @@ export interface HistoricalReplayAuditLogRecorderOptions {
   paths: HistoricalReplayAuditLogPaths;
   startedAt: Date;
   tickCount: number;
+  metadataContext: HistoricalReplayRunMetadataContext;
 }
 
 export class HistoricalReplayAuditLogRecorder {
@@ -126,6 +214,9 @@ export class HistoricalReplayAuditLogRecorder {
     );
     this.metadata = {
       mode: "paper_only",
+      identity: options.metadataContext.identity,
+      window: options.metadataContext.window,
+      configuration: options.metadataContext.configuration,
       status: "running",
       startedAt: options.startedAt.toISOString(),
       updatedAt: options.startedAt.toISOString(),

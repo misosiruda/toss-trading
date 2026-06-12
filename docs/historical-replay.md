@@ -33,6 +33,18 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 `historical-replay-progress.json`은 dashboard 표시용 snapshot입니다. 전체 분석과 재현에는 append-only JSONL 로그를 사용합니다.
 
+`historical-replay-run-metadata.json`은 replay 실행 단위의 재현성 근거를 저장합니다.
+
+포함되는 metadata:
+
+- `identity`: `runId`, optional `batchId`, optional `runIndex`
+- `window`: explicit/random window source, start/end, selected month, seed, timezone offset
+- `configuration`: clock, sampling policy, initial cash, packet/risk constraint 요약
+- `logPaths`: packet, decision, risk decision, trade, portfolio timeline log path
+- `status`: `running`, `completed`, `failed`
+
+Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 기본 manifest로 사용합니다.
+
 ## Portfolio Valuation
 
 Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까지 관측 가능한 최신 historical snapshot 가격으로 재평가합니다.
@@ -169,6 +181,16 @@ npm run historical:replay:dry -- -- --data-dir data/paper --random-window --rand
 ```
 
 availability report는 저장된 `historical-market-snapshots.jsonl`만 읽습니다. 외부 데이터 수집, broker API 호출, replay 실행, 주문 생성은 수행하지 않습니다.
+
+### Batch Run Metadata
+
+반복 batch 실행에서 개별 run을 추적하려면 metadata용 식별자를 CLI에 전달할 수 있습니다.
+
+```powershell
+npm run historical:replay:dry -- -- --data-dir data/paper --start-at 2025-02-01T00:00:00+09:00 --end-at 2025-02-28T23:59:59.999+09:00 --step-seconds 60 --every-n-steps 5 --batch-id batch-2025-q1-smoke --batch-run-index 0 --run-id batch-2025-q1-smoke-run-000000
+```
+
+이 옵션은 `historical-replay-run-metadata.json`에만 저장됩니다. replay sampling, AI decision, risk decision, paper order 처리 정책을 바꾸지 않습니다.
 
 ## Lookahead Guard
 

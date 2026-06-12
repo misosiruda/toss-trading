@@ -49,6 +49,23 @@ test("historical replay workflow writes a stored paper report", async () => {
     packetExpiresInSeconds: 60,
     maxCandidates: 10,
     maxSnapshotAgeSeconds: 300,
+    runId: "batch_replay_202501_run_000001",
+    batchId: "batch_replay_202501",
+    batchRunIndex: 1,
+    windowSelection: {
+      seed: "batch-seed-001",
+      rangeStart: "2025-01-01T00:00:00.000Z",
+      rangeEnd: "2025-01-31T23:59:59.999Z",
+      windowMonths: 1,
+      timezoneOffsetMinutes: 540,
+      candidateCount: 1,
+      selectedCandidateIndex: 0,
+      selectedMonth: "2025-01",
+      localStartDate: "2025-01-02",
+      localEndDate: "2025-01-02",
+      startAt: "2025-01-02T00:00:00.000Z",
+      endAt: "2025-01-02T00:01:00.000Z"
+    },
     constraints: {
       maxNewPositions: 3,
       maxBudgetPerSymbolKrw: 100_000,
@@ -119,6 +136,27 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(runMetadata["status"], "completed");
   assert.equal(runMetadata["mode"], "paper_only");
   assert.match(String(runMetadata["disclaimer"]), /cannot place live orders/);
+  const runIdentity = runMetadata["identity"] as Record<string, unknown>;
+  const runWindow = runMetadata["window"] as Record<string, unknown>;
+  const runConfiguration = runMetadata["configuration"] as Record<
+    string,
+    unknown
+  >;
+  const runClock = runConfiguration["clock"] as Record<string, unknown>;
+  const runSamplingPolicy = runConfiguration["samplingPolicy"] as Record<
+    string,
+    unknown
+  >;
+  assert.equal(runIdentity["runId"], "batch_replay_202501_run_000001");
+  assert.equal(runIdentity["batchId"], "batch_replay_202501");
+  assert.equal(runIdentity["runIndex"], 1);
+  assert.equal(runWindow["source"], "random_window");
+  assert.equal(runWindow["selectedMonth"], "2025-01");
+  assert.equal(runWindow["seed"], "batch-seed-001");
+  assert.equal(runWindow["timezoneOffsetMinutes"], 540);
+  assert.equal(runClock["stepSeconds"], 60);
+  assert.equal(runSamplingPolicy["everyNSteps"], 2);
+  assert.equal(runConfiguration["initialCashKrw"], 1_000_000);
   assert.equal(packetLog.length, result.replayResult.packetCount);
   assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);
   assert.equal(riskDecisionLog.length, result.replayResult.riskDecisions.length);

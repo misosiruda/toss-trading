@@ -41,7 +41,10 @@ const VALUE_OPTION_NAMES = new Set([
   "--max-budget-per-symbol-krw",
   "--min-window-snapshots",
   "--min-snapshots-per-symbol",
-  "--required-symbols"
+  "--required-symbols",
+  "--run-id",
+  "--batch-id",
+  "--batch-run-index"
 ]);
 
 const args = process.argv.slice(2);
@@ -84,6 +87,9 @@ const maxCodexCalls = readNumberArg("--max-codex-calls", 10);
 const maxCandidates = readNumberArg("--max-candidates", 10);
 const maxSnapshotAgeSeconds = readNumberArg("--max-snapshot-age-seconds", 300);
 const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
+const runId = readArgValue("--run-id");
+const batchId = readArgValue("--batch-id");
+const batchRunIndex = readOptionalNumberArg("--batch-run-index");
 const decisionFrequencyArg = readArgValue("--decision-frequency");
 const decisionFrequency =
   decisionFrequencyArg === "once_per_day" ||
@@ -152,6 +158,10 @@ const result = await runHistoricalReplayWorkflow({
   packetExpiresInSeconds: readNumberArg("--packet-expires-in-seconds", 60),
   maxCandidates,
   maxSnapshotAgeSeconds,
+  ...(runId === undefined ? {} : { runId }),
+  ...(batchId === undefined ? {} : { batchId }),
+  ...(batchRunIndex === undefined ? {} : { batchRunIndex }),
+  ...(replayWindow === null ? {} : { windowSelection: replayWindow }),
   constraints: {
     maxNewPositions: readNumberArg("--max-new-positions", 3),
     maxBudgetPerSymbolKrw: readNumberArg("--max-budget-per-symbol-krw", 100_000),

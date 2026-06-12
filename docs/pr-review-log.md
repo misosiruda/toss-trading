@@ -1395,3 +1395,36 @@
 - `docs/pr-implementation-plan.md`는 PR-51 범위와 PR-52 이후 batch replay 후속 순서를 갱신했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 외부 historical data 수집기, 반복 batch runner, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
+
+## PR-52: Batch Replay Run Metadata
+
+### Review 1: Scope and Safety
+
+- 범위는 기존 `historical-replay-run-metadata.json`에 batch 분석용 identity/window/configuration metadata를 추가하는 데 한정합니다.
+- `identity`는 `runId`, optional `batchId`, optional `runIndex`만 저장하며 실행 정책을 바꾸지 않습니다.
+- `window`는 explicit/random window source, selected month, seed, timezone offset을 재현성 근거로 저장합니다.
+- `configuration`은 clock, sampling policy, initial cash, packet/risk constraint snapshot을 저장합니다.
+- CLI의 `--batch-id`, `--batch-run-index`, `--run-id`는 metadata 기록용 옵션이며 replay sampling, AI decision, risk decision, paper order 정책을 변경하지 않습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- workflow test에서 `runId`, `batchId`, `runIndex`가 `historical-replay-run-metadata.json`에 저장되는지 검증했습니다.
+- workflow test에서 random window selection의 `selectedMonth`, `seed`, `timezoneOffsetMinutes`가 metadata에 저장되는지 검증했습니다.
+- workflow test에서 clock/sampling/initial cash configuration이 metadata에 저장되는지 검증했습니다.
+- CLI integration test에서 `--batch-id`, `--batch-run-index`, `--run-id`가 dry-run 실행 후 metadata 파일까지 전달되는지 검증했습니다.
+- CLI integration test에서 기존 availability positional fallback regression이 계속 통과하는지 확인했습니다.
+- `npm test`로 전체 test suite 219개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalReplayAuditLog.ts`에 run identity/window/configuration schema와 metadata context type을 추가했습니다.
+- `src/workflows/historicalReplayWorkflow.ts`는 clock, sampling policy, batch option, random window selection을 metadata context로 묶어 audit log recorder에 전달합니다.
+- `src/cli/historicalReplay.ts`는 metadata 전용 batch option을 파싱하고 workflow option으로 전달합니다.
+- `src/cli/historicalReplayCli.test.ts`는 CLI batch metadata 저장 경로를 검증합니다.
+- `src/workflows/historicalReplayWorkflow.test.ts`는 stored metadata 구조를 검증합니다.
+- `docs/historical-replay.md`는 run metadata 필드와 batch run metadata CLI 예시를 추가했습니다.
+- `docs/pr-implementation-plan.md`는 PR-52 범위와 PR-53 이후 batch replay 후속 순서를 기록했습니다.
+- 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
+- 이번 PR은 반복 batch 실행 loop, batch run directory layout, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
