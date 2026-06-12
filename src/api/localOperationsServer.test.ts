@@ -115,20 +115,52 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /가상 투자 대시보드/);
     assert.match(html.text, /id="daily-report-heading"/);
     assert.match(html.text, /id="report-detail"/);
+    assert.match(html.text, /id="replay-heading"/);
+    assert.match(html.text, /id="replay-timeline-body"/);
     assert.match(html.text, /data-action-filter="BUY"/);
     assert.match(html.text, /id="symbol-filter"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /\/virtual\/portfolio/);
     assert.match(script.text, /\/paper\/report/);
+    assert.match(script.text, /\/replay\/report/);
     assert.match(script.text, /\/audit\/events/);
     assert.match(script.text, /fetchEndpointData/);
     assert.match(script.text, /endpointFailures/);
     assert.match(script.text, /renderDailyReport/);
+    assert.match(script.text, /renderReplayReport/);
+    assert.match(script.text, /renderReplayTimeline/);
     assert.match(script.text, /renderDecisionTimeline/);
     assert.match(script.text, /decisionOutcomeRow/);
     assert.match(script.text, /decisionRationale/);
     assert.match(script.text, /Risk Factors/);
     assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves stored historical replay report read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(
+    paths.historicalReplayReportPath,
+    `${JSON.stringify(historicalReplayReport())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/replay/report");
+    const report = result.payload["report"] as Record<string, unknown>;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(report["title"], "Historical Replay Paper Report");
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
   } finally {
     await stopTestServer(server);
   }
@@ -361,5 +393,68 @@ function auditEvent(): AuditEvent {
     summary: "KR:005930 VIRTUAL_BUY ord_abcdef123456",
     maskedRefs: [],
     createdAt: "2026-06-11T09:02:00+09:00"
+  };
+}
+
+function historicalReplayReport(): Record<string, unknown> {
+  return {
+    title: "Historical Replay Paper Report",
+    mode: "paper_only",
+    generatedAt: "2026-06-11T09:00:00+09:00",
+    simulatedRange: {
+      startAt: "2025-01-02T00:00:00.000Z",
+      endAt: "2025-01-02T00:02:00.000Z",
+      tickCount: 3
+    },
+    replaySummary: {
+      packetCount: 3,
+      decisionProviderCallCount: 2,
+      decisionSkippedCount: 1,
+      decisionRecordCount: 2,
+      decisionItemCount: 2,
+      tradeCount: 2,
+      rejectedCount: 0
+    },
+    portfolio: {
+      finalCashKrw: 830_000,
+      finalPositionCount: 2,
+      finalVirtualNetWorthKrw: 1_000_000
+    },
+    tradeSummary: {
+      tradeCount: 2,
+      virtualBuyAmountKrw: 170_000,
+      virtualSellAmountKrw: 0,
+      symbols: ["005930", "035420"]
+    },
+    riskSummary: {
+      approvedCount: 2,
+      rejectedCount: 0,
+      rejectCodes: {}
+    },
+    samplingSummary: {
+      decisionsRequested: 2,
+      decisionsSkipped: 1,
+      skipReasons: {
+        STEP_INTERVAL_SKIPPED: 1
+      }
+    },
+    sourceWarningSummary: {
+      lookaheadGuardStatus: "future_snapshots_excluded",
+      warningCount: 1,
+      futureSnapshotWarningCount: 1,
+      staleSnapshotWarningCount: 0,
+      recentWarnings: ["account 1234-5678-901234 order ord_abcdef123456"]
+    },
+    portfolioTimeline: [
+      {
+        simulatedAt: "2025-01-02T00:00:00.000Z",
+        cashKrw: 930_000,
+        positionCount: 1,
+        positionMarketValueKrw: 70_000,
+        virtualNetWorthKrw: 1_000_000
+      }
+    ],
+    disclaimer:
+      "Paper-only historical replay simulation. This is not financial advice, not a performance guarantee, and cannot place live orders."
   };
 }

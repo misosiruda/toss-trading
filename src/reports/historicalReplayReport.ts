@@ -3,7 +3,10 @@ import {
   type PaperPortfolioAnalytics
 } from "../analytics/paperPortfolioAnalytics.js";
 import type { VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
-import type { HistoricalReplayResult } from "../replay/historicalReplayRunner.js";
+import type {
+  HistoricalPortfolioTimelineItem,
+  HistoricalReplayResult
+} from "../replay/historicalReplayRunner.js";
 import { maskSensitiveText } from "../security/masking.js";
 
 export interface HistoricalReplayReportOptions {
@@ -25,6 +28,7 @@ export interface HistoricalReplayReport {
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
   sourceWarningSummary: HistoricalReplaySourceWarningSummary;
+  portfolioTimeline: HistoricalPortfolioTimelineItem[];
   disclaimer: string;
 }
 
@@ -116,6 +120,7 @@ export function buildHistoricalReplayReport(
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
     sourceWarningSummary: summarizeWarnings(result.warnings),
+    portfolioTimeline: result.portfolioTimeline,
     disclaimer: historicalReplayDisclaimer()
   };
 }
@@ -184,6 +189,14 @@ export function renderHistoricalReplayReport(
     `future_snapshot_warning_count: ${report.sourceWarningSummary.futureSnapshotWarningCount}`,
     `stale_snapshot_warning_count: ${report.sourceWarningSummary.staleSnapshotWarningCount}`,
     `recent_warnings: ${report.sourceWarningSummary.recentWarnings.join(" | ") || "none"}`,
+    "",
+    "## Virtual Portfolio Timeline",
+    ...report.portfolioTimeline
+      .slice(-10)
+      .map(
+        (item) =>
+          `${item.simulatedAt} cash=${item.cashKrw} positions=${item.positionCount} net=${item.virtualNetWorthKrw}`
+      ),
     "",
     report.disclaimer
   ];

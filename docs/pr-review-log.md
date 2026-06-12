@@ -915,3 +915,29 @@
 - 기존 `buildPaperPortfolioAnalytics`와 `maskSensitiveText`를 재사용했습니다.
 - report 입력은 in-memory `HistoricalReplayResult`이며 저장소 mutation이나 dashboard-triggered replay를 추가하지 않았습니다.
 - PR-35에서는 이 report shape을 read-only dashboard/API 조회용으로 노출할 수 있습니다.
+
+## PR-35: Dashboard Replay View
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 historical replay report를 read-only API와 dashboard panel로 조회하는 데 한정했습니다.
+- `/replay/report`는 `historical-replay-report.json`을 읽기만 하며 replay 실행, Codex CLI 실행, TossInvest CLI 실행을 트리거하지 않습니다.
+- dashboard에는 replay 실행 버튼, paper run 버튼, collector trigger, live order control을 추가하지 않았습니다.
+- endpoint는 기존 local operations server의 GET/HEAD read-only method guard 안에서 동작합니다.
+- 응답은 기존 `maskObject` 경로를 통과하므로 account/order-like 문자열이 마스킹됩니다.
+
+### Review 2: Tests and Validation
+
+- dashboard asset test에서 replay heading, timeline table, `/replay/report` fetch, `renderReplayReport`/`renderReplayTimeline` 경로를 확인합니다.
+- `/replay/report` endpoint test에서 stored report를 read-only로 반환하는지 확인합니다.
+- endpoint test에서 stored report 내부 계좌번호/order-like 문자열이 응답에서 마스킹되는지 확인합니다.
+- dashboard script에 `POST`, `PUT`, `DELETE` 문자열이 없는 기존 검증을 유지합니다.
+- full test suite로 기존 dashboard, API, paper report, replay report 경계를 함께 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `StoragePaths`에 `historicalReplayReportPath`를 추가했습니다.
+- `src/api/localOperationsServer.ts`에 `/replay/report` read-only endpoint를 추가했습니다.
+- `dashboard/index.html`에 historical replay summary/timeline panel을 추가했습니다.
+- `dashboard/app.js`는 저장된 replay report status, summary, sampling, lookahead warning, portfolio timeline을 렌더링합니다.
+- `README.md` dashboard endpoint 목록에 `/replay/report`와 dashboard-triggered replay 제외 문구를 반영했습니다.

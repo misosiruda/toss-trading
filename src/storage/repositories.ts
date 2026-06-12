@@ -31,6 +31,7 @@ export interface StoragePaths {
   tossInvestSourcesPath: string;
   marketPacketsPath: string;
   historicalMarketSnapshotsPath: string;
+  historicalReplayReportPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -42,7 +43,11 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     virtualTradesPath: join(baseDir, "virtual-trades.jsonl"),
     tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl"),
     marketPacketsPath: join(baseDir, "market-packets.jsonl"),
-    historicalMarketSnapshotsPath: join(baseDir, "historical-market-snapshots.jsonl")
+    historicalMarketSnapshotsPath: join(
+      baseDir,
+      "historical-market-snapshots.jsonl"
+    ),
+    historicalReplayReportPath: join(baseDir, "historical-replay-report.json")
   };
 }
 

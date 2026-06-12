@@ -75,6 +75,53 @@
           <p id="report-disclaimer" class="report-disclaimer">-</p>
         </section>
 
+        <section class="panel full replay-panel" aria-labelledby="replay-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">historical replay</p>
+              <h2 id="replay-heading">과거 리플레이</h2>
+            </div>
+            <span id="replay-status" class="status-pill neutral">-</span>
+          </div>
+          <div class="report-kpis replay-kpis" aria-label="과거 리플레이 요약">
+            <div>
+              <span>기간</span>
+              <strong id="replay-range">-</strong>
+            </div>
+            <div>
+              <span>Packet</span>
+              <strong id="replay-packets">-</strong>
+            </div>
+            <div>
+              <span>AI 호출</span>
+              <strong id="replay-decisions">-</strong>
+            </div>
+            <div>
+              <span>가상 체결</span>
+              <strong id="replay-trades">-</strong>
+            </div>
+            <div>
+              <span>Risk</span>
+              <strong id="replay-risk">-</strong>
+            </div>
+          </div>
+          <dl id="replay-detail" class="definition-list report-detail"></dl>
+          <div class="table-wrap replay-timeline-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sim Time</th>
+                  <th>현금</th>
+                  <th>포지션</th>
+                  <th>가상 순자산</th>
+                </tr>
+              </thead>
+              <tbody id="replay-timeline-body"></tbody>
+            </table>
+          </div>
+          <p id="replay-disclaimer" class="report-disclaimer">-</p>
+        </section>
+
         <section class="panel wide">
           <div class="panel-heading">
             <div>

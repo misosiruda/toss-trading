@@ -15,6 +15,7 @@ const endpoints = {
   decisions: "/virtual/decisions?limit=20",
   trades: "/virtual/trades?limit=20",
   report: "/paper/report",
+  replay: "/replay/report",
   scheduler: "/scheduler/status",
   source: "/source/health",
   packets: "/market/packets?limit=5",
@@ -114,6 +115,7 @@ function renderDashboard(data) {
   updateFilterControls();
   renderDecisionTimeline();
   renderDailyReport(report);
+  renderReplayReport(data.replay);
   renderRiskSummary(report.riskSummary, report.decisionOutcome);
   renderTrades(state.trades);
   renderPackets(data.packets?.packets ?? []);
@@ -175,6 +177,71 @@ function renderDailyReport(report) {
     "Source Warning",
     (report?.sourceStatus?.warnings ?? []).join(" | ") || "none"
   );
+}
+
+function renderReplayReport(replayPayload) {
+  const report = replayPayload?.report ?? null;
+  const status = replayPayload?.status ?? "missing";
+  setStatus("replay-status", status, status);
+
+  setText("replay-range", replayRangeText(report?.simulatedRange));
+  setText("replay-packets", `${report?.replaySummary?.packetCount ?? 0}개`);
+  setText(
+    "replay-decisions",
+    `${report?.replaySummary?.decisionProviderCallCount ?? 0} 호출 / ${report?.replaySummary?.decisionSkippedCount ?? 0} skip`
+  );
+  setText("replay-trades", `${report?.tradeSummary?.tradeCount ?? 0}건`);
+  setText(
+    "replay-risk",
+    `${report?.riskSummary?.approvedCount ?? 0} 승인 / ${report?.riskSummary?.rejectedCount ?? 0} 거절`
+  );
+  setText("replay-disclaimer", report?.disclaimer ?? "저장된 과거 리플레이 리포트 없음");
+
+  const detail = document.getElementById("replay-detail");
+  clear(detail);
+  appendDefinition(
+    detail,
+    "최종 가상 순자산",
+    formatKrw(report?.portfolio?.finalVirtualNetWorthKrw)
+  );
+  appendDefinition(
+    detail,
+    "Sampling",
+    summarizeRecord(report?.samplingSummary?.skipReasons)
+  );
+  appendDefinition(
+    detail,
+    "Lookahead",
+    `${report?.sourceWarningSummary?.lookaheadGuardStatus ?? "unknown"} · future warnings ${report?.sourceWarningSummary?.futureSnapshotWarningCount ?? 0}`
+  );
+  appendDefinition(
+    detail,
+    "최근 경고",
+    (report?.sourceWarningSummary?.recentWarnings ?? []).join(" | ") || "none"
+  );
+
+  renderReplayTimeline(report?.portfolioTimeline ?? []);
+}
+
+function renderReplayTimeline(timeline) {
+  const body = document.getElementById("replay-timeline-body");
+  clear(body);
+
+  if (!timeline.length) {
+    appendEmptyRow(body, 4, "저장된 리플레이 타임라인 없음");
+    return;
+  }
+
+  for (const item of timeline.slice(-10)) {
+    const row = document.createElement("tr");
+    row.append(
+      cell(formatDateTime(item.simulatedAt)),
+      cell(formatKrw(item.cashKrw), "numeric"),
+      cell(String(item.positionCount ?? 0), "numeric"),
+      cell(formatKrw(item.virtualNetWorthKrw), "numeric")
+    );
+    body.append(row);
+  }
 }
 
 function renderPositions(positions) {
@@ -674,6 +741,13 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+function replayRangeText(range) {
+  if (!range?.startAt && !range?.endAt) {
+    return "-";
+  }
+  return `${formatDateTime(range.startAt)} - ${formatDateTime(range.endAt)} · ${range.tickCount ?? 0} ticks`;
 }
 
 function decisionFreshness(expiresAt) {

@@ -116,6 +116,8 @@ async function routeRequest(
         date: readDate(url, options),
         generatedAt: readNow(options)
       });
+    case "/replay/report":
+      return readHistoricalReplayReport(options.storageBaseDir);
     case "/scheduler/status":
       return readSchedulerStatus(options.storageBaseDir);
     case "/source/health":
@@ -207,6 +209,20 @@ async function readSchedulerStatus(
     lockStatus: lock.status,
     schedulerState: state.value,
     lock: lock.value
+  };
+}
+
+async function readHistoricalReplayReport(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const report = await readJsonFile(paths.historicalReplayReportPath);
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status: report.status,
+    report: report.value
   };
 }
 
