@@ -1739,11 +1739,49 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-56: Benchmark Comparison Hardening
+
+목표:
+
+- historical replay report의 benchmark raw metric만으로는 strategy가 benchmark 대비 얼마나 다른지 바로 판단하기 어렵습니다.
+- strategy와 각 benchmark의 delta를 구조화해 batch/diagnostic 분석에서 같은 contract로 비교할 수 있게 합니다.
+- benchmark 비교는 paper-only 사후 분석이며 투자 조언, 성과 보장, live trading signal로 사용하지 않습니다.
+
+작업 범위:
+
+- `HistoricalReplayBenchmarkReport.comparisons` contract 추가
+- strategy vs cash-only, equal-weight buy-and-hold, initial-portfolio buy-and-hold delta 계산
+- final net worth, total return, max drawdown, tick volatility, turnover, fee drag delta 계산
+- equal-weight benchmark unavailable 상태를 명시적으로 표현
+- equal-weight buy-and-hold가 첫 priced replay packet 이후에만 진입하도록 entry point 보강
+- Historical Replay 문서에 comparison delta semantics 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- strategy vs benchmark delta unit test
+- equal-weight benchmark entry point test
+- priced candidate가 없을 때 unavailable comparison test
+- historical replay report render test
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- Sharpe/Sortino/Calmar 등 신규 성과 지표
+- benchmark weight optimizer
+- external market index benchmark
+- dashboard batch view
+- aggregate 결과 기반 전략 자동 조정
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-56: Benchmark Comparison Hardening
 - PR-57: Batch Replay Dashboard Read-only View
 - PR-58: Regression And Safety Tests
 

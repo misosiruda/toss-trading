@@ -1528,3 +1528,35 @@
 - `docs/pr-implementation-plan.md`는 PR-55 범위와 PR-56 이후 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, 신규 match는 disclaimer와 문서상 제외/금지 경계 문구로만 확인했습니다.
 - 이번 PR은 benchmark comparison hardening, dashboard batch view, aggregate 결과 기반 전략 자동 조정은 포함하지 않습니다.
+
+## PR-56: Benchmark Comparison Hardening
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay benchmark report의 비교 contract 보강에 한정합니다.
+- 기존 `strategy`, `cashOnly`, `equalWeightBuyAndHold`, `initialPortfolioBuyAndHold` raw metric은 유지하고, strategy minus benchmark delta를 `comparisons`에 추가합니다.
+- equal-weight benchmark는 첫 priced replay packet 이후에만 진입하며, priced candidate가 없으면 unavailable comparison으로 기록합니다.
+- benchmark 비교는 저장된 replay packet과 portfolio timeline만 사용하는 paper-only 사후 분석입니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- benchmark unit test에서 strategy vs cash-only, strategy vs equal-weight delta를 검증했습니다.
+- benchmark unit test에서 equal-weight benchmark가 첫 priced replay packet 이후에만 진입하는지 검증했습니다.
+- benchmark unit test에서 priced candidate가 없으면 `benchmarkAvailable=false`와 `null` delta가 기록되는지 검증했습니다.
+- historical replay report test에서 `benchmark_comparisons` 렌더링을 검증했습니다.
+- targeted test로 `node --test dist\\reports\\historicalReplayBenchmark.test.js` 통과를 확인했습니다.
+- targeted test로 `node --test dist\\reports\\historicalReplayReport.test.js` 통과를 확인했습니다.
+- `npm test`로 전체 test suite 234개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/reports/historicalReplayBenchmark.ts`에 `HistoricalReplayBenchmarkComparisons`와 comparison delta 계산을 추가했습니다.
+- `src/reports/historicalReplayBenchmark.test.ts`를 추가해 comparison delta, equal-weight entry point, unavailable benchmark contract를 고정했습니다.
+- `src/reports/historicalReplayReport.ts`는 markdown report에 `benchmark_comparisons`를 출력합니다.
+- `src/reports/historicalReplayReport.test.ts`는 새 comparison field가 report와 rendered output에 포함되는지 검증합니다.
+- `docs/historical-replay.md`는 comparison delta semantics와 unavailable benchmark 표현을 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-56 범위와 PR-57 이후 후속 순서를 기록했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 문서상 제외/금지 경계 문구로만 확인했습니다.
+- 이번 PR은 Sharpe/Sortino/Calmar, 외부 market index benchmark, dashboard batch view를 포함하지 않습니다.
