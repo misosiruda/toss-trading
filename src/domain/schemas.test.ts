@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   assertFresh,
+  historicalMarketSnapshotSchema,
   marketPacketSchema,
   parseWithSchema,
   virtualDecisionSchema
@@ -73,6 +74,54 @@ test("valid market packet fixture passes schema validation", () => {
 
   assert.equal(packet.mode, "paper_only");
   assert.equal(packet.candidates[0]?.sourceRefs[0], "external_snapshot_001");
+});
+
+test("valid historical market snapshot fixture passes schema validation", () => {
+  const snapshot = parseWithSchema(
+    historicalMarketSnapshotSchema,
+    {
+      snapshotId: "hist_kr_005930_20250611_090000",
+      market: "KR",
+      symbol: "005930",
+      observedAt: "2025-06-11T09:00:00+09:00",
+      interval: "1m",
+      openPriceKrw: 70_000,
+      highPriceKrw: 70_500,
+      lowPriceKrw: 69_900,
+      closePriceKrw: 70_200,
+      lastPriceKrw: 70_200,
+      volume: 120_000,
+      sourceRefs: ["historical_fixture_001"],
+      createdAt: "2026-06-11T09:00:00+09:00"
+    },
+    "historicalMarketSnapshot"
+  );
+
+  assert.equal(snapshot.symbol, "005930");
+  assert.equal(snapshot.interval, "1m");
+});
+
+test("historical market snapshot rejects inverted high and low prices", () => {
+  assert.throws(
+    () =>
+      parseWithSchema(
+        historicalMarketSnapshotSchema,
+        {
+          snapshotId: "hist_invalid_prices",
+          market: "KR",
+          symbol: "005930",
+          observedAt: "2025-06-11T09:00:00+09:00",
+          interval: "1m",
+          highPriceKrw: 69_000,
+          lowPriceKrw: 70_000,
+          lastPriceKrw: 69_500,
+          sourceRefs: ["historical_fixture_001"],
+          createdAt: "2026-06-11T09:00:00+09:00"
+        },
+        "historicalMarketSnapshot"
+      ),
+    /highPriceKrw/
+  );
 });
 
 test("invalid virtual action is rejected", () => {

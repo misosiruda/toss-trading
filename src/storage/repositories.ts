@@ -3,6 +3,9 @@ import { join } from "node:path";
 import {
   auditEventSchema,
   type AuditEvent,
+  historicalMarketSnapshotSchema,
+  type HistoricalMarketSnapshot,
+  type Market,
   marketPacketSchema,
   type MarketPacket,
   virtualDecisionSchema,
@@ -27,6 +30,7 @@ export interface StoragePaths {
   virtualTradesPath: string;
   tossInvestSourcesPath: string;
   marketPacketsPath: string;
+  historicalMarketSnapshotsPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -37,8 +41,23 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     virtualDecisionsPath: join(baseDir, "virtual-decisions.jsonl"),
     virtualTradesPath: join(baseDir, "virtual-trades.jsonl"),
     tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl"),
-    marketPacketsPath: join(baseDir, "market-packets.jsonl")
+    marketPacketsPath: join(baseDir, "market-packets.jsonl"),
+    historicalMarketSnapshotsPath: join(baseDir, "historical-market-snapshots.jsonl")
   };
+}
+
+export interface HistoricalSnapshotQuery {
+  asOf: Date;
+  from?: Date;
+  market?: Market;
+  symbols?: string[];
+  limit?: number;
+}
+
+export interface HistoricalSnapshotQueryResult
+  extends JsonlReadResult<HistoricalMarketSnapshot> {
+  totalStoredCount: number;
+  excludedFutureCount: number;
 }
 
 export class FileAuditLog {
@@ -147,4 +166,83 @@ export class FileMarketPacketStore {
   readAll(): Promise<JsonlReadResult<MarketPacket>> {
     return this.store.readAll();
   }
+}
+
+export class FileHistoricalMarketSnapshotStore {
+  private readonly store: JsonlStore<HistoricalMarketSnapshot>;
+
+  constructor(filePath: string) {
+    this.store = new JsonlStore(
+      filePath,
+      historicalMarketSnapshotSchema,
+      "historicalMarketSnapshot"
+    );
+  }
+
+  append(snapshot: HistoricalMarketSnapshot): Promise<void> {
+    return this.store.append(snapshot);
+  }
+
+  readAll(): Promise<JsonlReadResult<HistoricalMarketSnapshot>> {
+    return this.store.readAll();
+  }
+
+  async readUpTo(
+    query: HistoricalSnapshotQuery
+  ): Promise<HistoricalSnapshotQueryResult> {
+    const result = await this.store.readAll();
+    const matchingRecords = result.records.filter((snapshot) =>
+      matchesHistoricalSnapshotQuery(snapshot, query)
+    );
+    const records = matchingRecords
+      .filter((snapshot) => Date.parse(snapshot.observedAt) <= query.asOf.getTime())
+      .sort(compareHistoricalSnapshots);
+    const limitedRecords =
+      query.limit === undefined ? records : records.slice(-query.limit);
+
+    return {
+      records: limitedRecords,
+      corruptLineCount: result.corruptLineCount,
+      totalStoredCount: result.records.length,
+      excludedFutureCount: matchingRecords.length - records.length
+    };
+  }
+}
+
+function matchesHistoricalSnapshotQuery(
+  snapshot: HistoricalMarketSnapshot,
+  query: HistoricalSnapshotQuery
+): boolean {
+  if (query.market !== undefined && snapshot.market !== query.market) {
+    return false;
+  }
+  if (query.symbols !== undefined && !query.symbols.includes(snapshot.symbol)) {
+    return false;
+  }
+  if (
+    query.from !== undefined &&
+    Date.parse(snapshot.observedAt) < query.from.getTime()
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function compareHistoricalSnapshots(
+  left: HistoricalMarketSnapshot,
+  right: HistoricalMarketSnapshot
+): number {
+  const observedDiff = Date.parse(left.observedAt) - Date.parse(right.observedAt);
+  if (observedDiff !== 0) {
+    return observedDiff;
+  }
+  const marketDiff = left.market.localeCompare(right.market);
+  if (marketDiff !== 0) {
+    return marketDiff;
+  }
+  const symbolDiff = left.symbol.localeCompare(right.symbol);
+  if (symbolDiff !== 0) {
+    return symbolDiff;
+  }
+  return left.snapshotId.localeCompare(right.snapshotId);
 }

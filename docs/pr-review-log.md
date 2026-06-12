@@ -740,3 +740,28 @@
 - `src/api/localOperationsServer.test.ts`의 dashboard asset test를 partial failure helper까지 확장했습니다.
 - README dashboard 설명에 `/audit/events`와 부분 실패 표시 동작을 반영했습니다.
 - PR-27 계획과 검토 기록을 문서에 반영했습니다.
+
+## PR-28: Historical Market Data Store
+
+### Review 1: Scope and Safety
+
+- 범위는 historical market snapshot schema, JSONL store path, read-up-to query에 한정했습니다.
+- historical downloader, replay runner, Codex CLI execution, dashboard trigger는 추가하지 않았습니다.
+- `readUpTo`는 `asOf` 이후 snapshot을 제외해 lookahead를 막는 저장소 조회 계층입니다.
+- 이 PR은 market data 조회 기반만 추가하며 portfolio, decision, risk, trade state를 수정하지 않습니다.
+- live order path, raw `tossctl` MCP tool, raw `codex exec` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- historical snapshot schema validation test를 추가했습니다.
+- high/low price inversion reject test를 추가했습니다.
+- `asOf` 이후 historical snapshot exclusion test를 추가했습니다.
+- from/symbol filter와 corrupt JSONL line handling test를 추가했습니다.
+- full test suite로 기존 read-only API/MCP/risk 경계를 함께 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `HistoricalMarketSnapshot` contract를 추가했습니다.
+- `src/storage/repositories.ts`에 `historical-market-snapshots.jsonl` path와 `FileHistoricalMarketSnapshotStore`를 추가했습니다.
+- `readUpTo`는 observed time, market, symbol, snapshot id 기준으로 deterministic sort를 수행합니다.
+- PR-28부터 PR-36까지 historical accelerated replay 계획을 implementation plan에 반영했습니다.

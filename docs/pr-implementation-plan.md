@@ -844,6 +844,257 @@
 - endpoint mutation
 - live order placement
 
+## PR-28: Historical Market Data Store
+
+목표:
+
+- 과거 시장 데이터를 시간순으로 저장하고 simulated time 기준으로 미래 데이터를 제외해 조회할 수 있게 합니다.
+
+작업 범위:
+
+- `HistoricalMarketSnapshot` schema
+- historical market snapshot JSONL path/store
+- `asOf` 이하 조회
+- symbol/from filter
+- time-order deterministic sorting
+- corrupt line handling
+
+검증:
+
+- valid historical snapshot schema validation
+- inverted high/low price reject
+- `asOf` 이후 snapshot 제외
+- from/symbol filter 적용
+- corrupt JSONL line count 유지
+- full test suite
+
+제외:
+
+- historical downloader
+- AI decision execution
+- replay runner
+- dashboard-triggered replay
+- live order placement
+
+## PR-29: Simulated Clock and Replay Window
+
+목표:
+
+- 실제 시간이 아니라 replay 전용 simulated clock으로 start/end/step window를 deterministic하게 진행합니다.
+
+작업 범위:
+
+- `SimulatedClock`
+- replay start/end time
+- step interval
+- speed multiplier metadata
+- market session window guard
+
+검증:
+
+- start/end 범위 준수
+- step progression deterministic
+- session 밖 timestamp skip
+- real clock 의존 없음
+
+제외:
+
+- AI decision execution
+- paper order execution
+- dashboard UI
+- real-time loop
+
+## PR-30: Historical Market Packet Builder
+
+목표:
+
+- 특정 simulated time 기준 historical snapshot만 사용해 paper-only `market_packet`을 생성합니다.
+
+작업 범위:
+
+- historical snapshot to `MarketCandidate`
+- simulated source refs
+- top N candidate trimming
+- simulated packet expiry
+- lookahead guard warnings
+
+검증:
+
+- simulated time 이후 데이터 미포함
+- packet schema validation
+- max candidates 적용
+- stale/empty input fail-closed
+
+제외:
+
+- Codex CLI execution
+- paper order execution
+- performance claim
+
+## PR-31: Accelerated Replay Runner Without AI
+
+목표:
+
+- AI 호출 없이 deterministic fixture decision으로 historical replay engine을 검증합니다.
+
+작업 범위:
+
+- packet sequence replay
+- static decision provider
+- Risk Engine integration
+- PaperOrderEngine integration
+- replay audit chain
+
+검증:
+
+- same input same result
+- risk reject leaves portfolio unchanged
+- no realtime API call
+- simulated time audit metadata
+
+제외:
+
+- real Codex CLI call
+- dashboard-triggered replay
+- live trading
+
+## PR-32: Codex AI Historical Decision Provider
+
+목표:
+
+- replay 중 각 historical packet을 Codex CLI paper-only provider에 전달해 AI 판단을 받을 수 있게 합니다.
+
+작업 범위:
+
+- existing `CodexCliDecisionProvider` reuse
+- simulated time metadata
+- no-lookahead prompt guard
+- max AI calls per replay
+- timeout/failure skip policy
+
+검증:
+
+- `AI_DECISION_ENABLED=false` no execution
+- read-only sandbox 유지
+- timeout creates no paper order
+- packetId mismatch reject
+- AI call budget enforced
+
+제외:
+
+- raw `codex exec` MCP tool
+- dashboard-triggered AI run
+- live `TradingSignal`
+- live order placement
+
+## PR-33: Replay Speed and Sampling Policy
+
+목표:
+
+- 모든 historical tick마다 AI를 호출하지 않고 현실적인 비용/속도로 replay할 수 있게 합니다.
+
+작업 범위:
+
+- every N steps policy
+- candidate changed only policy
+- daily/weekly decision mode
+- max candidates per step
+- replay progress summary
+
+검증:
+
+- policy별 AI call 수 제한
+- skipped step preserves portfolio
+- replay order deterministic
+- budget guard 동작
+
+제외:
+
+- auto tuning
+- profitability optimization
+- live loop
+
+## PR-34: Historical Replay Report
+
+목표:
+
+- historical replay 결과를 paper-only 분석 리포트로 출력합니다.
+
+작업 범위:
+
+- replay summary
+- decision/trade/risk counts
+- final virtual portfolio
+- source/lookahead warning summary
+- paper-only disclaimer
+
+검증:
+
+- no investment advice wording
+- no performance guarantee wording
+- result masking
+- deterministic fixture report
+
+제외:
+
+- 실계좌 PnL
+- 외부 report upload
+- backtest overclaim
+
+## PR-35: Dashboard Replay View
+
+목표:
+
+- dashboard에서 historical replay 결과를 read-only로 확인할 수 있게 합니다.
+
+작업 범위:
+
+- replay summary panel
+- simulated time range
+- AI decision timeline reuse
+- virtual portfolio timeline table
+- risk/trade linkage reuse
+
+검증:
+
+- read-only endpoint only
+- no replay trigger button
+- desktop/mobile screenshot
+- partial failure UX 유지
+
+제외:
+
+- dashboard-triggered replay
+- live order
+- real-time streaming chart
+
+## PR-36: Final Safety and Lookahead Audit
+
+목표:
+
+- historical replay가 simulated time 이후 데이터를 보지 않는지 전체 경계를 점검합니다.
+
+작업 범위:
+
+- lookahead guard tests
+- prompt guard review
+- historical source ref audit
+- docs update
+- final review log
+
+검증:
+
+- simulated time 이후 데이터 검색 차단
+- replay runner real clock dependency audit
+- full test suite
+- dashboard browser verification
+
+제외:
+
+- official Toss API
+- live trading
+- production scheduler
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

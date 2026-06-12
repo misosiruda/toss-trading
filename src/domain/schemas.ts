@@ -58,6 +58,37 @@ export const marketCandidateSchema = z
   })
   .strict();
 
+export const historicalMarketSnapshotSchema = z
+  .object({
+    snapshotId: nonEmptyStringSchema,
+    market: marketSchema,
+    symbol: nonEmptyStringSchema,
+    observedAt: isoDateTimeSchema,
+    interval: z.enum(["1m", "5m", "15m", "1h", "1d"]),
+    openPriceKrw: moneyKrwSchema.optional(),
+    highPriceKrw: moneyKrwSchema.optional(),
+    lowPriceKrw: moneyKrwSchema.optional(),
+    closePriceKrw: moneyKrwSchema.optional(),
+    lastPriceKrw: moneyKrwSchema,
+    volume: z.number().nonnegative().optional(),
+    sourceRefs: z.array(nonEmptyStringSchema).min(1),
+    createdAt: isoDateTimeSchema
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.highPriceKrw !== undefined &&
+      value.lowPriceKrw !== undefined &&
+      value.highPriceKrw < value.lowPriceKrw
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["highPriceKrw"],
+        message: "highPriceKrw must be greater than or equal to lowPriceKrw"
+      });
+    }
+  });
+
 export const marketPacketSchema = z
   .object({
     packetId: nonEmptyStringSchema,
@@ -159,6 +190,9 @@ export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualPosition = z.infer<typeof virtualPositionSchema>;
 export type VirtualPortfolio = z.infer<typeof virtualPortfolioSchema>;
 export type MarketCandidate = z.infer<typeof marketCandidateSchema>;
+export type HistoricalMarketSnapshot = z.infer<
+  typeof historicalMarketSnapshotSchema
+>;
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
 export type VirtualDecisionItem = z.infer<typeof virtualDecisionItemSchema>;
 export type VirtualDecision = z.infer<typeof virtualDecisionSchema>;
