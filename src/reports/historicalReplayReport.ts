@@ -1,0 +1,332 @@
+import {
+  buildPaperPortfolioAnalytics,
+  type PaperPortfolioAnalytics
+} from "../analytics/paperPortfolioAnalytics.js";
+import type { VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
+import type { HistoricalReplayResult } from "../replay/historicalReplayRunner.js";
+import { maskSensitiveText } from "../security/masking.js";
+
+export interface HistoricalReplayReportOptions {
+  result: HistoricalReplayResult;
+  generatedAt: Date;
+  title?: string;
+}
+
+export interface HistoricalReplayReport {
+  title: string;
+  mode: "paper_only";
+  generatedAt: string;
+  simulatedRange: HistoricalReplayRangeSummary;
+  replaySummary: HistoricalReplaySummary;
+  portfolio: HistoricalReplayPortfolioSummary;
+  analytics: PaperPortfolioAnalytics;
+  decisionOutcome: HistoricalReplayDecisionOutcomeSummary;
+  tradeSummary: HistoricalReplayTradeSummary;
+  riskSummary: HistoricalReplayRiskSummary;
+  samplingSummary: HistoricalReplaySamplingSummary;
+  sourceWarningSummary: HistoricalReplaySourceWarningSummary;
+  disclaimer: string;
+}
+
+export interface HistoricalReplayRangeSummary {
+  startAt: string | null;
+  endAt: string | null;
+  tickCount: number;
+}
+
+export interface HistoricalReplaySummary {
+  packetCount: number;
+  decisionProviderCallCount: number;
+  decisionSkippedCount: number;
+  decisionRecordCount: number;
+  decisionItemCount: number;
+  tradeCount: number;
+  rejectedCount: number;
+}
+
+export interface HistoricalReplayPortfolioSummary {
+  initialCashKrw: number;
+  finalCashKrw: number;
+  finalPositionCount: number;
+  finalPositionMarketValueKrw: number;
+  finalVirtualNetWorthKrw: number;
+}
+
+export interface HistoricalReplayDecisionOutcomeSummary {
+  byAction: Record<string, number>;
+  averageConfidence: number | null;
+  symbols: string[];
+}
+
+export interface HistoricalReplayTradeSummary {
+  tradeCount: number;
+  virtualBuyAmountKrw: number;
+  virtualSellAmountKrw: number;
+  symbols: string[];
+}
+
+export interface HistoricalReplayRiskSummary {
+  approvedCount: number;
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+}
+
+export interface HistoricalReplaySamplingSummary {
+  policy: HistoricalReplayResult["samplingPolicy"];
+  decisionsRequested: number;
+  decisionsSkipped: number;
+  skipReasons: Record<string, number>;
+}
+
+export interface HistoricalReplaySourceWarningSummary {
+  warningCount: number;
+  futureSnapshotWarningCount: number;
+  staleSnapshotWarningCount: number;
+  recentWarnings: string[];
+  lookaheadGuardStatus: "future_snapshots_excluded" | "no_future_snapshot_warnings";
+}
+
+export function buildHistoricalReplayReport(
+  options: HistoricalReplayReportOptions
+): HistoricalReplayReport {
+  const result = options.result;
+
+  return {
+    title: options.title ?? "Historical Replay Paper Report",
+    mode: "paper_only",
+    generatedAt: options.generatedAt.toISOString(),
+    simulatedRange: summarizeRange(result),
+    replaySummary: {
+      packetCount: result.packetCount,
+      decisionProviderCallCount: result.decisionProviderCallCount,
+      decisionSkippedCount: result.decisionSkippedCount,
+      decisionRecordCount: result.decisionRecordCount,
+      decisionItemCount: result.decisionItemCount,
+      tradeCount: result.tradeCount,
+      rejectedCount: result.rejectedCount
+    },
+    portfolio: summarizePortfolio(result.initialPortfolio, result.finalPortfolio),
+    analytics: buildPaperPortfolioAnalytics({
+      portfolio: result.finalPortfolio,
+      decisions: result.decisions,
+      trades: result.trades
+    }),
+    decisionOutcome: summarizeDecisions(result.decisions),
+    tradeSummary: summarizeTrades(result.trades),
+    riskSummary: summarizeRisk(result),
+    samplingSummary: summarizeSampling(result),
+    sourceWarningSummary: summarizeWarnings(result.warnings),
+    disclaimer: historicalReplayDisclaimer()
+  };
+}
+
+export function renderHistoricalReplayReport(
+  report: HistoricalReplayReport
+): string {
+  const lines = [
+    `# ${report.title}`,
+    "",
+    `mode: ${report.mode}`,
+    `generated_at: ${report.generatedAt}`,
+    "",
+    "## Simulated Range",
+    `start_at: ${report.simulatedRange.startAt ?? "null"}`,
+    `end_at: ${report.simulatedRange.endAt ?? "null"}`,
+    `tick_count: ${report.simulatedRange.tickCount}`,
+    "",
+    "## Replay Summary",
+    `packet_count: ${report.replaySummary.packetCount}`,
+    `decision_provider_calls: ${report.replaySummary.decisionProviderCallCount}`,
+    `decision_skipped_count: ${report.replaySummary.decisionSkippedCount}`,
+    `decision_records: ${report.replaySummary.decisionRecordCount}`,
+    `decision_items: ${report.replaySummary.decisionItemCount}`,
+    `trade_count: ${report.replaySummary.tradeCount}`,
+    `risk_rejected_count: ${report.replaySummary.rejectedCount}`,
+    "",
+    "## Final Virtual Portfolio",
+    `initial_cash_krw: ${report.portfolio.initialCashKrw}`,
+    `final_cash_krw: ${report.portfolio.finalCashKrw}`,
+    `final_position_count: ${report.portfolio.finalPositionCount}`,
+    `final_position_market_value_krw: ${report.portfolio.finalPositionMarketValueKrw}`,
+    `final_virtual_net_worth_krw: ${report.portfolio.finalVirtualNetWorthKrw}`,
+    "",
+    "## Portfolio Analytics",
+    `cash_allocation_ratio: ${formatNullable(report.analytics.cashAllocationRatio)}`,
+    `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
+    `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
+    `decision_trade_linkage: ${JSON.stringify(report.analytics.decisionTradeLinkage)}`,
+    "",
+    "## Decision Outcome",
+    `by_action: ${JSON.stringify(report.decisionOutcome.byAction)}`,
+    `average_confidence: ${formatNullable(report.decisionOutcome.averageConfidence)}`,
+    `symbols: ${report.decisionOutcome.symbols.join(", ") || "none"}`,
+    "",
+    "## Virtual Trades",
+    `trade_count: ${report.tradeSummary.tradeCount}`,
+    `virtual_buy_amount_krw: ${report.tradeSummary.virtualBuyAmountKrw}`,
+    `virtual_sell_amount_krw: ${report.tradeSummary.virtualSellAmountKrw}`,
+    `symbols: ${report.tradeSummary.symbols.join(", ") || "none"}`,
+    "",
+    "## Virtual Risk",
+    `approved_count: ${report.riskSummary.approvedCount}`,
+    `rejected_count: ${report.riskSummary.rejectedCount}`,
+    `reject_codes: ${JSON.stringify(report.riskSummary.rejectCodes)}`,
+    "",
+    "## Sampling",
+    `policy: ${JSON.stringify(report.samplingSummary.policy)}`,
+    `decisions_requested: ${report.samplingSummary.decisionsRequested}`,
+    `decisions_skipped: ${report.samplingSummary.decisionsSkipped}`,
+    `skip_reasons: ${JSON.stringify(report.samplingSummary.skipReasons)}`,
+    "",
+    "## Source and Lookahead Warnings",
+    `lookahead_guard_status: ${report.sourceWarningSummary.lookaheadGuardStatus}`,
+    `warning_count: ${report.sourceWarningSummary.warningCount}`,
+    `future_snapshot_warning_count: ${report.sourceWarningSummary.futureSnapshotWarningCount}`,
+    `stale_snapshot_warning_count: ${report.sourceWarningSummary.staleSnapshotWarningCount}`,
+    `recent_warnings: ${report.sourceWarningSummary.recentWarnings.join(" | ") || "none"}`,
+    "",
+    report.disclaimer
+  ];
+
+  return maskSensitiveText(lines.join("\n"));
+}
+
+function summarizeRange(
+  result: HistoricalReplayResult
+): HistoricalReplayRangeSummary {
+  const first = result.portfolioTimeline[0];
+  const last = result.portfolioTimeline.at(-1);
+
+  return {
+    startAt: first?.simulatedAt ?? null,
+    endAt: last?.simulatedAt ?? null,
+    tickCount: result.tickCount
+  };
+}
+
+function summarizePortfolio(
+  initialPortfolio: VirtualPortfolio,
+  finalPortfolio: VirtualPortfolio
+): HistoricalReplayPortfolioSummary {
+  const finalPositionMarketValueKrw = sumPositionMarketValue(finalPortfolio);
+
+  return {
+    initialCashKrw: initialPortfolio.cashKrw,
+    finalCashKrw: finalPortfolio.cashKrw,
+    finalPositionCount: finalPortfolio.positions.length,
+    finalPositionMarketValueKrw,
+    finalVirtualNetWorthKrw: finalPortfolio.cashKrw + finalPositionMarketValueKrw
+  };
+}
+
+function summarizeDecisions(
+  decisions: VirtualDecision[]
+): HistoricalReplayDecisionOutcomeSummary {
+  const items = decisions.flatMap((decision) => decision.decisions);
+  const byAction: Record<string, number> = {};
+  for (const item of items) {
+    byAction[item.action] = (byAction[item.action] ?? 0) + 1;
+  }
+
+  return {
+    byAction,
+    averageConfidence:
+      items.length > 0
+        ? Number(
+            (
+              items.reduce((sum, item) => sum + item.confidence, 0) / items.length
+            ).toFixed(4)
+          )
+        : null,
+    symbols: Array.from(new Set(items.map((item) => item.symbol))).sort()
+  };
+}
+
+function summarizeTrades(trades: VirtualTrade[]): HistoricalReplayTradeSummary {
+  return {
+    tradeCount: trades.length,
+    virtualBuyAmountKrw: trades
+      .filter((trade) => trade.action === "VIRTUAL_BUY")
+      .reduce((sum, trade) => sum + trade.amountKrw, 0),
+    virtualSellAmountKrw: trades
+      .filter((trade) => trade.action === "VIRTUAL_SELL")
+      .reduce((sum, trade) => sum + trade.amountKrw, 0),
+    symbols: Array.from(new Set(trades.map((trade) => trade.symbol))).sort()
+  };
+}
+
+function summarizeRisk(
+  result: HistoricalReplayResult
+): HistoricalReplayRiskSummary {
+  const rejectCodes: Record<string, number> = {};
+  for (const decision of result.riskDecisions) {
+    for (const code of decision.rejectCodes) {
+      rejectCodes[code] = (rejectCodes[code] ?? 0) + 1;
+    }
+  }
+
+  return {
+    approvedCount: result.riskDecisions.filter((decision) => decision.approved)
+      .length,
+    rejectedCount: result.rejectedCount,
+    rejectCodes
+  };
+}
+
+function summarizeSampling(
+  result: HistoricalReplayResult
+): HistoricalReplaySamplingSummary {
+  const skipReasons: Record<string, number> = {};
+  for (const decision of result.samplingDecisions) {
+    if (!decision.shouldEvaluate) {
+      skipReasons[decision.reason] = (skipReasons[decision.reason] ?? 0) + 1;
+    }
+  }
+
+  return {
+    policy: result.samplingPolicy,
+    decisionsRequested: result.decisionProviderCallCount,
+    decisionsSkipped: result.decisionSkippedCount,
+    skipReasons
+  };
+}
+
+function summarizeWarnings(
+  warnings: string[]
+): HistoricalReplaySourceWarningSummary {
+  const futureSnapshotWarningCount = warnings.filter((warning) =>
+    warning.toLowerCase().includes("future snapshot")
+  ).length;
+  const staleSnapshotWarningCount = warnings.filter((warning) =>
+    warning.toLowerCase().includes("stale")
+  ).length;
+
+  return {
+    warningCount: warnings.length,
+    futureSnapshotWarningCount,
+    staleSnapshotWarningCount,
+    recentWarnings: warnings.slice(-10),
+    lookaheadGuardStatus:
+      futureSnapshotWarningCount > 0
+        ? "future_snapshots_excluded"
+        : "no_future_snapshot_warnings"
+  };
+}
+
+function sumPositionMarketValue(portfolio: VirtualPortfolio): number {
+  return portfolio.positions.reduce(
+    (sum, position) =>
+      sum +
+      (position.marketValueKrw ??
+        Math.round(position.quantity * position.averagePriceKrw)),
+    0
+  );
+}
+
+function formatNullable(value: number | null): string {
+  return value === null ? "null" : String(value);
+}
+
+function historicalReplayDisclaimer(): string {
+  return "Paper-only historical replay simulation. This is not financial advice, not a performance guarantee, and cannot place live orders.";
+}

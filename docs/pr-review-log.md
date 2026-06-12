@@ -890,3 +890,28 @@
 - `runHistoricalReplay`는 optional `samplingPolicy`를 받아 decision provider 호출 전 `shouldEvaluate`를 확인합니다.
 - 결과에는 `decisionProviderCallCount`, `decisionSkippedCount`, `samplingDecisions`, `progressSummary`를 추가했습니다.
 - default path는 sampling policy가 없으면 기존처럼 모든 packet에서 decision provider를 호출합니다.
+
+## PR-34: Historical Replay Report
+
+### Review 1: Scope and Safety
+
+- 범위는 `HistoricalReplayResult`를 paper-only 리포트 구조와 마크다운 문자열로 변환하는 read-only report layer에 한정했습니다.
+- 리포트는 replay 결과를 요약할 뿐 외부 API, Codex CLI, TossInvest CLI, live order path를 호출하지 않습니다.
+- 리포트 문구는 paper-only historical replay simulation으로 제한하고 투자 조언/성과 보장 표현을 금지했습니다.
+- 민감한 계좌번호/order-like 문자열은 기존 `maskSensitiveText`를 통해 렌더 단계에서 마스킹합니다.
+- final virtual net worth는 가상 포트폴리오 상태 요약이며 투자 성과 주장으로 표현하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- replay summary, final virtual portfolio, decision outcome, trade summary를 fixture replay 결과로 검증했습니다.
+- sampling skip reason과 provider call count가 리포트에 반영되는지 검증했습니다.
+- future snapshot warning count와 lookahead guard status가 리포트에 반영되는지 검증했습니다.
+- rendered report가 계좌번호/order-like 값을 마스킹하는지 검증했습니다.
+- disclaimer에 `not financial advice`, `not a performance guarantee`, `cannot place live orders`가 유지되는지 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/reports/historicalReplayReport.ts`를 추가했습니다.
+- 기존 `buildPaperPortfolioAnalytics`와 `maskSensitiveText`를 재사용했습니다.
+- report 입력은 in-memory `HistoricalReplayResult`이며 저장소 mutation이나 dashboard-triggered replay를 추가하지 않았습니다.
+- PR-35에서는 이 report shape을 read-only dashboard/API 조회용으로 노출할 수 있습니다.
