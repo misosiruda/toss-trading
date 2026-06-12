@@ -1,4 +1,4 @@
-export const PAPER_DECISION_PROMPT_VERSION = "paper-v3";
+export const PAPER_DECISION_PROMPT_VERSION = "paper-v4";
 
 export function buildPaperDecisionPrompt(): string {
   return [
@@ -13,7 +13,9 @@ export function buildPaperDecisionPrompt(): string {
     "Every decision must cite dataRefs copied from the candidate sourceRefs in the packet.",
     "Non-hold decisions must include concrete riskFactors and must not exceed maxBudgetPerSymbolKrw.",
     "For VIRTUAL_SELL, prefer reduceOnly=true with sellRatio, sellQuantity, targetWeightPct, or sellAll instead of guessing a sell amount.",
-    "For VIRTUAL_HOLD, set budgetKrw to 0 and do not include sell sizing fields.",
+    "For VIRTUAL_HOLD, set budgetKrw to 0, include holdReasonCode, and do not include sell sizing fields.",
+    "Allowed holdReasonCode values are INSUFFICIENT_EVIDENCE, STALE_DATA, CONTRADICTORY_SIGNALS, POLICY_BLOCKED, PORTFOLIO_CONFLICT, NO_POSITION_TO_SELL, NOT_IN_CANDIDATES, and LOW_LIQUIDITY.",
+    "Do not include holdReasonCode on VIRTUAL_BUY or VIRTUAL_SELL decisions.",
     "Write all human-readable natural-language fields in Korean: summary, thesis, and riskFactors.",
     "Keep schema field names, enum values, symbols, market codes, and dataRefs exactly as machine-readable English identifiers.",
     "Never present the output as financial advice, a recommendation, or a performance guarantee.",

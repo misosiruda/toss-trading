@@ -1123,6 +1123,38 @@
 - backend sizing 전환
 - live trading 또는 broker adapter 연결
 
+## PR-39: Virtual Hold Reason Code
+
+목표:
+
+- `VIRTUAL_HOLD` 판단을 단순 abstain이 아니라 machine-readable 보류 사유로 기록합니다.
+
+작업 범위:
+
+- `VirtualDecisionItem`에 optional `holdReasonCode` enum 추가
+- Codex output schema artifact에 `holdReasonCode` 허용 및 HOLD 조건부 required 반영
+- paper decision prompt에서 HOLD reason code 요구
+- semantic validator에서 `VIRTUAL_HOLD`의 `holdReasonCode` 누락 reject
+- semantic validator에서 BUY/SELL의 `holdReasonCode` 오용 reject
+- Codex CLI paper trading 문서에 HOLD reason code 계약 반영
+
+검증:
+
+- schema가 허용된 HOLD reason code를 parse함
+- schema가 알 수 없는 HOLD reason code를 reject함
+- semantic validator가 HOLD reason 누락을 storage 전에 reject함
+- semantic validator가 non-HOLD reason code 오용을 reject함
+- prompt/schema artifact 테스트가 새 계약을 확인함
+- full test suite
+
+제외:
+
+- decision schema v2 전면 전환
+- raw sizing 제거
+- backend sizing 계산 전환
+- hold reason distribution report/dashboard
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

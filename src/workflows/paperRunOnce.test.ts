@@ -121,6 +121,40 @@ test("runPaperDecisionOnce rejects semantic-invalid decisions before storage", a
   );
 });
 
+test("runPaperDecisionOnce rejects hold decisions without hold reason before storage", async () => {
+  const dir = await tempDir();
+  const result = await runPaperDecisionOnce({
+    storageBaseDir: dir,
+    provider: new StaticDecisionProvider({
+      ...validDecision(),
+      decisions: [
+        {
+          ...validDecision().decisions[0]!,
+          action: "VIRTUAL_HOLD",
+          budgetKrw: 0,
+          riskFactors: []
+        }
+      ]
+    }),
+    now
+  });
+  const paths = createStoragePaths(dir);
+  const decisions = await new FileVirtualDecisionStore(
+    paths.virtualDecisionsPath
+  ).readAll();
+  const trades = await new FileVirtualTradeStore(paths.virtualTradesPath).readAll();
+  const audit = await new FileAuditLog(paths.auditLogPath).readAll();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.tradeCount, 0);
+  assert.equal(decisions.records.length, 0);
+  assert.equal(trades.records.length, 0);
+  assert.deepEqual(
+    audit.records.map((event) => event.eventType),
+    ["MARKET_PACKET_CREATED", "VIRTUAL_DECISION_REJECTED"]
+  );
+});
+
 function validDecision() {
   return {
     packetId: "packet_mock_001",

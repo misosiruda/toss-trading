@@ -11,7 +11,9 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_SYMBOL_NOT_IN_PACKET",
   "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
-  "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE"
+  "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE",
+  "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
+  "VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED"
 ] as const;
 
 export type VirtualDecisionValidationRejectCode =
@@ -64,6 +66,26 @@ export function validateVirtualDecisionAgainstPacket(input: {
       issues.push({
         code: "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
         message: `${item.action} is not allowed by packet constraints`,
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
+    }
+
+    if (item.action === "VIRTUAL_HOLD" && !item.holdReasonCode) {
+      issues.push({
+        code: "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
+        message: "VIRTUAL_HOLD decisions must include holdReasonCode",
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
+    }
+
+    if (item.action !== "VIRTUAL_HOLD" && item.holdReasonCode) {
+      issues.push({
+        code: "VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED",
+        message: `${item.action} decisions must not include holdReasonCode`,
         market: item.market,
         symbol: item.symbol,
         action: item.action
