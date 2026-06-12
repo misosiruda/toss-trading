@@ -1073,3 +1073,31 @@
 - `StaticDecisionProvider`와 `MarketPacketDryRunDecisionProvider`는 dry-run fixture가 현재 packet hash를 포함하도록 바인딩합니다.
 - `schemas/virtual-decision.schema.json`은 top-level `packetHash`를 required로 요구합니다.
 - 이번 PR은 promptVersion/modelId/policyVersion audit metadata와 normalized order layer는 포함하지 않고 후속 PR로 남깁니다.
+
+## PR-41: Virtual Decision Identity Metadata
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only AI decision의 prompt/model/schema/policy version metadata를 기록하고 누락을 reject하는 데 한정합니다.
+- metadata는 audit/provenance 목적이며 order routing, broker adapter, live signal 생성 권한을 추가하지 않습니다.
+- zod schema는 기존 저장 decision read path 호환을 위해 optional field로 확장합니다.
+- Codex output schema artifact와 semantic validator는 신규 AI output에 identity metadata를 요구합니다.
+- live trading, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- Codex CLI provider test에서 stdin envelope에 `promptVersion`, `modelId`, `schemaVersion`, `policyVersion`이 포함되는지 검증했습니다.
+- prompt test에서 identity metadata 복사 지시를 검증했습니다.
+- output schema artifact test에서 identity metadata required를 검증했습니다.
+- validator unit test에서 identity metadata 누락 decision reject를 검증했습니다.
+- historical Codex adapter fixture가 metadata gate를 통과하도록 보강했습니다.
+- `npm test`로 전체 test suite 173개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/decisionIdentity.ts`를 추가해 version metadata 기본값과 static fixture metadata를 분리했습니다.
+- `src/ai/codexCliDecisionProvider.ts`는 packet envelope에 identity metadata를 함께 전달합니다.
+- `src/paper/virtualDecisionValidation.ts`는 metadata 누락을 `VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED`로 reject합니다.
+- `StaticDecisionProvider`와 `MarketPacketDryRunDecisionProvider`는 static fixture metadata를 자동 바인딩합니다.
+- `schemas/virtual-decision.schema.json`은 신규 Codex output에서 identity metadata를 required로 요구합니다.
+- 이번 PR은 metadata value registry, side-by-side model evaluation, normalized order layer는 포함하지 않습니다.

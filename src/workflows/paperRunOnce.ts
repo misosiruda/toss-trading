@@ -9,6 +9,10 @@ import {
   type MarketPacketBuildResult
 } from "../market/packetBuilder.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import {
+  bindDecisionIdentityMetadata,
+  createStaticDecisionIdentityMetadata
+} from "../paper/decisionIdentity.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   summarizeVirtualDecisionValidation,
@@ -52,7 +56,7 @@ export class StaticDecisionProvider implements DecisionProvider {
   async decide(packet: MarketPacket): Promise<CodexCliDecisionResult> {
     return {
       attempted: false,
-      decision: bindDecisionPacketHash(this.decision, packet),
+      decision: bindStaticDecisionDefaults(this.decision, packet),
       failure: null,
       command: null
     };
@@ -72,16 +76,20 @@ export class FailingDecisionProvider implements DecisionProvider {
   }
 }
 
-function bindDecisionPacketHash(
+function bindStaticDecisionDefaults(
   decision: VirtualDecision,
   packet: MarketPacket
 ): VirtualDecision {
-  return decision.packetHash
+  const decisionWithHash = decision.packetHash
     ? decision
     : {
         ...decision,
         packetHash: createMarketPacketHash(packet)
       };
+  return bindDecisionIdentityMetadata(
+    decisionWithHash,
+    createStaticDecisionIdentityMetadata()
+  );
 }
 
 export async function runPaperDecisionOnce(

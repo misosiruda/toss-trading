@@ -202,6 +202,10 @@ export const virtualDecisionSchema = z
   .object({
     packetId: nonEmptyStringSchema,
     packetHash: nonEmptyStringSchema.optional(),
+    promptVersion: nonEmptyStringSchema.optional(),
+    modelId: nonEmptyStringSchema.optional(),
+    schemaVersion: nonEmptyStringSchema.optional(),
+    policyVersion: nonEmptyStringSchema.optional(),
     summary: nonEmptyStringSchema,
     decisions: z.array(virtualDecisionItemSchema).max(20)
   })

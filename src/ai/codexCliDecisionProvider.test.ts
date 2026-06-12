@@ -4,6 +4,10 @@ import test from "node:test";
 
 import type { MarketPacket } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import {
+  VIRTUAL_DECISION_SCHEMA_VERSION,
+  VIRTUAL_RISK_POLICY_VERSION
+} from "../paper/decisionIdentity.js";
 import { CodexCliDecisionProvider } from "./codexCliDecisionProvider.js";
 import {
   buildPaperDecisionPrompt,
@@ -38,6 +42,10 @@ class FakeRunner implements ProcessRunner {
 const validDecisionJson = JSON.stringify({
   packetId: "packet_001",
   packetHash: createMarketPacketHash(packet()),
+  promptVersion: PAPER_DECISION_PROMPT_VERSION,
+  modelId: "codex-cli-unspecified",
+  schemaVersion: VIRTUAL_DECISION_SCHEMA_VERSION,
+  policyVersion: VIRTUAL_RISK_POLICY_VERSION,
   summary: "Paper-only decision.",
   decisions: [
     {
@@ -145,6 +153,14 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.args.at(-1) ?? "", /Use only the packetHash/);
   assert.match(runner.calls[0]?.args.at(-1) ?? "", /Do not run shell commands/);
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
+  assert.match(
+    runner.calls[0]?.options.stdin ?? "",
+    /"promptVersion":"paper-v6"/
+  );
+  assert.match(
+    runner.calls[0]?.options.stdin ?? "",
+    /"modelId":"codex-cli-unspecified"/
+  );
   assert.match(runner.calls[0]?.options.stdin ?? "", /"marketPacket":/);
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetId":"packet_001"/);
 });
@@ -153,8 +169,9 @@ test("paper decision prompt requires paper-only guarded output", () => {
   const prompt = buildPaperDecisionPrompt();
 
   assert.match(prompt, /paper-only trading analyst/);
-  assert.match(prompt, /packetHash and marketPacket/);
+  assert.match(prompt, /packetHash, promptVersion, modelId/);
   assert.match(prompt, /top-level packetHash exactly/);
+  assert.match(prompt, /policyVersion exactly/);
   assert.match(prompt, /Return only a virtual_decision JSON object/);
   assert.match(prompt, /do not call tossctl/);
   assert.match(prompt, /Do not run shell commands/);
@@ -195,6 +212,22 @@ test("virtual decision output schema artifact constrains actions", async () => {
   assert.equal(schema.properties?.decisions?.required, undefined);
   assert.equal(
     (schema as { required?: string[] }).required?.includes("packetHash"),
+    true
+  );
+  assert.equal(
+    (schema as { required?: string[] }).required?.includes("promptVersion"),
+    true
+  );
+  assert.equal(
+    (schema as { required?: string[] }).required?.includes("modelId"),
+    true
+  );
+  assert.equal(
+    (schema as { required?: string[] }).required?.includes("schemaVersion"),
+    true
+  );
+  assert.equal(
+    (schema as { required?: string[] }).required?.includes("policyVersion"),
     true
   );
   assert.equal(schema.properties?.decisions?.items?.additionalProperties, false);

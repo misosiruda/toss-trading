@@ -16,6 +16,10 @@ import {
   buildPaperDecisionPrompt,
   PAPER_DECISION_PROMPT_VERSION
 } from "./decisionPrompt.js";
+import {
+  createDecisionIdentityMetadata,
+  type VirtualDecisionIdentityMetadata
+} from "../paper/decisionIdentity.js";
 
 export interface CodexCliDecisionProviderConfig {
   enabled: boolean;
@@ -25,6 +29,9 @@ export interface CodexCliDecisionProviderConfig {
   maxRunsPerDay: number;
   allowWebSearch: boolean;
   outputSchemaPath?: string;
+  modelId?: string;
+  schemaVersion?: string;
+  policyVersion?: string;
   prompt?: string;
   promptVersion?: string;
   now?: () => Date;
@@ -95,10 +102,21 @@ export class CodexCliDecisionProvider {
 
     this.budget.consume(now);
 
-    const result = await this.runner.run(command.command, command.args, {
-      stdin: `${JSON.stringify(createDecisionInput(packet))}\n`,
-      timeoutMs: this.config.timeoutMs
-    });
+    const result = await this.runner.run(
+      command.command,
+      command.args,
+      {
+        stdin: `${JSON.stringify(
+          createDecisionInput(
+            packet,
+            createDecisionIdentityMetadata(
+              decisionIdentityInput(command.promptVersion, this.config)
+            )
+          )
+        )}\n`,
+        timeoutMs: this.config.timeoutMs
+      }
+    );
 
     if (result.timedOut) {
       return failure(command, "timeout", result.stderr);
@@ -148,12 +166,38 @@ export class CodexCliDecisionProvider {
   }
 }
 
-function createDecisionInput(packet: MarketPacket): {
+function decisionIdentityInput(
+  promptVersion: string,
+  config: Pick<
+    CodexCliDecisionProviderConfig,
+    "modelId" | "schemaVersion" | "policyVersion"
+  >
+): Parameters<typeof createDecisionIdentityMetadata>[0] {
+  return {
+    promptVersion,
+    ...(config.modelId ? { modelId: config.modelId } : {}),
+    ...(config.schemaVersion ? { schemaVersion: config.schemaVersion } : {}),
+    ...(config.policyVersion ? { policyVersion: config.policyVersion } : {})
+  };
+}
+
+function createDecisionInput(
+  packet: MarketPacket,
+  metadata: VirtualDecisionIdentityMetadata
+): {
   packetHash: string;
+  promptVersion: string;
+  modelId: string;
+  schemaVersion: string;
+  policyVersion: string;
   marketPacket: MarketPacket;
 } {
   return {
     packetHash: createMarketPacketHash(packet),
+    promptVersion: metadata.promptVersion,
+    modelId: metadata.modelId,
+    schemaVersion: metadata.schemaVersion,
+    policyVersion: metadata.policyVersion,
     marketPacket: packet
   };
 }

@@ -1187,6 +1187,37 @@
 - normalized order layer
 - live trading 또는 broker adapter 연결
 
+## PR-41: Virtual Decision Identity Metadata
+
+목표:
+
+- AI decision에 prompt/model/schema/policy version metadata를 남겨 판단 조건을 audit 가능하게 합니다.
+
+작업 범위:
+
+- `VirtualDecision` top-level optional `promptVersion`, `modelId`, `schemaVersion`, `policyVersion` field 추가
+- Codex output schema artifact에서 identity metadata required 반영
+- Codex CLI provider stdin envelope에 identity metadata 포함
+- paper decision prompt에서 identity metadata 복사 요구
+- semantic validator에서 identity metadata 누락 reject
+- static/dry-run provider에 `static-fixture-v1` metadata 바인딩
+- Codex CLI paper trading 문서에 identity metadata 계약 반영
+
+검증:
+
+- Codex CLI provider stdin에 identity metadata가 포함됨
+- output schema artifact가 identity metadata를 required로 요구함
+- semantic validator가 metadata 누락 decision을 reject함
+- historical Codex adapter fixture가 metadata gate를 통과함
+- full test suite
+
+제외:
+
+- metadata value allowlist 또는 version registry
+- side-by-side model evaluation
+- normalized order layer
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
