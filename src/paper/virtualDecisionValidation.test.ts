@@ -179,6 +179,30 @@ test("rejects actions outside packet constraints", () => {
   assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_ACTION_NOT_ALLOWED"));
 });
 
+test("rejects actions outside candidate eligibility", () => {
+  const ineligiblePacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        buyEligible: false,
+        blockedReasonCodes: ["MAX_NEW_POSITIONS_REACHED"],
+        budgetTierAllowed: "NONE",
+        positionExists: false,
+        cooldownActive: false
+      }
+    ]
+  });
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: ineligiblePacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(ineligiblePacket)
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE"));
+});
+
 test("rejects hold decisions without a hold reason code", () => {
   const result = validateVirtualDecisionAgainstPacket({
     packet: packet(),
