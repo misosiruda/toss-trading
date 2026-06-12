@@ -790,3 +790,28 @@
 - session guard는 configured timezone offset으로 local HH:mm을 계산해 replay window를 필터링합니다.
 - clock은 입력 `Date`만 사용하므로 real clock 의존 없이 deterministic하게 동작합니다.
 - PR-30 historical packet builder가 이 clock의 `simulatedAt` tick을 기준 시간으로 사용할 수 있습니다.
+
+## PR-30: Historical Market Packet Builder
+
+### Review 1: Scope and Safety
+
+- 범위는 historical snapshot을 paper-only `MarketPacket` 후보로 변환하는 계층에 한정했습니다.
+- 기존 `MarketPacketBuilder`를 재사용해 packet schema, virtual portfolio snapshot, constraints contract를 유지했습니다.
+- simulated time 이후 snapshot은 후보에서 제외하고 warning으로만 남깁니다.
+- stale snapshot만 있는 경우 packet을 만들지 않고 `NO_HISTORICAL_CANDIDATES`로 fail-closed합니다.
+- Codex CLI execution, paper order execution, dashboard trigger, live order path는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- future snapshot exclusion test를 추가했습니다.
+- latest snapshot per symbol selection test를 추가했습니다.
+- max candidates deterministic trimming test를 추가했습니다.
+- all stale snapshots fail-closed test를 추가했습니다.
+- full test suite로 기존 market packet, risk, dashboard, MCP 경계를 함께 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/market/historicalPacketBuilder.ts`를 추가했습니다.
+- historical candidate sourceRefs는 `historical_snapshot:<snapshotId>`와 원 source refs를 포함합니다.
+- candidate freshness는 snapshot `observedAt + maxSnapshotAgeSeconds`로 계산합니다.
+- PR-31 replay runner는 이 builder를 simulated clock tick마다 호출할 수 있습니다.
