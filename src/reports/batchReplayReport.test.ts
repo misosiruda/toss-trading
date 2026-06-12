@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type {
+  MarketRegimeClassification,
+  MarketRegimeLabel
+} from "../analytics/marketRegimeClassifier.js";
+import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
+import {
+  buildBatchReplayAggregateReport,
+  renderBatchReplayAggregateReport
+} from "./batchReplayReport.js";
+
+test("batch replay aggregate report summarizes overall and regime returns", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceRunsPath: "data/batch/batch-replay-runs.jsonl",
+    records: [
+      record("run_0", 0, "completed", "bull", 0.05, 1_050_000),
+      record("run_1", 1, "completed", "bull", -0.01, 990_000),
+      record("run_2", 2, "completed", "bear", 0.02, 1_020_000),
+      record("run_3", 3, "skipped", "insufficient_data", null, null),
+      record("run_4", 4, "failed", "mixed", null, null)
+    ]
+  });
+
+  assert.equal(report.mode, "paper_only");
+  assert.equal(report.sourceRunsPath, "data/batch/batch-replay-runs.jsonl");
+  assert.equal(report.summary.runCount, 5);
+  assert.equal(report.summary.completedCount, 3);
+  assert.equal(report.summary.skippedCount, 1);
+  assert.equal(report.summary.failedCount, 1);
+  assert.equal(report.summary.returnSampleCount, 3);
+  assert.deepEqual(report.summary.regimeCounts, {
+    bull: 2,
+    bear: 1,
+    insufficient_data: 1,
+    mixed: 1
+  });
+  assert.equal(report.overall.averageTotalReturnRatio, 0.02);
+  assert.equal(report.overall.medianTotalReturnRatio, 0.02);
+  assert.equal(report.overall.winRate, 0.666667);
+  assert.equal(report.byRegime.bull?.completedCount, 2);
+  assert.equal(report.byRegime.bull?.averageTotalReturnRatio, 0.02);
+  assert.equal(report.byRegime.bear?.averageTotalReturnRatio, 0.02);
+  assert.equal(report.byRegime.insufficient_data?.returnSampleCount, 0);
+});
+
+test("batch replay aggregate report renders paper-only disclaimer", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [record("run_0", 0, "completed", "sideways", 0, 1_000_000)]
+  });
+  const rendered = renderBatchReplayAggregateReport(report);
+
+  assert.match(rendered, /Batch Replay Paper Aggregate Report/);
+  assert.match(rendered, /paper-only/);
+  assert.doesNotMatch(rendered, /live order/i);
+});
+
+function record(
+  runId: string,
+  runIndex: number,
+  status: BatchReplayRunRecord["status"],
+  regime: MarketRegimeLabel,
+  totalReturnRatio: number | null,
+  finalVirtualNetWorthKrw: number | null
+): BatchReplayRunRecord {
+  return {
+    mode: "paper_only",
+    batchId: "batch-test",
+    runId,
+    runIndex,
+    runSeed: `seed:${runIndex}`,
+    status,
+    startedAt: "2026-06-12T01:00:00.000Z",
+    completedAt: status === "completed" ? "2026-06-12T01:00:01.000Z" : null,
+    skippedAt: status === "skipped" ? "2026-06-12T01:00:01.000Z" : null,
+    failedAt: status === "failed" ? "2026-06-12T01:00:01.000Z" : null,
+    storageBaseDir: `data/batch/${runId}`,
+    window: {
+      seed: `seed:${runIndex}`,
+      rangeStart: "2025-01-01T00:00:00.000Z",
+      rangeEnd: "2025-12-31T23:59:59.999Z",
+      windowMonths: 1,
+      timezoneOffsetMinutes: 540,
+      candidateCount: 12,
+      selectedCandidateIndex: runIndex,
+      selectedMonth: "2025-01",
+      localStartDate: "2025-01-01",
+      localEndDate: "2025-01-31",
+      startAt: "2024-12-31T15:00:00.000Z",
+      endAt: "2025-01-31T14:59:59.999Z"
+    },
+    marketRegime: marketRegime(regime),
+    dataAvailability: {
+      status: status === "skipped" ? "insufficient" : "available",
+      totalSnapshotCount: 10,
+      windowSnapshotCount: status === "skipped" ? 0 : 10,
+      corruptLineCount: 0,
+      requiredSymbolCount: 0,
+      availableRequiredSymbolCount: 0,
+      issues: status === "skipped" ? ["WINDOW_SNAPSHOT_MISSING"] : []
+    },
+    summary:
+      status === "completed"
+        ? {
+            finalVirtualNetWorthKrw: finalVirtualNetWorthKrw ?? 1_000_000,
+            totalReturnRatio,
+            tradeCount: 1,
+            decisionProviderCallCount: 1,
+            rejectedCount: 0
+          }
+        : null,
+    reportPath:
+      status === "completed" ? `data/batch/${runId}/historical-replay-report.json` : null,
+    error: status === "failed" ? "fixture failure" : null,
+    skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null
+  };
+}
+
+function marketRegime(label: MarketRegimeLabel): MarketRegimeClassification {
+  return {
+    label,
+    windowStart: "2024-12-31T15:00:00.000Z",
+    windowEnd: "2025-01-31T14:59:59.999Z",
+    symbolCount: label === "insufficient_data" ? 0 : 1,
+    classifiedSymbolCount: label === "insufficient_data" ? 0 : 1,
+    averageReturnRatio: label === "insufficient_data" ? null : 0,
+    medianReturnRatio: label === "insufficient_data" ? null : 0,
+    advancingSymbolRatio: label === "bull" ? 1 : 0,
+    decliningSymbolRatio: label === "bear" ? 1 : 0,
+    flatSymbolRatio: label === "sideways" ? 1 : 0,
+    minSymbols: 1,
+    minSnapshotsPerSymbol: 2,
+    thresholds: {
+      bullReturnThreshold: 0.03,
+      bearReturnThreshold: -0.03,
+      sidewaysAbsReturnThreshold: 0.01,
+      breadthThreshold: 0.6
+    },
+    reasons: ["fixture"],
+    symbolReturns: []
+  };
+}

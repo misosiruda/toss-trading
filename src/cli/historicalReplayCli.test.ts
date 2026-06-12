@@ -86,7 +86,7 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
 });
 
-test("historical batch replay CLI writes batch manifest", () => {
+test("historical batch replay CLI writes batch manifest and aggregate report", () => {
   const sourceDataDir = mkdtempSync(
     join(tmpdir(), "historical-batch-cli-source-")
   );
@@ -140,6 +140,35 @@ test("historical batch replay CLI writes batch manifest", () => {
   assert.equal(output["completedCount"], 1);
   assert.equal(manifest["batchId"], "batch-cli");
   assert.equal(runRecords[0]?.["status"], "completed");
+
+  const aggregateReportPath = join(
+    outputBaseDir,
+    "batch-cli",
+    "batch-replay-aggregate-report.json"
+  );
+  const reportResult = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      String(output["runsPath"]),
+      "--output-path",
+      aggregateReportPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(reportResult.status, 0, reportResult.stderr);
+  assert.match(reportResult.stdout, /Batch Replay Paper Aggregate Report/);
+  assert.match(reportResult.stdout, /paper-only/);
+  const aggregateReport = JSON.parse(
+    readFileSync(aggregateReportPath, "utf8")
+  ) as Record<string, unknown>;
+  const summary = aggregateReport["summary"] as Record<string, unknown>;
+
+  assert.equal(aggregateReport["mode"], "paper_only");
+  assert.equal(summary["runCount"], 1);
+  assert.equal(summary["completedCount"], 1);
 });
 
 function snapshot(
