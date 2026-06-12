@@ -1560,3 +1560,38 @@
 - `docs/pr-implementation-plan.md`는 PR-56 범위와 PR-57 이후 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 문서상 제외/금지 경계 문구로만 확인했습니다.
 - 이번 PR은 Sharpe/Sortino/Calmar, 외부 market index benchmark, dashboard batch view를 포함하지 않습니다.
+
+## PR-57: Batch Replay Dashboard Read-only View
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 batch aggregate report를 Local Operations API와 dashboard에서 조회하는 read-only view에 한정합니다.
+- `/batch/replay/report`는 `batch-replay-aggregate-report.json`을 읽어 `mode: paper_only`, `readOnly: true`와 함께 반환합니다.
+- dashboard는 batch replay 실행, aggregate report 생성, AI 호출, strategy 자동 조정, 주문 생성을 트리거하지 않습니다.
+- Local Operations API의 기존 method gate를 유지해 `GET`/`HEAD` 외 요청은 거절됩니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- API test에서 `/batch/replay/report`가 저장된 batch aggregate report를 read-only payload로 반환하는지 검증했습니다.
+- dashboard asset test에서 batch replay panel DOM hook, `/batch/replay/report` endpoint 문자열, `renderBatchReplayReport` renderer 포함 여부를 검증했습니다.
+- 기존 Local Operations API mutation method 거절 테스트를 유지해 read-only boundary가 깨지지 않았는지 확인했습니다.
+- `npm run build` 통과를 확인했습니다.
+- `node --check dashboard\app.js` 통과를 확인했습니다.
+- targeted test로 `node --test dist\api\localOperationsServer.test.js` 10개 통과를 확인했습니다.
+- browser verification에서 임시 서버 기준 desktop/mobile viewport 모두 batch panel rendering, API 연결 상태, console error 없음, mobile horizontal overflow 없음이 확인되었습니다.
+- `npm test`로 전체 test suite 235개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/storage/repositories.ts`에 `batchReplayAggregateReportPath`를 추가해 dashboard data dir에서 aggregate report path를 표준화했습니다.
+- `src/api/localOperationsServer.ts`에 `/batch/replay/report` route와 read-only JSON reader를 추가했습니다.
+- `dashboard/index.html`은 반복 리플레이 요약 KPI, 장세별 결과, 상세, disclaimer panel을 추가했습니다.
+- `dashboard/app.js`는 batch aggregate report를 fetch하고 전체/장세별 metric을 렌더링합니다.
+- `dashboard/styles.css`는 batch replay panel layout과 mobile responsive rule을 추가했습니다.
+- `src/api/localOperationsServer.test.ts`는 API endpoint, dashboard DOM hook, renderer wiring을 검증합니다.
+- `docs/historical-replay.md`는 dashboard에서 batch aggregate report를 조회하는 방법과 실행 버튼이 없다는 경계를 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-57 범위와 PR-58 후속 순서를 기록했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 기존 `/place_order` 거절 테스트, 문서상 제외/금지 경계, 신규 paper-only disclaimer로만 확인했습니다.
+- 이번 PR은 dashboard batch 실행 버튼, report 생성, live trading 연결, strategy 자동 조정은 포함하지 않습니다.

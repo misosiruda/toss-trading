@@ -1778,11 +1778,47 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-57: Batch Replay Dashboard Read-only View
+
+목표:
+
+- batch aggregate report를 dashboard에서 조회만 할 수 있게 합니다.
+- 반복 replay 전체 결과와 market regime별 결과를 한 화면에서 확인할 수 있게 합니다.
+- dashboard는 batch replay 실행, report 생성, AI 호출, 주문 생성을 트리거하지 않습니다.
+
+작업 범위:
+
+- storage path에 `batch-replay-aggregate-report.json` 추가
+- Local Operations API에 `GET/HEAD /batch/replay/report` read-only endpoint 추가
+- dashboard fetch endpoint에 batch replay aggregate report 조회 추가
+- dashboard에 반복 리플레이 요약 KPI와 장세별 결과 panel 추가
+- dashboard asset/API tests 추가
+- Historical Replay 문서에 dashboard 조회 경계 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- `/batch/replay/report`가 저장된 aggregate report를 read-only로 반환하는지 테스트
+- dashboard HTML에 batch replay panel DOM hook이 있는지 테스트
+- dashboard JS가 batch endpoint와 renderer를 포함하는지 테스트
+- mutation method가 계속 거절되는지 기존 테스트 유지
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- dashboard에서 batch replay 실행
+- dashboard에서 aggregate report 생성
+- dashboard에서 strategy 자동 조정
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-57: Batch Replay Dashboard Read-only View
 - PR-58: Regression And Safety Tests
 
 ## Later PRs

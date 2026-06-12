@@ -264,6 +264,8 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 집계된 수익률은 paper-only 시뮬레이션 결과를 요약한 값입니다. 투자 조언, 수익률 보장, 실계좌 성과, live trading signal로 해석하면 안 됩니다.
 
+Dashboard는 `--data-dir`로 지정된 directory의 `batch-replay-aggregate-report.json`을 `/batch/replay/report`에서 read-only로 조회합니다. batch output directory를 dashboard data dir로 지정하면 반복 리플레이 요약과 장세별 결과를 확인할 수 있습니다.
+
 ## Lookahead Guard
 
 Historical replay는 simulated time 이후 데이터를 현재 packet에 넣지 않습니다.
@@ -293,4 +295,4 @@ Historical replay는 simulated time 이후 데이터를 현재 packet에 넣지 
 npm run dashboard -- --data-dir data/paper
 ```
 
-Dashboard는 저장된 `historical-replay-report.json`을 `/replay/report`로 조회합니다. 조회 endpoint는 `GET`/`HEAD`만 허용되며 replay 실행 버튼을 제공하지 않습니다.
+Dashboard는 저장된 `historical-replay-report.json`을 `/replay/report`로 조회하고, 저장된 `batch-replay-aggregate-report.json`을 `/batch/replay/report`로 조회합니다. 조회 endpoint는 `GET`/`HEAD`만 허용되며 replay 실행 버튼을 제공하지 않습니다.

@@ -25,6 +25,7 @@ const endpoints = {
   report: "/paper/report",
   replay: "/replay/report",
   replayProgress: "/replay/progress",
+  batchReplay: "/batch/replay/report",
   scheduler: "/scheduler/status",
   source: "/source/health",
   packets: "/market/packets?limit=5",
@@ -267,6 +268,7 @@ function renderDashboard(data) {
   renderDailyReport(report);
   renderReplayReport(data.replay);
   renderReplayProgress(data.replayProgress);
+  renderBatchReplayReport(data.batchReplay);
   renderPortfolioPerformance(data);
   renderBenchmarkComparison(data);
   renderExecutionCostDiagnostics(data);
@@ -382,6 +384,117 @@ function renderReplayReport(replayPayload) {
   );
 
   renderReplayTimeline(report?.portfolioTimeline ?? []);
+}
+
+function renderBatchReplayReport(batchPayload) {
+  const report = batchPayload?.report ?? null;
+  const status = batchPayload?.status ?? "missing";
+  const summary = report?.summary ?? {};
+  const overall = report?.overall ?? {};
+
+  setStatus("batch-replay-status", status, status);
+  setText("batch-replay-runs", `${summary.runCount ?? 0}회`);
+  setText("batch-replay-completed", `${summary.completedCount ?? 0}회`);
+  setText("batch-replay-return-samples", `${summary.returnSampleCount ?? 0}개`);
+  setText(
+    "batch-replay-average-return",
+    formatSignedRatio(overall.averageTotalReturnRatio)
+  );
+  setText("batch-replay-win-rate", formatRatio(overall.winRate));
+  setText(
+    "batch-replay-source",
+    report?.sourceRunsPath ? "aggregate report" : "-"
+  );
+  setText(
+    "batch-replay-disclaimer",
+    report?.disclaimer ?? "저장된 반복 리플레이 집계 없음"
+  );
+  setValueTone("batch-replay-average-return", overall.averageTotalReturnRatio);
+
+  const detail = document.getElementById("batch-replay-detail");
+  clear(detail);
+  appendDefinition(detail, "생성 시각", formatDateTime(report?.generatedAt));
+  appendDefinition(detail, "입력 로그", report?.sourceRunsPath ?? "-");
+  appendDefinition(
+    detail,
+    "상태",
+    `${summary.completedCount ?? 0} completed / ${summary.skippedCount ?? 0} skipped / ${summary.failedCount ?? 0} failed`
+  );
+  appendDefinition(detail, "중앙값 수익률", formatSignedRatio(overall.medianTotalReturnRatio));
+  appendDefinition(detail, "최저/최고", `${formatSignedRatio(overall.minTotalReturnRatio)} / ${formatSignedRatio(overall.maxTotalReturnRatio)}`);
+  appendDefinition(detail, "평균 최종자산", formatKrw(overall.averageFinalVirtualNetWorthKrw));
+  appendDefinition(detail, "가상 체결", `${overall.totalTradeCount ?? 0}건`);
+  appendDefinition(detail, "Risk Reject", `${overall.totalRejectedCount ?? 0}건`);
+
+  renderBatchRegimeList(report?.byRegime ?? {});
+}
+
+function renderBatchRegimeList(byRegime) {
+  const list = document.getElementById("batch-regime-list");
+  clear(list);
+  const entries = Object.entries(byRegime ?? {}).sort(([left], [right]) =>
+    regimeSortKey(left) - regimeSortKey(right)
+  );
+  setText("batch-regime-count", entries.length ? `${entries.length}개 그룹` : "-");
+
+  if (!entries.length) {
+    list?.append(emptyState("장세별 집계 없음"));
+    return;
+  }
+
+  for (const [label, group] of entries) {
+    const item = document.createElement("article");
+    item.className = "batch-regime-item";
+    const header = document.createElement("div");
+    header.className = "batch-regime-header";
+    const title = document.createElement("strong");
+    title.textContent = regimeLabel(label);
+    const count = document.createElement("span");
+    count.textContent = `${group.runCount ?? 0}회 · sample ${group.returnSampleCount ?? 0}`;
+    header.append(title, count);
+
+    const metrics = document.createElement("div");
+    metrics.className = "batch-regime-metrics";
+    metrics.append(
+      batchRegimeMetric("평균", formatSignedRatio(group.averageTotalReturnRatio), group.averageTotalReturnRatio),
+      batchRegimeMetric("승률", formatRatio(group.winRate), group.winRate),
+      batchRegimeMetric("체결", `${group.totalTradeCount ?? 0}건`, null)
+    );
+
+    item.append(header, metrics);
+    list?.append(item);
+  }
+}
+
+function batchRegimeMetric(label, value, toneValue) {
+  const item = document.createElement("div");
+  const term = document.createElement("span");
+  term.textContent = label;
+  const metric = document.createElement("strong");
+  metric.className = valueToneClass(toneValue);
+  metric.textContent = value;
+  item.append(term, metric);
+  return item;
+}
+
+function regimeSortKey(label) {
+  return {
+    bull: 0,
+    bear: 1,
+    sideways: 2,
+    mixed: 3,
+    insufficient_data: 4
+  }[label] ?? 99;
+}
+
+function regimeLabel(label) {
+  return {
+    bull: "상승장",
+    bear: "하락장",
+    sideways: "횡보장",
+    mixed: "혼합장",
+    insufficient_data: "데이터 부족"
+  }[label] ?? String(label ?? "-");
 }
 
 function renderReplayProgress(progressPayload) {
