@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -38,6 +38,52 @@ test("historical replay availability CLI keeps named option values out of positi
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout) as { status: string };
   assert.equal(report.status, "available");
+});
+
+test("historical replay CLI writes batch run metadata", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-batch-metadata-cli-"));
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--dry-run",
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--step-seconds",
+      "60",
+      "--batch-id",
+      "batch-smoke",
+      "--batch-run-index",
+      "2",
+      "--run-id",
+      "batch-smoke-run-002"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const metadata = JSON.parse(
+    readFileSync(join(dataDir, "historical-replay-run-metadata.json"), "utf8")
+  ) as Record<string, unknown>;
+  const identity = metadata["identity"] as Record<string, unknown>;
+  const window = metadata["window"] as Record<string, unknown>;
+
+  assert.equal(identity["runId"], "batch-smoke-run-002");
+  assert.equal(identity["batchId"], "batch-smoke");
+  assert.equal(identity["runIndex"], 2);
+  assert.equal(window["source"], "explicit");
+  assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
 });
 
 function snapshot(

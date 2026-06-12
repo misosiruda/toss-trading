@@ -24,9 +24,13 @@ import {
   runCodexHistoricalReplay,
   type CodexHistoricalReplayDecisionProviderLike
 } from "../replay/codexHistoricalReplayRunner.js";
-import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
+import {
+  HistoricalReplayAuditLogRecorder,
+  type HistoricalReplayRunMetadataContext
+} from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
 import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
+import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 
@@ -42,6 +46,10 @@ export interface HistoricalReplayWorkflowOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  runId?: string;
+  batchId?: string;
+  batchRunIndex?: number;
+  windowSelection?: ReplayWindowSelection;
 }
 
 export interface HistoricalReplayWorkflowResult {
@@ -82,10 +90,12 @@ export async function runHistoricalReplayWorkflow(
     snapshots: snapshots.records
   };
   const replayStartedAt = options.generatedAt ?? new Date();
+  const tickCount = options.clock.ticks().length;
+  const metadataContext = buildRunMetadataContext(options, replayStartedAt);
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
     startedAt: replayStartedAt,
-    tickCount: options.clock.ticks().length,
+    tickCount,
     initialPortfolio
   });
   const auditLogRecorder = new HistoricalReplayAuditLogRecorder({
@@ -98,7 +108,8 @@ export async function runHistoricalReplayWorkflow(
       portfolioTimelinePath: paths.historicalReplayPortfolioTimelinePath
     },
     startedAt: replayStartedAt,
-    tickCount: options.clock.ticks().length
+    tickCount,
+    metadataContext
   });
 
   await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
@@ -148,6 +159,100 @@ export async function runHistoricalReplayWorkflow(
     await auditLogRecorder.fail(error);
     throw error;
   }
+}
+
+function buildRunMetadataContext(
+  options: HistoricalReplayWorkflowOptions,
+  replayStartedAt: Date
+): HistoricalReplayRunMetadataContext {
+  const clock = options.clock.metadata();
+  const samplingPolicy = options.samplingPolicy?.metadata() ?? null;
+  const windowSelection = options.windowSelection;
+  const batchId = normalizeOptionalText(options.batchId);
+  const runIndex = options.batchRunIndex ?? null;
+  const timezoneOffsetMinutes =
+    windowSelection?.timezoneOffsetMinutes ??
+    samplingPolicy?.timezoneOffsetMinutes ??
+    0;
+
+  return {
+    identity: {
+      runId:
+        normalizeOptionalText(options.runId) ??
+        defaultRunId({
+          batchId,
+          runIndex,
+          replayStartedAt,
+          windowStartAt: clock.startAt
+        }),
+      batchId,
+      runIndex
+    },
+    window: {
+      source: windowSelection === undefined ? "explicit" : "random_window",
+      startAt: clock.startAt,
+      endAt: clock.endAt,
+      rangeStart: windowSelection?.rangeStart ?? null,
+      rangeEnd: windowSelection?.rangeEnd ?? null,
+      seed: windowSelection?.seed ?? null,
+      selectedMonth: windowSelection?.selectedMonth ?? null,
+      localStartDate: windowSelection?.localStartDate ?? null,
+      localEndDate: windowSelection?.localEndDate ?? null,
+      windowMonths: windowSelection?.windowMonths ?? null,
+      timezoneOffsetMinutes
+    },
+    configuration: {
+      clock: {
+        startAt: clock.startAt,
+        endAt: clock.endAt,
+        stepSeconds: clock.stepSeconds,
+        speedMultiplier: clock.speedMultiplier
+      },
+      samplingPolicy,
+      initialCashKrw: options.initialCashKrw ?? 1_000_000,
+      packetIdPrefix: options.packetIdPrefix,
+      packetExpiresInSeconds: options.packetExpiresInSeconds,
+      maxCandidates: options.maxCandidates,
+      maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
+      constraints: options.constraints
+    }
+  };
+}
+
+function defaultRunId(input: {
+  batchId: string | null;
+  runIndex: number | null;
+  replayStartedAt: Date;
+  windowStartAt: string;
+}): string {
+  const windowDate = input.windowStartAt.slice(0, 10).replaceAll("-", "");
+  if (input.batchId !== null) {
+    const runIndex =
+      input.runIndex === null ? "manual" : String(input.runIndex).padStart(6, "0");
+    return `${safeRunIdPart(input.batchId)}_run_${runIndex}_${windowDate}`;
+  }
+
+  const startedAt = input.replayStartedAt
+    .toISOString()
+    .replace(/[^0-9]/g, "")
+    .slice(0, 14);
+  return `historical_replay_${startedAt}_${windowDate}`;
+}
+
+function normalizeOptionalText(value: string | undefined): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function safeRunIdPart(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized.length === 0 ? "batch" : sanitized;
 }
 
 function createInitialPortfolio(
