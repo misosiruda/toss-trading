@@ -104,7 +104,13 @@ test("VirtualRiskEngine rejects max symbol exposure breaches", () => {
 
 test("VirtualRiskEngine rejects buy decisions that breach cash reserve", () => {
   const risk = new VirtualRiskEngine().evaluate({
-    packet: packet(),
+    packet: packet({
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 1_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      }
+    }),
     portfolio: portfolio(),
     decision: decision({ budgetKrw: 950_000 }),
     policy: {
@@ -123,7 +129,13 @@ test("VirtualRiskEngine rejects buy decisions that breach cash reserve", () => {
 
 test("VirtualRiskEngine rejects buy decisions that exceed NAV weight", () => {
   const risk = new VirtualRiskEngine().evaluate({
-    packet: packet(),
+    packet: packet({
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 1_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      }
+    }),
     portfolio: portfolio(),
     decision: decision({ budgetKrw: 400_000 }),
     policy: {
@@ -421,6 +433,39 @@ test("PaperOrderEngine executes reduce-only sell ratio sizing", () => {
   assert.equal(result.trade?.quantity, 1);
   assert.equal(result.portfolio.cashKrw, 70_000);
   assert.equal(result.portfolio.positions[0]?.quantity, 1);
+});
+
+test("PaperOrderEngine clips oversize reduce-only sell quantity", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 70_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 0,
+      sellQuantity: 2,
+      reduceOnly: true,
+      thesis: "Paper-only sell fixture."
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.amountKrw, 70_000);
+  assert.equal(result.trade?.quantity, 1);
+  assert.equal(result.portfolio.cashKrw, 70_000);
+  assert.equal(result.portfolio.positions.length, 0);
 });
 
 test("PaperOrderEngine records sell realized pnl after costs", () => {

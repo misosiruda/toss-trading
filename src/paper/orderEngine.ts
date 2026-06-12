@@ -6,7 +6,10 @@ import type {
   VirtualRiskDecision,
   VirtualTrade
 } from "../domain/schemas.js";
-import { resolveVirtualDecisionNotionalKrw } from "./decisionSizing.js";
+import {
+  normalizeVirtualDecision,
+  type NormalizedVirtualOrder
+} from "./decisionNormalizer.js";
 import {
   buildPaperFill,
   type PaperExecutionPolicy,
@@ -64,24 +67,26 @@ export class PaperOrderEngine {
       };
     }
     const pricedCandidate = candidate as PricedMarketCandidate;
+    const normalizedOrder = normalizeVirtualDecision(input);
 
     if (input.decision.action === "VIRTUAL_BUY") {
-      return executeBuy(input, riskDecision, pricedCandidate);
+      return executeBuy(input, riskDecision, pricedCandidate, normalizedOrder);
     }
 
-    return executeSell(input, riskDecision, pricedCandidate);
+    return executeSell(input, riskDecision, pricedCandidate, normalizedOrder);
   }
 }
 
 function executeBuy(
   input: PaperOrderInput,
   riskDecision: VirtualRiskDecision,
-  candidate: PricedMarketCandidate
+  candidate: PricedMarketCandidate,
+  normalizedOrder: NormalizedVirtualOrder
 ): PaperOrderResult {
   const portfolio = clonePortfolio(input.portfolio);
   const fill = buildPaperFill({
     action: "VIRTUAL_BUY",
-    targetNotionalKrw: resolveVirtualDecisionNotionalKrw(input),
+    targetNotionalKrw: normalizedOrder.targetNotionalKrw,
     sourcePriceKrw: candidate.lastPriceKrw,
     policy: input.executionPolicy
   });
@@ -136,7 +141,8 @@ function executeBuy(
 function executeSell(
   input: PaperOrderInput,
   riskDecision: VirtualRiskDecision,
-  candidate: PricedMarketCandidate
+  candidate: PricedMarketCandidate,
+  normalizedOrder: NormalizedVirtualOrder
 ): PaperOrderResult {
   const portfolio = clonePortfolio(input.portfolio);
   const existing = portfolio.positions.find(
@@ -151,7 +157,7 @@ function executeSell(
 
   const fill = buildPaperFill({
     action: "VIRTUAL_SELL",
-    targetNotionalKrw: resolveVirtualDecisionNotionalKrw(input),
+    targetNotionalKrw: normalizedOrder.targetNotionalKrw,
     sourcePriceKrw: candidate.lastPriceKrw,
     averagePriceKrw: existing.averagePriceKrw,
     policy: input.executionPolicy

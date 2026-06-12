@@ -135,6 +135,7 @@ test("codex historical replay runner skips paper orders on provider failure", as
 });
 
 test("codex historical replay runner emits risk rejection progress events", async () => {
+  const baseOptions = runnerOptions();
   const provider = new FakeCodexReplayProvider((packet) => ({
     attempted: true,
     decision: decision(packet.packetId, packet.candidates[0]?.symbol ?? "005930", {
@@ -147,7 +148,11 @@ test("codex historical replay runner emits risk rejection progress events", asyn
 
   const result = await runCodexHistoricalReplay(
     {
-      ...runnerOptions(),
+      ...baseOptions,
+      constraints: {
+        ...baseOptions.constraints,
+        maxBudgetPerSymbolKrw: 2_000_000
+      },
       clock: new SimulatedClock({
         startAt: new Date("2025-01-02T09:00:00+09:00"),
         endAt: new Date("2025-01-02T09:00:00+09:00"),

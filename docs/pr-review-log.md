@@ -1101,3 +1101,29 @@
 - `StaticDecisionProvider`와 `MarketPacketDryRunDecisionProvider`는 static fixture metadata를 자동 바인딩합니다.
 - `schemas/virtual-decision.schema.json`은 신규 Codex output에서 identity metadata를 required로 요구합니다.
 - 이번 PR은 metadata value registry, side-by-side model evaluation, normalized order layer는 포함하지 않습니다.
+
+## PR-42: Virtual Decision Normalizer and Backend Sizing
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only AI decision raw sizing hint를 backend-computed `NormalizedVirtualOrder`로 변환하는 정규화 계층에 한정합니다.
+- `DecisionNormalizer`는 BUY budget을 packet constraint로 cap하고, SELL sizing은 현재 virtual position과 candidate price를 기준으로 reduce-only notional로 변환합니다.
+- `VirtualRiskEngine`과 `PaperOrderEngine`은 raw AI `budgetKrw`, `sellQuantity`, `sellRatio`, `targetWeightPct`, `sellAll`을 직접 해석하지 않고 normalizer가 만든 `targetNotionalKrw`를 사용합니다.
+- schema v1 compatibility를 위해 기존 decision fields는 제거하지 않고, raw AI sizing은 backend sizing input hint로만 유지합니다.
+- live trading, broker adapter, `TradingSignal`, `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `DecisionNormalizer` unit test에서 BUY budget cap, SELL ratio sizing, oversize SELL quantity clip, HOLD zero-notional reduce-only 처리를 검증했습니다.
+- `PaperOrderEngine` integration test에서 oversize reduce-only SELL quantity가 현재 position 수량으로 clip되어 virtual position을 초과 매도하지 않는지 검증했습니다.
+- 기존 `VirtualRiskEngine` cash reserve와 NAV weight reject test는 packet cap이 Risk 조건을 가리지 않도록 packet constraint를 명시적으로 조정했습니다.
+- historical Codex replay risk rejection test도 packet cap이 의도한 rejection을 숨기지 않도록 replay constraint를 조정했습니다.
+- `npm test`로 전체 test suite 178개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/decisionNormalizer.ts`와 `src/paper/decisionNormalizer.test.ts`를 추가했습니다.
+- legacy `src/paper/decisionSizing.ts`를 제거하고, Risk/Order notional source를 `normalizeVirtualDecision(input).targetNotionalKrw`로 통일했습니다.
+- SELL oversize는 Risk reject 전에 backend normalizer에서 available virtual position value로 clip되므로 paper execution이 position을 음수로 만들지 않습니다.
+- Codex CLI paper trading 문서는 raw AI sizing hint와 backend normalized sizing의 책임 경계를 설명하도록 갱신했습니다.
+- 이번 PR은 confidence decomposition, normalized order persistence, decision schema v2 전환은 포함하지 않고 후속 PR로 남깁니다.
