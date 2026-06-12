@@ -179,6 +179,7 @@ npm run dashboard -- --data-dir data/paper
 
 자세한 계획은 [docs/roadmap.md](docs/roadmap.md)를 참고합니다.
 Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
+Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
 
 ## Disclaimer

@@ -967,3 +967,28 @@
 - `src/cli/historicalReplay.ts`와 `historical:replay`, `historical:replay:dry` npm scripts를 추가했습니다.
 - CLI는 positional fallback을 지원해 npm argument forwarding에서 option name이 제거되는 경우에도 실행할 수 있습니다.
 - README에 historical replay dry-run/Codex path 실행 예시를 추가했습니다.
+
+## PR-37: Final Historical Replay Safety Audit
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay의 lookahead guard, wall-clock dependency, 문서화 상태를 최종 점검하는 데 한정했습니다.
+- live trading, official Toss API adapter, order router, dashboard-triggered replay, raw command MCP tool은 추가하지 않았습니다.
+- future snapshot이 현재 simulated tick의 packet, decision, trade, final portfolio에 영향을 주지 않는지 별도 safety test를 추가했습니다.
+- core replay module에서 `Date.now()`와 인자 없는 `new Date()`를 사용하지 않는지 static safety test를 추가했습니다.
+- 문서에는 paper-only, no investment advice, no performance guarantee, no live order boundary를 유지했습니다.
+
+### Review 2: Tests and Validation
+
+- future snapshot이 excluded warning으로만 남고 현재 tick candidate에 포함되지 않는지 검증했습니다.
+- future snapshot이 추가되어도 single-tick replay final portfolio와 trade symbol이 baseline과 동일한지 검증했습니다.
+- `historicalReplayRunner`, `codexHistoricalReplayRunner`, `historicalPacketBuilder`, `simulatedClock`에 current wall-clock API 사용이 없는지 검증했습니다.
+- full test suite로 historical store, packet builder, replay runner, Codex adapter, workflow, dashboard 경계를 함께 확인합니다.
+- safety grep으로 live order/raw MCP execution/realtime loop 패턴을 다시 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalReplaySafety.test.ts`를 추가했습니다.
+- `docs/historical-replay.md`를 추가해 input/output, flow, 실행 방법, lookahead guard, safety boundary, dashboard 조회 방식을 정리했습니다.
+- README에 historical replay 문서 링크를 추가했습니다.
+- PR-28부터 PR-37까지의 historical accelerated replay slice가 dashboard 조회까지 연결됐습니다.
