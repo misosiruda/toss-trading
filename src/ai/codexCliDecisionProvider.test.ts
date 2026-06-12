@@ -156,6 +156,9 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /Use candidate score and reasonCodes/);
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
+  assert.match(prompt, /include holdReasonCode/);
+  assert.match(prompt, /INSUFFICIENT_EVIDENCE/);
+  assert.match(prompt, /Do not include holdReasonCode on VIRTUAL_BUY/);
   assert.match(prompt, /natural-language fields in Korean/);
   assert.match(prompt, /machine-readable English identifiers/);
   assert.match(prompt, /Never present the output as financial advice/);
@@ -172,6 +175,7 @@ test("virtual decision output schema artifact constrains actions", async () => {
           allOf?: unknown[];
           properties?: {
             action?: { enum?: string[] };
+            holdReasonCode?: { enum?: string[] };
             sellRatio?: { maximum?: number };
             reduceOnly?: { type?: string };
           };
@@ -187,6 +191,19 @@ test("virtual decision output schema artifact constrains actions", async () => {
     "VIRTUAL_SELL",
     "VIRTUAL_HOLD"
   ]);
+  assert.deepEqual(
+    schema.properties?.decisions?.items?.properties?.holdReasonCode?.enum,
+    [
+      "INSUFFICIENT_EVIDENCE",
+      "STALE_DATA",
+      "CONTRADICTORY_SIGNALS",
+      "POLICY_BLOCKED",
+      "PORTFOLIO_CONFLICT",
+      "NO_POSITION_TO_SELL",
+      "NOT_IN_CANDIDATES",
+      "LOW_LIQUIDITY"
+    ]
+  );
   assert.equal(
     schema.properties?.decisions?.items?.properties?.sellRatio?.maximum,
     1

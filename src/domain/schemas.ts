@@ -6,6 +6,16 @@ export const virtualActionSchema = z.enum([
   "VIRTUAL_SELL",
   "VIRTUAL_HOLD"
 ]);
+export const virtualHoldReasonCodeSchema = z.enum([
+  "INSUFFICIENT_EVIDENCE",
+  "STALE_DATA",
+  "CONTRADICTORY_SIGNALS",
+  "POLICY_BLOCKED",
+  "PORTFOLIO_CONFLICT",
+  "NO_POSITION_TO_SELL",
+  "NOT_IN_CANDIDATES",
+  "LOW_LIQUIDITY"
+]);
 export const virtualTradeStatusSchema = z.enum([
   "VIRTUAL_PENDING",
   "VIRTUAL_FILLED",
@@ -123,6 +133,7 @@ export const virtualDecisionItemSchema = z
     symbol: nonEmptyStringSchema,
     market: marketSchema,
     action: virtualActionSchema,
+    holdReasonCode: virtualHoldReasonCodeSchema.optional(),
     confidence: ratioSchema,
     budgetKrw: moneyKrwSchema,
     maxBudgetKrw: moneyKrwSchema.optional(),
@@ -247,6 +258,7 @@ export const auditEventSchema = z
 
 export type Market = z.infer<typeof marketSchema>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
+export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
 export type VirtualPosition = z.infer<typeof virtualPositionSchema>;
 export type VirtualPortfolio = z.infer<typeof virtualPortfolioSchema>;
 export type MarketCandidate = z.infer<typeof marketCandidateSchema>;

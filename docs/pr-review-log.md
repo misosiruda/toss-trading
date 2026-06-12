@@ -1015,3 +1015,32 @@
 - `src/workflows/paperRunOnce.ts`와 `src/workflows/paperRunFromMarketPacket.ts`는 AI decision 저장 전에 validator를 호출합니다.
 - `src/replay/codexHistoricalDecisionProvider.ts`는 delegate decision을 historical replay runner에 반환하기 전에 같은 validator를 적용합니다.
 - 기존 v1 `virtual_decision` schema와 paper-only storage file format은 변경하지 않았으며, HOLD reason code와 backend sizing 전환은 후속 PR로 남겼습니다.
+
+## PR-39: Virtual Hold Reason Code
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only `VIRTUAL_HOLD` 판단에 machine-readable 보류 사유를 붙이는 contract/gate 변경에 한정합니다.
+- `holdReasonCode`는 optional schema field로 추가해 기존 저장된 v1 decision 읽기 호환성을 유지합니다.
+- 새 AI output은 semantic validator에서 `VIRTUAL_HOLD`의 `holdReasonCode` 누락을 fail-closed 처리합니다.
+- BUY/SELL에 `holdReasonCode`가 붙으면 abstention 사유 오용으로 reject합니다.
+- live trading, broker adapter, raw `codex exec` MCP tool, raw `tossctl` MCP tool, dashboard-triggered AI run은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- schema test에서 허용된 `holdReasonCode` parse와 unknown reason reject를 검증했습니다.
+- validator unit test에서 HOLD reason 누락 reject를 검증했습니다.
+- validator unit test에서 non-HOLD reason code 오용 reject를 검증했습니다.
+- `runPaperDecisionOnce` workflow test에서 HOLD reason 누락 decision이 storage 전에 reject되는지 검증했습니다.
+- Codex prompt test에서 HOLD reason code 요구와 BUY/SELL 금지 문구를 검증했습니다.
+- JSON schema artifact test에서 `holdReasonCode` enum을 검증했습니다.
+- `npm test`로 전체 test suite 167개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `virtualHoldReasonCodeSchema`와 optional `holdReasonCode`를 추가했습니다.
+- `schemas/virtual-decision.schema.json`은 HOLD decision에 `holdReasonCode`를 조건부 required로 요구합니다.
+- `src/paper/virtualDecisionValidation.ts`는 workflow 저장 전에 HOLD reason 누락 및 non-HOLD 오용을 reject합니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v4`로 version을 올리고 HOLD reason code 출력을 요구합니다.
+- 변경 코드 파일 safety grep에서 live order/raw MCP execution/process execution 경로가 추가되지 않았음을 확인했습니다.
+- 이번 PR은 hold reason distribution report/dashboard 표시는 포함하지 않고 후속 PR로 남깁니다.

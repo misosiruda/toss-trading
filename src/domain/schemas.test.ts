@@ -172,6 +172,52 @@ test("non-hold decisions require risk factors", () => {
   );
 });
 
+test("hold decisions accept explicit hold reason code", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      holdReasonCode?: string;
+      budgetKrw: number;
+      riskFactors: string[];
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_HOLD";
+  decision.decisions[0]!.holdReasonCode = "INSUFFICIENT_EVIDENCE";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = [];
+
+  const parsed = parseWithSchema(
+    virtualDecisionSchema,
+    decision,
+    "virtualDecision"
+  );
+
+  assert.equal(
+    parsed.decisions[0]?.holdReasonCode,
+    "INSUFFICIENT_EVIDENCE"
+  );
+});
+
+test("hold decisions reject unknown hold reason code", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      holdReasonCode?: string;
+      budgetKrw: number;
+      riskFactors: string[];
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_HOLD";
+  decision.decisions[0]!.holdReasonCode = "UNKNOWN_REASON";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = [];
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /failed validation/
+  );
+});
+
 test("sell decisions require explicit sizing", () => {
   const decision = validVirtualDecision() as {
     decisions: Array<{

@@ -94,6 +94,7 @@ test("rejects duplicate decisions for the same market and symbol", () => {
         {
           ...base,
           action: "VIRTUAL_HOLD",
+          holdReasonCode: "INSUFFICIENT_EVIDENCE",
           budgetKrw: 0,
           riskFactors: []
         }
@@ -119,6 +120,46 @@ test("rejects actions outside packet constraints", () => {
 
   assert.equal(result.approved, false);
   assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_ACTION_NOT_ALLOWED"));
+});
+
+test("rejects hold decisions without a hold reason code", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          action: "VIRTUAL_HOLD",
+          budgetKrw: 0,
+          riskFactors: []
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_HOLD_REASON_REQUIRED")
+  );
+});
+
+test("rejects hold reason codes on non-hold decisions", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          holdReasonCode: "LOW_LIQUIDITY"
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED")
+  );
 });
 
 function packet(overrides: Partial<MarketPacket> = {}): MarketPacket {

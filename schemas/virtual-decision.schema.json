@@ -31,6 +31,7 @@
               }
             },
             "then": {
+              "required": ["holdReasonCode"],
               "properties": {
                 "budgetKrw": {
                   "const": 0
@@ -131,6 +132,19 @@
           "action": {
             "type": "string",
             "enum": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+          },
+          "holdReasonCode": {
+            "type": "string",
+            "enum": [
+              "INSUFFICIENT_EVIDENCE",
+              "STALE_DATA",
+              "CONTRADICTORY_SIGNALS",
+              "POLICY_BLOCKED",
+              "PORTFOLIO_CONFLICT",
+              "NO_POSITION_TO_SELL",
+              "NOT_IN_CANDIDATES",
+              "LOW_LIQUIDITY"
+            ]
           },
           "confidence": {
             "type": "number",
