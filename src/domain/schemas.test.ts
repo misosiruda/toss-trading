@@ -36,6 +36,15 @@ function validMarketPacket(): unknown {
         reasonCodes: ["RANKING", "FLOW_POSITIVE"],
         eventTags: ["earnings"],
         newsRefs: ["news:sample:001"],
+        featureRefs: ["candidate.KR.005930.ranking"],
+        featureScores: [
+          {
+            featureRef: "candidate.KR.005930.ranking",
+            score: 100,
+            scoreType: "RANKING",
+            reasonCode: "RANKING_WITHIN_PACKET"
+          }
+        ],
         dividendYieldPct: 2.4,
         exDividendDate: "2026-12-27",
         sourceRefs: ["external_snapshot_001"],
@@ -90,8 +99,43 @@ test("valid market packet fixture passes schema validation", () => {
   assert.equal(packet.candidates[0]?.industry, "Semiconductors");
   assert.deepEqual(packet.candidates[0]?.eventTags, ["earnings"]);
   assert.deepEqual(packet.candidates[0]?.newsRefs, ["news:sample:001"]);
+  assert.deepEqual(packet.candidates[0]?.featureScores, [
+    {
+      featureRef: "candidate.KR.005930.ranking",
+      score: 100,
+      scoreType: "RANKING",
+      reasonCode: "RANKING_WITHIN_PACKET"
+    }
+  ]);
   assert.equal(packet.candidates[0]?.dividendYieldPct, 2.4);
   assert.equal(packet.candidates[0]?.exDividendDate, "2026-12-27");
+});
+
+test("market packet rejects feature scores outside feature refs", () => {
+  const packet = validMarketPacket() as {
+    candidates: Array<{
+      featureRefs: string[];
+      featureScores: Array<{
+        featureRef: string;
+        score: number;
+        scoreType: string;
+        reasonCode: string;
+      }>;
+    }>;
+  };
+  packet.candidates[0]!.featureScores = [
+    {
+      featureRef: "candidate.KR.005930.futureReturn",
+      score: 100,
+      scoreType: "VALUE",
+      reasonCode: "FUTURE_RETURN"
+    }
+  ];
+
+  assert.throws(
+    () => parseWithSchema(marketPacketSchema, packet, "marketPacket"),
+    /featureScore\.featureRef/
+  );
 });
 
 test("valid historical market snapshot fixture passes schema validation", () => {

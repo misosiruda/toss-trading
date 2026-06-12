@@ -118,6 +118,15 @@ test("historical packet builder derives trend and volume reason codes from past 
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_TREND_UP"), true);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_VOLUME_ABOVE_AVG"), true);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_CANDLE_UP"), true);
+  assert.equal(
+    candidate.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.005930.score" &&
+        featureScore.score === candidate.score &&
+        featureScore.reasonCode === "CANDIDATE_SCORE"
+    ),
+    true
+  );
 });
 
 test("historical packet builder does not derive features from future snapshots", () => {
@@ -153,6 +162,12 @@ test("historical packet builder does not derive features from future snapshots",
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_MOMENTUM_UP"), false);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_TREND_UP"), false);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_VOLUME_ABOVE_AVG"), false);
+  assert.equal(
+    candidate.featureScores?.some((featureScore) =>
+      featureScore.reasonCode.includes("FUTURE")
+    ),
+    false
+  );
 });
 
 test("historical packet builder trims candidates deterministically", () => {

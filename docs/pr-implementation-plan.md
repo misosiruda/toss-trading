@@ -1393,6 +1393,42 @@
 - live `TradingSignal` 또는 `OrderIntent` 연결
 - live trading 또는 broker adapter 연결
 
+## PR-47: Market Candidate Feature Scores
+
+목표:
+
+- AI가 feature path의 의미와 강도를 free text로 추측하지 않도록 candidate별 deterministic `featureScores[]`를 `market_packet`에 포함합니다.
+- `featureScores[]`는 같은 candidate의 `featureRefs`에 연결된 backend-normalized metadata로만 사용하며, 투자 성과 보장이나 live execution signal로 사용하지 않습니다.
+
+작업 범위:
+
+- `MarketCandidate.featureScores[]` optional runtime field
+- `MarketCandidateFeatureScore` 구조: `featureRef`, `score`, `scoreType`, `reasonCode`
+- schema validation에서 `featureScores[].featureRef`가 같은 candidate의 `featureRefs`에 포함되는지 검증
+- `MarketPacketBuilder`의 deterministic feature score 계산
+- ranking, feature value, eligibility/policy/state feature score 계산
+- historical packet builder가 기존 point-in-time candidate features를 통해 feature score를 생성하는지 검증
+- Codex paper decision prompt version update
+- Codex CLI paper trading 문서에 featureScores contract 반영
+
+검증:
+
+- market packet schema가 featureScore ref와 featureRefs 불일치를 reject함
+- packet builder가 ranking/eligibility feature score를 deterministic하게 생성함
+- blocked BUY candidate는 `buyEligible`과 `budgetTierAllowed` feature score가 0으로 계산됨
+- historical packet builder의 point-in-time score가 `candidate.<market>.<symbol>.score` feature score에 반영됨
+- prompt가 featureScores를 backend-normalized metadata로만 사용하도록 명시함
+- full test suite
+
+제외:
+
+- confidence decomposition
+- feature score를 risk approval gate로 사용하는 변경
+- AI output schema에 feature score를 추가하는 변경
+- decision schema v2 전면 전환
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
