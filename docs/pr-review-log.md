@@ -1428,3 +1428,37 @@
 - `docs/pr-implementation-plan.md`는 PR-52 범위와 PR-53 이후 batch replay 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 반복 batch 실행 loop, batch run directory layout, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
+
+## PR-53: Batch Replay Runner
+
+### Review 1: Scope and Safety
+
+- 범위는 seed 기반 random window를 여러 번 선택해 deterministic paper historical replay를 반복 실행하고 결과 manifest/JSONL을 남기는 데 한정합니다.
+- batch runner는 source data directory의 저장된 `historical-market-snapshots.jsonl`만 읽습니다.
+- run별 출력은 batch output directory 아래에 분리해 저장하며 source snapshot 파일은 복사하거나 수정하지 않습니다.
+- 각 run은 replay 전 availability preflight를 수행하고, insufficient이면 replay workflow를 실행하지 않고 `skipped` record만 남깁니다.
+- 현재 batch runner는 Codex CLI AI batch 호출, 외부 data 수집, broker API 호출, 주문 생성을 수행하지 않습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- batch workflow test에서 manifest와 per-run JSONL이 생성되는지 검증했습니다.
+- batch workflow test에서 completed run summary와 run별 `historical-replay-run-metadata.json`의 batch identity/window가 저장되는지 검증했습니다.
+- batch workflow test에서 insufficient window가 `skipped`, `DATA_INSUFFICIENT`, `reportPath: null`로 기록되는지 검증했습니다.
+- CLI integration test에서 `historicalBatchReplay.js`가 batch manifest와 run JSONL을 생성하는지 검증했습니다.
+- npm script smoke에서 `historical:batch:replay:dry`가 double separator invocation으로 completed summary를 출력하는지 확인했습니다.
+- `npm test`로 전체 test suite 224개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/historicalBatchReplayWorkflow.ts`를 추가해 batch manifest, run JSONL, run별 historical replay workflow 실행을 orchestration합니다.
+- `src/workflows/historicalReplayWorkflow.ts`는 source snapshot path와 output storage dir을 분리할 수 있도록 `historicalMarketSnapshotsPath` option을 추가했습니다.
+- `src/cli/historicalBatchReplay.ts`를 추가해 batch id, seed, run count, random window range, sampling/availability option을 CLI로 받습니다.
+- `package.json`에 `historical:batch:replay:dry` script를 추가했습니다.
+- `src/workflows/historicalBatchReplayWorkflow.test.ts`는 completed/skipped batch run을 검증합니다.
+- `src/cli/historicalReplayCli.test.ts`는 batch CLI integration path를 검증합니다.
+- `docs/historical-replay.md`는 batch runner CLI 예시와 출력 구조를 추가했습니다.
+- `docs/pr-implementation-plan.md`는 PR-53 범위와 PR-54 이후 후속 순서를 기록했습니다.
+- 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
+- 이번 PR은 regime classification, aggregate report, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.

@@ -86,6 +86,62 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
 });
 
+test("historical batch replay CLI writes batch manifest", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-cli-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-cli-output-")
+  );
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-cli",
+      "--seed",
+      "seed-001",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60)
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    readFileSync(String(output["manifestPath"]), "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  assert.equal(output["status"], "completed");
+  assert.equal(output["completedCount"], 1);
+  assert.equal(manifest["batchId"], "batch-cli");
+  assert.equal(runRecords[0]?.["status"], "completed");
+});
+
 function snapshot(
   snapshotId: string,
   symbol: string

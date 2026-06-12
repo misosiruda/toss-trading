@@ -192,6 +192,38 @@ npm run historical:replay:dry -- -- --data-dir data/paper --start-at 2025-02-01T
 
 이 옵션은 `historical-replay-run-metadata.json`에만 저장됩니다. replay sampling, AI decision, risk decision, paper order 처리 정책을 바꾸지 않습니다.
 
+### Batch Replay Runner
+
+여러 random 1개월 window를 반복 실행하고 run별 결과를 JSONL로 남길 수 있습니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2026-04-12-2026-06-12 --output-dir data/batch-replay --batch-id batch-smoke-001 --seed batch-seed-001 --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1
+```
+
+출력 구조:
+
+```text
+data/batch-replay/
+└── batch-smoke-001/
+    ├── batch-replay-manifest.json
+    ├── batch-replay-runs.jsonl
+    └── runs/
+        └── batch-smoke-001_run_000000_202604/
+            ├── historical-replay-report.json
+            ├── historical-replay-run-metadata.json
+            ├── historical-replay-packets.jsonl
+            ├── historical-replay-decisions.jsonl
+            ├── historical-replay-risk-decisions.jsonl
+            ├── historical-replay-trades.jsonl
+            └── historical-replay-portfolio-timeline.jsonl
+```
+
+- batch runner는 source data directory의 `historical-market-snapshots.jsonl`을 읽고, run별 출력은 batch output directory 아래에 분리해 씁니다.
+- 각 run은 `seed:runIndex`를 사용해 deterministic random window를 선택합니다.
+- availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
+- 현재 batch runner는 deterministic paper replay만 실행합니다. Codex CLI AI 호출, 외부 data 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
+- `batch-replay-runs.jsonl`은 후속 aggregate report와 regime classification의 입력으로 사용됩니다.
+
 ## Lookahead Guard
 
 Historical replay는 simulated time 이후 데이터를 현재 packet에 넣지 않습니다.
