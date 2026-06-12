@@ -1,10 +1,17 @@
 import type {
+  MarketCandidate,
   MarketPacket,
   VirtualDecisionItem,
   VirtualPortfolio,
   VirtualRiskDecision,
   VirtualTrade
 } from "../domain/schemas.js";
+import { resolveVirtualDecisionNotionalKrw } from "./decisionSizing.js";
+import {
+  buildPaperFill,
+  type PaperExecutionPolicy,
+  type PaperFill
+} from "./executionModel.js";
 import { findCandidate, VirtualRiskEngine, type VirtualRiskPolicy } from "./riskEngine.js";
 
 export interface PaperOrderInput {
@@ -12,6 +19,7 @@ export interface PaperOrderInput {
   portfolio: VirtualPortfolio;
   decision: VirtualDecisionItem;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  executionPolicy?: Partial<PaperExecutionPolicy> | undefined;
 }
 
 export interface PaperOrderResult {
@@ -19,6 +27,8 @@ export interface PaperOrderResult {
   riskDecision: VirtualRiskDecision;
   trade: VirtualTrade | null;
 }
+
+type PricedMarketCandidate = MarketCandidate & { lastPriceKrw: number };
 
 export class PaperOrderEngine {
   private readonly riskEngine = new VirtualRiskEngine();
@@ -53,22 +63,28 @@ export class PaperOrderEngine {
         trade: null
       };
     }
+    const pricedCandidate = candidate as PricedMarketCandidate;
 
     if (input.decision.action === "VIRTUAL_BUY") {
-      return executeBuy(input, riskDecision, candidate.lastPriceKrw);
+      return executeBuy(input, riskDecision, pricedCandidate);
     }
 
-    return executeSell(input, riskDecision, candidate.lastPriceKrw);
+    return executeSell(input, riskDecision, pricedCandidate);
   }
 }
 
 function executeBuy(
   input: PaperOrderInput,
   riskDecision: VirtualRiskDecision,
-  priceKrw: number
+  candidate: PricedMarketCandidate
 ): PaperOrderResult {
   const portfolio = clonePortfolio(input.portfolio);
-  const quantity = input.decision.budgetKrw / priceKrw;
+  const fill = buildPaperFill({
+    action: "VIRTUAL_BUY",
+    targetNotionalKrw: resolveVirtualDecisionNotionalKrw(input),
+    sourcePriceKrw: candidate.lastPriceKrw,
+    policy: input.executionPolicy
+  });
   const existing = portfolio.positions.find(
     (position) =>
       position.market === input.decision.market &&
@@ -77,26 +93,31 @@ function executeBuy(
 
   if (existing) {
     const previousAmount = existing.quantity * existing.averagePriceKrw;
-    const nextQuantity = existing.quantity + quantity;
+    const nextQuantity = existing.quantity + fill.quantity;
     existing.quantity = nextQuantity;
     existing.averagePriceKrw = Math.round(
-      (previousAmount + input.decision.budgetKrw) / nextQuantity
+      (previousAmount + fill.netAmountKrw) / nextQuantity
     );
-    existing.marketValueKrw = Math.round(nextQuantity * priceKrw);
+    existing.marketPriceKrw = candidate.lastPriceKrw;
+    existing.marketValueKrw = Math.round(nextQuantity * candidate.lastPriceKrw);
+    existing.unrealizedPnlKrw =
+      existing.marketValueKrw - Math.round(nextQuantity * existing.averagePriceKrw);
     existing.updatedAt = riskDecision.createdAt;
   } else {
     portfolio.positions.push({
       market: input.decision.market,
       symbol: input.decision.symbol,
-      quantity,
-      averagePriceKrw: priceKrw,
-      marketValueKrw: input.decision.budgetKrw,
-      unrealizedPnlKrw: 0,
+      quantity: fill.quantity,
+      averagePriceKrw: Math.round(fill.netAmountKrw / fill.quantity),
+      marketPriceKrw: candidate.lastPriceKrw,
+      marketValueKrw: Math.round(fill.quantity * candidate.lastPriceKrw),
+      unrealizedPnlKrw:
+        Math.round(fill.quantity * candidate.lastPriceKrw) - fill.netAmountKrw,
       updatedAt: riskDecision.createdAt
     });
   }
 
-  portfolio.cashKrw -= input.decision.budgetKrw;
+  portfolio.cashKrw -= fill.netAmountKrw;
   portfolio.updatedAt = riskDecision.createdAt;
 
   return {
@@ -106,9 +127,8 @@ function executeBuy(
       input,
       riskDecision,
       "VIRTUAL_BUY",
-      quantity,
-      priceKrw,
-      input.decision.budgetKrw
+      fill,
+      candidate.sourceRefs
     )
   };
 }
@@ -116,7 +136,7 @@ function executeBuy(
 function executeSell(
   input: PaperOrderInput,
   riskDecision: VirtualRiskDecision,
-  priceKrw: number
+  candidate: PricedMarketCandidate
 ): PaperOrderResult {
   const portfolio = clonePortfolio(input.portfolio);
   const existing = portfolio.positions.find(
@@ -129,11 +149,21 @@ function executeSell(
     return { portfolio, riskDecision, trade: null };
   }
 
-  const quantity = input.decision.budgetKrw / priceKrw;
-  existing.quantity -= quantity;
-  existing.marketValueKrw = Math.round(existing.quantity * priceKrw);
+  const fill = buildPaperFill({
+    action: "VIRTUAL_SELL",
+    targetNotionalKrw: resolveVirtualDecisionNotionalKrw(input),
+    sourcePriceKrw: candidate.lastPriceKrw,
+    averagePriceKrw: existing.averagePriceKrw,
+    policy: input.executionPolicy
+  });
+  existing.quantity -= fill.quantity;
+  existing.marketPriceKrw = candidate.lastPriceKrw;
+  existing.marketValueKrw = Math.round(existing.quantity * candidate.lastPriceKrw);
+  existing.unrealizedPnlKrw =
+    existing.marketValueKrw -
+    Math.round(existing.quantity * existing.averagePriceKrw);
   existing.updatedAt = riskDecision.createdAt;
-  portfolio.cashKrw += input.decision.budgetKrw;
+  portfolio.cashKrw += fill.netAmountKrw;
   portfolio.updatedAt = riskDecision.createdAt;
 
   if (existing.quantity <= 0.000001) {
@@ -153,9 +183,8 @@ function executeSell(
       input,
       riskDecision,
       "VIRTUAL_SELL",
-      quantity,
-      priceKrw,
-      input.decision.budgetKrw
+      fill,
+      candidate.sourceRefs
     )
   };
 }
@@ -164,23 +193,38 @@ function buildTrade(
   input: PaperOrderInput,
   riskDecision: VirtualRiskDecision,
   action: "VIRTUAL_BUY" | "VIRTUAL_SELL",
-  quantity: number,
-  priceKrw: number,
-  amountKrw: number
+  fill: PaperFill,
+  priceSourceRefs: string[]
 ): VirtualTrade {
-  return {
+  const trade: VirtualTrade = {
     tradeId: `vtrade_${input.packet.packetId}_${input.decision.symbol}_${input.decision.action}`,
     packetId: input.packet.packetId,
     decisionId: riskDecision.riskDecisionId,
     market: input.decision.market,
     symbol: input.decision.symbol,
     action,
-    quantity,
-    priceKrw,
-    amountKrw,
+    quantity: fill.quantity,
+    sourcePriceKrw: fill.sourcePriceKrw,
+    priceKrw: fill.fillPriceKrw,
+    fillPriceRule: fill.fillPriceRule,
+    grossAmountKrw: fill.grossAmountKrw,
+    amountKrw: fill.grossAmountKrw,
+    netAmountKrw: fill.netAmountKrw,
+    feeKrw: fill.feeKrw,
+    taxKrw: fill.taxKrw,
+    slippageKrw: fill.slippageKrw,
+    priceSourceRefs,
+    fillRatio: fill.fillRatio,
+    fractionalShares: fill.fractionalShares,
     status: "VIRTUAL_FILLED",
     executedAt: riskDecision.createdAt
   };
+
+  if (fill.realizedPnlKrw !== undefined) {
+    trade.realizedPnlKrw = fill.realizedPnlKrw;
+  }
+
+  return trade;
 }
 
 function clonePortfolio(portfolio: VirtualPortfolio): VirtualPortfolio {

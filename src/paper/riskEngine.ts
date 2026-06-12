@@ -6,12 +6,20 @@ import {
   type VirtualPortfolio,
   type VirtualRiskDecision
 } from "../domain/schemas.js";
+import { resolveVirtualDecisionNotionalKrw } from "./decisionSizing.js";
+import {
+  appendVirtualRiskRejectCode,
+  createVirtualRiskPolicy,
+  isVirtualRiskCooldownActive,
+  minimumCashReserveKrw,
+  normalizeVirtualRiskRejectCodes,
+  virtualNetWorthKrw,
+  VIRTUAL_RISK_RULE_IDS,
+  type VirtualRiskPolicy,
+  type VirtualRiskRejectCode
+} from "./riskPolicy.js";
 
-export interface VirtualRiskPolicy {
-  maxBudgetPerDecisionKrw: number;
-  maxSymbolExposureKrw: number;
-  now: Date;
-}
+export type { VirtualRiskPolicy } from "./riskPolicy.js";
 
 export interface VirtualRiskInput {
   packet: MarketPacket;
@@ -22,54 +30,75 @@ export interface VirtualRiskInput {
 
 export class VirtualRiskEngine {
   evaluate(input: VirtualRiskInput): VirtualRiskDecision {
-    const policy = createVirtualRiskPolicy(input);
-    const rejectCodes: string[] = [];
-    const checkedRules = [
-      "packet_freshness",
-      "decision_freshness",
-      "candidate_presence",
-      "candidate_price",
-      "cash_limit",
-      "budget_limit",
-      "symbol_exposure",
-      "sell_position"
-    ];
+    const policy = createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: input.packet.constraints.maxBudgetPerSymbolKrw,
+      policy: input.policy
+    });
+    const rejectCodes: VirtualRiskRejectCode[] = [];
+    const checkedRules = [...VIRTUAL_RISK_RULE_IDS];
 
     if (!isFresh(input.packet.expiresAt, policy.now)) {
-      rejectCodes.push("VIRTUAL_PACKET_STALE");
+      appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_PACKET_STALE");
     }
 
     if (!isFresh(input.decision.expiresAt, policy.now)) {
-      rejectCodes.push("VIRTUAL_DECISION_STALE");
+      appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_DECISION_STALE");
     }
 
     const candidate = findCandidate(input.packet, input.decision);
     if (!candidate) {
-      rejectCodes.push("VIRTUAL_CANDIDATE_NOT_FOUND");
+      appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_CANDIDATE_NOT_FOUND");
     }
 
     if (input.decision.action !== "VIRTUAL_HOLD" && !candidate?.lastPriceKrw) {
-      rejectCodes.push("VIRTUAL_PRICE_MISSING");
+      appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_PRICE_MISSING");
+    }
+
+    if (isVirtualRiskCooldownActive(input.decision, policy)) {
+      appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_COOLDOWN_ACTIVE");
     }
 
     if (input.decision.action === "VIRTUAL_BUY") {
-      if (input.decision.budgetKrw > input.portfolio.cashKrw) {
-        rejectCodes.push("VIRTUAL_CASH_EXCEEDED");
+      const notionalKrw = resolveVirtualDecisionNotionalKrw(input);
+      if (notionalKrw > input.portfolio.cashKrw) {
+        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_CASH_EXCEEDED");
       }
 
-      if (input.decision.budgetKrw > policy.maxBudgetPerDecisionKrw) {
-        rejectCodes.push("VIRTUAL_BUDGET_EXCEEDED");
+      if (
+        input.portfolio.cashKrw - notionalKrw <
+        minimumCashReserveKrw(input.portfolio, policy)
+      ) {
+        appendVirtualRiskRejectCode(
+          rejectCodes,
+          "VIRTUAL_CASH_RESERVE_BREACHED"
+        );
+      }
+
+      if (notionalKrw > policy.maxBudgetPerDecisionKrw) {
+        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_BUDGET_EXCEEDED");
       }
 
       const currentExposure = currentSymbolExposureKrw(
         input.portfolio,
         input.decision
       );
+      if (currentExposure + notionalKrw > policy.maxSymbolExposureKrw) {
+        appendVirtualRiskRejectCode(
+          rejectCodes,
+          "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED"
+        );
+      }
+
+      const netWorthKrw = virtualNetWorthKrw(input.portfolio);
       if (
-        currentExposure + input.decision.budgetKrw >
-        policy.maxSymbolExposureKrw
+        netWorthKrw > 0 &&
+        (currentExposure + notionalKrw) / netWorthKrw >
+          policy.maxPositionWeightRatio
       ) {
-        rejectCodes.push("VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED");
+        appendVirtualRiskRejectCode(
+          rejectCodes,
+          "VIRTUAL_POSITION_WEIGHT_EXCEEDED"
+        );
       }
     }
 
@@ -79,14 +108,21 @@ export class VirtualRiskEngine {
           item.market === input.decision.market &&
           item.symbol === input.decision.symbol
       );
+      const notionalKrw = resolveVirtualDecisionNotionalKrw(input);
       if (!position) {
-        rejectCodes.push("VIRTUAL_POSITION_NOT_FOUND");
-      } else if (input.decision.budgetKrw <= 0) {
-        rejectCodes.push("VIRTUAL_SELL_AMOUNT_REQUIRED");
+        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_POSITION_NOT_FOUND");
+      } else if (notionalKrw <= 0) {
+        appendVirtualRiskRejectCode(
+          rejectCodes,
+          "VIRTUAL_SELL_AMOUNT_REQUIRED"
+        );
       } else if (candidate?.lastPriceKrw) {
         const positionValue = Math.round(position.quantity * candidate.lastPriceKrw);
-        if (input.decision.budgetKrw > positionValue) {
-          rejectCodes.push("VIRTUAL_SELL_AMOUNT_EXCEEDED");
+        if (notionalKrw > positionValue) {
+          appendVirtualRiskRejectCode(
+            rejectCodes,
+            "VIRTUAL_SELL_AMOUNT_EXCEEDED"
+          );
         }
       }
     }
@@ -96,23 +132,11 @@ export class VirtualRiskEngine {
       packetId: input.packet.packetId,
       symbol: input.decision.symbol,
       approved: rejectCodes.length === 0,
-      rejectCodes,
+      rejectCodes: normalizeVirtualRiskRejectCodes(rejectCodes),
       checkedRules,
       createdAt: policy.now.toISOString()
     };
   }
-}
-
-function createVirtualRiskPolicy(input: VirtualRiskInput): VirtualRiskPolicy {
-  return {
-    maxBudgetPerDecisionKrw:
-      input.policy?.maxBudgetPerDecisionKrw ??
-      input.packet.constraints.maxBudgetPerSymbolKrw,
-    maxSymbolExposureKrw:
-      input.policy?.maxSymbolExposureKrw ??
-      input.packet.constraints.maxBudgetPerSymbolKrw,
-    now: input.policy?.now ?? new Date()
-  };
 }
 
 function isFresh(expiresAt: string, now: Date): boolean {

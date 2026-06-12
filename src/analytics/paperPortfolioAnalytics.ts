@@ -29,7 +29,7 @@ export interface SymbolAllocation {
 }
 
 export interface VirtualPnlSummary {
-  realizedPnlKrw: null;
+  realizedPnlKrw: number | null;
   unrealizedPnlKrw: number | null;
   note: string;
 }
@@ -86,7 +86,7 @@ export function buildPaperPortfolioAnalytics(input: {
     positionCount: input.portfolio?.positions.length ?? 0,
     symbolAllocations: symbolAllocations.sort(compareSymbolAllocation),
     exposureByMarket: buildExposureByMarket(symbolAllocations),
-    virtualPnl: buildVirtualPnl(input.portfolio),
+    virtualPnl: buildVirtualPnl(input.portfolio, input.trades),
     decisionTradeLinkage: buildDecisionTradeLinkage(input.decisions, input.trades),
     disclaimer:
       "Paper-only analytics for virtual simulation. This is not investment performance and not financial advice."
@@ -115,21 +115,28 @@ function buildExposureByMarket(
 }
 
 function buildVirtualPnl(
-  portfolio: VirtualPortfolio | null
+  portfolio: VirtualPortfolio | null,
+  trades: VirtualTrade[]
 ): VirtualPnlSummary {
   const pnlValues =
     portfolio?.positions
       .map((position) => position.unrealizedPnlKrw)
       .filter((value): value is number => value !== undefined) ?? [];
+  const realizedValues = trades
+    .map((trade) => trade.realizedPnlKrw)
+    .filter((value): value is number => value !== undefined);
 
   return {
-    realizedPnlKrw: null,
+    realizedPnlKrw:
+      realizedValues.length > 0
+        ? realizedValues.reduce((sum, value) => sum + value, 0)
+        : null,
     unrealizedPnlKrw:
       portfolio && pnlValues.length === portfolio.positions.length
         ? pnlValues.reduce((sum, value) => sum + value, 0)
         : null,
     note:
-      "Realized PnL requires broker-grade fills and cost basis; this paper metric intentionally avoids performance claims."
+      "Paper-only PnL is derived from virtual fills and marked positions; it is not broker-grade performance."
   };
 }
 

@@ -102,6 +102,108 @@ test("VirtualRiskEngine rejects max symbol exposure breaches", () => {
   assert.ok(risk.rejectCodes.includes("VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED"));
 });
 
+test("VirtualRiskEngine rejects buy decisions that breach cash reserve", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 950_000 }),
+    policy: {
+      now,
+      maxBudgetPerDecisionKrw: 1_000_000,
+      maxSymbolExposureKrw: 1_000_000,
+      maxPositionWeightRatio: 1,
+      minCashReserveRatio: 0.1
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_CASH_RESERVE_BREACHED"));
+  assert.ok(risk.checkedRules.includes("cash_reserve"));
+});
+
+test("VirtualRiskEngine rejects buy decisions that exceed NAV weight", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 400_000 }),
+    policy: {
+      now,
+      maxBudgetPerDecisionKrw: 1_000_000,
+      maxSymbolExposureKrw: 1_000_000,
+      maxPositionWeightRatio: 0.35
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_POSITION_WEIGHT_EXCEEDED"));
+  assert.ok(risk.checkedRules.includes("position_weight"));
+});
+
+test("VirtualRiskEngine rejects active symbol action cooldowns", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 70_000 }),
+    policy: {
+      now,
+      cooldownEntries: [
+        {
+          market: "KR",
+          symbol: "005930",
+          action: "VIRTUAL_BUY",
+          activeUntil: "2026-06-11T09:30:00+09:00",
+          reason: "post_reject"
+        }
+      ]
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_COOLDOWN_ACTIVE"));
+  assert.ok(risk.checkedRules.includes("cooldown"));
+});
+
+test("VirtualRiskEngine exempts reduce-only sells from cooldown", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 0,
+      sellRatio: 0.5,
+      reduceOnly: true,
+      thesis: "Paper-only sell fixture."
+    }),
+    policy: {
+      now,
+      cooldownEntries: [
+        {
+          market: "KR",
+          symbol: "005930",
+          action: "VIRTUAL_SELL",
+          activeUntil: "2026-06-11T09:30:00+09:00",
+          reason: "post_fill"
+        }
+      ]
+    }
+  });
+
+  assert.equal(risk.approved, true);
+  assert.equal(risk.rejectCodes.includes("VIRTUAL_COOLDOWN_ACTIVE"), false);
+});
+
 test("VirtualRiskEngine rejects stale decisions", () => {
   const risk = new VirtualRiskEngine().evaluate({
     packet: packet(),
@@ -181,6 +283,48 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
   assert.equal(result.portfolio.positions[0]?.averagePriceKrw, 70_000);
 });
 
+test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: { now },
+    executionPolicy: {
+      slippageBps: 10,
+      feeBps: 10
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.sourcePriceKrw, 70_000);
+  assert.equal(result.trade?.priceKrw, 70_070);
+  assert.equal(result.trade?.grossAmountKrw, 70_000);
+  assert.equal(result.trade?.feeKrw, 70);
+  assert.equal(result.trade?.netAmountKrw, 70_070);
+  assert.equal(result.trade?.slippageKrw, 70);
+  assert.equal(result.portfolio.cashKrw, 929_930);
+  assert.equal(result.portfolio.positions[0]?.marketPriceKrw, 70_000);
+  assert.equal(result.portfolio.positions[0]?.unrealizedPnlKrw, -140);
+});
+
+test("PaperOrderEngine supports whole-share paper fills", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 100_000 }),
+    riskPolicy: { now },
+    executionPolicy: {
+      allowFractionalShares: false
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.quantity, 1);
+  assert.equal(result.trade?.amountKrw, 70_000);
+  assert.equal(result.trade?.fractionalShares, false);
+  assert.equal(result.portfolio.cashKrw, 930_000);
+});
+
 test("PaperOrderEngine records approved holds without mutating portfolio", () => {
   const startingPortfolio = portfolio();
   const result = new PaperOrderEngine().execute({
@@ -244,6 +388,77 @@ test("PaperOrderEngine updates virtual position on sell", () => {
   assert.equal(result.trade?.action, "VIRTUAL_SELL");
   assert.equal(result.portfolio.cashKrw, 70_000);
   assert.equal(result.portfolio.positions[0]?.quantity, 1);
+});
+
+test("PaperOrderEngine executes reduce-only sell ratio sizing", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 0,
+      sellRatio: 0.5,
+      reduceOnly: true,
+      thesis: "Paper-only sell fixture."
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.amountKrw, 70_000);
+  assert.equal(result.trade?.quantity, 1);
+  assert.equal(result.portfolio.cashKrw, 70_000);
+  assert.equal(result.portfolio.positions[0]?.quantity, 1);
+});
+
+test("PaperOrderEngine records sell realized pnl after costs", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 60_000,
+          marketValueKrw: 70_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 70_000,
+      thesis: "Paper-only sell fixture."
+    }),
+    riskPolicy: { now },
+    executionPolicy: {
+      feeBps: 10,
+      taxBps: 20
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.grossAmountKrw, 70_000);
+  assert.equal(result.trade?.feeKrw, 70);
+  assert.equal(result.trade?.taxKrw, 140);
+  assert.equal(result.trade?.netAmountKrw, 69_790);
+  assert.equal(result.trade?.realizedPnlKrw, 9_790);
+  assert.equal(result.portfolio.cashKrw, 69_790);
+  assert.equal(result.portfolio.positions.length, 0);
 });
 
 test("PaperOrderEngine does not mutate portfolio when risk rejects", () => {

@@ -108,11 +108,7 @@ export class CodexCliDecisionProvider {
     }
 
     try {
-      const decision = parseWithSchema(
-        virtualDecisionSchema,
-        JSON.parse(result.stdout.trim()),
-        "virtualDecision"
-      );
+      const decision = parseVirtualDecisionFromStdout(result.stdout);
       return { attempted: true, decision, failure: null, command };
     } catch (error) {
       return failure(
@@ -177,4 +173,94 @@ function failure(
   }
 
   return base;
+}
+
+function parseVirtualDecisionFromStdout(stdout: string): VirtualDecision {
+  const direct = tryParseVirtualDecision(stdout.trim());
+  if (direct !== null) {
+    return direct;
+  }
+
+  for (const candidate of extractJsonObjectCandidates(stdout)) {
+    const decision = tryParseVirtualDecision(candidate);
+    if (decision !== null) {
+      return decision;
+    }
+  }
+
+  throw new Error("stdout did not contain a valid virtualDecision JSON object");
+}
+
+function tryParseVirtualDecision(value: string): VirtualDecision | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return parseWithSchema(
+      virtualDecisionSchema,
+      JSON.parse(value),
+      "virtualDecision"
+    );
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonObjectCandidates(stdout: string): string[] {
+  const candidates: string[] = [];
+
+  for (let start = 0; start < stdout.length; start += 1) {
+    if (stdout[start] !== "{") {
+      continue;
+    }
+
+    const end = findJsonObjectEnd(stdout, start);
+    if (end !== -1) {
+      candidates.push(stdout.slice(start, end + 1));
+      start = end;
+    }
+  }
+
+  return candidates;
+}
+
+function findJsonObjectEnd(value: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return -1;
 }

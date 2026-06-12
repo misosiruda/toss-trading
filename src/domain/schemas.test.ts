@@ -172,6 +172,92 @@ test("non-hold decisions require risk factors", () => {
   );
 });
 
+test("sell decisions require explicit sizing", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /Sell decisions must include/
+  );
+});
+
+test("sell decisions support reduce-only ratio sizing", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellRatio?: number;
+      reduceOnly?: boolean;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellRatio = 0.5;
+  decision.decisions[0]!.reduceOnly = true;
+
+  const parsed = parseWithSchema(
+    virtualDecisionSchema,
+    decision,
+    "virtualDecision"
+  );
+
+  assert.equal(parsed.decisions[0]?.sellRatio, 0.5);
+  assert.equal(parsed.decisions[0]?.reduceOnly, true);
+});
+
+test("sell decisions reject v2 sizing without reduceOnly true", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellRatio?: number;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellRatio = 0.5;
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /reduceOnly to true/
+  );
+});
+
+test("sell decisions reject explicit non reduce-only intent", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellAll?: boolean;
+      reduceOnly?: boolean;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellAll = true;
+  decision.decisions[0]!.reduceOnly = false;
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /reduce-only/
+  );
+});
+
 test("stale timestamp helper rejects expired values", () => {
   assert.throws(
     () =>
