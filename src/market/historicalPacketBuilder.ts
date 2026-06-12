@@ -20,7 +20,8 @@ export interface HistoricalMarketPacketBuilderOptions {
 
 export interface HistoricalMarketPacketBuildInput {
   portfolio: VirtualPortfolio;
-  snapshots: HistoricalMarketSnapshot[];
+  snapshots?: HistoricalMarketSnapshot[];
+  snapshotIndex?: HistoricalMarketSnapshotIndex;
 }
 
 export type HistoricalMarketPacketBuildResult =
@@ -43,52 +44,135 @@ export type HistoricalMarketPacketBuildResult =
       excludedStaleCount: number;
     };
 
-export class HistoricalMarketPacketBuilder {
-  constructor(private readonly options: HistoricalMarketPacketBuilderOptions) {
-    validateOptions(options);
+interface HistoricalCandidateFeatures {
+  score: number;
+  reasonCodes: string[];
+}
+
+interface IndexedHistoricalMarketSnapshot {
+  snapshot: HistoricalMarketSnapshot;
+  observedAtMs: number;
+}
+
+const maxDetailedExclusionWarnings = 20;
+
+export class HistoricalMarketSnapshotIndex {
+  private readonly snapshotsByTime: IndexedHistoricalMarketSnapshot[];
+  private readonly snapshotsBySymbol = new Map<
+    string,
+    IndexedHistoricalMarketSnapshot[]
+  >();
+
+  constructor(snapshots: HistoricalMarketSnapshot[]) {
+    this.snapshotsByTime = snapshots
+      .map((snapshot) => ({
+        snapshot,
+        observedAtMs: Date.parse(snapshot.observedAt)
+      }))
+      .sort(compareIndexedSnapshotFreshness);
+
+    for (const item of this.snapshotsByTime) {
+      const key = `${item.snapshot.market}:${item.snapshot.symbol}`;
+      const current = this.snapshotsBySymbol.get(key) ?? [];
+      current.push(item);
+      this.snapshotsBySymbol.set(key, current);
+    }
+  }
+
+  get sourceSnapshotCount(): number {
+    return this.snapshotsByTime.length;
+  }
+
+  latestFreshSnapshots(input: {
+    simulatedAt: Date;
+    maxSnapshotAgeSeconds: number;
+  }): HistoricalMarketSnapshot[] {
+    const simulatedAtMs = input.simulatedAt.getTime();
+    const staleBeforeMs = simulatedAtMs - input.maxSnapshotAgeSeconds * 1000;
+    const selectedSnapshots: IndexedHistoricalMarketSnapshot[] = [];
+
+    for (const history of this.snapshotsBySymbol.values()) {
+      const currentIndex = upperBoundObservedAt(history, simulatedAtMs) - 1;
+      if (currentIndex < 0) {
+        continue;
+      }
+
+      const current = history[currentIndex];
+      if (current === undefined || current.observedAtMs < staleBeforeMs) {
+        continue;
+      }
+
+      selectedSnapshots.push(current);
+    }
+
+    return selectedSnapshots.map((item) => item.snapshot).sort(compareCandidateSnapshots);
   }
 
   build(
-    input: HistoricalMarketPacketBuildInput
+    options: HistoricalMarketPacketBuilderOptions,
+    portfolio: VirtualPortfolio
   ): HistoricalMarketPacketBuildResult {
-    const warnings: string[] = [];
-    const selectedSnapshots = new Map<string, HistoricalMarketSnapshot>();
-    let excludedFutureCount = 0;
-    let excludedStaleCount = 0;
-    const simulatedAtMs = this.options.simulatedAt.getTime();
+    const simulatedAtMs = options.simulatedAt.getTime();
+    const staleBeforeMs = simulatedAtMs - options.maxSnapshotAgeSeconds * 1000;
+    const firstFutureIndex = upperBoundObservedAt(
+      this.snapshotsByTime,
+      simulatedAtMs
+    );
+    const firstFreshIndex = lowerBoundObservedAt(
+      this.snapshotsByTime,
+      staleBeforeMs
+    );
+    const excludedFutureCount = this.snapshotsByTime.length - firstFutureIndex;
+    const excludedStaleCount = firstFreshIndex;
+    const warnings = exclusionWarnings(
+      this.snapshotsByTime,
+      firstFreshIndex,
+      firstFutureIndex,
+      excludedStaleCount,
+      excludedFutureCount
+    );
 
-    for (const snapshot of input.snapshots) {
-      const observedAtMs = Date.parse(snapshot.observedAt);
-      if (observedAtMs > simulatedAtMs) {
-        excludedFutureCount += 1;
-        warnings.push(
-          `${snapshot.market}:${snapshot.symbol} ${snapshot.snapshotId} excluded: future snapshot`
-        );
+    const selectedSnapshots = this.latestFreshSnapshots({
+      simulatedAt: options.simulatedAt,
+      maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds
+    });
+    const featureHistoryBySnapshotId = new Map<
+      string,
+      HistoricalMarketSnapshot[]
+    >();
+
+    for (const history of this.snapshotsBySymbol.values()) {
+      const currentIndex = upperBoundObservedAt(history, simulatedAtMs) - 1;
+      if (currentIndex < 0) {
         continue;
       }
 
-      if (
-        observedAtMs <
-        simulatedAtMs - this.options.maxSnapshotAgeSeconds * 1000
-      ) {
-        excludedStaleCount += 1;
-        warnings.push(
-          `${snapshot.market}:${snapshot.symbol} ${snapshot.snapshotId} excluded: stale historical snapshot`
-        );
+      const current = history[currentIndex];
+      if (current === undefined || current.observedAtMs < staleBeforeMs) {
         continue;
       }
 
-      const key = `${snapshot.market}:${snapshot.symbol}`;
-      const existing = selectedSnapshots.get(key);
-      if (existing === undefined || compareSnapshotFreshness(snapshot, existing) > 0) {
-        selectedSnapshots.set(key, snapshot);
-      }
+      featureHistoryBySnapshotId.set(
+        current.snapshot.snapshotId,
+        history
+          .slice(Math.max(0, currentIndex - 5), currentIndex + 1)
+          .map((item) => item.snapshot)
+      );
     }
 
-    const candidates = Array.from(selectedSnapshots.values())
-      .sort(compareCandidateSnapshots)
-      .slice(0, this.options.maxCandidates)
-      .map((snapshot, index) => toCandidateDraft(snapshot, index + 1, this.options));
+    const candidates = selectedSnapshots
+      .slice(0, options.maxCandidates)
+      .map((snapshot, index) =>
+        toCandidateDraft(
+          snapshot,
+          index + 1,
+          options,
+          deriveCandidateFeatures(
+            snapshot,
+            featureHistoryBySnapshotId.get(snapshot.snapshotId) ?? [snapshot]
+          )
+        )
+      );
 
     if (candidates.length === 0) {
       return {
@@ -98,7 +182,7 @@ export class HistoricalMarketPacketBuilder {
           warnings.length > 0
             ? warnings
             : ["historical packet failed: no snapshots available"],
-        sourceSnapshotCount: input.snapshots.length,
+        sourceSnapshotCount: this.sourceSnapshotCount,
         candidateSnapshotCount: 0,
         excludedFutureCount,
         excludedStaleCount
@@ -106,13 +190,13 @@ export class HistoricalMarketPacketBuilder {
     }
 
     const result = new MarketPacketBuilder({
-      packetId: this.options.packetId,
-      generatedAt: this.options.simulatedAt,
-      expiresInSeconds: this.options.expiresInSeconds,
-      maxCandidates: this.options.maxCandidates,
-      constraints: this.options.constraints
+      packetId: options.packetId,
+      generatedAt: options.simulatedAt,
+      expiresInSeconds: options.expiresInSeconds,
+      maxCandidates: options.maxCandidates,
+      constraints: options.constraints
     }).build({
-      portfolio: input.portfolio,
+      portfolio,
       candidates
     });
 
@@ -120,7 +204,7 @@ export class HistoricalMarketPacketBuilder {
       status: "ok",
       packet: result.packet,
       warnings: [...warnings, ...result.warnings],
-      sourceSnapshotCount: input.snapshots.length,
+      sourceSnapshotCount: this.sourceSnapshotCount,
       candidateSnapshotCount: candidates.length,
       excludedFutureCount,
       excludedStaleCount
@@ -128,17 +212,38 @@ export class HistoricalMarketPacketBuilder {
   }
 }
 
+export class HistoricalMarketPacketBuilder {
+  constructor(private readonly options: HistoricalMarketPacketBuilderOptions) {
+    validateOptions(options);
+  }
+
+  build(
+    input: HistoricalMarketPacketBuildInput
+  ): HistoricalMarketPacketBuildResult {
+    const snapshotIndex =
+      input.snapshotIndex ??
+      new HistoricalMarketSnapshotIndex(input.snapshots ?? []);
+    return snapshotIndex.build(this.options, input.portfolio);
+  }
+}
+
 function toCandidateDraft(
   snapshot: HistoricalMarketSnapshot,
   ranking: number,
-  options: HistoricalMarketPacketBuilderOptions
+  options: HistoricalMarketPacketBuilderOptions,
+  features: HistoricalCandidateFeatures
 ): MarketCandidateDraft {
   return {
     market: snapshot.market,
     symbol: snapshot.symbol,
     lastPriceKrw: snapshot.lastPriceKrw,
     ranking,
-    reasonCodes: [`HISTORICAL_${snapshot.interval}`, "HISTORICAL_REPLAY"],
+    score: features.score,
+    reasonCodes: [
+      `HISTORICAL_${snapshot.interval}`,
+      "HISTORICAL_REPLAY",
+      ...features.reasonCodes
+    ],
     sourceRefs: [
       `historical_snapshot:${snapshot.snapshotId}`,
       ...snapshot.sourceRefs
@@ -150,15 +255,154 @@ function toCandidateDraft(
   };
 }
 
-function compareSnapshotFreshness(
-  left: HistoricalMarketSnapshot,
-  right: HistoricalMarketSnapshot
+function deriveCandidateFeatures(
+  current: HistoricalMarketSnapshot,
+  history: HistoricalMarketSnapshot[]
+): HistoricalCandidateFeatures {
+  const currentObservedAtMs = Date.parse(current.observedAt);
+  const pastSnapshots = history.filter(
+    (snapshot) => Date.parse(snapshot.observedAt) <= currentObservedAtMs
+  );
+  const currentIndex = pastSnapshots.findIndex(
+    (snapshot) => snapshot.snapshotId === current.snapshotId
+  );
+  const previous = currentIndex > 0 ? pastSnapshots[currentIndex - 1] : undefined;
+  const recentWindowStart = Math.max(0, pastSnapshots.length - 6);
+  const recentWindow = pastSnapshots.slice(recentWindowStart);
+  const baseline = recentWindow[0];
+  const previousWindow = recentWindow.slice(0, -1);
+
+  const reasonCodes: string[] = [];
+  let score = 50;
+
+  const oneStepChangePct =
+    previous !== undefined
+      ? percentageChange(current.lastPriceKrw, previous.lastPriceKrw)
+      : undefined;
+  if (oneStepChangePct !== undefined) {
+    score += oneStepChangePct * 500;
+    reasonCodes.push(momentumReasonCode(oneStepChangePct));
+  }
+
+  const windowChangePct =
+    baseline !== undefined && baseline.snapshotId !== current.snapshotId
+      ? percentageChange(current.lastPriceKrw, baseline.lastPriceKrw)
+      : undefined;
+  if (windowChangePct !== undefined) {
+    score += windowChangePct * 250;
+    reasonCodes.push(trendReasonCode(windowChangePct));
+  }
+
+  const volumeRatio = volumeRatioAgainstAverage(current, previousWindow);
+  if (volumeRatio !== undefined) {
+    if (volumeRatio >= 1.2) {
+      score += 5;
+      reasonCodes.push("HISTORICAL_VOLUME_ABOVE_AVG");
+    } else if (volumeRatio <= 0.8) {
+      score -= 5;
+      reasonCodes.push("HISTORICAL_VOLUME_BELOW_AVG");
+    } else {
+      reasonCodes.push("HISTORICAL_VOLUME_NEAR_AVG");
+    }
+  }
+
+  const candleReason = candleReasonCode(current);
+  if (candleReason !== undefined) {
+    reasonCodes.push(candleReason);
+  }
+
+  return {
+    score: clampScore(score),
+    reasonCodes: Array.from(new Set(reasonCodes)).sort()
+  };
+}
+
+function percentageChange(current: number, baseline: number): number | undefined {
+  if (baseline <= 0) {
+    return undefined;
+  }
+  return (current - baseline) / baseline;
+}
+
+function momentumReasonCode(changePct: number): string {
+  if (changePct > 0.001) {
+    return "HISTORICAL_MOMENTUM_UP";
+  }
+  if (changePct < -0.001) {
+    return "HISTORICAL_MOMENTUM_DOWN";
+  }
+  return "HISTORICAL_MOMENTUM_FLAT";
+}
+
+function trendReasonCode(changePct: number): string {
+  if (changePct > 0.003) {
+    return "HISTORICAL_TREND_UP";
+  }
+  if (changePct < -0.003) {
+    return "HISTORICAL_TREND_DOWN";
+  }
+  return "HISTORICAL_TREND_FLAT";
+}
+
+function volumeRatioAgainstAverage(
+  current: HistoricalMarketSnapshot,
+  previousWindow: HistoricalMarketSnapshot[]
+): number | undefined {
+  if (current.volume === undefined || previousWindow.length === 0) {
+    return undefined;
+  }
+
+  const previousVolumes = previousWindow
+    .map((snapshot) => snapshot.volume)
+    .filter((volume): volume is number => volume !== undefined);
+  if (previousVolumes.length === 0) {
+    return undefined;
+  }
+
+  const averageVolume =
+    previousVolumes.reduce((total, volume) => total + volume, 0) /
+    previousVolumes.length;
+  if (averageVolume <= 0) {
+    return undefined;
+  }
+
+  return current.volume / averageVolume;
+}
+
+function candleReasonCode(snapshot: HistoricalMarketSnapshot): string | undefined {
+  if (snapshot.openPriceKrw === undefined || snapshot.closePriceKrw === undefined) {
+    return undefined;
+  }
+  if (snapshot.closePriceKrw > snapshot.openPriceKrw) {
+    return "HISTORICAL_CANDLE_UP";
+  }
+  if (snapshot.closePriceKrw < snapshot.openPriceKrw) {
+    return "HISTORICAL_CANDLE_DOWN";
+  }
+  return "HISTORICAL_CANDLE_FLAT";
+}
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function compareIndexedSnapshotFreshness(
+  left: IndexedHistoricalMarketSnapshot,
+  right: IndexedHistoricalMarketSnapshot
 ): number {
-  const observedDiff = Date.parse(left.observedAt) - Date.parse(right.observedAt);
+  const observedDiff = left.observedAtMs - right.observedAtMs;
   if (observedDiff !== 0) {
     return observedDiff;
   }
-  return left.snapshotId.localeCompare(right.snapshotId);
+  const marketDiff = left.snapshot.market.localeCompare(right.snapshot.market);
+  if (marketDiff !== 0) {
+    return marketDiff;
+  }
+  const symbolDiff = left.snapshot.symbol.localeCompare(right.snapshot.symbol);
+  if (symbolDiff !== 0) {
+    return symbolDiff;
+  }
+  return left.snapshot.snapshotId.localeCompare(right.snapshot.snapshotId);
 }
 
 function compareCandidateSnapshots(
@@ -178,6 +422,90 @@ function compareCandidateSnapshots(
     return symbolDiff;
   }
   return left.snapshotId.localeCompare(right.snapshotId);
+}
+
+function lowerBoundObservedAt(
+  snapshots: IndexedHistoricalMarketSnapshot[],
+  observedAtMs: number
+): number {
+  let low = 0;
+  let high = snapshots.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const item = snapshots[middle];
+    if (item !== undefined && item.observedAtMs < observedAtMs) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+function upperBoundObservedAt(
+  snapshots: IndexedHistoricalMarketSnapshot[],
+  observedAtMs: number
+): number {
+  let low = 0;
+  let high = snapshots.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const item = snapshots[middle];
+    if (item !== undefined && item.observedAtMs <= observedAtMs) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+function exclusionWarnings(
+  snapshotsByTime: IndexedHistoricalMarketSnapshot[],
+  firstFreshIndex: number,
+  firstFutureIndex: number,
+  excludedStaleCount: number,
+  excludedFutureCount: number
+): string[] {
+  const warnings: string[] = [];
+  const staleDetailCount = Math.min(
+    excludedStaleCount,
+    maxDetailedExclusionWarnings
+  );
+  const staleStartIndex = Math.max(0, firstFreshIndex - staleDetailCount);
+  for (const item of snapshotsByTime.slice(staleStartIndex, firstFreshIndex)) {
+    warnings.push(exclusionWarning(item.snapshot, "stale historical snapshot"));
+  }
+  if (excludedStaleCount > staleDetailCount) {
+    warnings.push(
+      `${excludedStaleCount - staleDetailCount} additional historical snapshots excluded: stale historical snapshot`
+    );
+  }
+
+  const futureDetailCount = Math.min(
+    excludedFutureCount,
+    Math.max(0, maxDetailedExclusionWarnings - warnings.length)
+  );
+  for (const item of snapshotsByTime.slice(
+    firstFutureIndex,
+    firstFutureIndex + futureDetailCount
+  )) {
+    warnings.push(exclusionWarning(item.snapshot, "future snapshot"));
+  }
+  if (excludedFutureCount > futureDetailCount) {
+    warnings.push(
+      `${excludedFutureCount - futureDetailCount} additional historical snapshots excluded: future snapshot`
+    );
+  }
+
+  return warnings;
+}
+
+function exclusionWarning(
+  snapshot: HistoricalMarketSnapshot,
+  reason: "future snapshot" | "stale historical snapshot"
+): string {
+  return `${snapshot.market}:${snapshot.symbol} ${snapshot.snapshotId} excluded: ${reason}`;
 }
 
 function validateOptions(options: HistoricalMarketPacketBuilderOptions): void {

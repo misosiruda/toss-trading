@@ -28,8 +28,13 @@ export const virtualPositionSchema = z
     symbol: nonEmptyStringSchema,
     quantity: z.number().nonnegative(),
     averagePriceKrw: moneyKrwSchema,
+    marketPriceKrw: moneyKrwSchema.optional(),
     marketValueKrw: moneyKrwSchema.optional(),
     unrealizedPnlKrw: z.number().optional(),
+    priceUpdatedAt: isoDateTimeSchema.optional(),
+    priceStaleAfter: isoDateTimeSchema.optional(),
+    priceSourceRefs: z.array(nonEmptyStringSchema).optional(),
+    isPriceStale: z.boolean().optional(),
     updatedAt: isoDateTimeSchema
   })
   .strict();
@@ -48,10 +53,16 @@ export const marketCandidateSchema = z
     market: marketSchema,
     symbol: nonEmptyStringSchema,
     name: nonEmptyStringSchema.optional(),
+    sector: nonEmptyStringSchema.optional(),
+    industry: nonEmptyStringSchema.optional(),
     lastPriceKrw: moneyKrwSchema.optional(),
     ranking: z.number().int().positive().optional(),
     score: z.number().min(0).max(100).optional(),
     reasonCodes: z.array(nonEmptyStringSchema).default([]),
+    eventTags: z.array(nonEmptyStringSchema).optional(),
+    newsRefs: z.array(nonEmptyStringSchema).optional(),
+    dividendYieldPct: z.number().min(0).max(100).optional(),
+    exDividendDate: nonEmptyStringSchema.optional(),
     sourceRefs: z.array(nonEmptyStringSchema).min(1),
     collectedAt: isoDateTimeSchema,
     staleAfter: isoDateTimeSchema

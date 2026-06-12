@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type {
   HistoricalMarketSnapshot,
+  VirtualDecision,
   VirtualPortfolio
 } from "../domain/schemas.js";
 import {
@@ -176,6 +177,52 @@ test("historical replay runner preserves portfolio on sampled-out steps", () => 
   assert.equal(result.progressSummary.decisionsRequested, 2);
 });
 
+test("historical replay runner marks held positions to current market prices", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      decisionProvider: new HoldDecisionProvider(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      })
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 500_000,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 2,
+            averagePriceKrw: 70_000,
+            marketValueKrw: 140_000,
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 80_000
+        })
+      ]
+    }
+  );
+
+  const finalPosition = result.finalPortfolio.positions[0];
+  const timelineItem = result.portfolioTimeline.at(-1);
+
+  assert.equal(finalPosition?.marketPriceKrw, 80_000);
+  assert.equal(finalPosition?.marketValueKrw, 160_000);
+  assert.equal(finalPosition?.unrealizedPnlKrw, 20_000);
+  assert.equal(timelineItem?.positionMarketValueKrw, 160_000);
+  assert.equal(timelineItem?.virtualNetWorthKrw, 660_000);
+});
+
 function runnerOptions(): HistoricalReplayRunnerOptions {
   return {
     clock: new SimulatedClock({
@@ -206,6 +253,32 @@ class CountingDecisionProvider implements HistoricalReplayDecisionProvider {
   ) {
     this.calls += 1;
     return this.delegate.decide(packet);
+  }
+}
+
+class HoldDecisionProvider implements HistoricalReplayDecisionProvider {
+  decide(
+    packet: Parameters<HistoricalReplayDecisionProvider["decide"]>[0]
+  ): VirtualDecision {
+    const candidate = packet.candidates[0];
+    assert.ok(candidate);
+    return {
+      packetId: packet.packetId,
+      summary: "Hold fixture.",
+      decisions: [
+        {
+          market: candidate.market,
+          symbol: candidate.symbol,
+          action: "VIRTUAL_HOLD",
+          confidence: 0.5,
+          budgetKrw: 0,
+          thesis: "Hold existing position.",
+          riskFactors: [],
+          dataRefs: [candidate.sourceRefs[0] ?? `packet:${packet.packetId}`],
+          expiresAt: packet.expiresAt
+        }
+      ]
+    };
   }
 }
 
