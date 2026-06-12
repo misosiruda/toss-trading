@@ -1465,6 +1465,40 @@
 - live `TradingSignal` 또는 `OrderIntent` 연결
 - live trading 또는 broker adapter 연결
 
+## PR-49: Virtual Decision Regression Suite
+
+목표:
+
+- paper-only AI decision validation의 golden path와 adversarial rejection path를 고정 회귀 테스트로 묶습니다.
+- 개별 validator unit test가 커버하는 규칙을 실제 packet/decision fixture 조합 기준으로 재검증해 contract drift를 빠르게 감지합니다.
+
+작업 범위:
+
+- golden `MarketPacket` + `VirtualDecision` fixture 추가
+- validation 통과 후 backend-generated `confidenceBreakdown` binding 검증
+- unknown `dataRef`, cross-symbol `dataRef`, unknown `featureRef` adversarial case 검증
+- `claimSupport` 누락, candidate 밖 `claimSupport.dataRefs`, candidate 밖 `claimSupport.featureRefs` 검증
+- AI-supplied `decisionHash`, AI-supplied `confidenceBreakdown` reject 검증
+- candidate eligibility 밖 `VIRTUAL_BUY` reject 검증
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- golden fixture가 semantic validation을 통과함
+- confidence breakdown은 AI output이 아니라 validation 이후 backend binding으로만 생성됨
+- adversarial fixture가 기대 reject code로 hard reject됨
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- production validation rule 변경
+- scoring threshold, calibration, conformal/abstention policy
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

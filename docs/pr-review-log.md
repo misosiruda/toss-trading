@@ -1302,3 +1302,30 @@
 - paper run, stored market packet run, historical replay runner는 validation 이후 저장/result decision에 confidence breakdown을 bind합니다.
 - `docs/codex-cli-paper-trading.md`는 `confidenceBreakdown`이 backend-generated 저장 metadata이며 Codex output field가 아님을 명시합니다.
 - 이번 PR은 confidence threshold gate, Risk Engine approval 연동, calibration policy, decision schema v2 전환은 포함하지 않습니다.
+
+## PR-49: Virtual Decision Regression Suite
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only virtual decision validation의 regression test와 PR 계획 문서 갱신에 한정합니다.
+- production validation rule, scoring threshold, calibration, conformal/abstention policy는 변경하지 않았습니다.
+- golden fixture는 semantic validation과 validation 이후 backend confidence binding만 검증합니다.
+- adversarial fixture는 packet 밖 ref, cross-symbol ref, AI-supplied backend-only field, eligibility violation이 hard reject되는지 고정합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- golden regression test에서 packet/decision pair가 semantic validation을 통과하는지 검증했습니다.
+- golden regression test에서 `confidenceBreakdown`이 AI output에는 없고 validation 이후 backend binding으로 생성되는지 검증했습니다.
+- adversarial regression table에서 unknown `dataRef`, cross-symbol `dataRef`, unknown `featureRef`를 검증했습니다.
+- adversarial regression table에서 `claimSupport` 누락, candidate 밖 `claimSupport.dataRefs`, candidate 밖 `claimSupport.featureRefs`를 검증했습니다.
+- adversarial regression table에서 AI-supplied `decisionHash`, AI-supplied `confidenceBreakdown`, ineligible BUY를 검증했습니다.
+- `npm test`로 전체 test suite 208개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/virtualDecisionRegression.test.ts`를 추가해 golden/adversarial fixture 기반 regression suite를 구성했습니다.
+- `docs/pr-implementation-plan.md`에 PR-49 계획, 검증 기준, 제외사항을 추가했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 테스트에는 live/order/broker 경계 확장이 없고, 계획 문서에는 제외사항 문구로만 관련 키워드가 남는 것을 확인했습니다.
+- 이번 PR은 production code 변경 없이 regression coverage와 계획 문서만 추가합니다.
