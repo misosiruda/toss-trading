@@ -65,6 +65,12 @@ function validVirtualDecision(): unknown {
         thesis: "Ranking and source refs support a small virtual allocation.",
         riskFactors: ["Paper-only fixture risk."],
         dataRefs: ["external_snapshot_001"],
+        claimSupport: [
+          {
+            claim: "Ranking and source refs support a small virtual allocation.",
+            dataRefs: ["external_snapshot_001"]
+          }
+        ],
         expiresAt: later
       }
     ]
@@ -157,6 +163,20 @@ test("missing data ref is rejected", () => {
   assert.throws(
     () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
     /failed validation/
+  );
+});
+
+test("claim support requires at least one supporting ref", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      claimSupport: Array<{ claim: string; dataRefs?: string[] }>;
+    }>;
+  };
+  decision.decisions[0]!.claimSupport = [{ claim: "Unsupported claim." }];
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /Claim support/
   );
 });
 

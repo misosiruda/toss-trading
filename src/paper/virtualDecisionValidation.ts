@@ -20,6 +20,9 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
   "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE",
   "VIRTUAL_DECISION_FEATURE_REF_NOT_IN_CANDIDATE",
+  "VIRTUAL_DECISION_CLAIM_SUPPORT_REQUIRED",
+  "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE",
+  "VIRTUAL_DECISION_CLAIM_SUPPORT_FEATURE_REF_NOT_IN_CANDIDATE",
   "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
   "VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED"
 ] as const;
@@ -35,6 +38,7 @@ export interface VirtualDecisionValidationIssue {
   action?: VirtualAction;
   dataRef?: string;
   featureRef?: string;
+  claim?: string;
   metadataField?: string;
 }
 
@@ -187,6 +191,46 @@ export function validateVirtualDecisionAgainstPacket(input: {
         });
       }
     }
+
+    if (!item.claimSupport || item.claimSupport.length === 0) {
+      issues.push({
+        code: "VIRTUAL_DECISION_CLAIM_SUPPORT_REQUIRED",
+        message: `${item.market}:${item.symbol} must include claimSupport`,
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
+    }
+
+    for (const claimSupport of item.claimSupport ?? []) {
+      for (const dataRef of claimSupport.dataRefs ?? []) {
+        if (!candidate.sourceRefs.includes(dataRef)) {
+          issues.push({
+            code: "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE",
+            message: `${dataRef} is not a claim support sourceRef for ${item.market}:${item.symbol}`,
+            market: item.market,
+            symbol: item.symbol,
+            action: item.action,
+            dataRef,
+            claim: claimSupport.claim
+          });
+        }
+      }
+
+      for (const featureRef of claimSupport.featureRefs ?? []) {
+        if (!(candidate.featureRefs ?? []).includes(featureRef)) {
+          issues.push({
+            code: "VIRTUAL_DECISION_CLAIM_SUPPORT_FEATURE_REF_NOT_IN_CANDIDATE",
+            message: `${featureRef} is not a claim support featureRef for ${item.market}:${item.symbol}`,
+            market: item.market,
+            symbol: item.symbol,
+            action: item.action,
+            featureRef,
+            claim: claimSupport.claim
+          });
+        }
+      }
+    }
   }
 
   return {
@@ -207,10 +251,11 @@ export function summarizeVirtualDecisionValidation(
       const featureRef = issue.featureRef
         ? ` featureRef=${issue.featureRef}`
         : "";
+      const claim = issue.claim ? ` claim=${issue.claim}` : "";
       const metadataField = issue.metadataField
         ? ` metadataField=${issue.metadataField}`
         : "";
-      return `${issue.code}${target}${dataRef}${featureRef}${metadataField}`;
+      return `${issue.code}${target}${dataRef}${featureRef}${claim}${metadataField}`;
     })
     .join("; ");
 }

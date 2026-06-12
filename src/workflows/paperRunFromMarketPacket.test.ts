@@ -249,6 +249,12 @@ function virtualDecision(): VirtualDecision {
         thesis: "Stored market packet supports a paper-only virtual buy.",
         riskFactors: ["Paper-only simulation risk."],
         dataRefs: ["tossinvest_cli:market.ranking:0:0"],
+        claimSupport: [
+          {
+            claim: "Stored market packet supports a paper-only virtual buy.",
+            dataRefs: ["tossinvest_cli:market.ranking:0:0"]
+          }
+        ],
         expiresAt: "2026-06-11T09:05:00+09:00"
       }
     ]

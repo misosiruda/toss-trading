@@ -112,6 +112,10 @@ export class FirstPricedHistoricalDecisionProvider
     const candidate = packet.candidates.find(
       (item) => item.lastPriceKrw !== undefined
     );
+    const dataRef =
+      candidate === undefined
+        ? null
+        : candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
     const decisions: VirtualDecisionItem[] =
       candidate === undefined
         ? []
@@ -130,7 +134,14 @@ export class FirstPricedHistoricalDecisionProvider
               riskFactors: [
                 "Historical replay fixture is not a live trading signal."
               ],
-              dataRefs: [candidate.sourceRefs[0] ?? `packet:${packet.packetId}`],
+              dataRefs: [dataRef ?? `packet:${packet.packetId}`],
+              claimSupport: [
+                {
+                  claim:
+                    "Deterministic historical replay fixture uses the first priced candidate.",
+                  dataRefs: [dataRef ?? `packet:${packet.packetId}`]
+                }
+              ],
               expiresAt: packet.expiresAt
             }
           ];

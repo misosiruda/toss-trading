@@ -141,6 +141,25 @@ export const marketPacketSchema = z
   })
   .strict();
 
+export const virtualDecisionClaimSupportSchema = z
+  .object({
+    claim: nonEmptyStringSchema,
+    dataRefs: z.array(nonEmptyStringSchema).optional(),
+    featureRefs: z.array(nonEmptyStringSchema).optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const refCount =
+      (value.dataRefs?.length ?? 0) + (value.featureRefs?.length ?? 0);
+    if (refCount === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataRefs"],
+        message: "Claim support must include at least one dataRef or featureRef"
+      });
+    }
+  });
+
 export const virtualDecisionItemSchema = z
   .object({
     symbol: nonEmptyStringSchema,
@@ -159,6 +178,7 @@ export const virtualDecisionItemSchema = z
     riskFactors: z.array(nonEmptyStringSchema),
     dataRefs: z.array(nonEmptyStringSchema).min(1),
     featureRefs: z.array(nonEmptyStringSchema).optional(),
+    claimSupport: z.array(virtualDecisionClaimSupportSchema).optional(),
     expiresAt: isoDateTimeSchema
   })
   .strict()
@@ -287,6 +307,9 @@ export type HistoricalMarketSnapshot = z.infer<
   typeof historicalMarketSnapshotSchema
 >;
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
+export type VirtualDecisionClaimSupport = z.infer<
+  typeof virtualDecisionClaimSupportSchema
+>;
 export type VirtualDecisionItem = z.infer<typeof virtualDecisionItemSchema>;
 export type VirtualDecision = z.infer<typeof virtualDecisionSchema>;
 export type VirtualRiskDecision = z.infer<typeof virtualRiskDecisionSchema>;

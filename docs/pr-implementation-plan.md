@@ -1355,6 +1355,44 @@
 - live `TradingSignal` 또는 `OrderIntent` 연결
 - live trading 또는 broker adapter 연결
 
+## PR-46: Virtual Decision Claim Support
+
+목표:
+
+- AI decision의 핵심 thesis/risk claim을 packet 내부 ref와 명시적으로 연결합니다.
+- free-text 근거 설명이 packet 밖 정보를 암시하거나 다른 symbol/source를 끌어오지 못하도록 semantic validation을 강화합니다.
+
+작업 범위:
+
+- `VirtualDecisionItem.claimSupport[]` optional runtime field
+- Codex output schema artifact에서 decision item별 `claimSupport` required 반영
+- claim별 `claim`, `dataRefs`, `featureRefs` 구조 추가
+- claim support가 최소 하나의 `dataRef` 또는 `featureRef`를 갖도록 schema validation
+- semantic validator의 claimSupport 누락 hard reject
+- claimSupport `dataRefs`와 `featureRefs`가 같은 packet candidate ref에 속하는지 검증
+- Codex paper decision prompt version update
+- dry-run/static historical fixture의 claimSupport 보강
+- Codex CLI paper trading 문서에 claimSupport contract 반영
+
+검증:
+
+- schema artifact가 `claimSupport`를 required로 요구함
+- prompt가 claimSupport mapping 규칙을 명시함
+- claimSupport가 supporting ref 없이 들어오면 schema reject됨
+- claimSupport 누락 decision은 semantic reject됨
+- claimSupport가 packet candidate 밖 dataRef/featureRef를 참조하면 semantic reject됨
+- dry-run/stored packet/historical replay fixture가 claimSupport gate를 통과함
+- full test suite
+
+제외:
+
+- `thesis` free text의 자연어 entailment 검증
+- feature value score 계산
+- confidence decomposition
+- decision schema v2 전면 전환
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

@@ -1210,3 +1210,35 @@
 - `src/replay/historicalReplayAuditLog.ts`와 `src/replay/historicalReplayProgress.ts`는 replay decision record에도 같은 backend hash를 바인딩합니다.
 - `src/paper/virtualDecisionValidation.ts`는 AI가 직접 보낸 `decisionHash`를 reject합니다.
 - 이번 PR은 external signing, hash registry, immutable storage backend는 포함하지 않습니다.
+
+## PR-46: Virtual Decision Claim Support
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only AI decision item의 핵심 claim을 packet 내부 ref와 연결하는 `claimSupport[]` contract에 한정합니다.
+- `claimSupport`는 natural-language thesis를 backend policy로 해석하지 않고, 각 claim이 어떤 `dataRefs`/`featureRefs`에 기대는지만 audit 가능하게 남기는 metadata입니다.
+- runtime schema는 기존 저장 record read compatibility를 위해 optional field로 확장합니다.
+- Codex output schema artifact는 신규 AI output에서 `claimSupport`를 required로 요구합니다.
+- semantic validator는 누락된 `claimSupport`, candidate 밖 dataRef, candidate 밖 featureRef를 hard reject합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- domain schema test에서 claimSupport가 ref 없이 들어오면 reject되는지 검증했습니다.
+- Codex output schema artifact test에서 decision item required에 `claimSupport`가 포함되는지 검증했습니다.
+- Codex prompt test에서 claimSupport mapping 지시가 포함되는지 검증했습니다.
+- semantic validator test에서 claimSupport 누락 decision이 `VIRTUAL_DECISION_CLAIM_SUPPORT_REQUIRED`로 reject되는지 검증했습니다.
+- semantic validator test에서 claimSupport dataRef/featureRef가 candidate 밖 ref를 참조하면 reject되는지 검증했습니다.
+- dry-run/stored packet/historical replay fixture에 claimSupport를 추가해 기존 paper-only workflow가 gate를 통과하도록 했습니다.
+- `npm test`로 전체 test suite 193개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `virtualDecisionClaimSupportSchema`와 `VirtualDecisionItem.claimSupport`를 추가했습니다.
+- `schemas/virtual-decision.schema.json`은 신규 AI output에서 item별 `claimSupport`를 required로 요구합니다.
+- `src/paper/virtualDecisionValidation.ts`는 claimSupport 누락과 packet 밖 claim support ref를 reject합니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v9`로 version을 올리고 claimSupport 작성 규칙을 명시합니다.
+- dry-run CLI, scheduler dry-run, stored market packet dry-run, historical replay fixture provider에 claimSupport를 추가했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- 금지 경계 grep에서 live order, raw `codex exec`, raw `tossctl`, sandbox escalation 관련 신규 노출이 없음을 확인했습니다.
+- 이번 PR은 natural-language claim entailment 검증, confidence decomposition, decision schema v2 전면 전환은 포함하지 않습니다.
