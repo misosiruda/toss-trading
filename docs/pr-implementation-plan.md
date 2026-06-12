@@ -1700,11 +1700,49 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-55: Batch Aggregate Report
+
+목표:
+
+- batch replay가 생성한 `batch-replay-runs.jsonl`을 전체 및 market regime별로 집계합니다.
+- 반복 실행 결과가 상승/하락/횡보/혼합/데이터부족 조건에서 어떻게 달라지는지 사후 분석할 수 있는 report를 만듭니다.
+- 집계 report는 paper-only 결과 요약이며 투자 조언, 성과 보장, live trading signal로 사용하지 않습니다.
+
+작업 범위:
+
+- batch run record aggregate report helper 추가
+- 전체 completed/skipped/failed count와 return sample count 계산
+- 전체 및 regime별 평균/중앙값/min/max paper return ratio 계산
+- 전체 및 regime별 win rate, final virtual net worth 평균, trade/rejected count 계산
+- `batch-replay-runs.jsonl` 입력 CLI 추가
+- optional aggregate report JSON 파일 출력
+- Historical Replay 문서에 report 실행 예시와 safety boundary 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- 전체 및 regime별 aggregate metric unit test
+- markdown render disclaimer test
+- CLI가 JSONL 입력을 읽고 aggregate JSON report를 쓰는지 검증
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- benchmark comparison hardening
+- dashboard batch view
+- aggregate 결과 기반 전략 자동 조정
+- Codex CLI AI batch 호출
+- 외부 historical data 수집기
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-55: Batch Aggregate Report
 - PR-56: Benchmark Comparison Hardening
 - PR-57: Batch Replay Dashboard Read-only View
 - PR-58: Regression And Safety Tests

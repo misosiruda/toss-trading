@@ -1495,3 +1495,36 @@
 - `docs/pr-implementation-plan.md`는 PR-54 범위와 PR-55 이후 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 aggregate report, regime별 수익률 비교표, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.
+
+## PR-55: Batch Aggregate Report
+
+### Review 1: Scope and Safety
+
+- 범위는 완료된 `batch-replay-runs.jsonl`을 읽어 전체 및 market regime별 aggregate report를 생성하는 데 한정합니다.
+- report helper는 batch run record summary와 regime label만 사용하며 replay workflow를 실행하지 않습니다.
+- CLI는 `--runs-path` JSONL 입력을 읽고 optional `--output-path` JSON report를 쓰는 사후 분석 도구입니다.
+- Codex CLI AI 호출, 외부 data 수집, broker API 호출, 주문 생성, strategy 자동 조정은 추가하지 않았습니다.
+- 집계 결과는 paper-only 시뮬레이션 요약이며 투자 조언, 성과 보장, live trading signal로 사용하지 않는 disclaimer를 포함합니다.
+
+### Review 2: Tests and Validation
+
+- aggregate helper test에서 전체 completed/skipped/failed count, return sample count, regime count를 검증했습니다.
+- aggregate helper test에서 전체 및 regime별 average/median/win rate 계산을 검증했습니다.
+- render test에서 markdown report가 paper-only disclaimer를 포함하고 live order wording을 포함하지 않는지 검증했습니다.
+- CLI integration test에서 batch runner가 만든 `runsPath`를 `historicalBatchReport.js`가 읽고 aggregate JSON report를 쓰는지 검증했습니다.
+- targeted test로 `node --test dist\\reports\\batchReplayReport.test.js` 통과를 확인했습니다.
+- targeted test로 `node --test dist\\cli\\historicalReplayCli.test.js` 통과를 확인했습니다.
+- `npm test`로 전체 test suite 231개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/reports/batchReplayReport.ts`를 추가해 overall 및 regime별 aggregate metric을 계산하고 markdown summary를 렌더링합니다.
+- `src/reports/batchReplayReport.test.ts`를 추가해 completed/skipped/failed run이 섞인 fixture의 aggregate 결과를 고정했습니다.
+- `src/cli/historicalBatchReport.ts`를 추가해 `batch-replay-runs.jsonl` 입력과 optional JSON report 출력을 지원합니다.
+- `src/cli/historicalReplayCli.test.ts`는 batch replay CLI smoke 뒤 aggregate report CLI까지 이어서 검증합니다.
+- `package.json`에 `historical:batch:report` script를 추가했습니다.
+- `docs/historical-replay.md`는 aggregate report CLI 예시, 출력 metric, paper-only 해석 경계를 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-55 범위와 PR-56 이후 후속 순서를 기록했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, 신규 match는 disclaimer와 문서상 제외/금지 경계 문구로만 확인했습니다.
+- 이번 PR은 benchmark comparison hardening, dashboard batch view, aggregate 결과 기반 전략 자동 조정은 포함하지 않습니다.
