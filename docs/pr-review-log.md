@@ -1624,3 +1624,38 @@
 - `docs/pr-implementation-plan.md`는 PR-58 범위와 planned batch replay PR 완료 상태를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 새 정적 테스트의 금지 패턴, 기존 `/place_order` 거절 테스트, 문서상 제외/금지 경계, 기존 paper-only disclaimer로만 확인했습니다.
 - 이번 PR은 신규 runtime feature, scheduler 변경, dashboard 실행 버튼, strategy 자동 조정, live trading 연결을 포함하지 않습니다.
+
+## PR-59: Batch Replay Codex AI Provider
+
+### Review 1: Scope and Safety
+
+- 범위는 batch replay에서 실제 Codex CLI paper-only provider를 명시 옵션으로 주입하는 데 한정합니다.
+- 기본 batch replay는 계속 deterministic provider를 사용하며 `--use-codex-ai`가 없으면 Codex CLI를 호출하지 않습니다.
+- `--use-codex-ai`는 `AI_DECISION_MODE=paper_only`와 enabled provider 환경이 아니면 fail-fast 됩니다.
+- Codex CLI provider는 `read-only` sandbox, batch-level daily budget, run-level call cap, replay sampling cap을 함께 사용합니다.
+- Codex output은 기존 `VirtualDecision` 검증, packet validation, `VirtualRiskEngine`, `PaperOrderEngine` 경로만 통과합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- workflow test에서 batch replay가 run별 provider factory를 호출하고 manifest에 `codex_cli` metadata를 기록하는지 검증했습니다.
+- CLI test에서 기본 batch replay output과 manifest가 `deterministic_fixture` provider metadata를 유지하는지 검증했습니다.
+- CLI test에서 `--use-codex-ai`가 enabled provider 환경 없이 실행되면 fail-fast 되는지 검증했습니다.
+- CLI test에서 `--max-codex-calls-per-run=0`이 fail-fast 되는지 검증했습니다.
+- targeted test로 `node --test dist\workflows\historicalBatchReplayWorkflow.test.js` 3개 통과를 확인했습니다.
+- targeted test로 `node --test dist\cli\historicalReplayCli.test.js` 5개 통과를 확인했습니다.
+- targeted safety test로 `node --test dist\replay\historicalReplaySafety.test.js` 3개 통과를 확인했습니다.
+- `npm run build` 통과를 확인했습니다.
+- `npm test`로 전체 test suite 240개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/historicalBatchReplayWorkflow.ts`에 `decisionProviderFactory`와 provider metadata manifest 기록을 추가했습니다.
+- `src/cli/historicalBatchReplay.ts`는 `--use-codex-ai`, `--max-codex-calls-per-run`, enabled env fail-fast, read-only Codex provider wiring을 추가했습니다.
+- `package.json`에 `historical:batch:replay` script를 추가하고 기존 dry script는 유지했습니다.
+- `src/workflows/historicalBatchReplayWorkflow.test.ts`는 injected Codex-style provider가 run별로 사용되는지 검증합니다.
+- `src/cli/historicalReplayCli.test.ts`는 default provider metadata와 Codex AI guard를 검증합니다.
+- `docs/historical-replay.md`는 실제 Codex AI batch 실행 명령, 권장 10회 설정, call cap, safety boundary를 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-59 범위와 후속 계획 상태를 기록했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 기존 CLI test의 `node:child_process`와 문서상 제외/금지 경계로만 확인했습니다.
+- 이번 PR은 retry/backoff scheduler, 병렬 batch execution, dashboard-triggered replay, live trading 연결을 포함하지 않습니다.

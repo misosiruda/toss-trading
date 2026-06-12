@@ -1,13 +1,53 @@
 import "../config/loadEnv.js";
 
+import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import type { Market } from "../domain/schemas.js";
+import {
+  CodexHistoricalReplayDecisionProvider,
+  withHistoricalReplayPrompt
+} from "../replay/codexHistoricalDecisionProvider.js";
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
 const everyNSteps = readOptionalNumberArg("--every-n-steps");
 const decisionFrequency = readDecisionFrequencyArg();
 const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
+const useCodexAi = args.includes("--use-codex-ai");
+const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
+const outputSchemaOption =
+  process.env.AI_DECISION_OUTPUT_SCHEMA_PATH === undefined
+    ? {}
+    : { outputSchemaPath: process.env.AI_DECISION_OUTPUT_SCHEMA_PATH };
+
+if (useCodexAi && (process.env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
+  throw new Error("AI_DECISION_MODE must be paper_only for batch replay Codex AI");
+}
+
+if (useCodexAi && process.env.AI_DECISION_ENABLED !== "true") {
+  throw new Error("--use-codex-ai requires the AI decision provider to be enabled");
+}
+
+if (
+  useCodexAi &&
+  (!Number.isInteger(maxCodexCallsPerRun) || maxCodexCallsPerRun <= 0)
+) {
+  throw new Error("--max-codex-calls-per-run must be a positive integer");
+}
+
+const codexDelegate = useCodexAi
+  ? new CodexCliDecisionProvider(
+      withHistoricalReplayPrompt({
+        enabled: true,
+        codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
+        sandbox: "read-only",
+        timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
+        maxRunsPerDay: Number(process.env.AI_DECISION_MAX_RUNS_PER_DAY ?? 5),
+        allowWebSearch: process.env.CODEX_ALLOW_WEB_SEARCH === "true",
+        ...outputSchemaOption
+      })
+    )
+  : null;
 
 const result = await runHistoricalBatchReplay({
   sourceDataDir:
@@ -34,6 +74,20 @@ const result = await runHistoricalBatchReplay({
   minWindowSnapshots: readNumberArg("--min-window-snapshots", 1),
   minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
+  ...(codexDelegate === null
+    ? {}
+    : {
+        decisionProviderFactory: () =>
+          new CodexHistoricalReplayDecisionProvider(codexDelegate, {
+            maxCallsPerReplay: maxCodexCallsPerRun
+          }),
+        decisionProviderMetadata: {
+          mode: "codex_cli" as const,
+          maxCallsPerRun: maxCodexCallsPerRun,
+          sandbox: "read-only" as const,
+          allowWebSearch: process.env.CODEX_ALLOW_WEB_SEARCH === "true"
+        }
+      }),
   constraints: {
     maxNewPositions: readNumberArg("--max-new-positions", 3),
     maxBudgetPerSymbolKrw: readNumberArg("--max-budget-per-symbol-krw", 100_000),
@@ -53,7 +107,9 @@ console.log(
       runCount: result.runCount,
       completedCount: result.completedCount,
       skippedCount: result.skippedCount,
-      failedCount: result.failedCount
+      failedCount: result.failedCount,
+      decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
+      maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
     null,
     2

@@ -1847,11 +1847,49 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-59: Batch Replay Codex AI Provider
+
+목표:
+
+- batch replay에서 실제 Codex CLI paper-only provider를 명시 옵션으로 사용할 수 있게 합니다.
+- 기본 batch replay는 계속 deterministic provider를 사용하고, Codex AI는 `--use-codex-ai`가 있을 때만 활성화합니다.
+- run별 Codex call cap과 batch 전체 daily budget을 분리해 긴 실행을 통제합니다.
+
+작업 범위:
+
+- batch workflow에 per-run decision provider factory 주입점 추가
+- batch manifest에 decision provider metadata 기록
+- batch CLI에 `--use-codex-ai`, `--max-codex-calls-per-run` 옵션 추가
+- `historical:batch:replay` npm script 추가
+- `AI_DECISION_ENABLED=true` 없이는 Codex AI batch 실행을 fail-fast 처리
+- workflow/CLI tests 추가
+- Historical Replay 문서에 실제 Codex AI batch 실행법과 안전 경계 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- provider factory 주입 workflow test
+- CLI fail-fast test
+- 기존 deterministic batch replay CLI test
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- dashboard에서 batch replay 실행
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` MCP tool 노출
+- raw `tossctl` MCP tool 노출
+- retry/backoff scheduler
+- 병렬 batch execution
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- 현재 계획된 paper-only batch replay PR 범위는 PR-58까지입니다.
+- 현재 계획된 paper-only batch replay PR 범위는 PR-59까지입니다.
 
 ## Later PRs
 
