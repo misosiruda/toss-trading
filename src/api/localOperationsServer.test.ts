@@ -392,10 +392,20 @@ test("local operations API rejects mutation methods and has no live order endpoi
     const mutation = await fetchJson(baseUrl, "/virtual/portfolio", {
       method: "POST"
     });
+    const batchMutation = await fetchJson(baseUrl, "/batch/replay/report", {
+      method: "POST"
+    });
+    const batchHead = await fetch(`${baseUrl}/batch/replay/report`, {
+      method: "HEAD"
+    });
     const liveOrder = await fetchJson(baseUrl, "/place_order");
 
     assert.equal(mutation.response.status, 405);
     assert.equal(mutation.payload["readOnly"], true);
+    assert.equal(batchMutation.response.status, 405);
+    assert.equal(batchMutation.payload["readOnly"], true);
+    assert.equal(batchHead.status, 200);
+    assert.equal(await batchHead.text(), "");
     assert.equal(liveOrder.response.status, 404);
     assert.equal(liveOrder.payload["error"], "not_found");
   } finally {

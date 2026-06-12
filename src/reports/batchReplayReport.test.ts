@@ -58,6 +58,31 @@ test("batch replay aggregate report renders paper-only disclaimer", () => {
   assert.doesNotMatch(rendered, /live order/i);
 });
 
+test("batch replay aggregate report excludes unavailable returns from performance samples", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [
+      record("run_0", 0, "completed", "bull", null, 1_000_000),
+      record("run_1", 1, "completed", "bull", 0.03, 1_030_000),
+      record("run_2", 2, "skipped", "bear", null, null),
+      record("run_3", 3, "failed", "mixed", null, null)
+    ]
+  });
+
+  assert.equal(report.summary.runCount, 4);
+  assert.equal(report.summary.completedCount, 2);
+  assert.equal(report.summary.returnSampleCount, 1);
+  assert.equal(report.overall.returnSampleCount, 1);
+  assert.equal(report.overall.averageTotalReturnRatio, 0.03);
+  assert.equal(report.overall.winRate, 1);
+  assert.equal(report.overall.averageFinalVirtualNetWorthKrw, 1_015_000);
+  assert.equal(report.byRegime.bull?.completedCount, 2);
+  assert.equal(report.byRegime.bull?.returnSampleCount, 1);
+  assert.equal(report.byRegime.bear?.returnSampleCount, 0);
+  assert.equal(report.byRegime.bear?.averageTotalReturnRatio, null);
+  assert.equal(report.byRegime.mixed?.failedCount, 1);
+});
+
 function record(
   runId: string,
   runIndex: number,

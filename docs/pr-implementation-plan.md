@@ -1815,11 +1815,43 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-58: Regression And Safety Tests
+
+목표:
+
+- batch replay 분석 흐름이 paper-only/read-only 경계를 유지하는지 회귀 테스트로 고정합니다.
+- aggregate report가 skipped/failed/null-return run을 수익률 표본에 섞지 않는지 검증합니다.
+- dashboard/Local Operations API가 batch replay 조회 endpoint에 대해 mutation method를 허용하지 않는지 검증합니다.
+
+작업 범위:
+
+- batch replay workflow/report/dashboard/API source file 대상 금지 실행 표면 정적 테스트 추가
+- batch aggregate report의 unavailable return sample 제외 테스트 추가
+- `/batch/replay/report` `POST` 거절 및 `HEAD` read-only 조회 테스트 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- targeted safety/report/API tests
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- production scheduler 변경
+- batch replay 실행 policy 변경
+- aggregate metric 산식 변경
+- dashboard 기능 추가
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-58: Regression And Safety Tests
+- 현재 계획된 paper-only batch replay PR 범위는 PR-58까지입니다.
 
 ## Later PRs
 

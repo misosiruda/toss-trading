@@ -1595,3 +1595,32 @@
 - `docs/pr-implementation-plan.md`는 PR-57 범위와 PR-58 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 기존 `/place_order` 거절 테스트, 문서상 제외/금지 경계, 신규 paper-only disclaimer로만 확인했습니다.
 - 이번 PR은 dashboard batch 실행 버튼, report 생성, live trading 연결, strategy 자동 조정은 포함하지 않습니다.
+
+## PR-58: Regression And Safety Tests
+
+### Review 1: Scope and Safety
+
+- 범위는 batch replay 분석 흐름의 회귀/안전 테스트 보강에 한정합니다.
+- 신규 정적 테스트는 batch workflow, aggregate report, batch CLI, Local Operations API, dashboard source에서 live execution surface가 추가되지 않았는지 검사합니다.
+- aggregate report 테스트는 skipped/failed/null-return run이 수익률 표본에 섞이지 않는지 검증합니다.
+- Local Operations API 테스트는 `/batch/replay/report`가 `POST`를 거절하고 `HEAD`는 body 없이 조회되는지 검증합니다.
+- production scheduler, batch replay 실행 policy, aggregate metric 산식, dashboard 기능은 변경하지 않았습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- targeted safety test로 `node --test dist\replay\historicalReplaySafety.test.js` 3개 통과를 확인했습니다.
+- targeted report test로 `node --test dist\reports\batchReplayReport.test.js` 3개 통과를 확인했습니다.
+- targeted API test로 `node --test dist\api\localOperationsServer.test.js` 10개 통과를 확인했습니다.
+- `npm run build` 통과를 확인했습니다.
+- `npm test`로 전체 test suite 237개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalReplaySafety.test.ts`에 batch replay 관련 source file 대상 금지 실행 표면 정적 테스트를 추가했습니다.
+- `src/reports/batchReplayReport.test.ts`에 unavailable return sample 제외 회귀 테스트를 추가했습니다.
+- `src/api/localOperationsServer.test.ts`는 `/batch/replay/report`의 `POST` 거절과 `HEAD` read-only 조회를 검증합니다.
+- `docs/pr-implementation-plan.md`는 PR-58 범위와 planned batch replay PR 완료 상태를 기록했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 새 정적 테스트의 금지 패턴, 기존 `/place_order` 거절 테스트, 문서상 제외/금지 경계, 기존 paper-only disclaimer로만 확인했습니다.
+- 이번 PR은 신규 runtime feature, scheduler 변경, dashboard 실행 버튼, strategy 자동 조정, live trading 연결을 포함하지 않습니다.
