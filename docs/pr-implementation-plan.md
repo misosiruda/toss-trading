@@ -1614,11 +1614,54 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-53: Batch Replay Runner
+
+목표:
+
+- seed 기반 random 1개월 replay window를 여러 번 선택하고 각 window를 paper-only historical replay로 실행합니다.
+- 각 실행 결과를 batch manifest와 run JSONL로 남겨 후속 regime classification과 aggregate report에서 분석할 수 있게 합니다.
+
+작업 범위:
+
+- batch replay workflow 추가
+- source data directory와 run별 output directory 분리
+- run별 deterministic seed derivation (`seed:runIndex`)
+- run별 data availability preflight
+- insufficient window는 replay workflow 실행 없이 `skipped` record로 저장
+- completed/failed/skipped run record JSONL 저장
+- batch manifest JSON 저장
+- historical batch replay CLI 추가
+- `historical:batch:replay:dry` npm script 추가
+- workflow/CLI tests
+- Historical Replay 문서에 batch runner 사용법과 출력 구조 추가
+
+검증:
+
+- batch manifest가 생성됨
+- run JSONL에 completed run summary가 저장됨
+- run별 `historical-replay-run-metadata.json`이 batch identity/window를 포함함
+- insufficient window가 skipped로 기록되고 report path가 null로 유지됨
+- CLI가 batch manifest와 run JSONL을 생성함
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- regime classification
+- aggregate report
+- benchmark comparison hardening
+- dashboard batch view
+- Codex CLI AI batch 호출
+- 외부 historical data 수집기
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-53: Batch Replay Runner
 - PR-54: Regime Classifier
 - PR-55: Batch Aggregate Report
 - PR-56: Benchmark Comparison Hardening

@@ -36,6 +36,7 @@ import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
+  historicalMarketSnapshotsPath?: string;
   clock: SimulatedClock;
   decisionProvider?: CodexHistoricalReplayDecisionProviderLike;
   samplingPolicy?: ReplaySamplingPolicy;
@@ -64,11 +65,11 @@ export async function runHistoricalReplayWorkflow(
   options: HistoricalReplayWorkflowOptions
 ): Promise<HistoricalReplayWorkflowResult> {
   const paths = createStoragePaths(options.storageBaseDir);
+  const historicalMarketSnapshotsPath =
+    options.historicalMarketSnapshotsPath ?? paths.historicalMarketSnapshotsPath;
   const [portfolio, snapshots] = await Promise.all([
     new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read(),
-    new FileHistoricalMarketSnapshotStore(
-      paths.historicalMarketSnapshotsPath
-    ).readAll()
+    new FileHistoricalMarketSnapshotStore(historicalMarketSnapshotsPath).readAll()
   ]);
   const initialPortfolio =
     portfolio ?? createInitialPortfolio(options.initialCashKrw ?? 1_000_000, options);
