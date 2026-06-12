@@ -1320,6 +1320,41 @@
 - decision schema v2 전면 전환
 - live trading 또는 broker adapter 연결
 
+## PR-45: Virtual Decision Backend Hash
+
+목표:
+
+- AI decision 저장 레코드에 backend-generated `decisionHash`를 추가해 audit identity를 강화합니다.
+- `decisionHash`는 AI가 만들거나 복사하는 값이 아니라 backend가 validation 이후 저장 직전에 계산합니다.
+
+작업 범위:
+
+- `VirtualDecision.decisionHash` optional runtime field
+- stable JSON 기반 `createVirtualDecisionHash` helper
+- `decisionHash` 자신을 제외한 decision content hash
+- `FileVirtualDecisionStore` append 시 backend hash binding
+- historical replay decision log와 progress snapshot의 decision hash binding
+- semantic validator의 AI-supplied `decisionHash` reject
+- Codex CLI paper trading 문서에 backend-generated hash boundary 반영
+
+검증:
+
+- decision hash가 object key order와 무관하게 deterministic함
+- 기존 `decisionHash` field는 hash input에서 제외됨
+- decision 내용 변경 시 hash가 변경됨
+- virtual decision store가 append 시 backend hash를 붙임
+- historical replay progress와 decision log에 hash가 기록됨
+- AI가 `decisionHash`를 제공하면 semantic reject됨
+- full test suite
+
+제외:
+
+- Codex output schema artifact에 `decisionHash` 추가
+- hash registry 또는 external signing
+- immutable storage/WORM backend
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

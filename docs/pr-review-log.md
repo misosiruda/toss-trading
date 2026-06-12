@@ -1181,3 +1181,32 @@
 - `schemas/virtual-decision.schema.json`은 AI output에서 optional `featureRefs` array를 허용합니다.
 - `src/ai/decisionPrompt.ts`는 `paper-v8`로 version을 올리고 featureRefs 복사 규칙을 명시합니다.
 - 이번 PR은 `claimSupport[]`, feature value scoring, confidence decomposition은 포함하지 않고 후속 PR로 남깁니다.
+
+## PR-45: Virtual Decision Backend Hash
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only `VirtualDecision` 저장 레코드에 backend-generated `decisionHash`를 붙이는 데 한정합니다.
+- `decisionHash`는 AI output contract가 아니며, `schemas/virtual-decision.schema.json`에는 추가하지 않았습니다.
+- runtime `virtualDecisionSchema`는 저장된 레코드 읽기 호환을 위해 optional `decisionHash`를 허용합니다.
+- semantic validator는 AI가 제공한 `decisionHash`를 `VIRTUAL_DECISION_HASH_NOT_ALLOWED`로 reject합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `decisionHash` unit test에서 object key order와 무관한 deterministic hash를 검증했습니다.
+- 기존 `decisionHash` field가 hash input에서 제외되어 self-reference가 생기지 않는지 검증했습니다.
+- decision content 변경 시 hash가 변경되는지 검증했습니다.
+- `FileVirtualDecisionStore` test에서 append 시 backend-generated hash가 기록되는지 검증했습니다.
+- historical replay workflow test에서 progress snapshot과 decision log에 `decisionHash`가 기록되는지 검증했습니다.
+- semantic validator test에서 AI-supplied `decisionHash`가 storage 전에 reject되는지 검증했습니다.
+- `npm test`로 전체 test suite 189개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/decisionHash.ts`와 `src/paper/decisionHash.test.ts`를 추가했습니다.
+- `src/domain/schemas.ts`의 `VirtualDecision` schema에 optional `decisionHash` field를 추가했습니다.
+- `src/storage/repositories.ts`는 `FileVirtualDecisionStore.append`에서 저장 직전 hash를 바인딩합니다.
+- `src/replay/historicalReplayAuditLog.ts`와 `src/replay/historicalReplayProgress.ts`는 replay decision record에도 같은 backend hash를 바인딩합니다.
+- `src/paper/virtualDecisionValidation.ts`는 AI가 직접 보낸 `decisionHash`를 reject합니다.
+- 이번 PR은 external signing, hash registry, immutable storage backend는 포함하지 않습니다.

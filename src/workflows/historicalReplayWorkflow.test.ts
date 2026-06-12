@@ -112,6 +112,7 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(progressTimeline.at(-1)?.["virtualNetWorthKrw"], 1_000_000);
   assert.equal(progressPackets.length, 2);
   assert.equal(progressDecisions[0]?.["packetId"], "packet_historical_workflow_0");
+  assert.match(String(progressDecisions[0]?.["decisionHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.equal(progressRiskDecisions[0]?.["approved"], true);
   assert.equal(progressTrades[0]?.["symbol"], "005930");
   assert.equal(progressEvents[0]?.["eventType"], "VIRTUAL_BUY");
@@ -125,6 +126,7 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.ok(portfolioTimelineLog.length >= result.replayResult.tickCount);
   assert.equal(packetLog[0]?.["packetId"], "packet_historical_workflow_0");
   assert.equal(decisionLog[0]?.["packetId"], "packet_historical_workflow_0");
+  assert.match(String(decisionLog[0]?.["decisionHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.equal(riskDecisionLog[0]?.["approved"], true);
   assert.equal(tradeLog[0]?.["symbol"], "005930");
   assert.equal(

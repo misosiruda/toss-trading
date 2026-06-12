@@ -63,6 +63,19 @@ test("rejects decisions for changed packet content with same packet id", () => {
   );
 });
 
+test("rejects AI-supplied decision hash before storage", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisionHash:
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_HASH_NOT_ALLOWED"));
+});
+
 test("rejects decisions without identity metadata", () => {
   const invalidDecision = decision();
   delete invalidDecision.modelId;

@@ -11,6 +11,7 @@ import {
   virtualRiskDecisionSchema,
   virtualTradeSchema
 } from "../domain/schemas.js";
+import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
 import { JsonlStore } from "../storage/jsonlStore.js";
 import {
   HISTORICAL_REPLAY_PROGRESS_DISCLAIMER,
@@ -162,7 +163,7 @@ export class HistoricalReplayAuditLogRecorder {
         continue;
       }
       this.seenDecisionPacketIds.add(decision.packetId);
-      await this.decisionStore.append(decision);
+      await this.decisionStore.append(bindVirtualDecisionHash(decision));
     }
 
     for (const riskDecision of update.riskDecisions) {

@@ -12,6 +12,7 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_PACKET_MISMATCH",
   "VIRTUAL_DECISION_PACKET_HASH_REQUIRED",
   "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
+  "VIRTUAL_DECISION_HASH_NOT_ALLOWED",
   "VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED",
   "VIRTUAL_DECISION_SYMBOL_NOT_IN_PACKET",
   "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
@@ -66,6 +67,13 @@ export function validateVirtualDecisionAgainstPacket(input: {
     issues.push({
       code: "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
       message: `decision packetHash ${input.decision.packetHash} does not match ${expectedPacketHash}`
+    });
+  }
+
+  if (input.decision.decisionHash) {
+    issues.push({
+      code: "VIRTUAL_DECISION_HASH_NOT_ALLOWED",
+      message: "decisionHash is backend-generated and must not be supplied"
     });
   }
 
