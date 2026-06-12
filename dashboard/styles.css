@@ -282,6 +282,11 @@ th.numeric {
   gap: 14px;
 }
 
+.batch-replay-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .report-kpis {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -349,6 +354,71 @@ th.numeric {
 
 .replay-performance-kpis {
   grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.batch-replay-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.batch-replay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.batch-regime-list {
+  display: grid;
+  gap: 10px;
+}
+
+.batch-regime-item {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 12px;
+}
+
+.batch-regime-header,
+.batch-regime-metrics {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.batch-regime-header strong,
+.batch-regime-header span,
+.batch-regime-metrics strong,
+.batch-regime-metrics span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.batch-regime-header span,
+.batch-regime-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.batch-regime-metrics div {
+  display: grid;
+  gap: 3px;
+}
+
+.batch-regime-metrics strong {
+  font-size: 15px;
+}
+
+.batch-replay-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 
 .replay-events-wrap {
@@ -1167,6 +1237,10 @@ th.numeric {
     grid-template-columns: 1fr;
   }
 
+  .batch-replay-layout {
+    grid-template-columns: 1fr;
+  }
+
   .benchmark-layout {
     grid-template-columns: 1fr;
   }
@@ -1269,6 +1343,12 @@ th.numeric {
 
   .benchmark-scoreboard {
     grid-template-columns: 1fr;
+  }
+
+  .batch-regime-header,
+  .batch-regime-metrics {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .benchmark-bar-row {

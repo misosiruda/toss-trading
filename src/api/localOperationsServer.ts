@@ -120,6 +120,8 @@ async function routeRequest(
       return readHistoricalReplayReport(options.storageBaseDir);
     case "/replay/progress":
       return readHistoricalReplayProgress(options.storageBaseDir);
+    case "/batch/replay/report":
+      return readBatchReplayAggregateReport(options.storageBaseDir);
     case "/scheduler/status":
       return readSchedulerStatus(options.storageBaseDir);
     case "/source/health":
@@ -244,6 +246,20 @@ async function readHistoricalReplayProgress(
     status: progressStatus,
     fileStatus: progress.status,
     progress: progress.value
+  };
+}
+
+async function readBatchReplayAggregateReport(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const report = await readJsonFile(paths.batchReplayAggregateReportPath);
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status: report.status,
+    report: report.value
   };
 }
 

@@ -139,6 +139,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="replay-progress-status"/);
     assert.match(html.text, /id="replay-progress-events-body"/);
     assert.match(html.text, /id="replay-timeline-body"/);
+    assert.match(html.text, /id="batch-replay-heading"/);
+    assert.match(html.text, /id="batch-replay-average-return"/);
+    assert.match(html.text, /id="batch-regime-list"/);
     assert.match(html.text, /data-action-filter="BUY"/);
     assert.match(html.text, /id="symbol-filter"/);
     assert.match(html.text, /id="decision-performance-list"/);
@@ -150,12 +153,14 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /\/paper\/report/);
     assert.match(script.text, /\/replay\/report/);
     assert.match(script.text, /\/replay\/progress/);
+    assert.match(script.text, /\/batch\/replay\/report/);
     assert.match(script.text, /\/audit\/events/);
     assert.match(script.text, /fetchEndpointData/);
     assert.match(script.text, /endpointFailures/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
     assert.match(script.text, /renderReplayProgress/);
+    assert.match(script.text, /renderBatchReplayReport/);
     assert.match(script.text, /renderPortfolioPerformance/);
     assert.match(script.text, /renderNetWorthChart/);
     assert.match(script.text, /renderAllocationList/);
@@ -204,6 +209,31 @@ test("local operations API serves stored historical replay report read-only", as
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves stored batch replay aggregate report read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/batch/replay/report");
+    const report = result.payload["report"] as Record<string, unknown>;
+    const summary = report["summary"] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(report["title"], "Batch Replay Paper Aggregate Report");
+    assert.equal(summary["runCount"], 4);
   } finally {
     await stopTestServer(server);
   }
@@ -542,6 +572,103 @@ function historicalReplayReport(): Record<string, unknown> {
     ],
     disclaimer:
       "Paper-only historical replay simulation. This is not financial advice, not a performance guarantee, and cannot place live orders."
+  };
+}
+
+function batchReplayAggregateReport(): Record<string, unknown> {
+  return {
+    title: "Batch Replay Paper Aggregate Report",
+    mode: "paper_only",
+    generatedAt: "2026-06-11T09:00:00+09:00",
+    sourceRunsPath: "data/batch-replay/batch-smoke/batch-replay-runs.jsonl",
+    summary: {
+      runCount: 4,
+      completedCount: 3,
+      skippedCount: 1,
+      failedCount: 0,
+      returnSampleCount: 3,
+      regimeCounts: {
+        bull: 2,
+        bear: 1,
+        insufficient_data: 1
+      }
+    },
+    overall: {
+      key: "overall",
+      runCount: 4,
+      completedCount: 3,
+      skippedCount: 1,
+      failedCount: 0,
+      returnSampleCount: 3,
+      averageTotalReturnRatio: 0.015,
+      medianTotalReturnRatio: 0.01,
+      minTotalReturnRatio: -0.01,
+      maxTotalReturnRatio: 0.045,
+      winRate: 0.666667,
+      averageFinalVirtualNetWorthKrw: 1_015_000,
+      totalTradeCount: 8,
+      averageTradeCount: 2.666667,
+      totalRejectedCount: 1,
+      runIds: ["run_0", "run_1", "run_2", "run_3"]
+    },
+    byRegime: {
+      bull: {
+        key: "bull",
+        runCount: 2,
+        completedCount: 2,
+        skippedCount: 0,
+        failedCount: 0,
+        returnSampleCount: 2,
+        averageTotalReturnRatio: 0.025,
+        medianTotalReturnRatio: 0.025,
+        minTotalReturnRatio: 0.005,
+        maxTotalReturnRatio: 0.045,
+        winRate: 1,
+        averageFinalVirtualNetWorthKrw: 1_025_000,
+        totalTradeCount: 6,
+        averageTradeCount: 3,
+        totalRejectedCount: 0,
+        runIds: ["run_0", "run_1"]
+      },
+      bear: {
+        key: "bear",
+        runCount: 1,
+        completedCount: 1,
+        skippedCount: 0,
+        failedCount: 0,
+        returnSampleCount: 1,
+        averageTotalReturnRatio: -0.01,
+        medianTotalReturnRatio: -0.01,
+        minTotalReturnRatio: -0.01,
+        maxTotalReturnRatio: -0.01,
+        winRate: 0,
+        averageFinalVirtualNetWorthKrw: 990_000,
+        totalTradeCount: 2,
+        averageTradeCount: 2,
+        totalRejectedCount: 1,
+        runIds: ["run_2"]
+      },
+      insufficient_data: {
+        key: "insufficient_data",
+        runCount: 1,
+        completedCount: 0,
+        skippedCount: 1,
+        failedCount: 0,
+        returnSampleCount: 0,
+        averageTotalReturnRatio: null,
+        medianTotalReturnRatio: null,
+        minTotalReturnRatio: null,
+        maxTotalReturnRatio: null,
+        winRate: null,
+        averageFinalVirtualNetWorthKrw: null,
+        totalTradeCount: 0,
+        averageTradeCount: null,
+        totalRejectedCount: 0,
+        runIds: ["run_3"]
+      }
+    },
+    disclaimer:
+      "Batch replay aggregate reports are paper-only. They are not investment advice, guaranteed performance, or live trading signals."
   };
 }
 

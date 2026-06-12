@@ -40,6 +40,7 @@ export interface StoragePaths {
   historicalReplayRiskDecisionLogPath: string;
   historicalReplayTradeLogPath: string;
   historicalReplayPortfolioTimelinePath: string;
+  batchReplayAggregateReportPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -80,6 +81,10 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     historicalReplayPortfolioTimelinePath: join(
       baseDir,
       "historical-replay-portfolio-timeline.jsonl"
+    ),
+    batchReplayAggregateReportPath: join(
+      baseDir,
+      "batch-replay-aggregate-report.json"
     )
   };
 }
