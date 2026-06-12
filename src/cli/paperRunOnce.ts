@@ -26,6 +26,12 @@ const provider = dryRun
           thesis: "Dry-run paper-only virtual buy.",
           riskFactors: ["Dry-run paper trading risk."],
           dataRefs: ["mock_source_001"],
+          claimSupport: [
+            {
+              claim: "Dry-run paper-only virtual buy.",
+              dataRefs: ["mock_source_001"]
+            }
+          ],
           expiresAt: new Date(now.getTime() + 300_000).toISOString()
         }
       ]

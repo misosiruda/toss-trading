@@ -211,6 +211,87 @@ test("rejects hallucinated feature refs not present on the candidate", () => {
   assert.match(summarizeVirtualDecisionValidation(result), /futureReturn/);
 });
 
+test("rejects decisions without claim support", () => {
+  const item = { ...decision().decisions[0]! };
+  delete item.claimSupport;
+
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisions: [item]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_CLAIM_SUPPORT_REQUIRED")
+  );
+});
+
+test("rejects claim support data refs outside the candidate", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          claimSupport: [
+            {
+              claim: "Hallucinated source supports this thesis.",
+              dataRefs: ["source_hallucinated"]
+            }
+          ]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE"
+    )
+  );
+  assert.match(summarizeVirtualDecisionValidation(result), /source_hallucinated/);
+});
+
+test("rejects claim support feature refs outside the candidate", () => {
+  const featurePacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        featureRefs: ["candidate.KR.005930.score"]
+      }
+    ]
+  });
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: featurePacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(featurePacket),
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          featureRefs: ["candidate.KR.005930.score"],
+          claimSupport: [
+            {
+              claim: "A future return feature supports this thesis.",
+              featureRefs: ["candidate.KR.005930.futureReturn"]
+            }
+          ]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_CLAIM_SUPPORT_FEATURE_REF_NOT_IN_CANDIDATE"
+    )
+  );
+  assert.match(summarizeVirtualDecisionValidation(result), /futureReturn/);
+});
+
 test("rejects duplicate decisions for the same market and symbol", () => {
   const base = decision().decisions[0]!;
   const result = validateVirtualDecisionAgainstPacket({
@@ -374,6 +455,12 @@ function decision(overrides: Partial<VirtualDecision> = {}): VirtualDecision {
         thesis: "Packet source supports a paper-only virtual buy.",
         riskFactors: ["Paper-only fixture risk."],
         dataRefs: ["source_005930"],
+        claimSupport: [
+          {
+            claim: "Packet source supports a paper-only virtual buy.",
+            dataRefs: ["source_005930"]
+          }
+        ],
         expiresAt: "2026-06-11T09:05:00+09:00"
       }
     ],

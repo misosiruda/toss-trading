@@ -1,4 +1,4 @@
-export const PAPER_DECISION_PROMPT_VERSION = "paper-v8";
+export const PAPER_DECISION_PROMPT_VERSION = "paper-v9";
 
 export function buildPaperDecisionPrompt(): string {
   return [
@@ -16,12 +16,14 @@ export function buildPaperDecisionPrompt(): string {
     "Non-hold decisions are allowed when packet evidence is strong, internally consistent, within constraints, and supported by concrete riskFactors.",
     "Every decision must cite dataRefs copied from the candidate sourceRefs in the packet.",
     "When candidate featureRefs are present, include only featureRefs copied from that same candidate.",
+    "Every decision must include claimSupport entries that map each key thesis or risk claim to packet dataRefs or featureRefs.",
+    "Each claimSupport dataRef must be copied from the same candidate sourceRefs, and each claimSupport featureRef must be copied from the same candidate featureRefs.",
     "Non-hold decisions must include concrete riskFactors and must not exceed maxBudgetPerSymbolKrw.",
     "For VIRTUAL_SELL, prefer reduceOnly=true with sellRatio, sellQuantity, targetWeightPct, or sellAll instead of guessing a sell amount.",
     "For VIRTUAL_HOLD, set budgetKrw to 0, include holdReasonCode, and do not include sell sizing fields.",
     "Allowed holdReasonCode values are INSUFFICIENT_EVIDENCE, STALE_DATA, CONTRADICTORY_SIGNALS, POLICY_BLOCKED, PORTFOLIO_CONFLICT, NO_POSITION_TO_SELL, NOT_IN_CANDIDATES, and LOW_LIQUIDITY.",
     "Do not include holdReasonCode on VIRTUAL_BUY or VIRTUAL_SELL decisions.",
-    "Write all human-readable natural-language fields in Korean: summary, thesis, and riskFactors.",
+    "Write all human-readable natural-language fields in Korean: summary, thesis, riskFactors, and claimSupport.claim.",
     "Keep schema field names, enum values, symbols, market codes, and dataRefs exactly as machine-readable English identifiers.",
     "Never present the output as financial advice, a recommendation, or a performance guarantee.",
     "Keep the summary brief and focused on paper-only simulation state."

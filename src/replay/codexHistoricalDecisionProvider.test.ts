@@ -205,6 +205,12 @@ function decision(
         thesis: "Historical replay fixture uses current packet evidence.",
         riskFactors: ["Historical replay can diverge from live markets."],
         dataRefs: ["historical_snapshot:hist_005930"],
+        claimSupport: [
+          {
+            claim: "Historical replay fixture uses current packet evidence.",
+            dataRefs: ["historical_snapshot:hist_005930"]
+          }
+        ],
         expiresAt: "2025-01-02T00:01:00.000Z"
       }
     ],

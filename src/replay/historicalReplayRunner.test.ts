@@ -262,6 +262,7 @@ class HoldDecisionProvider implements HistoricalReplayDecisionProvider {
   ): VirtualDecision {
     const candidate = packet.candidates[0];
     assert.ok(candidate);
+    const dataRef = candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
     return {
       packetId: packet.packetId,
       summary: "Hold fixture.",
@@ -274,7 +275,13 @@ class HoldDecisionProvider implements HistoricalReplayDecisionProvider {
           budgetKrw: 0,
           thesis: "Hold existing position.",
           riskFactors: [],
-          dataRefs: [candidate.sourceRefs[0] ?? `packet:${packet.packetId}`],
+          dataRefs: [dataRef],
+          claimSupport: [
+            {
+              claim: "Hold existing position.",
+              dataRefs: [dataRef]
+            }
+          ],
           expiresAt: packet.expiresAt
         }
       ]

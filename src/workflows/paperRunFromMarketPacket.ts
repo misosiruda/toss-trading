@@ -72,6 +72,7 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
       packet.constraints.maxBudgetPerSymbolKrw,
       Math.max(candidate.lastPriceKrw ?? 0, 1)
     );
+    const dataRef = candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
 
     return {
       attempted: false,
@@ -89,7 +90,13 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
             budgetKrw,
             thesis: "Dry-run uses the first priced stored market candidate.",
             riskFactors: ["Dry-run paper simulation can diverge from live markets."],
-            dataRefs: [candidate.sourceRefs[0] ?? `packet:${packet.packetId}`],
+            dataRefs: [dataRef],
+            claimSupport: [
+              {
+                claim: "Dry-run uses the first priced stored market candidate.",
+                dataRefs: [dataRef]
+              }
+            ],
             expiresAt: packet.expiresAt
           }
         ]

@@ -57,6 +57,12 @@ const validDecisionJson = JSON.stringify({
       thesis: "Compact packet supports a virtual buy.",
       riskFactors: ["Paper risk."],
       dataRefs: ["source_001"],
+      claimSupport: [
+        {
+          claim: "Compact packet supports a virtual buy.",
+          dataRefs: ["source_001"]
+        }
+      ],
       expiresAt: "2026-06-11T09:05:00+09:00"
     }
   ]
@@ -155,7 +161,7 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
-    /"promptVersion":"paper-v8"/
+    /"promptVersion":"paper-v9"/
   );
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
@@ -182,6 +188,8 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
   assert.match(prompt, /featureRefs copied from that same candidate/);
+  assert.match(prompt, /claimSupport entries/);
+  assert.match(prompt, /claimSupport dataRef/);
   assert.match(prompt, /include holdReasonCode/);
   assert.match(prompt, /INSUFFICIENT_EVIDENCE/);
   assert.match(prompt, /Do not include holdReasonCode on VIRTUAL_BUY/);
@@ -200,10 +208,25 @@ test("virtual decision output schema artifact constrains actions", async () => {
         items?: {
           additionalProperties?: boolean;
           allOf?: unknown[];
+          required?: string[];
           properties?: {
             action?: { enum?: string[] };
             holdReasonCode?: { enum?: string[] };
             featureRefs?: { type?: string; items?: { type?: string } };
+            claimSupport?: {
+              type?: string;
+              minItems?: number;
+              items?: {
+                additionalProperties?: boolean;
+                required?: string[];
+                anyOf?: unknown[];
+                properties?: {
+                  claim?: { type?: string };
+                  dataRefs?: { type?: string; minItems?: number };
+                  featureRefs?: { type?: string; minItems?: number };
+                };
+              };
+            };
             sellRatio?: { maximum?: number };
             reduceOnly?: { type?: string };
           };
@@ -235,6 +258,10 @@ test("virtual decision output schema artifact constrains actions", async () => {
     true
   );
   assert.equal(schema.properties?.decisions?.items?.additionalProperties, false);
+  assert.equal(
+    schema.properties?.decisions?.items?.required?.includes("claimSupport"),
+    true
+  );
   assert.deepEqual(schema.properties?.decisions?.items?.properties?.action?.enum, [
     "VIRTUAL_BUY",
     "VIRTUAL_SELL",
@@ -268,6 +295,29 @@ test("virtual decision output schema artifact constrains actions", async () => {
   assert.equal(
     schema.properties?.decisions?.items?.properties?.featureRefs?.items?.type,
     "string"
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.claimSupport?.type,
+    "array"
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.claimSupport?.minItems,
+    1
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.claimSupport?.items
+      ?.additionalProperties,
+    false
+  );
+  assert.deepEqual(
+    schema.properties?.decisions?.items?.properties?.claimSupport?.items
+      ?.required,
+    ["claim"]
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.claimSupport?.items?.anyOf
+      ?.length,
+    2
   );
   assert.equal(schema.properties?.decisions?.items?.allOf?.length, 3);
 });

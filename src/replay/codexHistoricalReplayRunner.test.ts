@@ -251,6 +251,12 @@ function decision(
         thesis: "Fixture decision uses only the current historical packet.",
         riskFactors: ["Historical replay is paper-only."],
         dataRefs: [`historical_snapshot:${symbol}`],
+        claimSupport: [
+          {
+            claim: "Fixture decision uses only the current historical packet.",
+            dataRefs: [`historical_snapshot:${symbol}`]
+          }
+        ],
         expiresAt: "2025-01-02T00:05:00.000Z",
         ...overrides
       }
