@@ -8,8 +8,11 @@ import type {
 import {
   FirstPricedHistoricalDecisionProvider,
   runHistoricalReplay,
+  type HistoricalReplayDecisionContext,
+  type HistoricalReplayDecisionProvider,
   type HistoricalReplayRunnerOptions
 } from "./historicalReplayRunner.js";
+import { ReplaySamplingPolicy } from "./replaySamplingPolicy.js";
 import { SimulatedClock } from "./simulatedClock.js";
 
 test("historical replay runner is deterministic without AI", () => {
@@ -115,6 +118,64 @@ test("historical replay runner skips packets when only future snapshots exist", 
   assert.equal(result.warnings.some((warning) => warning.includes("future")), true);
 });
 
+test("historical replay runner preserves portfolio on sampled-out steps", () => {
+  const decisionProvider = new CountingDecisionProvider();
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:02:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider,
+      samplingPolicy: new ReplaySamplingPolicy({ everyNSteps: 2 })
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        }),
+        snapshot({
+          snapshotId: "hist_000660_0901",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:01:00+09:00",
+          lastPriceKrw: 120_000
+        }),
+        snapshot({
+          snapshotId: "hist_035420_0902",
+          symbol: "035420",
+          observedAt: "2025-01-02T09:02:00+09:00",
+          lastPriceKrw: 180_000
+        })
+      ]
+    }
+  );
+
+  assert.equal(decisionProvider.calls, 2);
+  assert.equal(result.packetCount, 3);
+  assert.equal(result.decisionProviderCallCount, 2);
+  assert.equal(result.decisionSkippedCount, 1);
+  assert.equal(result.tradeCount, 2);
+  assert.equal(result.portfolioTimeline.length, 3);
+  assert.deepEqual(
+    result.samplingDecisions.map((item) => item.shouldEvaluate),
+    [true, false, true]
+  );
+  assert.equal(
+    result.auditEvents.some(
+      (event) => event.eventType === "HISTORICAL_DECISION_SKIPPED"
+    ),
+    true
+  );
+  assert.equal(result.progressSummary.decisionsSkipped, 1);
+  assert.equal(result.progressSummary.decisionsRequested, 2);
+});
+
 function runnerOptions(): HistoricalReplayRunnerOptions {
   return {
     clock: new SimulatedClock({
@@ -133,6 +194,19 @@ function runnerOptions(): HistoricalReplayRunnerOptions {
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
     }
   };
+}
+
+class CountingDecisionProvider implements HistoricalReplayDecisionProvider {
+  calls = 0;
+  private readonly delegate = new FirstPricedHistoricalDecisionProvider();
+
+  decide(
+    packet: Parameters<HistoricalReplayDecisionProvider["decide"]>[0],
+    _context: HistoricalReplayDecisionContext
+  ) {
+    this.calls += 1;
+    return this.delegate.decide(packet);
+  }
 }
 
 function portfolio(overrides: Partial<VirtualPortfolio> = {}): VirtualPortfolio {

@@ -865,3 +865,28 @@
 - `withHistoricalReplayPrompt`는 기존 `CodexCliDecisionProviderConfig`에 historical replay prompt/version을 주입합니다.
 - `CodexHistoricalReplayDecisionProvider`는 delegate result를 검증하고 packet mismatch를 `AI_DECISION_FAILED`로 반환합니다.
 - PR-33 sampling policy는 이 adapter의 `maxCallsPerReplay`와 함께 AI 호출 빈도를 제한할 수 있습니다.
+
+## PR-33: Replay Speed and Sampling Policy
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay에서 decision provider 호출 빈도를 제한하는 sampling policy와 runner hook에 한정했습니다.
+- policy는 packet 생성 이후 provider 호출 전 gate로 동작하며 live trading signal이나 order intent를 생성하지 않습니다.
+- raw `codex exec`, raw `tossctl`, dashboard-triggered replay/AI run은 추가하지 않았습니다.
+- skipped step은 portfolio를 변경하지 않고 audit event와 sampling decision record만 남깁니다.
+- replay speed는 real timer가 아니라 simulated tick progression metadata로만 유지합니다.
+
+### Review 2: Tests and Validation
+
+- every N steps policy가 deterministic하게 provider 호출 수를 제한하는지 검증했습니다.
+- candidate changed only policy가 동일 candidate fingerprint를 skip하는지 검증했습니다.
+- once per day/once per week policy가 simulated local date 기준으로 동작하는지 검증했습니다.
+- max decision calls budget이 provider 호출 전 fail-closed skip으로 동작하는지 검증했습니다.
+- runner integration test로 sampled-out step에서 portfolio가 유지되고 skip audit이 남는지 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/replaySamplingPolicy.ts`를 추가해 sampling 상태와 metadata를 runner 밖으로 분리했습니다.
+- `runHistoricalReplay`는 optional `samplingPolicy`를 받아 decision provider 호출 전 `shouldEvaluate`를 확인합니다.
+- 결과에는 `decisionProviderCallCount`, `decisionSkippedCount`, `samplingDecisions`, `progressSummary`를 추가했습니다.
+- default path는 sampling policy가 없으면 기존처럼 모든 packet에서 decision provider를 호출합니다.

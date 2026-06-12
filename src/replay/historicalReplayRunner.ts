@@ -11,6 +11,12 @@ import type {
 import { HistoricalMarketPacketBuilder } from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
+import {
+  fingerprintMarketPacketCandidates,
+  type ReplaySamplingDecision,
+  type ReplaySamplingPolicy,
+  type ReplaySamplingPolicyMetadata
+} from "./replaySamplingPolicy.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 
 export interface HistoricalReplayDecisionContext {
@@ -28,6 +34,7 @@ export interface HistoricalReplayDecisionProvider {
 export interface HistoricalReplayRunnerOptions {
   clock: SimulatedClock;
   decisionProvider: HistoricalReplayDecisionProvider;
+  samplingPolicy?: ReplaySamplingPolicy;
   packetIdPrefix: string;
   packetExpiresInSeconds: number;
   maxCandidates: number;
@@ -48,11 +55,31 @@ export interface HistoricalPortfolioTimelineItem {
   virtualNetWorthKrw: number;
 }
 
+export interface HistoricalReplaySamplingRecord {
+  simulatedAt: string;
+  packetId: string;
+  shouldEvaluate: boolean;
+  reason: ReplaySamplingDecision["reason"];
+  decisionCallsUsed: number;
+  candidateFingerprint: string;
+}
+
+export interface HistoricalReplayProgressSummary {
+  totalTicks: number;
+  packetsCreated: number;
+  decisionsRequested: number;
+  decisionsSkipped: number;
+  tradesCreated: number;
+  maxCandidatesPerStep: number;
+}
+
 export interface HistoricalReplayResult {
   status: "completed";
   mode: "paper_only";
   tickCount: number;
   packetCount: number;
+  decisionProviderCallCount: number;
+  decisionSkippedCount: number;
   decisionRecordCount: number;
   decisionItemCount: number;
   tradeCount: number;
@@ -63,6 +90,9 @@ export interface HistoricalReplayResult {
   trades: VirtualTrade[];
   auditEvents: AuditEvent[];
   warnings: string[];
+  samplingPolicy: ReplaySamplingPolicyMetadata | null;
+  samplingDecisions: HistoricalReplaySamplingRecord[];
+  progressSummary: HistoricalReplayProgressSummary;
   initialPortfolio: VirtualPortfolio;
   finalPortfolio: VirtualPortfolio;
   portfolioTimeline: HistoricalPortfolioTimelineItem[];
@@ -118,7 +148,10 @@ export function runHistoricalReplay(
   const trades: VirtualTrade[] = [];
   const auditEvents: AuditEvent[] = [];
   const warnings: string[] = [];
+  const samplingDecisions: HistoricalReplaySamplingRecord[] = [];
   const portfolioTimeline: HistoricalPortfolioTimelineItem[] = [];
+  let decisionProviderCallCount = 0;
+  let decisionSkippedCount = 0;
   const engine = new PaperOrderEngine();
   const ticks = options.clock.ticks();
 
@@ -150,6 +183,10 @@ export function runHistoricalReplay(
     }
 
     const packet = packetBuild.packet;
+    const context: HistoricalReplayDecisionContext = {
+      simulatedAt,
+      tick
+    };
     packets.push(packet);
     appendAuditEvent(
       auditEvents,
@@ -158,10 +195,35 @@ export function runHistoricalReplay(
       tick
     );
 
-    const decision = options.decisionProvider.decide(packet, {
-      simulatedAt,
-      tick
+    const samplingDecision = evaluateSamplingPolicy(
+      options.samplingPolicy,
+      packet,
+      context,
+      decisionProviderCallCount
+    );
+    samplingDecisions.push({
+      simulatedAt: simulatedAt.toISOString(),
+      packetId: packet.packetId,
+      shouldEvaluate: samplingDecision.shouldEvaluate,
+      reason: samplingDecision.reason,
+      decisionCallsUsed: samplingDecision.decisionCallsUsed,
+      candidateFingerprint: samplingDecision.candidateFingerprint
     });
+
+    if (!samplingDecision.shouldEvaluate) {
+      decisionSkippedCount += 1;
+      appendAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_SKIPPED",
+        `${packet.packetId} ${samplingDecision.reason}`,
+        tick
+      );
+      portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      continue;
+    }
+
+    decisionProviderCallCount += 1;
+    const decision = options.decisionProvider.decide(packet, context);
     if (decision.packetId !== packet.packetId) {
       appendAuditEvent(
         auditEvents,
@@ -218,6 +280,8 @@ export function runHistoricalReplay(
     mode: "paper_only",
     tickCount: ticks.length,
     packetCount: packets.length,
+    decisionProviderCallCount,
+    decisionSkippedCount,
     decisionRecordCount: decisions.length,
     decisionItemCount: decisions.reduce(
       (sum, decision) => sum + decision.decisions.length,
@@ -231,9 +295,37 @@ export function runHistoricalReplay(
     trades,
     auditEvents,
     warnings,
+    samplingPolicy: options.samplingPolicy?.metadata() ?? null,
+    samplingDecisions,
+    progressSummary: {
+      totalTicks: ticks.length,
+      packetsCreated: packets.length,
+      decisionsRequested: decisionProviderCallCount,
+      decisionsSkipped: decisionSkippedCount,
+      tradesCreated: trades.length,
+      maxCandidatesPerStep: options.maxCandidates
+    },
     initialPortfolio,
     finalPortfolio: currentPortfolio,
     portfolioTimeline
+  };
+}
+
+function evaluateSamplingPolicy(
+  samplingPolicy: ReplaySamplingPolicy | undefined,
+  packet: MarketPacket,
+  context: HistoricalReplayDecisionContext,
+  currentDecisionProviderCallCount: number
+): ReplaySamplingDecision {
+  if (samplingPolicy !== undefined) {
+    return samplingPolicy.evaluate(packet, context);
+  }
+
+  return {
+    shouldEvaluate: true,
+    reason: "POLICY_ALLOWED",
+    decisionCallsUsed: currentDecisionProviderCallCount + 1,
+    candidateFingerprint: fingerprintMarketPacketCandidates(packet)
   };
 }
 
