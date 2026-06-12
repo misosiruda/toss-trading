@@ -5,9 +5,12 @@ import type {
   VirtualDecision,
   VirtualDecisionItem
 } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 
 export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_PACKET_MISMATCH",
+  "VIRTUAL_DECISION_PACKET_HASH_REQUIRED",
+  "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
   "VIRTUAL_DECISION_SYMBOL_NOT_IN_PACKET",
   "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
@@ -44,6 +47,19 @@ export function validateVirtualDecisionAgainstPacket(input: {
     issues.push({
       code: "VIRTUAL_DECISION_PACKET_MISMATCH",
       message: `decision packetId ${input.decision.packetId} does not match packet ${input.packet.packetId}`
+    });
+  }
+
+  const expectedPacketHash = createMarketPacketHash(input.packet);
+  if (!input.decision.packetHash) {
+    issues.push({
+      code: "VIRTUAL_DECISION_PACKET_HASH_REQUIRED",
+      message: "decision must include packetHash"
+    });
+  } else if (input.decision.packetHash !== expectedPacketHash) {
+    issues.push({
+      code: "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
+      message: `decision packetHash ${input.decision.packetHash} does not match ${expectedPacketHash}`
     });
   }
 

@@ -5,6 +5,7 @@ import type {
   VirtualPortfolio
 } from "../domain/schemas.js";
 import { isFresh } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   createStoragePaths,
@@ -53,6 +54,7 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
         attempted: false,
         decision: {
           packetId: packet.packetId,
+          packetHash: createMarketPacketHash(packet),
           summary: "Dry-run paper-only hold because no priced candidate exists.",
           decisions: []
         },
@@ -70,6 +72,7 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
       attempted: false,
       decision: {
         packetId: packet.packetId,
+        packetHash: createMarketPacketHash(packet),
         summary: "Dry-run paper-only decision from stored market packet.",
         decisions: [
           {
@@ -94,10 +97,15 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
 export class StaticMarketPacketDecisionProvider implements DecisionProvider {
   constructor(private readonly decision: VirtualDecision) {}
 
-  async decide(): Promise<CodexCliDecisionResult> {
+  async decide(packet: MarketPacket): Promise<CodexCliDecisionResult> {
     return {
       attempted: false,
-      decision: this.decision,
+      decision: this.decision.packetHash
+        ? this.decision
+        : {
+            ...this.decision,
+            packetHash: createMarketPacketHash(packet)
+          },
       failure: null,
       command: null
     };

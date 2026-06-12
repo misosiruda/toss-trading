@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { MarketPacket, VirtualDecision } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import {
   summarizeVirtualDecisionValidation,
   validateVirtualDecisionAgainstPacket
@@ -25,6 +26,40 @@ test("rejects packet mismatches before paper order execution", () => {
 
   assert.equal(result.approved, false);
   assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_PACKET_MISMATCH"));
+});
+
+test("rejects decisions without packet hash", () => {
+  const invalidDecision = decision();
+  delete invalidDecision.packetHash;
+
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: invalidDecision
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_PACKET_HASH_REQUIRED")
+  );
+});
+
+test("rejects decisions for changed packet content with same packet id", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          score: 99
+        }
+      ]
+    }),
+    decision: decision()
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_PACKET_HASH_MISMATCH")
+  );
 });
 
 test("rejects decisions for symbols outside the packet", () => {
@@ -210,6 +245,7 @@ function packet(overrides: Partial<MarketPacket> = {}): MarketPacket {
 function decision(overrides: Partial<VirtualDecision> = {}): VirtualDecision {
   return {
     packetId: "packet_001",
+    packetHash: createMarketPacketHash(packet()),
     summary: "Paper-only validation fixture.",
     decisions: [
       {
