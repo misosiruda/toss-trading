@@ -125,6 +125,29 @@ dataDir startAt endAt stepSeconds everyNSteps
 - `stepSeconds`: `60`
 - `everyNSteps`: `5`
 
+### 랜덤 1개월 Window 선택
+
+batch replay의 선행 단계로 seed 기반 랜덤 calendar-month window를 선택할 수 있습니다.
+
+선택만 확인:
+
+```powershell
+npm run historical:replay:dry -- --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --print-window-only
+```
+
+선택된 window로 dry-run replay 실행:
+
+```powershell
+npm run historical:replay:dry -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --step-seconds 60 --every-n-steps 5
+```
+
+특성:
+
+- 같은 `--random-window-seed`와 같은 range는 항상 같은 window를 선택합니다.
+- window는 지정 range 안에 완전히 포함되는 calendar-month 단위로만 선택됩니다.
+- `--print-window-only`는 replay를 실행하지 않고 선택된 window metadata만 JSON으로 출력합니다.
+- 이 선택 metadata는 batch runner와 aggregate report에서 재현성 근거로 사용할 예정입니다.
+
 ## Lookahead Guard
 
 Historical replay는 simulated time 이후 데이터를 현재 packet에 넣지 않습니다.

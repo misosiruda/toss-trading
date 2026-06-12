@@ -1499,6 +1499,56 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-50: Replay Window Sampler
+
+목표:
+
+- `2023-01-01`부터 `2026-05-31`까지 같은 기간 범위에서 seed 기반 랜덤 1개월 replay window를 재현 가능하게 선택합니다.
+- batch replay runner가 후속 PR에서 같은 sampler를 사용해 여러 window를 반복 실행할 수 있게 합니다.
+
+작업 범위:
+
+- seed 기반 deterministic calendar-month sampler
+- full window가 지정 range 안에 완전히 포함되는 후보만 선택
+- `windowMonths`, `timezoneOffsetMinutes`, `candidateCount`, 선택된 local date metadata 반환
+- historical replay CLI의 `--random-window`, `--random-window-from`, `--random-window-to`, `--random-window-seed`, `--window-months`, `--print-window-only` 옵션
+- Historical Replay 문서에 window 선택 예시 추가
+- sampler unit test와 CLI build 검증
+
+검증:
+
+- 같은 seed와 같은 range는 같은 window를 선택함
+- 후보 window가 range 밖으로 나가지 않음
+- multi-month window 후보가 deterministic하게 계산됨
+- full window가 없는 짧은 range는 fail-closed 처리됨
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- 반복 batch 실행 loop
+- historical data availability scan
+- regime classification
+- aggregate report
+- dashboard batch view
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
+## Batch Replay Follow-up PRs
+
+다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
+
+- PR-51: Historical Data Availability Check
+- PR-52: Batch Replay Run Metadata
+- PR-53: Batch Replay Runner
+- PR-54: Regime Classifier
+- PR-55: Batch Aggregate Report
+- PR-56: Benchmark Comparison Hardening
+- PR-57: Batch Replay Dashboard Read-only View
+- PR-58: Regression And Safety Tests
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

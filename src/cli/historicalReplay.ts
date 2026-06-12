@@ -6,6 +6,7 @@ import {
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
+import { selectReplayWindow } from "../replay/replayWindowSampler.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import { renderHistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import { runHistoricalReplayWorkflow } from "../workflows/historicalReplayWorkflow.js";
@@ -14,8 +15,33 @@ const args = process.argv.slice(2);
 const positionalArgs = args.filter((arg) => !arg.startsWith("-"));
 const dryRun = args.includes("--dry-run");
 const dataDir = readArgValue("--data-dir") ?? positionalArgs[0] ?? "data/paper";
-const startAt = readDateArg("--start-at", positionalArgs[1]);
-const endAt = readDateArg("--end-at", positionalArgs[2]);
+const timezoneOffsetMinutes = readNumberArg("--timezone-offset-minutes", 540);
+const replayWindow = args.includes("--random-window")
+  ? selectReplayWindow({
+      rangeStart: readDateArg("--random-window-from"),
+      rangeEnd: readDateArg("--random-window-to"),
+      seed: readRequiredArgValue("--random-window-seed"),
+      windowMonths: readNumberArg("--window-months", 1),
+      timezoneOffsetMinutes
+    })
+  : null;
+
+if (args.includes("--print-window-only")) {
+  if (replayWindow === null) {
+    throw new Error("--print-window-only requires --random-window");
+  }
+  console.log(JSON.stringify(replayWindow, null, 2));
+  process.exit(0);
+}
+
+const startAt =
+  replayWindow === null
+    ? readDateArg("--start-at", positionalArgs[1])
+    : new Date(replayWindow.startAt);
+const endAt =
+  replayWindow === null
+    ? readDateArg("--end-at", positionalArgs[2])
+    : new Date(replayWindow.endAt);
 const stepSeconds = readNumberArg("--step-seconds", 60, positionalArgs[3]);
 const everyNSteps = readOptionalNumberArg("--every-n-steps", positionalArgs[4]);
 const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
@@ -43,7 +69,7 @@ const samplingPolicy = new ReplaySamplingPolicy({
   ...(maxDecisionCalls === undefined ? {} : { maxDecisionCalls }),
   candidateChangedOnly: process.argv.includes("--candidate-changed-only"),
   decisionFrequency,
-  timezoneOffsetMinutes: readNumberArg("--timezone-offset-minutes", 540)
+  timezoneOffsetMinutes
 });
 
 const decisionProvider = dryRun
@@ -130,5 +156,18 @@ function readArgValue(name: string): string | undefined {
     return undefined;
   }
 
-  return args[index + 1];
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function readRequiredArgValue(name: string): string {
+  const value = readArgValue(name);
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
 }

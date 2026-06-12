@@ -1329,3 +1329,33 @@
 - `docs/pr-implementation-plan.md`에 PR-49 계획, 검증 기준, 제외사항을 추가했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 테스트에는 live/order/broker 경계 확장이 없고, 계획 문서에는 제외사항 문구로만 관련 키워드가 남는 것을 확인했습니다.
 - 이번 PR은 production code 변경 없이 regression coverage와 계획 문서만 추가합니다.
+
+## PR-50: Replay Window Sampler
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only historical replay용 calendar-month window 선택 계층과 CLI option wiring에 한정합니다.
+- sampler는 seed 기반 deterministic 선택만 수행하며 replay 반복 실행, market regime 분류, 수익성 집계는 포함하지 않습니다.
+- `--print-window-only`는 선택된 window metadata를 JSON으로 출력하고 replay workflow를 실행하지 않습니다.
+- historical replay 실행 경로는 기존 Risk Engine과 PaperOrderEngine 경계를 그대로 사용합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- sampler unit test에서 같은 seed/range가 같은 calendar-month window를 선택하는지 검증했습니다.
+- sampler unit test에서 2023-01부터 2026-05까지 41개 월 후보가 계산되는지 검증했습니다.
+- sampler unit test에서 후보 window가 지정 range 안에 완전히 포함되는지 검증했습니다.
+- sampler unit test에서 multi-month window와 full window가 없는 짧은 range의 fail-closed 동작을 검증했습니다.
+- CLI smoke로 `--print-window-only`가 selected window JSON만 출력하는지 확인했습니다.
+- `npm test`로 전체 test suite 212개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- 변경 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/replayWindowSampler.ts`를 추가해 seed, range, window size, timezone offset 기반의 deterministic window 선택을 구현했습니다.
+- `src/replay/replayWindowSampler.test.ts`를 추가해 단일/복수 월 후보, 재현성, fail-closed 동작을 검증했습니다.
+- `src/cli/historicalReplay.ts`는 기존 positional `startAt/endAt` 실행을 유지하면서 `--random-window`가 있을 때만 sampler 결과를 사용합니다.
+- `docs/historical-replay.md`는 `--print-window-only`와 선택된 window로 dry-run replay를 실행하는 예시를 추가했습니다.
+- `docs/pr-implementation-plan.md`는 PR-50 범위와 PR-51~PR-58 batch replay 후속 순서를 기록했습니다.
+- 이번 PR은 반복 batch 실행, 데이터 가용성 scan, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
