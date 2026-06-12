@@ -24,6 +24,7 @@ import {
   type ReplayWindowSelection
 } from "../replay/replayWindowSampler.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
+import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
 
 export type BatchReplayRunStatus = "completed" | "skipped" | "failed";
 export type BatchReplayManifestStatus =
@@ -57,7 +58,32 @@ export interface BatchReplayRunnerOptions {
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
+  decisionProviderFactory?: BatchReplayDecisionProviderFactory;
+  decisionProviderMetadata?: BatchReplayDecisionProviderMetadata;
 }
+
+export type BatchReplayDecisionProviderMode =
+  | "deterministic_fixture"
+  | "codex_cli";
+
+export interface BatchReplayDecisionProviderMetadata {
+  mode: BatchReplayDecisionProviderMode;
+  maxCallsPerRun: number | null;
+  sandbox: "read-only" | null;
+  allowWebSearch: boolean;
+}
+
+export interface BatchReplayDecisionProviderContext {
+  batchId: string;
+  runId: string;
+  runIndex: number;
+  runSeed: string;
+  window: ReplayWindowSelection;
+}
+
+export type BatchReplayDecisionProviderFactory = (
+  context: BatchReplayDecisionProviderContext
+) => CodexHistoricalReplayDecisionProviderLike;
 
 export interface BatchReplayResult {
   mode: "paper_only";
@@ -88,6 +114,7 @@ export interface BatchReplayManifest {
   completedCount: number;
   skippedCount: number;
   failedCount: number;
+  decisionProvider: BatchReplayDecisionProviderMetadata;
   disclaimer: string;
 }
 
@@ -161,6 +188,8 @@ export async function runHistoricalBatchReplay(
   const startedAt = options.generatedAt ?? new Date();
   const paths = batchReplayPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
+  const decisionProviderMetadata =
+    options.decisionProviderMetadata ?? defaultDecisionProviderMetadata();
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
@@ -183,6 +212,7 @@ export async function runHistoricalBatchReplay(
     completedCount: 0,
     skippedCount: 0,
     failedCount: 0,
+    decisionProvider: decisionProviderMetadata,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -237,6 +267,13 @@ export async function runHistoricalBatchReplay(
     }
 
     try {
+      const decisionProvider = options.decisionProviderFactory?.({
+        batchId,
+        runId,
+        runIndex,
+        runSeed,
+        window
+      });
       const result = await runHistoricalReplayWorkflow({
         storageBaseDir,
         historicalMarketSnapshotsPath: sourcePaths.historicalMarketSnapshotsPath,
@@ -267,6 +304,7 @@ export async function runHistoricalBatchReplay(
         maxSnapshotAgeSeconds:
           options.maxSnapshotAgeSeconds ?? DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
         constraints: options.constraints ?? DEFAULT_CONSTRAINTS,
+        ...(decisionProvider === undefined ? {} : { decisionProvider }),
         runId,
         batchId,
         batchRunIndex: runIndex,
@@ -331,6 +369,7 @@ export async function runHistoricalBatchReplay(
     completedCount,
     skippedCount,
     failedCount,
+    decisionProvider: decisionProviderMetadata,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -486,6 +525,15 @@ function safePathPart(value: string): string {
     .replace(/[^A-Za-z0-9_-]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return sanitized.length === 0 ? "batch" : sanitized;
+}
+
+function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {
+  return {
+    mode: "deterministic_fixture",
+    maxCallsPerRun: null,
+    sandbox: null,
+    allowWebSearch: false
+  };
 }
 
 function batchReplayDisclaimer(): string {

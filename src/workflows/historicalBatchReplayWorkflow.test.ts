@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type {
+  HistoricalMarketSnapshot,
+  MarketPacket,
+  VirtualDecision
+} from "../domain/schemas.js";
+import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
@@ -123,6 +128,111 @@ test("historical batch replay runner skips insufficient windows", async () => {
     ["WINDOW_SNAPSHOT_MISSING", "WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"]
   );
 });
+
+test("historical batch replay runner can inject Codex-style provider per run", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 74_000)
+  );
+  const factoryContexts: Array<Record<string, unknown>> = [];
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-codex",
+    seed: "seed-001",
+    runCount: 2,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxDecisionCalls: 1,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    decisionProviderFactory: (context) => {
+      factoryContexts.push({
+        batchId: context.batchId,
+        runId: context.runId,
+        runIndex: context.runIndex,
+        runSeed: context.runSeed,
+        selectedMonth: context.window.selectedMonth
+      });
+      return new FakeCodexBatchProvider();
+    },
+    decisionProviderMetadata: {
+      mode: "codex_cli",
+      maxCallsPerRun: 1,
+      sandbox: "read-only",
+      allowWebSearch: false
+    }
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const manifestProvider = manifest["decisionProvider"] as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+
+  assert.equal(result.completedCount, 2);
+  assert.equal(factoryContexts.length, 2);
+  assert.deepEqual(
+    factoryContexts.map((context) => context["runIndex"]),
+    [0, 1]
+  );
+  assert.equal(manifestProvider["mode"], "codex_cli");
+  assert.equal(manifestProvider["maxCallsPerRun"], 1);
+  assert.equal(
+    (runRecords[0]?.["summary"] as Record<string, unknown>)["decisionProviderCallCount"],
+    1
+  );
+});
+
+class FakeCodexBatchProvider {
+  async decide(packet: MarketPacket): Promise<CodexCliDecisionResult> {
+    return {
+      attempted: true,
+      decision: decision(packet),
+      failure: null,
+      command: null
+    };
+  }
+}
+
+function decision(packet: MarketPacket): VirtualDecision {
+  const candidate = packet.candidates[0];
+  const symbol = candidate?.symbol ?? "005930";
+  const dataRef = candidate?.sourceRefs[0] ?? `historical_snapshot:${symbol}`;
+
+  return {
+    packetId: packet.packetId,
+    summary: "Injected Codex-style batch replay fixture.",
+    decisions: [
+      {
+        market: "KR",
+        symbol,
+        action: "VIRTUAL_BUY",
+        confidence: 0.6,
+        budgetKrw: 70_000,
+        thesis: "Fixture uses only the simulated historical packet.",
+        riskFactors: ["Historical replay remains paper-only."],
+        dataRefs: [dataRef],
+        claimSupport: [
+          {
+            claim: "Fixture uses only the simulated historical packet.",
+            dataRefs: [dataRef]
+          }
+        ],
+        expiresAt: packet.expiresAt
+      }
+    ]
+  };
+}
 
 function snapshot(
   snapshotId: string,

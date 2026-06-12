@@ -169,6 +169,61 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(aggregateReport["mode"], "paper_only");
   assert.equal(summary["runCount"], 1);
   assert.equal(summary["completedCount"], 1);
+  assert.equal(output["decisionProvider"], "deterministic_fixture");
+  assert.equal(output["maxCodexCallsPerRun"], null);
+  assert.equal(
+    (manifest["decisionProvider"] as Record<string, unknown>)["mode"],
+    "deterministic_fixture"
+  );
+});
+
+test("historical batch replay CLI requires explicit AI enable for Codex AI", () => {
+  const result = spawnSync(
+    process.execPath,
+    [join("dist", "cli", "historicalBatchReplay.js"), "--use-codex-ai"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_DECISION_MODE: "paper_only",
+        AI_DECISION_ENABLED: "false"
+      }
+    }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--use-codex-ai requires the AI decision provider to be enabled/
+  );
+});
+
+test("historical batch replay CLI rejects invalid per-run Codex call cap", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--use-codex-ai",
+      "--max-codex-calls-per-run",
+      "0"
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_DECISION_MODE: "paper_only",
+        AI_DECISION_ENABLED: "true"
+      }
+    }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--max-codex-calls-per-run must be a positive integer/
+  );
 });
 
 function snapshot(

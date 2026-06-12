@@ -16,6 +16,7 @@
     "paper:replay": "npm run build && node dist/cli/paperReplay.js",
     "historical:availability": "npm run build && node dist/cli/historicalReplay.js --check-data-availability",
     "historical:batch:report": "npm run build && node dist/cli/historicalBatchReport.js",
+    "historical:batch:replay": "npm run build && node dist/cli/historicalBatchReplay.js",
     "historical:batch:replay:dry": "npm run build && node dist/cli/historicalBatchReplay.js",
     "historical:replay": "npm run build && node dist/cli/historicalReplay.js",
     "historical:replay:dry": "npm run build && node dist/cli/historicalReplay.js --dry-run",
