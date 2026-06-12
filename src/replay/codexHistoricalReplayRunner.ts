@@ -6,15 +6,28 @@ import type {
   VirtualRiskDecision,
   VirtualTrade
 } from "../domain/schemas.js";
-import { HistoricalMarketPacketBuilder } from "../market/historicalPacketBuilder.js";
+import {
+  HistoricalMarketPacketBuilder,
+  HistoricalMarketSnapshotIndex
+} from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
+import {
+  markPortfolioToMarket,
+  pricePointsFromHistoricalSnapshots
+} from "../portfolio/markToMarket.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
   fingerprintMarketPacketCandidates,
   type ReplaySamplingDecision,
   type ReplaySamplingPolicy
 } from "./replaySamplingPolicy.js";
+import {
+  createHistoricalReplayProgressEvent,
+  type HistoricalReplayProgressEvent,
+  type HistoricalReplayProgressUpdate,
+  type HistoricalReplayTickPerformance
+} from "./historicalReplayProgress.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -40,6 +53,10 @@ export interface CodexHistoricalReplayRunnerOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  performanceClock?: () => number;
+  onProgress?: (
+    update: HistoricalReplayProgressUpdate
+  ) => Promise<void> | void;
 }
 
 export async function runCodexHistoricalReplay(
@@ -58,11 +75,75 @@ export async function runCodexHistoricalReplay(
   const portfolioTimeline: HistoricalPortfolioTimelineItem[] = [];
   let decisionProviderCallCount = 0;
   let decisionSkippedCount = 0;
+  let rejectedCount = 0;
   const engine = new PaperOrderEngine();
   const ticks = options.clock.ticks();
+  const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
+  const performanceClock = options.performanceClock ?? monotonicNowMs;
+
+  const emitProgress = async (
+    tick: SimulatedTick,
+    simulatedAt: Date,
+    event?: HistoricalReplayProgressEvent,
+    performance?: HistoricalReplayTickPerformance
+  ): Promise<void> => {
+    if (options.onProgress === undefined) {
+      return;
+    }
+
+    const update: HistoricalReplayProgressUpdate = {
+      simulatedAt,
+      tick,
+      tickCount: ticks.length,
+      packetCount: packets.length,
+      decisionProviderCallCount,
+      decisionSkippedCount,
+      decisionRecordCount: decisions.length,
+      tradeCount: trades.length,
+      riskDecisionCount: riskDecisions.length,
+      riskApprovedCount: riskDecisions.length - rejectedCount,
+      rejectedCount,
+      currentPortfolio,
+      packets,
+      decisions,
+      riskDecisions,
+      trades
+    };
+    if (performance !== undefined) {
+      update.performance = performance;
+    }
+
+    if (event === undefined) {
+      await options.onProgress(update);
+      return;
+    }
+
+    await options.onProgress({
+      ...update,
+      event
+    });
+  };
 
   for (const tick of ticks) {
+    const tickStartedAtMs = performanceClock();
+    let packetBuildMs = 0;
+    let samplingMs = 0;
+    let decisionProviderMs = 0;
+    let orderExecutionMs = 0;
     const simulatedAt = new Date(tick.epochMs);
+    const pricePoints = pricePointsFromHistoricalSnapshots(
+      snapshotIndex.latestFreshSnapshots({
+        simulatedAt,
+        maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds
+      }),
+      options.maxSnapshotAgeSeconds
+    );
+    currentPortfolio = markPortfolioToMarket({
+      portfolio: currentPortfolio,
+      prices: pricePoints,
+      asOf: simulatedAt
+    });
+    const packetBuildStartedAtMs = performanceClock();
     const packetBuild = new HistoricalMarketPacketBuilder({
       packetId: `${options.packetIdPrefix}_${tick.stepIndex}`,
       simulatedAt,
@@ -72,8 +153,9 @@ export async function runCodexHistoricalReplay(
       constraints: options.constraints
     }).build({
       portfolio: currentPortfolio,
-      snapshots: input.snapshots
+      snapshotIndex
     });
+    packetBuildMs = performanceClock() - packetBuildStartedAtMs;
 
     warnings.push(...packetBuild.warnings);
 
@@ -85,6 +167,19 @@ export async function runCodexHistoricalReplay(
         tick
       );
       portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      await emitProgress(
+        tick,
+        simulatedAt,
+        undefined,
+        tickPerformance({
+          performanceClock,
+          tickStartedAtMs,
+          packetBuildMs,
+          samplingMs,
+          decisionProviderMs,
+          orderExecutionMs
+        })
+      );
       continue;
     }
 
@@ -101,12 +196,14 @@ export async function runCodexHistoricalReplay(
       tick
     );
 
+    const samplingStartedAtMs = performanceClock();
     const samplingDecision = evaluateSamplingPolicy(
       options.samplingPolicy,
       packet,
       context,
       decisionProviderCallCount
     );
+    samplingMs = performanceClock() - samplingStartedAtMs;
     samplingDecisions.push({
       simulatedAt: simulatedAt.toISOString(),
       packetId: packet.packetId,
@@ -125,11 +222,26 @@ export async function runCodexHistoricalReplay(
         tick
       );
       portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      await emitProgress(
+        tick,
+        simulatedAt,
+        undefined,
+        tickPerformance({
+          performanceClock,
+          tickStartedAtMs,
+          packetBuildMs,
+          samplingMs,
+          decisionProviderMs,
+          orderExecutionMs
+        })
+      );
       continue;
     }
 
     decisionProviderCallCount += 1;
+    const decisionStartedAtMs = performanceClock();
     const decisionResult = await options.decisionProvider.decide(packet, context);
+    decisionProviderMs = performanceClock() - decisionStartedAtMs;
     if (decisionResult.failure || !decisionResult.decision) {
       appendAuditEvent(
         auditEvents,
@@ -138,6 +250,19 @@ export async function runCodexHistoricalReplay(
         tick
       );
       portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      await emitProgress(
+        tick,
+        simulatedAt,
+        undefined,
+        tickPerformance({
+          performanceClock,
+          tickStartedAtMs,
+          packetBuildMs,
+          samplingMs,
+          decisionProviderMs,
+          orderExecutionMs
+        })
+      );
       continue;
     }
 
@@ -149,6 +274,19 @@ export async function runCodexHistoricalReplay(
         tick
       );
       portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      await emitProgress(
+        tick,
+        simulatedAt,
+        undefined,
+        tickPerformance({
+          performanceClock,
+          tickStartedAtMs,
+          packetBuildMs,
+          samplingMs,
+          decisionProviderMs,
+          orderExecutionMs
+        })
+      );
       continue;
     }
 
@@ -161,12 +299,14 @@ export async function runCodexHistoricalReplay(
     );
 
     for (const item of decisionResult.decision.decisions) {
+      const orderStartedAtMs = performanceClock();
       const result = engine.execute({
         packet,
         portfolio: currentPortfolio,
         decision: item,
         riskPolicy: { now: simulatedAt }
       });
+      orderExecutionMs += performanceClock() - orderStartedAtMs;
       currentPortfolio = result.portfolio;
       riskDecisions.push(result.riskDecision);
       appendAuditEvent(
@@ -178,6 +318,27 @@ export async function runCodexHistoricalReplay(
         tick
       );
 
+      if (!result.riskDecision.approved) {
+        rejectedCount += 1;
+        await emitProgress(
+          tick,
+          simulatedAt,
+          createHistoricalReplayProgressEvent({
+            eventType: "RISK_REJECTED",
+            sequence: riskDecisions.length,
+            simulatedAt,
+            tick,
+            packetId: packet.packetId,
+            market: item.market,
+            symbol: item.symbol,
+            action: item.action,
+            approved: false,
+            rejectCodes: result.riskDecision.rejectCodes,
+            summary: `${item.market}:${item.symbol} ${item.action} rejected ${result.riskDecision.rejectCodes.join(",")}`
+          })
+        );
+      }
+
       if (result.trade) {
         trades.push(result.trade);
         appendAuditEvent(
@@ -186,10 +347,46 @@ export async function runCodexHistoricalReplay(
           `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
           tick
         );
+        await emitProgress(
+          tick,
+          simulatedAt,
+          createHistoricalReplayProgressEvent({
+            eventType: result.trade.action,
+            sequence: trades.length,
+            simulatedAt,
+            tick,
+            packetId: packet.packetId,
+            market: result.trade.market,
+            symbol: result.trade.symbol,
+            action: result.trade.action,
+            approved: true,
+            rejectCodes: [],
+            amountKrw: result.trade.amountKrw,
+            summary: `${result.trade.market}:${result.trade.symbol} ${result.trade.action} filled ${result.trade.amountKrw}`
+          })
+        );
       }
     }
 
+    currentPortfolio = markPortfolioToMarket({
+      portfolio: currentPortfolio,
+      prices: pricePoints,
+      asOf: simulatedAt
+    });
     portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+    await emitProgress(
+      tick,
+      simulatedAt,
+      undefined,
+      tickPerformance({
+        performanceClock,
+        tickStartedAtMs,
+        packetBuildMs,
+        samplingMs,
+        decisionProviderMs,
+        orderExecutionMs
+      })
+    );
   }
 
   return {
@@ -205,7 +402,7 @@ export async function runCodexHistoricalReplay(
       0
     ),
     tradeCount: trades.length,
-    rejectedCount: riskDecisions.filter((decision) => !decision.approved).length,
+    rejectedCount,
     packets,
     decisions,
     riskDecisions,
@@ -297,4 +494,25 @@ function clonePortfolio(portfolio: VirtualPortfolio): VirtualPortfolio {
     ...portfolio,
     positions: portfolio.positions.map((position) => ({ ...position }))
   };
+}
+
+function tickPerformance(input: {
+  performanceClock: () => number;
+  tickStartedAtMs: number;
+  packetBuildMs: number;
+  samplingMs: number;
+  decisionProviderMs: number;
+  orderExecutionMs: number;
+}): HistoricalReplayTickPerformance {
+  return {
+    tickElapsedMs: input.performanceClock() - input.tickStartedAtMs,
+    packetBuildMs: input.packetBuildMs,
+    samplingMs: input.samplingMs,
+    decisionProviderMs: input.decisionProviderMs,
+    orderExecutionMs: input.orderExecutionMs
+  };
+}
+
+function monotonicNowMs(): number {
+  return globalThis.performance.now();
 }

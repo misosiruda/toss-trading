@@ -58,6 +58,39 @@ test("historical replay workflow writes a stored paper report", async () => {
   const stored = JSON.parse(
     await readFile(paths.historicalReplayReportPath, "utf8")
   ) as Record<string, unknown>;
+  const progress = JSON.parse(
+    await readFile(paths.historicalReplayProgressPath, "utf8")
+  ) as Record<string, unknown>;
+  const progressEvents = progress["recentEvents"] as Array<
+    Record<string, unknown>
+  >;
+  const progressPortfolio = progress["currentPortfolio"] as Record<string, unknown>;
+  const progressPositions = progressPortfolio["positions"] as Array<
+    Record<string, unknown>
+  >;
+  const progressPackets = progress["recentPackets"] as Array<Record<string, unknown>>;
+  const progressDecisions = progress["recentDecisions"] as Array<
+    Record<string, unknown>
+  >;
+  const progressRiskDecisions = progress["recentRiskDecisions"] as Array<
+    Record<string, unknown>
+  >;
+  const progressTrades = progress["recentTrades"] as Array<Record<string, unknown>>;
+  const progressTimeline = progress["portfolioTimeline"] as Array<
+    Record<string, unknown>
+  >;
+  const runMetadata = JSON.parse(
+    await readFile(paths.historicalReplayRunMetadataPath, "utf8")
+  ) as Record<string, unknown>;
+  const packetLog = await readJsonl(paths.historicalReplayPacketLogPath);
+  const decisionLog = await readJsonl(paths.historicalReplayDecisionLogPath);
+  const riskDecisionLog = await readJsonl(
+    paths.historicalReplayRiskDecisionLogPath
+  );
+  const tradeLog = await readJsonl(paths.historicalReplayTradeLogPath);
+  const portfolioTimelineLog = await readJsonl(
+    paths.historicalReplayPortfolioTimelinePath
+  );
 
   assert.equal(result.status, "completed");
   assert.equal(result.mode, "paper_only");
@@ -67,6 +100,39 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(result.replayResult.decisionSkippedCount, 1);
   assert.equal(stored["title"], "Historical Replay Paper Report");
   assert.match(String(stored["disclaimer"]), /cannot place live orders/);
+  assert.equal(progress["status"], "completed");
+  assert.equal(progress["tickCount"], 2);
+  assert.equal(progress["decisionProviderCallCount"], 1);
+  assert.equal(progress["decisionSkippedCount"], 1);
+  assert.equal(progress["riskDecisionCount"], 1);
+  assert.equal(progress["riskApprovedCount"], 1);
+  assert.equal(progress["finalReportPath"], paths.historicalReplayReportPath);
+  assert.equal(progressPositions[0]?.["symbol"], "005930");
+  assert.equal(progressTimeline.length, 2);
+  assert.equal(progressTimeline.at(-1)?.["virtualNetWorthKrw"], 1_000_000);
+  assert.equal(progressPackets.length, 2);
+  assert.equal(progressDecisions[0]?.["packetId"], "packet_historical_workflow_0");
+  assert.equal(progressRiskDecisions[0]?.["approved"], true);
+  assert.equal(progressTrades[0]?.["symbol"], "005930");
+  assert.equal(progressEvents[0]?.["eventType"], "VIRTUAL_BUY");
+  assert.equal(runMetadata["status"], "completed");
+  assert.equal(runMetadata["mode"], "paper_only");
+  assert.match(String(runMetadata["disclaimer"]), /cannot place live orders/);
+  assert.equal(packetLog.length, result.replayResult.packetCount);
+  assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);
+  assert.equal(riskDecisionLog.length, result.replayResult.riskDecisions.length);
+  assert.equal(tradeLog.length, result.replayResult.tradeCount);
+  assert.ok(portfolioTimelineLog.length >= result.replayResult.tickCount);
+  assert.equal(packetLog[0]?.["packetId"], "packet_historical_workflow_0");
+  assert.equal(decisionLog[0]?.["packetId"], "packet_historical_workflow_0");
+  assert.equal(riskDecisionLog[0]?.["approved"], true);
+  assert.equal(tradeLog[0]?.["symbol"], "005930");
+  assert.equal(
+    (portfolioTimelineLog.at(-1)?.["portfolio"] as Record<string, unknown>)?.[
+      "virtualNetWorthKrw"
+    ],
+    1_000_000
+  );
 });
 
 function snapshot(input: {
@@ -86,4 +152,12 @@ function snapshot(input: {
     sourceRefs: [`fixture:${input.snapshotId}`],
     createdAt: "2026-06-12T09:00:00+09:00"
   };
+}
+
+async function readJsonl(filePath: string): Promise<Array<Record<string, unknown>>> {
+  const raw = await readFile(filePath, "utf8");
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
