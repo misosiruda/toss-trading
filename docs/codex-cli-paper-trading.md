@@ -130,6 +130,12 @@ CODEX_EXEC_PATH=C:\Users\<user>\AppData\Local\OpenAI\Codex\bin\<version>\codex.e
       "last_price_krw": 70000,
       "ranking": 12,
       "reason_codes": ["RANKING", "FLOW_POSITIVE"],
+      "buyEligible": true,
+      "sellEligible": false,
+      "blockedReasonCodes": ["POSITION_NOT_FOUND"],
+      "budgetTierAllowed": "LARGE",
+      "positionExists": false,
+      "cooldownActive": false,
       "source_refs": ["external_snapshot_001"]
     }
   ],
@@ -142,6 +148,8 @@ CODEX_EXEC_PATH=C:\Users\<user>\AppData\Local\OpenAI\Codex\bin\<version>\codex.e
 ```
 
 packet은 작게 유지합니다. raw quote data, order book, news text를 대량으로 넘기기보다 top 10-20 후보만 전달합니다.
+
+candidate별 action eligibility는 backend가 미리 계산합니다. AI는 `buyEligible`, `sellEligible`, `blockedReasonCodes`, `budgetTierAllowed`, `positionExists`, `cooldownActive`를 policy-safe envelope로 읽고, `buyEligible=false`인 후보에 `VIRTUAL_BUY`를 제안하거나 `sellEligible=false`인 후보에 `VIRTUAL_SELL`을 제안하지 않습니다. 이런 proposal은 semantic validator에서 hard reject됩니다.
 
 ## Virtual Decision Schema
 
@@ -346,6 +354,7 @@ prompt는 단순하고 엄격해야 합니다.
 - investment advice로 읽히는 표현을 쓰지 않습니다.
 - stale, incomplete, contradictory data에서는 `VIRTUAL_HOLD`를 선호합니다.
 - non-hold decision에는 risk factor를 포함합니다.
+- candidate eligibility field가 action을 막고 있으면 해당 action을 제안하지 않습니다.
 
 ## 실패 정책
 

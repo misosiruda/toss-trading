@@ -96,6 +96,67 @@ test("MarketPacketBuilder includes virtual portfolio snapshot", () => {
   assert.equal(result.packet.virtualPortfolio.portfolioId, "virtual_default");
 });
 
+test("MarketPacketBuilder adds deterministic candidate action eligibility", () => {
+  const result = builder().build({
+    portfolio: portfolio(),
+    candidates: [candidate("005930", 1)]
+  });
+
+  const normalized = result.packet.candidates[0]!;
+  assert.equal(normalized.buyEligible, true);
+  assert.equal(normalized.sellEligible, false);
+  assert.equal(normalized.positionExists, false);
+  assert.equal(normalized.cooldownActive, false);
+  assert.equal(normalized.budgetTierAllowed, "LARGE");
+  assert.deepEqual(normalized.blockedReasonCodes, ["POSITION_NOT_FOUND"]);
+});
+
+test("MarketPacketBuilder blocks new buys when max new positions is reached", () => {
+  const result = new MarketPacketBuilder({
+    packetId: "packet_test_001",
+    generatedAt,
+    expiresInSeconds: 300,
+    maxCandidates: 2,
+    constraints: {
+      maxNewPositions: 1,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 70_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [candidate("005930", 1), candidate("000660", 2)]
+  });
+
+  const existing = result.packet.candidates.find(
+    (item) => item.symbol === "005930"
+  )!;
+  const newCandidate = result.packet.candidates.find(
+    (item) => item.symbol === "000660"
+  )!;
+
+  assert.equal(existing.buyEligible, true);
+  assert.equal(existing.sellEligible, true);
+  assert.equal(existing.positionExists, true);
+  assert.equal(newCandidate.buyEligible, false);
+  assert.equal(newCandidate.sellEligible, false);
+  assert.equal(
+    newCandidate.blockedReasonCodes?.includes("MAX_NEW_POSITIONS_REACHED"),
+    true
+  );
+});
+
 test("MarketPacketBuilder drops sensitive extra fields from raw candidate drafts", () => {
   const rawCandidate = {
     ...candidate("005930", 1),

@@ -16,6 +16,12 @@ export const virtualHoldReasonCodeSchema = z.enum([
   "NOT_IN_CANDIDATES",
   "LOW_LIQUIDITY"
 ]);
+export const virtualBudgetTierSchema = z.enum([
+  "NONE",
+  "SMALL",
+  "MEDIUM",
+  "LARGE"
+]);
 export const virtualTradeStatusSchema = z.enum([
   "VIRTUAL_PENDING",
   "VIRTUAL_FILLED",
@@ -73,6 +79,12 @@ export const marketCandidateSchema = z
     newsRefs: z.array(nonEmptyStringSchema).optional(),
     dividendYieldPct: z.number().min(0).max(100).optional(),
     exDividendDate: nonEmptyStringSchema.optional(),
+    buyEligible: z.boolean().optional(),
+    sellEligible: z.boolean().optional(),
+    blockedReasonCodes: z.array(nonEmptyStringSchema).optional(),
+    budgetTierAllowed: virtualBudgetTierSchema.optional(),
+    positionExists: z.boolean().optional(),
+    cooldownActive: z.boolean().optional(),
     sourceRefs: z.array(nonEmptyStringSchema).min(1),
     collectedAt: isoDateTimeSchema,
     staleAfter: isoDateTimeSchema
@@ -264,6 +276,7 @@ export const auditEventSchema = z
 export type Market = z.infer<typeof marketSchema>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
+export type VirtualBudgetTier = z.infer<typeof virtualBudgetTierSchema>;
 export type VirtualPosition = z.infer<typeof virtualPositionSchema>;
 export type VirtualPortfolio = z.infer<typeof virtualPortfolioSchema>;
 export type MarketCandidate = z.infer<typeof marketCandidateSchema>;

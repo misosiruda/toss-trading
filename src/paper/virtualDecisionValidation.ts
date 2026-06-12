@@ -15,6 +15,7 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED",
   "VIRTUAL_DECISION_SYMBOL_NOT_IN_PACKET",
   "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
+  "VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE",
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
   "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE",
   "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
@@ -129,6 +130,26 @@ export function validateVirtualDecisionAgainstPacket(input: {
         action: item.action
       });
       continue;
+    }
+
+    if (item.action === "VIRTUAL_BUY" && candidate.buyEligible === false) {
+      issues.push({
+        code: "VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE",
+        message: `${item.market}:${item.symbol} is not buyEligible in packet`,
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
+    }
+
+    if (item.action === "VIRTUAL_SELL" && candidate.sellEligible === false) {
+      issues.push({
+        code: "VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE",
+        message: `${item.market}:${item.symbol} is not sellEligible in packet`,
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
     }
 
     for (const dataRef of item.dataRefs) {

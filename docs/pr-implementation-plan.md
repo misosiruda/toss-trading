@@ -1253,6 +1253,39 @@
 - live `TradingSignal` 또는 `OrderIntent` 연결
 - live trading 또는 broker adapter 연결
 
+## PR-43: Market Packet Candidate Action Eligibility
+
+목표:
+
+- BUY/SELL 가능 여부를 AI가 추측하지 않도록 candidate별 policy-safe eligibility metadata를 `market_packet`에 포함합니다.
+- AI가 packet에서 `buyEligible=false` 또는 `sellEligible=false`인 action을 제안하면 저장 전 semantic validator에서 reject합니다.
+
+작업 범위:
+
+- `MarketCandidate` eligibility fields
+- `buyEligible`, `sellEligible`, `blockedReasonCodes`, `budgetTierAllowed`, `positionExists`, `cooldownActive`
+- `MarketPacketBuilder`의 portfolio/constraint 기반 eligibility 계산
+- Codex paper decision prompt version update
+- semantic validator의 candidate eligibility hard gate
+- Codex CLI paper trading 문서에 eligibility contract 반영
+
+검증:
+
+- empty portfolio candidate는 BUY eligible, SELL ineligible로 생성됨
+- 기존 position candidate는 SELL eligible로 생성됨
+- `maxNewPositions` 도달 시 신규 candidate BUY가 blocked됨
+- `buyEligible=false` candidate에 대한 BUY decision은 semantic reject됨
+- prompt가 eligibility fields와 금지 action을 명시함
+- full test suite
+
+제외:
+
+- live broker position eligibility
+- RiskPolicy cooldownEntries를 packet builder에 직접 연결
+- confidence decomposition
+- decision schema v2 전면 전환
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

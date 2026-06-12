@@ -1127,3 +1127,29 @@
 - SELL oversize는 Risk reject 전에 backend normalizer에서 available virtual position value로 clip되므로 paper execution이 position을 음수로 만들지 않습니다.
 - Codex CLI paper trading 문서는 raw AI sizing hint와 backend normalized sizing의 책임 경계를 설명하도록 갱신했습니다.
 - 이번 PR은 confidence decomposition, normalized order persistence, decision schema v2 전환은 포함하지 않고 후속 PR로 남깁니다.
+
+## PR-43: Market Packet Candidate Action Eligibility
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only `market_packet` candidate에 policy-safe action eligibility metadata를 추가하는 데 한정합니다.
+- `buyEligible`, `sellEligible`, `blockedReasonCodes`, `budgetTierAllowed`, `positionExists`, `cooldownActive`는 AI가 policy 범위 밖 BUY/SELL proposal을 덜 내도록 돕는 입력 metadata입니다.
+- `MarketPacketBuilder`는 virtual portfolio와 packet constraints로 계산 가능한 eligibility만 채웁니다.
+- `VirtualDecision` schema v1의 raw sizing fields는 이번 PR에서 제거하지 않습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `MarketPacketBuilder` test에서 empty portfolio candidate가 BUY eligible, SELL ineligible로 생성되는지 검증했습니다.
+- `MarketPacketBuilder` test에서 기존 position candidate가 SELL eligible로 생성되고, `maxNewPositions`에 도달한 신규 candidate BUY가 blocked되는지 검증했습니다.
+- semantic validator test에서 `buyEligible=false` candidate에 대한 `VIRTUAL_BUY` decision이 `VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE`로 reject되는지 검증했습니다.
+- Codex prompt test에서 eligibility fields와 ineligible action 금지 지시가 포함되는지 검증했습니다.
+- `npm test`로 전체 test suite 181개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`의 `MarketCandidate` schema에 optional eligibility fields와 `VirtualBudgetTier`를 추가했습니다.
+- `src/market/packetBuilder.ts`는 candidate normalize 과정에서 eligibility metadata를 deterministic하게 계산합니다.
+- `src/paper/virtualDecisionValidation.ts`는 candidate-level eligibility가 명시적으로 false인 BUY/SELL proposal을 storage 전에 reject합니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v7`로 version을 올리고 eligibility fields 준수를 요구합니다.
+- 이번 PR은 RiskPolicy cooldownEntries를 packet builder에 연결하지 않고, candidate draft의 `cooldownActive`가 true인 경우에만 BUY blocker로 반영합니다.
