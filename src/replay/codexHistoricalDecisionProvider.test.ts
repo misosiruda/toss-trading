@@ -83,6 +83,37 @@ test("historical replay codex provider rejects packet mismatches", async () => {
   assert.equal(delegate.calls.length, 1);
 });
 
+test("historical replay codex provider rejects hallucinated data refs", async () => {
+  const delegate = new FakeDelegate([
+    {
+      attempted: true,
+      decision: decision({
+        decisions: [
+          {
+            ...decision().decisions[0]!,
+            dataRefs: ["historical_snapshot:missing"]
+          }
+        ]
+      }),
+      failure: null,
+      command: null
+    }
+  ]);
+  const provider = new CodexHistoricalReplayDecisionProvider(delegate, {
+    maxCallsPerReplay: 2
+  });
+
+  const result = await provider.decide(packet(), context());
+
+  assert.equal(result.decision, null);
+  assert.equal(result.failure?.code, "AI_DECISION_FAILED");
+  assert.match(
+    result.failure?.reason ?? "",
+    /VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE/
+  );
+  assert.equal(delegate.calls.length, 1);
+});
+
 test("historical replay codex provider enforces replay call budget", async () => {
   const delegate = new FakeDelegate([
     {

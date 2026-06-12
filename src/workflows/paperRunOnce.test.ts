@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   createStoragePaths,
   FileAuditLog,
+  FileVirtualDecisionStore,
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
 } from "../storage/repositories.js";
@@ -85,6 +86,38 @@ test("successful run writes virtual trade and audit event chain", async () => {
       "VIRTUAL_RISK_APPROVED",
       "PAPER_ORDER_FILLED"
     ]
+  );
+});
+
+test("runPaperDecisionOnce rejects semantic-invalid decisions before storage", async () => {
+  const dir = await tempDir();
+  const result = await runPaperDecisionOnce({
+    storageBaseDir: dir,
+    provider: new StaticDecisionProvider({
+      ...validDecision(),
+      decisions: [
+        {
+          ...validDecision().decisions[0]!,
+          dataRefs: ["mock_source_missing"]
+        }
+      ]
+    }),
+    now
+  });
+  const paths = createStoragePaths(dir);
+  const decisions = await new FileVirtualDecisionStore(
+    paths.virtualDecisionsPath
+  ).readAll();
+  const trades = await new FileVirtualTradeStore(paths.virtualTradesPath).readAll();
+  const audit = await new FileAuditLog(paths.auditLogPath).readAll();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.tradeCount, 0);
+  assert.equal(decisions.records.length, 0);
+  assert.equal(trades.records.length, 0);
+  assert.deepEqual(
+    audit.records.map((event) => event.eventType),
+    ["MARKET_PACKET_CREATED", "VIRTUAL_DECISION_REJECTED"]
   );
 });
 

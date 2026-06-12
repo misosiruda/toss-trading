@@ -1095,6 +1095,34 @@
 - live trading
 - production scheduler
 
+## PR-38: AI Decision Semantic Validation
+
+목표:
+
+- schema-valid이지만 packet 근거가 맞지 않는 paper-only AI decision을 저장 또는 가상 체결 전에 차단합니다.
+
+작업 범위:
+
+- `VirtualDecision`과 `MarketPacket` 사이의 semantic validator 추가
+- `packetId` mismatch, packet 밖 symbol, duplicate symbol, allowed action 위반, candidate sourceRef 밖 `dataRefs` 검증
+- one-shot paper run, stored market packet run, historical Codex replay provider에 저장 전 validator 연결
+- semantic reject 시 `VIRTUAL_DECISION_REJECTED` audit event 기록
+
+검증:
+
+- hallucinated `dataRefs`가 decision/trade 저장 전에 reject됨
+- cross-symbol `dataRefs`가 reject됨
+- packet 밖 symbol과 duplicate decision이 reject됨
+- 기존 paper-only happy path와 historical replay provider 경계 유지
+- full test suite
+
+제외:
+
+- decision schema v2 전환
+- HOLD reason code 도입
+- backend sizing 전환
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

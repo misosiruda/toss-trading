@@ -113,6 +113,40 @@ test("market packet paper run rejects decision packet mismatch without saving de
   assert.equal(trades.records.length, 0);
 });
 
+test("market packet paper run rejects hallucinated data refs before saving decision", async () => {
+  const dir = await tempDir();
+  const paths = createStoragePaths(dir);
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(marketPacket());
+
+  const result = await runPaperDecisionFromLatestMarketPacket({
+    storageBaseDir: dir,
+    provider: new StaticMarketPacketDecisionProvider({
+      ...virtualDecision(),
+      decisions: [
+        {
+          ...virtualDecision().decisions[0]!,
+          dataRefs: ["tossinvest_cli:market.ranking:missing"]
+        }
+      ]
+    }),
+    now
+  });
+  const decisions = await new FileVirtualDecisionStore(
+    paths.virtualDecisionsPath
+  ).readAll();
+  const trades = await new FileVirtualTradeStore(paths.virtualTradesPath).readAll();
+  const audit = await new FileAuditLog(paths.auditLogPath).readAll();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureReason, "virtual_decision_semantic_invalid");
+  assert.equal(decisions.records.length, 0);
+  assert.equal(trades.records.length, 0);
+  assert.deepEqual(
+    audit.records.map((event) => event.eventType),
+    ["MARKET_PACKET_SELECTED", "VIRTUAL_DECISION_REJECTED"]
+  );
+});
+
 test("market packet dry-run provider builds a paper decision from stored candidates", async () => {
   const dir = await tempDir();
   const paths = createStoragePaths(dir);

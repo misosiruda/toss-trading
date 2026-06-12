@@ -19,6 +19,11 @@ import type {
   CodexCliDecisionFailure,
   CodexCliDecisionResult
 } from "../ai/codexCliDecisionProvider.js";
+import {
+  summarizeVirtualDecisionValidation,
+  validateVirtualDecisionAgainstPacket,
+  type VirtualDecisionValidationResult
+} from "../paper/virtualDecisionValidation.js";
 import type { DecisionProvider } from "./paperRunOnce.js";
 
 export interface PaperRunFromMarketPacketOptions {
@@ -169,16 +174,25 @@ export async function runPaperDecisionFromLatestMarketPacket(
     );
   }
 
-  if (decisionResult.decision.packetId !== packet.packetId) {
+  const validation = validateVirtualDecisionAgainstPacket({
+    packet,
+    decision: decisionResult.decision
+  });
+  if (!validation.approved) {
     auditEventIds.push(
       await appendAudit(
         repositories.auditLog,
-        "AI_DECISION_FAILED",
-        `Decision packet mismatch for stored market packet ${packet.packetId}`,
+        "VIRTUAL_DECISION_REJECTED",
+        summarizeVirtualDecisionValidation(validation),
         now
       )
     );
-    return failedResult(packet.packetId, "decision_packet_mismatch", auditEventIds, now);
+    return failedResult(
+      packet.packetId,
+      validationFailureReason(validation),
+      auditEventIds,
+      now
+    );
   }
 
   await repositories.decisionStore.append(decisionResult.decision);
@@ -331,4 +345,12 @@ function clonePortfolio(portfolio: VirtualPortfolio): VirtualPortfolio {
     ...portfolio,
     positions: portfolio.positions.map((position) => ({ ...position }))
   };
+}
+
+function validationFailureReason(
+  validation: VirtualDecisionValidationResult
+): string {
+  return validation.rejectCodes.includes("VIRTUAL_DECISION_PACKET_MISMATCH")
+    ? "decision_packet_mismatch"
+    : "virtual_decision_semantic_invalid";
 }
