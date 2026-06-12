@@ -13,6 +13,7 @@ import {
   HistoricalMarketSnapshotIndex
 } from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   markPortfolioToMarket,
@@ -266,15 +267,20 @@ export function runHistoricalReplay(
       continue;
     }
 
-    decisions.push(decision);
+    const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+      decision,
+      packet
+    });
+
+    decisions.push(recordedDecision);
     appendAuditEvent(
       auditEvents,
       "VIRTUAL_DECISION_RECORDED",
-      `${decision.decisions.length} historical replay decision(s)`,
+      `${recordedDecision.decisions.length} historical replay decision(s)`,
       tick
     );
 
-    for (const item of decision.decisions) {
+    for (const item of recordedDecision.decisions) {
       const result = engine.execute({
         packet,
         portfolio: currentPortfolio,

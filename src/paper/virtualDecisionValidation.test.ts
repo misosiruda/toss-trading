@@ -76,6 +76,35 @@ test("rejects AI-supplied decision hash before storage", () => {
   assert.ok(result.rejectCodes.includes("VIRTUAL_DECISION_HASH_NOT_ALLOWED"));
 });
 
+test("rejects AI-supplied confidence breakdown before storage", () => {
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: decision({
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          confidenceBreakdown: {
+            modelConfidence: 0.7,
+            evidenceQualityScore: 100,
+            dataCompletenessScore: 100,
+            policyEligibilityScore: 100,
+            executionRiskScore: 100,
+            overallScore: 100,
+            reasonCodes: ["AI_SUPPLIED"]
+          }
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_CONFIDENCE_BREAKDOWN_NOT_ALLOWED"
+    )
+  );
+});
+
 test("rejects decisions without identity metadata", () => {
   const invalidDecision = decision();
   delete invalidDecision.modelId;

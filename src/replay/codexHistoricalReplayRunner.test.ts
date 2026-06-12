@@ -66,6 +66,10 @@ test("codex historical replay runner executes async paper decisions", async () =
   assert.equal(result.decisionSkippedCount, 1);
   assert.equal(result.decisionRecordCount, 2);
   assert.equal(result.tradeCount, 2);
+  assert.equal(
+    result.decisions[0]?.decisions[0]?.confidenceBreakdown?.modelConfidence,
+    0.6
+  );
   assert.deepEqual(
     result.samplingDecisions.map((item) => item.shouldEvaluate),
     [true, false, true]
@@ -77,6 +81,11 @@ test("codex historical replay runner executes async paper decisions", async () =
   const latestProgress = progressUpdates.at(-1);
   assert.equal(latestProgress?.packets.length, 3);
   assert.equal(latestProgress?.decisions.length, 2);
+  assert.equal(
+    latestProgress?.decisions[0]?.decisions[0]?.confidenceBreakdown
+      ?.modelConfidence,
+    0.6
+  );
   assert.equal(latestProgress?.riskDecisions.length, 2);
   assert.equal(latestProgress?.trades.length, 2);
   assert.equal(latestProgress?.currentPortfolio.positions.length, 2);

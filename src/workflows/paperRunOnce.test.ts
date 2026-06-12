@@ -37,7 +37,18 @@ test("runPaperDecisionOnce completes with mocked Codex decision provider", async
   assert.match(result.report, /not financial advice/);
 
   const paths = createStoragePaths(dir);
+  const decisions = await new FileVirtualDecisionStore(
+    paths.virtualDecisionsPath
+  ).readAll();
   const trades = await new FileVirtualTradeStore(paths.virtualTradesPath).readAll();
+  assert.equal(
+    decisions.records[0]?.decisions[0]?.confidenceBreakdown?.modelConfidence,
+    0.7
+  );
+  assert.equal(
+    decisions.records[0]?.decisions[0]?.confidenceBreakdown?.overallScore,
+    83
+  );
   assert.equal(trades.records.length, 1);
   assert.equal(trades.records[0]?.status, "VIRTUAL_FILLED");
 });

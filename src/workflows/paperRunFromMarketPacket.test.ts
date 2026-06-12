@@ -51,6 +51,16 @@ test("market packet paper run records decision, trade, portfolio, and audit chai
   assert.equal(result.tradeCount, 1);
   assert.equal(result.rejectedCount, 0);
   assert.equal(decisions.records.length, 1);
+  assert.equal(
+    decisions.records[0]?.decisions[0]?.confidenceBreakdown?.modelConfidence,
+    0.7
+  );
+  assert.match(
+    decisions.records[0]?.decisions[0]?.confidenceBreakdown?.reasonCodes.join(
+      ","
+    ) ?? "",
+    /MODEL_CONFIDENCE_HIGH/
+  );
   assert.equal(trades.records.length, 1);
   assert.equal(portfolio?.cashKrw, 930_000);
   assert.deepEqual(

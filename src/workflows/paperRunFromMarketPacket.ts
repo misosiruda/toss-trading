@@ -10,6 +10,7 @@ import {
   bindDecisionIdentityMetadata,
   createStaticDecisionIdentityMetadata
 } from "../paper/decisionIdentity.js";
+import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   createStoragePaths,
@@ -221,12 +222,17 @@ export async function runPaperDecisionFromLatestMarketPacket(
     );
   }
 
-  await repositories.decisionStore.append(decisionResult.decision);
+  const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+    decision: decisionResult.decision,
+    packet
+  });
+
+  await repositories.decisionStore.append(recordedDecision);
   auditEventIds.push(
     await appendAudit(
       repositories.auditLog,
       "VIRTUAL_DECISION_RECORDED",
-      `Recorded ${decisionResult.decision.decisions.length} paper-only decision(s) from stored market packet`,
+      `Recorded ${recordedDecision.decisions.length} paper-only decision(s) from stored market packet`,
       now
     )
   );
@@ -236,7 +242,7 @@ export async function runPaperDecisionFromLatestMarketPacket(
   let rejectedCount = 0;
   const engine = new PaperOrderEngine();
 
-  for (const decision of decisionResult.decision.decisions) {
+  for (const decision of recordedDecision.decisions) {
     const result = engine.execute({
       packet,
       portfolio: currentPortfolio,

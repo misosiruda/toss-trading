@@ -13,6 +13,7 @@ import {
   bindDecisionIdentityMetadata,
   createStaticDecisionIdentityMetadata
 } from "../paper/decisionIdentity.js";
+import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   summarizeVirtualDecisionValidation,
@@ -164,12 +165,17 @@ export async function runPaperDecisionOnce(
     };
   }
 
-  await repositories.decisionStore.append(decisionResult.decision);
+  const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+    decision: decisionResult.decision,
+    packet: packetResult.packet
+  });
+
+  await repositories.decisionStore.append(recordedDecision);
   auditEventIds.push(
     await appendAudit(
       repositories.auditLog,
       "VIRTUAL_DECISION_RECORDED",
-      `Recorded ${decisionResult.decision.decisions.length} paper-only decision(s)`,
+      `Recorded ${recordedDecision.decisions.length} paper-only decision(s)`,
       now
     )
   );
@@ -178,7 +184,7 @@ export async function runPaperDecisionOnce(
   let tradeCount = 0;
   const engine = new PaperOrderEngine();
 
-  for (const decision of decisionResult.decision.decisions) {
+  for (const decision of recordedDecision.decisions) {
     const result = engine.execute({
       packet: packetResult.packet,
       portfolio: currentPortfolio,

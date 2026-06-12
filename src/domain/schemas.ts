@@ -189,6 +189,18 @@ export const virtualDecisionClaimSupportSchema = z
     }
   });
 
+export const virtualDecisionConfidenceBreakdownSchema = z
+  .object({
+    modelConfidence: ratioSchema,
+    evidenceQualityScore: z.number().min(0).max(100),
+    dataCompletenessScore: z.number().min(0).max(100),
+    policyEligibilityScore: z.number().min(0).max(100),
+    executionRiskScore: z.number().min(0).max(100),
+    overallScore: z.number().min(0).max(100),
+    reasonCodes: z.array(nonEmptyStringSchema).min(1)
+  })
+  .strict();
+
 export const virtualDecisionItemSchema = z
   .object({
     symbol: nonEmptyStringSchema,
@@ -208,6 +220,7 @@ export const virtualDecisionItemSchema = z
     dataRefs: z.array(nonEmptyStringSchema).min(1),
     featureRefs: z.array(nonEmptyStringSchema).optional(),
     claimSupport: z.array(virtualDecisionClaimSupportSchema).optional(),
+    confidenceBreakdown: virtualDecisionConfidenceBreakdownSchema.optional(),
     expiresAt: isoDateTimeSchema
   })
   .strict()
@@ -344,6 +357,9 @@ export type HistoricalMarketSnapshot = z.infer<
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
 export type VirtualDecisionClaimSupport = z.infer<
   typeof virtualDecisionClaimSupportSchema
+>;
+export type VirtualDecisionConfidenceBreakdown = z.infer<
+  typeof virtualDecisionConfidenceBreakdownSchema
 >;
 export type VirtualDecisionItem = z.infer<typeof virtualDecisionItemSchema>;
 export type VirtualDecision = z.infer<typeof virtualDecisionSchema>;
