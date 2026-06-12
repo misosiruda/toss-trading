@@ -10,6 +10,10 @@ import {
 } from "../market/packetBuilder.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
+  summarizeVirtualDecisionValidation,
+  validateVirtualDecisionAgainstPacket
+} from "../paper/virtualDecisionValidation.js";
+import {
   createStoragePaths,
   FileAuditLog,
   FileVirtualDecisionStore,
@@ -107,6 +111,32 @@ export async function runPaperDecisionOnce(
     return {
       status: "failed",
       report: buildReport(packetResult, 0, "AI decision failed; no paper order was created."),
+      packetId: packetResult.packet.packetId,
+      tradeCount: 0,
+      auditEventIds
+    };
+  }
+
+  const validation = validateVirtualDecisionAgainstPacket({
+    packet: packetResult.packet,
+    decision: decisionResult.decision
+  });
+  if (!validation.approved) {
+    auditEventIds.push(
+      await appendAudit(
+        repositories.auditLog,
+        "VIRTUAL_DECISION_REJECTED",
+        summarizeVirtualDecisionValidation(validation),
+        now
+      )
+    );
+    return {
+      status: "failed",
+      report: buildReport(
+        packetResult,
+        0,
+        "AI decision rejected by semantic validation; no paper order was created."
+      ),
       packetId: packetResult.packet.packetId,
       tradeCount: 0,
       auditEventIds

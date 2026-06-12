@@ -8,6 +8,10 @@ import {
   PAPER_DECISION_PROMPT_VERSION
 } from "../ai/decisionPrompt.js";
 import type { MarketPacket } from "../domain/schemas.js";
+import {
+  summarizeVirtualDecisionValidation,
+  validateVirtualDecisionAgainstPacket
+} from "../paper/virtualDecisionValidation.js";
 import type { HistoricalReplayDecisionContext } from "./historicalReplayRunner.js";
 
 export const HISTORICAL_REPLAY_DECISION_PROMPT_VERSION =
@@ -54,11 +58,19 @@ export class CodexHistoricalReplayDecisionProvider {
 
     this.callCount += 1;
     const result = await this.delegate.decide(packet);
-    if (result.decision && result.decision.packetId !== packet.packetId) {
-      return failedHistoricalDecision(
-        result.command,
-        `decision_packet_mismatch:${result.decision.packetId}:${packet.packetId}`
-      );
+    if (result.decision) {
+      const validation = validateVirtualDecisionAgainstPacket({
+        packet,
+        decision: result.decision
+      });
+      if (!validation.approved) {
+        return failedHistoricalDecision(
+          result.command,
+          validation.rejectCodes.includes("VIRTUAL_DECISION_PACKET_MISMATCH")
+            ? `decision_packet_mismatch:${result.decision.packetId}:${packet.packetId}; ${summarizeVirtualDecisionValidation(validation)}`
+            : summarizeVirtualDecisionValidation(validation)
+        );
+      }
     }
 
     return result;

@@ -992,3 +992,26 @@
 - `docs/historical-replay.md`를 추가해 input/output, flow, 실행 방법, lookahead guard, safety boundary, dashboard 조회 방식을 정리했습니다.
 - README에 historical replay 문서 링크를 추가했습니다.
 - PR-28부터 PR-37까지의 historical accelerated replay slice가 dashboard 조회까지 연결됐습니다.
+
+## PR-38: AI Decision Semantic Validation
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only AI decision을 저장 또는 가상 체결 전에 packet 근거와 대조하는 semantic validator에 한정했습니다.
+- live trading, broker adapter, raw `codex exec` MCP tool, raw `tossctl` MCP tool, AI-driven live signal/order intent 경로는 추가하지 않았습니다.
+- validator는 `packetId`, candidate presence, allowed action, duplicate `market:symbol`, candidate `sourceRefs` 기반 `dataRefs` 검증만 수행합니다.
+- semantic reject는 `VIRTUAL_DECISION_REJECTED` audit event로 기록하고, decision/trade 저장 및 portfolio mutation 전에 fail closed 처리합니다.
+
+### Review 2: Tests and Validation
+
+- validator unit tests에서 valid decision, packet mismatch, packet 밖 symbol, hallucinated `dataRefs`, cross-symbol `dataRefs`, duplicate decision, disallowed action을 검증했습니다.
+- one-shot paper run과 stored market packet run에서 semantic-invalid decision이 `virtual-decisions.jsonl`과 `virtual-trades.jsonl`에 저장되지 않는지 검증했습니다.
+- historical Codex replay provider에서 hallucinated `dataRefs`가 `AI_DECISION_FAILED`로 변환되어 replay order execution으로 넘어가지 않는지 검증했습니다.
+- `npm test`로 전체 test suite 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/virtualDecisionValidation.ts`를 추가해 `VirtualDecision`과 `MarketPacket` 사이의 semantic validation을 독립 모듈로 분리했습니다.
+- `src/workflows/paperRunOnce.ts`와 `src/workflows/paperRunFromMarketPacket.ts`는 AI decision 저장 전에 validator를 호출합니다.
+- `src/replay/codexHistoricalDecisionProvider.ts`는 delegate decision을 historical replay runner에 반환하기 전에 같은 validator를 적용합니다.
+- 기존 v1 `virtual_decision` schema와 paper-only storage file format은 변경하지 않았으며, HOLD reason code와 backend sizing 전환은 후속 PR로 남겼습니다.
