@@ -221,8 +221,23 @@ data/batch-replay/
 - batch runner는 source data directory의 `historical-market-snapshots.jsonl`을 읽고, run별 출력은 batch output directory 아래에 분리해 씁니다.
 - 각 run은 `seed:runIndex`를 사용해 deterministic random window를 선택합니다.
 - availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
+- 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - 현재 batch runner는 deterministic paper replay만 실행합니다. Codex CLI AI 호출, 외부 data 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
-- `batch-replay-runs.jsonl`은 후속 aggregate report와 regime classification의 입력으로 사용됩니다.
+- `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
+
+### Market Regime Classification
+
+Market regime은 window 안 snapshot만 사용해 deterministic하게 계산합니다.
+
+- symbol별 window 첫 가격과 마지막 가격의 return ratio를 계산합니다.
+- 기본값 기준 최소 2개 snapshot이 있는 symbol만 분류에 사용합니다.
+- 평균 return이 `+3%` 이상이고 상승 symbol 비율이 `60%` 이상이면 `bull`입니다.
+- 평균 return이 `-3%` 이하이고 하락 symbol 비율이 `60%` 이상이면 `bear`입니다.
+- 평균 return의 절대값이 `1%` 이하이면 `sideways`입니다.
+- 위 조건이 충돌하거나 방향성과 breadth가 엇갈리면 `mixed`입니다.
+- 분류 가능한 symbol이 부족하면 `insufficient_data`입니다.
+
+이 분류는 batch 결과를 나중에 조건별로 나누기 위한 metadata입니다. trading signal, risk approval, order intent로 사용하지 않습니다.
 
 ## Lookahead Guard
 

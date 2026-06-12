@@ -1,6 +1,10 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import {
+  classifyMarketRegime,
+  type MarketRegimeClassification
+} from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import {
@@ -100,6 +104,7 @@ export interface BatchReplayRunRecord {
   failedAt: string | null;
   storageBaseDir: string;
   window: ReplayWindowSelection;
+  marketRegime: MarketRegimeClassification;
   dataAvailability: BatchReplayDataAvailabilitySummary;
   summary: BatchReplayRunSummary | null;
   reportPath: string | null;
@@ -194,15 +199,22 @@ export async function runHistoricalBatchReplay(
     const runId = batchReplayRunId(batchId, runIndex, window);
     const storageBaseDir = join(paths.runsDir, runId);
     const runStartedAt = dateForRun(startedAt, runIndex);
+    const windowStart = new Date(window.startAt);
+    const windowEnd = new Date(window.endAt);
     const availability = assessHistoricalDataAvailability({
       snapshots: snapshotRead.records,
-      windowStart: new Date(window.startAt),
-      windowEnd: new Date(window.endAt),
+      windowStart,
+      windowEnd,
       corruptLineCount: snapshotRead.corruptLineCount,
       minWindowSnapshots: options.minWindowSnapshots ?? 1,
       minSnapshotsPerRequiredSymbol:
         options.minSnapshotsPerRequiredSymbol ?? 1,
       requiredSymbols: options.requiredSymbols ?? []
+    });
+    const marketRegime = classifyMarketRegime({
+      snapshots: snapshotRead.records,
+      windowStart,
+      windowEnd
     });
 
     if (availability.status !== "available") {
@@ -215,6 +227,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        marketRegime,
         availability,
         skipReason: "DATA_INSUFFICIENT"
       });
@@ -268,6 +281,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        marketRegime,
         availability,
         reportPath: result.reportPath,
         summary: summarizeRun(result.report)
@@ -284,6 +298,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        marketRegime,
         availability,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -343,6 +358,7 @@ function runRecord(input: {
   runStartedAt: Date;
   storageBaseDir: string;
   window: ReplayWindowSelection;
+  marketRegime: MarketRegimeClassification;
   availability: HistoricalDataAvailabilityReport;
   reportPath?: string;
   summary?: BatchReplayRunSummary;
@@ -363,6 +379,7 @@ function runRecord(input: {
     failedAt: input.status === "failed" ? terminalAt : null,
     storageBaseDir: input.storageBaseDir,
     window: input.window,
+    marketRegime: input.marketRegime,
     dataAvailability: summarizeAvailability(input.availability),
     summary: input.summary ?? null,
     reportPath: input.reportPath ?? null,
