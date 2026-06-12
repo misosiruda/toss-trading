@@ -6,6 +6,7 @@ import type {
 } from "../ai/codexCliDecisionProvider.js";
 import type { MarketPacket, VirtualDecision } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import { createStaticDecisionIdentityMetadata } from "../paper/decisionIdentity.js";
 import {
   buildHistoricalReplayDecisionPrompt,
   CodexHistoricalReplayDecisionProvider,
@@ -192,6 +193,7 @@ function decision(
   return {
     packetId: "packet_historical_0",
     packetHash: createMarketPacketHash(packet()),
+    ...createStaticDecisionIdentityMetadata(),
     summary: "Historical replay Codex fixture.",
     decisions: [
       {

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { MarketPacket, VirtualDecision } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import { createStaticDecisionIdentityMetadata } from "./decisionIdentity.js";
 import {
   summarizeVirtualDecisionValidation,
   validateVirtualDecisionAgainstPacket
@@ -59,6 +60,27 @@ test("rejects decisions for changed packet content with same packet id", () => {
   assert.equal(result.approved, false);
   assert.ok(
     result.rejectCodes.includes("VIRTUAL_DECISION_PACKET_HASH_MISMATCH")
+  );
+});
+
+test("rejects decisions without identity metadata", () => {
+  const invalidDecision = decision();
+  delete invalidDecision.modelId;
+
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: packet(),
+    decision: invalidDecision
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED"
+    )
+  );
+  assert.match(
+    summarizeVirtualDecisionValidation(result),
+    /metadataField=modelId/
   );
 });
 
@@ -246,6 +268,7 @@ function decision(overrides: Partial<VirtualDecision> = {}): VirtualDecision {
   return {
     packetId: "packet_001",
     packetHash: createMarketPacketHash(packet()),
+    ...createStaticDecisionIdentityMetadata(),
     summary: "Paper-only validation fixture.",
     decisions: [
       {

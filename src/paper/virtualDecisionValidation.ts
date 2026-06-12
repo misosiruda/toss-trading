@@ -6,11 +6,13 @@ import type {
   VirtualDecisionItem
 } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import { missingDecisionIdentityFields } from "./decisionIdentity.js";
 
 export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_PACKET_MISMATCH",
   "VIRTUAL_DECISION_PACKET_HASH_REQUIRED",
   "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
+  "VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED",
   "VIRTUAL_DECISION_SYMBOL_NOT_IN_PACKET",
   "VIRTUAL_DECISION_ACTION_NOT_ALLOWED",
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
@@ -29,6 +31,7 @@ export interface VirtualDecisionValidationIssue {
   symbol?: string;
   action?: VirtualAction;
   dataRef?: string;
+  metadataField?: string;
 }
 
 export interface VirtualDecisionValidationResult {
@@ -60,6 +63,14 @@ export function validateVirtualDecisionAgainstPacket(input: {
     issues.push({
       code: "VIRTUAL_DECISION_PACKET_HASH_MISMATCH",
       message: `decision packetHash ${input.decision.packetHash} does not match ${expectedPacketHash}`
+    });
+  }
+
+  for (const field of missingDecisionIdentityFields(input.decision)) {
+    issues.push({
+      code: "VIRTUAL_DECISION_IDENTITY_METADATA_REQUIRED",
+      message: `decision must include ${field}`,
+      metadataField: field
     });
   }
 
@@ -149,7 +160,10 @@ export function summarizeVirtualDecisionValidation(
       const target =
         issue.market && issue.symbol ? ` ${issue.market}:${issue.symbol}` : "";
       const dataRef = issue.dataRef ? ` dataRef=${issue.dataRef}` : "";
-      return `${issue.code}${target}${dataRef}`;
+      const metadataField = issue.metadataField
+        ? ` metadataField=${issue.metadataField}`
+        : "";
+      return `${issue.code}${target}${dataRef}${metadataField}`;
     })
     .join("; ");
 }
