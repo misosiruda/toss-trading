@@ -12,10 +12,16 @@ export interface MarketCandidateDraft {
   market: Market;
   symbol: string;
   name?: string;
+  sector?: string;
+  industry?: string;
   lastPriceKrw?: number;
   ranking?: number;
   score?: number;
   reasonCodes?: string[];
+  eventTags?: string[];
+  newsRefs?: string[];
+  dividendYieldPct?: number;
+  exDividendDate?: string;
   sourceRefs?: string[];
   collectedAt?: string;
   staleAfter?: string;
@@ -131,6 +137,8 @@ function normalizeCandidate(
     market: candidate.market,
     symbol: candidate.symbol,
     reasonCodes: candidate.reasonCodes ?? [],
+    eventTags: candidate.eventTags ?? [],
+    newsRefs: candidate.newsRefs ?? [],
     sourceRefs: candidate.sourceRefs ?? [],
     collectedAt: defaults.collectedAt,
     staleAfter: defaults.staleAfter
@@ -138,6 +146,12 @@ function normalizeCandidate(
 
   if (candidate.name !== undefined) {
     normalized.name = candidate.name;
+  }
+  if (candidate.sector !== undefined) {
+    normalized.sector = candidate.sector;
+  }
+  if (candidate.industry !== undefined) {
+    normalized.industry = candidate.industry;
   }
   if (candidate.lastPriceKrw !== undefined) {
     normalized.lastPriceKrw = candidate.lastPriceKrw;
@@ -147,6 +161,12 @@ function normalizeCandidate(
   }
   if (candidate.score !== undefined) {
     normalized.score = candidate.score;
+  }
+  if (candidate.dividendYieldPct !== undefined) {
+    normalized.dividendYieldPct = candidate.dividendYieldPct;
+  }
+  if (candidate.exDividendDate !== undefined) {
+    normalized.exDividendDate = candidate.exDividendDate;
   }
 
   return normalized;

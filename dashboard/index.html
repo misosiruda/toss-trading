@@ -41,6 +41,272 @@
       </section>
 
       <section class="content-grid">
+        <section class="panel full performance-panel" aria-labelledby="performance-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">performance</p>
+              <h2 id="performance-heading">포트폴리오 성과</h2>
+            </div>
+            <span id="performance-asof" class="subtle">-</span>
+          </div>
+          <div class="report-kpis performance-kpis" aria-label="포트폴리오 성과 요약">
+            <div>
+              <span>시작자산</span>
+              <strong id="performance-initial-net-worth">-</strong>
+            </div>
+            <div>
+              <span>평가손익</span>
+              <strong id="performance-total-pnl">-</strong>
+            </div>
+            <div>
+              <span>총 수익률</span>
+              <strong id="performance-total-return">-</strong>
+            </div>
+            <div>
+              <span>현금 비중</span>
+              <strong id="performance-cash-ratio">-</strong>
+            </div>
+            <div>
+              <span>최대 낙폭</span>
+              <strong id="performance-max-drawdown">-</strong>
+            </div>
+          </div>
+          <div class="performance-layout">
+            <section class="performance-chart" aria-label="순자산 곡선">
+              <div class="mini-section-heading">
+                <strong>순자산 곡선</strong>
+                <span id="performance-chart-range" class="subtle">-</span>
+              </div>
+              <svg id="net-worth-chart" viewBox="0 0 640 220" role="img" aria-label="가상 순자산 변화 차트"></svg>
+            </section>
+            <section class="allocation-panel" aria-label="자산 배분">
+              <div class="mini-section-heading">
+                <strong>자산 배분</strong>
+                <span id="allocation-total" class="subtle">-</span>
+              </div>
+              <div id="allocation-list" class="allocation-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel full benchmark-panel" aria-labelledby="benchmark-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">benchmark</p>
+              <h2 id="benchmark-heading">벤치마크 비교</h2>
+            </div>
+            <span id="benchmark-range" class="subtle">-</span>
+          </div>
+          <div class="benchmark-layout">
+            <div class="benchmark-scoreboard">
+              <div>
+                <span>AI 포트폴리오</span>
+                <strong id="benchmark-portfolio-return">-</strong>
+              </div>
+              <div>
+                <span>동일가중 보유</span>
+                <strong id="benchmark-equal-weight-return">-</strong>
+              </div>
+              <div>
+                <span>초과수익</span>
+                <strong id="benchmark-alpha">-</strong>
+              </div>
+              <div>
+                <span>판정</span>
+                <strong id="benchmark-verdict">-</strong>
+              </div>
+            </div>
+            <div class="benchmark-bars" aria-label="벤치마크 수익률 막대">
+              <div class="benchmark-bar-row">
+                <span>AI</span>
+                <div class="benchmark-bar-track"><span id="benchmark-portfolio-bar"></span></div>
+                <strong id="benchmark-portfolio-bar-label">-</strong>
+              </div>
+              <div class="benchmark-bar-row">
+                <span>동일가중</span>
+                <div class="benchmark-bar-track"><span id="benchmark-equal-weight-bar"></span></div>
+                <strong id="benchmark-equal-weight-bar-label">-</strong>
+              </div>
+            </div>
+            <div id="benchmark-movers" class="benchmark-movers"></div>
+          </div>
+        </section>
+
+        <section class="panel full execution-cost-panel" aria-labelledby="execution-cost-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">execution diagnostics</p>
+              <h2 id="execution-cost-heading">체결 비용 진단</h2>
+            </div>
+            <span id="execution-cost-source" class="subtle">-</span>
+          </div>
+          <div class="report-kpis execution-cost-kpis" aria-label="가상 체결 비용 요약">
+            <div>
+              <span>비용 드래그</span>
+              <strong id="execution-cost-fee-drag">-</strong>
+            </div>
+            <div>
+              <span>Turnover</span>
+              <strong id="execution-cost-turnover">-</strong>
+            </div>
+            <div>
+              <span>평균 비용률</span>
+              <strong id="execution-cost-average-ratio">-</strong>
+            </div>
+            <div>
+              <span>실현손익</span>
+              <strong id="execution-cost-realized-pnl">-</strong>
+            </div>
+          </div>
+          <dl id="execution-cost-detail" class="definition-list execution-cost-detail"></dl>
+        </section>
+
+        <section class="panel full market-monitor-panel" aria-labelledby="market-monitor-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">market monitor</p>
+              <h2 id="market-monitor-heading">시장 모니터</h2>
+            </div>
+            <span id="market-monitor-range" class="subtle">-</span>
+          </div>
+          <div class="market-monitor-layout">
+            <div>
+              <div class="mini-section-heading">
+                <strong>주요 상승</strong>
+                <span id="market-monitor-gainers-count" class="subtle">-</span>
+              </div>
+              <div id="market-monitor-gainers" class="market-monitor-list"></div>
+            </div>
+            <div>
+              <div class="mini-section-heading">
+                <strong>주요 하락</strong>
+                <span id="market-monitor-losers-count" class="subtle">-</span>
+              </div>
+              <div id="market-monitor-losers" class="market-monitor-list"></div>
+            </div>
+            <div>
+              <div class="mini-section-heading">
+                <strong>거래/가격 상위</strong>
+                <span id="market-monitor-turnover-count" class="subtle">-</span>
+              </div>
+              <div id="market-monitor-turnover" class="market-monitor-list"></div>
+            </div>
+            <div>
+              <div class="mini-section-heading">
+                <strong>구간 고점/저점</strong>
+                <span id="market-monitor-extreme-count" class="subtle">-</span>
+              </div>
+              <div id="market-monitor-extremes" class="market-monitor-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel full exposure-panel" aria-labelledby="exposure-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">exposure</p>
+              <h2 id="exposure-heading">섹터/산업 노출</h2>
+            </div>
+            <span id="exposure-coverage" class="subtle">-</span>
+          </div>
+          <div class="exposure-layout">
+            <section aria-label="섹터 비중">
+              <div class="mini-section-heading">
+                <strong>섹터 비중</strong>
+                <span id="exposure-sector-count" class="subtle">-</span>
+              </div>
+              <div id="exposure-sector-list" class="exposure-list"></div>
+            </section>
+            <section aria-label="산업 비중">
+              <div class="mini-section-heading">
+                <strong>산업 비중</strong>
+                <span id="exposure-industry-count" class="subtle">-</span>
+              </div>
+              <div id="exposure-industry-list" class="exposure-list"></div>
+            </section>
+            <section aria-label="메타데이터 커버리지">
+              <div class="mini-section-heading">
+                <strong>데이터 커버리지</strong>
+                <span id="exposure-position-count" class="subtle">-</span>
+              </div>
+              <dl id="exposure-coverage-detail" class="definition-list exposure-detail"></dl>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel full event-panel" aria-labelledby="event-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">events</p>
+              <h2 id="event-heading">이벤트/뉴스 커버리지</h2>
+            </div>
+            <span id="event-coverage" class="subtle">-</span>
+          </div>
+          <div class="event-layout">
+            <section aria-label="명시 이벤트">
+              <div class="mini-section-heading">
+                <strong>명시 이벤트</strong>
+                <span id="event-explicit-count" class="subtle">-</span>
+              </div>
+              <div id="event-explicit-list" class="event-list"></div>
+            </section>
+            <section aria-label="신호 기반 이벤트">
+              <div class="mini-section-heading">
+                <strong>신호 기반 이벤트</strong>
+                <span id="event-signal-count" class="subtle">-</span>
+              </div>
+              <div id="event-signal-list" class="event-list"></div>
+            </section>
+            <section aria-label="이벤트 데이터 공백">
+              <div class="mini-section-heading">
+                <strong>데이터 공백</strong>
+                <span id="event-gap-status" class="status-pill neutral">-</span>
+              </div>
+              <dl id="event-gap-detail" class="definition-list event-detail"></dl>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel full income-goal-panel" aria-labelledby="income-goal-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">income & goal</p>
+              <h2 id="income-goal-heading">목표/소득 점검</h2>
+            </div>
+            <span id="income-goal-status" class="status-pill neutral">-</span>
+          </div>
+          <div class="income-goal-kpis" aria-label="목표 및 가상 손익 요약">
+            <div>
+              <span>기준 자산</span>
+              <strong id="goal-baseline-net-worth">-</strong>
+            </div>
+            <div>
+              <span>현재 자산</span>
+              <strong id="goal-current-net-worth">-</strong>
+            </div>
+            <div>
+              <span>5% 목표 진행</span>
+              <strong id="goal-target-progress">-</strong>
+            </div>
+            <div>
+              <span>가상 실현손익</span>
+              <strong id="income-realized-pnl">-</strong>
+            </div>
+            <div>
+              <span>회전율</span>
+              <strong id="income-turnover-ratio">-</strong>
+            </div>
+            <div>
+              <span>배당 데이터</span>
+              <strong id="income-dividend-status">-</strong>
+            </div>
+          </div>
+          <div class="goal-progress-track" aria-label="5% 목표 진행률">
+            <span id="goal-progress-bar"></span>
+          </div>
+          <dl id="income-goal-detail" class="definition-list income-goal-detail"></dl>
+        </section>
+
         <section class="panel full report-panel" aria-labelledby="daily-report-heading">
           <div class="panel-heading">
             <div>
@@ -105,6 +371,79 @@
               <strong id="replay-risk">-</strong>
             </div>
           </div>
+          <section class="replay-progress" aria-label="진행 중 과거 리플레이">
+            <div class="panel-heading compact">
+              <div>
+                <p class="eyebrow">live progress</p>
+                <h3>진행 중 리플레이</h3>
+              </div>
+              <span id="replay-progress-status" class="status-pill neutral">-</span>
+            </div>
+            <div class="progress-meter" aria-hidden="true">
+              <span id="replay-progress-bar"></span>
+            </div>
+            <div class="report-kpis replay-progress-kpis">
+              <div>
+                <span>Tick</span>
+                <strong id="replay-progress-ticks">-</strong>
+              </div>
+              <div>
+                <span>Sim Time</span>
+                <strong id="replay-progress-sim-time">-</strong>
+              </div>
+              <div>
+                <span>AI 호출</span>
+                <strong id="replay-progress-decisions">-</strong>
+              </div>
+              <div>
+                <span>가상 체결</span>
+                <strong id="replay-progress-trades">-</strong>
+              </div>
+              <div>
+                <span>반려</span>
+                <strong id="replay-progress-rejected">-</strong>
+              </div>
+            </div>
+            <div class="report-kpis replay-performance-kpis">
+              <div>
+                <span>최근 Tick</span>
+                <strong id="replay-performance-last-tick">-</strong>
+              </div>
+              <div>
+                <span>Packet Build</span>
+                <strong id="replay-performance-packet-build">-</strong>
+              </div>
+              <div>
+                <span>AI 판단</span>
+                <strong id="replay-performance-decision">-</strong>
+              </div>
+              <div>
+                <span>평균 Tick</span>
+                <strong id="replay-performance-average">-</strong>
+              </div>
+              <div>
+                <span>예상 남은 시간</span>
+                <strong id="replay-performance-eta">-</strong>
+              </div>
+              <div>
+                <span>병목</span>
+                <strong id="replay-performance-bottleneck">-</strong>
+              </div>
+            </div>
+            <div class="table-wrap replay-events-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sim Time</th>
+                    <th>종목</th>
+                    <th>이벤트</th>
+                    <th>근거</th>
+                  </tr>
+                </thead>
+                <tbody id="replay-progress-events-body"></tbody>
+              </table>
+            </div>
+          </section>
           <dl id="replay-detail" class="definition-list report-detail"></dl>
           <div class="table-wrap replay-timeline-wrap">
             <table>
@@ -137,8 +476,11 @@
                   <th>종목</th>
                   <th>수량</th>
                   <th>평균가</th>
+                  <th>현재가</th>
                   <th>평가금액</th>
                   <th>손익</th>
+                  <th>손익률</th>
+                  <th>비중</th>
                 </tr>
               </thead>
               <tbody id="positions-body"></tbody>
@@ -167,18 +509,47 @@
           </div>
           <div class="decision-toolbar">
             <div class="segmented-control" aria-label="액션 필터">
-              <button class="segment-button active" type="button" data-action-filter="ALL">All</button>
-              <button class="segment-button" type="button" data-action-filter="BUY">Buy</button>
-              <button class="segment-button" type="button" data-action-filter="SELL">Sell</button>
-              <button class="segment-button" type="button" data-action-filter="HOLD">Hold</button>
+              <button class="segment-button active" type="button" data-action-filter="ALL">전체</button>
+              <button class="segment-button" type="button" data-action-filter="BUY">매수</button>
+              <button class="segment-button" type="button" data-action-filter="SELL">매도</button>
+              <button class="segment-button" type="button" data-action-filter="HOLD">보류</button>
             </div>
             <label class="filter-field">
               <span>종목</span>
-              <input id="symbol-filter" type="search" autocomplete="off" placeholder="005930, TSLA" />
+              <input id="symbol-filter" type="search" autocomplete="off" placeholder="삼성전자, 005930, TSLA" />
             </label>
           </div>
           <div id="decision-groups" class="decision-groups"></div>
           <div id="decision-list" class="decision-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">decision performance</p>
+              <h2>AI 판단 성과</h2>
+            </div>
+            <span id="decision-performance-count" class="subtle">-</span>
+          </div>
+          <div class="decision-performance-kpis" aria-label="AI 판단 사후 성과 요약">
+            <div>
+              <span>평균 판단 수익률</span>
+              <strong id="decision-performance-average">-</strong>
+            </div>
+            <div>
+              <span>매수 적중률</span>
+              <strong id="decision-performance-buy-hit-rate">-</strong>
+            </div>
+            <div>
+              <span>매도 적중률</span>
+              <strong id="decision-performance-sell-hit-rate">-</strong>
+            </div>
+            <div>
+              <span>보류 기회비용</span>
+              <strong id="decision-performance-hold-opportunity">-</strong>
+            </div>
+          </div>
+          <div id="decision-performance-list" class="decision-performance-list"></div>
         </section>
 
         <section class="panel">
@@ -189,6 +560,43 @@
             </div>
           </div>
           <dl id="risk-summary" class="definition-list"></dl>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">portfolio risk</p>
+              <h2>포트폴리오 리스크</h2>
+            </div>
+            <span id="portfolio-risk-status" class="status-pill neutral">-</span>
+          </div>
+          <div class="risk-metric-grid">
+            <div>
+              <span>주식 노출</span>
+              <strong id="portfolio-risk-exposure">-</strong>
+            </div>
+            <div>
+              <span>현금 소진율</span>
+              <strong id="portfolio-risk-cash-depletion">-</strong>
+            </div>
+            <div>
+              <span>최대 종목 비중</span>
+              <strong id="portfolio-risk-top-weight">-</strong>
+            </div>
+            <div>
+              <span>집중도 HHI</span>
+              <strong id="portfolio-risk-hhi">-</strong>
+            </div>
+            <div>
+              <span>변동성</span>
+              <strong id="portfolio-risk-volatility">-</strong>
+            </div>
+            <div>
+              <span>최대 낙폭</span>
+              <strong id="portfolio-risk-drawdown">-</strong>
+            </div>
+          </div>
+          <dl id="portfolio-risk-detail" class="definition-list risk-detail"></dl>
         </section>
 
         <section class="panel wide">

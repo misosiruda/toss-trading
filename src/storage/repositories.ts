@@ -32,6 +32,13 @@ export interface StoragePaths {
   marketPacketsPath: string;
   historicalMarketSnapshotsPath: string;
   historicalReplayReportPath: string;
+  historicalReplayProgressPath: string;
+  historicalReplayRunMetadataPath: string;
+  historicalReplayPacketLogPath: string;
+  historicalReplayDecisionLogPath: string;
+  historicalReplayRiskDecisionLogPath: string;
+  historicalReplayTradeLogPath: string;
+  historicalReplayPortfolioTimelinePath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -47,7 +54,32 @@ export function createStoragePaths(baseDir: string): StoragePaths {
       baseDir,
       "historical-market-snapshots.jsonl"
     ),
-    historicalReplayReportPath: join(baseDir, "historical-replay-report.json")
+    historicalReplayReportPath: join(baseDir, "historical-replay-report.json"),
+    historicalReplayProgressPath: join(baseDir, "historical-replay-progress.json"),
+    historicalReplayRunMetadataPath: join(
+      baseDir,
+      "historical-replay-run-metadata.json"
+    ),
+    historicalReplayPacketLogPath: join(
+      baseDir,
+      "historical-replay-packets.jsonl"
+    ),
+    historicalReplayDecisionLogPath: join(
+      baseDir,
+      "historical-replay-decisions.jsonl"
+    ),
+    historicalReplayRiskDecisionLogPath: join(
+      baseDir,
+      "historical-replay-risk-decisions.jsonl"
+    ),
+    historicalReplayTradeLogPath: join(
+      baseDir,
+      "historical-replay-trades.jsonl"
+    ),
+    historicalReplayPortfolioTimelinePath: join(
+      baseDir,
+      "historical-replay-portfolio-timeline.jsonl"
+    )
   };
 }
 

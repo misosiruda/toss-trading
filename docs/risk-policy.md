@@ -26,14 +26,44 @@ Paper trading에도 같은 철학을 적용합니다. Codex CLI는 `virtual_deci
 권장 reject code:
 
 - `VIRTUAL_PACKET_STALE`
+- `VIRTUAL_DECISION_STALE`
+- `VIRTUAL_CANDIDATE_NOT_FOUND`
+- `VIRTUAL_PRICE_MISSING`
 - `VIRTUAL_CASH_EXCEEDED`
+- `VIRTUAL_CASH_RESERVE_BREACHED`
+- `VIRTUAL_BUDGET_EXCEEDED`
 - `VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED`
-- `VIRTUAL_DAILY_TURNOVER_EXCEEDED`
+- `VIRTUAL_POSITION_WEIGHT_EXCEEDED`
+- `VIRTUAL_POSITION_NOT_FOUND`
+- `VIRTUAL_SELL_AMOUNT_REQUIRED`
+- `VIRTUAL_SELL_AMOUNT_EXCEEDED`
 - `VIRTUAL_COOLDOWN_ACTIVE`
 - `VIRTUAL_DECISION_SCHEMA_INVALID`
 - `VIRTUAL_DECISION_SOURCE_MISSING`
 
 `virtual_decision` reject는 실거래 risk decision과 섞지 않고 별도 audit event로 기록합니다.
+
+## Paper Trading Policy Parameters
+
+`VirtualRiskEngine`은 paper-only 판단에 대해 다음 정책을 정규화해서 평가합니다.
+
+| 정책 | 기본값 | 설명 |
+| --- | ---: | --- |
+| `maxBudgetPerDecisionKrw` | packet `maxBudgetPerSymbolKrw` | AI decision 1건의 최대 paper notional |
+| `maxSymbolExposureKrw` | packet `maxBudgetPerSymbolKrw` | 동일 종목의 최대 paper exposure |
+| `maxPositionWeightRatio` | `0.35` | NAV 대비 단일 종목 paper 비중 한도 |
+| `minCashReserveRatio` | `0.10` | NAV 대비 최소 현금 reserve |
+| `minCashReserveKrw` | `0` | 절대 최소 현금 reserve |
+| `cooldownEntries` | `[]` | symbol/action 단위의 임시 진입 제한 |
+
+정책 목적:
+
+- `cash_reserve`는 모든 현금을 소진하는 BUY를 막습니다.
+- `position_weight`는 NAV가 커져도 단일 종목 집중도가 과도해지지 않게 막습니다.
+- `cooldown`은 같은 symbol/action/reject code 반복으로 AI가 같은 실수를 빠르게 되풀이하는 상황을 줄이기 위한 입력입니다.
+- `reduceOnly: true`인 `VIRTUAL_SELL`은 리스크 축소성 paper 매도이므로 cooldown 예외로 둡니다.
+
+현재 정책은 paper-only `VirtualRiskEngine`에 한정됩니다. 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
 
 ## Required Risk Rules
 

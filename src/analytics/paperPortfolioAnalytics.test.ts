@@ -25,7 +25,7 @@ test("paper analytics calculates exposure and allocation totals", () => {
   assert.match(analytics.disclaimer, /not investment performance/);
 });
 
-test("paper analytics keeps realized pnl as explicit placeholder", () => {
+test("paper analytics keeps realized pnl null without sell fill metadata", () => {
   const analytics = buildPaperPortfolioAnalytics({
     portfolio: portfolio(),
     decisions: [],
@@ -34,7 +34,26 @@ test("paper analytics keeps realized pnl as explicit placeholder", () => {
 
   assert.equal(analytics.virtualPnl.realizedPnlKrw, null);
   assert.equal(analytics.virtualPnl.unrealizedPnlKrw, 10_000);
-  assert.match(analytics.virtualPnl.note, /avoids performance claims/);
+  assert.match(analytics.virtualPnl.note, /Paper-only PnL/);
+});
+
+test("paper analytics sums realized pnl from virtual sell fills", () => {
+  const analytics = buildPaperPortfolioAnalytics({
+    portfolio: portfolio(),
+    decisions: [],
+    trades: [
+      {
+        ...trade("packet_001", "KR", "005930", "VIRTUAL_SELL"),
+        realizedPnlKrw: 9_790
+      },
+      {
+        ...trade("packet_002", "KR", "005930", "VIRTUAL_SELL"),
+        realizedPnlKrw: -1_000
+      }
+    ]
+  });
+
+  assert.equal(analytics.virtualPnl.realizedPnlKrw, 8_790);
 });
 
 test("paper analytics links decisions to filled virtual trades", () => {

@@ -29,9 +29,15 @@ function validMarketPacket(): unknown {
         market: "KR",
         symbol: "005930",
         name: "Sample Corp",
+        sector: "Technology",
+        industry: "Semiconductors",
         lastPriceKrw: 70_000,
         ranking: 1,
         reasonCodes: ["RANKING", "FLOW_POSITIVE"],
+        eventTags: ["earnings"],
+        newsRefs: ["news:sample:001"],
+        dividendYieldPct: 2.4,
+        exDividendDate: "2026-12-27",
         sourceRefs: ["external_snapshot_001"],
         collectedAt: now,
         staleAfter: later
@@ -74,6 +80,12 @@ test("valid market packet fixture passes schema validation", () => {
 
   assert.equal(packet.mode, "paper_only");
   assert.equal(packet.candidates[0]?.sourceRefs[0], "external_snapshot_001");
+  assert.equal(packet.candidates[0]?.sector, "Technology");
+  assert.equal(packet.candidates[0]?.industry, "Semiconductors");
+  assert.deepEqual(packet.candidates[0]?.eventTags, ["earnings"]);
+  assert.deepEqual(packet.candidates[0]?.newsRefs, ["news:sample:001"]);
+  assert.equal(packet.candidates[0]?.dividendYieldPct, 2.4);
+  assert.equal(packet.candidates[0]?.exDividendDate, "2026-12-27");
 });
 
 test("valid historical market snapshot fixture passes schema validation", () => {
@@ -157,6 +169,92 @@ test("non-hold decisions require risk factors", () => {
   assert.throws(
     () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
     /risk factor/
+  );
+});
+
+test("sell decisions require explicit sizing", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /Sell decisions must include/
+  );
+});
+
+test("sell decisions support reduce-only ratio sizing", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellRatio?: number;
+      reduceOnly?: boolean;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellRatio = 0.5;
+  decision.decisions[0]!.reduceOnly = true;
+
+  const parsed = parseWithSchema(
+    virtualDecisionSchema,
+    decision,
+    "virtualDecision"
+  );
+
+  assert.equal(parsed.decisions[0]?.sellRatio, 0.5);
+  assert.equal(parsed.decisions[0]?.reduceOnly, true);
+});
+
+test("sell decisions reject v2 sizing without reduceOnly true", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellRatio?: number;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellRatio = 0.5;
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /reduceOnly to true/
+  );
+});
+
+test("sell decisions reject explicit non reduce-only intent", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      action: string;
+      budgetKrw: number;
+      riskFactors: string[];
+      sellAll?: boolean;
+      reduceOnly?: boolean;
+    }>;
+  };
+  decision.decisions[0]!.action = "VIRTUAL_SELL";
+  decision.decisions[0]!.budgetKrw = 0;
+  decision.decisions[0]!.riskFactors = ["Paper-only sell sizing risk."];
+  decision.decisions[0]!.sellAll = true;
+  decision.decisions[0]!.reduceOnly = false;
+
+  assert.throws(
+    () => parseWithSchema(virtualDecisionSchema, decision, "virtualDecision"),
+    /reduce-only/
   );
 });
 

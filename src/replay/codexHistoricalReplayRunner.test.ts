@@ -15,6 +15,7 @@ import {
   type CodexHistoricalReplayRunnerOptions,
   type CodexHistoricalReplayDecisionProviderLike
 } from "./codexHistoricalReplayRunner.js";
+import type { HistoricalReplayProgressUpdate } from "./historicalReplayProgress.js";
 
 test("codex historical replay runner executes async paper decisions", async () => {
   const provider = new FakeCodexReplayProvider((packet) => ({
@@ -23,12 +24,16 @@ test("codex historical replay runner executes async paper decisions", async () =
     failure: null,
     command: null
   }));
+  const progressUpdates: HistoricalReplayProgressUpdate[] = [];
 
   const result = await runCodexHistoricalReplay(
     {
       ...runnerOptions(),
       decisionProvider: provider,
-      samplingPolicy: new ReplaySamplingPolicy({ everyNSteps: 2 })
+      samplingPolicy: new ReplaySamplingPolicy({ everyNSteps: 2 }),
+      onProgress: (update) => {
+        progressUpdates.push(update);
+      }
     },
     {
       initialPortfolio: portfolio(),
@@ -64,6 +69,22 @@ test("codex historical replay runner executes async paper decisions", async () =
   assert.deepEqual(
     result.samplingDecisions.map((item) => item.shouldEvaluate),
     [true, false, true]
+  );
+  assert.equal(
+    progressUpdates.some((update) => update.event?.eventType === "VIRTUAL_BUY"),
+    true
+  );
+  const latestProgress = progressUpdates.at(-1);
+  assert.equal(latestProgress?.packets.length, 3);
+  assert.equal(latestProgress?.decisions.length, 2);
+  assert.equal(latestProgress?.riskDecisions.length, 2);
+  assert.equal(latestProgress?.trades.length, 2);
+  assert.equal(latestProgress?.currentPortfolio.positions.length, 2);
+  assert.equal(
+    latestProgress?.performance !== undefined &&
+      latestProgress.performance.tickElapsedMs >=
+        latestProgress.performance.packetBuildMs,
+    true
   );
 });
 
@@ -113,6 +134,56 @@ test("codex historical replay runner skips paper orders on provider failure", as
   );
 });
 
+test("codex historical replay runner emits risk rejection progress events", async () => {
+  const provider = new FakeCodexReplayProvider((packet) => ({
+    attempted: true,
+    decision: decision(packet.packetId, packet.candidates[0]?.symbol ?? "005930", {
+      budgetKrw: 2_000_000
+    }),
+    failure: null,
+    command: null
+  }));
+  const progressUpdates: HistoricalReplayProgressUpdate[] = [];
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider,
+      onProgress: (update) => {
+        progressUpdates.push(update);
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        })
+      ]
+    }
+  );
+
+  const rejectedUpdate = progressUpdates.find(
+    (update) => update.event?.eventType === "RISK_REJECTED"
+  );
+
+  assert.equal(result.rejectedCount, 1);
+  assert.equal(result.tradeCount, 0);
+  assert.equal(rejectedUpdate?.event?.symbol, "005930");
+  assert.equal(
+    rejectedUpdate?.event?.rejectCodes.includes("VIRTUAL_CASH_EXCEEDED"),
+    true
+  );
+});
+
 class FakeCodexReplayProvider implements CodexHistoricalReplayDecisionProviderLike {
   calls = 0;
 
@@ -157,7 +228,11 @@ function portfolio(): VirtualPortfolio {
   };
 }
 
-function decision(packetId: string, symbol: string): VirtualDecision {
+function decision(
+  packetId: string,
+  symbol: string,
+  overrides: Partial<VirtualDecision["decisions"][number]> = {}
+): VirtualDecision {
   return {
     packetId,
     summary: "Async Codex replay fixture.",
@@ -171,7 +246,8 @@ function decision(packetId: string, symbol: string): VirtualDecision {
         thesis: "Fixture decision uses only the current historical packet.",
         riskFactors: ["Historical replay is paper-only."],
         dataRefs: [`historical_snapshot:${symbol}`],
-        expiresAt: "2025-01-02T00:05:00.000Z"
+        expiresAt: "2025-01-02T00:05:00.000Z",
+        ...overrides
       }
     ]
   };

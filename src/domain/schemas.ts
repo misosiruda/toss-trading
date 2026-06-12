@@ -28,8 +28,13 @@ export const virtualPositionSchema = z
     symbol: nonEmptyStringSchema,
     quantity: z.number().nonnegative(),
     averagePriceKrw: moneyKrwSchema,
+    marketPriceKrw: moneyKrwSchema.optional(),
     marketValueKrw: moneyKrwSchema.optional(),
     unrealizedPnlKrw: z.number().optional(),
+    priceUpdatedAt: isoDateTimeSchema.optional(),
+    priceStaleAfter: isoDateTimeSchema.optional(),
+    priceSourceRefs: z.array(nonEmptyStringSchema).optional(),
+    isPriceStale: z.boolean().optional(),
     updatedAt: isoDateTimeSchema
   })
   .strict();
@@ -48,10 +53,16 @@ export const marketCandidateSchema = z
     market: marketSchema,
     symbol: nonEmptyStringSchema,
     name: nonEmptyStringSchema.optional(),
+    sector: nonEmptyStringSchema.optional(),
+    industry: nonEmptyStringSchema.optional(),
     lastPriceKrw: moneyKrwSchema.optional(),
     ranking: z.number().int().positive().optional(),
     score: z.number().min(0).max(100).optional(),
     reasonCodes: z.array(nonEmptyStringSchema).default([]),
+    eventTags: z.array(nonEmptyStringSchema).optional(),
+    newsRefs: z.array(nonEmptyStringSchema).optional(),
+    dividendYieldPct: z.number().min(0).max(100).optional(),
+    exDividendDate: nonEmptyStringSchema.optional(),
     sourceRefs: z.array(nonEmptyStringSchema).min(1),
     collectedAt: isoDateTimeSchema,
     staleAfter: isoDateTimeSchema
@@ -114,6 +125,12 @@ export const virtualDecisionItemSchema = z
     action: virtualActionSchema,
     confidence: ratioSchema,
     budgetKrw: moneyKrwSchema,
+    maxBudgetKrw: moneyKrwSchema.optional(),
+    sellQuantity: z.number().positive().optional(),
+    sellRatio: z.number().gt(0).max(1).optional(),
+    targetWeightPct: ratioSchema.optional(),
+    sellAll: z.boolean().optional(),
+    reduceOnly: z.boolean().optional(),
     thesis: nonEmptyStringSchema,
     riskFactors: z.array(nonEmptyStringSchema),
     dataRefs: z.array(nonEmptyStringSchema).min(1),
@@ -134,6 +151,38 @@ export const virtualDecisionItemSchema = z
         code: z.ZodIssueCode.custom,
         path: ["budgetKrw"],
         message: "Hold decisions must not allocate virtual budget"
+      });
+    }
+
+    if (
+      value.action === "VIRTUAL_SELL" &&
+      !hasVirtualSellSizing(value)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["budgetKrw"],
+        message:
+          "Sell decisions must include budgetKrw, sellQuantity, sellRatio, targetWeightPct, or sellAll"
+      });
+    }
+
+    if (value.action === "VIRTUAL_SELL" && value.reduceOnly === false) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reduceOnly"],
+        message: "Sell decisions must be reduce-only"
+      });
+    }
+
+    if (
+      value.action === "VIRTUAL_SELL" &&
+      hasVirtualSellSizingV2(value) &&
+      value.reduceOnly !== true
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reduceOnly"],
+        message: "V2 sell sizing must set reduceOnly to true"
       });
     }
   });
@@ -167,8 +216,19 @@ export const virtualTradeSchema = z
     symbol: nonEmptyStringSchema,
     action: z.enum(["VIRTUAL_BUY", "VIRTUAL_SELL"]),
     quantity: z.number().positive(),
+    sourcePriceKrw: moneyKrwSchema.optional(),
     priceKrw: moneyKrwSchema,
+    fillPriceRule: z.enum(["current_candidate_last_price"]).optional(),
+    grossAmountKrw: moneyKrwSchema.optional(),
     amountKrw: moneyKrwSchema,
+    netAmountKrw: moneyKrwSchema.optional(),
+    feeKrw: moneyKrwSchema.optional(),
+    taxKrw: moneyKrwSchema.optional(),
+    slippageKrw: moneyKrwSchema.optional(),
+    realizedPnlKrw: z.number().optional(),
+    priceSourceRefs: z.array(nonEmptyStringSchema).optional(),
+    fillRatio: z.number().gt(0).max(1).optional(),
+    fractionalShares: z.boolean().optional(),
     status: virtualTradeStatusSchema,
     executedAt: isoDateTimeSchema
   })
@@ -226,4 +286,34 @@ export function assertFresh(expiresAt: string, now = new Date()): void {
   if (!isFresh(expiresAt, now)) {
     throw new Error(`stale timestamp: ${expiresAt}`);
   }
+}
+
+function hasVirtualSellSizing(value: {
+  budgetKrw: number;
+  sellQuantity?: number | undefined;
+  sellRatio?: number | undefined;
+  targetWeightPct?: number | undefined;
+  sellAll?: boolean | undefined;
+}): boolean {
+  return (
+    value.budgetKrw > 0 ||
+    value.sellQuantity !== undefined ||
+    value.sellRatio !== undefined ||
+    value.targetWeightPct !== undefined ||
+    value.sellAll === true
+  );
+}
+
+function hasVirtualSellSizingV2(value: {
+  sellQuantity?: number | undefined;
+  sellRatio?: number | undefined;
+  targetWeightPct?: number | undefined;
+  sellAll?: boolean | undefined;
+}): boolean {
+  return (
+    value.sellQuantity !== undefined ||
+    value.sellRatio !== undefined ||
+    value.targetWeightPct !== undefined ||
+    value.sellAll === true
+  );
 }

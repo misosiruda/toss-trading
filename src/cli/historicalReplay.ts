@@ -73,7 +73,6 @@ const result = await runHistoricalReplayWorkflow({
   }),
   ...(decisionProvider === undefined ? {} : { decisionProvider }),
   samplingPolicy,
-  generatedAt: new Date(),
   initialCashKrw,
   packetIdPrefix: readArgValue("--packet-id-prefix") ?? "packet_historical",
   packetExpiresInSeconds: readNumberArg("--packet-expires-in-seconds", 60),

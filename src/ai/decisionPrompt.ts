@@ -1,4 +1,4 @@
-export const PAPER_DECISION_PROMPT_VERSION = "paper-v1";
+export const PAPER_DECISION_PROMPT_VERSION = "paper-v3";
 
 export function buildPaperDecisionPrompt(): string {
   return [
@@ -8,8 +8,14 @@ export function buildPaperDecisionPrompt(): string {
     "Do not run shell commands, do not call broker APIs, do not call tossctl, and do not create real orders.",
     "Allowed actions are VIRTUAL_BUY, VIRTUAL_SELL, and VIRTUAL_HOLD only.",
     "Prefer VIRTUAL_HOLD when evidence is weak, stale, missing, contradictory, or outside the packet constraints.",
+    "Use candidate score and reasonCodes when present as paper-only evidence.",
+    "Non-hold decisions are allowed when packet evidence is strong, internally consistent, within constraints, and supported by concrete riskFactors.",
     "Every decision must cite dataRefs copied from the candidate sourceRefs in the packet.",
     "Non-hold decisions must include concrete riskFactors and must not exceed maxBudgetPerSymbolKrw.",
+    "For VIRTUAL_SELL, prefer reduceOnly=true with sellRatio, sellQuantity, targetWeightPct, or sellAll instead of guessing a sell amount.",
+    "For VIRTUAL_HOLD, set budgetKrw to 0 and do not include sell sizing fields.",
+    "Write all human-readable natural-language fields in Korean: summary, thesis, and riskFactors.",
+    "Keep schema field names, enum values, symbols, market codes, and dataRefs exactly as machine-readable English identifiers.",
     "Never present the output as financial advice, a recommendation, or a performance guarantee.",
     "Keep the summary brief and focused on paper-only simulation state."
   ].join("\n");

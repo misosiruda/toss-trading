@@ -8,9 +8,16 @@ import type {
   VirtualRiskDecision,
   VirtualTrade
 } from "../domain/schemas.js";
-import { HistoricalMarketPacketBuilder } from "../market/historicalPacketBuilder.js";
+import {
+  HistoricalMarketPacketBuilder,
+  HistoricalMarketSnapshotIndex
+} from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
+import {
+  markPortfolioToMarket,
+  pricePointsFromHistoricalSnapshots
+} from "../portfolio/markToMarket.js";
 import {
   fingerprintMarketPacketCandidates,
   type ReplaySamplingDecision,
@@ -154,9 +161,22 @@ export function runHistoricalReplay(
   let decisionSkippedCount = 0;
   const engine = new PaperOrderEngine();
   const ticks = options.clock.ticks();
+  const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
 
   for (const tick of ticks) {
     const simulatedAt = new Date(tick.epochMs);
+    const pricePoints = pricePointsFromHistoricalSnapshots(
+      snapshotIndex.latestFreshSnapshots({
+        simulatedAt,
+        maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds
+      }),
+      options.maxSnapshotAgeSeconds
+    );
+    currentPortfolio = markPortfolioToMarket({
+      portfolio: currentPortfolio,
+      prices: pricePoints,
+      asOf: simulatedAt
+    });
     const packetBuild = new HistoricalMarketPacketBuilder({
       packetId: `${options.packetIdPrefix}_${tick.stepIndex}`,
       simulatedAt,
@@ -166,7 +186,7 @@ export function runHistoricalReplay(
       constraints: options.constraints
     }).build({
       portfolio: currentPortfolio,
-      snapshots: input.snapshots
+      snapshotIndex
     });
 
     warnings.push(...packetBuild.warnings);
@@ -272,6 +292,11 @@ export function runHistoricalReplay(
       }
     }
 
+    currentPortfolio = markPortfolioToMarket({
+      portfolio: currentPortfolio,
+      prices: pricePoints,
+      asOf: simulatedAt
+    });
     portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
   }
 

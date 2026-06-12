@@ -1,0 +1,151 @@
+{
+  "source": {
+    "rawProgressSnapshot": "docs/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json",
+    "diagnosticBrief": "docs/historical-replay-diagnostic-brief.md",
+    "dataDir": "data/replay-2026-04-12-2026-06-12",
+    "capturedAtKst": "2026-06-12 15:53"
+  },
+  "safetyBoundary": {
+    "mode": "paper_only",
+    "liveTrading": false,
+    "finalOrderDecisionByAi": false,
+    "riskEngineFinalGate": true,
+    "disclaimer": "This is a paper-only virtual replay snapshot. It is not financial advice, not a performance guarantee, and cannot place live orders."
+  },
+  "progress": {
+    "status": "running",
+    "mode": "paper_only",
+    "startedAt": "2026-06-12T03:48:08.189Z",
+    "updatedAt": "2026-06-12T06:53:25.312Z",
+    "simulatedAt": "2026-05-15T08:00:00Z",
+    "completedTickCount": 605,
+    "tickCount": 1272,
+    "progressPct": 47.56,
+    "packetCount": 209,
+    "decisionProviderCallCount": 209,
+    "decisionRecordCount": 208,
+    "decisionSkippedCount": 0,
+    "riskDecisionCount": 1248,
+    "riskApprovedCount": 1155,
+    "rejectedCount": 93,
+    "tradeCount": 26,
+    "finalReportPath": null
+  },
+  "portfolio": {
+    "cashKrw": 2558364,
+    "positionCount": 6,
+    "positionMarketValueKrw": 8934153,
+    "virtualNetWorthKrw": 11492517,
+    "positions": [
+      {
+        "symbol": "035420",
+        "quantity": 9.033852,
+        "averagePriceKrw": 218290,
+        "marketPriceKrw": null,
+        "marketValueKrw": 1969380,
+        "weightPct": 17.14,
+        "unrealizedPnlKrw": 0
+      },
+      {
+        "symbol": "042660",
+        "quantity": 15.328896,
+        "averagePriceKrw": 131550,
+        "marketPriceKrw": null,
+        "marketValueKrw": 1848665,
+        "weightPct": 16.09,
+        "unrealizedPnlKrw": 0
+      },
+      {
+        "symbol": "028300",
+        "quantity": 33.464726,
+        "averagePriceKrw": 57299,
+        "marketPriceKrw": null,
+        "marketValueKrw": 1803749,
+        "weightPct": 15.69,
+        "unrealizedPnlKrw": 0
+      },
+      {
+        "symbol": "035900",
+        "quantity": 25.013638,
+        "averagePriceKrw": 60475,
+        "marketPriceKrw": null,
+        "marketValueKrw": 1475805,
+        "weightPct": 12.84,
+        "unrealizedPnlKrw": 0
+      },
+      {
+        "symbol": "000660",
+        "quantity": 0.647293,
+        "averagePriceKrw": 1194000,
+        "marketPriceKrw": null,
+        "marketValueKrw": 1259631,
+        "weightPct": 10.96,
+        "unrealizedPnlKrw": 0
+      },
+      {
+        "symbol": "005930",
+        "quantity": 2.026069,
+        "averagePriceKrw": 221000,
+        "marketPriceKrw": null,
+        "marketValueKrw": 576923,
+        "weightPct": 5.02,
+        "unrealizedPnlKrw": 0
+      }
+    ]
+  },
+  "recentDecisionActionCounts": [
+    {
+      "action": "VIRTUAL_BUY",
+      "count": 15
+    },
+    {
+      "action": "VIRTUAL_HOLD",
+      "count": 249
+    },
+    {
+      "action": "VIRTUAL_SELL",
+      "count": 36
+    }
+  ],
+  "recentRejectCodeCounts": [
+    {
+      "code": "VIRTUAL_SELL_AMOUNT_EXCEEDED",
+      "count": 6
+    },
+    {
+      "code": "VIRTUAL_SELL_AMOUNT_REQUIRED",
+      "count": 3
+    },
+    {
+      "code": "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED",
+      "count": 4
+    }
+  ],
+  "tradeActionCounts": [
+    {
+      "action": "VIRTUAL_BUY",
+      "count": 20,
+      "amountKrw": 18884161
+    },
+    {
+      "action": "VIRTUAL_SELL",
+      "count": 6,
+      "amountKrw": 11442525
+    }
+  ],
+  "knownDataLimitations": [
+    "The replay is still running and only 47.56% complete.",
+    "final historical-replay-report.json has not been generated yet.",
+    "The progress snapshot keeps recent decisions, recent risk decisions, and recent packets, not the complete audit trail.",
+    "position marketPriceKrw is null.",
+    "position unrealizedPnlKrw is stored as 0.",
+    "benchmark, max drawdown, slippage, fees, tax, and out-of-sample metrics are not available yet."
+  ],
+  "initialImprovementHypotheses": [
+    "Add append-only decision, risk decision, trade, and portfolio timeline logs.",
+    "Fix mark-to-market so positions have marketPriceKrw, unrealizedPnlKrw, and stale-price metadata.",
+    "Change sell decisions from amount-only to quantity or sellRatio based contracts.",
+    "Add cash reserve, exposure, and same-symbol cooldown policies.",
+    "Add benchmark comparison and decision outcome attribution before judging investability."
+  ]
+}

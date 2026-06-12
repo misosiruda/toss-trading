@@ -1,7 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { VirtualPortfolio } from "../domain/schemas.js";
+import type {
+  MarketPacket,
+  VirtualPortfolio
+} from "../domain/schemas.js";
+import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
   buildHistoricalReplayReport,
   type HistoricalReplayReport
@@ -13,13 +17,15 @@ import {
 } from "../storage/repositories.js";
 import {
   FirstPricedHistoricalDecisionProvider,
-  runHistoricalReplay,
+  type HistoricalReplayDecisionContext,
   type HistoricalReplayResult
 } from "../replay/historicalReplayRunner.js";
 import {
   runCodexHistoricalReplay,
   type CodexHistoricalReplayDecisionProviderLike
 } from "../replay/codexHistoricalReplayRunner.js";
+import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
+import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
 import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
@@ -75,41 +81,73 @@ export async function runHistoricalReplayWorkflow(
     initialPortfolio,
     snapshots: snapshots.records
   };
-  const replayResult =
-    options.decisionProvider === undefined
-      ? runHistoricalReplay(
-          {
-            ...commonOptions,
-            decisionProvider: new FirstPricedHistoricalDecisionProvider()
-          },
-          replayInput
-        )
-      : await runCodexHistoricalReplay(
-          {
-            ...commonOptions,
-            decisionProvider: options.decisionProvider
-          },
-          replayInput
-        );
-  const report = buildHistoricalReplayReport({
-    result: replayResult,
-    generatedAt: options.generatedAt ?? new Date()
+  const replayStartedAt = options.generatedAt ?? new Date();
+  const progressRecorder = new HistoricalReplayProgressRecorder({
+    filePath: paths.historicalReplayProgressPath,
+    startedAt: replayStartedAt,
+    tickCount: options.clock.ticks().length,
+    initialPortfolio
+  });
+  const auditLogRecorder = new HistoricalReplayAuditLogRecorder({
+    paths: {
+      runMetadataPath: paths.historicalReplayRunMetadataPath,
+      packetLogPath: paths.historicalReplayPacketLogPath,
+      decisionLogPath: paths.historicalReplayDecisionLogPath,
+      riskDecisionLogPath: paths.historicalReplayRiskDecisionLogPath,
+      tradeLogPath: paths.historicalReplayTradeLogPath,
+      portfolioTimelinePath: paths.historicalReplayPortfolioTimelinePath
+    },
+    startedAt: replayStartedAt,
+    tickCount: options.clock.ticks().length
   });
 
-  await mkdir(dirname(paths.historicalReplayReportPath), { recursive: true });
-  await writeFile(
-    paths.historicalReplayReportPath,
-    `${JSON.stringify(report, null, 2)}\n`,
-    "utf8"
-  );
+  await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
 
-  return {
-    status: "completed",
-    mode: "paper_only",
-    reportPath: paths.historicalReplayReportPath,
-    report,
-    replayResult
-  };
+  try {
+    const decisionProvider =
+      options.decisionProvider ??
+      new FirstPricedCodexHistoricalDecisionProvider();
+    const replayResult = await runCodexHistoricalReplay(
+      {
+        ...commonOptions,
+        decisionProvider,
+        onProgress: async (update) => {
+          await progressRecorder.record(update);
+          await auditLogRecorder.record(update);
+        }
+      },
+      replayInput
+    );
+    const reportGeneratedAt = options.generatedAt ?? new Date();
+    const report = buildHistoricalReplayReport({
+      result: replayResult,
+      generatedAt: reportGeneratedAt
+    });
+
+    await mkdir(dirname(paths.historicalReplayReportPath), { recursive: true });
+    await writeFile(
+      paths.historicalReplayReportPath,
+      `${JSON.stringify(report, null, 2)}\n`,
+      "utf8"
+    );
+    await progressRecorder.complete({
+      completedAt: reportGeneratedAt,
+      finalReportPath: paths.historicalReplayReportPath
+    });
+    await auditLogRecorder.complete(reportGeneratedAt);
+
+    return {
+      status: "completed",
+      mode: "paper_only",
+      reportPath: paths.historicalReplayReportPath,
+      report,
+      replayResult
+    };
+  } catch (error) {
+    await progressRecorder.fail(error);
+    await auditLogRecorder.fail(error);
+    throw error;
+  }
 }
 
 function createInitialPortfolio(
@@ -122,4 +160,23 @@ function createInitialPortfolio(
     positions: [],
     updatedAt: options.clock.metadata().startAt
   };
+}
+
+class FirstPricedCodexHistoricalDecisionProvider
+  implements CodexHistoricalReplayDecisionProviderLike
+{
+  private readonly provider = new FirstPricedHistoricalDecisionProvider();
+
+  async decide(
+    packet: MarketPacket,
+    context: HistoricalReplayDecisionContext
+  ): Promise<CodexCliDecisionResult> {
+    void context;
+    return {
+      attempted: true,
+      decision: this.provider.decide(packet),
+      failure: null,
+      command: null
+    };
+  }
 }

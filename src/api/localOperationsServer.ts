@@ -118,6 +118,8 @@ async function routeRequest(
       });
     case "/replay/report":
       return readHistoricalReplayReport(options.storageBaseDir);
+    case "/replay/progress":
+      return readHistoricalReplayProgress(options.storageBaseDir);
     case "/scheduler/status":
       return readSchedulerStatus(options.storageBaseDir);
     case "/source/health":
@@ -223,6 +225,25 @@ async function readHistoricalReplayReport(
     readOnly: true,
     status: report.status,
     report: report.value
+  };
+}
+
+async function readHistoricalReplayProgress(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const progress = await readJsonFile(paths.historicalReplayProgressPath);
+  const progressStatus =
+    progress.status === "ok" && isRecord(progress.value)
+      ? progress.value["status"]
+      : progress.status;
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status: progressStatus,
+    fileStatus: progress.status,
+    progress: progress.value
   };
 }
 
@@ -406,4 +427,8 @@ function writeJson(
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

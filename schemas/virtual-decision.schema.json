@@ -20,6 +20,94 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": ["action"],
+              "properties": {
+                "action": {
+                  "const": "VIRTUAL_HOLD"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "budgetKrw": {
+                  "const": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["action"],
+              "properties": {
+                "action": {
+                  "const": "VIRTUAL_SELL"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "budgetKrw": {
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                {
+                  "required": ["sellQuantity"]
+                },
+                {
+                  "required": ["sellRatio"]
+                },
+                {
+                  "required": ["targetWeightPct"]
+                },
+                {
+                  "required": ["sellAll"],
+                  "properties": {
+                    "sellAll": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "required": ["sellQuantity"]
+                },
+                {
+                  "required": ["sellRatio"]
+                },
+                {
+                  "required": ["targetWeightPct"]
+                },
+                {
+                  "required": ["sellAll"],
+                  "properties": {
+                    "sellAll": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "required": ["reduceOnly"],
+              "properties": {
+                "reduceOnly": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ],
         "required": [
           "symbol",
           "market",
@@ -52,6 +140,30 @@
           "budgetKrw": {
             "type": "integer",
             "minimum": 0
+          },
+          "maxBudgetKrw": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sellQuantity": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "sellRatio": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "targetWeightPct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sellAll": {
+            "type": "boolean"
+          },
+          "reduceOnly": {
+            "type": "boolean"
           },
           "thesis": {
             "type": "string",

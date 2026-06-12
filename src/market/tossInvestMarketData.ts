@@ -37,13 +37,19 @@ interface CandidateAccumulator {
   market: Market;
   symbol: string;
   reasonCodes: Set<string>;
+  eventTags: Set<string>;
+  newsRefs: Set<string>;
   sourceRefs: Set<string>;
   collectedAt: string;
   staleAfter: string;
   name?: string;
+  sector?: string;
+  industry?: string;
   lastPriceKrw?: number;
   ranking?: number;
   score?: number;
+  dividendYieldPct?: number;
+  exDividendDate?: string;
 }
 
 const rankingRowKeys = ["items", "results", "rankings", "ranking", "stocks", "data"];
@@ -199,10 +205,16 @@ function createCandidatePatch(
   market: Market;
   symbol: string;
   reasonCodes: string[];
+  eventTags: string[];
+  newsRefs: string[];
   name?: string;
+  sector?: string;
+  industry?: string;
   lastPriceKrw?: number;
   ranking?: number;
   score?: number;
+  dividendYieldPct?: number;
+  exDividendDate?: string;
 } | null {
   const symbol = readString(record, ["symbol", "ticker", "code", "stockCode", "stock_code"]);
   if (!symbol) {
@@ -215,19 +227,47 @@ function createCandidatePatch(
     market: Market;
     symbol: string;
     reasonCodes: string[];
+    eventTags: string[];
+    newsRefs: string[];
     name?: string;
+    sector?: string;
+    industry?: string;
     lastPriceKrw?: number;
     ranking?: number;
     score?: number;
+    dividendYieldPct?: number;
+    exDividendDate?: string;
   } = {
     market,
     symbol: symbol.toUpperCase(),
-    reasonCodes
+    reasonCodes,
+    eventTags: readEventTags(record),
+    newsRefs: readNewsRefs(record)
   };
 
   const name = readString(record, ["name", "stockName", "stock_name", "displayName"]);
   if (name) {
     patch.name = name;
+  }
+  const sector = readString(record, [
+    "sector",
+    "sectorName",
+    "sector_name",
+    "industrySector",
+    "category"
+  ]);
+  if (sector) {
+    patch.sector = sector;
+  }
+  const industry = readString(record, [
+    "industry",
+    "industryName",
+    "industry_name",
+    "subIndustry",
+    "theme"
+  ]);
+  if (industry) {
+    patch.industry = industry;
   }
 
   const explicitLastPriceKrw = readMoney(record, [
@@ -256,6 +296,24 @@ function createCandidatePatch(
   if (score !== undefined) {
     patch.score = score;
   }
+  const dividendYieldPct = readPercent(record, [
+    "dividendYieldPct",
+    "dividendYield",
+    "dividend_yield",
+    "yieldPct"
+  ]);
+  if (dividendYieldPct !== undefined) {
+    patch.dividendYieldPct = dividendYieldPct;
+  }
+  const exDividendDate = readString(record, [
+    "exDividendDate",
+    "ex_dividend_date",
+    "dividendDate",
+    "dividend_date"
+  ]);
+  if (exDividendDate !== undefined) {
+    patch.exDividendDate = exDividendDate;
+  }
 
   return patch;
 }
@@ -269,10 +327,16 @@ function upsertCandidate(
     collectedAt: Date;
     staleAfter: Date;
     reasonCodes: string[];
+    eventTags: string[];
+    newsRefs: string[];
     name?: string;
+    sector?: string;
+    industry?: string;
     lastPriceKrw?: number;
     ranking?: number;
     score?: number;
+    dividendYieldPct?: number;
+    exDividendDate?: string;
   }
 ): void {
   const key = `${patch.market}:${patch.symbol}`;
@@ -283,12 +347,24 @@ function upsertCandidate(
   for (const reasonCode of patch.reasonCodes) {
     current.reasonCodes.add(reasonCode);
   }
+  for (const eventTag of patch.eventTags) {
+    current.eventTags.add(eventTag);
+  }
+  for (const newsRef of patch.newsRefs) {
+    current.newsRefs.add(newsRef);
+  }
   current.sourceRefs.add(patch.sourceRef);
   current.collectedAt = maxIso(current.collectedAt, patch.collectedAt);
   current.staleAfter = minIso(current.staleAfter, patch.staleAfter);
 
   if (patch.name !== undefined) {
     current.name = patch.name;
+  }
+  if (patch.sector !== undefined) {
+    current.sector = patch.sector;
+  }
+  if (patch.industry !== undefined) {
+    current.industry = patch.industry;
   }
   if (patch.lastPriceKrw !== undefined) {
     current.lastPriceKrw = patch.lastPriceKrw;
@@ -298,6 +374,12 @@ function upsertCandidate(
   }
   if (patch.score !== undefined) {
     current.score = patch.score;
+  }
+  if (patch.dividendYieldPct !== undefined) {
+    current.dividendYieldPct = patch.dividendYieldPct;
+  }
+  if (patch.exDividendDate !== undefined) {
+    current.exDividendDate = patch.exDividendDate;
   }
 
   accumulators.set(key, current);
@@ -313,6 +395,8 @@ function createAccumulator(
     market,
     symbol,
     reasonCodes: new Set(),
+    eventTags: new Set(),
+    newsRefs: new Set(),
     sourceRefs: new Set(),
     collectedAt: collectedAt.toISOString(),
     staleAfter: staleAfter.toISOString()
@@ -324,6 +408,8 @@ function toCandidateDraft(accumulator: CandidateAccumulator): MarketCandidateDra
     market: accumulator.market,
     symbol: accumulator.symbol,
     reasonCodes: Array.from(accumulator.reasonCodes).sort(),
+    eventTags: Array.from(accumulator.eventTags).sort(),
+    newsRefs: Array.from(accumulator.newsRefs).sort(),
     sourceRefs: Array.from(accumulator.sourceRefs).sort(),
     collectedAt: accumulator.collectedAt,
     staleAfter: accumulator.staleAfter
@@ -331,6 +417,12 @@ function toCandidateDraft(accumulator: CandidateAccumulator): MarketCandidateDra
 
   if (accumulator.name !== undefined) {
     candidate.name = accumulator.name;
+  }
+  if (accumulator.sector !== undefined) {
+    candidate.sector = accumulator.sector;
+  }
+  if (accumulator.industry !== undefined) {
+    candidate.industry = accumulator.industry;
   }
   if (accumulator.lastPriceKrw !== undefined) {
     candidate.lastPriceKrw = accumulator.lastPriceKrw;
@@ -340,6 +432,12 @@ function toCandidateDraft(accumulator: CandidateAccumulator): MarketCandidateDra
   }
   if (accumulator.score !== undefined) {
     candidate.score = accumulator.score;
+  }
+  if (accumulator.dividendYieldPct !== undefined) {
+    candidate.dividendYieldPct = accumulator.dividendYieldPct;
+  }
+  if (accumulator.exDividendDate !== undefined) {
+    candidate.exDividendDate = accumulator.exDividendDate;
   }
 
   return candidate;
@@ -407,6 +505,33 @@ function defaultReasonCodes(
   }
 
   return Array.from(codes);
+}
+
+function readEventTags(record: JsonRecord): string[] {
+  return Array.from(
+    new Set([
+      ...readStringList(record["eventTag"]),
+      ...readStringList(record["eventTags"]),
+      ...readStringList(record["event"]),
+      ...readStringList(record["events"]),
+      ...readStringList(record["catalyst"]),
+      ...readStringList(record["catalysts"]),
+      ...readStringList(record["earningsEvent"])
+    ])
+  ).sort();
+}
+
+function readNewsRefs(record: JsonRecord): string[] {
+  return Array.from(
+    new Set([
+      ...readStringList(record["newsRef"]),
+      ...readStringList(record["newsRefs"]),
+      ...readStringList(record["newsUrl"]),
+      ...readStringList(record["newsUrls"]),
+      ...readStringList(record["articleUrl"]),
+      ...readStringList(record["articleUrls"])
+    ])
+  ).sort();
 }
 
 function readString(record: JsonRecord, keys: string[]): string | undefined {
@@ -498,6 +623,15 @@ function readScore(record: JsonRecord, keys: string[]): number | undefined {
   return normalized;
 }
 
+function readPercent(record: JsonRecord, keys: string[]): number | undefined {
+  const value = readFiniteNumber(record, keys);
+  if (value === undefined || value < 0 || value > 100) {
+    return undefined;
+  }
+
+  return value;
+}
+
 function readFiniteNumber(record: JsonRecord, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
@@ -505,7 +639,7 @@ function readFiniteNumber(record: JsonRecord, keys: string[]): number | undefine
       return value;
     }
     if (typeof value === "string") {
-      const parsed = Number(value.replace(/,/g, "").trim());
+      const parsed = Number(value.replace(/,/g, "").replace(/%/g, "").trim());
       if (Number.isFinite(parsed)) {
         return parsed;
       }

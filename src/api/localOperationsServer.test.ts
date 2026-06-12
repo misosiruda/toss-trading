@@ -114,25 +114,68 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
     assert.match(html.text, /가상 투자 대시보드/);
     assert.match(html.text, /id="daily-report-heading"/);
+    assert.match(html.text, /id="performance-heading"/);
+    assert.match(html.text, /id="net-worth-chart"/);
+    assert.match(html.text, /id="allocation-list"/);
+    assert.match(html.text, /id="benchmark-heading"/);
+    assert.match(html.text, /id="benchmark-alpha"/);
+    assert.match(html.text, /id="execution-cost-heading"/);
+    assert.match(html.text, /id="execution-cost-fee-drag"/);
+    assert.match(html.text, /id="execution-cost-detail"/);
+    assert.match(html.text, /id="market-monitor-heading"/);
+    assert.match(html.text, /id="market-monitor-gainers"/);
+    assert.match(html.text, /id="market-monitor-extremes"/);
+    assert.match(html.text, /id="exposure-heading"/);
+    assert.match(html.text, /id="exposure-sector-list"/);
+    assert.match(html.text, /id="exposure-coverage-detail"/);
+    assert.match(html.text, /id="event-heading"/);
+    assert.match(html.text, /id="event-signal-list"/);
+    assert.match(html.text, /id="event-gap-detail"/);
+    assert.match(html.text, /id="income-goal-heading"/);
+    assert.match(html.text, /id="goal-target-progress"/);
+    assert.match(html.text, /id="income-goal-detail"/);
     assert.match(html.text, /id="report-detail"/);
     assert.match(html.text, /id="replay-heading"/);
+    assert.match(html.text, /id="replay-progress-status"/);
+    assert.match(html.text, /id="replay-progress-events-body"/);
     assert.match(html.text, /id="replay-timeline-body"/);
     assert.match(html.text, /data-action-filter="BUY"/);
     assert.match(html.text, /id="symbol-filter"/);
+    assert.match(html.text, /id="decision-performance-list"/);
+    assert.match(html.text, /id="decision-performance-average"/);
+    assert.match(html.text, /id="portfolio-risk-status"/);
+    assert.match(html.text, /id="portfolio-risk-detail"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /\/virtual\/portfolio/);
     assert.match(script.text, /\/paper\/report/);
     assert.match(script.text, /\/replay\/report/);
+    assert.match(script.text, /\/replay\/progress/);
     assert.match(script.text, /\/audit\/events/);
     assert.match(script.text, /fetchEndpointData/);
     assert.match(script.text, /endpointFailures/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
+    assert.match(script.text, /renderReplayProgress/);
+    assert.match(script.text, /renderPortfolioPerformance/);
+    assert.match(script.text, /renderNetWorthChart/);
+    assert.match(script.text, /renderAllocationList/);
+    assert.match(script.text, /renderBenchmarkComparison/);
+    assert.match(script.text, /equalWeightBenchmarkReturn/);
+    assert.match(script.text, /renderExecutionCostDiagnostics/);
+    assert.match(script.text, /buildExecutionCostSummary/);
+    assert.match(script.text, /renderExposureBreakdown/);
+    assert.match(script.text, /renderEventCoverage/);
+    assert.match(script.text, /renderIncomeGoalPanel/);
+    assert.match(script.text, /scheduleReplayProgressPolling/);
     assert.match(script.text, /renderReplayTimeline/);
     assert.match(script.text, /renderDecisionTimeline/);
+    assert.match(script.text, /renderDecisionPerformance/);
+    assert.match(script.text, /buildDecisionPerformanceOutcomes/);
+    assert.match(script.text, /renderPortfolioRiskMetrics/);
+    assert.match(script.text, /buildPortfolioRiskMetrics/);
     assert.match(script.text, /decisionOutcomeRow/);
     assert.match(script.text, /decisionRationale/);
-    assert.match(script.text, /Risk Factors/);
+    assert.match(script.text, /리스크 요인/);
     assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
@@ -158,6 +201,49 @@ test("local operations API serves stored historical replay report read-only", as
     assert.equal(result.payload["readOnly"], true);
     assert.equal(result.payload["status"], "ok");
     assert.equal(report["title"], "Historical Replay Paper Report");
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves stored historical replay progress read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(
+    paths.historicalReplayProgressPath,
+    `${JSON.stringify(historicalReplayProgress())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/replay/progress");
+    const progress = result.payload["progress"] as Record<string, unknown>;
+    const events = progress["recentEvents"] as Array<Record<string, unknown>>;
+    const progressPortfolio = progress["currentPortfolio"] as Record<string, unknown>;
+    const positions = progressPortfolio["positions"] as Array<Record<string, unknown>>;
+    const portfolioTimeline = progress["portfolioTimeline"] as Array<
+      Record<string, unknown>
+    >;
+    const recentDecisions = progress["recentDecisions"] as Array<Record<string, unknown>>;
+    const recentTrades = progress["recentTrades"] as Array<Record<string, unknown>>;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "running");
+    assert.equal(result.payload["fileStatus"], "ok");
+    assert.equal(progress["mode"], "paper_only");
+    assert.equal(progress["riskDecisionCount"], 2);
+    assert.equal(progress["riskApprovedCount"], 1);
+    assert.equal(positions[0]?.["symbol"], "005930");
+    assert.equal(portfolioTimeline[0]?.["virtualNetWorthKrw"], 1_000_000);
+    assert.equal(recentDecisions[0]?.["packetId"], "packet_api_001");
+    assert.equal(recentTrades[0]?.["tradeId"], "trade_api_001");
+    assert.equal(events[0]?.["eventType"], "RISK_REJECTED");
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);
@@ -456,5 +542,116 @@ function historicalReplayReport(): Record<string, unknown> {
     ],
     disclaimer:
       "Paper-only historical replay simulation. This is not financial advice, not a performance guarantee, and cannot place live orders."
+  };
+}
+
+function historicalReplayProgress(): Record<string, unknown> {
+  return {
+    mode: "paper_only",
+    status: "running",
+    startedAt: "2026-06-11T09:00:00+09:00",
+    updatedAt: "2025-01-02T00:01:00.000Z",
+    completedAt: null,
+    failedAt: null,
+    simulatedAt: "2025-01-02T00:01:00.000Z",
+    tickIndex: 1,
+    completedTickCount: 2,
+    tickCount: 3,
+    packetCount: 2,
+    decisionProviderCallCount: 2,
+    decisionSkippedCount: 0,
+    decisionRecordCount: 2,
+    tradeCount: 1,
+    riskDecisionCount: 2,
+    riskApprovedCount: 1,
+    rejectedCount: 1,
+    currentPortfolio: {
+      simulatedAt: "2025-01-02T00:01:00.000Z",
+      cashKrw: 930_000,
+      positionCount: 1,
+      positionMarketValueKrw: 70_000,
+      virtualNetWorthKrw: 1_000_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 70_000,
+          unrealizedPnlKrw: 0,
+          updatedAt: "2025-01-02T00:01:00.000Z"
+        }
+      ]
+    },
+    portfolioTimeline: [
+      {
+        simulatedAt: "2025-01-02T00:00:00.000Z",
+        cashKrw: 1_000_000,
+        positionCount: 0,
+        positionMarketValueKrw: 0,
+        virtualNetWorthKrw: 1_000_000,
+        positions: []
+      },
+      {
+        simulatedAt: "2025-01-02T00:01:00.000Z",
+        cashKrw: 930_000,
+        positionCount: 1,
+        positionMarketValueKrw: 70_000,
+        virtualNetWorthKrw: 1_000_000,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 1,
+            averagePriceKrw: 70_000,
+            marketValueKrw: 70_000,
+            unrealizedPnlKrw: 0,
+            updatedAt: "2025-01-02T00:01:00.000Z"
+          }
+        ]
+      }
+    ],
+    recentEvents: [
+      {
+        eventId: "replay_event_1_2_packet_api_001_005930_risk_rejected",
+        eventType: "RISK_REJECTED",
+        simulatedAt: "2025-01-02T00:01:00.000Z",
+        tickIndex: 1,
+        packetId: "packet_api_001",
+        market: "KR",
+        symbol: "005930",
+        action: "VIRTUAL_BUY",
+        approved: false,
+        rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
+        summary: "KR:005930 VIRTUAL_BUY rejected account 1234-5678-901234 order ord_abcdef123456"
+      }
+    ],
+    recentPackets: [marketPacket()],
+    recentDecisions: [decision()],
+    recentRiskDecisions: [
+      {
+        riskDecisionId: "risk_api_002",
+        packetId: "packet_api_001",
+        symbol: "005930",
+        approved: false,
+        rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
+        checkedRules: ["cash_available"],
+        createdAt: "2025-01-02T00:01:00.000Z"
+      },
+      {
+        riskDecisionId: "risk_api_001",
+        packetId: "packet_api_001",
+        symbol: "005930",
+        approved: true,
+        rejectCodes: [],
+        checkedRules: ["cash_available"],
+        createdAt: "2025-01-02T00:00:00.000Z"
+      }
+    ],
+    recentTrades: [trade()],
+    finalReportPath: null,
+    error: null,
+    disclaimer:
+      "Paper-only historical replay progress. This is not financial advice, not a performance guarantee, and cannot place live orders."
   };
 }

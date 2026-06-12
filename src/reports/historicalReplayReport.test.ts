@@ -36,6 +36,10 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.portfolioTimeline.length, 3);
   assert.equal(report.decisionOutcome.byAction["VIRTUAL_BUY"], 2);
   assert.equal(report.samplingSummary.skipReasons["STEP_INTERVAL_SKIPPED"], 1);
+  assert.equal(report.benchmarks.strategy.initialNetWorthKrw > 0, true);
+  assert.equal(report.benchmarks.cashOnly.totalReturnRatio, 0);
+  assert.notEqual(report.benchmarks.equalWeightBuyAndHold, null);
+  assert.match(report.benchmarks.notes.join(" "), /replay packets/);
   assert.equal(report.sourceWarningSummary.futureSnapshotWarningCount > 0, true);
   assert.equal(
     report.sourceWarningSummary.lookaheadGuardStatus,
@@ -57,6 +61,8 @@ test("rendered historical replay report masks sensitive values and avoids advice
 
   assert.match(rendered, /Historical Replay Paper Report/);
   assert.match(rendered, /lookahead_guard_status/);
+  assert.match(rendered, /Benchmarks/);
+  assert.match(rendered, /equal_weight_buy_and_hold/);
   assert.match(rendered, /Virtual Portfolio Timeline/);
   assert.match(rendered, /Paper-only historical replay simulation/);
   assert.match(rendered, /not financial advice/);

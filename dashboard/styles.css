@@ -38,7 +38,8 @@ body {
 }
 
 .app-header h1,
-.panel h2 {
+.panel h2,
+.panel h3 {
   margin: 0;
   letter-spacing: 0;
 }
@@ -50,6 +51,11 @@ body {
 
 .panel h2 {
   font-size: 18px;
+  line-height: 1.25;
+}
+
+.panel h3 {
+  font-size: 15px;
   line-height: 1.25;
 }
 
@@ -152,6 +158,10 @@ body {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.panel-heading.compact {
+  margin-bottom: 10px;
 }
 
 .subtle {
@@ -308,6 +318,44 @@ th.numeric {
   padding-top: 12px;
 }
 
+.replay-progress {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.progress-meter {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.progress-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  transition: width 180ms ease;
+}
+
+.replay-progress-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.replay-performance-kpis {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.replay-events-wrap {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .report-disclaimer {
   margin: 0;
   color: var(--muted);
@@ -316,9 +364,499 @@ th.numeric {
   overflow-wrap: anywhere;
 }
 
+.performance-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.performance-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.performance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.performance-chart,
+.allocation-panel {
+  min-width: 0;
+}
+
+.mini-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mini-section-heading strong {
+  font-size: 14px;
+}
+
+#net-worth-chart {
+  display: block;
+  width: 100%;
+  height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+}
+
+.chart-grid {
+  stroke: #dfe5ee;
+  stroke-width: 1;
+}
+
+.chart-area {
+  fill: rgba(34, 94, 168, 0.08);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--blue);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.chart-line.positive {
+  stroke: var(--green);
+}
+
+.chart-line.negative {
+  stroke: var(--red);
+}
+
+.chart-label,
+.chart-empty {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.allocation-list {
+  display: grid;
+  gap: 12px;
+}
+
+.allocation-item {
+  display: grid;
+  gap: 7px;
+}
+
+.allocation-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.allocation-meta strong,
+.allocation-meta span {
+  overflow-wrap: anywhere;
+}
+
+.allocation-meta span {
+  color: var(--muted);
+}
+
+.allocation-bar {
+  display: block;
+  min-width: 2px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--blue);
+}
+
+.allocation-bar.cash {
+  background: var(--green);
+}
+
+.positive {
+  color: var(--green);
+}
+
+.negative {
+  color: var(--red);
+}
+
+.benchmark-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.benchmark-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(260px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.benchmark-scoreboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.benchmark-scoreboard div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 12px;
+}
+
+.benchmark-scoreboard span,
+.benchmark-bar-row > span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.benchmark-scoreboard strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 17px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.benchmark-bars {
+  display: grid;
+  gap: 14px;
+}
+
+.benchmark-bar-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 74px;
+  gap: 10px;
+  align-items: center;
+}
+
+.benchmark-bar-track {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.benchmark-bar-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.benchmark-bar-track span.positive {
+  background: var(--green);
+}
+
+.benchmark-bar-track span.negative {
+  background: var(--red);
+}
+
+.benchmark-bar-row strong {
+  font-size: 13px;
+  text-align: right;
+}
+
+.benchmark-movers {
+  display: grid;
+  gap: 8px;
+}
+
+.benchmark-mover {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  font-size: 13px;
+}
+
+.benchmark-mover strong,
+.benchmark-mover span {
+  overflow-wrap: anywhere;
+}
+
+.market-monitor-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.market-monitor-layout {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.market-monitor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.market-monitor-item {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 10px;
+  font-size: 13px;
+}
+
+.market-monitor-item strong,
+.market-monitor-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.market-monitor-item > span {
+  color: var(--muted);
+}
+
+.market-monitor-item > span.positive {
+  color: var(--green);
+}
+
+.market-monitor-item > span.negative {
+  color: var(--red);
+}
+
+.exposure-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.exposure-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(260px, 0.75fr);
+  gap: 16px;
+}
+
+.exposure-list {
+  display: grid;
+  gap: 10px;
+}
+
+.exposure-item {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 10px;
+}
+
+.exposure-item-header {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.exposure-item-header strong,
+.exposure-item-header span,
+.exposure-symbols {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.exposure-item-header span {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.exposure-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe4f0;
+}
+
+.exposure-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.exposure-symbols {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.exposure-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.event-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.event-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(260px, 0.75fr);
+  gap: 16px;
+}
+
+.event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-item {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 10px;
+  font-size: 13px;
+}
+
+.event-item strong,
+.event-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-item > span {
+  color: var(--muted);
+}
+
+.event-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.income-goal-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.income-goal-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.income-goal-kpis div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 12px;
+}
+
+.income-goal-kpis span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.income-goal-kpis strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.goal-progress-track {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.goal-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.goal-progress-track span.positive {
+  background: var(--green);
+}
+
+.income-goal-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.execution-cost-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.execution-cost-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.risk-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.risk-metric-grid div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 12px;
+}
+
+.risk-metric-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.risk-metric-grid strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.risk-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .decision-list,
 .packet-list,
-.decision-groups {
+.decision-groups,
+.decision-performance-list {
   display: grid;
   gap: 12px;
 }
@@ -405,13 +943,66 @@ th.numeric {
   font-size: 12px;
 }
 
+.decision-performance-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.decision-performance-kpis div {
+  min-width: 0;
+}
+
+.decision-performance-kpis span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.decision-performance-kpis strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
 .decision-item,
-.packet-item {
+.packet-item,
+.decision-performance-item {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-muted);
   padding: 14px;
+}
+
+.decision-performance-item {
+  display: grid;
+  gap: 8px;
+}
+
+.decision-performance-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.decision-performance-symbol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.decision-performance-detail {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .decision-topline {
@@ -572,8 +1163,32 @@ th.numeric {
     grid-template-columns: 1fr;
   }
 
+  .performance-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .benchmark-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .market-monitor-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exposure-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .event-layout {
+    grid-template-columns: 1fr;
+  }
+
   .report-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .income-goal-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -606,6 +1221,10 @@ th.numeric {
     grid-template-columns: 1fr;
   }
 
+  .income-goal-kpis {
+    grid-template-columns: 1fr;
+  }
+
   .metric-panel,
   .panel {
     max-width: calc(100vw - 24px);
@@ -613,6 +1232,7 @@ th.numeric {
 
   .panel-heading,
   .decision-topline,
+  .decision-performance-topline,
   .decision-toolbar {
     align-items: flex-start;
     flex-direction: column;
@@ -645,6 +1265,27 @@ th.numeric {
 
   .decision-groups {
     grid-template-columns: 1fr;
+  }
+
+  .benchmark-scoreboard {
+    grid-template-columns: 1fr;
+  }
+
+  .benchmark-bar-row {
+    grid-template-columns: 64px minmax(0, 1fr) 64px;
+  }
+
+  .market-monitor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .exposure-item-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .exposure-item-header span {
+    text-align: left;
   }
 
   .decision-meta,

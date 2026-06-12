@@ -8,6 +8,10 @@ import type {
   HistoricalReplayResult
 } from "../replay/historicalReplayRunner.js";
 import { maskSensitiveText } from "../security/masking.js";
+import {
+  buildHistoricalReplayBenchmarks,
+  type HistoricalReplayBenchmarkReport
+} from "./historicalReplayBenchmark.js";
 
 export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
@@ -27,6 +31,7 @@ export interface HistoricalReplayReport {
   tradeSummary: HistoricalReplayTradeSummary;
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
+  benchmarks: HistoricalReplayBenchmarkReport;
   sourceWarningSummary: HistoricalReplaySourceWarningSummary;
   portfolioTimeline: HistoricalPortfolioTimelineItem[];
   disclaimer: string;
@@ -119,6 +124,7 @@ export function buildHistoricalReplayReport(
     tradeSummary: summarizeTrades(result.trades),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
+    benchmarks: buildHistoricalReplayBenchmarks(result),
     sourceWarningSummary: summarizeWarnings(result.warnings),
     portfolioTimeline: result.portfolioTimeline,
     disclaimer: historicalReplayDisclaimer()
@@ -182,6 +188,17 @@ export function renderHistoricalReplayReport(
     `decisions_requested: ${report.samplingSummary.decisionsRequested}`,
     `decisions_skipped: ${report.samplingSummary.decisionsSkipped}`,
     `skip_reasons: ${JSON.stringify(report.samplingSummary.skipReasons)}`,
+    "",
+    "## Benchmarks",
+    `strategy: ${formatMetricSummary(report.benchmarks.strategy)}`,
+    `cash_only: ${formatMetricSummary(report.benchmarks.cashOnly)}`,
+    `equal_weight_buy_and_hold: ${
+      report.benchmarks.equalWeightBuyAndHold
+        ? formatMetricSummary(report.benchmarks.equalWeightBuyAndHold)
+        : "null"
+    }`,
+    `initial_portfolio_buy_and_hold: ${formatMetricSummary(report.benchmarks.initialPortfolioBuyAndHold)}`,
+    `benchmark_notes: ${report.benchmarks.notes.join(" | ")}`,
     "",
     "## Source and Lookahead Warnings",
     `lookahead_guard_status: ${report.sourceWarningSummary.lookaheadGuardStatus}`,
@@ -338,6 +355,12 @@ function sumPositionMarketValue(portfolio: VirtualPortfolio): number {
 
 function formatNullable(value: number | null): string {
   return value === null ? "null" : String(value);
+}
+
+function formatMetricSummary(
+  value: HistoricalReplayBenchmarkReport["strategy"]
+): string {
+  return JSON.stringify(value);
 }
 
 function historicalReplayDisclaimer(): string {

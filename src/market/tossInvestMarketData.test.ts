@@ -62,6 +62,12 @@ test("sample tossctl ranking, signals, and quote JSON normalize into candidates"
             market: "kr",
             symbol: "005930",
             name: "Samsung Electronics",
+            sector: "Technology",
+            industryName: "Semiconductors",
+            eventTags: ["earnings"],
+            newsUrl: "https://example.invalid/news/005930",
+            dividendYield: "2.4%",
+            exDividendDate: "2026-12-27",
             currentPrice: "71,000",
             rank: 1,
             score: 91,
@@ -102,6 +108,12 @@ test("sample tossctl ranking, signals, and quote JSON normalize into candidates"
   assert.equal(samsung.lastPriceKrw, 72_000);
   assert.equal(samsung.ranking, 1);
   assert.equal(samsung.score, 91);
+  assert.equal(samsung.sector, "Technology");
+  assert.equal(samsung.industry, "Semiconductors");
+  assert.deepEqual(samsung.eventTags, ["earnings"]);
+  assert.deepEqual(samsung.newsRefs, ["https://example.invalid/news/005930"]);
+  assert.equal(samsung.dividendYieldPct, 2.4);
+  assert.equal(samsung.exDividendDate, "2026-12-27");
   assert.deepEqual(samsung.reasonCodes?.sort(), [
     "TOSS_AI_SIGNAL",
     "TOSS_EARNINGS_MOMENTUM",

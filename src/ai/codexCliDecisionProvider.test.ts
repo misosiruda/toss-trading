@@ -153,7 +153,11 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /do not call tossctl/);
   assert.match(prompt, /Do not run shell commands/);
   assert.match(prompt, /Prefer VIRTUAL_HOLD/);
+  assert.match(prompt, /Use candidate score and reasonCodes/);
+  assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
+  assert.match(prompt, /natural-language fields in Korean/);
+  assert.match(prompt, /machine-readable English identifiers/);
   assert.match(prompt, /Never present the output as financial advice/);
 });
 
@@ -165,8 +169,11 @@ test("virtual decision output schema artifact constrains actions", async () => {
       decisions?: {
         items?: {
           additionalProperties?: boolean;
+          allOf?: unknown[];
           properties?: {
             action?: { enum?: string[] };
+            sellRatio?: { maximum?: number };
+            reduceOnly?: { type?: string };
           };
         };
       };
@@ -180,6 +187,15 @@ test("virtual decision output schema artifact constrains actions", async () => {
     "VIRTUAL_SELL",
     "VIRTUAL_HOLD"
   ]);
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.sellRatio?.maximum,
+    1
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.reduceOnly?.type,
+    "boolean"
+  );
+  assert.equal(schema.properties?.decisions?.items?.allOf?.length, 3);
 });
 
 test("timeout is reported as AI_DECISION_FAILED", async () => {
@@ -222,6 +238,27 @@ test("valid JSON output is parsed as virtual decision", async () => {
 
   assert.equal(result.failure, null);
   assert.equal(result.decision?.decisions[0]?.action, "VIRTUAL_BUY");
+});
+
+test("valid JSON is extracted from Codex CLI stdout logs", async () => {
+  const runner = new FakeRunner({
+    exitCode: 0,
+    stdout: [
+      "OpenAI Codex v0.130.0-alpha.5",
+      "session id: fixture",
+      validDecisionJson,
+      "tokens used",
+      "1234"
+    ].join("\n"),
+    stderr: "",
+    timedOut: false
+  });
+
+  const result = await provider(runner).decide(packet());
+
+  assert.equal(result.failure, null);
+  assert.equal(result.decision?.packetId, "packet_001");
+  assert.equal(result.decision?.decisions[0]?.symbol, "005930");
 });
 
 test("run budget prevents execution after daily limit", async () => {
