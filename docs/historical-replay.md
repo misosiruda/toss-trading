@@ -21,8 +21,56 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 출력:
 
 - `historical-replay-report.json`
+- `historical-replay-progress.json`
+- `historical-replay-run-metadata.json`
+- `historical-replay-packets.jsonl`
+- `historical-replay-decisions.jsonl`
+- `historical-replay-risk-decisions.jsonl`
+- `historical-replay-trades.jsonl`
+- `historical-replay-portfolio-timeline.jsonl`
 - dashboard `/replay/report` read-only 조회
 - CLI stdout markdown report
+
+`historical-replay-progress.json`은 dashboard 표시용 snapshot입니다. 전체 분석과 재현에는 append-only JSONL 로그를 사용합니다.
+
+## Portfolio Valuation
+
+Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까지 관측 가능한 최신 historical snapshot 가격으로 재평가합니다.
+
+저장되는 position valuation 필드:
+
+- `marketPriceKrw`
+- `marketValueKrw`
+- `unrealizedPnlKrw`
+- `priceUpdatedAt`
+- `priceStaleAfter`
+- `priceSourceRefs`
+- `isPriceStale`
+
+가격이 없는 포지션은 기존 `marketValueKrw`를 유지하고, 값이 없으면 `quantity * averagePriceKrw`를 fallback으로 사용합니다. 이 fallback은 성과 검증용 현재가가 아니라 데이터 결손 상태로 해석해야 합니다.
+
+## Benchmark Report
+
+`historical-replay-report.json`은 replay 결과와 함께 최소 비교 기준을 생성합니다.
+
+포함되는 benchmark:
+
+- `strategy`: 실제 paper replay portfolio timeline 기준
+- `cashOnly`: 초기 순자산을 현금으로 보유한 기준
+- `equalWeightBuyAndHold`: 첫 priced replay packet의 후보를 동일가중으로 매수 후 보유한 기준
+- `initialPortfolioBuyAndHold`: 초기 포트폴리오를 거래 없이 보유한 기준
+
+포함되는 metric:
+
+- `initialNetWorthKrw`
+- `finalNetWorthKrw`
+- `totalReturnRatio`
+- `maxDrawdownRatio`
+- `tickVolatilityRatio`
+- `turnoverRatio`
+- `feeDragKrw`
+
+이 benchmark는 저장된 replay packet과 portfolio timeline만 사용합니다. 외부 지수, 미래 가격, 실계좌 성과와 비교하지 않습니다.
 
 ## Flow
 
