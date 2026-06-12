@@ -765,3 +765,28 @@
 - `src/storage/repositories.ts`에 `historical-market-snapshots.jsonl` path와 `FileHistoricalMarketSnapshotStore`를 추가했습니다.
 - `readUpTo`는 observed time, market, symbol, snapshot id 기준으로 deterministic sort를 수행합니다.
 - PR-28부터 PR-36까지 historical accelerated replay 계획을 implementation plan에 반영했습니다.
+
+## PR-29: Simulated Clock and Replay Window
+
+### Review 1: Scope and Safety
+
+- 범위는 replay 전용 simulated clock과 session window guard에 한정했습니다.
+- 실제 `setInterval`, background worker, OS scheduler, realtime trading loop는 추가하지 않았습니다.
+- `speedMultiplier`는 metadata로만 보관하고 sleep, timer, process execution을 만들지 않습니다.
+- AI decision, paper order execution, portfolio mutation, dashboard UI는 변경하지 않았습니다.
+- live order path, raw `tossctl` MCP tool, raw `codex exec` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- inclusive tick progression test를 추가했습니다.
+- market session 밖 timestamp skip test를 추가했습니다.
+- weekday-only session guard test를 추가했습니다.
+- invalid replay window, invalid step, invalid session time reject test를 추가했습니다.
+- full test suite로 기존 paper/risk/dashboard 경계를 함께 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/simulatedClock.ts`에 `SimulatedClock`, `ReplaySessionWindow`, `SimulatedTick`을 추가했습니다.
+- session guard는 configured timezone offset으로 local HH:mm을 계산해 replay window를 필터링합니다.
+- clock은 입력 `Date`만 사용하므로 real clock 의존 없이 deterministic하게 동작합니다.
+- PR-30 historical packet builder가 이 clock의 `simulatedAt` tick을 기준 시간으로 사용할 수 있습니다.
