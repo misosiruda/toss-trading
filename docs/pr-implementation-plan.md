@@ -1536,11 +1536,50 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-51: Historical Data Availability Check
+
+목표:
+
+- 랜덤 또는 명시 replay window가 실제 `historical-market-snapshots.jsonl` 데이터로 실행 가능한지 사전에 확인합니다.
+- batch replay runner가 데이터 없는 window를 실행하지 않도록 fail-closed 판단 근거를 제공합니다.
+
+작업 범위:
+
+- historical snapshot availability report helper
+- 전체 snapshot earliest/latest timestamp와 window 내 snapshot count 계산
+- symbol별 전체/window snapshot coverage summary
+- optional required symbol coverage check
+- corrupt JSONL line이 있으면 insufficient 처리
+- historical replay CLI의 `--check-data-availability`, `--require-data-availability`, `--min-window-snapshots`, `--min-snapshots-per-symbol`, `--required-symbols` 옵션
+- `historical:availability` npm script
+- Historical Replay 문서에 data availability 확인 예시 추가
+
+검증:
+
+- window 안 snapshot count가 계산됨
+- required symbol별 coverage가 계산됨
+- window snapshot이 없으면 insufficient 처리됨
+- required symbol이 없거나 부족하면 insufficient 처리됨
+- corrupt snapshot line이 있으면 insufficient 처리됨
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- 외부 historical data 수집기 구현
+- 반복 batch 실행 loop
+- regime classification
+- aggregate report
+- dashboard batch view
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-51: Historical Data Availability Check
 - PR-52: Batch Replay Run Metadata
 - PR-53: Batch Replay Runner
 - PR-54: Regime Classifier

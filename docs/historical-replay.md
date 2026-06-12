@@ -132,13 +132,13 @@ batch replay의 선행 단계로 seed 기반 랜덤 calendar-month window를 선
 선택만 확인:
 
 ```powershell
-npm run historical:replay:dry -- --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --print-window-only
+npm run historical:replay:dry -- -- --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --print-window-only
 ```
 
 선택된 window로 dry-run replay 실행:
 
 ```powershell
-npm run historical:replay:dry -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --step-seconds 60 --every-n-steps 5
+npm run historical:replay:dry -- -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --step-seconds 60 --every-n-steps 5
 ```
 
 특성:
@@ -147,6 +147,28 @@ npm run historical:replay:dry -- --data-dir data/paper --random-window --random-
 - window는 지정 range 안에 완전히 포함되는 calendar-month 단위로만 선택됩니다.
 - `--print-window-only`는 replay를 실행하지 않고 선택된 window metadata만 JSON으로 출력합니다.
 - 이 선택 metadata는 batch runner와 aggregate report에서 재현성 근거로 사용할 예정입니다.
+
+### Historical Data Availability 확인
+
+선택된 replay window에 실제 historical snapshot이 있는지 사전에 확인할 수 있습니다.
+
+```powershell
+npm run historical:availability -- -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --min-window-snapshots 1
+```
+
+특정 symbol coverage도 함께 요구할 수 있습니다.
+
+```powershell
+npm run historical:availability -- -- --data-dir data/paper --start-at 2025-02-01T00:00:00+09:00 --end-at 2025-02-28T23:59:59.999+09:00 --required-symbols KR:005930,KR:000660 --min-snapshots-per-symbol 1
+```
+
+실제 replay 실행 전에 데이터 부족을 fail-closed로 막으려면 `--require-data-availability`를 사용합니다.
+
+```powershell
+npm run historical:replay:dry -- -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --require-data-availability
+```
+
+availability report는 저장된 `historical-market-snapshots.jsonl`만 읽습니다. 외부 데이터 수집, broker API 호출, replay 실행, 주문 생성은 수행하지 않습니다.
 
 ## Lookahead Guard
 

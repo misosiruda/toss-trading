@@ -1359,3 +1359,39 @@
 - `docs/historical-replay.md`는 `--print-window-only`와 선택된 window로 dry-run replay를 실행하는 예시를 추가했습니다.
 - `docs/pr-implementation-plan.md`는 PR-50 범위와 PR-51~PR-58 batch replay 후속 순서를 기록했습니다.
 - 이번 PR은 반복 batch 실행, 데이터 가용성 scan, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
+
+## PR-51: Historical Data Availability Check
+
+### Review 1: Scope and Safety
+
+- 범위는 replay 실행 전 `historical-market-snapshots.jsonl`을 읽어 window/symbol coverage를 판정하는 paper-only 사전 검사에 한정합니다.
+- `--check-data-availability`는 availability report JSON을 출력하고 replay workflow를 실행하지 않습니다.
+- `--require-data-availability`는 데이터가 부족한 경우 replay 시작 전 fail-closed로 중단합니다.
+- availability helper는 외부 데이터 수집, broker API 호출, 주문 생성, AI 판단 호출을 수행하지 않습니다.
+- CLI positional fallback은 named option value가 섞이지 않도록 수집 규칙만 보강했습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- availability helper test에서 window snapshot count, symbol summary, required symbol coverage를 검증했습니다.
+- availability helper test에서 window snapshot이 없으면 `WINDOW_SNAPSHOT_MISSING`과 `WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM`으로 insufficient 처리되는지 검증했습니다.
+- availability helper test에서 required symbol이 없거나 window 안 snapshot이 부족하면 insufficient 처리되는지 검증했습니다.
+- availability helper test에서 corrupt snapshot line count가 있으면 insufficient 처리되는지 검증했습니다.
+- CLI regression test에서 `--required-symbols`와 min option value가 positional fallback을 오염시키지 않는지 검증했습니다.
+- 실제 `data/replay-2026-04-12-2026-06-12` snapshot으로 availability CLI가 available report를 exit 0으로 출력하는지 확인했습니다.
+- `npm run historical:availability -- -- --data-dir ...` 형태의 npm script invocation이 option name을 보존하는지 확인했습니다.
+- window 밖 구간을 대상으로 한 availability CLI smoke에서 insufficient report와 exit 1을 확인했습니다.
+- `npm test`로 전체 test suite 218개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalDataAvailability.ts`를 추가해 snapshot/window/required symbol coverage report와 issue code를 생성합니다.
+- `src/replay/historicalDataAvailability.test.ts`를 추가해 available, missing window, missing/insufficient required symbol, corrupt line, invalid option 케이스를 검증합니다.
+- `src/cli/historicalReplay.ts`는 `--check-data-availability`, `--require-data-availability`, `--min-window-snapshots`, `--min-snapshots-per-symbol`, `--required-symbols`를 historical replay CLI에 연결합니다.
+- `src/cli/historicalReplayCli.test.ts`를 추가해 named option value와 positional fallback의 통합 동작을 고정합니다.
+- `package.json`에 `historical:availability` script를 추가했습니다.
+- `docs/historical-replay.md`는 availability 확인, required symbol coverage, replay 전 fail-closed 사용 예시를 추가했습니다.
+- `docs/pr-implementation-plan.md`는 PR-51 범위와 PR-52 이후 batch replay 후속 순서를 갱신했습니다.
+- 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
+- 이번 PR은 외부 historical data 수집기, 반복 batch runner, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
