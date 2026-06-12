@@ -6,7 +6,7 @@ import {
   type VirtualPortfolio,
   type VirtualRiskDecision
 } from "../domain/schemas.js";
-import { resolveVirtualDecisionNotionalKrw } from "./decisionSizing.js";
+import { normalizeVirtualDecision } from "./decisionNormalizer.js";
 import {
   appendVirtualRiskRejectCode,
   createVirtualRiskPolicy,
@@ -59,7 +59,7 @@ export class VirtualRiskEngine {
     }
 
     if (input.decision.action === "VIRTUAL_BUY") {
-      const notionalKrw = resolveVirtualDecisionNotionalKrw(input);
+      const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
       if (notionalKrw > input.portfolio.cashKrw) {
         appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_CASH_EXCEEDED");
       }
@@ -108,7 +108,7 @@ export class VirtualRiskEngine {
           item.market === input.decision.market &&
           item.symbol === input.decision.symbol
       );
-      const notionalKrw = resolveVirtualDecisionNotionalKrw(input);
+      const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
       if (!position) {
         appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_POSITION_NOT_FOUND");
       } else if (notionalKrw <= 0) {

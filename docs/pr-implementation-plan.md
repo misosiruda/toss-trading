@@ -1218,6 +1218,41 @@
 - normalized order layer
 - live trading 또는 broker adapter 연결
 
+## PR-42: Virtual Decision Normalizer and Backend Sizing
+
+목표:
+
+- AI가 제출한 raw sizing hint를 바로 paper Risk/Order 경로에 쓰지 않고 backend 정규화 계층에서 paper notional로 변환합니다.
+- BUY는 packet budget constraint를 넘지 않도록 cap하고, SELL은 현재 virtual position과 후보 가격을 기준으로 reduce-only notional을 계산합니다.
+
+작업 범위:
+
+- `DecisionNormalizer`
+- `NormalizedVirtualOrder`
+- BUY budget cap by packet constraint
+- SELL `sellAll`, `sellQuantity`, `sellRatio`, `targetWeightPct`, legacy `budgetKrw` 처리
+- oversize SELL을 현재 virtual position value로 clip
+- `VirtualRiskEngine`과 `PaperOrderEngine`의 notional source를 normalizer로 통일
+- Codex CLI paper trading 문서에 raw AI sizing hint와 backend normalized sizing 경계 반영
+
+검증:
+
+- BUY budget cap unit test
+- SELL ratio sizing unit test
+- oversize SELL quantity clip unit/integration test
+- HOLD zero-notional reduce-only unit test
+- 기존 Risk Engine cash reserve/NAV weight rejection 유지
+- historical Codex replay risk rejection 유지
+- full test suite
+
+제외:
+
+- decision schema v2 전면 전환
+- AI confidence decomposition
+- strategy scoring/portfolio optimizer
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
