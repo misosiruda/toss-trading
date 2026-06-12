@@ -815,3 +815,28 @@
 - historical candidate sourceRefs는 `historical_snapshot:<snapshotId>`와 원 source refs를 포함합니다.
 - candidate freshness는 snapshot `observedAt + maxSnapshotAgeSeconds`로 계산합니다.
 - PR-31 replay runner는 이 builder를 simulated clock tick마다 호출할 수 있습니다.
+
+## PR-31: Accelerated Replay Runner Without AI
+
+### Review 1: Scope and Safety
+
+- 범위는 in-memory historical replay runner와 deterministic non-AI decision provider에 한정했습니다.
+- Codex CLI execution, `tossctl` execution, file persistence, dashboard trigger, live order path는 추가하지 않았습니다.
+- runner는 `SimulatedClock`, `HistoricalMarketPacketBuilder`, `PaperOrderEngine`을 연결하되 실시간 loop를 소유하지 않습니다.
+- Risk Engine은 기존 `PaperOrderEngine` 내부 gate를 그대로 사용하며 reject 시 portfolio mutation이 없습니다.
+- replay 결과는 paper-only virtual portfolio/timeline/audit 배열로만 반환합니다.
+
+### Review 2: Tests and Validation
+
+- same input same output deterministic replay test를 추가했습니다.
+- risk reject leaves portfolio unchanged test를 추가했습니다.
+- future-only snapshot skip packet test를 추가했습니다.
+- full test suite로 기존 paper replay, dashboard, MCP, risk 경계를 함께 확인합니다.
+- scope search로 raw execution/live order 경로가 추가되지 않았는지 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalReplayRunner.ts`를 추가했습니다.
+- `FirstPricedHistoricalDecisionProvider`는 AI 없이 첫 priced candidate만 deterministic virtual buy fixture로 변환합니다.
+- runner는 packet, decision, risk decision, trade, audit event, portfolio timeline을 반환합니다.
+- PR-32에서는 이 runner의 provider 경계에 Codex CLI paper-only provider를 연결할 수 있습니다.
