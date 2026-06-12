@@ -840,3 +840,28 @@
 - `FirstPricedHistoricalDecisionProvider`는 AI 없이 첫 priced candidate만 deterministic virtual buy fixture로 변환합니다.
 - runner는 packet, decision, risk decision, trade, audit event, portfolio timeline을 반환합니다.
 - PR-32에서는 이 runner의 provider 경계에 Codex CLI paper-only provider를 연결할 수 있습니다.
+
+## PR-32: Codex AI Historical Decision Provider
+
+### Review 1: Scope and Safety
+
+- 범위는 existing Codex CLI paper-only provider를 historical replay에서 사용할 adapter와 prompt guard에 한정했습니다.
+- adapter는 raw `codex exec` tool을 노출하지 않고 delegate provider의 `decide(packet)`만 호출합니다.
+- prompt는 `packet.generatedAt`을 simulated current time으로 취급하고 미래 데이터 사용을 금지합니다.
+- replay별 max Codex call budget을 adapter에서 추가로 제한합니다.
+- live `TradingSignal`, live `OrderIntent`, dashboard-triggered AI run, live order path는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- historical replay prompt no-lookahead wording test를 추가했습니다.
+- config helper가 `sandbox: read-only`와 historical prompt version을 유지하는지 확인했습니다.
+- decision packet mismatch fail-closed test를 추가했습니다.
+- max calls per replay budget enforcement test를 추가했습니다.
+- full test suite로 기존 Codex provider disabled/budget/read-only command tests를 함께 확인합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/codexHistoricalDecisionProvider.ts`를 추가했습니다.
+- `withHistoricalReplayPrompt`는 기존 `CodexCliDecisionProviderConfig`에 historical replay prompt/version을 주입합니다.
+- `CodexHistoricalReplayDecisionProvider`는 delegate result를 검증하고 packet mismatch를 `AI_DECISION_FAILED`로 반환합니다.
+- PR-33 sampling policy는 이 adapter의 `maxCallsPerReplay`와 함께 AI 호출 빈도를 제한할 수 있습니다.
