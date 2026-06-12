@@ -58,6 +58,10 @@ test("historical replay runner is deterministic without AI", () => {
   assert.equal(first.packetCount, 2);
   assert.equal(first.tradeCount, 2);
   assert.equal(first.finalPortfolio.cashKrw, 830_000);
+  assert.equal(
+    first.decisions[0]?.decisions[0]?.confidenceBreakdown?.modelConfidence,
+    0.55
+  );
   assert.deepEqual(
     first.trades.map((trade) => trade.symbol),
     ["005930", "000660"]

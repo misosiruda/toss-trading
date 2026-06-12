@@ -1429,6 +1429,42 @@
 - live `TradingSignal` 또는 `OrderIntent` 연결
 - live trading 또는 broker adapter 연결
 
+## PR-48: Backend Confidence Breakdown
+
+목표:
+
+- AI가 제공한 단일 `confidence` scalar를 그대로 신뢰하지 않고, backend가 packet과 decision item을 비교해 confidence를 여러 deterministic component로 분해합니다.
+- `confidenceBreakdown`은 Codex output이 아니라 validation 이후 backend-generated 저장 metadata로 남깁니다.
+
+작업 범위:
+
+- `VirtualDecisionItem.confidenceBreakdown` optional runtime field
+- `VirtualDecisionConfidenceBreakdown` 구조: `modelConfidence`, `evidenceQualityScore`, `dataCompletenessScore`, `policyEligibilityScore`, `executionRiskScore`, `overallScore`, `reasonCodes`
+- Codex output schema artifact가 `confidenceBreakdown`을 허용하지 않는지 테스트
+- semantic validator의 AI-supplied `confidenceBreakdown` reject
+- backend confidence assessment helper
+- paper run workflow, stored market packet workflow, historical replay runner의 validation 이후 confidence breakdown binding
+- Codex CLI paper trading 문서에 backend-generated confidence breakdown boundary 반영
+
+검증:
+
+- confidence assessment가 AI `confidence`를 `modelConfidence` audit field로만 보존함
+- evidence/data/policy/execution component score가 deterministic하게 계산됨
+- policy-blocked candidate는 policy score가 낮게 계산됨
+- AI가 `confidenceBreakdown`을 제공하면 semantic validator에서 reject됨
+- Codex output schema artifact가 `confidenceBreakdown`을 허용하지 않음
+- paper run/stored packet/historical replay 저장 decision에 backend confidence breakdown이 남음
+- full test suite
+
+제외:
+
+- AI output schema에 `confidenceBreakdown` 추가
+- confidence score를 Risk Engine approval gate로 사용하는 변경
+- calibration threshold 또는 conformal/abstention policy
+- decision schema v2 전면 전환
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

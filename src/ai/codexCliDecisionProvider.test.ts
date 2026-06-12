@@ -321,6 +321,11 @@ test("virtual decision output schema artifact constrains actions", async () => {
       ?.length,
     2
   );
+  assert.equal(
+    "confidenceBreakdown" in
+      (schema.properties?.decisions?.items?.properties ?? {}),
+    false
+  );
   assert.equal(schema.properties?.decisions?.items?.allOf?.length, 3);
 });
 

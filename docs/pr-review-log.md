@@ -1272,3 +1272,33 @@
 - 코드 변경 파일 대상 금지 경계 grep에서 live order, raw `codex exec`, raw `tossctl`, sandbox escalation 관련 신규 노출이 없음을 확인했습니다.
 - `git diff --check`로 whitespace error가 없음을 확인했습니다.
 - 이번 PR은 confidence decomposition, feature score risk gate, AI output schema feature score 추가, decision schema v2 전환은 포함하지 않습니다.
+
+## PR-48: Backend Confidence Breakdown
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only decision item에 backend-generated `confidenceBreakdown` 저장 metadata를 추가하는 데 한정합니다.
+- AI가 제공하는 `confidence`는 `modelConfidence` audit input으로만 보존하고, evidence/data/policy/execution component score는 backend가 packet과 decision item을 비교해 계산합니다.
+- `confidenceBreakdown`은 Codex output schema artifact에 추가하지 않고, semantic validator가 AI-supplied `confidenceBreakdown`을 reject합니다.
+- runtime schema는 기존 저장 record read compatibility를 위해 optional field로 확장합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- confidence helper test에서 `modelConfidence`, evidence/data/policy/execution/overall score와 reason code를 검증했습니다.
+- confidence helper test에서 policy-blocked candidate의 `policyEligibilityScore`가 낮게 계산되는지 검증했습니다.
+- semantic validator test에서 AI-supplied `confidenceBreakdown`이 `VIRTUAL_DECISION_CONFIDENCE_BREAKDOWN_NOT_ALLOWED`로 reject되는지 검증했습니다.
+- Codex output schema artifact test에서 `confidenceBreakdown` property를 허용하지 않는지 검증했습니다.
+- paper run workflow test에서 저장된 decision item에 backend confidence breakdown이 남는지 검증했습니다.
+- stored market packet workflow test에서 저장된 decision item에 backend confidence breakdown이 남는지 검증했습니다.
+- historical replay runner와 Codex historical replay runner test에서 result/progress decision에 backend confidence breakdown이 남는지 검증했습니다.
+- `npm test`로 전체 test suite 198개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `VirtualDecisionConfidenceBreakdown` schema/type과 `VirtualDecisionItem.confidenceBreakdown` optional field를 추가했습니다.
+- `src/paper/decisionConfidence.ts`는 packet candidate, cited refs, feature scores, action eligibility, execution hint를 사용해 backend confidence components를 계산합니다.
+- `src/paper/virtualDecisionValidation.ts`는 AI-supplied confidence breakdown을 reject합니다.
+- paper run, stored market packet run, historical replay runner는 validation 이후 저장/result decision에 confidence breakdown을 bind합니다.
+- `docs/codex-cli-paper-trading.md`는 `confidenceBreakdown`이 backend-generated 저장 metadata이며 Codex output field가 아님을 명시합니다.
+- 이번 PR은 confidence threshold gate, Risk Engine approval 연동, calibration policy, decision schema v2 전환은 포함하지 않습니다.

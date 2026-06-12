@@ -23,6 +23,7 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_CLAIM_SUPPORT_REQUIRED",
   "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE",
   "VIRTUAL_DECISION_CLAIM_SUPPORT_FEATURE_REF_NOT_IN_CANDIDATE",
+  "VIRTUAL_DECISION_CONFIDENCE_BREAKDOWN_NOT_ALLOWED",
   "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
   "VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED"
 ] as const;
@@ -103,6 +104,17 @@ export function validateVirtualDecisionAgainstPacket(input: {
       });
     }
     seenKeys.add(key);
+
+    if (item.confidenceBreakdown) {
+      issues.push({
+        code: "VIRTUAL_DECISION_CONFIDENCE_BREAKDOWN_NOT_ALLOWED",
+        message:
+          "confidenceBreakdown is backend-generated and must not be supplied",
+        market: item.market,
+        symbol: item.symbol,
+        action: item.action
+      });
+    }
 
     if (!input.packet.constraints.allowedActions.includes(item.action)) {
       issues.push({
