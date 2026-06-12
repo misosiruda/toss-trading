@@ -1658,11 +1658,52 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-54: Regime Classifier
+
+목표:
+
+- batch replay run record에 window별 market regime metadata를 추가해 상승/하락/횡보/혼합/데이터부족 조건별 분석 기반을 만듭니다.
+- regime classification은 trading signal이 아니라 후속 aggregate report의 grouping key로만 사용합니다.
+
+작업 범위:
+
+- market regime classifier helper 추가
+- symbol별 first/last window price return 계산
+- `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` label 정의
+- 평균 return, median return, 상승/하락/flat symbol ratio 저장
+- classifier thresholds와 reason code 저장
+- batch replay run record에 `marketRegime` 추가
+- regime classifier tests
+- batch workflow tests에 regime record 검증 추가
+- Historical Replay 문서에 regime rule 설명 추가
+
+검증:
+
+- 상승 window가 `bull`로 분류됨
+- 하락 window가 `bear`로 분류됨
+- 횡보 window가 `sideways`로 분류됨
+- 방향성이 엇갈린 window가 `mixed`로 분류됨
+- 분류 가능한 데이터가 부족하면 `insufficient_data`로 분류됨
+- batch run JSONL에 `marketRegime`이 저장됨
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- aggregate report
+- regime별 수익률 비교표
+- benchmark comparison hardening
+- dashboard batch view
+- regime을 trading/risk decision에 연결
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Batch Replay Follow-up PRs
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- PR-54: Regime Classifier
 - PR-55: Batch Aggregate Report
 - PR-56: Benchmark Comparison Hardening
 - PR-57: Batch Replay Dashboard Read-only View

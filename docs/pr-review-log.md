@@ -1462,3 +1462,36 @@
 - `docs/pr-implementation-plan.md`는 PR-53 범위와 PR-54 이후 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 regime classification, aggregate report, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.
+
+## PR-54: Regime Classifier
+
+### Review 1: Scope and Safety
+
+- 범위는 batch replay run record에 window별 market regime metadata를 추가하는 데 한정합니다.
+- regime classifier는 저장된 historical snapshot의 window 안 first/last price return만 사용합니다.
+- regime label은 후속 aggregate report의 grouping key이며 trading signal, risk approval, order intent로 사용하지 않습니다.
+- batch runner는 기존처럼 deterministic paper replay만 실행하며 Codex CLI AI batch 호출, 외부 data 수집, broker API 호출, 주문 생성을 수행하지 않습니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- classifier unit test에서 상승 window가 `bull`로 분류되는지 검증했습니다.
+- classifier unit test에서 하락 window가 `bear`로 분류되는지 검증했습니다.
+- classifier unit test에서 횡보 window가 `sideways`로 분류되는지 검증했습니다.
+- classifier unit test에서 방향성이 엇갈린 window가 `mixed`로 분류되는지 검증했습니다.
+- classifier unit test에서 분류 가능한 데이터가 부족하면 `insufficient_data`로 분류되는지 검증했습니다.
+- batch workflow test에서 completed run record에 `marketRegime.label = bull`이 저장되는지 검증했습니다.
+- batch workflow test에서 skipped run record에 `marketRegime.label = insufficient_data`가 저장되는지 검증했습니다.
+- `npm test`로 전체 test suite 229개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/analytics/marketRegimeClassifier.ts`를 추가해 symbol별 first/last return, 평균/중앙값 return, breadth ratio, label/reason을 계산합니다.
+- `src/analytics/marketRegimeClassifier.test.ts`를 추가해 bull/bear/sideways/mixed/insufficient classification을 검증합니다.
+- `src/workflows/historicalBatchReplayWorkflow.ts`는 각 run window에 대해 regime을 계산하고 `BatchReplayRunRecord.marketRegime`에 저장합니다.
+- `src/workflows/historicalBatchReplayWorkflow.test.ts`는 completed/skipped run의 regime label 저장을 검증합니다.
+- `docs/historical-replay.md`는 regime label과 기본 threshold를 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-54 범위와 PR-55 이후 후속 순서를 기록했습니다.
+- 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
+- 이번 PR은 aggregate report, regime별 수익률 비교표, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.

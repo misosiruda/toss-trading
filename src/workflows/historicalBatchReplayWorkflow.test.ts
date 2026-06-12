@@ -22,7 +22,7 @@ test("historical batch replay runner writes manifest and per-run records", async
     snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
   );
   await snapshotStore.append(
-    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 72_000)
+    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 74_000)
   );
 
   const result = await runHistoricalBatchReplay({
@@ -71,6 +71,10 @@ test("historical batch replay runner writes manifest and per-run records", async
     (firstRecord["dataAvailability"] as Record<string, unknown>)["status"],
     "available"
   );
+  assert.equal(
+    (firstRecord["marketRegime"] as Record<string, unknown>)["label"],
+    "bull"
+  );
   assert.ok(firstRecord["summary"]);
   assert.equal(firstIdentity["batchId"], "batch-smoke");
   assert.equal(firstIdentity["runIndex"], 0);
@@ -110,6 +114,10 @@ test("historical batch replay runner skips insufficient windows", async () => {
   assert.equal(firstRecord["status"], "skipped");
   assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
   assert.equal(firstRecord["reportPath"], null);
+  assert.equal(
+    (firstRecord["marketRegime"] as Record<string, unknown>)["label"],
+    "insufficient_data"
+  );
   assert.deepEqual(
     (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
     ["WINDOW_SNAPSHOT_MISSING", "WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"]
