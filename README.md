@@ -145,6 +145,18 @@ Codex CLI 판단을 사용할 때도 이 경로는 paper-only `virtual_decision`
 npm run paper:run-from-market-packet -- --data-dir data/paper
 ```
 
+저장된 `historical-market-snapshots.jsonl`이 있다면 과거 데이터를 simulated time으로 빠르게 흘려보내는 historical replay report를 만들 수 있습니다. dry-run은 AI 호출 없이 deterministic fixture decision으로 `historical-replay-report.json`을 생성합니다.
+
+```powershell
+npm run historical:replay:dry -- data/paper 2025-01-02T09:00:00+09:00 2025-01-02T15:30:00+09:00 60 5
+```
+
+Codex CLI를 historical replay decision provider로 사용할 때도 `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=true`, `CODEX_EXEC_PATH` 같은 로컬 `.env` 설정을 사용하며 `codex exec --sandbox read-only` 경계를 유지합니다.
+
+```powershell
+npm run historical:replay -- data/paper 2025-01-02T09:00:00+09:00 2025-01-02T15:30:00+09:00 60 5
+```
+
 가상 투자 상태는 같은 local operations server에서 read-only dashboard로 볼 수 있습니다.
 
 ```powershell

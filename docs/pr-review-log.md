@@ -941,3 +941,29 @@
 - `dashboard/index.html`에 historical replay summary/timeline panel을 추가했습니다.
 - `dashboard/app.js`는 저장된 replay report status, summary, sampling, lookahead warning, portfolio timeline을 렌더링합니다.
 - `README.md` dashboard endpoint 목록에 `/replay/report`와 dashboard-triggered replay 제외 문구를 반영했습니다.
+
+## PR-36: Historical Replay Workflow and CLI
+
+### Review 1: Scope and Safety
+
+- 범위는 저장된 `historical-market-snapshots.jsonl`을 읽어 paper-only historical replay를 실행하고 `historical-replay-report.json`을 쓰는 local CLI/workflow에 한정했습니다.
+- CLI는 live order, official Toss API, TossInvest CLI collector, dashboard-triggered replay를 추가하지 않습니다.
+- dry-run path는 deterministic fixture decision provider를 사용하고 AI 호출을 수행하지 않습니다.
+- Codex path는 기존 `CodexCliDecisionProvider`를 historical no-lookahead prompt와 `sandbox: read-only` config로 감싼 뒤 paper-only decision result만 처리합니다.
+- provider failure나 packet mismatch는 paper order 없이 audit event와 timeline만 남기고 넘어갑니다.
+
+### Review 2: Tests and Validation
+
+- async Codex-style replay runner가 mocked provider decision을 paper Risk Engine/OrderEngine에 연결하는지 검증했습니다.
+- provider failure가 paper order를 만들지 않고 portfolio를 유지하는지 검증했습니다.
+- storage workflow가 historical snapshots를 읽고 stored historical replay report JSON을 쓰는지 검증했습니다.
+- `npm test`로 128개 테스트 통과를 확인했습니다.
+- `npm run historical:replay:dry -- data\\replay-cli-smoke 2025-01-02T09:00:00+09:00 2025-01-02T09:01:00+09:00 60 2` smoke 성공을 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/codexHistoricalReplayRunner.ts`를 추가해 async Codex-style provider를 replay loop에 연결했습니다.
+- `src/workflows/historicalReplayWorkflow.ts`를 추가해 storage read, replay execution, report write를 orchestration합니다.
+- `src/cli/historicalReplay.ts`와 `historical:replay`, `historical:replay:dry` npm scripts를 추가했습니다.
+- CLI는 positional fallback을 지원해 npm argument forwarding에서 option name이 제거되는 경우에도 실행할 수 있습니다.
+- README에 historical replay dry-run/Codex path 실행 예시를 추가했습니다.
