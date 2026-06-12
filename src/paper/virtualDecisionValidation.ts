@@ -18,6 +18,7 @@ export const VIRTUAL_DECISION_VALIDATION_REJECT_CODES = [
   "VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE",
   "VIRTUAL_DECISION_DUPLICATE_SYMBOL",
   "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE",
+  "VIRTUAL_DECISION_FEATURE_REF_NOT_IN_CANDIDATE",
   "VIRTUAL_DECISION_HOLD_REASON_REQUIRED",
   "VIRTUAL_DECISION_HOLD_REASON_NOT_ALLOWED"
 ] as const;
@@ -32,6 +33,7 @@ export interface VirtualDecisionValidationIssue {
   symbol?: string;
   action?: VirtualAction;
   dataRef?: string;
+  featureRef?: string;
   metadataField?: string;
 }
 
@@ -164,6 +166,19 @@ export function validateVirtualDecisionAgainstPacket(input: {
         });
       }
     }
+
+    for (const featureRef of item.featureRefs ?? []) {
+      if (!(candidate.featureRefs ?? []).includes(featureRef)) {
+        issues.push({
+          code: "VIRTUAL_DECISION_FEATURE_REF_NOT_IN_CANDIDATE",
+          message: `${featureRef} is not a featureRef for ${item.market}:${item.symbol}`,
+          market: item.market,
+          symbol: item.symbol,
+          action: item.action,
+          featureRef
+        });
+      }
+    }
   }
 
   return {
@@ -181,10 +196,13 @@ export function summarizeVirtualDecisionValidation(
       const target =
         issue.market && issue.symbol ? ` ${issue.market}:${issue.symbol}` : "";
       const dataRef = issue.dataRef ? ` dataRef=${issue.dataRef}` : "";
+      const featureRef = issue.featureRef
+        ? ` featureRef=${issue.featureRef}`
+        : "";
       const metadataField = issue.metadataField
         ? ` metadataField=${issue.metadataField}`
         : "";
-      return `${issue.code}${target}${dataRef}${metadataField}`;
+      return `${issue.code}${target}${dataRef}${featureRef}${metadataField}`;
     })
     .join("; ");
 }

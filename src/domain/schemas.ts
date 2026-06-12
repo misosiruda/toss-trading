@@ -77,6 +77,7 @@ export const marketCandidateSchema = z
     reasonCodes: z.array(nonEmptyStringSchema).default([]),
     eventTags: z.array(nonEmptyStringSchema).optional(),
     newsRefs: z.array(nonEmptyStringSchema).optional(),
+    featureRefs: z.array(nonEmptyStringSchema).optional(),
     dividendYieldPct: z.number().min(0).max(100).optional(),
     exDividendDate: nonEmptyStringSchema.optional(),
     buyEligible: z.boolean().optional(),
@@ -157,6 +158,7 @@ export const virtualDecisionItemSchema = z
     thesis: nonEmptyStringSchema,
     riskFactors: z.array(nonEmptyStringSchema),
     dataRefs: z.array(nonEmptyStringSchema).min(1),
+    featureRefs: z.array(nonEmptyStringSchema).optional(),
     expiresAt: isoDateTimeSchema
   })
   .strict()

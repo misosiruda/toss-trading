@@ -141,6 +141,63 @@ test("rejects cross-symbol data refs from another packet candidate", () => {
   );
 });
 
+test("accepts feature refs copied from the same packet candidate", () => {
+  const featurePacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        featureRefs: ["candidate.KR.005930.score"]
+      }
+    ]
+  });
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: featurePacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(featurePacket),
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          featureRefs: ["candidate.KR.005930.score"]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.rejectCodes, []);
+});
+
+test("rejects hallucinated feature refs not present on the candidate", () => {
+  const featurePacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        featureRefs: ["candidate.KR.005930.score"]
+      }
+    ]
+  });
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: featurePacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(featurePacket),
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          featureRefs: ["candidate.KR.005930.futureReturn"]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_FEATURE_REF_NOT_IN_CANDIDATE"
+    )
+  );
+  assert.match(summarizeVirtualDecisionValidation(result), /futureReturn/);
+});
+
 test("rejects duplicate decisions for the same market and symbol", () => {
   const base = decision().decisions[0]!;
   const result = validateVirtualDecisionAgainstPacket({

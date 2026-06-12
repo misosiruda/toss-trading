@@ -109,6 +109,14 @@ test("MarketPacketBuilder adds deterministic candidate action eligibility", () =
   assert.equal(normalized.cooldownActive, false);
   assert.equal(normalized.budgetTierAllowed, "LARGE");
   assert.deepEqual(normalized.blockedReasonCodes, ["POSITION_NOT_FOUND"]);
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.005930.lastPriceKrw"),
+    true
+  );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.005930.buyEligible"),
+    true
+  );
 });
 
 test("MarketPacketBuilder blocks new buys when max new positions is reached", () => {

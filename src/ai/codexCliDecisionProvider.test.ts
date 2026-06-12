@@ -155,7 +155,7 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
-    /"promptVersion":"paper-v7"/
+    /"promptVersion":"paper-v8"/
   );
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
@@ -181,6 +181,7 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /Do not propose VIRTUAL_BUY when buyEligible is false/);
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
+  assert.match(prompt, /featureRefs copied from that same candidate/);
   assert.match(prompt, /include holdReasonCode/);
   assert.match(prompt, /INSUFFICIENT_EVIDENCE/);
   assert.match(prompt, /Do not include holdReasonCode on VIRTUAL_BUY/);
@@ -202,6 +203,7 @@ test("virtual decision output schema artifact constrains actions", async () => {
           properties?: {
             action?: { enum?: string[] };
             holdReasonCode?: { enum?: string[] };
+            featureRefs?: { type?: string; items?: { type?: string } };
             sellRatio?: { maximum?: number };
             reduceOnly?: { type?: string };
           };
@@ -258,6 +260,14 @@ test("virtual decision output schema artifact constrains actions", async () => {
   assert.equal(
     schema.properties?.decisions?.items?.properties?.reduceOnly?.type,
     "boolean"
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.featureRefs?.type,
+    "array"
+  );
+  assert.equal(
+    schema.properties?.decisions?.items?.properties?.featureRefs?.items?.type,
+    "string"
   );
   assert.equal(schema.properties?.decisions?.items?.allOf?.length, 3);
 });

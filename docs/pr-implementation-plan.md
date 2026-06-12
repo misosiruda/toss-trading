@@ -1286,6 +1286,40 @@
 - decision schema v2 전면 전환
 - live trading 또는 broker adapter 연결
 
+## PR-44: Virtual Decision Feature Refs Grounding
+
+목표:
+
+- AI가 raw `dataRefs`뿐 아니라 backend가 만든 deterministic feature path도 packet 안에서만 인용하게 합니다.
+- `featureRefs`가 packet candidate의 `featureRefs` 부분집합이 아니면 semantic validator에서 hard reject합니다.
+
+작업 범위:
+
+- `MarketCandidate.featureRefs`
+- `VirtualDecisionItem.featureRefs`
+- `MarketPacketBuilder`의 deterministic candidate feature ref 생성
+- Codex output schema artifact의 optional `featureRefs` 허용
+- Codex paper decision prompt version update
+- semantic validator의 featureRef subset hard gate
+- Codex CLI paper trading 문서에 featureRefs contract 반영
+
+검증:
+
+- packet builder가 price/ranking/eligibility feature refs를 생성함
+- 같은 candidate에서 복사한 featureRefs는 semantic validation 통과
+- hallucinated featureRefs는 semantic reject됨
+- output schema artifact가 featureRefs를 허용함
+- prompt가 featureRefs 복사 규칙을 명시함
+- full test suite
+
+제외:
+
+- `claimSupport[]` atomic claim mapping
+- feature value score 계산
+- confidence decomposition
+- decision schema v2 전면 전환
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
