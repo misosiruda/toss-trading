@@ -6,7 +6,28 @@ export interface HistoricalReplayBenchmarkReport {
   cashOnly: HistoricalReplayMetricSummary;
   equalWeightBuyAndHold: HistoricalReplayMetricSummary | null;
   initialPortfolioBuyAndHold: HistoricalReplayMetricSummary;
+  comparisons: HistoricalReplayBenchmarkComparisons;
   notes: string[];
+}
+
+export interface HistoricalReplayBenchmarkComparisons {
+  strategyVsCashOnly: HistoricalReplayBenchmarkComparison;
+  strategyVsEqualWeightBuyAndHold: HistoricalReplayBenchmarkComparison;
+  strategyVsInitialPortfolioBuyAndHold: HistoricalReplayBenchmarkComparison;
+}
+
+export interface HistoricalReplayBenchmarkComparison {
+  benchmarkName:
+    | "cashOnly"
+    | "equalWeightBuyAndHold"
+    | "initialPortfolioBuyAndHold";
+  benchmarkAvailable: boolean;
+  finalNetWorthDeltaKrw: number | null;
+  totalReturnDeltaRatio: number | null;
+  maxDrawdownDeltaRatio: number | null;
+  tickVolatilityDeltaRatio: number | null;
+  turnoverDeltaRatio: number | null;
+  feeDragDeltaKrw: number | null;
 }
 
 export interface HistoricalReplayMetricSummary {
@@ -38,27 +59,49 @@ export function buildHistoricalReplayBenchmarks(
     result.initialPortfolio,
     result.packets
   );
+  const strategy = summarizeMetricCurve(
+    normalizedStrategyCurve,
+    tradeAmountKrw,
+    feeDragKrw
+  );
+  const cashOnly = summarizeMetricCurve(
+    Array.from({ length: normalizedStrategyCurve.length }, () => initialNetWorthKrw),
+    0,
+    0
+  );
+  const equalWeightBuyAndHold =
+    equalWeightCurve.length > 0
+      ? summarizeMetricCurve(equalWeightCurve, 0, 0)
+      : null;
+  const initialPortfolioBuyAndHold = summarizeMetricCurve(
+    initialPortfolioCurve,
+    0,
+    0
+  );
 
   return {
-    strategy: summarizeMetricCurve(
-      normalizedStrategyCurve,
-      tradeAmountKrw,
-      feeDragKrw
-    ),
-    cashOnly: summarizeMetricCurve(
-      Array.from({ length: normalizedStrategyCurve.length }, () => initialNetWorthKrw),
-      0,
-      0
-    ),
-    equalWeightBuyAndHold:
-      equalWeightCurve.length > 0
-        ? summarizeMetricCurve(equalWeightCurve, 0, 0)
-        : null,
-    initialPortfolioBuyAndHold: summarizeMetricCurve(initialPortfolioCurve, 0, 0),
+    strategy,
+    cashOnly,
+    equalWeightBuyAndHold,
+    initialPortfolioBuyAndHold,
+    comparisons: {
+      strategyVsCashOnly: compareMetricSummary("cashOnly", strategy, cashOnly),
+      strategyVsEqualWeightBuyAndHold: compareMetricSummary(
+        "equalWeightBuyAndHold",
+        strategy,
+        equalWeightBuyAndHold
+      ),
+      strategyVsInitialPortfolioBuyAndHold: compareMetricSummary(
+        "initialPortfolioBuyAndHold",
+        strategy,
+        initialPortfolioBuyAndHold
+      )
+    },
     notes: [
       "Benchmarks use only replay packets and portfolio timeline data.",
       "Volatility is per replay tick and is not annualized.",
-      "Equal-weight buy-and-hold uses the first priced replay packet universe."
+      "Equal-weight buy-and-hold uses the first priced replay packet universe.",
+      "Comparison deltas are strategy metric minus benchmark metric."
     ]
   };
 }
@@ -96,12 +139,22 @@ function buildEqualWeightBuyHoldCurve(
   initialNetWorthKrw: number,
   packets: MarketPacket[]
 ): number[] {
-  const firstPacket = packets.find((packet) =>
-    packet.candidates.some((candidate) => candidate.lastPriceKrw !== undefined)
+  if (initialNetWorthKrw <= 0) {
+    return [];
+  }
+
+  const entryPacketIndex = packets.findIndex((packet) =>
+    packet.candidates.some(
+      (candidate) =>
+        candidate.lastPriceKrw !== undefined && candidate.lastPriceKrw > 0
+    )
   );
+  const entryPacket =
+    entryPacketIndex === -1 ? undefined : packets[entryPacketIndex];
   const firstCandidates =
-    firstPacket?.candidates.filter(
-      (candidate) => candidate.lastPriceKrw !== undefined
+    entryPacket?.candidates.filter(
+      (candidate) =>
+        candidate.lastPriceKrw !== undefined && candidate.lastPriceKrw > 0
     ) ?? [];
 
   if (firstCandidates.length === 0) {
@@ -116,7 +169,11 @@ function buildEqualWeightBuyHoldCurve(
     lastPriceKrw: candidate.lastPriceKrw!
   }));
 
-  return packets.map((packet) => {
+  return packets.map((packet, index) => {
+    if (index < entryPacketIndex) {
+      return initialNetWorthKrw;
+    }
+
     for (const candidate of packet.candidates) {
       const holding = holdings.find(
         (item) =>
@@ -203,6 +260,59 @@ function sumTradeCosts(trades: VirtualTrade[]): number {
       (trade.slippageKrw ?? 0),
     0
   );
+}
+
+function compareMetricSummary(
+  benchmarkName: HistoricalReplayBenchmarkComparison["benchmarkName"],
+  strategy: HistoricalReplayMetricSummary,
+  benchmark: HistoricalReplayMetricSummary | null
+): HistoricalReplayBenchmarkComparison {
+  if (benchmark === null) {
+    return {
+      benchmarkName,
+      benchmarkAvailable: false,
+      finalNetWorthDeltaKrw: null,
+      totalReturnDeltaRatio: null,
+      maxDrawdownDeltaRatio: null,
+      tickVolatilityDeltaRatio: null,
+      turnoverDeltaRatio: null,
+      feeDragDeltaKrw: null
+    };
+  }
+
+  return {
+    benchmarkName,
+    benchmarkAvailable: true,
+    finalNetWorthDeltaKrw:
+      strategy.finalNetWorthKrw - benchmark.finalNetWorthKrw,
+    totalReturnDeltaRatio: subtractNullable(
+      strategy.totalReturnRatio,
+      benchmark.totalReturnRatio
+    ),
+    maxDrawdownDeltaRatio: subtractNullable(
+      strategy.maxDrawdownRatio,
+      benchmark.maxDrawdownRatio
+    ),
+    tickVolatilityDeltaRatio: subtractNullable(
+      strategy.tickVolatilityRatio,
+      benchmark.tickVolatilityRatio
+    ),
+    turnoverDeltaRatio: subtractNullable(
+      strategy.turnoverRatio,
+      benchmark.turnoverRatio
+    ),
+    feeDragDeltaKrw: strategy.feeDragKrw - benchmark.feeDragKrw
+  };
+}
+
+function subtractNullable(
+  left: number | null,
+  right: number | null
+): number | null {
+  if (left === null || right === null) {
+    return null;
+  }
+  return roundRatio(left - right);
 }
 
 function maxDrawdownRatio(curve: number[]): number | null {

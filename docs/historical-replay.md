@@ -71,6 +71,7 @@ Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까
 - `cashOnly`: 초기 순자산을 현금으로 보유한 기준
 - `equalWeightBuyAndHold`: 첫 priced replay packet의 후보를 동일가중으로 매수 후 보유한 기준
 - `initialPortfolioBuyAndHold`: 초기 포트폴리오를 거래 없이 보유한 기준
+- `comparisons`: strategy metric에서 각 benchmark metric을 뺀 차이
 
 포함되는 metric:
 
@@ -81,6 +82,8 @@ Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까
 - `tickVolatilityRatio`
 - `turnoverRatio`
 - `feeDragKrw`
+
+`comparisons`는 `strategyVsCashOnly`, `strategyVsEqualWeightBuyAndHold`, `strategyVsInitialPortfolioBuyAndHold`를 포함합니다. 각 delta는 strategy metric minus benchmark metric입니다. 비교 대상 benchmark를 만들 수 없으면 `benchmarkAvailable=false`와 `null` delta를 기록합니다.
 
 이 benchmark는 저장된 replay packet과 portfolio timeline만 사용합니다. 외부 지수, 미래 가격, 실계좌 성과와 비교하지 않습니다.
 

@@ -198,6 +198,7 @@ export function renderHistoricalReplayReport(
         : "null"
     }`,
     `initial_portfolio_buy_and_hold: ${formatMetricSummary(report.benchmarks.initialPortfolioBuyAndHold)}`,
+    `benchmark_comparisons: ${JSON.stringify(report.benchmarks.comparisons)}`,
     `benchmark_notes: ${report.benchmarks.notes.join(" | ")}`,
     "",
     "## Source and Lookahead Warnings",
