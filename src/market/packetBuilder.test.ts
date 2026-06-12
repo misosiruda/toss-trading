@@ -117,6 +117,32 @@ test("MarketPacketBuilder adds deterministic candidate action eligibility", () =
     normalized.featureRefs?.includes("candidate.KR.005930.buyEligible"),
     true
   );
+  assert.equal(
+    normalized.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.005930.ranking" &&
+        featureScore.score === 100 &&
+        featureScore.scoreType === "RANKING" &&
+        featureScore.reasonCode === "RANKING_WITHIN_PACKET"
+    ),
+    true
+  );
+  assert.equal(
+    normalized.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.005930.sellEligible" &&
+        featureScore.score === 0 &&
+        featureScore.scoreType === "POLICY" &&
+        featureScore.reasonCode === "SELL_BLOCKED"
+    ),
+    true
+  );
+  assert.equal(
+    normalized.featureScores?.every((featureScore) =>
+      normalized.featureRefs?.includes(featureScore.featureRef)
+    ),
+    true
+  );
 });
 
 test("MarketPacketBuilder blocks new buys when max new positions is reached", () => {
@@ -161,6 +187,24 @@ test("MarketPacketBuilder blocks new buys when max new positions is reached", ()
   assert.equal(newCandidate.sellEligible, false);
   assert.equal(
     newCandidate.blockedReasonCodes?.includes("MAX_NEW_POSITIONS_REACHED"),
+    true
+  );
+  assert.equal(
+    newCandidate.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.000660.buyEligible" &&
+        featureScore.score === 0 &&
+        featureScore.reasonCode === "BUY_BLOCKED"
+    ),
+    true
+  );
+  assert.equal(
+    newCandidate.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.000660.budgetTierAllowed" &&
+        featureScore.score === 0 &&
+        featureScore.reasonCode === "BUDGET_TIER_NONE"
+    ),
     true
   );
 });

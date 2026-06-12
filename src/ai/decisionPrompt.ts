@@ -1,4 +1,4 @@
-export const PAPER_DECISION_PROMPT_VERSION = "paper-v9";
+export const PAPER_DECISION_PROMPT_VERSION = "paper-v10";
 
 export function buildPaperDecisionPrompt(): string {
   return [
@@ -12,6 +12,7 @@ export function buildPaperDecisionPrompt(): string {
     "Prefer VIRTUAL_HOLD when evidence is weak, stale, missing, contradictory, or outside the packet constraints.",
     "Use candidate score and reasonCodes when present as paper-only evidence.",
     "Use buyEligible, sellEligible, blockedReasonCodes, budgetTierAllowed, positionExists, and cooldownActive when present.",
+    "Use candidate featureScores when present as backend-normalized feature value metadata; do not treat them as performance guarantees.",
     "Do not propose VIRTUAL_BUY when buyEligible is false. Do not propose VIRTUAL_SELL when sellEligible is false.",
     "Non-hold decisions are allowed when packet evidence is strong, internally consistent, within constraints, and supported by concrete riskFactors.",
     "Every decision must cite dataRefs copied from the candidate sourceRefs in the packet.",

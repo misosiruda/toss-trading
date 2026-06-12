@@ -3,6 +3,7 @@ import {
   parseWithSchema,
   type Market,
   type MarketCandidate,
+  type MarketCandidateFeatureScore,
   type MarketPacket,
   type VirtualBudgetTier,
   type VirtualAction,
@@ -53,15 +54,14 @@ export interface MarketPacketBuildResult {
   warnings: string[];
 }
 
-type CandidateEligibility = Pick<
-  MarketCandidate,
-  | "buyEligible"
-  | "sellEligible"
-  | "blockedReasonCodes"
-  | "budgetTierAllowed"
-  | "positionExists"
-  | "cooldownActive"
->;
+interface CandidateEligibility {
+  buyEligible: boolean;
+  sellEligible: boolean;
+  blockedReasonCodes: string[];
+  budgetTierAllowed: VirtualBudgetTier;
+  positionExists: boolean;
+  cooldownActive: boolean;
+}
 
 export class MarketPacketBuilder {
   constructor(private readonly options: MarketPacketBuilderOptions) {}
@@ -93,7 +93,10 @@ export class MarketPacketBuilder {
               portfolio: input.portfolio,
               candidate,
               constraints: this.options.constraints
-            })
+            }),
+            {
+              maxCandidates: this.options.maxCandidates
+            }
           )
         ];
       })
@@ -152,15 +155,23 @@ export function createMockMarketPacket(input: {
 function normalizeCandidate(
   candidate: MarketCandidateDraft,
   defaults: Pick<MarketCandidate, "collectedAt" | "staleAfter">,
-  eligibility: CandidateEligibility
+  eligibility: CandidateEligibility,
+  scoring: Pick<MarketPacketBuilderOptions, "maxCandidates">
 ): MarketCandidate {
+  const featureRefs = buildCandidateFeatureRefs(candidate);
   const normalized: MarketCandidate = {
     market: candidate.market,
     symbol: candidate.symbol,
     reasonCodes: candidate.reasonCodes ?? [],
     eventTags: candidate.eventTags ?? [],
     newsRefs: candidate.newsRefs ?? [],
-    featureRefs: buildCandidateFeatureRefs(candidate),
+    featureRefs,
+    featureScores: buildCandidateFeatureScores({
+      candidate,
+      eligibility,
+      featureRefs,
+      maxCandidates: scoring.maxCandidates
+    }),
     buyEligible: eligibility.buyEligible,
     sellEligible: eligibility.sellEligible,
     blockedReasonCodes: eligibility.blockedReasonCodes,
@@ -234,6 +245,146 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
   refs.push(`${prefix}.cooldownActive`);
 
   return Array.from(new Set(refs)).sort();
+}
+
+function buildCandidateFeatureScores(input: {
+  candidate: MarketCandidateDraft;
+  eligibility: CandidateEligibility;
+  featureRefs: string[];
+  maxCandidates: number;
+}): MarketCandidateFeatureScore[] {
+  const prefix = `candidate.${input.candidate.market}.${input.candidate.symbol}`;
+  const scores: MarketCandidateFeatureScore[] = [];
+
+  const addScore = (
+    featureName: string,
+    score: number,
+    scoreType: MarketCandidateFeatureScore["scoreType"],
+    reasonCode: string
+  ) => {
+    const featureRef = `${prefix}.${featureName}`;
+    if (!input.featureRefs.includes(featureRef)) {
+      return;
+    }
+    scores.push({
+      featureRef,
+      score: clampScore(score),
+      scoreType,
+      reasonCode
+    });
+  };
+
+  if (input.candidate.lastPriceKrw !== undefined) {
+    addScore("lastPriceKrw", 100, "AVAILABILITY", "PRICE_AVAILABLE");
+  }
+  if (input.candidate.ranking !== undefined) {
+    addScore(
+      "ranking",
+      rankFeatureScore(input.candidate.ranking, input.maxCandidates),
+      "RANKING",
+      "RANKING_WITHIN_PACKET"
+    );
+  }
+  if (input.candidate.score !== undefined) {
+    addScore("score", input.candidate.score, "VALUE", "CANDIDATE_SCORE");
+  }
+  if (input.candidate.reasonCodes && input.candidate.reasonCodes.length > 0) {
+    addScore(
+      "reasonCodes",
+      50 + Math.min(input.candidate.reasonCodes.length, 5) * 10,
+      "VALUE",
+      "REASON_CODE_COUNT"
+    );
+  }
+  if (input.candidate.eventTags && input.candidate.eventTags.length > 0) {
+    addScore(
+      "eventTags",
+      50 + Math.min(input.candidate.eventTags.length, 5) * 10,
+      "VALUE",
+      "EVENT_TAG_COUNT"
+    );
+  }
+  if (input.candidate.dividendYieldPct !== undefined) {
+    addScore(
+      "dividendYieldPct",
+      100,
+      "AVAILABILITY",
+      "DIVIDEND_FIELD_AVAILABLE"
+    );
+  }
+  if (input.candidate.exDividendDate !== undefined) {
+    addScore(
+      "exDividendDate",
+      100,
+      "AVAILABILITY",
+      "EX_DIVIDEND_DATE_AVAILABLE"
+    );
+  }
+
+  addScore(
+    "buyEligible",
+    input.eligibility.buyEligible ? 100 : 0,
+    "POLICY",
+    input.eligibility.buyEligible ? "BUY_ELIGIBLE" : "BUY_BLOCKED"
+  );
+  addScore(
+    "sellEligible",
+    input.eligibility.sellEligible ? 100 : 0,
+    "POLICY",
+    input.eligibility.sellEligible ? "SELL_ELIGIBLE" : "SELL_BLOCKED"
+  );
+  addScore(
+    "blockedReasonCodes",
+    input.eligibility.blockedReasonCodes.length === 0 ? 100 : 0,
+    "POLICY",
+    input.eligibility.blockedReasonCodes.length === 0
+      ? "NO_BLOCKED_REASONS"
+      : "BLOCKED_REASONS_PRESENT"
+  );
+  addScore(
+    "budgetTierAllowed",
+    budgetTierFeatureScore(input.eligibility.budgetTierAllowed),
+    "POLICY",
+    `BUDGET_TIER_${input.eligibility.budgetTierAllowed}`
+  );
+  addScore(
+    "positionExists",
+    input.eligibility.positionExists ? 100 : 0,
+    "STATE",
+    input.eligibility.positionExists ? "POSITION_EXISTS" : "POSITION_ABSENT"
+  );
+  addScore(
+    "cooldownActive",
+    input.eligibility.cooldownActive ? 0 : 100,
+    "POLICY",
+    input.eligibility.cooldownActive ? "COOLDOWN_ACTIVE" : "COOLDOWN_CLEAR"
+  );
+
+  return scores.sort((left, right) =>
+    left.featureRef.localeCompare(right.featureRef)
+  );
+}
+
+function rankFeatureScore(ranking: number, maxCandidates: number): number {
+  if (maxCandidates <= 1) {
+    return 100;
+  }
+
+  const boundedRank = Math.max(1, Math.min(ranking, maxCandidates));
+  return ((maxCandidates - boundedRank) / (maxCandidates - 1)) * 100;
+}
+
+function budgetTierFeatureScore(tier: VirtualBudgetTier): number {
+  switch (tier) {
+    case "LARGE":
+      return 100;
+    case "MEDIUM":
+      return 66;
+    case "SMALL":
+      return 33;
+    case "NONE":
+      return 0;
+  }
 }
 
 function deriveCandidateEligibility(input: {
@@ -343,4 +494,8 @@ function compareCandidates(left: MarketCandidate, right: MarketCandidate): numbe
   }
 
   return (right.score ?? 0) - (left.score ?? 0);
+}
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score)));
 }

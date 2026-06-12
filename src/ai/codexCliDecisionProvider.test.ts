@@ -161,7 +161,7 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
-    /"promptVersion":"paper-v9"/
+    /"promptVersion":"paper-v10"/
   );
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
@@ -184,6 +184,8 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /Prefer VIRTUAL_HOLD/);
   assert.match(prompt, /Use candidate score and reasonCodes/);
   assert.match(prompt, /buyEligible, sellEligible/);
+  assert.match(prompt, /featureScores/);
+  assert.match(prompt, /backend-normalized feature value metadata/);
   assert.match(prompt, /Do not propose VIRTUAL_BUY when buyEligible is false/);
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);

@@ -48,7 +48,7 @@ function virtualDecision(): VirtualDecision {
   return {
     packetId: "packet_001",
     packetHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    promptVersion: "paper-v9",
+    promptVersion: "paper-v10",
     modelId: "codex-cli-static",
     schemaVersion: "virtual-decision.v1",
     policyVersion: "paper-policy.v1",

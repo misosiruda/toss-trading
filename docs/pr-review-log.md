@@ -1242,3 +1242,33 @@
 - `git diff --check`로 whitespace error가 없음을 확인했습니다.
 - 금지 경계 grep에서 live order, raw `codex exec`, raw `tossctl`, sandbox escalation 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 natural-language claim entailment 검증, confidence decomposition, decision schema v2 전면 전환은 포함하지 않습니다.
+
+## PR-47: Market Candidate Feature Scores
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only `market_packet` candidate metadata에 backend-calculated `featureScores[]`를 추가하는 데 한정합니다.
+- `featureScores[]`는 AI output field가 아니라 packet 내부 feature value를 0-100 scale로 정규화한 read-only metadata입니다.
+- `featureScores[]`는 투자 성과 보장, live execution signal, risk approval gate로 사용하지 않습니다.
+- runtime schema는 기존 packet read compatibility를 위해 optional field로 확장합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- market packet schema test에서 `featureScores[].featureRef`가 같은 candidate의 `featureRefs` 밖을 참조하면 reject되는지 검증했습니다.
+- packet builder test에서 ranking feature score가 deterministic하게 계산되는지 검증했습니다.
+- packet builder test에서 SELL 불가 candidate의 `sellEligible` feature score가 0으로 계산되는지 검증했습니다.
+- packet builder test에서 max new positions로 BUY가 막힌 candidate의 `buyEligible`와 `budgetTierAllowed` feature score가 0으로 계산되는지 검증했습니다.
+- historical packet builder test에서 point-in-time으로 계산된 candidate `score`가 `featureScores`에 반영되는지 검증했습니다.
+- prompt test에서 `featureScores`를 backend-normalized feature value metadata로만 사용하도록 지시하는지 검증했습니다.
+- `npm test`로 전체 test suite 194개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `MarketCandidateFeatureScore` schema/type과 feature score ref consistency validation을 추가했습니다.
+- `src/market/packetBuilder.ts`는 `featureRefs`와 같은 prefix를 사용하는 deterministic `featureScores[]`를 생성합니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v10`으로 version을 올리고 `featureScores` 사용 경계를 명시합니다.
+- `docs/codex-cli-paper-trading.md`는 `featureScores` packet contract와 prompt version 예시를 갱신했습니다.
+- 코드 변경 파일 대상 금지 경계 grep에서 live order, raw `codex exec`, raw `tossctl`, sandbox escalation 관련 신규 노출이 없음을 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- 이번 PR은 confidence decomposition, feature score risk gate, AI output schema feature score 추가, decision schema v2 전환은 포함하지 않습니다.

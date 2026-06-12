@@ -22,6 +22,13 @@ export const virtualBudgetTierSchema = z.enum([
   "MEDIUM",
   "LARGE"
 ]);
+export const marketCandidateFeatureScoreTypeSchema = z.enum([
+  "AVAILABILITY",
+  "RANKING",
+  "VALUE",
+  "POLICY",
+  "STATE"
+]);
 export const virtualTradeStatusSchema = z.enum([
   "VIRTUAL_PENDING",
   "VIRTUAL_FILLED",
@@ -64,6 +71,15 @@ export const virtualPortfolioSchema = z
   })
   .strict();
 
+export const marketCandidateFeatureScoreSchema = z
+  .object({
+    featureRef: nonEmptyStringSchema,
+    score: z.number().min(0).max(100),
+    scoreType: marketCandidateFeatureScoreTypeSchema,
+    reasonCode: nonEmptyStringSchema
+  })
+  .strict();
+
 export const marketCandidateSchema = z
   .object({
     market: marketSchema,
@@ -78,6 +94,7 @@ export const marketCandidateSchema = z
     eventTags: z.array(nonEmptyStringSchema).optional(),
     newsRefs: z.array(nonEmptyStringSchema).optional(),
     featureRefs: z.array(nonEmptyStringSchema).optional(),
+    featureScores: z.array(marketCandidateFeatureScoreSchema).optional(),
     dividendYieldPct: z.number().min(0).max(100).optional(),
     exDividendDate: nonEmptyStringSchema.optional(),
     buyEligible: z.boolean().optional(),
@@ -90,7 +107,19 @@ export const marketCandidateSchema = z
     collectedAt: isoDateTimeSchema,
     staleAfter: isoDateTimeSchema
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const featureRefs = value.featureRefs ?? [];
+    for (const [index, featureScore] of (value.featureScores ?? []).entries()) {
+      if (!featureRefs.includes(featureScore.featureRef)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["featureScores", index, "featureRef"],
+          message: "featureScore.featureRef must be included in featureRefs"
+        });
+      }
+    }
+  });
 
 export const historicalMarketSnapshotSchema = z
   .object({
@@ -300,8 +329,14 @@ export type Market = z.infer<typeof marketSchema>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
 export type VirtualBudgetTier = z.infer<typeof virtualBudgetTierSchema>;
+export type MarketCandidateFeatureScoreType = z.infer<
+  typeof marketCandidateFeatureScoreTypeSchema
+>;
 export type VirtualPosition = z.infer<typeof virtualPositionSchema>;
 export type VirtualPortfolio = z.infer<typeof virtualPortfolioSchema>;
+export type MarketCandidateFeatureScore = z.infer<
+  typeof marketCandidateFeatureScoreSchema
+>;
 export type MarketCandidate = z.infer<typeof marketCandidateSchema>;
 export type HistoricalMarketSnapshot = z.infer<
   typeof historicalMarketSnapshotSchema
