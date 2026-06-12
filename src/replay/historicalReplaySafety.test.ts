@@ -75,6 +75,38 @@ test("historical replay core avoids current wall-clock APIs", async () => {
   }
 });
 
+test("batch replay analysis keeps live execution surfaces out of source files", async () => {
+  const sourcePaths = [
+    "src/workflows/historicalBatchReplayWorkflow.ts",
+    "src/reports/batchReplayReport.ts",
+    "src/cli/historicalBatchReplay.ts",
+    "src/cli/historicalBatchReport.ts",
+    "src/api/localOperationsServer.ts",
+    "dashboard/app.js",
+    "dashboard/index.html"
+  ];
+  const forbiddenPatterns = [
+    /from\s+["']node:child_process["']/,
+    /\bspawn(?:Sync)?\s*\(/,
+    /\bexec(?:File|Sync)?\s*\(/,
+    /\btossctl\b/i,
+    /\bcodex\s+exec\b/i,
+    /\bplace_order\b/i,
+    /\bTradingSignal\b/,
+    /\bOrderIntent\b/,
+    /\bTRADING_ENABLED\s*=\s*true\b/,
+    /\bAI_DECISION_ENABLED\s*=\s*true\b/,
+    /method\s*:\s*["'](?:POST|PUT|PATCH|DELETE)["']/i
+  ];
+
+  for (const sourcePath of sourcePaths) {
+    const source = await readFile(sourcePath, "utf8");
+    for (const pattern of forbiddenPatterns) {
+      assert.doesNotMatch(source, pattern, `${sourcePath} matched ${pattern}`);
+    }
+  }
+});
+
 function runnerOptions(): HistoricalReplayRunnerOptions {
   return {
     clock: new SimulatedClock({
