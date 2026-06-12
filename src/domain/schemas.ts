@@ -201,6 +201,7 @@ export const virtualDecisionItemSchema = z
 export const virtualDecisionSchema = z
   .object({
     packetId: nonEmptyStringSchema,
+    packetHash: nonEmptyStringSchema.optional(),
     summary: nonEmptyStringSchema,
     decisions: z.array(virtualDecisionItemSchema).max(20)
   })

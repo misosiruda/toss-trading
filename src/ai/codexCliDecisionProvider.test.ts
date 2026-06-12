@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import type { MarketPacket } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import { CodexCliDecisionProvider } from "./codexCliDecisionProvider.js";
 import {
   buildPaperDecisionPrompt,
@@ -36,6 +37,7 @@ class FakeRunner implements ProcessRunner {
 
 const validDecisionJson = JSON.stringify({
   packetId: "packet_001",
+  packetHash: createMarketPacketHash(packet()),
   summary: "Paper-only decision.",
   decisions: [
     {
@@ -140,8 +142,10 @@ test("provider builds read-only codex exec command with output schema", async ()
   ]);
   assert.equal(runner.calls[0]?.args.includes("--search"), false);
   assert.equal(result.command?.promptVersion, PAPER_DECISION_PROMPT_VERSION);
-  assert.match(runner.calls[0]?.args.at(-1) ?? "", /Use only the market_packet/);
+  assert.match(runner.calls[0]?.args.at(-1) ?? "", /Use only the packetHash/);
   assert.match(runner.calls[0]?.args.at(-1) ?? "", /Do not run shell commands/);
+  assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
+  assert.match(runner.calls[0]?.options.stdin ?? "", /"marketPacket":/);
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetId":"packet_001"/);
 });
 
@@ -149,6 +153,8 @@ test("paper decision prompt requires paper-only guarded output", () => {
   const prompt = buildPaperDecisionPrompt();
 
   assert.match(prompt, /paper-only trading analyst/);
+  assert.match(prompt, /packetHash and marketPacket/);
+  assert.match(prompt, /top-level packetHash exactly/);
   assert.match(prompt, /Return only a virtual_decision JSON object/);
   assert.match(prompt, /do not call tossctl/);
   assert.match(prompt, /Do not run shell commands/);
@@ -170,6 +176,7 @@ test("virtual decision output schema artifact constrains actions", async () => {
     additionalProperties?: boolean;
     properties?: {
       decisions?: {
+        required?: string[];
         items?: {
           additionalProperties?: boolean;
           allOf?: unknown[];
@@ -185,6 +192,11 @@ test("virtual decision output schema artifact constrains actions", async () => {
   };
 
   assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties?.decisions?.required, undefined);
+  assert.equal(
+    (schema as { required?: string[] }).required?.includes("packetHash"),
+    true
+  );
   assert.equal(schema.properties?.decisions?.items?.additionalProperties, false);
   assert.deepEqual(schema.properties?.decisions?.items?.properties?.action?.enum, [
     "VIRTUAL_BUY",

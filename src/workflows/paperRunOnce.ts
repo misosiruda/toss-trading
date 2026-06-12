@@ -8,6 +8,7 @@ import {
   createMockMarketPacket,
   type MarketPacketBuildResult
 } from "../market/packetBuilder.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   summarizeVirtualDecisionValidation,
@@ -48,10 +49,10 @@ export interface PaperRunOnceResult {
 export class StaticDecisionProvider implements DecisionProvider {
   constructor(private readonly decision: VirtualDecision) {}
 
-  async decide(): Promise<CodexCliDecisionResult> {
+  async decide(packet: MarketPacket): Promise<CodexCliDecisionResult> {
     return {
       attempted: false,
-      decision: this.decision,
+      decision: bindDecisionPacketHash(this.decision, packet),
       failure: null,
       command: null
     };
@@ -69,6 +70,18 @@ export class FailingDecisionProvider implements DecisionProvider {
       command: null
     };
   }
+}
+
+function bindDecisionPacketHash(
+  decision: VirtualDecision,
+  packet: MarketPacket
+): VirtualDecision {
+  return decision.packetHash
+    ? decision
+    : {
+        ...decision,
+        packetHash: createMarketPacketHash(packet)
+      };
 }
 
 export async function runPaperDecisionOnce(

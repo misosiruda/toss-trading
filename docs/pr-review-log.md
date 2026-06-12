@@ -1044,3 +1044,32 @@
 - `src/ai/decisionPrompt.ts`는 `paper-v4`로 version을 올리고 HOLD reason code 출력을 요구합니다.
 - 변경 코드 파일 safety grep에서 live order/raw MCP execution/process execution 경로가 추가되지 않았음을 확인했습니다.
 - 이번 PR은 hold reason distribution report/dashboard 표시는 포함하지 않고 후속 PR로 남깁니다.
+
+## PR-40: Virtual Decision Packet Hash Binding
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only AI decision과 입력 `marketPacket`의 내용 바인딩을 강화하는 데 한정합니다.
+- `packetHash`는 stable JSON 기반 `sha256:<hex>` 문자열이며, broker/order/risk sizing 권한을 추가하지 않습니다.
+- zod schema는 기존 저장된 v1 decision read path 호환을 위해 optional field로 확장합니다.
+- Codex output schema artifact와 semantic validator는 신규 AI output에 `packetHash`를 요구합니다.
+- live trading, broker adapter, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- packet hash helper test에서 object key order와 무관한 deterministic hash를 검증했습니다.
+- packet 내용 변경 시 hash가 변경되는지 검증했습니다.
+- validator unit test에서 missing `packetHash` reject를 검증했습니다.
+- validator unit test에서 같은 `packetId`지만 내용이 다른 packet hash mismatch reject를 검증했습니다.
+- workflow test에서 `packetHash` mismatch decision이 storage 전에 reject되는지 검증했습니다.
+- Codex CLI provider test에서 stdin envelope에 `packetHash`와 `marketPacket`이 포함되는지 검증했습니다.
+- `npm test`로 전체 test suite 172개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/market/packetHash.ts`를 추가해 packet hash 계산을 순수 함수로 분리했습니다.
+- `src/ai/codexCliDecisionProvider.ts`는 stdin을 `{ packetHash, marketPacket }` envelope로 전달합니다.
+- `src/paper/virtualDecisionValidation.ts`는 `packetHash` 누락과 mismatch를 semantic reject로 처리합니다.
+- `StaticDecisionProvider`와 `MarketPacketDryRunDecisionProvider`는 dry-run fixture가 현재 packet hash를 포함하도록 바인딩합니다.
+- `schemas/virtual-decision.schema.json`은 top-level `packetHash`를 required로 요구합니다.
+- 이번 PR은 promptVersion/modelId/policyVersion audit metadata와 normalized order layer는 포함하지 않고 후속 PR로 남깁니다.

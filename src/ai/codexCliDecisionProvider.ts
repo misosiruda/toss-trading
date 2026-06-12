@@ -4,6 +4,7 @@ import {
   type MarketPacket,
   type VirtualDecision
 } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import {
   InMemoryDailyRunBudget
 } from "./runBudget.js";
@@ -95,7 +96,7 @@ export class CodexCliDecisionProvider {
     this.budget.consume(now);
 
     const result = await this.runner.run(command.command, command.args, {
-      stdin: `${JSON.stringify(packet)}\n`,
+      stdin: `${JSON.stringify(createDecisionInput(packet))}\n`,
       timeoutMs: this.config.timeoutMs
     });
 
@@ -145,6 +146,16 @@ export class CodexCliDecisionProvider {
   private optionalWebSearchArgs(): string[] {
     return this.config.allowWebSearch ? ["--search"] : [];
   }
+}
+
+function createDecisionInput(packet: MarketPacket): {
+  packetHash: string;
+  marketPacket: MarketPacket;
+} {
+  return {
+    packetHash: createMarketPacketHash(packet),
+    marketPacket: packet
+  };
 }
 
 function failure(

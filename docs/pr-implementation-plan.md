@@ -1155,6 +1155,38 @@
 - hold reason distribution report/dashboard
 - live trading 또는 broker adapter 연결
 
+## PR-40: Virtual Decision Packet Hash Binding
+
+목표:
+
+- AI decision이 참조한 `marketPacket` 내용이 backend가 제공한 packet과 동일한지 `packetHash`로 검증합니다.
+
+작업 범위:
+
+- stable JSON 기반 `createMarketPacketHash` helper 추가
+- Codex CLI provider stdin을 `{ packetHash, marketPacket }` envelope로 변경
+- `VirtualDecision` top-level optional `packetHash` field 추가
+- Codex output schema artifact에서 `packetHash` required 및 `sha256:<hex>` pattern 요구
+- semantic validator에서 `packetHash` 누락 및 mismatch reject
+- dry-run/static provider가 현재 packet hash를 fixture decision에 바인딩
+- Codex CLI paper trading 문서에 packetHash 계약 반영
+
+검증:
+
+- 동일 packet의 object key order 차이에도 hash가 동일함
+- packet 내용 변경 시 hash가 달라짐
+- semantic validator가 missing/mismatched packetHash를 reject함
+- workflow가 packetHash mismatch decision을 storage 전에 reject함
+- Codex CLI provider가 stdin envelope에 packetHash와 marketPacket을 포함함
+- full test suite
+
+제외:
+
+- promptVersion/modelId/policyVersion audit metadata 추가
+- decision schema v2 전면 전환
+- normalized order layer
+- live trading 또는 broker adapter 연결
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
