@@ -1,4 +1,4 @@
-export const PAPER_DECISION_PROMPT_VERSION = "paper-v7";
+export const PAPER_DECISION_PROMPT_VERSION = "paper-v8";
 
 export function buildPaperDecisionPrompt(): string {
   return [
@@ -15,6 +15,7 @@ export function buildPaperDecisionPrompt(): string {
     "Do not propose VIRTUAL_BUY when buyEligible is false. Do not propose VIRTUAL_SELL when sellEligible is false.",
     "Non-hold decisions are allowed when packet evidence is strong, internally consistent, within constraints, and supported by concrete riskFactors.",
     "Every decision must cite dataRefs copied from the candidate sourceRefs in the packet.",
+    "When candidate featureRefs are present, include only featureRefs copied from that same candidate.",
     "Non-hold decisions must include concrete riskFactors and must not exceed maxBudgetPerSymbolKrw.",
     "For VIRTUAL_SELL, prefer reduceOnly=true with sellRatio, sellQuantity, targetWeightPct, or sellAll instead of guessing a sell amount.",
     "For VIRTUAL_HOLD, set budgetKrw to 0, include holdReasonCode, and do not include sell sizing fields.",

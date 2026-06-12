@@ -1153,3 +1153,31 @@
 - `src/paper/virtualDecisionValidation.ts`는 candidate-level eligibility가 명시적으로 false인 BUY/SELL proposal을 storage 전에 reject합니다.
 - `src/ai/decisionPrompt.ts`는 `paper-v7`로 version을 올리고 eligibility fields 준수를 요구합니다.
 - 이번 PR은 RiskPolicy cooldownEntries를 packet builder에 연결하지 않고, candidate draft의 `cooldownActive`가 true인 경우에만 BUY blocker로 반영합니다.
+
+## PR-44: Virtual Decision Feature Refs Grounding
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only `market_packet` candidate의 deterministic `featureRefs`와 AI decision의 optional `featureRefs` subset validation에 한정합니다.
+- `featureRefs`는 backend가 만든 candidate feature path를 AI가 복사해 근거로 남기는 audit/provenance metadata입니다.
+- validator는 packet candidate 밖 featureRef를 hard reject하지만, feature value 계산이나 claim-level support mapping은 추가하지 않습니다.
+- 기존 `dataRefs` gate, packetHash, identity metadata, candidate eligibility gate는 유지합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `MarketPacketBuilder` test에서 candidate featureRefs가 deterministic path로 생성되는지 검증했습니다.
+- semantic validator test에서 같은 candidate에서 복사한 `featureRefs`가 통과하는지 검증했습니다.
+- semantic validator test에서 hallucinated `featureRefs`가 `VIRTUAL_DECISION_FEATURE_REF_NOT_IN_CANDIDATE`로 reject되는지 검증했습니다.
+- Codex output schema artifact test에서 optional `featureRefs` array가 허용되는지 검증했습니다.
+- Codex prompt test에서 featureRefs 복사 규칙이 포함되는지 검증했습니다.
+- `npm test`로 전체 test suite 183개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/domain/schemas.ts`에 `MarketCandidate.featureRefs`와 `VirtualDecisionItem.featureRefs` optional fields를 추가했습니다.
+- `src/market/packetBuilder.ts`는 price/ranking/score/reason/eligibility field path를 candidate featureRefs로 생성합니다.
+- `src/paper/virtualDecisionValidation.ts`는 decision featureRefs가 candidate featureRefs의 부분집합인지 확인합니다.
+- `schemas/virtual-decision.schema.json`은 AI output에서 optional `featureRefs` array를 허용합니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v8`로 version을 올리고 featureRefs 복사 규칙을 명시합니다.
+- 이번 PR은 `claimSupport[]`, feature value scoring, confidence decomposition은 포함하지 않고 후속 PR로 남깁니다.

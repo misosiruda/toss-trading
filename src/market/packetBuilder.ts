@@ -160,6 +160,7 @@ function normalizeCandidate(
     reasonCodes: candidate.reasonCodes ?? [],
     eventTags: candidate.eventTags ?? [],
     newsRefs: candidate.newsRefs ?? [],
+    featureRefs: buildCandidateFeatureRefs(candidate),
     buyEligible: eligibility.buyEligible,
     sellEligible: eligibility.sellEligible,
     blockedReasonCodes: eligibility.blockedReasonCodes,
@@ -197,6 +198,42 @@ function normalizeCandidate(
   }
 
   return normalized;
+}
+
+function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
+  const prefix = `candidate.${candidate.market}.${candidate.symbol}`;
+  const refs: string[] = [];
+
+  if (candidate.lastPriceKrw !== undefined) {
+    refs.push(`${prefix}.lastPriceKrw`);
+  }
+  if (candidate.ranking !== undefined) {
+    refs.push(`${prefix}.ranking`);
+  }
+  if (candidate.score !== undefined) {
+    refs.push(`${prefix}.score`);
+  }
+  if (candidate.reasonCodes && candidate.reasonCodes.length > 0) {
+    refs.push(`${prefix}.reasonCodes`);
+  }
+  if (candidate.eventTags && candidate.eventTags.length > 0) {
+    refs.push(`${prefix}.eventTags`);
+  }
+  if (candidate.dividendYieldPct !== undefined) {
+    refs.push(`${prefix}.dividendYieldPct`);
+  }
+  if (candidate.exDividendDate !== undefined) {
+    refs.push(`${prefix}.exDividendDate`);
+  }
+
+  refs.push(`${prefix}.buyEligible`);
+  refs.push(`${prefix}.sellEligible`);
+  refs.push(`${prefix}.blockedReasonCodes`);
+  refs.push(`${prefix}.budgetTierAllowed`);
+  refs.push(`${prefix}.positionExists`);
+  refs.push(`${prefix}.cooldownActive`);
+
+  return Array.from(new Set(refs)).sort();
 }
 
 function deriveCandidateEligibility(input: {
