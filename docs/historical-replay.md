@@ -18,6 +18,7 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 - sampling policy: `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`
 - decision provider: dry-run fixture 또는 Codex CLI paper-only provider
 - paper risk profile: `conservative`, `balanced`, `aggressive_paper`
+- optional paper exit policy: take-profit, stop-loss, rebalance threshold
 
 출력:
 
@@ -40,7 +41,7 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 - `identity`: `runId`, optional `batchId`, optional `runIndex`
 - `window`: explicit/random window source, start/end, selected month, seed, timezone offset
-- `configuration`: clock, sampling policy, initial cash, packet/risk profile/constraint 요약
+- `configuration`: clock, sampling policy, initial cash, packet/risk profile/constraint, paper exit policy 요약
 - `logPaths`: packet, decision, risk decision, trade, portfolio timeline log path
 - `status`: `running`, `completed`, `failed`
 
@@ -94,10 +95,12 @@ Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까
 flowchart TD
     SnapshotStore["historical-market-snapshots.jsonl"] --> Clock["SimulatedClock"]
     Clock --> PacketBuilder["HistoricalMarketPacketBuilder"]
+    PacketBuilder --> ExitPolicy["PaperExitPolicy (optional)"]
     PacketBuilder --> Sampling["ReplaySamplingPolicy"]
     Sampling --> Provider{"Decision Provider"}
     Provider --> DryRun["Dry-run fixture"]
     Provider --> Codex["Codex CLI paper-only provider"]
+    ExitPolicy --> Risk["VirtualRiskEngine"]
     DryRun --> Risk["VirtualRiskEngine"]
     Codex --> Risk
     Risk --> PaperOrder["PaperOrderEngine"]
@@ -275,6 +278,30 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - 선택된 profile과 정규화된 risk policy는 `batch-replay-manifest.json`과 각 run의 `historical-replay-run-metadata.json`에 기록됩니다.
 - 이 profile은 `VirtualRiskEngine`과 `PaperOrderEngine` 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않습니다.
 - profile 이름은 투자 조언, 수익률 보장, 실계좌 성과 예측으로 해석하면 안 됩니다.
+
+#### Paper Exit Policy
+
+Historical replay와 batch replay는 AI/provider 판단과 별도로 deterministic paper-only exit rule을 실행할 수 있습니다. 기본값은 비활성입니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-exit-policy-smoke --seed batch-seed-001 --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 5 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --risk-profile aggressive_paper --paper-take-profit-ratio 0.15 --paper-stop-loss-ratio 0.08 --paper-rebalance-max-position-weight-ratio 0.55
+```
+
+옵션:
+
+- `--paper-take-profit-ratio 0.15`: 보유 포지션의 미실현 수익률이 15% 이상이면 reduce-only `VIRTUAL_SELL` sell-all decision을 생성합니다.
+- `--paper-stop-loss-ratio 0.08`: 보유 포지션의 미실현 수익률이 -8% 이하이면 reduce-only `VIRTUAL_SELL` sell-all decision을 생성합니다.
+- `--paper-rebalance-max-position-weight-ratio 0.55`: 포지션 평가액이 가상 순자산의 55%를 초과하면 `targetWeightPct=0.55` reduce-only sell decision을 생성합니다.
+
+동작:
+
+- exit rule은 AI/provider call count에 포함되지 않습니다.
+- exit decision도 기존 `VirtualRiskEngine`과 `PaperOrderEngine`만 통과합니다.
+- 같은 tick에서 exit이 발생한 종목은 provider가 같은 종목에 대해 낸 decision item을 실행하지 않습니다.
+- stop-loss가 take-profit/rebalance보다 우선하고, take-profit이 rebalance보다 우선합니다.
+- 실행된 exit policy는 `historical-replay-decisions.jsonl`, `historical-replay-risk-decisions.jsonl`, `historical-replay-trades.jsonl`, `historical-replay-run-metadata.json`, `historical-replay-report.json`, `batch-replay-manifest.json`에 기록됩니다.
+
+이 정책은 paper-only replay 실험용입니다. live `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않으며 수익률 목표 달성이나 실계좌 성과를 보장하지 않습니다.
 
 #### Batch Replay에서 Codex CLI AI 사용
 

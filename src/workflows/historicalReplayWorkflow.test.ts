@@ -159,6 +159,7 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(runConfiguration["initialCashKrw"], 1_000_000);
   assert.equal(runConfiguration["riskProfile"], null);
   assert.equal(runConfiguration["riskPolicy"], null);
+  assert.equal(runConfiguration["paperExitPolicy"], null);
   assert.equal(packetLog.length, result.replayResult.packetCount);
   assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);
   assert.equal(riskDecisionLog.length, result.replayResult.riskDecisions.length);

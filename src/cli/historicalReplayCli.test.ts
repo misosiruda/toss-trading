@@ -62,6 +62,8 @@ test("historical replay CLI writes batch run metadata", () => {
       "2025-02-03T09:00:00+09:00",
       "--step-seconds",
       "60",
+      "--paper-take-profit-ratio",
+      "0.15",
       "--batch-id",
       "batch-smoke",
       "--batch-run-index",
@@ -78,12 +80,18 @@ test("historical replay CLI writes batch run metadata", () => {
   ) as Record<string, unknown>;
   const identity = metadata["identity"] as Record<string, unknown>;
   const window = metadata["window"] as Record<string, unknown>;
+  const configuration = metadata["configuration"] as Record<string, unknown>;
+  const paperExitPolicy = configuration["paperExitPolicy"] as Record<
+    string,
+    unknown
+  >;
 
   assert.equal(identity["runId"], "batch-smoke-run-002");
   assert.equal(identity["batchId"], "batch-smoke");
   assert.equal(identity["runIndex"], 2);
   assert.equal(window["source"], "explicit");
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
+  assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
 });
 
 test("historical batch replay CLI writes batch manifest and aggregate report", () => {
@@ -124,6 +132,12 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       String(31 * 24 * 60 * 60),
       "--risk-profile",
       "aggressive_paper",
+      "--paper-take-profit-ratio",
+      "0.15",
+      "--paper-stop-loss-ratio",
+      "0.08",
+      "--paper-rebalance-max-position-weight-ratio",
+      "0.55",
       "--window-sampling",
       "balanced_regime",
       "--target-regimes",
@@ -145,9 +159,19 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(output["status"], "completed");
   assert.equal(output["completedCount"], 1);
   assert.equal(output["riskProfile"], "aggressive_paper");
+  assert.deepEqual(output["paperExitPolicy"], {
+    takeProfitRatio: 0.15,
+    stopLossRatio: 0.08,
+    rebalanceMaxPositionWeightRatio: 0.55
+  });
   assert.equal(output["windowSamplingMode"], "balanced_regime");
   assert.equal(manifest["batchId"], "batch-cli");
   assert.equal(manifest["riskProfile"], "aggressive_paper");
+  assert.deepEqual(manifest["paperExitPolicy"], {
+    takeProfitRatio: 0.15,
+    stopLossRatio: 0.08,
+    rebalanceMaxPositionWeightRatio: 0.55
+  });
   assert.equal(
     (manifest["windowSampling"] as Record<string, unknown>)["mode"],
     "balanced_regime"
@@ -175,6 +199,11 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     unknown
   >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
+  assert.deepEqual(runConfiguration["paperExitPolicy"], {
+    takeProfitRatio: 0.15,
+    stopLossRatio: 0.08,
+    rebalanceMaxPositionWeightRatio: 0.55
+  });
   assert.equal(runConstraints["maxNewPositions"], 5);
   assert.equal(runConstraints["maxBudgetPerSymbolKrw"], 400_000);
 

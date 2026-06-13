@@ -112,6 +112,7 @@ function replayResult(input: {
     auditEvents: [],
     warnings: [],
     samplingPolicy: null,
+    paperExitPolicy: null,
     samplingDecisions: [],
     progressSummary: {
       totalTicks: input.portfolioTimelineValues.length,

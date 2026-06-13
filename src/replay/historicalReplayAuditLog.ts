@@ -109,6 +109,14 @@ export const historicalReplayRunConfigurationSchema = z
         minCashReserveKrw: z.number().int().nonnegative().optional()
       })
       .strict()
+      .nullable(),
+    paperExitPolicy: z
+      .object({
+        takeProfitRatio: z.number().gt(0).max(10).optional(),
+        stopLossRatio: z.number().gt(0).max(1).optional(),
+        rebalanceMaxPositionWeightRatio: z.number().gt(0).max(1).optional()
+      })
+      .strict()
       .nullable()
   })
   .strict();
@@ -192,7 +200,7 @@ export class HistoricalReplayAuditLogRecorder {
     HistoricalReplayPortfolioTimelineRecord
   >;
   private readonly seenPacketIds = new Set<string>();
-  private readonly seenDecisionPacketIds = new Set<string>();
+  private readonly seenDecisionHashes = new Set<string>();
   private readonly seenRiskDecisionIds = new Set<string>();
   private readonly seenTradeIds = new Set<string>();
   private portfolioTimelineSequence = 0;
@@ -262,11 +270,13 @@ export class HistoricalReplayAuditLogRecorder {
     }
 
     for (const decision of update.decisions) {
-      if (this.seenDecisionPacketIds.has(decision.packetId)) {
+      const boundDecision = bindVirtualDecisionHash(decision);
+      const decisionHash = boundDecision.decisionHash ?? decision.packetId;
+      if (this.seenDecisionHashes.has(decisionHash)) {
         continue;
       }
-      this.seenDecisionPacketIds.add(decision.packetId);
-      await this.decisionStore.append(bindVirtualDecisionHash(decision));
+      this.seenDecisionHashes.add(decisionHash);
+      await this.decisionStore.append(boundDecision);
     }
 
     for (const riskDecision of update.riskDecisions) {

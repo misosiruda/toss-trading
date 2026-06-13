@@ -6,6 +6,7 @@ import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
+import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
 import type { Market } from "../domain/schemas.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -37,6 +38,7 @@ const riskProfile = resolvePaperRiskProfile({
     ? {}
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
+const paperExitPolicy = readPaperExitPolicyArg();
 
 if (useCodexAi && (process.env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
   throw new Error("AI_DECISION_MODE must be paper_only for batch replay Codex AI");
@@ -96,6 +98,7 @@ const result = await runHistoricalBatchReplay({
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
+  ...(paperExitPolicy === undefined ? {} : { paperExitPolicy }),
   ...(codexDelegate === null
     ? {}
     : {
@@ -130,6 +133,7 @@ console.log(
       failedCount: result.failedCount,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
+      paperExitPolicy: paperExitPolicy ?? null,
       windowSamplingMode,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
@@ -233,6 +237,22 @@ function readRequiredArgValue(name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function readPaperExitPolicyArg() {
+  const takeProfitRatio = readOptionalNumberArg("--paper-take-profit-ratio");
+  const stopLossRatio = readOptionalNumberArg("--paper-stop-loss-ratio");
+  const rebalanceMaxPositionWeightRatio = readOptionalNumberArg(
+    "--paper-rebalance-max-position-weight-ratio"
+  );
+  const normalized = normalizePaperExitPolicy({
+    ...(takeProfitRatio === undefined ? {} : { takeProfitRatio }),
+    ...(stopLossRatio === undefined ? {} : { stopLossRatio }),
+    ...(rebalanceMaxPositionWeightRatio === undefined
+      ? {}
+      : { rebalanceMaxPositionWeightRatio })
+  });
+  return normalized ?? undefined;
 }
 
 function readRequiredSymbols():
