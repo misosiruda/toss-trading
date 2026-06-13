@@ -1659,3 +1659,38 @@
 - `docs/pr-implementation-plan.md`는 PR-59 범위와 후속 계획 상태를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 기존 CLI test의 `node:child_process`와 문서상 제외/금지 경계로만 확인했습니다.
 - 이번 PR은 retry/backoff scheduler, 병렬 batch execution, dashboard-triggered replay, live trading 연결을 포함하지 않습니다.
+
+## PR-60: Codex Structured Output Replay Fix
+
+### Review 1: Scope and Safety
+
+- 범위는 실제 Codex CLI historical/batch replay가 구조화 출력 스키마를 사용해 `VirtualDecision`을 남기도록 수정하는 데 한정합니다.
+- Codex output schema artifact는 Codex structured output에서 거부되는 `allOf`, `if`, `then`, numeric/string bound keyword를 제거하고 action별 branch schema로 분리했습니다.
+- historical replay CLI와 batch replay CLI는 `AI_DECISION_*` 값을 우선 사용하고 기존 paper CLI 호환 설정인 `CODEX_OUTPUT_SCHEMA_PATH`, `CODEX_DECISION_MAX_RUNS_PER_DAY`, `CODEX_DECISION_ALLOW_WEB_SEARCH`를 fallback으로 읽습니다.
+- 기본 batch replay는 `--use-codex-ai`가 없으면 계속 deterministic provider를 사용합니다.
+- Codex CLI provider는 기존처럼 `read-only` sandbox와 paper-only `VirtualDecision` 경로만 사용합니다.
+- live trading, broker adapter, live `TradingSignal`, live `OrderIntent`, raw `codex exec` MCP tool, raw `tossctl` MCP tool은 추가하지 않았습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출이 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- direct Codex CLI structured output smoke에서 `schemas/virtual-decision.schema.json`을 명시 전달했을 때 `VIRTUAL_BUY` decision 1건이 schema와 domain parser를 통과하는지 확인했습니다.
+- 실제 historical batch smoke에서 `CODEX_OUTPUT_SCHEMA_PATH` fallback만으로 `decisionProviderCallCount=1`, `decisionRecordCount=1`, `tradeCount=1`이 기록되는지 확인했습니다.
+- 실제 10회 Codex batch replay `batch-codex-datafull-20260613-002`가 completed 10, skipped 0, failed 0으로 완료되는지 확인했습니다.
+- 10회 batch 결과에서 Codex 호출 48회, decision record 48개, decision item 51개, paper trade 24건, risk reject 8건이 기록되는지 확인했습니다.
+- aggregate report에서 전체 평균 수익률 0.014421, median 0.01439, win rate 0.7이 계산되는지 확인했습니다.
+- targeted test로 `node --test dist/cli/codexDecisionEnv.test.js dist/ai/codexCliDecisionProvider.test.js dist/replay/codexHistoricalDecisionProvider.test.js dist/cli/historicalReplayCli.test.js` 22개 통과를 확인했습니다.
+- `npm test`로 전체 test suite 243개 통과를 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `schemas/virtual-decision.schema.json`은 Codex structured output 호환 branch schema로 변경했습니다.
+- `src/ai/decisionPrompt.ts`는 `paper-v11` prompt로 packet identity, direct schema output, non-empty candidate decision rule을 명시합니다.
+- `src/cli/codexDecisionEnv.ts`와 test를 추가해 historical Codex env alias 해석을 고정했습니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 새 env resolver를 사용합니다.
+- `src/ai/codexCliDecisionProvider.test.ts`는 unsupported schema keyword가 남지 않았는지, action별 branch와 `claimSupport` contract가 유지되는지 검증합니다.
+- `src/replay/codexHistoricalDecisionProvider.test.ts`는 historical prompt가 no-lookahead boundary와 non-empty decision rule을 함께 포함하는지 검증합니다.
+- `docs/historical-replay.md`는 historical replay에서 `CODEX_*` fallback env와 output schema 전달 방식을 문서화했습니다.
+- `docs/pr-implementation-plan.md`는 PR-60 범위와 이후 paper return 실험 PR 순서를 기록했습니다.
+- 이번 PR은 aggressive risk profile, 목표 수익률 최적화, 장세 균형 sampler, live trading 연결을 포함하지 않습니다.

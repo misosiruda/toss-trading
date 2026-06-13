@@ -1,6 +1,7 @@
 import "../config/loadEnv.js";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
 import type { Market } from "../domain/schemas.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -15,10 +16,7 @@ const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
 const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
-const outputSchemaOption =
-  process.env.AI_DECISION_OUTPUT_SCHEMA_PATH === undefined
-    ? {}
-    : { outputSchemaPath: process.env.AI_DECISION_OUTPUT_SCHEMA_PATH };
+const codexDecisionEnv = readHistoricalCodexDecisionEnv();
 
 if (useCodexAi && (process.env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
   throw new Error("AI_DECISION_MODE must be paper_only for batch replay Codex AI");
@@ -42,9 +40,11 @@ const codexDelegate = useCodexAi
         codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
         sandbox: "read-only",
         timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-        maxRunsPerDay: Number(process.env.AI_DECISION_MAX_RUNS_PER_DAY ?? 5),
-        allowWebSearch: process.env.CODEX_ALLOW_WEB_SEARCH === "true",
-        ...outputSchemaOption
+        maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
+        allowWebSearch: codexDecisionEnv.allowWebSearch,
+        ...(codexDecisionEnv.outputSchemaPath === undefined
+          ? {}
+          : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
       })
     )
   : null;
@@ -85,7 +85,7 @@ const result = await runHistoricalBatchReplay({
           mode: "codex_cli" as const,
           maxCallsPerRun: maxCodexCallsPerRun,
           sandbox: "read-only" as const,
-          allowWebSearch: process.env.CODEX_ALLOW_WEB_SEARCH === "true"
+          allowWebSearch: codexDecisionEnv.allowWebSearch
         }
       }),
   constraints: {

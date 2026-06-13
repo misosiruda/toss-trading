@@ -1,6 +1,7 @@
 import "../config/loadEnv.js";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
 import { assessHistoricalDataAvailability } from "../replay/historicalDataAvailability.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -96,10 +97,7 @@ const decisionFrequency =
   decisionFrequencyArg === "once_per_week"
     ? decisionFrequencyArg
     : "every_tick";
-const outputSchemaOption =
-  process.env.AI_DECISION_OUTPUT_SCHEMA_PATH === undefined
-    ? {}
-    : { outputSchemaPath: process.env.AI_DECISION_OUTPUT_SCHEMA_PATH };
+const codexDecisionEnv = readHistoricalCodexDecisionEnv();
 
 if (checkDataAvailability || requireDataAvailability) {
   const availabilityReport = await readHistoricalDataAvailabilityReport();
@@ -135,9 +133,11 @@ const decisionProvider = dryRun
           codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
           sandbox: "read-only",
           timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-          maxRunsPerDay: Number(process.env.AI_DECISION_MAX_RUNS_PER_DAY ?? 5),
-          allowWebSearch: process.env.CODEX_ALLOW_WEB_SEARCH === "true",
-          ...outputSchemaOption
+          maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
+          allowWebSearch: codexDecisionEnv.allowWebSearch,
+          ...(codexDecisionEnv.outputSchemaPath === undefined
+            ? {}
+            : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
         })
       ),
       { maxCallsPerReplay: maxCodexCalls }
