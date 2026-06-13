@@ -295,6 +295,31 @@ export async function runCodexHistoricalReplay(
               summary: `${result.trade.market}:${result.trade.symbol} ${result.trade.action} filled ${result.trade.amountKrw}`
             })
           );
+        } else if (result.noOpReason !== undefined) {
+          exitedSymbolKeys.add(decisionItemSymbolKey(item));
+          appendAuditEvent(
+            auditEvents,
+            result.noOpReason,
+            `${item.market}:${item.symbol} ${item.action}`,
+            tick
+          );
+          await emitProgress(
+            tick,
+            simulatedAt,
+            createHistoricalReplayProgressEvent({
+              eventType: result.noOpReason,
+              sequence: riskDecisions.length,
+              simulatedAt,
+              tick,
+              packetId: packet.packetId,
+              market: item.market,
+              symbol: item.symbol,
+              action: item.action,
+              approved: true,
+              rejectCodes: [],
+              summary: `${item.market}:${item.symbol} ${item.action} ${result.noOpReason}`
+            })
+          );
         }
       }
     }
@@ -509,6 +534,30 @@ export async function runCodexHistoricalReplay(
             rejectCodes: [],
             amountKrw: result.trade.amountKrw,
             summary: `${result.trade.market}:${result.trade.symbol} ${result.trade.action} filled ${result.trade.amountKrw}`
+          })
+        );
+      } else if (result.noOpReason !== undefined) {
+        appendAuditEvent(
+          auditEvents,
+          result.noOpReason,
+          `${item.market}:${item.symbol} ${item.action}`,
+          tick
+        );
+        await emitProgress(
+          tick,
+          simulatedAt,
+          createHistoricalReplayProgressEvent({
+            eventType: result.noOpReason,
+            sequence: riskDecisions.length,
+            simulatedAt,
+            tick,
+            packetId: packet.packetId,
+            market: item.market,
+            symbol: item.symbol,
+            action: item.action,
+            approved: true,
+            rejectCodes: [],
+            summary: `${item.market}:${item.symbol} ${item.action} ${result.noOpReason}`
           })
         );
       }

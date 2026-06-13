@@ -14,6 +14,7 @@ export interface PaperFillInput {
   targetNotionalKrw: number;
   sourcePriceKrw: number;
   averagePriceKrw?: number | undefined;
+  quantityOverride?: number | undefined;
   policy?: Partial<PaperExecutionPolicy> | undefined;
 }
 
@@ -54,9 +55,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
   const targetNotionalKrw = Math.round(
     input.targetNotionalKrw * policy.fillRatio
   );
-  let quantity = targetNotionalKrw / quantityPrice;
+  let quantity = input.quantityOverride ?? targetNotionalKrw / quantityPrice;
 
-  if (!policy.allowFractionalShares) {
+  if (input.quantityOverride === undefined && !policy.allowFractionalShares) {
     quantity = Math.floor(quantity);
   }
 

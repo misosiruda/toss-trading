@@ -41,7 +41,8 @@ export const historicalReplayProgressStatusSchema = z.enum([
 export const historicalReplayProgressEventTypeSchema = z.enum([
   "VIRTUAL_BUY",
   "VIRTUAL_SELL",
-  "RISK_REJECTED"
+  "RISK_REJECTED",
+  "NO_OP_EXIT_DUST_CLOSED"
 ]);
 
 export const historicalReplayPortfolioProgressSchema = z

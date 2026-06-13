@@ -285,6 +285,14 @@ export function runHistoricalReplay(
             `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
             tick
           );
+        } else if (result.noOpReason !== undefined) {
+          exitedSymbolKeys.add(decisionItemSymbolKey(item));
+          appendAuditEvent(
+            auditEvents,
+            result.noOpReason,
+            `${item.market}:${item.symbol} ${item.action}`,
+            tick
+          );
         }
       }
     }
@@ -391,6 +399,13 @@ export function runHistoricalReplay(
           auditEvents,
           "PAPER_ORDER_FILLED",
           `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
+          tick
+        );
+      } else if (result.noOpReason !== undefined) {
+        appendAuditEvent(
+          auditEvents,
+          result.noOpReason,
+          `${item.market}:${item.symbol} ${item.action}`,
           tick
         );
       }
