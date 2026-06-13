@@ -506,6 +506,89 @@ test("PaperOrderEngine records sell realized pnl after costs", () => {
   assert.equal(result.portfolio.positions.length, 0);
 });
 
+test("PaperOrderEngine snaps full reduce-only exits to the held quantity", () => {
+  const heldQuantity = 4.189044038668099;
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          symbol: "028300",
+          lastPriceKrw: 84_600
+        }
+      ]
+    }),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "028300",
+          quantity: heldQuantity,
+          averagePriceKrw: 93_100,
+          marketValueKrw: Math.round(heldQuantity * 84_600),
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      symbol: "028300",
+      action: "VIRTUAL_SELL",
+      budgetKrw: 0,
+      sellAll: true,
+      reduceOnly: true,
+      thesis: "Paper-only full exit fixture."
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.quantity, heldQuantity);
+  assert.equal(result.portfolio.positions.length, 0);
+});
+
+test("PaperOrderEngine closes sellAll dust positions without a trade", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          symbol: "028300",
+          lastPriceKrw: 84_600
+        }
+      ]
+    }),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "028300",
+          quantity: 0.00000001,
+          averagePriceKrw: 93_100,
+          marketValueKrw: 0,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      symbol: "028300",
+      action: "VIRTUAL_SELL",
+      budgetKrw: 0,
+      sellAll: true,
+      reduceOnly: true,
+      thesis: "Paper-only dust close fixture."
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.riskDecision.rejectCodes.includes("VIRTUAL_SELL_AMOUNT_REQUIRED"), false);
+  assert.equal(result.trade, null);
+  assert.equal(result.noOpReason, "NO_OP_EXIT_DUST_CLOSED");
+  assert.equal(result.portfolio.positions.length, 0);
+});
+
 test("PaperOrderEngine does not mutate portfolio when risk rejects", () => {
   const startingPortfolio = portfolio({ cashKrw: 10_000 });
   const result = new PaperOrderEngine().execute({

@@ -7,6 +7,7 @@ import {
   type VirtualRiskDecision
 } from "../domain/schemas.js";
 import { normalizeVirtualDecision } from "./decisionNormalizer.js";
+import { isSellAllDustClose } from "./dustPosition.js";
 import {
   appendVirtualRiskRejectCode,
   createVirtualRiskPolicy,
@@ -111,7 +112,14 @@ export class VirtualRiskEngine {
       const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
       if (!position) {
         appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_POSITION_NOT_FOUND");
-      } else if (notionalKrw <= 0) {
+      } else if (
+        notionalKrw <= 0 &&
+        !isSellAllDustClose({
+          decision: input.decision,
+          position,
+          priceKrw: candidate?.lastPriceKrw
+        })
+      ) {
         appendVirtualRiskRejectCode(
           rejectCodes,
           "VIRTUAL_SELL_AMOUNT_REQUIRED"

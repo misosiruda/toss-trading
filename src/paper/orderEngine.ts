@@ -15,6 +15,7 @@ import {
   type PaperExecutionPolicy,
   type PaperFill
 } from "./executionModel.js";
+import { isDustPosition, isSellAllDustClose } from "./dustPosition.js";
 import { findCandidate, VirtualRiskEngine, type VirtualRiskPolicy } from "./riskEngine.js";
 
 export interface PaperOrderInput {
@@ -29,6 +30,7 @@ export interface PaperOrderResult {
   portfolio: VirtualPortfolio;
   riskDecision: VirtualRiskDecision;
   trade: VirtualTrade | null;
+  noOpReason?: "NO_OP_EXIT_DUST_CLOSED" | undefined;
 }
 
 type PricedMarketCandidate = MarketCandidate & { lastPriceKrw: number };
@@ -155,11 +157,43 @@ function executeSell(
     return { portfolio, riskDecision, trade: null };
   }
 
+  if (
+    normalizedOrder.targetNotionalKrw <= 0 &&
+    isSellAllDustClose({
+      decision: input.decision,
+      position: existing,
+      priceKrw: candidate.lastPriceKrw
+    })
+  ) {
+    portfolio.positions = portfolio.positions.filter(
+      (position) =>
+        !(
+          position.market === input.decision.market &&
+          position.symbol === input.decision.symbol
+        )
+    );
+    portfolio.updatedAt = riskDecision.createdAt;
+
+    return {
+      portfolio,
+      riskDecision,
+      trade: null,
+      noOpReason: "NO_OP_EXIT_DUST_CLOSED"
+    };
+  }
+
   const fill = buildPaperFill({
     action: "VIRTUAL_SELL",
     targetNotionalKrw: normalizedOrder.targetNotionalKrw,
     sourcePriceKrw: candidate.lastPriceKrw,
     averagePriceKrw: existing.averagePriceKrw,
+    quantityOverride: shouldSnapToFullExit({
+      normalizedOrder,
+      existing,
+      sourcePriceKrw: candidate.lastPriceKrw
+    })
+      ? existing.quantity
+      : undefined,
     policy: input.executionPolicy
   });
   existing.quantity -= fill.quantity;
@@ -172,7 +206,7 @@ function executeSell(
   portfolio.cashKrw += fill.netAmountKrw;
   portfolio.updatedAt = riskDecision.createdAt;
 
-  if (existing.quantity <= 0.000001) {
+  if (isDustPosition(existing, candidate.lastPriceKrw)) {
     portfolio.positions = portfolio.positions.filter(
       (position) =>
         !(
@@ -193,6 +227,21 @@ function executeSell(
       candidate.sourceRefs
     )
   };
+}
+
+function shouldSnapToFullExit(input: {
+  normalizedOrder: NormalizedVirtualOrder;
+  existing: VirtualPortfolio["positions"][number];
+  sourcePriceKrw: number;
+}): boolean {
+  const currentPositionValueKrw = Math.round(
+    input.existing.quantity * input.sourcePriceKrw
+  );
+  return (
+    input.normalizedOrder.reduceOnly &&
+    currentPositionValueKrw > 0 &&
+    input.normalizedOrder.targetNotionalKrw >= currentPositionValueKrw
+  );
 }
 
 function buildTrade(
