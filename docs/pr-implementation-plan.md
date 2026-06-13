@@ -2110,9 +2110,44 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-66: Aggressive Codex Prompt Policy
+
+목표:
+
+- `aggressive_paper` risk profile에서 Codex CLI paper-only prompt policy를 기본 historical replay prompt와 분리합니다.
+- 공격형 profile이 더 넓은 paper-only risk envelope을 사용할 수 있음을 prompt에 명시하되, 수익률 목표 달성을 강제하지 않도록 경계를 둡니다.
+- batch replay manifest에 선택된 prompt policy와 prompt version을 기록합니다.
+
+작업 범위:
+
+- historical replay prompt policy resolver 추가
+- `aggressive_paper` 전용 prompt version 추가
+- single/batch historical Codex provider 생성 시 risk profile 기반 prompt policy 주입
+- batch replay decision provider metadata에 `promptPolicy`, `promptVersion` 추가
+- prompt policy unit test와 batch metadata test 추가
+- Historical Replay 문서와 PR review log 업데이트
+
+검증:
+
+- 기본 historical replay prompt version은 기존 `paper-v11-historical-replay-v1` 유지
+- `aggressive_paper`는 `paper-v11-historical-replay-aggressive-paper-v1` 사용
+- aggressive prompt에는 paper-only, no live trading, no return target chasing, eligibility/constraint guard가 포함
+- batch manifest에 Codex provider prompt policy/version 기록
+- `npm test`
+- `git diff --check`
+
+제외:
+
+- 수익률 보장 또는 목표 수익률 강제
+- prompt가 Risk Engine을 우회하는 규칙
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+- 새로운 외부 데이터 수집 또는 web search 기본 활성화
+
 ## Remaining Paper Return Experiment PRs
 
-- PR-66: aggressive profile용 Codex prompt policy 분리
+- 없음. 이 문서의 paper return experiment vertical slice는 PR-64~PR-66으로 닫습니다.
 
 ## Later PRs
 

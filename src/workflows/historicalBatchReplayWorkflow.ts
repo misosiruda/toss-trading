@@ -91,6 +91,8 @@ export interface BatchReplayDecisionProviderMetadata {
   maxCallsPerRun: number | null;
   sandbox: "read-only" | null;
   allowWebSearch: boolean;
+  promptPolicy: string | null;
+  promptVersion: string | null;
 }
 
 export interface BatchReplayDecisionProviderContext {
@@ -693,7 +695,9 @@ function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata 
     mode: "deterministic_fixture",
     maxCallsPerRun: null,
     sandbox: null,
-    allowWebSearch: false
+    allowWebSearch: false,
+    promptPolicy: null,
+    promptVersion: null
   };
 }
 
