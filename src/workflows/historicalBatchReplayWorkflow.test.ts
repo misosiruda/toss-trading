@@ -67,8 +67,16 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(manifest["status"], "completed");
   assert.equal(manifest["completedCount"], 2);
   assert.equal(manifest["riskProfile"], null);
+  assert.equal(
+    (manifest["windowSampling"] as Record<string, unknown>)["mode"],
+    "random"
+  );
   assert.equal(runRecords.length, 2);
   assert.equal(firstRecord["status"], "completed");
+  assert.equal(
+    (firstRecord["windowSampling"] as Record<string, unknown>)["mode"],
+    "random"
+  );
   assert.equal(
     (firstRecord["window"] as Record<string, unknown>)["selectedMonth"],
     "2025-02"
@@ -127,6 +135,69 @@ test("historical batch replay runner skips insufficient windows", async () => {
   assert.deepEqual(
     (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
     ["WINDOW_SNAPSHOT_MISSING", "WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"]
+  );
+});
+
+test("historical batch replay runner balances windows by market regime", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  for (const item of [
+    snapshot("hist_005930_202501_001", "005930", "2025-01-03T09:00:00+09:00", 100),
+    snapshot("hist_005930_202501_002", "005930", "2025-01-28T09:00:00+09:00", 106),
+    snapshot("hist_005930_202502_001", "005930", "2025-02-03T09:00:00+09:00", 100),
+    snapshot("hist_005930_202502_002", "005930", "2025-02-28T09:00:00+09:00", 94),
+    snapshot("hist_005930_202503_001", "005930", "2025-03-03T09:00:00+09:00", 10_000),
+    snapshot("hist_005930_202503_002", "005930", "2025-03-28T09:00:00+09:00", 10_050)
+  ]) {
+    await snapshotStore.append(item);
+  }
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-balanced-regime",
+    seed: "seed-001",
+    runCount: 3,
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-03-31T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    windowSamplingMode: "balanced_regime",
+    targetRegimes: ["bull", "bear", "sideways"]
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+  const manifestWindowSampling = manifest["windowSampling"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(result.completedCount, 3);
+  assert.equal(manifestWindowSampling["mode"], "balanced_regime");
+  assert.deepEqual(manifestWindowSampling["activeTargetRegimes"], [
+    "bull",
+    "bear",
+    "sideways"
+  ]);
+  assert.deepEqual(
+    runRecords.map(
+      (record) =>
+        (record["windowSampling"] as Record<string, unknown>)["targetRegime"]
+    ),
+    ["bull", "bear", "sideways"]
+  );
+  assert.deepEqual(
+    runRecords.map(
+      (record) => (record["marketRegime"] as Record<string, unknown>)["label"]
+    ),
+    ["bull", "bear", "sideways"]
   );
 });
 

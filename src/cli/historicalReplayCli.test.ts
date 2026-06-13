@@ -123,7 +123,11 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "--max-snapshot-age-seconds",
       String(31 * 24 * 60 * 60),
       "--risk-profile",
-      "aggressive_paper"
+      "aggressive_paper",
+      "--window-sampling",
+      "balanced_regime",
+      "--target-regimes",
+      "insufficient_data"
     ],
     { cwd: process.cwd(), encoding: "utf8" }
   );
@@ -141,9 +145,18 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(output["status"], "completed");
   assert.equal(output["completedCount"], 1);
   assert.equal(output["riskProfile"], "aggressive_paper");
+  assert.equal(output["windowSamplingMode"], "balanced_regime");
   assert.equal(manifest["batchId"], "batch-cli");
   assert.equal(manifest["riskProfile"], "aggressive_paper");
+  assert.equal(
+    (manifest["windowSampling"] as Record<string, unknown>)["mode"],
+    "balanced_regime"
+  );
   assert.equal(runRecords[0]?.["status"], "completed");
+  assert.equal(
+    (runRecords[0]?.["windowSampling"] as Record<string, unknown>)["targetRegime"],
+    "insufficient_data"
+  );
   const runMetadata = JSON.parse(
     readFileSync(
       join(
