@@ -227,6 +227,115 @@ test("historical replay runner marks held positions to current market prices", (
   assert.equal(timelineItem?.virtualNetWorthKrw, 660_000);
 });
 
+test("historical replay runner executes paper exit policy on sampled-out provider steps", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      decisionProvider: new HoldDecisionProvider(),
+      samplingPolicy: new ReplaySamplingPolicy({ everyNSteps: 2 }),
+      paperExitPolicy: { takeProfitRatio: 0.15 }
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 0,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 10,
+            averagePriceKrw: 100,
+            marketValueKrw: 1_000,
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 100
+        }),
+        snapshot({
+          snapshotId: "hist_005930_0901",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:01:00+09:00",
+          lastPriceKrw: 120
+        })
+      ]
+    }
+  );
+
+  assert.deepEqual(
+    result.samplingDecisions.map((item) => item.shouldEvaluate),
+    [true, false]
+  );
+  assert.deepEqual(result.paperExitPolicy, { takeProfitRatio: 0.15 });
+  assert.equal(result.decisionProviderCallCount, 1);
+  assert.equal(result.decisionSkippedCount, 1);
+  assert.equal(result.decisionRecordCount, 2);
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0]?.action, "VIRTUAL_SELL");
+  assert.equal(result.finalPortfolio.cashKrw, 1_200);
+  assert.equal(result.finalPortfolio.positions.length, 0);
+  assert.equal(
+    result.auditEvents.some(
+      (event) => event.eventType === "PAPER_EXIT_POLICY_RECORDED"
+    ),
+    true
+  );
+});
+
+test("historical replay runner suppresses same-symbol provider items after filled exits", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      paperExitPolicy: { takeProfitRatio: 0.15 }
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 0,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 10,
+            averagePriceKrw: 100,
+            marketValueKrw: 1_000,
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 120
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.decisionProviderCallCount, 1);
+  assert.equal(result.decisionRecordCount, 1);
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0]?.action, "VIRTUAL_SELL");
+  assert.equal(result.finalPortfolio.cashKrw, 1_200);
+  assert.equal(result.finalPortfolio.positions.length, 0);
+  assert.equal(
+    result.auditEvents.some(
+      (event) => event.eventType === "HISTORICAL_DECISION_ITEM_SUPPRESSED"
+    ),
+    true
+  );
+});
+
 function runnerOptions(): HistoricalReplayRunnerOptions {
   return {
     clock: new SimulatedClock({

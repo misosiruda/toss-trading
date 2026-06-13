@@ -6,6 +6,7 @@ import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
+import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
 import { assessHistoricalDataAvailability } from "../replay/historicalDataAvailability.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -43,6 +44,9 @@ const VALUE_OPTION_NAMES = new Set([
   "--packet-id-prefix",
   "--packet-expires-in-seconds",
   "--risk-profile",
+  "--paper-take-profit-ratio",
+  "--paper-stop-loss-ratio",
+  "--paper-rebalance-max-position-weight-ratio",
   "--max-new-positions",
   "--max-budget-per-symbol-krw",
   "--min-window-snapshots",
@@ -116,6 +120,7 @@ const riskProfile = resolvePaperRiskProfile({
     ? {}
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
+const paperExitPolicy = readPaperExitPolicyArg();
 
 if (checkDataAvailability || requireDataAvailability) {
   const availabilityReport = await readHistoricalDataAvailabilityReport();
@@ -182,7 +187,8 @@ const result = await runHistoricalReplayWorkflow({
   ...(replayWindow === null ? {} : { windowSelection: replayWindow }),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
-  riskPolicy: riskProfile.riskPolicy
+  riskPolicy: riskProfile.riskPolicy,
+  ...(paperExitPolicy === undefined ? {} : { paperExitPolicy })
 });
 
 console.log(renderHistoricalReplayReport(result.report));
@@ -244,6 +250,22 @@ function readRequiredArgValue(name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function readPaperExitPolicyArg() {
+  const takeProfitRatio = readOptionalNumberArg("--paper-take-profit-ratio");
+  const stopLossRatio = readOptionalNumberArg("--paper-stop-loss-ratio");
+  const rebalanceMaxPositionWeightRatio = readOptionalNumberArg(
+    "--paper-rebalance-max-position-weight-ratio"
+  );
+  const normalized = normalizePaperExitPolicy({
+    ...(takeProfitRatio === undefined ? {} : { takeProfitRatio }),
+    ...(stopLossRatio === undefined ? {} : { stopLossRatio }),
+    ...(rebalanceMaxPositionWeightRatio === undefined
+      ? {}
+      : { rebalanceMaxPositionWeightRatio })
+  });
+  return normalized ?? undefined;
 }
 
 function collectPositionalArgs(values: string[]): string[] {

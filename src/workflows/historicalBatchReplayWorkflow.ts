@@ -7,6 +7,11 @@ import {
   type MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import {
+  normalizePaperExitPolicy,
+  type NormalizedPaperExitPolicy,
+  type PaperExitPolicy
+} from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
@@ -67,6 +72,7 @@ export interface BatchReplayRunnerOptions {
   constraints?: MarketPacketConstraints;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  paperExitPolicy?: PaperExitPolicy;
   windowSamplingMode?: BatchReplayWindowSamplingMode;
   targetRegimes?: MarketRegimeLabel[];
   minWindowSnapshots?: number;
@@ -130,6 +136,7 @@ export interface BatchReplayManifest {
   failedCount: number;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   riskProfile: PaperRiskProfileName | null;
+  paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
   disclaimer: string;
 }
@@ -227,6 +234,7 @@ export async function runHistoricalBatchReplay(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
   const windowSamplingMode = options.windowSamplingMode ?? "random";
+  const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
   const initialWindowSamplingSummary = initialWindowSamplingSummaryFor(
     windowSamplingMode,
     options.targetRegimes
@@ -252,6 +260,7 @@ export async function runHistoricalBatchReplay(
     failedCount: 0,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    paperExitPolicy,
     windowSampling: initialWindowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
   });
@@ -356,6 +365,9 @@ export async function runHistoricalBatchReplay(
         ...(options.riskPolicy === undefined
           ? {}
           : { riskPolicy: options.riskPolicy }),
+        ...(options.paperExitPolicy === undefined
+          ? {}
+          : { paperExitPolicy: options.paperExitPolicy }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
         runId,
         batchId,
@@ -425,6 +437,7 @@ export async function runHistoricalBatchReplay(
     failedCount,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    paperExitPolicy,
     windowSampling: windowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
   });

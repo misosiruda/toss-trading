@@ -14,6 +14,12 @@ import {
 } from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
+import {
+  buildPaperExitPolicyDecision,
+  normalizePaperExitPolicy,
+  type NormalizedPaperExitPolicy,
+  type PaperExitPolicy
+} from "../paper/exitPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import {
@@ -50,6 +56,7 @@ export interface HistoricalReplayRunnerOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  paperExitPolicy?: PaperExitPolicy;
 }
 
 export interface HistoricalReplayInput {
@@ -101,6 +108,7 @@ export interface HistoricalReplayResult {
   auditEvents: AuditEvent[];
   warnings: string[];
   samplingPolicy: ReplaySamplingPolicyMetadata | null;
+  paperExitPolicy: NormalizedPaperExitPolicy | null;
   samplingDecisions: HistoricalReplaySamplingRecord[];
   progressSummary: HistoricalReplayProgressSummary;
   initialPortfolio: VirtualPortfolio;
@@ -176,6 +184,7 @@ export function runHistoricalReplay(
   const engine = new PaperOrderEngine();
   const ticks = options.clock.ticks();
   const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
+  const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
 
   for (const tick of ticks) {
     const simulatedAt = new Date(tick.epochMs);
@@ -229,6 +238,57 @@ export function runHistoricalReplay(
       tick
     );
 
+    const exitedSymbolKeys = new Set<string>();
+    const exitDecision = buildPaperExitPolicyDecision({
+      packet,
+      portfolio: currentPortfolio,
+      policy: paperExitPolicy ?? undefined
+    });
+    if (exitDecision !== null) {
+      const recordedExitDecision = bindVirtualDecisionConfidenceBreakdown({
+        decision: exitDecision,
+        packet
+      });
+
+      decisions.push(recordedExitDecision);
+      appendAuditEvent(
+        auditEvents,
+        "PAPER_EXIT_POLICY_RECORDED",
+        `${recordedExitDecision.decisions.length} paper exit decision(s)`,
+        tick
+      );
+
+      for (const item of recordedExitDecision.decisions) {
+        const result = engine.execute({
+          packet,
+          portfolio: currentPortfolio,
+          decision: item,
+          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
+        });
+        currentPortfolio = result.portfolio;
+        riskDecisions.push(result.riskDecision);
+        appendAuditEvent(
+          auditEvents,
+          result.riskDecision.approved
+            ? "VIRTUAL_RISK_APPROVED"
+            : "VIRTUAL_RISK_REJECTED",
+          `${item.market}:${item.symbol} ${item.action}`,
+          tick
+        );
+
+        if (result.trade) {
+          exitedSymbolKeys.add(decisionItemSymbolKey(item));
+          trades.push(result.trade);
+          appendAuditEvent(
+            auditEvents,
+            "PAPER_ORDER_FILLED",
+            `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
+            tick
+          );
+        }
+      }
+    }
+
     const samplingDecision = evaluateSamplingPolicy(
       options.samplingPolicy,
       packet,
@@ -269,8 +329,33 @@ export function runHistoricalReplay(
       continue;
     }
 
-    const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+    const filteredDecision = suppressDecisionItemsForSymbols(
       decision,
+      exitedSymbolKeys
+    );
+    if (filteredDecision.suppressedCount > 0) {
+      appendAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_ITEM_SUPPRESSED",
+        `${filteredDecision.suppressedCount} provider decision item(s) suppressed after paper exit`,
+        tick
+      );
+    }
+    if (
+      filteredDecision.decision.decisions.length === 0 &&
+      decision.decisions.length > 0
+    ) {
+      currentPortfolio = markPortfolioToMarket({
+        portfolio: currentPortfolio,
+        prices: pricePoints,
+        asOf: simulatedAt
+      });
+      portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
+      continue;
+    }
+
+    const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+      decision: filteredDecision.decision,
       packet
     });
 
@@ -340,6 +425,7 @@ export function runHistoricalReplay(
     auditEvents,
     warnings,
     samplingPolicy: options.samplingPolicy?.metadata() ?? null,
+    paperExitPolicy,
     samplingDecisions,
     progressSummary: {
       totalTicks: ticks.length,
@@ -381,6 +467,36 @@ function evaluateSamplingPolicy(
     decisionCallsUsed: currentDecisionProviderCallCount + 1,
     candidateFingerprint: fingerprintMarketPacketCandidates(packet)
   };
+}
+
+function suppressDecisionItemsForSymbols(
+  decision: VirtualDecision,
+  symbolKeys: Set<string>
+): { decision: VirtualDecision; suppressedCount: number } {
+  if (symbolKeys.size === 0) {
+    return { decision, suppressedCount: 0 };
+  }
+
+  const decisions = decision.decisions.filter(
+    (item) => !symbolKeys.has(decisionItemSymbolKey(item))
+  );
+  return {
+    decision: {
+      ...decision,
+      decisions,
+      summary:
+        decisions.length === decision.decisions.length
+          ? decision.summary
+          : `${decision.summary} Provider items for exited symbols were suppressed.`
+    },
+    suppressedCount: decision.decisions.length - decisions.length
+  };
+}
+
+function decisionItemSymbolKey(
+  item: Pick<VirtualDecisionItem, "market" | "symbol">
+): string {
+  return `${item.market}:${item.symbol}`;
 }
 
 function appendAuditEvent(

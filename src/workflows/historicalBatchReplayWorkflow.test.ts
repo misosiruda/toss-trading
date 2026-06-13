@@ -67,6 +67,7 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(manifest["status"], "completed");
   assert.equal(manifest["completedCount"], 2);
   assert.equal(manifest["riskProfile"], null);
+  assert.equal(manifest["paperExitPolicy"], null);
   assert.equal(
     (manifest["windowSampling"] as Record<string, unknown>)["mode"],
     "random"
@@ -299,6 +300,11 @@ test("historical batch replay runner records selected risk profile", async () =>
       maxPositionWeightRatio: 0.65,
       minCashReserveRatio: 0.05,
       minCashReserveKrw: 0
+    },
+    paperExitPolicy: {
+      takeProfitRatio: 0.15,
+      stopLossRatio: 0.08,
+      rebalanceMaxPositionWeightRatio: 0.55
     }
   });
   const manifest = JSON.parse(
@@ -317,9 +323,21 @@ test("historical batch replay runner records selected risk profile", async () =>
   const configuration = metadata["configuration"] as Record<string, unknown>;
   const constraints = configuration["constraints"] as Record<string, unknown>;
   const riskPolicy = configuration["riskPolicy"] as Record<string, unknown>;
+  const paperExitPolicy = configuration["paperExitPolicy"] as Record<
+    string,
+    unknown
+  >;
 
   assert.equal(manifest["riskProfile"], "aggressive_paper");
+  assert.deepEqual(manifest["paperExitPolicy"], {
+    takeProfitRatio: 0.15,
+    stopLossRatio: 0.08,
+    rebalanceMaxPositionWeightRatio: 0.55
+  });
   assert.equal(configuration["riskProfile"], "aggressive_paper");
+  assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
+  assert.equal(paperExitPolicy["stopLossRatio"], 0.08);
+  assert.equal(paperExitPolicy["rebalanceMaxPositionWeightRatio"], 0.55);
   assert.equal(constraints["maxNewPositions"], 5);
   assert.equal(constraints["maxBudgetPerSymbolKrw"], 400_000);
   assert.equal(riskPolicy["maxBudgetPerDecisionKrw"], 400_000);

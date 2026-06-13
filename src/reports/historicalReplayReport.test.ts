@@ -31,6 +31,7 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.replaySummary.decisionProviderCallCount, 2);
   assert.equal(report.replaySummary.decisionSkippedCount, 1);
   assert.equal(report.tradeSummary.tradeCount, 2);
+  assert.equal(report.paperExitPolicy, null);
   assert.equal(report.portfolio.finalCashKrw, 830_000);
   assert.equal(report.portfolio.finalPositionCount, 2);
   assert.equal(report.portfolioTimeline.length, 3);
@@ -64,6 +65,7 @@ test("rendered historical replay report masks sensitive values and avoids advice
   );
 
   assert.match(rendered, /Historical Replay Paper Report/);
+  assert.match(rendered, /paper_exit_policy/);
   assert.match(rendered, /lookahead_guard_status/);
   assert.match(rendered, /Benchmarks/);
   assert.match(rendered, /equal_weight_buy_and_hold/);

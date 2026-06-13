@@ -33,6 +33,10 @@ import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import {
+  normalizePaperExitPolicy,
+  type PaperExitPolicy
+} from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 
@@ -51,6 +55,7 @@ export interface HistoricalReplayWorkflowOptions {
   constraints: MarketPacketConstraints;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  paperExitPolicy?: PaperExitPolicy;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;
@@ -89,7 +94,10 @@ export async function runHistoricalReplayWorkflow(
     maxCandidates: options.maxCandidates,
     maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
     constraints: options.constraints,
-    ...(options.riskPolicy === undefined ? {} : { riskPolicy: options.riskPolicy })
+    ...(options.riskPolicy === undefined ? {} : { riskPolicy: options.riskPolicy }),
+    ...(options.paperExitPolicy === undefined
+      ? {}
+      : { paperExitPolicy: options.paperExitPolicy })
   };
   const replayInput = {
     initialPortfolio,
@@ -222,7 +230,8 @@ function buildRunMetadataContext(
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
       constraints: options.constraints,
       riskProfile: options.riskProfile ?? null,
-      riskPolicy: serializeRiskPolicy(options.riskPolicy)
+      riskPolicy: serializeRiskPolicy(options.riskPolicy),
+      paperExitPolicy: normalizePaperExitPolicy(options.paperExitPolicy)
     }
   };
 }

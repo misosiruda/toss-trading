@@ -25,6 +25,7 @@ export interface HistoricalReplayReport {
   generatedAt: string;
   simulatedRange: HistoricalReplayRangeSummary;
   replaySummary: HistoricalReplaySummary;
+  paperExitPolicy: HistoricalReplayResult["paperExitPolicy"];
   portfolio: HistoricalReplayPortfolioSummary;
   analytics: PaperPortfolioAnalytics;
   decisionOutcome: HistoricalReplayDecisionOutcomeSummary;
@@ -114,6 +115,7 @@ export function buildHistoricalReplayReport(
       tradeCount: result.tradeCount,
       rejectedCount: result.rejectedCount
     },
+    paperExitPolicy: result.paperExitPolicy,
     portfolio: summarizePortfolio(result.initialPortfolio, result.finalPortfolio),
     analytics: buildPaperPortfolioAnalytics({
       portfolio: result.finalPortfolio,
@@ -153,6 +155,7 @@ export function renderHistoricalReplayReport(
     `decision_items: ${report.replaySummary.decisionItemCount}`,
     `trade_count: ${report.replaySummary.tradeCount}`,
     `risk_rejected_count: ${report.replaySummary.rejectedCount}`,
+    `paper_exit_policy: ${JSON.stringify(report.paperExitPolicy)}`,
     "",
     "## Final Virtual Portfolio",
     `initial_cash_krw: ${report.portfolio.initialCashKrw}`,
