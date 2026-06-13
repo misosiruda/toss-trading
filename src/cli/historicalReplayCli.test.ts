@@ -121,7 +121,9 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "--step-seconds",
       "604800",
       "--max-snapshot-age-seconds",
-      String(31 * 24 * 60 * 60)
+      String(31 * 24 * 60 * 60),
+      "--risk-profile",
+      "aggressive_paper"
     ],
     { cwd: process.cwd(), encoding: "utf8" }
   );
@@ -138,8 +140,30 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
 
   assert.equal(output["status"], "completed");
   assert.equal(output["completedCount"], 1);
+  assert.equal(output["riskProfile"], "aggressive_paper");
   assert.equal(manifest["batchId"], "batch-cli");
+  assert.equal(manifest["riskProfile"], "aggressive_paper");
   assert.equal(runRecords[0]?.["status"], "completed");
+  const runMetadata = JSON.parse(
+    readFileSync(
+      join(
+        String(runRecords[0]?.["storageBaseDir"]),
+        "historical-replay-run-metadata.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+  const runConfiguration = runMetadata["configuration"] as Record<
+    string,
+    unknown
+  >;
+  const runConstraints = runConfiguration["constraints"] as Record<
+    string,
+    unknown
+  >;
+  assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
+  assert.equal(runConstraints["maxNewPositions"], 5);
+  assert.equal(runConstraints["maxBudgetPerSymbolKrw"], 400_000);
 
   const aggregateReportPath = join(
     outputBaseDir,

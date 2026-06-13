@@ -1924,11 +1924,51 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-61: Aggressive Paper Risk Profile
+
+목표:
+
+- historical replay와 batch replay에서 명시적으로 선택 가능한 `aggressive_paper` profile을 추가합니다.
+- 기본 replay 동작은 기존 `conservative` profile로 유지합니다.
+- 선택된 profile과 정규화된 risk policy를 manifest와 run metadata에 저장해 batch 결과를 나중에 재현 가능하게 만듭니다.
+
+작업 범위:
+
+- `conservative`, `balanced`, `aggressive_paper` paper-only risk profile resolver 추가
+- historical replay CLI와 batch replay CLI의 `--risk-profile` 옵션 추가
+- `--max-new-positions`, `--max-budget-per-symbol-krw` override를 profile 기반 constraint/risk policy에 반영
+- replay runner와 Codex replay runner에 `VirtualRiskEngine` policy override 전달
+- batch manifest와 run metadata에 `riskProfile`, `riskPolicy` 저장
+- profile resolver, workflow metadata, CLI integration tests 추가
+- Historical Replay 문서와 Risk Policy 문서에 profile 표와 적용 경계 추가
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- 기본 profile이 기존 `maxNewPositions=3`, `maxBudgetPerSymbolKrw=100000` constraint를 유지함
+- `aggressive_paper`가 `maxNewPositions=5`, `maxBudgetPerSymbolKrw=400000` constraint와 paper risk policy를 생성함
+- aggressive profile에서 더 큰 paper-only buy fill이 허용되는지 검증
+- batch manifest와 run metadata에 선택 profile과 risk policy가 저장되는지 검증
+- CLI 실행 결과가 선택 profile을 stdout/metadata에 기록하는지 검증
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+- deterministic dry-run batch smoke
+
+제외:
+
+- 목표 수익률 최적화
+- 장세 균형 sampler
+- take-profit/stop-loss/rebalance 규칙
+- aggressive profile 전용 Codex prompt policy
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Next Paper Return Experiment PRs
 
 다음 PR들은 사용자가 요청한 월 15~30% 목표를 paper-only 실험으로 검증하기 위한 후속 범위입니다.
 
-- PR-61: `aggressive_paper` risk profile 추가
 - PR-62: market regime 균형 batch sampler 추가
 - PR-63: target return hit-rate aggregate report 추가
 - PR-64: paper-only take-profit/stop-loss/rebalance 규칙 추가

@@ -2,6 +2,10 @@ import "../config/loadEnv.js";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
+import {
+  parsePaperRiskProfileName,
+  resolvePaperRiskProfile
+} from "../paper/riskProfile.js";
 import { assessHistoricalDataAvailability } from "../replay/historicalDataAvailability.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -38,6 +42,7 @@ const VALUE_OPTION_NAMES = new Set([
   "--speed-multiplier",
   "--packet-id-prefix",
   "--packet-expires-in-seconds",
+  "--risk-profile",
   "--max-new-positions",
   "--max-budget-per-symbol-krw",
   "--min-window-snapshots",
@@ -98,6 +103,19 @@ const decisionFrequency =
     ? decisionFrequencyArg
     : "every_tick";
 const codexDecisionEnv = readHistoricalCodexDecisionEnv();
+const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
+const maxBudgetPerSymbolOverride = readOptionalNumberArg(
+  "--max-budget-per-symbol-krw"
+);
+const riskProfile = resolvePaperRiskProfile({
+  name: parsePaperRiskProfileName(readArgValue("--risk-profile")),
+  ...(maxNewPositionsOverride === undefined
+    ? {}
+    : { maxNewPositions: maxNewPositionsOverride }),
+  ...(maxBudgetPerSymbolOverride === undefined
+    ? {}
+    : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
+});
 
 if (checkDataAvailability || requireDataAvailability) {
   const availabilityReport = await readHistoricalDataAvailabilityReport();
@@ -162,11 +180,9 @@ const result = await runHistoricalReplayWorkflow({
   ...(batchId === undefined ? {} : { batchId }),
   ...(batchRunIndex === undefined ? {} : { batchRunIndex }),
   ...(replayWindow === null ? {} : { windowSelection: replayWindow }),
-  constraints: {
-    maxNewPositions: readNumberArg("--max-new-positions", 3),
-    maxBudgetPerSymbolKrw: readNumberArg("--max-budget-per-symbol-krw", 100_000),
-    allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-  }
+  constraints: riskProfile.constraints,
+  riskProfile: riskProfile.name,
+  riskPolicy: riskProfile.riskPolicy
 });
 
 console.log(renderHistoricalReplayReport(result.report));

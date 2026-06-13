@@ -66,6 +66,7 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(result.failedCount, 0);
   assert.equal(manifest["status"], "completed");
   assert.equal(manifest["completedCount"], 2);
+  assert.equal(manifest["riskProfile"], null);
   assert.equal(runRecords.length, 2);
   assert.equal(firstRecord["status"], "completed");
   assert.equal(
@@ -191,6 +192,69 @@ test("historical batch replay runner can inject Codex-style provider per run", a
     (runRecords[0]?.["summary"] as Record<string, unknown>)["decisionProviderCallCount"],
     1
   );
+});
+
+test("historical batch replay runner records selected risk profile", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-aggressive-profile",
+    seed: "seed-001",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    riskProfile: "aggressive_paper",
+    constraints: {
+      maxNewPositions: 5,
+      maxBudgetPerSymbolKrw: 400_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    riskPolicy: {
+      maxBudgetPerDecisionKrw: 400_000,
+      maxSymbolExposureKrw: 600_000,
+      maxPositionWeightRatio: 0.65,
+      minCashReserveRatio: 0.05,
+      minCashReserveKrw: 0
+    }
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+  const metadata = JSON.parse(
+    await readFile(
+      join(
+        String(runRecords[0]?.["storageBaseDir"]),
+        "historical-replay-run-metadata.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+  const configuration = metadata["configuration"] as Record<string, unknown>;
+  const constraints = configuration["constraints"] as Record<string, unknown>;
+  const riskPolicy = configuration["riskPolicy"] as Record<string, unknown>;
+
+  assert.equal(manifest["riskProfile"], "aggressive_paper");
+  assert.equal(configuration["riskProfile"], "aggressive_paper");
+  assert.equal(constraints["maxNewPositions"], 5);
+  assert.equal(constraints["maxBudgetPerSymbolKrw"], 400_000);
+  assert.equal(riskPolicy["maxBudgetPerDecisionKrw"], 400_000);
+  assert.equal(riskPolicy["maxSymbolExposureKrw"], 600_000);
+  assert.equal(riskPolicy["maxPositionWeightRatio"], 0.65);
+  assert.equal(riskPolicy["minCashReserveRatio"], 0.05);
 });
 
 class FakeCodexBatchProvider {

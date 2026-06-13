@@ -13,6 +13,7 @@ import {
   virtualTradeSchema
 } from "../domain/schemas.js";
 import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
+import { PAPER_RISK_PROFILE_NAMES } from "../paper/riskProfile.js";
 import { JsonlStore } from "../storage/jsonlStore.js";
 import {
   HISTORICAL_REPLAY_PROGRESS_DISCLAIMER,
@@ -97,7 +98,18 @@ export const historicalReplayRunConfigurationSchema = z
         maxBudgetPerSymbolKrw: z.number().int().nonnegative(),
         allowedActions: z.array(virtualActionSchema).min(1)
       })
+      .strict(),
+    riskProfile: z.enum(PAPER_RISK_PROFILE_NAMES).nullable(),
+    riskPolicy: z
+      .object({
+        maxBudgetPerDecisionKrw: z.number().int().nonnegative().optional(),
+        maxSymbolExposureKrw: z.number().int().nonnegative().optional(),
+        maxPositionWeightRatio: z.number().min(0).max(1).optional(),
+        minCashReserveRatio: z.number().min(0).max(1).optional(),
+        minCashReserveKrw: z.number().int().nonnegative().optional()
+      })
       .strict()
+      .nullable()
   })
   .strict();
 

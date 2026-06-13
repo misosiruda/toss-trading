@@ -6,6 +6,8 @@ import {
   type MarketRegimeClassification
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import type { PaperRiskProfileName } from "../paper/riskProfile.js";
+import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import {
   createStoragePaths,
@@ -55,6 +57,8 @@ export interface BatchReplayRunnerOptions {
   maxCandidates?: number;
   maxSnapshotAgeSeconds?: number;
   constraints?: MarketPacketConstraints;
+  riskProfile?: PaperRiskProfileName;
+  riskPolicy?: Partial<VirtualRiskPolicy>;
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
@@ -115,6 +119,7 @@ export interface BatchReplayManifest {
   skippedCount: number;
   failedCount: number;
   decisionProvider: BatchReplayDecisionProviderMetadata;
+  riskProfile: PaperRiskProfileName | null;
   disclaimer: string;
 }
 
@@ -213,6 +218,7 @@ export async function runHistoricalBatchReplay(
     skippedCount: 0,
     failedCount: 0,
     decisionProvider: decisionProviderMetadata,
+    riskProfile: options.riskProfile ?? null,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -304,6 +310,12 @@ export async function runHistoricalBatchReplay(
         maxSnapshotAgeSeconds:
           options.maxSnapshotAgeSeconds ?? DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
         constraints: options.constraints ?? DEFAULT_CONSTRAINTS,
+        ...(options.riskProfile === undefined
+          ? {}
+          : { riskProfile: options.riskProfile }),
+        ...(options.riskPolicy === undefined
+          ? {}
+          : { riskPolicy: options.riskPolicy }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
         runId,
         batchId,
@@ -370,6 +382,7 @@ export async function runHistoricalBatchReplay(
     skippedCount,
     failedCount,
     decisionProvider: decisionProviderMetadata,
+    riskProfile: options.riskProfile ?? null,
     disclaimer: batchReplayDisclaimer()
   });
 

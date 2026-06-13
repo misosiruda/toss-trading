@@ -33,6 +33,8 @@ import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import type { PaperRiskProfileName } from "../paper/riskProfile.js";
+import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
@@ -47,6 +49,8 @@ export interface HistoricalReplayWorkflowOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  riskProfile?: PaperRiskProfileName;
+  riskPolicy?: Partial<VirtualRiskPolicy>;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;
@@ -84,7 +88,8 @@ export async function runHistoricalReplayWorkflow(
     packetExpiresInSeconds: options.packetExpiresInSeconds,
     maxCandidates: options.maxCandidates,
     maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-    constraints: options.constraints
+    constraints: options.constraints,
+    ...(options.riskPolicy === undefined ? {} : { riskPolicy: options.riskPolicy })
   };
   const replayInput = {
     initialPortfolio,
@@ -215,8 +220,36 @@ function buildRunMetadataContext(
       packetExpiresInSeconds: options.packetExpiresInSeconds,
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-      constraints: options.constraints
+      constraints: options.constraints,
+      riskProfile: options.riskProfile ?? null,
+      riskPolicy: serializeRiskPolicy(options.riskPolicy)
     }
+  };
+}
+
+function serializeRiskPolicy(
+  policy: Partial<VirtualRiskPolicy> | undefined
+): HistoricalReplayRunMetadataContext["configuration"]["riskPolicy"] {
+  if (policy === undefined) {
+    return null;
+  }
+
+  return {
+    ...(policy.maxBudgetPerDecisionKrw === undefined
+      ? {}
+      : { maxBudgetPerDecisionKrw: policy.maxBudgetPerDecisionKrw }),
+    ...(policy.maxSymbolExposureKrw === undefined
+      ? {}
+      : { maxSymbolExposureKrw: policy.maxSymbolExposureKrw }),
+    ...(policy.maxPositionWeightRatio === undefined
+      ? {}
+      : { maxPositionWeightRatio: policy.maxPositionWeightRatio }),
+    ...(policy.minCashReserveRatio === undefined
+      ? {}
+      : { minCashReserveRatio: policy.minCashReserveRatio }),
+    ...(policy.minCashReserveKrw === undefined
+      ? {}
+      : { minCashReserveKrw: policy.minCashReserveKrw })
   };
 }
 
