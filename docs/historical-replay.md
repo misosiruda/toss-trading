@@ -231,8 +231,29 @@ data/batch-replay/
 - 각 run은 `seed:runIndex`를 사용해 deterministic random window를 선택합니다.
 - availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
+- `--window-sampling balanced_regime`을 사용하면 requested market regime bucket을 순환하며 window를 선택합니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
 - `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
+
+#### Market Regime Balanced Sampling
+
+기본 batch replay는 seed 기반 random month sampling을 사용합니다. 장세별 결과를 더 균형 있게 비교하려면 `balanced_regime` sampling을 명시합니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-balanced-regime-smoke --seed batch-seed-001 --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --window-sampling balanced_regime
+```
+
+동작:
+
+- 기본 target regime은 `bull,bear,sideways,mixed`입니다.
+- `--target-regimes bull,bear,sideways,mixed`처럼 target을 명시할 수 있습니다.
+- sampler는 전체 후보 month를 먼저 `marketRegime`으로 분류한 뒤, 사용 가능한 target bucket만 active target으로 둡니다.
+- run index는 active target regime을 순환합니다. 예를 들어 active target이 4개이고 run이 4개이면 각 regime이 1번씩 target이 됩니다.
+- target bucket 안의 month 선택은 seed, run index, target regime, replay range를 사용해 deterministic하게 수행합니다.
+- 선택 결과는 run record의 `windowSampling.targetRegime`, `targetCandidateCount`, `marketRegime`에 저장됩니다.
+- manifest의 `windowSampling`에는 requested/active/unavailable target regime, 전체 candidate count, bucket count가 저장됩니다.
+
+이 sampling은 분석용 window selection metadata입니다. trading signal, risk approval, order intent, strategy 자동 조정으로 사용하지 않습니다.
 
 #### Paper Risk Profile
 

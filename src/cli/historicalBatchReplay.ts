@@ -11,6 +11,7 @@ import {
   CodexHistoricalReplayDecisionProvider,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
+import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
@@ -20,6 +21,8 @@ const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
 const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
+const windowSamplingMode = readWindowSamplingModeArg();
+const targetRegimes = readTargetRegimesArg();
 const codexDecisionEnv = readHistoricalCodexDecisionEnv();
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
@@ -91,6 +94,8 @@ const result = await runHistoricalBatchReplay({
   minWindowSnapshots: readNumberArg("--min-window-snapshots", 1),
   minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
+  windowSamplingMode,
+  ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(codexDelegate === null
     ? {}
     : {
@@ -125,6 +130,7 @@ console.log(
       failedCount: result.failedCount,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
+      windowSamplingMode,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
     null,
@@ -170,6 +176,41 @@ function readDecisionFrequencyArg() {
   throw new Error(
     "--decision-frequency must be every_tick, once_per_day, or once_per_week"
   );
+}
+
+function readWindowSamplingModeArg() {
+  const value = readArgValue("--window-sampling");
+  if (
+    value === undefined ||
+    value === "random" ||
+    value === "balanced_regime"
+  ) {
+    return value ?? "random";
+  }
+  throw new Error("--window-sampling must be random or balanced_regime");
+}
+
+function readTargetRegimesArg(): MarketRegimeLabel[] | undefined {
+  const raw = readArgValue("--target-regimes");
+  if (raw === undefined || raw.trim().length === 0) {
+    return undefined;
+  }
+
+  return raw.split(",").map((value) => {
+    const label = value.trim();
+    if (
+      label === "bull" ||
+      label === "bear" ||
+      label === "sideways" ||
+      label === "mixed" ||
+      label === "insufficient_data"
+    ) {
+      return label;
+    }
+    throw new Error(
+      "--target-regimes must contain bull, bear, sideways, mixed, or insufficient_data"
+    );
+  });
 }
 
 function readArgValue(name: string): string | undefined {

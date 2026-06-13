@@ -1965,11 +1965,52 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-62: Market Regime Balanced Batch Sampler
+
+목표:
+
+- batch replay가 random month만 반복하지 않고 상승장/하락장/횡보장/혼합장 조건을 균형 있게 선택할 수 있게 합니다.
+- 기본 batch replay는 기존 `random` sampling을 유지합니다.
+- balanced sampling 결과를 manifest와 run record에 남겨 aggregate report에서 조건별 결과를 해석할 수 있게 합니다.
+
+작업 범위:
+
+- `balanced_regime` window sampling mode 추가
+- 전체 candidate month를 `MarketRegimeClassifier`로 사전 분류하는 sampler 추가
+- 기본 target regime `bull,bear,sideways,mixed` 순환 선택
+- `--window-sampling random|balanced_regime` CLI 옵션 추가
+- `--target-regimes` CLI 옵션 추가
+- batch manifest에 requested/active/unavailable target regimes와 bucket count 저장
+- run record에 target regime, target bucket size, actual market regime 저장
+- sampler unit test, workflow test, CLI integration test, safety test 업데이트
+- Historical Replay 문서와 PR review log 업데이트
+
+검증:
+
+- sampler가 available target regime을 run index 기준으로 순환 선택함
+- unavailable target regime은 active target에서 제외됨
+- requested target regime이 하나도 없으면 fail-closed 처리됨
+- batch workflow가 balanced target과 actual regime을 run JSONL에 저장함
+- CLI가 `--window-sampling balanced_regime`을 stdout/manifest/run record에 기록함
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+- 실제 2023-01~2026-05 데이터 기준 deterministic dry-run smoke
+
+제외:
+
+- 목표 수익률 hit-rate report
+- take-profit/stop-loss/rebalance 규칙
+- aggregate 결과 기반 strategy 자동 조정
+- Codex prompt policy 변경
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Next Paper Return Experiment PRs
 
 다음 PR들은 사용자가 요청한 월 15~30% 목표를 paper-only 실험으로 검증하기 위한 후속 범위입니다.
 
-- PR-62: market regime 균형 batch sampler 추가
 - PR-63: target return hit-rate aggregate report 추가
 - PR-64: paper-only take-profit/stop-loss/rebalance 규칙 추가
 - PR-65: historical universe 확대 및 coverage 검증

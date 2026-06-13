@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 
 import {
   classifyMarketRegime,
-  type MarketRegimeClassification
+  type MarketRegimeClassification,
+  type MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
@@ -19,12 +20,18 @@ import {
   type HistoricalDataAvailabilityReport,
   type HistoricalDataAvailabilitySymbolRequirement
 } from "../replay/historicalDataAvailability.js";
+import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
   selectReplayWindow,
   type ReplayWindowSelection
 } from "../replay/replayWindowSampler.js";
+import {
+  DEFAULT_BALANCED_REGIME_TARGETS,
+  selectRegimeBalancedReplayWindow,
+  type RegimeBalancedWindowSamplerPlan
+} from "../replay/regimeBalancedWindowSampler.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
 
@@ -33,6 +40,7 @@ export type BatchReplayManifestStatus =
   | "running"
   | "completed"
   | "completed_with_failures";
+export type BatchReplayWindowSamplingMode = "random" | "balanced_regime";
 
 export interface BatchReplayRunnerOptions {
   sourceDataDir: string;
@@ -59,6 +67,8 @@ export interface BatchReplayRunnerOptions {
   constraints?: MarketPacketConstraints;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  windowSamplingMode?: BatchReplayWindowSamplingMode;
+  targetRegimes?: MarketRegimeLabel[];
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
@@ -120,6 +130,7 @@ export interface BatchReplayManifest {
   failedCount: number;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   riskProfile: PaperRiskProfileName | null;
+  windowSampling: BatchReplayWindowSamplingSummary;
   disclaimer: string;
 }
 
@@ -136,6 +147,7 @@ export interface BatchReplayRunRecord {
   failedAt: string | null;
   storageBaseDir: string;
   window: ReplayWindowSelection;
+  windowSampling: BatchReplayRunWindowSampling;
   marketRegime: MarketRegimeClassification;
   dataAvailability: BatchReplayDataAvailabilitySummary;
   summary: BatchReplayRunSummary | null;
@@ -160,6 +172,22 @@ export interface BatchReplayRunSummary {
   tradeCount: number;
   decisionProviderCallCount: number;
   rejectedCount: number;
+}
+
+export interface BatchReplayWindowSamplingSummary {
+  mode: BatchReplayWindowSamplingMode;
+  requestedTargetRegimes: MarketRegimeLabel[] | null;
+  activeTargetRegimes: MarketRegimeLabel[] | null;
+  unavailableTargetRegimes: MarketRegimeLabel[] | null;
+  candidateCount: number | null;
+  bucketCounts: Record<MarketRegimeLabel, number> | null;
+}
+
+export interface BatchReplayRunWindowSampling {
+  mode: BatchReplayWindowSamplingMode;
+  targetRegime: MarketRegimeLabel | null;
+  targetCandidateCount: number | null;
+  fallbackReason: string | null;
 }
 
 interface BatchReplayPaths {
@@ -198,6 +226,11 @@ export async function runHistoricalBatchReplay(
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
+  const windowSamplingMode = options.windowSamplingMode ?? "random";
+  const initialWindowSamplingSummary = initialWindowSamplingSummaryFor(
+    windowSamplingMode,
+    options.targetRegimes
+  );
   const records: BatchReplayRunRecord[] = [];
 
   await mkdir(paths.runsDir, { recursive: true });
@@ -219,19 +252,23 @@ export async function runHistoricalBatchReplay(
     failedCount: 0,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    windowSampling: initialWindowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
   });
 
+  let windowSamplingSummary = initialWindowSamplingSummary;
+
   for (let runIndex = 0; runIndex < options.runCount; runIndex += 1) {
     const runSeed = `${seed}:${runIndex}`;
-    const window = selectReplayWindow({
-      rangeStart: options.rangeStart,
-      rangeEnd: options.rangeEnd,
-      seed: runSeed,
-      windowMonths: options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
-      timezoneOffsetMinutes:
-        options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+    const windowSelection = selectBatchReplayWindow({
+      options,
+      snapshots: snapshotRead.records,
+      runIndex,
+      runSeed,
+      windowSamplingMode
     });
+    windowSamplingSummary = windowSelection.summary;
+    const window = windowSelection.window;
     const runId = batchReplayRunId(batchId, runIndex, window);
     const storageBaseDir = join(paths.runsDir, runId);
     const runStartedAt = dateForRun(startedAt, runIndex);
@@ -247,11 +284,13 @@ export async function runHistoricalBatchReplay(
         options.minSnapshotsPerRequiredSymbol ?? 1,
       requiredSymbols: options.requiredSymbols ?? []
     });
-    const marketRegime = classifyMarketRegime({
-      snapshots: snapshotRead.records,
-      windowStart,
-      windowEnd
-    });
+    const marketRegime =
+      windowSelection.marketRegime ??
+      classifyMarketRegime({
+        snapshots: snapshotRead.records,
+        windowStart,
+        windowEnd
+      });
 
     if (availability.status !== "available") {
       const skipped = runRecord({
@@ -263,6 +302,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        windowSampling: windowSelection.runWindowSampling,
         marketRegime,
         availability,
         skipReason: "DATA_INSUFFICIENT"
@@ -331,6 +371,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        windowSampling: windowSelection.runWindowSampling,
         marketRegime,
         availability,
         reportPath: result.reportPath,
@@ -348,6 +389,7 @@ export async function runHistoricalBatchReplay(
         runStartedAt,
         storageBaseDir,
         window,
+        windowSampling: windowSelection.runWindowSampling,
         marketRegime,
         availability,
         error: error instanceof Error ? error.message : String(error)
@@ -383,6 +425,7 @@ export async function runHistoricalBatchReplay(
     failedCount,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    windowSampling: windowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -401,6 +444,96 @@ export async function runHistoricalBatchReplay(
   };
 }
 
+interface SelectedBatchReplayWindow {
+  window: ReplayWindowSelection;
+  runWindowSampling: BatchReplayRunWindowSampling;
+  summary: BatchReplayWindowSamplingSummary;
+  marketRegime?: MarketRegimeClassification;
+}
+
+function selectBatchReplayWindow(input: {
+  options: BatchReplayRunnerOptions;
+  snapshots: HistoricalMarketSnapshot[];
+  runIndex: number;
+  runSeed: string;
+  windowSamplingMode: BatchReplayWindowSamplingMode;
+}): SelectedBatchReplayWindow {
+  if (input.windowSamplingMode === "balanced_regime") {
+    const selected = selectRegimeBalancedReplayWindow({
+      snapshots: input.snapshots,
+      rangeStart: input.options.rangeStart,
+      rangeEnd: input.options.rangeEnd,
+      seed: input.runSeed,
+      runIndex: input.runIndex,
+      windowMonths: input.options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
+      timezoneOffsetMinutes:
+        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
+      targetRegimes:
+        input.options.targetRegimes ?? DEFAULT_BALANCED_REGIME_TARGETS
+    });
+
+    return {
+      window: selected.window,
+      runWindowSampling: {
+        mode: "balanced_regime",
+        targetRegime: selected.targetRegime,
+        targetCandidateCount: selected.targetCandidateCount,
+        fallbackReason: null
+      },
+      summary: windowSamplingSummaryFromPlan(selected.plan),
+      marketRegime: selected.marketRegime
+    };
+  }
+
+  return {
+    window: selectReplayWindow({
+      rangeStart: input.options.rangeStart,
+      rangeEnd: input.options.rangeEnd,
+      seed: input.runSeed,
+      windowMonths: input.options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
+      timezoneOffsetMinutes:
+        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+    }),
+    runWindowSampling: {
+      mode: "random",
+      targetRegime: null,
+      targetCandidateCount: null,
+      fallbackReason: null
+    },
+    summary: initialWindowSamplingSummaryFor("random")
+  };
+}
+
+function initialWindowSamplingSummaryFor(
+  mode: BatchReplayWindowSamplingMode,
+  targetRegimes?: MarketRegimeLabel[]
+): BatchReplayWindowSamplingSummary {
+  return {
+    mode,
+    requestedTargetRegimes:
+      mode === "balanced_regime"
+        ? targetRegimes ?? DEFAULT_BALANCED_REGIME_TARGETS
+        : null,
+    activeTargetRegimes: null,
+    unavailableTargetRegimes: null,
+    candidateCount: null,
+    bucketCounts: null
+  };
+}
+
+function windowSamplingSummaryFromPlan(
+  plan: RegimeBalancedWindowSamplerPlan
+): BatchReplayWindowSamplingSummary {
+  return {
+    mode: plan.mode,
+    requestedTargetRegimes: plan.requestedTargetRegimes,
+    activeTargetRegimes: plan.activeTargetRegimes,
+    unavailableTargetRegimes: plan.unavailableTargetRegimes,
+    candidateCount: plan.candidateCount,
+    bucketCounts: plan.bucketCounts
+  };
+}
+
 function runRecord(input: {
   batchId: string;
   runId: string;
@@ -410,6 +543,7 @@ function runRecord(input: {
   runStartedAt: Date;
   storageBaseDir: string;
   window: ReplayWindowSelection;
+  windowSampling: BatchReplayRunWindowSampling;
   marketRegime: MarketRegimeClassification;
   availability: HistoricalDataAvailabilityReport;
   reportPath?: string;
@@ -431,6 +565,7 @@ function runRecord(input: {
     failedAt: input.status === "failed" ? terminalAt : null,
     storageBaseDir: input.storageBaseDir,
     window: input.window,
+    windowSampling: input.windowSampling,
     marketRegime: input.marketRegime,
     dataAvailability: summarizeAvailability(input.availability),
     summary: input.summary ?? null,

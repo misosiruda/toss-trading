@@ -78,6 +78,7 @@ test("historical replay core avoids current wall-clock APIs", async () => {
 test("batch replay analysis keeps live execution surfaces out of source files", async () => {
   const sourcePaths = [
     "src/workflows/historicalBatchReplayWorkflow.ts",
+    "src/replay/regimeBalancedWindowSampler.ts",
     "src/reports/batchReplayReport.ts",
     "src/cli/historicalBatchReplay.ts",
     "src/cli/historicalBatchReport.ts",

@@ -1724,3 +1724,34 @@
 - `src/paper/riskProfile.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/workflows/historicalReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`는 profile default, aggressive fill, metadata 저장, CLI integration을 검증합니다.
 - `docs/historical-replay.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
+
+## PR-62: Market Regime Balanced Batch Sampler
+
+### Review 1: Scope and Safety
+
+- 범위는 batch replay window selection mode에 `balanced_regime`을 추가하는 데 한정합니다.
+- 기본 batch replay는 기존 `random` sampling을 유지하며, balanced sampling은 `--window-sampling balanced_regime`을 명시할 때만 적용됩니다.
+- sampler는 저장된 historical snapshot과 기존 `MarketRegimeClassifier`만 사용해 후보 month를 분류합니다.
+- target regime은 window 선택 metadata이며 trading signal, risk approval, order intent, strategy 자동 조정으로 사용하지 않습니다.
+- Codex prompt policy, 목표 수익률 hit-rate report, take-profit/stop-loss/rebalance 규칙, live trading 연결은 포함하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- targeted test로 `node --test dist/replay/regimeBalancedWindowSampler.test.js dist/workflows/historicalBatchReplayWorkflow.test.js` 8개 통과를 확인했습니다.
+- targeted test로 `node --test dist/cli/historicalReplayCli.test.js dist/replay/historicalReplaySafety.test.js dist/reports/batchReplayReport.test.js` 11개 통과를 확인했습니다.
+- `npm test`로 전체 test suite 254개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- deterministic dry-run batch smoke `batch-balanced-regime-smoke-20260613-001`가 completed 4, skipped 0, failed 0으로 완료되는지 확인했습니다.
+- smoke manifest에서 requested target `bull,bear,sideways,mixed`, active target `bull,bear,sideways,mixed`, bucket count `bull=19`, `bear=10`, `sideways=2`, `mixed=10`, `insufficient_data=0`을 확인했습니다.
+- smoke run records에서 run target/actual regime/month가 `bull/bull/2025-10`, `bear/bear/2024-01`, `sideways/sideways/2024-04`, `mixed/mixed/2025-05`로 저장되는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/regimeBalancedWindowSampler.ts`를 추가해 전체 candidate month를 사전 분류하고 active target regime을 순환 선택합니다.
+- `src/workflows/historicalBatchReplayWorkflow.ts`는 `windowSamplingMode`, `targetRegimes` option을 받아 random 또는 balanced window selection을 수행합니다.
+- batch manifest에는 `windowSampling` summary를 저장하고, run record에는 `windowSampling.targetRegime`, `targetCandidateCount`, actual `marketRegime`을 함께 저장합니다.
+- `src/cli/historicalBatchReplay.ts`는 `--window-sampling random|balanced_regime`과 `--target-regimes`를 파싱하고 stdout에 선택 mode를 출력합니다.
+- `src/replay/regimeBalancedWindowSampler.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`, `src/reports/batchReplayReport.test.ts`는 sampler, workflow, CLI, aggregate fixture contract를 검증합니다.
+- `src/replay/historicalReplaySafety.test.ts`는 신규 sampler source file을 금지 실행 표면 정적 검사 대상에 포함했습니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 balanced sampling 사용법, 저장 metadata, 제외 범위를 문서화했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.

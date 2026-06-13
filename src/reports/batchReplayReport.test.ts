@@ -117,6 +117,12 @@ function record(
       startAt: "2024-12-31T15:00:00.000Z",
       endAt: "2025-01-31T14:59:59.999Z"
     },
+    windowSampling: {
+      mode: "random",
+      targetRegime: null,
+      targetCandidateCount: null,
+      fallbackReason: null
+    },
     marketRegime: marketRegime(regime),
     dataAvailability: {
       status: status === "skipped" ? "insufficient" : "available",
