@@ -303,6 +303,31 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 이 정책은 paper-only replay 실험용입니다. live `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않으며 수익률 목표 달성이나 실계좌 성과를 보장하지 않습니다.
 
+#### Historical Universe Coverage
+
+확장 universe는 `docs/historical-universe.kr-expanded.json`에 저장합니다.
+
+- `required=true`: 현재 core replay dataset에 반드시 있어야 하는 symbol입니다.
+- `required=false`: 더 넓은 실험을 위한 expansion target입니다.
+- 기본 coverage status는 required symbol만 기준으로 판단합니다.
+- optional symbol까지 강제하려면 `--require-optional-symbols` 또는 batch replay의 `--require-optional-universe-symbols`를 사용합니다.
+
+coverage report 생성:
+
+```powershell
+npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-yahoo-daily --universe-path docs/historical-universe.kr-expanded.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --output-path data/replay-2023-01-2026-05-yahoo-daily/historical-universe-coverage.json
+```
+
+JSON 출력이 필요하면 `--json`을 추가합니다.
+
+batch replay에서 universe required symbol을 availability check에 반영:
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-universe-coverage-smoke --seed batch-seed-001 --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --universe-path docs/historical-universe.kr-expanded.json
+```
+
+이 검증은 저장된 `historical-market-snapshots.jsonl`만 읽습니다. 외부 데이터 수집, broker API 호출, replay 결과 최적화, 주문 생성은 수행하지 않습니다.
+
 #### Batch Replay에서 Codex CLI AI 사용
 
 실제 Codex CLI paper-only provider를 batch replay에서 사용하려면 명시 옵션과 환경 변수가 모두 필요합니다.

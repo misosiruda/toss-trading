@@ -1,5 +1,7 @@
 import "../config/loadEnv.js";
 
+import { readFileSync } from "node:fs";
+
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
 import {
@@ -8,6 +10,10 @@ import {
 } from "../paper/riskProfile.js";
 import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
 import type { Market } from "../domain/schemas.js";
+import {
+  parseHistoricalUniverseManifest,
+  requiredSymbolsFromHistoricalUniverse
+} from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
   withHistoricalReplayPrompt
@@ -258,16 +264,48 @@ function readPaperExitPolicyArg() {
 function readRequiredSymbols():
   | Array<{ market: Market; symbol: string }>
   | undefined {
-  const raw = readArgValue("--required-symbols");
-  if (raw === undefined || raw.trim().length === 0) {
-    return undefined;
+  const values: Array<{ market: Market; symbol: string }> = [];
+  const universePath = readArgValue("--universe-path");
+  if (universePath !== undefined) {
+    const universe = parseHistoricalUniverseManifest(
+      JSON.parse(readFileSync(universePath, "utf8"))
+    );
+    values.push(
+      ...requiredSymbolsFromHistoricalUniverse(universe, {
+        includeOptional: args.includes("--require-optional-universe-symbols")
+      })
+    );
   }
 
-  return raw.split(",").map((value) => {
-    const [market, symbol] = value.split(":");
-    if ((market !== "KR" && market !== "US") || !symbol) {
-      throw new Error("--required-symbols must use MARKET:SYMBOL entries");
-    }
-    return { market, symbol };
+  const raw = readArgValue("--required-symbols");
+  if (raw !== undefined && raw.trim().length > 0) {
+    values.push(
+      ...raw.split(",").map((value) => {
+        const [market, symbol] = value.split(":");
+        const parsedMarket: Market | undefined =
+          market === "KR" ? "KR" : market === "US" ? "US" : undefined;
+        if (parsedMarket === undefined || !symbol) {
+          throw new Error("--required-symbols must use MARKET:SYMBOL entries");
+        }
+        return { market: parsedMarket, symbol };
+      })
+    );
+  }
+
+  return values.length === 0 ? undefined : dedupeSymbols(values);
+}
+
+function dedupeSymbols(
+  values: Array<{ market: Market; symbol: string }>
+): Array<{ market: Market; symbol: string }> {
+  const byKey = new Map<string, { market: Market; symbol: string }>();
+  for (const value of values) {
+    byKey.set(`${value.market}:${value.symbol}`, value);
+  }
+  return Array.from(byKey.values()).sort((left, right) => {
+    const marketDiff = left.market.localeCompare(right.market);
+    return marketDiff === 0
+      ? left.symbol.localeCompare(right.symbol)
+      : marketDiff;
   });
 }

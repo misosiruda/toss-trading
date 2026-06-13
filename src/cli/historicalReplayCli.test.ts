@@ -246,6 +246,120 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   );
 });
 
+test("historical universe coverage CLI writes a JSON coverage report", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-universe-source-"));
+  const outputPath = join(dataDir, "historical-universe-coverage.json");
+  const universePath = join(dataDir, "universe.json");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    [
+      JSON.stringify(snapshot("hist_005930_202501", "005930")),
+      JSON.stringify(snapshot("hist_000660_202501", "000660"))
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalUniverseCoverage.js"),
+      "--data-dir",
+      dataDir,
+      "--universe-path",
+      universePath,
+      "--range-start",
+      "2025-02-01T00:00:00+09:00",
+      "--range-end",
+      "2025-02-28T23:59:59.999+09:00",
+      "--min-monthly-coverage-ratio",
+      "1",
+      "--output-path",
+      outputPath,
+      "--json"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const stdoutReport = JSON.parse(result.stdout) as Record<string, unknown>;
+  const storedReport = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(stdoutReport["status"], "available");
+  assert.equal(storedReport["universeId"], "fixture-expanded");
+  assert.deepEqual(storedReport["missingOptionalSymbols"], [
+    { market: "KR", symbol: "035420" }
+  ]);
+});
+
+test("historical batch replay CLI can enforce optional universe symbols", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-universe-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-universe-output-")
+  );
+  const universePath = join(sourceDataDir, "universe.json");
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    [
+      JSON.stringify(snapshot("hist_005930_202501", "005930")),
+      JSON.stringify(snapshot("hist_000660_202501", "000660"))
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-universe-cli",
+      "--seed",
+      "seed-001",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60),
+      "--universe-path",
+      universePath,
+      "--require-optional-universe-symbols"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  assert.equal(output["completedCount"], 0);
+  assert.equal(output["skippedCount"], 1);
+  assert.equal(runRecords[0]?.["skipReason"], "DATA_INSUFFICIENT");
+  assert.deepEqual(
+    (runRecords[0]?.["dataAvailability"] as Record<string, unknown>)["issues"],
+    ["REQUIRED_SYMBOL_MISSING"]
+  );
+});
+
 test("historical batch replay CLI requires explicit AI enable for Codex AI", () => {
   const result = spawnSync(
     process.execPath,
@@ -310,5 +424,18 @@ function snapshot(
     volume: 100_000,
     sourceRefs: [`fixture:${snapshotId}`],
     createdAt: observedAt
+  };
+}
+
+function universe() {
+  return {
+    mode: "paper_only_historical_universe",
+    universeId: "fixture-expanded",
+    symbols: [
+      { market: "KR", symbol: "005930", required: true },
+      { market: "KR", symbol: "000660", required: true },
+      { market: "KR", symbol: "035420", required: false }
+    ],
+    disclaimer: "Paper-only fixture."
   };
 }

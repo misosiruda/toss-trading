@@ -1784,3 +1784,62 @@
 - `src/cli/historicalReplayCli.test.ts`는 aggregate report CLI가 custom threshold를 JSON report에 저장하는지 검증합니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 CLI 사용법, metric 의미, 제외 범위를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
+
+## PR-64: Paper Exit Policy Replay
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay와 batch replay의 paper-only exit policy에 한정합니다.
+- take-profit, stop-loss, rebalance rule은 deterministic `VirtualDecision`만 생성합니다.
+- exit decision은 기존 `VirtualRiskEngine`과 `PaperOrderEngine` 경로만 통과합니다.
+- exit rule은 AI/provider call count에 포함하지 않고, decision/risk/trade log에는 기록합니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- targeted test로 `node --test dist/paper/exitPolicy.test.js dist/replay/historicalReplayRunner.test.js dist/replay/codexHistoricalReplayRunner.test.js dist/workflows/historicalReplayWorkflow.test.js dist/workflows/historicalBatchReplayWorkflow.test.js dist/cli/historicalReplayCli.test.js dist/reports/historicalReplayReport.test.js dist/reports/historicalReplayBenchmark.test.js` 33개 통과를 확인했습니다.
+- `npm test`로 전체 test suite 264개 통과를 확인했습니다.
+- `git diff --check`와 `git diff --cached --check`로 whitespace error가 없음을 확인했습니다.
+- deterministic dry-run batch smoke `batch-exit-policy-smoke-20260613-001`가 completed 2, skipped 0, failed 0으로 완료되는지 확인했습니다.
+- smoke 첫 run에서 `paper_exit_policy_v1` decision record 1개와 `VIRTUAL_SELL` trade 1개가 생성되는지 확인했습니다.
+- manifest, run metadata, historical report에 `paperExitPolicy`가 저장되는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/exitPolicy.ts`는 policy 정규화와 exit decision 생성을 담당합니다.
+- `src/replay/historicalReplayRunner.ts`와 `src/replay/codexHistoricalReplayRunner.ts`는 packet 생성 직후 exit policy를 실행하고, 체결 종목의 provider item을 suppress합니다.
+- `src/replay/historicalReplayAuditLog.ts`는 같은 packet의 exit/provider decision을 모두 남길 수 있도록 decision hash 기준 중복 제거로 변경했습니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 paper exit policy CLI 옵션을 받습니다.
+- `src/workflows/historicalReplayWorkflow.ts`, `src/workflows/historicalBatchReplayWorkflow.ts`, `src/reports/historicalReplayReport.ts`는 policy metadata를 저장/출력합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 사용법, metadata, 제외 범위를 문서화했습니다.
+- PR #28로 merge 완료했습니다.
+
+## PR-65: Historical Universe Coverage
+
+### Review 1: Scope and Safety
+
+- 범위는 paper-only historical universe manifest와 저장 snapshot coverage 검증에 한정합니다.
+- `docs/historical-universe.kr-expanded.json`은 core required symbol과 optional expansion target을 분리합니다.
+- coverage CLI는 저장된 `historical-market-snapshots.jsonl`만 읽고 외부 데이터 수집, broker API 호출, replay 실행, 주문 생성을 수행하지 않습니다.
+- batch replay의 `--universe-path`는 availability check의 required symbol 입력으로만 사용합니다.
+- optional expansion symbol은 기본 status를 깨지 않고 gap으로 기록하며, `--require-optional-symbols` 또는 `--require-optional-universe-symbols`를 명시할 때만 fail-closed 대상이 됩니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/replay/historicalUniverseCoverage.test.js dist/cli/historicalReplayCli.test.js dist/replay/historicalReplaySafety.test.js`: pass, 15 tests.
+- `npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-yahoo-daily --universe-path docs/historical-universe.kr-expanded.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --output-path data/replay-2023-01-2026-05-yahoo-daily/historical-universe-coverage.json --json`: pass.
+- coverage smoke 결과는 `status=available`, `availableRequiredSymbolCount=6`, `missingRequiredSymbols=[]`, `missingOptionalSymbols=7`, `corruptLineCount=0`입니다.
+- `npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-universe-coverage-smoke-20260613-001 --seed batch-seed-universe-001 --runs 2 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --universe-path docs/historical-universe.kr-expanded.json --risk-profile aggressive_paper`: pass, `completedCount=2`, `skippedCount=0`, `failedCount=0`.
+- `npm test`: pass, 271 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+
+### Review 3: Diff and Integration
+
+- `src/replay/historicalUniverseCoverage.ts`는 manifest parsing, required symbol extraction, monthly coverage report를 계산합니다.
+- `src/cli/historicalUniverseCoverage.ts`는 coverage report CLI와 optional JSON/output file 작성을 제공합니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 `--universe-path`로 manifest required symbol을 availability check에 반영합니다.
+- `package.json`은 `historical:universe:coverage` script를 추가합니다.
+- `src/replay/historicalReplaySafety.test.ts`는 신규 coverage source와 CLI를 live execution surface 정적 검사 대상에 포함합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 coverage 사용법, PR-65 범위, 제외 범위를 문서화합니다.

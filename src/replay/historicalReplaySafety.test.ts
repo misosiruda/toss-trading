@@ -79,9 +79,11 @@ test("batch replay analysis keeps live execution surfaces out of source files", 
   const sourcePaths = [
     "src/workflows/historicalBatchReplayWorkflow.ts",
     "src/replay/regimeBalancedWindowSampler.ts",
+    "src/replay/historicalUniverseCoverage.ts",
     "src/reports/batchReplayReport.ts",
     "src/cli/historicalBatchReplay.ts",
     "src/cli/historicalBatchReport.ts",
+    "src/cli/historicalUniverseCoverage.ts",
     "src/api/localOperationsServer.ts",
     "dashboard/app.js",
     "dashboard/index.html"

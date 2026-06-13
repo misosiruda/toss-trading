@@ -1,0 +1,125 @@
+{
+  "mode": "paper_only_historical_universe",
+  "universeId": "kr-paper-expanded-v1",
+  "description": "Paper-only KR historical replay universe. Core symbols match the current local dataset; optional symbols define the expansion target for broader replay experiments.",
+  "symbols": [
+    {
+      "market": "KR",
+      "symbol": "000660",
+      "sourceSymbol": "000660.KS",
+      "name": "SK Hynix",
+      "segment": "core",
+      "required": true,
+      "tags": ["semiconductor", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "005930",
+      "sourceSymbol": "005930.KS",
+      "name": "Samsung Electronics",
+      "segment": "core",
+      "required": true,
+      "tags": ["semiconductor", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "028300",
+      "sourceSymbol": "028300.KS",
+      "name": "Alteogen",
+      "segment": "core",
+      "required": true,
+      "tags": ["bio", "growth"]
+    },
+    {
+      "market": "KR",
+      "symbol": "035420",
+      "sourceSymbol": "035420.KS",
+      "name": "NAVER",
+      "segment": "core",
+      "required": true,
+      "tags": ["internet", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "035900",
+      "sourceSymbol": "035900.KS",
+      "name": "JYP Entertainment",
+      "segment": "core",
+      "required": true,
+      "tags": ["entertainment", "growth"]
+    },
+    {
+      "market": "KR",
+      "symbol": "042660",
+      "sourceSymbol": "042660.KS",
+      "name": "Hanwha Ocean",
+      "segment": "core",
+      "required": true,
+      "tags": ["shipbuilding", "cyclical"]
+    },
+    {
+      "market": "KR",
+      "symbol": "006400",
+      "sourceSymbol": "006400.KS",
+      "name": "Samsung SDI",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["battery", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "051910",
+      "sourceSymbol": "051910.KS",
+      "name": "LG Chem",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["battery", "chemical"]
+    },
+    {
+      "market": "KR",
+      "symbol": "068270",
+      "sourceSymbol": "068270.KS",
+      "name": "Celltrion",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["bio", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "086520",
+      "sourceSymbol": "086520.KQ",
+      "name": "Ecopro",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["battery", "growth"]
+    },
+    {
+      "market": "KR",
+      "symbol": "207940",
+      "sourceSymbol": "207940.KS",
+      "name": "Samsung Biologics",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["bio", "large_cap"]
+    },
+    {
+      "market": "KR",
+      "symbol": "247540",
+      "sourceSymbol": "247540.KQ",
+      "name": "Ecopro BM",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["battery", "growth"]
+    },
+    {
+      "market": "KR",
+      "symbol": "373220",
+      "sourceSymbol": "373220.KS",
+      "name": "LG Energy Solution",
+      "segment": "expanded",
+      "required": false,
+      "tags": ["battery", "large_cap"]
+    }
+  ],
+  "disclaimer": "Paper-only replay universe. Symbols are experiment inputs, not investment advice, not a performance guarantee, and not live trading recommendations."
+}
