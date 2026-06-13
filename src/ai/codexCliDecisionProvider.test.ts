@@ -161,7 +161,7 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetHash":"sha256:/);
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
-    /"promptVersion":"paper-v10"/
+    new RegExp(`"promptVersion":"${PAPER_DECISION_PROMPT_VERSION}"`)
   );
   assert.match(
     runner.calls[0]?.options.stdin ?? "",
@@ -176,11 +176,15 @@ test("paper decision prompt requires paper-only guarded output", () => {
 
   assert.match(prompt, /paper-only trading analyst/);
   assert.match(prompt, /packetHash, promptVersion, modelId/);
+  assert.match(prompt, /top-level packetId exactly/);
   assert.match(prompt, /top-level packetHash exactly/);
   assert.match(prompt, /policyVersion exactly/);
-  assert.match(prompt, /Return only a virtual_decision JSON object/);
+  assert.match(prompt, /directly matches the virtual decision schema/);
+  assert.match(prompt, /Do not wrap it in a virtual_decision key/);
   assert.match(prompt, /do not call tossctl/);
   assert.match(prompt, /Do not run shell commands/);
+  assert.match(prompt, /return at least one decision item/);
+  assert.match(prompt, /empty decisions array only when/);
   assert.match(prompt, /Prefer VIRTUAL_HOLD/);
   assert.match(prompt, /Use candidate score and reasonCodes/);
   assert.match(prompt, /buyEligible, sellEligible/);
@@ -189,7 +193,6 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /Do not propose VIRTUAL_BUY when buyEligible is false/);
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
-  assert.match(prompt, /featureRefs copied from that same candidate/);
   assert.match(prompt, /claimSupport entries/);
   assert.match(prompt, /claimSupport dataRef/);
   assert.match(prompt, /include holdReasonCode/);
@@ -208,30 +211,26 @@ test("virtual decision output schema artifact constrains actions", async () => {
       decisions?: {
         required?: string[];
         items?: {
-          additionalProperties?: boolean;
-          allOf?: unknown[];
-          required?: string[];
-          properties?: {
-            action?: { enum?: string[] };
-            holdReasonCode?: { enum?: string[] };
-            featureRefs?: { type?: string; items?: { type?: string } };
-            claimSupport?: {
-              type?: string;
-              minItems?: number;
-              items?: {
-                additionalProperties?: boolean;
-                required?: string[];
-                anyOf?: unknown[];
-                properties?: {
-                  claim?: { type?: string };
-                  dataRefs?: { type?: string; minItems?: number };
-                  featureRefs?: { type?: string; minItems?: number };
+          anyOf?: Array<{
+            additionalProperties?: boolean;
+            required?: string[];
+            properties?: {
+              action?: { enum?: string[] };
+              holdReasonCode?: { enum?: string[] };
+              claimSupport?: {
+                type?: string;
+                items?: {
+                  additionalProperties?: boolean;
+                  required?: string[];
+                  properties?: {
+                    claim?: { type?: string };
+                    dataRefs?: { type?: string };
+                  };
                 };
               };
+              reduceOnly?: { type?: string };
             };
-            sellRatio?: { maximum?: number };
-            reduceOnly?: { type?: string };
-          };
+          }>;
         };
       };
     };
@@ -239,6 +238,7 @@ test("virtual decision output schema artifact constrains actions", async () => {
 
   assert.equal(schema.additionalProperties, false);
   assert.equal(schema.properties?.decisions?.required, undefined);
+  assert.deepEqual(unsupportedSchemaKeywords(JSON.parse(raw)), []);
   assert.equal(
     (schema as { required?: string[] }).required?.includes("packetHash"),
     true
@@ -259,18 +259,38 @@ test("virtual decision output schema artifact constrains actions", async () => {
     (schema as { required?: string[] }).required?.includes("policyVersion"),
     true
   );
-  assert.equal(schema.properties?.decisions?.items?.additionalProperties, false);
-  assert.equal(
-    schema.properties?.decisions?.items?.required?.includes("claimSupport"),
-    true
-  );
-  assert.deepEqual(schema.properties?.decisions?.items?.properties?.action?.enum, [
-    "VIRTUAL_BUY",
-    "VIRTUAL_SELL",
-    "VIRTUAL_HOLD"
-  ]);
+  const branches = schema.properties?.decisions?.items?.anyOf ?? [];
+  assert.equal(branches.length, 3);
+  for (const branch of branches) {
+    assert.equal(branch.additionalProperties, false);
+    assert.equal(branch.required?.includes("claimSupport"), true);
+    assert.equal(branch.properties?.claimSupport?.type, "array");
+    assert.equal(
+      branch.properties?.claimSupport?.items?.additionalProperties,
+      false
+    );
+    assert.deepEqual(branch.properties?.claimSupport?.items?.required, [
+      "claim",
+      "dataRefs"
+    ]);
+    assert.equal(
+      "confidenceBreakdown" in (branch.properties ?? {}),
+      false
+    );
+    assert.equal("featureRefs" in (branch.properties ?? {}), false);
+  }
   assert.deepEqual(
-    schema.properties?.decisions?.items?.properties?.holdReasonCode?.enum,
+    branches.map((branch) => branch.properties?.action?.enum?.[0]).sort(),
+    ["VIRTUAL_BUY", "VIRTUAL_HOLD", "VIRTUAL_SELL"]
+  );
+  const holdBranch = branches.find(
+    (branch) => branch.properties?.action?.enum?.[0] === "VIRTUAL_HOLD"
+  );
+  const sellBranch = branches.find(
+    (branch) => branch.properties?.action?.enum?.[0] === "VIRTUAL_SELL"
+  );
+  assert.deepEqual(
+    holdBranch?.properties?.holdReasonCode?.enum,
     [
       "INSUFFICIENT_EVIDENCE",
       "STALE_DATA",
@@ -282,52 +302,45 @@ test("virtual decision output schema artifact constrains actions", async () => {
       "LOW_LIQUIDITY"
     ]
   );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.sellRatio?.maximum,
-    1
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.reduceOnly?.type,
-    "boolean"
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.featureRefs?.type,
-    "array"
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.featureRefs?.items?.type,
-    "string"
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.claimSupport?.type,
-    "array"
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.claimSupport?.minItems,
-    1
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.claimSupport?.items
-      ?.additionalProperties,
-    false
-  );
-  assert.deepEqual(
-    schema.properties?.decisions?.items?.properties?.claimSupport?.items
-      ?.required,
-    ["claim"]
-  );
-  assert.equal(
-    schema.properties?.decisions?.items?.properties?.claimSupport?.items?.anyOf
-      ?.length,
-    2
-  );
-  assert.equal(
-    "confidenceBreakdown" in
-      (schema.properties?.decisions?.items?.properties ?? {}),
-    false
-  );
-  assert.equal(schema.properties?.decisions?.items?.allOf?.length, 3);
+  assert.equal(sellBranch?.properties?.reduceOnly?.type, "boolean");
 });
+
+function unsupportedSchemaKeywords(value: unknown, path = "$"): string[] {
+  const unsupported = new Set([
+    "allOf",
+    "oneOf",
+    "if",
+    "then",
+    "else",
+    "const",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "format",
+    "minItems",
+    "maxItems",
+    "default"
+  ]);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      unsupportedSchemaKeywords(item, `${path}[${index}]`)
+    );
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+
+  return Object.entries(value).flatMap(([key, child]) => [
+    ...(unsupported.has(key) ? [`${path}.${key}`] : []),
+    ...unsupportedSchemaKeywords(child, `${path}.${key}`)
+  ]);
+}
 
 test("timeout is reported as AI_DECISION_FAILED", async () => {
   const runner = new FakeRunner({

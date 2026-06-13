@@ -16,269 +16,265 @@
   ],
   "properties": {
     "packetId": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "packetHash": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$"
+      "type": "string"
     },
     "promptVersion": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "modelId": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "schemaVersion": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "policyVersion": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "summary": {
-      "type": "string",
-      "minLength": 1
+      "type": "string"
     },
     "decisions": {
       "type": "array",
-      "maxItems": 20,
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "allOf": [
+        "anyOf": [
           {
-            "if": {
-              "required": ["action"],
-              "properties": {
-                "action": {
-                  "const": "VIRTUAL_HOLD"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "holdReasonCode",
+              "confidence",
+              "budgetKrw",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_HOLD"]
+              },
+              "holdReasonCode": {
+                "type": "string",
+                "enum": [
+                  "INSUFFICIENT_EVIDENCE",
+                  "STALE_DATA",
+                  "CONTRADICTORY_SIGNALS",
+                  "POLICY_BLOCKED",
+                  "PORTFOLIO_CONFLICT",
+                  "NO_POSITION_TO_SELL",
+                  "NOT_IN_CANDIDATES",
+                  "LOW_LIQUIDITY"
+                ]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 }
-              }
-            },
-            "then": {
-              "required": ["holdReasonCode"],
-              "properties": {
-                "budgetKrw": {
-                  "const": 0
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
               }
             }
           },
           {
-            "if": {
-              "required": ["action"],
-              "properties": {
-                "action": {
-                  "const": "VIRTUAL_SELL"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_BUY"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
               }
-            },
-            "then": {
-              "anyOf": [
-                {
-                  "properties": {
-                    "budgetKrw": {
-                      "exclusiveMinimum": 0
-                    }
-                  }
-                },
-                {
-                  "required": ["sellQuantity"]
-                },
-                {
-                  "required": ["sellRatio"]
-                },
-                {
-                  "required": ["targetWeightPct"]
-                },
-                {
-                  "required": ["sellAll"],
-                  "properties": {
-                    "sellAll": {
-                      "const": true
-                    }
-                  }
-                }
-              ]
             }
           },
           {
-            "if": {
-              "anyOf": [
-                {
-                  "required": ["sellQuantity"]
-                },
-                {
-                  "required": ["sellRatio"]
-                },
-                {
-                  "required": ["targetWeightPct"]
-                },
-                {
-                  "required": ["sellAll"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "reduceOnly",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_SELL"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "reduceOnly": {
+                "type": "boolean"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs"],
                   "properties": {
-                    "sellAll": {
-                      "const": true
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   }
                 }
-              ]
-            },
-            "then": {
-              "required": ["reduceOnly"],
-              "properties": {
-                "reduceOnly": {
-                  "const": true
-                }
+              },
+              "expiresAt": {
+                "type": "string"
               }
             }
           }
-        ],
-        "required": [
-          "symbol",
-          "market",
-          "action",
-          "confidence",
-          "budgetKrw",
-          "thesis",
-          "riskFactors",
-          "dataRefs",
-          "claimSupport",
-          "expiresAt"
-        ],
-        "properties": {
-          "symbol": {
-            "type": "string",
-            "minLength": 1
-          },
-          "market": {
-            "type": "string",
-            "enum": ["KR", "US"]
-          },
-          "action": {
-            "type": "string",
-            "enum": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-          },
-          "holdReasonCode": {
-            "type": "string",
-            "enum": [
-              "INSUFFICIENT_EVIDENCE",
-              "STALE_DATA",
-              "CONTRADICTORY_SIGNALS",
-              "POLICY_BLOCKED",
-              "PORTFOLIO_CONFLICT",
-              "NO_POSITION_TO_SELL",
-              "NOT_IN_CANDIDATES",
-              "LOW_LIQUIDITY"
-            ]
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "budgetKrw": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "maxBudgetKrw": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "sellQuantity": {
-            "type": "number",
-            "exclusiveMinimum": 0
-          },
-          "sellRatio": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "maximum": 1
-          },
-          "targetWeightPct": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "sellAll": {
-            "type": "boolean"
-          },
-          "reduceOnly": {
-            "type": "boolean"
-          },
-          "thesis": {
-            "type": "string",
-            "minLength": 1
-          },
-          "riskFactors": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "dataRefs": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "featureRefs": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "claimSupport": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["claim"],
-              "anyOf": [
-                {
-                  "required": ["dataRefs"]
-                },
-                {
-                  "required": ["featureRefs"]
-                }
-              ],
-              "properties": {
-                "claim": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "dataRefs": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "featureRefs": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            }
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
+        ]
       }
     }
   }

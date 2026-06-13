@@ -1889,7 +1889,51 @@
 
 다음 PR들은 paper-only batch replay 분석을 위한 후속 범위입니다.
 
-- 현재 계획된 paper-only batch replay PR 범위는 PR-59까지입니다.
+## PR-60: Codex Structured Output Replay Fix
+
+목표:
+
+- 실제 Codex CLI batch replay가 `VirtualDecision` 구조화 출력 스키마를 사용해 decision/trade 로그를 남기도록 수정합니다.
+- historical replay CLI와 batch replay CLI의 Codex 환경 변수 이름을 기존 paper CLI 설정과 호환되게 정리합니다.
+- AI decision prompt가 output schema에 맞는 최상위 JSON object를 반환하도록 요구합니다.
+
+작업 범위:
+
+- Codex structured output에서 거부되는 JSON Schema keyword 제거
+- action별 branch schema로 `VIRTUAL_BUY`, `VIRTUAL_HOLD`, `VIRTUAL_SELL` output contract 정리
+- `paper-v11` prompt로 packet identity, direct schema output, non-empty candidate decision 요구 반영
+- historical replay/batch replay CLI에 `AI_DECISION_*` 우선 및 `CODEX_*` fallback env resolver 추가
+- env resolver, prompt, output schema artifact tests 추가/수정
+- Historical Replay 문서와 PR review log에 설정/검토 기록 추가
+
+검증:
+
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+- 실제 Codex CLI 1회 smoke batch
+- 실제 Codex CLI 10회 historical batch replay
+- batch aggregate report 생성
+
+제외:
+
+- aggressive risk profile
+- 목표 수익률 최적화
+- 장세 균형 sampler
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
+## Next Paper Return Experiment PRs
+
+다음 PR들은 사용자가 요청한 월 15~30% 목표를 paper-only 실험으로 검증하기 위한 후속 범위입니다.
+
+- PR-61: `aggressive_paper` risk profile 추가
+- PR-62: market regime 균형 batch sampler 추가
+- PR-63: target return hit-rate aggregate report 추가
+- PR-64: paper-only take-profit/stop-loss/rebalance 규칙 추가
+- PR-65: historical universe 확대 및 coverage 검증
+- PR-66: aggressive profile용 Codex prompt policy 분리
 
 ## Later PRs
 

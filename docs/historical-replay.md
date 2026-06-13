@@ -120,7 +120,12 @@ AI_DECISION_ENABLED=true
 CODEX_EXEC_PATH=codex
 CODEX_EXEC_SANDBOX=read-only
 CODEX_EXEC_TIMEOUT_SECONDS=300
+CODEX_OUTPUT_SCHEMA_PATH=schemas/virtual-decision.schema.json
+CODEX_DECISION_MAX_RUNS_PER_DAY=5
+CODEX_DECISION_ALLOW_WEB_SEARCH=false
 ```
+
+Historical replay CLI는 기존 paper CLI와 같은 `CODEX_*` 설정명을 fallback으로 읽습니다. 같은 목적의 `AI_DECISION_*` 값이 함께 있으면 `AI_DECISION_OUTPUT_SCHEMA_PATH`, `AI_DECISION_MAX_RUNS_PER_DAY`, `CODEX_ALLOW_WEB_SEARCH`가 우선됩니다.
 
 ```powershell
 npm run historical:replay -- data/paper 2025-01-02T09:00:00+09:00 2025-01-02T15:30:00+09:00 60 5
@@ -239,6 +244,7 @@ CODEX_EXEC_PATH=codex
 CODEX_EXEC_TIMEOUT_SECONDS=300
 AI_DECISION_MAX_RUNS_PER_DAY=50
 CODEX_ALLOW_WEB_SEARCH=false
+CODEX_OUTPUT_SCHEMA_PATH=schemas/virtual-decision.schema.json
 ```
 
 권장 첫 실행은 10개 random month, run당 최대 5회 판단, 주간 판단입니다.
@@ -249,10 +255,11 @@ npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir data/repl
 
 - `--use-codex-ai`가 없으면 Codex CLI를 호출하지 않습니다.
 - `--use-codex-ai`는 `AI_DECISION_ENABLED=true`가 아니면 fail-fast 됩니다.
-- batch 전체 daily budget은 `AI_DECISION_MAX_RUNS_PER_DAY`로 제한합니다.
+- batch 전체 daily budget은 `AI_DECISION_MAX_RUNS_PER_DAY`로 제한합니다. 값이 없으면 기존 paper CLI 호환 설정인 `CODEX_DECISION_MAX_RUNS_PER_DAY`를 사용합니다.
 - 각 run의 Codex call cap은 `--max-codex-calls-per-run`으로 제한합니다.
 - replay sampling call cap은 `--max-decision-calls`로 제한합니다.
 - Codex CLI는 `read-only` sandbox로 호출됩니다.
+- Codex output schema는 `AI_DECISION_OUTPUT_SCHEMA_PATH` 또는 fallback `CODEX_OUTPUT_SCHEMA_PATH`로 전달됩니다.
 - provider 실패, timeout, packet mismatch는 paper order 없이 audit/progress log에 실패로 기록됩니다.
 - Codex output은 `VirtualDecision`으로만 처리되며 live `TradingSignal` 또는 `OrderIntent`로 연결하지 않습니다.
 - 모든 가상 매수/매도는 기존 `VirtualRiskEngine`과 `PaperOrderEngine` 경로만 통과합니다.
