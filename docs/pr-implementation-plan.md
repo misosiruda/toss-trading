@@ -2007,11 +2007,49 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-63: Target Return Hit-rate Aggregate Report
+
+목표:
+
+- batch aggregate report가 완료된 paper return sample 중 target return threshold 이상을 달성한 비율을 계산합니다.
+- 사용자가 월 15%, 30% 같은 목표 조건을 paper-only 사후 분석 지표로 확인할 수 있게 합니다.
+- 기본 threshold는 `0.15`, `0.30`으로 두고 CLI에서 명시 threshold를 받을 수 있게 합니다.
+
+작업 범위:
+
+- aggregate report option에 `targetReturnThresholds` 추가
+- 전체 및 regime별 `targetReturnHitRates` 계산
+- threshold별 sample count, hit count, hit rate, hit run ID 저장
+- historical batch report CLI에 `--target-return-thresholds` 옵션 추가
+- markdown render에 target return hit-rate 출력
+- report/CLI tests 업데이트
+- Historical Replay 문서와 PR review log 업데이트
+
+검증:
+
+- 기본 threshold `[0.15, 0.30]`이 report에 저장됨
+- custom threshold가 정렬/중복 제거되어 저장됨
+- 전체 및 regime별 hit count/hit rate가 return sample 기준으로 계산됨
+- skipped/failed/null-return run은 sample에서 제외됨
+- CLI가 `--target-return-thresholds`를 JSON report와 markdown output에 반영함
+- `npm test`
+- `git diff --check`
+- deterministic aggregate report smoke
+
+제외:
+
+- 목표 수익률 최적화
+- strategy 자동 조정
+- take-profit/stop-loss/rebalance 규칙
+- Codex prompt policy 변경
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Next Paper Return Experiment PRs
 
 다음 PR들은 사용자가 요청한 월 15~30% 목표를 paper-only 실험으로 검증하기 위한 후속 범위입니다.
 
-- PR-63: target return hit-rate aggregate report 추가
 - PR-64: paper-only take-profit/stop-loss/rebalance 규칙 추가
 - PR-65: historical universe 확대 및 coverage 검증
 - PR-66: aggressive profile용 Codex prompt policy 분리

@@ -6,6 +6,7 @@ export interface BatchReplayAggregateReportOptions {
   generatedAt: Date;
   sourceRunsPath?: string;
   title?: string;
+  targetReturnThresholds?: number[];
 }
 
 export interface BatchReplayAggregateReport {
@@ -13,6 +14,7 @@ export interface BatchReplayAggregateReport {
   mode: "paper_only";
   generatedAt: string;
   sourceRunsPath: string | null;
+  targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
@@ -40,6 +42,7 @@ export interface BatchReplayGroupSummary {
   minTotalReturnRatio: number | null;
   maxTotalReturnRatio: number | null;
   winRate: number | null;
+  targetReturnHitRates: TargetReturnHitRate[];
   averageFinalVirtualNetWorthKrw: number | null;
   totalTradeCount: number;
   averageTradeCount: number | null;
@@ -47,14 +50,27 @@ export interface BatchReplayGroupSummary {
   runIds: string[];
 }
 
+export interface TargetReturnHitRate {
+  threshold: number;
+  sampleCount: number;
+  hitCount: number;
+  hitRate: number | null;
+  runIds: string[];
+}
+
+const DEFAULT_TARGET_RETURN_THRESHOLDS = [0.15, 0.3];
+
 export function buildBatchReplayAggregateReport(
   options: BatchReplayAggregateReportOptions
 ): BatchReplayAggregateReport {
   const records = [...options.records].sort(compareRunRecords);
+  const targetReturnThresholds = normalizeTargetReturnThresholds(
+    options.targetReturnThresholds
+  );
   const byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>> = {};
 
   for (const [label, groupRecords] of groupByRegime(records).entries()) {
-    byRegime[label] = summarizeGroup(label, groupRecords);
+    byRegime[label] = summarizeGroup(label, groupRecords, targetReturnThresholds);
   }
 
   return {
@@ -62,6 +78,7 @@ export function buildBatchReplayAggregateReport(
     mode: "paper_only",
     generatedAt: options.generatedAt.toISOString(),
     sourceRunsPath: options.sourceRunsPath ?? null,
+    targetReturnThresholds,
     summary: {
       runCount: records.length,
       completedCount: records.filter((record) => record.status === "completed")
@@ -72,7 +89,7 @@ export function buildBatchReplayAggregateReport(
       returnSampleCount: records.filter(hasReturnSample).length,
       regimeCounts: countRegimes(records)
     },
-    overall: summarizeGroup("overall", records),
+    overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
     disclaimer: batchAggregateDisclaimer()
   };
@@ -87,6 +104,7 @@ export function renderBatchReplayAggregateReport(
     `mode: ${report.mode}`,
     `generated_at: ${report.generatedAt}`,
     `source_runs_path: ${report.sourceRunsPath ?? "null"}`,
+    `target_return_thresholds: ${JSON.stringify(report.targetReturnThresholds)}`,
     "",
     "## Summary",
     `run_count: ${report.summary.runCount}`,
@@ -114,7 +132,8 @@ export function renderBatchReplayAggregateReport(
 
 function summarizeGroup(
   key: string,
-  records: BatchReplayRunRecord[]
+  records: BatchReplayRunRecord[],
+  targetReturnThresholds: number[]
 ): BatchReplayGroupSummary {
   const completed = records.filter((record) => record.status === "completed");
   const returnSamples = completed.filter(hasReturnSample);
@@ -144,6 +163,9 @@ function summarizeGroup(
       returns.length === 0
         ? null
         : roundRatio(returns.filter((value) => value > 0).length / returns.length),
+    targetReturnHitRates: targetReturnThresholds.map((threshold) =>
+      targetReturnHitRate(threshold, returnSamples)
+    ),
     averageFinalVirtualNetWorthKrw:
       finalNetWorthValues.length === 0
         ? null
@@ -153,6 +175,25 @@ function summarizeGroup(
       tradeCounts.length === 0 ? null : roundRatio(average(tradeCounts)),
     totalRejectedCount: rejectedCounts.reduce((sum, value) => sum + value, 0),
     runIds: records.map((record) => record.runId)
+  };
+}
+
+function targetReturnHitRate(
+  threshold: number,
+  returnSamples: BatchReplayRunRecord[]
+): TargetReturnHitRate {
+  const hitRecords = returnSamples.filter(
+    (record) => record.summary!.totalReturnRatio! >= threshold
+  );
+  return {
+    threshold,
+    sampleCount: returnSamples.length,
+    hitCount: hitRecords.length,
+    hitRate:
+      returnSamples.length === 0
+        ? null
+        : roundRatio(hitRecords.length / returnSamples.length),
+    runIds: hitRecords.map((record) => record.runId)
   };
 }
 
@@ -211,8 +252,23 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `average_total_return_ratio: ${formatNullable(group.averageTotalReturnRatio)}`,
     `median_total_return_ratio: ${formatNullable(group.medianTotalReturnRatio)}`,
     `win_rate: ${formatNullable(group.winRate)}`,
+    `target_return_hit_rates: ${JSON.stringify(group.targetReturnHitRates)}`,
     `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`
   ].join("\n");
+}
+
+function normalizeTargetReturnThresholds(values: number[] | undefined): number[] {
+  const rawValues = values ?? DEFAULT_TARGET_RETURN_THRESHOLDS;
+  if (rawValues.length === 0) {
+    throw new Error("targetReturnThresholds must not be empty");
+  }
+  const normalized = rawValues.map((value) => {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error("targetReturnThresholds must be non-negative numbers");
+    }
+    return roundRatio(value);
+  });
+  return Array.from(new Set(normalized)).sort((left, right) => left - right);
 }
 
 function average(values: number[]): number {

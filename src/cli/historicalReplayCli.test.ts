@@ -190,7 +190,9 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "--runs-path",
       String(output["runsPath"]),
       "--output-path",
-      aggregateReportPath
+      aggregateReportPath,
+      "--target-return-thresholds",
+      "0.02,0.05"
     ],
     { cwd: process.cwd(), encoding: "utf8" }
   );
@@ -204,6 +206,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   const summary = aggregateReport["summary"] as Record<string, unknown>;
 
   assert.equal(aggregateReport["mode"], "paper_only");
+  assert.deepEqual(aggregateReport["targetReturnThresholds"], [0.02, 0.05]);
   assert.equal(summary["runCount"], 1);
   assert.equal(summary["completedCount"], 1);
   assert.equal(output["decisionProvider"], "deterministic_fixture");

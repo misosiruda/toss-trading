@@ -329,19 +329,26 @@ batch replay가 생성한 `batch-replay-runs.jsonl`을 읽어 전체 및 market 
 npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-001/batch-replay-runs.jsonl --output-path data/batch-replay/batch-smoke-001/batch-replay-aggregate-report.json
 ```
 
+목표 수익률 threshold별 hit-rate를 함께 계산하려면 ratio 값을 comma-separated로 전달합니다.
+
+```powershell
+npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-001/batch-replay-runs.jsonl --output-path data/batch-replay/batch-smoke-001/batch-replay-aggregate-report.json --target-return-thresholds "0.15,0.30"
+```
+
 집계 report는 다음 정보를 포함합니다.
 
 - 전체 run 수, completed/skipped/failed count
 - return sample이 있는 completed run 수
 - 전체 및 regime별 평균/중앙값/min/max paper return ratio
 - 전체 및 regime별 win rate
+- 전체 및 regime별 target return threshold hit-rate
 - final virtual net worth 평균
 - trade/rejected count 요약
 - 집계에 포함된 run ID 목록
 
 이 report는 이미 완료된 paper-only batch run record를 읽는 사후 분석 도구입니다. replay 실행, Codex CLI AI 호출, 외부 데이터 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
 
-집계된 수익률은 paper-only 시뮬레이션 결과를 요약한 값입니다. 투자 조언, 수익률 보장, 실계좌 성과, live trading signal로 해석하면 안 됩니다.
+집계된 수익률과 target return hit-rate는 paper-only 시뮬레이션 결과를 요약한 값입니다. 투자 조언, 수익률 보장, 실계좌 성과, live trading signal로 해석하면 안 됩니다.
 
 Dashboard는 `--data-dir`로 지정된 directory의 `batch-replay-aggregate-report.json`을 `/batch/replay/report`에서 read-only로 조회합니다. batch output directory를 dashboard data dir로 지정하면 반복 리플레이 요약과 장세별 결과를 확인할 수 있습니다.
 
