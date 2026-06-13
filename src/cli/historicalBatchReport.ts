@@ -13,11 +13,15 @@ import type {
 const args = process.argv.slice(2);
 const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
+const targetReturnThresholds = readOptionalNumberListArg(
+  "--target-return-thresholds"
+);
 const records = await readBatchReplayRunRecords(runsPath);
 const report = buildBatchReplayAggregateReport({
   records,
   generatedAt: new Date(),
-  sourceRunsPath: runsPath
+  sourceRunsPath: runsPath,
+  ...(targetReturnThresholds === undefined ? {} : { targetReturnThresholds })
 });
 
 if (outputPath !== undefined) {
@@ -109,4 +113,19 @@ function readRequiredArgValue(name: string): string {
     throw new Error(`${name} is required`);
   }
   return value;
+}
+
+function readOptionalNumberListArg(name: string): number[] | undefined {
+  const raw = readArgValue(name);
+  if (raw === undefined || raw.trim().length === 0) {
+    return undefined;
+  }
+
+  return raw.split(",").map((value) => {
+    const parsed = Number(value.trim());
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`${name} must contain non-negative numbers`);
+    }
+    return parsed;
+  });
 }

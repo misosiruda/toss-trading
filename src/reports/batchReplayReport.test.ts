@@ -31,6 +31,7 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.summary.skippedCount, 1);
   assert.equal(report.summary.failedCount, 1);
   assert.equal(report.summary.returnSampleCount, 3);
+  assert.deepEqual(report.targetReturnThresholds, [0.15, 0.3]);
   assert.deepEqual(report.summary.regimeCounts, {
     bull: 2,
     bear: 1,
@@ -40,10 +41,64 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
+  assert.deepEqual(report.overall.targetReturnHitRates, [
+    {
+      threshold: 0.15,
+      sampleCount: 3,
+      hitCount: 0,
+      hitRate: 0,
+      runIds: []
+    },
+    {
+      threshold: 0.3,
+      sampleCount: 3,
+      hitCount: 0,
+      hitRate: 0,
+      runIds: []
+    }
+  ]);
   assert.equal(report.byRegime.bull?.completedCount, 2);
   assert.equal(report.byRegime.bull?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.bear?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.insufficient_data?.returnSampleCount, 0);
+});
+
+test("batch replay aggregate report calculates target return hit rates", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    targetReturnThresholds: [0.05, 0.02],
+    records: [
+      record("run_0", 0, "completed", "bull", 0.05, 1_050_000),
+      record("run_1", 1, "completed", "bear", 0.02, 1_020_000),
+      record("run_2", 2, "completed", "sideways", -0.01, 990_000),
+      record("run_3", 3, "skipped", "insufficient_data", null, null)
+    ]
+  });
+
+  assert.deepEqual(report.targetReturnThresholds, [0.02, 0.05]);
+  assert.deepEqual(report.overall.targetReturnHitRates, [
+    {
+      threshold: 0.02,
+      sampleCount: 3,
+      hitCount: 2,
+      hitRate: 0.666667,
+      runIds: ["run_0", "run_1"]
+    },
+    {
+      threshold: 0.05,
+      sampleCount: 3,
+      hitCount: 1,
+      hitRate: 0.333333,
+      runIds: ["run_0"]
+    }
+  ]);
+  assert.deepEqual(report.byRegime.bull?.targetReturnHitRates[0], {
+    threshold: 0.02,
+    sampleCount: 1,
+    hitCount: 1,
+    hitRate: 1,
+    runIds: ["run_0"]
+  });
 });
 
 test("batch replay aggregate report renders paper-only disclaimer", () => {
@@ -55,6 +110,7 @@ test("batch replay aggregate report renders paper-only disclaimer", () => {
 
   assert.match(rendered, /Batch Replay Paper Aggregate Report/);
   assert.match(rendered, /paper-only/);
+  assert.match(rendered, /target_return_hit_rates/);
   assert.doesNotMatch(rendered, /live order/i);
 });
 

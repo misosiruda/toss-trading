@@ -1755,3 +1755,32 @@
 - `src/replay/historicalReplaySafety.test.ts`는 신규 sampler source file을 금지 실행 표면 정적 검사 대상에 포함했습니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 balanced sampling 사용법, 저장 metadata, 제외 범위를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
+
+## PR-63: Target Return Hit-rate Aggregate Report
+
+### Review 1: Scope and Safety
+
+- 범위는 완료된 batch replay run record를 읽는 aggregate report에 target return hit-rate를 추가하는 데 한정합니다.
+- hit-rate는 `completed` run 중 `totalReturnRatio` sample이 있는 record만 대상으로 계산합니다.
+- 기본 threshold는 `0.15`, `0.30`이며 CLI에서 `--target-return-thresholds`로 명시 threshold를 전달할 수 있습니다.
+- 이 지표는 paper-only 사후 분석 결과이며 투자 조언, 성과 보장, live trading signal로 사용하지 않습니다.
+- replay 실행, Codex AI 호출, strategy 자동 조정, take-profit/stop-loss/rebalance 규칙은 포함하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- targeted test로 `node --test dist/reports/batchReplayReport.test.js` 4개 통과를 확인했습니다.
+- targeted test로 `node --test dist/cli/historicalReplayCli.test.js` 5개 통과를 확인했습니다.
+- `npm test`로 전체 test suite 255개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- deterministic aggregate report smoke에서 `--target-return-thresholds "0.02,0.05,0.15,0.30"`이 JSON report와 markdown output에 반영되는지 확인했습니다.
+- smoke report에서 overall hit-rate가 `0.02=2/4/0.5`, `0.05=1/4/0.25`, `0.15=1/4/0.25`, `0.30=0/4/0`으로 계산되는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/reports/batchReplayReport.ts`는 report option에 `targetReturnThresholds`를 추가하고 전체/regime별 `targetReturnHitRates`를 계산합니다.
+- `targetReturnHitRates`는 threshold, sample count, hit count, hit rate, hit run ID를 포함합니다.
+- `src/cli/historicalBatchReport.ts`는 `--target-return-thresholds`를 comma-separated ratio list로 파싱합니다.
+- `src/reports/batchReplayReport.test.ts`는 기본 threshold, custom threshold, skipped/failed/null-return 제외, markdown render를 검증합니다.
+- `src/cli/historicalReplayCli.test.ts`는 aggregate report CLI가 custom threshold를 JSON report에 저장하는지 검증합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 CLI 사용법, metric 의미, 제외 범위를 문서화했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
