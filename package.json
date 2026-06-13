@@ -18,6 +18,7 @@
     "historical:batch:report": "npm run build && node dist/cli/historicalBatchReport.js",
     "historical:batch:replay": "npm run build && node dist/cli/historicalBatchReplay.js",
     "historical:batch:replay:dry": "npm run build && node dist/cli/historicalBatchReplay.js",
+    "historical:universe:coverage": "npm run build && node dist/cli/historicalUniverseCoverage.js",
     "historical:replay": "npm run build && node dist/cli/historicalReplay.js",
     "historical:replay:dry": "npm run build && node dist/cli/historicalReplay.js --dry-run",
     "paper:run-from-market-packet": "npm run build && node dist/cli/paperRunFromMarketPacket.js",

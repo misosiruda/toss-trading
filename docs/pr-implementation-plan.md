@@ -2050,8 +2050,68 @@
 
 다음 PR들은 사용자가 요청한 월 15~30% 목표를 paper-only 실험으로 검증하기 위한 후속 범위입니다.
 
-- PR-64: paper-only take-profit/stop-loss/rebalance 규칙 추가
-- PR-65: historical universe 확대 및 coverage 검증
+## PR-64: Paper Exit Policy Replay
+
+목표:
+
+- historical replay와 batch replay에서 paper-only take-profit/stop-loss/rebalance 규칙을 실험할 수 있게 합니다.
+- exit rule은 AI/provider 판단 횟수와 분리하되, decision/risk/trade log에는 남깁니다.
+
+완료:
+
+- `PaperExitPolicy` 순수 모듈 추가
+- replay runner와 Codex replay runner에 exit decision 실행 연결
+- CLI 옵션 `--paper-take-profit-ratio`, `--paper-stop-loss-ratio`, `--paper-rebalance-max-position-weight-ratio` 추가
+- run metadata, batch manifest, historical report에 `paperExitPolicy` 기록
+- PR review log에 3단계 검토 기록 추가
+- PR #28로 merge 완료
+
+제외:
+
+- live trading 연결
+- 수익률 보장 또는 strategy 자동 조정
+- historical universe 확대
+- Codex prompt policy 변경
+
+## PR-65: Historical Universe Coverage
+
+목표:
+
+- broader paper replay 실험을 위한 KR historical universe manifest를 추가합니다.
+- 현재 core dataset과 확장 target의 월별 coverage를 검증하는 CLI를 제공합니다.
+- batch replay availability check에 universe required symbol을 연결합니다.
+
+작업 범위:
+
+- `docs/historical-universe.kr-expanded.json` 추가
+- `HistoricalUniverseCoverage` report 계산
+- `historical:universe:coverage` CLI 추가
+- single/batch replay CLI의 `--universe-path` 입력 지원
+- optional expansion symbol 강제 옵션 추가
+- coverage/CLI/safety tests 업데이트
+- Historical Replay 문서와 PR review log 업데이트
+
+검증:
+
+- required core symbol coverage가 충분하면 report status가 `available`
+- optional symbol gap은 status를 깨지 않고 별도 필드로 기록
+- optional symbol 강제 시 fail-closed
+- batch replay CLI가 universe manifest를 availability required symbol로 반영
+- `npm test`
+- `git diff --check`
+- 실제 2023-01~2026-05 데이터 기준 coverage smoke
+
+제외:
+
+- historical raw data 파일 commit
+- 외부 데이터 수집 자동화
+- replay 결과 기반 universe 자동 선택
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
+## Remaining Paper Return Experiment PRs
+
 - PR-66: aggressive profile용 Codex prompt policy 분리
 
 ## Later PRs
