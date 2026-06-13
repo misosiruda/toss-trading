@@ -1843,3 +1843,32 @@
 - `package.json`은 `historical:universe:coverage` script를 추가합니다.
 - `src/replay/historicalReplaySafety.test.ts`는 신규 coverage source와 CLI를 live execution surface 정적 검사 대상에 포함합니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 coverage 사용법, PR-65 범위, 제외 범위를 문서화합니다.
+
+## PR-66: Aggressive Codex Prompt Policy
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay의 Codex CLI paper-only prompt policy 분리에 한정합니다.
+- `conservative`, `balanced` profile은 기존 default historical prompt와 version을 유지합니다.
+- `aggressive_paper` profile만 별도 prompt policy와 prompt version을 사용합니다.
+- aggressive prompt는 더 넓은 paper-only risk envelope을 인지시키되, 월 15~30% 수익률 목표를 쫓기 위한 trade 강제를 금지합니다.
+- prompt policy는 Codex output을 `VirtualDecision`으로만 제한하며 기존 `VirtualRiskEngine`과 `PaperOrderEngine` 경로를 우회하지 않습니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/replay/codexHistoricalDecisionProvider.test.js dist/workflows/historicalBatchReplayWorkflow.test.js dist/cli/historicalReplayCli.test.js dist/replay/historicalReplaySafety.test.js`: pass, 22 tests.
+- `npm test`: pass, 273 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- 실제 Codex CLI 호출 smoke는 실행하지 않았습니다. 이번 PR은 prompt resolver, CLI wiring, manifest metadata를 unit/integration test로 검증하고 live/cost-dependent provider 실행은 범위에서 제외합니다.
+
+### Review 3: Diff and Integration
+
+- `src/replay/codexHistoricalDecisionProvider.ts`는 `HistoricalReplayPromptPolicy` resolver와 `aggressive_paper` prompt/version을 추가합니다.
+- `withHistoricalReplayPrompt`는 risk profile option을 받아 default 또는 aggressive policy를 주입합니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 선택된 `riskProfile.name`을 prompt policy 선택에 전달합니다.
+- `src/workflows/historicalBatchReplayWorkflow.ts`는 batch manifest의 decision provider metadata에 nullable `promptPolicy`, `promptVersion`을 추가합니다.
+- `src/replay/codexHistoricalDecisionProvider.test.ts`는 default/balanced policy 유지와 aggressive prompt guard 문구를 검증합니다.
+- `src/workflows/historicalBatchReplayWorkflow.test.ts`는 Codex-style provider metadata에 aggressive prompt policy/version이 기록되는지 검증합니다.
+- `docs/historical-replay.md`, `docs/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.

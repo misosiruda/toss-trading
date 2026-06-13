@@ -16,6 +16,7 @@ import {
 } from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
+  resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
@@ -45,6 +46,9 @@ const riskProfile = resolvePaperRiskProfile({
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
 const paperExitPolicy = readPaperExitPolicyArg();
+const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
+  riskProfile: riskProfile.name
+});
 
 if (useCodexAi && (process.env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
   throw new Error("AI_DECISION_MODE must be paper_only for batch replay Codex AI");
@@ -63,17 +67,21 @@ if (
 
 const codexDelegate = useCodexAi
   ? new CodexCliDecisionProvider(
-      withHistoricalReplayPrompt({
-        enabled: true,
-        codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-        sandbox: "read-only",
-        timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-        maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
-        allowWebSearch: codexDecisionEnv.allowWebSearch,
-        ...(codexDecisionEnv.outputSchemaPath === undefined
-          ? {}
-          : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
-      })
+      withHistoricalReplayPrompt(
+        {
+          enabled: true,
+          codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
+          sandbox: "read-only",
+          timeoutMs:
+            Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
+          maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
+          allowWebSearch: codexDecisionEnv.allowWebSearch,
+          ...(codexDecisionEnv.outputSchemaPath === undefined
+            ? {}
+            : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
+        },
+        { riskProfile: riskProfile.name }
+      )
     )
   : null;
 
@@ -116,7 +124,9 @@ const result = await runHistoricalBatchReplay({
           mode: "codex_cli" as const,
           maxCallsPerRun: maxCodexCallsPerRun,
           sandbox: "read-only" as const,
-          allowWebSearch: codexDecisionEnv.allowWebSearch
+          allowWebSearch: codexDecisionEnv.allowWebSearch,
+          promptPolicy: historicalPromptPolicy.name,
+          promptVersion: historicalPromptPolicy.promptVersion
         }
       }),
   constraints: riskProfile.constraints,

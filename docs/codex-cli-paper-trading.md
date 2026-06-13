@@ -429,6 +429,15 @@ prompt는 단순하고 엄격해야 합니다.
 - non-hold decision에는 risk factor를 포함합니다.
 - candidate eligibility field가 action을 막고 있으면 해당 action을 제안하지 않습니다.
 
+Historical replay에서 `--risk-profile aggressive_paper`를 사용하는 경우에는 별도 prompt policy를 사용합니다. 이 policy는 더 넓은 paper-only constraint를 Codex가 인지하도록 돕지만, 다음 경계는 유지합니다.
+
+- live trading에는 적용하지 않습니다.
+- 목표 수익률 달성을 위해 trade를 강제하지 않습니다.
+- `buyEligible=true`, fresh `dataRefs`, packet-local evidence, cash/constraint 여력이 동시에 있을 때만 더 적극적인 `VIRTUAL_BUY`를 검토합니다.
+- `budgetKrw`는 항상 packet constraint 이하로 제한합니다.
+- evidence 또는 eligibility가 부족하면 `aggressive_paper`에서도 `VIRTUAL_HOLD`가 올바른 출력입니다.
+- 선택된 prompt policy와 version은 batch replay manifest의 decision provider metadata에 기록합니다.
+
 ## 실패 정책
 
 worker는 다음 경우 Codex를 unavailable로 처리해야 합니다.

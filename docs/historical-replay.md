@@ -279,6 +279,26 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - 이 profile은 `VirtualRiskEngine`과 `PaperOrderEngine` 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않습니다.
 - profile 이름은 투자 조언, 수익률 보장, 실계좌 성과 예측으로 해석하면 안 됩니다.
 
+#### Aggressive Codex Prompt Policy
+
+Codex CLI provider를 historical replay에서 사용할 때 `--risk-profile aggressive_paper`를 지정하면 별도 prompt policy를 사용합니다.
+
+| Risk profile | Prompt policy | Prompt version |
+| --- | --- | --- |
+| `conservative` | `default` | `paper-v11-historical-replay-v1` |
+| `balanced` | `default` | `paper-v11-historical-replay-v1` |
+| `aggressive_paper` | `aggressive_paper` | `paper-v11-historical-replay-aggressive-paper-v1` |
+
+`aggressive_paper` prompt policy는 다음을 Codex 입력 prompt에 추가합니다.
+
+- paper-only historical replay에만 적용되며 live trading에는 적용하지 않습니다.
+- 월 15~30% 수익률 목표를 쫓기 위해 trade를 강제하지 않습니다.
+- `buyEligible=true`, 강한 `featureScores` 또는 `reasonCodes`, fresh `dataRefs`, packet constraint 내 현금 여력이 동시에 있을 때만 `VIRTUAL_BUY`를 더 적극적으로 검토합니다.
+- `budgetKrw`는 `marketPacket.constraints.maxBudgetPerSymbolKrw`를 넘지 않으며, concentration/drawdown/stale-data/cash-reserve risk를 `riskFactors`에 명시해야 합니다.
+- evidence, eligibility, constraints가 부족하면 `aggressive_paper`에서도 `VIRTUAL_HOLD`가 올바른 판단입니다.
+
+batch replay에서 Codex CLI를 사용할 경우 선택된 prompt policy와 prompt version은 `batch-replay-manifest.json`의 `decisionProvider.promptPolicy`, `decisionProvider.promptVersion`에 기록됩니다.
+
 #### Paper Exit Policy
 
 Historical replay와 batch replay는 AI/provider 판단과 별도로 deterministic paper-only exit rule을 실행할 수 있습니다. 기본값은 비활성입니다.

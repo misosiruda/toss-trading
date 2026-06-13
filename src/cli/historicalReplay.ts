@@ -158,17 +158,21 @@ const decisionProvider = dryRun
   ? undefined
   : new CodexHistoricalReplayDecisionProvider(
       new CodexCliDecisionProvider(
-        withHistoricalReplayPrompt({
-          enabled: process.env.AI_DECISION_ENABLED === "true",
-          codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-          sandbox: "read-only",
-          timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-          maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
-          allowWebSearch: codexDecisionEnv.allowWebSearch,
-          ...(codexDecisionEnv.outputSchemaPath === undefined
-            ? {}
-            : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
-        })
+        withHistoricalReplayPrompt(
+          {
+            enabled: process.env.AI_DECISION_ENABLED === "true",
+            codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
+            sandbox: "read-only",
+            timeoutMs:
+              Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
+            maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
+            allowWebSearch: codexDecisionEnv.allowWebSearch,
+            ...(codexDecisionEnv.outputSchemaPath === undefined
+              ? {}
+              : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
+          },
+          { riskProfile: riskProfile.name }
+        )
       ),
       { maxCallsPerReplay: maxCodexCalls }
     );

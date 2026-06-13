@@ -9,8 +9,10 @@ import { createMarketPacketHash } from "../market/packetHash.js";
 import { createStaticDecisionIdentityMetadata } from "../paper/decisionIdentity.js";
 import {
   buildHistoricalReplayDecisionPrompt,
+  HISTORICAL_REPLAY_AGGRESSIVE_PAPER_PROMPT_VERSION,
   CodexHistoricalReplayDecisionProvider,
   HISTORICAL_REPLAY_DECISION_PROMPT_VERSION,
+  resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "./codexHistoricalDecisionProvider.js";
 
@@ -60,6 +62,51 @@ test("historical replay config keeps read-only sandbox and prompt version", () =
   assert.equal(config.sandbox, "read-only");
   assert.equal(config.promptVersion, HISTORICAL_REPLAY_DECISION_PROMPT_VERSION);
   assert.match(config.prompt ?? "", /Historical replay mode/);
+});
+
+test("aggressive paper replay prompt uses separate paper-only policy", () => {
+  const policy = resolveHistoricalReplayPromptPolicy({
+    riskProfile: "aggressive_paper"
+  });
+  const config = withHistoricalReplayPrompt(
+    {
+      enabled: false,
+      codexPath: "codex",
+      sandbox: "read-only",
+      timeoutMs: 300_000,
+      maxRunsPerDay: 1,
+      allowWebSearch: false
+    },
+    { riskProfile: "aggressive_paper" }
+  );
+
+  assert.equal(policy.name, "aggressive_paper");
+  assert.equal(
+    policy.promptVersion,
+    HISTORICAL_REPLAY_AGGRESSIVE_PAPER_PROMPT_VERSION
+  );
+  assert.equal(
+    config.promptVersion,
+    HISTORICAL_REPLAY_AGGRESSIVE_PAPER_PROMPT_VERSION
+  );
+  assert.match(config.prompt ?? "", /Aggressive paper profile policy/);
+  assert.match(config.prompt ?? "", /paper-only historical replay/);
+  assert.match(config.prompt ?? "", /never to live trading/);
+  assert.match(config.prompt ?? "", /Do not chase a monthly return target/);
+  assert.match(config.prompt ?? "", /15-30% returns/);
+  assert.match(config.prompt ?? "", /buyEligible=true/);
+  assert.match(config.prompt ?? "", /maxBudgetPerSymbolKrw/);
+  assert.match(config.prompt ?? "", /VIRTUAL_HOLD remains required/);
+});
+
+test("balanced replay prompt keeps the default historical policy", () => {
+  const policy = resolveHistoricalReplayPromptPolicy({
+    riskProfile: "balanced"
+  });
+
+  assert.equal(policy.name, "default");
+  assert.equal(policy.promptVersion, HISTORICAL_REPLAY_DECISION_PROMPT_VERSION);
+  assert.doesNotMatch(policy.prompt, /Aggressive paper profile policy/);
 });
 
 test("historical replay codex provider rejects packet mismatches", async () => {
