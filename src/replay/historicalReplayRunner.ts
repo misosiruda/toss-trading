@@ -15,6 +15,7 @@ import {
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
+import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import {
   markPortfolioToMarket,
   pricePointsFromHistoricalSnapshots
@@ -48,6 +49,7 @@ export interface HistoricalReplayRunnerOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  riskPolicy?: Partial<VirtualRiskPolicy>;
 }
 
 export interface HistoricalReplayInput {
@@ -285,7 +287,7 @@ export function runHistoricalReplay(
         packet,
         portfolio: currentPortfolio,
         decision: item,
-        riskPolicy: { now: simulatedAt }
+        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
       });
       currentPortfolio = result.portfolio;
       riskDecisions.push(result.riskDecision);
@@ -350,6 +352,16 @@ export function runHistoricalReplay(
     initialPortfolio,
     finalPortfolio: currentPortfolio,
     portfolioTimeline
+  };
+}
+
+function riskPolicyForTick(
+  policy: Partial<VirtualRiskPolicy> | undefined,
+  now: Date
+): Partial<VirtualRiskPolicy> {
+  return {
+    ...(policy ?? {}),
+    now
   };
 }
 

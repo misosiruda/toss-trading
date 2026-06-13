@@ -17,6 +17,7 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 - replay window: `startAt`, `endAt`, `stepSeconds`
 - sampling policy: `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`
 - decision provider: dry-run fixture 또는 Codex CLI paper-only provider
+- paper risk profile: `conservative`, `balanced`, `aggressive_paper`
 
 출력:
 
@@ -39,7 +40,7 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 - `identity`: `runId`, optional `batchId`, optional `runIndex`
 - `window`: explicit/random window source, start/end, selected month, seed, timezone offset
-- `configuration`: clock, sampling policy, initial cash, packet/risk constraint 요약
+- `configuration`: clock, sampling policy, initial cash, packet/risk profile/constraint 요약
 - `logPaths`: packet, decision, risk decision, trade, portfolio timeline log path
 - `status`: `running`, `completed`, `failed`
 
@@ -232,6 +233,27 @@ data/batch-replay/
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
 - `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
+
+#### Paper Risk Profile
+
+Historical replay와 batch replay는 paper-only 실험용 risk profile을 선택할 수 있습니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-aggressive-profile-smoke --seed batch-seed-001 --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 5 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --risk-profile aggressive_paper
+```
+
+| Profile | `maxNewPositions` | `maxBudgetPerSymbolKrw` | `maxPositionWeightRatio` | `minCashReserveRatio` |
+| --- | ---: | ---: | ---: | ---: |
+| `conservative` | 3 | 100,000 | 0.35 | 0.10 |
+| `balanced` | 4 | 200,000 | 0.45 | 0.08 |
+| `aggressive_paper` | 5 | 400,000 | 0.65 | 0.05 |
+
+- 기본값은 `conservative`입니다.
+- `--max-new-positions`, `--max-budget-per-symbol-krw`를 명시하면 선택한 profile의 packet constraint와 paper risk policy에 같은 override가 반영됩니다.
+- `aggressive_paper`는 더 큰 paper-only 매수 후보와 종목 exposure를 허용해 수익률 분포를 실험하기 위한 profile입니다.
+- 선택된 profile과 정규화된 risk policy는 `batch-replay-manifest.json`과 각 run의 `historical-replay-run-metadata.json`에 기록됩니다.
+- 이 profile은 `VirtualRiskEngine`과 `PaperOrderEngine` 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않습니다.
+- profile 이름은 투자 조언, 수익률 보장, 실계좌 성과 예측으로 해석하면 안 됩니다.
 
 #### Batch Replay에서 Codex CLI AI 사용
 

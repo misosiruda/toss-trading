@@ -13,6 +13,7 @@ import {
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
+import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import {
   markPortfolioToMarket,
   pricePointsFromHistoricalSnapshots
@@ -54,6 +55,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  riskPolicy?: Partial<VirtualRiskPolicy>;
   performanceClock?: () => number;
   onProgress?: (
     update: HistoricalReplayProgressUpdate
@@ -310,7 +312,7 @@ export async function runCodexHistoricalReplay(
         packet,
         portfolio: currentPortfolio,
         decision: item,
-        riskPolicy: { now: simulatedAt }
+        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
       });
       orderExecutionMs += performanceClock() - orderStartedAtMs;
       currentPortfolio = result.portfolio;
@@ -428,6 +430,16 @@ export async function runCodexHistoricalReplay(
     initialPortfolio,
     finalPortfolio: currentPortfolio,
     portfolioTimeline
+  };
+}
+
+function riskPolicyForTick(
+  policy: Partial<VirtualRiskPolicy> | undefined,
+  now: Date
+): Partial<VirtualRiskPolicy> {
+  return {
+    ...(policy ?? {}),
+    now
   };
 }
 

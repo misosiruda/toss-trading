@@ -65,6 +65,26 @@ Paper trading에도 같은 철학을 적용합니다. Codex CLI는 `virtual_deci
 
 현재 정책은 paper-only `VirtualRiskEngine`에 한정됩니다. 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
 
+## Paper Risk Profiles
+
+Historical replay와 batch replay는 명시 옵션으로 paper-only risk profile을 선택할 수 있습니다. profile은 packet constraint와 `VirtualRiskEngine` policy를 함께 정규화하는 실험 설정이며, 기본값은 `conservative`입니다.
+
+| Profile | `maxNewPositions` | `maxBudgetPerDecisionKrw` | `maxSymbolExposureKrw` | `maxPositionWeightRatio` | `minCashReserveRatio` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `conservative` | 3 | 100,000 | 100,000 | 0.35 | 0.10 |
+| `balanced` | 4 | 200,000 | 250,000 | 0.45 | 0.08 |
+| `aggressive_paper` | 5 | 400,000 | 600,000 | 0.65 | 0.05 |
+
+적용 범위:
+
+- `conservative`는 기존 historical replay 기본 constraint와 같은 보수적 profile입니다.
+- `balanced`는 paper-only 실험에서 신규 포지션 수와 종목별 예산을 중간 수준으로 높입니다.
+- `aggressive_paper`는 더 큰 paper-only notional과 종목 exposure를 허용해 batch 결과 분포를 비교하기 위한 profile입니다.
+- CLI override인 `--max-new-positions`, `--max-budget-per-symbol-krw`는 선택한 profile 위에 적용됩니다.
+- 선택된 profile과 정규화된 risk policy는 replay metadata에 남겨 사후 분석에서 재현할 수 있게 합니다.
+
+이 profile은 paper-only replay 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`, broker adapter 설정을 변경하지 않습니다.
+
 ## Required Risk Rules
 
 ### Kill Switch

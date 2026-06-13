@@ -1694,3 +1694,33 @@
 - `docs/historical-replay.md`는 historical replay에서 `CODEX_*` fallback env와 output schema 전달 방식을 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-60 범위와 이후 paper return 실험 PR 순서를 기록했습니다.
 - 이번 PR은 aggressive risk profile, 목표 수익률 최적화, 장세 균형 sampler, live trading 연결을 포함하지 않습니다.
+
+## PR-61: Aggressive Paper Risk Profile
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay와 batch replay의 paper-only risk profile 선택에 한정합니다.
+- 기본 profile은 기존 constraint와 호환되는 `conservative`이며, `aggressive_paper`는 `--risk-profile aggressive_paper`를 명시할 때만 적용됩니다.
+- profile은 packet constraint와 `VirtualRiskEngine` policy override만 정규화하며, live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`, broker adapter 경로로 전파하지 않습니다.
+- batch manifest와 run metadata에는 선택 profile과 정규화된 risk policy를 기록해 사후 분석의 재현 근거로만 사용합니다.
+- 목표 수익률 보장, strategy 자동 조정, take-profit/stop-loss/rebalance 규칙, aggressive profile 전용 Codex prompt policy는 포함하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- targeted test로 `node --test dist/paper/riskProfile.test.js dist/paper/orderEngine.test.js` 24개 통과를 확인했습니다.
+- targeted test로 `node --test dist/workflows/historicalReplayWorkflow.test.js dist/workflows/historicalBatchReplayWorkflow.test.js dist/cli/historicalReplayCli.test.js` 10개 통과를 확인했습니다.
+- `npm test`로 전체 test suite 250개 통과를 확인했습니다.
+- `git diff --check`로 whitespace error가 없음을 확인했습니다.
+- deterministic dry-run batch smoke `batch-aggressive-profile-smoke-20260613-001`가 completed 1, skipped 0, failed 0으로 완료되는지 확인했습니다.
+- smoke manifest와 run metadata에서 `riskProfile=aggressive_paper`, `maxNewPositions=5`, `maxBudgetPerSymbolKrw=400000`, `maxSymbolExposureKrw=600000`, `maxPositionWeightRatio=0.65`, `minCashReserveRatio=0.05`가 저장되는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/riskProfile.ts`를 추가해 `conservative`, `balanced`, `aggressive_paper` profile resolver와 parser를 구현했습니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 `--risk-profile`, `--max-new-positions`, `--max-budget-per-symbol-krw`를 profile 기반 constraint와 risk policy로 정규화합니다.
+- `src/replay/historicalReplayRunner.ts`와 `src/replay/codexHistoricalReplayRunner.ts`는 simulated tick의 `now`와 profile risk policy를 함께 `PaperOrderEngine`에 전달합니다.
+- `src/workflows/historicalReplayWorkflow.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run metadata와 batch manifest에 profile 정보를 저장합니다.
+- `src/replay/historicalReplayAuditLog.ts`는 metadata schema에 nullable `riskProfile`과 `riskPolicy`를 추가했습니다.
+- `src/paper/riskProfile.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/workflows/historicalReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`는 profile default, aggressive fill, metadata 저장, CLI integration을 검증합니다.
+- `docs/historical-replay.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
+- 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.

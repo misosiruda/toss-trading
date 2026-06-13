@@ -2,6 +2,10 @@ import "../config/loadEnv.js";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
+import {
+  parsePaperRiskProfileName,
+  resolvePaperRiskProfile
+} from "../paper/riskProfile.js";
 import type { Market } from "../domain/schemas.js";
 import {
   CodexHistoricalReplayDecisionProvider,
@@ -17,6 +21,19 @@ const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
 const codexDecisionEnv = readHistoricalCodexDecisionEnv();
+const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
+const maxBudgetPerSymbolOverride = readOptionalNumberArg(
+  "--max-budget-per-symbol-krw"
+);
+const riskProfile = resolvePaperRiskProfile({
+  name: parsePaperRiskProfileName(readArgValue("--risk-profile")),
+  ...(maxNewPositionsOverride === undefined
+    ? {}
+    : { maxNewPositions: maxNewPositionsOverride }),
+  ...(maxBudgetPerSymbolOverride === undefined
+    ? {}
+    : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
+});
 
 if (useCodexAi && (process.env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
   throw new Error("AI_DECISION_MODE must be paper_only for batch replay Codex AI");
@@ -88,11 +105,9 @@ const result = await runHistoricalBatchReplay({
           allowWebSearch: codexDecisionEnv.allowWebSearch
         }
       }),
-  constraints: {
-    maxNewPositions: readNumberArg("--max-new-positions", 3),
-    maxBudgetPerSymbolKrw: readNumberArg("--max-budget-per-symbol-krw", 100_000),
-    allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-  }
+  constraints: riskProfile.constraints,
+  riskProfile: riskProfile.name,
+  riskPolicy: riskProfile.riskPolicy
 });
 
 console.log(
@@ -109,6 +124,7 @@ console.log(
       skippedCount: result.skippedCount,
       failedCount: result.failedCount,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
+      riskProfile: riskProfile.name,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
     null,
