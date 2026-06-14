@@ -41,6 +41,7 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
+  assert.equal(report.overall.totalAiDecisionFailureCount, 0);
   assert.deepEqual(report.overall.targetReturnHitRates, [
     {
       threshold: 0.15,
@@ -101,6 +102,23 @@ test("batch replay aggregate report calculates target return hit rates", () => {
   });
 });
 
+test("batch replay aggregate report counts AI decision failures separately from failed runs", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [
+      record("run_0", 0, "completed", "bull", 0.05, 1_050_000, 2),
+      record("run_1", 1, "completed", "bull", 0.02, 1_020_000, 1),
+      record("run_2", 2, "failed", "bull", null, null, 0)
+    ]
+  });
+
+  assert.equal(report.summary.failedCount, 1);
+  assert.equal(report.overall.completedCount, 2);
+  assert.equal(report.overall.failedCount, 1);
+  assert.equal(report.overall.totalAiDecisionFailureCount, 3);
+  assert.equal(report.byRegime.bull?.totalAiDecisionFailureCount, 3);
+});
+
 test("batch replay aggregate report renders paper-only disclaimer", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -111,6 +129,7 @@ test("batch replay aggregate report renders paper-only disclaimer", () => {
   assert.match(rendered, /Batch Replay Paper Aggregate Report/);
   assert.match(rendered, /paper-only/);
   assert.match(rendered, /target_return_hit_rates/);
+  assert.match(rendered, /total_ai_decision_failure_count/);
   assert.doesNotMatch(rendered, /live order/i);
 });
 
@@ -145,7 +164,8 @@ function record(
   status: BatchReplayRunRecord["status"],
   regime: MarketRegimeLabel,
   totalReturnRatio: number | null,
-  finalVirtualNetWorthKrw: number | null
+  finalVirtualNetWorthKrw: number | null,
+  aiDecisionFailureCount = 0
 ): BatchReplayRunRecord {
   return {
     mode: "paper_only",
@@ -196,6 +216,7 @@ function record(
             totalReturnRatio,
             tradeCount: 1,
             decisionProviderCallCount: 1,
+            aiDecisionFailureCount,
             rejectedCount: 0
           }
         : null,

@@ -46,6 +46,7 @@ export interface BatchReplayGroupSummary {
   averageFinalVirtualNetWorthKrw: number | null;
   totalTradeCount: number;
   averageTradeCount: number | null;
+  totalAiDecisionFailureCount: number;
   totalRejectedCount: number;
   runIds: string[];
 }
@@ -142,6 +143,9 @@ function summarizeGroup(
     .map((record) => record.summary?.finalVirtualNetWorthKrw ?? null)
     .filter((value): value is number => value !== null);
   const tradeCounts = completed.map((record) => record.summary?.tradeCount ?? 0);
+  const aiDecisionFailureCounts = completed.map(
+    (record) => record.summary?.aiDecisionFailureCount ?? 0
+  );
   const rejectedCounts = completed.map(
     (record) => record.summary?.rejectedCount ?? 0
   );
@@ -173,6 +177,10 @@ function summarizeGroup(
     totalTradeCount: tradeCounts.reduce((sum, value) => sum + value, 0),
     averageTradeCount:
       tradeCounts.length === 0 ? null : roundRatio(average(tradeCounts)),
+    totalAiDecisionFailureCount: aiDecisionFailureCounts.reduce(
+      (sum, value) => sum + value,
+      0
+    ),
     totalRejectedCount: rejectedCounts.reduce((sum, value) => sum + value, 0),
     runIds: records.map((record) => record.runId)
   };
@@ -253,7 +261,8 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `median_total_return_ratio: ${formatNullable(group.medianTotalReturnRatio)}`,
     `win_rate: ${formatNullable(group.winRate)}`,
     `target_return_hit_rates: ${JSON.stringify(group.targetReturnHitRates)}`,
-    `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`
+    `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`,
+    `total_ai_decision_failure_count: ${group.totalAiDecisionFailureCount}`
   ].join("\n");
 }
 

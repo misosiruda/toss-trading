@@ -273,6 +273,48 @@ test("historical batch replay runner can inject Codex-style provider per run", a
   );
 });
 
+test("historical batch replay runner records AI provider failures without failing completed replay", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 74_000)
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-codex-provider-failure",
+    seed: "seed-001",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxDecisionCalls: 1,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    decisionProviderFactory: () => new FailingCodexBatchProvider()
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const firstSummary = runRecords[0]?.["summary"] as Record<string, unknown>;
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.completedCount, 1);
+  assert.equal(result.failedCount, 0);
+  assert.equal(runRecords[0]?.["status"], "completed");
+  assert.equal(runRecords[0]?.["error"], null);
+  assert.equal(firstSummary["decisionProviderCallCount"], 1);
+  assert.equal(firstSummary["aiDecisionFailureCount"], 1);
+  assert.equal(firstSummary["tradeCount"], 0);
+  assert.match(String(runRecords[0]?.["reportPath"]), /historical-replay-report\.json$/);
+});
+
 test("historical batch replay runner records selected risk profile", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
   const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
@@ -359,6 +401,20 @@ class FakeCodexBatchProvider {
       attempted: true,
       decision: decision(packet),
       failure: null,
+      command: null
+    };
+  }
+}
+
+class FailingCodexBatchProvider {
+  async decide(_packet: MarketPacket): Promise<CodexCliDecisionResult> {
+    return {
+      attempted: true,
+      decision: null,
+      failure: {
+        code: "AI_DECISION_FAILED",
+        reason: "fixture provider failure"
+      },
       command: null
     };
   }

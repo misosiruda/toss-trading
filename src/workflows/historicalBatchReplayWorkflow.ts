@@ -25,7 +25,7 @@ import {
   type HistoricalDataAvailabilityReport,
   type HistoricalDataAvailabilitySymbolRequirement
 } from "../replay/historicalDataAvailability.js";
-import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type { AuditEvent, HistoricalMarketSnapshot } from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
@@ -180,6 +180,7 @@ export interface BatchReplayRunSummary {
   totalReturnRatio: number | null;
   tradeCount: number;
   decisionProviderCallCount: number;
+  aiDecisionFailureCount: number;
   rejectedCount: number;
 }
 
@@ -389,7 +390,7 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         availability,
         reportPath: result.reportPath,
-        summary: summarizeRun(result.report)
+        summary: summarizeRun(result.report, result.replayResult.auditEvents)
       });
       records.push(completed);
       await appendRunRecord(paths.runsPath, completed);
@@ -590,12 +591,18 @@ function runRecord(input: {
   };
 }
 
-function summarizeRun(report: HistoricalReplayReport): BatchReplayRunSummary {
+function summarizeRun(
+  report: HistoricalReplayReport,
+  auditEvents: AuditEvent[]
+): BatchReplayRunSummary {
   return {
     finalVirtualNetWorthKrw: report.portfolio.finalVirtualNetWorthKrw,
     totalReturnRatio: report.benchmarks.strategy.totalReturnRatio,
     tradeCount: report.tradeSummary.tradeCount,
     decisionProviderCallCount: report.replaySummary.decisionProviderCallCount,
+    aiDecisionFailureCount: auditEvents.filter(
+      (event) => event.eventType === "HISTORICAL_AI_DECISION_FAILED"
+    ).length,
     rejectedCount: report.riskSummary.rejectedCount
   };
 }
