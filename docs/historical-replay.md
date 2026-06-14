@@ -416,6 +416,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - 전체 및 regime별 target return threshold hit-rate
 - final virtual net worth 평균
 - trade/rejected count 요약
+- 완료된 replay 내부의 Codex provider failure count
 - 집계에 포함된 run ID 목록
 
 이 report는 이미 완료된 paper-only batch run record를 읽는 사후 분석 도구입니다. replay 실행, Codex CLI AI 호출, 외부 데이터 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
@@ -446,6 +447,7 @@ Historical replay는 simulated time 이후 데이터를 현재 packet에 넣지 
 - `CodexHistoricalReplayDecisionProvider` 결과는 paper-only `VirtualDecision`으로만 처리합니다.
 - 모든 가상 주문은 `VirtualRiskEngine`을 통과해야 합니다.
 - provider failure, timeout, packet mismatch는 paper order 없이 audit event와 timeline만 남깁니다.
+- batch replay는 완료된 replay 내부의 provider failure를 `aiDecisionFailureCount`로 집계합니다. replay workflow 자체가 throw한 경우만 run `failed`로 기록합니다.
 
 ## Dashboard
 

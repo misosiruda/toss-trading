@@ -1872,3 +1872,29 @@
 - `src/replay/codexHistoricalDecisionProvider.test.ts`는 default/balanced policy 유지와 aggressive prompt guard 문구를 검증합니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 Codex-style provider metadata에 aggressive prompt policy/version이 기록되는지 검증합니다.
 - `docs/historical-replay.md`, `docs/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.
+
+## PR-67: Batch AI Failure Accounting
+
+### Review 1: Scope and Safety
+
+- 범위는 batch replay 사후 분석 summary/report에 Codex provider failure count를 추가하는 데 한정합니다.
+- `HISTORICAL_AI_DECISION_FAILED` audit event는 완료된 replay 내부의 provider failure로 집계하고, workflow 자체가 throw한 경우만 run `failed`로 둡니다.
+- trading decision, risk limit, order execution, allocation, exit policy, prompt/schema는 변경하지 않습니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않았습니다.
+- 변경 code file 대상 금지 경계 grep 결과 신규 live/order/raw execution surface match가 없음을 확인했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/workflows/historicalBatchReplayWorkflow.test.js dist/reports/batchReplayReport.test.js`: pass, 11 tests.
+- `npm test`: pass, 275 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- 안전 grep: code 변경 파일에서는 금지 문자열 match 없음. 문서 match는 기존 금지/예시 경계 문구와 PR-67 제외 범위로만 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/workflows/historicalBatchReplayWorkflow.ts`는 completed run summary에 `aiDecisionFailureCount`를 저장합니다.
+- `src/reports/batchReplayReport.ts`는 completed run의 `aiDecisionFailureCount`를 `totalAiDecisionFailureCount`로 합산하고 markdown render에 표시합니다.
+- `src/workflows/historicalBatchReplayWorkflow.test.ts`는 provider failure가 있어도 replay가 완료되면 batch run이 `completed`로 남고 AI failure count가 1로 기록되는지 검증합니다.
+- `src/reports/batchReplayReport.test.ts`는 completed run 내부 AI failure count와 failed run count가 분리되는지 검증합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 AI failure accounting 의미, 검증 기준, 제외 범위를 문서화합니다.

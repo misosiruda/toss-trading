@@ -2147,7 +2147,41 @@
 
 ## Remaining Paper Return Experiment PRs
 
-- 없음. 이 문서의 paper return experiment vertical slice는 PR-64~PR-66으로 닫습니다.
+## PR-67: Batch AI Failure Accounting
+
+목표:
+
+- 완료된 historical replay 내부에서 발생한 Codex provider failure를 batch run 실패와 분리해 기록합니다.
+- batch aggregate report가 provider failure count를 합산해, replay workflow 자체 실패와 AI 판단 실패를 구분할 수 있게 합니다.
+- 이 변경은 paper-only 사후 분석 정확도 개선이며 trading decision, risk limit, order execution policy를 바꾸지 않습니다.
+
+작업 범위:
+
+- batch run summary에 `aiDecisionFailureCount` 추가
+- `HISTORICAL_AI_DECISION_FAILED` audit event를 완료 run summary에 집계
+- aggregate report에 `totalAiDecisionFailureCount` 추가
+- provider failure가 replay 완료를 막지 않는 workflow test 추가
+- report aggregate test, Historical Replay 문서, PR review log 업데이트
+
+검증:
+
+- provider failure가 있는 completed replay가 batch `failed`로 승격되지 않음
+- aggregate report가 completed run의 AI failure count만 합산함
+- `npm run build`
+- targeted tests
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- AI prompt/schema 변경
+- retry/repair 정책 추가
+- risk limit 완화
+- allocation/exit policy 변경
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
 ## Later PRs
 
