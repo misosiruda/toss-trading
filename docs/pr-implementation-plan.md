@@ -2221,6 +2221,49 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-69: Paper Allocation Target Exposure
+
+목표:
+
+- paper replay에서 현금 비중이 과도하게 유지되는 원인을 줄이기 위해 profile별 target exposure를 명시합니다.
+- market packet에 allocation snapshot을 포함해 AI/provider와 deterministic fixture가 같은 budget cap을 보게 합니다.
+- target exposure를 normalizer와 `VirtualRiskEngine`의 deterministic final gate에 연결합니다.
+
+작업 범위:
+
+- `PaperAllocationPolicy`와 allocation snapshot 계산 추가
+- `marketPacket.portfolioAllocation` schema 추가
+- `MarketPacketBuilder`와 `HistoricalMarketPacketBuilder`에 allocation snapshot 연결
+- BUY normalizer의 per-decision/target-exposure cap 적용
+- `VirtualRiskEngine` target exposure reject rule 추가
+- risk profile별 target exposure와 initial cash 기반 aggressive budget scaling 추가
+- historical replay, Codex historical replay, single/batch workflow, CLI에 allocation policy 전달
+- metadata/manifest에 allocation policy 기록
+- targeted tests와 PR review log 업데이트
+
+검증:
+
+- allocation snapshot 계산
+- packet builder eligibility와 budget tier
+- BUY normalizer cap
+- target exposure risk reject
+- first-priced fixture multi-candidate allocation
+- batch manifest/run metadata allocation 기록
+- `npm run build`
+- targeted tests
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- 수익률 보장 또는 목표 수익률 강제
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+- partial take-profit/trailing stop exit policy 변경
+- portfolio construction aggregate report 확장
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

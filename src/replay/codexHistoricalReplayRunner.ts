@@ -18,6 +18,7 @@ import {
   normalizePaperExitPolicy,
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
@@ -63,6 +64,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  allocationPolicy?: PaperAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   performanceClock?: () => number;
   onProgress?: (
@@ -162,7 +164,10 @@ export async function runCodexHistoricalReplay(
       expiresInSeconds: options.packetExpiresInSeconds,
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-      constraints: options.constraints
+      constraints: options.constraints,
+      ...(options.allocationPolicy === undefined
+        ? {}
+        : { allocationPolicy: options.allocationPolicy })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -606,6 +611,7 @@ export async function runCodexHistoricalReplay(
     auditEvents,
     warnings,
     samplingPolicy: options.samplingPolicy?.metadata() ?? null,
+    allocationPolicy: options.allocationPolicy ?? null,
     paperExitPolicy,
     samplingDecisions,
     progressSummary: {

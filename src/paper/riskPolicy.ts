@@ -13,6 +13,7 @@ export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_CASH_EXCEEDED",
   "VIRTUAL_CASH_RESERVE_BREACHED",
   "VIRTUAL_BUDGET_EXCEEDED",
+  "VIRTUAL_TARGET_EXPOSURE_EXCEEDED",
   "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED",
   "VIRTUAL_POSITION_WEIGHT_EXCEEDED",
   "VIRTUAL_POSITION_NOT_FOUND",
@@ -31,6 +32,7 @@ export const VIRTUAL_RISK_RULE_IDS = [
   "cash_limit",
   "cash_reserve",
   "budget_limit",
+  "target_exposure",
   "symbol_exposure",
   "position_weight",
   "sell_position",
@@ -50,6 +52,7 @@ export interface VirtualRiskCooldownEntry {
 export interface VirtualRiskPolicy {
   maxBudgetPerDecisionKrw: number;
   maxSymbolExposureKrw: number;
+  targetExposureRatio?: number | undefined;
   maxPositionWeightRatio: number;
   minCashReserveRatio: number;
   minCashReserveKrw: number;
@@ -70,6 +73,9 @@ export function createVirtualRiskPolicy(
       input.policy?.maxBudgetPerDecisionKrw ?? input.maxBudgetPerSymbolKrw,
     maxSymbolExposureKrw:
       input.policy?.maxSymbolExposureKrw ?? input.maxBudgetPerSymbolKrw,
+    ...(input.policy?.targetExposureRatio === undefined
+      ? {}
+      : { targetExposureRatio: input.policy.targetExposureRatio }),
     maxPositionWeightRatio: input.policy?.maxPositionWeightRatio ?? 0.35,
     minCashReserveRatio: input.policy?.minCashReserveRatio ?? 0.1,
     minCashReserveKrw: input.policy?.minCashReserveKrw ?? 0,

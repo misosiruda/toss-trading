@@ -7,8 +7,13 @@ import {
   type MarketPacket,
   type VirtualBudgetTier,
   type VirtualAction,
+  type PortfolioAllocation,
   type VirtualPortfolio
 } from "../domain/schemas.js";
+import {
+  buildPaperAllocationSnapshot,
+  type PaperAllocationPolicy
+} from "../paper/allocationPolicy.js";
 
 export interface MarketCandidateDraft {
   market: Market;
@@ -42,6 +47,7 @@ export interface MarketPacketBuilderOptions {
   expiresInSeconds: number;
   maxCandidates: number;
   constraints: MarketPacketConstraints;
+  allocationPolicy?: PaperAllocationPolicy;
 }
 
 export interface MarketPacketBuildInput {
@@ -72,6 +78,13 @@ export class MarketPacketBuilder {
     const expiresAt = new Date(
       this.options.generatedAt.getTime() + this.options.expiresInSeconds * 1000
     ).toISOString();
+    const portfolioAllocation =
+      this.options.allocationPolicy === undefined
+        ? undefined
+        : buildPaperAllocationSnapshot({
+            portfolio: input.portfolio,
+            policy: this.options.allocationPolicy
+          });
 
     const candidates = input.candidates
       .flatMap((candidate): MarketCandidate[] => {
@@ -92,7 +105,8 @@ export class MarketPacketBuilder {
             deriveCandidateEligibility({
               portfolio: input.portfolio,
               candidate,
-              constraints: this.options.constraints
+              constraints: this.options.constraints,
+              portfolioAllocation
             }),
             {
               maxCandidates: this.options.maxCandidates
@@ -112,7 +126,8 @@ export class MarketPacketBuilder {
         expiresAt,
         virtualPortfolio: input.portfolio,
         candidates,
-        constraints: this.options.constraints
+        constraints: this.options.constraints,
+        ...(portfolioAllocation === undefined ? {} : { portfolioAllocation })
       },
       "marketPacket"
     );
@@ -391,6 +406,7 @@ function deriveCandidateEligibility(input: {
   portfolio: VirtualPortfolio;
   candidate: MarketCandidateDraft;
   constraints: MarketPacketConstraints;
+  portfolioAllocation?: PortfolioAllocation | undefined;
 }): CandidateEligibility {
   const positionExists = input.portfolio.positions.some(
     (position) =>
@@ -423,6 +439,12 @@ function deriveCandidateEligibility(input: {
   ) {
     buyBlockedReasonCodes.push("BUY_BUDGET_UNAVAILABLE");
   }
+  if (
+    input.portfolioAllocation !== undefined &&
+    input.portfolioAllocation.maxAdditionalBuyBudgetKrw <= 0
+  ) {
+    buyBlockedReasonCodes.push("TARGET_EXPOSURE_REACHED");
+  }
   if (cooldownActive) {
     buyBlockedReasonCodes.push("COOLDOWN_ACTIVE");
   }
@@ -449,7 +471,9 @@ function deriveCandidateEligibility(input: {
     budgetTierAllowed: deriveBudgetTier({
       buyEligible,
       cashKrw: input.portfolio.cashKrw,
-      maxBudgetPerSymbolKrw: input.constraints.maxBudgetPerSymbolKrw
+      maxBudgetPerSymbolKrw: input.constraints.maxBudgetPerSymbolKrw,
+      maxAdditionalBuyBudgetKrw:
+        input.portfolioAllocation?.maxAdditionalBuyBudgetKrw
     }),
     positionExists,
     cooldownActive
@@ -460,6 +484,7 @@ function deriveBudgetTier(input: {
   buyEligible: boolean;
   cashKrw: number;
   maxBudgetPerSymbolKrw: number;
+  maxAdditionalBuyBudgetKrw?: number | undefined;
 }): VirtualBudgetTier {
   if (
     !input.buyEligible ||
@@ -471,7 +496,8 @@ function deriveBudgetTier(input: {
 
   const allowedBudgetKrw = Math.min(
     input.cashKrw,
-    input.maxBudgetPerSymbolKrw
+    input.maxBudgetPerSymbolKrw,
+    input.maxAdditionalBuyBudgetKrw ?? input.maxBudgetPerSymbolKrw
   );
   const ratio = allowedBudgetKrw / input.maxBudgetPerSymbolKrw;
 

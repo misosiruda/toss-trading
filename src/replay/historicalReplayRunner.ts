@@ -20,6 +20,7 @@ import {
   type NormalizedPaperExitPolicy,
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import {
@@ -56,6 +57,7 @@ export interface HistoricalReplayRunnerOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  allocationPolicy?: PaperAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
 }
 
@@ -108,6 +110,7 @@ export interface HistoricalReplayResult {
   auditEvents: AuditEvent[];
   warnings: string[];
   samplingPolicy: ReplaySamplingPolicyMetadata | null;
+  allocationPolicy: PaperAllocationPolicy | null;
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   samplingDecisions: HistoricalReplaySamplingRecord[];
   progressSummary: HistoricalReplayProgressSummary;
@@ -120,49 +123,198 @@ export class FirstPricedHistoricalDecisionProvider
   implements HistoricalReplayDecisionProvider
 {
   decide(packet: MarketPacket): VirtualDecision {
-    const candidate = packet.candidates.find(
-      (item) => item.lastPriceKrw !== undefined
-    );
-    const dataRef =
-      candidate === undefined
-        ? null
-        : candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
-    const decisions: VirtualDecisionItem[] =
-      candidate === undefined
-        ? []
-        : [
-            {
-              market: candidate.market,
-              symbol: candidate.symbol,
-              action: "VIRTUAL_BUY",
-              confidence: 0.55,
-              budgetKrw: Math.min(
-                packet.constraints.maxBudgetPerSymbolKrw,
-                candidate.lastPriceKrw ?? packet.constraints.maxBudgetPerSymbolKrw
-              ),
-              thesis:
-                "Deterministic historical replay fixture uses the first priced candidate.",
-              riskFactors: [
-                "Historical replay fixture is not a live trading signal."
-              ],
-              dataRefs: [dataRef ?? `packet:${packet.packetId}`],
-              claimSupport: [
-                {
-                  claim:
-                    "Deterministic historical replay fixture uses the first priced candidate.",
-                  dataRefs: [dataRef ?? `packet:${packet.packetId}`]
-                }
-              ],
-              expiresAt: packet.expiresAt
-            }
-          ];
-
     return {
       packetId: packet.packetId,
       summary: "Deterministic paper-only historical replay decision.",
-      decisions
+      decisions: firstPricedDecisions(packet)
     };
   }
+}
+
+function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
+  const candidates = packet.candidates.filter(
+    (item) => item.lastPriceKrw !== undefined
+  );
+  const firstCandidate = candidates[0];
+  if (firstCandidate === undefined) {
+    return [];
+  }
+
+  const allocation = packet.portfolioAllocation;
+  if (allocation === undefined) {
+    return [
+      firstPricedDecision({
+        packet,
+        candidate: firstCandidate,
+        budgetKrw: legacySingleShareBudgetKrw(packet, firstCandidate)
+      })
+    ];
+  }
+
+  const decisions: VirtualDecisionItem[] = [];
+  const projectedExposureBySymbol = currentExposureBySymbol(packet);
+  let remainingAdditionalBudgetKrw = allocation.maxAdditionalBuyBudgetKrw;
+  let remainingCashBudgetKrw = Math.max(
+    0,
+    packet.virtualPortfolio.cashKrw - allocation.minCashReserveKrw
+  );
+
+  for (const candidate of candidates) {
+    if (candidate.buyEligible === false) {
+      continue;
+    }
+    if (decisions.length >= packet.constraints.maxNewPositions) {
+      break;
+    }
+
+    const symbolKey = `${candidate.market}:${candidate.symbol}`;
+    const currentSymbolExposureKrw =
+      projectedExposureBySymbol.get(symbolKey) ?? 0;
+    const budgetKrw = firstPricedBudgetKrw({
+      packet,
+      currentSymbolExposureKrw,
+      remainingAdditionalBudgetKrw,
+      remainingCashBudgetKrw
+    });
+    if (budgetKrw <= 0) {
+      continue;
+    }
+
+    decisions.push(firstPricedDecision({ packet, candidate, budgetKrw }));
+    projectedExposureBySymbol.set(
+      symbolKey,
+      currentSymbolExposureKrw + budgetKrw
+    );
+    remainingAdditionalBudgetKrw -= budgetKrw;
+    remainingCashBudgetKrw -= budgetKrw;
+  }
+
+  if (decisions.length > 0) {
+    return decisions;
+  }
+
+  return [
+    firstPricedHoldDecision({
+      packet,
+      candidate: firstCandidate
+    })
+  ];
+}
+
+function firstPricedDecision(input: {
+  packet: MarketPacket;
+  candidate: MarketPacket["candidates"][number];
+  budgetKrw: number;
+}): VirtualDecisionItem {
+  const sourceRef = firstSourceRef(input.packet, input.candidate);
+
+  return {
+    market: input.candidate.market,
+    symbol: input.candidate.symbol,
+    action: "VIRTUAL_BUY",
+    confidence: 0.55,
+    budgetKrw: input.budgetKrw,
+    thesis:
+      "Deterministic historical replay fixture uses the first priced candidate.",
+    riskFactors: [
+      "Historical replay fixture is not a live trading signal."
+    ],
+    dataRefs: [sourceRef],
+    claimSupport: [
+      {
+        claim:
+          "Deterministic historical replay fixture uses the first priced candidate.",
+        dataRefs: [sourceRef]
+      }
+    ],
+    expiresAt: input.packet.expiresAt
+  };
+}
+
+function firstPricedHoldDecision(input: {
+  packet: MarketPacket;
+  candidate: MarketPacket["candidates"][number];
+}): VirtualDecisionItem {
+  const sourceRef = firstSourceRef(input.packet, input.candidate);
+  return {
+    market: input.candidate.market,
+    symbol: input.candidate.symbol,
+    action: "VIRTUAL_HOLD",
+    confidence: 0.55,
+    budgetKrw: 0,
+    thesis:
+      "Deterministic historical replay fixture found no remaining allocation budget.",
+    riskFactors: [],
+    dataRefs: [sourceRef],
+    claimSupport: [
+      {
+        claim:
+          "Deterministic historical replay fixture found no remaining allocation budget.",
+        dataRefs: [sourceRef]
+      }
+    ],
+    holdReasonCode: "PORTFOLIO_CONFLICT",
+    expiresAt: input.packet.expiresAt
+  };
+}
+
+function legacySingleShareBudgetKrw(
+  packet: MarketPacket,
+  candidate: MarketPacket["candidates"][number]
+): number {
+  return Math.min(
+    packet.constraints.maxBudgetPerSymbolKrw,
+    candidate.lastPriceKrw ?? packet.constraints.maxBudgetPerSymbolKrw
+  );
+}
+
+function firstPricedBudgetKrw(input: {
+  packet: MarketPacket;
+  currentSymbolExposureKrw: number;
+  remainingAdditionalBudgetKrw: number;
+  remainingCashBudgetKrw: number;
+}): number {
+  const allocation = input.packet.portfolioAllocation;
+  if (allocation === undefined) {
+    return 0;
+  }
+
+  const symbolHeadroomKrw = Math.max(
+    0,
+    allocation.maxSymbolExposureKrw - input.currentSymbolExposureKrw
+  );
+
+  return Math.max(
+    0,
+    Math.floor(
+      Math.min(
+        input.packet.constraints.maxBudgetPerSymbolKrw,
+        allocation.maxBudgetPerDecisionKrw,
+        input.remainingAdditionalBudgetKrw,
+        symbolHeadroomKrw,
+        input.remainingCashBudgetKrw
+      )
+    )
+  );
+}
+
+function currentExposureBySymbol(packet: MarketPacket): Map<string, number> {
+  const values = new Map<string, number>();
+  for (const position of packet.virtualPortfolio.positions) {
+    values.set(
+      `${position.market}:${position.symbol}`,
+      position.marketValueKrw ??
+        Math.round(position.quantity * position.averagePriceKrw)
+    );
+  }
+  return values;
+}
+
+function firstSourceRef(
+  packet: MarketPacket,
+  candidate: MarketPacket["candidates"][number]
+): string {
+  return candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
 }
 
 export function runHistoricalReplay(
@@ -206,7 +358,10 @@ export function runHistoricalReplay(
       expiresInSeconds: options.packetExpiresInSeconds,
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-      constraints: options.constraints
+      constraints: options.constraints,
+      ...(options.allocationPolicy === undefined
+        ? {}
+        : { allocationPolicy: options.allocationPolicy })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -440,6 +595,7 @@ export function runHistoricalReplay(
     auditEvents,
     warnings,
     samplingPolicy: options.samplingPolicy?.metadata() ?? null,
+    allocationPolicy: options.allocationPolicy ?? null,
     paperExitPolicy,
     samplingDecisions,
     progressSummary: {

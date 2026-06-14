@@ -209,6 +209,55 @@ test("MarketPacketBuilder blocks new buys when max new positions is reached", ()
   );
 });
 
+test("MarketPacketBuilder includes allocation snapshot and blocks buys at target exposure", () => {
+  const result = new MarketPacketBuilder({
+    packetId: "packet_test_001",
+    generatedAt,
+    expiresInSeconds: 300,
+    maxCandidates: 2,
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 200_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    allocationPolicy: {
+      policyName: "fixture_allocation",
+      targetExposureRatio: 0.8,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.3
+    }
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      cashKrw: 100_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 90,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 900_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [candidate("000660", 1)]
+  });
+
+  assert.equal(result.packet.portfolioAllocation?.targetExposureRatio, 0.8);
+  assert.equal(result.packet.portfolioAllocation?.currentExposureRatio, 0.9);
+  assert.equal(result.packet.portfolioAllocation?.maxAdditionalBuyBudgetKrw, 0);
+  assert.equal(result.packet.candidates[0]?.buyEligible, false);
+  assert.equal(
+    result.packet.candidates[0]?.blockedReasonCodes?.includes(
+      "TARGET_EXPOSURE_REACHED"
+    ),
+    true
+  );
+  assert.equal(result.packet.candidates[0]?.budgetTierAllowed, "NONE");
+});
+
 test("MarketPacketBuilder drops sensitive extra fields from raw candidate drafts", () => {
   const rawCandidate = {
     ...candidate("005930", 1),

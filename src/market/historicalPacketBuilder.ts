@@ -8,6 +8,7 @@ import {
   type MarketPacketConstraints,
   type MarketCandidateDraft
 } from "./packetBuilder.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 
 export interface HistoricalMarketPacketBuilderOptions {
   packetId: string;
@@ -16,6 +17,7 @@ export interface HistoricalMarketPacketBuilderOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  allocationPolicy?: PaperAllocationPolicy;
 }
 
 export interface HistoricalMarketPacketBuildInput {
@@ -194,7 +196,10 @@ export class HistoricalMarketSnapshotIndex {
       generatedAt: options.simulatedAt,
       expiresInSeconds: options.expiresInSeconds,
       maxCandidates: options.maxCandidates,
-      constraints: options.constraints
+      constraints: options.constraints,
+      ...(options.allocationPolicy === undefined
+        ? {}
+        : { allocationPolicy: options.allocationPolicy })
     }).build({
       portfolio,
       candidates

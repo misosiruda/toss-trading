@@ -14,6 +14,7 @@ import {
 } from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import {
   createStoragePaths,
@@ -72,6 +73,7 @@ export interface BatchReplayRunnerOptions {
   constraints?: MarketPacketConstraints;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  allocationPolicy?: PaperAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   windowSamplingMode?: BatchReplayWindowSamplingMode;
   targetRegimes?: MarketRegimeLabel[];
@@ -138,6 +140,7 @@ export interface BatchReplayManifest {
   failedCount: number;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   riskProfile: PaperRiskProfileName | null;
+  allocationPolicy: PaperAllocationPolicy | null;
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
   disclaimer: string;
@@ -263,6 +266,7 @@ export async function runHistoricalBatchReplay(
     failedCount: 0,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    allocationPolicy: options.allocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: initialWindowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
@@ -368,6 +372,9 @@ export async function runHistoricalBatchReplay(
         ...(options.riskPolicy === undefined
           ? {}
           : { riskPolicy: options.riskPolicy }),
+        ...(options.allocationPolicy === undefined
+          ? {}
+          : { allocationPolicy: options.allocationPolicy }),
         ...(options.paperExitPolicy === undefined
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
@@ -440,6 +447,7 @@ export async function runHistoricalBatchReplay(
     failedCount,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
+    allocationPolicy: options.allocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: windowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
