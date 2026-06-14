@@ -2183,6 +2183,44 @@
 - live trading 또는 broker adapter 연결
 - raw `codex exec` 또는 raw `tossctl` MCP tool 노출
 
+## PR-68: Codex CLI Batch Session Budget
+
+목표:
+
+- batch replay의 Codex CLI paper-only 호출이 `CODEX_DECISION_MAX_RUNS_PER_DAY` 기본값 1에 묶이지 않게 합니다.
+- 각 replay run마다 독립 provider budget을 사용하고, Codex CLI 실행은 ephemeral session으로 격리합니다.
+- 실제 batch 실행 전에 연결 실패를 빠르게 드러내는 preflight를 추가합니다.
+
+작업 범위:
+
+- `CodexCliDecisionProvider`에 `ephemeral` command option 추가
+- single/batch historical replay Codex CLI 호출에 `--ephemeral` 적용
+- batch replay CLI에서 run마다 새 Codex provider 생성
+- `--max-codex-calls-per-run`을 per-run provider budget으로 사용
+- batch Codex preflight와 `--skip-codex-preflight` escape hatch 추가
+- Codex stderr failure summary helper 추가
+- provider/replay/CLI regression test와 PR review log 업데이트
+
+검증:
+
+- provider command에 `--ephemeral` 포함
+- batch CLI가 preflight 1회와 run별 Codex 호출을 수행하되 per-run cap 1에서 2개 run을 완료
+- provider failure audit summary에 핵심 stderr error line 포함
+- `npm run build`
+- targeted tests
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- AI prompt/schema 변경
+- retry/repair 정책 추가
+- allocation/exit/risk policy 변경
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

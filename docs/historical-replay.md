@@ -236,6 +236,8 @@ data/batch-replay/
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - `--window-sampling balanced_regime`을 사용하면 requested market regime bucket을 순환하며 window를 선택합니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
+- Codex CLI AI 호출은 run마다 별도 `CodexCliDecisionProvider`를 생성하고 `codex exec --ephemeral`을 사용합니다. `--max-codex-calls-per-run`은 batch 전체가 아니라 각 run의 paper-only 호출 상한입니다.
+- `--use-codex-ai` 실행 전에는 기본으로 preflight decision을 1회 수행합니다. 이미 Codex 연결을 별도 확인한 경우에만 `--skip-codex-preflight`로 생략합니다.
 - `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
 
 #### Market Regime Balanced Sampling

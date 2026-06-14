@@ -3,13 +3,14 @@ import "../config/loadEnv.js";
 import { readFileSync } from "node:fs";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
 import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
 import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
 import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
-import type { Market } from "../domain/schemas.js";
+import type { Market, MarketPacket } from "../domain/schemas.js";
 import {
   parseHistoricalUniverseManifest,
   requiredSymbolsFromHistoricalUniverse
@@ -65,25 +66,29 @@ if (
   throw new Error("--max-codex-calls-per-run must be a positive integer");
 }
 
-const codexDelegate = useCodexAi
-  ? new CodexCliDecisionProvider(
-      withHistoricalReplayPrompt(
-        {
-          enabled: true,
-          codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-          sandbox: "read-only",
-          timeoutMs:
-            Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-          maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
-          allowWebSearch: codexDecisionEnv.allowWebSearch,
-          ...(codexDecisionEnv.outputSchemaPath === undefined
-            ? {}
-            : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
-        },
-        { riskProfile: riskProfile.name }
-      )
+const createCodexDelegate = (): CodexCliDecisionProvider =>
+  new CodexCliDecisionProvider(
+    withHistoricalReplayPrompt(
+      {
+        enabled: true,
+        codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
+        sandbox: "read-only",
+        timeoutMs:
+          Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
+        maxRunsPerDay: maxCodexCallsPerRun,
+        allowWebSearch: codexDecisionEnv.allowWebSearch,
+        ephemeral: true,
+        ...(codexDecisionEnv.outputSchemaPath === undefined
+          ? {}
+          : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
+      },
+      { riskProfile: riskProfile.name }
     )
-  : null;
+  );
+
+if (useCodexAi && !args.includes("--skip-codex-preflight")) {
+  await assertCodexPreflight(createCodexDelegate());
+}
 
 const result = await runHistoricalBatchReplay({
   sourceDataDir:
@@ -113,13 +118,15 @@ const result = await runHistoricalBatchReplay({
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(paperExitPolicy === undefined ? {} : { paperExitPolicy }),
-  ...(codexDelegate === null
-    ? {}
-    : {
+  ...(useCodexAi
+    ? {
         decisionProviderFactory: () =>
-          new CodexHistoricalReplayDecisionProvider(codexDelegate, {
-            maxCallsPerReplay: maxCodexCallsPerRun
-          }),
+          new CodexHistoricalReplayDecisionProvider(
+            createCodexDelegate(),
+            {
+              maxCallsPerReplay: maxCodexCallsPerRun
+            }
+          ),
         decisionProviderMetadata: {
           mode: "codex_cli" as const,
           maxCallsPerRun: maxCodexCallsPerRun,
@@ -128,7 +135,8 @@ const result = await runHistoricalBatchReplay({
           promptPolicy: historicalPromptPolicy.name,
           promptVersion: historicalPromptPolicy.promptVersion
         }
-      }),
+      }
+    : {}),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
   riskPolicy: riskProfile.riskPolicy
@@ -318,4 +326,40 @@ function dedupeSymbols(
       ? left.symbol.localeCompare(right.symbol)
       : marketDiff;
   });
+}
+
+async function assertCodexPreflight(
+  provider: CodexCliDecisionProvider
+): Promise<void> {
+  const result = await provider.decide(codexPreflightPacket());
+  if (result.failure !== null || result.decision === null) {
+    throw new Error(
+      `Codex AI preflight failed: ${summarizeCodexCliDecisionFailure(
+        result.failure
+      )}`
+    );
+  }
+}
+
+function codexPreflightPacket(): MarketPacket {
+  const generatedAt = new Date();
+  const expiresAt = new Date(generatedAt.getTime() + 60_000);
+  return {
+    packetId: "packet_codex_preflight",
+    mode: "paper_only",
+    generatedAt: generatedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    virtualPortfolio: {
+      portfolioId: "virtual_preflight",
+      cashKrw: 0,
+      positions: [],
+      updatedAt: generatedAt.toISOString()
+    },
+    candidates: [],
+    constraints: {
+      maxNewPositions: 0,
+      maxBudgetPerSymbolKrw: 0,
+      allowedActions: ["VIRTUAL_HOLD"]
+    }
+  };
 }

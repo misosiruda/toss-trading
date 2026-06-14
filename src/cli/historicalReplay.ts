@@ -167,6 +167,7 @@ const decisionProvider = dryRun
               Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
             maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
             allowWebSearch: codexDecisionEnv.allowWebSearch,
+            ephemeral: true,
             ...(codexDecisionEnv.outputSchemaPath === undefined
               ? {}
               : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })

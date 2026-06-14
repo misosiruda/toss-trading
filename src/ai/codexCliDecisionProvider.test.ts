@@ -171,6 +171,19 @@ test("provider builds read-only codex exec command with output schema", async ()
   assert.match(runner.calls[0]?.options.stdin ?? "", /"packetId":"packet_001"/);
 });
 
+test("provider can build ephemeral codex exec command", async () => {
+  const runner = new FakeRunner({
+    exitCode: 0,
+    stdout: validDecisionJson,
+    stderr: "",
+    timedOut: false
+  });
+
+  await provider(runner, { ephemeral: true }).decide(packet());
+
+  assert.equal(runner.calls[0]?.args.includes("--ephemeral"), true);
+});
+
 test("paper decision prompt requires paper-only guarded output", () => {
   const prompt = buildPaperDecisionPrompt();
 

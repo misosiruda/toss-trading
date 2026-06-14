@@ -143,6 +143,53 @@ test("codex historical replay runner skips paper orders on provider failure", as
   );
 });
 
+test("codex historical replay runner records stderr details on provider failure", async () => {
+  const provider = new FakeCodexReplayProvider(() => ({
+    attempted: true,
+    decision: null,
+    failure: {
+      code: "AI_DECISION_FAILED",
+      reason: "exit_code_1",
+      stderr: [
+        "OpenAI Codex v0.130.0-alpha.5",
+        "user prompt omitted",
+        "ERROR: stream disconnected before completion: error sending request for url (https://api.openai.com/v1/responses)"
+      ].join("\n")
+    },
+    command: null
+  }));
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        })
+      ]
+    }
+  );
+
+  const failure = result.auditEvents.find(
+    (event) => event.eventType === "HISTORICAL_AI_DECISION_FAILED"
+  );
+  assert.match(failure?.summary ?? "", /exit_code_1/);
+  assert.match(failure?.summary ?? "", /api\.openai\.com/);
+  assert.doesNotMatch(failure?.summary ?? "", /user prompt omitted/);
+});
+
 test("codex historical replay runner executes paper exit policy before provider failure", async () => {
   const provider = new FakeCodexReplayProvider(() => ({
     attempted: true,
