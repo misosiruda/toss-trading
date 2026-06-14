@@ -268,16 +268,18 @@ Historical replay와 batch replay는 paper-only 실험용 risk profile을 선택
 npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-aggressive-profile-smoke --seed batch-seed-001 --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 5 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --risk-profile aggressive_paper
 ```
 
-| Profile | `maxNewPositions` | `maxBudgetPerSymbolKrw` | `maxPositionWeightRatio` | `minCashReserveRatio` |
-| --- | ---: | ---: | ---: | ---: |
-| `conservative` | 3 | 100,000 | 0.35 | 0.10 |
-| `balanced` | 4 | 200,000 | 0.45 | 0.08 |
-| `aggressive_paper` | 5 | 400,000 | 0.65 | 0.05 |
+| Profile | `targetExposureRatio` | `maxNewPositions` | `maxBudgetPerSymbolKrw` | `maxPositionWeightRatio` | `minCashReserveRatio` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `conservative` | 0.35 | 3 | 100,000 | 0.35 | 0.10 |
+| `balanced` | 0.55 | 4 | 200,000 | 0.45 | 0.08 |
+| `aggressive_paper` | 0.85 | 5 | 400,000 | 0.65 | 0.05 |
 
 - 기본값은 `conservative`입니다.
 - `--max-new-positions`, `--max-budget-per-symbol-krw`를 명시하면 선택한 profile의 packet constraint와 paper risk policy에 같은 override가 반영됩니다.
+- 각 profile은 `portfolioAllocation` snapshot을 packet에 추가합니다. 이 snapshot은 현재 노출, 목표 노출, 목표 노출까지의 추가 매수 가능 금액, per-decision budget, symbol exposure cap을 포함합니다.
+- `aggressive_paper`에서 `--initial-cash-krw`가 큰 경우 `maxBudgetPerSymbolKrw`, `maxBudgetPerDecisionKrw`, `maxSymbolExposureKrw`가 profile ratio에 맞춰 확장됩니다.
 - `aggressive_paper`는 더 큰 paper-only 매수 후보와 종목 exposure를 허용해 수익률 분포를 실험하기 위한 profile입니다.
-- 선택된 profile과 정규화된 risk policy는 `batch-replay-manifest.json`과 각 run의 `historical-replay-run-metadata.json`에 기록됩니다.
+- 선택된 profile, allocation policy, 정규화된 risk policy는 `batch-replay-manifest.json`과 각 run의 `historical-replay-run-metadata.json`에 기록됩니다.
 - 이 profile은 `VirtualRiskEngine`과 `PaperOrderEngine` 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않습니다.
 - profile 이름은 투자 조언, 수익률 보장, 실계좌 성과 예측으로 해석하면 안 됩니다.
 

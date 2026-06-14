@@ -1926,3 +1926,31 @@
 - batch Codex preflight는 `--skip-codex-preflight`가 없을 때 실행되며, 실패 summary는 `summarizeCodexCliDecisionFailure`로 압축합니다.
 - `src/replay/codexHistoricalReplayRunner.ts`는 `HISTORICAL_AI_DECISION_FAILED` audit summary에 stderr 핵심 error line을 포함합니다.
 - `src/cli/historicalReplayCli.test.ts`, `src/ai/codexCliDecisionProvider.test.ts`, `src/replay/codexHistoricalReplayRunner.test.ts`는 CLI budget/session, command flag, failure summary를 검증합니다.
+
+## PR-69: Paper Allocation Target Exposure
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay의 paper-only allocation snapshot과 target exposure gate에 한정합니다.
+- allocation snapshot은 market packet에 포함되는 deterministic metadata이며, live trading signal이나 order intent로 승격하지 않습니다.
+- AI/provider가 큰 budget을 제안해도 normalizer와 `VirtualRiskEngine`이 target exposure, per-decision budget, symbol exposure, cash reserve를 최종 제한합니다.
+- aggressive profile의 initial cash scaling은 paper replay profile에만 적용합니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/paper/allocationPolicy.test.js dist/market/packetBuilder.test.js dist/paper/decisionNormalizer.test.js dist/paper/orderEngine.test.js dist/paper/riskProfile.test.js dist/replay/historicalReplayRunner.test.js dist/workflows/historicalBatchReplayWorkflow.test.js dist/cli/historicalReplayCli.test.js`: pass, 67 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- allocation snapshot, packet eligibility, BUY budget cap, target exposure reject, first-priced fixture multi-candidate allocation, manifest/run metadata 저장을 확인했습니다.
+- 금지 경계 grep은 batch disclaimer의 `cannot place live orders` 문구만 match했고 신규 live/raw execution surface는 없습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/allocationPolicy.ts`는 target exposure, cash reserve, per-decision budget, symbol exposure cap을 계산합니다.
+- `src/domain/schemas.ts`, `src/market/packetBuilder.ts`, `src/market/historicalPacketBuilder.ts`는 `portfolioAllocation`을 packet contract에 추가합니다.
+- `src/paper/decisionNormalizer.ts`와 `src/paper/riskEngine.ts`는 allocation budget cap과 target exposure reject를 적용합니다.
+- `src/paper/riskProfile.ts`는 profile별 allocation policy와 initial cash 기반 aggressive budget scaling을 제공합니다.
+- `src/replay/historicalReplayRunner.ts`는 allocation이 있을 때 first-priced fixture를 여러 eligible 후보로 분산합니다.
+- `src/replay/codexHistoricalReplayRunner.ts`, `src/workflows/historicalReplayWorkflow.ts`, `src/workflows/historicalBatchReplayWorkflow.ts`, CLI는 allocation policy를 replay와 metadata에 전달합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 target exposure profile, metadata, 제외 범위를 문서화합니다.
