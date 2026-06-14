@@ -1898,3 +1898,31 @@
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 provider failure가 있어도 replay가 완료되면 batch run이 `completed`로 남고 AI failure count가 1로 기록되는지 검증합니다.
 - `src/reports/batchReplayReport.test.ts`는 completed run 내부 AI failure count와 failed run count가 분리되는지 검증합니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 AI failure accounting 의미, 검증 기준, 제외 범위를 문서화합니다.
+
+## PR-68: Codex CLI Batch Session Budget
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay의 Codex CLI paper-only provider 실행 방식에 한정합니다.
+- batch replay는 run마다 새 `CodexCliDecisionProvider`를 생성해 `--max-codex-calls-per-run`을 per-run budget으로 적용합니다.
+- Codex CLI 실행은 `--ephemeral`을 사용해 이전 CLI 세션 상태와 섞이지 않게 합니다.
+- preflight는 paper-only empty candidate packet으로 연결 실패를 조기에 드러내는 용도이며 trading decision, risk limit, order policy를 바꾸지 않습니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/ai/codexCliDecisionProvider.test.js dist/replay/codexHistoricalReplayRunner.test.js dist/cli/historicalReplayCli.test.js`: pass, 23 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- provider command에 `--ephemeral`이 포함되는지 확인했습니다.
+- fake Codex CLI fixture로 preflight 1회와 2개 replay run 호출이 모두 `--ephemeral`로 실행되고, per-run cap 1에서도 batch가 `completedCount=2`로 끝나는지 확인했습니다.
+- provider failure stderr summary가 핵심 `api.openai.com` error line은 남기고 prompt noise는 제외하는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/ai/codexCliDecisionProvider.ts`는 `ephemeral` option을 받아 `codex exec --ephemeral`을 구성합니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 historical Codex provider 생성 시 ephemeral 실행을 사용합니다.
+- `src/cli/historicalBatchReplay.ts`는 batch 전체에서 provider를 공유하지 않고 run마다 새 provider를 생성합니다.
+- batch Codex preflight는 `--skip-codex-preflight`가 없을 때 실행되며, 실패 summary는 `summarizeCodexCliDecisionFailure`로 압축합니다.
+- `src/replay/codexHistoricalReplayRunner.ts`는 `HISTORICAL_AI_DECISION_FAILED` audit summary에 stderr 핵심 error line을 포함합니다.
+- `src/cli/historicalReplayCli.test.ts`, `src/ai/codexCliDecisionProvider.test.ts`, `src/replay/codexHistoricalReplayRunner.test.ts`는 CLI budget/session, command flag, failure summary를 검증합니다.
