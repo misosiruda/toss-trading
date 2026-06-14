@@ -346,9 +346,17 @@ test("historical batch replay runner records selected risk profile", async () =>
     riskPolicy: {
       maxBudgetPerDecisionKrw: 400_000,
       maxSymbolExposureKrw: 600_000,
+      targetExposureRatio: 0.85,
       maxPositionWeightRatio: 0.65,
       minCashReserveRatio: 0.05,
       minCashReserveKrw: 0
+    },
+    allocationPolicy: {
+      policyName: "aggressive_paper_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.3
     },
     paperExitPolicy: {
       takeProfitRatio: 0.15,
@@ -372,6 +380,14 @@ test("historical batch replay runner records selected risk profile", async () =>
   const configuration = metadata["configuration"] as Record<string, unknown>;
   const constraints = configuration["constraints"] as Record<string, unknown>;
   const riskPolicy = configuration["riskPolicy"] as Record<string, unknown>;
+  const manifestAllocationPolicy = manifest["allocationPolicy"] as Record<
+    string,
+    unknown
+  >;
+  const allocationPolicy = configuration["allocationPolicy"] as Record<
+    string,
+    unknown
+  >;
   const paperExitPolicy = configuration["paperExitPolicy"] as Record<
     string,
     unknown
@@ -384,6 +400,10 @@ test("historical batch replay runner records selected risk profile", async () =>
     rebalanceMaxPositionWeightRatio: 0.55
   });
   assert.equal(configuration["riskProfile"], "aggressive_paper");
+  assert.equal(manifestAllocationPolicy["targetExposureRatio"], 0.85);
+  assert.equal(allocationPolicy["policyName"], "aggressive_paper_allocation");
+  assert.equal(allocationPolicy["targetExposureRatio"], 0.85);
+  assert.equal(allocationPolicy["maxBudgetPerDecisionRatio"], 0.2);
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
   assert.equal(paperExitPolicy["stopLossRatio"], 0.08);
   assert.equal(paperExitPolicy["rebalanceMaxPositionWeightRatio"], 0.55);
@@ -391,6 +411,7 @@ test("historical batch replay runner records selected risk profile", async () =>
   assert.equal(constraints["maxBudgetPerSymbolKrw"], 400_000);
   assert.equal(riskPolicy["maxBudgetPerDecisionKrw"], 400_000);
   assert.equal(riskPolicy["maxSymbolExposureKrw"], 600_000);
+  assert.equal(riskPolicy["targetExposureRatio"], 0.85);
   assert.equal(riskPolicy["maxPositionWeightRatio"], 0.65);
   assert.equal(riskPolicy["minCashReserveRatio"], 0.05);
 });

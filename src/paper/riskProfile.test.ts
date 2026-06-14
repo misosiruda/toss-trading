@@ -37,8 +37,12 @@ test("paper risk profile exposes aggressive paper-only limits", () => {
   assert.equal(profile.constraints.maxBudgetPerSymbolKrw, 400_000);
   assert.equal(profile.riskPolicy.maxBudgetPerDecisionKrw, 400_000);
   assert.equal(profile.riskPolicy.maxSymbolExposureKrw, 600_000);
+  assert.equal(profile.riskPolicy.targetExposureRatio, 0.85);
   assert.equal(profile.riskPolicy.maxPositionWeightRatio, 0.65);
   assert.equal(profile.riskPolicy.minCashReserveRatio, 0.05);
+  assert.equal(profile.allocationPolicy.targetExposureRatio, 0.85);
+  assert.equal(profile.allocationPolicy.maxBudgetPerDecisionRatio, 0.2);
+  assert.equal(profile.allocationPolicy.maxSymbolExposureRatio, 0.3);
 });
 
 test("paper risk profile applies explicit CLI budget override to policy", () => {
@@ -50,6 +54,19 @@ test("paper risk profile applies explicit CLI budget override to policy", () => 
   assert.equal(profile.constraints.maxBudgetPerSymbolKrw, 500_000);
   assert.equal(profile.riskPolicy.maxBudgetPerDecisionKrw, 500_000);
   assert.equal(profile.riskPolicy.maxSymbolExposureKrw, 750_000);
+});
+
+test("paper risk profile scales aggressive paper limits from initial cash", () => {
+  const profile = resolvePaperRiskProfile({
+    name: "aggressive_paper",
+    initialCashKrw: 10_000_000
+  });
+
+  assert.equal(profile.constraints.maxBudgetPerSymbolKrw, 2_000_000);
+  assert.equal(profile.riskPolicy.maxBudgetPerDecisionKrw, 2_000_000);
+  assert.equal(profile.riskPolicy.maxSymbolExposureKrw, 3_000_000);
+  assert.equal(profile.riskPolicy.targetExposureRatio, 0.85);
+  assert.equal(profile.riskPolicy.minCashReserveRatio, 0.05);
 });
 
 test("paper risk profile rejects unknown names", () => {

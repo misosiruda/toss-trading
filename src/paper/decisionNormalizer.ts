@@ -62,14 +62,24 @@ function normalizeBuy(
     "targetNotionalKrw" | "quantity" | "reduceOnly"
   >
 ): NormalizedVirtualOrder {
+  const allocationCaps = input.packet.portfolioAllocation;
   const requestedBudgetKrw = Math.min(
     input.decision.budgetKrw,
-    input.packet.constraints.maxBudgetPerSymbolKrw
+    input.packet.constraints.maxBudgetPerSymbolKrw,
+    allocationCaps?.maxBudgetPerDecisionKrw ?? Number.MAX_SAFE_INTEGER,
+    allocationCaps?.maxAdditionalBuyBudgetKrw ?? Number.MAX_SAFE_INTEGER
   );
-  const notes =
-    requestedBudgetKrw < input.decision.budgetKrw
-      ? ["BUY_BUDGET_CAPPED_BY_PACKET_POLICY"]
-      : [];
+  const notes: string[] = [];
+  if (requestedBudgetKrw < input.decision.budgetKrw) {
+    notes.push("BUY_BUDGET_CAPPED_BY_PACKET_POLICY");
+  }
+  if (
+    allocationCaps !== undefined &&
+    requestedBudgetKrw <= allocationCaps.maxAdditionalBuyBudgetKrw &&
+    input.decision.budgetKrw > allocationCaps.maxAdditionalBuyBudgetKrw
+  ) {
+    notes.push("BUY_BUDGET_CAPPED_BY_TARGET_EXPOSURE");
+  }
 
   return {
     ...base,

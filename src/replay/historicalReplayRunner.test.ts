@@ -68,6 +68,109 @@ test("historical replay runner is deterministic without AI", () => {
   );
 });
 
+test("first priced fixture uses allocation budget when present", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 200_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      allocationPolicy: {
+        policyName: "fixture_allocation",
+        targetExposureRatio: 0.85,
+        minCashReserveRatio: 0.05,
+        maxBudgetPerDecisionRatio: 0.2,
+        maxSymbolExposureRatio: 0.3
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.decisionRecordCount, 1);
+  assert.equal(result.decisions[0]?.decisions[0]?.budgetKrw, 200_000);
+  assert.equal(result.trades[0]?.netAmountKrw, 200_000);
+  assert.equal(result.finalPortfolio.cashKrw, 800_000);
+  assert.equal(result.allocationPolicy?.targetExposureRatio, 0.85);
+});
+
+test("first priced fixture spreads allocation budget across candidates", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      constraints: {
+        maxNewPositions: 5,
+        maxBudgetPerSymbolKrw: 200_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      allocationPolicy: {
+        policyName: "fixture_allocation",
+        targetExposureRatio: 0.85,
+        minCashReserveRatio: 0.05,
+        maxBudgetPerDecisionRatio: 0.2,
+        maxSymbolExposureRatio: 0.3
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        }),
+        snapshot({
+          snapshotId: "hist_000660_0900",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 120_000
+        }),
+        snapshot({
+          snapshotId: "hist_035420_0900",
+          symbol: "035420",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 180_000
+        })
+      ]
+    }
+  );
+
+  assert.deepEqual(
+    result.decisions[0]?.decisions
+      .map((decision) => decision.symbol)
+      .sort(),
+    ["000660", "005930", "035420"]
+  );
+  assert.deepEqual(
+    result.decisions[0]?.decisions.map((decision) => decision.budgetKrw),
+    [200_000, 200_000, 200_000]
+  );
+  assert.equal(result.tradeCount, 3);
+  assert.equal(result.finalPortfolio.cashKrw, 400_000);
+});
+
 test("historical replay runner leaves portfolio unchanged on risk reject", () => {
   const result = runHistoricalReplay(runnerOptions(), {
     initialPortfolio: portfolio({ cashKrw: 50 }),

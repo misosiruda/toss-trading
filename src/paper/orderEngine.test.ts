@@ -127,6 +127,43 @@ test("VirtualRiskEngine rejects buy decisions that breach cash reserve", () => {
   assert.ok(risk.checkedRules.includes("cash_reserve"));
 });
 
+test("VirtualRiskEngine rejects buy decisions that exceed target exposure", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet({
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 1_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      }
+    }),
+    portfolio: portfolio({
+      cashKrw: 300_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 7,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 700_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ symbol: "005930", budgetKrw: 200_000 }),
+    policy: {
+      now,
+      maxBudgetPerDecisionKrw: 1_000_000,
+      maxSymbolExposureKrw: 1_000_000,
+      targetExposureRatio: 0.8,
+      maxPositionWeightRatio: 1
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_TARGET_EXPOSURE_EXCEEDED"));
+  assert.ok(risk.checkedRules.includes("target_exposure"));
+});
+
 test("VirtualRiskEngine rejects buy decisions that exceed NAV weight", () => {
   const risk = new VirtualRiskEngine().evaluate({
     packet: packet({

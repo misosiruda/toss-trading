@@ -79,6 +79,19 @@ export class VirtualRiskEngine {
         appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_BUDGET_EXCEEDED");
       }
 
+      const netWorthKrw = virtualNetWorthKrw(input.portfolio);
+      if (
+        policy.targetExposureRatio !== undefined &&
+        netWorthKrw > 0 &&
+        (portfolioExposureKrw(input.portfolio) + notionalKrw) / netWorthKrw >
+          policy.targetExposureRatio
+      ) {
+        appendVirtualRiskRejectCode(
+          rejectCodes,
+          "VIRTUAL_TARGET_EXPOSURE_EXCEEDED"
+        );
+      }
+
       const currentExposure = currentSymbolExposureKrw(
         input.portfolio,
         input.decision
@@ -90,7 +103,6 @@ export class VirtualRiskEngine {
         );
       }
 
-      const netWorthKrw = virtualNetWorthKrw(input.portfolio);
       if (
         netWorthKrw > 0 &&
         (currentExposure + notionalKrw) / netWorthKrw >
@@ -178,4 +190,14 @@ function currentSymbolExposureKrw(
   }
 
   return position.marketValueKrw ?? Math.round(position.quantity * position.averagePriceKrw);
+}
+
+function portfolioExposureKrw(portfolio: VirtualPortfolio): number {
+  return portfolio.positions.reduce(
+    (sum, position) =>
+      sum +
+      (position.marketValueKrw ??
+        Math.round(position.quantity * position.averagePriceKrw)),
+    0
+  );
 }

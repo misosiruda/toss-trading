@@ -52,6 +52,42 @@ test("normalizer derives sell notional from reduce-only ratio", () => {
   assert.equal(order.reduceOnly, true);
 });
 
+test("normalizer caps buy notional by portfolio allocation budget", () => {
+  const order = normalizeVirtualDecision({
+    packet: packet({
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 500_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      portfolioAllocation: {
+        policyName: "fixture_allocation",
+        targetExposureRatio: 0.8,
+        minCashReserveRatio: 0.05,
+        maxBudgetPerDecisionRatio: 0.2,
+        maxSymbolExposureRatio: 0.3,
+        currentExposureRatio: 0.7,
+        currentCashRatio: 0.3,
+        targetCashRatio: 0.2,
+        targetExposureGapRatio: 0.1,
+        targetExposureGapKrw: 100_000,
+        maxAdditionalBuyBudgetKrw: 80_000,
+        maxBudgetPerDecisionKrw: 200_000,
+        maxSymbolExposureKrw: 300_000,
+        minCashReserveKrw: 50_000
+      }
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 300_000 })
+  });
+
+  assert.equal(order.targetNotionalKrw, 80_000);
+  assert.deepEqual(order.normalizationNotes, [
+    "BUY_BUDGET_CAPPED_BY_PACKET_POLICY",
+    "BUY_BUDGET_CAPPED_BY_TARGET_EXPOSURE"
+  ]);
+});
+
 test("normalizer clips oversize sell quantity to available position", () => {
   const order = normalizeVirtualDecision({
     packet: packet(),

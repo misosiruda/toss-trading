@@ -39,6 +39,7 @@ import {
 } from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
@@ -55,6 +56,7 @@ export interface HistoricalReplayWorkflowOptions {
   constraints: MarketPacketConstraints;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  allocationPolicy?: PaperAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   runId?: string;
   batchId?: string;
@@ -95,6 +97,9 @@ export async function runHistoricalReplayWorkflow(
     maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
     constraints: options.constraints,
     ...(options.riskPolicy === undefined ? {} : { riskPolicy: options.riskPolicy }),
+    ...(options.allocationPolicy === undefined
+      ? {}
+      : { allocationPolicy: options.allocationPolicy }),
     ...(options.paperExitPolicy === undefined
       ? {}
       : { paperExitPolicy: options.paperExitPolicy })
@@ -231,6 +236,7 @@ function buildRunMetadataContext(
       constraints: options.constraints,
       riskProfile: options.riskProfile ?? null,
       riskPolicy: serializeRiskPolicy(options.riskPolicy),
+      allocationPolicy: options.allocationPolicy ?? null,
       paperExitPolicy: normalizePaperExitPolicy(options.paperExitPolicy)
     }
   };
@@ -250,6 +256,9 @@ function serializeRiskPolicy(
     ...(policy.maxSymbolExposureKrw === undefined
       ? {}
       : { maxSymbolExposureKrw: policy.maxSymbolExposureKrw }),
+    ...(policy.targetExposureRatio === undefined
+      ? {}
+      : { targetExposureRatio: policy.targetExposureRatio }),
     ...(policy.maxPositionWeightRatio === undefined
       ? {}
       : { maxPositionWeightRatio: policy.maxPositionWeightRatio }),

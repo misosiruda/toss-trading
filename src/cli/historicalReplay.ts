@@ -120,6 +120,7 @@ const maxBudgetPerSymbolOverride = readOptionalNumberArg(
 );
 const riskProfile = resolvePaperRiskProfile({
   name: parsePaperRiskProfileName(readArgValue("--risk-profile")),
+  initialCashKrw,
   ...(maxNewPositionsOverride === undefined
     ? {}
     : { maxNewPositions: maxNewPositionsOverride }),
@@ -200,6 +201,7 @@ const result = await runHistoricalReplayWorkflow({
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
   riskPolicy: riskProfile.riskPolicy,
+  allocationPolicy: riskProfile.allocationPolicy,
   ...(paperExitPolicy === undefined ? {} : { paperExitPolicy })
 });
 

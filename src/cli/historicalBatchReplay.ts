@@ -33,12 +33,14 @@ const requiredSymbols = readRequiredSymbols();
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
 const codexDecisionEnv = readHistoricalCodexDecisionEnv();
+const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
   "--max-budget-per-symbol-krw"
 );
 const riskProfile = resolvePaperRiskProfile({
   name: parsePaperRiskProfileName(readArgValue("--risk-profile")),
+  initialCashKrw,
   ...(maxNewPositionsOverride === undefined
     ? {}
     : { maxNewPositions: maxNewPositionsOverride }),
@@ -107,7 +109,7 @@ const result = await runHistoricalBatchReplay({
   candidateChangedOnly: args.includes("--candidate-changed-only"),
   ...(decisionFrequency === undefined ? {} : { decisionFrequency }),
   ...(maxDecisionCalls === undefined ? {} : { maxDecisionCalls }),
-  initialCashKrw: readNumberArg("--initial-cash-krw", 1_000_000),
+  initialCashKrw,
   packetIdPrefix: readArgValue("--packet-id-prefix") ?? "packet_batch_replay",
   packetExpiresInSeconds: readNumberArg("--packet-expires-in-seconds", 60),
   maxCandidates: readNumberArg("--max-candidates", 10),
@@ -139,7 +141,8 @@ const result = await runHistoricalBatchReplay({
     : {}),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
-  riskPolicy: riskProfile.riskPolicy
+  riskPolicy: riskProfile.riskPolicy,
+  allocationPolicy: riskProfile.allocationPolicy
 });
 
 console.log(

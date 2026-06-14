@@ -152,6 +152,25 @@ export const historicalMarketSnapshotSchema = z
     }
   });
 
+export const portfolioAllocationSchema = z
+  .object({
+    policyName: nonEmptyStringSchema,
+    targetExposureRatio: ratioSchema,
+    minCashReserveRatio: ratioSchema,
+    maxBudgetPerDecisionRatio: ratioSchema,
+    maxSymbolExposureRatio: ratioSchema,
+    currentExposureRatio: ratioSchema,
+    currentCashRatio: ratioSchema,
+    targetCashRatio: ratioSchema,
+    targetExposureGapRatio: ratioSchema,
+    targetExposureGapKrw: moneyKrwSchema,
+    maxAdditionalBuyBudgetKrw: moneyKrwSchema,
+    maxBudgetPerDecisionKrw: moneyKrwSchema,
+    maxSymbolExposureKrw: moneyKrwSchema,
+    minCashReserveKrw: moneyKrwSchema
+  })
+  .strict();
+
 export const marketPacketSchema = z
   .object({
     packetId: nonEmptyStringSchema,
@@ -166,7 +185,8 @@ export const marketPacketSchema = z
         maxBudgetPerSymbolKrw: moneyKrwSchema,
         allowedActions: z.array(virtualActionSchema).min(1)
       })
-      .strict()
+      .strict(),
+    portfolioAllocation: portfolioAllocationSchema.optional()
   })
   .strict();
 
@@ -354,6 +374,7 @@ export type MarketCandidate = z.infer<typeof marketCandidateSchema>;
 export type HistoricalMarketSnapshot = z.infer<
   typeof historicalMarketSnapshotSchema
 >;
+export type PortfolioAllocation = z.infer<typeof portfolioAllocationSchema>;
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
 export type VirtualDecisionClaimSupport = z.infer<
   typeof virtualDecisionClaimSupportSchema

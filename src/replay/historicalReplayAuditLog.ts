@@ -104,9 +104,20 @@ export const historicalReplayRunConfigurationSchema = z
       .object({
         maxBudgetPerDecisionKrw: z.number().int().nonnegative().optional(),
         maxSymbolExposureKrw: z.number().int().nonnegative().optional(),
+        targetExposureRatio: z.number().min(0).max(1).optional(),
         maxPositionWeightRatio: z.number().min(0).max(1).optional(),
         minCashReserveRatio: z.number().min(0).max(1).optional(),
         minCashReserveKrw: z.number().int().nonnegative().optional()
+      })
+      .strict()
+      .nullable(),
+    allocationPolicy: z
+      .object({
+        policyName: z.string().trim().min(1),
+        targetExposureRatio: z.number().min(0).max(1),
+        minCashReserveRatio: z.number().min(0).max(1),
+        maxBudgetPerDecisionRatio: z.number().min(0).max(1),
+        maxSymbolExposureRatio: z.number().min(0).max(1)
       })
       .strict()
       .nullable(),
