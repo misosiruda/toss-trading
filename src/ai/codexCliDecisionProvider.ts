@@ -34,6 +34,7 @@ export interface CodexCliDecisionProviderConfig {
   policyVersion?: string;
   prompt?: string;
   promptVersion?: string;
+  ephemeral?: boolean;
   now?: () => Date;
 }
 
@@ -143,6 +144,7 @@ export class CodexCliDecisionProvider {
       "exec",
       "--sandbox",
       this.config.sandbox,
+      ...this.optionalEphemeralArgs(),
       ...this.optionalOutputSchemaArgs(),
       ...this.optionalWebSearchArgs(),
       this.config.prompt ?? buildPaperDecisionPrompt()
@@ -159,6 +161,10 @@ export class CodexCliDecisionProvider {
     return this.config.outputSchemaPath
       ? ["--output-schema", this.config.outputSchemaPath]
       : [];
+  }
+
+  private optionalEphemeralArgs(): string[] {
+    return this.config.ephemeral === true ? ["--ephemeral"] : [];
   }
 
   private optionalWebSearchArgs(): string[] {

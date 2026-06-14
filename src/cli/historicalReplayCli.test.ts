@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -409,6 +414,83 @@ test("historical batch replay CLI rejects invalid per-run Codex call cap", () =>
   );
 });
 
+test("historical batch replay CLI uses ephemeral Codex sessions per run", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-codex-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-codex-output-")
+  );
+  const fakeCodexDir = mkdtempSync(join(tmpdir(), "fake-codex-cli-"));
+  const fakeCodexLogPath = join(fakeCodexDir, "calls.jsonl");
+  createFakeCodexExecScript(fakeCodexDir);
+  const cliPath = join(
+    process.cwd(),
+    "dist",
+    "cli",
+    "historicalBatchReplay.js"
+  );
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-codex-ephemeral",
+      "--seed",
+      "seed-001",
+      "--runs",
+      "2",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60),
+      "--max-decision-calls",
+      "1",
+      "--max-codex-calls-per-run",
+      "1",
+      "--use-codex-ai"
+    ],
+    {
+      cwd: fakeCodexDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_DECISION_MODE: "paper_only",
+        AI_DECISION_ENABLED: "true",
+        CODEX_EXEC_PATH: process.execPath,
+        CODEX_EXEC_TIMEOUT_SECONDS: "5",
+        FAKE_CODEX_LOG_PATH: fakeCodexLogPath
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const calls = readFileSync(fakeCodexLogPath, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as { args: string[] });
+
+  assert.equal(output["completedCount"], 2);
+  assert.equal(calls.length, 3);
+  assert.equal(calls.every((call) => call.args.includes("--ephemeral")), true);
+});
+
 function snapshot(
   snapshotId: string,
   symbol: string
@@ -425,6 +507,36 @@ function snapshot(
     sourceRefs: [`fixture:${snapshotId}`],
     createdAt: observedAt
   };
+}
+
+function createFakeCodexExecScript(baseDir: string): void {
+  const scriptPath = join(baseDir, "exec");
+  writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const logPath = process.env.FAKE_CODEX_LOG_PATH;",
+      "if (logPath) { fs.appendFileSync(logPath, JSON.stringify({ args: process.argv.slice(2) }) + '\\n'); }",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const parsed = JSON.parse(input);",
+      "  const packet = parsed.marketPacket;",
+      "  process.stdout.write(JSON.stringify({",
+      "    packetId: packet.packetId,",
+      "    packetHash: parsed.packetHash,",
+      "    promptVersion: parsed.promptVersion,",
+      "    modelId: parsed.modelId,",
+      "    schemaVersion: parsed.schemaVersion,",
+      "    policyVersion: parsed.policyVersion,",
+      "    summary: 'fake Codex hold decision',",
+      "    decisions: []",
+      "  }));",
+      "});"
+    ].join("\n"),
+    "utf8"
+  );
 }
 
 function universe() {

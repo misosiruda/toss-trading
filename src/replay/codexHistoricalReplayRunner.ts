@@ -20,6 +20,7 @@ import {
 } from "../paper/exitPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
+import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
 import {
   markPortfolioToMarket,
   pricePointsFromHistoricalSnapshots
@@ -374,7 +375,7 @@ export async function runCodexHistoricalReplay(
       appendAuditEvent(
         auditEvents,
         "HISTORICAL_AI_DECISION_FAILED",
-        decisionResult.failure?.reason ?? "provider returned no decision",
+        summarizeCodexCliDecisionFailure(decisionResult.failure),
         tick
       );
       portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
