@@ -296,6 +296,73 @@ test("MarketPacketBuilder includes allocation snapshot and blocks buys at target
   assert.equal(result.packet.candidates[0]?.budgetTierAllowed, "NONE");
 });
 
+test("MarketPacketBuilder blocks buys when candidate market target is reached", () => {
+  const result = new MarketPacketBuilder({
+    packetId: "packet_test_001",
+    generatedAt,
+    expiresInSeconds: 300,
+    maxCandidates: 2,
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 200_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    allocationPolicy: {
+      policyName: "market_aware_allocation",
+      targetExposureRatio: 0.8,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.3,
+      marketTargetExposureRatios: {
+        KR: 0.1,
+        US: 0.5
+      }
+    }
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      cashKrw: 800_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 20,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 200_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [
+      candidate("000660", 1),
+      { ...candidate("AAPL", 2), market: "US" }
+    ]
+  });
+
+  const krCandidate = result.packet.candidates.find(
+    (item) => item.market === "KR"
+  )!;
+  const usCandidate = result.packet.candidates.find(
+    (item) => item.market === "US"
+  )!;
+
+  assert.equal(
+    result.packet.portfolioAllocation?.marketAllocations?.KR
+      ?.maxAdditionalBuyBudgetKrw,
+    0
+  );
+  assert.equal(krCandidate.buyEligible, false);
+  assert.equal(
+    krCandidate.blockedReasonCodes?.includes(
+      "MARKET_TARGET_EXPOSURE_REACHED"
+    ),
+    true
+  );
+  assert.equal(krCandidate.budgetTierAllowed, "NONE");
+  assert.equal(usCandidate.buyEligible, true);
+  assert.equal(usCandidate.budgetTierAllowed, "LARGE");
+});
+
 test("MarketPacketBuilder drops sensitive extra fields from raw candidate drafts", () => {
   const rawCandidate = {
     ...candidate("005930", 1),
