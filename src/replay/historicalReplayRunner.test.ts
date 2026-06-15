@@ -171,6 +171,74 @@ test("first priced fixture spreads allocation budget across candidates", () => {
   assert.equal(result.finalPortfolio.cashKrw, 400_000);
 });
 
+test("first priced fixture respects market allocation budget", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      constraints: {
+        maxNewPositions: 5,
+        maxBudgetPerSymbolKrw: 200_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      allocationPolicy: {
+        policyName: "fixture_market_allocation",
+        targetExposureRatio: 0.85,
+        minCashReserveRatio: 0.05,
+        maxBudgetPerDecisionRatio: 0.2,
+        maxSymbolExposureRatio: 0.3,
+        marketTargetExposureRatios: {
+          KR: 0.1,
+          US: 0.4
+        }
+      }
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 800_000,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 20,
+            averagePriceKrw: 10_000,
+            marketValueKrw: 200_000,
+            updatedAt: "2025-01-02T09:00:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_000660_0900",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000,
+          market: "KR"
+        }),
+        snapshot({
+          snapshotId: "hist_aapl_0900",
+          symbol: "AAPL",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 120_000,
+          market: "US"
+        })
+      ]
+    }
+  );
+
+  assert.deepEqual(
+    result.decisions[0]?.decisions.map((decision) => decision.market),
+    ["US"]
+  );
+  assert.equal(result.decisions[0]?.decisions[0]?.budgetKrw, 200_000);
+  assert.equal(result.trades[0]?.market, "US");
+  assert.equal(result.tradeCount, 1);
+});
+
 test("historical replay runner leaves portfolio unchanged on risk reject", () => {
   const result = runHistoricalReplay(runnerOptions(), {
     initialPortfolio: portfolio({ cashKrw: 50 }),
@@ -523,10 +591,11 @@ function snapshot(input: {
   symbol: string;
   observedAt: string;
   lastPriceKrw: number;
+  market?: HistoricalMarketSnapshot["market"];
 }): HistoricalMarketSnapshot {
   return {
     snapshotId: input.snapshotId,
-    market: "KR",
+    market: input.market ?? "KR",
     symbol: input.symbol,
     observedAt: input.observedAt,
     interval: "1m",
