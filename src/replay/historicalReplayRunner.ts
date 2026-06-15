@@ -155,6 +155,14 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
 
   const decisions: VirtualDecisionItem[] = [];
   const projectedExposureBySymbol = currentExposureBySymbol(packet);
+  const remainingMarketBudgetByMarket = new Map(
+    Object.entries(allocation.marketAllocations ?? {}).map(
+      ([market, marketAllocation]) => [
+        market,
+        marketAllocation.maxAdditionalBuyBudgetKrw
+      ]
+    )
+  );
   let remainingAdditionalBudgetKrw = allocation.maxAdditionalBuyBudgetKrw;
   let remainingCashBudgetKrw = Math.max(
     0,
@@ -177,7 +185,10 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
       candidate,
       currentSymbolExposureKrw,
       remainingAdditionalBudgetKrw,
-      remainingCashBudgetKrw
+      remainingCashBudgetKrw,
+      remainingMarketBudgetKrw: remainingMarketBudgetByMarket.get(
+        candidate.market
+      )
     });
     if (budgetKrw <= 0) {
       continue;
@@ -190,6 +201,15 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
     );
     remainingAdditionalBudgetKrw -= budgetKrw;
     remainingCashBudgetKrw -= budgetKrw;
+    const remainingMarketBudget = remainingMarketBudgetByMarket.get(
+      candidate.market
+    );
+    if (remainingMarketBudget !== undefined) {
+      remainingMarketBudgetByMarket.set(
+        candidate.market,
+        remainingMarketBudget - budgetKrw
+      );
+    }
   }
 
   if (decisions.length > 0) {
@@ -277,6 +297,7 @@ function firstPricedBudgetKrw(input: {
   currentSymbolExposureKrw: number;
   remainingAdditionalBudgetKrw: number;
   remainingCashBudgetKrw: number;
+  remainingMarketBudgetKrw?: number | undefined;
 }): number {
   const allocation = input.packet.portfolioAllocation;
   if (allocation === undefined) {
@@ -296,7 +317,8 @@ function firstPricedBudgetKrw(input: {
         allocation.maxBudgetPerDecisionKrw,
         input.remainingAdditionalBudgetKrw,
         symbolHeadroomKrw,
-        input.remainingCashBudgetKrw
+        input.remainingCashBudgetKrw,
+        input.remainingMarketBudgetKrw ?? Number.MAX_SAFE_INTEGER
       )
     )
   );
@@ -701,9 +723,7 @@ function decisionItemSymbolKey(
 
 function appendAuditEvent(
   events: AuditEvent[],
-  eventType: string,
-  summary: string,
-  tick: SimulatedTick
+  eventType: string, summary: string, tick: SimulatedTick
 ): void {
   events.push(auditEvent(eventType, summary, tick, events.length));
 }
