@@ -289,7 +289,9 @@ function countRegimesByMarket(
   const counts: Partial<Record<Market, Partial<Record<MarketRegimeLabel, number>>>> =
     {};
   for (const record of records) {
-    for (const [market, regime] of Object.entries(record.marketRegimesByMarket)) {
+    for (const [market, regime] of Object.entries(
+      record.marketRegimesByMarket ?? {}
+    )) {
       const marketKey = market as Market;
       const marketCounts = counts[marketKey] ?? {};
       marketCounts[regime.label] = (marketCounts[regime.label] ?? 0) + 1;
