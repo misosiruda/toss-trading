@@ -63,11 +63,14 @@ function normalizeBuy(
   >
 ): NormalizedVirtualOrder {
   const allocationCaps = input.packet.portfolioAllocation;
+  const marketAllocationCap =
+    allocationCaps?.marketAllocations?.[input.decision.market];
   const requestedBudgetKrw = Math.min(
     input.decision.budgetKrw,
     input.packet.constraints.maxBudgetPerSymbolKrw,
     allocationCaps?.maxBudgetPerDecisionKrw ?? Number.MAX_SAFE_INTEGER,
-    allocationCaps?.maxAdditionalBuyBudgetKrw ?? Number.MAX_SAFE_INTEGER
+    allocationCaps?.maxAdditionalBuyBudgetKrw ?? Number.MAX_SAFE_INTEGER,
+    marketAllocationCap?.maxAdditionalBuyBudgetKrw ?? Number.MAX_SAFE_INTEGER
   );
   const notes: string[] = [];
   if (requestedBudgetKrw < input.decision.budgetKrw) {
@@ -79,6 +82,13 @@ function normalizeBuy(
     input.decision.budgetKrw > allocationCaps.maxAdditionalBuyBudgetKrw
   ) {
     notes.push("BUY_BUDGET_CAPPED_BY_TARGET_EXPOSURE");
+  }
+  if (
+    marketAllocationCap !== undefined &&
+    requestedBudgetKrw <= marketAllocationCap.maxAdditionalBuyBudgetKrw &&
+    input.decision.budgetKrw > marketAllocationCap.maxAdditionalBuyBudgetKrw
+  ) {
+    notes.push("BUY_BUDGET_CAPPED_BY_MARKET_TARGET_EXPOSURE");
   }
 
   return {

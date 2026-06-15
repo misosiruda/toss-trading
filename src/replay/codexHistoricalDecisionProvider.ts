@@ -141,6 +141,7 @@ export function buildHistoricalReplayDecisionPrompt(
       "Do not chase a monthly return target, do not force trades to reach 15-30% returns, and do not guarantee performance.",
       "Prefer VIRTUAL_BUY over VIRTUAL_HOLD only for top-ranked candidates with strong featureScores or reasonCodes, fresh dataRefs, buyEligible=true, and enough cash under packet constraints.",
       "When marketPacket.portfolioAllocation shows a positive targetExposureGapKrw, prefer filling that gap across eligible top-ranked candidates while staying within maxAdditionalBuyBudgetKrw, maxBudgetPerDecisionKrw, maxSymbolExposureKrw, and marketPacket.constraints.maxBudgetPerSymbolKrw.",
+      "When marketPacket.portfolioAllocation.marketAllocations is present, also keep each VIRTUAL_BUY within that candidate market's maxAdditionalBuyBudgetKrw.",
       "When proposing VIRTUAL_BUY, size budgetKrw close to the allowed paper allocation budget only when riskFactors explicitly cover concentration, drawdown, stale-data, target-exposure, and cash-reserve risk.",
       "Use reduce-only VIRTUAL_SELL for existing positions when packet evidence weakens or portfolio state shows concentration, cash, or policy conflict supported by packet data.",
       "VIRTUAL_HOLD remains required when eligibility, evidence, or constraints do not support a non-hold action."

@@ -184,6 +184,9 @@ export const portfolioAllocationSchema = z
     minCashReserveRatio: ratioSchema,
     maxBudgetPerDecisionRatio: ratioSchema,
     maxSymbolExposureRatio: ratioSchema,
+    marketTargetExposureRatios: z
+      .partialRecord(marketSchema, ratioSchema)
+      .optional(),
     currentExposureRatio: ratioSchema,
     currentCashRatio: ratioSchema,
     targetCashRatio: ratioSchema,
@@ -192,7 +195,22 @@ export const portfolioAllocationSchema = z
     maxAdditionalBuyBudgetKrw: moneyKrwSchema,
     maxBudgetPerDecisionKrw: moneyKrwSchema,
     maxSymbolExposureKrw: moneyKrwSchema,
-    minCashReserveKrw: moneyKrwSchema
+    minCashReserveKrw: moneyKrwSchema,
+    marketAllocations: z
+      .partialRecord(
+        marketSchema,
+        z
+          .object({
+            market: marketSchema,
+            targetExposureRatio: ratioSchema,
+            currentExposureRatio: ratioSchema,
+            targetExposureGapRatio: ratioSchema,
+            targetExposureGapKrw: moneyKrwSchema,
+            maxAdditionalBuyBudgetKrw: moneyKrwSchema
+          })
+          .strict()
+      )
+      .optional()
   })
   .strict();
 

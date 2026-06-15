@@ -56,6 +56,49 @@ test("paper allocation snapshot caps additional buys at target exposure gap", ()
   assert.equal(snapshot.maxAdditionalBuyBudgetKrw, 5_500_000);
 });
 
+test("paper allocation snapshot calculates market target exposure budgets", () => {
+  const snapshot = buildPaperAllocationSnapshot({
+    portfolio: portfolio({
+      cashKrw: 7_000_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 30,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 3_000_000,
+          updatedAt: "2026-06-14T09:00:00+09:00"
+        }
+      ]
+    }),
+    policy: {
+      policyName: "market_aware_paper_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.3,
+      marketTargetExposureRatios: {
+        KR: 0.2,
+        US: 0.6
+      }
+    }
+  });
+
+  assert.deepEqual(snapshot.marketTargetExposureRatios, {
+    KR: 0.2,
+    US: 0.6
+  });
+  assert.equal(snapshot.marketAllocations?.KR?.currentExposureRatio, 0.3);
+  assert.equal(snapshot.marketAllocations?.KR?.targetExposureGapKrw, 0);
+  assert.equal(snapshot.marketAllocations?.KR?.maxAdditionalBuyBudgetKrw, 0);
+  assert.equal(snapshot.marketAllocations?.US?.currentExposureRatio, 0);
+  assert.equal(snapshot.marketAllocations?.US?.targetExposureGapKrw, 6_000_000);
+  assert.equal(
+    snapshot.marketAllocations?.US?.maxAdditionalBuyBudgetKrw,
+    6_000_000
+  );
+});
+
 function portfolio(overrides: Partial<VirtualPortfolio> = {}): VirtualPortfolio {
   return {
     portfolioId: "virtual_default",

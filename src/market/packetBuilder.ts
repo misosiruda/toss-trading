@@ -450,6 +450,8 @@ function deriveCandidateEligibility(input: {
     input.candidate.lastPriceKrw !== undefined &&
     input.candidate.lastPriceKrw > 0;
   const cooldownActive = input.candidate.cooldownActive === true;
+  const marketAllocation =
+    input.portfolioAllocation?.marketAllocations?.[input.candidate.market];
   const buyBlockedReasonCodes: string[] = [];
   const sellBlockedReasonCodes: string[] = [];
 
@@ -476,6 +478,12 @@ function deriveCandidateEligibility(input: {
     input.portfolioAllocation.maxAdditionalBuyBudgetKrw <= 0
   ) {
     buyBlockedReasonCodes.push("TARGET_EXPOSURE_REACHED");
+  }
+  if (
+    marketAllocation !== undefined &&
+    marketAllocation.maxAdditionalBuyBudgetKrw <= 0
+  ) {
+    buyBlockedReasonCodes.push("MARKET_TARGET_EXPOSURE_REACHED");
   }
   if (cooldownActive) {
     buyBlockedReasonCodes.push("COOLDOWN_ACTIVE");
@@ -505,7 +513,9 @@ function deriveCandidateEligibility(input: {
       cashKrw: input.portfolio.cashKrw,
       maxBudgetPerSymbolKrw: input.constraints.maxBudgetPerSymbolKrw,
       maxAdditionalBuyBudgetKrw:
-        input.portfolioAllocation?.maxAdditionalBuyBudgetKrw
+        input.portfolioAllocation?.maxAdditionalBuyBudgetKrw,
+      maxMarketAdditionalBuyBudgetKrw:
+        marketAllocation?.maxAdditionalBuyBudgetKrw
     }),
     positionExists,
     cooldownActive
@@ -517,6 +527,7 @@ function deriveBudgetTier(input: {
   cashKrw: number;
   maxBudgetPerSymbolKrw: number;
   maxAdditionalBuyBudgetKrw?: number | undefined;
+  maxMarketAdditionalBuyBudgetKrw?: number | undefined;
 }): VirtualBudgetTier {
   if (
     !input.buyEligible ||
@@ -529,7 +540,8 @@ function deriveBudgetTier(input: {
   const allowedBudgetKrw = Math.min(
     input.cashKrw,
     input.maxBudgetPerSymbolKrw,
-    input.maxAdditionalBuyBudgetKrw ?? input.maxBudgetPerSymbolKrw
+    input.maxAdditionalBuyBudgetKrw ?? input.maxBudgetPerSymbolKrw,
+    input.maxMarketAdditionalBuyBudgetKrw ?? input.maxBudgetPerSymbolKrw
   );
   const ratio = allowedBudgetKrw / input.maxBudgetPerSymbolKrw;
 

@@ -1,5 +1,7 @@
-import type { VirtualPortfolio } from "../domain/schemas.js";
+import type { Market, VirtualPortfolio } from "../domain/schemas.js";
 import { virtualNetWorthKrw } from "./riskPolicy.js";
+
+export type PaperMarketTargetExposureRatios = Partial<Record<Market, number>>;
 
 export interface PaperAllocationPolicy {
   policyName: string;
@@ -7,6 +9,7 @@ export interface PaperAllocationPolicy {
   minCashReserveRatio: number;
   maxBudgetPerDecisionRatio: number;
   maxSymbolExposureRatio: number;
+  marketTargetExposureRatios?: PaperMarketTargetExposureRatios;
 }
 
 export interface PaperAllocationSnapshot extends PaperAllocationPolicy {
@@ -19,6 +22,20 @@ export interface PaperAllocationSnapshot extends PaperAllocationPolicy {
   maxBudgetPerDecisionKrw: number;
   maxSymbolExposureKrw: number;
   minCashReserveKrw: number;
+  marketAllocations?: PaperMarketAllocationSnapshotByMarket;
+}
+
+export type PaperMarketAllocationSnapshotByMarket = Partial<
+  Record<Market, PaperMarketAllocationSnapshot>
+>;
+
+export interface PaperMarketAllocationSnapshot {
+  market: Market;
+  targetExposureRatio: number;
+  currentExposureRatio: number;
+  targetExposureGapRatio: number;
+  targetExposureGapKrw: number;
+  maxAdditionalBuyBudgetKrw: number;
 }
 
 export function buildPaperAllocationSnapshot(input: {
@@ -43,8 +60,14 @@ export function buildPaperAllocationSnapshot(input: {
     0,
     targetPositionValueKrw - positionMarketValueKrw
   );
+  const marketAllocations = buildMarketAllocations({
+    portfolio: input.portfolio,
+    policy: input.policy,
+    netWorthKrw,
+    cashAvailableAfterReserve
+  });
 
-  return {
+  const snapshot: PaperAllocationSnapshot = {
     policyName: input.policy.policyName,
     targetExposureRatio,
     minCashReserveRatio,
@@ -52,6 +75,13 @@ export function buildPaperAllocationSnapshot(input: {
       input.policy.maxBudgetPerDecisionRatio
     ),
     maxSymbolExposureRatio: boundedRatio(input.policy.maxSymbolExposureRatio),
+    ...(input.policy.marketTargetExposureRatios === undefined
+      ? {}
+      : {
+          marketTargetExposureRatios: normalizeMarketTargetExposureRatios(
+            input.policy.marketTargetExposureRatios
+          )
+        }),
     currentExposureRatio: roundRatio(currentExposureRatio),
     currentCashRatio: roundRatio(currentCashRatio),
     targetCashRatio: roundRatio(1 - targetExposureRatio),
@@ -71,6 +101,10 @@ export function buildPaperAllocationSnapshot(input: {
     ),
     minCashReserveKrw
   };
+
+  return Object.keys(marketAllocations).length === 0
+    ? snapshot
+    : { ...snapshot, marketAllocations };
 }
 
 export function portfolioExposureRatio(portfolio: VirtualPortfolio): number {
@@ -82,11 +116,81 @@ export function portfolioExposureRatio(portfolio: VirtualPortfolio): number {
 }
 
 export function positionMarketValue(portfolio: VirtualPortfolio): number {
+  return positionMarketValueForMarket(portfolio);
+}
+
+function buildMarketAllocations(input: {
+  portfolio: VirtualPortfolio;
+  policy: PaperAllocationPolicy;
+  netWorthKrw: number;
+  cashAvailableAfterReserve: number;
+}): PaperMarketAllocationSnapshotByMarket {
+  const targets = normalizeMarketTargetExposureRatios(
+    input.policy.marketTargetExposureRatios ?? {}
+  );
+  const allocations: PaperMarketAllocationSnapshotByMarket = {};
+
+  for (const [market, targetExposureRatio] of Object.entries(targets)) {
+    const marketKey = market as Market;
+    const currentMarketValueKrw = positionMarketValueForMarket(
+      input.portfolio,
+      marketKey
+    );
+    const currentExposureRatio =
+      input.netWorthKrw <= 0
+        ? 0
+        : boundedRatio(currentMarketValueKrw / input.netWorthKrw);
+    const targetMarketValueKrw = Math.round(
+      input.netWorthKrw * targetExposureRatio
+    );
+    const targetExposureGapKrw = Math.max(
+      0,
+      targetMarketValueKrw - currentMarketValueKrw
+    );
+
+    allocations[marketKey] = {
+      market: marketKey,
+      targetExposureRatio,
+      currentExposureRatio: roundRatio(currentExposureRatio),
+      targetExposureGapRatio: roundRatio(
+        Math.max(0, targetExposureRatio - currentExposureRatio)
+      ),
+      targetExposureGapKrw,
+      maxAdditionalBuyBudgetKrw: Math.min(
+        input.cashAvailableAfterReserve,
+        targetExposureGapKrw
+      )
+    };
+  }
+
+  return allocations;
+}
+
+function normalizeMarketTargetExposureRatios(
+  targets: PaperMarketTargetExposureRatios
+): PaperMarketTargetExposureRatios {
+  const normalized: PaperMarketTargetExposureRatios = {};
+  for (const [market, value] of Object.entries(targets)) {
+    normalized[market as Market] = roundRatio(boundedRatio(value));
+  }
+  return normalized;
+}
+
+function positionMarketValueForMarket(
+  portfolio: VirtualPortfolio,
+  market?: Market
+): number {
   return portfolio.positions.reduce(
-    (sum, position) =>
-      sum +
-      (position.marketValueKrw ??
-        Math.round(position.quantity * position.averagePriceKrw)),
+    (sum, position) => {
+      if (market !== undefined && position.market !== market) {
+        return sum;
+      }
+      return (
+        sum +
+        (position.marketValueKrw ??
+          Math.round(position.quantity * position.averagePriceKrw))
+      );
+    },
     0
   );
 }
