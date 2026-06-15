@@ -66,6 +66,10 @@ export const virtualPositionSchema = z
   .object({
     market: marketSchema,
     symbol: nonEmptyStringSchema,
+    assetType: assetTypeSchema.optional(),
+    assetClass: assetClassSchema.optional(),
+    region: assetRegionSchema.optional(),
+    riskTags: z.array(assetRiskTagSchema).optional(),
     quantity: z.number().nonnegative(),
     averagePriceKrw: moneyKrwSchema,
     marketPriceKrw: moneyKrwSchema.optional(),

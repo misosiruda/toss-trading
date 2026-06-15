@@ -29,7 +29,12 @@ import {
   type HistoricalDataAvailabilityReport,
   type HistoricalDataAvailabilitySymbolRequirement
 } from "../replay/historicalDataAvailability.js";
-import type { AuditEvent, HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type {
+  AssetType,
+  AuditEvent,
+  HistoricalMarketSnapshot,
+  Market
+} from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
@@ -203,6 +208,8 @@ export interface BatchReplayRunSummary {
   targetExposureRatio: number | null;
   averageTargetExposureGapRatio: number | null;
   finalTargetExposureGapRatio: number | null;
+  finalExposureByMarketKrw: Record<Market, number>;
+  finalExposureByAssetTypeKrw: Record<AssetType | "UNKNOWN", number>;
 }
 
 export interface BatchReplayWindowSamplingSummary {
@@ -661,7 +668,9 @@ function summarizeRun(
     averageTargetExposureGapRatio:
       report.portfolioConstruction.averageTargetExposureGapRatio,
     finalTargetExposureGapRatio:
-      report.portfolioConstruction.finalTargetExposureGapRatio
+      report.portfolioConstruction.finalTargetExposureGapRatio,
+    finalExposureByMarketKrw: report.analytics.exposureByMarket,
+    finalExposureByAssetTypeKrw: report.analytics.exposureByAssetType
   };
 }
 

@@ -60,6 +60,125 @@ test("historical universe coverage fails closed when optional symbols are requir
   assert.deepEqual(report.issues, ["OPTIONAL_UNIVERSE_SYMBOL_MISSING"]);
 });
 
+test("historical universe coverage can require market and asset type availability", () => {
+  const report = assessHistoricalUniverseCoverage({
+    universe: parseHistoricalUniverseManifest({
+      mode: "paper_only_historical_universe",
+      universeId: "global-fixture",
+      symbols: [
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          required: true
+        },
+        {
+          market: "US",
+          symbol: "SPY",
+          assetType: "ETF",
+          required: true
+        }
+      ],
+      disclaimer: "Paper-only fixture."
+    }),
+    snapshots: [
+      {
+        ...snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00"),
+        assetType: "STOCK"
+      }
+    ],
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
+    requiredMarkets: ["KR", "US"],
+    requiredAssetTypes: ["STOCK", "ETF"]
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.deepEqual(report.availableMarkets, ["KR"]);
+  assert.deepEqual(report.availableAssetTypes, ["STOCK"]);
+  assert.deepEqual(report.missingRequiredMarkets, ["US"]);
+  assert.deepEqual(report.missingRequiredAssetTypes, ["ETF"]);
+  assert.ok(report.issues.includes("REQUIRED_MARKET_MISSING"));
+  assert.ok(report.issues.includes("REQUIRED_ASSET_TYPE_MISSING"));
+});
+
+test("historical universe coverage can require broad available symbol counts", () => {
+  const report = assessHistoricalUniverseCoverage({
+    universe: parseHistoricalUniverseManifest({
+      mode: "paper_only_historical_universe",
+      universeId: "broad-fixture",
+      symbols: [
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          required: true
+        },
+        {
+          market: "KR",
+          symbol: "069500",
+          assetType: "ETF",
+          required: false
+        },
+        {
+          market: "US",
+          symbol: "AAPL",
+          assetType: "STOCK",
+          required: false
+        },
+        {
+          market: "US",
+          symbol: "SPY",
+          assetType: "ETF",
+          required: false
+        }
+      ],
+      disclaimer: "Paper-only fixture."
+    }),
+    snapshots: [
+      {
+        ...snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00"),
+        assetType: "STOCK"
+      },
+      {
+        ...snapshot("hist_069500_202501", "069500", "2025-01-02T15:30:00+09:00"),
+        assetType: "ETF"
+      }
+    ],
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
+    minAvailableSymbolCount: 3,
+    minAvailableMarketSymbolCounts: {
+      KR: 2,
+      US: 1
+    },
+    minAvailableAssetTypeSymbolCounts: {
+      STOCK: 2,
+      ETF: 1
+    }
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.equal(report.availableSymbolCount, 2);
+  assert.deepEqual(report.availableMarketSymbolCounts, { KR: 2 });
+  assert.deepEqual(report.availableAssetTypeSymbolCounts, { ETF: 1, STOCK: 1 });
+  assert.deepEqual(report.insufficientAvailableMarketSymbolCounts, [
+    { market: "US", minimum: 1, available: 0 }
+  ]);
+  assert.deepEqual(report.insufficientAvailableAssetTypeSymbolCounts, [
+    { assetType: "STOCK", minimum: 2, available: 1 }
+  ]);
+  assert.ok(
+    report.issues.includes("AVAILABLE_UNIVERSE_SYMBOL_COUNT_BELOW_MINIMUM")
+  );
+  assert.ok(
+    report.issues.includes("AVAILABLE_MARKET_SYMBOL_COUNT_BELOW_MINIMUM")
+  );
+  assert.ok(
+    report.issues.includes("AVAILABLE_ASSET_TYPE_SYMBOL_COUNT_BELOW_MINIMUM")
+  );
+});
+
 test("historical universe coverage reports partial monthly gaps", () => {
   const report = assessHistoricalUniverseCoverage({
     universe: universe(),

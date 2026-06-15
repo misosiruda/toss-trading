@@ -1,4 +1,5 @@
 import type {
+  AssetType,
   Market,
   VirtualDecision,
   VirtualPortfolio,
@@ -15,6 +16,7 @@ export interface PaperPortfolioAnalytics {
   positionCount: number;
   symbolAllocations: SymbolAllocation[];
   exposureByMarket: Record<Market, number>;
+  exposureByAssetType: Record<AssetType | "UNKNOWN", number>;
   virtualPnl: VirtualPnlSummary;
   decisionTradeLinkage: DecisionTradeLinkageSummary;
   disclaimer: string;
@@ -23,6 +25,7 @@ export interface PaperPortfolioAnalytics {
 export interface SymbolAllocation {
   market: Market;
   symbol: string;
+  assetType: AssetType | null;
   quantity: number;
   marketValueKrw: number;
   allocationRatio: number | null;
@@ -61,6 +64,7 @@ export function buildPaperPortfolioAnalytics(input: {
       return {
         market: position.market,
         symbol: position.symbol,
+        assetType: position.assetType ?? null,
         quantity: position.quantity,
         marketValueKrw,
         allocationRatio:
@@ -86,6 +90,7 @@ export function buildPaperPortfolioAnalytics(input: {
     positionCount: input.portfolio?.positions.length ?? 0,
     symbolAllocations: symbolAllocations.sort(compareSymbolAllocation),
     exposureByMarket: buildExposureByMarket(symbolAllocations),
+    exposureByAssetType: buildExposureByAssetType(symbolAllocations),
     virtualPnl: buildVirtualPnl(input.portfolio, input.trades),
     decisionTradeLinkage: buildDecisionTradeLinkage(input.decisions, input.trades),
     disclaimer:
@@ -111,6 +116,19 @@ function buildExposureByMarket(
       return byMarket;
     },
     { KR: 0, US: 0 }
+  );
+}
+
+function buildExposureByAssetType(
+  allocations: SymbolAllocation[]
+): Record<AssetType | "UNKNOWN", number> {
+  return allocations.reduce<Record<AssetType | "UNKNOWN", number>>(
+    (byAssetType, allocation) => {
+      const key = allocation.assetType ?? "UNKNOWN";
+      byAssetType[key] += allocation.marketValueKrw;
+      return byAssetType;
+    },
+    { STOCK: 0, ETF: 0, UNKNOWN: 0 }
   );
 }
 

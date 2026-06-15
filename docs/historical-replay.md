@@ -365,6 +365,39 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 이 검증은 저장된 `historical-market-snapshots.jsonl`만 읽습니다. 외부 데이터 수집, broker API 호출, replay 결과 최적화, 주문 생성은 수행하지 않습니다.
 
+#### Global KR/US/ETF Yahoo Daily Dataset
+
+국장, 미장, ETF를 함께 쓰는 replay dataset은 `docs/historical-universe.global-broad.json`과 Yahoo daily chart ingest CLI로 생성합니다.
+
+`global-broad` universe는 20개 core symbol을 `required=true`로 유지하고, 나머지 확장 symbol은 `required=false`로 둡니다. 대형 universe에서는 개별 optional symbol 실패보다 전체 실험 폭이 중요하므로 coverage 단계에서 전체/시장별/자산유형별 최소 확보 수를 함께 검사합니다.
+
+```powershell
+npm run historical:yahoo:ingest -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --allow-partial --json
+```
+
+동작:
+
+- Yahoo chart daily OHLCV를 `historical-market-snapshots.jsonl`로 저장합니다.
+- `market=US` 또는 Yahoo currency가 `USD`인 가격은 같은 날짜 이전의 `KRW=X` daily close로 KRW 환산합니다.
+- snapshot에는 universe의 `assetType`, `assetClass`, `region`, `riskTags`를 보존합니다.
+- 이 CLI는 historical replay input만 생성하며 replay 실행, Codex CLI 호출, broker API 호출, 주문 생성을 수행하지 않습니다.
+
+생성 후 coverage는 시장과 자산유형 존재 여부, 그리고 broad universe 최소 확보량을 함께 강제합니다.
+
+```powershell
+npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --output-path data/replay-2023-01-2026-05-global-yahoo-daily/historical-universe-coverage.json
+```
+
+global dataset으로 batch replay를 실행할 때는 source data dir과 universe path를 함께 바꿉니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-yahoo-daily --output-dir data/batch-replay --batch-id batch-global-smoke --seed batch-global-smoke --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --market-regime-allocation
+```
+
+Codex CLI provider를 사용할 때도 같은 `--source-data-dir`와 `--universe-path`를 사용합니다. `--use-codex-ai`는 `AI_DECISION_ENABLED=true`가 명시된 경우에만 활성화됩니다.
+
+Historical packet builder는 매 decision step마다 해당 시점까지의 최신 fresh snapshot 전체를 점수화한 뒤 후보를 선별합니다. AI packet은 schema 상 최대 20개 후보로 제한되어 있으므로, broad universe를 그대로 AI에 넘기지 않고 deterministic screener가 점수, 시장 분산, 자산유형 분산을 먼저 적용합니다.
+
 #### Batch Replay에서 Codex CLI AI 사용
 
 실제 Codex CLI paper-only provider를 batch replay에서 사용하려면 명시 옵션과 환경 변수가 모두 필요합니다.

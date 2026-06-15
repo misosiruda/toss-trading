@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
   type Server,
   type ServerResponse
 } from "node:http";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
@@ -122,6 +122,8 @@ async function routeRequest(
       return readHistoricalReplayProgress(options.storageBaseDir);
     case "/batch/replay/report":
       return readBatchReplayAggregateReport(options.storageBaseDir);
+    case "/batch/replay/runs":
+      return readBatchReplayRuns(options.storageBaseDir, readLimit(url));
     case "/scheduler/status":
       return readSchedulerStatus(options.storageBaseDir);
     case "/source/health":
@@ -263,6 +265,76 @@ async function readBatchReplayAggregateReport(
   };
 }
 
+async function readBatchReplayRuns(
+  storageBaseDir: string,
+  limit: number
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
+  const latestManifest = await readLatestBatchReplayManifest(storageBaseDir);
+  const manifestRunsPath = readManifestRunsPath(latestManifest?.manifest ?? null);
+  const aggregateRunsPath = readSourceRunsPath(aggregate.value);
+  const sourceRunsPath =
+    latestManifest?.status === "running" && manifestRunsPath !== null
+      ? manifestRunsPath
+      : aggregateRunsPath ?? manifestRunsPath;
+  const batchStatus = latestManifest?.status ?? null;
+
+  if (sourceRunsPath === null) {
+    return {
+      mode: "paper_only",
+      readOnly: true,
+      status: "missing",
+      aggregateStatus: aggregate.status,
+      batchStatus,
+      batchId: latestManifest?.batchId ?? null,
+      sourceRunsPath: null,
+      runs: [],
+      count: 0,
+      totalCount: 0,
+      statusCounts: {},
+      corruptLineCount: 0
+    };
+  }
+
+  const runsPath = resolveBatchReplayRunsPath(sourceRunsPath, storageBaseDir);
+  if (runsPath === null) {
+    return {
+      mode: "paper_only",
+      readOnly: true,
+      status: "blocked",
+      aggregateStatus: aggregate.status,
+      batchStatus,
+      batchId: latestManifest?.batchId ?? null,
+      sourceRunsPath,
+      runs: [],
+      count: 0,
+      totalCount: 0,
+      statusCounts: {},
+      corruptLineCount: 0
+    };
+  }
+
+  const result = await readJsonlRecords(runsPath);
+  const runs = takeLast(result.records, limit);
+  const status = batchStatus === "running" ? "running" : result.status;
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status,
+    aggregateStatus: aggregate.status,
+    batchStatus,
+    batchId: latestManifest?.batchId ?? null,
+    sourceRunsPath,
+    runs,
+    count: runs.length,
+    totalCount: result.records.length,
+    statusCounts: countRunStatuses(result.records),
+    corruptLineCount: result.corruptLineCount
+  };
+}
+
 async function readSourceHealth(
   storageBaseDir: string
 ): Promise<Record<string, unknown>> {
@@ -369,6 +441,10 @@ function takeRecent<T>(records: T[], limit: number): T[] {
   return records.slice(-limit).reverse();
 }
 
+function takeLast<T>(records: T[], limit: number): T[] {
+  return records.slice(-limit);
+}
+
 async function readJsonFile(
   filePath: string
 ): Promise<{ status: "missing" | "ok" | "corrupt"; value: unknown | null }> {
@@ -385,6 +461,181 @@ async function readJsonFile(
   }
 }
 
+async function readJsonlRecords(filePath: string): Promise<{
+  status: "missing" | "ok" | "degraded";
+  records: Record<string, unknown>[];
+  corruptLineCount: number;
+}> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing", records: [], corruptLineCount: 0 };
+    }
+    throw error;
+  }
+
+  const records: Record<string, unknown>[] = [];
+  let corruptLineCount = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (isRecord(parsed)) {
+        records.push(parsed);
+      } else {
+        corruptLineCount += 1;
+      }
+    } catch {
+      corruptLineCount += 1;
+    }
+  }
+
+  return {
+    status: corruptLineCount > 0 ? "degraded" : "ok",
+    records,
+    corruptLineCount
+  };
+}
+
+function readSourceRunsPath(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const sourceRunsPath = value["sourceRunsPath"];
+  if (typeof sourceRunsPath !== "string" || sourceRunsPath.trim().length === 0) {
+    return null;
+  }
+  return sourceRunsPath;
+}
+
+interface BatchReplayManifestSnapshot {
+  batchId: string | null;
+  status: string | null;
+  updatedAt: string | null;
+  manifest: Record<string, unknown>;
+}
+
+async function readLatestBatchReplayManifest(
+  storageBaseDir: string
+): Promise<BatchReplayManifestSnapshot | null> {
+  const batchReplayDir = resolve(dirname(resolve(storageBaseDir)), "batch-replay");
+  let entries;
+  try {
+    entries = await readdir(batchReplayDir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+
+  const manifests: BatchReplayManifestSnapshot[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const manifestPath = join(
+      batchReplayDir,
+      entry.name,
+      "batch-replay-manifest.json"
+    );
+    const manifest = await readJsonFile(manifestPath);
+    if (manifest.status !== "ok" || !isRecord(manifest.value)) {
+      continue;
+    }
+    manifests.push({
+      batchId: readStringField(manifest.value, "batchId"),
+      status: readStringField(manifest.value, "status"),
+      updatedAt:
+        readStringField(manifest.value, "updatedAt") ??
+        readStringField(manifest.value, "startedAt") ??
+        readStringField(manifest.value, "completedAt"),
+      manifest: manifest.value
+    });
+  }
+
+  return manifests.sort(compareBatchReplayManifests)[0] ?? null;
+}
+
+function readManifestRunsPath(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return readStringField(value, "runsPath");
+}
+
+function readStringField(
+  value: Record<string, unknown>,
+  key: string
+): string | null {
+  const field = value[key];
+  return typeof field === "string" && field.trim().length > 0 ? field : null;
+}
+
+function compareBatchReplayManifests(
+  left: BatchReplayManifestSnapshot,
+  right: BatchReplayManifestSnapshot
+): number {
+  const leftTime = Date.parse(left.updatedAt ?? "");
+  const rightTime = Date.parse(right.updatedAt ?? "");
+  const normalizedLeft = Number.isFinite(leftTime) ? leftTime : 0;
+  const normalizedRight = Number.isFinite(rightTime) ? rightTime : 0;
+  if (normalizedLeft !== normalizedRight) {
+    return normalizedRight - normalizedLeft;
+  }
+  return String(right.batchId ?? "").localeCompare(String(left.batchId ?? ""));
+}
+
+function resolveBatchReplayRunsPath(
+  sourceRunsPath: string,
+  storageBaseDir: string
+): string | null {
+  const resolvedPath = isAbsolute(sourceRunsPath)
+    ? resolve(sourceRunsPath)
+    : resolve(process.cwd(), sourceRunsPath);
+  const normalized = resolvedPath.replace(/\\/g, "/");
+
+  if (
+    basename(resolvedPath) !== "batch-replay-runs.jsonl" ||
+    !normalized.includes("/batch-replay/")
+  ) {
+    return null;
+  }
+
+  const allowedRoots = [
+    resolve(process.cwd()),
+    resolve(storageBaseDir),
+    resolve(dirname(resolve(storageBaseDir)), "batch-replay"),
+    resolve(process.cwd(), "data", "batch-replay")
+  ];
+  return allowedRoots.some((root) => isPathInside(resolvedPath, root))
+    ? resolvedPath
+    : null;
+}
+
+function isPathInside(childPath: string, parentPath: string): boolean {
+  const path = relative(parentPath, childPath);
+  return path === "" || (!!path && !path.startsWith("..") && !isAbsolute(path));
+}
+
+function countRunStatuses(
+  records: Record<string, unknown>[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const record of records) {
+    const status = typeof record["status"] === "string" ? record["status"] : "unknown";
+    counts[status] = (counts[status] ?? 0) + 1;
+  }
+  return counts;
+}
+
 interface DashboardAsset {
   fileName: string;
   contentType: string;
@@ -395,16 +646,22 @@ function readDashboardAsset(pathname: string): DashboardAsset | null {
     case "/":
     case "/dashboard":
     case "/dashboard/":
+    case "/dashboard/virtual-replays":
+    case "/dashboard/virtual-replays/":
+    case "/dashboard/batch-summary":
+    case "/dashboard/batch-summary/":
       return {
         fileName: "index.html",
         contentType: "text/html; charset=utf-8"
       };
     case "/dashboard/app.js":
+    case "/app.js":
       return {
         fileName: "app.js",
         contentType: "text/javascript; charset=utf-8"
       };
     case "/dashboard/styles.css":
+    case "/styles.css":
       return {
         fileName: "styles.css",
         contentType: "text/css; charset=utf-8"

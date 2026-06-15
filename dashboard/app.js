@@ -9,13 +9,18 @@ const state = {
   trades: [],
   performancePoints: [],
   symbolMetadata: new Map(),
+  currentPage: "overview",
+  selectedBatchRunIndex: 0,
   refreshStartedAt: null,
+  batchRunsTimer: null,
+  batchRunsInFlight: false,
   replayProgressTimer: null,
   replayProgressInFlight: false,
   replayProgressStatus: null
 };
 
 const replayProgressPollMs = 3000;
+const batchRunsPollMs = 5000;
 
 const endpoints = {
   health: "/health",
@@ -26,6 +31,7 @@ const endpoints = {
   replay: "/replay/report",
   replayProgress: "/replay/progress",
   batchReplay: "/batch/replay/report",
+  batchRuns: "/batch/replay/runs?limit=50",
   scheduler: "/scheduler/status",
   source: "/source/health",
   packets: "/market/packets?limit=5",
@@ -41,9 +47,37 @@ const fallbackSymbolMetadata = new Map([
   ["KR:042660", { name: "한화오션", sector: "산업재", industry: "조선" }]
 ]);
 
+const fileModeDashboardUrl = "http://127.0.0.1:8787/dashboard";
+
 document.getElementById("refresh-button")?.addEventListener("click", () => {
+  if (isFileMode()) {
+    showFileModeNotice();
+    return;
+  }
   void loadDashboard().catch(() => undefined);
 });
+
+document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
+  const route = link.getAttribute("data-dashboard-route") ?? "overview";
+  const path = dashboardPathForRoute(route);
+  if (isFileMode()) {
+    link.setAttribute("href", `${fileModeDashboardUrl}${path}`);
+  }
+
+  link.addEventListener("click", (event) => {
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (isFileMode()) {
+      return;
+    }
+    event.preventDefault();
+    history.pushState({}, "", link.href);
+    applyDashboardRoute();
+  });
+});
+
+window.addEventListener("popstate", applyDashboardRoute);
 
 document.querySelectorAll("[data-action-filter]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -59,7 +93,12 @@ document.getElementById("symbol-filter")?.addEventListener("input", (event) => {
   renderDecisionTimeline();
 });
 
-void loadDashboard().catch(() => undefined);
+applyDashboardRoute();
+if (isFileMode()) {
+  showFileModeNotice();
+} else {
+  void loadDashboard().catch(() => undefined);
+}
 
 async function loadDashboard() {
   state.refreshStartedAt = new Date();
@@ -108,6 +147,76 @@ async function fetchJson(path) {
 function endpointErrorMessage(path, error) {
   const message = error instanceof Error ? error.message : String(error);
   return `${path}: ${message}`;
+}
+
+function isFileMode() {
+  return window.location.protocol === "file:";
+}
+
+function showFileModeNotice() {
+  setStatus("api-status", "degraded", "서버 URL 필요");
+  showError(
+    `대시보드는 로컬 운영 API가 필요합니다. ${fileModeDashboardUrl} 로 열어주세요.`
+  );
+}
+
+function applyDashboardRoute() {
+  const page = dashboardPageFromPath(window.location.pathname);
+  state.currentPage = page;
+
+  document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
+    const route = link.getAttribute("data-dashboard-route") ?? "overview";
+    link.classList.toggle("active", route === page);
+    if (route === page) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+
+  document.querySelectorAll(".metric-grid").forEach((section) => {
+    section.hidden = page !== "overview";
+  });
+
+  document.querySelectorAll(".content-grid > .panel").forEach((panel) => {
+    const pageAttribute = panel.getAttribute("data-dashboard-page");
+    const pages =
+      pageAttribute === null ? ["overview"] : pageAttribute.split(/\s+/);
+    panel.hidden = !pages.includes(page);
+  });
+
+  document.title = `${dashboardPageLabel(page)} - Toss Trading Paper Dashboard`;
+  if (page === "virtual-replays" && !isFileMode()) {
+    void refreshBatchRuns().catch(() => undefined);
+  } else {
+    clearBatchRunsPolling();
+  }
+}
+
+function dashboardPageFromPath(pathname) {
+  if (pathname.startsWith("/dashboard/virtual-replays")) {
+    return "virtual-replays";
+  }
+  if (pathname.startsWith("/dashboard/batch-summary")) {
+    return "batch-summary";
+  }
+  return "overview";
+}
+
+function dashboardPageLabel(page) {
+  return {
+    overview: "개요",
+    "virtual-replays": "가상 투자",
+    "batch-summary": "총합 결과"
+  }[page] ?? "개요";
+}
+
+function dashboardPathForRoute(route) {
+  return {
+    overview: "",
+    "virtual-replays": "/virtual-replays",
+    "batch-summary": "/batch-summary"
+  }[route] ?? "";
 }
 
 function rememberSymbolMetadata(data) {
@@ -269,6 +378,8 @@ function renderDashboard(data) {
   renderReplayReport(data.replay);
   renderReplayProgress(data.replayProgress);
   renderBatchReplayReport(data.batchReplay);
+  renderBatchReplayRuns(data.batchRuns);
+  scheduleBatchRunsPolling(data.batchRuns);
   renderPortfolioPerformance(data);
   renderBenchmarkComparison(data);
   renderExecutionCostDiagnostics(data);
@@ -423,6 +534,16 @@ function renderBatchReplayReport(batchPayload) {
   appendDefinition(detail, "중앙값 수익률", formatSignedRatio(overall.medianTotalReturnRatio));
   appendDefinition(detail, "최저/최고", `${formatSignedRatio(overall.minTotalReturnRatio)} / ${formatSignedRatio(overall.maxTotalReturnRatio)}`);
   appendDefinition(detail, "평균 최종자산", formatKrw(overall.averageFinalVirtualNetWorthKrw));
+  appendDefinition(
+    detail,
+    "시장별 평균 노출",
+    formatExposureBreakdown(overall.averageFinalExposureByMarketKrw)
+  );
+  appendDefinition(
+    detail,
+    "자산유형별 평균 노출",
+    formatExposureBreakdown(overall.averageFinalExposureByAssetTypeKrw)
+  );
   appendDefinition(detail, "가상 체결", `${overall.totalTradeCount ?? 0}건`);
   appendDefinition(detail, "Risk Reject", `${overall.totalRejectedCount ?? 0}건`);
 
@@ -464,6 +585,265 @@ function renderBatchRegimeList(byRegime) {
     item.append(header, metrics);
     list?.append(item);
   }
+}
+
+function renderBatchReplayRuns(runsPayload) {
+  const status = runsPayload?.status ?? "missing";
+  const statusCounts = runsPayload?.statusCounts ?? {};
+  const completedCount = Number(statusCounts.completed ?? 0);
+  const skippedCount = Number(statusCounts.skipped ?? 0);
+  const failedCount = Number(statusCounts.failed ?? 0);
+  const corruptLineCount = Number(runsPayload?.corruptLineCount ?? 0);
+
+  setStatus("batch-run-status", status, status);
+  setText("batch-run-record-count", `${runsPayload?.count ?? 0}개`);
+  setText("batch-run-total-count", `${runsPayload?.totalCount ?? 0}개`);
+  setText("batch-run-completed-count", `${completedCount}개`);
+  setText("batch-run-problem-count", `${failedCount + skippedCount}개`);
+  setText(
+    "batch-run-log-state",
+    corruptLineCount > 0 ? `corrupt ${corruptLineCount}` : status
+  );
+  setText("batch-run-source", runsPayload?.sourceRunsPath ?? "-");
+
+  const tabs = document.getElementById("batch-run-tabs");
+  const list = document.getElementById("batch-run-list");
+  clear(tabs);
+  clear(list);
+
+  if (status === "blocked") {
+    list?.append(emptyState("허용되지 않은 반복 리플레이 로그 경로"));
+    return;
+  }
+
+  const runs = Array.isArray(runsPayload?.runs)
+    ? [...runsPayload.runs].sort(compareBatchRunRecords)
+    : [];
+
+  if (!runs.length) {
+    list?.append(emptyState("개별 가상 투자 실행 로그 없음"));
+    return;
+  }
+
+  state.selectedBatchRunIndex = Math.max(
+    0,
+    Math.min(state.selectedBatchRunIndex, runs.length - 1)
+  );
+  renderBatchRunTabs(tabs, list, runs);
+  renderBatchRunPage(list, runs[state.selectedBatchRunIndex]);
+}
+
+function renderBatchRunTabs(tabs, list, runs) {
+  clear(tabs);
+  for (const [index, run] of runs.entries()) {
+    const button = document.createElement("button");
+    button.className = "batch-run-tab";
+    button.type = "button";
+    button.role = "tab";
+    button.textContent = String(index + 1);
+    button.title = run?.runId ?? `run ${index + 1}`;
+    button.setAttribute("aria-selected", String(index === state.selectedBatchRunIndex));
+    button.classList.toggle("active", index === state.selectedBatchRunIndex);
+    button.addEventListener("click", () => {
+      state.selectedBatchRunIndex = index;
+      updateBatchRunTabs(tabs);
+      clear(list);
+      renderBatchRunPage(list, runs[index]);
+    });
+    tabs?.append(button);
+  }
+}
+
+function updateBatchRunTabs(tabs) {
+  tabs?.querySelectorAll(".batch-run-tab").forEach((button, index) => {
+    const isActive = index === state.selectedBatchRunIndex;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  });
+}
+
+function renderBatchRunPage(list, run) {
+  if (!run) {
+    list?.append(emptyState("선택된 가상 투자 실행 없음"));
+    return;
+  }
+
+  const item = document.createElement("article");
+  item.className = "batch-run-item batch-run-page";
+
+  const header = document.createElement("div");
+  header.className = "batch-run-header";
+  const titleWrap = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = batchRunTitle(run);
+  const meta = document.createElement("span");
+  meta.textContent = `${regimeLabel(run?.marketRegime?.label)} · ${batchRunRangeText(run?.window)}`;
+  titleWrap.append(title, meta);
+  const statusPill = document.createElement("span");
+  statusPill.className = `status-pill ${statusClass(run?.status)}`;
+  statusPill.textContent = runStatusLabel(run?.status);
+  header.append(titleWrap, statusPill);
+
+  const metrics = document.createElement("div");
+  metrics.className = "batch-run-metrics";
+  metrics.append(
+    batchRunMetric("수익률", formatSignedRatio(run?.summary?.totalReturnRatio), run?.summary?.totalReturnRatio),
+    batchRunMetric("최종자산", compactKrw(run?.summary?.finalVirtualNetWorthKrw), null),
+    batchRunMetric("체결", `${run?.summary?.tradeCount ?? 0}건`, null),
+    batchRunMetric("AI 호출", `${run?.summary?.decisionProviderCallCount ?? 0}회`, null),
+    batchRunMetric("Reject", `${run?.summary?.rejectedCount ?? 0}건`, null),
+    batchRunMetric("현금비중", formatRatio(run?.summary?.finalCashRatio), run?.summary?.finalCashRatio)
+  );
+
+  const pageLayout = document.createElement("div");
+  pageLayout.className = "batch-run-page-layout";
+  const summary = document.createElement("dl");
+  summary.className = "definition-list batch-run-page-detail";
+  appendDefinition(summary, "Run ID", run?.runId ?? "-");
+  appendDefinition(summary, "실행 Seed", run?.runSeed ?? "-");
+  appendDefinition(summary, "기간", batchRunRangeText(run?.window));
+  appendDefinition(summary, "장세", regimeLabel(run?.marketRegime?.label));
+  appendDefinition(
+    summary,
+    "Sampling",
+    `${run?.windowSampling?.mode ?? "-"} · target ${regimeLabel(run?.windowSampling?.targetRegime)}`
+  );
+  appendDefinition(
+    summary,
+    "데이터",
+    `${run?.dataAvailability?.status ?? "unknown"} · ${run?.dataAvailability?.windowSnapshotCount ?? 0} snapshots`
+  );
+
+  const diagnostics = document.createElement("dl");
+  diagnostics.className = "definition-list batch-run-page-detail";
+  appendDefinition(diagnostics, "AI 실패", `${run?.summary?.aiDecisionFailureCount ?? 0}건`);
+  appendDefinition(diagnostics, "의미있는 Reject", `${run?.summary?.meaningfulRejectCount ?? 0}건`);
+  appendDefinition(diagnostics, "Dust Reject", `${run?.summary?.dustRejectCount ?? 0}건`);
+  appendDefinition(diagnostics, "목표 노출", formatRatio(run?.summary?.targetExposureRatio));
+  appendDefinition(
+    diagnostics,
+    "최종 노출",
+    `${formatRatio(run?.summary?.finalPositionRatio)} / 현금 ${formatRatio(run?.summary?.finalCashRatio)}`
+  );
+  appendDefinition(
+    diagnostics,
+    "시장별 노출",
+    formatExposureBreakdown(run?.summary?.finalExposureByMarketKrw)
+  );
+  appendDefinition(
+    diagnostics,
+    "자산유형별 노출",
+    formatExposureBreakdown(run?.summary?.finalExposureByAssetTypeKrw)
+  );
+  appendDefinition(diagnostics, "Report", run?.reportPath ?? "-");
+  appendDefinition(diagnostics, "상태 상세", batchRunDetailText(run));
+
+  pageLayout.append(summary, diagnostics);
+  item.append(header, metrics, pageLayout);
+  list?.append(item);
+}
+
+function scheduleBatchRunsPolling(runsPayload) {
+  clearBatchRunsPolling();
+  if (state.currentPage !== "virtual-replays" || !shouldPollBatchRuns(runsPayload)) {
+    return;
+  }
+
+  state.batchRunsTimer = window.setTimeout(() => {
+    state.batchRunsTimer = null;
+    void refreshBatchRuns().catch(() => undefined);
+  }, batchRunsPollMs);
+}
+
+function clearBatchRunsPolling() {
+  if (state.batchRunsTimer !== null) {
+    window.clearTimeout(state.batchRunsTimer);
+    state.batchRunsTimer = null;
+  }
+}
+
+async function refreshBatchRuns() {
+  if (state.batchRunsInFlight) {
+    return;
+  }
+  state.batchRunsInFlight = true;
+  try {
+    const payload = await fetchJson(endpoints.batchRuns);
+    renderBatchReplayRuns(payload);
+    scheduleBatchRunsPolling(payload);
+  } catch (error) {
+    showError(endpointErrorMessage(endpoints.batchRuns, error));
+    scheduleBatchRunsPolling({ status: "missing", aggregateStatus: "missing" });
+  } finally {
+    state.batchRunsInFlight = false;
+  }
+}
+
+function shouldPollBatchRuns(runsPayload) {
+  const status = runsPayload?.status;
+  return (
+    status === "running" ||
+    (status === "missing" && runsPayload?.aggregateStatus === "missing") ||
+    runsPayload === undefined
+  );
+}
+
+function compareBatchRunRecords(left, right) {
+  const leftIndex = Number(left?.runIndex);
+  const rightIndex = Number(right?.runIndex);
+  if (Number.isFinite(leftIndex) && Number.isFinite(rightIndex)) {
+    return leftIndex - rightIndex;
+  }
+  return String(left?.runId ?? "").localeCompare(String(right?.runId ?? ""));
+}
+
+function batchRunTitle(run) {
+  const runIndex = Number(run?.runIndex);
+  const indexText = Number.isInteger(runIndex) ? `#${runIndex + 1}` : "#-";
+  return `${indexText} ${run?.runId ?? "unknown"}`;
+}
+
+function batchRunRangeText(windowSelection) {
+  if (!windowSelection?.startAt && !windowSelection?.endAt) {
+    return "-";
+  }
+  return `${formatDateOnly(windowSelection.startAt)} - ${formatDateOnly(windowSelection.endAt)}`;
+}
+
+function batchRunDetailText(run) {
+  if (run?.status === "skipped") {
+    return `skip: ${run?.skipReason ?? "unknown"}`;
+  }
+  if (run?.status === "failed") {
+    return `error: ${run?.error ?? "unknown"}`;
+  }
+  const exposure = formatRatio(run?.summary?.finalPositionRatio);
+  const target = formatRatio(run?.summary?.targetExposureRatio);
+  return `노출 ${exposure} / 목표 ${target} · report ${run?.reportPath ?? "-"}`;
+}
+
+function batchRunMetric(label, value, toneValue) {
+  const item = document.createElement("div");
+  const term = document.createElement("span");
+  term.textContent = label;
+  const metric = document.createElement("strong");
+  metric.className = valueToneClass(toneValue);
+  metric.textContent = value;
+  item.append(term, metric);
+  return item;
+}
+
+function runStatusLabel(status) {
+  if (status === "completed") {
+    return "완료";
+  }
+  if (status === "skipped") {
+    return "스킵";
+  }
+  if (status === "failed") {
+    return "실패";
+  }
+  return String(status ?? "-");
 }
 
 function batchRegimeMetric(label, value, toneValue) {
@@ -2918,7 +3298,9 @@ function statusClass(status) {
     status === "degraded" ||
     status === "loading" ||
     status === "unknown" ||
-    status === "running"
+    status === "running" ||
+    status === "skipped" ||
+    status === "completed_with_failures"
   ) {
     return "degraded";
   }
@@ -2979,6 +3361,18 @@ function compactKrw(value) {
     notation: "compact",
     maximumFractionDigits: 1
   }).format(Number(value))}원`;
+}
+
+function formatExposureBreakdown(values) {
+  const entries = Object.entries(values ?? {})
+    .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) {
+    return "-";
+  }
+  return entries
+    .map(([key, value]) => `${key} ${compactKrw(value)}`)
+    .join(" · ");
 }
 
 function formatQuantity(value) {
@@ -3067,6 +3461,21 @@ function formatDateTime(value) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
+  }).format(date);
+}
+
+function formatDateOnly(value) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
   }).format(date);
 }
 

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -29,7 +29,10 @@ import { createLocalOperationsServer } from "./localOperationsServer.js";
 const now = new Date("2026-06-11T09:00:00+09:00");
 
 async function createTempStorageBaseDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "toss-trading-api-test-"));
+  const parent = await mkdtemp(join(tmpdir(), "toss-trading-api-test-"));
+  const storageBaseDir = join(parent, "paper");
+  await mkdir(storageBaseDir, { recursive: true });
+  return storageBaseDir;
 }
 
 async function startTestServer(
@@ -109,10 +112,23 @@ test("local operations API serves read-only dashboard assets", async () => {
   try {
     const html = await fetchText(baseUrl, "/dashboard");
     const script = await fetchText(baseUrl, "/dashboard/app.js");
+    const rootScript = await fetchText(baseUrl, "/app.js");
+    const rootStyles = await fetchText(baseUrl, "/styles.css");
+    const replayPage = await fetchText(baseUrl, "/dashboard/virtual-replays");
+    const summaryPage = await fetchText(baseUrl, "/dashboard/batch-summary");
 
     assert.equal(html.response.status, 200);
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
+    assert.equal(replayPage.response.status, 200);
+    assert.equal(summaryPage.response.status, 200);
+    assert.equal(rootScript.response.status, 200);
+    assert.equal(rootStyles.response.status, 200);
     assert.match(html.text, /가상 투자 대시보드/);
+    assert.match(html.text, /href="styles.css"/);
+    assert.match(html.text, /src="app.js"/);
+    assert.match(html.text, /data-dashboard-route="overview"/);
+    assert.match(html.text, /data-dashboard-route="virtual-replays"/);
+    assert.match(html.text, /data-dashboard-route="batch-summary"/);
     assert.match(html.text, /id="daily-report-heading"/);
     assert.match(html.text, /id="performance-heading"/);
     assert.match(html.text, /id="net-worth-chart"/);
@@ -139,6 +155,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="replay-progress-status"/);
     assert.match(html.text, /id="replay-progress-events-body"/);
     assert.match(html.text, /id="replay-timeline-body"/);
+    assert.match(html.text, /id="batch-run-heading"/);
+    assert.match(html.text, /id="batch-run-tabs"/);
+    assert.match(html.text, /id="batch-run-list"/);
     assert.match(html.text, /id="batch-replay-heading"/);
     assert.match(html.text, /id="batch-replay-average-return"/);
     assert.match(html.text, /id="batch-regime-list"/);
@@ -154,13 +173,21 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /\/replay\/report/);
     assert.match(script.text, /\/replay\/progress/);
     assert.match(script.text, /\/batch\/replay\/report/);
+    assert.match(script.text, /\/batch\/replay\/runs/);
     assert.match(script.text, /\/audit\/events/);
     assert.match(script.text, /fetchEndpointData/);
     assert.match(script.text, /endpointFailures/);
+    assert.match(script.text, /applyDashboardRoute/);
+    assert.match(script.text, /showFileModeNotice/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
     assert.match(script.text, /renderReplayProgress/);
     assert.match(script.text, /renderBatchReplayReport/);
+    assert.match(script.text, /renderBatchReplayRuns/);
+    assert.match(script.text, /renderBatchRunTabs/);
+    assert.match(script.text, /renderBatchRunPage/);
+    assert.match(script.text, /scheduleBatchRunsPolling/);
+    assert.match(script.text, /refreshBatchRuns/);
     assert.match(script.text, /renderPortfolioPerformance/);
     assert.match(script.text, /renderNetWorthChart/);
     assert.match(script.text, /renderAllocationList/);
@@ -234,6 +261,91 @@ test("local operations API serves stored batch replay aggregate report read-only
     assert.equal(result.payload["status"], "ok");
     assert.equal(report["title"], "Batch Replay Paper Aggregate Report");
     assert.equal(summary["runCount"], 4);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves individual batch replay runs read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const runsDir = join(storageBaseDir, "batch-replay", "batch-smoke");
+  const runsPath = join(runsDir, "batch-replay-runs.jsonl");
+  await mkdir(runsDir, { recursive: true });
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport(runsPath))}\n`,
+    "utf8"
+  );
+  await writeFile(
+    runsPath,
+    [
+      JSON.stringify(batchReplayRunRecord(0, "completed")),
+      JSON.stringify(batchReplayRunRecord(1, "failed")),
+      "not-json"
+    ].join("\n"),
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/batch/replay/runs?limit=1");
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+    const statusCounts = result.payload["statusCounts"] as Record<string, unknown>;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "degraded");
+    assert.equal(result.payload["count"], 1);
+    assert.equal(result.payload["totalCount"], 2);
+    assert.equal(result.payload["corruptLineCount"], 1);
+    assert.equal(statusCounts["completed"], 1);
+    assert.equal(statusCounts["failed"], 1);
+    assert.equal(runs[0]?.["runId"], "run_1");
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves live batch replay runs from the latest manifest", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const batchDir = join(storageBaseDir, "..", "batch-replay", "batch-live");
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  await mkdir(batchDir, { recursive: true });
+  await writeFile(
+    join(batchDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-live",
+      status: "running",
+      updatedAt: "2026-06-11T09:00:00+09:00",
+      runsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    runsPath,
+    `${JSON.stringify(batchReplayRunRecord(0, "completed"))}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/batch/replay/runs?limit=10");
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "running");
+    assert.equal(result.payload["aggregateStatus"], "missing");
+    assert.equal(result.payload["batchStatus"], "running");
+    assert.equal(result.payload["batchId"], "batch-live");
+    assert.equal(result.payload["count"], 1);
+    assert.equal(runs[0]?.["runId"], "run_0");
   } finally {
     await stopTestServer(server);
   }
@@ -395,6 +507,9 @@ test("local operations API rejects mutation methods and has no live order endpoi
     const batchMutation = await fetchJson(baseUrl, "/batch/replay/report", {
       method: "POST"
     });
+    const batchRunsMutation = await fetchJson(baseUrl, "/batch/replay/runs", {
+      method: "POST"
+    });
     const batchHead = await fetch(`${baseUrl}/batch/replay/report`, {
       method: "HEAD"
     });
@@ -404,6 +519,8 @@ test("local operations API rejects mutation methods and has no live order endpoi
     assert.equal(mutation.payload["readOnly"], true);
     assert.equal(batchMutation.response.status, 405);
     assert.equal(batchMutation.payload["readOnly"], true);
+    assert.equal(batchRunsMutation.response.status, 405);
+    assert.equal(batchRunsMutation.payload["readOnly"], true);
     assert.equal(batchHead.status, 200);
     assert.equal(await batchHead.text(), "");
     assert.equal(liveOrder.response.status, 404);
@@ -585,12 +702,14 @@ function historicalReplayReport(): Record<string, unknown> {
   };
 }
 
-function batchReplayAggregateReport(): Record<string, unknown> {
+function batchReplayAggregateReport(
+  sourceRunsPath = "data/batch-replay/batch-smoke/batch-replay-runs.jsonl"
+): Record<string, unknown> {
   return {
     title: "Batch Replay Paper Aggregate Report",
     mode: "paper_only",
     generatedAt: "2026-06-11T09:00:00+09:00",
-    sourceRunsPath: "data/batch-replay/batch-smoke/batch-replay-runs.jsonl",
+    sourceRunsPath,
     summary: {
       runCount: 4,
       completedCount: 3,
@@ -679,6 +798,85 @@ function batchReplayAggregateReport(): Record<string, unknown> {
     },
     disclaimer:
       "Batch replay aggregate reports are paper-only. They are not investment advice, guaranteed performance, or live trading signals."
+  };
+}
+
+function batchReplayRunRecord(
+  runIndex: number,
+  status: "completed" | "failed"
+): Record<string, unknown> {
+  return {
+    mode: "paper_only",
+    batchId: "batch-smoke",
+    runId: `run_${runIndex}`,
+    runIndex,
+    runSeed: `seed:${runIndex}`,
+    status,
+    startedAt: "2026-06-11T09:00:00+09:00",
+    completedAt: status === "completed" ? "2026-06-11T09:01:00+09:00" : null,
+    skippedAt: null,
+    failedAt: status === "failed" ? "2026-06-11T09:01:00+09:00" : null,
+    storageBaseDir: `data/batch-replay/batch-smoke/runs/run_${runIndex}`,
+    window: {
+      startAt: "2025-01-02T00:00:00.000Z",
+      endAt: "2025-02-02T00:00:00.000Z",
+      seed: `seed:${runIndex}`,
+      index: runIndex
+    },
+    windowSampling: {
+      mode: "balanced_regime",
+      targetRegime: status === "completed" ? "bull" : "bear",
+      targetCandidateCount: 2,
+      fallbackReason: null
+    },
+    marketRegime: {
+      label: status === "completed" ? "bull" : "bear",
+      score: status === "completed" ? 0.4 : -0.3,
+      confidence: 0.8,
+      evidence: []
+    },
+    marketRegimesByMarket: {},
+    dataAvailability: {
+      status: "available",
+      totalSnapshotCount: 4,
+      windowSnapshotCount: 4,
+      corruptLineCount: 0,
+      requiredSymbolCount: 0,
+      availableRequiredSymbolCount: 0,
+      issues: []
+    },
+    summary:
+      status === "completed"
+        ? {
+            finalVirtualNetWorthKrw: 1_025_000,
+            totalReturnRatio: 0.025,
+            tradeCount: 3,
+            decisionProviderCallCount: 2,
+            aiDecisionFailureCount: 0,
+            rejectedCount: 0,
+            meaningfulRejectCount: 0,
+            dustRejectCount: 0,
+            avgExposureRatio: 0.55,
+            avgCashRatio: 0.45,
+            maxExposureRatio: 0.7,
+            minExposureRatio: 0.2,
+            timeInMarketRatio: 0.8,
+            finalCashRatio: 0.3,
+            finalPositionRatio: 0.7,
+            targetExposureRatio: 0.75,
+            averageTargetExposureGapRatio: 0.08,
+            finalTargetExposureGapRatio: 0.05
+          }
+        : null,
+    reportPath:
+      status === "completed"
+        ? `data/batch-replay/batch-smoke/runs/run_${runIndex}/historical-replay-report.json`
+        : null,
+    error:
+      status === "failed"
+        ? "failed with account 1234-5678-901234 order ord_abcdef123456"
+        : null,
+    skipReason: null
   };
 }
 
