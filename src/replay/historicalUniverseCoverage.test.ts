@@ -33,6 +33,11 @@ test("historical universe coverage passes required core while reporting optional
   assert.deepEqual(report.missingOptionalSymbols, [
     { market: "KR", symbol: "035420" }
   ]);
+  const skHynix = report.symbolSummaries.find((item) => item.symbol === "000660");
+  assert.equal(skHynix?.assetType, "STOCK");
+  assert.equal(skHynix?.assetClass, "equity");
+  assert.equal(skHynix?.region, "KR");
+  assert.deepEqual(skHynix?.riskTags, ["sector_concentrated"]);
   assert.deepEqual(report.issues, []);
   assert.deepEqual(report.expectedMonths, ["2025-01", "2025-02"]);
 });
@@ -115,7 +120,15 @@ function universe(): HistoricalUniverseManifest {
     universeId: "fixture-universe",
     symbols: [
       { market: "KR", symbol: "005930", required: true },
-      { market: "KR", symbol: "000660", required: true },
+      {
+        market: "KR",
+        symbol: "000660",
+        assetType: "STOCK",
+        assetClass: "equity",
+        region: "KR",
+        riskTags: ["sector_concentrated"],
+        required: true
+      },
       { market: "KR", symbol: "035420", required: false }
     ],
     disclaimer: "Paper-only fixture."
