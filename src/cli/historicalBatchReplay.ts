@@ -10,6 +10,7 @@ import {
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
 import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
+import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import type { Market, MarketPacket } from "../domain/schemas.js";
 import {
   parseHistoricalUniverseManifest,
@@ -49,6 +50,7 @@ const riskProfile = resolvePaperRiskProfile({
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
 const paperExitPolicy = readPaperExitPolicyArg();
+const marketRegimeAllocationPolicy = readMarketRegimeAllocationPolicyArg();
 const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
   riskProfile: riskProfile.name
 });
@@ -120,6 +122,9 @@ const result = await runHistoricalBatchReplay({
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(paperExitPolicy === undefined ? {} : { paperExitPolicy }),
+  ...(marketRegimeAllocationPolicy === undefined
+    ? {}
+    : { marketRegimeAllocationPolicy }),
   ...(useCodexAi
     ? {
         decisionProviderFactory: () =>
@@ -161,6 +166,7 @@ console.log(
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
       paperExitPolicy: paperExitPolicy ?? null,
+      marketRegimeAllocationPolicy: marketRegimeAllocationPolicy ?? null,
       windowSamplingMode,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
@@ -292,6 +298,33 @@ function readPaperExitPolicyArg() {
       : { trailingStopFromPeakRatio })
   });
   return normalized ?? undefined;
+}
+
+function readMarketRegimeAllocationPolicyArg():
+  | MarketRegimeAllocationPolicy
+  | undefined {
+  if (!args.includes("--market-regime-allocation")) {
+    return undefined;
+  }
+
+  const lookbackDays = readNumberArg(
+    "--market-regime-allocation-lookback-days",
+    20
+  );
+  if (!Number.isInteger(lookbackDays) || lookbackDays <= 0) {
+    throw new Error(
+      "--market-regime-allocation-lookback-days must be a positive integer"
+    );
+  }
+
+  return {
+    lookbackDays,
+    minSymbols: readNumberArg("--market-regime-min-symbols", 1),
+    minSnapshotsPerSymbol: readNumberArg(
+      "--market-regime-min-snapshots-per-symbol",
+      2
+    )
+  };
 }
 
 function readTakeProfitModeArg() {
