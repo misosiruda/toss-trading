@@ -38,6 +38,14 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
     insufficient_data: 1,
     mixed: 1
   });
+  assert.deepEqual(report.summary.regimeCountsByMarket, {
+    KR: {
+      bull: 2,
+      bear: 1,
+      insufficient_data: 1,
+      mixed: 1
+    }
+  });
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
@@ -127,6 +135,26 @@ test("batch replay aggregate report counts AI decision failures separately from 
   assert.equal(report.byRegime.bull?.totalAiDecisionFailureCount, 3);
 });
 
+test("batch replay aggregate report handles legacy records without market counts", () => {
+  const legacyRecord = record(
+    "legacy_run_0",
+    0,
+    "completed",
+    "bull",
+    0.01,
+    1_010_000
+  ) as Partial<BatchReplayRunRecord>;
+  delete legacyRecord.marketRegimesByMarket;
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [legacyRecord as BatchReplayRunRecord]
+  });
+
+  assert.deepEqual(report.summary.regimeCounts, { bull: 1 });
+  assert.deepEqual(report.summary.regimeCountsByMarket, {});
+});
+
 test("batch replay aggregate report renders paper-only disclaimer", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -137,6 +165,7 @@ test("batch replay aggregate report renders paper-only disclaimer", () => {
   assert.match(rendered, /Batch Replay Paper Aggregate Report/);
   assert.match(rendered, /paper-only/);
   assert.match(rendered, /target_return_hit_rates/);
+  assert.match(rendered, /regime_counts_by_market/);
   assert.match(rendered, /total_ai_decision_failure_count/);
   assert.doesNotMatch(rendered, /live order/i);
 });
@@ -208,6 +237,9 @@ function record(
       fallbackReason: null
     },
     marketRegime: marketRegime(regime),
+    marketRegimesByMarket: {
+      KR: marketRegime(regime)
+    },
     dataAvailability: {
       status: status === "skipped" ? "insufficient" : "available",
       totalSnapshotCount: 10,

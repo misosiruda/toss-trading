@@ -1,4 +1,5 @@
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
+import type { Market } from "../domain/schemas.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
@@ -28,6 +29,9 @@ export interface BatchReplayAggregateSummary {
   failedCount: number;
   returnSampleCount: number;
   regimeCounts: Partial<Record<MarketRegimeLabel, number>>;
+  regimeCountsByMarket: Partial<
+    Record<Market, Partial<Record<MarketRegimeLabel, number>>>
+  >;
 }
 
 export interface BatchReplayGroupSummary {
@@ -98,7 +102,8 @@ export function buildBatchReplayAggregateReport(
         .length,
       failedCount: records.filter((record) => record.status === "failed").length,
       returnSampleCount: records.filter(hasReturnSample).length,
-      regimeCounts: countRegimes(records)
+      regimeCounts: countRegimes(records),
+      regimeCountsByMarket: countRegimesByMarket(records)
     },
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
@@ -124,6 +129,7 @@ export function renderBatchReplayAggregateReport(
     `failed_count: ${report.summary.failedCount}`,
     `return_sample_count: ${report.summary.returnSampleCount}`,
     `regime_counts: ${JSON.stringify(report.summary.regimeCounts)}`,
+    `regime_counts_by_market: ${JSON.stringify(report.summary.regimeCountsByMarket)}`,
     "",
     "## Overall",
     renderGroup(report.overall),
@@ -273,6 +279,24 @@ function countRegimes(
   for (const record of records) {
     const label = record.marketRegime.label;
     counts[label] = (counts[label] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function countRegimesByMarket(
+  records: BatchReplayRunRecord[]
+): Partial<Record<Market, Partial<Record<MarketRegimeLabel, number>>>> {
+  const counts: Partial<Record<Market, Partial<Record<MarketRegimeLabel, number>>>> =
+    {};
+  for (const record of records) {
+    for (const [market, regime] of Object.entries(
+      record.marketRegimesByMarket ?? {}
+    )) {
+      const marketKey = market as Market;
+      const marketCounts = counts[marketKey] ?? {};
+      marketCounts[regime.label] = (marketCounts[regime.label] ?? 0) + 1;
+      counts[marketKey] = marketCounts;
+    }
   }
   return counts;
 }
