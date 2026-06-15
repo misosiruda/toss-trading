@@ -3,8 +3,10 @@ import { dirname, join } from "node:path";
 
 import {
   classifyMarketRegime,
+  classifyMarketRegimeByMarket,
   type MarketRegimeClassification,
-  type MarketRegimeLabel
+  type MarketRegimeLabel,
+  type MarketRegimesByMarket
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
@@ -161,6 +163,7 @@ export interface BatchReplayRunRecord {
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
   marketRegime: MarketRegimeClassification;
+  marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
   summary: BatchReplayRunSummary | null;
   reportPath: string | null;
@@ -319,6 +322,11 @@ export async function runHistoricalBatchReplay(
         windowStart,
         windowEnd
       });
+    const marketRegimesByMarket = classifyMarketRegimeByMarket({
+      snapshots: snapshotRead.records,
+      windowStart,
+      windowEnd
+    });
 
     if (availability.status !== "available") {
       const skipped = runRecord({
@@ -332,6 +340,7 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         marketRegime,
+        marketRegimesByMarket,
         availability,
         skipReason: "DATA_INSUFFICIENT"
       });
@@ -407,6 +416,7 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         marketRegime,
+        marketRegimesByMarket,
         availability,
         reportPath: result.reportPath,
         summary: summarizeRun(result.report, result.replayResult.auditEvents)
@@ -425,6 +435,7 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         marketRegime,
+        marketRegimesByMarket,
         availability,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -581,6 +592,7 @@ function runRecord(input: {
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
   marketRegime: MarketRegimeClassification;
+  marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
   reportPath?: string;
   summary?: BatchReplayRunSummary;
@@ -603,6 +615,7 @@ function runRecord(input: {
     window: input.window,
     windowSampling: input.windowSampling,
     marketRegime: input.marketRegime,
+    marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability),
     summary: input.summary ?? null,
     reportPath: input.reportPath ?? null,
