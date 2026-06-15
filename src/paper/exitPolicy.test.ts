@@ -9,6 +9,7 @@ import {
 } from "../domain/schemas.js";
 import {
   buildPaperExitPolicyDecision,
+  createPaperExitPolicyState,
   normalizePaperExitPolicy
 } from "./exitPolicy.js";
 
@@ -48,7 +49,60 @@ test("buildPaperExitPolicyDecision creates reduce-only take-profit sell-all deci
   assert.equal(parsed.decisions[0]?.action, "VIRTUAL_SELL");
   assert.equal(parsed.decisions[0]?.reduceOnly, true);
   assert.equal(parsed.decisions[0]?.sellAll, true);
+  assert.equal(parsed.decisions[0]?.sellRatio, undefined);
   assert.match(parsed.decisions[0]?.thesis ?? "", /take-profit/);
+});
+
+test("buildPaperExitPolicyDecision supports partial take-profit and trailing stop", () => {
+  const state = createPaperExitPolicyState();
+  const heldPortfolio = portfolio({
+    positions: [position({ averagePriceKrw: 100, quantity: 10 })]
+  });
+  const policy = {
+    takeProfitRatio: 0.15,
+    takeProfitMode: "partial_then_trail" as const,
+    takeProfitSellRatio: 0.5,
+    trailingStopFromPeakRatio: 0.08
+  };
+
+  const partial = buildPaperExitPolicyDecision({
+    packet: packet({ lastPriceKrw: 120 }),
+    portfolio: heldPortfolio,
+    policy,
+    state
+  });
+
+  assert.ok(partial);
+  assert.equal(partial.decisions[0]?.sellAll, undefined);
+  assert.equal(partial.decisions[0]?.sellRatio, 0.5);
+  assert.match(partial.decisions[0]?.thesis ?? "", /partial take-profit/);
+
+  const repeat = buildPaperExitPolicyDecision({
+    packet: packet({ lastPriceKrw: 130 }),
+    portfolio: heldPortfolio,
+    policy,
+    state
+  });
+  assert.equal(repeat, null);
+
+  const peak = buildPaperExitPolicyDecision({
+    packet: packet({ lastPriceKrw: 140 }),
+    portfolio: heldPortfolio,
+    policy,
+    state
+  });
+  assert.equal(peak, null);
+
+  const trailing = buildPaperExitPolicyDecision({
+    packet: packet({ lastPriceKrw: 128 }),
+    portfolio: heldPortfolio,
+    policy,
+    state
+  });
+  assert.ok(trailing);
+  assert.equal(trailing.decisions[0]?.sellAll, true);
+  assert.equal(trailing.decisions[0]?.sellRatio, undefined);
+  assert.match(trailing.decisions[0]?.thesis ?? "", /trailing stop/);
 });
 
 test("buildPaperExitPolicyDecision prioritizes stop-loss before other exits", () => {

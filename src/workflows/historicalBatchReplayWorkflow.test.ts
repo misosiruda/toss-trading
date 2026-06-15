@@ -395,6 +395,7 @@ test("historical batch replay runner records selected risk profile", async () =>
 
   assert.equal(manifest["riskProfile"], "aggressive_paper");
   assert.deepEqual(manifest["paperExitPolicy"], {
+    takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
     stopLossRatio: 0.08,
     rebalanceMaxPositionWeightRatio: 0.55
@@ -404,6 +405,7 @@ test("historical batch replay runner records selected risk profile", async () =>
   assert.equal(allocationPolicy["policyName"], "aggressive_paper_allocation");
   assert.equal(allocationPolicy["targetExposureRatio"], 0.85);
   assert.equal(allocationPolicy["maxBudgetPerDecisionRatio"], 0.2);
+  assert.equal(paperExitPolicy["takeProfitMode"], "full_exit");
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
   assert.equal(paperExitPolicy["stopLossRatio"], 0.08);
   assert.equal(paperExitPolicy["rebalanceMaxPositionWeightRatio"], 0.55);

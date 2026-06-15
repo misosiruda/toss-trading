@@ -16,7 +16,9 @@ import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import {
   buildPaperExitPolicyDecision,
+  createPaperExitPolicyState,
   normalizePaperExitPolicy,
+  prunePaperExitPolicyState,
   type NormalizedPaperExitPolicy,
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
@@ -172,6 +174,7 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
       projectedExposureBySymbol.get(symbolKey) ?? 0;
     const budgetKrw = firstPricedBudgetKrw({
       packet,
+      candidate,
       currentSymbolExposureKrw,
       remainingAdditionalBudgetKrw,
       remainingCashBudgetKrw
@@ -270,13 +273,14 @@ function legacySingleShareBudgetKrw(
 
 function firstPricedBudgetKrw(input: {
   packet: MarketPacket;
+  candidate: MarketPacket["candidates"][number];
   currentSymbolExposureKrw: number;
   remainingAdditionalBudgetKrw: number;
   remainingCashBudgetKrw: number;
 }): number {
   const allocation = input.packet.portfolioAllocation;
   if (allocation === undefined) {
-    return 0;
+    return legacySingleShareBudgetKrw(input.packet, input.candidate);
   }
 
   const symbolHeadroomKrw = Math.max(
@@ -337,6 +341,8 @@ export function runHistoricalReplay(
   const ticks = options.clock.ticks();
   const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
+  const paperExitPolicyState = createPaperExitPolicyState();
+  appendExitPolicyWarnings(warnings, options.riskPolicy, paperExitPolicy);
 
   for (const tick of ticks) {
     const simulatedAt = new Date(tick.epochMs);
@@ -397,7 +403,8 @@ export function runHistoricalReplay(
     const exitDecision = buildPaperExitPolicyDecision({
       packet,
       portfolio: currentPortfolio,
-      policy: paperExitPolicy ?? undefined
+      policy: paperExitPolicy ?? undefined,
+      state: paperExitPolicyState
     });
     if (exitDecision !== null) {
       const recordedExitDecision = bindVirtualDecisionConfidenceBreakdown({
@@ -421,6 +428,7 @@ export function runHistoricalReplay(
           riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
         });
         currentPortfolio = result.portfolio;
+        prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
         riskDecisions.push(result.riskDecision);
         appendAuditEvent(
           auditEvents,
@@ -538,6 +546,7 @@ export function runHistoricalReplay(
         riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
       });
       currentPortfolio = result.portfolio;
+      prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
       riskDecisions.push(result.riskDecision);
       appendAuditEvent(
         auditEvents,
@@ -571,6 +580,7 @@ export function runHistoricalReplay(
       prices: pricePoints,
       asOf: simulatedAt
     });
+    prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
     portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
   }
 
@@ -620,6 +630,25 @@ function riskPolicyForTick(
     ...(policy ?? {}),
     now
   };
+}
+
+function appendExitPolicyWarnings(
+  warnings: string[],
+  riskPolicy: Partial<VirtualRiskPolicy> | undefined,
+  paperExitPolicy: NormalizedPaperExitPolicy | null
+): void {
+  const riskMaxPositionWeightRatio = riskPolicy?.maxPositionWeightRatio;
+  const rebalanceMaxPositionWeightRatio =
+    paperExitPolicy?.rebalanceMaxPositionWeightRatio;
+  if (
+    riskMaxPositionWeightRatio !== undefined &&
+    rebalanceMaxPositionWeightRatio !== undefined &&
+    rebalanceMaxPositionWeightRatio < riskMaxPositionWeightRatio
+  ) {
+    warnings.push(
+      `paper exit rebalanceMaxPositionWeightRatio (${rebalanceMaxPositionWeightRatio}) is below risk maxPositionWeightRatio (${riskMaxPositionWeightRatio})`
+    );
+  }
 }
 
 function evaluateSamplingPolicy(

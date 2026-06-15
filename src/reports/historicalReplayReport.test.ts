@@ -13,6 +13,7 @@ import {
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import {
+  buildPortfolioConstructionMetrics,
   buildHistoricalReplayReport,
   renderHistoricalReplayReport
 } from "./historicalReplayReport.js";
@@ -35,6 +36,9 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.portfolio.finalCashKrw, 830_000);
   assert.equal(report.portfolio.finalPositionCount, 2);
   assert.equal(report.portfolioTimeline.length, 3);
+  assert.notEqual(report.portfolioConstruction.avgExposureRatio, null);
+  assert.notEqual(report.portfolioConstruction.avgCashRatio, null);
+  assert.notEqual(report.portfolioConstruction.timeInMarketRatio, null);
   assert.equal(report.decisionOutcome.byAction["VIRTUAL_BUY"], 2);
   assert.equal(report.samplingSummary.skipReasons["STEP_INTERVAL_SKIPPED"], 1);
   assert.equal(report.benchmarks.strategy.initialNetWorthKrw > 0, true);
@@ -66,6 +70,10 @@ test("rendered historical replay report masks sensitive values and avoids advice
 
   assert.match(rendered, /Historical Replay Paper Report/);
   assert.match(rendered, /paper_exit_policy/);
+  assert.match(rendered, /avg_exposure_ratio/);
+  assert.match(rendered, /time_in_market_ratio/);
+  assert.match(rendered, /meaningful_reject_count/);
+  assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
   assert.match(rendered, /Benchmarks/);
   assert.match(rendered, /equal_weight_buy_and_hold/);
@@ -78,6 +86,50 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.equal(rendered.includes("1234-5678-901234"), false);
   assert.equal(rendered.includes("ord_abcdef123456"), false);
   assert.equal(rendered.includes("can place live orders"), false);
+});
+
+test("portfolio construction metrics handle zero equity without NaN", () => {
+  const metrics = buildPortfolioConstructionMetrics([
+    {
+      simulatedAt: "2025-01-02T09:00:00.000Z",
+      cashKrw: 500,
+      positionCount: 1,
+      positionMarketValueKrw: 500,
+      virtualNetWorthKrw: 1_000
+    },
+    {
+      simulatedAt: "2025-01-02T09:01:00.000Z",
+      cashKrw: 0,
+      positionCount: 0,
+      positionMarketValueKrw: 0,
+      virtualNetWorthKrw: 0
+    }
+  ]);
+
+  assert.equal(metrics.avgExposureRatio, 0.25);
+  assert.equal(metrics.avgCashRatio, 0.25);
+  assert.equal(metrics.maxExposureRatio, 0.5);
+  assert.equal(metrics.minExposureRatio, 0);
+  assert.equal(metrics.timeInMarketRatio, 0.5);
+  assert.equal(metrics.finalCashRatio, 0);
+  assert.equal(metrics.finalPositionRatio, 0);
+});
+
+test("historical replay report separates dust no-op from meaningful rejects", () => {
+  const result = replayResult();
+  result.auditEvents.push({
+    eventId: "audit_dust_noop_001",
+    eventType: "NO_OP_EXIT_DUST_CLOSED",
+    actor: "system",
+    summary: "fixture dust close",
+    maskedRefs: [],
+    createdAt: "2025-01-02T09:02:00+09:00"
+  });
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.riskSummary.meaningfulRejectCount, result.rejectedCount);
+  assert.equal(report.riskSummary.dustRejectCount, 1);
 });
 
 function replayResult(): HistoricalReplayResult {

@@ -316,6 +316,9 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `--paper-take-profit-ratio 0.15`: 보유 포지션의 미실현 수익률이 15% 이상이면 reduce-only `VIRTUAL_SELL` sell-all decision을 생성합니다.
 - `--paper-stop-loss-ratio 0.08`: 보유 포지션의 미실현 수익률이 -8% 이하이면 reduce-only `VIRTUAL_SELL` sell-all decision을 생성합니다.
 - `--paper-rebalance-max-position-weight-ratio 0.55`: 포지션 평가액이 가상 순자산의 55%를 초과하면 `targetWeightPct=0.55` reduce-only sell decision을 생성합니다.
+- `--paper-take-profit-mode full_exit|partial_then_trail`: take-profit 처리 방식을 선택합니다. 기본값은 `full_exit`입니다.
+- `--paper-take-profit-sell-ratio 0.5`: `partial_then_trail` 모드에서 최초 take-profit 도달 시 매도할 보유 수량 비율입니다.
+- `--paper-trailing-stop-from-peak-ratio 0.08`: `partial_then_trail` 모드에서 partial take-profit 이후 peak 가격 대비 하락률이 이 값을 넘으면 잔여 수량을 sell-all 합니다.
 
 동작:
 
@@ -323,9 +326,19 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - exit decision도 기존 `VirtualRiskEngine`과 `PaperOrderEngine`만 통과합니다.
 - 같은 tick에서 exit이 발생한 종목은 provider가 같은 종목에 대해 낸 decision item을 실행하지 않습니다.
 - stop-loss가 take-profit/rebalance보다 우선하고, take-profit이 rebalance보다 우선합니다.
+- `full_exit` 모드는 기존과 같이 take-profit 도달 시 전량 매도합니다.
+- `partial_then_trail` 모드는 replay runner 내부 paper-only state로 종목별 partial take-profit 실행 여부와 peak 가격을 추적합니다. 이 state는 live trading path나 broker adapter로 전달하지 않습니다.
+- `partial_then_trail`에서 partial take-profit은 같은 position에 대해 한 번만 실행합니다.
+- risk profile의 `maxPositionWeightRatio`보다 exit policy의 `rebalanceMaxPositionWeightRatio`가 낮으면 자동 변경하지 않고 replay warning으로만 기록합니다.
 - 실행된 exit policy는 `historical-replay-decisions.jsonl`, `historical-replay-risk-decisions.jsonl`, `historical-replay-trades.jsonl`, `historical-replay-run-metadata.json`, `historical-replay-report.json`, `batch-replay-manifest.json`에 기록됩니다.
 
 이 정책은 paper-only replay 실험용입니다. live `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않으며 수익률 목표 달성이나 실계좌 성과를 보장하지 않습니다.
+
+예: partial take-profit 후 trailing stop 실험
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-yahoo-daily --output-dir data/batch-replay --batch-id batch-exit-v2-partial-trail --seed batch-seed-001 --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 5 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --risk-profile aggressive_paper --paper-take-profit-ratio 0.15 --paper-stop-loss-ratio 0.08 --paper-rebalance-max-position-weight-ratio 0.55 --paper-take-profit-mode partial_then_trail --paper-take-profit-sell-ratio 0.5 --paper-trailing-stop-from-peak-ratio 0.08
+```
 
 #### Historical Universe Coverage
 
@@ -419,9 +432,22 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - 전체 및 regime별 win rate
 - 전체 및 regime별 target return threshold hit-rate
 - final virtual net worth 평균
+- 전체 및 regime별 평균 exposure ratio, cash ratio, time-in-market ratio
+- final cash ratio, final position ratio 평균
 - trade/rejected count 요약
-- 완료된 replay 내부의 Codex provider failure count
+- Codex provider 호출 실패 count 요약
+- meaningful reject count와 dust/no-op reject count 분리
 - 집계에 포함된 run ID 목록
+
+Run-level `historical-replay-report.json`의 portfolio construction metric:
+
+- `avgExposureRatio`: timeline snapshot별 `positionMarketValueKrw / virtualNetWorthKrw` 평균
+- `avgCashRatio`: timeline snapshot별 `cashKrw / virtualNetWorthKrw` 평균
+- `maxExposureRatio`, `minExposureRatio`
+- `timeInMarketRatio`: exposure ratio가 `0.05`를 초과한 snapshot 비율
+- `finalCashRatio`, `finalPositionRatio`
+
+`cashDragApproxKrw`는 아직 report에 넣지 않습니다. 기준 benchmark와 재투자 가정에 따라 값이 크게 달라질 수 있어, 부정확한 placeholder 대신 후속 PR에서 별도 정의한 뒤 추가합니다.
 
 이 report는 이미 완료된 paper-only batch run record를 읽는 사후 분석 도구입니다. replay 실행, Codex CLI AI 호출, 외부 데이터 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
 

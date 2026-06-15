@@ -1954,3 +1954,29 @@
 - `src/replay/historicalReplayRunner.ts`는 allocation이 있을 때 first-priced fixture를 여러 eligible 후보로 분산합니다.
 - `src/replay/codexHistoricalReplayRunner.ts`, `src/workflows/historicalReplayWorkflow.ts`, `src/workflows/historicalBatchReplayWorkflow.ts`, CLI는 allocation policy를 replay와 metadata에 전달합니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 target exposure profile, metadata, 제외 범위를 문서화합니다.
+
+## PR-70: Paper Exit Policy Telemetry
+
+### Review 1: Scope and Safety
+
+- 범위는 historical replay의 paper-only exit policy와 사후 분석 metric 확장에 한정합니다.
+- `partial_then_trail` state는 replay runner 내부 state이며 live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter로 전달하지 않습니다.
+- exit decision은 기존과 동일하게 reduce-only `VirtualDecision`을 만들고 `VirtualRiskEngine`과 `PaperOrderEngine`을 통과합니다.
+- aggregate/report metric은 사후 분석용이며 buy/sell signal, risk approval, strategy 자동 조정에 사용하지 않습니다.
+- live trading, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 추가하지 않습니다.
+
+### Review 2: Tests and Validation
+
+- `npm test`: pass, 290 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- partial take-profit 후 trailing stop, default `full_exit` metadata, portfolio construction metric, dust/no-op reject 분리, batch aggregate metric을 테스트로 확인했습니다.
+- 금지 경계 grep에서 신규 실행 경로는 없고, match는 문서상 금지/비전파 문구와 paper-only disclaimer로만 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/paper/exitPolicy.ts`는 `full_exit` 기본값을 유지하면서 `partial_then_trail` 모드에서 최초 partial sell과 이후 peak drawdown 기반 trailing sell-all을 생성합니다.
+- `src/replay/historicalReplayRunner.ts`와 `src/replay/codexHistoricalReplayRunner.ts`는 replay별 exit state를 만들고 포지션 정리 후 stale state를 prune합니다.
+- `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 새 paper exit option을 파싱합니다.
+- `src/reports/historicalReplayReport.ts`는 portfolio construction metric과 meaningful/dust reject count를 출력합니다.
+- `src/reports/batchReplayReport.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run summary와 aggregate report에 exposure/cash/time-in-market/target gap/dust reject metric을 전달합니다.
+- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 option, metric, 제외 범위를 문서화합니다.

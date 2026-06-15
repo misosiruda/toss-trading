@@ -15,7 +15,9 @@ import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import {
   buildPaperExitPolicyDecision,
+  createPaperExitPolicyState,
   normalizePaperExitPolicy,
+  prunePaperExitPolicyState,
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
@@ -94,6 +96,8 @@ export async function runCodexHistoricalReplay(
   const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
   const performanceClock = options.performanceClock ?? monotonicNowMs;
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
+  const paperExitPolicyState = createPaperExitPolicyState();
+  appendExitPolicyWarnings(warnings, options.riskPolicy, paperExitPolicy);
 
   const emitProgress = async (
     tick: SimulatedTick,
@@ -217,7 +221,8 @@ export async function runCodexHistoricalReplay(
     const exitDecision = buildPaperExitPolicyDecision({
       packet,
       portfolio: currentPortfolio,
-      policy: paperExitPolicy ?? undefined
+      policy: paperExitPolicy ?? undefined,
+      state: paperExitPolicyState
     });
     if (exitDecision !== null) {
       const recordedExitDecision = bindVirtualDecisionConfidenceBreakdown({
@@ -243,6 +248,7 @@ export async function runCodexHistoricalReplay(
         });
         orderExecutionMs += performanceClock() - orderStartedAtMs;
         currentPortfolio = result.portfolio;
+        prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
         riskDecisions.push(result.riskDecision);
         appendAuditEvent(
           auditEvents,
@@ -485,6 +491,7 @@ export async function runCodexHistoricalReplay(
       });
       orderExecutionMs += performanceClock() - orderStartedAtMs;
       currentPortfolio = result.portfolio;
+      prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
       riskDecisions.push(result.riskDecision);
       appendAuditEvent(
         auditEvents,
@@ -574,6 +581,7 @@ export async function runCodexHistoricalReplay(
       prices: pricePoints,
       asOf: simulatedAt
     });
+    prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
     portfolioTimeline.push(timelineItem(simulatedAt, currentPortfolio));
     await emitProgress(
       tick,
@@ -636,6 +644,25 @@ function riskPolicyForTick(
     ...(policy ?? {}),
     now
   };
+}
+
+function appendExitPolicyWarnings(
+  warnings: string[],
+  riskPolicy: Partial<VirtualRiskPolicy> | undefined,
+  paperExitPolicy: ReturnType<typeof normalizePaperExitPolicy>
+): void {
+  const riskMaxPositionWeightRatio = riskPolicy?.maxPositionWeightRatio;
+  const rebalanceMaxPositionWeightRatio =
+    paperExitPolicy?.rebalanceMaxPositionWeightRatio;
+  if (
+    riskMaxPositionWeightRatio !== undefined &&
+    rebalanceMaxPositionWeightRatio !== undefined &&
+    rebalanceMaxPositionWeightRatio < riskMaxPositionWeightRatio
+  ) {
+    warnings.push(
+      `paper exit rebalanceMaxPositionWeightRatio (${rebalanceMaxPositionWeightRatio}) is below risk maxPositionWeightRatio (${riskMaxPositionWeightRatio})`
+    );
+  }
 }
 
 function evaluateSamplingPolicy(

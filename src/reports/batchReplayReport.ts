@@ -44,10 +44,20 @@ export interface BatchReplayGroupSummary {
   winRate: number | null;
   targetReturnHitRates: TargetReturnHitRate[];
   averageFinalVirtualNetWorthKrw: number | null;
+  averageExposureRatio: number | null;
+  averageCashRatio: number | null;
+  averageTimeInMarketRatio: number | null;
+  averageFinalCashRatio: number | null;
+  averageFinalPositionRatio: number | null;
+  averageTargetExposureRatio: number | null;
+  averageTargetExposureGapRatio: number | null;
+  averageFinalTargetExposureGapRatio: number | null;
   totalTradeCount: number;
   averageTradeCount: number | null;
   totalAiDecisionFailureCount: number;
   totalRejectedCount: number;
+  totalMeaningfulRejectCount: number;
+  totalDustRejectCount: number;
   runIds: string[];
 }
 
@@ -149,6 +159,13 @@ function summarizeGroup(
   const rejectedCounts = completed.map(
     (record) => record.summary?.rejectedCount ?? 0
   );
+  const meaningfulRejectedCounts = completed.map(
+    (record) =>
+      record.summary?.meaningfulRejectCount ?? record.summary?.rejectedCount ?? 0
+  );
+  const dustRejectedCounts = completed.map(
+    (record) => record.summary?.dustRejectCount ?? 0
+  );
 
   return {
     key,
@@ -174,6 +191,26 @@ function summarizeGroup(
       finalNetWorthValues.length === 0
         ? null
         : Math.round(average(finalNetWorthValues)),
+    averageExposureRatio: averageSummaryRatio(completed, "avgExposureRatio"),
+    averageCashRatio: averageSummaryRatio(completed, "avgCashRatio"),
+    averageTimeInMarketRatio: averageSummaryRatio(completed, "timeInMarketRatio"),
+    averageFinalCashRatio: averageSummaryRatio(completed, "finalCashRatio"),
+    averageFinalPositionRatio: averageSummaryRatio(
+      completed,
+      "finalPositionRatio"
+    ),
+    averageTargetExposureRatio: averageSummaryRatio(
+      completed,
+      "targetExposureRatio"
+    ),
+    averageTargetExposureGapRatio: averageSummaryRatio(
+      completed,
+      "averageTargetExposureGapRatio"
+    ),
+    averageFinalTargetExposureGapRatio: averageSummaryRatio(
+      completed,
+      "finalTargetExposureGapRatio"
+    ),
     totalTradeCount: tradeCounts.reduce((sum, value) => sum + value, 0),
     averageTradeCount:
       tradeCounts.length === 0 ? null : roundRatio(average(tradeCounts)),
@@ -182,6 +219,14 @@ function summarizeGroup(
       0
     ),
     totalRejectedCount: rejectedCounts.reduce((sum, value) => sum + value, 0),
+    totalMeaningfulRejectCount: meaningfulRejectedCounts.reduce(
+      (sum, value) => sum + value,
+      0
+    ),
+    totalDustRejectCount: dustRejectedCounts.reduce(
+      (sum, value) => sum + value,
+      0
+    ),
     runIds: records.map((record) => record.runId)
   };
 }
@@ -262,8 +307,37 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `win_rate: ${formatNullable(group.winRate)}`,
     `target_return_hit_rates: ${JSON.stringify(group.targetReturnHitRates)}`,
     `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`,
-    `total_ai_decision_failure_count: ${group.totalAiDecisionFailureCount}`
+    `average_exposure_ratio: ${formatNullable(group.averageExposureRatio)}`,
+    `average_cash_ratio: ${formatNullable(group.averageCashRatio)}`,
+    `average_time_in_market_ratio: ${formatNullable(group.averageTimeInMarketRatio)}`,
+    `average_final_cash_ratio: ${formatNullable(group.averageFinalCashRatio)}`,
+    `average_final_position_ratio: ${formatNullable(group.averageFinalPositionRatio)}`,
+    `average_target_exposure_ratio: ${formatNullable(group.averageTargetExposureRatio)}`,
+    `average_target_exposure_gap_ratio: ${formatNullable(group.averageTargetExposureGapRatio)}`,
+    `average_final_target_exposure_gap_ratio: ${formatNullable(group.averageFinalTargetExposureGapRatio)}`,
+    `total_ai_decision_failure_count: ${group.totalAiDecisionFailureCount}`,
+    `total_rejected_count: ${group.totalRejectedCount}`,
+    `total_meaningful_reject_count: ${group.totalMeaningfulRejectCount}`,
+    `total_dust_reject_count: ${group.totalDustRejectCount}`
   ].join("\n");
+}
+
+function averageSummaryRatio(
+  records: BatchReplayRunRecord[],
+  key:
+    | "avgExposureRatio"
+    | "avgCashRatio"
+    | "timeInMarketRatio"
+    | "finalCashRatio"
+    | "finalPositionRatio"
+    | "targetExposureRatio"
+    | "averageTargetExposureGapRatio"
+    | "finalTargetExposureGapRatio"
+): number | null {
+  const values = records
+    .map((record) => record.summary?.[key] ?? null)
+    .filter((value): value is number => value !== null);
+  return values.length === 0 ? null : roundRatio(average(values));
 }
 
 function normalizeTargetReturnThresholds(values: number[] | undefined): number[] {

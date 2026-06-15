@@ -7,6 +7,7 @@ import {
   type MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import {
   normalizePaperExitPolicy,
   type NormalizedPaperExitPolicy,
@@ -14,7 +15,6 @@ import {
 } from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
-import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import {
   createStoragePaths,
@@ -185,6 +185,18 @@ export interface BatchReplayRunSummary {
   decisionProviderCallCount: number;
   aiDecisionFailureCount: number;
   rejectedCount: number;
+  meaningfulRejectCount: number;
+  dustRejectCount: number;
+  avgExposureRatio: number | null;
+  avgCashRatio: number | null;
+  maxExposureRatio: number | null;
+  minExposureRatio: number | null;
+  timeInMarketRatio: number | null;
+  finalCashRatio: number | null;
+  finalPositionRatio: number | null;
+  targetExposureRatio: number | null;
+  averageTargetExposureGapRatio: number | null;
+  finalTargetExposureGapRatio: number | null;
 }
 
 export interface BatchReplayWindowSamplingSummary {
@@ -611,7 +623,21 @@ function summarizeRun(
     aiDecisionFailureCount: auditEvents.filter(
       (event) => event.eventType === "HISTORICAL_AI_DECISION_FAILED"
     ).length,
-    rejectedCount: report.riskSummary.rejectedCount
+    rejectedCount: report.riskSummary.rejectedCount,
+    meaningfulRejectCount: report.riskSummary.meaningfulRejectCount,
+    dustRejectCount: report.riskSummary.dustRejectCount,
+    avgExposureRatio: report.portfolioConstruction.avgExposureRatio,
+    avgCashRatio: report.portfolioConstruction.avgCashRatio,
+    maxExposureRatio: report.portfolioConstruction.maxExposureRatio,
+    minExposureRatio: report.portfolioConstruction.minExposureRatio,
+    timeInMarketRatio: report.portfolioConstruction.timeInMarketRatio,
+    finalCashRatio: report.portfolioConstruction.finalCashRatio,
+    finalPositionRatio: report.portfolioConstruction.finalPositionRatio,
+    targetExposureRatio: report.portfolioConstruction.targetExposureRatio,
+    averageTargetExposureGapRatio:
+      report.portfolioConstruction.averageTargetExposureGapRatio,
+    finalTargetExposureGapRatio:
+      report.portfolioConstruction.finalTargetExposureGapRatio
   };
 }
 
