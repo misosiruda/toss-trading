@@ -10,6 +10,7 @@ import {
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
+import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import {
   normalizePaperExitPolicy,
   type NormalizedPaperExitPolicy,
@@ -76,6 +77,7 @@ export interface BatchReplayRunnerOptions {
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
   allocationPolicy?: PaperAllocationPolicy;
+  marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   windowSamplingMode?: BatchReplayWindowSamplingMode;
   targetRegimes?: MarketRegimeLabel[];
@@ -143,6 +145,7 @@ export interface BatchReplayManifest {
   decisionProvider: BatchReplayDecisionProviderMetadata;
   riskProfile: PaperRiskProfileName | null;
   allocationPolicy: PaperAllocationPolicy | null;
+  marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | null;
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
   disclaimer: string;
@@ -282,6 +285,7 @@ export async function runHistoricalBatchReplay(
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
+    marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: initialWindowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
@@ -396,6 +400,12 @@ export async function runHistoricalBatchReplay(
         ...(options.allocationPolicy === undefined
           ? {}
           : { allocationPolicy: options.allocationPolicy }),
+        ...(options.marketRegimeAllocationPolicy === undefined
+          ? {}
+          : {
+              marketRegimeAllocationPolicy:
+                options.marketRegimeAllocationPolicy
+            }),
         ...(options.paperExitPolicy === undefined
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
@@ -471,6 +481,7 @@ export async function runHistoricalBatchReplay(
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
+    marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: windowSamplingSummary,
     disclaimer: batchReplayDisclaimer()
