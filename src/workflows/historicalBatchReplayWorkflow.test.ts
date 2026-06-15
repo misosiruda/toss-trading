@@ -200,6 +200,17 @@ test("historical batch replay runner balances windows by market regime", async (
     ),
     ["bull", "bear", "sideways"]
   );
+  assert.deepEqual(
+    runRecords.map(
+      (record) =>
+        (
+          (record["marketRegimesByMarket"] as Record<string, unknown>)[
+            "KR"
+          ] as Record<string, unknown>
+        )["label"]
+    ),
+    ["bull", "bear", "sideways"]
+  );
 });
 
 test("historical batch replay runner can inject Codex-style provider per run", async () => {
