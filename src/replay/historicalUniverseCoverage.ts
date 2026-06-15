@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  assetClassSchema,
+  assetRegionSchema,
+  assetRiskTagSchema,
+  assetTypeSchema,
   type HistoricalMarketSnapshot,
   type Market,
   marketSchema,
@@ -14,6 +18,10 @@ export const historicalUniverseMemberSchema = z
     symbol: z.string().trim().min(1),
     sourceSymbol: z.string().trim().min(1).optional(),
     name: z.string().trim().min(1).optional(),
+    assetType: assetTypeSchema.optional(),
+    assetClass: assetClassSchema.optional(),
+    region: assetRegionSchema.optional(),
+    riskTags: z.array(assetRiskTagSchema).optional(),
     segment: z.string().trim().min(1).optional(),
     required: z.boolean().default(true),
     tags: z.array(z.string().trim().min(1)).optional()
@@ -68,6 +76,10 @@ export interface HistoricalUniverseCoverageSymbolSummary {
   symbol: string;
   sourceSymbol: string | null;
   name: string | null;
+  assetType: string | null;
+  assetClass: string | null;
+  region: string | null;
+  riskTags: string[];
   segment: string | null;
   required: boolean;
   snapshotCount: number;
@@ -266,6 +278,10 @@ function summarizeUniverseMember(input: {
     symbol: input.member.symbol,
     sourceSymbol: input.member.sourceSymbol ?? null,
     name: input.member.name ?? null,
+    assetType: input.member.assetType ?? null,
+    assetClass: input.member.assetClass ?? null,
+    region: input.member.region ?? null,
+    riskTags: input.member.riskTags ?? [],
     segment: input.member.segment ?? null,
     required: input.member.required,
     snapshotCount: sortedSnapshots.length,
