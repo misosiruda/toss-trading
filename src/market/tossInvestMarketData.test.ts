@@ -62,6 +62,7 @@ test("sample tossctl ranking, signals, and quote JSON normalize into candidates"
             market: "kr",
             symbol: "005930",
             name: "Samsung Electronics",
+            assetType: "stock",
             sector: "Technology",
             industryName: "Semiconductors",
             eventTags: ["earnings"],
@@ -106,6 +107,9 @@ test("sample tossctl ranking, signals, and quote JSON normalize into candidates"
   const samsung = result.candidates.find((candidate) => candidate.symbol === "005930");
   assert.ok(samsung);
   assert.equal(samsung.lastPriceKrw, 72_000);
+  assert.equal(samsung.assetType, "STOCK");
+  assert.equal(samsung.assetClass, "equity");
+  assert.equal(samsung.region, "KR");
   assert.equal(samsung.ranking, 1);
   assert.equal(samsung.score, 91);
   assert.equal(samsung.sector, "Technology");
@@ -166,6 +170,35 @@ test("quote batch normalizes KRW last price and skips USD last price as KRW", ()
   assert.equal(samsung?.lastPriceKrw, 303_000);
   assert.equal(tesla?.lastPriceKrw, undefined);
   assert.equal(tesla?.market, "US");
+  assert.equal(tesla?.region, "US");
+});
+
+test("tossinvest normalization derives ETF taxonomy and risk tags", () => {
+  const result = normalizeTossInvestCollectorResults(
+    [
+      source("market.ranking", {
+        items: [
+          {
+            market: "KOSPI",
+            symbol: "252670",
+            name: "KODEX 200선물인버스2X ETF",
+            category: "ETF",
+            tags: ["leveraged"],
+            price: 2_500,
+            rank: 1
+          }
+        ]
+      })
+    ],
+    normalizationOptions()
+  );
+
+  const candidate = result.candidates[0];
+  assert.equal(result.status, "ok");
+  assert.equal(candidate?.assetType, "ETF");
+  assert.equal(candidate?.assetClass, "inverse");
+  assert.equal(candidate?.region, "KR");
+  assert.deepEqual(candidate?.riskTags, ["inverse", "leveraged"]);
 });
 
 test("stale tossctl source is excluded from candidates", () => {

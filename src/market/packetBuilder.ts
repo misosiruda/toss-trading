@@ -7,6 +7,10 @@ import {
   type MarketPacket,
   type VirtualBudgetTier,
   type VirtualAction,
+  type AssetClass,
+  type AssetRegion,
+  type AssetRiskTag,
+  type AssetType,
   type PortfolioAllocation,
   type VirtualPortfolio
 } from "../domain/schemas.js";
@@ -19,6 +23,10 @@ export interface MarketCandidateDraft {
   market: Market;
   symbol: string;
   name?: string;
+  assetType?: AssetType;
+  assetClass?: AssetClass;
+  region?: AssetRegion;
+  riskTags?: AssetRiskTag[];
   sector?: string;
   industry?: string;
   lastPriceKrw?: number;
@@ -201,6 +209,18 @@ function normalizeCandidate(
   if (candidate.name !== undefined) {
     normalized.name = candidate.name;
   }
+  if (candidate.assetType !== undefined) {
+    normalized.assetType = candidate.assetType;
+  }
+  if (candidate.assetClass !== undefined) {
+    normalized.assetClass = candidate.assetClass;
+  }
+  if (candidate.region !== undefined) {
+    normalized.region = candidate.region;
+  }
+  if (candidate.riskTags !== undefined) {
+    normalized.riskTags = candidate.riskTags;
+  }
   if (candidate.sector !== undefined) {
     normalized.sector = candidate.sector;
   }
@@ -232,6 +252,18 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
 
   if (candidate.lastPriceKrw !== undefined) {
     refs.push(`${prefix}.lastPriceKrw`);
+  }
+  if (candidate.assetType !== undefined) {
+    refs.push(`${prefix}.assetType`);
+  }
+  if (candidate.assetClass !== undefined) {
+    refs.push(`${prefix}.assetClass`);
+  }
+  if (candidate.region !== undefined) {
+    refs.push(`${prefix}.region`);
+  }
+  if (candidate.riskTags && candidate.riskTags.length > 0) {
+    refs.push(`${prefix}.riskTags`);
   }
   if (candidate.ranking !== undefined) {
     refs.push(`${prefix}.ranking`);

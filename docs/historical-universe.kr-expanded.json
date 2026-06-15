@@ -10,7 +10,13 @@
       "name": "SK Hynix",
       "segment": "core",
       "required": true,
-      "tags": ["semiconductor", "large_cap"]
+      "tags": [
+        "semiconductor",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -19,7 +25,13 @@
       "name": "Samsung Electronics",
       "segment": "core",
       "required": true,
-      "tags": ["semiconductor", "large_cap"]
+      "tags": [
+        "semiconductor",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -28,7 +40,13 @@
       "name": "Alteogen",
       "segment": "core",
       "required": true,
-      "tags": ["bio", "growth"]
+      "tags": [
+        "bio",
+        "growth"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -37,7 +55,13 @@
       "name": "NAVER",
       "segment": "core",
       "required": true,
-      "tags": ["internet", "large_cap"]
+      "tags": [
+        "internet",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -46,7 +70,13 @@
       "name": "JYP Entertainment",
       "segment": "core",
       "required": true,
-      "tags": ["entertainment", "growth"]
+      "tags": [
+        "entertainment",
+        "growth"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -55,7 +85,13 @@
       "name": "Hanwha Ocean",
       "segment": "core",
       "required": true,
-      "tags": ["shipbuilding", "cyclical"]
+      "tags": [
+        "shipbuilding",
+        "cyclical"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -64,7 +100,13 @@
       "name": "Samsung SDI",
       "segment": "expanded",
       "required": false,
-      "tags": ["battery", "large_cap"]
+      "tags": [
+        "battery",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -73,7 +115,13 @@
       "name": "LG Chem",
       "segment": "expanded",
       "required": false,
-      "tags": ["battery", "chemical"]
+      "tags": [
+        "battery",
+        "chemical"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -82,7 +130,13 @@
       "name": "Celltrion",
       "segment": "expanded",
       "required": false,
-      "tags": ["bio", "large_cap"]
+      "tags": [
+        "bio",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -91,7 +145,13 @@
       "name": "Ecopro",
       "segment": "expanded",
       "required": false,
-      "tags": ["battery", "growth"]
+      "tags": [
+        "battery",
+        "growth"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -100,7 +160,13 @@
       "name": "Samsung Biologics",
       "segment": "expanded",
       "required": false,
-      "tags": ["bio", "large_cap"]
+      "tags": [
+        "bio",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -109,7 +175,13 @@
       "name": "Ecopro BM",
       "segment": "expanded",
       "required": false,
-      "tags": ["battery", "growth"]
+      "tags": [
+        "battery",
+        "growth"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     },
     {
       "market": "KR",
@@ -118,7 +190,13 @@
       "name": "LG Energy Solution",
       "segment": "expanded",
       "required": false,
-      "tags": ["battery", "large_cap"]
+      "tags": [
+        "battery",
+        "large_cap"
+      ],
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR"
     }
   ],
   "disclaimer": "Paper-only replay universe. Symbols are experiment inputs, not investment advice, not a performance guarantee, and not live trading recommendations."

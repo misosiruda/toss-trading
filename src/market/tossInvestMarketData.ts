@@ -1,4 +1,11 @@
-import type { Market, VirtualPortfolio } from "../domain/schemas.js";
+import type {
+  AssetClass,
+  AssetRegion,
+  AssetRiskTag,
+  AssetType,
+  Market,
+  VirtualPortfolio
+} from "../domain/schemas.js";
 import type { TossInvestCliCollectResult } from "../collectors/tossInvestCliCollector.js";
 import {
   MarketPacketBuilder,
@@ -43,6 +50,10 @@ interface CandidateAccumulator {
   collectedAt: string;
   staleAfter: string;
   name?: string;
+  assetType?: AssetType;
+  assetClass?: AssetClass;
+  region?: AssetRegion;
+  riskTags?: Set<AssetRiskTag>;
   sector?: string;
   industry?: string;
   lastPriceKrw?: number;
@@ -208,6 +219,10 @@ function createCandidatePatch(
   eventTags: string[];
   newsRefs: string[];
   name?: string;
+  assetType?: AssetType;
+  assetClass?: AssetClass;
+  region?: AssetRegion;
+  riskTags?: AssetRiskTag[];
   sector?: string;
   industry?: string;
   lastPriceKrw?: number;
@@ -230,6 +245,10 @@ function createCandidatePatch(
     eventTags: string[];
     newsRefs: string[];
     name?: string;
+    assetType?: AssetType;
+    assetClass?: AssetClass;
+    region?: AssetRegion;
+    riskTags?: AssetRiskTag[];
     sector?: string;
     industry?: string;
     lastPriceKrw?: number;
@@ -248,6 +267,22 @@ function createCandidatePatch(
   const name = readString(record, ["name", "stockName", "stock_name", "displayName"]);
   if (name) {
     patch.name = name;
+  }
+  const assetType = readAssetType(record);
+  if (assetType !== undefined) {
+    patch.assetType = assetType;
+  }
+  const assetClass = readAssetClass(record, assetType);
+  if (assetClass !== undefined) {
+    patch.assetClass = assetClass;
+  }
+  const region = readAssetRegion(record, market);
+  if (region !== undefined) {
+    patch.region = region;
+  }
+  const riskTags = readAssetRiskTags(record);
+  if (riskTags.length > 0) {
+    patch.riskTags = riskTags;
   }
   const sector = readString(record, [
     "sector",
@@ -330,6 +365,10 @@ function upsertCandidate(
     eventTags: string[];
     newsRefs: string[];
     name?: string;
+    assetType?: AssetType;
+    assetClass?: AssetClass;
+    region?: AssetRegion;
+    riskTags?: AssetRiskTag[];
     sector?: string;
     industry?: string;
     lastPriceKrw?: number;
@@ -359,6 +398,22 @@ function upsertCandidate(
 
   if (patch.name !== undefined) {
     current.name = patch.name;
+  }
+  if (patch.assetType !== undefined) {
+    current.assetType = patch.assetType;
+  }
+  if (patch.assetClass !== undefined) {
+    current.assetClass = patch.assetClass;
+  }
+  if (patch.region !== undefined) {
+    current.region = patch.region;
+  }
+  if (patch.riskTags !== undefined) {
+    const currentRiskTags = current.riskTags ?? new Set<AssetRiskTag>();
+    for (const riskTag of patch.riskTags) {
+      currentRiskTags.add(riskTag);
+    }
+    current.riskTags = currentRiskTags;
   }
   if (patch.sector !== undefined) {
     current.sector = patch.sector;
@@ -417,6 +472,18 @@ function toCandidateDraft(accumulator: CandidateAccumulator): MarketCandidateDra
 
   if (accumulator.name !== undefined) {
     candidate.name = accumulator.name;
+  }
+  if (accumulator.assetType !== undefined) {
+    candidate.assetType = accumulator.assetType;
+  }
+  if (accumulator.assetClass !== undefined) {
+    candidate.assetClass = accumulator.assetClass;
+  }
+  if (accumulator.region !== undefined) {
+    candidate.region = accumulator.region;
+  }
+  if (accumulator.riskTags !== undefined && accumulator.riskTags.size > 0) {
+    candidate.riskTags = Array.from(accumulator.riskTags).sort();
   }
   if (accumulator.sector !== undefined) {
     candidate.sector = accumulator.sector;
@@ -534,6 +601,198 @@ function readNewsRefs(record: JsonRecord): string[] {
   ).sort();
 }
 
+function readAssetType(record: JsonRecord): AssetType | undefined {
+  const explicit = readString(record, [
+    "assetType",
+    "asset_type",
+    "instrumentType",
+    "instrument_type",
+    "securityType",
+    "security_type",
+    "type"
+  ]);
+  const fallbackName = readString(record, [
+    "name",
+    "stockName",
+    "stock_name",
+    "asset_name",
+    "displayName"
+  ]);
+  const normalized = normalizeText(`${explicit ?? ""} ${fallbackName ?? ""}`);
+
+  if (normalized.includes("ETF")) {
+    return "ETF";
+  }
+  if (
+    normalized.includes("STOCK") ||
+    normalized.includes("STOCKS") ||
+    normalized.includes("EQUITY") ||
+    normalized.includes("SHARE")
+  ) {
+    return "STOCK";
+  }
+
+  return undefined;
+}
+
+function readAssetClass(
+  record: JsonRecord,
+  assetType: AssetType | undefined
+): AssetClass | undefined {
+  const explicit = readString(record, [
+    "assetClass",
+    "asset_class",
+    "class",
+    "category",
+    "asset_type",
+    "instrumentType",
+    "instrument_type"
+  ]);
+  const text = normalizeText(
+    [
+      explicit,
+      readString(record, ["name", "stockName", "stock_name", "asset_name"]),
+      readString(record, ["title", "keyword", "theme", "sector"])
+    ]
+      .filter((value): value is string => value !== undefined)
+      .join(" ")
+  );
+
+  if (text.includes("INVERSE") || text.includes("인버스")) {
+    return "inverse";
+  }
+  if (
+    text.includes("LEVERAGED") ||
+    text.includes("LEVERAGE") ||
+    text.includes("레버리지") ||
+    /\b[23]X\b/.test(text)
+  ) {
+    return "leveraged";
+  }
+  if (
+    text.includes("BOND") ||
+    text.includes("TREASURY") ||
+    text.includes("FIXED_INCOME") ||
+    text.includes("채권")
+  ) {
+    return "bond";
+  }
+  if (
+    text.includes("CASH") ||
+    text.includes("MONEY_MARKET") ||
+    text.includes("MMF")
+  ) {
+    return "cash_like";
+  }
+  if (
+    text.includes("COMMODITY") ||
+    text.includes("GOLD") ||
+    text.includes("원자재") ||
+    text.includes("금")
+  ) {
+    return "commodity";
+  }
+  if (
+    text.includes("CURRENCY") ||
+    text.includes("FX") ||
+    text.includes("DOLLAR") ||
+    text.includes("USD") ||
+    text.includes("달러")
+  ) {
+    return "currency";
+  }
+  if (
+    text.includes("EQUITY") ||
+    text.includes("STOCK") ||
+    text.includes("ETF") ||
+    text.includes("주식")
+  ) {
+    return "equity";
+  }
+
+  return assetType === "STOCK" ? "equity" : undefined;
+}
+
+function readAssetRegion(
+  record: JsonRecord,
+  fallbackMarket: Market
+): AssetRegion | undefined {
+  const explicit = readString(record, [
+    "region",
+    "assetRegion",
+    "asset_region",
+    "investmentRegion",
+    "investment_region",
+    "country",
+    "nation",
+    "market",
+    "exchange"
+  ]);
+  const normalized = normalizeText(explicit ?? "");
+
+  if (["KR", "KOR", "KOREA", "KOSPI", "KOSDAQ"].includes(normalized)) {
+    return "KR";
+  }
+  if (["US", "USA", "NASDAQ", "NYSE", "AMEX"].includes(normalized)) {
+    return "US";
+  }
+  if (
+    ["GLOBAL", "WORLD", "INTERNATIONAL"].includes(normalized) ||
+    normalized.includes("GLOBAL")
+  ) {
+    return "GLOBAL";
+  }
+
+  return fallbackMarket;
+}
+
+function readAssetRiskTags(record: JsonRecord): AssetRiskTag[] {
+  const text = normalizeText(
+    [
+      ...readStringList(record["riskTag"]),
+      ...readStringList(record["riskTags"]),
+      ...readStringList(record["risk_tags"]),
+      ...readStringList(record["tags"]),
+      readString(record, ["name", "stockName", "stock_name", "asset_name"]),
+      readString(record, ["title", "keyword", "theme", "category"])
+    ]
+      .filter((value): value is string => value !== undefined)
+      .join(" ")
+  );
+  const riskTags = new Set<AssetRiskTag>();
+
+  if (text.includes("INVERSE") || text.includes("인버스")) {
+    riskTags.add("inverse");
+  }
+  if (
+    text.includes("LEVERAGED") ||
+    text.includes("LEVERAGE") ||
+    text.includes("레버리지") ||
+    /\b[23]X\b/.test(text)
+  ) {
+    riskTags.add("leveraged");
+  }
+  if (
+    text.includes("CURRENCY_EXPOSED") ||
+    text.includes("UNHEDGED") ||
+    text.includes("환노출")
+  ) {
+    riskTags.add("currency_exposed");
+  }
+  if (
+    text.includes("SECTOR_CONCENTRATED") ||
+    text.includes("SECTOR") ||
+    text.includes("THEME") ||
+    text.includes("TOP10") ||
+    text.includes("섹터") ||
+    text.includes("테마")
+  ) {
+    riskTags.add("sector_concentrated");
+  }
+
+  return Array.from(riskTags).sort();
+}
+
 function readString(record: JsonRecord, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
@@ -577,6 +836,10 @@ function readMarket(record: JsonRecord, fallback: Market): Market {
   }
 
   return fallback;
+}
+
+function normalizeText(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s-]+/g, "_");
 }
 
 function readMoney(record: JsonRecord, keys: string[]): number | undefined {

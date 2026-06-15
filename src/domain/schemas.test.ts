@@ -29,6 +29,10 @@ function validMarketPacket(): unknown {
         market: "KR",
         symbol: "005930",
         name: "Sample Corp",
+        assetType: "STOCK",
+        assetClass: "equity",
+        region: "KR",
+        riskTags: ["sector_concentrated"],
         sector: "Technology",
         industry: "Semiconductors",
         lastPriceKrw: 70_000,
@@ -95,6 +99,10 @@ test("valid market packet fixture passes schema validation", () => {
 
   assert.equal(packet.mode, "paper_only");
   assert.equal(packet.candidates[0]?.sourceRefs[0], "external_snapshot_001");
+  assert.equal(packet.candidates[0]?.assetType, "STOCK");
+  assert.equal(packet.candidates[0]?.assetClass, "equity");
+  assert.equal(packet.candidates[0]?.region, "KR");
+  assert.deepEqual(packet.candidates[0]?.riskTags, ["sector_concentrated"]);
   assert.equal(packet.candidates[0]?.sector, "Technology");
   assert.equal(packet.candidates[0]?.industry, "Semiconductors");
   assert.deepEqual(packet.candidates[0]?.eventTags, ["earnings"]);
@@ -145,6 +153,9 @@ test("valid historical market snapshot fixture passes schema validation", () => 
       snapshotId: "hist_kr_005930_20250611_090000",
       market: "KR",
       symbol: "005930",
+      assetType: "STOCK",
+      assetClass: "equity",
+      region: "KR",
       observedAt: "2025-06-11T09:00:00+09:00",
       interval: "1m",
       openPriceKrw: 70_000,
@@ -160,6 +171,9 @@ test("valid historical market snapshot fixture passes schema validation", () => 
   );
 
   assert.equal(snapshot.symbol, "005930");
+  assert.equal(snapshot.assetType, "STOCK");
+  assert.equal(snapshot.assetClass, "equity");
+  assert.equal(snapshot.region, "KR");
   assert.equal(snapshot.interval, "1m");
 });
 

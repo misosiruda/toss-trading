@@ -1,6 +1,23 @@
 import { z } from "zod";
 
 export const marketSchema = z.enum(["KR", "US"]);
+export const assetTypeSchema = z.enum(["STOCK", "ETF"]);
+export const assetClassSchema = z.enum([
+  "equity",
+  "bond",
+  "cash_like",
+  "commodity",
+  "currency",
+  "inverse",
+  "leveraged"
+]);
+export const assetRegionSchema = z.enum(["KR", "US", "GLOBAL"]);
+export const assetRiskTagSchema = z.enum([
+  "inverse",
+  "leveraged",
+  "currency_exposed",
+  "sector_concentrated"
+]);
 export const virtualActionSchema = z.enum([
   "VIRTUAL_BUY",
   "VIRTUAL_SELL",
@@ -85,6 +102,10 @@ export const marketCandidateSchema = z
     market: marketSchema,
     symbol: nonEmptyStringSchema,
     name: nonEmptyStringSchema.optional(),
+    assetType: assetTypeSchema.optional(),
+    assetClass: assetClassSchema.optional(),
+    region: assetRegionSchema.optional(),
+    riskTags: z.array(assetRiskTagSchema).optional(),
     sector: nonEmptyStringSchema.optional(),
     industry: nonEmptyStringSchema.optional(),
     lastPriceKrw: moneyKrwSchema.optional(),
@@ -126,6 +147,10 @@ export const historicalMarketSnapshotSchema = z
     snapshotId: nonEmptyStringSchema,
     market: marketSchema,
     symbol: nonEmptyStringSchema,
+    assetType: assetTypeSchema.optional(),
+    assetClass: assetClassSchema.optional(),
+    region: assetRegionSchema.optional(),
+    riskTags: z.array(assetRiskTagSchema).optional(),
     observedAt: isoDateTimeSchema,
     interval: z.enum(["1m", "5m", "15m", "1h", "1d"]),
     openPriceKrw: moneyKrwSchema.optional(),
@@ -359,6 +384,10 @@ export const auditEventSchema = z
   .strict();
 
 export type Market = z.infer<typeof marketSchema>;
+export type AssetType = z.infer<typeof assetTypeSchema>;
+export type AssetClass = z.infer<typeof assetClassSchema>;
+export type AssetRegion = z.infer<typeof assetRegionSchema>;
+export type AssetRiskTag = z.infer<typeof assetRiskTagSchema>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
 export type VirtualBudgetTier = z.infer<typeof virtualBudgetTierSchema>;
