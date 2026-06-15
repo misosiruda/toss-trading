@@ -145,6 +145,44 @@ test("MarketPacketBuilder adds deterministic candidate action eligibility", () =
   );
 });
 
+test("MarketPacketBuilder preserves asset taxonomy and feature refs", () => {
+  const result = builder().build({
+    portfolio: portfolio(),
+    candidates: [
+      {
+        ...candidate("069500", 1),
+        name: "KODEX 200 ETF",
+        assetType: "ETF",
+        assetClass: "equity",
+        region: "KR",
+        riskTags: ["sector_concentrated"]
+      }
+    ]
+  });
+
+  const normalized = result.packet.candidates[0]!;
+  assert.equal(normalized.assetType, "ETF");
+  assert.equal(normalized.assetClass, "equity");
+  assert.equal(normalized.region, "KR");
+  assert.deepEqual(normalized.riskTags, ["sector_concentrated"]);
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.069500.assetType"),
+    true
+  );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.069500.assetClass"),
+    true
+  );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.069500.region"),
+    true
+  );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.069500.riskTags"),
+    true
+  );
+});
+
 test("MarketPacketBuilder blocks new buys when max new positions is reached", () => {
   const result = new MarketPacketBuilder({
     packetId: "packet_test_001",
