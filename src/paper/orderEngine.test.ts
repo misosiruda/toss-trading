@@ -320,7 +320,25 @@ test("VirtualRiskEngine rejects decisions outside packet candidates", () => {
 
 test("PaperOrderEngine fills valid virtual buy decisions", () => {
   const result = new PaperOrderEngine().execute({
-    packet: packet(),
+    packet: packet({
+      candidates: [
+        {
+          market: "KR",
+          symbol: "005930",
+          name: "Sample ETF",
+          assetType: "ETF",
+          assetClass: "equity",
+          region: "KR",
+          riskTags: ["sector_concentrated"],
+          lastPriceKrw: 70_000,
+          ranking: 1,
+          reasonCodes: ["RANKING"],
+          sourceRefs: ["external_snapshot_001"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        }
+      ]
+    }),
     portfolio: portfolio(),
     decision: decision({ budgetKrw: 70_000 }),
     riskPolicy: { now }
@@ -331,6 +349,12 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
   assert.equal(result.portfolio.cashKrw, 930_000);
   assert.equal(result.portfolio.positions[0]?.quantity, 1);
   assert.equal(result.portfolio.positions[0]?.averagePriceKrw, 70_000);
+  assert.equal(result.portfolio.positions[0]?.assetType, "ETF");
+  assert.equal(result.portfolio.positions[0]?.assetClass, "equity");
+  assert.equal(result.portfolio.positions[0]?.region, "KR");
+  assert.deepEqual(result.portfolio.positions[0]?.riskTags, [
+    "sector_concentrated"
+  ]);
 });
 
 test("PaperOrderEngine records buy fill costs with slippage and fees", () => {

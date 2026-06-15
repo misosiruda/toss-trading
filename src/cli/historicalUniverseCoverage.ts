@@ -8,6 +8,12 @@ import {
   parseHistoricalUniverseManifest
 } from "../replay/historicalUniverseCoverage.js";
 import {
+  assetTypeSchema,
+  marketSchema,
+  type AssetType,
+  type Market
+} from "../domain/schemas.js";
+import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
 } from "../storage/repositories.js";
@@ -23,7 +29,16 @@ const minMonthlyCoverageRatio = readNumberArg(
   1
 );
 const minSnapshotsPerSymbol = readNumberArg("--min-snapshots-per-symbol", 1);
+const minAvailableSymbolCount = readNumberArg("--min-available-symbols", 0);
+const minAvailableMarketSymbolCounts = readMarketCountArg(
+  "--min-available-market-symbols"
+);
+const minAvailableAssetTypeSymbolCounts = readAssetTypeCountArg(
+  "--min-available-asset-type-symbols"
+);
 const requireOptionalSymbols = args.includes("--require-optional-symbols");
+const requiredMarkets = readMarketListArg("--require-markets");
+const requiredAssetTypes = readAssetTypeListArg("--require-asset-types");
 const outputPath = readArgValue("--output-path");
 const jsonOutput = args.includes("--json");
 
@@ -42,8 +57,13 @@ const report = assessHistoricalUniverseCoverage({
   timezoneOffsetMinutes,
   minMonthlyCoverageRatio,
   minSnapshotsPerSymbol,
+  minAvailableSymbolCount,
+  minAvailableMarketSymbolCounts,
+  minAvailableAssetTypeSymbolCounts,
   corruptLineCount: snapshotRead.corruptLineCount,
-  requireOptionalSymbols
+  requireOptionalSymbols,
+  requiredMarkets,
+  requiredAssetTypes
 });
 
 if (outputPath !== undefined) {
@@ -69,11 +89,31 @@ function renderReport(): string {
     `optional_symbols: ${report.optionalSymbolCount}`,
     `available_required_symbols: ${report.availableRequiredSymbolCount}`,
     `available_optional_symbols: ${report.availableOptionalSymbolCount}`,
+    `available_symbols: ${report.availableSymbolCount}`,
+    `min_available_symbols: ${report.minAvailableSymbolCount}`,
+    `required_markets: ${report.requiredMarkets.join(", ") || "none"}`,
+    `available_markets: ${report.availableMarkets.join(", ") || "none"}`,
+    `available_market_symbol_counts: ${formatCountRecord(
+      report.availableMarketSymbolCounts
+    )}`,
+    `min_available_market_symbol_counts: ${formatCountRecord(
+      report.minAvailableMarketSymbolCounts
+    )}`,
+    `required_asset_types: ${report.requiredAssetTypes.join(", ") || "none"}`,
+    `available_asset_types: ${report.availableAssetTypes.join(", ") || "none"}`,
+    `available_asset_type_symbol_counts: ${formatCountRecord(
+      report.availableAssetTypeSymbolCounts
+    )}`,
+    `min_available_asset_type_symbol_counts: ${formatCountRecord(
+      report.minAvailableAssetTypeSymbolCounts
+    )}`,
     `issues: ${report.issues.join(", ") || "none"}`,
     "",
     "## Missing Symbols",
     `required: ${formatSymbols(report.missingRequiredSymbols)}`,
     `optional: ${formatSymbols(report.missingOptionalSymbols)}`,
+    `markets: ${report.missingRequiredMarkets.join(", ") || "none"}`,
+    `asset_types: ${report.missingRequiredAssetTypes.join(", ") || "none"}`,
     "",
     "## Lowest Coverage",
     ...report.symbolSummaries
@@ -121,6 +161,69 @@ function readNumberArg(name: string, fallback: number): number {
     throw new Error(`${name} must be a number`);
   }
   return parsed;
+}
+
+function readMarketListArg(name: string): Market[] {
+  return readListArg(name).map((value) => marketSchema.parse(value));
+}
+
+function readAssetTypeListArg(name: string): AssetType[] {
+  return readListArg(name).map((value) => assetTypeSchema.parse(value));
+}
+
+function readMarketCountArg(name: string): Partial<Record<Market, number>> {
+  const output: Partial<Record<Market, number>> = {};
+  for (const item of readListArg(name)) {
+    const [rawKey, rawCount] = item.split(":");
+    const market = marketSchema.parse(rawKey);
+    output[market] = parseCount(rawCount, name, item);
+  }
+  return output;
+}
+
+function readAssetTypeCountArg(
+  name: string
+): Partial<Record<AssetType, number>> {
+  const output: Partial<Record<AssetType, number>> = {};
+  for (const item of readListArg(name)) {
+    const [rawKey, rawCount] = item.split(":");
+    const assetType = assetTypeSchema.parse(rawKey);
+    output[assetType] = parseCount(rawCount, name, item);
+  }
+  return output;
+}
+
+function parseCount(
+  rawCount: string | undefined,
+  argName: string,
+  item: string
+): number {
+  const count = Number(rawCount);
+  if (!Number.isInteger(count) || count < 0) {
+    throw new Error(`${argName} item must use KEY:non-negative-integer (${item})`);
+  }
+  return count;
+}
+
+function readListArg(name: string): string[] {
+  const raw = readArgValue(name);
+  if (raw === undefined || raw.trim().length === 0) {
+    return [];
+  }
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function formatCountRecord(value: Partial<Record<string, number>>): string {
+  const entries = Object.entries(value);
+  return entries.length === 0
+    ? "none"
+    : entries
+        .sort((left, right) => left[0].localeCompare(right[0]))
+        .map(([key, count]) => `${key}:${count}`)
+        .join(", ");
 }
 
 function readArgValue(name: string): string | undefined {

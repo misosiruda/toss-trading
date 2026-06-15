@@ -51,12 +51,25 @@ interface HistoricalCandidateFeatures {
   reasonCodes: string[];
 }
 
+interface ScreenedHistoricalCandidate {
+  snapshot: HistoricalMarketSnapshot;
+  features: HistoricalCandidateFeatures;
+  reasonCodes: string[];
+}
+
+interface HistoricalCandidateScreenInput {
+  snapshot: HistoricalMarketSnapshot;
+  features: HistoricalCandidateFeatures;
+}
+
 interface IndexedHistoricalMarketSnapshot {
   snapshot: HistoricalMarketSnapshot;
   observedAtMs: number;
 }
 
 const maxDetailedExclusionWarnings = 20;
+const maxMarketCandidateShare = 0.65;
+const maxAssetTypeCandidateShare = 0.75;
 
 export class HistoricalMarketSnapshotIndex {
   private readonly snapshotsByTime: IndexedHistoricalMarketSnapshot[];
@@ -162,19 +175,26 @@ export class HistoricalMarketSnapshotIndex {
       );
     }
 
-    const candidates = selectedSnapshots
-      .slice(0, options.maxCandidates)
-      .map((snapshot, index) =>
-        toCandidateDraft(
+    const screenedCandidates = screenHistoricalCandidates({
+      candidates: selectedSnapshots.map((snapshot) => ({
+        snapshot,
+        features: deriveCandidateFeatures(
           snapshot,
-          index + 1,
-          options,
-          deriveCandidateFeatures(
-            snapshot,
-            featureHistoryBySnapshotId.get(snapshot.snapshotId) ?? [snapshot]
-          )
+          featureHistoryBySnapshotId.get(snapshot.snapshotId) ?? [snapshot]
         )
-      );
+      })),
+      maxCandidates: options.maxCandidates
+    });
+
+    const candidates = screenedCandidates.map((candidate, index) =>
+      toCandidateDraft(candidate.snapshot, index + 1, options, {
+        score: candidate.features.score,
+        reasonCodes: [
+          ...candidate.features.reasonCodes,
+          ...candidate.reasonCodes
+        ]
+      })
+    );
 
     if (candidates.length === 0) {
       return {
@@ -241,6 +261,12 @@ function toCandidateDraft(
   return {
     market: snapshot.market,
     symbol: snapshot.symbol,
+    ...(snapshot.assetType === undefined ? {} : { assetType: snapshot.assetType }),
+    ...(snapshot.assetClass === undefined
+      ? {}
+      : { assetClass: snapshot.assetClass }),
+    ...(snapshot.region === undefined ? {} : { region: snapshot.region }),
+    ...(snapshot.riskTags === undefined ? {} : { riskTags: snapshot.riskTags }),
     lastPriceKrw: snapshot.lastPriceKrw,
     ranking,
     score: features.score,
@@ -258,6 +284,84 @@ function toCandidateDraft(
       Date.parse(snapshot.observedAt) + options.maxSnapshotAgeSeconds * 1000
     ).toISOString()
   };
+}
+
+function screenHistoricalCandidates(input: {
+  candidates: HistoricalCandidateScreenInput[];
+  maxCandidates: number;
+}): ScreenedHistoricalCandidate[] {
+  if (input.maxCandidates <= 0 || input.candidates.length === 0) {
+    return [];
+  }
+
+  const sorted = [...input.candidates].sort(compareScreenInputs);
+  const marketLimit = Math.max(
+    1,
+    Math.ceil(input.maxCandidates * maxMarketCandidateShare)
+  );
+  const assetTypeLimit = Math.max(
+    1,
+    Math.ceil(input.maxCandidates * maxAssetTypeCandidateShare)
+  );
+  const selected: ScreenedHistoricalCandidate[] = [];
+  const selectedIds = new Set<string>();
+  const marketCounts = new Map<string, number>();
+  const assetTypeCounts = new Map<string, number>();
+
+  for (const candidate of sorted) {
+    if (selected.length >= input.maxCandidates) {
+      break;
+    }
+    if (
+      (marketCounts.get(candidate.snapshot.market) ?? 0) >= marketLimit ||
+      (assetTypeCounts.get(assetTypeKey(candidate.snapshot)) ?? 0) >=
+        assetTypeLimit
+    ) {
+      continue;
+    }
+    selected.push({
+      ...candidate,
+      reasonCodes: ["HISTORICAL_SCREENER_DIVERSIFIED"]
+    });
+    selectedIds.add(candidate.snapshot.snapshotId);
+    incrementCount(marketCounts, candidate.snapshot.market);
+    incrementCount(assetTypeCounts, assetTypeKey(candidate.snapshot));
+  }
+
+  for (const candidate of sorted) {
+    if (selected.length >= input.maxCandidates) {
+      break;
+    }
+    if (selectedIds.has(candidate.snapshot.snapshotId)) {
+      continue;
+    }
+    selected.push({
+      ...candidate,
+      reasonCodes: ["HISTORICAL_SCREENER_SCORE_FILL"]
+    });
+    selectedIds.add(candidate.snapshot.snapshotId);
+  }
+
+  return selected;
+}
+
+function compareScreenInputs(
+  left: HistoricalCandidateScreenInput,
+  right: HistoricalCandidateScreenInput
+): number {
+  const scoreDiff = right.features.score - left.features.score;
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+  return compareCandidateSnapshots(left.snapshot, right.snapshot);
+}
+
+function assetTypeKey(snapshot: HistoricalMarketSnapshot): string {
+  return snapshot.assetType ?? "UNKNOWN";
+}
+
+function incrementCount(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
 function deriveCandidateFeatures(

@@ -1,5 +1,5 @@
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
-import type { Market } from "../domain/schemas.js";
+import type { AssetType, Market } from "../domain/schemas.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
@@ -56,6 +56,8 @@ export interface BatchReplayGroupSummary {
   averageTargetExposureRatio: number | null;
   averageTargetExposureGapRatio: number | null;
   averageFinalTargetExposureGapRatio: number | null;
+  averageFinalExposureByMarketKrw: Partial<Record<Market, number>>;
+  averageFinalExposureByAssetTypeKrw: Partial<Record<AssetType | "UNKNOWN", number>>;
   totalTradeCount: number;
   averageTradeCount: number | null;
   totalAiDecisionFailureCount: number;
@@ -217,6 +219,14 @@ function summarizeGroup(
       completed,
       "finalTargetExposureGapRatio"
     ),
+    averageFinalExposureByMarketKrw: averageSummaryMap(
+      completed,
+      "finalExposureByMarketKrw"
+    ),
+    averageFinalExposureByAssetTypeKrw: averageSummaryMap(
+      completed,
+      "finalExposureByAssetTypeKrw"
+    ),
     totalTradeCount: tradeCounts.reduce((sum, value) => sum + value, 0),
     averageTradeCount:
       tradeCounts.length === 0 ? null : roundRatio(average(tradeCounts)),
@@ -339,6 +349,8 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `average_target_exposure_ratio: ${formatNullable(group.averageTargetExposureRatio)}`,
     `average_target_exposure_gap_ratio: ${formatNullable(group.averageTargetExposureGapRatio)}`,
     `average_final_target_exposure_gap_ratio: ${formatNullable(group.averageFinalTargetExposureGapRatio)}`,
+    `average_final_exposure_by_market_krw: ${JSON.stringify(group.averageFinalExposureByMarketKrw)}`,
+    `average_final_exposure_by_asset_type_krw: ${JSON.stringify(group.averageFinalExposureByAssetTypeKrw)}`,
     `total_ai_decision_failure_count: ${group.totalAiDecisionFailureCount}`,
     `total_rejected_count: ${group.totalRejectedCount}`,
     `total_meaningful_reject_count: ${group.totalMeaningfulRejectCount}`,
@@ -362,6 +374,37 @@ function averageSummaryRatio(
     .map((record) => record.summary?.[key] ?? null)
     .filter((value): value is number => value !== null);
   return values.length === 0 ? null : roundRatio(average(values));
+}
+
+function averageSummaryMap(
+  records: BatchReplayRunRecord[],
+  key: "finalExposureByMarketKrw" | "finalExposureByAssetTypeKrw"
+): Partial<Record<string, number>> {
+  const sums = new Map<string, { total: number; count: number }>();
+  for (const record of records) {
+    const values = record.summary?.[key];
+    if (values === undefined) {
+      continue;
+    }
+    for (const [entryKey, value] of Object.entries(values)) {
+      if (!Number.isFinite(value) || value === 0) {
+        continue;
+      }
+      const current = sums.get(entryKey) ?? { total: 0, count: 0 };
+      current.total += value;
+      current.count += 1;
+      sums.set(entryKey, current);
+    }
+  }
+
+  return Object.fromEntries(
+    Array.from(sums.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([entryKey, value]) => [
+        entryKey,
+        Math.round(value.total / value.count)
+      ])
+  );
 }
 
 function normalizeTargetReturnThresholds(values: number[] | undefined): number[] {

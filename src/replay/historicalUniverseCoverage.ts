@@ -5,6 +5,7 @@ import {
   assetRegionSchema,
   assetRiskTagSchema,
   assetTypeSchema,
+  type AssetType,
   type HistoricalMarketSnapshot,
   type Market,
   marketSchema,
@@ -68,7 +69,12 @@ export interface HistoricalUniverseCoverageOptions {
   timezoneOffsetMinutes?: number;
   minMonthlyCoverageRatio?: number;
   minSnapshotsPerSymbol?: number;
+  minAvailableSymbolCount?: number;
+  minAvailableMarketSymbolCounts?: Partial<Record<Market, number>>;
+  minAvailableAssetTypeSymbolCounts?: Partial<Record<AssetType, number>>;
   requireOptionalSymbols?: boolean;
+  requiredMarkets?: Market[];
+  requiredAssetTypes?: AssetType[];
 }
 
 export interface HistoricalUniverseCoverageSymbolSummary {
@@ -102,7 +108,29 @@ export interface HistoricalUniverseCoverageReport {
   expectedMonths: string[];
   minMonthlyCoverageRatio: number;
   minSnapshotsPerSymbol: number;
+  minAvailableSymbolCount: number;
+  minAvailableMarketSymbolCounts: Partial<Record<Market, number>>;
+  minAvailableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
   requireOptionalSymbols: boolean;
+  requiredMarkets: Market[];
+  requiredAssetTypes: AssetType[];
+  availableMarkets: Market[];
+  availableAssetTypes: AssetType[];
+  availableSymbolCount: number;
+  availableMarketSymbolCounts: Partial<Record<Market, number>>;
+  availableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
+  missingRequiredMarkets: Market[];
+  missingRequiredAssetTypes: AssetType[];
+  insufficientAvailableMarketSymbolCounts: Array<{
+    market: Market;
+    minimum: number;
+    available: number;
+  }>;
+  insufficientAvailableAssetTypeSymbolCounts: Array<{
+    assetType: AssetType;
+    minimum: number;
+    available: number;
+  }>;
   corruptLineCount: number;
   universeSymbolCount: number;
   requiredSymbolCount: number;
@@ -165,6 +193,19 @@ export function assessHistoricalUniverseCoverage(
   const minSnapshotsPerSymbol =
     options.minSnapshotsPerSymbol ?? DEFAULT_MIN_SNAPSHOTS_PER_SYMBOL;
   validateNonNegativeInteger(minSnapshotsPerSymbol, "minSnapshotsPerSymbol");
+  const minAvailableSymbolCount = options.minAvailableSymbolCount ?? 0;
+  validateNonNegativeInteger(
+    minAvailableSymbolCount,
+    "minAvailableSymbolCount"
+  );
+  const minAvailableMarketSymbolCounts = normalizeCountRecord(
+    options.minAvailableMarketSymbolCounts ?? {},
+    "minAvailableMarketSymbolCounts"
+  );
+  const minAvailableAssetTypeSymbolCounts = normalizeCountRecord(
+    options.minAvailableAssetTypeSymbolCounts ?? {},
+    "minAvailableAssetTypeSymbolCounts"
+  );
   const corruptLineCount = options.corruptLineCount ?? 0;
   validateNonNegativeInteger(corruptLineCount, "corruptLineCount");
 
@@ -204,13 +245,53 @@ export function assessHistoricalUniverseCoverage(
       !summary.required && summary.snapshotCount > 0 && !summary.available
   );
   const requireOptionalSymbols = options.requireOptionalSymbols === true;
+  const requiredMarkets = uniqueSorted(options.requiredMarkets ?? []);
+  const requiredAssetTypes = uniqueSorted(options.requiredAssetTypes ?? []);
+  const availableSymbolCount = symbolSummaries.filter(
+    (summary) => summary.available
+  ).length;
+  const availableMarkets = uniqueSorted(
+    symbolSummaries
+      .filter((summary) => summary.available)
+      .map((summary) => summary.market)
+  );
+  const availableAssetTypes = uniqueSorted(
+    symbolSummaries
+      .filter((summary) => summary.available && summary.assetType !== null)
+      .map((summary) => summary.assetType as AssetType)
+  );
+  const availableMarketSymbolCounts = countAvailableMarkets(symbolSummaries);
+  const availableAssetTypeSymbolCounts =
+    countAvailableAssetTypes(symbolSummaries);
+  const missingRequiredMarkets = requiredMarkets.filter(
+    (market) => !availableMarkets.includes(market)
+  );
+  const missingRequiredAssetTypes = requiredAssetTypes.filter(
+    (assetType) => !availableAssetTypes.includes(assetType)
+  );
+  const insufficientAvailableMarketSymbolCounts =
+    insufficientMarketSymbolCounts({
+      minimumCounts: minAvailableMarketSymbolCounts,
+      availableCounts: availableMarketSymbolCounts
+    });
+  const insufficientAvailableAssetTypeSymbolCounts =
+    insufficientAssetTypeSymbolCounts({
+      minimumCounts: minAvailableAssetTypeSymbolCounts,
+      availableCounts: availableAssetTypeSymbolCounts
+    });
   const issues = coverageIssues({
     corruptLineCount,
     missingRequiredSymbols,
     missingOptionalSymbols,
     insufficientRequiredSymbols,
     insufficientOptionalSymbols,
-    requireOptionalSymbols
+    requireOptionalSymbols,
+    missingRequiredMarkets,
+    missingRequiredAssetTypes,
+    availableSymbolCount,
+    minAvailableSymbolCount,
+    insufficientAvailableMarketSymbolCounts,
+    insufficientAvailableAssetTypeSymbolCounts
   });
 
   return {
@@ -223,7 +304,21 @@ export function assessHistoricalUniverseCoverage(
     expectedMonths,
     minMonthlyCoverageRatio,
     minSnapshotsPerSymbol,
+    minAvailableSymbolCount,
+    minAvailableMarketSymbolCounts,
+    minAvailableAssetTypeSymbolCounts,
     requireOptionalSymbols,
+    requiredMarkets,
+    requiredAssetTypes,
+    availableMarkets,
+    availableAssetTypes,
+    availableSymbolCount,
+    availableMarketSymbolCounts,
+    availableAssetTypeSymbolCounts,
+    missingRequiredMarkets,
+    missingRequiredAssetTypes,
+    insufficientAvailableMarketSymbolCounts,
+    insufficientAvailableAssetTypeSymbolCounts,
     corruptLineCount,
     universeSymbolCount: symbolSummaries.length,
     requiredSymbolCount: symbolSummaries.filter((summary) => summary.required)
@@ -348,6 +443,20 @@ function coverageIssues(input: {
   insufficientRequiredSymbols: HistoricalUniverseCoverageSymbolSummary[];
   insufficientOptionalSymbols: HistoricalUniverseCoverageSymbolSummary[];
   requireOptionalSymbols: boolean;
+  missingRequiredMarkets: Market[];
+  missingRequiredAssetTypes: AssetType[];
+  availableSymbolCount: number;
+  minAvailableSymbolCount: number;
+  insufficientAvailableMarketSymbolCounts: Array<{
+    market: Market;
+    minimum: number;
+    available: number;
+  }>;
+  insufficientAvailableAssetTypeSymbolCounts: Array<{
+    assetType: AssetType;
+    minimum: number;
+    available: number;
+  }>;
 }): string[] {
   const issues: string[] = [];
   if (input.corruptLineCount > 0) {
@@ -368,7 +477,103 @@ function coverageIssues(input: {
   ) {
     issues.push("OPTIONAL_UNIVERSE_SYMBOL_COVERAGE_BELOW_MINIMUM");
   }
+  if (input.missingRequiredMarkets.length > 0) {
+    issues.push("REQUIRED_MARKET_MISSING");
+  }
+  if (input.missingRequiredAssetTypes.length > 0) {
+    issues.push("REQUIRED_ASSET_TYPE_MISSING");
+  }
+  if (input.availableSymbolCount < input.minAvailableSymbolCount) {
+    issues.push("AVAILABLE_UNIVERSE_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
+  if (input.insufficientAvailableMarketSymbolCounts.length > 0) {
+    issues.push("AVAILABLE_MARKET_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
+  if (input.insufficientAvailableAssetTypeSymbolCounts.length > 0) {
+    issues.push("AVAILABLE_ASSET_TYPE_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
   return issues;
+}
+
+function normalizeCountRecord<T extends string>(
+  value: Partial<Record<T, number>>,
+  label: string
+): Partial<Record<T, number>> {
+  const output: Partial<Record<T, number>> = {};
+  for (const [key, count] of Object.entries(value) as Array<[T, number]>) {
+    validateNonNegativeInteger(count, `${label}.${key}`);
+    if (count > 0) {
+      output[key] = count;
+    }
+  }
+  return sortCountRecord(output);
+}
+
+function countAvailableMarkets(
+  summaries: HistoricalUniverseCoverageSymbolSummary[]
+): Partial<Record<Market, number>> {
+  const counts: Partial<Record<Market, number>> = {};
+  for (const summary of summaries) {
+    if (!summary.available) {
+      continue;
+    }
+    counts[summary.market] = (counts[summary.market] ?? 0) + 1;
+  }
+  return sortCountRecord(counts);
+}
+
+function countAvailableAssetTypes(
+  summaries: HistoricalUniverseCoverageSymbolSummary[]
+): Partial<Record<AssetType, number>> {
+  const counts: Partial<Record<AssetType, number>> = {};
+  for (const summary of summaries) {
+    if (!summary.available || summary.assetType === null) {
+      continue;
+    }
+    const assetType = summary.assetType as AssetType;
+    counts[assetType] = (counts[assetType] ?? 0) + 1;
+  }
+  return sortCountRecord(counts);
+}
+
+function insufficientMarketSymbolCounts(input: {
+  minimumCounts: Partial<Record<Market, number>>;
+  availableCounts: Partial<Record<Market, number>>;
+}): Array<{ market: Market; minimum: number; available: number }> {
+  return (Object.entries(input.minimumCounts) as Array<[Market, number]>)
+    .flatMap(([market, minimum]) => {
+      const available = input.availableCounts[market] ?? 0;
+      return available < minimum ? [{ market, minimum, available }] : [];
+    })
+    .sort((left, right) => left.market.localeCompare(right.market));
+}
+
+function insufficientAssetTypeSymbolCounts(input: {
+  minimumCounts: Partial<Record<AssetType, number>>;
+  availableCounts: Partial<Record<AssetType, number>>;
+}): Array<{ assetType: AssetType; minimum: number; available: number }> {
+  return (Object.entries(input.minimumCounts) as Array<[AssetType, number]>)
+    .flatMap(([assetType, minimum]) => {
+      const available = input.availableCounts[assetType] ?? 0;
+      return available < minimum ? [{ assetType, minimum, available }] : [];
+    })
+    .sort((left, right) => left.assetType.localeCompare(right.assetType));
+}
+
+function sortCountRecord<T extends string>(
+  record: Partial<Record<T, number>>
+): Partial<Record<T, number>> {
+  return Object.fromEntries(
+    (Object.entries(record) as Array<[T, number]>).sort((left, right) =>
+      left[0].localeCompare(right[0])
+    )
+  ) as Partial<Record<T, number>>;
+}
+
+function uniqueSorted<T extends string>(values: T[]): T[] {
+  return Array.from(new Set(values)).sort((left, right) =>
+    left.localeCompare(right)
+  );
 }
 
 function listLocalYearMonths(input: {

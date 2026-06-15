@@ -55,6 +55,14 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.averageTargetExposureRatio, 0.85);
   assert.equal(report.overall.averageTargetExposureGapRatio, 0.65);
   assert.equal(report.overall.averageFinalTargetExposureGapRatio, 0.65);
+  assert.deepEqual(report.overall.averageFinalExposureByMarketKrw, {
+    KR: 100_000,
+    US: 100_000
+  });
+  assert.deepEqual(report.overall.averageFinalExposureByAssetTypeKrw, {
+    ETF: 100_000,
+    STOCK: 100_000
+  });
   assert.equal(report.overall.totalAiDecisionFailureCount, 0);
   assert.equal(report.overall.totalMeaningfulRejectCount, 0);
   assert.equal(report.overall.totalDustRejectCount, 0);
@@ -269,7 +277,16 @@ function record(
             finalPositionRatio: 0.2,
             targetExposureRatio: 0.85,
             averageTargetExposureGapRatio: 0.65,
-            finalTargetExposureGapRatio: 0.65
+            finalTargetExposureGapRatio: 0.65,
+            finalExposureByMarketKrw: {
+              KR: 100_000,
+              US: 100_000
+            },
+            finalExposureByAssetTypeKrw: {
+              STOCK: 100_000,
+              ETF: 100_000,
+              UNKNOWN: 0
+            }
           }
         : null,
     reportPath:

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Toss Trading Paper Dashboard</title>
-    <link rel="stylesheet" href="/dashboard/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="app-header">
@@ -12,6 +12,11 @@
         <p class="eyebrow">paper_only</p>
         <h1>가상 투자 대시보드</h1>
       </div>
+      <nav class="dashboard-nav" aria-label="대시보드 페이지">
+        <a href="/dashboard" data-dashboard-route="overview">개요</a>
+        <a href="/dashboard/virtual-replays" data-dashboard-route="virtual-replays">가상 투자</a>
+        <a href="/dashboard/batch-summary" data-dashboard-route="batch-summary">총합 결과</a>
+      </nav>
       <div class="header-status">
         <span id="api-status" class="status-pill neutral">연결 확인 중</span>
         <button id="refresh-button" class="icon-button" type="button" aria-label="새로고침" title="새로고침">
@@ -341,7 +346,7 @@
           <p id="report-disclaimer" class="report-disclaimer">-</p>
         </section>
 
-        <section class="panel full replay-panel" aria-labelledby="replay-heading">
+        <section class="panel full replay-panel" data-dashboard-page="virtual-replays" aria-labelledby="replay-heading">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">historical replay</p>
@@ -461,7 +466,45 @@
           <p id="replay-disclaimer" class="report-disclaimer">-</p>
         </section>
 
-        <section class="panel full batch-replay-panel" aria-labelledby="batch-replay-heading">
+        <section class="panel full batch-run-panel" data-dashboard-page="virtual-replays" aria-labelledby="batch-run-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">batch replay runs</p>
+              <h2 id="batch-run-heading">개별 가상 투자 실행</h2>
+            </div>
+            <span id="batch-run-status" class="status-pill neutral">-</span>
+          </div>
+          <div class="report-kpis batch-run-kpis" aria-label="개별 가상 투자 실행 요약">
+            <div>
+              <span>노출 Run</span>
+              <strong id="batch-run-record-count">-</strong>
+            </div>
+            <div>
+              <span>전체 Run</span>
+              <strong id="batch-run-total-count">-</strong>
+            </div>
+            <div>
+              <span>Completed</span>
+              <strong id="batch-run-completed-count">-</strong>
+            </div>
+            <div>
+              <span>Failed/Skipped</span>
+              <strong id="batch-run-problem-count">-</strong>
+            </div>
+            <div>
+              <span>로그 상태</span>
+              <strong id="batch-run-log-state">-</strong>
+            </div>
+          </div>
+          <div class="mini-section-heading">
+            <strong>실행 목록</strong>
+            <span id="batch-run-source" class="subtle">-</span>
+          </div>
+          <div id="batch-run-tabs" class="batch-run-tabs" role="tablist" aria-label="개별 가상 투자 실행 선택"></div>
+          <div id="batch-run-list" class="batch-run-list"></div>
+        </section>
+
+        <section class="panel full batch-replay-panel" data-dashboard-page="batch-summary" aria-labelledby="batch-replay-heading">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">batch replay</p>
@@ -685,6 +728,6 @@
     </main>
 
     <div id="error-banner" class="error-banner" hidden></div>
-    <script src="/dashboard/app.js" type="module"></script>
+    <script src="app.js" type="module"></script>
   </body>
 </html>

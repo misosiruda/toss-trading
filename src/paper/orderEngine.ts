@@ -109,11 +109,22 @@ function executeBuy(
     existing.marketValueKrw = Math.round(nextQuantity * candidate.lastPriceKrw);
     existing.unrealizedPnlKrw =
       existing.marketValueKrw - Math.round(nextQuantity * existing.averagePriceKrw);
+    syncPositionMetadata(existing, candidate);
     existing.updatedAt = riskDecision.createdAt;
   } else {
     portfolio.positions.push({
       market: input.decision.market,
       symbol: input.decision.symbol,
+      ...(candidate.assetType === undefined
+        ? {}
+        : { assetType: candidate.assetType }),
+      ...(candidate.assetClass === undefined
+        ? {}
+        : { assetClass: candidate.assetClass }),
+      ...(candidate.region === undefined ? {} : { region: candidate.region }),
+      ...(candidate.riskTags === undefined
+        ? {}
+        : { riskTags: candidate.riskTags }),
       quantity: fill.quantity,
       averagePriceKrw: Math.round(fill.netAmountKrw / fill.quantity),
       marketPriceKrw: candidate.lastPriceKrw,
@@ -280,6 +291,24 @@ function buildTrade(
   }
 
   return trade;
+}
+
+function syncPositionMetadata(
+  position: VirtualPortfolio["positions"][number],
+  candidate: MarketCandidate
+): void {
+  if (position.assetType === undefined && candidate.assetType !== undefined) {
+    position.assetType = candidate.assetType;
+  }
+  if (position.assetClass === undefined && candidate.assetClass !== undefined) {
+    position.assetClass = candidate.assetClass;
+  }
+  if (position.region === undefined && candidate.region !== undefined) {
+    position.region = candidate.region;
+  }
+  if (position.riskTags === undefined && candidate.riskTags !== undefined) {
+    position.riskTags = candidate.riskTags;
+  }
 }
 
 function clonePortfolio(portfolio: VirtualPortfolio): VirtualPortfolio {

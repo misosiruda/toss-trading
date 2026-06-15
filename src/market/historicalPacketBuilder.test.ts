@@ -129,6 +129,37 @@ test("historical packet builder derives trend and volume reason codes from past 
   );
 });
 
+test("historical packet builder preserves snapshot asset metadata in candidates", () => {
+  const result = builder().build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_spy",
+        market: "US",
+        symbol: "SPY",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        assetType: "ETF",
+        assetClass: "equity",
+        region: "US",
+        riskTags: ["currency_exposed"]
+      })
+    ]
+  });
+
+  const candidate = result.status === "ok" ? result.packet.candidates[0] : null;
+
+  assert.equal(result.status, "ok");
+  assert.equal(candidate?.market, "US");
+  assert.equal(candidate?.assetType, "ETF");
+  assert.equal(candidate?.assetClass, "equity");
+  assert.equal(candidate?.region, "US");
+  assert.deepEqual(candidate?.riskTags, ["currency_exposed"]);
+  assert.equal(
+    candidate?.featureRefs?.includes("candidate.US.SPY.assetType"),
+    true
+  );
+});
+
 test("historical packet builder does not derive features from future snapshots", () => {
   const result = builder().build({
     portfolio: portfolio(),
@@ -198,6 +229,91 @@ test("historical packet builder trims candidates deterministically", () => {
       ? result.packet.candidates.map((candidate) => candidate.symbol)
       : [],
     ["000660", "035420"]
+  );
+});
+
+test("historical packet builder screens broad universe with market diversification", () => {
+  const result = builder({ maxCandidates: 3 }).build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_us_a_prev",
+        market: "US",
+        symbol: "AAA",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_us_a_current",
+        market: "US",
+        symbol: "AAA",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 120_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_us_b_prev",
+        market: "US",
+        symbol: "BBB",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_us_b_current",
+        market: "US",
+        symbol: "BBB",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 120_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_us_c_prev",
+        market: "US",
+        symbol: "CCC",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_us_c_current",
+        market: "US",
+        symbol: "CCC",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 120_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_kr_prev",
+        market: "KR",
+        symbol: "005930",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000,
+        assetType: "STOCK"
+      }),
+      snapshot({
+        snapshotId: "hist_kr_current",
+        market: "KR",
+        symbol: "005930",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 90_000,
+        assetType: "STOCK"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidates = result.status === "ok" ? result.packet.candidates : [];
+  assert.deepEqual(
+    candidates.map((candidate) => `${candidate.market}:${candidate.symbol}`),
+    ["US:AAA", "US:BBB", "KR:005930"]
+  );
+  assert.equal(
+    candidates.every((candidate) =>
+      candidate.reasonCodes.includes("HISTORICAL_SCREENER_DIVERSIFIED")
+    ),
+    true
   );
 });
 
@@ -288,8 +404,13 @@ function portfolio(): VirtualPortfolio {
 
 function snapshot(input: {
   snapshotId: string;
+  market?: HistoricalMarketSnapshot["market"];
   symbol: string;
   observedAt: string;
+  assetType?: HistoricalMarketSnapshot["assetType"];
+  assetClass?: HistoricalMarketSnapshot["assetClass"];
+  region?: HistoricalMarketSnapshot["region"];
+  riskTags?: HistoricalMarketSnapshot["riskTags"];
   lastPriceKrw?: number;
   volume?: number;
   openPriceKrw?: number;
@@ -297,8 +418,12 @@ function snapshot(input: {
 }): HistoricalMarketSnapshot {
   const output: HistoricalMarketSnapshot = {
     snapshotId: input.snapshotId,
-    market: "KR",
+    market: input.market ?? "KR",
     symbol: input.symbol,
+    ...(input.assetType === undefined ? {} : { assetType: input.assetType }),
+    ...(input.assetClass === undefined ? {} : { assetClass: input.assetClass }),
+    ...(input.region === undefined ? {} : { region: input.region }),
+    ...(input.riskTags === undefined ? {} : { riskTags: input.riskTags }),
     observedAt: input.observedAt,
     interval: "1m",
     lastPriceKrw: input.lastPriceKrw ?? 70_000,

@@ -201,6 +201,7 @@ export function renderHistoricalReplayReport(
     `cash_allocation_ratio: ${formatNullable(report.analytics.cashAllocationRatio)}`,
     `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
     `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
+    `exposure_by_asset_type: ${JSON.stringify(report.analytics.exposureByAssetType)}`,
     `decision_trade_linkage: ${JSON.stringify(report.analytics.decisionTradeLinkage)}`,
     "",
     "## Decision Outcome",

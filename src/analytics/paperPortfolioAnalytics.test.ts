@@ -18,9 +18,18 @@ test("paper analytics calculates exposure and allocation totals", () => {
   assert.equal(analytics.positionAllocationRatio, 0.3);
   assert.equal(analytics.exposureByMarket.KR, 100_000);
   assert.equal(analytics.exposureByMarket.US, 200_000);
+  assert.equal(analytics.exposureByAssetType.STOCK, 100_000);
+  assert.equal(analytics.exposureByAssetType.ETF, 200_000);
+  assert.equal(analytics.exposureByAssetType.UNKNOWN, 0);
   assert.deepEqual(
-    analytics.symbolAllocations.map((allocation) => allocation.symbol),
-    ["AAPL", "005930"]
+    analytics.symbolAllocations.map((allocation) => [
+      allocation.symbol,
+      allocation.assetType
+    ]),
+    [
+      ["AAPL", "ETF"],
+      ["005930", "STOCK"]
+    ]
   );
   assert.match(analytics.disclaimer, /not investment performance/);
 });
@@ -83,6 +92,7 @@ function portfolio(): VirtualPortfolio {
       {
         market: "KR",
         symbol: "005930",
+        assetType: "STOCK",
         quantity: 1,
         averagePriceKrw: 90_000,
         marketValueKrw: 100_000,
@@ -92,6 +102,7 @@ function portfolio(): VirtualPortfolio {
       {
         market: "US",
         symbol: "AAPL",
+        assetType: "ETF",
         quantity: 2,
         averagePriceKrw: 100_000,
         marketValueKrw: 200_000,

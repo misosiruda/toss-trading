@@ -123,6 +123,7 @@ export function renderPaperDailyReport(report: PaperDailyReport): string {
     `cash_allocation_ratio: ${formatNullable(report.analytics.cashAllocationRatio)}`,
     `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
     `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
+    `exposure_by_asset_type: ${JSON.stringify(report.analytics.exposureByAssetType)}`,
     `symbol_allocations: ${report.analytics.symbolAllocations
       .map((allocation) => `${allocation.market}:${allocation.symbol}:${allocation.allocationRatio ?? "null"}`)
       .join(", ") || "none"}`,
