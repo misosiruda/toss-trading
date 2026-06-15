@@ -135,6 +135,26 @@ test("batch replay aggregate report counts AI decision failures separately from 
   assert.equal(report.byRegime.bull?.totalAiDecisionFailureCount, 3);
 });
 
+test("batch replay aggregate report handles legacy records without market counts", () => {
+  const legacyRecord = record(
+    "legacy_run_0",
+    0,
+    "completed",
+    "bull",
+    0.01,
+    1_010_000
+  ) as Partial<BatchReplayRunRecord>;
+  delete legacyRecord.marketRegimesByMarket;
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [legacyRecord as BatchReplayRunRecord]
+  });
+
+  assert.deepEqual(report.summary.regimeCounts, { bull: 1 });
+  assert.deepEqual(report.summary.regimeCountsByMarket, {});
+});
+
 test("batch replay aggregate report renders paper-only disclaimer", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
