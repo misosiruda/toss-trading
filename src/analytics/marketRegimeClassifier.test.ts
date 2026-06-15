@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
-import { classifyMarketRegime } from "./marketRegimeClassifier.js";
+import {
+  classifyMarketRegime,
+  classifyMarketRegimeByMarket
+} from "./marketRegimeClassifier.js";
 
 test("market regime classifier detects bull windows", () => {
   const regime = classifyMarketRegime({
@@ -89,15 +92,34 @@ test("market regime classifier reports insufficient data", () => {
   assert.ok(regime.reasons.includes("INSUFFICIENT_CLASSIFIABLE_SYMBOLS"));
 });
 
+test("market regime classifier reports different labels by market", () => {
+  const regimes = classifyMarketRegimeByMarket({
+    snapshots: [
+      snapshot("kr_1", "005930", "2025-07-01T09:00:00+09:00", 100, "KR"),
+      snapshot("kr_2", "005930", "2025-07-31T15:00:00+09:00", 94, "KR"),
+      snapshot("us_1", "AAPL", "2025-07-01T09:00:00+09:00", 100, "US"),
+      snapshot("us_2", "AAPL", "2025-07-31T15:00:00+09:00", 108, "US")
+    ],
+    windowStart: new Date("2025-07-01T00:00:00+09:00"),
+    windowEnd: new Date("2025-07-31T23:59:59.999+09:00")
+  });
+
+  assert.equal(regimes.KR?.label, "bear");
+  assert.equal(regimes.US?.label, "bull");
+  assert.equal(regimes.KR?.symbolReturns[0]?.market, "KR");
+  assert.equal(regimes.US?.symbolReturns[0]?.market, "US");
+});
+
 function snapshot(
   snapshotId: string,
   symbol: string,
   observedAt: string,
-  lastPriceKrw: number
+  lastPriceKrw: number,
+  market: "KR" | "US" = "KR"
 ): HistoricalMarketSnapshot {
   return {
     snapshotId,
-    market: "KR",
+    market,
     symbol,
     observedAt,
     interval: "1d",
