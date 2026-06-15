@@ -53,6 +53,10 @@ export interface MarketRegimeSymbolReturn {
   returnRatio: number;
 }
 
+export type MarketRegimesByMarket = Partial<
+  Record<Market, MarketRegimeClassification>
+>;
+
 const DEFAULT_MIN_SYMBOLS = 1;
 const DEFAULT_MIN_SNAPSHOTS_PER_SYMBOL = 2;
 const DEFAULT_BULL_RETURN_THRESHOLD = 0.03;
@@ -136,6 +140,32 @@ export function classifyMarketRegime(
     reasons,
     symbolReturns
   };
+}
+
+export function classifyMarketRegimeByMarket(
+  options: MarketRegimeClassifierOptions
+): MarketRegimesByMarket {
+  validateOptions(options);
+
+  const markets = Array.from(
+    new Set(
+      options.snapshots
+        .filter((snapshot) =>
+          isInsideWindow(snapshot, options.windowStart, options.windowEnd)
+        )
+        .map((snapshot) => snapshot.market)
+    )
+  ).sort();
+  const byMarket: MarketRegimesByMarket = {};
+
+  for (const market of markets) {
+    byMarket[market] = classifyMarketRegime({
+      ...options,
+      snapshots: options.snapshots.filter((snapshot) => snapshot.market === market)
+    });
+  }
+
+  return byMarket;
 }
 
 function baseClassification(input: {
