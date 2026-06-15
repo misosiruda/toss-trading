@@ -83,7 +83,9 @@ export function classifyMarketRegime(
     breadthThreshold: options.breadthThreshold ?? DEFAULT_BREADTH_THRESHOLD
   };
   const windowSnapshots = options.snapshots
-    .filter((snapshot) => isInsideWindow(snapshot, options.windowStart, options.windowEnd))
+    .filter((snapshot) =>
+      isInsideWindow(snapshot, options.windowStart, options.windowEnd)
+    )
     .sort(compareSnapshots);
   const symbolGroups = groupBySymbol(windowSnapshots);
   const symbolReturns = Array.from(symbolGroups.values())
@@ -161,7 +163,9 @@ export function classifyMarketRegimeByMarket(
   for (const market of markets) {
     byMarket[market] = classifyMarketRegime({
       ...options,
-      snapshots: options.snapshots.filter((snapshot) => snapshot.market === market)
+      snapshots: options.snapshots.filter(
+        (snapshot) => snapshot.market === market
+      )
     });
   }
 
@@ -240,7 +244,9 @@ function toSymbolReturn(
     lastObservedAt: last.observedAt,
     firstPriceKrw: first.lastPriceKrw,
     lastPriceKrw: last.lastPriceKrw,
-    returnRatio: roundRatio((last.lastPriceKrw - first.lastPriceKrw) / first.lastPriceKrw)
+    returnRatio: roundRatio(
+      (last.lastPriceKrw - first.lastPriceKrw) / first.lastPriceKrw
+    )
   };
 }
 
