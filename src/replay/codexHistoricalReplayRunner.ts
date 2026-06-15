@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  HistoricalMarketSnapshot,
   MarketPacket,
   VirtualDecision,
   VirtualDecisionItem,
@@ -21,6 +22,10 @@ import {
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
+import {
+  buildMarketRegimeAllocationPolicy,
+  type MarketRegimeAllocationPolicy
+} from "../paper/marketRegimeAllocationPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
@@ -67,6 +72,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   constraints: MarketPacketConstraints;
   riskPolicy?: Partial<VirtualRiskPolicy>;
   allocationPolicy?: PaperAllocationPolicy;
+  marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   performanceClock?: () => number;
   onProgress?: (
@@ -98,6 +104,7 @@ export async function runCodexHistoricalReplay(
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
   const paperExitPolicyState = createPaperExitPolicyState();
   appendExitPolicyWarnings(warnings, options.riskPolicy, paperExitPolicy);
+  appendMarketRegimeAllocationWarnings(warnings, options);
 
   const emitProgress = async (
     tick: SimulatedTick,
@@ -161,6 +168,12 @@ export async function runCodexHistoricalReplay(
       prices: pricePoints,
       asOf: simulatedAt
     });
+    const allocationPolicy = allocationPolicyForTick({
+      basePolicy: options.allocationPolicy,
+      marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy,
+      snapshots: input.snapshots,
+      simulatedAt
+    });
     const packetBuildStartedAtMs = performanceClock();
     const packetBuild = new HistoricalMarketPacketBuilder({
       packetId: `${options.packetIdPrefix}_${tick.stepIndex}`,
@@ -169,9 +182,9 @@ export async function runCodexHistoricalReplay(
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
       constraints: options.constraints,
-      ...(options.allocationPolicy === undefined
+      ...(allocationPolicy === undefined
         ? {}
-        : { allocationPolicy: options.allocationPolicy })
+        : { allocationPolicy })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -646,6 +659,27 @@ function riskPolicyForTick(
   };
 }
 
+function allocationPolicyForTick(input: {
+  basePolicy: PaperAllocationPolicy | undefined;
+  marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | undefined;
+  snapshots: HistoricalMarketSnapshot[];
+  simulatedAt: Date;
+}): PaperAllocationPolicy | undefined {
+  if (input.basePolicy === undefined) {
+    return undefined;
+  }
+  if (input.marketRegimeAllocationPolicy === undefined) {
+    return input.basePolicy;
+  }
+
+  return buildMarketRegimeAllocationPolicy({
+    basePolicy: input.basePolicy,
+    snapshots: input.snapshots,
+    simulatedAt: input.simulatedAt,
+    policy: input.marketRegimeAllocationPolicy
+  }).allocationPolicy;
+}
+
 function appendExitPolicyWarnings(
   warnings: string[],
   riskPolicy: Partial<VirtualRiskPolicy> | undefined,
@@ -661,6 +695,23 @@ function appendExitPolicyWarnings(
   ) {
     warnings.push(
       `paper exit rebalanceMaxPositionWeightRatio (${rebalanceMaxPositionWeightRatio}) is below risk maxPositionWeightRatio (${riskMaxPositionWeightRatio})`
+    );
+  }
+}
+
+function appendMarketRegimeAllocationWarnings(
+  warnings: string[],
+  options: Pick<
+    CodexHistoricalReplayRunnerOptions,
+    "allocationPolicy" | "marketRegimeAllocationPolicy"
+  >
+): void {
+  if (
+    options.marketRegimeAllocationPolicy !== undefined &&
+    options.allocationPolicy === undefined
+  ) {
+    warnings.push(
+      "market regime allocation policy ignored: allocationPolicy is not configured"
     );
   }
 }

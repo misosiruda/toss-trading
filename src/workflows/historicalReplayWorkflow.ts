@@ -34,6 +34,7 @@ import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
+import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import {
   normalizePaperExitPolicy,
   type PaperExitPolicy
@@ -57,6 +58,7 @@ export interface HistoricalReplayWorkflowOptions {
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
   allocationPolicy?: PaperAllocationPolicy;
+  marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   runId?: string;
   batchId?: string;
@@ -100,6 +102,9 @@ export async function runHistoricalReplayWorkflow(
     ...(options.allocationPolicy === undefined
       ? {}
       : { allocationPolicy: options.allocationPolicy }),
+    ...(options.marketRegimeAllocationPolicy === undefined
+      ? {}
+      : { marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy }),
     ...(options.paperExitPolicy === undefined
       ? {}
       : { paperExitPolicy: options.paperExitPolicy })
@@ -237,6 +242,8 @@ function buildRunMetadataContext(
       riskProfile: options.riskProfile ?? null,
       riskPolicy: serializeRiskPolicy(options.riskPolicy),
       allocationPolicy: options.allocationPolicy ?? null,
+      marketRegimeAllocationPolicy:
+        options.marketRegimeAllocationPolicy ?? null,
       paperExitPolicy: normalizePaperExitPolicy(options.paperExitPolicy)
     }
   };

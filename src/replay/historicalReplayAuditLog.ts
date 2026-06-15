@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   isoDateTimeSchema,
+  marketSchema,
   marketPacketSchema,
   parseWithSchema,
   virtualActionSchema,
@@ -117,7 +118,35 @@ export const historicalReplayRunConfigurationSchema = z
         targetExposureRatio: z.number().min(0).max(1),
         minCashReserveRatio: z.number().min(0).max(1),
         maxBudgetPerDecisionRatio: z.number().min(0).max(1),
-        maxSymbolExposureRatio: z.number().min(0).max(1)
+        maxSymbolExposureRatio: z.number().min(0).max(1),
+        marketTargetExposureRatios: z
+          .partialRecord(marketSchema, z.number().min(0).max(1))
+          .optional()
+      })
+      .strict()
+      .nullable(),
+    marketRegimeAllocationPolicy: z
+      .object({
+        lookbackDays: z.number().int().positive(),
+        policyNameSuffix: z.string().trim().min(1).optional(),
+        minSymbols: z.number().int().positive().optional(),
+        minSnapshotsPerSymbol: z.number().int().positive().optional(),
+        bullReturnThreshold: z.number().optional(),
+        bearReturnThreshold: z.number().optional(),
+        sidewaysAbsReturnThreshold: z.number().optional(),
+        breadthThreshold: z.number().optional(),
+        regimeWeights: z
+          .partialRecord(
+            z.enum([
+              "bull",
+              "bear",
+              "sideways",
+              "mixed",
+              "insufficient_data"
+            ]),
+            z.number().nonnegative()
+          )
+          .optional()
       })
       .strict()
       .nullable(),
