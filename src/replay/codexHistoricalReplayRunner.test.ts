@@ -244,7 +244,10 @@ test("codex historical replay runner executes paper exit policy before provider 
   );
 
   assert.equal(provider.calls, 1);
-  assert.deepEqual(result.paperExitPolicy, { takeProfitRatio: 0.15 });
+  assert.deepEqual(result.paperExitPolicy, {
+    takeProfitMode: "full_exit",
+    takeProfitRatio: 0.15
+  });
   assert.equal(result.decisionRecordCount, 1);
   assert.equal(result.tradeCount, 1);
   assert.equal(result.trades[0]?.action, "VIRTUAL_SELL");
@@ -263,6 +266,97 @@ test("codex historical replay runner executes paper exit policy before provider 
   );
   assert.equal(
     progressUpdates.some((update) => update.event?.eventType === "VIRTUAL_SELL"),
+    true
+  );
+});
+
+test("codex historical replay runner supports partial take-profit then trailing stop", async () => {
+  const provider = new FakeCodexReplayProvider(() => ({
+    attempted: true,
+    decision: null,
+    failure: {
+      code: "AI_DECISION_FAILED",
+      reason: "fixture failure"
+    },
+    command: null
+  }));
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:03:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider,
+      paperExitPolicy: {
+        takeProfitRatio: 0.15,
+        takeProfitMode: "partial_then_trail",
+        takeProfitSellRatio: 0.5,
+        trailingStopFromPeakRatio: 0.08
+      }
+    },
+    {
+      initialPortfolio: {
+        portfolioId: "virtual_default",
+        cashKrw: 0,
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            quantity: 10,
+            averagePriceKrw: 100,
+            marketValueKrw: 1_000,
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ],
+        updatedAt: "2025-01-02T09:00:00+09:00"
+      },
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 100
+        }),
+        snapshot({
+          snapshotId: "hist_005930_0901",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:01:00+09:00",
+          lastPriceKrw: 120
+        }),
+        snapshot({
+          snapshotId: "hist_005930_0902",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:02:00+09:00",
+          lastPriceKrw: 140
+        }),
+        snapshot({
+          snapshotId: "hist_005930_0903",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:03:00+09:00",
+          lastPriceKrw: 128
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.tradeCount, 2);
+  assert.equal(result.trades[0]?.quantity, 5);
+  assert.equal(result.trades[1]?.quantity, 5);
+  assert.equal(result.finalPortfolio.positions.length, 0);
+  assert.equal(result.finalPortfolio.cashKrw, 1_240);
+  assert.equal(
+    result.decisions
+      .flatMap((decision) => decision.decisions)
+      .filter((item) => item.thesis.includes("partial take-profit")).length,
+    1
+  );
+  assert.equal(
+    result.decisions
+      .flatMap((decision) => decision.decisions)
+      .some((item) => item.thesis.includes("trailing stop")),
     true
   );
 });

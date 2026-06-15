@@ -25,8 +25,10 @@ export interface HistoricalReplayReport {
   generatedAt: string;
   simulatedRange: HistoricalReplayRangeSummary;
   replaySummary: HistoricalReplaySummary;
+  allocationPolicy: HistoricalReplayResult["allocationPolicy"];
   paperExitPolicy: HistoricalReplayResult["paperExitPolicy"];
   portfolio: HistoricalReplayPortfolioSummary;
+  portfolioConstruction: HistoricalReplayPortfolioConstructionMetrics;
   analytics: PaperPortfolioAnalytics;
   decisionOutcome: HistoricalReplayDecisionOutcomeSummary;
   tradeSummary: HistoricalReplayTradeSummary;
@@ -62,6 +64,19 @@ export interface HistoricalReplayPortfolioSummary {
   finalVirtualNetWorthKrw: number;
 }
 
+export interface HistoricalReplayPortfolioConstructionMetrics {
+  avgExposureRatio: number | null;
+  avgCashRatio: number | null;
+  maxExposureRatio: number | null;
+  minExposureRatio: number | null;
+  timeInMarketRatio: number | null;
+  finalCashRatio: number | null;
+  finalPositionRatio: number | null;
+  targetExposureRatio: number | null;
+  averageTargetExposureGapRatio: number | null;
+  finalTargetExposureGapRatio: number | null;
+}
+
 export interface HistoricalReplayDecisionOutcomeSummary {
   byAction: Record<string, number>;
   averageConfidence: number | null;
@@ -78,6 +93,8 @@ export interface HistoricalReplayTradeSummary {
 export interface HistoricalReplayRiskSummary {
   approvedCount: number;
   rejectedCount: number;
+  meaningfulRejectCount: number;
+  dustRejectCount: number;
   rejectCodes: Record<string, number>;
 }
 
@@ -115,8 +132,13 @@ export function buildHistoricalReplayReport(
       tradeCount: result.tradeCount,
       rejectedCount: result.rejectedCount
     },
+    allocationPolicy: result.allocationPolicy,
     paperExitPolicy: result.paperExitPolicy,
     portfolio: summarizePortfolio(result.initialPortfolio, result.finalPortfolio),
+    portfolioConstruction: buildPortfolioConstructionMetrics(
+      result.portfolioTimeline,
+      result.allocationPolicy
+    ),
     analytics: buildPaperPortfolioAnalytics({
       portfolio: result.finalPortfolio,
       decisions: result.decisions,
@@ -155,6 +177,7 @@ export function renderHistoricalReplayReport(
     `decision_items: ${report.replaySummary.decisionItemCount}`,
     `trade_count: ${report.replaySummary.tradeCount}`,
     `risk_rejected_count: ${report.replaySummary.rejectedCount}`,
+    `allocation_policy: ${JSON.stringify(report.allocationPolicy)}`,
     `paper_exit_policy: ${JSON.stringify(report.paperExitPolicy)}`,
     "",
     "## Final Virtual Portfolio",
@@ -165,6 +188,16 @@ export function renderHistoricalReplayReport(
     `final_virtual_net_worth_krw: ${report.portfolio.finalVirtualNetWorthKrw}`,
     "",
     "## Portfolio Analytics",
+    `avg_exposure_ratio: ${formatNullable(report.portfolioConstruction.avgExposureRatio)}`,
+    `avg_cash_ratio: ${formatNullable(report.portfolioConstruction.avgCashRatio)}`,
+    `max_exposure_ratio: ${formatNullable(report.portfolioConstruction.maxExposureRatio)}`,
+    `min_exposure_ratio: ${formatNullable(report.portfolioConstruction.minExposureRatio)}`,
+    `time_in_market_ratio: ${formatNullable(report.portfolioConstruction.timeInMarketRatio)}`,
+    `final_cash_ratio: ${formatNullable(report.portfolioConstruction.finalCashRatio)}`,
+    `final_position_ratio: ${formatNullable(report.portfolioConstruction.finalPositionRatio)}`,
+    `target_exposure_ratio: ${formatNullable(report.portfolioConstruction.targetExposureRatio)}`,
+    `average_target_exposure_gap_ratio: ${formatNullable(report.portfolioConstruction.averageTargetExposureGapRatio)}`,
+    `final_target_exposure_gap_ratio: ${formatNullable(report.portfolioConstruction.finalTargetExposureGapRatio)}`,
     `cash_allocation_ratio: ${formatNullable(report.analytics.cashAllocationRatio)}`,
     `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
     `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
@@ -184,6 +217,8 @@ export function renderHistoricalReplayReport(
     "## Virtual Risk",
     `approved_count: ${report.riskSummary.approvedCount}`,
     `rejected_count: ${report.riskSummary.rejectedCount}`,
+    `meaningful_reject_count: ${report.riskSummary.meaningfulRejectCount}`,
+    `dust_reject_count: ${report.riskSummary.dustRejectCount}`,
     `reject_codes: ${JSON.stringify(report.riskSummary.rejectCodes)}`,
     "",
     "## Sampling",
@@ -303,8 +338,85 @@ function summarizeRisk(
     approvedCount: result.riskDecisions.filter((decision) => decision.approved)
       .length,
     rejectedCount: result.rejectedCount,
+    meaningfulRejectCount: result.rejectedCount,
+    dustRejectCount: result.auditEvents.filter(
+      (event) => event.eventType === "NO_OP_EXIT_DUST_CLOSED"
+    ).length,
     rejectCodes
   };
+}
+
+export function buildPortfolioConstructionMetrics(
+  timeline: HistoricalPortfolioTimelineItem[],
+  allocationPolicy: HistoricalReplayResult["allocationPolicy"] = null
+): HistoricalReplayPortfolioConstructionMetrics {
+  if (timeline.length === 0) {
+    return {
+      avgExposureRatio: null,
+      avgCashRatio: null,
+      maxExposureRatio: null,
+      minExposureRatio: null,
+      timeInMarketRatio: null,
+      finalCashRatio: null,
+      finalPositionRatio: null,
+      targetExposureRatio: allocationPolicy?.targetExposureRatio ?? null,
+      averageTargetExposureGapRatio: null,
+      finalTargetExposureGapRatio: null
+    };
+  }
+
+  const exposureRatios = timeline.map(exposureRatio);
+  const cashRatios = timeline.map(cashRatio);
+  const targetExposureRatio = allocationPolicy?.targetExposureRatio ?? null;
+  const targetExposureGapRatios =
+    targetExposureRatio === null
+      ? []
+      : exposureRatios.map((ratio) =>
+          Math.max(0, targetExposureRatio - ratio)
+        );
+  const final = timeline[timeline.length - 1]!;
+
+  return {
+    avgExposureRatio: roundRatio(average(exposureRatios)),
+    avgCashRatio: roundRatio(average(cashRatios)),
+    maxExposureRatio: roundRatio(Math.max(...exposureRatios)),
+    minExposureRatio: roundRatio(Math.min(...exposureRatios)),
+    timeInMarketRatio: roundRatio(
+      exposureRatios.filter((ratio) => ratio > 0.05).length / timeline.length
+    ),
+    finalCashRatio: roundRatio(cashRatio(final)),
+    finalPositionRatio: roundRatio(exposureRatio(final)),
+    targetExposureRatio,
+    averageTargetExposureGapRatio:
+      targetExposureGapRatios.length === 0
+        ? null
+        : roundRatio(average(targetExposureGapRatios)),
+    finalTargetExposureGapRatio:
+      targetExposureRatio === null
+        ? null
+        : roundRatio(Math.max(0, targetExposureRatio - exposureRatio(final)))
+  };
+}
+
+function exposureRatio(item: HistoricalPortfolioTimelineItem): number {
+  if (!Number.isFinite(item.virtualNetWorthKrw) || item.virtualNetWorthKrw <= 0) {
+    return 0;
+  }
+  return boundedRatio(item.positionMarketValueKrw / item.virtualNetWorthKrw);
+}
+
+function cashRatio(item: HistoricalPortfolioTimelineItem): number {
+  if (!Number.isFinite(item.virtualNetWorthKrw) || item.virtualNetWorthKrw <= 0) {
+    return 0;
+  }
+  return boundedRatio(item.cashKrw / item.virtualNetWorthKrw);
+}
+
+function boundedRatio(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
 }
 
 function summarizeSampling(
@@ -355,6 +467,14 @@ function sumPositionMarketValue(portfolio: VirtualPortfolio): number {
         Math.round(position.quantity * position.averagePriceKrw)),
     0
   );
+}
+
+function average(values: number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function roundRatio(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function formatNullable(value: number | null): string {

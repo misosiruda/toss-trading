@@ -12,13 +12,30 @@ export interface PaperExitPolicy {
   takeProfitRatio?: number;
   stopLossRatio?: number;
   rebalanceMaxPositionWeightRatio?: number;
+  takeProfitMode?: TakeProfitMode;
+  takeProfitSellRatio?: number;
+  trailingStopFromPeakRatio?: number;
 }
 
-export type NormalizedPaperExitPolicy = PaperExitPolicy;
+export type TakeProfitMode = "full_exit" | "partial_then_trail";
+
+export interface NormalizedPaperExitPolicy extends PaperExitPolicy {
+  takeProfitMode: TakeProfitMode;
+}
+
+export interface PaperExitPolicyPositionState {
+  partialTakeProfitExecuted: boolean;
+  peakPriceKrw: number;
+}
+
+export type PaperExitPolicyState = Map<string, PaperExitPolicyPositionState>;
 
 type ExitReason = "take_profit" | "stop_loss" | "rebalance";
 
 const ratioEpsilon = 1e-9;
+const DEFAULT_TAKE_PROFIT_MODE: TakeProfitMode = "full_exit";
+const DEFAULT_TAKE_PROFIT_SELL_RATIO = 0.5;
+const DEFAULT_TRAILING_STOP_FROM_PEAK_RATIO = 0.08;
 
 export function normalizePaperExitPolicy(
   policy: PaperExitPolicy | undefined
@@ -27,7 +44,9 @@ export function normalizePaperExitPolicy(
     return null;
   }
 
-  const normalized: NormalizedPaperExitPolicy = {};
+  const normalized: NormalizedPaperExitPolicy = {
+    takeProfitMode: normalizeTakeProfitMode(policy.takeProfitMode)
+  };
 
   if (policy.takeProfitRatio !== undefined) {
     normalized.takeProfitRatio = validateRatio({
@@ -50,14 +69,55 @@ export function normalizePaperExitPolicy(
       max: 1
     });
   }
+  if (policy.takeProfitSellRatio !== undefined) {
+    normalized.takeProfitSellRatio = validateRatio({
+      name: "takeProfitSellRatio",
+      value: policy.takeProfitSellRatio,
+      max: 1
+    });
+  }
+  if (policy.trailingStopFromPeakRatio !== undefined) {
+    normalized.trailingStopFromPeakRatio = validateRatio({
+      name: "trailingStopFromPeakRatio",
+      value: policy.trailingStopFromPeakRatio,
+      max: 1
+    });
+  }
 
-  return Object.keys(normalized).length === 0 ? null : normalized;
+  const hasRule =
+    normalized.takeProfitRatio !== undefined ||
+    normalized.stopLossRatio !== undefined ||
+    normalized.rebalanceMaxPositionWeightRatio !== undefined;
+
+  return hasRule ? normalized : null;
+}
+
+export function createPaperExitPolicyState(): PaperExitPolicyState {
+  return new Map();
+}
+
+export function prunePaperExitPolicyState(
+  state: PaperExitPolicyState,
+  portfolio: VirtualPortfolio
+): void {
+  const activePositionKeys = new Set(
+    portfolio.positions
+      .filter((position) => position.quantity > 0)
+      .map((position) => positionKey(position))
+  );
+
+  for (const key of state.keys()) {
+    if (!activePositionKeys.has(key)) {
+      state.delete(key);
+    }
+  }
 }
 
 export function buildPaperExitPolicyDecision(input: {
   packet: MarketPacket;
   portfolio: VirtualPortfolio;
   policy?: PaperExitPolicy | undefined;
+  state?: PaperExitPolicyState | undefined;
 }): VirtualDecision | null {
   const policy = normalizePaperExitPolicy(input.policy);
   if (policy === null) {
@@ -86,7 +146,8 @@ export function buildPaperExitPolicyDecision(input: {
       portfolio: input.portfolio,
       position,
       candidate,
-      policy
+      policy,
+      state: input.state
     });
 
     return decision === null ? [] : [decision];
@@ -110,6 +171,7 @@ function buildPositionExitDecision(input: {
   position: VirtualPosition;
   candidate: MarketCandidate;
   policy: NormalizedPaperExitPolicy;
+  state?: PaperExitPolicyState | undefined;
 }): VirtualDecisionItem | null {
   if (
     input.position.quantity <= 0 ||
@@ -122,6 +184,12 @@ function buildPositionExitDecision(input: {
   }
 
   const currentPriceKrw = input.candidate.lastPriceKrw;
+  const stateKey = positionKey(input.position);
+  const positionState = updateExitPositionState({
+    state: input.state,
+    key: stateKey,
+    currentPriceKrw
+  });
   const unrealizedReturnRatio =
     (currentPriceKrw - input.position.averagePriceKrw) /
     input.position.averagePriceKrw;
@@ -142,9 +210,53 @@ function buildPositionExitDecision(input: {
   }
 
   if (
+    input.policy.takeProfitMode === "partial_then_trail" &&
+    positionState.partialTakeProfitExecuted
+  ) {
+    const peakDrawdownRatio =
+      positionState.peakPriceKrw > 0
+        ? (positionState.peakPriceKrw - currentPriceKrw) /
+          positionState.peakPriceKrw
+        : 0;
+    const trailingStopRatio =
+      input.policy.trailingStopFromPeakRatio ??
+      DEFAULT_TRAILING_STOP_FROM_PEAK_RATIO;
+    if (peakDrawdownRatio >= trailingStopRatio) {
+      return exitDecision({
+        packet: input.packet,
+        candidate: input.candidate,
+        reason: "take_profit",
+        sizing: { sellAll: true },
+        thesis: `Paper-only trailing stop exit triggered after ${formatRatio(
+          peakDrawdownRatio
+        )} drawdown from peak.`
+      });
+    }
+  }
+
+  if (
     input.policy.takeProfitRatio !== undefined &&
     unrealizedReturnRatio >= input.policy.takeProfitRatio
   ) {
+    if (input.policy.takeProfitMode === "partial_then_trail") {
+      if (positionState.partialTakeProfitExecuted) {
+        return null;
+      }
+      positionState.partialTakeProfitExecuted = true;
+      return exitDecision({
+        packet: input.packet,
+        candidate: input.candidate,
+        reason: "take_profit",
+        sizing: {
+          sellRatio:
+            input.policy.takeProfitSellRatio ?? DEFAULT_TAKE_PROFIT_SELL_RATIO
+        },
+        thesis: `Paper-only partial take-profit exit triggered at ${formatRatio(
+          unrealizedReturnRatio
+        )} unrealized return.`
+      });
+    }
+
     return exitDecision({
       packet: input.packet,
       candidate: input.candidate,
@@ -192,7 +304,7 @@ function exitDecision(input: {
   reason: ExitReason;
   sizing: Pick<
     VirtualDecisionItem,
-    "sellAll" | "targetWeightPct"
+    "sellAll" | "sellRatio" | "targetWeightPct"
   >;
   thesis: string;
 }): VirtualDecisionItem {
@@ -245,6 +357,46 @@ function validateRatio(input: {
     throw new Error(`${input.name} must be > 0 and <= ${input.max}`);
   }
   return input.value;
+}
+
+function normalizeTakeProfitMode(value: TakeProfitMode | undefined): TakeProfitMode {
+  if (value === undefined) {
+    return DEFAULT_TAKE_PROFIT_MODE;
+  }
+  if (value === "full_exit" || value === "partial_then_trail") {
+    return value;
+  }
+  throw new Error("takeProfitMode must be full_exit or partial_then_trail");
+}
+
+function updateExitPositionState(input: {
+  state?: PaperExitPolicyState | undefined;
+  key: string;
+  currentPriceKrw: number;
+}): PaperExitPolicyPositionState {
+  if (input.state === undefined) {
+    return {
+      partialTakeProfitExecuted: false,
+      peakPriceKrw: input.currentPriceKrw
+    };
+  }
+
+  const existing = input.state.get(input.key);
+  if (existing === undefined) {
+    const created = {
+      partialTakeProfitExecuted: false,
+      peakPriceKrw: input.currentPriceKrw
+    };
+    input.state.set(input.key, created);
+    return created;
+  }
+
+  existing.peakPriceKrw = Math.max(existing.peakPriceKrw, input.currentPriceKrw);
+  return existing;
+}
+
+function positionKey(position: Pick<VirtualPosition, "market" | "symbol">): string {
+  return `${position.market}:${position.symbol}`;
 }
 
 function formatRatio(value: number): string {

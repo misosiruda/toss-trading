@@ -41,7 +41,15 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
+  assert.equal(report.overall.averageExposureRatio, 0.2);
+  assert.equal(report.overall.averageCashRatio, 0.8);
+  assert.equal(report.overall.averageTimeInMarketRatio, 1);
+  assert.equal(report.overall.averageTargetExposureRatio, 0.85);
+  assert.equal(report.overall.averageTargetExposureGapRatio, 0.65);
+  assert.equal(report.overall.averageFinalTargetExposureGapRatio, 0.65);
   assert.equal(report.overall.totalAiDecisionFailureCount, 0);
+  assert.equal(report.overall.totalMeaningfulRejectCount, 0);
+  assert.equal(report.overall.totalDustRejectCount, 0);
   assert.deepEqual(report.overall.targetReturnHitRates, [
     {
       threshold: 0.15,
@@ -217,7 +225,19 @@ function record(
             tradeCount: 1,
             decisionProviderCallCount: 1,
             aiDecisionFailureCount,
-            rejectedCount: 0
+            rejectedCount: 0,
+            meaningfulRejectCount: 0,
+            dustRejectCount: 0,
+            avgExposureRatio: 0.2,
+            avgCashRatio: 0.8,
+            maxExposureRatio: 0.3,
+            minExposureRatio: 0.1,
+            timeInMarketRatio: 1,
+            finalCashRatio: 0.8,
+            finalPositionRatio: 0.2,
+            targetExposureRatio: 0.85,
+            averageTargetExposureGapRatio: 0.65,
+            finalTargetExposureGapRatio: 0.65
           }
         : null,
     reportPath:

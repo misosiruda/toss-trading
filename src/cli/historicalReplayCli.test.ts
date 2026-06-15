@@ -165,6 +165,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(output["completedCount"], 1);
   assert.equal(output["riskProfile"], "aggressive_paper");
   assert.deepEqual(output["paperExitPolicy"], {
+    takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
     stopLossRatio: 0.08,
     rebalanceMaxPositionWeightRatio: 0.55
@@ -173,6 +174,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(manifest["batchId"], "batch-cli");
   assert.equal(manifest["riskProfile"], "aggressive_paper");
   assert.deepEqual(manifest["paperExitPolicy"], {
+    takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
     stopLossRatio: 0.08,
     rebalanceMaxPositionWeightRatio: 0.55
@@ -205,6 +207,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
   assert.deepEqual(runConfiguration["paperExitPolicy"], {
+    takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
     stopLossRatio: 0.08,
     rebalanceMaxPositionWeightRatio: 0.55

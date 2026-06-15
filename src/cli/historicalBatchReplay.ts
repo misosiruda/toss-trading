@@ -272,14 +272,39 @@ function readPaperExitPolicyArg() {
   const rebalanceMaxPositionWeightRatio = readOptionalNumberArg(
     "--paper-rebalance-max-position-weight-ratio"
   );
+  const takeProfitMode = readTakeProfitModeArg();
+  const takeProfitSellRatio = readOptionalNumberArg(
+    "--paper-take-profit-sell-ratio"
+  );
+  const trailingStopFromPeakRatio = readOptionalNumberArg(
+    "--paper-trailing-stop-from-peak-ratio"
+  );
   const normalized = normalizePaperExitPolicy({
     ...(takeProfitRatio === undefined ? {} : { takeProfitRatio }),
     ...(stopLossRatio === undefined ? {} : { stopLossRatio }),
     ...(rebalanceMaxPositionWeightRatio === undefined
       ? {}
-      : { rebalanceMaxPositionWeightRatio })
+      : { rebalanceMaxPositionWeightRatio }),
+    ...(takeProfitMode === undefined ? {} : { takeProfitMode }),
+    ...(takeProfitSellRatio === undefined ? {} : { takeProfitSellRatio }),
+    ...(trailingStopFromPeakRatio === undefined
+      ? {}
+      : { trailingStopFromPeakRatio })
   });
   return normalized ?? undefined;
+}
+
+function readTakeProfitModeArg() {
+  const raw = readArgValue("--paper-take-profit-mode");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (raw === "full_exit" || raw === "partial_then_trail") {
+    return raw;
+  }
+  throw new Error(
+    "--paper-take-profit-mode must be full_exit or partial_then_trail"
+  );
 }
 
 function readRequiredSymbols():

@@ -373,7 +373,10 @@ test("historical replay runner executes paper exit policy on sampled-out provide
     result.samplingDecisions.map((item) => item.shouldEvaluate),
     [true, false]
   );
-  assert.deepEqual(result.paperExitPolicy, { takeProfitRatio: 0.15 });
+  assert.deepEqual(result.paperExitPolicy, {
+    takeProfitRatio: 0.15,
+    takeProfitMode: "full_exit"
+  });
   assert.equal(result.decisionProviderCallCount, 1);
   assert.equal(result.decisionSkippedCount, 1);
   assert.equal(result.decisionRecordCount, 2);

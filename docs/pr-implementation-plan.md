@@ -2264,6 +2264,41 @@
 - partial take-profit/trailing stop exit policy 변경
 - portfolio construction aggregate report 확장
 
+## PR-70: Paper Exit Policy Telemetry
+
+목표:
+
+- 기존 paper-only take-profit을 전량 매도 방식만이 아니라 partial take-profit 후 trailing stop 방식으로도 실험할 수 있게 합니다.
+- replay report와 batch aggregate report에 cash/exposure/time-in-market 지표를 추가해 현금 비중 문제를 분석할 수 있게 합니다.
+- dust/no-op close와 의미 있는 reject count를 분리해 risk reject 통계를 해석 가능하게 만듭니다.
+
+작업 범위:
+
+- `PaperExitPolicy`에 `takeProfitMode`, `takeProfitSellRatio`, `trailingStopFromPeakRatio` 추가
+- replay runner와 Codex replay runner에 종목별 paper-only exit state 추가
+- CLI 옵션 `--paper-take-profit-mode`, `--paper-take-profit-sell-ratio`, `--paper-trailing-stop-from-peak-ratio` 추가
+- run-level portfolio construction metric 계산
+- batch aggregate report에 exposure/cash/time-in-market/target gap/dust reject metric 추가
+- Historical Replay 문서와 PR review log 업데이트
+
+검증:
+
+- partial take-profit이 1회만 실행되고 이후 peak 대비 trailing stop에서 잔여 수량을 sell-all
+- stop-loss, take-profit, rebalance 우선순위 유지
+- normalized `paperExitPolicy`가 metadata/manifest/CLI output에 기록됨
+- report가 NaN 없이 zero NAV timeline을 처리
+- `npm test`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- 수익률 보장 또는 목표 수익률 강제
+- strategy 자동 최적화
+- live `TradingSignal` 또는 `OrderIntent` 연결
+- live trading 또는 broker adapter 연결
+- raw `codex exec` 또는 raw `tossctl` MCP tool 노출
+
 ## Later PRs
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.

@@ -125,7 +125,12 @@ export const historicalReplayRunConfigurationSchema = z
       .object({
         takeProfitRatio: z.number().gt(0).max(10).optional(),
         stopLossRatio: z.number().gt(0).max(1).optional(),
-        rebalanceMaxPositionWeightRatio: z.number().gt(0).max(1).optional()
+        rebalanceMaxPositionWeightRatio: z.number().gt(0).max(1).optional(),
+        takeProfitMode: z
+          .enum(["full_exit", "partial_then_trail"])
+          .optional(),
+        takeProfitSellRatio: z.number().gt(0).max(1).optional(),
+        trailingStopFromPeakRatio: z.number().gt(0).max(1).optional()
       })
       .strict()
       .nullable()

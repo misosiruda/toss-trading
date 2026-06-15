@@ -33,13 +33,13 @@ import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
+import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import {
   normalizePaperExitPolicy,
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
-import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
