@@ -96,6 +96,7 @@ test("aggressive paper replay prompt uses separate paper-only policy", () => {
   assert.match(config.prompt ?? "", /15-30% returns/);
   assert.match(config.prompt ?? "", /buyEligible=true/);
   assert.match(config.prompt ?? "", /maxBudgetPerSymbolKrw/);
+  assert.match(config.prompt ?? "", /marketAllocations/);
   assert.match(config.prompt ?? "", /VIRTUAL_HOLD remains required/);
 });
 
