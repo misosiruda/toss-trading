@@ -209,6 +209,41 @@ npm run build
 - 실패 메시지가 개발자가 바로 고칠 수 있는 수준으로 명확하다.
 - `npm run check`가 build, quality gate, test를 한 번에 실행한다.
 
+## Phase 7. Dashboard Module 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/apiClient.js`
+- `dashboard/dom.js`
+- `dashboard/formatters.js`
+- `dashboard/metadata.js`
+- `dashboard/router.js`
+- `dashboard/state.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.ts`
+- `scripts/qualityGate.mjs`
+
+목표:
+
+- 3천 라인 이상으로 커진 dashboard entrypoint에서 fetch, routing, state, formatting, DOM helper, symbol metadata helper를 분리한다.
+- browser가 직접 로드하는 ES module 구조를 유지하고 bundler나 새 dependency를 추가하지 않는다.
+- Local Operations API의 static asset allowlist와 dashboard import graph가 drift되지 않게 quality gate에서 검증한다.
+- dashboard renderer는 후속 PR에서 더 작게 분리할 수 있도록 `app.js`에 남겨 behavior change를 줄인다.
+
+금지:
+
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- Local Operations API `GET`/`HEAD` read-only guard 약화
+- bundler, framework, formatter 도입을 같은 PR에 포함
+
+완료 기준:
+
+- `dashboard/app.js`가 support module을 import한다.
+- 새 dashboard module이 Local Operations API asset allowlist로 서빙된다.
+- `scripts/qualityGate.mjs`가 dashboard endpoint와 module asset drift를 검증한다.
+- `npm run check`가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인

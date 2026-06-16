@@ -132,17 +132,40 @@ test("local operations API serves read-only dashboard assets", async () => {
   try {
     const html = await fetchText(baseUrl, "/dashboard");
     const script = await fetchText(baseUrl, "/dashboard/app.js");
+    const moduleScripts = await Promise.all(
+      [
+        "/dashboard/apiClient.js",
+        "/dashboard/dom.js",
+        "/dashboard/formatters.js",
+        "/dashboard/metadata.js",
+        "/dashboard/router.js",
+        "/dashboard/state.js"
+      ].map((path) => fetchText(baseUrl, path))
+    );
     const rootScript = await fetchText(baseUrl, "/app.js");
+    const rootModuleScript = await fetchText(baseUrl, "/apiClient.js");
     const rootStyles = await fetchText(baseUrl, "/styles.css");
     const replayPage = await fetchText(baseUrl, "/dashboard/virtual-replays");
     const summaryPage = await fetchText(baseUrl, "/dashboard/batch-summary");
+    const dashboardScriptText = [
+      script.text,
+      ...moduleScripts.map((moduleScript) => moduleScript.text)
+    ].join("\n");
 
     assert.equal(html.response.status, 200);
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
     assert.equal(replayPage.response.status, 200);
     assert.equal(summaryPage.response.status, 200);
     assert.equal(rootScript.response.status, 200);
+    assert.equal(rootModuleScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
+    for (const moduleScript of moduleScripts) {
+      assert.equal(moduleScript.response.status, 200);
+      assert.match(
+        moduleScript.response.headers.get("content-type") ?? "",
+        /text\/javascript/
+      );
+    }
     assert.match(html.text, /가상 투자 대시보드/);
     assert.match(html.text, /href="styles.css"/);
     assert.match(html.text, /src="app.js"/);
@@ -188,20 +211,26 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="portfolio-risk-status"/);
     assert.match(html.text, /id="portfolio-risk-detail"/);
     assert.equal(script.response.status, 200);
-    assert.match(script.text, /\/virtual\/portfolio/);
-    assert.match(script.text, /\/paper\/report/);
-    assert.match(script.text, /\/replay\/report/);
-    assert.match(script.text, /\/replay\/progress/);
-    assert.match(script.text, /\/batch\/replay\/report/);
-    assert.match(script.text, /\/batch\/replay\/runs/);
-    assert.match(script.text, /\/audit\/events/);
+    assert.match(script.text, /from "\.\/apiClient\.js"/);
+    assert.match(script.text, /from "\.\/dom\.js"/);
+    assert.match(script.text, /from "\.\/formatters\.js"/);
+    assert.match(script.text, /from "\.\/metadata\.js"/);
+    assert.match(script.text, /from "\.\/router\.js"/);
+    assert.match(script.text, /from "\.\/state\.js"/);
+    assert.match(dashboardScriptText, /\/virtual\/portfolio/);
+    assert.match(dashboardScriptText, /\/paper\/report/);
+    assert.match(dashboardScriptText, /\/replay\/report/);
+    assert.match(dashboardScriptText, /\/replay\/progress/);
+    assert.match(dashboardScriptText, /\/batch\/replay\/report/);
+    assert.match(dashboardScriptText, /\/batch\/replay\/runs/);
+    assert.match(dashboardScriptText, /\/audit\/events/);
     for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
-      assert.equal(script.text.includes(routePath), true, routePath);
+      assert.equal(dashboardScriptText.includes(routePath), true, routePath);
     }
-    assert.match(script.text, /fetchEndpointData/);
-    assert.match(script.text, /endpointFailures/);
-    assert.match(script.text, /applyDashboardRoute/);
-    assert.match(script.text, /showFileModeNotice/);
+    assert.match(dashboardScriptText, /fetchEndpointData/);
+    assert.match(dashboardScriptText, /endpointFailures/);
+    assert.match(dashboardScriptText, /applyDashboardRoute/);
+    assert.match(dashboardScriptText, /showFileModeNotice/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
     assert.match(script.text, /renderReplayProgress/);
@@ -231,7 +260,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /decisionOutcomeRow/);
     assert.match(script.text, /decisionRationale/);
     assert.match(script.text, /리스크 요인/);
-    assert.doesNotMatch(script.text, /\bPOST\b|\bPUT\b|\bDELETE\b/);
+    assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
   }

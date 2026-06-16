@@ -34,6 +34,18 @@ export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
 export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/dashboard/app.js",
   "/app.js",
+  "/dashboard/apiClient.js",
+  "/apiClient.js",
+  "/dashboard/dom.js",
+  "/dom.js",
+  "/dashboard/formatters.js",
+  "/formatters.js",
+  "/dashboard/metadata.js",
+  "/metadata.js",
+  "/dashboard/router.js",
+  "/router.js",
+  "/dashboard/state.js",
+  "/state.js",
   "/dashboard/styles.css",
   "/styles.css"
 ] as const;

@@ -649,9 +649,14 @@ function readDashboardAsset(pathname: string): DashboardAsset | null {
     return null;
   }
 
+  const fileName = pathname.split("/").at(-1);
+  if (fileName === undefined || fileName.length === 0) {
+    return null;
+  }
+
   if (pathname.endsWith(".js")) {
     return {
-      fileName: "app.js",
+      fileName,
       contentType: "text/javascript; charset=utf-8"
     };
   }
