@@ -278,6 +278,40 @@ npm run build
 - `scripts/qualityGate.mjs`가 server bootstrap 책임 drift를 검증한다.
 - `npm run check`가 통과한다.
 
+## Phase 9. Dashboard Report Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/reportRenderers.js`
+- `dashboard/reportViewHelpers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `scripts/qualityGate.mjs`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 daily report, historical replay report, batch replay aggregate report DOM renderer를 별도 module로 이동한다.
+- 여러 dashboard renderer가 공유하는 report label/summary helper를 `reportViewHelpers.js`로 분리한다.
+- browser가 직접 로드하는 nested ES module이 Local Operations API asset allowlist와 quality gate에서 같이 검증되게 한다.
+- `app.js`는 dashboard bootstrap, refresh orchestration, page별 renderer composition 중심으로 줄인다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- report 문구를 투자 조언이나 수익률 보장처럼 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 report renderer module을 import하고 daily/replay/batch report renderer 구현을 직접 보유하지 않는다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- `scripts/qualityGate.mjs`가 dashboard import graph를 따라 nested module allowlist drift를 검증한다.
+- `npm run check`와 browser dashboard smoke 확인이 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인

@@ -185,6 +185,8 @@ flowchart TD
 - `dashboard/dom.js`
 - `dashboard/formatters.js`
 - `dashboard/metadata.js`
+- `dashboard/reportRenderers.js`
+- `dashboard/reportViewHelpers.js`
 - `dashboard/router.js`
 - `dashboard/state.js`
 - `dashboard/styles.css`
@@ -240,6 +242,9 @@ flowchart TD
 | `src/api/localOperationsReaders.ts` | storage/report artifact read-only payload 생성 |
 | `src/api/localOperationsDashboardAssets.ts` | dashboard document/module/static asset 매핑과 응답 |
 | `src/api/localOperationsResponse.ts` | masked JSON response writer |
+| `dashboard/app.js` | dashboard bootstrap, refresh orchestration, renderer composition |
+| `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
+| `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
 | `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |
 | `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |

@@ -37,6 +37,7 @@ function assertBacktickedName(text, name, label) {
 
 const packageJson = readJson("package.json");
 const dashboardScript = readText("dashboard/app.js");
+const dashboardModuleImports = readDashboardModuleImportGraph("app.js");
 const dashboardApiClientScript = readText("dashboard/apiClient.js");
 const localOperationsServerSource = readText("src/api/localOperationsServer.ts");
 const mcpToolsDoc = readText("docs/mcp-tools.md");
@@ -57,8 +58,7 @@ for (const route of LOCAL_OPERATIONS_API_ROUTES) {
   );
 }
 
-for (const fileName of readDashboardModuleImports(dashboardScript)) {
-  readText(`dashboard/${fileName}`);
+for (const fileName of dashboardModuleImports) {
   assert(
     LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS.includes(`/dashboard/${fileName}`),
     `dashboard asset allowlist must include /dashboard/${fileName}`
@@ -157,6 +157,18 @@ function readDashboardEndpointPaths(source) {
     paths.add(new URL(endpoint, "http://127.0.0.1").pathname);
   }
   return paths;
+}
+
+function readDashboardModuleImportGraph(entryFileName, visited = new Set()) {
+  const source = readText(`dashboard/${entryFileName}`);
+  for (const fileName of readDashboardModuleImports(source)) {
+    if (visited.has(fileName)) {
+      continue;
+    }
+    visited.add(fileName);
+    readDashboardModuleImportGraph(fileName, visited);
+  }
+  return visited;
 }
 
 function readDashboardModuleImports(source) {
