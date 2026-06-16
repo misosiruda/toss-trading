@@ -1711,8 +1711,12 @@ function setGoalProgressBar(id, value) {
     value === null || value === undefined || !Number.isFinite(Number(value))
       ? 0
       : Math.max(0, Math.min(1, Number(value)));
+  const progressValue = Math.round(progress * 100);
   node.style.width = `${Math.max(2, progress * 100)}%`;
   node.className = Number(value ?? 0) >= 1 ? "positive" : "";
+  if (node.parentElement?.classList.contains("goal-progress-track")) {
+    node.parentElement.setAttribute("aria-valuenow", String(progressValue));
+  }
 }
 
 function portfolioPerformanceTimeline(data) {

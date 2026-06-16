@@ -171,6 +171,18 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(rootReportRenderersScript.response.status, 200);
     assert.equal(rootReportViewHelpersScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
+    assert.equal(
+      rootStyles.text.includes(
+        'html[data-dashboard-page="virtual-replays"] .metric-grid'
+      ),
+      true
+    );
+    assert.equal(
+      rootStyles.text.includes(
+        'html[data-dashboard-page="batch-summary"] .metric-grid'
+      ),
+      true
+    );
     for (const moduleScript of moduleScripts) {
       assert.equal(moduleScript.response.status, 200);
       assert.match(
@@ -179,6 +191,7 @@ test("local operations API serves read-only dashboard assets", async () => {
       );
     }
     assert.match(html.text, /가상 투자 대시보드/);
+    assert.match(html.text, /document\.documentElement\.dataset\.dashboardPage/);
     assert.match(html.text, /href="styles.css"/);
     assert.match(html.text, /src="app.js"/);
     assert.match(html.text, /data-dashboard-route="overview"/);
@@ -204,6 +217,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="event-gap-detail"/);
     assert.match(html.text, /id="income-goal-heading"/);
     assert.match(html.text, /id="goal-target-progress"/);
+    assert.match(html.text, /role="progressbar"/);
+    assert.match(html.text, /aria-valuenow="0"/);
     assert.match(html.text, /id="income-goal-detail"/);
     assert.match(html.text, /id="report-detail"/);
     assert.match(html.text, /id="replay-heading"/);
@@ -244,6 +259,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /fetchEndpointData/);
     assert.match(dashboardScriptText, /endpointFailures/);
     assert.match(dashboardScriptText, /applyDashboardRoute/);
+    assert.match(dashboardScriptText, /dataset\.dashboardPage = page/);
     assert.match(dashboardScriptText, /showFileModeNotice/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
@@ -264,6 +280,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /renderExposureBreakdown/);
     assert.match(script.text, /renderEventCoverage/);
     assert.match(script.text, /renderIncomeGoalPanel/);
+    assert.match(script.text, /aria-valuenow/);
     assert.match(script.text, /scheduleReplayProgressPolling/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
     assert.match(script.text, /renderDecisionTimeline/);
