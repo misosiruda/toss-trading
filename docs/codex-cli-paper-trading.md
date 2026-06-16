@@ -176,127 +176,37 @@ candidate별 `featureScores`는 backend가 `featureRefs`에 연결해 계산한 
 
 ## Virtual Decision Schema
 
-paper order를 만들기 전에 Codex output은 반드시 schema validation을 통과해야 합니다. 현재 런타임 계약은 `schemas/virtual-decision.schema.json`과 `virtualDecisionSchema`의 camelCase 필드를 기준으로 합니다.
+paper order를 만들기 전에 Codex output은 반드시 schema validation과 packet-bound semantic validation을 통과해야 합니다. 계약의 source of truth는 역할별로 나눕니다.
 
-기본 필수 필드는 다음과 같습니다.
+| 위치 | 역할 |
+| --- | --- |
+| `src/domain/schemas.ts` | runtime/storage Zod schema. 저장 record에 backend-generated `decisionHash`, decision item의 `confidenceBreakdown`을 허용합니다. |
+| `schemas/virtual-decision.schema.json` | Codex CLI `--output-schema` artifact. AI가 직접 출력할 수 있는 field만 허용하며 `decisionHash`, `confidenceBreakdown`은 포함하지 않습니다. |
+| `src/paper/virtualDecisionValidation.ts` | packet identity, source refs, feature refs, claim support, action eligibility를 실제 `MarketPacket`에 묶어 검증합니다. |
+| `src/ai/decisionPrompt.ts` | Codex CLI가 output schema와 같은 contract를 따르도록 지시하는 prompt source입니다. |
 
-```json
-{
-  "type": "object",
-  "required": [
-    "packetId",
-    "packetHash",
-    "promptVersion",
-    "modelId",
-    "schemaVersion",
-    "policyVersion",
-    "decisions",
-    "summary"
-  ],
-  "additionalProperties": false,
-  "properties": {
-    "packetId": { "type": "string" },
-    "packetHash": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$"
-    },
-    "promptVersion": { "type": "string" },
-    "modelId": { "type": "string" },
-    "schemaVersion": { "type": "string" },
-    "policyVersion": { "type": "string" },
-    "summary": { "type": "string" },
-    "decisions": {
-      "type": "array",
-      "maxItems": 20,
-      "items": {
-        "type": "object",
-        "required": [
-          "symbol",
-          "market",
-          "action",
-          "confidence",
-          "budgetKrw",
-          "thesis",
-          "riskFactors",
-          "dataRefs",
-          "claimSupport",
-          "expiresAt"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "symbol": { "type": "string" },
-          "market": { "type": "string", "enum": ["KR", "US"] },
-          "action": {
-            "type": "string",
-            "enum": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-          },
-          "holdReasonCode": {
-            "type": "string",
-            "enum": [
-              "INSUFFICIENT_EVIDENCE",
-              "STALE_DATA",
-              "CONTRADICTORY_SIGNALS",
-              "POLICY_BLOCKED",
-              "PORTFOLIO_CONFLICT",
-              "NO_POSITION_TO_SELL",
-              "NOT_IN_CANDIDATES",
-              "LOW_LIQUIDITY"
-            ]
-          },
-          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-          "budgetKrw": { "type": "integer", "minimum": 0 },
-          "maxBudgetKrw": { "type": "integer", "minimum": 0 },
-          "sellQuantity": { "type": "number", "exclusiveMinimum": 0 },
-          "sellRatio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-          "targetWeightPct": { "type": "number", "minimum": 0, "maximum": 1 },
-          "sellAll": { "type": "boolean" },
-          "reduceOnly": { "type": "boolean" },
-          "thesis": { "type": "string" },
-          "riskFactors": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "dataRefs": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "featureRefs": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "claimSupport": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "object",
-              "required": ["claim"],
-              "anyOf": [
-                { "required": ["dataRefs"] },
-                { "required": ["featureRefs"] }
-              ],
-              "additionalProperties": false,
-              "properties": {
-                "claim": { "type": "string" },
-                "dataRefs": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": { "type": "string" }
-                },
-                "featureRefs": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": { "type": "string" }
-                }
-              }
-            }
-          },
-          "expiresAt": { "type": "string" }
-        }
-      }
-    }
-  }
-}
+Codex output schema는 Codex CLI output schema 호환성을 위해 `type`, `enum`, `required`, `additionalProperties`, `anyOf`, `properties`, `items` 중심의 제한된 JSON Schema subset만 사용합니다. 길이, 수치 범위, freshness, packet hash 일치, candidate ref 일치 같은 세부 제약은 Zod schema와 semantic validator에서 fail-closed로 다시 검증합니다.
+
+Codex output의 top-level 필수 field:
+
+```text
+packetId
+packetHash
+promptVersion
+modelId
+schemaVersion
+policyVersion
+summary
+decisions
 ```
+
+Decision item은 action별 branch를 사용합니다.
+
+- `VIRTUAL_HOLD`: `holdReasonCode`가 필수이고 SELL sizing field는 output schema에서 허용하지 않습니다.
+- `VIRTUAL_BUY`: `budgetKrw`와 evidence field를 포함합니다.
+- `VIRTUAL_SELL`: `reduceOnly`가 필수이며 `sellQuantity`, `sellRatio`, `targetWeightPct`, `sellAll` 같은 v2 sizing hint를 허용합니다.
+
+모든 decision item은 `dataRefs`와 `claimSupport`를 포함해야 합니다. `featureRefs`는 optional이며 같은 candidate의 `featureRefs`에서 복사한 값만 semantic validator를 통과합니다. `claimSupport` entry는 `claim`과 함께 `dataRefs` 또는 `featureRefs` 중 하나 이상을 포함해야 합니다.
 
 저장된 `VirtualDecision` record에는 backend-generated `decisionHash`가 추가될 수 있습니다. 이 값은 Codex output field가 아니며 `schemas/virtual-decision.schema.json`에도 포함하지 않습니다. backend는 validation을 통과한 decision을 저장하기 직전에 `decisionHash` 자신을 제외한 stable JSON을 `sha256:<hex>`로 계산해 붙입니다.
 
@@ -339,7 +249,7 @@ AI decision의 `budgetKrw`, `sellQuantity`, `sellRatio`, `targetWeightPct`, `sel
 {
   "packetId": "packet_2026-06-12T09:00:00+09:00",
   "packetHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "promptVersion": "paper-v10",
+  "promptVersion": "paper-v12",
   "modelId": "codex-cli-unspecified",
   "schemaVersion": "virtual-decision.schema.v1",
   "policyVersion": "paper-risk-policy.v1",
@@ -378,7 +288,7 @@ AI decision의 `budgetKrw`, `sellQuantity`, `sellRatio`, `targetWeightPct`, `sel
 codex exec `
   --sandbox read-only `
   --output-schema .\schemas\virtual-decision.schema.json `
-  "Use only the provided packetHash and marketPacket. Return virtual_decision JSON only."
+  "Use only the provided packetHash and marketPacket. Return one VirtualDecision JSON object only."
 ```
 
 stdin은 backend provider가 다음 형태로 구성합니다.
@@ -386,7 +296,7 @@ stdin은 backend provider가 다음 형태로 구성합니다.
 ```json
 {
   "packetHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "promptVersion": "paper-v10",
+  "promptVersion": "paper-v12",
   "modelId": "codex-cli-unspecified",
   "schemaVersion": "virtual-decision.schema.v1",
   "policyVersion": "paper-risk-policy.v1",

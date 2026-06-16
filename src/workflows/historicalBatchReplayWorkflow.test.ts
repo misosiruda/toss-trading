@@ -256,7 +256,7 @@ test("historical batch replay runner can inject Codex-style provider per run", a
       sandbox: "read-only",
       allowWebSearch: false,
       promptPolicy: "aggressive_paper",
-      promptVersion: "paper-v11-historical-replay-aggressive-paper-v1"
+      promptVersion: "paper-v12-historical-replay-aggressive-paper-v1"
     }
   });
   const manifest = JSON.parse(
@@ -276,7 +276,7 @@ test("historical batch replay runner can inject Codex-style provider per run", a
   assert.equal(manifestProvider["promptPolicy"], "aggressive_paper");
   assert.equal(
     manifestProvider["promptVersion"],
-    "paper-v11-historical-replay-aggressive-paper-v1"
+    "paper-v12-historical-replay-aggressive-paper-v1"
   );
   assert.equal(
     (runRecords[0]?.["summary"] as Record<string, unknown>)["decisionProviderCallCount"],
