@@ -15,7 +15,7 @@ toss-trading/
 ├── package.json               # Node.js scripts와 의존성
 ├── tsconfig.json              # TypeScript strict compiler 설정
 ├── .codex/                    # Codex MCP 설정 예시
-├── dashboard/                 # read-only local dashboard 정적 파일
+├── dashboard/                 # read-only local dashboard ES module 정적 파일
 ├── data/                      # 로컬 실행 산출물. Git source of truth 아님
 ├── docs/                      # 아키텍처, 정책, 운영, 리팩토링 문서
 ├── scripts/                   # dependency-free quality gate와 유지보수 스크립트
@@ -176,6 +176,12 @@ flowchart TD
 - `src/api/localOperationsServer.ts`
 - `dashboard/index.html`
 - `dashboard/app.js`
+- `dashboard/apiClient.js`
+- `dashboard/dom.js`
+- `dashboard/formatters.js`
+- `dashboard/metadata.js`
+- `dashboard/router.js`
+- `dashboard/state.js`
 - `dashboard/styles.css`
 - `docs/historical-replay.md`
 
@@ -223,7 +229,7 @@ flowchart TD
 
 | 위치 | 역할 |
 | --- | --- |
-| `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard static path 기준 |
+| `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard ES module/static path 기준 |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
 | `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |
 | `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |

@@ -1,53 +1,58 @@
-const state = {
-  decisionItems: [],
-  filters: {
-    action: "ALL",
-    symbol: ""
-  },
-  auditEvents: [],
-  riskDecisions: [],
-  trades: [],
-  performancePoints: [],
-  symbolMetadata: new Map(),
-  currentPage: "overview",
-  selectedBatchRunIndex: 0,
-  refreshStartedAt: null,
-  batchRunsTimer: null,
-  batchRunsInFlight: false,
-  replayProgressTimer: null,
-  replayProgressInFlight: false,
-  replayProgressStatus: null
-};
-
-const replayProgressPollMs = 3000;
-const batchRunsPollMs = 5000;
-
-const endpoints = {
-  health: "/health",
-  portfolio: "/virtual/portfolio",
-  decisions: "/virtual/decisions?limit=20",
-  trades: "/virtual/trades?limit=20",
-  report: "/paper/report",
-  replay: "/replay/report",
-  replayProgress: "/replay/progress",
-  batchReplay: "/batch/replay/report",
-  batchRuns: "/batch/replay/runs?limit=50",
-  scheduler: "/scheduler/status",
-  source: "/source/health",
-  packets: "/market/packets?limit=5",
-  audit: "/audit/events?limit=100"
-};
-
-const fallbackSymbolMetadata = new Map([
-  ["KR:000660", { name: "SK하이닉스", sector: "정보기술", industry: "반도체" }],
-  ["KR:005930", { name: "삼성전자", sector: "정보기술", industry: "반도체" }],
-  ["KR:028300", { name: "HLB", sector: "헬스케어", industry: "바이오/제약" }],
-  ["KR:035420", { name: "NAVER", sector: "커뮤니케이션서비스", industry: "인터넷/플랫폼" }],
-  ["KR:035900", { name: "JYP Ent.", sector: "커뮤니케이션서비스", industry: "엔터테인먼트" }],
-  ["KR:042660", { name: "한화오션", sector: "산업재", industry: "조선" }]
-]);
-
-const fileModeDashboardUrl = "http://127.0.0.1:8787/dashboard";
+import {
+  endpointErrorMessage,
+  endpointFailures,
+  endpoints,
+  fetchEndpointData,
+  fetchJson
+} from "./apiClient.js";
+import {
+  appendDefinition,
+  appendEmptyRow,
+  cell,
+  clear,
+  emptyState,
+  hideError,
+  paragraph,
+  setProgressBar,
+  setStatus,
+  setText,
+  setValueTone,
+  showError,
+  statusClass,
+  svgNode
+} from "./dom.js";
+import {
+  average,
+  compactKrw,
+  formatDateOnly,
+  formatDateTime,
+  formatDurationMs,
+  formatExposureBreakdown,
+  formatKrw,
+  formatPercent,
+  formatQuantity,
+  formatRatio,
+  formatSignedKrw,
+  formatSignedRatio,
+  performanceBottleneckLabel,
+  valueToneClass
+} from "./formatters.js";
+import {
+  enrichCandidateForDisplay,
+  enrichPositionForDisplay,
+  metadataForSymbol,
+  registerSymbolMetadata,
+  symbolCodeText,
+  symbolDisplayName,
+  symbolDisplayText
+} from "./metadata.js";
+import { bindDashboardNavigation } from "./router.js";
+import {
+  batchRunsPollMs,
+  fileModeDashboardUrl,
+  replayProgressPollMs,
+  state
+} from "./state.js";
 
 document.getElementById("refresh-button")?.addEventListener("click", () => {
   if (isFileMode()) {
@@ -57,27 +62,11 @@ document.getElementById("refresh-button")?.addEventListener("click", () => {
   void loadDashboard().catch(() => undefined);
 });
 
-document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
-  const route = link.getAttribute("data-dashboard-route") ?? "overview";
-  const path = dashboardPathForRoute(route);
-  if (isFileMode()) {
-    link.setAttribute("href", `${fileModeDashboardUrl}${path}`);
-  }
-
-  link.addEventListener("click", (event) => {
-    if (!(link instanceof HTMLAnchorElement)) {
-      return;
-    }
-    if (isFileMode()) {
-      return;
-    }
-    event.preventDefault();
-    history.pushState({}, "", link.href);
-    applyDashboardRoute();
-  });
+const dashboardNavigation = bindDashboardNavigation({
+  isFileMode,
+  onVirtualReplaysPage: () => void refreshBatchRuns().catch(() => undefined),
+  onOtherPage: clearBatchRunsPolling
 });
-
-window.addEventListener("popstate", applyDashboardRoute);
 
 document.querySelectorAll("[data-action-filter]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -93,7 +82,7 @@ document.getElementById("symbol-filter")?.addEventListener("input", (event) => {
   renderDecisionTimeline();
 });
 
-applyDashboardRoute();
+dashboardNavigation.applyDashboardRoute();
 if (isFileMode()) {
   showFileModeNotice();
 } else {
@@ -117,38 +106,6 @@ async function loadDashboard() {
   }
 }
 
-async function fetchEndpointData() {
-  const entries = await Promise.all(
-    Object.entries(endpoints).map(async ([key, path]) => {
-      try {
-        return [key, await fetchJson(path)];
-      } catch (error) {
-        return [key, { error: endpointErrorMessage(path, error) }];
-      }
-    })
-  );
-  return Object.fromEntries(entries);
-}
-
-function endpointFailures(data) {
-  return Object.entries(data)
-    .filter(([, value]) => value?.error)
-    .map(([key]) => key);
-}
-
-async function fetchJson(path) {
-  const response = await fetch(path, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`${path} returned ${response.status}`);
-  }
-  return await response.json();
-}
-
-function endpointErrorMessage(path, error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return `${path}: ${message}`;
-}
-
 function isFileMode() {
   return window.location.protocol === "file:";
 }
@@ -158,65 +115,6 @@ function showFileModeNotice() {
   showError(
     `대시보드는 로컬 운영 API가 필요합니다. ${fileModeDashboardUrl} 로 열어주세요.`
   );
-}
-
-function applyDashboardRoute() {
-  const page = dashboardPageFromPath(window.location.pathname);
-  state.currentPage = page;
-
-  document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
-    const route = link.getAttribute("data-dashboard-route") ?? "overview";
-    link.classList.toggle("active", route === page);
-    if (route === page) {
-      link.setAttribute("aria-current", "page");
-    } else {
-      link.removeAttribute("aria-current");
-    }
-  });
-
-  document.querySelectorAll(".metric-grid").forEach((section) => {
-    section.hidden = page !== "overview";
-  });
-
-  document.querySelectorAll(".content-grid > .panel").forEach((panel) => {
-    const pageAttribute = panel.getAttribute("data-dashboard-page");
-    const pages =
-      pageAttribute === null ? ["overview"] : pageAttribute.split(/\s+/);
-    panel.hidden = !pages.includes(page);
-  });
-
-  document.title = `${dashboardPageLabel(page)} - Toss Trading Paper Dashboard`;
-  if (page === "virtual-replays" && !isFileMode()) {
-    void refreshBatchRuns().catch(() => undefined);
-  } else {
-    clearBatchRunsPolling();
-  }
-}
-
-function dashboardPageFromPath(pathname) {
-  if (pathname.startsWith("/dashboard/virtual-replays")) {
-    return "virtual-replays";
-  }
-  if (pathname.startsWith("/dashboard/batch-summary")) {
-    return "batch-summary";
-  }
-  return "overview";
-}
-
-function dashboardPageLabel(page) {
-  return {
-    overview: "개요",
-    "virtual-replays": "가상 투자",
-    "batch-summary": "총합 결과"
-  }[page] ?? "개요";
-}
-
-function dashboardPathForRoute(route) {
-  return {
-    overview: "",
-    "virtual-replays": "/virtual-replays",
-    "batch-summary": "/batch-summary"
-  }[route] ?? "";
 }
 
 function rememberSymbolMetadata(data) {
@@ -234,99 +132,6 @@ function rememberSymbolMetadata(data) {
   for (const trade of data?.trades?.trades ?? data?.replayProgress?.progress?.recentTrades ?? []) {
     registerSymbolMetadata(trade);
   }
-}
-
-function registerSymbolMetadata(item) {
-  if (!item?.market || !item?.symbol) {
-    return;
-  }
-  const key = symbolKey(item.market, item.symbol);
-  const current = state.symbolMetadata.get(key) ?? {};
-  const fallback = fallbackSymbolMetadata.get(key) ?? {};
-  state.symbolMetadata.set(key, {
-    name: cleanMetadataValue(item.name) ?? current.name ?? fallback.name ?? null,
-    sector:
-      cleanMetadataValue(item.sector ?? item.category) ??
-      current.sector ??
-      fallback.sector ??
-      null,
-    industry:
-      cleanMetadataValue(item.industry ?? item.theme) ??
-      current.industry ??
-      fallback.industry ??
-      null
-  });
-}
-
-function symbolKey(market, symbol) {
-  return `${market ?? ""}:${symbol ?? ""}`;
-}
-
-function cleanMetadataValue(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const normalized = value.trim();
-  return normalized.length ? normalized : null;
-}
-
-function metadataForSymbol(market, symbol, item = {}) {
-  const key = symbolKey(market, symbol);
-  const remembered = state.symbolMetadata.get(key) ?? {};
-  const fallback = fallbackSymbolMetadata.get(key) ?? {};
-  return {
-    name: cleanMetadataValue(item.name) ?? remembered.name ?? fallback.name ?? null,
-    sector:
-      cleanMetadataValue(item.sector ?? item.category) ??
-      remembered.sector ??
-      fallback.sector ??
-      null,
-    industry:
-      cleanMetadataValue(item.industry ?? item.theme) ??
-      remembered.industry ??
-      fallback.industry ??
-      null
-  };
-}
-
-function symbolCodeText(market, symbol) {
-  if (market && symbol) {
-    return `${market}:${symbol}`;
-  }
-  return symbol ?? market ?? "-";
-}
-
-function symbolDisplayName(market, symbol, item = {}) {
-  return metadataForSymbol(market, symbol, item).name ?? symbol ?? "-";
-}
-
-function symbolDisplayText(market, symbol, item = {}) {
-  const name = symbolDisplayName(market, symbol, item);
-  const code = symbolCodeText(market, symbol);
-  return name && name !== symbol && name !== code ? `${name} (${code})` : code;
-}
-
-function enrichPositionForDisplay(position, candidate = {}) {
-  const metadata = metadataForSymbol(position?.market, position?.symbol, {
-    ...candidate,
-    ...position
-  });
-  return {
-    ...position,
-    name: metadata.name ?? position?.name,
-    sector: metadata.sector ?? position?.sector,
-    industry: metadata.industry ?? position?.industry
-  };
-}
-
-function enrichCandidateForDisplay(candidate) {
-  const metadata = metadataForSymbol(candidate?.market, candidate?.symbol, candidate);
-  return {
-    ...candidate,
-    name: metadata.name ?? candidate?.name,
-    sector: metadata.sector ?? candidate?.sector,
-    industry: metadata.industry ?? candidate?.industry
-  };
 }
 
 function renderDashboard(data) {
@@ -3227,274 +3032,6 @@ function symbolCell(market, symbol, item = {}) {
   return td;
 }
 
-function cell(value, className) {
-  const td = document.createElement("td");
-  if (className) {
-    td.className = className;
-  }
-  td.textContent = value ?? "-";
-  return td;
-}
-
-function paragraph(value) {
-  const node = document.createElement("p");
-  node.className = "decision-text";
-  node.textContent = value ?? "-";
-  return node;
-}
-
-function appendDefinition(list, term, description) {
-  const dt = document.createElement("dt");
-  dt.textContent = term;
-  const dd = document.createElement("dd");
-  dd.textContent = description ?? "-";
-  list.append(dt, dd);
-}
-
-function appendEmptyRow(body, colspan, message) {
-  const row = document.createElement("tr");
-  const empty = document.createElement("td");
-  empty.colSpan = colspan;
-  empty.append(emptyState(message));
-  row.append(empty);
-  body.append(row);
-}
-
-function emptyState(message) {
-  const node = document.createElement("div");
-  node.className = "empty-state";
-  node.textContent = message;
-  return node;
-}
-
-function setText(id, value) {
-  const node = document.getElementById(id);
-  if (node) {
-    node.textContent = value ?? "-";
-  }
-}
-
-function setStatus(id, status, text) {
-  const node = document.getElementById(id);
-  if (!node) {
-    return;
-  }
-  node.className = `status-pill ${statusClass(status)}`;
-  node.textContent = text;
-}
-
-function setProgressBar(id, percent) {
-  const node = document.getElementById(id);
-  if (node) {
-    node.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
-  }
-}
-
-function statusClass(status) {
-  if (status === "ok" || status === "completed") {
-    return "ok";
-  }
-  if (
-    status === "degraded" ||
-    status === "loading" ||
-    status === "unknown" ||
-    status === "running" ||
-    status === "skipped" ||
-    status === "completed_with_failures"
-  ) {
-    return "degraded";
-  }
-  if (
-    status === "error" ||
-    status === "blocked" ||
-    status === "corrupt" ||
-    status === "failed"
-  ) {
-    return "error";
-  }
-  return "neutral";
-}
-
-function clear(node) {
-  if (node) {
-    node.replaceChildren();
-  }
-}
-
-function showError(message) {
-  const banner = document.getElementById("error-banner");
-  if (!banner) {
-    return;
-  }
-  banner.textContent = message;
-  banner.hidden = false;
-}
-
-function hideError() {
-  const banner = document.getElementById("error-banner");
-  if (banner) {
-    banner.hidden = true;
-  }
-}
-
-function formatKrw(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return `${new Intl.NumberFormat("ko-KR").format(Number(value))}원`;
-}
-
-function formatSignedKrw(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  const number = Number(value);
-  const prefix = number > 0 ? "+" : "";
-  return `${prefix}${formatKrw(number)}`;
-}
-
-function compactKrw(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return `${new Intl.NumberFormat("ko-KR", {
-    notation: "compact",
-    maximumFractionDigits: 1
-  }).format(Number(value))}원`;
-}
-
-function formatExposureBreakdown(values) {
-  const entries = Object.entries(values ?? {})
-    .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0)
-    .sort(([left], [right]) => left.localeCompare(right));
-  if (!entries.length) {
-    return "-";
-  }
-  return entries
-    .map(([key, value]) => `${key} ${compactKrw(value)}`)
-    .join(" · ");
-}
-
-function formatQuantity(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return new Intl.NumberFormat("ko-KR", {
-    maximumFractionDigits: 6
-  }).format(Number(value));
-}
-
-function formatPercent(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return `${Math.round(Number(value) * 100)}%`;
-}
-
-function formatRatio(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  return `${(Number(value) * 100).toFixed(2)}%`;
-}
-
-function formatDurationMs(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  const milliseconds = Number(value);
-  if (milliseconds < 1_000) {
-    return `${Math.round(milliseconds)}ms`;
-  }
-  const seconds = milliseconds / 1_000;
-  if (seconds < 60) {
-    return `${seconds.toFixed(seconds < 10 ? 1 : 0)}초`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  if (minutes < 60) {
-    return `${minutes}분 ${remainingSeconds}초`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}시간 ${remainingMinutes}분`;
-}
-
-function performanceBottleneckLabel(value) {
-  if (value === "packet_build") {
-    return "packet build";
-  }
-  if (value === "sampling") {
-    return "sampling";
-  }
-  if (value === "decision_provider") {
-    return "AI 판단";
-  }
-  if (value === "order_execution") {
-    return "리스크/체결";
-  }
-  if (value === "none") {
-    return "없음";
-  }
-  return "-";
-}
-
-function formatSignedRatio(value) {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-";
-  }
-  const number = Number(value);
-  const prefix = number > 0 ? "+" : "";
-  return `${prefix}${(number * 100).toFixed(2)}%`;
-}
-
-function formatDateTime(value) {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function formatDateOnly(value) {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(date);
-}
-
-function average(values) {
-  const finiteValues = values.filter(
-    (value) =>
-      value !== null &&
-      value !== undefined &&
-      Number.isFinite(Number(value))
-  );
-  if (!finiteValues.length) {
-    return null;
-  }
-  return (
-    finiteValues.reduce((sum, value) => sum + Number(value), 0) /
-    finiteValues.length
-  );
-}
-
 function replayRangeText(range) {
   if (!range?.startAt && !range?.endAt) {
     return "-";
@@ -3616,35 +3153,4 @@ function positionCostBasis(position) {
   return Math.round(
     Number(position?.quantity ?? 0) * Number(position?.averagePriceKrw ?? 0)
   );
-}
-
-function valueToneClass(value, baseClass = "") {
-  const number = Number(value);
-  const tone =
-    Number.isFinite(number) && number > 0
-      ? "positive"
-      : Number.isFinite(number) && number < 0
-        ? "negative"
-        : "";
-  return [baseClass, tone].filter(Boolean).join(" ");
-}
-
-function setValueTone(id, value) {
-  const node = document.getElementById(id);
-  if (!node) {
-    return;
-  }
-  node.classList.remove("positive", "negative");
-  const tone = valueToneClass(value);
-  if (tone) {
-    node.classList.add(tone);
-  }
-}
-
-function svgNode(name, attributes) {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", name);
-  for (const [key, value] of Object.entries(attributes)) {
-    node.setAttribute(key, value);
-  }
-  return node;
 }

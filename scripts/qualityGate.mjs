@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 
 import {
+  LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS,
   LOCAL_OPERATIONS_API_ROUTES,
   READ_ONLY_HTTP_METHODS
 } from "../dist/api/localOperationsSurface.js";
@@ -36,9 +37,12 @@ function assertBacktickedName(text, name, label) {
 
 const packageJson = readJson("package.json");
 const dashboardScript = readText("dashboard/app.js");
+const dashboardApiClientScript = readText("dashboard/apiClient.js");
 const mcpToolsDoc = readText("docs/mcp-tools.md");
 const llmBoundaryDoc = readText("docs/llm-boundary.md");
-const dashboardEndpointPaths = readDashboardEndpointPaths(dashboardScript);
+const dashboardEndpointPaths = readDashboardEndpointPaths(
+  dashboardApiClientScript
+);
 
 assert(
   JSON.stringify(READ_ONLY_HTTP_METHODS) === JSON.stringify(["GET", "HEAD"]),
@@ -49,6 +53,18 @@ for (const route of LOCAL_OPERATIONS_API_ROUTES) {
   assert(
     dashboardEndpointPaths.has(route),
     `dashboard endpoints must include exact route ${route}`
+  );
+}
+
+for (const fileName of readDashboardModuleImports(dashboardScript)) {
+  readText(`dashboard/${fileName}`);
+  assert(
+    LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS.includes(`/dashboard/${fileName}`),
+    `dashboard asset allowlist must include /dashboard/${fileName}`
+  );
+  assert(
+    LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS.includes(`/${fileName}`),
+    `dashboard asset allowlist must include /${fileName}`
   );
 }
 
@@ -118,4 +134,15 @@ function readDashboardEndpointPaths(source) {
     paths.add(new URL(endpoint, "http://127.0.0.1").pathname);
   }
   return paths;
+}
+
+function readDashboardModuleImports(source) {
+  const imports = new Set();
+  for (const match of source.matchAll(/from\s+"\.\/(?<fileName>[^"]+\.js)"/g)) {
+    const fileName = match.groups?.fileName;
+    if (fileName !== undefined) {
+      imports.add(fileName);
+    }
+  }
+  return imports;
 }

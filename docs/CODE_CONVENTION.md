@@ -211,6 +211,12 @@ const options = {
 - dashboard 정적 asset 제공
 - Codex MCP read-only tool surface
 
+dashboard 작성 규칙:
+
+- `dashboard/app.js`는 dashboard bootstrap과 renderer composition 중심으로 유지한다.
+- endpoint fetch는 `dashboard/apiClient.js`, routing은 `dashboard/router.js`, DOM helper는 `dashboard/dom.js`, formatting helper는 `dashboard/formatters.js`, symbol metadata helper는 `dashboard/metadata.js`, shared mutable state는 `dashboard/state.js`에 둔다.
+- 새 dashboard module을 추가하면 `src/api/localOperationsSurface.ts`의 asset allowlist와 `scripts/qualityGate.mjs` 검증 대상이 함께 갱신되어야 한다.
+
 금지:
 
 - replay 실행 endpoint
