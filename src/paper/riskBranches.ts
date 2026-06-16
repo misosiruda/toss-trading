@@ -99,7 +99,7 @@ export function evaluateVirtualSellRiskBranch(
     return rejectCodes;
   }
 
-  if (input.candidate?.lastPriceKrw !== undefined) {
+  if (input.candidate?.lastPriceKrw) {
     const positionValue = Math.round(
       position.quantity * input.candidate.lastPriceKrw
     );

@@ -107,6 +107,37 @@ test("sell risk branch requires sizing for non-dust sell decisions", () => {
   ]);
 });
 
+test("sell risk branch does not mark zero-price candidates as amount exceeded", () => {
+  const input = {
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-14T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 70_000,
+      thesis: "Paper-only sell fixture."
+    }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 100_000,
+      policy: { now }
+    }),
+    candidate: candidate({ lastPriceKrw: 0 })
+  };
+
+  assert.deepEqual(evaluateVirtualSellRiskBranch(input), []);
+});
+
 test("sell risk branch allows sellAll dust close without trade sizing", () => {
   const input = {
     packet: packet(),
@@ -168,7 +199,7 @@ function packet(): MarketPacket {
   };
 }
 
-function candidate(): MarketCandidate {
+function candidate(overrides: Partial<MarketCandidate> = {}): MarketCandidate {
   return {
     market: "KR",
     symbol: "005930",
@@ -178,7 +209,8 @@ function candidate(): MarketCandidate {
     reasonCodes: ["RISK_BRANCH"],
     sourceRefs: ["fixture:risk-branch"],
     collectedAt: "2026-06-14T08:59:00+09:00",
-    staleAfter: "2026-06-14T09:05:00+09:00"
+    staleAfter: "2026-06-14T09:05:00+09:00",
+    ...overrides
   };
 }
 
