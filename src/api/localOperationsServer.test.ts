@@ -135,6 +135,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     const moduleScripts = await Promise.all(
       [
         "/dashboard/apiClient.js",
+        "/dashboard/decisionRenderers.js",
         "/dashboard/dom.js",
         "/dashboard/formatters.js",
         "/dashboard/metadata.js",
@@ -146,6 +147,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     );
     const rootScript = await fetchText(baseUrl, "/app.js");
     const rootModuleScript = await fetchText(baseUrl, "/apiClient.js");
+    const rootDecisionRenderersScript = await fetchText(
+      baseUrl,
+      "/decisionRenderers.js"
+    );
     const rootReportRenderersScript = await fetchText(
       baseUrl,
       "/reportRenderers.js"
@@ -168,6 +173,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(summaryPage.response.status, 200);
     assert.equal(rootScript.response.status, 200);
     assert.equal(rootModuleScript.response.status, 200);
+    assert.equal(rootDecisionRenderersScript.response.status, 200);
     assert.equal(rootReportRenderersScript.response.status, 200);
     assert.equal(rootReportViewHelpersScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
@@ -239,6 +245,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="portfolio-risk-detail"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /from "\.\/apiClient\.js"/);
+    assert.match(script.text, /from "\.\/decisionRenderers\.js"/);
     assert.match(script.text, /from "\.\/dom\.js"/);
     assert.match(script.text, /from "\.\/formatters\.js"/);
     assert.match(script.text, /from "\.\/metadata\.js"/);
@@ -283,14 +290,16 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /aria-valuenow/);
     assert.match(script.text, /scheduleReplayProgressPolling/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
-    assert.match(script.text, /renderDecisionTimeline/);
-    assert.match(script.text, /renderDecisionPerformance/);
-    assert.match(script.text, /buildDecisionPerformanceOutcomes/);
+    assert.match(dashboardScriptText, /renderDecisionTimeline/);
+    assert.match(dashboardScriptText, /renderDecisionPerformance/);
+    assert.match(dashboardScriptText, /buildDecisionPerformanceOutcomes/);
     assert.match(script.text, /renderPortfolioRiskMetrics/);
     assert.match(script.text, /buildPortfolioRiskMetrics/);
-    assert.match(script.text, /decisionOutcomeRow/);
-    assert.match(script.text, /decisionRationale/);
-    assert.match(script.text, /리스크 요인/);
+    assert.match(dashboardScriptText, /decisionOutcomeRow/);
+    assert.match(dashboardScriptText, /decisionRationale/);
+    assert.match(dashboardScriptText, /리스크 요인/);
+    assert.doesNotMatch(script.text, /function renderDecisionTimeline/);
+    assert.doesNotMatch(script.text, /function renderDecisionPerformance/);
     assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
