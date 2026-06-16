@@ -38,6 +38,7 @@ function assertBacktickedName(text, name, label) {
 const packageJson = readJson("package.json");
 const dashboardScript = readText("dashboard/app.js");
 const dashboardApiClientScript = readText("dashboard/apiClient.js");
+const localOperationsServerSource = readText("src/api/localOperationsServer.ts");
 const mcpToolsDoc = readText("docs/mcp-tools.md");
 const llmBoundaryDoc = readText("docs/llm-boundary.md");
 const dashboardEndpointPaths = readDashboardEndpointPaths(
@@ -65,6 +66,28 @@ for (const fileName of readDashboardModuleImports(dashboardScript)) {
   assert(
     LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS.includes(`/${fileName}`),
     `dashboard asset allowlist must include /${fileName}`
+  );
+}
+
+assertIncludes(
+  localOperationsServerSource,
+  "routeRequest",
+  "src/api/localOperationsServer.ts"
+);
+assertIncludes(
+  localOperationsServerSource,
+  "readDashboardAsset",
+  "src/api/localOperationsServer.ts"
+);
+for (const forbiddenImport of [
+  "../reports/",
+  "../scheduler/",
+  "../security/",
+  "../storage/"
+]) {
+  assert(
+    !localOperationsServerSource.includes(forbiddenImport),
+    `src/api/localOperationsServer.ts must delegate ${forbiddenImport} imports`
   );
 }
 

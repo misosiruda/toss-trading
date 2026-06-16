@@ -174,6 +174,11 @@ flowchart TD
 
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.ts`
+- `src/api/localOperationsRouting.ts`
+- `src/api/localOperationsReaders.ts`
+- `src/api/localOperationsDashboardAssets.ts`
+- `src/api/localOperationsResponse.ts`
+- `src/api/localOperationsTypes.ts`
 - `dashboard/index.html`
 - `dashboard/app.js`
 - `dashboard/apiClient.js`
@@ -230,6 +235,11 @@ flowchart TD
 | 위치 | 역할 |
 | --- | --- |
 | `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard ES module/static path 기준 |
+| `src/api/localOperationsServer.ts` | HTTP server bootstrap, method guard, dashboard asset/API dispatch |
+| `src/api/localOperationsRouting.ts` | Local Operations API route handler table과 query parameter parsing |
+| `src/api/localOperationsReaders.ts` | storage/report artifact read-only payload 생성 |
+| `src/api/localOperationsDashboardAssets.ts` | dashboard document/module/static asset 매핑과 응답 |
+| `src/api/localOperationsResponse.ts` | masked JSON response writer |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
 | `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |
 | `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |

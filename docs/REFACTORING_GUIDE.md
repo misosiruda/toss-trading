@@ -244,6 +244,40 @@ npm run build
 - `scripts/qualityGate.mjs`가 dashboard endpoint와 module asset drift를 검증한다.
 - `npm run check`가 통과한다.
 
+## Phase 8. Local Operations API Handler 분리
+
+범위:
+
+- `src/api/localOperationsServer.ts`
+- `src/api/localOperationsRouting.ts`
+- `src/api/localOperationsReaders.ts`
+- `src/api/localOperationsDashboardAssets.ts`
+- `src/api/localOperationsResponse.ts`
+- `src/api/localOperationsTypes.ts`
+- `src/api/localOperationsServer.test.ts`
+- `scripts/qualityGate.mjs`
+
+목표:
+
+- `localOperationsServer.ts`에서 HTTP server bootstrap, route dispatch, storage reader, dashboard asset writer, JSON response writer가 섞인 구조를 분리한다.
+- server entrypoint는 method guard와 dispatch만 담당하게 줄인다.
+- route table/query parsing과 storage/report artifact read-only payload 생성을 별도 module로 이동한다.
+- dashboard static asset serving과 masked JSON response writer를 별도 module로 분리한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- `GET`/`HEAD` read-only guard 약화
+- storage reader에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행을 시작
+- masking 없는 raw response 추가
+
+완료 기준:
+
+- `localOperationsServer.ts`가 `reports`, `scheduler`, `security`, `storage` module을 직접 import하지 않는다.
+- 기존 Local Operations API 테스트가 통과한다.
+- `scripts/qualityGate.mjs`가 server bootstrap 책임 drift를 검증한다.
+- `npm run check`가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인

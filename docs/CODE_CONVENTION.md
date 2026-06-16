@@ -217,6 +217,14 @@ dashboard 작성 규칙:
 - endpoint fetch는 `dashboard/apiClient.js`, routing은 `dashboard/router.js`, DOM helper는 `dashboard/dom.js`, formatting helper는 `dashboard/formatters.js`, symbol metadata helper는 `dashboard/metadata.js`, shared mutable state는 `dashboard/state.js`에 둔다.
 - 새 dashboard module을 추가하면 `src/api/localOperationsSurface.ts`의 asset allowlist와 `scripts/qualityGate.mjs` 검증 대상이 함께 갱신되어야 한다.
 
+Local Operations API 작성 규칙:
+
+- `src/api/localOperationsServer.ts`는 HTTP server bootstrap, read-only method guard, dashboard asset/API dispatch만 담당한다.
+- route table과 query parsing은 `src/api/localOperationsRouting.ts`에 둔다.
+- storage/report artifact를 읽어 응답 payload를 만드는 코드는 `src/api/localOperationsReaders.ts`에 둔다.
+- dashboard static asset mapping은 `src/api/localOperationsDashboardAssets.ts`, masked JSON 응답은 `src/api/localOperationsResponse.ts`에 둔다.
+- `localOperationsServer.ts`가 `reports`, `scheduler`, `storage`, `security` module을 직접 import해야 하는 구조로 돌아가면 책임이 다시 섞인 것이다.
+
 금지:
 
 - replay 실행 endpoint
