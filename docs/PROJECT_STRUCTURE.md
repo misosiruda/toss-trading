@@ -182,6 +182,7 @@ flowchart TD
 - `dashboard/index.html`
 - `dashboard/app.js`
 - `dashboard/apiClient.js`
+- `dashboard/batchRunRenderers.js`
 - `dashboard/decisionRenderers.js`
 - `dashboard/dom.js`
 - `dashboard/formatters.js`
@@ -244,6 +245,7 @@ flowchart TD
 | `src/api/localOperationsDashboardAssets.ts` | dashboard document/module/static asset 매핑과 응답 |
 | `src/api/localOperationsResponse.ts` | masked JSON response writer |
 | `dashboard/app.js` | dashboard bootstrap, refresh orchestration, renderer composition |
+| `dashboard/batchRunRenderers.js` | batch replay 개별 run 목록, 탭, 상세, polling renderer |
 | `dashboard/decisionRenderers.js` | AI decision timeline, filter, performance, risk summary DOM renderer |
 | `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
 | `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
