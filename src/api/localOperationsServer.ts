@@ -5,11 +5,16 @@ import {
   type Server,
   type ServerResponse
 } from "node:http";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
 
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import { maskObject } from "../security/masking.js";
+import {
+  createBatchReplayManifestPath,
+  createBatchReplayRootDirForStorage,
+  resolveBatchReplayRunsArtifactPath
+} from "../storage/artifactPaths.js";
 import {
   createStoragePaths,
   FileAuditLog,
@@ -297,7 +302,9 @@ async function readBatchReplayRuns(
     };
   }
 
-  const runsPath = resolveBatchReplayRunsPath(sourceRunsPath, storageBaseDir);
+  const runsPath = resolveBatchReplayRunsArtifactPath(sourceRunsPath, {
+    storageBaseDir
+  });
   if (runsPath === null) {
     return {
       mode: "paper_only",
@@ -525,7 +532,7 @@ interface BatchReplayManifestSnapshot {
 async function readLatestBatchReplayManifest(
   storageBaseDir: string
 ): Promise<BatchReplayManifestSnapshot | null> {
-  const batchReplayDir = resolve(dirname(resolve(storageBaseDir)), "batch-replay");
+  const batchReplayDir = createBatchReplayRootDirForStorage(storageBaseDir);
   let entries;
   try {
     entries = await readdir(batchReplayDir, { withFileTypes: true });
@@ -541,10 +548,9 @@ async function readLatestBatchReplayManifest(
     if (!entry.isDirectory()) {
       continue;
     }
-    const manifestPath = join(
+    const manifestPath = createBatchReplayManifestPath(
       batchReplayDir,
-      entry.name,
-      "batch-replay-manifest.json"
+      entry.name
     );
     const manifest = await readJsonFile(manifestPath);
     if (manifest.status !== "ok" || !isRecord(manifest.value)) {
@@ -591,38 +597,6 @@ function compareBatchReplayManifests(
     return normalizedRight - normalizedLeft;
   }
   return String(right.batchId ?? "").localeCompare(String(left.batchId ?? ""));
-}
-
-function resolveBatchReplayRunsPath(
-  sourceRunsPath: string,
-  storageBaseDir: string
-): string | null {
-  const resolvedPath = isAbsolute(sourceRunsPath)
-    ? resolve(sourceRunsPath)
-    : resolve(process.cwd(), sourceRunsPath);
-  const normalized = resolvedPath.replace(/\\/g, "/");
-
-  if (
-    basename(resolvedPath) !== "batch-replay-runs.jsonl" ||
-    !normalized.includes("/batch-replay/")
-  ) {
-    return null;
-  }
-
-  const allowedRoots = [
-    resolve(process.cwd()),
-    resolve(storageBaseDir),
-    resolve(dirname(resolve(storageBaseDir)), "batch-replay"),
-    resolve(process.cwd(), "data", "batch-replay")
-  ];
-  return allowedRoots.some((root) => isPathInside(resolvedPath, root))
-    ? resolvedPath
-    : null;
-}
-
-function isPathInside(childPath: string, parentPath: string): boolean {
-  const path = relative(parentPath, childPath);
-  return path === "" || (!!path && !path.startsWith("..") && !isAbsolute(path));
 }
 
 function countRunStatuses(

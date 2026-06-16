@@ -199,6 +199,7 @@ flowchart TD
 
 수정 후보:
 
+- `src/storage/artifactPaths.ts`
 - `src/storage/repositories.ts`
 - `src/storage/fileStore.ts`
 - `src/storage/jsonlStore.ts`
@@ -210,6 +211,22 @@ flowchart TD
 - path mapping 변경이 dashboard/API와 batch report를 깨지 않는지 확인
 - append-only audit/replay JSONL 의미가 유지되는지 확인
 - corrupt line handling이 read path를 전체 실패로 만들지 않는지 확인
+
+주요 source of truth:
+
+| 위치 | 역할 |
+| --- | --- |
+| `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |
+| `src/storage/repositories.ts#createStoragePaths` | 단일 storage base dir 안의 paper/replay/report artifact path mapping |
+| `src/storage/jsonlStore.ts` | append-only JSONL read/write와 corrupt line count 처리 |
+| `src/storage/fileStore.ts` | snapshot JSON read/write |
+
+Artifact 역할:
+
+- `*.jsonl`: append-only log입니다. audit event, virtual decision/trade, market packet, historical replay packet/decision/risk/trade/timeline, batch run record처럼 시간 순서 기록을 보존합니다.
+- `*.json`: latest snapshot 또는 generated report입니다. virtual portfolio, replay report/progress/metadata, batch manifest, aggregate report처럼 현재 상태 또는 산출 report를 담습니다.
+- `data/` 아래 파일은 runtime artifact이며 Git source of truth가 아닙니다.
+- Local Operations API는 storage helper가 정의한 path만 read-only로 조회하고, replay/batch/Codex 실행을 시작하지 않습니다.
 
 ## 테스트와 검증
 
