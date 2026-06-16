@@ -188,6 +188,7 @@ flowchart TD
 - `dashboard/formatters.js`
 - `dashboard/metadata.js`
 - `dashboard/portfolioModel.js`
+- `dashboard/portfolioRenderers.js`
 - `dashboard/reportRenderers.js`
 - `dashboard/reportViewHelpers.js`
 - `dashboard/router.js`
@@ -249,6 +250,7 @@ flowchart TD
 | `dashboard/batchRunRenderers.js` | batch replay 개별 run 목록, 탭, 상세, polling renderer |
 | `dashboard/decisionRenderers.js` | AI decision timeline, filter, performance, risk summary DOM renderer |
 | `dashboard/portfolioModel.js` | portfolio timeline, trade PnL, position valuation, benchmark data helper |
+| `dashboard/portfolioRenderers.js` | portfolio 성과, 벤치마크, 노출, 이벤트, 목표, 리스크 metric DOM renderer |
 | `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
 | `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
