@@ -34,6 +34,7 @@ export function bindDashboardNavigation({
   function applyDashboardRoute() {
     const page = dashboardPageFromPath(window.location.pathname);
     state.currentPage = page;
+    document.documentElement.dataset.dashboardPage = page;
 
     document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
       const route = link.getAttribute("data-dashboard-route") ?? "overview";

@@ -137,6 +137,20 @@ body {
   display: none !important;
 }
 
+html[data-dashboard-page="overview"] .content-grid > .panel[data-dashboard-page],
+html[data-dashboard-page="virtual-replays"] .metric-grid,
+html[data-dashboard-page="virtual-replays"] .content-grid > .panel:not([data-dashboard-page]),
+html[data-dashboard-page="virtual-replays"]
+  .content-grid
+  > .panel[data-dashboard-page]:not([data-dashboard-page~="virtual-replays"]),
+html[data-dashboard-page="batch-summary"] .metric-grid,
+html[data-dashboard-page="batch-summary"] .content-grid > .panel:not([data-dashboard-page]),
+html[data-dashboard-page="batch-summary"]
+  .content-grid
+  > .panel[data-dashboard-page]:not([data-dashboard-page~="batch-summary"]) {
+  display: none;
+}
+
 .metric-grid,
 .content-grid {
   display: grid;
