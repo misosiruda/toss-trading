@@ -194,6 +194,7 @@ npm run build
 목표:
 
 - 현재 `npm run build`, `npm test` 기준을 유지한다.
+- PR 전 전체 검증을 위한 `npm run check` 기준을 추가한다.
 - 필요한 경우 lint/format 도구를 별도 PR로 추가한다.
 - code convention을 자동 검사할 수 있는 후보를 검토한다.
 
@@ -206,6 +207,7 @@ npm run build
 
 - tooling 변경은 별도 책임 단위로 리뷰 가능하다.
 - 실패 메시지가 개발자가 바로 고칠 수 있는 수준으로 명확하다.
+- `npm run check`가 build, quality gate, test를 한 번에 실행한다.
 
 ## 작업 전 체크리스트
 
@@ -222,6 +224,7 @@ npm run build
 - [ ] risk/schema/replay/storage 변경이면 테스트 추가 또는 보강
 - [ ] `npm run build` 실행
 - [ ] 가능하면 `npm test` 실행
+- [ ] tooling 변경이면 `npm run check` 실행
 - [ ] `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본값 유지 확인
 - [ ] live order, raw `tossctl`, raw `codex exec` enabled surface가 추가되지 않았는지 확인
 - [ ] 실계좌 정보, token, order ID, execution data가 노출되지 않았는지 확인
