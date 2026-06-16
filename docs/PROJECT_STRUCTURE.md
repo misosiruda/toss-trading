@@ -18,6 +18,7 @@ toss-trading/
 ├── dashboard/                 # read-only local dashboard 정적 파일
 ├── data/                      # 로컬 실행 산출물. Git source of truth 아님
 ├── docs/                      # 아키텍처, 정책, 운영, 리팩토링 문서
+├── scripts/                   # dependency-free quality gate와 유지보수 스크립트
 ├── schemas/                   # 외부로 노출되는 JSON Schema
 └── src/                       # TypeScript backend source
 ```
@@ -242,9 +243,12 @@ Artifact 역할:
 기본 검증:
 
 ```powershell
+npm run check
 npm run build
 npm test
 ```
+
+`npm run check`는 `quality:gate`와 전체 test suite를 순서대로 실행한다. `quality:gate`는 build 후 `scripts/qualityGate.mjs`를 실행한다. 이 스크립트는 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, 관련 문서 drift를 검사한다.
 
 리팩토링 범위가 좁더라도 `npm test`는 `npm run build`를 포함한다. risk, paper order, replay, storage contract를 바꾸면 해당 영역 테스트를 추가하거나 보강한다.
 

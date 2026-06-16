@@ -6,6 +6,8 @@
   "description": "Safe-by-default paper trading backend with Codex MCP operations boundaries.",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "quality:gate": "npm run build && node scripts/qualityGate.mjs",
+    "check": "npm run quality:gate && node --test \"dist/**/*.test.js\"",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "prepaper:run-once": "npm run build",
     "paper:run-once": "node dist/cli/paperRunOnce.js",

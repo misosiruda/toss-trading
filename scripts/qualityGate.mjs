@@ -1,0 +1,121 @@
+#!/usr/bin/env node
+
+import { readFileSync } from "node:fs";
+
+import {
+  LOCAL_OPERATIONS_API_ROUTES,
+  READ_ONLY_HTTP_METHODS
+} from "../dist/api/localOperationsSurface.js";
+import { disabledByDefaultMcpToolNames } from "../dist/mcp/toolSurfacePolicy.js";
+import { virtualPortfolioToolNames } from "../dist/mcp/virtualPortfolioTools.js";
+
+const repoRoot = new URL("../", import.meta.url);
+const failures = [];
+
+function readText(path) {
+  return readFileSync(new URL(path, repoRoot), "utf8");
+}
+
+function readJson(path) {
+  return JSON.parse(readText(path));
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    failures.push(message);
+  }
+}
+
+function assertIncludes(text, needle, label) {
+  assert(text.includes(needle), `${label} must include ${needle}`);
+}
+
+function assertBacktickedName(text, name, label) {
+  assertIncludes(text, `\`${name}\``, label);
+}
+
+const packageJson = readJson("package.json");
+const dashboardScript = readText("dashboard/app.js");
+const mcpToolsDoc = readText("docs/mcp-tools.md");
+const llmBoundaryDoc = readText("docs/llm-boundary.md");
+const dashboardEndpointPaths = readDashboardEndpointPaths(dashboardScript);
+
+assert(
+  JSON.stringify(READ_ONLY_HTTP_METHODS) === JSON.stringify(["GET", "HEAD"]),
+  "READ_ONLY_HTTP_METHODS must stay exactly GET/HEAD"
+);
+
+for (const route of LOCAL_OPERATIONS_API_ROUTES) {
+  assert(
+    dashboardEndpointPaths.has(route),
+    `dashboard endpoints must include exact route ${route}`
+  );
+}
+
+for (const toolName of virtualPortfolioToolNames) {
+  assertBacktickedName(mcpToolsDoc, toolName, "docs/mcp-tools.md");
+  assertBacktickedName(llmBoundaryDoc, toolName, "docs/llm-boundary.md");
+}
+
+for (const disabledToolName of disabledByDefaultMcpToolNames) {
+  assert(
+    !virtualPortfolioToolNames.includes(disabledToolName),
+    `${disabledToolName} must not be an enabled MCP tool`
+  );
+  assertBacktickedName(mcpToolsDoc, disabledToolName, "docs/mcp-tools.md");
+  assertBacktickedName(llmBoundaryDoc, disabledToolName, "docs/llm-boundary.md");
+}
+
+assert(
+  packageJson.scripts?.build === "tsc -p tsconfig.json",
+  "package.json scripts.build must stay tsc -p tsconfig.json"
+);
+assert(
+  typeof packageJson.scripts?.test === "string" &&
+    packageJson.scripts.test.includes("npm run build") &&
+    packageJson.scripts.test.includes("node --test"),
+  "package.json scripts.test must build before running node --test"
+);
+assert(
+  typeof packageJson.scripts?.["quality:gate"] === "string" &&
+    packageJson.scripts["quality:gate"].includes("npm run build") &&
+    packageJson.scripts["quality:gate"].includes("scripts/qualityGate.mjs"),
+  "package.json scripts.quality:gate must build before running qualityGate.mjs"
+);
+assert(
+  typeof packageJson.scripts?.check === "string" &&
+    packageJson.scripts.check.includes("npm run quality:gate") &&
+    packageJson.scripts.check.includes("node --test"),
+  "package.json scripts.check must run quality:gate and node --test"
+);
+
+if (failures.length > 0) {
+  console.error("[quality:gate] failed");
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exitCode = 1;
+} else {
+  console.log("[quality:gate] ok");
+}
+
+function readDashboardEndpointPaths(source) {
+  const endpointBlockMatch = source.match(
+    /const endpoints = \{(?<body>[\s\S]*?)\};/
+  );
+  assert(
+    endpointBlockMatch?.groups?.body !== undefined,
+    "dashboard endpoints object must be present"
+  );
+
+  const paths = new Set();
+  const body = endpointBlockMatch?.groups?.body ?? "";
+  for (const match of body.matchAll(/:\s*"(?<endpoint>[^"]+)"/g)) {
+    const endpoint = match.groups?.endpoint;
+    if (endpoint === undefined) {
+      continue;
+    }
+    paths.add(new URL(endpoint, "http://127.0.0.1").pathname);
+  }
+  return paths;
+}
