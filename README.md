@@ -181,6 +181,9 @@ npm run dashboard -- --data-dir data/paper
 Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
 Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
+코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
+코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.
+대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
 
 ## Disclaimer
 
