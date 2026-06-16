@@ -171,6 +171,7 @@ flowchart TD
 
 수정 후보:
 
+- `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.ts`
 - `dashboard/index.html`
 - `dashboard/app.js`
@@ -189,6 +190,7 @@ flowchart TD
 
 - `src/mcp/server.ts`
 - `src/mcp/virtualPortfolioTools.ts`
+- `src/mcp/toolSurfacePolicy.ts`
 - `docs/mcp-tools.md`
 - `docs/llm-boundary.md`
 
@@ -197,6 +199,7 @@ flowchart TD
 - enabled tool은 read-only인지 확인
 - raw `tossctl`, raw `codex exec`, live order tool을 추가하지 않음
 - tool contract와 docs 예시가 일치
+- disabled-by-default tool 이름이 `toolSurfacePolicy.ts`와 docs에서 일치
 
 ### Storage artifact 변경
 
@@ -219,6 +222,9 @@ flowchart TD
 
 | 위치 | 역할 |
 | --- | --- |
+| `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard static path 기준 |
+| `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
+| `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |
 | `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |
 | `src/storage/repositories.ts#createStoragePaths` | 단일 storage base dir 안의 paper/replay/report artifact path mapping |
 | `src/storage/jsonlStore.ts` | append-only JSONL read/write와 corrupt line count 처리 |

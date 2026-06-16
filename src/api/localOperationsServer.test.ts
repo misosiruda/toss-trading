@@ -25,6 +25,10 @@ import {
   FileVirtualTradeStore
 } from "../storage/repositories.js";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
+import {
+  LOCAL_OPERATIONS_API_ROUTES,
+  READ_ONLY_HTTP_METHODS
+} from "./localOperationsSurface.js";
 
 const now = new Date("2026-06-11T09:00:00+09:00");
 
@@ -80,6 +84,22 @@ async function fetchText(
   const text = await response.text();
   return { response, text };
 }
+
+test("local operations surface manifest is read-only", () => {
+  assert.deepEqual([...READ_ONLY_HTTP_METHODS], ["GET", "HEAD"]);
+  assert.equal(
+    (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
+    false
+  );
+  assert.equal(
+    (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/run_codex_exec"),
+    false
+  );
+  assert.equal(
+    (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/run_tossctl"),
+    false
+  );
+});
 
 test("local operations API serves health and virtual portfolio JSON", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
@@ -175,6 +195,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /\/batch\/replay\/report/);
     assert.match(script.text, /\/batch\/replay\/runs/);
     assert.match(script.text, /\/audit\/events/);
+    for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
+      assert.equal(script.text.includes(routePath), true, routePath);
+    }
     assert.match(script.text, /fetchEndpointData/);
     assert.match(script.text, /endpointFailures/);
     assert.match(script.text, /applyDashboardRoute/);
@@ -501,26 +524,17 @@ test("local operations API rejects mutation methods and has no live order endpoi
   const { server, baseUrl } = await startTestServer(storageBaseDir);
 
   try {
-    const mutation = await fetchJson(baseUrl, "/virtual/portfolio", {
-      method: "POST"
-    });
-    const batchMutation = await fetchJson(baseUrl, "/batch/replay/report", {
-      method: "POST"
-    });
-    const batchRunsMutation = await fetchJson(baseUrl, "/batch/replay/runs", {
-      method: "POST"
-    });
+    for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
+      const mutation = await fetchJson(baseUrl, routePath, { method: "POST" });
+      assert.equal(mutation.response.status, 405, routePath);
+      assert.equal(mutation.payload["readOnly"], true, routePath);
+    }
+
     const batchHead = await fetch(`${baseUrl}/batch/replay/report`, {
       method: "HEAD"
     });
     const liveOrder = await fetchJson(baseUrl, "/place_order");
 
-    assert.equal(mutation.response.status, 405);
-    assert.equal(mutation.payload["readOnly"], true);
-    assert.equal(batchMutation.response.status, 405);
-    assert.equal(batchMutation.payload["readOnly"], true);
-    assert.equal(batchRunsMutation.response.status, 405);
-    assert.equal(batchRunsMutation.payload["readOnly"], true);
     assert.equal(batchHead.status, 200);
     assert.equal(await batchHead.text(), "");
     assert.equal(liveOrder.response.status, 404);
