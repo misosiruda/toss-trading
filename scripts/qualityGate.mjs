@@ -38,6 +38,7 @@ const packageJson = readJson("package.json");
 const dashboardScript = readText("dashboard/app.js");
 const mcpToolsDoc = readText("docs/mcp-tools.md");
 const llmBoundaryDoc = readText("docs/llm-boundary.md");
+const dashboardEndpointPaths = readDashboardEndpointPaths(dashboardScript);
 
 assert(
   JSON.stringify(READ_ONLY_HTTP_METHODS) === JSON.stringify(["GET", "HEAD"]),
@@ -45,7 +46,10 @@ assert(
 );
 
 for (const route of LOCAL_OPERATIONS_API_ROUTES) {
-  assertIncludes(dashboardScript, route, "dashboard/app.js");
+  assert(
+    dashboardEndpointPaths.has(route),
+    `dashboard endpoints must include exact route ${route}`
+  );
 }
 
 for (const toolName of virtualPortfolioToolNames) {
@@ -93,4 +97,25 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log("[quality:gate] ok");
+}
+
+function readDashboardEndpointPaths(source) {
+  const endpointBlockMatch = source.match(
+    /const endpoints = \{(?<body>[\s\S]*?)\};/
+  );
+  assert(
+    endpointBlockMatch?.groups?.body !== undefined,
+    "dashboard endpoints object must be present"
+  );
+
+  const paths = new Set();
+  const body = endpointBlockMatch?.groups?.body ?? "";
+  for (const match of body.matchAll(/:\s*"(?<endpoint>[^"]+)"/g)) {
+    const endpoint = match.groups?.endpoint;
+    if (endpoint === undefined) {
+      continue;
+    }
+    paths.add(new URL(endpoint, "http://127.0.0.1").pathname);
+  }
+  return paths;
 }
