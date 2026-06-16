@@ -153,6 +153,8 @@ flowchart TD
 
 - `src/replay/`
 - `src/workflows/historicalReplayWorkflow.ts`
+- `src/workflows/historicalReplayWorkflowPlan.ts`
+- `src/workflows/historicalReplayWorkflowArtifacts.ts`
 - `src/workflows/historicalBatchReplayWorkflow.ts`
 - `src/reports/historicalReplayReport.ts`
 - `src/reports/batchReplayReport.ts`
