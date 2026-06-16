@@ -23,6 +23,17 @@ Paper trading에도 같은 철학을 적용합니다. Codex CLI는 `virtual_deci
 - source freshness 통과
 - virtual cash/exposure/cooldown 통과
 
+계약 source of truth:
+
+| Contract | Source | 검증 책임 |
+| --- | --- | --- |
+| `VirtualDecision` output | `schemas/virtual-decision.schema.json` | Codex CLI가 직접 출력할 수 있는 paper-only field만 허용 |
+| `VirtualDecision` runtime/storage | `src/domain/schemas.ts` | 저장 record의 `decisionHash`, `confidenceBreakdown` 같은 backend-generated field 포함 |
+| `MarketPacket` | `src/domain/schemas.ts` | candidate, source refs, feature refs, portfolio constraint의 구조 검증 |
+| `VirtualRiskDecision` | `src/domain/schemas.ts` | paper risk gate 승인/거절 결과 기록 |
+| `VirtualTrade` | `src/domain/schemas.ts` | `PaperOrderEngine`이 기록하는 paper-only 체결 결과 |
+| packet-bound semantic validation | `src/paper/virtualDecisionValidation.ts` | packet hash, identity metadata, candidate refs, claim support, action eligibility 검증 |
+
 권장 reject code:
 
 - `VIRTUAL_PACKET_STALE`
@@ -32,6 +43,7 @@ Paper trading에도 같은 철학을 적용합니다. Codex CLI는 `virtual_deci
 - `VIRTUAL_CASH_EXCEEDED`
 - `VIRTUAL_CASH_RESERVE_BREACHED`
 - `VIRTUAL_BUDGET_EXCEEDED`
+- `VIRTUAL_TARGET_EXPOSURE_EXCEEDED`
 - `VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED`
 - `VIRTUAL_POSITION_WEIGHT_EXCEEDED`
 - `VIRTUAL_POSITION_NOT_FOUND`

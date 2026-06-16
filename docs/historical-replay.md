@@ -289,9 +289,9 @@ Codex CLI provider를 historical replay에서 사용할 때 `--risk-profile aggr
 
 | Risk profile | Prompt policy | Prompt version |
 | --- | --- | --- |
-| `conservative` | `default` | `paper-v11-historical-replay-v1` |
-| `balanced` | `default` | `paper-v11-historical-replay-v1` |
-| `aggressive_paper` | `aggressive_paper` | `paper-v11-historical-replay-aggressive-paper-v1` |
+| `conservative` | `default` | `paper-v12-historical-replay-v1` |
+| `balanced` | `default` | `paper-v12-historical-replay-v1` |
+| `aggressive_paper` | `aggressive_paper` | `paper-v12-historical-replay-aggressive-paper-v1` |
 
 `aggressive_paper` prompt policy는 다음을 Codex 입력 prompt에 추가합니다.
 

@@ -87,6 +87,9 @@
               "budgetKrw": {
                 "type": "integer"
               },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
               "thesis": {
                 "type": "string"
               },
@@ -102,17 +105,37 @@
                   "type": "string"
                 }
               },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "claimSupport": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim", "dataRefs"],
+                  "required": ["claim"],
+                  "anyOf": [
+                    {
+                      "required": ["dataRefs"]
+                    },
+                    {
+                      "required": ["featureRefs"]
+                    }
+                  ],
                   "properties": {
                     "claim": {
                       "type": "string"
                     },
                     "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -159,6 +182,9 @@
               "budgetKrw": {
                 "type": "integer"
               },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
               "thesis": {
                 "type": "string"
               },
@@ -174,17 +200,37 @@
                   "type": "string"
                 }
               },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "claimSupport": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim", "dataRefs"],
+                  "required": ["claim"],
+                  "anyOf": [
+                    {
+                      "required": ["dataRefs"]
+                    },
+                    {
+                      "required": ["featureRefs"]
+                    }
+                  ],
                   "properties": {
                     "claim": {
                       "type": "string"
                     },
                     "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
                       "type": "array",
                       "items": {
                         "type": "string"
@@ -232,6 +278,21 @@
               "budgetKrw": {
                 "type": "integer"
               },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
+              "sellQuantity": {
+                "type": "number"
+              },
+              "sellRatio": {
+                "type": "number"
+              },
+              "targetWeightPct": {
+                "type": "number"
+              },
+              "sellAll": {
+                "type": "boolean"
+              },
               "reduceOnly": {
                 "type": "boolean"
               },
@@ -250,17 +311,37 @@
                   "type": "string"
                 }
               },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "claimSupport": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim", "dataRefs"],
+                  "required": ["claim"],
+                  "anyOf": [
+                    {
+                      "required": ["dataRefs"]
+                    },
+                    {
+                      "required": ["featureRefs"]
+                    }
+                  ],
                   "properties": {
                     "claim": {
                       "type": "string"
                     },
                     "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
                       "type": "array",
                       "items": {
                         "type": "string"

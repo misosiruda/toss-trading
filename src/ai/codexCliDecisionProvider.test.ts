@@ -203,11 +203,14 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /buyEligible, sellEligible/);
   assert.match(prompt, /featureScores/);
   assert.match(prompt, /backend-normalized feature value metadata/);
+  assert.match(prompt, /featureRefs/);
   assert.match(prompt, /Do not propose VIRTUAL_BUY when buyEligible is false/);
   assert.match(prompt, /Non-hold decisions are allowed/);
   assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
   assert.match(prompt, /claimSupport entries/);
   assert.match(prompt, /claimSupport dataRef/);
+  assert.match(prompt, /dataRefs or featureRefs/);
+  assert.match(prompt, /sellQuantity, sellRatio, targetWeightPct, or sellAll/);
   assert.match(prompt, /include holdReasonCode/);
   assert.match(prompt, /INSUFFICIENT_EVIDENCE/);
   assert.match(prompt, /Do not include holdReasonCode on VIRTUAL_BUY/);
@@ -218,92 +221,88 @@ test("paper decision prompt requires paper-only guarded output", () => {
 
 test("virtual decision output schema artifact constrains actions", async () => {
   const raw = await readFile("schemas/virtual-decision.schema.json", "utf8");
+  type JsonSchemaNode = {
+    additionalProperties?: boolean;
+    anyOf?: JsonSchemaNode[];
+    enum?: string[];
+    items?: JsonSchemaNode;
+    properties?: Record<string, JsonSchemaNode>;
+    required?: string[];
+    type?: string;
+  };
   const schema = JSON.parse(raw) as {
     additionalProperties?: boolean;
-    properties?: {
-      decisions?: {
-        required?: string[];
-        items?: {
-          anyOf?: Array<{
-            additionalProperties?: boolean;
-            required?: string[];
-            properties?: {
-              action?: { enum?: string[] };
-              holdReasonCode?: { enum?: string[] };
-              claimSupport?: {
-                type?: string;
-                items?: {
-                  additionalProperties?: boolean;
-                  required?: string[];
-                  properties?: {
-                    claim?: { type?: string };
-                    dataRefs?: { type?: string };
-                  };
-                };
-              };
-              reduceOnly?: { type?: string };
-            };
-          }>;
-        };
-      };
-    };
+    properties?: Record<string, JsonSchemaNode>;
+    required?: string[];
   };
 
   assert.equal(schema.additionalProperties, false);
-  assert.equal(schema.properties?.decisions?.required, undefined);
+  assert.equal(schema.properties?.["decisions"]?.required, undefined);
   assert.deepEqual(unsupportedSchemaKeywords(JSON.parse(raw)), []);
-  assert.equal(
-    (schema as { required?: string[] }).required?.includes("packetHash"),
-    true
-  );
-  assert.equal(
-    (schema as { required?: string[] }).required?.includes("promptVersion"),
-    true
-  );
-  assert.equal(
-    (schema as { required?: string[] }).required?.includes("modelId"),
-    true
-  );
-  assert.equal(
-    (schema as { required?: string[] }).required?.includes("schemaVersion"),
-    true
-  );
-  assert.equal(
-    (schema as { required?: string[] }).required?.includes("policyVersion"),
-    true
-  );
-  const branches = schema.properties?.decisions?.items?.anyOf ?? [];
+  assert.equal(schema.required?.includes("packetHash"), true);
+  assert.equal(schema.required?.includes("promptVersion"), true);
+  assert.equal(schema.required?.includes("modelId"), true);
+  assert.equal(schema.required?.includes("schemaVersion"), true);
+  assert.equal(schema.required?.includes("policyVersion"), true);
+  assert.equal("decisionHash" in (schema.properties ?? {}), false);
+
+  const branches = schema.properties?.["decisions"]?.items?.anyOf ?? [];
   assert.equal(branches.length, 3);
   for (const branch of branches) {
     assert.equal(branch.additionalProperties, false);
     assert.equal(branch.required?.includes("claimSupport"), true);
-    assert.equal(branch.properties?.claimSupport?.type, "array");
+    assert.equal(branch.properties?.["maxBudgetKrw"]?.type, "integer");
+    assert.equal(branch.properties?.["featureRefs"]?.type, "array");
+    assert.equal(branch.properties?.["claimSupport"]?.type, "array");
     assert.equal(
-      branch.properties?.claimSupport?.items?.additionalProperties,
+      branch.properties?.["claimSupport"]?.items?.additionalProperties,
       false
     );
-    assert.deepEqual(branch.properties?.claimSupport?.items?.required, [
-      "claim",
-      "dataRefs"
+    assert.deepEqual(branch.properties?.["claimSupport"]?.items?.required, [
+      "claim"
     ]);
+    assert.deepEqual(
+      branch.properties?.["claimSupport"]?.items?.anyOf
+        ?.map((option) => option.required?.[0])
+        .sort(),
+      ["dataRefs", "featureRefs"]
+    );
+    assert.equal(
+      branch.properties?.["claimSupport"]?.items?.properties?.["dataRefs"]
+        ?.type,
+      "array"
+    );
+    assert.equal(
+      branch.properties?.["claimSupport"]?.items?.properties?.["featureRefs"]
+        ?.type,
+      "array"
+    );
     assert.equal(
       "confidenceBreakdown" in (branch.properties ?? {}),
       false
     );
-    assert.equal("featureRefs" in (branch.properties ?? {}), false);
   }
   assert.deepEqual(
-    branches.map((branch) => branch.properties?.action?.enum?.[0]).sort(),
+    branches.map((branch) => branch.properties?.["action"]?.enum?.[0]).sort(),
     ["VIRTUAL_BUY", "VIRTUAL_HOLD", "VIRTUAL_SELL"]
   );
   const holdBranch = branches.find(
-    (branch) => branch.properties?.action?.enum?.[0] === "VIRTUAL_HOLD"
+    (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_HOLD"
+  );
+  const buyBranch = branches.find(
+    (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_BUY"
   );
   const sellBranch = branches.find(
-    (branch) => branch.properties?.action?.enum?.[0] === "VIRTUAL_SELL"
+    (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_SELL"
   );
+  for (const branch of [holdBranch, buyBranch]) {
+    assert.equal("sellQuantity" in (branch?.properties ?? {}), false);
+    assert.equal("sellRatio" in (branch?.properties ?? {}), false);
+    assert.equal("targetWeightPct" in (branch?.properties ?? {}), false);
+    assert.equal("sellAll" in (branch?.properties ?? {}), false);
+  }
   assert.deepEqual(
-    holdBranch?.properties?.holdReasonCode?.enum,
+    holdBranch?.properties?.["holdReasonCode"]?.enum,
     [
       "INSUFFICIENT_EVIDENCE",
       "STALE_DATA",
@@ -315,7 +314,11 @@ test("virtual decision output schema artifact constrains actions", async () => {
       "LOW_LIQUIDITY"
     ]
   );
-  assert.equal(sellBranch?.properties?.reduceOnly?.type, "boolean");
+  assert.equal(sellBranch?.properties?.["sellQuantity"]?.type, "number");
+  assert.equal(sellBranch?.properties?.["sellRatio"]?.type, "number");
+  assert.equal(sellBranch?.properties?.["targetWeightPct"]?.type, "number");
+  assert.equal(sellBranch?.properties?.["sellAll"]?.type, "boolean");
+  assert.equal(sellBranch?.properties?.["reduceOnly"]?.type, "boolean");
 });
 
 function unsupportedSchemaKeywords(value: unknown, path = "$"): string[] {

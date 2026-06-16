@@ -238,6 +238,36 @@ test("claim support requires at least one supporting ref", () => {
   );
 });
 
+test("claim support accepts feature refs as supporting refs", () => {
+  const decision = validVirtualDecision() as {
+    decisions: Array<{
+      featureRefs?: string[];
+      claimSupport: Array<{
+        claim: string;
+        dataRefs?: string[];
+        featureRefs?: string[];
+      }>;
+    }>;
+  };
+  decision.decisions[0]!.featureRefs = ["candidate.KR.005930.ranking"];
+  decision.decisions[0]!.claimSupport = [
+    {
+      claim: "Ranking feature supports a small virtual allocation.",
+      featureRefs: ["candidate.KR.005930.ranking"]
+    }
+  ];
+
+  const parsed = parseWithSchema(
+    virtualDecisionSchema,
+    decision,
+    "virtualDecision"
+  );
+
+  assert.deepEqual(parsed.decisions[0]?.claimSupport?.[0]?.featureRefs, [
+    "candidate.KR.005930.ranking"
+  ]);
+});
+
 test("non-hold decisions require risk factors", () => {
   const decision = validVirtualDecision() as {
     decisions: Array<{ riskFactors: string[] }>;
