@@ -137,8 +137,13 @@ export async function callVirtualPortfolioTool(
     return errorResult(`Unknown or disabled tool: ${name}`);
   }
 
-  const repositories = createReadOnlyRepositories(context.storageBaseDir);
   const toolArgs = args ?? {};
+  const argError = validateToolArgs(name, toolArgs);
+  if (argError !== null) {
+    return errorResult(argError);
+  }
+
+  const repositories = createReadOnlyRepositories(context.storageBaseDir);
 
   switch (name) {
     case "get_virtual_portfolio":
@@ -454,6 +459,74 @@ function isVirtualPortfolioToolName(
   name: string
 ): name is VirtualPortfolioToolName {
   return virtualPortfolioToolNames.includes(name as VirtualPortfolioToolName);
+}
+
+function validateToolArgs(
+  name: VirtualPortfolioToolName,
+  args: Record<string, unknown>
+): string | null {
+  switch (name) {
+    case "get_virtual_portfolio":
+    case "get_virtual_performance":
+    case "get_scheduler_status":
+    case "get_source_health":
+      return validateAllowedFields(args, []);
+    case "get_virtual_positions": {
+      const unexpectedField = validateAllowedFields(args, ["market", "symbol"]);
+      if (unexpectedField !== null) {
+        return unexpectedField;
+      }
+
+      const market = args["market"];
+      if (market !== undefined && market !== "KR" && market !== "US") {
+        return "`market` must be one of KR or US";
+      }
+
+      const symbol = args["symbol"];
+      if (
+        symbol !== undefined &&
+        (typeof symbol !== "string" || symbol.trim().length === 0)
+      ) {
+        return "`symbol` must be a non-empty string";
+      }
+      return null;
+    }
+    case "get_virtual_decisions":
+    case "get_virtual_trades":
+    case "get_market_packets": {
+      const unexpectedField = validateAllowedFields(args, ["limit"]);
+      if (unexpectedField !== null) {
+        return unexpectedField;
+      }
+
+      const limit = readLimit(args);
+      return typeof limit === "string" ? limit : null;
+    }
+    case "get_paper_report": {
+      const unexpectedField = validateAllowedFields(args, ["date"]);
+      if (unexpectedField !== null) {
+        return unexpectedField;
+      }
+
+      if (args["date"] === undefined) {
+        return null;
+      }
+      const date = readDateArg(args);
+      return typeof date === "string" ? null : date.error;
+    }
+  }
+}
+
+function validateAllowedFields(
+  args: Record<string, unknown>,
+  allowedFields: readonly string[]
+): string | null {
+  for (const field of Object.keys(args)) {
+    if (!allowedFields.includes(field)) {
+      return `Unexpected input field: ${field}`;
+    }
+  }
+  return null;
 }
 
 function readLimit(args: Record<string, unknown>): number | string {

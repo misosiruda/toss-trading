@@ -326,6 +326,43 @@ test("get_market_packets returns recent stored packets with a limit", async () =
   assert.equal(packets[0]?.["packetId"], "packet_mcp_002");
 });
 
+test("virtual portfolio MCP tools reject invalid input fields", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const invalidMarket = await callVirtualPortfolioTool(
+    "get_virtual_positions",
+    { market: "JP" },
+    { storageBaseDir }
+  );
+  const invalidMarketPayload = parseToolJson(invalidMarket);
+  const unexpectedField = await callVirtualPortfolioTool(
+    "get_virtual_portfolio",
+    { limit: 1 },
+    { storageBaseDir }
+  );
+  const unexpectedFieldPayload = parseToolJson(unexpectedField);
+  const invalidLimit = await callVirtualPortfolioTool(
+    "get_market_packets",
+    { limit: 101 },
+    { storageBaseDir }
+  );
+  const invalidLimitPayload = parseToolJson(invalidLimit);
+  const invalidDate = await callVirtualPortfolioTool(
+    "get_paper_report",
+    { date: "2026-6-1" },
+    { storageBaseDir }
+  );
+  const invalidDatePayload = parseToolJson(invalidDate);
+
+  assert.equal(invalidMarket.isError, true);
+  assert.match(String(invalidMarketPayload["error"]), /`market`/);
+  assert.equal(unexpectedField.isError, true);
+  assert.match(String(unexpectedFieldPayload["error"]), /Unexpected input field/);
+  assert.equal(invalidLimit.isError, true);
+  assert.match(String(invalidLimitPayload["error"]), /`limit`/);
+  assert.equal(invalidDate.isError, true);
+  assert.match(String(invalidDatePayload["error"]), /`date`/);
+});
+
 test("forbidden or unknown tool names return an MCP error result", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   for (const disabledToolName of disabledByDefaultMcpToolNames) {

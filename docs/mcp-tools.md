@@ -51,7 +51,7 @@
 - `limit`은 `1` 이상 `100` 이하 integer만 허용한다.
 - `date`는 `YYYY-MM-DD` 문자열만 허용한다.
 - `market`은 `KR` 또는 `US`만 허용한다.
-- unknown input field는 JSON Schema의 `additionalProperties: false`로 막는다.
+- unknown input field는 JSON Schema와 server-side validation에서 막는다.
 - unknown 또는 disabled tool name은 MCP error result로 반환한다.
 
 ## Output Policy
