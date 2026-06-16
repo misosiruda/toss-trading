@@ -318,6 +318,43 @@ test("VirtualRiskEngine rejects decisions outside packet candidates", () => {
   assert.ok(risk.rejectCodes.includes("VIRTUAL_CANDIDATE_NOT_FOUND"));
 });
 
+test("VirtualRiskEngine does not report zero-price sells as amount exceeded", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          lastPriceKrw: 0
+        }
+      ]
+    }),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 70_000,
+      thesis: "Paper-only sell fixture."
+    }),
+    policy: { now }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_PRICE_MISSING"));
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_SELL_AMOUNT_REQUIRED"));
+  assert.equal(risk.rejectCodes.includes("VIRTUAL_SELL_AMOUNT_EXCEEDED"), false);
+});
+
 test("PaperOrderEngine fills valid virtual buy decisions", () => {
   const result = new PaperOrderEngine().execute({
     packet: packet({
