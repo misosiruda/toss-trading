@@ -117,6 +117,7 @@ flowchart TD
 수정 후보:
 
 - `src/paper/riskEngine.ts`
+- `src/paper/riskBranches.ts`
 - `src/paper/riskPolicy.ts`
 - `src/paper/riskProfile.ts`
 - `src/paper/orderEngine.ts`

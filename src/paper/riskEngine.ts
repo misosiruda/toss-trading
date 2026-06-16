@@ -6,15 +6,15 @@ import {
   type VirtualPortfolio,
   type VirtualRiskDecision
 } from "../domain/schemas.js";
-import { normalizeVirtualDecision } from "./decisionNormalizer.js";
-import { isSellAllDustClose } from "./dustPosition.js";
+import {
+  evaluateVirtualBuyRiskBranch,
+  evaluateVirtualSellRiskBranch
+} from "./riskBranches.js";
 import {
   appendVirtualRiskRejectCode,
   createVirtualRiskPolicy,
   isVirtualRiskCooldownActive,
-  minimumCashReserveKrw,
   normalizeVirtualRiskRejectCodes,
-  virtualNetWorthKrw,
   VIRTUAL_RISK_RULE_IDS,
   type VirtualRiskPolicy,
   type VirtualRiskRejectCode
@@ -60,91 +60,29 @@ export class VirtualRiskEngine {
     }
 
     if (input.decision.action === "VIRTUAL_BUY") {
-      const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
-      if (notionalKrw > input.portfolio.cashKrw) {
-        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_CASH_EXCEEDED");
-      }
-
-      if (
-        input.portfolio.cashKrw - notionalKrw <
-        minimumCashReserveKrw(input.portfolio, policy)
-      ) {
-        appendVirtualRiskRejectCode(
-          rejectCodes,
-          "VIRTUAL_CASH_RESERVE_BREACHED"
-        );
-      }
-
-      if (notionalKrw > policy.maxBudgetPerDecisionKrw) {
-        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_BUDGET_EXCEEDED");
-      }
-
-      const netWorthKrw = virtualNetWorthKrw(input.portfolio);
-      if (
-        policy.targetExposureRatio !== undefined &&
-        netWorthKrw > 0 &&
-        (portfolioExposureKrw(input.portfolio) + notionalKrw) / netWorthKrw >
-          policy.targetExposureRatio
-      ) {
-        appendVirtualRiskRejectCode(
-          rejectCodes,
-          "VIRTUAL_TARGET_EXPOSURE_EXCEEDED"
-        );
-      }
-
-      const currentExposure = currentSymbolExposureKrw(
-        input.portfolio,
-        input.decision
+      appendBranchRejectCodes(
+        rejectCodes,
+        evaluateVirtualBuyRiskBranch({
+          packet: input.packet,
+          portfolio: input.portfolio,
+          decision: input.decision,
+          policy,
+          candidate
+        })
       );
-      if (currentExposure + notionalKrw > policy.maxSymbolExposureKrw) {
-        appendVirtualRiskRejectCode(
-          rejectCodes,
-          "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED"
-        );
-      }
-
-      if (
-        netWorthKrw > 0 &&
-        (currentExposure + notionalKrw) / netWorthKrw >
-          policy.maxPositionWeightRatio
-      ) {
-        appendVirtualRiskRejectCode(
-          rejectCodes,
-          "VIRTUAL_POSITION_WEIGHT_EXCEEDED"
-        );
-      }
     }
 
     if (input.decision.action === "VIRTUAL_SELL") {
-      const position = input.portfolio.positions.find(
-        (item) =>
-          item.market === input.decision.market &&
-          item.symbol === input.decision.symbol
-      );
-      const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
-      if (!position) {
-        appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_POSITION_NOT_FOUND");
-      } else if (
-        notionalKrw <= 0 &&
-        !isSellAllDustClose({
+      appendBranchRejectCodes(
+        rejectCodes,
+        evaluateVirtualSellRiskBranch({
+          packet: input.packet,
+          portfolio: input.portfolio,
           decision: input.decision,
-          position,
-          priceKrw: candidate?.lastPriceKrw
+          policy,
+          candidate
         })
-      ) {
-        appendVirtualRiskRejectCode(
-          rejectCodes,
-          "VIRTUAL_SELL_AMOUNT_REQUIRED"
-        );
-      } else if (candidate?.lastPriceKrw) {
-        const positionValue = Math.round(position.quantity * candidate.lastPriceKrw);
-        if (notionalKrw > positionValue) {
-          appendVirtualRiskRejectCode(
-            rejectCodes,
-            "VIRTUAL_SELL_AMOUNT_EXCEEDED"
-          );
-        }
-      }
+      );
     }
 
     return {
@@ -178,26 +116,11 @@ export function findCandidate(
   );
 }
 
-function currentSymbolExposureKrw(
-  portfolio: VirtualPortfolio,
-  decision: Pick<VirtualDecisionItem, "market" | "symbol">
-): number {
-  const position = portfolio.positions.find(
-    (item) => item.market === decision.market && item.symbol === decision.symbol
-  );
-  if (!position) {
-    return 0;
+function appendBranchRejectCodes(
+  target: VirtualRiskRejectCode[],
+  codes: VirtualRiskRejectCode[]
+): void {
+  for (const code of codes) {
+    appendVirtualRiskRejectCode(target, code);
   }
-
-  return position.marketValueKrw ?? Math.round(position.quantity * position.averagePriceKrw);
-}
-
-function portfolioExposureKrw(portfolio: VirtualPortfolio): number {
-  return portfolio.positions.reduce(
-    (sum, position) =>
-      sum +
-      (position.marketValueKrw ??
-        Math.round(position.quantity * position.averagePriceKrw)),
-    0
-  );
 }
