@@ -48,6 +48,10 @@ import {
 } from "../replay/regimeBalancedWindowSampler.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
+import {
+  createBatchReplayArtifactPaths,
+  safeArtifactPathPart
+} from "../storage/artifactPaths.js";
 
 export type BatchReplayRunStatus = "completed" | "skipped" | "failed";
 export type BatchReplayManifestStatus =
@@ -228,13 +232,6 @@ export interface BatchReplayRunWindowSampling {
   fallbackReason: string | null;
 }
 
-interface BatchReplayPaths {
-  outputDir: string;
-  runsDir: string;
-  manifestPath: string;
-  runsPath: string;
-}
-
 const DEFAULT_TIMEZONE_OFFSET_MINUTES = 540;
 const DEFAULT_WINDOW_MONTHS = 1;
 const DEFAULT_STEP_SECONDS = 60;
@@ -257,7 +254,7 @@ export async function runHistoricalBatchReplay(
   const batchId = normalizeRequiredText(options.batchId, "batchId");
   const seed = normalizeRequiredText(options.seed, "seed");
   const startedAt = options.generatedAt ?? new Date();
-  const paths = batchReplayPaths(options.outputBaseDir, batchId);
+  const paths = createBatchReplayArtifactPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
   const decisionProviderMetadata =
     options.decisionProviderMetadata ?? defaultDecisionProviderMetadata();
@@ -703,26 +700,16 @@ async function writeManifest(
   await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
-function batchReplayPaths(outputBaseDir: string, batchId: string): BatchReplayPaths {
-  const outputDir = join(outputBaseDir, safePathPart(batchId));
-  return {
-    outputDir,
-    runsDir: join(outputDir, "runs"),
-    manifestPath: join(outputDir, "batch-replay-manifest.json"),
-    runsPath: join(outputDir, "batch-replay-runs.jsonl")
-  };
-}
-
 function batchReplayRunId(
   batchId: string,
   runIndex: number,
   window: ReplayWindowSelection
 ): string {
   const paddedIndex = String(runIndex).padStart(6, "0");
-  return `${safePathPart(batchId)}_run_${paddedIndex}_${window.selectedMonth.replace(
-    "-",
-    ""
-  )}`;
+  return `${safeArtifactPathPart(
+    batchId,
+    "batch"
+  )}_run_${paddedIndex}_${window.selectedMonth.replace("-", "")}`;
 }
 
 function validateBatchOptions(options: BatchReplayRunnerOptions): void {
@@ -754,14 +741,6 @@ function validateDate(value: Date, label: string): void {
 
 function dateForRun(startedAt: Date, runIndex: number): Date {
   return new Date(startedAt.getTime() + runIndex);
-}
-
-function safePathPart(value: string): string {
-  const sanitized = value
-    .trim()
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return sanitized.length === 0 ? "batch" : sanitized;
 }
 
 function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {

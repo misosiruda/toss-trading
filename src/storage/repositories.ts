@@ -20,6 +20,7 @@ import {
   type TossInvestCliCollectResult
 } from "../collectors/tossInvestCliCollector.js";
 import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
+import { BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME } from "./artifactPaths.js";
 import { JsonFileStore } from "./fileStore.js";
 import { JsonlStore, type JsonlReadResult } from "./jsonlStore.js";
 
@@ -84,7 +85,7 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     ),
     batchReplayAggregateReportPath: join(
       baseDir,
-      "batch-replay-aggregate-report.json"
+      BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME
     )
   };
 }
