@@ -46,6 +46,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/formatters.js",
   "/dashboard/metadata.js",
   "/metadata.js",
+  "/dashboard/portfolioModel.js",
+  "/portfolioModel.js",
   "/dashboard/reportRenderers.js",
   "/reportRenderers.js",
   "/dashboard/reportViewHelpers.js",

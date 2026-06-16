@@ -378,6 +378,40 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 12. Dashboard Portfolio Model Helper 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/portfolioModel.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 portfolio timeline, trade PnL, position valuation, benchmark data helper를 별도 module로 이동한다.
+- 성과/벤치마크/노출/이벤트/수입 목표/리스크 renderer가 공유하는 data helper 경계를 먼저 고정한다.
+- 이후 portfolio analytics renderer를 더 작은 PR로 분리할 수 있도록 renderer와 model helper 책임을 나눈다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 quality gate에서 같이 검증되게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- portfolio value, PnL, drawdown, volatility 계산식을 behavior change로 변경
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- portfolio/benchmark 문구를 투자 조언이나 수익률 보장처럼 변경
+- risk engine, order engine, batch replay artifact schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 portfolio model helper module을 import하고 portfolio timeline/current summary/position value helper 구현을 직접 보유하지 않는다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
