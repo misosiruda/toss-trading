@@ -193,6 +193,7 @@ flowchart TD
 - `dashboard/reportViewHelpers.js`
 - `dashboard/router.js`
 - `dashboard/state.js`
+- `dashboard/tableRenderers.js`
 - `dashboard/styles.css`
 - `docs/historical-replay.md`
 
@@ -253,6 +254,7 @@ flowchart TD
 | `dashboard/portfolioRenderers.js` | portfolio 성과, 벤치마크, 노출, 이벤트, 목표, 리스크 metric DOM renderer |
 | `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
 | `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
+| `dashboard/tableRenderers.js` | positions/trades/market packet table renderer와 symbol cell helper |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
 | `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |
 | `src/storage/artifactPaths.ts` | batch replay artifact root, manifest/runs file name, runs JSONL allowlist path policy |
