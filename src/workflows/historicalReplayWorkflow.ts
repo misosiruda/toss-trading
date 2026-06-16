@@ -1,10 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
-import type {
-  MarketPacket,
-  VirtualPortfolio
-} from "../domain/schemas.js";
+import type { MarketPacket } from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
   buildHistoricalReplayReport,
@@ -24,47 +18,15 @@ import {
   runCodexHistoricalReplay,
   type CodexHistoricalReplayDecisionProviderLike
 } from "../replay/codexHistoricalReplayRunner.js";
-import {
-  HistoricalReplayAuditLogRecorder,
-  type HistoricalReplayRunMetadataContext
-} from "../replay/historicalReplayAuditLog.js";
+import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
-import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
-import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
-import type { SimulatedClock } from "../replay/simulatedClock.js";
-import type { MarketPacketConstraints } from "../market/packetBuilder.js";
-import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
-import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import {
-  normalizePaperExitPolicy,
-  type PaperExitPolicy
-} from "../paper/exitPolicy.js";
-import type { PaperRiskProfileName } from "../paper/riskProfile.js";
-import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
+  createHistoricalReplayWorkflowPlan,
+  type HistoricalReplayWorkflowOptions
+} from "./historicalReplayWorkflowPlan.js";
+import { writeHistoricalReplayReportArtifact } from "./historicalReplayWorkflowArtifacts.js";
 
-export interface HistoricalReplayWorkflowOptions {
-  storageBaseDir: string;
-  historicalMarketSnapshotsPath?: string;
-  clock: SimulatedClock;
-  decisionProvider?: CodexHistoricalReplayDecisionProviderLike;
-  samplingPolicy?: ReplaySamplingPolicy;
-  generatedAt?: Date;
-  initialCashKrw?: number;
-  packetIdPrefix: string;
-  packetExpiresInSeconds: number;
-  maxCandidates: number;
-  maxSnapshotAgeSeconds: number;
-  constraints: MarketPacketConstraints;
-  riskProfile?: PaperRiskProfileName;
-  riskPolicy?: Partial<VirtualRiskPolicy>;
-  allocationPolicy?: PaperAllocationPolicy;
-  marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
-  paperExitPolicy?: PaperExitPolicy;
-  runId?: string;
-  batchId?: string;
-  batchRunIndex?: number;
-  windowSelection?: ReplayWindowSelection;
-}
+export type { HistoricalReplayWorkflowOptions } from "./historicalReplayWorkflowPlan.js";
 
 export interface HistoricalReplayWorkflowResult {
   status: "completed";
@@ -84,43 +46,21 @@ export async function runHistoricalReplayWorkflow(
     new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read(),
     new FileHistoricalMarketSnapshotStore(historicalMarketSnapshotsPath).readAll()
   ]);
-  const initialPortfolio =
-    portfolio ?? createInitialPortfolio(options.initialCashKrw ?? 1_000_000, options);
-  const samplingOption =
-    options.samplingPolicy === undefined
-      ? {}
-      : { samplingPolicy: options.samplingPolicy };
-  const commonOptions = {
-    clock: options.clock,
-    ...samplingOption,
-    packetIdPrefix: options.packetIdPrefix,
-    packetExpiresInSeconds: options.packetExpiresInSeconds,
-    maxCandidates: options.maxCandidates,
-    maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-    constraints: options.constraints,
-    ...(options.riskPolicy === undefined ? {} : { riskPolicy: options.riskPolicy }),
-    ...(options.allocationPolicy === undefined
-      ? {}
-      : { allocationPolicy: options.allocationPolicy }),
-    ...(options.marketRegimeAllocationPolicy === undefined
-      ? {}
-      : { marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy }),
-    ...(options.paperExitPolicy === undefined
-      ? {}
-      : { paperExitPolicy: options.paperExitPolicy })
-  };
-  const replayInput = {
-    initialPortfolio,
-    snapshots: snapshots.records
-  };
   const replayStartedAt = options.generatedAt ?? new Date();
-  const tickCount = options.clock.ticks().length;
-  const metadataContext = buildRunMetadataContext(options, replayStartedAt);
+  const decisionProvider =
+    options.decisionProvider ?? new FirstPricedCodexHistoricalDecisionProvider();
+  const plan = createHistoricalReplayWorkflowPlan({
+    options,
+    storedPortfolio: portfolio,
+    snapshots: snapshots.records,
+    replayStartedAt,
+    decisionProvider
+  });
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
     startedAt: replayStartedAt,
-    tickCount,
-    initialPortfolio
+    tickCount: plan.tickCount,
+    initialPortfolio: plan.initialPortfolio
   });
   const auditLogRecorder = new HistoricalReplayAuditLogRecorder({
     paths: {
@@ -132,26 +72,22 @@ export async function runHistoricalReplayWorkflow(
       portfolioTimelinePath: paths.historicalReplayPortfolioTimelinePath
     },
     startedAt: replayStartedAt,
-    tickCount,
-    metadataContext
+    tickCount: plan.tickCount,
+    metadataContext: plan.metadataContext
   });
 
   await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
 
   try {
-    const decisionProvider =
-      options.decisionProvider ??
-      new FirstPricedCodexHistoricalDecisionProvider();
     const replayResult = await runCodexHistoricalReplay(
       {
-        ...commonOptions,
-        decisionProvider,
+        ...plan.runnerOptions,
         onProgress: async (update) => {
           await progressRecorder.record(update);
           await auditLogRecorder.record(update);
         }
       },
-      replayInput
+      plan.replayInput
     );
     const reportGeneratedAt = options.generatedAt ?? new Date();
     const report = buildHistoricalReplayReport({
@@ -159,12 +95,10 @@ export async function runHistoricalReplayWorkflow(
       generatedAt: reportGeneratedAt
     });
 
-    await mkdir(dirname(paths.historicalReplayReportPath), { recursive: true });
-    await writeFile(
-      paths.historicalReplayReportPath,
-      `${JSON.stringify(report, null, 2)}\n`,
-      "utf8"
-    );
+    await writeHistoricalReplayReportArtifact({
+      reportPath: paths.historicalReplayReportPath,
+      report
+    });
     await progressRecorder.complete({
       completedAt: reportGeneratedAt,
       finalReportPath: paths.historicalReplayReportPath
@@ -183,147 +117,6 @@ export async function runHistoricalReplayWorkflow(
     await auditLogRecorder.fail(error);
     throw error;
   }
-}
-
-function buildRunMetadataContext(
-  options: HistoricalReplayWorkflowOptions,
-  replayStartedAt: Date
-): HistoricalReplayRunMetadataContext {
-  const clock = options.clock.metadata();
-  const samplingPolicy = options.samplingPolicy?.metadata() ?? null;
-  const windowSelection = options.windowSelection;
-  const batchId = normalizeOptionalText(options.batchId);
-  const runIndex = options.batchRunIndex ?? null;
-  const timezoneOffsetMinutes =
-    windowSelection?.timezoneOffsetMinutes ??
-    samplingPolicy?.timezoneOffsetMinutes ??
-    0;
-
-  return {
-    identity: {
-      runId:
-        normalizeOptionalText(options.runId) ??
-        defaultRunId({
-          batchId,
-          runIndex,
-          replayStartedAt,
-          windowStartAt: clock.startAt
-        }),
-      batchId,
-      runIndex
-    },
-    window: {
-      source: windowSelection === undefined ? "explicit" : "random_window",
-      startAt: clock.startAt,
-      endAt: clock.endAt,
-      rangeStart: windowSelection?.rangeStart ?? null,
-      rangeEnd: windowSelection?.rangeEnd ?? null,
-      seed: windowSelection?.seed ?? null,
-      selectedMonth: windowSelection?.selectedMonth ?? null,
-      localStartDate: windowSelection?.localStartDate ?? null,
-      localEndDate: windowSelection?.localEndDate ?? null,
-      windowMonths: windowSelection?.windowMonths ?? null,
-      timezoneOffsetMinutes
-    },
-    configuration: {
-      clock: {
-        startAt: clock.startAt,
-        endAt: clock.endAt,
-        stepSeconds: clock.stepSeconds,
-        speedMultiplier: clock.speedMultiplier
-      },
-      samplingPolicy,
-      initialCashKrw: options.initialCashKrw ?? 1_000_000,
-      packetIdPrefix: options.packetIdPrefix,
-      packetExpiresInSeconds: options.packetExpiresInSeconds,
-      maxCandidates: options.maxCandidates,
-      maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-      constraints: options.constraints,
-      riskProfile: options.riskProfile ?? null,
-      riskPolicy: serializeRiskPolicy(options.riskPolicy),
-      allocationPolicy: options.allocationPolicy ?? null,
-      marketRegimeAllocationPolicy:
-        options.marketRegimeAllocationPolicy ?? null,
-      paperExitPolicy: normalizePaperExitPolicy(options.paperExitPolicy)
-    }
-  };
-}
-
-function serializeRiskPolicy(
-  policy: Partial<VirtualRiskPolicy> | undefined
-): HistoricalReplayRunMetadataContext["configuration"]["riskPolicy"] {
-  if (policy === undefined) {
-    return null;
-  }
-
-  return {
-    ...(policy.maxBudgetPerDecisionKrw === undefined
-      ? {}
-      : { maxBudgetPerDecisionKrw: policy.maxBudgetPerDecisionKrw }),
-    ...(policy.maxSymbolExposureKrw === undefined
-      ? {}
-      : { maxSymbolExposureKrw: policy.maxSymbolExposureKrw }),
-    ...(policy.targetExposureRatio === undefined
-      ? {}
-      : { targetExposureRatio: policy.targetExposureRatio }),
-    ...(policy.maxPositionWeightRatio === undefined
-      ? {}
-      : { maxPositionWeightRatio: policy.maxPositionWeightRatio }),
-    ...(policy.minCashReserveRatio === undefined
-      ? {}
-      : { minCashReserveRatio: policy.minCashReserveRatio }),
-    ...(policy.minCashReserveKrw === undefined
-      ? {}
-      : { minCashReserveKrw: policy.minCashReserveKrw })
-  };
-}
-
-function defaultRunId(input: {
-  batchId: string | null;
-  runIndex: number | null;
-  replayStartedAt: Date;
-  windowStartAt: string;
-}): string {
-  const windowDate = input.windowStartAt.slice(0, 10).replaceAll("-", "");
-  if (input.batchId !== null) {
-    const runIndex =
-      input.runIndex === null ? "manual" : String(input.runIndex).padStart(6, "0");
-    return `${safeRunIdPart(input.batchId)}_run_${runIndex}_${windowDate}`;
-  }
-
-  const startedAt = input.replayStartedAt
-    .toISOString()
-    .replace(/[^0-9]/g, "")
-    .slice(0, 14);
-  return `historical_replay_${startedAt}_${windowDate}`;
-}
-
-function normalizeOptionalText(value: string | undefined): string | null {
-  if (value === undefined) {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-}
-
-function safeRunIdPart(value: string): string {
-  const sanitized = value
-    .trim()
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return sanitized.length === 0 ? "batch" : sanitized;
-}
-
-function createInitialPortfolio(
-  cashKrw: number,
-  options: Pick<HistoricalReplayWorkflowOptions, "clock">
-): VirtualPortfolio {
-  return {
-    portfolioId: "virtual_default",
-    cashKrw,
-    positions: [],
-    updatedAt: options.clock.metadata().startAt
-  };
 }
 
 class FirstPricedCodexHistoricalDecisionProvider
