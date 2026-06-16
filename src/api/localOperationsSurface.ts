@@ -38,6 +38,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/apiClient.js",
   "/dashboard/dom.js",
   "/dom.js",
+  "/dashboard/decisionRenderers.js",
+  "/decisionRenderers.js",
   "/dashboard/formatters.js",
   "/formatters.js",
   "/dashboard/metadata.js",

@@ -312,6 +312,39 @@ npm run build
 - `scripts/qualityGate.mjs`가 dashboard import graph를 따라 nested module allowlist drift를 검증한다.
 - `npm run check`와 browser dashboard smoke 확인이 통과한다.
 
+## Phase 10. Dashboard Decision Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/decisionRenderers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 AI decision timeline, action filter, decision performance, risk summary renderer를 별도 module로 이동한다.
+- decision 화면에서 공유하는 action label, tag list, freshness helper를 renderer module 안에 모아 중복을 줄인다.
+- `app.js`는 dashboard bootstrap, refresh orchestration, page별 renderer composition 중심으로 줄인다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 quality gate에서 같이 검증되게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- dashboard에서 AI decision 실행, replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- decision/risk 문구를 투자 조언이나 수익률 보장처럼 변경
+- risk engine, order engine, decision schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 decision renderer module을 import하고 decision timeline/performance renderer 구현을 직접 보유하지 않는다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
