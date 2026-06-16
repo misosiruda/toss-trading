@@ -58,6 +58,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/router.js",
   "/dashboard/state.js",
   "/state.js",
+  "/dashboard/tableRenderers.js",
+  "/tableRenderers.js",
   "/dashboard/styles.css",
   "/styles.css"
 ] as const;

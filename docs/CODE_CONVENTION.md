@@ -217,6 +217,7 @@ dashboard 작성 규칙:
 - endpoint fetch는 `dashboard/apiClient.js`, routing은 `dashboard/router.js`, DOM helper는 `dashboard/dom.js`, formatting helper는 `dashboard/formatters.js`, symbol metadata helper는 `dashboard/metadata.js`, shared mutable state는 `dashboard/state.js`에 둔다.
 - portfolio timeline, trade PnL, position valuation, benchmark data helper는 `dashboard/portfolioModel.js`에 둔다.
 - portfolio performance, benchmark, exposure, event coverage, income goal, portfolio risk metric DOM renderer는 `dashboard/portfolioRenderers.js`에 둔다.
+- positions/trades/market packet table renderer와 symbol cell helper는 `dashboard/tableRenderers.js`에 둔다.
 - batch replay 개별 run 목록/탭/상세/polling renderer는 `dashboard/batchRunRenderers.js`에 둔다.
 - AI decision timeline/filter/performance renderer와 action display helper는 `dashboard/decisionRenderers.js`에 둔다.
 - daily/replay/batch report renderer는 `dashboard/reportRenderers.js`, 여러 renderer가 공유하는 report label/summary helper는 `dashboard/reportViewHelpers.js`에 둔다.
