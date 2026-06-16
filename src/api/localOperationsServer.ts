@@ -24,6 +24,13 @@ import {
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
 } from "../storage/repositories.js";
+import {
+  isLocalOperationsApiRoutePath,
+  isReadOnlyHttpMethod,
+  LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS,
+  LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS,
+  type LocalOperationsApiRoutePath
+} from "./localOperationsSurface.js";
 
 export interface LocalOperationsServerOptions {
   storageBaseDir: string;
@@ -64,7 +71,7 @@ async function handleRequest(
   options: LocalOperationsServerOptions
 ): Promise<void> {
   try {
-    if (!isReadOnlyMethod(request.method)) {
+    if (!isReadOnlyHttpMethod(request.method)) {
       writeJson(response, 405, {
         error: "method_not_allowed",
         readOnly: true
@@ -106,41 +113,52 @@ async function routeRequest(
   url: URL,
   options: LocalOperationsServerOptions
 ): Promise<unknown | null> {
-  switch (url.pathname) {
-    case "/health":
-      return healthResponse();
-    case "/virtual/portfolio":
-      return readVirtualPortfolio(options.storageBaseDir);
-    case "/virtual/decisions":
-      return readVirtualDecisions(options.storageBaseDir, readLimit(url));
-    case "/virtual/trades":
-      return readVirtualTrades(options.storageBaseDir, readLimit(url));
-    case "/paper/report":
-      return buildPaperDailyReport({
-        storageBaseDir: options.storageBaseDir,
-        date: readDate(url, options),
-        generatedAt: readNow(options)
-      });
-    case "/replay/report":
-      return readHistoricalReplayReport(options.storageBaseDir);
-    case "/replay/progress":
-      return readHistoricalReplayProgress(options.storageBaseDir);
-    case "/batch/replay/report":
-      return readBatchReplayAggregateReport(options.storageBaseDir);
-    case "/batch/replay/runs":
-      return readBatchReplayRuns(options.storageBaseDir, readLimit(url));
-    case "/scheduler/status":
-      return readSchedulerStatus(options.storageBaseDir);
-    case "/source/health":
-      return readSourceHealth(options.storageBaseDir);
-    case "/market/packets":
-      return readMarketPackets(options.storageBaseDir, readLimit(url));
-    case "/audit/events":
-      return readAuditEvents(options.storageBaseDir, readLimit(url));
-    default:
-      return null;
+  if (!isLocalOperationsApiRoutePath(url.pathname)) {
+    return null;
   }
+
+  return LOCAL_OPERATIONS_ROUTE_HANDLERS[url.pathname](url, options);
 }
+
+type LocalOperationsRouteHandler = (
+  url: URL,
+  options: LocalOperationsServerOptions
+) => Promise<unknown> | unknown;
+
+const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
+  LocalOperationsApiRoutePath,
+  LocalOperationsRouteHandler
+> = {
+  "/health": () => healthResponse(),
+  "/virtual/portfolio": (_url, options) =>
+    readVirtualPortfolio(options.storageBaseDir),
+  "/virtual/decisions": (url, options) =>
+    readVirtualDecisions(options.storageBaseDir, readLimit(url)),
+  "/virtual/trades": (url, options) =>
+    readVirtualTrades(options.storageBaseDir, readLimit(url)),
+  "/paper/report": (url, options) =>
+    buildPaperDailyReport({
+      storageBaseDir: options.storageBaseDir,
+      date: readDate(url, options),
+      generatedAt: readNow(options)
+    }),
+  "/replay/report": (_url, options) =>
+    readHistoricalReplayReport(options.storageBaseDir),
+  "/replay/progress": (_url, options) =>
+    readHistoricalReplayProgress(options.storageBaseDir),
+  "/batch/replay/report": (_url, options) =>
+    readBatchReplayAggregateReport(options.storageBaseDir),
+  "/batch/replay/runs": (url, options) =>
+    readBatchReplayRuns(options.storageBaseDir, readLimit(url)),
+  "/scheduler/status": (_url, options) =>
+    readSchedulerStatus(options.storageBaseDir),
+  "/source/health": (_url, options) =>
+    readSourceHealth(options.storageBaseDir),
+  "/market/packets": (url, options) =>
+    readMarketPackets(options.storageBaseDir, readLimit(url)),
+  "/audit/events": (url, options) =>
+    readAuditEvents(options.storageBaseDir, readLimit(url))
+};
 
 function healthResponse(): Record<string, unknown> {
   return {
@@ -415,10 +433,6 @@ async function readAuditEvents(
   };
 }
 
-function isReadOnlyMethod(method: string | undefined): boolean {
-  return method === "GET" || method === "HEAD";
-}
-
 function readLimit(url: URL): number {
   const raw = url.searchParams.get("limit");
   if (!raw) {
@@ -616,33 +630,36 @@ interface DashboardAsset {
 }
 
 function readDashboardAsset(pathname: string): DashboardAsset | null {
-  switch (pathname) {
-    case "/":
-    case "/dashboard":
-    case "/dashboard/":
-    case "/dashboard/virtual-replays":
-    case "/dashboard/virtual-replays/":
-    case "/dashboard/batch-summary":
-    case "/dashboard/batch-summary/":
-      return {
-        fileName: "index.html",
-        contentType: "text/html; charset=utf-8"
-      };
-    case "/dashboard/app.js":
-    case "/app.js":
-      return {
-        fileName: "app.js",
-        contentType: "text/javascript; charset=utf-8"
-      };
-    case "/dashboard/styles.css":
-    case "/styles.css":
-      return {
-        fileName: "styles.css",
-        contentType: "text/css; charset=utf-8"
-      };
-    default:
-      return null;
+  if (
+    (LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS as readonly string[]).includes(
+      pathname
+    )
+  ) {
+    return {
+      fileName: "index.html",
+      contentType: "text/html; charset=utf-8"
+    };
   }
+
+  if (
+    !(LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS as readonly string[]).includes(
+      pathname
+    )
+  ) {
+    return null;
+  }
+
+  if (pathname.endsWith(".js")) {
+    return {
+      fileName: "app.js",
+      contentType: "text/javascript; charset=utf-8"
+    };
+  }
+
+  return {
+    fileName: "styles.css",
+    contentType: "text/css; charset=utf-8"
+  };
 }
 
 async function writeDashboardAsset(

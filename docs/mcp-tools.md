@@ -2,398 +2,73 @@
 
 > Codex is not the trading engine. Codex is an MCP-based operations interface for inspecting, explaining, and safely controlling a deterministic trading backend.
 
-## Tool Policy Summary
+## 목적
 
-MCP Server는 Codex에 운영 인터페이스를 제공합니다. 기본 정책은 read-only입니다. side-effect tool은 최소화하고, 명시적 approval과 audit log를 요구합니다. raw broker order API는 Codex에 직접 노출하지 않습니다.
+이 문서는 현재 MCP server가 Codex에 노출하는 tool surface와 금지된 tool 이름을 정리한다.
 
-## Read-only Tools
+기본 정책은 read-only이다. MCP tool 호출은 저장된 paper-only state와 운영 산출물을 조회할 수 있지만, replay 실행, Codex CLI 실행, TossInvest CLI 실행, broker 주문, live trading mode 변경을 시작하지 않는다.
 
-Read-only tool은 저장된 backend state를 조회합니다. 외부 CLI나 broker API를 Codex 요청 시점에 직접 실행하지 않습니다.
+## Source of Truth
 
-### `get_account_summary`
+| 항목 | 코드 위치 | 역할 |
+| --- | --- | --- |
+| enabled MCP tool names | `src/mcp/virtualPortfolioTools.ts` | `virtualPortfolioToolNames`와 tool schema 정의 |
+| disabled-by-default tool names | `src/mcp/toolSurfacePolicy.ts` | enabled surface에 들어가면 안 되는 금지 tool 이름 |
+| MCP server entrypoint | `src/mcp/server.ts` | `ListToolsRequestSchema`, `CallToolRequestSchema` 연결 |
+| local operations HTTP routes | `src/api/localOperationsSurface.ts` | dashboard/API route와 read-only method 기준 |
 
-계좌 요약을 조회합니다. 계좌번호는 masking합니다.
+문서를 수정할 때는 위 코드 상수와 테스트를 함께 확인한다.
 
-Input:
+## Current Enabled Read-only Tools
 
-```json
-{
-  "account_ref": "default"
-}
-```
+현재 enabled MCP tool은 paper-only virtual state 조회용이다.
 
-Output:
+| Tool | 입력 | 조회 대상 | 주의 |
+| --- | --- | --- | --- |
+| `get_virtual_portfolio` | 없음 | current `VirtualPortfolio` snapshot | portfolio가 없으면 `sourceStatus: "missing"` |
+| `get_virtual_positions` | `market?`, `symbol?` | current virtual positions | 저장된 portfolio만 필터링 |
+| `get_virtual_decisions` | `limit?` | recent `VirtualDecision` JSONL | 민감 문자열 masking |
+| `get_virtual_trades` | `limit?` | recent `VirtualTrade` JSONL | paper-only virtual fills |
+| `get_virtual_performance` | 없음 | portfolio/trade 기반 파생 지표 | 투자 성과 주장 금지 disclaimer 포함 |
+| `get_paper_report` | `date?` | local paper daily report | report 생성은 저장된 paper state 조회 기반 |
+| `get_scheduler_status` | 없음 | scheduler state/lock files | scheduler run을 시작하지 않음 |
+| `get_source_health` | 없음 | stored TossInvest source records | 외부 CLI를 실행하지 않음 |
+| `get_market_packets` | `limit?` | stored `MarketPacket` JSONL | market packet 조회만 수행 |
 
-```json
-{
-  "account_ref": "default",
-  "masked_account_number": "1234-****-****",
-  "broker_provider": "mock",
-  "trading_enabled": false,
-  "total_equity_krw": 10000000,
-  "cash_krw": 5000000,
-  "position_value_krw": 5000000,
-  "daily_pnl_krw": 0,
-  "updated_at": "2026-05-19T09:00:00+09:00"
-}
-```
-
-### `get_positions`
-
-보유 포지션을 조회합니다.
+모든 enabled tool은 다음 MCP annotations를 가져야 한다.
 
 ```json
 {
-  "market": "KR",
-  "include_zero": false
+  "readOnlyHint": true,
+  "destructiveHint": false,
+  "idempotentHint": true,
+  "openWorldHint": false
 }
 ```
 
-```json
-{
-  "positions": [
-    {
-      "market": "KR",
-      "symbol": "005930",
-      "quantity": 10,
-      "average_price": 70000,
-      "market_value_krw": 700000,
-      "unrealized_pnl_krw": 0,
-      "updated_at": "2026-05-19T09:00:00+09:00"
-    }
-  ]
-}
-```
+## Tool Input Policy
 
-### `get_cash_balance`
+- `limit`은 `1` 이상 `100` 이하 integer만 허용한다.
+- `date`는 `YYYY-MM-DD` 문자열만 허용한다.
+- `market`은 `KR` 또는 `US`만 허용한다.
+- unknown input field는 JSON Schema의 `additionalProperties: false`로 막는다.
+- unknown 또는 disabled tool name은 MCP error result로 반환한다.
 
-현금 잔고를 조회합니다.
+## Output Policy
 
-```json
-{
-  "currency": "KRW"
-}
-```
+MCP tool output은 JSON text content로 반환한다.
 
-```json
-{
-  "currency": "KRW",
-  "available_cash": 5000000,
-  "settled_cash": 5000000,
-  "pending_cash": 0,
-  "updated_at": "2026-05-19T09:00:00+09:00"
-}
-```
+공통 속성:
 
-### `get_screened_candidates`
+- `mode: "paper_only"`
+- `readOnly: true`
+- paper-only disclaimer
 
-최근 screener 후보 목록을 조회합니다.
-
-```json
-{
-  "market": "KR",
-  "limit": 20
-}
-```
-
-```json
-{
-  "candidates": [
-    {
-      "candidate_id": "cand_mock_001",
-      "market": "KR",
-      "symbol": "005930",
-      "score": 82,
-      "reason_codes": ["VOLUME_SPIKE", "MA_BREAKOUT"],
-      "screened_at": "2026-05-19T09:00:00+09:00",
-      "expires_at": "2026-05-19T09:05:00+09:00"
-    }
-  ]
-}
-```
-
-### `get_candidate_detail`
-
-후보의 factor와 snapshot reference를 조회합니다.
-
-```json
-{
-  "candidate_id": "cand_mock_001"
-}
-```
-
-```json
-{
-  "candidate_id": "cand_mock_001",
-  "market": "KR",
-  "symbol": "005930",
-  "factors": {
-    "volume_spike_ratio": 2.4,
-    "rsi": 58.2,
-    "spread_bps": 5
-  },
-  "snapshot_ref": "snapshot_mock_001",
-  "reason_codes": ["VOLUME_SPIKE", "MA_BREAKOUT"]
-}
-```
-
-### `get_latest_signals`
-
-최근 trading signal 목록을 조회합니다.
-
-```json
-{
-  "strategy_id": "mock_momentum_v1",
-  "limit": 20
-}
-```
-
-```json
-{
-  "signals": [
-    {
-      "signal_id": "sig_mock_001",
-      "strategy_id": "mock_momentum_v1",
-      "market": "KR",
-      "symbol": "005930",
-      "side": "BUY",
-      "signal_type": "MOMENTUM_BREAKOUT",
-      "created_at": "2026-05-19T09:00:00+09:00",
-      "expires_at": "2026-05-19T09:03:00+09:00"
-    }
-  ]
-}
-```
-
-### `get_signal_detail`
-
-Signal 생성 근거를 조회합니다.
-
-```json
-{
-  "signal_id": "sig_mock_001"
-}
-```
-
-```json
-{
-  "signal_id": "sig_mock_001",
-  "input_candidate_id": "cand_mock_001",
-  "reason_codes": ["CANDIDATE_SCORE_THRESHOLD", "TREND_FILTER_PASS"],
-  "snapshot_ref": "snapshot_mock_001",
-  "llm_generated": false
-}
-```
-
-### `get_risk_decisions`
-
-Risk Engine 판단 목록을 조회합니다.
-
-```json
-{
-  "approved": false,
-  "limit": 20
-}
-```
-
-```json
-{
-  "risk_decisions": [
-    {
-      "decision_id": "risk_mock_001",
-      "signal_id": "sig_mock_001",
-      "approved": false,
-      "reject_codes": ["MAX_ORDER_AMOUNT_EXCEEDED"],
-      "created_at": "2026-05-19T09:00:01+09:00"
-    }
-  ]
-}
-```
-
-### `get_strategy_status`
-
-Strategy runtime 상태를 조회합니다.
-
-```json
-{
-  "strategy_id": "mock_momentum_v1"
-}
-```
-
-```json
-{
-  "strategy_id": "mock_momentum_v1",
-  "status": "PAUSED",
-  "trading_enabled": false,
-  "last_run_at": "2026-05-19T09:00:00+09:00",
-  "last_error": null
-}
-```
-
-### `get_open_orders`
-
-미체결 주문을 조회합니다. order ID는 masking합니다.
-
-```json
-{
-  "market": "KR"
-}
-```
-
-```json
-{
-  "open_orders": [
-    {
-      "masked_order_id": "ord_****_001",
-      "market": "KR",
-      "symbol": "005930",
-      "side": "BUY",
-      "quantity": 1,
-      "status": "ACCEPTED",
-      "created_at": "2026-05-19T09:00:02+09:00"
-    }
-  ]
-}
-```
-
-### `get_recent_executions`
-
-최근 체결을 조회합니다. execution ID는 masking합니다.
-
-```json
-{
-  "limit": 20
-}
-```
-
-```json
-{
-  "executions": [
-    {
-      "masked_execution_id": "exec_****_001",
-      "masked_order_id": "ord_****_001",
-      "market": "KR",
-      "symbol": "005930",
-      "side": "BUY",
-      "quantity": 1,
-      "price": 70000,
-      "executed_at": "2026-05-19T09:00:03+09:00"
-    }
-  ]
-}
-```
-
-### `get_audit_events`
-
-감사 이벤트를 조회합니다.
-
-```json
-{
-  "event_type": "RISK_DECISION",
-  "limit": 50
-}
-```
-
-### Future external intelligence tools
-
-`tossinvest-cli` fork 같은 optional source를 구현하더라도 Codex에는 raw command runner를 노출하지 않습니다. 필요한 경우 다음처럼 normalized store를 조회하는 read-only tool만 추가합니다.
-
-- `get_external_market_intelligence`
-- `get_external_market_signal_snapshot`
-- `get_intelligence_source_status`
-
-이 tool들은 `ExternalMarketSignalStore` 또는 `MarketSnapshotStore`에 이미 저장된 값을 조회합니다. collector process 실행, auth/config 변경, watchlist mutation, order command 실행은 수행하지 않습니다.
-
-### Future paper trading tools
-
-Codex CLI paper trading을 구현하더라도 MCP에는 저장된 paper state를 조회하는 read-only tool만 기본 노출합니다.
-
-- `get_virtual_portfolio`
-- `get_virtual_positions`
-- `get_virtual_decisions`
-- `get_virtual_trades`
-- `get_virtual_performance`
-
-이 tool들은 `VirtualPortfolio`, `VirtualLedger`, `VirtualDecisionStore`를 조회합니다. MCP tool 호출 시점에 `codex exec`를 실행하지 않습니다.
-
-```json
-{
-  "events": [
-    {
-      "event_id": "audit_mock_001",
-      "event_type": "RISK_DECISION",
-      "actor": "system",
-      "summary": "Order rejected by RiskEngine",
-      "masked_refs": ["risk_****_001"],
-      "created_at": "2026-05-19T09:00:01+09:00"
-    }
-  ]
-}
-```
-
-## Limited Operational Tools
-
-이 tool들은 side effect가 있으므로 `approval_mode = "prompt"`를 권장합니다.
-
-### `preview_order`
-
-주문을 실행하지 않고 Risk Engine 검증 결과와 예상 주문 내용을 미리 봅니다.
-
-```json
-{
-  "signal_id": "sig_mock_001",
-  "quantity": 1,
-  "order_type": "LIMIT",
-  "limit_price": 70000
-}
-```
-
-```json
-{
-  "preview_id": "preview_mock_001",
-  "expires_at": "2026-05-19T09:01:00+09:00",
-  "risk_approved": true,
-  "estimated_order_amount_krw": 70000,
-  "warnings": []
-}
-```
-
-### `pause_strategy`
-
-Strategy 실행을 중지합니다. 신규 signal 생성을 막기 위한 운영 제어입니다.
-
-```json
-{
-  "strategy_id": "mock_momentum_v1",
-  "reason": "manual maintenance"
-}
-```
-
-### `resume_strategy`
-
-중지된 strategy를 재개합니다. `TRADING_ENABLED=false`이면 signal 생성만 재개되고 주문 실행은 계속 차단될 수 있습니다.
-
-```json
-{
-  "strategy_id": "mock_momentum_v1",
-  "reason": "manual resume after check"
-}
-```
-
-### `emergency_stop`
-
-신규 주문과 strategy 실행을 즉시 차단합니다.
-
-```json
-{
-  "reason": "manual emergency stop",
-  "scope": "ALL"
-}
-```
+민감 정보는 `maskObject`를 통과한다. 계좌번호, token, order ID, execution data처럼 읽힐 수 있는 값은 원문으로 출력하지 않는다.
 
 ## Disabled-by-default Tools
 
-다음 tool은 기본적으로 Codex에 노출하지 않습니다.
+다음 이름은 기본 enabled MCP surface에 포함하지 않는다.
 
 - `place_order`
 - `place_market_order`
@@ -409,17 +84,36 @@ Strategy 실행을 중지합니다. 신규 signal 생성을 막기 위한 운영
 - `transfer_cash`
 - `withdraw`
 
-실거래가 가능한 tool은 별도 threat model, 사용자 승인, 테스트, mock 검증, audit log, rollback 절차가 없으면 추가하지 않습니다.
+실거래 또는 외부 command 실행이 가능한 tool은 별도 threat model, 사용자 승인, mock 검증, audit log, rollback 절차가 없으면 추가하지 않는다.
+
+## Local Operations API와의 관계
+
+MCP server와 local operations HTTP API는 모두 운영 조회 surface지만 entrypoint가 다르다.
+
+- MCP: Codex tool 호출용 read-only interface
+- Local Operations API: dashboard와 로컬 브라우저 조회용 HTTP interface
+
+Local Operations API의 route와 method 기준은 `src/api/localOperationsSurface.ts`가 source of truth다. HTTP API도 `GET`/`HEAD`만 허용하고 `POST`/`PUT`/`PATCH`/`DELETE` 요청은 `405`로 거절한다.
+
+## Future Tool Policy
+
+새 tool을 추가하기 전에 다음 질문을 통과해야 한다.
+
+1. 이 tool이 계좌, 주문, 체결, watchlist, 설정, replay artifact를 변경하는가?
+2. 이 tool이 raw `tossctl` 또는 raw `codex exec`를 실행하는가?
+3. 이 tool이 `VirtualDecision`을 live `TradingSignal` 또는 `OrderIntent`로 승격하는가?
+4. read-only snapshot 조회로 대체할 수 있는가?
+5. approval, audit log, idempotency, rollback 기준이 문서화되어 있는가?
+
+하나라도 불명확하면 enabled tool로 추가하지 않는다.
 
 ## Approval Policy Recommendation
 
 - `default_tools_approval_mode = "prompt"`
 - read-only tools는 필요 시 tool별 `approval_mode = "approve"`로 명시
-- operational tools는 `approval_mode = "prompt"` 유지
-- disabled-by-default tools는 `disabled_tools`에 명시
-- MCP Server 자체는 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false` 환경에서 먼저 실행
-- external intelligence source는 기본 비활성화하고, enabled되더라도 read-only normalized data 조회만 MCP에 노출
-- Codex CLI paper trading은 backend worker에서만 실행하고, MCP에는 virtual state 조회만 노출
-- enabled/disabled tool 변경은 pull request 또는 명시적 변경 이력으로 관리
+- operational tools는 기본 enabled surface에 넣지 않는다.
+- disabled-by-default tools는 config의 `disabled_tools` 또는 리뷰 기준에 명시한다.
+- MCP server는 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false` 환경에서 먼저 실행한다.
+- Codex CLI paper decision은 backend worker 경로에서만 실행하고 MCP tool로 노출하지 않는다.
 
-예시는 [.codex/config.example.toml](../.codex/config.example.toml)을 참고합니다.
+설정 예시는 [.codex/config.example.toml](../.codex/config.example.toml)을 참고한다.

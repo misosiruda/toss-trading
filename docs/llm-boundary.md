@@ -10,23 +10,19 @@ Codex는 트레이딩 엔진이 아닙니다. Codex는 결정론적 트레이딩
 
 ## What Codex Can Do
 
-Codex는 다음 작업에 사용할 수 있습니다.
+Codex는 현재 enabled MCP surface에서 다음 작업에 사용할 수 있습니다.
 
-- `get_account_summary`로 계좌 요약 조회
-- `get_positions`로 보유 포지션 조회
-- `get_cash_balance`로 현금 잔고 조회
-- `get_screened_candidates`로 screener 후보 조회
-- `get_candidate_detail`로 후보 상세 분석
-- `get_latest_signals`와 `get_signal_detail`로 signal 조회 및 설명
-- `get_risk_decisions`로 risk rejection 이유 설명
-- `get_strategy_status`로 strategy 상태 조회
-- `get_open_orders`로 미체결 주문 조회
-- `get_recent_executions`로 최근 체결 조회
-- `get_audit_events`로 감사 이벤트 조회
-- 후보 분석 보고서 생성
-- 리스크 결정의 근거 설명
-- 운영자가 승인한 `preview_order`, `pause_strategy`, `resume_strategy`, `emergency_stop` 요청
-- paper trading mode에서 `codex exec`를 통해 `virtual_decision` JSON 생성
+- `get_virtual_portfolio`로 paper-only virtual portfolio 조회
+- `get_virtual_positions`로 paper-only virtual position 조회
+- `get_virtual_decisions`로 저장된 virtual decision 조회
+- `get_virtual_trades`로 저장된 virtual trade 조회
+- `get_virtual_performance`로 paper-only 파생 지표 조회
+- `get_paper_report`로 local paper daily report 조회
+- `get_scheduler_status`로 scheduler state와 lock metadata 조회
+- `get_source_health`로 저장된 TossInvest read-only source 상태 조회
+- `get_market_packets`로 저장된 market packet 조회
+- 저장된 후보, risk reject, paper report를 바탕으로 한 설명과 문서화
+- backend worker가 paper trading mode에서 실행한 `virtual_decision` JSON 검토
 
 Codex의 설명은 의사결정 지원 정보이며, 실계좌 최종 매매 판단이 아닙니다. `virtual_decision`은 가상 포트폴리오에만 적용되는 paper trading 판단입니다.
 
@@ -77,28 +73,25 @@ MCP tool은 세 단계로 분류합니다.
 
 ### Read-only Tools
 
-기본 enabled 대상입니다. 상태 조회, 설명, 감사 로그 확인에 사용합니다.
+기본 enabled 대상입니다. 현재 구현은 paper-only virtual state와 운영 산출물 조회로 제한합니다.
 
-- `get_account_summary`
-- `get_positions`
-- `get_cash_balance`
-- `get_screened_candidates`
-- `get_candidate_detail`
-- `get_latest_signals`
-- `get_signal_detail`
-- `get_risk_decisions`
-- `get_strategy_status`
-- `get_open_orders`
-- `get_recent_executions`
-- `get_audit_events`
+- `get_virtual_portfolio`
+- `get_virtual_positions`
+- `get_virtual_decisions`
+- `get_virtual_trades`
+- `get_virtual_performance`
+- `get_paper_report`
+- `get_scheduler_status`
+- `get_source_health`
+- `get_market_packets`
 
 향후 optional external intelligence source를 붙이는 경우에도 Codex는 저장된 normalized snapshot만 조회합니다. Codex가 collector process나 external CLI command를 직접 실행하지 않습니다.
 
-향후 paper trading을 붙이는 경우에도 MCP에는 저장된 `VirtualPortfolio`, `VirtualLedger`, `virtual_decision` 조회 tool만 노출합니다. `codex exec` 실행 tool은 노출하지 않습니다.
+MCP에는 저장된 `VirtualPortfolio`, `VirtualTrade`, `VirtualDecision`, `MarketPacket`, paper report, scheduler/source health 조회 tool만 노출합니다. `codex exec` 실행 tool은 노출하지 않습니다.
 
 ### Limited Operational Tools
 
-제한적으로 enabled할 수 있지만 `approval_mode = "prompt"`가 필요합니다.
+제한적으로 enabled할 수 있지만 `approval_mode = "prompt"`가 필요합니다. 현재 enabled MCP tool 목록에는 포함되어 있지 않습니다.
 
 - `preview_order`
 - `pause_strategy`
@@ -117,6 +110,8 @@ MCP tool은 세 단계로 분류합니다.
 - `execute_tossctl`
 - `run_codex_exec`
 - `execute_codex_cli`
+- `place_toss_order`
+- `sync_watchlist`
 - `enable_live_trading`
 - `update_risk_policy`
 - `update_strategy_threshold`

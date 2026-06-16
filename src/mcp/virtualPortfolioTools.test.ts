@@ -20,6 +20,7 @@ import {
   listVirtualPortfolioTools,
   virtualPortfolioToolNames
 } from "./virtualPortfolioTools.js";
+import { disabledByDefaultMcpToolNames } from "./toolSurfacePolicy.js";
 
 async function createTempStorageBaseDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "toss-trading-mcp-test-"));
@@ -150,9 +151,13 @@ test("virtual portfolio MCP tool list is read-only and excludes forbidden tools"
     tools.map((tool) => tool.name),
     [...virtualPortfolioToolNames]
   );
-  assert.equal(tools.some((tool) => tool.name === "place_order"), false);
-  assert.equal(tools.some((tool) => tool.name === "run_tossctl"), false);
-  assert.equal(tools.some((tool) => tool.name === "run_codex_exec"), false);
+  for (const disabledToolName of disabledByDefaultMcpToolNames) {
+    assert.equal(
+      tools.some((tool) => tool.name === disabledToolName),
+      false,
+      disabledToolName
+    );
+  }
   assert.equal(
     tools.every((tool) => tool.annotations?.readOnlyHint === true),
     true
@@ -323,13 +328,25 @@ test("get_market_packets returns recent stored packets with a limit", async () =
 
 test("forbidden or unknown tool names return an MCP error result", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
-  const result = await callVirtualPortfolioTool(
-    "place_order",
-    {},
-    { storageBaseDir }
-  );
-  const payload = parseToolJson(result);
+  for (const disabledToolName of disabledByDefaultMcpToolNames) {
+    const result = await callVirtualPortfolioTool(
+      disabledToolName,
+      {},
+      { storageBaseDir }
+    );
+    const payload = parseToolJson(result);
 
-  assert.equal(result.isError, true);
-  assert.match(String(payload["error"]), /Unknown or disabled tool/);
+    assert.equal(result.isError, true, disabledToolName);
+    assert.match(
+      String(payload["error"]),
+      /Unknown or disabled tool/,
+      disabledToolName
+    );
+  }
+
+  const unknown = await callVirtualPortfolioTool("unknown_tool", {}, { storageBaseDir });
+  const unknownPayload = parseToolJson(unknown);
+
+  assert.equal(unknown.isError, true);
+  assert.match(String(unknownPayload["error"]), /Unknown or disabled tool/);
 });
