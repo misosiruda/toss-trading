@@ -345,6 +345,39 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 11. Dashboard Batch Run Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/batchRunRenderers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 batch replay 개별 run 목록, 탭, 상세, polling renderer를 별도 module로 이동한다.
+- `app.js`는 dashboard bootstrap, refresh orchestration, page별 renderer composition 중심으로 줄인다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 quality gate에서 같이 검증되게 한다.
+- virtual replays page의 batch run 표시와 polling 동작을 behavior-preserving 방식으로 유지한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- batch replay 문구를 투자 조언이나 수익률 보장처럼 변경
+- batch replay artifact schema, risk engine, order engine 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 batch run renderer module을 import하고 batch run tab/page renderer 구현을 직접 보유하지 않는다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
