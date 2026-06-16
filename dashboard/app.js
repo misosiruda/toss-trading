@@ -68,6 +68,7 @@ import {
   initialNetWorthKrw,
   maxDrawdownRatio,
   portfolioPerformanceTimeline,
+  portfolioPointFromVirtualPortfolio,
   positionCostBasis,
   positionMarketValue,
   realizedPnlFromTrades,

@@ -342,7 +342,7 @@ function portfolioPointFromPacket(packet) {
   );
 }
 
-function portfolioPointFromVirtualPortfolio(portfolio, simulatedAt, latestPacket) {
+export function portfolioPointFromVirtualPortfolio(portfolio, simulatedAt, latestPacket) {
   if (!portfolio || !simulatedAt) {
     return null;
   }

@@ -263,6 +263,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /from "\.\/formatters\.js"/);
     assert.match(script.text, /from "\.\/metadata\.js"/);
     assert.match(script.text, /from "\.\/portfolioModel\.js"/);
+    assert.match(script.text, /portfolioPointFromVirtualPortfolio/);
+    assert.match(dashboardScriptText, /export function portfolioPointFromVirtualPortfolio/);
     assert.match(script.text, /from "\.\/reportRenderers\.js"/);
     assert.match(script.text, /from "\.\/reportViewHelpers\.js"/);
     assert.match(script.text, /from "\.\/router\.js"/);
