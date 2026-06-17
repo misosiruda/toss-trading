@@ -2486,6 +2486,7 @@
 - sell position missing/quantity exceeded 차단
 - preview required/expired/mismatch 차단
 - malformed numeric order intent와 risk snapshot 차단
+- malformed snapshot collection 차단
 - sell intent가 exposure를 증가시키지 않음
 - `npm run check`
 - `git diff --check`

@@ -161,12 +161,27 @@ function evaluateRiskSnapshotShape(
   rejectCodes: LiveRiskRejectCode[],
   snapshot: LiveRiskSnapshot
 ): void {
+  const positions = Array.isArray(snapshot.positions) ? snapshot.positions : [];
+  const openOrders = Array.isArray(snapshot.openOrders)
+    ? snapshot.openOrders
+    : [];
+
   if (!isNonNegativeFiniteNumber(snapshot.dailyLossKrw)) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
-    return;
   }
 
-  const hasInvalidPosition = snapshot.positions.some((position) => {
+  if (
+    !Array.isArray(snapshot.positions) ||
+    !Array.isArray(snapshot.openOrders) ||
+    !isRecord(snapshot.marketSessions)
+  ) {
+    appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
+  }
+
+  const hasInvalidPosition = positions.some((position) => {
+    if (!isRecord(position)) {
+      return true;
+    }
     if (
       !isLiveMarket(position.market) ||
       !isNonEmptyString(position.symbol) ||
@@ -185,7 +200,10 @@ function evaluateRiskSnapshotShape(
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
   }
 
-  const hasInvalidOpenOrder = snapshot.openOrders.some((openOrder) => {
+  const hasInvalidOpenOrder = openOrders.some((openOrder) => {
+    if (!isRecord(openOrder)) {
+      return true;
+    }
     if (
       !isNonEmptyString(openOrder.orderIntentId) ||
       (openOrder.signalId !== undefined &&
@@ -272,7 +290,7 @@ function evaluateMarketHours(
     return;
   }
 
-  const session = snapshot.marketSessions[market];
+  const session = safeMarketSessions(snapshot.marketSessions)[market];
   if (session === undefined) {
     appendLiveRiskRejectCode(rejectCodes, "MARKET_HOURS_UNKNOWN");
     return;
@@ -288,7 +306,7 @@ function evaluateDuplicateOrder(
   normalizedSymbol: string,
   snapshot: LiveRiskSnapshot
 ): void {
-  for (const openOrder of snapshot.openOrders) {
+  for (const openOrder of safeOpenOrders(snapshot.openOrders)) {
     if (openOrder.orderIntentId === intent.orderIntentId) {
       appendLiveRiskRejectCode(rejectCodes, "DUPLICATE_ORDER_INTENT");
     }
@@ -337,7 +355,7 @@ function evaluateOpenOrderCount(
   snapshot: LiveRiskSnapshot,
   policy: LiveRiskPolicy
 ): void {
-  if (snapshot.openOrders.length >= policy.maxOpenOrders) {
+  if (safeOpenOrders(snapshot.openOrders).length >= policy.maxOpenOrders) {
     appendLiveRiskRejectCode(rejectCodes, "OPEN_ORDER_LIMIT_EXCEEDED");
   }
 }
@@ -459,14 +477,14 @@ function currentMarketExposureKrw(
   snapshot: LiveRiskSnapshot,
   market: Market
 ): number {
-  return snapshot.positions
+  return safeRiskPositions(snapshot.positions)
     .filter((position) => position.market === market)
     .reduce((sum, position) => sum + positionExposureKrw(position), 0) +
     currentOpenBuyMarketExposureKrw(snapshot, market);
 }
 
 function currentTotalExposureKrw(snapshot: LiveRiskSnapshot): number {
-  return snapshot.positions.reduce(
+  return safeRiskPositions(snapshot.positions).reduce(
     (sum, position) => sum + positionExposureKrw(position),
     0
   ) + currentOpenBuyTotalExposureKrw(snapshot);
@@ -477,7 +495,7 @@ function currentOpenBuySymbolExposureKrw(
   market: Market,
   normalizedSymbol: string
 ): number {
-  return snapshot.openOrders
+  return safeOpenOrders(snapshot.openOrders)
     .filter(
       (openOrder) =>
         openOrder.side === "BUY" &&
@@ -491,7 +509,7 @@ function currentOpenBuyMarketExposureKrw(
   snapshot: LiveRiskSnapshot,
   market: Market
 ): number {
-  return snapshot.openOrders
+  return safeOpenOrders(snapshot.openOrders)
     .filter(
       (openOrder) => openOrder.side === "BUY" && openOrder.market === market
     )
@@ -499,7 +517,7 @@ function currentOpenBuyMarketExposureKrw(
 }
 
 function currentOpenBuyTotalExposureKrw(snapshot: LiveRiskSnapshot): number {
-  return snapshot.openOrders
+  return safeOpenOrders(snapshot.openOrders)
     .filter((openOrder) => openOrder.side === "BUY")
     .reduce((sum, openOrder) => sum + openOrderExposureKrw(openOrder), 0);
 }
@@ -509,7 +527,7 @@ function findPosition(
   market: Market,
   normalizedSymbol: string
 ): LiveRiskPosition | undefined {
-  return snapshot.positions.find(
+  return safeRiskPositions(snapshot.positions).find(
     (position) =>
       position.market === market &&
       safeNormalizeLiveRiskSymbol(position.symbol) === normalizedSymbol
@@ -532,6 +550,26 @@ function safeNormalizeLiveRiskSymbol(value: unknown): string {
   return isNonEmptyString(value) ? normalizeLiveRiskSymbol(value) : "";
 }
 
+function safeRiskPositions(value: unknown): readonly LiveRiskPosition[] {
+  return Array.isArray(value)
+    ? (value.filter(isRecord) as unknown as readonly LiveRiskPosition[])
+    : [];
+}
+
+function safeOpenOrders(value: unknown): readonly LiveOpenOrder[] {
+  return Array.isArray(value)
+    ? (value.filter(isRecord) as unknown as readonly LiveOpenOrder[])
+    : [];
+}
+
+function safeMarketSessions(
+  value: unknown
+): Partial<Record<Market, LiveMarketSessionStatus>> {
+  return isRecord(value)
+    ? (value as Partial<Record<Market, LiveMarketSessionStatus>>)
+    : {};
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -546,6 +584,10 @@ function isLiveOrderSide(value: unknown): value is LiveOrderSide {
 
 function isLiveOrderType(value: unknown): value is LiveOrderType {
   return value === "LIMIT" || value === "MARKET";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function openOrderExposureKrw(openOrder: LiveOpenOrder): number {

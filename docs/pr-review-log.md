@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 13 tests.
-- `npm run check`: pass, 388 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 14 tests.
+- `npm run check`: pass, 389 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2277,6 +2277,7 @@
 - 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
 - pending BUY open order의 notional을 exposure cap에 반영하는지 검증합니다.
 - pending BUY open order의 notional이 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
+- malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 fail-closed 되는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
 - 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
 
@@ -2299,3 +2300,8 @@
 - P2 `Reserve pending buy exposure before approving`: `LiveOpenOrder`에 optional `estimatedGrossAmountKrw`를 추가하고, BUY open order의 pending notional을 symbol/market/total exposure 계산에 반영했습니다.
 - P2 `Validate symbol before normalizing it`: intent symbol과 snapshot symbol을 `safeNormalizeLiveRiskSymbol`로 처리해 malformed symbol이 throw가 아니라 fail-closed reject code로 귀결되도록 보강했습니다.
 - 추가 테스트: pending BUY exposure cap 반영, pending BUY notional 누락 snapshot reject, non-string symbol malformed intent reject.
+
+### Codex Review Fix 3
+
+- P2 `Guard malformed snapshots before iterating arrays`: `positions`, `openOrders`, `marketSessions`를 array/object 여부 확인 후 접근하도록 `safeRiskPositions`, `safeOpenOrders`, `safeMarketSessions`를 추가했습니다.
+- 추가 테스트: malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 reject되는지 검증합니다.

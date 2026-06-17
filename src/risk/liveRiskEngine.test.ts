@@ -373,6 +373,33 @@ test("live risk engine rejects malformed numeric intent and snapshot values", ()
   );
 });
 
+test("live risk engine rejects malformed snapshot collections without throwing", () => {
+  const decision = evaluate({
+    snapshot: ({
+      ...baseSnapshot(),
+      positions: null,
+      openOrders: undefined,
+      marketSessions: null
+    } as unknown) as LiveRiskSnapshot
+  });
+  const malformedElementDecision = evaluate({
+    snapshot: ({
+      ...baseSnapshot(),
+      positions: [null],
+      openOrders: [null]
+    } as unknown) as LiveRiskSnapshot
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(
+    decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT")
+  );
+  assert.equal(malformedElementDecision.approved, false);
+  assert.ok(
+    malformedElementDecision.rejectCodes.includes("INVALID_RISK_SNAPSHOT")
+  );
+});
+
 test("live risk engine rejects malformed enum and identity intent fields", () => {
   const decision = evaluate({
     intent: ({

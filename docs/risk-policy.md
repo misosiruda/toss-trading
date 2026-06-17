@@ -111,6 +111,7 @@ Artifact 위치 계약:
 - sell position ownership and quantity
 - preview requirement
 - malformed numeric order intent and risk snapshot rejection
+- malformed snapshot collection rejection
 
 현재 제외 범위:
 
