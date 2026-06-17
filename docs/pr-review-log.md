@@ -2032,3 +2032,30 @@
 - `scripts/qualityGate.mjs`는 `AI_DECISION_*` alias가 `CODEX_*` fallback보다 우선되는지 검사합니다.
 - `docs/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
 - 신규 runtime behavior, API contract, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 27: Official Toss Open API Adapter Design
+
+### Review 1: Scope and Safety
+
+- 범위는 official Toss Open API adapter 설계 문서와 관련 문서 링크 추가에 한정합니다.
+- official API 실제 호출 코드, token auth 구현, live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현은 추가하지 않았습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- Codex MCP enabled surface, Local Operations API route, dashboard asset, package script는 변경하지 않았습니다.
+- 설계 문서에는 후속 구현 전 OpenAPI JSON 재확인, mock-first 순서, Risk Engine 선행 조건, MCP/dashboard mutation 금지 조건을 명시했습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run check`: pass, 335 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- 공식 문서 확인: `developers.tossinvest.com/llms.txt`, overview markdown, OpenAPI markdown, OpenAPI JSON metadata를 확인했습니다.
+- 확인한 OpenAPI metadata는 `openapi=3.1.0`, `info.version=1.1.1`, server `https://openapi.tossinvest.com`입니다.
+- 이번 phase는 docs-only 변경이라 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `docs/official-toss-open-api-adapter-design.md`는 공식 endpoint category, OAuth2 Client Credentials, `X-Tossinvest-Account`, rate limit, error envelope, idempotency, audit/masking, PR 분리 순서를 문서화합니다.
+- `README.md`와 `docs/architecture.md`는 official adapter가 아직 구현되지 않았고 설계 문서만 존재한다는 경계를 연결합니다.
+- `docs/PROJECT_STRUCTURE.md`는 새 설계 문서를 구조/책임 경계 문서 목록에 추가합니다.
+- `docs/pr-implementation-plan.md`는 Later PRs의 official adapter design 범위를 설계 문서로 구체화하고 구현 제외 범위를 명시합니다.
+- Codex review 후속 수정으로 live trading threat model을 official order gateway보다 앞에 배치했습니다.
+- 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.

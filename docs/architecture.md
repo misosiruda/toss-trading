@@ -67,7 +67,7 @@ Trading Engine은 Codex가 실행 중이 아니어도 동작해야 합니다. Co
 
 `MarketDataCollector`는 시세, 거래량, 호가, 체결, market hours 정보를 수집합니다. 수집된 데이터는 `MarketSnapshotStore`에 저장되고 screener와 strategy가 동일한 snapshot 기준으로 판단할 수 있게 합니다.
 
-공식 broker adapter의 primary source는 Toss Securities Open API입니다. `tossinvest-cli` fork 같은 비공식 source는 production broker adapter가 아니라 optional read-only intelligence source로만 다룹니다.
+공식 broker adapter의 primary source는 Toss Securities Open API입니다. `tossinvest-cli` fork 같은 비공식 source는 production broker adapter가 아니라 optional read-only intelligence source로만 다룹니다. Official adapter 구현 전 설계 경계는 [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)를 따릅니다.
 
 ### ExternalIntelligenceCollector
 
