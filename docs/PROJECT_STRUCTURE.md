@@ -29,6 +29,7 @@ toss-trading/
 | --- | --- | --- |
 | `src/domain/` | Zod schema, TypeScript contract, 공통 validation | I/O, storage, provider 호출 금지 |
 | `src/config/` | `.env` 로딩과 실행 설정 해석, official token auth config parsing | trading mode를 암묵적으로 활성화하지 않음 |
+| `src/broker/` | official broker integration helper, token auth client boundary | live order gateway, direct MCP/API 노출 금지 |
 | `src/collectors/` | optional read-only source 수집과 정규화 | 주문, 계좌 mutation, raw command runner 금지 |
 | `src/market/` | market packet, historical packet, packet hash 생성 | Codex CLI나 broker API 호출 금지 |
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
@@ -240,6 +241,23 @@ flowchart TD
 - `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret` 누락 시 `invalid`로 fail-closed 되는지 확인
 - safe summary가 credential value를 반환하지 않는지 확인
 - token 발급 HTTP call, token cache, broker adapter, account/order adapter를 추가하지 않음
+
+### Official Toss Open API token auth client 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiAuthClient.ts`
+- `src/broker/tossOpenApiAuthClient.test.ts`
+- `docs/official-token-auth-design.md`
+
+필수 확인:
+
+- token issue request가 `application/x-www-form-urlencoded`와 `grant_type=client_credentials`를 사용
+- `TossOpenApiAuthClient`가 disabled/invalid config에서 issuer를 호출하지 않고 fail-closed 처리
+- token response의 `token_type`이 `Bearer`가 아니면 cache하지 않음
+- `expires_in`과 safety margin 기준으로 memory cache를 재사용 또는 재발급
+- concurrent token request가 single-flight로 합쳐짐
+- 실제 HTTP transport, persistent token store, account/order adapter, live order gateway를 추가하지 않음
 
 ### Storage artifact 변경
 

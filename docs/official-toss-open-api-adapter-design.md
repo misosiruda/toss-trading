@@ -319,7 +319,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 1 | Official API adapter design | 이 문서와 링크 | code, token auth, order |
 | 2 | [Official token auth design](official-token-auth-design.md) | env, secret handling, token lifecycle 문서와 tests plan | real secret, API call |
 | 3 | Token config parser | safe-disabled env parser, placeholder, missing secret tests | token issue HTTP call |
-| 4 | Mocked token auth client | form request builder, memory cache, single-flight tests | account/order adapter |
+| 4 | Mocked token auth client | form request builder, response parser, memory cache, single-flight tests | HTTP transport, account/order adapter |
 | 5 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
 | 6 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 7 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |

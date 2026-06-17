@@ -108,6 +108,24 @@ const options = {
 
 `readTossOpenApiAuthConfig({})`는 `enabled=false`, `status=disabled`를 기본값으로 유지해야 한다. `TOSS_OPEN_API_AUTH_ENABLED=true`일 때 `TOSS_OPEN_API_CLIENT_ID` 또는 `TOSS_OPEN_API_CLIENT_SECRET`이 없으면 API 호출 전에 `invalid`로 fail-closed 처리해야 한다. credential value를 운영 조회에 사용할 때는 `summarizeTossOpenApiAuthConfig`처럼 존재 여부만 반환하는 safe summary를 사용한다.
 
+### `src/broker`
+
+책임:
+
+- official broker integration helper
+- Toss Open API token auth client boundary
+- token issue request contract 구성
+- process memory token cache와 single-flight 제어
+
+금지:
+
+- live order gateway를 기본 활성화
+- MCP/API/dashboard에서 직접 호출 가능한 broker mutation surface 추가
+- persistent token store를 별도 보안 설계 없이 추가
+- auth 계층에서 order retry 또는 Risk Engine 판단 수행
+
+`TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 통해 token issue를 추상화한다. 실제 HTTP transport를 추가할 때는 별도 PR에서 error/rate limit/masking 테스트를 함께 추가해야 한다.
+
 ### `src/collectors`
 
 책임:
