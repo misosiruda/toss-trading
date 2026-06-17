@@ -53,10 +53,12 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 
 | Artifact | 형식/역할 | Domain contract | Writer | Local Operations reader | 실패 추적 기준 |
 | --- | --- | --- | --- | --- | --- |
+| `virtual-portfolio.json` | JSON snapshot | `VirtualPortfolio` | `FileVirtualPortfolioStore` | `/virtual/portfolio` | 최신 paper-only portfolio state 확인 |
 | `market-packets.jsonl` | JSONL append-only log | `MarketPacket` | `FileMarketPacketStore` | `/market/packets` | AI decision 이전 후보, source refs, packet hash 확인 |
-| `virtual-decisions.jsonl` | JSONL append-only log | `VirtualDecision` | `FileVirtualDecisionStore` | `/decisions` | schema/semantic validation을 통과해 저장된 paper decision 확인 |
-| `virtual-trades.jsonl` | JSONL append-only log | `VirtualTrade` | `FileVirtualTradeStore` | `/trades` | paper fill 발생 여부 확인 |
+| `virtual-decisions.jsonl` | JSONL append-only log | `VirtualDecision` | `FileVirtualDecisionStore` | `/virtual/decisions` | schema/semantic validation을 통과해 저장된 paper decision 확인 |
+| `virtual-trades.jsonl` | JSONL append-only log | `VirtualTrade` | `FileVirtualTradeStore` | `/virtual/trades` | paper fill 발생 여부 확인 |
 | `audit-events.jsonl` | JSONL append-only log | `AuditEvent` | `FileAuditLog` | `/audit/events` | provider failure, validation reject, risk reject, order/audit stage 확인 |
+| `tossinvest-sources.jsonl` | JSONL append-only log | `TossInvestCliCollectResult` | `FileTossInvestSourceStore` | `/source/health` | read-only source collection status와 degradation reason 확인 |
 | `historical-market-snapshots.jsonl` | JSONL append-only log | `HistoricalMarketSnapshot` | `FileHistoricalMarketSnapshotStore` | 없음 | replay 입력 snapshot과 corrupt line count 확인 |
 | `historical-replay-report.json` | JSON report | `HistoricalReplayReport` | `HistoricalReplayWorkflow` | `/replay/report` | 최종 summary, warning, failure count 확인 |
 | `historical-replay-progress.json` | JSON snapshot | `HistoricalReplayProgress` | `HistoricalReplayWorkflow` | `/replay/progress` | 실행 중 latest status, processed tick, 최근 event 확인 |

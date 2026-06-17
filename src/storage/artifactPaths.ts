@@ -80,7 +80,7 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     role: "snapshot",
     domainContract: "VirtualPortfolio",
     writer: "FileVirtualPortfolioStore",
-    localOperationsReader: "/portfolio",
+    localOperationsReader: "/virtual/portfolio",
     failureTrace: "latest paper-only portfolio state",
     corruptJsonlPolicy: null
   },
@@ -92,7 +92,7 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     role: "append_only_log",
     domainContract: "VirtualDecision",
     writer: "FileVirtualDecisionStore",
-    localOperationsReader: "/decisions",
+    localOperationsReader: "/virtual/decisions",
     failureTrace: "AI/provider decision accepted by backend validation",
     corruptJsonlPolicy: "skip_line_and_count"
   },
@@ -104,7 +104,7 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     role: "append_only_log",
     domainContract: "VirtualTrade",
     writer: "FileVirtualTradeStore",
-    localOperationsReader: "/trades",
+    localOperationsReader: "/virtual/trades",
     failureTrace: "paper order fill record",
     corruptJsonlPolicy: "skip_line_and_count"
   },
@@ -116,7 +116,7 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     role: "append_only_log",
     domainContract: "TossInvestCliCollectResult",
     writer: "FileTossInvestSourceStore",
-    localOperationsReader: "/sources/health",
+    localOperationsReader: "/source/health",
     failureTrace: "read-only source collection status and degradation reason",
     corruptJsonlPolicy: "skip_line_and_count"
   },

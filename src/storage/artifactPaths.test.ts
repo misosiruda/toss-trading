@@ -13,6 +13,7 @@ import {
   createStorageArtifactPathCatalog,
   resolveBatchReplayRunsArtifactPath
 } from "./artifactPaths.js";
+import { LOCAL_OPERATIONS_API_ROUTES } from "../api/localOperationsSurface.js";
 import { createStoragePaths } from "./repositories.js";
 
 test("batch replay artifact paths keep manifest and runs path in one catalog", () => {
@@ -88,6 +89,7 @@ test("storage artifact catalog matches repository storage paths", () => {
 
 test("storage artifact contracts document reader and corrupt JSONL policy", () => {
   const artifactNames = new Set<string>();
+  const localOperationsApiRoutes = new Set<string>(LOCAL_OPERATIONS_API_ROUTES);
 
   for (const contract of STORAGE_ARTIFACT_CONTRACTS) {
     assert.equal(artifactNames.has(contract.artifactName), false);
@@ -99,6 +101,14 @@ test("storage artifact contracts document reader and corrupt JSONL policy", () =
       assert.equal(contract.corruptJsonlPolicy, "skip_line_and_count");
     } else {
       assert.equal(contract.corruptJsonlPolicy, null);
+    }
+
+    if (contract.localOperationsReader !== null) {
+      assert.equal(
+        localOperationsApiRoutes.has(contract.localOperationsReader),
+        true,
+        `${contract.artifactName} points at a registered local operations route`
+      );
     }
   }
 
@@ -114,6 +124,10 @@ test("dynamic batch replay contracts document reader resolution", () => {
   assert.equal(batchRunContract?.fileName, BATCH_REPLAY_RUNS_FILE_NAME);
   assert.equal(batchRunContract?.format, "jsonl");
   assert.equal(batchRunContract?.localOperationsReader, "/batch/replay/runs");
+  assert.equal(
+    LOCAL_OPERATIONS_API_ROUTES.includes("/batch/replay/runs"),
+    true
+  );
   assert.equal(
     batchRunContract?.pathResolver,
     "resolveBatchReplayRunsArtifactPath"
