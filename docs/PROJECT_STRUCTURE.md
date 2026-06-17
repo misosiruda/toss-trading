@@ -297,6 +297,23 @@ flowchart TD
 - `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`만 허용
 - account snapshot reader, order endpoint, Local Operations API/MCP/dashboard surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`를 추가하지 않음
 
+### Official Toss Open API account snapshot reader 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiAccountSnapshotReader.ts`
+- `src/broker/tossOpenApiAccountSnapshotReader.test.ts`
+- `docs/official-toss-open-api-adapter-design.md`
+
+필수 확인:
+
+- reader가 injected account read-only JSON client만 호출
+- `/api/v1/accounts`, `/api/v1/holdings`만 mapping
+- holdings 조회는 explicit `accountSeq`가 있을 때만 수행하고 없으면 degraded source status로 남김
+- output에서 account number와 accountSeq를 masking
+- symbol filter는 letters, numbers, dot, dash만 허용
+- order endpoint, portfolio mutation, Local Operations API/MCP/dashboard surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`를 추가하지 않음
+
 ### Storage artifact 변경
 
 수정 후보:

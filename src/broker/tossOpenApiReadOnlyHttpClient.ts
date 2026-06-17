@@ -5,6 +5,7 @@ export type TossOpenApiReadOnlyHttpClientErrorCode =
   | "TOSS_OPEN_API_READONLY_AUTH_INVALID_CONFIG"
   | "TOSS_OPEN_API_READONLY_INVALID_BASE_URL"
   | "TOSS_OPEN_API_READONLY_INVALID_PATH"
+  | "TOSS_OPEN_API_READONLY_INVALID_ACCOUNT_SEQ"
   | "TOSS_OPEN_API_READONLY_MUTATION_BLOCKED"
   | "TOSS_OPEN_API_READONLY_INVALID_RESPONSE"
   | "TOSS_OPEN_API_READONLY_AUTH_FAILED"
@@ -15,12 +16,17 @@ export type TossOpenApiReadOnlyHttpClientErrorCode =
 
 export type TossOpenApiReadOnlyQueryValue = string | number | boolean;
 
-export interface TossOpenApiReadOnlyRequestInput {
-  method?: string;
-  path: string;
+export interface TossOpenApiReadOnlyRequestOptions {
   query?: ReadonlyArray<
     readonly [string, TossOpenApiReadOnlyQueryValue | undefined]
   >;
+  accountSeq?: number;
+}
+
+export interface TossOpenApiReadOnlyRequestInput
+  extends TossOpenApiReadOnlyRequestOptions {
+  method?: string;
+  path: string;
 }
 
 export interface TossOpenApiReadOnlyHttpRequest {
@@ -29,6 +35,7 @@ export interface TossOpenApiReadOnlyHttpRequest {
   headers: {
     Accept: "application/json";
     Authorization: string;
+    "X-Tossinvest-Account"?: string;
   };
 }
 
@@ -82,23 +89,27 @@ export class TossOpenApiReadOnlyHttpClient {
 
   async getJson(
     path: string,
-    query?: TossOpenApiReadOnlyRequestInput["query"]
+    options?:
+      | TossOpenApiReadOnlyRequestOptions
+      | TossOpenApiReadOnlyRequestInput["query"]
   ): Promise<unknown> {
+    const requestOptions = normalizeReadOnlyRequestOptions(options);
     return this.requestJson({
       method: "GET",
       path,
-      ...(query === undefined ? {} : { query })
+      ...requestOptions
     });
   }
 
   async requestJson(input: TossOpenApiReadOnlyRequestInput): Promise<unknown> {
     const url = buildTossOpenApiReadOnlyUrl(this.config.baseUrl, input);
+    const accountSeq = normalizeOptionalRequestAccountSeq(input.accountSeq);
     assertReadyAuthConfig(this.config);
-    const response = await this.sendGetRequest(url);
+    const response = await this.sendGetRequest(url, accountSeq);
     if (this.shouldRetryAfterTokenFailure(response)) {
       await this.tokenProvider.clearToken?.();
       return parseTossOpenApiReadOnlyHttpResponse(
-        await this.sendGetRequest(url)
+        await this.sendGetRequest(url, accountSeq)
       );
     }
 
@@ -106,11 +117,12 @@ export class TossOpenApiReadOnlyHttpClient {
   }
 
   private async sendGetRequest(
-    url: string
+    url: string,
+    accountSeq: number | undefined
   ): Promise<TossOpenApiReadOnlyHttpResponse> {
     const accessToken = await this.tokenProvider.getAccessToken();
     return this.transport.request(
-      buildTossOpenApiReadOnlyHttpRequest(url, accessToken)
+      buildTossOpenApiReadOnlyHttpRequest(url, accessToken, accountSeq)
     );
   }
 
@@ -161,15 +173,21 @@ export function buildTossOpenApiReadOnlyUrl(
 
 export function buildTossOpenApiReadOnlyHttpRequest(
   url: string,
-  accessToken: string
+  accessToken: string,
+  accountSeq?: number
 ): TossOpenApiReadOnlyHttpRequest {
+  const headers: TossOpenApiReadOnlyHttpRequest["headers"] = {
+    Accept: "application/json",
+    Authorization: `Bearer ${accessToken}`
+  };
+  if (accountSeq !== undefined) {
+    headers["X-Tossinvest-Account"] = String(accountSeq);
+  }
+
   return {
     method: "GET",
     url,
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`
-    }
+    headers
   };
 }
 
@@ -233,6 +251,46 @@ function throwInvalidPath(): never {
     "TOSS_OPEN_API_READONLY_INVALID_PATH",
     "Toss Open API read-only path must be root-relative."
   );
+}
+
+function normalizeReadOnlyRequestOptions(
+  options:
+    | TossOpenApiReadOnlyRequestOptions
+    | TossOpenApiReadOnlyRequestInput["query"]
+    | undefined
+): TossOpenApiReadOnlyRequestOptions {
+  if (options === undefined) {
+    return {};
+  }
+  if (isReadOnlyQueryOption(options)) {
+    return { query: options };
+  }
+
+  return options;
+}
+
+function isReadOnlyQueryOption(
+  options:
+    | TossOpenApiReadOnlyRequestOptions
+    | TossOpenApiReadOnlyRequestInput["query"]
+): options is TossOpenApiReadOnlyRequestInput["query"] {
+  return Array.isArray(options);
+}
+
+function normalizeOptionalRequestAccountSeq(
+  accountSeq: number | undefined
+): number | undefined {
+  if (accountSeq === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(accountSeq) || accountSeq <= 0) {
+    throw new TossOpenApiReadOnlyHttpClientError(
+      "TOSS_OPEN_API_READONLY_INVALID_ACCOUNT_SEQ",
+      "Toss Open API accountSeq header value must be a positive integer."
+    );
+  }
+
+  return accountSeq;
 }
 
 function mapTossOpenApiReadOnlyHttpError(

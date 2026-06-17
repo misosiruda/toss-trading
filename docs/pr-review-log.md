@@ -2207,3 +2207,46 @@
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, 201개 이상 prices symbols fail-closed, invalid input fail-closed, order endpoint 미호출을 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, account snapshot reader, account/order mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 33: Read-only Account Snapshot Reader
+
+### Review 1: Scope and Safety
+
+- 범위는 injected account read-only JSON client 기반 `TossOpenApiAccountSnapshotReader`, accounts/holdings endpoint boundary, account number/accountSeq masking, source status, 관련 문서 갱신에 한정합니다.
+- actual network transport, official API 실제 호출, persistent account store, portfolio mutation, Local Operations API/MCP/dashboard broker surface는 추가하지 않았습니다.
+- reader는 `/api/v1/accounts`, `/api/v1/holdings`만 호출합니다.
+- holdings 조회는 explicit `accountSeq`가 있을 때만 수행하고, 없으면 degraded source status로 남깁니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현을 추가하지 않았습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- real `client_id`, `client_secret`, `access_token`, account id, order id, execution data는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- official OpenAPI JSON 확인: `GET /api/v1/accounts`는 account list를 반환하고, `GET /api/v1/holdings`는 `X-Tossinvest-Account` header와 optional `symbol` query를 사용합니다.
+- `npm run build`: pass.
+- `node --test dist/broker/tossOpenApiAccountSnapshotReader.test.js`: pass, 6 tests.
+- `npm run check`: pass, 375 tests.
+- `git diff --check`: pass.
+- changed-file diff review: real secret, real account id, real order id, execution data는 없고, test fixture의 dummy `accountNo`는 masking assertion 용도로만 사용합니다.
+- source-only forbidden boundary grep: no matches for direct network call, persistent write surface, live order/raw command surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/broker/tossOpenApiAccountSnapshotReader.ts`는 injected account read-only JSON client만 호출하며 direct `fetch`, `http.request`, `https.request`를 사용하지 않습니다.
+- `readSnapshot`은 input `accountSeq`/`symbol`을 HTTP client 호출 전에 검증합니다.
+- `accountSeq`가 없으면 holdings 조회를 수행하지 않고 degraded source status와 warning을 반환합니다.
+- `accountSeq`가 있으면 `/api/v1/accounts`와 `/api/v1/holdings`를 호출하고, holdings query에는 optional normalized `symbol`만 추가합니다.
+- account number와 accountSeq는 snapshot output에서 `****`로 masking합니다.
+- `src/broker/tossOpenApiAccountSnapshotReader.test.ts`는 account/holdings mapping, masking, missing `accountSeq` degraded status, invalid input fail-closed, malformed envelope fail-closed, order endpoint 미호출을 검증합니다.
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
+- 신규 actual network call, order mutation, portfolio mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
+
+### Codex Review Fix: Account Header Contract
+
+- Review finding: account snapshot reader가 `{ accountSeq }` option을 넘기지만 기존 `TossOpenApiReadOnlyHttpClient`는 query array만 받아 `X-Tossinvest-Account` header를 만들지 못했습니다.
+- Fix review 1: `TossOpenApiReadOnlyHttpClient.getJson`는 기존 query array 호출을 유지하면서 `{ query, accountSeq }` options object를 추가로 받도록 확장했습니다.
+- Fix review 2: `accountSeq`는 positive integer만 허용하고 invalid value는 token provider/transport 호출 전에 `TOSS_OPEN_API_READONLY_INVALID_ACCOUNT_SEQ`로 fail-closed 처리합니다.
+- Fix review 3: `TossOpenApiAccountSnapshotReader`는 ad-hoc local options interface 대신 공용 `TossOpenApiReadOnlyRequestOptions` contract를 사용합니다.
+- 추가 테스트: read-only HTTP client가 `/api/v1/holdings` 요청에서 `X-Tossinvest-Account` header를 주입하는지 검증합니다.
+- 추가 테스트: invalid `accountSeq`가 auth/transport 호출 전에 차단되는지 검증합니다.

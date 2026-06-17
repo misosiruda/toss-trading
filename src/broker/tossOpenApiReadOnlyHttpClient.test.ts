@@ -87,6 +87,55 @@ test("read-only HTTP client injects bearer token into GET request", async () => 
   });
 });
 
+test("read-only HTTP client injects accountSeq into Toss account header", async () => {
+  const tokenProvider = new FakeTokenProvider("issued-token");
+  const transport = new FakeReadOnlyTransport([
+    { status: 200, body: { result: { items: [] } } }
+  ]);
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    tokenProvider,
+    transport
+  );
+
+  const body = await client.getJson("/api/v1/holdings", {
+    accountSeq: 1,
+    query: [["symbol", "005930"]]
+  });
+
+  assert.deepEqual(body, { result: { items: [] } });
+  assert.equal(tokenProvider.callCount, 1);
+  assert.equal(transport.requests.length, 1);
+  assert.equal(
+    transport.requests[0]?.url,
+    "https://openapi.tossinvest.com/api/v1/holdings?symbol=005930"
+  );
+  assert.deepEqual(transport.requests[0]?.headers, {
+    Accept: "application/json",
+    Authorization: "Bearer issued-token",
+    "X-Tossinvest-Account": "1"
+  });
+});
+
+test("read-only HTTP client rejects invalid accountSeq before auth and transport", async () => {
+  const tokenProvider = new FakeTokenProvider();
+  const transport = new FakeReadOnlyTransport([]);
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    tokenProvider,
+    transport
+  );
+
+  await assert.rejects(
+    () => client.getJson("/api/v1/holdings", { accountSeq: 0 }),
+    (error) =>
+      error instanceof TossOpenApiReadOnlyHttpClientError &&
+      error.code === "TOSS_OPEN_API_READONLY_INVALID_ACCOUNT_SEQ"
+  );
+  assert.equal(tokenProvider.callCount, 0);
+  assert.equal(transport.requests.length, 0);
+});
+
 test("read-only HTTP client blocks mutation methods before auth and transport", async () => {
   const tokenProvider = new FakeTokenProvider();
   const transport = new FakeReadOnlyTransport([]);

@@ -1,6 +1,6 @@
 # Official Toss Open API Adapter Design
 
-> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, mocked token auth client, injected transport 기반 read-only HTTP client, read-only market data adapter까지이며 actual network transport, account/order adapter, live order routing, live trading enable 기능은 구현하지 않는다.
+> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, mocked token auth client, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지이며 actual network transport, order adapter, live order routing, live trading enable 기능은 구현하지 않는다.
 
 ## 목적
 
