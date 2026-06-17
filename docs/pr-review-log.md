@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 18 tests.
-- `npm run check`: pass, 393 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 20 tests.
+- `npm run check`: pass, 395 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2280,6 +2280,8 @@
 - pending SELL open order의 quantity를 보유 수량 계산에 반영하는지 검증합니다.
 - pending SELL open order의 quantity가 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
 - malformed numeric risk policy를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
+- malformed boolean risk policy를 `INVALID_RISK_POLICY`와 safe fallback으로 fail-closed 차단하는지 검증합니다.
+- malformed risk policy collection이 throw 없이 `INVALID_RISK_POLICY`로 fail-closed 되는지 검증합니다.
 - unknown market order policy를 `INVALID_RISK_POLICY`와 disabled fallback으로 fail-closed 차단하는지 검증합니다.
 - malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 fail-closed 되는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
@@ -2320,3 +2322,9 @@
 
 - P2 `Fail closed on unknown market order policies`: untyped source에서 들어온 unknown `marketOrderPolicy`를 `INVALID_RISK_POLICY`로 reject하고 `disabled`로 정규화하도록 보강했습니다.
 - 추가 테스트: invalid market order policy가 MARKET order approval로 이어지지 않고 `INVALID_RISK_POLICY`, `MARKET_ORDER_DISABLED`로 reject되는지 검증합니다.
+
+### Codex Review Fix 6
+
+- P1 `Reject malformed boolean risk gates`: `killSwitch`, `requireMarketOpen`, `requirePreview`가 boolean이 아니면 `INVALID_RISK_POLICY`로 reject하고 safe fallback으로 정규화하도록 보강했습니다.
+- P2 `Guard policy collections before iterating`: `allowedSymbols`, `allowedMarkets`, `cooldownEntries`를 배열 여부와 element shape 검증 후 정규화해 malformed collection이 throw가 아니라 fail-closed reject로 귀결되도록 보강했습니다.
+- 추가 테스트: malformed boolean policy gate reject, malformed policy collection reject.

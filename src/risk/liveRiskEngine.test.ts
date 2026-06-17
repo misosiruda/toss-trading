@@ -241,6 +241,21 @@ test("live risk engine rejects invalid numeric policy limits", () => {
   assert.ok(decision.rejectCodes.includes("OPEN_ORDER_LIMIT_EXCEEDED"));
 });
 
+test("live risk engine rejects malformed boolean policy gates", () => {
+  const decision = evaluate({
+    policy: ({
+      ...approvingPolicy(),
+      killSwitch: 0,
+      requireMarketOpen: "false",
+      requirePreview: 1
+    } as unknown) as Partial<LiveRiskPolicy>
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+  assert.ok(decision.rejectCodes.includes("KILL_SWITCH_ACTIVE"));
+});
+
 test("live risk engine rejects invalid market order policy", () => {
   const decision = evaluate({
     intent: baseIntent({
@@ -256,6 +271,22 @@ test("live risk engine rejects invalid market order policy", () => {
   assert.equal(decision.approved, false);
   assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
   assert.ok(decision.rejectCodes.includes("MARKET_ORDER_DISABLED"));
+});
+
+test("live risk engine rejects malformed policy collections without throwing", () => {
+  const decision = evaluate({
+    policy: ({
+      ...approvingPolicy(),
+      allowedSymbols: "005930",
+      allowedMarkets: "KR",
+      cooldownEntries: [{ symbol: 123, activeUntil: fresh }]
+    } as unknown) as Partial<LiveRiskPolicy>
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+  assert.ok(decision.rejectCodes.includes("SYMBOL_NOT_ALLOWED"));
+  assert.ok(decision.rejectCodes.includes("MARKET_NOT_ALLOWED"));
 });
 
 test("live risk engine reserves pending buy exposure against caps", () => {

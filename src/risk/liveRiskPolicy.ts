@@ -89,9 +89,9 @@ export interface CreateLiveRiskPolicyInput {
 export function createLiveRiskPolicy(
   input: CreateLiveRiskPolicyInput = {}
 ): LiveRiskPolicy {
-  const policy = input.policy;
+  const policy = isRecord(input.policy) ? input.policy : undefined;
   return {
-    killSwitch: policy?.killSwitch ?? true,
+    killSwitch: normalizeBooleanPolicyValue(policy?.killSwitch, true),
     maxOrderAmountKrw: normalizeNonNegativeFinitePolicyNumber(
       policy?.maxOrderAmountKrw,
       0
@@ -112,17 +112,20 @@ export function createLiveRiskPolicy(
       policy?.maxTotalExposureKrw,
       0
     ),
-    allowedSymbols: normalizeAllowedSymbols(policy?.allowedSymbols ?? []),
-    allowedMarkets: [...new Set(policy?.allowedMarkets ?? [])],
-    requireMarketOpen: policy?.requireMarketOpen ?? true,
+    allowedSymbols: normalizeAllowedSymbols(policy?.allowedSymbols),
+    allowedMarkets: normalizeAllowedMarkets(policy?.allowedMarkets),
+    requireMarketOpen: normalizeBooleanPolicyValue(
+      policy?.requireMarketOpen,
+      true
+    ),
     maxOpenOrders: normalizeNonNegativeIntegerPolicyNumber(
       policy?.maxOpenOrders,
       0
     ),
     marketOrderPolicy: normalizeMarketOrderPolicy(policy?.marketOrderPolicy),
-    requirePreview: policy?.requirePreview ?? true,
-    cooldownEntries: policy?.cooldownEntries ?? [],
-    now: policy?.now ?? new Date()
+    requirePreview: normalizeBooleanPolicyValue(policy?.requirePreview, true),
+    cooldownEntries: normalizeCooldownEntries(policy?.cooldownEntries),
+    now: normalizePolicyNow(policy?.now)
   };
 }
 
@@ -133,11 +136,19 @@ type LiveRiskPolicyFiniteNumberKey =
   | "maxMarketExposureKrw"
   | "maxTotalExposureKrw";
 
+type LiveRiskPolicyBooleanKey =
+  | "killSwitch"
+  | "requireMarketOpen"
+  | "requirePreview";
+
 export function hasInvalidLiveRiskPolicyInput(
   policy: Partial<LiveRiskPolicy> | undefined
 ): boolean {
   if (policy === undefined) {
     return false;
+  }
+  if (!isRecord(policy)) {
+    return true;
   }
 
   const hasInvalidFiniteNumber = (
@@ -151,11 +162,21 @@ export function hasInvalidLiveRiskPolicyInput(
   ).some((key: LiveRiskPolicyFiniteNumberKey) =>
     hasInvalidFiniteNumberPolicyValue(policy, key)
   );
+  const hasInvalidBoolean = (
+    ["killSwitch", "requireMarketOpen", "requirePreview"] as const
+  ).some((key: LiveRiskPolicyBooleanKey) =>
+    hasInvalidBooleanPolicyValue(policy, key)
+  );
 
   return (
     hasInvalidFiniteNumber ||
+    hasInvalidBoolean ||
     hasInvalidIntegerPolicyValue(policy, "maxOpenOrders") ||
-    hasInvalidMarketOrderPolicyValue(policy)
+    hasInvalidAllowedSymbolsPolicyValue(policy) ||
+    hasInvalidAllowedMarketsPolicyValue(policy) ||
+    hasInvalidCooldownEntriesPolicyValue(policy) ||
+    hasInvalidMarketOrderPolicyValue(policy) ||
+    hasInvalidPolicyNowValue(policy)
   );
 }
 
@@ -178,12 +199,29 @@ export function normalizeLiveRiskSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
 }
 
-function normalizeAllowedSymbols(symbols: readonly string[]): string[] {
-  return [...new Set(symbols.map(normalizeLiveRiskSymbol))];
+function normalizeAllowedSymbols(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .filter(isNonEmptyString)
+        .map(normalizeLiveRiskSymbol)
+    )
+  ];
+}
+
+function normalizeAllowedMarkets(value: unknown): Market[] {
+  return Array.isArray(value) ? [...new Set(value.filter(isLiveMarket))] : [];
+}
+
+function normalizeCooldownEntries(value: unknown): LiveRiskCooldownEntry[] {
+  return Array.isArray(value) ? value.filter(isLiveRiskCooldownEntry) : [];
 }
 
 function hasInvalidFiniteNumberPolicyValue(
-  policy: Partial<LiveRiskPolicy>,
+  policy: Record<string, unknown>,
   key: LiveRiskPolicyFiniteNumberKey
 ): boolean {
   const value = policy[key];
@@ -191,11 +229,50 @@ function hasInvalidFiniteNumberPolicyValue(
 }
 
 function hasInvalidIntegerPolicyValue(
-  policy: Partial<LiveRiskPolicy>,
+  policy: Record<string, unknown>,
   key: "maxOpenOrders"
 ): boolean {
   const value = policy[key];
   return value !== undefined && !isNonNegativeInteger(value);
+}
+
+function hasInvalidBooleanPolicyValue(
+  policy: Record<string, unknown>,
+  key: LiveRiskPolicyBooleanKey
+): boolean {
+  const value = policy[key];
+  return value !== undefined && typeof value !== "boolean";
+}
+
+function hasInvalidAllowedSymbolsPolicyValue(
+  policy: Record<string, unknown>
+): boolean {
+  const value = policy.allowedSymbols;
+  return (
+    value !== undefined &&
+    (!Array.isArray(value) || value.some((symbol) => !isNonEmptyString(symbol)))
+  );
+}
+
+function hasInvalidAllowedMarketsPolicyValue(
+  policy: Record<string, unknown>
+): boolean {
+  const value = policy.allowedMarkets;
+  return (
+    value !== undefined &&
+    (!Array.isArray(value) || value.some((market) => !isLiveMarket(market)))
+  );
+}
+
+function hasInvalidCooldownEntriesPolicyValue(
+  policy: Record<string, unknown>
+): boolean {
+  const value = policy.cooldownEntries;
+  return (
+    value !== undefined &&
+    (!Array.isArray(value) ||
+      value.some((entry) => !isLiveRiskCooldownEntry(entry)))
+  );
 }
 
 function normalizeNonNegativeFinitePolicyNumber(
@@ -212,15 +289,28 @@ function normalizeNonNegativeIntegerPolicyNumber(
   return isNonNegativeInteger(value) ? value : fallback;
 }
 
+function normalizeBooleanPolicyValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function normalizeMarketOrderPolicy(value: unknown): LiveMarketOrderPolicy {
   return isLiveMarketOrderPolicy(value) ? value : "disabled";
 }
 
 function hasInvalidMarketOrderPolicyValue(
-  policy: Partial<LiveRiskPolicy>
+  policy: Record<string, unknown>
 ): boolean {
   const value = policy.marketOrderPolicy;
   return value !== undefined && !isLiveMarketOrderPolicy(value);
+}
+
+function normalizePolicyNow(value: unknown): Date {
+  return isValidDate(value) ? value : new Date();
+}
+
+function hasInvalidPolicyNowValue(policy: Record<string, unknown>): boolean {
+  const value = policy.now;
+  return value !== undefined && !isValidDate(value);
 }
 
 function isNonNegativeFiniteNumber(value: unknown): value is number {
@@ -231,6 +321,18 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && isNonNegativeFiniteNumber(value);
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isLiveMarket(value: unknown): value is Market {
+  return value === "KR" || value === "US";
+}
+
+function isLiveOrderSide(value: unknown): value is LiveOrderSide {
+  return value === "BUY" || value === "SELL";
+}
+
 function isLiveMarketOrderPolicy(
   value: unknown
 ): value is LiveMarketOrderPolicy {
@@ -239,4 +341,27 @@ function isLiveMarketOrderPolicy(
     value === "requires_approval" ||
     value === "allowed"
   );
+}
+
+function isLiveRiskCooldownEntry(
+  value: unknown
+): value is LiveRiskCooldownEntry {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.symbol) &&
+    (value.market === undefined || isLiveMarket(value.market)) &&
+    (value.side === undefined || isLiveOrderSide(value.side)) &&
+    isNonEmptyString(value.activeUntil) &&
+    (value.reason === undefined || typeof value.reason === "string")
+  );
+}
+
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && Number.isFinite(value.getTime());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

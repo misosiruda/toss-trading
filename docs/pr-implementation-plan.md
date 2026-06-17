@@ -2488,6 +2488,8 @@
 - preview required/expired/mismatch 차단
 - malformed numeric order intent와 risk snapshot 차단
 - malformed numeric risk policy 차단
+- malformed boolean risk policy 차단
+- malformed risk policy collection 차단
 - unknown market order policy 차단
 - malformed snapshot collection 차단
 - sell intent가 exposure를 증가시키지 않음
