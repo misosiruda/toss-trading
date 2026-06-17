@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Toss Trading Paper Dashboard</title>
+    <link rel="icon" href="data:," />
     <script>
       document.documentElement.dataset.dashboardPage =
         window.location.pathname.startsWith("/dashboard/virtual-replays")
@@ -623,7 +624,7 @@
             </div>
             <label class="filter-field">
               <span>종목</span>
-              <input id="symbol-filter" type="search" autocomplete="off" placeholder="삼성전자, 005930, TSLA" />
+              <input id="symbol-filter" type="search" autocomplete="off" aria-label="종목 필터" placeholder="삼성전자, 005930, TSLA" />
             </label>
           </div>
           <div id="decision-groups" class="decision-groups"></div>

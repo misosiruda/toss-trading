@@ -222,7 +222,7 @@ dashboard 작성 규칙:
 - replay progress panel, performance metric, progress event renderer와 replay progress view helper는 `dashboard/replayProgressRenderers.js`에 둔다.
 - replay progress polling, live replay section composition, progress refresh completion callback 연결은 `dashboard/replayProgressCoordinator.js`에 둔다.
 - batch replay 개별 run 목록/탭/상세/polling renderer는 `dashboard/batchRunRenderers.js`에 둔다.
-- AI decision timeline/filter/performance renderer와 action display helper는 `dashboard/decisionRenderers.js`에 둔다.
+- AI decision timeline/filter/performance renderer, decision filter event binding, action display helper는 `dashboard/decisionRenderers.js`에 둔다.
 - daily/replay/batch report renderer는 `dashboard/reportRenderers.js`, 여러 renderer가 공유하는 report label/summary helper는 `dashboard/reportViewHelpers.js`에 둔다.
 - source summary renderer와 dashboard symbol metadata registration은 `dashboard/sourceRenderers.js`에 둔다.
 - 새 dashboard module을 추가하면 `src/api/localOperationsSurface.ts`의 asset allowlist와 `scripts/qualityGate.mjs` 검증 대상이 함께 갱신되어야 한다.

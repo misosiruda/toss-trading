@@ -620,6 +620,41 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 19. Dashboard Decision Filter Binding 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/index.html`
+- `dashboard/decisionRenderers.js`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 decision action filter와 symbol filter DOM event binding을 decision module로 이동한다.
+- `app.js`는 dashboard bootstrap, fetch, full data refresh, page별 renderer composition 중심으로 유지한다.
+- action filter count 갱신, active state, symbol input filtering, decision timeline re-render 순서를 behavior-preserving 방식으로 유지한다.
+- decision filter input의 accessible name과 favicon 404 방지를 명시해 browser/accessibility smoke의 noise를 제거한다.
+- 기존 dashboard asset test가 decision filter binding의 module ownership과 app import를 검증하게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- decision filter UI 문구, filter 조건, timeline 표시 순서 변경
+- dashboard에서 AI decision 실행, replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- risk engine, order engine, replay artifact schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 decision filter DOM selector와 event handler 구현을 직접 보유하지 않는다.
+- `dashboard/decisionRenderers.js`가 `bindDecisionFilterControls`를 export하고 기존 `data-action-filter`, `symbol-filter` 상호작용을 담당한다.
+- `dashboard/index.html`의 symbol filter input이 자동 접근성 검사에서 이름 있는 control로 확인된다.
+- 기존 Local Operations API dashboard asset test가 decision module의 binding export와 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
