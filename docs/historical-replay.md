@@ -108,6 +108,23 @@ flowchart TD
     Report --> Dashboard["Dashboard /replay/report"]
 ```
 
+## Decision 처리 경계
+
+Historical replay의 tick 처리는 simulated time 기준으로 아래 순서를 유지합니다.
+
+1. `HistoricalMarketPacketBuilder`가 현재 tick까지 관측 가능한 snapshot만 사용해 packet을 생성합니다.
+2. optional `PaperExitPolicy`가 보유 포지션에 대한 deterministic paper-only exit decision을 먼저 생성합니다.
+3. exit decision은 `VirtualRiskEngine`과 `PaperOrderEngine`을 통과해 paper artifact로 기록됩니다.
+4. `ReplaySamplingPolicy`가 provider 호출 여부를 결정합니다.
+5. provider decision은 packet id와 no-lookahead data ref 검증을 통과한 뒤 기록됩니다.
+6. 같은 tick에서 exit이 실행된 symbol의 provider decision item은 실행 전에 suppression됩니다.
+7. provider decision item도 동일한 `VirtualRiskEngine`과 `PaperOrderEngine` 경계를 통과합니다.
+8. provider timeout, invalid output, packet mismatch는 audit/progress에 기록되지만 paper order로 변환하지 않습니다.
+
+`src/replay/historicalReplayDecisionBoundary.ts`는 decision confidence binding, audit event append, risk/order execution, progress event 변환만 담당합니다. 이 helper는 packet 생성, simulated clock, sampling 여부, provider 호출 여부를 결정하지 않습니다.
+
+이 경계는 replay 전용입니다. exit policy는 live trading policy가 아니며, replay runner는 live trading loop로 재사용하지 않습니다.
+
 ## 실행
 
 dry-run은 AI 호출 없이 deterministic fixture decision을 사용합니다.
