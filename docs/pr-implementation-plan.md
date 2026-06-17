@@ -2394,3 +2394,41 @@
 - live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
+
+### Mocked token auth client
+
+목표:
+
+- official token auth HTTP transport를 붙이기 전에 token issue request contract, response parsing, process memory cache, single-flight를 순수하게 검증합니다.
+- AuthClient는 injected `TossOpenApiTokenIssuer`만 호출하고 실제 network transport는 구현하지 않습니다.
+- disabled/invalid config는 issuer 호출 전에 fail-closed 처리합니다.
+
+작업 범위:
+
+- `src/broker/tossOpenApiAuthClient.ts`
+- `src/broker/tossOpenApiAuthClient.test.ts`
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- `application/x-www-form-urlencoded` token issue request body
+- disabled/invalid config no issuer call
+- `Bearer` token response validation
+- `expires_in` 기반 cache와 safety margin
+- concurrent request single-flight
+- invalid response no-cache
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- real HTTP token transport
+- official API 실제 호출
+- persistent token store
+- account/order adapter
+- Local Operations API/MCP/dashboard token status surface
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface

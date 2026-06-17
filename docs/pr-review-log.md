@@ -2115,3 +2115,31 @@
 - `scripts/qualityGate.mjs`는 default Toss Open API auth config가 disabled 상태인지 build artifact 기준으로 검사합니다.
 - `.env.example`, README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
 - 신규 network call, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 30: Mocked Token Auth Client
+
+### Review 1: Scope and Safety
+
+- 범위는 injected issuer 기반 `TossOpenApiAuthClient`, token issue request builder, token response parser, process memory cache, single-flight, 관련 문서 갱신에 한정합니다.
+- real HTTP token transport, official API 실제 호출, persistent token store, account/order adapter, Local Operations API/MCP/dashboard token surface는 추가하지 않았습니다.
+- disabled/invalid config는 token issuer 호출 전에 fail-closed 처리합니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- 테스트 credential은 local dummy string만 사용하며, real `client_id`, `client_secret`, `access_token`, account id는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/broker/tossOpenApiAuthClient.test.js`: pass, 8 tests.
+- `npm run check`: pass, 348 tests.
+- `git diff --check`: pass.
+- secret-like token/key pattern grep: no matches.
+- code-only forbidden boundary grep: no matches for live order/raw command/network/persistent write surface.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/broker/tossOpenApiAuthClient.ts`는 `application/x-www-form-urlencoded` token issue request를 만들고, `Bearer` response와 positive `expires_in`을 검증합니다.
+- `TossOpenApiAuthClient`는 process memory token cache, expiry safety margin, concurrent request single-flight를 제공하지만, 실제 HTTP transport는 injected `TossOpenApiTokenIssuer` 밖에 두었습니다.
+- `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection을 검증합니다.
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
+- 신규 network call, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
