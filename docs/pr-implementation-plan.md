@@ -2354,6 +2354,8 @@
 - root-relative path validation
 - non-https base URL reject
 - 401/403/429/4xx/5xx error mapping
+- official error envelope nested `error.code` parsing
+- 401 token failure guarded reissue 1회
 - 429 `Retry-After` parsing
 - `npm run check`
 - `git diff --check`

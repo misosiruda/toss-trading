@@ -113,7 +113,7 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret`이 누락되면 `status=invalid`로 fail-closed 처리한다.
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환한다.
 - `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache, single-flight를 검증한다.
-- `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping을 검증한다.
+- `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping, 401 token failure 1회 guarded reissue를 검증한다.
 - 실제 network transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
 
 ## Token Lifecycle

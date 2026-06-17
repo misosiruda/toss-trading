@@ -13,12 +13,21 @@ import {
 
 class FakeTokenProvider {
   callCount = 0;
+  clearCount = 0;
+  private readonly tokens: string[];
 
-  constructor(private readonly token = "local-access-token") {}
+  constructor(tokens: string | string[] = "local-access-token") {
+    this.tokens = Array.isArray(tokens) ? [...tokens] : [tokens];
+  }
 
   async getAccessToken(): Promise<string> {
+    const token = this.tokens[Math.min(this.callCount, this.tokens.length - 1)];
     this.callCount += 1;
-    return this.token;
+    return token ?? "local-access-token";
+  }
+
+  clearToken(): void {
+    this.clearCount += 1;
   }
 }
 
@@ -173,7 +182,7 @@ test("read-only URL builder rejects non-https base URL", () => {
 test("read-only HTTP client maps authentication failures", async () => {
   const client = new TossOpenApiReadOnlyHttpClient(
     readyConfig(),
-    new FakeTokenProvider(),
+    { getAccessToken: async () => "local-access-token" },
     new FakeReadOnlyTransport([
       { status: 401, body: { code: "invalid_token" } }
     ])
@@ -187,6 +196,55 @@ test("read-only HTTP client maps authentication failures", async () => {
       error.status === 401 &&
       error.responseCode === "invalid_token"
   );
+});
+
+test("read-only HTTP client retries once after refreshable token failure", async () => {
+  const tokenProvider = new FakeTokenProvider(["stale-token", "fresh-token"]);
+  const transport = new FakeReadOnlyTransport([
+    { status: 401, body: { error: { code: "expired-token" } } },
+    { status: 200, body: { prices: ["ok"] } }
+  ]);
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    tokenProvider,
+    transport
+  );
+
+  assert.deepEqual(await client.getJson("/api/v1/prices"), { prices: ["ok"] });
+  assert.equal(tokenProvider.callCount, 2);
+  assert.equal(tokenProvider.clearCount, 1);
+  assert.equal(transport.requests.length, 2);
+  assert.equal(
+    transport.requests[0]?.headers.Authorization,
+    "Bearer stale-token"
+  );
+  assert.equal(
+    transport.requests[1]?.headers.Authorization,
+    "Bearer fresh-token"
+  );
+});
+
+test("read-only HTTP client returns auth failure after one token retry", async () => {
+  const tokenProvider = new FakeTokenProvider(["stale-token", "fresh-token"]);
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    tokenProvider,
+    new FakeReadOnlyTransport([
+      { status: 401, body: { error: { code: "invalid-token" } } },
+      { status: 401, body: { error: { code: "invalid-token" } } }
+    ])
+  );
+
+  await assert.rejects(
+    () => client.getJson("/api/v1/prices"),
+    (error) =>
+      error instanceof TossOpenApiReadOnlyHttpClientError &&
+      error.code === "TOSS_OPEN_API_READONLY_AUTH_FAILED" &&
+      error.status === 401 &&
+      error.responseCode === "invalid-token"
+  );
+  assert.equal(tokenProvider.callCount, 2);
+  assert.equal(tokenProvider.clearCount, 1);
 });
 
 test("read-only HTTP client maps forbidden responses", async () => {
@@ -237,7 +295,7 @@ test("read-only HTTP client maps generic client and server errors", async () => 
     readyConfig(),
     new FakeTokenProvider(),
     new FakeReadOnlyTransport([
-      { status: 400, body: { code: "invalid_query" } }
+      { status: 400, body: { error: { code: "account-header-required" } } }
     ])
   );
   const serverError = new TossOpenApiReadOnlyHttpClient(
@@ -254,7 +312,7 @@ test("read-only HTTP client maps generic client and server errors", async () => 
       error instanceof TossOpenApiReadOnlyHttpClientError &&
       error.code === "TOSS_OPEN_API_READONLY_CLIENT_ERROR" &&
       error.status === 400 &&
-      error.responseCode === "invalid_query"
+      error.responseCode === "account-header-required"
   );
 
   await assert.rejects(

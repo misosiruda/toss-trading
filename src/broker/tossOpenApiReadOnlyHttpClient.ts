@@ -46,6 +46,7 @@ export interface TossOpenApiReadOnlyTransport {
 
 export interface TossOpenApiBearerTokenProvider {
   getAccessToken(): Promise<string>;
+  clearToken?(): void | Promise<void>;
 }
 
 export interface TossOpenApiReadOnlyHttpClientErrorOptions {
@@ -93,12 +94,34 @@ export class TossOpenApiReadOnlyHttpClient {
   async requestJson(input: TossOpenApiReadOnlyRequestInput): Promise<unknown> {
     const url = buildTossOpenApiReadOnlyUrl(this.config.baseUrl, input);
     assertReadyAuthConfig(this.config);
-    const accessToken = await this.tokenProvider.getAccessToken();
-    const response = await this.transport.request(
-      buildTossOpenApiReadOnlyHttpRequest(url, accessToken)
-    );
+    const response = await this.sendGetRequest(url);
+    if (this.shouldRetryAfterTokenFailure(response)) {
+      await this.tokenProvider.clearToken?.();
+      return parseTossOpenApiReadOnlyHttpResponse(
+        await this.sendGetRequest(url)
+      );
+    }
 
     return parseTossOpenApiReadOnlyHttpResponse(response);
+  }
+
+  private async sendGetRequest(
+    url: string
+  ): Promise<TossOpenApiReadOnlyHttpResponse> {
+    const accessToken = await this.tokenProvider.getAccessToken();
+    return this.transport.request(
+      buildTossOpenApiReadOnlyHttpRequest(url, accessToken)
+    );
+  }
+
+  private shouldRetryAfterTokenFailure(
+    response: TossOpenApiReadOnlyHttpResponse
+  ): boolean {
+    return (
+      response.status === 401 &&
+      this.tokenProvider.clearToken !== undefined &&
+      isRefreshableTokenErrorCode(readErrorCode(response.body))
+    );
   }
 }
 
@@ -270,10 +293,22 @@ function readErrorCode(body: unknown): string | undefined {
   if (typeof body.code === "string") {
     return body.code;
   }
+  if (isRecord(body.error) && typeof body.error.code === "string") {
+    return body.error.code;
+  }
   if (typeof body.error === "string") {
     return body.error;
   }
   return undefined;
+}
+
+function isRefreshableTokenErrorCode(code: string | undefined): boolean {
+  return (
+    code === "invalid-token" ||
+    code === "expired-token" ||
+    code === "invalid_token" ||
+    code === "expired_token"
+  );
 }
 
 function parseRetryAfterMs(

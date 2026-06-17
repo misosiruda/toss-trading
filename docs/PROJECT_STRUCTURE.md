@@ -275,6 +275,8 @@ flowchart TD
 - Bearer token은 injected token provider에서 받아 request header에만 주입
 - actual network transport는 injected interface 밖에 두고 직접 `fetch`/`http.request`/`https.request`를 추가하지 않음
 - 401/403/429/4xx/5xx response를 분류하고 429 `Retry-After`를 해석
+- official error envelope의 nested `error.code`를 해석
+- 401 `invalid-token`/`expired-token` 계열에서 optional `clearToken()` hook으로 token cache를 비운 뒤 `GET`을 1회만 재시도
 - absolute URL, protocol-relative URL, non-https base URL, backslash path를 reject
 - market endpoint mapping, account snapshot reader, Local Operations API/MCP/dashboard surface, live order gateway를 추가하지 않음
 
