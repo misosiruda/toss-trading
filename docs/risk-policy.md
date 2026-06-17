@@ -34,6 +34,18 @@ Paper trading에도 같은 철학을 적용합니다. Codex CLI는 `virtual_deci
 | `VirtualTrade` | `src/domain/schemas.ts` | `PaperOrderEngine`이 기록하는 paper-only 체결 결과 |
 | packet-bound semantic validation | `src/paper/virtualDecisionValidation.ts` | packet hash, identity metadata, candidate refs, claim support, action eligibility 검증 |
 
+Artifact 위치 계약:
+
+| Contract | Primary artifact | Replay artifact | 조회/추적 책임 |
+| --- | --- | --- | --- |
+| `MarketPacket` | `market-packets.jsonl` | `historical-replay-packets.jsonl` | risk 전 단계 입력 packet과 source refs 확인 |
+| `VirtualDecision` | `virtual-decisions.jsonl` | `historical-replay-decisions.jsonl` | validation을 통과한 paper-only decision만 저장 |
+| `VirtualRiskDecision` | `audit-events.jsonl` | `historical-replay-risk-decisions.jsonl` | 승인/거절, reject code, fail-closed 원인 추적 |
+| `VirtualTrade` | `virtual-trades.jsonl` | `historical-replay-trades.jsonl` | risk 승인 이후 paper fill만 저장 |
+| `AuditEvent` | `audit-events.jsonl` | `historical-replay-progress.json`의 `recentEvents`, `historical-replay-report.json`의 warning/failure summary | provider failure, validation reject, order stage 추적 |
+
+`src/storage/artifactPaths.ts`는 위 파일명의 source of truth입니다. JSONL artifact는 append-only로 다루며, read-only 조회는 손상 line을 건너뛰고 `corruptLineCount`를 반환해야 합니다. 손상 line이나 누락 파일은 risk gate 우회, replay 실행, paper order 생성으로 이어지면 안 됩니다.
+
 권장 reject code:
 
 - `VIRTUAL_PACKET_STALE`

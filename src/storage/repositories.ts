@@ -20,7 +20,24 @@ import {
   type TossInvestCliCollectResult
 } from "../collectors/tossInvestCliCollector.js";
 import { bindVirtualDecisionHash } from "../paper/decisionHash.js";
-import { BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME } from "./artifactPaths.js";
+import {
+  AUDIT_EVENTS_FILE_NAME,
+  BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME,
+  HISTORICAL_MARKET_SNAPSHOTS_FILE_NAME,
+  HISTORICAL_REPLAY_DECISIONS_FILE_NAME,
+  HISTORICAL_REPLAY_PACKETS_FILE_NAME,
+  HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME,
+  HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
+  HISTORICAL_REPLAY_REPORT_FILE_NAME,
+  HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME,
+  HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME,
+  HISTORICAL_REPLAY_TRADES_FILE_NAME,
+  MARKET_PACKETS_FILE_NAME,
+  TOSSINVEST_SOURCES_FILE_NAME,
+  VIRTUAL_DECISIONS_FILE_NAME,
+  VIRTUAL_PORTFOLIO_FILE_NAME,
+  VIRTUAL_TRADES_FILE_NAME
+} from "./artifactPaths.js";
 import { JsonFileStore } from "./fileStore.js";
 import { JsonlStore, type JsonlReadResult } from "./jsonlStore.js";
 
@@ -47,41 +64,47 @@ export interface StoragePaths {
 export function createStoragePaths(baseDir: string): StoragePaths {
   return {
     baseDir,
-    auditLogPath: join(baseDir, "audit-events.jsonl"),
-    virtualPortfolioPath: join(baseDir, "virtual-portfolio.json"),
-    virtualDecisionsPath: join(baseDir, "virtual-decisions.jsonl"),
-    virtualTradesPath: join(baseDir, "virtual-trades.jsonl"),
-    tossInvestSourcesPath: join(baseDir, "tossinvest-sources.jsonl"),
-    marketPacketsPath: join(baseDir, "market-packets.jsonl"),
+    auditLogPath: join(baseDir, AUDIT_EVENTS_FILE_NAME),
+    virtualPortfolioPath: join(baseDir, VIRTUAL_PORTFOLIO_FILE_NAME),
+    virtualDecisionsPath: join(baseDir, VIRTUAL_DECISIONS_FILE_NAME),
+    virtualTradesPath: join(baseDir, VIRTUAL_TRADES_FILE_NAME),
+    tossInvestSourcesPath: join(baseDir, TOSSINVEST_SOURCES_FILE_NAME),
+    marketPacketsPath: join(baseDir, MARKET_PACKETS_FILE_NAME),
     historicalMarketSnapshotsPath: join(
       baseDir,
-      "historical-market-snapshots.jsonl"
+      HISTORICAL_MARKET_SNAPSHOTS_FILE_NAME
     ),
-    historicalReplayReportPath: join(baseDir, "historical-replay-report.json"),
-    historicalReplayProgressPath: join(baseDir, "historical-replay-progress.json"),
+    historicalReplayReportPath: join(
+      baseDir,
+      HISTORICAL_REPLAY_REPORT_FILE_NAME
+    ),
+    historicalReplayProgressPath: join(
+      baseDir,
+      HISTORICAL_REPLAY_PROGRESS_FILE_NAME
+    ),
     historicalReplayRunMetadataPath: join(
       baseDir,
-      "historical-replay-run-metadata.json"
+      HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME
     ),
     historicalReplayPacketLogPath: join(
       baseDir,
-      "historical-replay-packets.jsonl"
+      HISTORICAL_REPLAY_PACKETS_FILE_NAME
     ),
     historicalReplayDecisionLogPath: join(
       baseDir,
-      "historical-replay-decisions.jsonl"
+      HISTORICAL_REPLAY_DECISIONS_FILE_NAME
     ),
     historicalReplayRiskDecisionLogPath: join(
       baseDir,
-      "historical-replay-risk-decisions.jsonl"
+      HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME
     ),
     historicalReplayTradeLogPath: join(
       baseDir,
-      "historical-replay-trades.jsonl"
+      HISTORICAL_REPLAY_TRADES_FILE_NAME
     ),
     historicalReplayPortfolioTimelinePath: join(
       baseDir,
-      "historical-replay-portfolio-timeline.jsonl"
+      HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME
     ),
     batchReplayAggregateReportPath: join(
       baseDir,

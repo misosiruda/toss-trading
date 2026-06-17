@@ -383,6 +383,19 @@ worker는 다음 경우 Codex를 unavailable로 처리해야 합니다.
 - 기존 virtual position은 변경하지 않습니다.
 - daily run budget이 남아 있으면 다음 scheduled run에서 재시도할 수 있습니다.
 
+실패 추적 artifact:
+
+| 단계 | 확인 파일 | 기록 조건 | no-trade 확인 기준 |
+| --- | --- | --- | --- |
+| packet 생성 | `market-packets.jsonl` | 후보와 source refs를 packet으로 저장한 경우 | packet hash, candidate refs, freshness 입력 확인 |
+| provider 실행 실패 | `audit-events.jsonl`, replay에서는 `historical-replay-progress.json`의 `recentEvents`와 `historical-replay-report.json` summary | Codex unavailable, timeout, invalid JSON, schema/semantic validation 실패 | `AI_DECISION_FAILED` 또는 `HISTORICAL_AI_DECISION_FAILED` event가 있고 decision/trade artifact에 해당 record가 없음 |
+| validation 통과 | `virtual-decisions.jsonl` | backend schema와 semantic validation을 통과한 경우만 append | 이 파일에 없으면 risk/order 단계로 전달되지 않음 |
+| risk gate | `audit-events.jsonl`, replay에서는 `historical-replay-risk-decisions.jsonl` | `VirtualRiskEngine` 승인/거절 결과 기록 | reject code가 있으면 `virtual-trades.jsonl` 또는 `historical-replay-trades.jsonl`에 fill이 없어야 함 |
+| paper fill | `virtual-trades.jsonl`, replay에서는 `historical-replay-trades.jsonl` | `PaperOrderEngine`이 paper-only 체결을 만든 경우만 append | 실패 run에서 새 trade record가 없어야 함 |
+| 최종 요약 | `historical-replay-report.json`, `batch-replay-aggregate-report.json` | replay 또는 batch report 생성 시 | provider failure count와 warning을 확인하되, report 조회는 실행 side effect를 만들지 않음 |
+
+JSONL reader는 손상 line을 건너뛰고 `corruptLineCount`를 반환합니다. 손상 line은 조사 대상이지만 read-only 조회가 replay 실행, Codex 실행, 주문 생성으로 이어지면 안 됩니다.
+
 ## 사용량 정책
 
 Codex Pro는 더 높은 포함 사용량을 제공하지만 usage limit이 있습니다. automated paper trading은 절약형으로 운영합니다.
