@@ -2311,3 +2311,19 @@
 - deployment packaging
 
 이 later PR들은 사용자 명시 지시 없이는 시작하지 않습니다.
+
+### Official Toss Open API adapter design
+
+설계 문서:
+
+- [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)
+
+이 단계는 official API adapter 구현이 아니라, 공식 OpenAPI source of truth, 인증 방식, endpoint category, rate limit, error model, adapter 계층, mock-first 구현 순서, MCP/dashboard 금지 표면을 문서화합니다.
+
+제외:
+
+- token auth 구현
+- official API 실제 호출 코드
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
