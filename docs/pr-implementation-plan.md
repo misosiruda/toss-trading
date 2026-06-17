@@ -2306,8 +2306,9 @@
 - Official Toss Open API adapter design
 - official token auth
 - live Risk Engine implementation
-- live OrderRouter
 - threat model for live trading
+- live OrderRouter dry-run
+- official order gateway behind explicit trading gates
 - deployment packaging
 
 이 later PR들은 사용자 명시 지시 없이는 시작하지 않습니다.

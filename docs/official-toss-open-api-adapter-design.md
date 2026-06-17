@@ -111,9 +111,10 @@ flowchart TD
     T --> M["Read-only market data adapter with mocked HTTP tests"]
     M --> A["Read-only account and holdings snapshot reader"]
     A --> R["Live RiskEngine implementation with mock broker"]
-    R --> O["OrderRouter with dry-run broker gateway"]
+    R --> H["Live trading threat model"]
+    H --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
-    P --> Q["Threat model and deployment gate"]
+    P --> Q["Deployment gate"]
 ```
 
 후속 PR은 이 순서를 건너뛰면 안 된다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
@@ -318,9 +319,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 3 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
 | 4 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 5 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
-| 6 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
-| 7 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
-| 8 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 6 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 7 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
+| 8 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
 | 9 | Deployment packaging | process isolation, config, monitoring | default live enable |
 
 ## Merge 전 체크리스트

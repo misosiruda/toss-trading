@@ -2057,4 +2057,5 @@
 - `README.md`와 `docs/architecture.md`는 official adapter가 아직 구현되지 않았고 설계 문서만 존재한다는 경계를 연결합니다.
 - `docs/PROJECT_STRUCTURE.md`는 새 설계 문서를 구조/책임 경계 문서 목록에 추가합니다.
 - `docs/pr-implementation-plan.md`는 Later PRs의 official adapter design 범위를 설계 문서로 구체화하고 구현 제외 범위를 명시합니다.
+- Codex review 후속 수정으로 live trading threat model을 official order gateway보다 앞에 배치했습니다.
 - 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
