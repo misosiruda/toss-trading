@@ -2059,3 +2059,30 @@
 - `docs/pr-implementation-plan.md`는 Later PRs의 official adapter design 범위를 설계 문서로 구체화하고 구현 제외 범위를 명시합니다.
 - Codex review 후속 수정으로 live trading threat model을 official order gateway보다 앞에 배치했습니다.
 - 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 28: Official Token Auth Design
+
+### Review 1: Scope and Safety
+
+- 범위는 official Toss Open API token auth 설계 문서와 관련 문서 링크 추가에 한정합니다.
+- token auth client, config parser, token cache, official API 실제 호출 코드, account/order adapter는 추가하지 않았습니다.
+- `.env.example`은 변경하지 않았고 real `client_id`, `client_secret`, `access_token`, account id를 문서에 넣지 않았습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- Codex MCP enabled surface, Local Operations API route, dashboard asset, package script는 변경하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run check`: pass, 335 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- 공식 문서 확인: Auth Markdown과 OpenAPI JSON에서 `POST /oauth2/token`, OAuth2 Client Credentials, `application/x-www-form-urlencoded`, refresh token 없음, client당 유효 token 1개, `AUTH` rate limit group을 확인했습니다.
+- 확인한 OpenAPI metadata는 `openapi=3.1.0`, `info.version=1.1.1`, server `https://openapi.tossinvest.com`입니다.
+- 이번 phase는 docs-only 변경이라 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `docs/official-token-auth-design.md`는 token endpoint 계약, secret handling, process memory token cache, expiry margin, guarded reissue, single-flight, multi-process 제약, MCP/dashboard token value 노출 금지 정책을 문서화합니다.
+- `README.md`는 official adapter와 token auth client가 아직 구현되지 않았고 설계 문서만 존재한다는 current status를 연결합니다.
+- `docs/architecture.md`는 official adapter 설계와 token auth 설계의 참조 경계를 분리합니다.
+- `docs/PROJECT_STRUCTURE.md`와 `docs/official-toss-open-api-adapter-design.md`는 새 token auth 설계 문서를 관련 문서와 PR 분리 계획에 추가합니다.
+- `docs/pr-implementation-plan.md`는 Later PRs의 official token auth design 범위, 포함 항목, 제외 항목을 구체화했습니다.
+- 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.

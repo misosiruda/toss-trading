@@ -2304,7 +2304,7 @@
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
 
 - Official Toss Open API adapter design
-- official token auth
+- official token auth design
 - live Risk Engine implementation
 - threat model for live trading
 - live OrderRouter dry-run
@@ -2325,6 +2325,32 @@
 
 - token auth 구현
 - official API 실제 호출 코드
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
+### Official token auth design
+
+설계 문서:
+
+- [official-token-auth-design.md](official-token-auth-design.md)
+
+이 단계는 official token auth 구현이 아니라, `POST /oauth2/token`의 OAuth2 Client Credentials 계약, `application/x-www-form-urlencoded` 요청, secret handling, token lifecycle, single-flight, client당 유효 token 1개 제약, 후속 구현 테스트 기준을 문서화합니다.
+
+포함:
+
+- 공식 Auth API 문서와 OpenAPI JSON 기준 token endpoint snapshot
+- `client_id`, `client_secret`, `access_token` masking과 repository 금지선
+- process memory token cache, expiry margin, guarded reissue, `AUTH` rate limit 처리 방향
+- MCP/dashboard token value 노출 금지 정책
+
+제외:
+
+- token auth client 구현
+- config parser 또는 `.env.example` 변경
+- official API 실제 호출 코드
+- persistent token store
+- account/order adapter
 - live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
