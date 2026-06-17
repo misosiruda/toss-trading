@@ -150,7 +150,7 @@ flowchart TD
 필수 확인:
 
 - 기본 policy는 fail-closed인지 확인
-- order intent와 risk snapshot의 숫자 값이 malformed 입력에서 fail-closed 되는지 확인
+- order intent, risk snapshot, risk policy의 숫자 값이 malformed 입력에서 fail-closed 되는지 확인
 - kill switch, max order amount, max daily loss, exposure, allowlist, market hours, duplicate, cooldown, open order count, market order policy, stale signal, preview requirement가 테스트되는지 확인
 - `RiskDecision`은 `orderIntentId`, `signalId`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 남기는지 확인
 - broker gateway, `OrderRouter`, Local Operations API/MCP/dashboard mutation surface를 추가하지 않음

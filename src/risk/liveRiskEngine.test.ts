@@ -191,7 +191,8 @@ test("live risk engine rejects duplicate order intent id before approval", () =>
           idempotencyKey: "idem_live_regenerated",
           market: "KR",
           symbol: "000660",
-          side: "SELL"
+          side: "SELL",
+          quantity: 1
         }
       ]
     })
@@ -223,6 +224,21 @@ test("live risk engine enforces order amount, daily loss, and exposure caps", ()
     "MAX_MARKET_EXPOSURE_EXCEEDED",
     "MAX_TOTAL_EXPOSURE_EXCEEDED"
   ]);
+});
+
+test("live risk engine rejects invalid numeric policy limits", () => {
+  const decision = evaluate({
+    policy: approvingPolicy({
+      maxOrderAmountKrw: Number.NaN,
+      maxSymbolExposureKrw: Number.POSITIVE_INFINITY,
+      maxOpenOrders: Number.NaN
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+  assert.ok(decision.rejectCodes.includes("MAX_ORDER_AMOUNT_EXCEEDED"));
+  assert.ok(decision.rejectCodes.includes("OPEN_ORDER_LIMIT_EXCEEDED"));
 });
 
 test("live risk engine reserves pending buy exposure against caps", () => {
@@ -278,6 +294,52 @@ test("live risk engine rejects pending buy exposure without notional", () => {
   assert.ok(
     decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT")
   );
+});
+
+test("live risk engine rejects pending sell quantity beyond holdings", () => {
+  const decision = evaluate({
+    intent: baseIntent({
+      side: "SELL",
+      symbol: "000660",
+      quantity: 2
+    }),
+    snapshot: baseSnapshot({
+      openOrders: [
+        {
+          orderIntentId: "intent_live_pending_sell",
+          signalId: "signal_live_pending_sell",
+          idempotencyKey: "idem_live_pending_sell",
+          market: "KR",
+          symbol: "000660",
+          side: "SELL",
+          quantity: 1
+        }
+      ]
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.deepEqual(decision.rejectCodes, ["SELL_QUANTITY_EXCEEDED"]);
+});
+
+test("live risk engine rejects pending sell order without quantity", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      openOrders: [
+        {
+          orderIntentId: "intent_live_pending_sell",
+          signalId: "signal_live_pending_sell",
+          idempotencyKey: "idem_live_pending_sell",
+          market: "KR",
+          symbol: "000660",
+          side: "SELL"
+        }
+      ]
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT"));
 });
 
 test("live risk engine enforces market order and preview policies", () => {

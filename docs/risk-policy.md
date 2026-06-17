@@ -100,6 +100,7 @@ Artifact 위치 계약:
 - max daily loss
 - symbol/market/total exposure
 - pending buy order exposure reservation
+- pending sell order quantity reservation
 - symbol allowlist
 - market allowlist
 - market hours
@@ -112,6 +113,7 @@ Artifact 위치 계약:
 - preview requirement
 - malformed numeric order intent and risk snapshot rejection
 - malformed snapshot collection rejection
+- malformed numeric risk policy rejection
 
 현재 제외 범위:
 

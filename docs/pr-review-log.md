@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 14 tests.
-- `npm run check`: pass, 389 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 17 tests.
+- `npm run check`: pass, 392 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2277,6 +2277,9 @@
 - 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
 - pending BUY open order의 notional을 exposure cap에 반영하는지 검증합니다.
 - pending BUY open order의 notional이 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
+- pending SELL open order의 quantity를 보유 수량 계산에 반영하는지 검증합니다.
+- pending SELL open order의 quantity가 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
+- malformed numeric risk policy를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
 - malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 fail-closed 되는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
 - 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
@@ -2305,3 +2308,9 @@
 
 - P2 `Guard malformed snapshots before iterating arrays`: `positions`, `openOrders`, `marketSessions`를 array/object 여부 확인 후 접근하도록 `safeRiskPositions`, `safeOpenOrders`, `safeMarketSessions`를 추가했습니다.
 - 추가 테스트: malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 reject되는지 검증합니다.
+
+### Codex Review Fix 4
+
+- P1 `Reserve open sell quantities before approving SELLs`: `LiveOpenOrder`에 optional `quantity`를 추가하고, SELL open order의 pending quantity를 보유 수량 계산에 반영했습니다.
+- P1 `Validate policy limits before approving`: risk policy numeric limit을 finite/non-negative 값으로 정규화하고 invalid 입력은 `INVALID_RISK_POLICY`로 fail-closed 처리하도록 보강했습니다.
+- 추가 테스트: pending SELL quantity 예약, pending SELL quantity 누락 snapshot reject, malformed numeric risk policy reject.

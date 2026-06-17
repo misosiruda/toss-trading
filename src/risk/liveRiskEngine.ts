@@ -2,6 +2,7 @@ import type { Market } from "../domain/schemas.js";
 import {
   appendLiveRiskRejectCode,
   createLiveRiskPolicy,
+  hasInvalidLiveRiskPolicyInput,
   LIVE_RISK_RULE_IDS,
   normalizeLiveRiskRejectCodes,
   normalizeLiveRiskSymbol,
@@ -64,6 +65,7 @@ export interface LiveOpenOrder {
   symbol: string;
   side: LiveOrderSide;
   estimatedGrossAmountKrw?: number | undefined;
+  quantity?: number | undefined;
 }
 
 export interface LiveRiskSnapshot {
@@ -98,6 +100,7 @@ export class LiveRiskEngine {
     const rejectCodes: LiveRiskRejectCode[] = [];
     const normalizedSymbol = safeNormalizeLiveRiskSymbol(input.intent.symbol);
 
+    evaluateRiskPolicyShape(rejectCodes, input.policy);
     evaluateOrderIntentShape(rejectCodes, input.intent);
     evaluateRiskSnapshotShape(rejectCodes, input.snapshot);
     evaluateKillSwitch(rejectCodes, policy);
@@ -135,6 +138,15 @@ export class LiveRiskEngine {
       riskSnapshotRef: input.snapshot.riskSnapshotRef,
       createdAt: policy.now.toISOString()
     };
+  }
+}
+
+function evaluateRiskPolicyShape(
+  rejectCodes: LiveRiskRejectCode[],
+  policy: Partial<LiveRiskPolicy> | undefined
+): void {
+  if (hasInvalidLiveRiskPolicyInput(policy)) {
+    appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_POLICY");
   }
 }
 
@@ -215,9 +227,15 @@ function evaluateRiskSnapshotShape(
     ) {
       return true;
     }
-    return (
+    if (
       openOrder.side === "BUY" &&
       !isPositiveFiniteNumber(openOrder.estimatedGrossAmountKrw)
+    ) {
+      return true;
+    }
+    return (
+      openOrder.side === "SELL" &&
+      !isPositiveFiniteNumber(openOrder.quantity)
     );
   });
 
@@ -398,7 +416,13 @@ function evaluateSellPosition(
     return;
   }
 
-  if (intent.quantity > position.quantity) {
+  const pendingSellQuantity = currentOpenSellQuantity(
+    snapshot,
+    intent.market,
+    normalizedSymbol
+  );
+
+  if (intent.quantity + pendingSellQuantity > position.quantity) {
     appendLiveRiskRejectCode(rejectCodes, "SELL_QUANTITY_EXCEEDED");
   }
 }
@@ -522,6 +546,21 @@ function currentOpenBuyTotalExposureKrw(snapshot: LiveRiskSnapshot): number {
     .reduce((sum, openOrder) => sum + openOrderExposureKrw(openOrder), 0);
 }
 
+function currentOpenSellQuantity(
+  snapshot: LiveRiskSnapshot,
+  market: Market,
+  normalizedSymbol: string
+): number {
+  return safeOpenOrders(snapshot.openOrders)
+    .filter(
+      (openOrder) =>
+        openOrder.side === "SELL" &&
+        openOrder.market === market &&
+        safeNormalizeLiveRiskSymbol(openOrder.symbol) === normalizedSymbol
+    )
+    .reduce((sum, openOrder) => sum + openOrderQuantity(openOrder), 0);
+}
+
 function findPosition(
   snapshot: LiveRiskSnapshot,
   market: Market,
@@ -592,6 +631,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function openOrderExposureKrw(openOrder: LiveOpenOrder): number {
   return openOrder.estimatedGrossAmountKrw ?? 0;
+}
+
+function openOrderQuantity(openOrder: LiveOpenOrder): number {
+  return openOrder.quantity ?? 0;
 }
 
 function isPositiveFiniteNumber(value: unknown): value is number {

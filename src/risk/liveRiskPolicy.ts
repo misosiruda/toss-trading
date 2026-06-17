@@ -24,7 +24,8 @@ export const LIVE_RISK_REJECT_CODES = [
   "PREVIEW_EXPIRED",
   "PREVIEW_MISMATCH",
   "INVALID_ORDER_INTENT",
-  "INVALID_RISK_SNAPSHOT"
+  "INVALID_RISK_SNAPSHOT",
+  "INVALID_RISK_POLICY"
 ] as const;
 
 export type LiveRiskRejectCode = (typeof LIVE_RISK_REJECT_CODES)[number];
@@ -45,7 +46,8 @@ export const LIVE_RISK_RULE_IDS = [
   "sell_position",
   "preview_requirement",
   "order_intent_validation",
-  "risk_snapshot_validation"
+  "risk_snapshot_validation",
+  "risk_policy_validation"
 ] as const;
 
 export type LiveRiskRuleId = (typeof LIVE_RISK_RULE_IDS)[number];
@@ -90,20 +92,70 @@ export function createLiveRiskPolicy(
   const policy = input.policy;
   return {
     killSwitch: policy?.killSwitch ?? true,
-    maxOrderAmountKrw: policy?.maxOrderAmountKrw ?? 0,
-    maxDailyLossKrw: policy?.maxDailyLossKrw ?? 0,
-    maxSymbolExposureKrw: policy?.maxSymbolExposureKrw ?? 0,
-    maxMarketExposureKrw: policy?.maxMarketExposureKrw ?? 0,
-    maxTotalExposureKrw: policy?.maxTotalExposureKrw ?? 0,
+    maxOrderAmountKrw: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxOrderAmountKrw,
+      0
+    ),
+    maxDailyLossKrw: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxDailyLossKrw,
+      0
+    ),
+    maxSymbolExposureKrw: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxSymbolExposureKrw,
+      0
+    ),
+    maxMarketExposureKrw: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxMarketExposureKrw,
+      0
+    ),
+    maxTotalExposureKrw: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxTotalExposureKrw,
+      0
+    ),
     allowedSymbols: normalizeAllowedSymbols(policy?.allowedSymbols ?? []),
     allowedMarkets: [...new Set(policy?.allowedMarkets ?? [])],
     requireMarketOpen: policy?.requireMarketOpen ?? true,
-    maxOpenOrders: policy?.maxOpenOrders ?? 0,
+    maxOpenOrders: normalizeNonNegativeIntegerPolicyNumber(
+      policy?.maxOpenOrders,
+      0
+    ),
     marketOrderPolicy: policy?.marketOrderPolicy ?? "disabled",
     requirePreview: policy?.requirePreview ?? true,
     cooldownEntries: policy?.cooldownEntries ?? [],
     now: policy?.now ?? new Date()
   };
+}
+
+type LiveRiskPolicyFiniteNumberKey =
+  | "maxOrderAmountKrw"
+  | "maxDailyLossKrw"
+  | "maxSymbolExposureKrw"
+  | "maxMarketExposureKrw"
+  | "maxTotalExposureKrw";
+
+export function hasInvalidLiveRiskPolicyInput(
+  policy: Partial<LiveRiskPolicy> | undefined
+): boolean {
+  if (policy === undefined) {
+    return false;
+  }
+
+  const hasInvalidFiniteNumber = (
+    [
+      "maxOrderAmountKrw",
+      "maxDailyLossKrw",
+      "maxSymbolExposureKrw",
+      "maxMarketExposureKrw",
+      "maxTotalExposureKrw"
+    ] as const
+  ).some((key: LiveRiskPolicyFiniteNumberKey) =>
+    hasInvalidFiniteNumberPolicyValue(policy, key)
+  );
+
+  return (
+    hasInvalidFiniteNumber ||
+    hasInvalidIntegerPolicyValue(policy, "maxOpenOrders")
+  );
 }
 
 export function appendLiveRiskRejectCode(
@@ -127,4 +179,42 @@ export function normalizeLiveRiskSymbol(symbol: string): string {
 
 function normalizeAllowedSymbols(symbols: readonly string[]): string[] {
   return [...new Set(symbols.map(normalizeLiveRiskSymbol))];
+}
+
+function hasInvalidFiniteNumberPolicyValue(
+  policy: Partial<LiveRiskPolicy>,
+  key: LiveRiskPolicyFiniteNumberKey
+): boolean {
+  const value = policy[key];
+  return value !== undefined && !isNonNegativeFiniteNumber(value);
+}
+
+function hasInvalidIntegerPolicyValue(
+  policy: Partial<LiveRiskPolicy>,
+  key: "maxOpenOrders"
+): boolean {
+  const value = policy[key];
+  return value !== undefined && !isNonNegativeInteger(value);
+}
+
+function normalizeNonNegativeFinitePolicyNumber(
+  value: unknown,
+  fallback: number
+): number {
+  return isNonNegativeFiniteNumber(value) ? value : fallback;
+}
+
+function normalizeNonNegativeIntegerPolicyNumber(
+  value: unknown,
+  fallback: number
+): number {
+  return isNonNegativeInteger(value) ? value : fallback;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && isNonNegativeFiniteNumber(value);
 }

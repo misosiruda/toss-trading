@@ -2482,10 +2482,12 @@
 - cooldown 차단
 - max order amount, daily loss, symbol/market/total exposure 차단
 - pending buy order exposure를 cap 계산에 반영
+- pending sell order quantity를 보유 수량 계산에 반영
 - market order disabled/requires approval 차단
 - sell position missing/quantity exceeded 차단
 - preview required/expired/mismatch 차단
 - malformed numeric order intent와 risk snapshot 차단
+- malformed numeric risk policy 차단
 - malformed snapshot collection 차단
 - sell intent가 exposure를 증가시키지 않음
 - `npm run check`
