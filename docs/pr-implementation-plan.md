@@ -2373,6 +2373,48 @@
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
 
+### Read-only market data adapter
+
+목표:
+
+- official Toss Open API market data endpoint를 read-only HTTP client 뒤에서 사용할 수 있게 path/query mapping을 고정합니다.
+- adapter는 injected read-only JSON client만 호출하고 actual network transport를 구현하지 않습니다.
+- market data adapter는 account/order source of truth 역할을 하지 않습니다.
+
+작업 범위:
+
+- `src/broker/tossOpenApiMarketDataAdapter.ts`
+- `src/broker/tossOpenApiMarketDataAdapter.test.ts`
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- official OpenAPI JSON endpoint metadata 재확인
+- `GET /api/v1/prices` symbols query mapping
+- `GET /api/v1/orderbook` symbol query mapping
+- `GET /api/v1/trades` symbol/count query mapping
+- `GET /api/v1/candles` symbol/interval/count/before/adjusted query mapping
+- `GET /api/v1/stocks/{symbol}/warnings` path mapping
+- `GET /api/v1/market-calendar/{KR|US}` path/date query mapping
+- invalid symbol, count, interval, market input fail-closed
+- account/order endpoint 미호출
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- actual network transport
+- official API 실제 호출
+- account snapshot reader
+- account header handling
+- persistent token store
+- Local Operations API/MCP/dashboard token or broker surface
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
 ### Official token auth design
 
 설계 문서:

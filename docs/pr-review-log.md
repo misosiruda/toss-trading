@@ -2174,3 +2174,36 @@
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`는 Bearer injection, query serialization, mutation method block, disabled/invalid auth config fail-closed, invalid path/base URL, nested error code parsing, 401 token retry, 401/403/429/4xx/5xx mapping, invalid response status를 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, market adapter, account snapshot reader, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 32: Read-only Market Data Adapter
+
+### Review 1: Scope and Safety
+
+- 범위는 injected read-only JSON client 기반 `TossOpenApiMarketDataAdapter`, market endpoint path/query mapping, input validation, 관련 문서 갱신에 한정합니다.
+- actual network transport, official API 실제 호출, account snapshot reader, account header handling, persistent token store, Local Operations API/MCP/dashboard broker surface는 추가하지 않았습니다.
+- adapter는 `/api/v1/prices`, `/api/v1/orderbook`, `/api/v1/trades`, `/api/v1/candles`, `/api/v1/stocks/{symbol}/warnings`, `/api/v1/market-calendar/{KR|US}`만 호출합니다.
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현을 추가하지 않았습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- real `client_id`, `client_secret`, `access_token`, account id, order id, execution data는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- official OpenAPI JSON 확인: `openapi=3.1.0`, `info.version=1.1.1`, server `https://openapi.tossinvest.com`.
+- official market endpoint parameter 확인: `prices.symbols`, `orderbook.symbol`, `trades.symbol/count`, `candles.symbol/interval/count/before/adjusted`, `stocks/{symbol}/warnings`, `market-calendar/{KR|US}.date`.
+- `npm run build`: pass.
+- `node --test dist/broker/tossOpenApiMarketDataAdapter.test.js`: pass, 5 tests.
+- `npm run check`: pass, 367 tests.
+- `git diff --check`: pass.
+- secret-like token/key pattern grep: no matches.
+- source-only forbidden boundary grep: no matches for direct network call, persistent write surface, live order/raw command surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/broker/tossOpenApiMarketDataAdapter.ts`는 injected read-only JSON client만 호출하며 direct `fetch`, `http.request`, `https.request`를 사용하지 않습니다.
+- `getPrices`, `getOrderbook`, `getTrades`, `getCandles`, `getStockWarnings`, `getMarketCalendar`는 official read-only market endpoint path와 query만 구성합니다.
+- symbol은 letters, numbers, dot, dash만 허용하고, path segment는 `encodeURIComponent`로 구성합니다.
+- `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`, market calendar region은 `KR` 또는 `US`만 허용합니다.
+- `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, invalid input fail-closed, order endpoint 미호출을 검증합니다.
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
+- 신규 actual network call, account snapshot reader, account/order mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
