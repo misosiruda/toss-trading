@@ -101,6 +101,7 @@ Artifact 위치 계약:
 - max daily loss
 - symbol/market/total exposure
 - aggregate symbol exposure across matching position rows
+- aggregate sellable quantity across matching position rows
 - risk snapshot freshness with `maxSnapshotAgeMs`
 - pending buy order exposure reservation
 - pending sell order quantity reservation

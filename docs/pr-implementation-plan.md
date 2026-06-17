@@ -2483,6 +2483,7 @@
 - max order amount, daily loss, symbol/market/total exposure 차단
 - stale risk snapshot 차단
 - duplicate position row가 있는 symbol exposure 집계
+- duplicate position row가 있는 sellable quantity 집계
 - pending buy order exposure를 cap 계산에 반영
 - pending sell order quantity를 보유 수량 계산에 반영
 - market order disabled/requires approval 차단

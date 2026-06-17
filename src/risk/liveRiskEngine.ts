@@ -644,11 +644,19 @@ function evaluateSellPosition(
     return;
   }
 
-  const position = findPosition(snapshot, intent.market, normalizedSymbol);
-  if (position === undefined) {
+  const positions = matchingPositions(
+    snapshot,
+    intent.market,
+    normalizedSymbol
+  );
+  if (positions.length === 0) {
     appendLiveRiskRejectCode(rejectCodes, "POSITION_NOT_FOUND");
     return;
   }
+  const positionQuantity = positions.reduce(
+    (sum, position) => sum + position.quantity,
+    0
+  );
 
   const pendingSellQuantity = currentOpenSellQuantity(
     snapshot,
@@ -656,7 +664,7 @@ function evaluateSellPosition(
     normalizedSymbol
   );
 
-  if (intent.quantity + pendingSellQuantity > position.quantity) {
+  if (intent.quantity + pendingSellQuantity > positionQuantity) {
     appendLiveRiskRejectCode(rejectCodes, "SELL_QUANTITY_EXCEEDED");
   }
 }
@@ -728,12 +736,7 @@ function currentSymbolExposureKrw(
   market: Market,
   normalizedSymbol: string
 ): number {
-  const positionExposure = safeRiskPositions(snapshot.positions)
-    .filter(
-      (position) =>
-        position.market === market &&
-        safeNormalizeLiveRiskSymbol(position.symbol) === normalizedSymbol
-    )
+  const positionExposure = matchingPositions(snapshot, market, normalizedSymbol)
     .reduce((sum, position) => sum + positionExposureKrw(position), 0);
   return (
     positionExposure +
@@ -805,12 +808,12 @@ function currentOpenSellQuantity(
     .reduce((sum, openOrder) => sum + openOrderQuantity(openOrder), 0);
 }
 
-function findPosition(
+function matchingPositions(
   snapshot: LiveRiskSnapshot,
   market: Market,
   normalizedSymbol: string
-): LiveRiskPosition | undefined {
-  return safeRiskPositions(snapshot.positions).find(
+): readonly LiveRiskPosition[] {
+  return safeRiskPositions(snapshot.positions).filter(
     (position) =>
       position.market === market &&
       safeNormalizeLiveRiskSymbol(position.symbol) === normalizedSymbol

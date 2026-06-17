@@ -364,6 +364,37 @@ test("live risk engine aggregates duplicate position rows for symbol exposure", 
   ]);
 });
 
+test("live risk engine aggregates duplicate position rows for sellable quantity", () => {
+  const decision = evaluate({
+    intent: baseIntent({
+      side: "SELL",
+      symbol: "000660",
+      quantity: 60
+    }),
+    snapshot: baseSnapshot({
+      positions: [
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 50,
+          averagePriceKrw: 1_000,
+          marketValueKrw: 50_000
+        },
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 50,
+          averagePriceKrw: 1_000,
+          marketValueKrw: 50_000
+        }
+      ]
+    })
+  });
+
+  assert.equal(decision.approved, true);
+  assert.deepEqual(decision.rejectCodes, []);
+});
+
 test("live risk engine rejects pending buy exposure without notional", () => {
   const decision = evaluate({
     snapshot: baseSnapshot({

@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 27 tests.
-- `npm run check`: pass, 402 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 28 tests.
+- `npm run check`: pass, 403 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2274,6 +2274,7 @@
 - stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
 - stale risk snapshot이 fail-closed reject code로 차단되는지 검증합니다.
 - duplicate position row가 있을 때 symbol exposure가 모든 matching row를 합산하는지 검증합니다.
+- duplicate position row가 있을 때 sellable quantity가 모든 matching row를 합산하는지 검증합니다.
 - missing/null root live risk payload가 throw 없이 fail-closed 되는지 검증합니다.
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
 - malformed snapshot audit metadata를 fail-closed reject code로 차단하는지 검증합니다.
@@ -2353,3 +2354,8 @@
 - P1 `Fail closed when risk snapshots are stale`: `LiveRiskPolicy.maxSnapshotAgeMs`와 `RISK_SNAPSHOT_STALE` reject code를 추가해 stale/future `capturedAt` snapshot이 live approval로 이어지지 않도록 보강했습니다.
 - P1 `Sum all matching positions for symbol exposure`: `currentSymbolExposureKrw`가 첫 position row만 보지 않고 동일 market/symbol position row 전체를 합산하도록 수정했습니다.
 - 추가 테스트: stale risk snapshot reject, duplicate position row symbol exposure aggregation.
+
+### Codex Review Fix 10
+
+- P2 `Aggregate sellable position rows before rejecting sells`: `evaluateSellPosition`이 첫 matching position row만 보지 않고 동일 market/symbol position row 전체의 quantity를 합산해 SELL 가능 수량을 판단하도록 수정했습니다.
+- 추가 테스트: duplicate position row sellable quantity aggregation.
