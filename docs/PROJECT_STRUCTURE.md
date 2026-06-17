@@ -4,7 +4,7 @@
 
 이 문서는 `toss-trading` 코드베이스에서 기능 위치와 책임 경계를 빠르게 찾기 위한 구조 문서다.
 
-기존 `architecture.md`, `trading-runtime.md`, `risk-policy.md`, `official-toss-open-api-adapter-design.md`가 시스템 설계와 안전 정책을 설명한다면, 이 문서는 실제 파일과 디렉터리 기준으로 "어디를 수정해야 하는가"를 정리한다.
+기존 `architecture.md`, `trading-runtime.md`, `risk-policy.md`, `official-toss-open-api-adapter-design.md`, `official-token-auth-design.md`가 시스템 설계와 안전 정책을 설명한다면, 이 문서는 실제 파일과 디렉터리 기준으로 "어디를 수정해야 하는가"를 정리한다.
 
 ## 전체 구조
 
@@ -298,6 +298,7 @@ npm test
 - [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md)
 - [architecture.md](architecture.md)
 - [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)
+- [official-token-auth-design.md](official-token-auth-design.md)
 - [trading-runtime.md](trading-runtime.md)
 - [risk-policy.md](risk-policy.md)
 - [historical-replay.md](historical-replay.md)

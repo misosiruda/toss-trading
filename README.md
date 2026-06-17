@@ -86,7 +86,7 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 ## Current Status
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
-- 실제 Toss Securities Open API adapter는 구현하지 않았습니다. 현재는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)만 문서화되어 있습니다.
+- 실제 Toss Securities Open API adapter와 token auth client는 구현하지 않았습니다. 현재는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/official-token-auth-design.md)만 문서화되어 있습니다.
 - `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
@@ -179,6 +179,7 @@ npm run dashboard -- --data-dir data/paper
 
 자세한 계획은 [docs/roadmap.md](docs/roadmap.md)를 참고합니다.
 Official Toss Open API adapter 설계는 [docs/official-toss-open-api-adapter-design.md](docs/official-toss-open-api-adapter-design.md)를 참고합니다.
+Official Toss Open API token auth 설계는 [docs/official-token-auth-design.md](docs/official-token-auth-design.md)를 참고합니다.
 Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
 Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
 Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbook.md](docs/ai-paper-trading-runbook.md)를 참고합니다.
