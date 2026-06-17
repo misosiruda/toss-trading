@@ -98,11 +98,15 @@ const options = {
 - `.env` 로딩
 - 실행 설정 파싱
 - safe default 유지
+- official Toss Open API token auth config를 HTTP 호출 없이 해석
 
 금지:
 
 - `TRADING_ENABLED=true` 또는 `AI_DECISION_ENABLED=true`를 암묵적으로 강제
 - 비밀값을 로그나 문서에 출력
+- token 발급 HTTP call, token cache, broker adapter 구현
+
+`readTossOpenApiAuthConfig({})`는 `enabled=false`, `status=disabled`를 기본값으로 유지해야 한다. `TOSS_OPEN_API_AUTH_ENABLED=true`일 때 `TOSS_OPEN_API_CLIENT_ID` 또는 `TOSS_OPEN_API_CLIENT_SECRET`이 없으면 API 호출 전에 `invalid`로 fail-closed 처리해야 한다. credential value를 운영 조회에 사용할 때는 `summarizeTossOpenApiAuthConfig`처럼 존재 여부만 반환하는 safe summary를 사용한다.
 
 ### `src/collectors`
 
@@ -311,7 +315,7 @@ npm run build
 npm test
 ```
 
-`npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, 관련 문서 drift를 검사한다.
+`npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, Toss Open API auth config safe default, 관련 문서 drift를 검사한다.
 
 `npm test`는 build 후 `dist/**/*.test.js`를 실행한다.
 

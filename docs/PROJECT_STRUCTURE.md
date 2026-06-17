@@ -28,7 +28,7 @@ toss-trading/
 | 경로 | 책임 | 주의 |
 | --- | --- | --- |
 | `src/domain/` | Zod schema, TypeScript contract, 공통 validation | I/O, storage, provider 호출 금지 |
-| `src/config/` | `.env` 로딩과 실행 설정 해석 | trading mode를 암묵적으로 활성화하지 않음 |
+| `src/config/` | `.env` 로딩과 실행 설정 해석, official token auth config parsing | trading mode를 암묵적으로 활성화하지 않음 |
 | `src/collectors/` | optional read-only source 수집과 정규화 | 주문, 계좌 mutation, raw command runner 금지 |
 | `src/market/` | market packet, historical packet, packet hash 생성 | Codex CLI나 broker API 호출 금지 |
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
@@ -223,6 +223,23 @@ flowchart TD
 - raw `tossctl`, raw `codex exec`, live order tool을 추가하지 않음
 - tool contract와 docs 예시가 일치
 - disabled-by-default tool 이름이 `toolSurfacePolicy.ts`와 docs에서 일치
+
+### Official Toss Open API token auth config 변경
+
+수정 후보:
+
+- `src/config/tossOpenApiAuthConfig.ts`
+- `src/config/tossOpenApiAuthConfig.test.ts`
+- `.env.example`
+- `scripts/qualityGate.mjs`
+- `docs/official-token-auth-design.md`
+
+필수 확인:
+
+- `readTossOpenApiAuthConfig({})`가 `enabled=false`, `status=disabled`를 유지하는지 확인
+- `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret` 누락 시 `invalid`로 fail-closed 되는지 확인
+- safe summary가 credential value를 반환하지 않는지 확인
+- token 발급 HTTP call, token cache, broker adapter, account/order adapter를 추가하지 않음
 
 ### Storage artifact 변경
 

@@ -2086,3 +2086,32 @@
 - `docs/PROJECT_STRUCTURE.md`와 `docs/official-toss-open-api-adapter-design.md`는 새 token auth 설계 문서를 관련 문서와 PR 분리 계획에 추가합니다.
 - `docs/pr-implementation-plan.md`는 Later PRs의 official token auth design 범위, 포함 항목, 제외 항목을 구체화했습니다.
 - 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 29: Official Token Config Parser
+
+### Review 1: Scope and Safety
+
+- 범위는 official Toss Open API token auth config parser, safe default quality gate, placeholder env, 관련 문서 갱신에 한정합니다.
+- token auth HTTP client, token issue request builder, token cache, official API 실제 호출, account/order adapter는 추가하지 않았습니다.
+- `.env.example`에는 `TOSS_OPEN_API_AUTH_ENABLED=false`와 빈 `TOSS_OPEN_API_CLIENT_ID`, `TOSS_OPEN_API_CLIENT_SECRET` placeholder만 추가했고 real credential은 포함하지 않았습니다.
+- `readTossOpenApiAuthConfig({})`는 `enabled=false`, `status=disabled`를 기본값으로 유지합니다.
+- Codex MCP enabled surface, Local Operations API route, dashboard asset, package script는 변경하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/config/tossOpenApiAuthConfig.test.js`: pass, 5 tests.
+- `npm run check`: pass, 340 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- secret-like token/key pattern grep: no matches.
+- 금지 경계 grep 결과 신규 code에는 `place_order`, raw `tossctl`, raw `codex exec`, live order HTTP call, `/oauth2/token` 호출 surface가 없고, match는 문서상 금지/설계 문구와 기존 safe default 예시로만 확인했습니다.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/config/tossOpenApiAuthConfig.ts`는 `TOSS_OPEN_API_AUTH_ENABLED`, `TOSS_OPEN_API_BASE_URL`, `TOSS_OPEN_API_CLIENT_ID`, `TOSS_OPEN_API_CLIENT_SECRET`을 해석합니다.
+- enabled 상태에서 client id 또는 client secret이 없으면 `status=invalid`와 issue code로 fail-closed 상태를 반환합니다.
+- `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환합니다.
+- `scripts/qualityGate.mjs`는 default Toss Open API auth config가 disabled 상태인지 build artifact 기준으로 검사합니다.
+- `.env.example`, README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
+- 신규 network call, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
