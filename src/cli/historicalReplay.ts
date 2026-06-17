@@ -3,7 +3,7 @@ import "../config/loadEnv.js";
 import { readFileSync } from "node:fs";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
-import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
+import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
 import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
@@ -116,7 +116,10 @@ const decisionFrequency =
   decisionFrequencyArg === "once_per_week"
     ? decisionFrequencyArg
     : "every_tick";
-const codexDecisionEnv = readHistoricalCodexDecisionEnv();
+const codexDecisionConfig = readCodexDecisionProviderConfig(process.env, {
+  defaultMaxRunsPerDay: 5,
+  ephemeral: true
+});
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
   "--max-budget-per-symbol-krw"
@@ -163,19 +166,7 @@ const decisionProvider = dryRun
   : new CodexHistoricalReplayDecisionProvider(
       new CodexCliDecisionProvider(
         withHistoricalReplayPrompt(
-          {
-            enabled: process.env.AI_DECISION_ENABLED === "true",
-            codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-            sandbox: "read-only",
-            timeoutMs:
-              Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-            maxRunsPerDay: codexDecisionEnv.maxRunsPerDay,
-            allowWebSearch: codexDecisionEnv.allowWebSearch,
-            ephemeral: true,
-            ...(codexDecisionEnv.outputSchemaPath === undefined
-              ? {}
-              : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
-          },
+          codexDecisionConfig,
           { riskProfile: riskProfile.name }
         )
       ),

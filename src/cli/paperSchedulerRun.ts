@@ -1,6 +1,7 @@
 import "../config/loadEnv.js";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
 import {
   createPaperSchedulerPaths,
   PaperRunOnceSchedulerJob,
@@ -40,17 +41,7 @@ const provider = dryRun
         }
       ]
     })
-  : new CodexCliDecisionProvider({
-      enabled: process.env.AI_DECISION_ENABLED === "true",
-      codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-      sandbox: "read-only",
-      timeoutMs: Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
-      maxRunsPerDay: Number(process.env.CODEX_DECISION_MAX_RUNS_PER_DAY ?? 3),
-      allowWebSearch: process.env.CODEX_DECISION_ALLOW_WEB_SEARCH === "true",
-      ...(process.env.CODEX_OUTPUT_SCHEMA_PATH
-        ? { outputSchemaPath: process.env.CODEX_OUTPUT_SCHEMA_PATH }
-        : {})
-    });
+  : new CodexCliDecisionProvider(readCodexDecisionProviderConfig());
 
 const paths = createPaperSchedulerPaths(dataDir);
 const scheduler = new PaperRunScheduler(

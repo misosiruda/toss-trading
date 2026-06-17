@@ -84,6 +84,8 @@ Codex CLI는 paper trading 전용 AI decision provider입니다.
 AI_DECISION_PROVIDER=codex_cli
 AI_DECISION_MODE=paper_only
 AI_DECISION_ENABLED=false
+AI_DECISION_OUTPUT_SCHEMA_PATH=schemas/virtual-decision.schema.json
+AI_DECISION_MAX_RUNS_PER_DAY=3
 CODEX_EXEC_PATH=codex
 CODEX_EXEC_SANDBOX=read-only
 CODEX_EXEC_TIMEOUT_SECONDS=300
@@ -95,6 +97,19 @@ VIRTUAL_INITIAL_CASH_KRW=1000000
 ```
 
 `AI_DECISION_ENABLED=false`가 기본값입니다. scheduled AI decision을 켜기 전에 storage, schema, dry-run 검증을 먼저 구현해야 합니다.
+
+Codex-backed paper CLI는 provider 설정을 같은 우선순위로 해석합니다.
+
+| 설정 목적 | 우선순위 |
+| --- | --- |
+| provider 활성화 | `AI_DECISION_ENABLED=true` |
+| Codex 실행 파일 | `CODEX_EXEC_PATH`, 없으면 `codex` |
+| 실행 timeout | `CODEX_EXEC_TIMEOUT_SECONDS`, 없으면 `300`초 |
+| output schema | `AI_DECISION_OUTPUT_SCHEMA_PATH`, 없으면 `CODEX_OUTPUT_SCHEMA_PATH` |
+| provider run budget | `AI_DECISION_MAX_RUNS_PER_DAY`, 없으면 `CODEX_DECISION_MAX_RUNS_PER_DAY`, 없으면 일반 paper CLI는 `3`, historical replay는 `5` |
+| web search | `CODEX_ALLOW_WEB_SEARCH=true`, 없으면 `CODEX_DECISION_ALLOW_WEB_SEARCH=true` |
+
+`historical:batch:replay --use-codex-ai`는 run마다 별도 Codex provider를 만들며 `--max-codex-calls-per-run`을 per-run 호출 상한으로 사용합니다. 이 값은 batch 전체 daily budget이 아니라 개별 replay run 안에서 허용되는 Codex 호출 수입니다.
 
 로컬 실행에서는 CLI와 MCP server 진입점이 프로젝트 루트 `.env`를 자동으로 읽습니다. `CODEX_EXEC_PATH`는 Windows 전역 환경 변수일 필요가 없고, 이 프로젝트의 `.env`에만 둘 수 있습니다. Windows Store alias가 `Access is denied`를 반환하는 경우에는 `codex` alias 대신 실제 Codex binary 경로를 사용합니다.
 

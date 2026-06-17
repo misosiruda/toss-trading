@@ -420,8 +420,8 @@ npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir data/repl
 
 - `--use-codex-ai`가 없으면 Codex CLI를 호출하지 않습니다.
 - `--use-codex-ai`는 `AI_DECISION_ENABLED=true`가 아니면 fail-fast 됩니다.
-- batch 전체 daily budget은 `AI_DECISION_MAX_RUNS_PER_DAY`로 제한합니다. 값이 없으면 기존 paper CLI 호환 설정인 `CODEX_DECISION_MAX_RUNS_PER_DAY`를 사용합니다.
-- 각 run의 Codex call cap은 `--max-codex-calls-per-run`으로 제한합니다.
+- 각 run의 Codex call cap은 `--max-codex-calls-per-run`으로 제한합니다. 이 값은 batch 전체 daily budget이 아니라 run마다 새로 생성되는 Codex provider의 per-run 상한입니다.
+- 일반 paper CLI와 single historical replay의 provider run budget은 `AI_DECISION_MAX_RUNS_PER_DAY`를 먼저 읽고, 값이 없으면 기존 paper CLI 호환 설정인 `CODEX_DECISION_MAX_RUNS_PER_DAY`를 사용합니다.
 - replay sampling call cap은 `--max-decision-calls`로 제한합니다.
 - Codex CLI는 `read-only` sandbox로 호출됩니다.
 - Codex output schema는 `AI_DECISION_OUTPUT_SCHEMA_PATH` 또는 fallback `CODEX_OUTPUT_SCHEMA_PATH`로 전달됩니다.

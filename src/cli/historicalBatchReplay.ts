@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
-import { readHistoricalCodexDecisionEnv } from "./codexDecisionEnv.js";
+import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
 import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
@@ -33,7 +33,9 @@ const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
-const codexDecisionEnv = readHistoricalCodexDecisionEnv();
+const codexDecisionConfig = readCodexDecisionProviderConfig(process.env, {
+  defaultMaxRunsPerDay: 5
+});
 const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
@@ -73,19 +75,11 @@ if (
 const createCodexDelegate = (): CodexCliDecisionProvider =>
   new CodexCliDecisionProvider(
     withHistoricalReplayPrompt(
-      {
+      readCodexDecisionProviderConfig(process.env, {
         enabled: true,
-        codexPath: process.env.CODEX_EXEC_PATH ?? "codex",
-        sandbox: "read-only",
-        timeoutMs:
-          Number(process.env.CODEX_EXEC_TIMEOUT_SECONDS ?? 300) * 1000,
         maxRunsPerDay: maxCodexCallsPerRun,
-        allowWebSearch: codexDecisionEnv.allowWebSearch,
-        ephemeral: true,
-        ...(codexDecisionEnv.outputSchemaPath === undefined
-          ? {}
-          : { outputSchemaPath: codexDecisionEnv.outputSchemaPath })
-      },
+        ephemeral: true
+      }),
       { riskProfile: riskProfile.name }
     )
   );
@@ -138,7 +132,7 @@ const result = await runHistoricalBatchReplay({
           mode: "codex_cli" as const,
           maxCallsPerRun: maxCodexCallsPerRun,
           sandbox: "read-only" as const,
-          allowWebSearch: codexDecisionEnv.allowWebSearch,
+          allowWebSearch: codexDecisionConfig.allowWebSearch,
           promptPolicy: historicalPromptPolicy.name,
           promptVersion: historicalPromptPolicy.promptVersion
         }
