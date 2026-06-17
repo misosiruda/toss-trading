@@ -190,6 +190,7 @@ flowchart TD
 - `dashboard/portfolioModel.js`
 - `dashboard/portfolioRenderers.js`
 - `dashboard/reportRenderers.js`
+- `dashboard/replayProgressCoordinator.js`
 - `dashboard/replayProgressRenderers.js`
 - `dashboard/reportViewHelpers.js`
 - `dashboard/router.js`
@@ -255,6 +256,7 @@ flowchart TD
 | `dashboard/portfolioModel.js` | portfolio timeline, trade PnL, position valuation, benchmark data helper |
 | `dashboard/portfolioRenderers.js` | portfolio 성과, 벤치마크, 노출, 이벤트, 목표, 리스크 metric DOM renderer |
 | `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
+| `dashboard/replayProgressCoordinator.js` | replay progress polling과 live replay section composition |
 | `dashboard/replayProgressRenderers.js` | replay progress panel, performance metric, event table renderer와 view helper |
 | `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
 | `dashboard/sourceRenderers.js` | source summary renderer와 dashboard symbol metadata registration |

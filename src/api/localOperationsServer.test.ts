@@ -143,6 +143,7 @@ test("local operations API serves read-only dashboard assets", async () => {
         "/dashboard/portfolioModel.js",
         "/dashboard/portfolioRenderers.js",
         "/dashboard/reportRenderers.js",
+        "/dashboard/replayProgressCoordinator.js",
         "/dashboard/replayProgressRenderers.js",
         "/dashboard/reportViewHelpers.js",
         "/dashboard/router.js",
@@ -177,6 +178,10 @@ test("local operations API serves read-only dashboard assets", async () => {
       baseUrl,
       "/replayProgressRenderers.js"
     );
+    const rootReplayProgressCoordinatorScript = await fetchText(
+      baseUrl,
+      "/replayProgressCoordinator.js"
+    );
     const rootReportViewHelpersScript = await fetchText(
       baseUrl,
       "/reportViewHelpers.js"
@@ -209,6 +214,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(rootPortfolioRenderersScript.response.status, 200);
     assert.equal(rootReportRenderersScript.response.status, 200);
     assert.equal(rootReplayProgressRenderersScript.response.status, 200);
+    assert.equal(rootReplayProgressCoordinatorScript.response.status, 200);
     assert.equal(rootReportViewHelpersScript.response.status, 200);
     assert.equal(rootSourceRenderersScript.response.status, 200);
     assert.equal(rootTableRenderersScript.response.status, 200);
@@ -286,11 +292,12 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /from "\.\/dom\.js"/);
     assert.match(script.text, /from "\.\/formatters\.js"/);
     assert.match(dashboardScriptText, /from "\.\/metadata\.js"/);
-    assert.match(script.text, /from "\.\/portfolioModel\.js"/);
+    assert.match(dashboardScriptText, /from "\.\/portfolioModel\.js"/);
     assert.match(script.text, /from "\.\/portfolioRenderers\.js"/);
     assert.match(dashboardScriptText, /portfolioPointFromVirtualPortfolio/);
     assert.match(dashboardScriptText, /export function portfolioPointFromVirtualPortfolio/);
     assert.match(script.text, /from "\.\/reportRenderers\.js"/);
+    assert.match(script.text, /from "\.\/replayProgressCoordinator\.js"/);
     assert.match(script.text, /from "\.\/replayProgressRenderers\.js"/);
     assert.match(dashboardScriptText, /from "\.\/reportViewHelpers\.js"/);
     assert.match(script.text, /from "\.\/router\.js"/);
@@ -334,7 +341,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /renderIncomeGoalPanel/);
     assert.match(dashboardScriptText, /aria-valuenow/);
     assert.match(script.text, /scheduleReplayProgressPolling/);
+    assert.match(script.text, /renderLiveReplaySections/);
     assert.match(script.text, /renderReplayProgress/);
+    assert.match(dashboardScriptText, /export function scheduleReplayProgressPolling/);
+    assert.match(dashboardScriptText, /export function renderLiveReplaySections/);
     assert.match(dashboardScriptText, /export function renderReplayProgress/);
     assert.match(dashboardScriptText, /export function replayProgressStatus/);
     assert.match(dashboardScriptText, /export function replayProgressRiskSummary/);
@@ -378,6 +388,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.doesNotMatch(script.text, /function renderReplayPerformance/);
     assert.doesNotMatch(script.text, /function renderReplayProgressEvents/);
     assert.doesNotMatch(script.text, /function replayProgressRiskSummary/);
+    assert.doesNotMatch(script.text, /function renderLiveReplaySections/);
+    assert.doesNotMatch(script.text, /function scheduleReplayProgressPolling/);
+    assert.doesNotMatch(script.text, /function refreshReplayProgress/);
     assert.doesNotMatch(script.text, /function renderSourceSummary/);
     assert.doesNotMatch(script.text, /function rememberSymbolMetadata/);
     assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
