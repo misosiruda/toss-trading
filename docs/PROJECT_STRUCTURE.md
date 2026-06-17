@@ -287,7 +287,7 @@ npm run build
 npm test
 ```
 
-`npm run check`는 `quality:gate`와 전체 test suite를 순서대로 실행한다. `quality:gate`는 build 후 `scripts/qualityGate.mjs`를 실행한다. 이 스크립트는 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, 관련 문서 drift를 검사한다.
+`npm run check`는 `quality:gate`와 전체 test suite를 순서대로 실행한다. `quality:gate`는 build 후 `scripts/qualityGate.mjs`를 실행한다. 이 스크립트는 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision provider safe default, 관련 문서 drift를 검사한다.
 
 리팩토링 범위가 좁더라도 `npm test`는 `npm run build`를 포함한다. risk, paper order, replay, storage contract를 바꾸면 해당 영역 테스트를 추가하거나 보강한다.
 
