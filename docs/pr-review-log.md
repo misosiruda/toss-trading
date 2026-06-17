@@ -2225,7 +2225,7 @@
 - official OpenAPI JSON 확인: `GET /api/v1/accounts`는 account list를 반환하고, `GET /api/v1/holdings`는 `X-Tossinvest-Account` header와 optional `symbol` query를 사용합니다.
 - `npm run build`: pass.
 - `node --test dist/broker/tossOpenApiAccountSnapshotReader.test.js`: pass, 6 tests.
-- `npm run check`: pass, 373 tests.
+- `npm run check`: pass, 375 tests.
 - `git diff --check`: pass.
 - changed-file diff review: real secret, real account id, real order id, execution data는 없고, test fixture의 dummy `accountNo`는 masking assertion 용도로만 사용합니다.
 - source-only forbidden boundary grep: no matches for direct network call, persistent write surface, live order/raw command surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`.
@@ -2241,3 +2241,12 @@
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`는 account/holdings mapping, masking, missing `accountSeq` degraded status, invalid input fail-closed, malformed envelope fail-closed, order endpoint 미호출을 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, order mutation, portfolio mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
+
+### Codex Review Fix: Account Header Contract
+
+- Review finding: account snapshot reader가 `{ accountSeq }` option을 넘기지만 기존 `TossOpenApiReadOnlyHttpClient`는 query array만 받아 `X-Tossinvest-Account` header를 만들지 못했습니다.
+- Fix review 1: `TossOpenApiReadOnlyHttpClient.getJson`는 기존 query array 호출을 유지하면서 `{ query, accountSeq }` options object를 추가로 받도록 확장했습니다.
+- Fix review 2: `accountSeq`는 positive integer만 허용하고 invalid value는 token provider/transport 호출 전에 `TOSS_OPEN_API_READONLY_INVALID_ACCOUNT_SEQ`로 fail-closed 처리합니다.
+- Fix review 3: `TossOpenApiAccountSnapshotReader`는 ad-hoc local options interface 대신 공용 `TossOpenApiReadOnlyRequestOptions` contract를 사용합니다.
+- 추가 테스트: read-only HTTP client가 `/api/v1/holdings` 요청에서 `X-Tossinvest-Account` header를 주입하는지 검증합니다.
+- 추가 테스트: invalid `accountSeq`가 auth/transport 호출 전에 차단되는지 검증합니다.

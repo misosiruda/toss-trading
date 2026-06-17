@@ -1,7 +1,7 @@
 import { maskObject } from "../security/masking.js";
 import type {
   TossOpenApiReadOnlyQueryValue,
-  TossOpenApiReadOnlyRequestInput
+  TossOpenApiReadOnlyRequestOptions
 } from "./tossOpenApiReadOnlyHttpClient.js";
 
 export type TossOpenApiAccountSnapshotStatus = "ok" | "degraded";
@@ -11,15 +11,10 @@ export type TossOpenApiAccountSnapshotReaderErrorCode =
   | "TOSS_OPEN_API_ACCOUNT_READER_INVALID_SYMBOL"
   | "TOSS_OPEN_API_ACCOUNT_READER_INVALID_RESPONSE";
 
-export interface TossOpenApiAccountReadOnlyClientOptions {
-  query?: TossOpenApiReadOnlyRequestInput["query"];
-  accountSeq?: number;
-}
-
 export interface TossOpenApiAccountReadOnlyJsonClient {
   getJson(
     path: string,
-    options?: TossOpenApiAccountReadOnlyClientOptions
+    options?: TossOpenApiReadOnlyRequestOptions
   ): Promise<unknown>;
 }
 

@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { TossOpenApiReadOnlyRequestOptions } from "./tossOpenApiReadOnlyHttpClient.js";
 import {
   TossOpenApiAccountSnapshotReader,
-  TossOpenApiAccountSnapshotReaderError,
-  type TossOpenApiAccountReadOnlyClientOptions
+  TossOpenApiAccountSnapshotReaderError
 } from "./tossOpenApiAccountSnapshotReader.js";
 
 class FakeAccountReadOnlyJsonClient {
   readonly calls: Array<{
     path: string;
-    options: TossOpenApiAccountReadOnlyClientOptions | undefined;
+    options: TossOpenApiReadOnlyRequestOptions | undefined;
   }> = [];
   private readonly responses: unknown[];
 
@@ -20,7 +20,7 @@ class FakeAccountReadOnlyJsonClient {
 
   async getJson(
     path: string,
-    options?: TossOpenApiAccountReadOnlyClientOptions
+    options?: TossOpenApiReadOnlyRequestOptions
   ): Promise<unknown> {
     this.calls.push({ path, options });
     return this.responses.shift() ?? { result: {} };
