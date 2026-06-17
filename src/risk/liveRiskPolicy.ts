@@ -353,9 +353,13 @@ function isLiveRiskCooldownEntry(
     isNonEmptyString(value.symbol) &&
     (value.market === undefined || isLiveMarket(value.market)) &&
     (value.side === undefined || isLiveOrderSide(value.side)) &&
-    isNonEmptyString(value.activeUntil) &&
+    isParseableTimestamp(value.activeUntil) &&
     (value.reason === undefined || typeof value.reason === "string")
   );
+}
+
+function isParseableTimestamp(value: unknown): value is string {
+  return isNonEmptyString(value) && Number.isFinite(Date.parse(value));
 }
 
 function isValidDate(value: unknown): value is Date {

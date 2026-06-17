@@ -111,11 +111,13 @@ Artifact 위치 계약:
 - stale signal rejection
 - sell position ownership and quantity
 - preview requirement
+- malformed live order preview rejection
 - malformed numeric order intent and risk snapshot rejection
 - malformed snapshot collection rejection
 - malformed numeric risk policy rejection
 - malformed boolean risk policy rejection
 - malformed risk policy collection rejection
+- malformed cooldown expiry rejection
 - unknown market order policy rejection
 
 현재 제외 범위:

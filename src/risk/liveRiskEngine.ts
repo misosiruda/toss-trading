@@ -163,7 +163,8 @@ function evaluateOrderIntentShape(
     !isLiveOrderSide(intent.side) ||
     !isLiveOrderType(intent.orderType) ||
     !isPositiveFiniteNumber(intent.quantity) ||
-    !isPositiveFiniteNumber(intent.estimatedGrossAmountKrw)
+    !isPositiveFiniteNumber(intent.estimatedGrossAmountKrw) ||
+    hasInvalidOrderPreviewShape(intent.preview)
   ) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_ORDER_INTENT");
   }
@@ -441,13 +442,19 @@ function evaluatePreviewRequirement(
     return;
   }
 
-  if (!isFresh(intent.preview.expiresAt, policy.now)) {
+  const preview = safeOrderPreview(intent.preview);
+  if (preview === undefined) {
+    appendLiveRiskRejectCode(rejectCodes, "INVALID_ORDER_INTENT");
+    return;
+  }
+
+  if (!isFresh(preview.expiresAt, policy.now)) {
     appendLiveRiskRejectCode(rejectCodes, "PREVIEW_EXPIRED");
   }
 
   if (
-    intent.preview.orderIntentId !== intent.orderIntentId ||
-    intent.preview.estimatedGrossAmountKrw !== intent.estimatedGrossAmountKrw
+    preview.orderIntentId !== intent.orderIntentId ||
+    preview.estimatedGrossAmountKrw !== intent.estimatedGrossAmountKrw
   ) {
     appendLiveRiskRejectCode(rejectCodes, "PREVIEW_MISMATCH");
   }
@@ -607,6 +614,26 @@ function safeMarketSessions(
   return isRecord(value)
     ? (value as Partial<Record<Market, LiveMarketSessionStatus>>)
     : {};
+}
+
+function safeOrderPreview(value: unknown): LiveOrderPreviewRef | undefined {
+  return isLiveOrderPreviewRef(value) ? value : undefined;
+}
+
+function hasInvalidOrderPreviewShape(value: unknown): boolean {
+  return value !== undefined && !isLiveOrderPreviewRef(value);
+}
+
+function isLiveOrderPreviewRef(value: unknown): value is LiveOrderPreviewRef {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.previewId) &&
+    isNonEmptyString(value.orderIntentId) &&
+    isPositiveFiniteNumber(value.estimatedGrossAmountKrw) &&
+    isNonEmptyString(value.expiresAt)
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {

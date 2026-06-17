@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 20 tests.
-- `npm run check`: pass, 395 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 22 tests.
+- `npm run check`: pass, 397 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2274,6 +2274,7 @@
 - stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
 - malformed enum/identity/symbol intent field를 fail-closed reject code로 차단하는지 검증합니다.
+- malformed live order preview를 fail-closed reject code로 차단하는지 검증합니다.
 - 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
 - pending BUY open order의 notional을 exposure cap에 반영하는지 검증합니다.
 - pending BUY open order의 notional이 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
@@ -2282,6 +2283,7 @@
 - malformed numeric risk policy를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
 - malformed boolean risk policy를 `INVALID_RISK_POLICY`와 safe fallback으로 fail-closed 차단하는지 검증합니다.
 - malformed risk policy collection이 throw 없이 `INVALID_RISK_POLICY`로 fail-closed 되는지 검증합니다.
+- malformed cooldown expiry를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
 - unknown market order policy를 `INVALID_RISK_POLICY`와 disabled fallback으로 fail-closed 차단하는지 검증합니다.
 - malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 fail-closed 되는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
@@ -2328,3 +2330,9 @@
 - P1 `Reject malformed boolean risk gates`: `killSwitch`, `requireMarketOpen`, `requirePreview`가 boolean이 아니면 `INVALID_RISK_POLICY`로 reject하고 safe fallback으로 정규화하도록 보강했습니다.
 - P2 `Guard policy collections before iterating`: `allowedSymbols`, `allowedMarkets`, `cooldownEntries`를 배열 여부와 element shape 검증 후 정규화해 malformed collection이 throw가 아니라 fail-closed reject로 귀결되도록 보강했습니다.
 - 추가 테스트: malformed boolean policy gate reject, malformed policy collection reject.
+
+### Codex Review Fix 7
+
+- P1 `Reject malformed live order previews`: `previewId`, `orderIntentId`, `estimatedGrossAmountKrw`, `expiresAt`를 runtime preview shape로 검증해 blank preview reference가 approval로 이어지지 않도록 보강했습니다.
+- P2 `Reject invalid cooldown expiry dates`: `cooldownEntries.activeUntil`을 parse 가능한 timestamp로 검증해 malformed expiry가 cooldown을 조용히 비활성화하지 않고 `INVALID_RISK_POLICY`로 reject되도록 보강했습니다.
+- 추가 테스트: malformed live order preview reject, invalid cooldown expiry reject.

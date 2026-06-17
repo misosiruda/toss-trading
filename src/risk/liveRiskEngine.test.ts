@@ -526,6 +526,41 @@ test("live risk engine rejects malformed enum and identity intent fields", () =>
   assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
 });
 
+test("live risk engine rejects malformed live order previews", () => {
+  const decision = evaluate({
+    intent: baseIntent({
+      preview: {
+        previewId: " ",
+        orderIntentId: "intent_live_001",
+        estimatedGrossAmountKrw: 80_000,
+        expiresAt: fresh
+      }
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
+});
+
+test("live risk engine rejects cooldown entries with invalid expiry dates", () => {
+  const decision = evaluate({
+    policy: approvingPolicy({
+      cooldownEntries: [
+        {
+          market: "KR",
+          symbol: "005930",
+          side: "BUY",
+          activeUntil: "not-a-date",
+          reason: "malformed policy"
+        }
+      ]
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+});
+
 test("live risk engine keeps sell exposure checks from increasing exposure", () => {
   const decision = evaluate({
     intent: baseIntent({
