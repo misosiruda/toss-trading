@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS,
   LOCAL_OPERATIONS_API_ROUTES,
   READ_ONLY_HTTP_METHODS
 } from "../dist/api/localOperationsSurface.js";
+import {
+  readCodexDecisionProviderConfig,
+  readHistoricalCodexDecisionEnv
+} from "../dist/cli/codexDecisionEnv.js";
 import { disabledByDefaultMcpToolNames } from "../dist/mcp/toolSurfacePolicy.js";
 import { virtualPortfolioToolNames } from "../dist/mcp/virtualPortfolioTools.js";
 
@@ -25,6 +30,13 @@ function assert(condition, message) {
   if (!condition) {
     failures.push(message);
   }
+}
+
+function assertDeepEqual(actual, expected, label) {
+  assert(
+    isDeepStrictEqual(actual, expected),
+    `${label} must be ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+  );
 }
 
 function assertIncludes(text, needle, label) {
@@ -49,6 +61,47 @@ const dashboardEndpointPaths = readDashboardEndpointPaths(
 assert(
   JSON.stringify(READ_ONLY_HTTP_METHODS) === JSON.stringify(["GET", "HEAD"]),
   "READ_ONLY_HTTP_METHODS must stay exactly GET/HEAD"
+);
+
+assertDeepEqual(
+  readCodexDecisionProviderConfig({}),
+  {
+    enabled: false,
+    codexPath: "codex",
+    sandbox: "read-only",
+    timeoutMs: 300_000,
+    maxRunsPerDay: 3,
+    allowWebSearch: false
+  },
+  "default Codex decision provider config"
+);
+assertDeepEqual(
+  readHistoricalCodexDecisionEnv({}),
+  {
+    maxRunsPerDay: 5,
+    allowWebSearch: false
+  },
+  "default historical Codex decision env"
+);
+assertDeepEqual(
+  readCodexDecisionProviderConfig({
+    AI_DECISION_OUTPUT_SCHEMA_PATH: "schemas/ai-schema.json",
+    CODEX_OUTPUT_SCHEMA_PATH: "schemas/codex-schema.json",
+    AI_DECISION_MAX_RUNS_PER_DAY: "40",
+    CODEX_DECISION_MAX_RUNS_PER_DAY: "3",
+    CODEX_ALLOW_WEB_SEARCH: "false",
+    CODEX_DECISION_ALLOW_WEB_SEARCH: "true"
+  }),
+  {
+    enabled: false,
+    codexPath: "codex",
+    sandbox: "read-only",
+    timeoutMs: 300_000,
+    maxRunsPerDay: 40,
+    allowWebSearch: false,
+    outputSchemaPath: "schemas/ai-schema.json"
+  },
+  "Codex decision provider AI_* alias precedence"
 );
 
 for (const route of LOCAL_OPERATIONS_API_ROUTES) {

@@ -2006,3 +2006,29 @@
 - failure triage table은 provider disabled, Codex executable/auth/usage limit, timeout, invalid schema, packet mismatch, risk reject, data availability 부족을 artifact 기준으로 분리합니다.
 - 금지 경계 grep 결과 match는 기존 금지 예시와 paper-only disclaimer 문구로만 확인했고 신규 live/raw execution surface는 없습니다.
 - README와 관련 docs는 긴 절차를 중복하지 않고 새 runbook 링크만 추가해 운영 source of truth를 분산하지 않도록 했습니다.
+
+## Phase 26: Process Quality Gate 보강
+
+### Review 1: Scope and Safety
+
+- 범위는 `scripts/qualityGate.mjs`와 quality gate 설명 문서 갱신에 한정합니다.
+- `quality:gate`가 Codex decision provider safe default와 alias precedence drift를 build artifact 기준으로 검사하도록 보강했습니다.
+- `BROKER_PROVIDER`, `TRADING_ENABLED`, live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter, raw `codex exec`, raw `tossctl` MCP tool은 변경하지 않았습니다.
+- provider 기본값은 disabled, `read-only` sandbox, web search disabled를 유지합니다.
+- dashboard/API route, dashboard asset, MCP enabled tool surface, package script 동작은 변경하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run check`: pass, 335 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- `package.json` script를 확인했으며 별도 browser E2E, 성능 지표, 접근성 자동 검사 script는 없습니다.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+- `npm run check`가 `quality:gate`를 선행 실행하고 전체 Node.js test suite를 실행하는 구조를 유지하는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `scripts/qualityGate.mjs`는 `readCodexDecisionProviderConfig({})`의 safe default를 검사합니다.
+- `scripts/qualityGate.mjs`는 `readHistoricalCodexDecisionEnv({})`의 historical replay Codex call cap과 web search default를 검사합니다.
+- `scripts/qualityGate.mjs`는 `AI_DECISION_*` alias가 `CODEX_*` fallback보다 우선되는지 검사합니다.
+- `docs/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
+- 신규 runtime behavior, API contract, data model, migration, dashboard UI 변경은 없습니다.

@@ -311,7 +311,7 @@ npm run build
 npm test
 ```
 
-`npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, 관련 문서 drift를 검사한다.
+`npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, 관련 문서 drift를 검사한다.
 
 `npm test`는 build 후 `dist/**/*.test.js`를 실행한다.
 
