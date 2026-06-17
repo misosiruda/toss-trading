@@ -8,6 +8,8 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 이 기능은 실거래 백테스트 엔진이 아닙니다. 결과는 가상 포트폴리오 시뮬레이션이며 투자 조언, 수익률 보장, 실계좌 성과가 아닙니다.
 
+Codex AI historical replay 또는 batch replay를 실제로 실행하기 전후의 운영 체크리스트는 [AI Paper Trading Runbook](ai-paper-trading-runbook.md)을 기준으로 확인합니다.
+
 ## 입력과 출력
 
 입력:
@@ -477,6 +479,7 @@ npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir data/repl
 - provider 실패, timeout, packet mismatch는 paper order 없이 audit/progress log에 실패로 기록됩니다.
 - Codex output은 `VirtualDecision`으로만 처리되며 live `TradingSignal` 또는 `OrderIntent`로 연결하지 않습니다.
 - 모든 가상 매수/매도는 기존 `VirtualRiskEngine`과 `PaperOrderEngine` 경로만 통과합니다.
+- 실행 전후 `.env`, data availability, budget cap, progress/audit/report 확인 순서는 [AI Paper Trading Runbook](ai-paper-trading-runbook.md)을 따릅니다.
 
 ### Market Regime Classification
 

@@ -1980,3 +1980,29 @@
 - `src/reports/historicalReplayReport.ts`는 portfolio construction metric과 meaningful/dust reject count를 출력합니다.
 - `src/reports/batchReplayReport.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run summary와 aggregate report에 exposure/cash/time-in-market/target gap/dust reject metric을 전달합니다.
 - `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 option, metric, 제외 범위를 문서화합니다.
+
+## Phase 25: AI Paper Trading 운영 Runbook 정리
+
+### Review 1: Scope and Safety
+
+- 범위는 Codex AI paper run과 historical/batch replay 운영 절차 문서화에 한정합니다.
+- `docs/ai-paper-trading-runbook.md`를 새로 추가하고 README, Codex CLI paper trading, historical replay, automation 문서에서 runbook으로 진입할 수 있게 연결했습니다.
+- code behavior, API route, dashboard asset, risk/order/replay 로직, package script는 변경하지 않았습니다.
+- runbook은 `TRADING_ENABLED=false`, `BROKER_PROVIDER=mock`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 유지합니다.
+- live trading enable 절차, 실계좌 주문 절차, raw `codex exec`/raw `tossctl` MCP tool, `place_order` enabled surface는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run check`: pass, 335 tests.
+- `git diff --check`: pass. Git line-ending conversion warnings only, whitespace errors 없음.
+- 실제 CLI 파일에서 `paper:run-once:dry`, `paper:report`, `paper:run-from-market-packet`, `historical:replay`, `historical:batch:replay`, `ops:api`의 argument 이름을 확인했습니다.
+- `src/cli/codexDecisionEnv.ts`에서 Codex provider env 우선순위와 `read-only` sandbox 고정을 확인했습니다.
+- `src/api/localOperationsSurface.ts`에서 runbook의 read-only endpoint 목록이 실제 route 목록과 일치하는지 확인했습니다.
+
+### Review 3: Diff and Integration
+
+- `docs/ai-paper-trading-runbook.md`는 실행 전 `.env`, schema path, data availability, budget/sampling, 실행 중 progress/audit, 실행 후 decision/risk/trade count와 retry 판단 순서를 정리합니다.
+- stored packet paper run, single historical replay, batch historical replay, aggregate report, dashboard read-only 조회 절차를 실제 package script 기준으로 작성했습니다.
+- failure triage table은 provider disabled, Codex executable/auth/usage limit, timeout, invalid schema, packet mismatch, risk reject, data availability 부족을 artifact 기준으로 분리합니다.
+- 금지 경계 grep 결과 match는 기존 금지 예시와 paper-only disclaimer 문구로만 확인했고 신규 live/raw execution surface는 없습니다.
+- README와 관련 docs는 긴 절차를 중복하지 않고 새 runbook 링크만 추가해 운영 source of truth를 분산하지 않도록 했습니다.
