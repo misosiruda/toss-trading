@@ -2456,6 +2456,65 @@
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
 
+### Live RiskEngine implementation
+
+목표:
+
+- live order path로 바로 연결하지 않는 deterministic `LiveRiskEngine`을 추가합니다.
+- 이미 구조화된 live order intent와 risk snapshot을 입력으로 받아 fail-closed `RiskDecision`을 생성합니다.
+- broker gateway, OrderRouter, official order endpoint, MCP/API/dashboard mutation surface는 추가하지 않습니다.
+
+작업 범위:
+
+- `src/risk/liveRiskPolicy.ts`
+- `src/risk/liveRiskEngine.ts`
+- `src/risk/liveRiskEngine.test.ts`
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- 기본 policy fail-closed
+- valid limit order approval path
+- stale signal fail-closed
+- market hours unknown/closed fail-closed
+- duplicate order intent와 idempotency key reuse 차단
+- cooldown 차단
+- max order amount, daily loss, symbol/market/total exposure 차단
+- stale risk snapshot 차단
+- duplicate position row가 있는 symbol exposure 집계
+- duplicate position row가 있는 sellable quantity 집계
+- pending buy order exposure를 cap 계산에 반영
+- pending sell order quantity를 보유 수량 계산에 반영
+- market order disabled/requires approval 차단
+- sell position missing/quantity exceeded 차단
+- preview required/expired/mismatch 차단
+- malformed root live risk payload 차단
+- malformed snapshot audit metadata 차단
+- malformed live order preview 차단
+- malformed numeric order intent와 risk snapshot 차단
+- malformed numeric risk policy 차단
+- malformed boolean risk policy 차단
+- malformed risk policy collection 차단
+- malformed cooldown expiry 차단
+- unknown market order policy 차단
+- malformed snapshot collection 차단
+- sell intent가 exposure를 증가시키지 않음
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- broker gateway
+- `OrderRouter`
+- official order endpoint 호출
+- execution tracking
+- Local Operations API/MCP/dashboard mutation surface
+- Codex CLI `virtual_decision`을 live intent로 변환하는 경로
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
 ### Official token auth design
 
 설계 문서:

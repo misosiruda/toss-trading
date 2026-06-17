@@ -2250,3 +2250,112 @@
 - Fix review 3: `TossOpenApiAccountSnapshotReader`는 ad-hoc local options interface 대신 공용 `TossOpenApiReadOnlyRequestOptions` contract를 사용합니다.
 - 추가 테스트: read-only HTTP client가 `/api/v1/holdings` 요청에서 `X-Tossinvest-Account` header를 주입하는지 검증합니다.
 - 추가 테스트: invalid `accountSeq`가 auth/transport 호출 전에 차단되는지 검증합니다.
+
+## Phase 34: Live RiskEngine Policy
+
+### Review 1: Scope and Safety
+
+- 범위는 `src/risk`의 deterministic `LiveRiskEngine`, live risk policy, 관련 단위 테스트와 문서 갱신에 한정합니다.
+- `LiveRiskEngine`은 이미 구조화된 live order intent와 risk snapshot만 입력으로 받으며, 자연어 주문 또는 Codex CLI `virtual_decision`을 해석하지 않습니다.
+- broker gateway, official order endpoint, `OrderRouter`, execution tracking, Local Operations API/MCP/dashboard mutation surface는 추가하지 않았습니다.
+- 기본 policy는 fail-closed이며 명시 policy 없이는 live order approval이 열리지 않습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- real account number, token, order id, execution data는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 28 tests.
+- `npm run check`: pass, 403 tests.
+- `git diff --check`: pass.
+- `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
+- valid limit order approval path를 검증합니다.
+- default policy fail-closed를 검증합니다.
+- stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
+- stale risk snapshot이 fail-closed reject code로 차단되는지 검증합니다.
+- duplicate position row가 있을 때 symbol exposure가 모든 matching row를 합산하는지 검증합니다.
+- duplicate position row가 있을 때 sellable quantity가 모든 matching row를 합산하는지 검증합니다.
+- missing/null root live risk payload가 throw 없이 fail-closed 되는지 검증합니다.
+- malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
+- malformed snapshot audit metadata를 fail-closed reject code로 차단하는지 검증합니다.
+- malformed enum/identity/symbol intent field를 fail-closed reject code로 차단하는지 검증합니다.
+- malformed live order preview를 fail-closed reject code로 차단하는지 검증합니다.
+- 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
+- pending BUY open order의 notional을 exposure cap에 반영하는지 검증합니다.
+- pending BUY open order의 notional이 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
+- pending SELL open order의 quantity를 보유 수량 계산에 반영하는지 검증합니다.
+- pending SELL open order의 quantity가 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
+- malformed numeric risk policy를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
+- malformed boolean risk policy를 `INVALID_RISK_POLICY`와 safe fallback으로 fail-closed 차단하는지 검증합니다.
+- malformed risk policy collection이 throw 없이 `INVALID_RISK_POLICY`로 fail-closed 되는지 검증합니다.
+- malformed cooldown expiry를 `INVALID_RISK_POLICY`로 fail-closed 차단하는지 검증합니다.
+- unknown market order policy를 `INVALID_RISK_POLICY`와 disabled fallback으로 fail-closed 차단하는지 검증합니다.
+- malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 fail-closed 되는지 검증합니다.
+- sell intent는 exposure를 증가시키지 않는지 검증합니다.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
+
+### Review 3: Diff and Integration
+
+- `src/risk/liveRiskPolicy.ts`는 live risk reject code, rule id, fail-closed policy default, symbol normalization을 정의합니다.
+- `src/risk/liveRiskEngine.ts`는 pure in-memory evaluation만 수행하며 filesystem, network, broker, storage를 호출하지 않습니다.
+- `src/risk/liveRiskEngine.ts`는 raw root payload를 안전한 evaluation input으로 정규화한 뒤 rule evaluation을 수행합니다.
+- `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
+- 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
+
+### Codex Review Fix
+
+- P2 `Fail closed on invalid live intent fields`: runtime에서 `side`, `orderType`, `market`, `orderIntentId`, `signalId`, `idempotencyKey`, `symbol`을 검증하도록 `INVALID_ORDER_INTENT` 조건을 확장했습니다.
+- P2 `Reject duplicate orderIntentId before approval`: snapshot open order의 `orderIntentId`가 incoming intent와 같으면 `DUPLICATE_ORDER_INTENT`로 차단하도록 보강했습니다.
+- 추가 테스트: malformed enum/identity intent field reject, duplicate `orderIntentId` reject.
+
+### Codex Review Fix 2
+
+- P2 `Reserve pending buy exposure before approving`: `LiveOpenOrder`에 optional `estimatedGrossAmountKrw`를 추가하고, BUY open order의 pending notional을 symbol/market/total exposure 계산에 반영했습니다.
+- P2 `Validate symbol before normalizing it`: intent symbol과 snapshot symbol을 `safeNormalizeLiveRiskSymbol`로 처리해 malformed symbol이 throw가 아니라 fail-closed reject code로 귀결되도록 보강했습니다.
+- 추가 테스트: pending BUY exposure cap 반영, pending BUY notional 누락 snapshot reject, non-string symbol malformed intent reject.
+
+### Codex Review Fix 3
+
+- P2 `Guard malformed snapshots before iterating arrays`: `positions`, `openOrders`, `marketSessions`를 array/object 여부 확인 후 접근하도록 `safeRiskPositions`, `safeOpenOrders`, `safeMarketSessions`를 추가했습니다.
+- 추가 테스트: malformed snapshot collection이 throw 없이 `INVALID_RISK_SNAPSHOT`으로 reject되는지 검증합니다.
+
+### Codex Review Fix 4
+
+- P1 `Reserve open sell quantities before approving SELLs`: `LiveOpenOrder`에 optional `quantity`를 추가하고, SELL open order의 pending quantity를 보유 수량 계산에 반영했습니다.
+- P1 `Validate policy limits before approving`: risk policy numeric limit을 finite/non-negative 값으로 정규화하고 invalid 입력은 `INVALID_RISK_POLICY`로 fail-closed 처리하도록 보강했습니다.
+- 추가 테스트: pending SELL quantity 예약, pending SELL quantity 누락 snapshot reject, malformed numeric risk policy reject.
+
+### Codex Review Fix 5
+
+- P2 `Fail closed on unknown market order policies`: untyped source에서 들어온 unknown `marketOrderPolicy`를 `INVALID_RISK_POLICY`로 reject하고 `disabled`로 정규화하도록 보강했습니다.
+- 추가 테스트: invalid market order policy가 MARKET order approval로 이어지지 않고 `INVALID_RISK_POLICY`, `MARKET_ORDER_DISABLED`로 reject되는지 검증합니다.
+
+### Codex Review Fix 6
+
+- P1 `Reject malformed boolean risk gates`: `killSwitch`, `requireMarketOpen`, `requirePreview`가 boolean이 아니면 `INVALID_RISK_POLICY`로 reject하고 safe fallback으로 정규화하도록 보강했습니다.
+- P2 `Guard policy collections before iterating`: `allowedSymbols`, `allowedMarkets`, `cooldownEntries`를 배열 여부와 element shape 검증 후 정규화해 malformed collection이 throw가 아니라 fail-closed reject로 귀결되도록 보강했습니다.
+- 추가 테스트: malformed boolean policy gate reject, malformed policy collection reject.
+
+### Codex Review Fix 7
+
+- P1 `Reject malformed live order previews`: `previewId`, `orderIntentId`, `estimatedGrossAmountKrw`, `expiresAt`를 runtime preview shape로 검증해 blank preview reference가 approval로 이어지지 않도록 보강했습니다.
+- P2 `Reject invalid cooldown expiry dates`: `cooldownEntries.activeUntil`을 parse 가능한 timestamp로 검증해 malformed expiry가 cooldown을 조용히 비활성화하지 않고 `INVALID_RISK_POLICY`로 reject되도록 보강했습니다.
+- 추가 테스트: malformed live order preview reject, invalid cooldown expiry reject.
+
+### Codex Review Fix 8
+
+- P2 `Guard missing live risk payloads before dereferencing`: `evaluate()` 진입점에서 raw root payload를 `NormalizedLiveRiskEvaluationInput`으로 정규화해 null/missing `intent` 또는 `snapshot`이 throw가 아니라 `INVALID_ORDER_INTENT`, `INVALID_RISK_SNAPSHOT`으로 귀결되도록 보강했습니다.
+- P2 `Reject snapshots without audit identity`: `riskSnapshotRef`와 `capturedAt`를 snapshot shape 검증에 포함해 blank snapshot reference 또는 unparseable timestamp가 approval로 이어지지 않도록 보강했습니다.
+- 추가 테스트: missing live risk input reject, malformed root payload reject, snapshot audit metadata reject.
+
+### Codex Review Fix 9
+
+- P1 `Fail closed when risk snapshots are stale`: `LiveRiskPolicy.maxSnapshotAgeMs`와 `RISK_SNAPSHOT_STALE` reject code를 추가해 stale/future `capturedAt` snapshot이 live approval로 이어지지 않도록 보강했습니다.
+- P1 `Sum all matching positions for symbol exposure`: `currentSymbolExposureKrw`가 첫 position row만 보지 않고 동일 market/symbol position row 전체를 합산하도록 수정했습니다.
+- 추가 테스트: stale risk snapshot reject, duplicate position row symbol exposure aggregation.
+
+### Codex Review Fix 10
+
+- P2 `Aggregate sellable position rows before rejecting sells`: `evaluateSellPosition`이 첫 matching position row만 보지 않고 동일 market/symbol position row 전체의 quantity를 합산해 SELL 가능 수량을 판단하도록 수정했습니다.
+- 추가 테스트: duplicate position row sellable quantity aggregation.

@@ -34,6 +34,7 @@ toss-trading/
 | `src/market/` | market packet, historical packet, packet hash 생성 | Codex CLI나 broker API 호출 금지 |
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
 | `src/paper/` | virtual decision validation, risk, order, ledger, allocation policy | live `TradingSignal`/`OrderIntent`로 연결 금지 |
+| `src/risk/` | live order intent용 deterministic RiskEngine | broker gateway, OrderRouter, MCP mutation surface 연결 금지 |
 | `src/replay/` | simulated clock, replay runner, sampling, lookahead guard | 실시간 trading loop로 사용 금지 |
 | `src/workflows/` | CLI/API가 호출하는 유스케이스 orchestration | 순수 정책을 중복 구현하지 않음 |
 | `src/storage/` | JSON/JSONL file store, storage path mapping | trading 판단을 하지 않음 |
@@ -59,12 +60,14 @@ flowchart TD
     Workflows --> Market["src/market"]
     Workflows --> Replay["src/replay"]
     Workflows --> Paper["src/paper"]
+    Workflows --> Risk["src/risk"]
     Workflows --> AI["src/ai"]
     Workflows --> Reports
     Workflows --> Storage
     Market --> Domain["src/domain"]
     Replay --> Domain
     Paper --> Domain
+    Risk --> Domain
     AI --> Domain
     Storage --> Domain
     Reports --> Domain
@@ -132,6 +135,27 @@ flowchart TD
 - `VirtualRiskEngine` 실패는 fail-closed인지 확인
 - 새 reject code는 report, audit, docs에서 해석 가능한지 확인
 - risk 관련 분기는 테스트를 추가하거나 기존 `*.test.ts`를 보강
+
+### Live RiskEngine 변경
+
+수정 후보:
+
+- `src/risk/liveRiskEngine.ts`
+- `src/risk/liveRiskPolicy.ts`
+- `src/risk/liveRiskEngine.test.ts`
+- `docs/risk-policy.md`
+- `docs/trading-runtime.md`
+- `docs/official-toss-open-api-adapter-design.md`
+
+필수 확인:
+
+- 기본 policy는 fail-closed인지 확인
+- root payload, order intent, preview, risk snapshot, risk policy의 숫자/enum/boolean/collection/timestamp/audit identity 값이 malformed 입력에서 fail-closed 되는지 확인
+- risk snapshot freshness와 duplicate position row 기반 aggregate exposure/sellable quantity가 테스트되는지 확인
+- kill switch, max order amount, max daily loss, exposure, allowlist, market hours, duplicate, cooldown, open order count, market order policy, stale signal, preview requirement가 테스트되는지 확인
+- `RiskDecision`은 `orderIntentId`, `signalId`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 남기는지 확인
+- broker gateway, `OrderRouter`, Local Operations API/MCP/dashboard mutation surface를 추가하지 않음
+- Codex CLI `virtual_decision`을 live order intent로 승격하지 않음
 
 ### Market packet 또는 candidate 생성 변경
 
