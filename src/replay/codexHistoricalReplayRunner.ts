@@ -3,7 +3,6 @@ import type {
   HistoricalMarketSnapshot,
   MarketPacket,
   VirtualDecision,
-  VirtualDecisionItem,
   VirtualPortfolio,
   VirtualRiskDecision,
   VirtualTrade
@@ -13,7 +12,6 @@ import {
   HistoricalMarketSnapshotIndex
 } from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
-import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import {
   buildPaperExitPolicyDecision,
   createPaperExitPolicyState,
@@ -40,11 +38,17 @@ import {
   type ReplaySamplingPolicy
 } from "./replaySamplingPolicy.js";
 import {
-  createHistoricalReplayProgressEvent,
   type HistoricalReplayProgressEvent,
   type HistoricalReplayProgressUpdate,
   type HistoricalReplayTickPerformance
 } from "./historicalReplayProgress.js";
+import {
+  appendHistoricalReplayAuditEvent,
+  executeHistoricalReplayDecisionItems,
+  progressEventFromHistoricalReplayExecutionEffect,
+  recordHistoricalReplayDecision,
+  suppressDecisionItemsForSymbols
+} from "./historicalReplayDecisionBoundary.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -194,7 +198,7 @@ export async function runCodexHistoricalReplay(
     warnings.push(...packetBuild.warnings);
 
     if (packetBuild.status === "failed") {
-      appendAuditEvent(
+      appendHistoricalReplayAuditEvent(
         auditEvents,
         "HISTORICAL_PACKET_SKIPPED",
         `No historical candidates at ${simulatedAt.toISOString()}`,
@@ -223,7 +227,7 @@ export async function runCodexHistoricalReplay(
       tick
     };
     packets.push(packet);
-    appendAuditEvent(
+    appendHistoricalReplayAuditEvent(
       auditEvents,
       "HISTORICAL_MARKET_PACKET_CREATED",
       `${packet.packetId} candidates=${packet.candidates.length}`,
@@ -238,114 +242,44 @@ export async function runCodexHistoricalReplay(
       state: paperExitPolicyState
     });
     if (exitDecision !== null) {
-      const recordedExitDecision = bindVirtualDecisionConfidenceBreakdown({
+      const recordedExitDecision = recordHistoricalReplayDecision({
+        packet,
         decision: exitDecision,
-        packet
-      });
-
-      decisions.push(recordedExitDecision);
-      appendAuditEvent(
+        source: "paper_exit_policy",
+        decisions,
         auditEvents,
-        "PAPER_EXIT_POLICY_RECORDED",
-        `${recordedExitDecision.decisions.length} paper exit decision(s)`,
         tick
-      );
+      });
+      const orderStartedAtMs = performanceClock();
+      const execution = executeHistoricalReplayDecisionItems({
+        packet,
+        portfolio: currentPortfolio,
+        recordedDecision: recordedExitDecision,
+        engine,
+        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+        paperExitPolicyState,
+        auditEvents,
+        riskDecisions,
+        trades,
+        tick,
+        exitSuppressionSymbolKeys: exitedSymbolKeys
+      });
+      orderExecutionMs += performanceClock() - orderStartedAtMs;
+      currentPortfolio = execution.portfolio;
+      rejectedCount += execution.rejectedCount;
 
-      for (const item of recordedExitDecision.decisions) {
-        const orderStartedAtMs = performanceClock();
-        const result = engine.execute({
-          packet,
-          portfolio: currentPortfolio,
-          decision: item,
-          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
-        });
-        orderExecutionMs += performanceClock() - orderStartedAtMs;
-        currentPortfolio = result.portfolio;
-        prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
-        riskDecisions.push(result.riskDecision);
-        appendAuditEvent(
-          auditEvents,
-          result.riskDecision.approved
-            ? "VIRTUAL_RISK_APPROVED"
-            : "VIRTUAL_RISK_REJECTED",
-          `${item.market}:${item.symbol} ${item.action}`,
-          tick
+      for (const effect of execution.effects) {
+        currentPortfolio = effect.portfolio;
+        await emitProgress(
+          tick,
+          simulatedAt,
+          progressEventFromHistoricalReplayExecutionEffect({
+            effect,
+            simulatedAt,
+            tick,
+            packetId: packet.packetId
+          })
         );
-
-        if (!result.riskDecision.approved) {
-          rejectedCount += 1;
-          await emitProgress(
-            tick,
-            simulatedAt,
-            createHistoricalReplayProgressEvent({
-              eventType: "RISK_REJECTED",
-              sequence: riskDecisions.length,
-              simulatedAt,
-              tick,
-              packetId: packet.packetId,
-              market: item.market,
-              symbol: item.symbol,
-              action: item.action,
-              approved: false,
-              rejectCodes: result.riskDecision.rejectCodes,
-              summary: `${item.market}:${item.symbol} ${item.action} rejected ${result.riskDecision.rejectCodes.join(",")}`
-            })
-          );
-        }
-
-        if (result.trade) {
-          exitedSymbolKeys.add(decisionItemSymbolKey(item));
-          trades.push(result.trade);
-          appendAuditEvent(
-            auditEvents,
-            "PAPER_ORDER_FILLED",
-            `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
-            tick
-          );
-          await emitProgress(
-            tick,
-            simulatedAt,
-            createHistoricalReplayProgressEvent({
-              eventType: result.trade.action,
-              sequence: trades.length,
-              simulatedAt,
-              tick,
-              packetId: packet.packetId,
-              market: result.trade.market,
-              symbol: result.trade.symbol,
-              action: result.trade.action,
-              approved: true,
-              rejectCodes: [],
-              amountKrw: result.trade.amountKrw,
-              summary: `${result.trade.market}:${result.trade.symbol} ${result.trade.action} filled ${result.trade.amountKrw}`
-            })
-          );
-        } else if (result.noOpReason !== undefined) {
-          exitedSymbolKeys.add(decisionItemSymbolKey(item));
-          appendAuditEvent(
-            auditEvents,
-            result.noOpReason,
-            `${item.market}:${item.symbol} ${item.action}`,
-            tick
-          );
-          await emitProgress(
-            tick,
-            simulatedAt,
-            createHistoricalReplayProgressEvent({
-              eventType: result.noOpReason,
-              sequence: riskDecisions.length,
-              simulatedAt,
-              tick,
-              packetId: packet.packetId,
-              market: item.market,
-              symbol: item.symbol,
-              action: item.action,
-              approved: true,
-              rejectCodes: [],
-              summary: `${item.market}:${item.symbol} ${item.action} ${result.noOpReason}`
-            })
-          );
-        }
       }
     }
 
@@ -368,7 +302,7 @@ export async function runCodexHistoricalReplay(
 
     if (!samplingDecision.shouldEvaluate) {
       decisionSkippedCount += 1;
-      appendAuditEvent(
+      appendHistoricalReplayAuditEvent(
         auditEvents,
         "HISTORICAL_DECISION_SKIPPED",
         `${packet.packetId} ${samplingDecision.reason}`,
@@ -396,7 +330,7 @@ export async function runCodexHistoricalReplay(
     const decisionResult = await options.decisionProvider.decide(packet, context);
     decisionProviderMs = performanceClock() - decisionStartedAtMs;
     if (decisionResult.failure || !decisionResult.decision) {
-      appendAuditEvent(
+      appendHistoricalReplayAuditEvent(
         auditEvents,
         "HISTORICAL_AI_DECISION_FAILED",
         summarizeCodexCliDecisionFailure(decisionResult.failure),
@@ -420,7 +354,7 @@ export async function runCodexHistoricalReplay(
     }
 
     if (decisionResult.decision.packetId !== packet.packetId) {
-      appendAuditEvent(
+      appendHistoricalReplayAuditEvent(
         auditEvents,
         "HISTORICAL_DECISION_REJECTED",
         `Decision packet mismatch for ${packet.packetId}`,
@@ -448,7 +382,7 @@ export async function runCodexHistoricalReplay(
       exitedSymbolKeys
     );
     if (filteredDecision.suppressedCount > 0) {
-      appendAuditEvent(
+      appendHistoricalReplayAuditEvent(
         auditEvents,
         "HISTORICAL_DECISION_ITEM_SUPPRESSED",
         `${filteredDecision.suppressedCount} provider decision item(s) suppressed after paper exit`,
@@ -481,112 +415,43 @@ export async function runCodexHistoricalReplay(
       continue;
     }
 
-    const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
+    const recordedDecision = recordHistoricalReplayDecision({
+      packet,
       decision: filteredDecision.decision,
-      packet
-    });
-
-    decisions.push(recordedDecision);
-    appendAuditEvent(
+      source: "provider",
+      decisions,
       auditEvents,
-      "VIRTUAL_DECISION_RECORDED",
-      `${recordedDecision.decisions.length} historical replay decision(s)`,
       tick
-    );
+    });
+    const orderStartedAtMs = performanceClock();
+    const execution = executeHistoricalReplayDecisionItems({
+      packet,
+      portfolio: currentPortfolio,
+      recordedDecision,
+      engine,
+      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+      paperExitPolicyState,
+      auditEvents,
+      riskDecisions,
+      trades,
+      tick
+    });
+    orderExecutionMs += performanceClock() - orderStartedAtMs;
+    currentPortfolio = execution.portfolio;
+    rejectedCount += execution.rejectedCount;
 
-    for (const item of recordedDecision.decisions) {
-      const orderStartedAtMs = performanceClock();
-      const result = engine.execute({
-        packet,
-        portfolio: currentPortfolio,
-        decision: item,
-        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt)
-      });
-      orderExecutionMs += performanceClock() - orderStartedAtMs;
-      currentPortfolio = result.portfolio;
-      prunePaperExitPolicyState(paperExitPolicyState, currentPortfolio);
-      riskDecisions.push(result.riskDecision);
-      appendAuditEvent(
-        auditEvents,
-        result.riskDecision.approved
-          ? "VIRTUAL_RISK_APPROVED"
-          : "VIRTUAL_RISK_REJECTED",
-        `${item.market}:${item.symbol} ${item.action}`,
-        tick
+    for (const effect of execution.effects) {
+      currentPortfolio = effect.portfolio;
+      await emitProgress(
+        tick,
+        simulatedAt,
+        progressEventFromHistoricalReplayExecutionEffect({
+          effect,
+          simulatedAt,
+          tick,
+          packetId: packet.packetId
+        })
       );
-
-      if (!result.riskDecision.approved) {
-        rejectedCount += 1;
-        await emitProgress(
-          tick,
-          simulatedAt,
-          createHistoricalReplayProgressEvent({
-            eventType: "RISK_REJECTED",
-            sequence: riskDecisions.length,
-            simulatedAt,
-            tick,
-            packetId: packet.packetId,
-            market: item.market,
-            symbol: item.symbol,
-            action: item.action,
-            approved: false,
-            rejectCodes: result.riskDecision.rejectCodes,
-            summary: `${item.market}:${item.symbol} ${item.action} rejected ${result.riskDecision.rejectCodes.join(",")}`
-          })
-        );
-      }
-
-      if (result.trade) {
-        trades.push(result.trade);
-        appendAuditEvent(
-          auditEvents,
-          "PAPER_ORDER_FILLED",
-          `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
-          tick
-        );
-        await emitProgress(
-          tick,
-          simulatedAt,
-          createHistoricalReplayProgressEvent({
-            eventType: result.trade.action,
-            sequence: trades.length,
-            simulatedAt,
-            tick,
-            packetId: packet.packetId,
-            market: result.trade.market,
-            symbol: result.trade.symbol,
-            action: result.trade.action,
-            approved: true,
-            rejectCodes: [],
-            amountKrw: result.trade.amountKrw,
-            summary: `${result.trade.market}:${result.trade.symbol} ${result.trade.action} filled ${result.trade.amountKrw}`
-          })
-        );
-      } else if (result.noOpReason !== undefined) {
-        appendAuditEvent(
-          auditEvents,
-          result.noOpReason,
-          `${item.market}:${item.symbol} ${item.action}`,
-          tick
-        );
-        await emitProgress(
-          tick,
-          simulatedAt,
-          createHistoricalReplayProgressEvent({
-            eventType: result.noOpReason,
-            sequence: riskDecisions.length,
-            simulatedAt,
-            tick,
-            packetId: packet.packetId,
-            market: item.market,
-            symbol: item.symbol,
-            action: item.action,
-            approved: true,
-            rejectCodes: [],
-            summary: `${item.market}:${item.symbol} ${item.action} ${result.noOpReason}`
-          })
-        );
-      }
     }
 
     currentPortfolio = markPortfolioToMarket({
@@ -731,61 +596,6 @@ function evaluateSamplingPolicy(
     reason: "POLICY_ALLOWED",
     decisionCallsUsed: currentDecisionProviderCallCount + 1,
     candidateFingerprint: fingerprintMarketPacketCandidates(packet)
-  };
-}
-
-function suppressDecisionItemsForSymbols(
-  decision: VirtualDecision,
-  symbolKeys: Set<string>
-): { decision: VirtualDecision; suppressedCount: number } {
-  if (symbolKeys.size === 0) {
-    return { decision, suppressedCount: 0 };
-  }
-
-  const decisions = decision.decisions.filter(
-    (item) => !symbolKeys.has(decisionItemSymbolKey(item))
-  );
-  return {
-    decision: {
-      ...decision,
-      decisions,
-      summary:
-        decisions.length === decision.decisions.length
-          ? decision.summary
-          : `${decision.summary} Provider items for exited symbols were suppressed.`
-    },
-    suppressedCount: decision.decisions.length - decisions.length
-  };
-}
-
-function decisionItemSymbolKey(
-  item: Pick<VirtualDecisionItem, "market" | "symbol">
-): string {
-  return `${item.market}:${item.symbol}`;
-}
-
-function appendAuditEvent(
-  events: AuditEvent[],
-  eventType: string,
-  summary: string,
-  tick: SimulatedTick
-): void {
-  events.push(auditEvent(eventType, summary, tick, events.length));
-}
-
-function auditEvent(
-  eventType: string,
-  summary: string,
-  tick: SimulatedTick,
-  sequence: number
-): AuditEvent {
-  return {
-    eventId: `audit_historical_${tick.stepIndex}_${sequence}_${eventType.toLowerCase()}`,
-    eventType,
-    actor: "system",
-    summary,
-    maskedRefs: [],
-    createdAt: new Date(tick.epochMs).toISOString()
   };
 }
 
