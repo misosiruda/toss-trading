@@ -655,6 +655,281 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 decision module의 binding export와 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 20. AI 투자 프로세스 기준선 문서화
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md)
+
+범위:
+
+- `docs/ai-investment-process-refactoring-plan.md`
+- `docs/REFACTORING_GUIDE.md`
+- `docs/codex-cli-paper-trading.md`
+- `docs/llm-boundary.md`
+- `docs/PROJECT_STRUCTURE.md`
+- `README.md`
+
+목표:
+
+- AI가 생성하는 `VirtualDecision`이 어떤 단계로 검증, 정규화, 리스크 평가, 가상 체결, 감사 기록에 연결되는지 프로세스 상태 기계로 고정한다.
+- 실행 모드별 entrypoint, 입력, 출력, AI 사용 조건을 문서화한다.
+- 이후 phase에서 사용할 단계 이름과 safety invariant를 고정한다.
+
+금지:
+
+- 코드 동작 변경
+- live trading capability 추가
+- Codex output을 live `TradingSignal` 또는 live `OrderIntent`로 승격
+
+완료 기준:
+
+- `MarketPacket -> VirtualDecision -> Validation -> Normalization -> VirtualRiskEngine -> PaperOrderEngine -> Audit/Report` 흐름이 문서로 추적 가능하다.
+- `paper:run-once`, `paper:run-from-market-packet`, `historical:replay`, `historical:batch:replay`의 차이가 문서에 정리되어 있다.
+- failure matrix가 no-trade/no-portfolio-change 조건을 설명한다.
+
+검증:
+
+- `npm run check`
+- `git diff --check`
+- 문서/코드 경로 일치 검토
+- safety boundary 검토
+- phase/PR 단위 분리 검토
+
+## Phase 21. Codex Decision Provider 설정 경계 정리
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-21-codex-decision-provider-설정-경계-정리)
+
+범위:
+
+- `src/cli/paperRunOnce.ts`
+- `src/cli/paperRunFromMarketPacket.ts`
+- `src/cli/historicalReplay.ts`
+- `src/cli/historicalBatchReplay.ts`
+- `src/cli/codexDecisionEnv.ts`
+- `src/ai/codexCliDecisionProvider.ts`
+
+목표:
+
+- CLI별로 흩어진 Codex provider 설정 생성을 공통 기준으로 정리한다.
+- `AI_DECISION_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `read-only` sandbox, web search disabled 기본값을 테스트로 고정한다.
+- daily budget과 batch per-run budget의 의미를 분리한다.
+
+금지:
+
+- `workspace-write` 또는 `danger-full-access` sandbox 허용
+- `--search` 기본 활성화
+- raw `codex exec` MCP tool 추가
+- provider failure를 paper order로 변환
+
+완료 기준:
+
+- paper run과 replay가 같은 env 해석 규칙을 공유한다.
+- batch replay의 per-run Codex call cap과 전체 daily budget이 코드와 문서에서 구분된다.
+- dry-run 경로는 Codex CLI를 호출하지 않는다.
+
+검증:
+
+- `npm run check`
+- `npm run paper:run-once:dry -- --data-dir data/process-refactor-smoke`
+- `git diff --check`
+- historical snapshot fixture가 있으면 `npm run historical:replay:dry -- --data-dir <historical-snapshot-data-dir> --start-at <start-at> --end-at <end-at> --step-seconds 60 --every-n-steps 1`
+
+## Phase 22. Paper Decision Pipeline 공통화
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-22-paper-decision-pipeline-공통화)
+
+범위:
+
+- `src/workflows/paperRunOnce.ts`
+- `src/workflows/paperRunFromMarketPacket.ts`
+- 신규 후보: `src/workflows/paperDecisionPipeline.ts`
+- `src/paper/virtualDecisionValidation.ts`
+- `src/paper/decisionNormalizer.ts`
+- `src/paper/orderEngine.ts`
+
+목표:
+
+- `paperRunOnce`와 `paperRunFromMarketPacket`의 provider 호출 이후 흐름을 공통 pipeline으로 정리한다.
+- AI failure, semantic validation, confidence binding, normalization, risk, order, audit 순서를 한곳에서 추적 가능하게 한다.
+
+금지:
+
+- packet 생성 방식 변경
+- risk rule 변경
+- order sizing behavior 변경
+- risk reject 후 trade 기록
+- live order path 추가
+
+완료 기준:
+
+- 두 paper workflow가 같은 validation/risk/order 순서를 공유한다.
+- invalid decision과 provider failure는 no-trade로 유지된다.
+- portfolio 저장과 audit 기록 순서가 유지된다.
+
+검증:
+
+- `npm run check`
+- `npm run paper:run-once:dry -- --data-dir data/process-refactor-smoke`
+- `npm run paper:run-from-market-packet:dry -- --data-dir data/process-refactor-smoke`
+- `git diff --check`
+
+## Phase 23. Historical Replay Decision 처리 경계 정리
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-23-historical-replay-decision-처리-경계-정리)
+
+범위:
+
+- `src/replay/historicalReplayRunner.ts`
+- `src/replay/codexHistoricalReplayRunner.ts`
+- `src/replay/codexHistoricalDecisionProvider.ts`
+- `src/paper/exitPolicy.ts`
+- `docs/historical-replay.md`
+
+목표:
+
+- historical replay의 AI/provider decision 처리 단계를 paper pipeline과 같은 용어로 정리한다.
+- simulated time, lookahead guard, exit policy, sampling, provider failure 책임을 분리한다.
+
+금지:
+
+- simulated time 이후 데이터 사용
+- replay를 live trading loop로 재사용
+- exit policy를 live policy로 승격
+- provider failure를 trade로 변환
+
+완료 기준:
+
+- exit policy가 실행된 symbol의 provider decision suppression이 유지된다.
+- provider timeout/invalid decision은 paper order 없이 기록된다.
+- replay artifact contract가 유지된다.
+
+검증:
+
+- `npm run check`
+- `git diff --check`
+- historical snapshot fixture가 있으면 `npm run historical:replay:dry -- --data-dir <historical-snapshot-data-dir> --start-at <start-at> --end-at <end-at> --step-seconds 60 --every-n-steps 1`
+
+## Phase 24. Process Audit와 Artifact Contract 정리
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-24-process-audit와-artifact-contract-정리)
+
+범위:
+
+- `src/storage/artifactPaths.ts`
+- `src/storage/repositories.ts`
+- `src/storage/jsonlStore.ts`
+- `src/api/localOperationsReaders.ts`
+- `src/reports/`
+- `docs/historical-replay.md`
+- `docs/risk-policy.md`
+- `docs/codex-cli-paper-trading.md`
+
+목표:
+
+- AI decision pipeline의 각 단계가 어떤 artifact를 남기는지 표준화한다.
+- 실패 시 어느 파일을 보면 원인을 추적할 수 있는지 명확히 한다.
+
+금지:
+
+- storage path를 문서 없이 변경
+- corrupt JSONL line 하나로 전체 read-only 조회를 실패시키는 변경
+- 민감 정보 masking 우회
+- replay/API/dashboard에서 실행 side effect 추가
+
+완료 기준:
+
+- `MarketPacket`, `VirtualDecision`, `VirtualRiskDecision`, `VirtualTrade`, `AuditEvent`, report artifact 관계가 문서화된다.
+- storage path와 local operations reader 계약이 문서와 일치한다.
+- masking과 read-only policy가 유지된다.
+
+검증:
+
+- `npm run check`
+- `git diff --check`
+
+## Phase 25. AI Paper Trading 운영 Runbook 정리
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-25-ai-paper-trading-운영-runbook-정리)
+
+범위:
+
+- 신규 후보: `docs/ai-paper-trading-runbook.md`
+- `docs/codex-cli-paper-trading.md`
+- `docs/historical-replay.md`
+- `docs/automation.md`
+- `README.md`
+
+목표:
+
+- Codex AI paper run 또는 batch replay 실행 전후 확인 절차를 한곳에 모은다.
+- 실패했을 때 재실행 가능 여부와 확인 파일을 명확히 한다.
+
+금지:
+
+- 실계좌 실행 절차 작성
+- live trading enable 절차를 paper runbook에 포함
+- 수익률 목표 달성을 보장하는 문구 추가
+
+완료 기준:
+
+- `.env`, `AI_DECISION_MODE`, `CODEX_EXEC_PATH`, schema path, data availability, budget cap 확인 절차가 문서화된다.
+- progress, audit, report, decision/risk/trade count 확인 순서가 문서화된다.
+- 투자 조언/성과 보장 방지 문구가 runbook과 report 기준에 맞는다.
+
+검증:
+
+- `npm run check`
+- `git diff --check`
+
+## Phase 26. Process Quality Gate 보강
+
+상세 계획:
+
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md#phase-26-process-quality-gate-보강)
+
+범위:
+
+- `scripts/qualityGate.mjs`
+- `package.json`
+- `src/mcp/toolSurfacePolicy.ts`
+- `src/mcp/virtualPortfolioTools.ts`
+- `src/cli/codexDecisionEnv.ts`
+- 관련 tests
+- 관련 docs
+
+목표:
+
+- AI 투자 프로세스의 safety invariant를 test/quality gate로 일부 강제한다.
+- 문서, MCP surface, package script, provider default의 drift를 조기에 발견한다.
+
+금지:
+
+- lint/formatter 도입과 behavior refactor를 같은 PR에 섞기
+- dashboard mutation endpoint 추가
+- raw command execution surface 추가
+
+완료 기준:
+
+- `npm run check`로 AI paper process safety drift 일부를 자동 감지한다.
+- quality gate 실패 메시지가 수정할 파일과 이유를 명확히 알려준다.
+
+검증:
+
+- `npm run check`
+- `git diff --check`
+- dashboard/API 영향이 있으면 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인

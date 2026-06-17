@@ -295,6 +295,7 @@ npm test
 
 - [CODE_CONVENTION.md](CODE_CONVENTION.md)
 - [REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)
+- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md)
 - [architecture.md](architecture.md)
 - [trading-runtime.md](trading-runtime.md)
 - [risk-policy.md](risk-policy.md)

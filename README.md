@@ -184,6 +184,7 @@ Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/hi
 코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.
 대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
+AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investment-process-refactoring-plan.md](docs/ai-investment-process-refactoring-plan.md)를 참고합니다.
 
 ## Disclaimer
 
