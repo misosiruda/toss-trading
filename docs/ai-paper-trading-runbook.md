@@ -90,7 +90,8 @@ npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-0
 
 - coverage status가 `available`이거나 부족한 symbol/window를 사람이 확인했다.
 - optional symbol gap을 required failure로 오해하지 않는다.
-- `--require-optional-universe-symbols`는 optional symbol까지 강제하려는 경우에만 사용한다.
+- coverage CLI에서 optional symbol까지 강제하려면 `--require-optional-symbols`를 사용한다.
+- single replay와 batch replay에서 universe optional symbol까지 availability check에 포함하려면 `--require-optional-universe-symbols`를 사용한다.
 
 ### 4. Budget과 sampling
 
