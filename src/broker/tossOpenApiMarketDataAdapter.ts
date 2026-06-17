@@ -6,6 +6,7 @@ import type {
 export type TossOpenApiMarketDataAdapterErrorCode =
   | "TOSS_OPEN_API_MARKET_DATA_INVALID_SYMBOL"
   | "TOSS_OPEN_API_MARKET_DATA_INVALID_SYMBOLS"
+  | "TOSS_OPEN_API_MARKET_DATA_TOO_MANY_SYMBOLS"
   | "TOSS_OPEN_API_MARKET_DATA_INVALID_COUNT"
   | "TOSS_OPEN_API_MARKET_DATA_INVALID_INTERVAL"
   | "TOSS_OPEN_API_MARKET_DATA_INVALID_MARKET";
@@ -108,6 +109,12 @@ function normalizeSymbols(symbols: readonly string[]): string[] {
     throw new TossOpenApiMarketDataAdapterError(
       "TOSS_OPEN_API_MARKET_DATA_INVALID_SYMBOLS",
       "Toss Open API prices request requires at least one symbol."
+    );
+  }
+  if (symbols.length > 200) {
+    throw new TossOpenApiMarketDataAdapterError(
+      "TOSS_OPEN_API_MARKET_DATA_TOO_MANY_SYMBOLS",
+      "Toss Open API prices request allows at most 200 symbols."
     );
   }
 

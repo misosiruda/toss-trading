@@ -292,6 +292,7 @@ flowchart TD
 
 - adapter가 injected read-only JSON client만 호출
 - `/api/v1/prices`, `/api/v1/orderbook`, `/api/v1/trades`, `/api/v1/candles`, `/api/v1/stocks/{symbol}/warnings`, `/api/v1/market-calendar/{KR|US}`만 mapping
+- `prices.symbols`는 official limit에 맞춰 1-200개만 허용
 - symbol은 official pattern에 맞춰 letters, numbers, dot, dash만 허용하고 path segment는 encoded path로 구성
 - `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`만 허용
 - account snapshot reader, order endpoint, Local Operations API/MCP/dashboard surface, live `TradingSignal`/`OrderIntent`/`OrderRouter`를 추가하지 않음

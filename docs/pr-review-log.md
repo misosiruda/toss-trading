@@ -2189,7 +2189,7 @@
 ### Review 2: Tests and Validation
 
 - official OpenAPI JSON 확인: `openapi=3.1.0`, `info.version=1.1.1`, server `https://openapi.tossinvest.com`.
-- official market endpoint parameter 확인: `prices.symbols`, `orderbook.symbol`, `trades.symbol/count`, `candles.symbol/interval/count/before/adjusted`, `stocks/{symbol}/warnings`, `market-calendar/{KR|US}.date`.
+- official market endpoint parameter 확인: `prices.symbols` 1-200개 limit, `orderbook.symbol`, `trades.symbol/count`, `candles.symbol/interval/count/before/adjusted`, `stocks/{symbol}/warnings`, `market-calendar/{KR|US}.date`.
 - `npm run build`: pass.
 - `node --test dist/broker/tossOpenApiMarketDataAdapter.test.js`: pass, 5 tests.
 - `npm run check`: pass, 367 tests.
@@ -2202,8 +2202,8 @@
 
 - `src/broker/tossOpenApiMarketDataAdapter.ts`는 injected read-only JSON client만 호출하며 direct `fetch`, `http.request`, `https.request`를 사용하지 않습니다.
 - `getPrices`, `getOrderbook`, `getTrades`, `getCandles`, `getStockWarnings`, `getMarketCalendar`는 official read-only market endpoint path와 query만 구성합니다.
-- symbol은 letters, numbers, dot, dash만 허용하고, path segment는 `encodeURIComponent`로 구성합니다.
+- `prices.symbols`는 1-200개만 허용하고, symbol은 letters, numbers, dot, dash만 허용하며, path segment는 `encodeURIComponent`로 구성합니다.
 - `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`, market calendar region은 `KR` 또는 `US`만 허용합니다.
-- `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, invalid input fail-closed, order endpoint 미호출을 검증합니다.
+- `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, 201개 이상 prices symbols fail-closed, invalid input fail-closed, order endpoint 미호출을 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, account snapshot reader, account/order mutation, API route, data model, migration, dashboard UI 변경은 없습니다.

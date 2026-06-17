@@ -2391,7 +2391,7 @@
 검증:
 
 - official OpenAPI JSON endpoint metadata 재확인
-- `GET /api/v1/prices` symbols query mapping
+- `GET /api/v1/prices` symbols query mapping과 1-200개 limit fail-closed
 - `GET /api/v1/orderbook` symbol query mapping
 - `GET /api/v1/trades` symbol/count query mapping
 - `GET /api/v1/candles` symbol/interval/count/before/adjusted query mapping

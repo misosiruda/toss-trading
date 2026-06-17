@@ -127,6 +127,17 @@ test("market data adapter rejects invalid inputs before HTTP client", async () =
       error.code === "TOSS_OPEN_API_MARKET_DATA_INVALID_SYMBOLS"
   );
   await assert.rejects(
+    () =>
+      adapter.getPrices({
+        symbols: Array.from({ length: 201 }, (_, index) =>
+          String(index + 1).padStart(6, "0")
+        )
+      }),
+    (error) =>
+      error instanceof TossOpenApiMarketDataAdapterError &&
+      error.code === "TOSS_OPEN_API_MARKET_DATA_TOO_MANY_SYMBOLS"
+  );
+  await assert.rejects(
     () => adapter.getOrderbook({ symbol: "../orders" }),
     (error) =>
       error instanceof TossOpenApiMarketDataAdapterError &&
