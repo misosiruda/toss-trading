@@ -2265,13 +2265,15 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 25 tests.
-- `npm run check`: pass, 400 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 27 tests.
+- `npm run check`: pass, 402 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
 - default policy fail-closed를 검증합니다.
 - stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
+- stale risk snapshot이 fail-closed reject code로 차단되는지 검증합니다.
+- duplicate position row가 있을 때 symbol exposure가 모든 matching row를 합산하는지 검증합니다.
 - missing/null root live risk payload가 throw 없이 fail-closed 되는지 검증합니다.
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
 - malformed snapshot audit metadata를 fail-closed reject code로 차단하는지 검증합니다.
@@ -2345,3 +2347,9 @@
 - P2 `Guard missing live risk payloads before dereferencing`: `evaluate()` 진입점에서 raw root payload를 `NormalizedLiveRiskEvaluationInput`으로 정규화해 null/missing `intent` 또는 `snapshot`이 throw가 아니라 `INVALID_ORDER_INTENT`, `INVALID_RISK_SNAPSHOT`으로 귀결되도록 보강했습니다.
 - P2 `Reject snapshots without audit identity`: `riskSnapshotRef`와 `capturedAt`를 snapshot shape 검증에 포함해 blank snapshot reference 또는 unparseable timestamp가 approval로 이어지지 않도록 보강했습니다.
 - 추가 테스트: missing live risk input reject, malformed root payload reject, snapshot audit metadata reject.
+
+### Codex Review Fix 9
+
+- P1 `Fail closed when risk snapshots are stale`: `LiveRiskPolicy.maxSnapshotAgeMs`와 `RISK_SNAPSHOT_STALE` reject code를 추가해 stale/future `capturedAt` snapshot이 live approval로 이어지지 않도록 보강했습니다.
+- P1 `Sum all matching positions for symbol exposure`: `currentSymbolExposureKrw`가 첫 position row만 보지 않고 동일 market/symbol position row 전체를 합산하도록 수정했습니다.
+- 추가 테스트: stale risk snapshot reject, duplicate position row symbol exposure aggregation.

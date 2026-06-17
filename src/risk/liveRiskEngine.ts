@@ -123,6 +123,7 @@ export class LiveRiskEngine {
     evaluateKillSwitch(rejectCodes, policy);
     evaluateStaleSignal(rejectCodes, intent, policy);
     evaluateOrderAmount(rejectCodes, intent, policy);
+    evaluateRiskSnapshotFreshness(rejectCodes, snapshot, policy);
     evaluateDailyLoss(rejectCodes, snapshot, policy);
     evaluateAllowlists(rejectCodes, intent.market, normalizedSymbol, policy);
     evaluateMarketHours(rejectCodes, intent.market, snapshot, policy);
@@ -487,6 +488,25 @@ function evaluateOrderAmount(
   }
 }
 
+function evaluateRiskSnapshotFreshness(
+  rejectCodes: LiveRiskRejectCode[],
+  snapshot: LiveRiskSnapshot,
+  policy: LiveRiskPolicy
+): void {
+  const capturedAtMs = Date.parse(snapshot.capturedAt);
+  if (!Number.isFinite(capturedAtMs)) {
+    return;
+  }
+
+  const nowMs = policy.now.getTime();
+  if (
+    capturedAtMs > nowMs ||
+    nowMs - capturedAtMs > policy.maxSnapshotAgeMs
+  ) {
+    appendLiveRiskRejectCode(rejectCodes, "RISK_SNAPSHOT_STALE");
+  }
+}
+
 function evaluateDailyLoss(
   rejectCodes: LiveRiskRejectCode[],
   snapshot: LiveRiskSnapshot,
@@ -708,9 +728,13 @@ function currentSymbolExposureKrw(
   market: Market,
   normalizedSymbol: string
 ): number {
-  const position = findPosition(snapshot, market, normalizedSymbol);
-  const positionExposure =
-    position === undefined ? 0 : positionExposureKrw(position);
+  const positionExposure = safeRiskPositions(snapshot.positions)
+    .filter(
+      (position) =>
+        position.market === market &&
+        safeNormalizeLiveRiskSymbol(position.symbol) === normalizedSymbol
+    )
+    .reduce((sum, position) => sum + positionExposureKrw(position), 0);
   return (
     positionExposure +
     currentOpenBuySymbolExposureKrw(snapshot, market, normalizedSymbol)

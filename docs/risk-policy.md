@@ -100,6 +100,8 @@ Artifact 위치 계약:
 - max order amount
 - max daily loss
 - symbol/market/total exposure
+- aggregate symbol exposure across matching position rows
+- risk snapshot freshness with `maxSnapshotAgeMs`
 - pending buy order exposure reservation
 - pending sell order quantity reservation
 - symbol allowlist
@@ -110,6 +112,7 @@ Artifact 위치 계약:
 - open order count
 - market order policy
 - stale signal rejection
+- stale risk snapshot rejection
 - sell position ownership and quantity
 - preview requirement
 - malformed root live risk payload rejection

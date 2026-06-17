@@ -68,6 +68,7 @@ function approvingPolicy(
     maxSymbolExposureKrw: 150_000,
     maxMarketExposureKrw: 500_000,
     maxTotalExposureKrw: 700_000,
+    maxSnapshotAgeMs: 60_000,
     allowedSymbols: ["005930", "000660"],
     allowedMarkets: ["KR"],
     requireMarketOpen: true,
@@ -115,6 +116,7 @@ test("live risk engine defaults to fail-closed without explicit policy", () => {
   assert.deepEqual(decision.rejectCodes, [
     "KILL_SWITCH_ACTIVE",
     "MAX_ORDER_AMOUNT_EXCEEDED",
+    "RISK_SNAPSHOT_STALE",
     "SYMBOL_NOT_ALLOWED",
     "MARKET_NOT_ALLOWED",
     "OPEN_ORDER_LIMIT_EXCEEDED",
@@ -226,6 +228,18 @@ test("live risk engine enforces order amount, daily loss, and exposure caps", ()
   ]);
 });
 
+test("live risk engine rejects stale risk snapshots", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      capturedAt: "2026-06-17T09:58:59.000Z"
+    }),
+    policy: approvingPolicy({ maxSnapshotAgeMs: 60_000 })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("RISK_SNAPSHOT_STALE"));
+});
+
 test("live risk engine rejects invalid numeric policy limits", () => {
   const decision = evaluate({
     policy: approvingPolicy({
@@ -301,6 +315,39 @@ test("live risk engine reserves pending buy exposure against caps", () => {
           symbol: "005930",
           side: "BUY",
           estimatedGrossAmountKrw: 30_000
+        }
+      ]
+    }),
+    policy: approvingPolicy({
+      maxSymbolExposureKrw: 100_000,
+      maxMarketExposureKrw: 500_000,
+      maxTotalExposureKrw: 700_000
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.deepEqual(decision.rejectCodes, [
+    "MAX_SYMBOL_EXPOSURE_EXCEEDED"
+  ]);
+});
+
+test("live risk engine aggregates duplicate position rows for symbol exposure", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 10_000
+        },
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 20_000
         }
       ]
     }),

@@ -151,6 +151,7 @@ flowchart TD
 
 - 기본 policy는 fail-closed인지 확인
 - root payload, order intent, preview, risk snapshot, risk policy의 숫자/enum/boolean/collection/timestamp/audit identity 값이 malformed 입력에서 fail-closed 되는지 확인
+- risk snapshot freshness와 duplicate position row 기반 aggregate exposure가 테스트되는지 확인
 - kill switch, max order amount, max daily loss, exposure, allowlist, market hours, duplicate, cooldown, open order count, market order policy, stale signal, preview requirement가 테스트되는지 확인
 - `RiskDecision`은 `orderIntentId`, `signalId`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 남기는지 확인
 - broker gateway, `OrderRouter`, Local Operations API/MCP/dashboard mutation surface를 추가하지 않음

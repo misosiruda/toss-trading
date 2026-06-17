@@ -18,6 +18,7 @@ export const LIVE_RISK_REJECT_CODES = [
   "MARKET_ORDER_DISABLED",
   "MARKET_ORDER_REQUIRES_APPROVAL",
   "SIGNAL_STALE",
+  "RISK_SNAPSHOT_STALE",
   "POSITION_NOT_FOUND",
   "SELL_QUANTITY_EXCEEDED",
   "PREVIEW_REQUIRED",
@@ -43,6 +44,7 @@ export const LIVE_RISK_RULE_IDS = [
   "open_order_count",
   "market_order_policy",
   "stale_signal",
+  "risk_snapshot_freshness",
   "sell_position",
   "preview_requirement",
   "order_intent_validation",
@@ -72,6 +74,7 @@ export interface LiveRiskPolicy {
   maxSymbolExposureKrw: number;
   maxMarketExposureKrw: number;
   maxTotalExposureKrw: number;
+  maxSnapshotAgeMs: number;
   allowedSymbols: readonly string[];
   allowedMarkets: readonly Market[];
   requireMarketOpen: boolean;
@@ -112,6 +115,10 @@ export function createLiveRiskPolicy(
       policy?.maxTotalExposureKrw,
       0
     ),
+    maxSnapshotAgeMs: normalizeNonNegativeFinitePolicyNumber(
+      policy?.maxSnapshotAgeMs,
+      60_000
+    ),
     allowedSymbols: normalizeAllowedSymbols(policy?.allowedSymbols),
     allowedMarkets: normalizeAllowedMarkets(policy?.allowedMarkets),
     requireMarketOpen: normalizeBooleanPolicyValue(
@@ -134,7 +141,8 @@ type LiveRiskPolicyFiniteNumberKey =
   | "maxDailyLossKrw"
   | "maxSymbolExposureKrw"
   | "maxMarketExposureKrw"
-  | "maxTotalExposureKrw";
+  | "maxTotalExposureKrw"
+  | "maxSnapshotAgeMs";
 
 type LiveRiskPolicyBooleanKey =
   | "killSwitch"
@@ -157,7 +165,8 @@ export function hasInvalidLiveRiskPolicyInput(
       "maxDailyLossKrw",
       "maxSymbolExposureKrw",
       "maxMarketExposureKrw",
-      "maxTotalExposureKrw"
+      "maxTotalExposureKrw",
+      "maxSnapshotAgeMs"
     ] as const
   ).some((key: LiveRiskPolicyFiniteNumberKey) =>
     hasInvalidFiniteNumberPolicyValue(policy, key)
