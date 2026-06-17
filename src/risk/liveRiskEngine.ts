@@ -63,6 +63,7 @@ export interface LiveOpenOrder {
   market: Market;
   symbol: string;
   side: LiveOrderSide;
+  estimatedGrossAmountKrw?: number | undefined;
 }
 
 export interface LiveRiskSnapshot {
@@ -95,7 +96,7 @@ export class LiveRiskEngine {
   evaluate(input: LiveRiskInput): LiveRiskDecision {
     const policy = createLiveRiskPolicy({ policy: input.policy });
     const rejectCodes: LiveRiskRejectCode[] = [];
-    const normalizedSymbol = normalizeLiveRiskSymbol(input.intent.symbol);
+    const normalizedSymbol = safeNormalizeLiveRiskSymbol(input.intent.symbol);
 
     evaluateOrderIntentShape(rejectCodes, input.intent);
     evaluateRiskSnapshotShape(rejectCodes, input.snapshot);
@@ -105,7 +106,12 @@ export class LiveRiskEngine {
     evaluateDailyLoss(rejectCodes, input.snapshot, policy);
     evaluateAllowlists(rejectCodes, input.intent.market, normalizedSymbol, policy);
     evaluateMarketHours(rejectCodes, input.intent.market, input.snapshot, policy);
-    evaluateDuplicateOrder(rejectCodes, input.intent, input.snapshot);
+    evaluateDuplicateOrder(
+      rejectCodes,
+      input.intent,
+      normalizedSymbol,
+      input.snapshot
+    );
     evaluateCooldown(rejectCodes, input.intent, normalizedSymbol, policy);
     evaluateOpenOrderCount(rejectCodes, input.snapshot, policy);
     evaluateMarketOrderPolicy(rejectCodes, input.intent, policy);
@@ -162,6 +168,8 @@ function evaluateRiskSnapshotShape(
 
   const hasInvalidPosition = snapshot.positions.some((position) => {
     if (
+      !isLiveMarket(position.market) ||
+      !isNonEmptyString(position.symbol) ||
       !isNonNegativeFiniteNumber(position.quantity) ||
       !isNonNegativeFiniteNumber(position.averagePriceKrw)
     ) {
@@ -174,6 +182,28 @@ function evaluateRiskSnapshotShape(
   });
 
   if (hasInvalidPosition) {
+    appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
+  }
+
+  const hasInvalidOpenOrder = snapshot.openOrders.some((openOrder) => {
+    if (
+      !isNonEmptyString(openOrder.orderIntentId) ||
+      (openOrder.signalId !== undefined &&
+        !isNonEmptyString(openOrder.signalId)) ||
+      !isNonEmptyString(openOrder.idempotencyKey) ||
+      !isLiveMarket(openOrder.market) ||
+      !isNonEmptyString(openOrder.symbol) ||
+      !isLiveOrderSide(openOrder.side)
+    ) {
+      return true;
+    }
+    return (
+      openOrder.side === "BUY" &&
+      !isPositiveFiniteNumber(openOrder.estimatedGrossAmountKrw)
+    );
+  });
+
+  if (hasInvalidOpenOrder) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
   }
 }
@@ -255,6 +285,7 @@ function evaluateMarketHours(
 function evaluateDuplicateOrder(
   rejectCodes: LiveRiskRejectCode[],
   intent: LiveOrderIntent,
+  normalizedSymbol: string,
   snapshot: LiveRiskSnapshot
 ): void {
   for (const openOrder of snapshot.openOrders) {
@@ -269,8 +300,7 @@ function evaluateDuplicateOrder(
     if (
       openOrder.signalId === intent.signalId &&
       openOrder.market === intent.market &&
-      normalizeLiveRiskSymbol(openOrder.symbol) ===
-        normalizeLiveRiskSymbol(intent.symbol) &&
+      safeNormalizeLiveRiskSymbol(openOrder.symbol) === normalizedSymbol &&
       openOrder.side === intent.side
     ) {
       appendLiveRiskRejectCode(rejectCodes, "DUPLICATE_ORDER_INTENT");
@@ -417,7 +447,12 @@ function currentSymbolExposureKrw(
   normalizedSymbol: string
 ): number {
   const position = findPosition(snapshot, market, normalizedSymbol);
-  return position === undefined ? 0 : positionExposureKrw(position);
+  const positionExposure =
+    position === undefined ? 0 : positionExposureKrw(position);
+  return (
+    positionExposure +
+    currentOpenBuySymbolExposureKrw(snapshot, market, normalizedSymbol)
+  );
 }
 
 function currentMarketExposureKrw(
@@ -426,14 +461,47 @@ function currentMarketExposureKrw(
 ): number {
   return snapshot.positions
     .filter((position) => position.market === market)
-    .reduce((sum, position) => sum + positionExposureKrw(position), 0);
+    .reduce((sum, position) => sum + positionExposureKrw(position), 0) +
+    currentOpenBuyMarketExposureKrw(snapshot, market);
 }
 
 function currentTotalExposureKrw(snapshot: LiveRiskSnapshot): number {
   return snapshot.positions.reduce(
     (sum, position) => sum + positionExposureKrw(position),
     0
-  );
+  ) + currentOpenBuyTotalExposureKrw(snapshot);
+}
+
+function currentOpenBuySymbolExposureKrw(
+  snapshot: LiveRiskSnapshot,
+  market: Market,
+  normalizedSymbol: string
+): number {
+  return snapshot.openOrders
+    .filter(
+      (openOrder) =>
+        openOrder.side === "BUY" &&
+        openOrder.market === market &&
+        safeNormalizeLiveRiskSymbol(openOrder.symbol) === normalizedSymbol
+    )
+    .reduce((sum, openOrder) => sum + openOrderExposureKrw(openOrder), 0);
+}
+
+function currentOpenBuyMarketExposureKrw(
+  snapshot: LiveRiskSnapshot,
+  market: Market
+): number {
+  return snapshot.openOrders
+    .filter(
+      (openOrder) => openOrder.side === "BUY" && openOrder.market === market
+    )
+    .reduce((sum, openOrder) => sum + openOrderExposureKrw(openOrder), 0);
+}
+
+function currentOpenBuyTotalExposureKrw(snapshot: LiveRiskSnapshot): number {
+  return snapshot.openOrders
+    .filter((openOrder) => openOrder.side === "BUY")
+    .reduce((sum, openOrder) => sum + openOrderExposureKrw(openOrder), 0);
 }
 
 function findPosition(
@@ -444,7 +512,7 @@ function findPosition(
   return snapshot.positions.find(
     (position) =>
       position.market === market &&
-      normalizeLiveRiskSymbol(position.symbol) === normalizedSymbol
+      safeNormalizeLiveRiskSymbol(position.symbol) === normalizedSymbol
   );
 }
 
@@ -458,6 +526,10 @@ function positionExposureKrw(position: LiveRiskPosition): number {
 function isFresh(expiresAt: string, now: Date): boolean {
   const expiresAtMs = Date.parse(expiresAt);
   return Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime();
+}
+
+function safeNormalizeLiveRiskSymbol(value: unknown): string {
+  return isNonEmptyString(value) ? normalizeLiveRiskSymbol(value) : "";
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -476,10 +548,14 @@ function isLiveOrderType(value: unknown): value is LiveOrderType {
   return value === "LIMIT" || value === "MARKET";
 }
 
-function isPositiveFiniteNumber(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
+function openOrderExposureKrw(openOrder: LiveOpenOrder): number {
+  return openOrder.estimatedGrossAmountKrw ?? 0;
 }
 
-function isNonNegativeFiniteNumber(value: number): boolean {
-  return Number.isFinite(value) && value >= 0;
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }

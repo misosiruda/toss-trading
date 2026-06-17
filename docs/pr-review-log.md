@@ -2265,8 +2265,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 11 tests.
-- `npm run check`: pass, 386 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 13 tests.
+- `npm run check`: pass, 388 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
@@ -2275,6 +2275,8 @@
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
 - malformed enum/identity/symbol intent field를 fail-closed reject code로 차단하는지 검증합니다.
 - 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
+- pending BUY open order의 notional을 exposure cap에 반영하는지 검증합니다.
+- pending BUY open order의 notional이 없으면 snapshot invalid로 fail-closed 되는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
 - 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
 
@@ -2291,3 +2293,9 @@
 - P2 `Fail closed on invalid live intent fields`: runtime에서 `side`, `orderType`, `market`, `orderIntentId`, `signalId`, `idempotencyKey`, `symbol`을 검증하도록 `INVALID_ORDER_INTENT` 조건을 확장했습니다.
 - P2 `Reject duplicate orderIntentId before approval`: snapshot open order의 `orderIntentId`가 incoming intent와 같으면 `DUPLICATE_ORDER_INTENT`로 차단하도록 보강했습니다.
 - 추가 테스트: malformed enum/identity intent field reject, duplicate `orderIntentId` reject.
+
+### Codex Review Fix 2
+
+- P2 `Reserve pending buy exposure before approving`: `LiveOpenOrder`에 optional `estimatedGrossAmountKrw`를 추가하고, BUY open order의 pending notional을 symbol/market/total exposure 계산에 반영했습니다.
+- P2 `Validate symbol before normalizing it`: intent symbol과 snapshot symbol을 `safeNormalizeLiveRiskSymbol`로 처리해 malformed symbol이 throw가 아니라 fail-closed reject code로 귀결되도록 보강했습니다.
+- 추가 테스트: pending BUY exposure cap 반영, pending BUY notional 누락 snapshot reject, non-string symbol malformed intent reject.

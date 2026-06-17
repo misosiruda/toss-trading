@@ -156,7 +156,8 @@ test("live risk engine rejects duplicate intent, reused idempotency, and cooldow
           idempotencyKey: "idem_live_001",
           market: "KR",
           symbol: "005930",
-          side: "BUY"
+          side: "BUY",
+          estimatedGrossAmountKrw: 1
         }
       ]
     }),
@@ -222,6 +223,61 @@ test("live risk engine enforces order amount, daily loss, and exposure caps", ()
     "MAX_MARKET_EXPOSURE_EXCEEDED",
     "MAX_TOTAL_EXPOSURE_EXCEEDED"
   ]);
+});
+
+test("live risk engine reserves pending buy exposure against caps", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      openOrders: [
+        {
+          orderIntentId: "intent_live_pending",
+          signalId: "signal_live_pending",
+          idempotencyKey: "idem_live_pending",
+          market: "KR",
+          symbol: "005930",
+          side: "BUY",
+          estimatedGrossAmountKrw: 30_000
+        }
+      ]
+    }),
+    policy: approvingPolicy({
+      maxSymbolExposureKrw: 100_000,
+      maxMarketExposureKrw: 500_000,
+      maxTotalExposureKrw: 700_000
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.deepEqual(decision.rejectCodes, [
+    "MAX_SYMBOL_EXPOSURE_EXCEEDED"
+  ]);
+});
+
+test("live risk engine rejects pending buy exposure without notional", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      openOrders: [
+        {
+          orderIntentId: "intent_live_pending",
+          signalId: "signal_live_pending",
+          idempotencyKey: "idem_live_pending",
+          market: "KR",
+          symbol: "005930",
+          side: "BUY"
+        }
+      ]
+    }),
+    policy: approvingPolicy({
+      maxSymbolExposureKrw: 1_000_000,
+      maxMarketExposureKrw: 1_000_000,
+      maxTotalExposureKrw: 1_000_000
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(
+    decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT")
+  );
 });
 
 test("live risk engine enforces market order and preview policies", () => {
@@ -323,7 +379,7 @@ test("live risk engine rejects malformed enum and identity intent fields", () =>
       ...baseIntent(),
       orderIntentId: " ",
       idempotencyKey: "",
-      symbol: "",
+      symbol: undefined,
       side: "WAIT",
       orderType: "STOP"
     } as unknown) as LiveOrderIntent

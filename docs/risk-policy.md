@@ -99,6 +99,7 @@ Artifact 위치 계약:
 - max order amount
 - max daily loss
 - symbol/market/total exposure
+- pending buy order exposure reservation
 - symbol allowlist
 - market allowlist
 - market hours
