@@ -2265,14 +2265,16 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 22 tests.
-- `npm run check`: pass, 397 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 25 tests.
+- `npm run check`: pass, 400 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
 - default policy fail-closed를 검증합니다.
 - stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
+- missing/null root live risk payload가 throw 없이 fail-closed 되는지 검증합니다.
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
+- malformed snapshot audit metadata를 fail-closed reject code로 차단하는지 검증합니다.
 - malformed enum/identity/symbol intent field를 fail-closed reject code로 차단하는지 검증합니다.
 - malformed live order preview를 fail-closed reject code로 차단하는지 검증합니다.
 - 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
@@ -2293,6 +2295,7 @@
 
 - `src/risk/liveRiskPolicy.ts`는 live risk reject code, rule id, fail-closed policy default, symbol normalization을 정의합니다.
 - `src/risk/liveRiskEngine.ts`는 pure in-memory evaluation만 수행하며 filesystem, network, broker, storage를 호출하지 않습니다.
+- `src/risk/liveRiskEngine.ts`는 raw root payload를 안전한 evaluation input으로 정규화한 뒤 rule evaluation을 수행합니다.
 - `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
 - `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
 - 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
@@ -2336,3 +2339,9 @@
 - P1 `Reject malformed live order previews`: `previewId`, `orderIntentId`, `estimatedGrossAmountKrw`, `expiresAt`를 runtime preview shape로 검증해 blank preview reference가 approval로 이어지지 않도록 보강했습니다.
 - P2 `Reject invalid cooldown expiry dates`: `cooldownEntries.activeUntil`을 parse 가능한 timestamp로 검증해 malformed expiry가 cooldown을 조용히 비활성화하지 않고 `INVALID_RISK_POLICY`로 reject되도록 보강했습니다.
 - 추가 테스트: malformed live order preview reject, invalid cooldown expiry reject.
+
+### Codex Review Fix 8
+
+- P2 `Guard missing live risk payloads before dereferencing`: `evaluate()` 진입점에서 raw root payload를 `NormalizedLiveRiskEvaluationInput`으로 정규화해 null/missing `intent` 또는 `snapshot`이 throw가 아니라 `INVALID_ORDER_INTENT`, `INVALID_RISK_SNAPSHOT`으로 귀결되도록 보강했습니다.
+- P2 `Reject snapshots without audit identity`: `riskSnapshotRef`와 `capturedAt`를 snapshot shape 검증에 포함해 blank snapshot reference 또는 unparseable timestamp가 approval로 이어지지 않도록 보강했습니다.
+- 추가 테스트: missing live risk input reject, malformed root payload reject, snapshot audit metadata reject.

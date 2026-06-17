@@ -94,48 +94,65 @@ export interface LiveRiskDecision {
   createdAt: string;
 }
 
+interface NormalizedLiveRiskEvaluationInput {
+  intent: LiveOrderIntent;
+  snapshot: LiveRiskSnapshot;
+  policy: unknown;
+  initialRejectCodes: LiveRiskRejectCode[];
+}
+
+const INVALID_ORDER_INTENT_ID = "invalid_order_intent";
+const INVALID_SIGNAL_ID = "invalid_signal";
+const INVALID_IDEMPOTENCY_KEY = "invalid_idempotency_key";
+const INVALID_RISK_SNAPSHOT_REF = "invalid_risk_snapshot";
+const INVALID_TIMESTAMP = "1970-01-01T00:00:00.000Z";
+
 export class LiveRiskEngine {
   evaluate(input: LiveRiskInput): LiveRiskDecision {
-    const policy = createLiveRiskPolicy({ policy: input.policy });
-    const rejectCodes: LiveRiskRejectCode[] = [];
-    const normalizedSymbol = safeNormalizeLiveRiskSymbol(input.intent.symbol);
+    const normalizedInput = normalizeLiveRiskEvaluationInput(input);
+    const { intent, snapshot, policy: rawPolicy } = normalizedInput;
+    const policy = createLiveRiskPolicy({ policy: rawPolicy });
+    const rejectCodes: LiveRiskRejectCode[] = [
+      ...normalizedInput.initialRejectCodes
+    ];
+    const normalizedSymbol = safeNormalizeLiveRiskSymbol(intent.symbol);
 
-    evaluateRiskPolicyShape(rejectCodes, input.policy);
-    evaluateOrderIntentShape(rejectCodes, input.intent);
-    evaluateRiskSnapshotShape(rejectCodes, input.snapshot);
+    evaluateRiskPolicyShape(rejectCodes, rawPolicy);
+    evaluateOrderIntentShape(rejectCodes, intent);
+    evaluateRiskSnapshotShape(rejectCodes, snapshot);
     evaluateKillSwitch(rejectCodes, policy);
-    evaluateStaleSignal(rejectCodes, input.intent, policy);
-    evaluateOrderAmount(rejectCodes, input.intent, policy);
-    evaluateDailyLoss(rejectCodes, input.snapshot, policy);
-    evaluateAllowlists(rejectCodes, input.intent.market, normalizedSymbol, policy);
-    evaluateMarketHours(rejectCodes, input.intent.market, input.snapshot, policy);
+    evaluateStaleSignal(rejectCodes, intent, policy);
+    evaluateOrderAmount(rejectCodes, intent, policy);
+    evaluateDailyLoss(rejectCodes, snapshot, policy);
+    evaluateAllowlists(rejectCodes, intent.market, normalizedSymbol, policy);
+    evaluateMarketHours(rejectCodes, intent.market, snapshot, policy);
     evaluateDuplicateOrder(
       rejectCodes,
-      input.intent,
+      intent,
       normalizedSymbol,
-      input.snapshot
+      snapshot
     );
-    evaluateCooldown(rejectCodes, input.intent, normalizedSymbol, policy);
-    evaluateOpenOrderCount(rejectCodes, input.snapshot, policy);
-    evaluateMarketOrderPolicy(rejectCodes, input.intent, policy);
-    evaluateSellPosition(rejectCodes, input.intent, normalizedSymbol, input.snapshot);
-    evaluatePreviewRequirement(rejectCodes, input.intent, policy);
+    evaluateCooldown(rejectCodes, intent, normalizedSymbol, policy);
+    evaluateOpenOrderCount(rejectCodes, snapshot, policy);
+    evaluateMarketOrderPolicy(rejectCodes, intent, policy);
+    evaluateSellPosition(rejectCodes, intent, normalizedSymbol, snapshot);
+    evaluatePreviewRequirement(rejectCodes, intent, policy);
     evaluateExposure(
       rejectCodes,
-      input.intent,
+      intent,
       normalizedSymbol,
-      input.snapshot,
+      snapshot,
       policy
     );
 
     return {
-      riskDecisionId: `risk_${input.intent.orderIntentId}_${input.snapshot.riskSnapshotRef}`,
-      orderIntentId: input.intent.orderIntentId,
-      signalId: input.intent.signalId,
+      riskDecisionId: `risk_${intent.orderIntentId}_${snapshot.riskSnapshotRef}`,
+      orderIntentId: intent.orderIntentId,
+      signalId: intent.signalId,
       approved: rejectCodes.length === 0,
       rejectCodes: normalizeLiveRiskRejectCodes(rejectCodes),
       checkedRules: [...LIVE_RISK_RULE_IDS],
-      riskSnapshotRef: input.snapshot.riskSnapshotRef,
+      riskSnapshotRef: snapshot.riskSnapshotRef,
       createdAt: policy.now.toISOString()
     };
   }
@@ -143,11 +160,34 @@ export class LiveRiskEngine {
 
 function evaluateRiskPolicyShape(
   rejectCodes: LiveRiskRejectCode[],
-  policy: Partial<LiveRiskPolicy> | undefined
+  policy: unknown
 ): void {
   if (hasInvalidLiveRiskPolicyInput(policy)) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_POLICY");
   }
+}
+
+function normalizeLiveRiskEvaluationInput(
+  input: unknown
+): NormalizedLiveRiskEvaluationInput {
+  const inputRecord = isRecord(input) ? input : undefined;
+  const rawIntent = inputRecord?.intent;
+  const rawSnapshot = inputRecord?.snapshot;
+  const initialRejectCodes: LiveRiskRejectCode[] = [];
+
+  if (!isLiveOrderIntentInput(rawIntent)) {
+    appendLiveRiskRejectCode(initialRejectCodes, "INVALID_ORDER_INTENT");
+  }
+  if (!isLiveRiskSnapshotInput(rawSnapshot)) {
+    appendLiveRiskRejectCode(initialRejectCodes, "INVALID_RISK_SNAPSHOT");
+  }
+
+  return {
+    intent: createSafeOrderIntent(rawIntent),
+    snapshot: createSafeRiskSnapshot(rawSnapshot),
+    policy: inputRecord?.policy,
+    initialRejectCodes
+  };
 }
 
 function evaluateOrderIntentShape(
@@ -164,6 +204,8 @@ function evaluateOrderIntentShape(
     !isLiveOrderType(intent.orderType) ||
     !isPositiveFiniteNumber(intent.quantity) ||
     !isPositiveFiniteNumber(intent.estimatedGrossAmountKrw) ||
+    !isParseableTimestamp(intent.createdAt) ||
+    !isParseableTimestamp(intent.expiresAt) ||
     hasInvalidOrderPreviewShape(intent.preview)
   ) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_ORDER_INTENT");
@@ -179,7 +221,11 @@ function evaluateRiskSnapshotShape(
     ? snapshot.openOrders
     : [];
 
-  if (!isNonNegativeFiniteNumber(snapshot.dailyLossKrw)) {
+  if (
+    !isNonEmptyString(snapshot.riskSnapshotRef) ||
+    !isParseableTimestamp(snapshot.capturedAt) ||
+    !isNonNegativeFiniteNumber(snapshot.dailyLossKrw)
+  ) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
   }
 
@@ -243,6 +289,173 @@ function evaluateRiskSnapshotShape(
   if (hasInvalidOpenOrder) {
     appendLiveRiskRejectCode(rejectCodes, "INVALID_RISK_SNAPSHOT");
   }
+}
+
+function createSafeOrderIntent(value: unknown): LiveOrderIntent {
+  const record = isRecord(value) ? value : {};
+  return {
+    orderIntentId: safeNonEmptyString(
+      record.orderIntentId,
+      INVALID_ORDER_INTENT_ID
+    ),
+    signalId: safeNonEmptyString(record.signalId, INVALID_SIGNAL_ID),
+    idempotencyKey: safeNonEmptyString(
+      record.idempotencyKey,
+      INVALID_IDEMPOTENCY_KEY
+    ),
+    market: isLiveMarket(record.market) ? record.market : "KR",
+    symbol: safeNonEmptyString(record.symbol, ""),
+    side: isLiveOrderSide(record.side) ? record.side : "BUY",
+    orderType: isLiveOrderType(record.orderType) ? record.orderType : "LIMIT",
+    quantity: isPositiveFiniteNumber(record.quantity) ? record.quantity : 0,
+    estimatedGrossAmountKrw: isPositiveFiniteNumber(
+      record.estimatedGrossAmountKrw
+    )
+      ? record.estimatedGrossAmountKrw
+      : 0,
+    createdAt: safeTimestamp(record.createdAt),
+    expiresAt: safeTimestamp(record.expiresAt),
+    preview: safeOrderPreview(record.preview),
+    approvals: createSafeOrderApprovals(record.approvals)
+  };
+}
+
+function createSafeRiskSnapshot(value: unknown): LiveRiskSnapshot {
+  const record = isRecord(value) ? value : {};
+  return {
+    riskSnapshotRef: safeNonEmptyString(
+      record.riskSnapshotRef,
+      INVALID_RISK_SNAPSHOT_REF
+    ),
+    capturedAt: safeTimestamp(record.capturedAt),
+    dailyLossKrw: isNonNegativeFiniteNumber(record.dailyLossKrw)
+      ? record.dailyLossKrw
+      : 0,
+    positions: Array.isArray(record.positions)
+      ? record.positions.filter(isLiveRiskPosition)
+      : [],
+    openOrders: Array.isArray(record.openOrders)
+      ? record.openOrders.filter(isLiveOpenOrder)
+      : [],
+    marketSessions: createSafeMarketSessions(record.marketSessions)
+  };
+}
+
+function createSafeOrderApprovals(
+  value: unknown
+): LiveOrderIntent["approvals"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return typeof value.marketOrderApproved === "boolean"
+    ? { marketOrderApproved: value.marketOrderApproved }
+    : {};
+}
+
+function createSafeMarketSessions(
+  value: unknown
+): Partial<Record<Market, LiveMarketSessionStatus>> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([market, status]) =>
+        isLiveMarket(market) && isLiveMarketSessionStatus(status)
+    )
+  ) as Partial<Record<Market, LiveMarketSessionStatus>>;
+}
+
+function isLiveOrderIntentInput(value: unknown): value is LiveOrderIntent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.orderIntentId) &&
+    isNonEmptyString(value.signalId) &&
+    isNonEmptyString(value.idempotencyKey) &&
+    isLiveMarket(value.market) &&
+    isNonEmptyString(value.symbol) &&
+    isLiveOrderSide(value.side) &&
+    isLiveOrderType(value.orderType) &&
+    isPositiveFiniteNumber(value.quantity) &&
+    isPositiveFiniteNumber(value.estimatedGrossAmountKrw) &&
+    isParseableTimestamp(value.createdAt) &&
+    isParseableTimestamp(value.expiresAt) &&
+    (value.preview === undefined || isLiveOrderPreviewRef(value.preview)) &&
+    (value.approvals === undefined || isLiveOrderApprovals(value.approvals))
+  );
+}
+
+function isLiveRiskSnapshotInput(value: unknown): value is LiveRiskSnapshot {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.riskSnapshotRef) &&
+    isParseableTimestamp(value.capturedAt) &&
+    isNonNegativeFiniteNumber(value.dailyLossKrw) &&
+    Array.isArray(value.positions) &&
+    value.positions.every(isLiveRiskPosition) &&
+    Array.isArray(value.openOrders) &&
+    value.openOrders.every(isLiveOpenOrder) &&
+    isLiveMarketSessions(value.marketSessions)
+  );
+}
+
+function isLiveRiskPosition(value: unknown): value is LiveRiskPosition {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isLiveMarket(value.market) &&
+    isNonEmptyString(value.symbol) &&
+    isNonNegativeFiniteNumber(value.quantity) &&
+    isNonNegativeFiniteNumber(value.averagePriceKrw) &&
+    (value.marketValueKrw === undefined ||
+      isNonNegativeFiniteNumber(value.marketValueKrw))
+  );
+}
+
+function isLiveOpenOrder(value: unknown): value is LiveOpenOrder {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    !isNonEmptyString(value.orderIntentId) ||
+    (value.signalId !== undefined && !isNonEmptyString(value.signalId)) ||
+    !isNonEmptyString(value.idempotencyKey) ||
+    !isLiveMarket(value.market) ||
+    !isNonEmptyString(value.symbol) ||
+    !isLiveOrderSide(value.side)
+  ) {
+    return false;
+  }
+  if (
+    value.side === "BUY" &&
+    !isPositiveFiniteNumber(value.estimatedGrossAmountKrw)
+  ) {
+    return false;
+  }
+  return value.side !== "SELL" || isPositiveFiniteNumber(value.quantity);
+}
+
+function isLiveOrderApprovals(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.marketOrderApproved === undefined ||
+      typeof value.marketOrderApproved === "boolean")
+  );
+}
+
+function isLiveMarketSessions(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([market, status]) =>
+        isLiveMarket(market) && isLiveMarketSessionStatus(status)
+    )
+  );
 }
 
 function evaluateKillSwitch(
@@ -632,12 +845,24 @@ function isLiveOrderPreviewRef(value: unknown): value is LiveOrderPreviewRef {
     isNonEmptyString(value.previewId) &&
     isNonEmptyString(value.orderIntentId) &&
     isPositiveFiniteNumber(value.estimatedGrossAmountKrw) &&
-    isNonEmptyString(value.expiresAt)
+    isParseableTimestamp(value.expiresAt)
   );
+}
+
+function safeNonEmptyString(value: unknown, fallback: string): string {
+  return isNonEmptyString(value) ? value : fallback;
+}
+
+function safeTimestamp(value: unknown): string {
+  return isParseableTimestamp(value) ? value : INVALID_TIMESTAMP;
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isParseableTimestamp(value: unknown): value is string {
+  return isNonEmptyString(value) && Number.isFinite(Date.parse(value));
 }
 
 function isLiveMarket(value: unknown): value is Market {
@@ -650,6 +875,12 @@ function isLiveOrderSide(value: unknown): value is LiveOrderSide {
 
 function isLiveOrderType(value: unknown): value is LiveOrderType {
   return value === "LIMIT" || value === "MARKET";
+}
+
+function isLiveMarketSessionStatus(
+  value: unknown
+): value is LiveMarketSessionStatus {
+  return value === "open" || value === "closed";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

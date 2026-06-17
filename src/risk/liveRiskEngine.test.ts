@@ -510,6 +510,44 @@ test("live risk engine rejects malformed snapshot collections without throwing",
   );
 });
 
+test("live risk engine rejects missing live risk input without throwing", () => {
+  const decision = new LiveRiskEngine().evaluate(
+    null as unknown as LiveRiskInput
+  );
+
+  assert.equal(decision.approved, false);
+  assert.equal(decision.orderIntentId, "invalid_order_intent");
+  assert.equal(decision.signalId, "invalid_signal");
+  assert.equal(decision.riskSnapshotRef, "invalid_risk_snapshot");
+  assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT"));
+});
+
+test("live risk engine rejects malformed root payloads before dereferencing", () => {
+  const decision = new LiveRiskEngine().evaluate(({
+    intent: null,
+    snapshot: null,
+    policy: null
+  } as unknown) as LiveRiskInput);
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT"));
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+});
+
+test("live risk engine rejects snapshot metadata without audit identity", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      riskSnapshotRef: " ",
+      capturedAt: "not-a-date"
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_SNAPSHOT"));
+});
+
 test("live risk engine rejects malformed enum and identity intent fields", () => {
   const decision = evaluate({
     intent: ({

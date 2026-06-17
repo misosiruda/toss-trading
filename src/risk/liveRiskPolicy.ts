@@ -83,7 +83,7 @@ export interface LiveRiskPolicy {
 }
 
 export interface CreateLiveRiskPolicyInput {
-  policy?: Partial<LiveRiskPolicy> | undefined;
+  policy?: unknown;
 }
 
 export function createLiveRiskPolicy(
@@ -142,7 +142,7 @@ type LiveRiskPolicyBooleanKey =
   | "requirePreview";
 
 export function hasInvalidLiveRiskPolicyInput(
-  policy: Partial<LiveRiskPolicy> | undefined
+  policy: unknown
 ): boolean {
   if (policy === undefined) {
     return false;

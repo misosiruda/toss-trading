@@ -95,6 +95,7 @@ Artifact 위치 계약:
 
 현재 구현 범위:
 
+- runtime root payload normalization before rule evaluation
 - kill switch
 - max order amount
 - max daily loss
@@ -111,6 +112,8 @@ Artifact 위치 계약:
 - stale signal rejection
 - sell position ownership and quantity
 - preview requirement
+- malformed root live risk payload rejection
+- malformed snapshot audit metadata rejection
 - malformed live order preview rejection
 - malformed numeric order intent and risk snapshot rejection
 - malformed snapshot collection rejection

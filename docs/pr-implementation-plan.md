@@ -2486,6 +2486,8 @@
 - market order disabled/requires approval 차단
 - sell position missing/quantity exceeded 차단
 - preview required/expired/mismatch 차단
+- malformed root live risk payload 차단
+- malformed snapshot audit metadata 차단
 - malformed live order preview 차단
 - malformed numeric order intent와 risk snapshot 차단
 - malformed numeric risk policy 차단
