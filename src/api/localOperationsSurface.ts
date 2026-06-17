@@ -52,6 +52,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/portfolioRenderers.js",
   "/dashboard/reportRenderers.js",
   "/reportRenderers.js",
+  "/dashboard/replayProgressRenderers.js",
+  "/replayProgressRenderers.js",
   "/dashboard/reportViewHelpers.js",
   "/reportViewHelpers.js",
   "/dashboard/router.js",

@@ -480,6 +480,41 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 15. Dashboard Replay Progress Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/replayProgressRenderers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 replay progress panel, performance metric, progress event table renderer를 별도 module로 이동한다.
+- replay progress status, current portfolio, risk summary, decision outcome view helper를 renderer module에 모아 live replay 화면 조립에서 재사용한다.
+- `app.js`는 dashboard bootstrap, refresh orchestration, page별 renderer composition, polling scheduling 중심으로 유지한다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 dashboard asset test에서 같이 검증되게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- replay progress polling interval, status transition, refresh behavior를 behavior change로 변경
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- replay progress 문구를 투자 조언이나 수익률 보장처럼 변경
+- risk engine, order engine, replay artifact schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 replay progress renderer module을 import하고 progress panel/event table renderer 구현을 직접 보유하지 않는다.
+- replay progress polling과 `loadDashboard` 재조회 흐름은 기존 `app.js` orchestration에 남아 있다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
