@@ -193,6 +193,7 @@ flowchart TD
 - `dashboard/replayProgressRenderers.js`
 - `dashboard/reportViewHelpers.js`
 - `dashboard/router.js`
+- `dashboard/sourceRenderers.js`
 - `dashboard/state.js`
 - `dashboard/tableRenderers.js`
 - `dashboard/styles.css`
@@ -256,6 +257,7 @@ flowchart TD
 | `dashboard/reportRenderers.js` | daily/replay/batch report DOM renderer |
 | `dashboard/replayProgressRenderers.js` | replay progress panel, performance metric, event table renderer와 view helper |
 | `dashboard/reportViewHelpers.js` | report/replay/batch renderer가 공유하는 label/summary helper |
+| `dashboard/sourceRenderers.js` | source summary renderer와 dashboard symbol metadata registration |
 | `dashboard/tableRenderers.js` | positions/trades/market packet table renderer와 symbol cell helper |
 | `src/mcp/toolSurfacePolicy.ts` | MCP에 기본 enabled하면 안 되는 disabled-by-default tool 이름 기준 |
 | `src/mcp/virtualPortfolioTools.ts` | 현재 enabled MCP read-only tool name, input schema, handler 기준 |

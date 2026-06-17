@@ -6,8 +6,6 @@ import {
   fetchJson
 } from "./apiClient.js";
 import {
-  appendDefinition,
-  clear,
   hideError,
   setStatus,
   setText,
@@ -17,7 +15,6 @@ import {
   formatDateTime,
   formatKrw
 } from "./formatters.js";
-import { registerSymbolMetadata } from "./metadata.js";
 import {
   flattenDecisionRecords,
   renderDecisionPerformance,
@@ -47,7 +44,6 @@ import {
   renderPortfolioRiskMetrics
 } from "./portfolioRenderers.js";
 import {
-  benchmarkPackets,
   currentPortfolioSummary
 } from "./portfolioModel.js";
 import {
@@ -58,13 +54,16 @@ import {
   replayProgressRiskSummary,
   replayProgressStatus
 } from "./replayProgressRenderers.js";
-import { summarizeRecord } from "./reportViewHelpers.js";
 import { bindDashboardNavigation } from "./router.js";
 import {
   fileModeDashboardUrl,
   replayProgressPollMs,
   state
 } from "./state.js";
+import {
+  rememberSymbolMetadata,
+  renderSourceSummary
+} from "./sourceRenderers.js";
 import {
   renderPackets,
   renderPositions,
@@ -132,23 +131,6 @@ function showFileModeNotice() {
   showError(
     `대시보드는 로컬 운영 API가 필요합니다. ${fileModeDashboardUrl} 로 열어주세요.`
   );
-}
-
-function rememberSymbolMetadata(data) {
-  for (const packet of benchmarkPackets(data)) {
-    for (const candidate of packet?.candidates ?? []) {
-      registerSymbolMetadata(candidate);
-    }
-  }
-  for (const position of data?.portfolio?.portfolio?.positions ?? []) {
-    registerSymbolMetadata(position);
-  }
-  for (const position of data?.replayProgress?.progress?.currentPortfolio?.positions ?? []) {
-    registerSymbolMetadata(position);
-  }
-  for (const trade of data?.trades?.trades ?? data?.replayProgress?.progress?.recentTrades ?? []) {
-    registerSymbolMetadata(trade);
-  }
 }
 
 function renderDashboard(data) {
@@ -313,16 +295,6 @@ async function refreshReplayProgress() {
   } finally {
     state.replayProgressInFlight = false;
   }
-}
-
-function renderSourceSummary(source, scheduler) {
-  const list = document.getElementById("source-summary");
-  clear(list);
-  appendDefinition(list, "수집 건수", String(source.totalCount ?? 0));
-  appendDefinition(list, "최근 수집", formatDateTime(source.lastCollectedAt));
-  appendDefinition(list, "오류 라인", String(source.corruptLineCount ?? 0));
-  appendDefinition(list, "명령", summarizeRecord(source.byCommandKey));
-  appendDefinition(list, "스케줄러", scheduler?.stateStatus ?? "unknown");
 }
 
 function shouldPollReplayProgress(status) {
