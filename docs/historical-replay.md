@@ -47,6 +47,38 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 기본 manifest로 사용합니다.
 
+## Artifact Contract
+
+고정 `--data-dir` artifact의 파일명 source of truth는 `src/storage/artifactPaths.ts`의 `STORAGE_ARTIFACT_CONTRACTS`입니다. `src/storage/repositories.ts`의 `createStoragePaths`는 이 상수를 사용해 writer와 Local Operations reader가 같은 경로를 보게 합니다.
+
+| Artifact | 형식/역할 | Domain contract | Writer | Local Operations reader | 실패 추적 기준 |
+| --- | --- | --- | --- | --- | --- |
+| `virtual-portfolio.json` | JSON snapshot | `VirtualPortfolio` | `FileVirtualPortfolioStore` | `/virtual/portfolio` | 최신 paper-only portfolio state 확인 |
+| `market-packets.jsonl` | JSONL append-only log | `MarketPacket` | `FileMarketPacketStore` | `/market/packets` | AI decision 이전 후보, source refs, packet hash 확인 |
+| `virtual-decisions.jsonl` | JSONL append-only log | `VirtualDecision` | `FileVirtualDecisionStore` | `/virtual/decisions` | schema/semantic validation을 통과해 저장된 paper decision 확인 |
+| `virtual-trades.jsonl` | JSONL append-only log | `VirtualTrade` | `FileVirtualTradeStore` | `/virtual/trades` | paper fill 발생 여부 확인 |
+| `audit-events.jsonl` | JSONL append-only log | `AuditEvent` | `FileAuditLog` | `/audit/events` | provider failure, validation reject, risk reject, order/audit stage 확인 |
+| `tossinvest-sources.jsonl` | JSONL append-only log | `TossInvestCliCollectResult` | `FileTossInvestSourceStore` | `/source/health` | read-only source collection status와 degradation reason 확인 |
+| `historical-market-snapshots.jsonl` | JSONL append-only log | `HistoricalMarketSnapshot` | `FileHistoricalMarketSnapshotStore` | 없음 | replay 입력 snapshot과 corrupt line count 확인 |
+| `historical-replay-report.json` | JSON report | `HistoricalReplayReport` | `HistoricalReplayWorkflow` | `/replay/report` | 최종 summary, warning, failure count 확인 |
+| `historical-replay-progress.json` | JSON snapshot | `HistoricalReplayProgress` | `HistoricalReplayWorkflow` | `/replay/progress` | 실행 중 latest status, processed tick, 최근 event 확인 |
+| `historical-replay-run-metadata.json` | JSON metadata | `HistoricalReplayRunMetadata` | `HistoricalReplayWorkflow` | 없음 | run id, window, profile, log path, status 확인 |
+| `historical-replay-packets.jsonl` | JSONL append-only log | `MarketPacket` | `HistoricalReplayWorkflow` | 없음 | simulated tick별 packet 생성 결과 확인 |
+| `historical-replay-decisions.jsonl` | JSONL append-only log | `VirtualDecision` | `HistoricalReplayWorkflow` | 없음 | exit/provider decision과 packet binding 확인 |
+| `historical-replay-risk-decisions.jsonl` | JSONL append-only log | `VirtualRiskDecision` | `HistoricalReplayWorkflow` | 없음 | risk approval/rejection과 reject code 확인 |
+| `historical-replay-trades.jsonl` | JSONL append-only log | `VirtualTrade` | `HistoricalReplayWorkflow` | 없음 | replay 중 paper fill 발생 여부 확인 |
+| `historical-replay-portfolio-timeline.jsonl` | JSONL append-only log | `HistoricalPortfolioTimelineItem` | `HistoricalReplayWorkflow` | 없음 | simulated tick별 portfolio state 확인 |
+| `batch-replay-aggregate-report.json` | JSON report | `BatchReplayAggregateReport` | `historicalBatchReport CLI` | `/batch/replay/report` | batch summary, regime별 통계, `aiDecisionFailureCount` 확인 |
+
+동적 batch artifact는 `--output-dir`과 `batchId`로 경로가 결정되며 `src/storage/artifactPaths.ts`의 `DYNAMIC_STORAGE_ARTIFACT_CONTRACTS`에 따로 둡니다.
+
+| Artifact | 경로 패턴 | Reader | 경로 검증 |
+| --- | --- | --- | --- |
+| `batch-replay-manifest.json` | `batch-replay/<batchId>/batch-replay-manifest.json` | `readLatestBatchReplayManifest` | `createBatchReplayManifestPath` |
+| `batch-replay-runs.jsonl` | `batch-replay/<batchId>/batch-replay-runs.jsonl` | `/batch/replay/runs` | `resolveBatchReplayRunsArtifactPath` |
+
+JSONL artifact는 read-only 조회에서 정상 line을 계속 반환하고 `corruptLineCount`로 손상 line 수를 노출합니다. 손상된 JSONL 한 줄 때문에 dashboard/API 전체 조회가 실패하면 안 됩니다. JSON snapshot/report가 손상되면 해당 reader는 `status: "corrupt"` 또는 `fileStatus: "corrupt"`로 응답하고 replay 실행이나 주문 생성을 시작하지 않습니다.
+
 ## Portfolio Valuation
 
 Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까지 관측 가능한 최신 historical snapshot 가격으로 재평가합니다.

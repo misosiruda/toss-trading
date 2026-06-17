@@ -5,11 +5,16 @@ import test from "node:test";
 import {
   BATCH_REPLAY_MANIFEST_FILE_NAME,
   BATCH_REPLAY_RUNS_FILE_NAME,
+  DYNAMIC_STORAGE_ARTIFACT_CONTRACTS,
+  STORAGE_ARTIFACT_CONTRACTS,
   createBatchReplayArtifactPaths,
   createBatchReplayManifestPath,
   createBatchReplayRootDirForStorage,
+  createStorageArtifactPathCatalog,
   resolveBatchReplayRunsArtifactPath
 } from "./artifactPaths.js";
+import { LOCAL_OPERATIONS_API_ROUTES } from "../api/localOperationsSurface.js";
+import { createStoragePaths } from "./repositories.js";
 
 test("batch replay artifact paths keep manifest and runs path in one catalog", () => {
   const paths = createBatchReplayArtifactPaths(
@@ -27,6 +32,107 @@ test("batch replay artifact paths keep manifest and runs path in one catalog", (
     paths.runsPath,
     join(paths.outputDir, BATCH_REPLAY_RUNS_FILE_NAME)
   );
+});
+
+test("storage artifact catalog matches repository storage paths", () => {
+  const baseDir = join("data", "paper");
+  const catalog = createStorageArtifactPathCatalog(baseDir);
+  const paths = createStoragePaths(baseDir);
+
+  assert.equal(catalog["auditEvents"], paths.auditLogPath);
+  assert.equal(catalog["virtualPortfolio"], paths.virtualPortfolioPath);
+  assert.equal(catalog["virtualDecisions"], paths.virtualDecisionsPath);
+  assert.equal(catalog["virtualTrades"], paths.virtualTradesPath);
+  assert.equal(catalog["tossInvestSources"], paths.tossInvestSourcesPath);
+  assert.equal(catalog["marketPackets"], paths.marketPacketsPath);
+  assert.equal(
+    catalog["historicalMarketSnapshots"],
+    paths.historicalMarketSnapshotsPath
+  );
+  assert.equal(
+    catalog["historicalReplayReport"],
+    paths.historicalReplayReportPath
+  );
+  assert.equal(
+    catalog["historicalReplayProgress"],
+    paths.historicalReplayProgressPath
+  );
+  assert.equal(
+    catalog["historicalReplayRunMetadata"],
+    paths.historicalReplayRunMetadataPath
+  );
+  assert.equal(
+    catalog["historicalReplayPackets"],
+    paths.historicalReplayPacketLogPath
+  );
+  assert.equal(
+    catalog["historicalReplayDecisions"],
+    paths.historicalReplayDecisionLogPath
+  );
+  assert.equal(
+    catalog["historicalReplayRiskDecisions"],
+    paths.historicalReplayRiskDecisionLogPath
+  );
+  assert.equal(
+    catalog["historicalReplayTrades"],
+    paths.historicalReplayTradeLogPath
+  );
+  assert.equal(
+    catalog["historicalReplayPortfolioTimeline"],
+    paths.historicalReplayPortfolioTimelinePath
+  );
+  assert.equal(
+    catalog["batchReplayAggregateReport"],
+    paths.batchReplayAggregateReportPath
+  );
+});
+
+test("storage artifact contracts document reader and corrupt JSONL policy", () => {
+  const artifactNames = new Set<string>();
+  const localOperationsApiRoutes = new Set<string>(LOCAL_OPERATIONS_API_ROUTES);
+
+  for (const contract of STORAGE_ARTIFACT_CONTRACTS) {
+    assert.equal(artifactNames.has(contract.artifactName), false);
+    artifactNames.add(contract.artifactName);
+    assert.equal(contract.relativePath, contract.fileName);
+    assert.equal(contract.failureTrace.length > 0, true);
+
+    if (contract.format === "jsonl") {
+      assert.equal(contract.corruptJsonlPolicy, "skip_line_and_count");
+    } else {
+      assert.equal(contract.corruptJsonlPolicy, null);
+    }
+
+    if (contract.localOperationsReader !== null) {
+      assert.equal(
+        localOperationsApiRoutes.has(contract.localOperationsReader),
+        true,
+        `${contract.artifactName} points at a registered local operations route`
+      );
+    }
+  }
+
+  assert.equal(artifactNames.has("batchReplayRuns"), false);
+});
+
+test("dynamic batch replay contracts document reader resolution", () => {
+  const batchRunContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
+    (contract) => contract.artifactName === "batchReplayRuns"
+  );
+
+  assert.notEqual(batchRunContract, undefined);
+  assert.equal(batchRunContract?.fileName, BATCH_REPLAY_RUNS_FILE_NAME);
+  assert.equal(batchRunContract?.format, "jsonl");
+  assert.equal(batchRunContract?.localOperationsReader, "/batch/replay/runs");
+  assert.equal(
+    LOCAL_OPERATIONS_API_ROUTES.includes("/batch/replay/runs"),
+    true
+  );
+  assert.equal(
+    batchRunContract?.pathResolver,
+    "resolveBatchReplayRunsArtifactPath"
+  );
+  assert.equal(batchRunContract?.corruptJsonlPolicy, "skip_line_and_count");
 });
 
 test("storage base dir maps to sibling batch replay artifact root", () => {
