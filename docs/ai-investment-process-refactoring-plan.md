@@ -74,7 +74,7 @@ flowchart TD
 | Codex CLI 호출 | AI provider | `src/ai/codexCliDecisionProvider.ts` | `AI_DECISION_FAILED` 또는 provider failure record, no trade |
 | output schema 검증 | domain/provider | `src/domain/schemas.ts`, `schemas/virtual-decision.schema.json` | invalid output reject, no trade |
 | packet-bound semantic validation | paper validation | `src/paper/virtualDecisionValidation.ts` | `VIRTUAL_DECISION_REJECTED`, no trade |
-| confidence metadata binding | backend paper workflow | `src/paper/confidence.ts` | backend-generated metadata만 저장 |
+| confidence metadata binding | backend paper workflow | `src/paper/decisionConfidence.ts` | backend-generated metadata만 저장 |
 | sizing 정규화 | paper model | `src/paper/decisionNormalizer.ts` | invalid/no-op sizing은 risk/order 단계에서 reject |
 | risk gate | paper risk | `src/paper/riskEngine.ts`, `src/paper/riskBranches.ts` | reject decision 저장, no trade |
 | paper execution | paper order | `src/paper/orderEngine.ts` | broker adapter 호출 없음, virtual state만 변경 |
