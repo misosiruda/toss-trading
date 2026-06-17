@@ -35,7 +35,7 @@ export interface TossOpenApiIssuedToken {
 export interface TossOpenApiTokenIssuer {
   issueToken(
     request: TossOpenApiTokenIssueRequest
-  ): Promise<TossOpenApiTokenIssueResponse>;
+  ): Promise<unknown>;
 }
 
 export interface TossOpenApiAuthClientOptions {
@@ -167,12 +167,15 @@ function assertReadyAuthConfig(
 }
 
 export function parseTossOpenApiTokenIssueResponse(
-  response: TossOpenApiTokenIssueResponse,
+  response: unknown,
   issuedAt: Date
 ): TossOpenApiIssuedToken {
   if (
+    !isRecord(response) ||
+    typeof response.access_token !== "string" ||
     response.access_token.trim().length === 0 ||
     response.token_type !== "Bearer" ||
+    typeof response.expires_in !== "number" ||
     !Number.isFinite(response.expires_in) ||
     response.expires_in <= 0
   ) {
@@ -188,4 +191,8 @@ export function parseTossOpenApiTokenIssueResponse(
     issuedAt,
     expiresAt: new Date(issuedAt.getTime() + response.expires_in * 1000)
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

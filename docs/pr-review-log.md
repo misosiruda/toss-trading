@@ -2129,8 +2129,8 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/broker/tossOpenApiAuthClient.test.js`: pass, 8 tests.
-- `npm run check`: pass, 348 tests.
+- `node --test dist/broker/tossOpenApiAuthClient.test.js`: pass, 9 tests.
+- `npm run check`: pass, 349 tests.
 - `git diff --check`: pass.
 - secret-like token/key pattern grep: no matches.
 - code-only forbidden boundary grep: no matches for live order/raw command/network/persistent write surface.
@@ -2140,6 +2140,6 @@
 
 - `src/broker/tossOpenApiAuthClient.ts`는 `application/x-www-form-urlencoded` token issue request를 만들고, `Bearer` response와 positive `expires_in`을 검증합니다.
 - `TossOpenApiAuthClient`는 process memory token cache, expiry safety margin, concurrent request single-flight를 제공하지만, 실제 HTTP transport는 injected `TossOpenApiTokenIssuer` 밖에 두었습니다.
-- `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection을 검증합니다.
+- `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection, malformed response shape rejection을 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 network call, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.

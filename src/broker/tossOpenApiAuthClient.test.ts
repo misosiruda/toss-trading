@@ -178,3 +178,25 @@ test("token response parser rejects non-Bearer token type", () => {
       error.code === "TOSS_OPEN_API_INVALID_TOKEN_RESPONSE"
   );
 });
+
+test("token response parser rejects malformed response shapes", () => {
+  const malformedResponses: unknown[] = [
+    {},
+    { access_token: null, token_type: "Bearer", expires_in: 3600 },
+    { access_token: "token", token_type: null, expires_in: 3600 },
+    { access_token: "token", token_type: "Bearer", expires_in: "3600" }
+  ];
+
+  for (const response of malformedResponses) {
+    assert.throws(
+      () =>
+        parseTossOpenApiTokenIssueResponse(
+          response,
+          new Date("2026-06-17T09:00:00+09:00")
+        ),
+      (error) =>
+        error instanceof TossOpenApiAuthClientError &&
+        error.code === "TOSS_OPEN_API_INVALID_TOKEN_RESPONSE"
+    );
+  }
+});
