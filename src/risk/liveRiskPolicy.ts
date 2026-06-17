@@ -119,7 +119,7 @@ export function createLiveRiskPolicy(
       policy?.maxOpenOrders,
       0
     ),
-    marketOrderPolicy: policy?.marketOrderPolicy ?? "disabled",
+    marketOrderPolicy: normalizeMarketOrderPolicy(policy?.marketOrderPolicy),
     requirePreview: policy?.requirePreview ?? true,
     cooldownEntries: policy?.cooldownEntries ?? [],
     now: policy?.now ?? new Date()
@@ -154,7 +154,8 @@ export function hasInvalidLiveRiskPolicyInput(
 
   return (
     hasInvalidFiniteNumber ||
-    hasInvalidIntegerPolicyValue(policy, "maxOpenOrders")
+    hasInvalidIntegerPolicyValue(policy, "maxOpenOrders") ||
+    hasInvalidMarketOrderPolicyValue(policy)
   );
 }
 
@@ -211,10 +212,31 @@ function normalizeNonNegativeIntegerPolicyNumber(
   return isNonNegativeInteger(value) ? value : fallback;
 }
 
+function normalizeMarketOrderPolicy(value: unknown): LiveMarketOrderPolicy {
+  return isLiveMarketOrderPolicy(value) ? value : "disabled";
+}
+
+function hasInvalidMarketOrderPolicyValue(
+  policy: Partial<LiveRiskPolicy>
+): boolean {
+  const value = policy.marketOrderPolicy;
+  return value !== undefined && !isLiveMarketOrderPolicy(value);
+}
+
 function isNonNegativeFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && isNonNegativeFiniteNumber(value);
+}
+
+function isLiveMarketOrderPolicy(
+  value: unknown
+): value is LiveMarketOrderPolicy {
+  return (
+    value === "disabled" ||
+    value === "requires_approval" ||
+    value === "allowed"
+  );
 }

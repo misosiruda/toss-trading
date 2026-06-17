@@ -241,6 +241,23 @@ test("live risk engine rejects invalid numeric policy limits", () => {
   assert.ok(decision.rejectCodes.includes("OPEN_ORDER_LIMIT_EXCEEDED"));
 });
 
+test("live risk engine rejects invalid market order policy", () => {
+  const decision = evaluate({
+    intent: baseIntent({
+      orderType: "MARKET",
+      approvals: { marketOrderApproved: true }
+    }),
+    policy: ({
+      ...approvingPolicy({ marketOrderPolicy: "allowed" }),
+      marketOrderPolicy: "require_approval"
+    } as unknown) as Partial<LiveRiskPolicy>
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_RISK_POLICY"));
+  assert.ok(decision.rejectCodes.includes("MARKET_ORDER_DISABLED"));
+});
+
 test("live risk engine reserves pending buy exposure against caps", () => {
   const decision = evaluate({
     snapshot: baseSnapshot({
