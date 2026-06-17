@@ -13,7 +13,7 @@ import {
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
 } from "../storage/repositories.js";
-import type { DecisionProvider } from "./paperRunOnce.js";
+import type { DecisionProvider } from "./paperDecisionPipeline.js";
 import {
   FailingMarketPacketDecisionProvider,
   MarketPacketDryRunDecisionProvider,
@@ -194,6 +194,46 @@ test("market packet paper run records provider failures without paper order", as
   assert.equal(result.status, "failed");
   assert.equal(result.failureReason, "AI_DECISION_DISABLED");
   assert.equal(trades.records.length, 0);
+});
+
+test("market packet paper run records risk rejection without paper order", async () => {
+  const dir = await tempDir();
+  const paths = createStoragePaths(dir);
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(
+    marketPacket({
+      virtualPortfolio: {
+        portfolioId: "virtual_default",
+        cashKrw: 1_000,
+        positions: [],
+        updatedAt: "2026-06-11T08:59:00+09:00"
+      }
+    })
+  );
+
+  const result = await runPaperDecisionFromLatestMarketPacket({
+    storageBaseDir: dir,
+    provider: new StaticMarketPacketDecisionProvider(virtualDecision()),
+    now
+  });
+  const trades = await new FileVirtualTradeStore(paths.virtualTradesPath).readAll();
+  const portfolio = await new FileVirtualPortfolioStore(
+    paths.virtualPortfolioPath
+  ).read();
+  const audit = await new FileAuditLog(paths.auditLogPath).readAll();
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.tradeCount, 0);
+  assert.equal(result.rejectedCount, 1);
+  assert.equal(trades.records.length, 0);
+  assert.equal(portfolio?.cashKrw, 1_000);
+  assert.deepEqual(
+    audit.records.map((event) => event.eventType),
+    [
+      "MARKET_PACKET_SELECTED",
+      "VIRTUAL_DECISION_RECORDED",
+      "VIRTUAL_RISK_REJECTED"
+    ]
+  );
 });
 
 class CountingDecisionProvider implements DecisionProvider {

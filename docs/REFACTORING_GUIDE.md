@@ -775,6 +775,7 @@ npm run build
 
 - `npm run check`
 - `npm run paper:run-once:dry -- --data-dir data/process-refactor-smoke`
+- `data/process-refactor-smoke`에 stored `market-packets.jsonl`이 없으면 read-only source fixture와 `npm run market:ingest -- --data-dir data/process-refactor-smoke`로 packet을 먼저 준비
 - `npm run paper:run-from-market-packet:dry -- --data-dir data/process-refactor-smoke`
 - `git diff --check`
 
