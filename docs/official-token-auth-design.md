@@ -1,6 +1,6 @@
 # Official Toss Open API Token Auth Design
 
-> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser와 injected `TossOpenApiTokenIssuer` 기반 mocked `TossOpenApiAuthClient`다. real HTTP transport, official API actual call, persistent token store, account/order adapter, live trading 기능은 구현하지 않는다.
+> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser, injected `TossOpenApiTokenIssuer` 기반 mocked `TossOpenApiAuthClient`, injected transport 기반 `TossOpenApiReadOnlyHttpClient`다. real network transport, official API actual call, persistent token store, account/order adapter, live trading 기능은 구현하지 않는다.
 
 ## 목적
 
@@ -113,7 +113,8 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret`이 누락되면 `status=invalid`로 fail-closed 처리한다.
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환한다.
 - `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache, single-flight를 검증한다.
-- 실제 HTTP transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
+- `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping을 검증한다.
+- 실제 network transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
 
 ## Token Lifecycle
 
@@ -212,7 +213,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 1 | Token auth design | 이 문서와 링크 | code, secret, API call |
 | 2 | Token config parser | placeholder env docs, parser, missing secret tests, safe summary, quality gate default check | token issue HTTP call |
 | 3 | Mocked AuthClient | form request builder, response parser, process memory cache, single-flight tests | HTTP transport, account/order adapter |
-| 4 | Authenticated read-only HTTP client | Bearer injection, error/rate mapping tests | mutation retry |
+| 4 | Authenticated read-only HTTP client | Bearer injection, read-only method guard, error/rate mapping tests | actual network transport, mutation retry |
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
 

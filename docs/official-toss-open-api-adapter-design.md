@@ -96,7 +96,7 @@
 
 - real `client_id`, `client_secret`, account id, token 문서화
 - official API 실제 호출 코드 추가
-- token auth 구현
+- 실제 network transport 구현
 - `TRADING_ENABLED=true` 기본값 또는 예시 추가
 - live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
 - `place_order` MCP tool enabled surface 추가
@@ -110,7 +110,8 @@ flowchart TD
     D["Design document only"] --> T["Token auth design and secret handling"]
     T --> C["Token config parser with safe defaults"]
     C --> AC["Mocked token auth client"]
-    AC --> M["Read-only market data adapter with mocked HTTP tests"]
+    AC --> H["Authenticated read-only HTTP client with injected transport"]
+    H --> M["Read-only market data adapter with mocked HTTP tests"]
     M --> A["Read-only account and holdings snapshot reader"]
     A --> R["Live RiskEngine implementation with mock broker"]
     R --> TM["Live trading threat model"]
@@ -320,13 +321,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 2 | [Official token auth design](official-token-auth-design.md) | env, secret handling, token lifecycle 문서와 tests plan | real secret, API call |
 | 3 | Token config parser | safe-disabled env parser, placeholder, missing secret tests | token issue HTTP call |
 | 4 | Mocked token auth client | form request builder, response parser, memory cache, single-flight tests | HTTP transport, account/order adapter |
-| 5 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
-| 6 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
-| 7 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
-| 8 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
-| 9 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
-| 10 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
-| 11 | Deployment packaging | process isolation, config, monitoring | default live enable |
+| 5 | Authenticated read-only HTTP client | Bearer injection, read-only method guard, error/rate mapping tests | actual network transport, mutation retry |
+| 6 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
+| 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
+| 8 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
+| 9 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 10 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
+| 11 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
+| 12 | Deployment packaging | process isolation, config, monitoring | default live enable |
 
 ## Merge 전 체크리스트
 

@@ -116,6 +116,8 @@ const options = {
 - Toss Open API token auth client boundary
 - token issue request contract 구성
 - process memory token cache와 single-flight 제어
+- authenticated read-only HTTP request contract 구성
+- Bearer token injection과 HTTP status mapping
 
 금지:
 
@@ -123,8 +125,11 @@ const options = {
 - MCP/API/dashboard에서 직접 호출 가능한 broker mutation surface 추가
 - persistent token store를 별도 보안 설계 없이 추가
 - auth 계층에서 order retry 또는 Risk Engine 판단 수행
+- injected transport 없이 직접 `fetch`, `http.request`, `https.request` 호출 추가
 
 `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 통해 token issue를 추상화한다. 실제 HTTP transport를 추가할 때는 별도 PR에서 error/rate limit/masking 테스트를 함께 추가해야 한다.
+
+`TossOpenApiReadOnlyHttpClient`는 injected transport만 호출하며 `GET` request만 허용한다. read-only client에서 `POST`, `PATCH`, `PUT`, `DELETE` 또는 order/account mutation retry를 허용해서는 안 된다.
 
 ### `src/collectors`
 

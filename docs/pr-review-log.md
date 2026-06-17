@@ -2143,3 +2143,33 @@
 - `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection, malformed response shape rejection을 검증합니다.
 - README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 network call, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
+
+## Phase 31: Authenticated Read-only HTTP Client
+
+### Review 1: Scope and Safety
+
+- 범위는 injected token provider와 injected transport 기반 `TossOpenApiReadOnlyHttpClient`, read-only request builder, auth config fail-closed guard, HTTP status/error/rate mapping, 관련 문서 갱신에 한정합니다.
+- actual network transport, official API 실제 호출, market endpoint adapter, account snapshot reader, persistent token store, Local Operations API/MCP/dashboard broker surface는 추가하지 않았습니다.
+- read-only client는 `GET`만 허용하고 mutation method는 token 발급 또는 transport 호출 전에 fail-closed 처리합니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- 테스트 token은 local dummy string만 사용하며 real `client_id`, `client_secret`, `access_token`, account id는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- official OpenAPI JSON 확인: `openapi=3.1.0`, `info.version=1.1.1`, server `https://openapi.tossinvest.com`, read-only `GET /api/v1/prices`, `GET /api/v1/orderbook`, `GET /api/v1/accounts`, mutation `POST /api/v1/orders` 등을 확인했습니다.
+- `npm run build`: pass.
+- `node --test dist/broker/tossOpenApiReadOnlyHttpClient.test.js`: pass, 11 tests.
+- `npm run check`: pass, 360 tests.
+- `git diff --check`: pass.
+- secret-like token/key pattern grep: no matches.
+- code-only forbidden boundary grep: no matches for direct network call, persistent write surface, live order/raw command surface.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외했습니다.
+
+### Review 3: Diff and Integration
+
+- `src/broker/tossOpenApiReadOnlyHttpClient.ts`는 root-relative path와 https base URL만 허용하고, disabled/invalid auth config를 token provider 호출 전에 차단하며, Bearer token을 request header에 주입합니다.
+- `TossOpenApiReadOnlyHttpClient`는 injected token provider와 injected transport만 호출하며 direct `fetch`, `http.request`, `https.request`를 사용하지 않습니다.
+- HTTP response mapping은 401 auth failure, 403 forbidden, 429 rate limit과 `Retry-After`, generic 4xx/5xx, invalid status를 구분합니다.
+- `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`는 Bearer injection, query serialization, mutation method block, disabled/invalid auth config fail-closed, invalid path/base URL, 401/403/429/4xx/5xx mapping, invalid response status를 검증합니다.
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
+- 신규 actual network call, market adapter, account snapshot reader, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.

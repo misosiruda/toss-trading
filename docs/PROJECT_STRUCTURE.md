@@ -259,6 +259,25 @@ flowchart TD
 - concurrent token request가 single-flight로 합쳐짐
 - 실제 HTTP transport, persistent token store, account/order adapter, live order gateway를 추가하지 않음
 
+### Official Toss Open API read-only HTTP client 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiReadOnlyHttpClient.ts`
+- `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+
+필수 확인:
+
+- read-only HTTP client가 `GET`만 허용하고 mutation method를 token 발급 전 차단
+- disabled/invalid auth config에서 token provider와 transport를 호출하지 않음
+- Bearer token은 injected token provider에서 받아 request header에만 주입
+- actual network transport는 injected interface 밖에 두고 직접 `fetch`/`http.request`/`https.request`를 추가하지 않음
+- 401/403/429/4xx/5xx response를 분류하고 429 `Retry-After`를 해석
+- absolute URL, protocol-relative URL, non-https base URL, backslash path를 reject
+- market endpoint mapping, account snapshot reader, Local Operations API/MCP/dashboard surface, live order gateway를 추가하지 않음
+
 ### Storage artifact 변경
 
 수정 후보:
