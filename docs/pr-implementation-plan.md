@@ -2331,6 +2331,48 @@
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
 
+### Authenticated read-only HTTP client
+
+목표:
+
+- read-only market adapter를 붙이기 전에 authenticated HTTP request boundary를 순수하게 검증합니다.
+- read-only client는 injected token provider와 injected transport만 사용하고 actual network transport를 구현하지 않습니다.
+- `GET` 외 method는 token 발급 또는 transport 호출 전에 fail-closed 처리합니다.
+
+작업 범위:
+
+- `src/broker/tossOpenApiReadOnlyHttpClient.ts`
+- `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- Bearer token header injection
+- `GET` only method guard
+- disabled/invalid auth config fail-closed
+- root-relative path validation
+- non-https base URL reject
+- 401/403/429/4xx/5xx error mapping
+- official error envelope nested `error.code` parsing
+- 401 token failure guarded reissue 1회
+- 429 `Retry-After` parsing
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- actual network transport
+- official API 실제 호출
+- market endpoint adapter
+- account snapshot reader
+- persistent token store
+- Local Operations API/MCP/dashboard token or broker surface
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
 ### Official token auth design
 
 설계 문서:
