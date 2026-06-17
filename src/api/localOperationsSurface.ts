@@ -38,6 +38,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/apiClient.js",
   "/dashboard/batchRunRenderers.js",
   "/batchRunRenderers.js",
+  "/dashboard/dashboardStatusRenderers.js",
+  "/dashboardStatusRenderers.js",
   "/dashboard/dom.js",
   "/dom.js",
   "/dashboard/decisionRenderers.js",
