@@ -143,6 +143,7 @@ test("local operations API serves read-only dashboard assets", async () => {
         "/dashboard/portfolioModel.js",
         "/dashboard/portfolioRenderers.js",
         "/dashboard/reportRenderers.js",
+        "/dashboard/replayProgressRenderers.js",
         "/dashboard/reportViewHelpers.js",
         "/dashboard/router.js",
         "/dashboard/state.js",
@@ -171,6 +172,10 @@ test("local operations API serves read-only dashboard assets", async () => {
       baseUrl,
       "/reportRenderers.js"
     );
+    const rootReplayProgressRenderersScript = await fetchText(
+      baseUrl,
+      "/replayProgressRenderers.js"
+    );
     const rootReportViewHelpersScript = await fetchText(
       baseUrl,
       "/reportViewHelpers.js"
@@ -198,6 +203,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(rootPortfolioModelScript.response.status, 200);
     assert.equal(rootPortfolioRenderersScript.response.status, 200);
     assert.equal(rootReportRenderersScript.response.status, 200);
+    assert.equal(rootReplayProgressRenderersScript.response.status, 200);
     assert.equal(rootReportViewHelpersScript.response.status, 200);
     assert.equal(rootTableRenderersScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
@@ -279,6 +285,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /portfolioPointFromVirtualPortfolio/);
     assert.match(dashboardScriptText, /export function portfolioPointFromVirtualPortfolio/);
     assert.match(script.text, /from "\.\/reportRenderers\.js"/);
+    assert.match(script.text, /from "\.\/replayProgressRenderers\.js"/);
     assert.match(script.text, /from "\.\/reportViewHelpers\.js"/);
     assert.match(script.text, /from "\.\/router\.js"/);
     assert.match(script.text, /from "\.\/state\.js"/);
@@ -320,6 +327,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /renderIncomeGoalPanel/);
     assert.match(dashboardScriptText, /aria-valuenow/);
     assert.match(script.text, /scheduleReplayProgressPolling/);
+    assert.match(script.text, /renderReplayProgress/);
+    assert.match(dashboardScriptText, /export function renderReplayProgress/);
+    assert.match(dashboardScriptText, /export function replayProgressStatus/);
+    assert.match(dashboardScriptText, /export function replayProgressRiskSummary/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
     assert.match(dashboardScriptText, /renderDecisionTimeline/);
     assert.match(dashboardScriptText, /renderDecisionPerformance/);
@@ -352,6 +363,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.doesNotMatch(script.text, /function renderTrades/);
     assert.doesNotMatch(script.text, /function renderPackets/);
     assert.doesNotMatch(script.text, /function symbolCell/);
+    assert.doesNotMatch(script.text, /function renderReplayProgress/);
+    assert.doesNotMatch(script.text, /function renderReplayPerformance/);
+    assert.doesNotMatch(script.text, /function renderReplayProgressEvents/);
+    assert.doesNotMatch(script.text, /function replayProgressRiskSummary/);
     assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
