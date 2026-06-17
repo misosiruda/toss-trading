@@ -118,6 +118,7 @@ const options = {
 - process memory token cache와 single-flight 제어
 - authenticated read-only HTTP request contract 구성
 - Bearer token injection과 HTTP status mapping
+- official market data endpoint path/query mapping
 
 금지:
 
@@ -130,6 +131,8 @@ const options = {
 `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 통해 token issue를 추상화한다. 실제 HTTP transport를 추가할 때는 별도 PR에서 error/rate limit/masking 테스트를 함께 추가해야 한다.
 
 `TossOpenApiReadOnlyHttpClient`는 injected transport만 호출하며 `GET` request만 허용한다. `401 invalid-token` 또는 `401 expired-token` 계열은 optional `clearToken()` hook이 있을 때만 1회 guarded reissue 후 재시도한다. read-only client에서 `POST`, `PATCH`, `PUT`, `DELETE` 또는 order/account mutation retry를 허용해서는 안 된다.
+
+`TossOpenApiMarketDataAdapter`는 injected read-only JSON client만 호출하고 `/api/v1/prices`, `/api/v1/orderbook`, `/api/v1/trades`, `/api/v1/candles`, `/api/v1/stocks/{symbol}/warnings`, `/api/v1/market-calendar/{KR|US}` mapping만 허용한다. `prices.symbols`는 official limit에 맞춰 1-200개만 허용한다. 이 adapter에서 account snapshot, order mutation, live `TradingSignal` 또는 `OrderIntent` 생성을 추가해서는 안 된다.
 
 ### `src/collectors`
 
