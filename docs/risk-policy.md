@@ -89,6 +89,39 @@ Artifact 위치 계약:
 
 현재 정책은 paper-only `VirtualRiskEngine`에 한정됩니다. 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
 
+## Live RiskEngine Implementation Boundary
+
+`LiveRiskEngine`은 `src/risk/`에 위치하며, 이미 구조화된 live order intent와 risk snapshot을 입력으로 받아 deterministic `RiskDecision`을 생성합니다.
+
+현재 구현 범위:
+
+- kill switch
+- max order amount
+- max daily loss
+- symbol/market/total exposure
+- symbol allowlist
+- market allowlist
+- market hours
+- duplicate order prevention
+- cooldown
+- open order count
+- market order policy
+- stale signal rejection
+- sell position ownership and quantity
+- preview requirement
+- malformed numeric order intent and risk snapshot rejection
+
+현재 제외 범위:
+
+- broker gateway 호출
+- `OrderRouter` 연결
+- official order endpoint 호출
+- Local Operations API/MCP/dashboard mutation surface
+- Codex CLI `virtual_decision`을 live order intent로 변환하는 경로
+- `TRADING_ENABLED=true` 기본값 또는 live order placement 활성화
+
+기본 live risk policy는 fail-closed입니다. 명시적 policy 없이 평가하면 kill switch, allowlist, amount/exposure, open order, preview gate가 승인으로 열리지 않습니다. 이 기본값은 live trading enable이 아니라 안전한 module contract입니다.
+
 ## Paper Risk Profiles
 
 Historical replay와 batch replay는 명시 옵션으로 paper-only risk profile을 선택할 수 있습니다. profile은 packet constraint와 `VirtualRiskEngine` policy를 함께 정규화하는 실험 설정이며, 기본값은 `conservative`입니다.

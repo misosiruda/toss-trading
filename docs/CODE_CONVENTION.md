@@ -137,6 +137,26 @@ const options = {
 
 `TossOpenApiAccountSnapshotReader`는 injected account read-only JSON client만 호출하고 `/api/v1/accounts`, `/api/v1/holdings` 조회만 허용한다. holdings 조회에는 explicit `accountSeq`가 필요하며, snapshot output은 account number와 accountSeq를 masking해야 한다. 이 reader에서 order endpoint, portfolio mutation, live `TradingSignal` 또는 `OrderIntent` 생성을 추가해서는 안 된다.
 
+### `src/risk`
+
+책임:
+
+- live 주문 전 deterministic `RiskEngine` 정책
+- structured live order intent와 risk snapshot 평가
+- kill switch, allowlist, market hours, exposure, duplicate, cooldown, preview gate
+- malformed numeric order intent/risk snapshot fail-closed validation
+- fail-closed `RiskDecision` 생성
+
+금지:
+
+- broker gateway 호출
+- order routing 또는 execution tracking
+- Codex CLI `virtual_decision`을 live order intent로 변환
+- MCP/API/dashboard mutation surface 추가
+- `TRADING_ENABLED=true` 기본값 또는 live order placement 활성화
+
+`LiveRiskEngine`은 이미 구조화된 live order intent와 risk snapshot만 입력으로 받아야 한다. 자연어 주문, Codex paper decision, raw broker response를 직접 해석해서는 안 된다. 기본 policy는 fail-closed여야 하며, 신규 rule이나 reject code를 추가하면 테스트와 문서를 함께 갱신한다.
+
 ### `src/collectors`
 
 책임:

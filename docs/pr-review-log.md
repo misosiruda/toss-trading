@@ -2250,3 +2250,36 @@
 - Fix review 3: `TossOpenApiAccountSnapshotReader`는 ad-hoc local options interface 대신 공용 `TossOpenApiReadOnlyRequestOptions` contract를 사용합니다.
 - 추가 테스트: read-only HTTP client가 `/api/v1/holdings` 요청에서 `X-Tossinvest-Account` header를 주입하는지 검증합니다.
 - 추가 테스트: invalid `accountSeq`가 auth/transport 호출 전에 차단되는지 검증합니다.
+
+## Phase 34: Live RiskEngine Policy
+
+### Review 1: Scope and Safety
+
+- 범위는 `src/risk`의 deterministic `LiveRiskEngine`, live risk policy, 관련 단위 테스트와 문서 갱신에 한정합니다.
+- `LiveRiskEngine`은 이미 구조화된 live order intent와 risk snapshot만 입력으로 받으며, 자연어 주문 또는 Codex CLI `virtual_decision`을 해석하지 않습니다.
+- broker gateway, official order endpoint, `OrderRouter`, execution tracking, Local Operations API/MCP/dashboard mutation surface는 추가하지 않았습니다.
+- 기본 policy는 fail-closed이며 명시 policy 없이는 live order approval이 열리지 않습니다.
+- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 변경하지 않았습니다.
+- real account number, token, order id, execution data는 추가하지 않았습니다.
+
+### Review 2: Tests and Validation
+
+- `npm run build`: pass.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 9 tests.
+- `npm run check`: pass, 384 tests.
+- `git diff --check`: pass.
+- `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
+- valid limit order approval path를 검증합니다.
+- default policy fail-closed를 검증합니다.
+- stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
+- malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
+- sell intent는 exposure를 증가시키지 않는지 검증합니다.
+- 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
+
+### Review 3: Diff and Integration
+
+- `src/risk/liveRiskPolicy.ts`는 live risk reject code, rule id, fail-closed policy default, symbol normalization을 정의합니다.
+- `src/risk/liveRiskEngine.ts`는 pure in-memory evaluation만 수행하며 filesystem, network, broker, storage를 호출하지 않습니다.
+- `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
+- 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
