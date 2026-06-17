@@ -515,6 +515,41 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 16. Dashboard Source Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/sourceRenderers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 source summary DOM renderer를 별도 module로 이동한다.
+- dashboard data에서 symbol metadata를 등록하는 준비 로직을 `sourceRenderers.js`로 이동해 `app.js`의 데이터 준비 책임을 줄인다.
+- `app.js`는 dashboard bootstrap, refresh orchestration, page별 renderer composition, polling scheduling 중심으로 유지한다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 dashboard asset test에서 같이 검증되게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- source health, scheduler status, symbol metadata 표시값을 behavior change로 변경
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- source summary 문구를 투자 조언이나 수익률 보장처럼 변경
+- risk engine, order engine, replay artifact schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 source renderer module을 import하고 source summary renderer 구현을 직접 보유하지 않는다.
+- dashboard symbol metadata registration이 기존 data source 범위를 유지한다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
