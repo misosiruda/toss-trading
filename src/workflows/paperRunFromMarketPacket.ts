@@ -1,5 +1,4 @@
 import type {
-  AuditEvent,
   MarketPacket,
   VirtualDecision,
   VirtualPortfolio
@@ -10,8 +9,6 @@ import {
   bindDecisionIdentityMetadata,
   createStaticDecisionIdentityMetadata
 } from "../paper/decisionIdentity.js";
-import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
-import { PaperOrderEngine } from "../paper/orderEngine.js";
 import {
   createStoragePaths,
   FileAuditLog,
@@ -26,11 +23,10 @@ import type {
   CodexCliDecisionResult
 } from "../ai/codexCliDecisionProvider.js";
 import {
-  summarizeVirtualDecisionValidation,
-  validateVirtualDecisionAgainstPacket,
-  type VirtualDecisionValidationResult
-} from "../paper/virtualDecisionValidation.js";
-import type { DecisionProvider } from "./paperRunOnce.js";
+  appendPaperAudit,
+  runPaperDecisionPipeline,
+  type DecisionProvider
+} from "./paperDecisionPipeline.js";
 
 export interface PaperRunFromMarketPacketOptions {
   storageBaseDir: string;
@@ -155,7 +151,7 @@ export async function runPaperDecisionFromLatestMarketPacket(
   const packet = packets.records.at(-1) ?? null;
 
   if (!packet) {
-    const auditEventId = await appendAudit(
+    const auditEventId = await appendPaperAudit(
       repositories.auditLog,
       "PAPER_MARKET_PACKET_RUN_FAILED",
       "No stored market packet is available",
@@ -165,7 +161,7 @@ export async function runPaperDecisionFromLatestMarketPacket(
   }
 
   if (!isFresh(packet.expiresAt, now)) {
-    const auditEventId = await appendAudit(
+    const auditEventId = await appendPaperAudit(
       repositories.auditLog,
       "PAPER_MARKET_PACKET_RUN_FAILED",
       `Stored market packet is stale: ${packet.packetId}`,
@@ -175,7 +171,7 @@ export async function runPaperDecisionFromLatestMarketPacket(
   }
 
   auditEventIds.push(
-    await appendAudit(
+    await appendPaperAudit(
       repositories.auditLog,
       "MARKET_PACKET_SELECTED",
       `Selected stored paper-only market packet ${packet.packetId}`,
@@ -183,116 +179,37 @@ export async function runPaperDecisionFromLatestMarketPacket(
     )
   );
 
-  const decisionResult = await options.provider.decide(packet);
-  if (decisionResult.failure || !decisionResult.decision) {
-    auditEventIds.push(
-      await appendAudit(
-        repositories.auditLog,
-        "AI_DECISION_FAILED",
-        decisionResult.failure?.reason ?? "provider returned no decision",
-        now
-      )
-    );
-    return failedResult(
-      packet.packetId,
-      decisionResult.failure?.code ?? "ai_decision_missing",
-      auditEventIds,
-      now
-    );
-  }
-
-  const validation = validateVirtualDecisionAgainstPacket({
+  const pipelineResult = await runPaperDecisionPipeline({
     packet,
-    decision: decisionResult.decision
+    portfolio: clonePortfolio(packet.virtualPortfolio),
+    provider: options.provider,
+    repositories,
+    now,
+    recordedDecisionSummary: (decisionCount) =>
+      `Recorded ${decisionCount} paper-only decision(s) from stored market packet`
   });
-  if (!validation.approved) {
-    auditEventIds.push(
-      await appendAudit(
-        repositories.auditLog,
-        "VIRTUAL_DECISION_REJECTED",
-        summarizeVirtualDecisionValidation(validation),
-        now
-      )
-    );
+  auditEventIds.push(...pipelineResult.auditEventIds);
+
+  if (pipelineResult.status === "failed") {
     return failedResult(
       packet.packetId,
-      validationFailureReason(validation),
+      pipelineResult.failure?.failureReason ?? "paper_decision_pipeline_failed",
       auditEventIds,
       now
     );
   }
-
-  const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
-    decision: decisionResult.decision,
-    packet
-  });
-
-  await repositories.decisionStore.append(recordedDecision);
-  auditEventIds.push(
-    await appendAudit(
-      repositories.auditLog,
-      "VIRTUAL_DECISION_RECORDED",
-      `Recorded ${recordedDecision.decisions.length} paper-only decision(s) from stored market packet`,
-      now
-    )
-  );
-
-  let currentPortfolio = clonePortfolio(packet.virtualPortfolio);
-  let tradeCount = 0;
-  let rejectedCount = 0;
-  const engine = new PaperOrderEngine();
-
-  for (const decision of recordedDecision.decisions) {
-    const result = engine.execute({
-      packet,
-      portfolio: currentPortfolio,
-      decision,
-      riskPolicy: { now }
-    });
-    currentPortfolio = result.portfolio;
-
-    if (!result.riskDecision.approved) {
-      rejectedCount += 1;
-    }
-
-    auditEventIds.push(
-      await appendAudit(
-        repositories.auditLog,
-        result.riskDecision.approved
-          ? "VIRTUAL_RISK_APPROVED"
-          : "VIRTUAL_RISK_REJECTED",
-        `${decision.market}:${decision.symbol} ${decision.action}`,
-        now
-      )
-    );
-
-    if (result.trade) {
-      await repositories.tradeStore.append(result.trade);
-      tradeCount += 1;
-      auditEventIds.push(
-        await appendAudit(
-          repositories.auditLog,
-          "PAPER_ORDER_FILLED",
-          `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
-          now
-        )
-      );
-    }
-  }
-
-  await repositories.portfolioStore.write(currentPortfolio);
 
   return {
     status: "completed",
     report: buildReport({
       packet,
-      tradeCount,
-      rejectedCount,
+      tradeCount: pipelineResult.tradeCount,
+      rejectedCount: pipelineResult.rejectedCount,
       statusLine: "Stored market packet paper trading run completed."
     }),
     packetId: packet.packetId,
-    tradeCount,
-    rejectedCount,
+    tradeCount: pipelineResult.tradeCount,
+    rejectedCount: pipelineResult.rejectedCount,
     auditEventIds,
     failureReason: null
   };
@@ -306,25 +223,6 @@ function createRepositories(paths: StoragePaths) {
     decisionStore: new FileVirtualDecisionStore(paths.virtualDecisionsPath),
     tradeStore: new FileVirtualTradeStore(paths.virtualTradesPath)
   };
-}
-
-async function appendAudit(
-  auditLog: FileAuditLog,
-  eventType: string,
-  summary: string,
-  now: Date
-): Promise<string> {
-  const eventId = `audit_${eventType.toLowerCase()}_${now.getTime()}`;
-  const event: AuditEvent = {
-    eventId,
-    eventType,
-    actor: "system",
-    summary,
-    maskedRefs: [],
-    createdAt: now.toISOString()
-  };
-  await auditLog.append(event);
-  return eventId;
 }
 
 function failedResult(
@@ -377,12 +275,4 @@ function clonePortfolio(portfolio: VirtualPortfolio): VirtualPortfolio {
     ...portfolio,
     positions: portfolio.positions.map((position) => ({ ...position }))
   };
-}
-
-function validationFailureReason(
-  validation: VirtualDecisionValidationResult
-): string {
-  return validation.rejectCodes.includes("VIRTUAL_DECISION_PACKET_MISMATCH")
-    ? "decision_packet_mismatch"
-    : "virtual_decision_semantic_invalid";
 }

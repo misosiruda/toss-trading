@@ -246,9 +246,14 @@ npm run historical:replay:dry -- --data-dir <historical-snapshot-data-dir> --sta
 ```powershell
 npm run check
 npm run paper:run-once:dry -- --data-dir data/process-refactor-smoke
+npm run market:ingest -- --data-dir data/process-refactor-smoke
 npm run paper:run-from-market-packet:dry -- --data-dir data/process-refactor-smoke
 git diff --check
 ```
+
+`paper:run-from-market-packet:dry`는 stored `market-packets.jsonl`을 읽으므로,
+`data/process-refactor-smoke`에 packet이 없으면 read-only source fixture 또는
+`tossinvest:collect` 결과를 먼저 준비한다.
 
 검토:
 
