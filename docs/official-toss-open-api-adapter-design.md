@@ -108,11 +108,13 @@
 ```mermaid
 flowchart TD
     D["Design document only"] --> T["Token auth design and secret handling"]
-    T --> M["Read-only market data adapter with mocked HTTP tests"]
+    T --> C["Token config parser with safe defaults"]
+    C --> AC["Mocked token auth client"]
+    AC --> M["Read-only market data adapter with mocked HTTP tests"]
     M --> A["Read-only account and holdings snapshot reader"]
     A --> R["Live RiskEngine implementation with mock broker"]
-    R --> H["Live trading threat model"]
-    H --> O["OrderRouter with dry-run broker gateway"]
+    R --> TM["Live trading threat model"]
+    TM --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
     P --> Q["Deployment gate"]
 ```
@@ -316,13 +318,15 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | --- | --- | --- | --- |
 | 1 | Official API adapter design | 이 문서와 링크 | code, token auth, order |
 | 2 | [Official token auth design](official-token-auth-design.md) | env, secret handling, token lifecycle 문서와 tests plan | real secret, API call |
-| 3 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
-| 4 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
-| 5 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
-| 6 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
-| 7 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
-| 8 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
-| 9 | Deployment packaging | process isolation, config, monitoring | default live enable |
+| 3 | Token config parser | safe-disabled env parser, placeholder, missing secret tests | token issue HTTP call |
+| 4 | Mocked token auth client | form request builder, memory cache, single-flight tests | account/order adapter |
+| 5 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
+| 6 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
+| 7 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
+| 8 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 9 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
+| 10 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
+| 11 | Deployment packaging | process isolation, config, monitoring | default live enable |
 
 ## Merge 전 체크리스트
 

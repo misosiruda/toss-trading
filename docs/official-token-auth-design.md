@@ -88,9 +88,10 @@ Accept: application/json
 
 ## Secret Handling 정책
 
-후속 구현에서 사용할 수 있는 config 후보는 다음과 같다. 실제 이름과 `.env.example` 추가 여부는 config parser 구현 PR에서 다시 확정한다.
+후속 구현에서 사용할 config 이름은 config parser PR에서 다음 placeholder로 고정했다.
 
 ```text
+TOSS_OPEN_API_AUTH_ENABLED=false
 TOSS_OPEN_API_BASE_URL=https://openapi.tossinvest.com
 TOSS_OPEN_API_CLIENT_ID=<local secret only>
 TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
@@ -104,6 +105,13 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - 실패 메시지를 저장할 때 provider response body를 그대로 남기지 않고 token-like string과 credential-like string을 masking한다.
 - `client_id`는 식별자로 보일 수 있지만 broker credential로 취급해 기본적으로 masking한다.
 - account id는 token auth 범위가 아니라 account adapter 범위에서 별도 masking 정책을 둔다.
+
+현재 구현 상태:
+
+- `.env.example`에는 placeholder만 추가되어 있으며 `TOSS_OPEN_API_AUTH_ENABLED=false`가 기본값이다.
+- `readTossOpenApiAuthConfig`는 env를 해석하되 token 발급 HTTP call을 수행하지 않는다.
+- `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret`이 누락되면 `status=invalid`로 fail-closed 처리한다.
+- `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환한다.
 
 ## Token Lifecycle
 
@@ -200,7 +208,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 순서 | PR | 포함 | 제외 |
 | --- | --- | --- | --- |
 | 1 | Token auth design | 이 문서와 링크 | code, secret, API call |
-| 2 | Token config parser | placeholder env docs, parser, missing secret tests | token issue HTTP call |
+| 2 | Token config parser | placeholder env docs, parser, missing secret tests, safe summary, quality gate default check | token issue HTTP call |
 | 3 | Mocked AuthClient | form request builder, memory cache, single-flight tests | account/order adapter |
 | 4 | Authenticated read-only HTTP client | Bearer injection, error/rate mapping tests | mutation retry |
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |

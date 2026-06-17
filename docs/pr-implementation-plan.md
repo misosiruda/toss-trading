@@ -2305,6 +2305,8 @@
 
 - Official Toss Open API adapter design
 - official token auth design
+- official token config parser
+- mocked token auth client
 - live Risk Engine implementation
 - threat model for live trading
 - live OrderRouter dry-run
@@ -2347,9 +2349,47 @@
 제외:
 
 - token auth client 구현
-- config parser 또는 `.env.example` 변경
+- token issue HTTP call
 - official API 실제 호출 코드
 - persistent token store
+- account/order adapter
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
+### Official token config parser
+
+목표:
+
+- official token auth 구현 전에 env config parsing을 safe-disabled 상태로 고정합니다.
+- `.env.example`에는 placeholder만 추가하고 real credential을 포함하지 않습니다.
+- `TOSS_OPEN_API_AUTH_ENABLED=true`에서 required secret 누락을 API call 전에 fail-closed 상태로 표현합니다.
+
+작업 범위:
+
+- `src/config/tossOpenApiAuthConfig.ts`
+- `src/config/tossOpenApiAuthConfig.test.ts`
+- `.env.example` placeholder
+- `scripts/qualityGate.mjs` safe default drift check
+- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- safe disabled default
+- missing client id/client secret invalid status
+- non-https base URL reject
+- safe summary가 credential value를 반환하지 않음
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- token auth HTTP client
+- token issue request builder
+- token cache
+- official API 실제 호출
 - account/order adapter
 - live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시

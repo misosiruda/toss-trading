@@ -12,6 +12,7 @@ import {
   readCodexDecisionProviderConfig,
   readHistoricalCodexDecisionEnv
 } from "../dist/cli/codexDecisionEnv.js";
+import { readTossOpenApiAuthConfig } from "../dist/config/tossOpenApiAuthConfig.js";
 import { disabledByDefaultMcpToolNames } from "../dist/mcp/toolSurfacePolicy.js";
 import { virtualPortfolioToolNames } from "../dist/mcp/virtualPortfolioTools.js";
 
@@ -82,6 +83,16 @@ assertDeepEqual(
     allowWebSearch: false
   },
   "default historical Codex decision env"
+);
+assertDeepEqual(
+  readTossOpenApiAuthConfig({}),
+  {
+    enabled: false,
+    status: "disabled",
+    baseUrl: "https://openapi.tossinvest.com",
+    issues: []
+  },
+  "default Toss Open API auth config"
 );
 assertDeepEqual(
   readCodexDecisionProviderConfig({
