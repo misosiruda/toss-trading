@@ -97,6 +97,68 @@ test("codex historical replay runner executes async paper decisions", async () =
   );
 });
 
+test("codex historical replay runner emits progress after each decision item", async () => {
+  const provider = new FakeCodexReplayProvider((packet) => ({
+    attempted: true,
+    decision: {
+      packetId: packet.packetId,
+      summary: "Multiple decision item fixture.",
+      decisions: [
+        decision(packet.packetId, "005930").decisions[0]!,
+        decision(packet.packetId, "000660").decisions[0]!
+      ]
+    },
+    failure: null,
+    command: null
+  }));
+  const progressUpdates: HistoricalReplayProgressUpdate[] = [];
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider,
+      onProgress: (update) => {
+        progressUpdates.push(update);
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        }),
+        snapshot({
+          snapshotId: "hist_000660_0900",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 100_000
+        })
+      ]
+    }
+  );
+
+  const buyUpdates = progressUpdates.filter(
+    (update) => update.event?.eventType === "VIRTUAL_BUY"
+  );
+
+  assert.equal(result.tradeCount, 2);
+  assert.equal(buyUpdates.length, 2);
+  assert.equal(buyUpdates[0]?.tradeCount, 1);
+  assert.equal(buyUpdates[0]?.trades.length, 1);
+  assert.equal(buyUpdates[0]?.event?.symbol, "005930");
+  assert.equal(buyUpdates[1]?.tradeCount, 2);
+  assert.equal(buyUpdates[1]?.trades.length, 2);
+  assert.equal(buyUpdates[1]?.event?.symbol, "000660");
+});
+
 test("codex historical replay runner skips paper orders on provider failure", async () => {
   const provider = new FakeCodexReplayProvider(() => ({
     attempted: true,

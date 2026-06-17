@@ -44,7 +44,7 @@ import {
 } from "./historicalReplayProgress.js";
 import {
   appendHistoricalReplayAuditEvent,
-  executeHistoricalReplayDecisionItems,
+  executeHistoricalReplayDecisionItem,
   progressEventFromHistoricalReplayExecutionEffect,
   recordHistoricalReplayDecision,
   suppressDecisionItemsForSymbols
@@ -132,11 +132,11 @@ export async function runCodexHistoricalReplay(
       riskDecisionCount: riskDecisions.length,
       riskApprovedCount: riskDecisions.length - rejectedCount,
       rejectedCount,
-      currentPortfolio,
-      packets,
-      decisions,
-      riskDecisions,
-      trades
+      currentPortfolio: clonePortfolio(currentPortfolio),
+      packets: [...packets],
+      decisions: [...decisions],
+      riskDecisions: [...riskDecisions],
+      trades: [...trades]
     };
     if (performance !== undefined) {
       update.performance = performance;
@@ -250,36 +250,38 @@ export async function runCodexHistoricalReplay(
         auditEvents,
         tick
       });
-      const orderStartedAtMs = performanceClock();
-      const execution = executeHistoricalReplayDecisionItems({
-        packet,
-        portfolio: currentPortfolio,
-        recordedDecision: recordedExitDecision,
-        engine,
-        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
-        paperExitPolicyState,
-        auditEvents,
-        riskDecisions,
-        trades,
-        tick,
-        exitSuppressionSymbolKeys: exitedSymbolKeys
-      });
-      orderExecutionMs += performanceClock() - orderStartedAtMs;
-      currentPortfolio = execution.portfolio;
-      rejectedCount += execution.rejectedCount;
-
-      for (const effect of execution.effects) {
-        currentPortfolio = effect.portfolio;
-        await emitProgress(
+      for (const item of recordedExitDecision.decisions) {
+        const orderStartedAtMs = performanceClock();
+        const execution = executeHistoricalReplayDecisionItem({
+          packet,
+          portfolio: currentPortfolio,
+          decisionItem: item,
+          engine,
+          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+          paperExitPolicyState,
+          auditEvents,
+          riskDecisions,
+          trades,
           tick,
-          simulatedAt,
-          progressEventFromHistoricalReplayExecutionEffect({
-            effect,
-            simulatedAt,
+          exitSuppressionSymbolKeys: exitedSymbolKeys
+        });
+        orderExecutionMs += performanceClock() - orderStartedAtMs;
+        currentPortfolio = execution.portfolio;
+        rejectedCount += execution.rejectedCount;
+
+        for (const effect of execution.effects) {
+          currentPortfolio = effect.portfolio;
+          await emitProgress(
             tick,
-            packetId: packet.packetId
-          })
-        );
+            simulatedAt,
+            progressEventFromHistoricalReplayExecutionEffect({
+              effect,
+              simulatedAt,
+              tick,
+              packetId: packet.packetId
+            })
+          );
+        }
       }
     }
 
@@ -423,35 +425,37 @@ export async function runCodexHistoricalReplay(
       auditEvents,
       tick
     });
-    const orderStartedAtMs = performanceClock();
-    const execution = executeHistoricalReplayDecisionItems({
-      packet,
-      portfolio: currentPortfolio,
-      recordedDecision,
-      engine,
-      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
-      paperExitPolicyState,
-      auditEvents,
-      riskDecisions,
-      trades,
-      tick
-    });
-    orderExecutionMs += performanceClock() - orderStartedAtMs;
-    currentPortfolio = execution.portfolio;
-    rejectedCount += execution.rejectedCount;
+    for (const item of recordedDecision.decisions) {
+      const orderStartedAtMs = performanceClock();
+      const execution = executeHistoricalReplayDecisionItem({
+        packet,
+        portfolio: currentPortfolio,
+        decisionItem: item,
+        engine,
+        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+        paperExitPolicyState,
+        auditEvents,
+        riskDecisions,
+        trades,
+        tick
+      });
+      orderExecutionMs += performanceClock() - orderStartedAtMs;
+      currentPortfolio = execution.portfolio;
+      rejectedCount += execution.rejectedCount;
 
-    for (const effect of execution.effects) {
-      currentPortfolio = effect.portfolio;
-      await emitProgress(
-        tick,
-        simulatedAt,
-        progressEventFromHistoricalReplayExecutionEffect({
-          effect,
-          simulatedAt,
+      for (const effect of execution.effects) {
+        currentPortfolio = effect.portfolio;
+        await emitProgress(
           tick,
-          packetId: packet.packetId
-        })
-      );
+          simulatedAt,
+          progressEventFromHistoricalReplayExecutionEffect({
+            effect,
+            simulatedAt,
+            tick,
+            packetId: packet.packetId
+          })
+        );
+      }
     }
 
     currentPortfolio = markPortfolioToMarket({
