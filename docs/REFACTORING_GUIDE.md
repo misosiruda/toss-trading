@@ -585,6 +585,41 @@ npm run build
 - 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
 - `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
 
+## Phase 18. Dashboard Status Renderer 분리
+
+범위:
+
+- `dashboard/app.js`
+- `dashboard/dashboardStatusRenderers.js`
+- `src/api/localOperationsSurface.ts`
+- `src/api/localOperationsServer.test.ts`
+- `docs/CODE_CONVENTION.md`
+- `docs/PROJECT_STRUCTURE.md`
+
+목표:
+
+- `dashboard/app.js`에 남아 있는 API 연결 상태, file-mode notice, dashboard 상단 metric DOM 갱신을 별도 module로 이동한다.
+- `app.js`는 fetch, full data refresh, page별 renderer composition 중심으로 유지한다.
+- source health, portfolio update text, net worth/cash/position metric 표시값을 behavior-preserving 방식으로 유지한다.
+- 새 dashboard ES module이 Local Operations API asset allowlist와 dashboard asset test에서 같이 검증되게 한다.
+
+금지:
+
+- Local Operations API route path 추가/삭제
+- dashboard top metric 계산 또는 표시값을 behavior change로 변경
+- dashboard에서 replay 실행, Codex CLI 실행, TossInvest CLI 실행, live order 실행 버튼 추가
+- metric/source 문구를 투자 조언이나 수익률 보장처럼 변경
+- risk engine, order engine, replay artifact schema 동작 변경
+- bundler, framework, formatter 도입
+
+완료 기준:
+
+- `dashboard/app.js`가 dashboard status renderer module을 import하고 API status/file-mode/top metric DOM 구현을 직접 보유하지 않는다.
+- `dashboard/dashboardStatusRenderers.js`가 기존 `api-status`, `source-status`, `metric-*`, `portfolio-updated` 갱신을 담당한다.
+- `src/api/localOperationsSurface.ts`가 새 dashboard module을 dashboard/root asset path로 모두 허용한다.
+- 기존 Local Operations API dashboard asset test가 새 module serving과 app import를 검증한다.
+- `npm run check`, browser dashboard smoke, 성능 지표 측정, 접근성 자동 검사가 통과한다.
+
 ## 작업 전 체크리스트
 
 - [ ] `AGENTS.md` 확인
