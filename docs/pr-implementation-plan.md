@@ -2415,6 +2415,47 @@
 - `TRADING_ENABLED=true` 기본값 또는 실행 예시
 - `place_order` MCP enabled surface
 
+### Read-only account snapshot
+
+목표:
+
+- official Toss Open API account/holdings endpoint를 read-only boundary 뒤에서 조회할 수 있게 account snapshot reader를 추가합니다.
+- reader는 injected account read-only JSON client만 호출하고 actual network transport를 구현하지 않습니다.
+- account number와 accountSeq는 snapshot output에서 masking합니다.
+
+작업 범위:
+
+- `src/broker/tossOpenApiAccountSnapshotReader.ts`
+- `src/broker/tossOpenApiAccountSnapshotReader.test.ts`
+- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`
+- PR review log에 3단계 검토 기록 추가
+
+검증:
+
+- official OpenAPI JSON endpoint metadata 재확인
+- `GET /api/v1/accounts` mapping
+- `GET /api/v1/holdings` accountSeq boundary와 optional symbol query mapping
+- missing accountSeq에서 holdings 조회를 skip하고 degraded source status 반환
+- account number와 accountSeq masking
+- invalid accountSeq, symbol input fail-closed
+- malformed official envelope fail-closed
+- order endpoint 미호출
+- `npm run check`
+- `git diff --check`
+- 금지 경계 grep
+
+제외:
+
+- actual network transport
+- official API 실제 호출
+- persistent account store
+- portfolio mutation
+- order endpoint
+- Local Operations API/MCP/dashboard token or broker surface
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
+
 ### Official token auth design
 
 설계 문서:
