@@ -34,6 +34,22 @@ export function flattenDecisionRecords(records) {
   );
 }
 
+export function bindDecisionFilterControls() {
+  document.querySelectorAll("[data-action-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filters.action = button.getAttribute("data-action-filter") ?? "ALL";
+      updateFilterControls();
+      renderDecisionTimeline();
+    });
+  });
+
+  document.getElementById("symbol-filter")?.addEventListener("input", (event) => {
+    const target = event.target;
+    state.filters.symbol = target instanceof HTMLInputElement ? target.value : "";
+    renderDecisionTimeline();
+  });
+}
+
 export function renderDecisionTimeline() {
   const list = document.getElementById("decision-list");
   clear(list);

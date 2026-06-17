@@ -287,6 +287,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="batch-regime-list"/);
     assert.match(html.text, /data-action-filter="BUY"/);
     assert.match(html.text, /id="symbol-filter"/);
+    assert.match(html.text, /aria-label="종목 필터"/);
+    assert.match(html.text, /rel="icon" href="data:,"/);
     assert.match(html.text, /id="decision-performance-list"/);
     assert.match(html.text, /id="decision-performance-average"/);
     assert.match(html.text, /id="portfolio-risk-status"/);
@@ -366,6 +368,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /export function renderSourceSummary/);
     assert.match(dashboardScriptText, /export function rememberSymbolMetadata/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
+    assert.match(script.text, /bindDecisionFilterControls/);
+    assert.match(dashboardScriptText, /export function bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /renderDecisionTimeline/);
     assert.match(dashboardScriptText, /renderDecisionPerformance/);
     assert.match(dashboardScriptText, /buildDecisionPerformanceOutcomes/);
@@ -409,6 +413,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.doesNotMatch(script.text, /function renderDashboardMetrics/);
     assert.doesNotMatch(script.text, /function showDashboardLoadingStatus/);
     assert.doesNotMatch(script.text, /function showDashboardEndpointResult/);
+    assert.doesNotMatch(script.text, /data-action-filter/);
+    assert.doesNotMatch(script.text, /symbol-filter/);
     assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
   } finally {
     await stopTestServer(server);
