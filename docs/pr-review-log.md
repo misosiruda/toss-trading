@@ -2265,14 +2265,16 @@
 ### Review 2: Tests and Validation
 
 - `npm run build`: pass.
-- `node --test dist/risk/liveRiskEngine.test.js`: pass, 9 tests.
-- `npm run check`: pass, 384 tests.
+- `node --test dist/risk/liveRiskEngine.test.js`: pass, 11 tests.
+- `npm run check`: pass, 386 tests.
 - `git diff --check`: pass.
 - `src/risk` forbidden boundary grep: no matches for direct network call, filesystem write, live order/raw command surface, `TRADING_ENABLED=true`, `AI_DECISION_ENABLED=true`.
 - valid limit order approval path를 검증합니다.
 - default policy fail-closed를 검증합니다.
 - stale signal, market hours unknown/closed, duplicate intent, idempotency reuse, cooldown, max order amount, daily loss, exposure caps, market order policy, sell position, preview policy를 검증합니다.
 - malformed numeric order intent와 risk snapshot을 fail-closed reject code로 차단하는지 검증합니다.
+- malformed enum/identity/symbol intent field를 fail-closed reject code로 차단하는지 검증합니다.
+- 동일 `orderIntentId`를 가진 open order가 있으면 signal/idempotency 재생성 여부와 무관하게 duplicate로 차단하는지 검증합니다.
 - sell intent는 exposure를 증가시키지 않는지 검증합니다.
 - 이번 phase는 dashboard/API behavior 또는 asset 변경이 없어 browser E2E smoke, 성능 지표 측정, 접근성 자동 검사는 실행 대상에서 제외합니다.
 
@@ -2283,3 +2285,9 @@
 - `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
 - `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
 - 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
+
+### Codex Review Fix
+
+- P2 `Fail closed on invalid live intent fields`: runtime에서 `side`, `orderType`, `market`, `orderIntentId`, `signalId`, `idempotencyKey`, `symbol`을 검증하도록 `INVALID_ORDER_INTENT` 조건을 확장했습니다.
+- P2 `Reject duplicate orderIntentId before approval`: snapshot open order의 `orderIntentId`가 incoming intent와 같으면 `DUPLICATE_ORDER_INTENT`로 차단하도록 보강했습니다.
+- 추가 테스트: malformed enum/identity intent field reject, duplicate `orderIntentId` reject.

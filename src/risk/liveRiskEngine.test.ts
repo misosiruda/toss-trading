@@ -181,6 +181,25 @@ test("live risk engine rejects duplicate intent, reused idempotency, and cooldow
   ]);
 });
 
+test("live risk engine rejects duplicate order intent id before approval", () => {
+  const decision = evaluate({
+    snapshot: baseSnapshot({
+      openOrders: [
+        {
+          orderIntentId: "intent_live_001",
+          idempotencyKey: "idem_live_regenerated",
+          market: "KR",
+          symbol: "000660",
+          side: "SELL"
+        }
+      ]
+    })
+  });
+
+  assert.equal(decision.approved, false);
+  assert.deepEqual(decision.rejectCodes, ["DUPLICATE_ORDER_INTENT"]);
+});
+
 test("live risk engine enforces order amount, daily loss, and exposure caps", () => {
   const decision = evaluate({
     intent: baseIntent({ estimatedGrossAmountKrw: 120_000 }),
@@ -296,6 +315,22 @@ test("live risk engine rejects malformed numeric intent and snapshot values", ()
   assert.ok(
     invalidSnapshotDecision.rejectCodes.includes("INVALID_RISK_SNAPSHOT")
   );
+});
+
+test("live risk engine rejects malformed enum and identity intent fields", () => {
+  const decision = evaluate({
+    intent: ({
+      ...baseIntent(),
+      orderIntentId: " ",
+      idempotencyKey: "",
+      symbol: "",
+      side: "WAIT",
+      orderType: "STOP"
+    } as unknown) as LiveOrderIntent
+  });
+
+  assert.equal(decision.approved, false);
+  assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
 });
 
 test("live risk engine keeps sell exposure checks from increasing exposure", () => {

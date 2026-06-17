@@ -137,6 +137,13 @@ function evaluateOrderIntentShape(
   intent: LiveOrderIntent
 ): void {
   if (
+    !isNonEmptyString(intent.orderIntentId) ||
+    !isNonEmptyString(intent.signalId) ||
+    !isNonEmptyString(intent.idempotencyKey) ||
+    !isLiveMarket(intent.market) ||
+    !isNonEmptyString(intent.symbol) ||
+    !isLiveOrderSide(intent.side) ||
+    !isLiveOrderType(intent.orderType) ||
     !isPositiveFiniteNumber(intent.quantity) ||
     !isPositiveFiniteNumber(intent.estimatedGrossAmountKrw)
   ) {
@@ -251,6 +258,10 @@ function evaluateDuplicateOrder(
   snapshot: LiveRiskSnapshot
 ): void {
   for (const openOrder of snapshot.openOrders) {
+    if (openOrder.orderIntentId === intent.orderIntentId) {
+      appendLiveRiskRejectCode(rejectCodes, "DUPLICATE_ORDER_INTENT");
+    }
+
     if (openOrder.idempotencyKey === intent.idempotencyKey) {
       appendLiveRiskRejectCode(rejectCodes, "IDEMPOTENCY_KEY_REUSED");
     }
@@ -447,6 +458,22 @@ function positionExposureKrw(position: LiveRiskPosition): number {
 function isFresh(expiresAt: string, now: Date): boolean {
   const expiresAtMs = Date.parse(expiresAt);
   return Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime();
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isLiveMarket(value: unknown): value is Market {
+  return value === "KR" || value === "US";
+}
+
+function isLiveOrderSide(value: unknown): value is LiveOrderSide {
+  return value === "BUY" || value === "SELL";
+}
+
+function isLiveOrderType(value: unknown): value is LiveOrderType {
+  return value === "LIMIT" || value === "MARKET";
 }
 
 function isPositiveFiniteNumber(value: number): boolean {
