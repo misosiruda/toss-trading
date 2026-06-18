@@ -2303,6 +2303,14 @@
 
 다음 작업은 위 vertical slice가 안정된 뒤 별도 계획으로 분리합니다.
 
+- Paper simulation dashboard product plan
+- SimulationRun artifact contract
+- Paper Simulation API skeleton
+- dashboard live/paper IA restructure
+- paper simulation launcher UI
+- paper simulation runner binding
+- active simulation dashboard
+- simulation history and validation center
 - Official Toss Open API adapter design
 - official token auth design
 - official token config parser
@@ -2314,6 +2322,34 @@
 - deployment packaging
 
 이 later PR들은 사용자 명시 지시 없이는 시작하지 않습니다.
+
+### Paper simulation dashboard product plan
+
+설계 문서:
+
+- [paper-simulation-dashboard-plan.md](paper-simulation-dashboard-plan.md)
+
+이 단계는 dashboard에서 실투자를 시작하기 위한 계획이 아니라, 알고리즘이 투자할 가치가 있는지 paper-only simulation으로 검증하기 위한 제품 흐름을 문서화합니다.
+
+포함:
+
+- live dashboard와 paper simulation dashboard의 정보 구조 분리
+- simulation 조건 선택 화면
+- active simulation progress dashboard
+- 지난 simulation portfolio/report 조회
+- validation center
+- Paper Simulation API와 기존 read-only Local Operations API의 namespace 분리
+- run-scoped artifact contract 후보
+- 후속 PR 분해
+
+제외:
+
+- UI 구현
+- API 구현
+- simulation runner 구현
+- live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
+- `TRADING_ENABLED=true` 기본값 또는 실행 예시
+- `place_order` MCP enabled surface
 
 ### Official Toss Open API adapter design
 
