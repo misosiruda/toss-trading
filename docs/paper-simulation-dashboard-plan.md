@@ -387,6 +387,11 @@ POST /paper/simulations/{runId}/cancel
 - handler는 allowlisted paper simulation runner만 호출한다.
 - live trading env/flag를 request body로 받지 않는다.
 - local-only binding을 유지한다.
+- local-only binding만 mutation 보호 수단으로 간주하지 않는다.
+- create/cancel 같은 state-changing route는 구현 전 mutation authorization, origin allowlist, CSRF guard를 명시적으로 갖춰야 한다.
+- browser-origin request는 dashboard same-origin 또는 allowlisted origin만 허용하고, cross-origin/simple request로 simulation을 시작하거나 취소할 수 없어야 한다.
+- mutation token 또는 session-scoped CSRF token은 repository에 저장하지 않고 runtime에서 발급/검증한다.
+- create/cancel route는 concurrency limit, per-run resource quota, audit event 기록을 적용한다.
 - 실행 artifact는 run id directory에 격리한다.
 
 초기 구현 단계에서는 create/cancel을 바로 열지 않고, mock/disabled response와 contract를 먼저 만들 수 있다.
