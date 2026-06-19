@@ -1,6 +1,9 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
+export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
 
 export type ReadOnlyHttpMethod = (typeof READ_ONLY_HTTP_METHODS)[number];
+export type PaperSimulationMutationMethod =
+  (typeof PAPER_SIMULATION_MUTATION_METHODS)[number];
 
 export const LOCAL_OPERATIONS_API_ROUTES = [
   "/health",
@@ -21,10 +24,27 @@ export const LOCAL_OPERATIONS_API_ROUTES = [
 export type LocalOperationsApiRoutePath =
   (typeof LOCAL_OPERATIONS_API_ROUTES)[number];
 
+export const PAPER_SIMULATION_MUTATION_API_ROUTES = [
+  "/paper/simulations"
+] as const;
+
+export type PaperSimulationMutationApiRoutePath =
+  (typeof PAPER_SIMULATION_MUTATION_API_ROUTES)[number];
+
 export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
   "/",
   "/dashboard",
   "/dashboard/",
+  "/dashboard/virtual",
+  "/dashboard/virtual/",
+  "/dashboard/virtual/simulations",
+  "/dashboard/virtual/simulations/",
+  "/dashboard/virtual/simulations/new",
+  "/dashboard/virtual/simulations/new/",
+  "/dashboard/virtual/simulations/current",
+  "/dashboard/virtual/simulations/current/",
+  "/dashboard/virtual/validation",
+  "/dashboard/virtual/validation/",
   "/dashboard/virtual-replays",
   "/dashboard/virtual-replays/",
   "/dashboard/batch-summary",
@@ -36,6 +56,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/app.js",
   "/dashboard/apiClient.js",
   "/apiClient.js",
+  "/dashboard/currentSimulationData.js",
+  "/currentSimulationData.js",
   "/dashboard/batchRunRenderers.js",
   "/batchRunRenderers.js",
   "/dashboard/dashboardStatusRenderers.js",
@@ -62,6 +84,8 @@ export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
   "/reportViewHelpers.js",
   "/dashboard/router.js",
   "/router.js",
+  "/dashboard/simulationForm.js",
+  "/simulationForm.js",
   "/dashboard/sourceRenderers.js",
   "/sourceRenderers.js",
   "/dashboard/state.js",
@@ -78,10 +102,24 @@ export function isReadOnlyHttpMethod(
   return method === "GET" || method === "HEAD";
 }
 
+export function isPaperSimulationMutationMethod(
+  method: string | undefined
+): method is PaperSimulationMutationMethod {
+  return method === "POST";
+}
+
 export function isLocalOperationsApiRoutePath(
   pathname: string
 ): pathname is LocalOperationsApiRoutePath {
   return LOCAL_OPERATIONS_API_ROUTES.includes(
     pathname as LocalOperationsApiRoutePath
+  );
+}
+
+export function isPaperSimulationMutationApiRoutePath(
+  pathname: string
+): pathname is PaperSimulationMutationApiRoutePath {
+  return PAPER_SIMULATION_MUTATION_API_ROUTES.includes(
+    pathname as PaperSimulationMutationApiRoutePath
   );
 }

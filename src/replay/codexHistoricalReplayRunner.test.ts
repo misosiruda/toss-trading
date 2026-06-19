@@ -97,6 +97,53 @@ test("codex historical replay runner executes async paper decisions", async () =
   );
 });
 
+test("codex historical replay runner applies optional pacing once per tick", async () => {
+  const delayCalls: number[] = [];
+  const provider = new FakeCodexReplayProvider((packet) => ({
+    attempted: true,
+    decision: decision(packet.packetId, packet.candidates[0]?.symbol ?? "005930"),
+    failure: null,
+    command: null
+  }));
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      decisionProvider: provider,
+      tickDelayMs: 12,
+      tickDelay: async (ms) => {
+        delayCalls.push(ms);
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000
+        }),
+        snapshot({
+          snapshotId: "hist_000660_0901",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:01:00+09:00",
+          lastPriceKrw: 120_000
+        }),
+        snapshot({
+          snapshotId: "hist_035420_0902",
+          symbol: "035420",
+          observedAt: "2025-01-02T09:02:00+09:00",
+          lastPriceKrw: 180_000
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.tickCount, 3);
+  assert.deepEqual(delayCalls, [12, 12, 12]);
+});
+
 test("codex historical replay runner emits progress after each decision item", async () => {
   const provider = new FakeCodexReplayProvider((packet) => ({
     attempted: true,
@@ -157,6 +204,121 @@ test("codex historical replay runner emits progress after each decision item", a
   assert.equal(buyUpdates[1]?.tradeCount, 2);
   assert.equal(buyUpdates[1]?.trades.length, 2);
   assert.equal(buyUpdates[1]?.event?.symbol, "000660");
+});
+
+test("codex historical replay runner preserves unobserved market budget on first ramp packet", async () => {
+  const provider = new FakeCodexReplayProvider((packet) => ({
+    attempted: true,
+    decision: {
+      packetId: packet.packetId,
+      summary: "KR-only first packet fixture.",
+      decisions: ["005930", "000660", "035420"].map((symbol) => ({
+        market: "KR" as const,
+        symbol,
+        action: "VIRTUAL_BUY" as const,
+        confidence: 0.7,
+        budgetKrw: 20_000_000,
+        thesis: "Fixture requests aggressive first-packet BUY.",
+        riskFactors: ["Paper-only replay risk."],
+        dataRefs: [`historical_snapshot:${symbol}`],
+        claimSupport: [
+          {
+            claim: "Fixture requests aggressive first-packet BUY.",
+            dataRefs: [`historical_snapshot:${symbol}`]
+          }
+        ],
+        expiresAt: "2025-01-02T00:05:00.000Z"
+      }))
+    },
+    failure: null,
+    command: null
+  }));
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      constraints: {
+        maxNewPositions: 5,
+        maxBudgetPerSymbolKrw: 20_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      allocationPolicy: {
+        policyName: "aggressive_paper_allocation",
+        targetExposureRatio: 0.85,
+        minCashReserveRatio: 0.05,
+        maxBudgetPerDecisionRatio: 0.2,
+        maxSymbolExposureRatio: 0.25,
+        deploymentRampDays: 10,
+        maxInitialDeploymentRatio: 0.25,
+        maxInitialOpenPositions: 2,
+        maxNewPositionsPerDay: 2,
+        maxConcurrentPositions: 5,
+        positionSlotRampDays: 10,
+        marketTargetExposureRatios: {
+          KR: 0.425,
+          US: 0.425
+        }
+      },
+      decisionProvider: provider
+    },
+    {
+      initialPortfolio: portfolio({ cashKrw: 100_000_000 }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0900",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 10_000
+        }),
+        snapshot({
+          snapshotId: "hist_000660_0900",
+          symbol: "000660",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 10_000
+        }),
+        snapshot({
+          snapshotId: "hist_035420_0900",
+          symbol: "035420",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 10_000
+        })
+      ]
+    }
+  );
+
+  const allocation = result.packets[0]?.portfolioAllocation;
+  assert.equal(allocation?.rampDayIndex, 1);
+  assert.equal(allocation?.scheduledExposureCeilingRatio, 0.25);
+  assert.equal(
+    allocation?.marketAllocations?.KR?.maxAdditionalBuyBudgetKrw,
+    12_500_000
+  );
+  assert.equal(
+    allocation?.marketAllocations?.US?.maxAdditionalBuyBudgetKrw,
+    12_500_000
+  );
+  assert.deepEqual(
+    result.decisions[0]?.decisions.map((item) => item.action),
+    ["VIRTUAL_BUY", "VIRTUAL_HOLD", "VIRTUAL_HOLD"]
+  );
+  assert.deepEqual(
+    result.decisions[0]?.decisions.map((item) => item.budgetKrw),
+    [12_500_000, 0, 0]
+  );
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0]?.amountKrw, 12_500_000);
+  assert.equal(result.finalPortfolio.cashKrw, 87_500_000);
+  assert.equal(
+    result.auditEvents.some(
+      (event) => event.eventType === "HISTORICAL_DECISION_ALLOCATION_CAPPED"
+    ),
+    true
+  );
 });
 
 test("codex historical replay runner skips paper orders on provider failure", async () => {
@@ -513,12 +675,13 @@ function runnerOptions(): Omit<
   };
 }
 
-function portfolio(): VirtualPortfolio {
+function portfolio(overrides: Partial<VirtualPortfolio> = {}): VirtualPortfolio {
   return {
     portfolioId: "virtual_default",
     cashKrw: 1_000_000,
     positions: [],
-    updatedAt: "2025-01-02T09:00:00+09:00"
+    updatedAt: "2025-01-02T09:00:00+09:00",
+    ...overrides
   };
 }
 

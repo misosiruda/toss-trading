@@ -7,7 +7,7 @@ export const endpoints = {
   replay: "/replay/report",
   replayProgress: "/replay/progress",
   batchReplay: "/batch/replay/report",
-  batchRuns: "/batch/replay/runs?limit=50",
+  batchRuns: "/batch/replay/runs?limit=50&includeLatestRunArtifacts=1",
   scheduler: "/scheduler/status",
   source: "/source/health",
   packets: "/market/packets?limit=5",
@@ -39,6 +39,30 @@ export async function fetchJson(path) {
     throw new Error(`${path} returned ${response.status}`);
   }
   return await response.json();
+}
+
+export async function postJson(path, payload) {
+  const response = await fetch(path, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+      "x-toss-trading-operation": "paper-simulation-create"
+    },
+    body: JSON.stringify(payload)
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      typeof json?.message === "string"
+        ? json.message
+        : `${path} returned ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = json;
+    throw error;
+  }
+  return json;
 }
 
 export function endpointErrorMessage(path, error) {

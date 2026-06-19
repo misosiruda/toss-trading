@@ -99,6 +99,161 @@ test("paper allocation snapshot calculates market target exposure budgets", () =
   );
 });
 
+test("paper allocation snapshot applies deployment ramp and market reserve", () => {
+  const snapshot = buildPaperAllocationSnapshot({
+    portfolio: portfolio({ cashKrw: 100_000_000 }),
+    policy: {
+      policyName: "aggressive_paper_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.25,
+      deploymentRampDays: 10,
+      rampDayIndex: 1,
+      maxInitialDeploymentRatio: 0.25,
+      maxDailyGrossBuyRatio: 0.12,
+      maxInitialOpenPositions: 2,
+      maxNewPositionsPerDay: 2,
+      maxConcurrentPositions: 5,
+      positionSlotRampDays: 10,
+      marketTargetExposureRatios: {
+        KR: 0.425,
+        US: 0.425
+      }
+    }
+  });
+
+  assert.equal(snapshot.targetExposureRatio, 0.85);
+  assert.equal(snapshot.scheduledExposureCeilingRatio, 0.25);
+  assert.equal(snapshot.opportunityReserveRatio, 0.6);
+  assert.equal(snapshot.scheduledExposureHeadroomKrw, 25_000_000);
+  assert.equal(snapshot.maxAdditionalBuyBudgetKrw, 25_000_000);
+  assert.equal(snapshot.maxBudgetPerDecisionKrw, 20_000_000);
+  assert.equal(snapshot.scheduledOpenPositionCeiling, 2);
+  assert.equal(snapshot.remainingNewPositionSlots, 2);
+  assert.equal(
+    snapshot.marketAllocations?.KR?.scheduledOpenPositionCeiling,
+    1
+  );
+  assert.equal(
+    snapshot.marketAllocations?.US?.scheduledOpenPositionCeiling,
+    1
+  );
+  assert.equal(
+    snapshot.marketAllocations?.KR?.scheduledTargetExposureRatio,
+    0.125
+  );
+  assert.equal(
+    snapshot.marketAllocations?.KR?.maxAdditionalBuyBudgetKrw,
+    12_500_000
+  );
+  assert.equal(
+    snapshot.marketAllocations?.US?.maxAdditionalBuyBudgetKrw,
+    12_500_000
+  );
+});
+
+test("paper allocation snapshot caps market position slots proportionally", () => {
+  const snapshot = buildPaperAllocationSnapshot({
+    portfolio: portfolio({
+      cashKrw: 600_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-14T09:00:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-14T09:00:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "035900",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-14T09:00:00+09:00"
+        },
+        {
+          market: "US",
+          symbol: "AMZN",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-14T09:00:00+09:00"
+        }
+      ]
+    }),
+    policy: {
+      policyName: "aggressive_paper_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.25,
+      deploymentRampDays: 10,
+      rampDayIndex: 10,
+      maxInitialDeploymentRatio: 0.25,
+      maxDailyGrossBuyRatio: 0.12,
+      maxInitialOpenPositions: 2,
+      maxNewPositionsPerDay: 2,
+      maxConcurrentPositions: 5,
+      positionSlotRampDays: 10,
+      marketTargetExposureRatios: {
+        KR: 0.425,
+        US: 0.425
+      }
+    }
+  });
+
+  assert.equal(snapshot.scheduledOpenPositionCeiling, 5);
+  assert.equal(snapshot.remainingNewPositionSlots, 1);
+  assert.equal(snapshot.marketAllocations?.KR?.currentOpenPositionCount, 3);
+  assert.equal(snapshot.marketAllocations?.KR?.scheduledOpenPositionCeiling, 3);
+  assert.equal(
+    snapshot.marketAllocations?.KR?.remainingScheduledOpenPositionSlots,
+    0
+  );
+  assert.equal(snapshot.marketAllocations?.US?.currentOpenPositionCount, 1);
+  assert.equal(snapshot.marketAllocations?.US?.scheduledOpenPositionCeiling, 3);
+  assert.equal(
+    snapshot.marketAllocations?.US?.remainingScheduledOpenPositionSlots,
+    2
+  );
+});
+
+test("paper allocation snapshot applies daily gross buy cap after first ramp day", () => {
+  const snapshot = buildPaperAllocationSnapshot({
+    portfolio: portfolio({ cashKrw: 100_000_000 }),
+    policy: {
+      policyName: "aggressive_paper_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.25,
+      deploymentRampDays: 10,
+      rampDayIndex: 2,
+      maxInitialDeploymentRatio: 0.25,
+      maxDailyGrossBuyRatio: 0.12,
+      maxInitialOpenPositions: 2,
+      maxNewPositionsPerDay: 2,
+      maxConcurrentPositions: 5,
+      positionSlotRampDays: 10
+    }
+  });
+
+  assert.equal(snapshot.scheduledExposureCeilingRatio, 0.316667);
+  assert.equal(snapshot.maxDailyGrossBuyBudgetKrw, 12_000_000);
+  assert.equal(snapshot.maxBudgetPerDecisionKrw, 12_000_000);
+});
+
 function portfolio(overrides: Partial<VirtualPortfolio> = {}): VirtualPortfolio {
   return {
     portfolioId: "virtual_default",

@@ -8,6 +8,7 @@ import {
   showDashboardLoadingStatus,
   showFileModeNotice
 } from "./dashboardStatusRenderers.js";
+import { currentSimulationDashboardData } from "./currentSimulationData.js";
 import {
   bindDecisionFilterControls,
   flattenDecisionRecords,
@@ -45,6 +46,7 @@ import {
   scheduleReplayProgressPolling
 } from "./replayProgressCoordinator.js";
 import { bindDashboardNavigation } from "./router.js";
+import { bindSimulationFormControls } from "./simulationForm.js";
 import { state } from "./state.js";
 import {
   rememberSymbolMetadata,
@@ -64,13 +66,27 @@ document.getElementById("refresh-button")?.addEventListener("click", () => {
   void loadDashboard().catch(() => undefined);
 });
 
+window.addEventListener("batch-runs-refreshed", (event) => {
+  const payload = event.detail;
+  if (!payload || !state.lastEndpointData) {
+    return;
+  }
+  event.preventDefault();
+  state.lastEndpointData = {
+    ...state.lastEndpointData,
+    batchRuns: payload
+  };
+  renderDashboard(state.lastEndpointData);
+});
+
 const dashboardNavigation = bindDashboardNavigation({
   isFileMode,
-  onVirtualReplaysPage: () => void refreshBatchRuns().catch(() => undefined),
+  onBatchRunsPage: () => void refreshBatchRuns().catch(() => undefined),
   onOtherPage: clearBatchRunsPolling
 });
 
 bindDecisionFilterControls();
+bindSimulationFormControls();
 
 dashboardNavigation.applyDashboardRoute();
 if (isFileMode()) {
@@ -86,6 +102,7 @@ async function loadDashboard() {
   const data = await fetchEndpointData();
   const failures = endpointFailures(data);
 
+  state.lastEndpointData = data;
   renderDashboard(data);
   showDashboardEndpointResult(failures);
 }
@@ -95,45 +112,52 @@ function isFileMode() {
 }
 
 function renderDashboard(data) {
-  rememberSymbolMetadata(data);
+  const dashboardData = currentSimulationDashboardData(data);
+  rememberSymbolMetadata(dashboardData);
 
-  const portfolio = data.portfolio?.portfolio ?? null;
-  const reportPortfolio = data.report?.portfolio ?? null;
-  const source = data.source ?? {};
-  const report = data.report ?? {};
+  const portfolio = dashboardData.portfolio?.portfolio ?? null;
+  const reportPortfolio = dashboardData.report?.portfolio ?? null;
+  const source = dashboardData.source ?? {};
+  const report = dashboardData.report ?? {};
 
-  renderDashboardMetrics(data);
+  renderDashboardMetrics(dashboardData);
 
   renderPositions(
     portfolio?.positions ?? [],
     reportPortfolio?.virtualNetWorthKrw ?? null
   );
-  renderSourceSummary(source, data.scheduler);
-  state.auditEvents = data.audit?.events ?? [];
-  state.trades = data.trades?.trades ?? [];
-  state.decisionItems = flattenDecisionRecords(data.decisions?.decisions ?? []);
+  renderSourceSummary(source, dashboardData.scheduler);
+  state.auditEvents = dashboardData.audit?.events ?? [];
+  state.trades = dashboardData.trades?.trades ?? [];
+  state.riskDecisions =
+    dashboardData.currentRunArtifacts?.riskDecisions ??
+    dashboardData.replayProgress?.progress?.recentRiskDecisions ??
+    [];
+  state.decisionItems = flattenDecisionRecords(
+    dashboardData.decisions?.decisions ?? []
+  );
   updateFilterControls();
   renderDecisionTimeline();
-  renderDecisionPerformance(data);
+  renderDecisionPerformance(dashboardData);
   renderDailyReport(report);
-  renderReplayReport(data.replay);
-  renderReplayProgress(data.replayProgress);
-  renderBatchReplayReport(data.batchReplay);
-  renderBatchReplayRuns(data.batchRuns);
-  scheduleBatchRunsPolling(data.batchRuns);
-  renderPortfolioPerformance(data);
-  renderBenchmarkComparison(data);
-  renderExecutionCostDiagnostics(data);
-  renderMarketMonitor(data);
-  renderExposureBreakdown(data);
-  renderEventCoverage(data);
-  renderIncomeGoalPanel(data);
-  scheduleReplayProgressPolling(data.replayProgress, {
+  renderReplayReport(dashboardData.replay);
+  renderReplayProgress(dashboardData.replayProgress);
+  renderBatchReplayReport(dashboardData.batchReplay);
+  renderBatchReplayRuns(dashboardData.batchRuns);
+  scheduleBatchRunsPolling(dashboardData.batchRuns);
+  renderPortfolioPerformance(dashboardData);
+  renderBenchmarkComparison(dashboardData);
+  renderExecutionCostDiagnostics(dashboardData);
+  renderMarketMonitor(dashboardData);
+  renderExposureBreakdown(dashboardData);
+  renderEventCoverage(dashboardData);
+  renderIncomeGoalPanel(dashboardData);
+  scheduleReplayProgressPolling(dashboardData.replayProgress, {
     onCompleted: loadDashboard
   });
   renderRiskSummary(report.riskSummary, report.decisionOutcome);
-  renderPortfolioRiskMetrics(data);
+  renderPortfolioRiskMetrics(dashboardData);
   renderTrades(state.trades);
-  renderPackets(data.packets?.packets ?? []);
-  renderLiveReplaySections(data.replayProgress);
+  renderPackets(dashboardData.packets?.packets ?? []);
+  renderLiveReplaySections(dashboardData.replayProgress);
 }

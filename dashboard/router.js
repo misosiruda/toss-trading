@@ -2,11 +2,11 @@ import { fileModeDashboardUrl, state } from "./state.js";
 
 export function bindDashboardNavigation({
   isFileMode,
-  onVirtualReplaysPage,
+  onBatchRunsPage,
   onOtherPage
 }) {
   document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
-    const route = link.getAttribute("data-dashboard-route") ?? "overview";
+    const route = link.getAttribute("data-dashboard-route") ?? "live";
     const path = dashboardPathForRoute(route);
     if (isFileMode()) {
       link.setAttribute("href", `${fileModeDashboardUrl}${path}`);
@@ -37,7 +37,7 @@ export function bindDashboardNavigation({
     document.documentElement.dataset.dashboardPage = page;
 
     document.querySelectorAll("[data-dashboard-route]").forEach((link) => {
-      const route = link.getAttribute("data-dashboard-route") ?? "overview";
+      const route = link.getAttribute("data-dashboard-route") ?? "live";
       link.classList.toggle("active", route === page);
       if (route === page) {
         link.setAttribute("aria-current", "page");
@@ -47,19 +47,21 @@ export function bindDashboardNavigation({
     });
 
     document.querySelectorAll(".metric-grid").forEach((section) => {
-      section.hidden = page !== "overview";
+      section.hidden = page !== "virtual";
     });
 
     document.querySelectorAll(".content-grid > .panel").forEach((panel) => {
       const pageAttribute = panel.getAttribute("data-dashboard-page");
-      const pages =
-        pageAttribute === null ? ["overview"] : pageAttribute.split(/\s+/);
+      const pages = pageAttribute === null ? ["virtual"] : pageAttribute.split(/\s+/);
       panel.hidden = !pages.includes(page);
     });
 
     document.title = `${dashboardPageLabel(page)} - Toss Trading Paper Dashboard`;
-    if (page === "virtual-replays" && !isFileMode()) {
-      onVirtualReplaysPage();
+    if (
+      (page === "virtual" || page === "active-simulation" || page === "history") &&
+      !isFileMode()
+    ) {
+      onBatchRunsPage();
     } else {
       onOtherPage();
     }
@@ -67,27 +69,48 @@ export function bindDashboardNavigation({
 }
 
 export function dashboardPageFromPath(pathname) {
+  if (pathname.startsWith("/dashboard/virtual/simulations/new")) {
+    return "new-simulation";
+  }
+  if (pathname.startsWith("/dashboard/virtual/simulations/current")) {
+    return "active-simulation";
+  }
+  if (pathname.startsWith("/dashboard/virtual/simulations")) {
+    return "history";
+  }
+  if (pathname.startsWith("/dashboard/virtual/validation")) {
+    return "validation";
+  }
   if (pathname.startsWith("/dashboard/virtual-replays")) {
-    return "virtual-replays";
+    return "active-simulation";
   }
   if (pathname.startsWith("/dashboard/batch-summary")) {
-    return "batch-summary";
+    return "validation";
   }
-  return "overview";
+  if (pathname.startsWith("/dashboard/virtual")) {
+    return "virtual";
+  }
+  return "live";
 }
 
 export function dashboardPageLabel(page) {
   return {
-    overview: "개요",
-    "virtual-replays": "가상 투자",
-    "batch-summary": "총합 결과"
-  }[page] ?? "개요";
+    live: "Live",
+    virtual: "가상 투자",
+    "new-simulation": "새 가상 투자",
+    "active-simulation": "실행 상세",
+    history: "히스토리",
+    validation: "검증 센터"
+  }[page] ?? "Live";
 }
 
 export function dashboardPathForRoute(route) {
   return {
-    overview: "",
-    "virtual-replays": "/virtual-replays",
-    "batch-summary": "/batch-summary"
+    live: "",
+    virtual: "/virtual",
+    "new-simulation": "/virtual/simulations/new",
+    "active-simulation": "/virtual/simulations/current",
+    history: "/virtual/simulations",
+    validation: "/virtual/validation"
   }[route] ?? "";
 }

@@ -44,7 +44,9 @@ test("historical replay prompt adds no-lookahead boundaries", () => {
   assert.match(prompt, /packet.generatedAt is the simulated current time/);
   assert.match(prompt, /Do not infer, request, or use market data after/);
   assert.match(prompt, /Do not use future prices/);
-  assert.match(prompt, /complete evidence set/);
+  assert.match(prompt, /candidate dataRefs/);
+  assert.match(prompt, /complete evidence citation set/);
+  assert.match(prompt, /sourceRefs are raw backend trace references/);
   assert.match(prompt, /return at least one decision item/);
   assert.match(prompt, /empty decisions array only when/);
 });

@@ -19,6 +19,69 @@ test("validates decision references against packet candidate source refs", () =>
   assert.deepEqual(result.rejectCodes, []);
 });
 
+test("validates decision references against packet candidate data refs when present", () => {
+  const stableRefPacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        dataRefs: ["candidate.KR.005930.source.0"]
+      },
+      packet().candidates[1]!
+    ]
+  });
+
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: stableRefPacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(stableRefPacket),
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          dataRefs: ["candidate.KR.005930.source.0"],
+          claimSupport: [
+            {
+              claim: "Stable candidate dataRef supports the paper decision.",
+              dataRefs: ["candidate.KR.005930.source.0"]
+            }
+          ]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.rejectCodes, []);
+});
+
+test("rejects raw source refs when packet candidate data refs are present", () => {
+  const stableRefPacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        dataRefs: ["candidate.KR.005930.source.0"]
+      },
+      packet().candidates[1]!
+    ]
+  });
+
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: stableRefPacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(stableRefPacket)
+    })
+  });
+
+  assert.equal(result.approved, false);
+  assert.ok(
+    result.rejectCodes.includes("VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE")
+  );
+  assert.ok(
+    result.rejectCodes.includes(
+      "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE"
+    )
+  );
+});
+
 test("rejects packet mismatches before paper order execution", () => {
   const result = validateVirtualDecisionAgainstPacket({
     packet: packet(),
@@ -200,6 +263,41 @@ test("accepts feature refs copied from the same packet candidate", () => {
         {
           ...decision().decisions[0]!,
           featureRefs: ["candidate.KR.005930.score"]
+        }
+      ]
+    })
+  });
+
+  assert.equal(result.approved, true);
+  assert.deepEqual(result.rejectCodes, []);
+});
+
+test("accepts collectedAt and staleAfter feature refs when advertised by candidate", () => {
+  const featurePacket = packet({
+    candidates: [
+      {
+        ...packet().candidates[0]!,
+        featureRefs: [
+          "candidate.KR.005930.collectedAt",
+          "candidate.KR.005930.staleAfter"
+        ]
+      }
+    ]
+  });
+  const result = validateVirtualDecisionAgainstPacket({
+    packet: featurePacket,
+    decision: decision({
+      packetHash: createMarketPacketHash(featurePacket),
+      decisions: [
+        {
+          ...decision().decisions[0]!,
+          featureRefs: ["candidate.KR.005930.collectedAt"],
+          claimSupport: [
+            {
+              claim: "Candidate timestamp is explicitly advertised as evidence.",
+              featureRefs: ["candidate.KR.005930.staleAfter"]
+            }
+          ]
         }
       ]
     })

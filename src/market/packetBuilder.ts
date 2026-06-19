@@ -14,6 +14,7 @@ import {
   type PortfolioAllocation,
   type VirtualPortfolio
 } from "../domain/schemas.js";
+import { buildCandidateDataRefs } from "./candidateDataRefs.js";
 import {
   buildPaperAllocationSnapshot,
   type PaperAllocationPolicy
@@ -77,6 +78,8 @@ interface CandidateEligibility {
   cooldownActive: boolean;
 }
 
+const maxPacketCandidateCount = 20;
+
 export class MarketPacketBuilder {
   constructor(private readonly options: MarketPacketBuilderOptions) {}
 
@@ -94,7 +97,7 @@ export class MarketPacketBuilder {
             policy: this.options.allocationPolicy
           });
 
-    const candidates = input.candidates
+    const normalizedCandidates = input.candidates
       .flatMap((candidate): MarketCandidate[] => {
         if (!candidate.sourceRefs || candidate.sourceRefs.length === 0) {
           warnings.push(
@@ -122,8 +125,12 @@ export class MarketPacketBuilder {
           )
         ];
       })
-      .sort(compareCandidates)
-      .slice(0, this.options.maxCandidates);
+      .sort(compareCandidates);
+    const candidates = selectPacketCandidates({
+      candidates: normalizedCandidates,
+      portfolio: input.portfolio,
+      maxCandidates: this.options.maxCandidates
+    });
 
     const packet = parseWithSchema(
       marketPacketSchema,
@@ -182,6 +189,7 @@ function normalizeCandidate(
   scoring: Pick<MarketPacketBuilderOptions, "maxCandidates">
 ): MarketCandidate {
   const featureRefs = buildCandidateFeatureRefs(candidate);
+  const dataRefs = buildCandidateDataRefs(candidate);
   const normalized: MarketCandidate = {
     market: candidate.market,
     symbol: candidate.symbol,
@@ -201,6 +209,7 @@ function normalizeCandidate(
     budgetTierAllowed: eligibility.budgetTierAllowed,
     positionExists: eligibility.positionExists,
     cooldownActive: eligibility.cooldownActive,
+    dataRefs,
     sourceRefs: candidate.sourceRefs ?? [],
     collectedAt: defaults.collectedAt,
     staleAfter: defaults.staleAfter
@@ -284,6 +293,8 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
     refs.push(`${prefix}.exDividendDate`);
   }
 
+  refs.push(`${prefix}.collectedAt`);
+  refs.push(`${prefix}.staleAfter`);
   refs.push(`${prefix}.buyEligible`);
   refs.push(`${prefix}.sellEligible`);
   refs.push(`${prefix}.blockedReasonCodes`);
@@ -452,6 +463,9 @@ function deriveCandidateEligibility(input: {
   const cooldownActive = input.candidate.cooldownActive === true;
   const marketAllocation =
     input.portfolioAllocation?.marketAllocations?.[input.candidate.market];
+  const maxOpenPositionCount =
+    input.portfolioAllocation?.scheduledOpenPositionCeiling ??
+    input.constraints.maxNewPositions;
   const buyBlockedReasonCodes: string[] = [];
   const sellBlockedReasonCodes: string[] = [];
 
@@ -463,9 +477,23 @@ function deriveCandidateEligibility(input: {
   }
   if (
     !positionExists &&
-    input.portfolio.positions.length >= input.constraints.maxNewPositions
+    input.portfolio.positions.length >= maxOpenPositionCount
   ) {
     buyBlockedReasonCodes.push("MAX_NEW_POSITIONS_REACHED");
+  }
+  if (
+    !positionExists &&
+    input.portfolioAllocation?.remainingNewPositionSlots !== undefined &&
+    input.portfolioAllocation.remainingNewPositionSlots <= 0
+  ) {
+    buyBlockedReasonCodes.push("MAX_NEW_POSITIONS_REACHED");
+  }
+  if (
+    !positionExists &&
+    marketAllocation?.remainingScheduledOpenPositionSlots !== undefined &&
+    marketAllocation.remainingScheduledOpenPositionSlots <= 0
+  ) {
+    buyBlockedReasonCodes.push("MARKET_POSITION_SLOTS_REACHED");
   }
   if (
     input.portfolio.cashKrw <= 0 ||
@@ -564,6 +592,48 @@ function compareCandidates(left: MarketCandidate, right: MarketCandidate): numbe
   }
 
   return (right.score ?? 0) - (left.score ?? 0);
+}
+
+function selectPacketCandidates(input: {
+  candidates: MarketCandidate[];
+  portfolio: VirtualPortfolio;
+  maxCandidates: number;
+}): MarketCandidate[] {
+  const positionKeys = new Set(
+    input.portfolio.positions
+      .filter((position) => position.quantity > 0)
+      .map((position) => `${position.market}:${position.symbol}`)
+  );
+  const selected = input.candidates.slice(0, input.maxCandidates);
+  const selectedKeys = new Set(selected.map(candidateKey));
+
+  for (const candidate of input.candidates) {
+    const key = candidateKey(candidate);
+    if (!positionKeys.has(key) || selectedKeys.has(key)) {
+      continue;
+    }
+    selected.push(candidate);
+    selectedKeys.add(key);
+  }
+
+  if (selected.length <= maxPacketCandidateCount) {
+    return selected;
+  }
+
+  let overflow = selected.length - maxPacketCandidateCount;
+  for (let index = selected.length - 1; index >= 0 && overflow > 0; index -= 1) {
+    if (positionKeys.has(candidateKey(selected[index]!))) {
+      continue;
+    }
+    selected.splice(index, 1);
+    overflow -= 1;
+  }
+
+  return selected.slice(0, maxPacketCandidateCount);
+}
+
+function candidateKey(candidate: Pick<MarketCandidate, "market" | "symbol">): string {
+  return `${candidate.market}:${candidate.symbol}`;
 }
 
 function clampScore(score: number): number {

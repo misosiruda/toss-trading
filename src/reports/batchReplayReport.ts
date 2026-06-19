@@ -98,8 +98,7 @@ export function buildBatchReplayAggregateReport(
     targetReturnThresholds,
     summary: {
       runCount: records.length,
-      completedCount: records.filter((record) => record.status === "completed")
-        .length,
+      completedCount: records.filter(isCompletedRunRecord).length,
       skippedCount: records.filter((record) => record.status === "skipped")
         .length,
       failedCount: records.filter((record) => record.status === "failed").length,
@@ -154,7 +153,7 @@ function summarizeGroup(
   records: BatchReplayRunRecord[],
   targetReturnThresholds: number[]
 ): BatchReplayGroupSummary {
-  const completed = records.filter((record) => record.status === "completed");
+  const completed = records.filter(isCompletedRunRecord);
   const returnSamples = completed.filter(hasReturnSample);
   const returns = returnSamples.map((record) => record.summary!.totalReturnRatio!);
   const finalNetWorthValues = completed
@@ -313,9 +312,16 @@ function countRegimesByMarket(
 
 function hasReturnSample(record: BatchReplayRunRecord): boolean {
   return (
-    record.status === "completed" &&
+    isCompletedRunRecord(record) &&
     record.summary?.totalReturnRatio !== null &&
     record.summary?.totalReturnRatio !== undefined
+  );
+}
+
+function isCompletedRunRecord(record: BatchReplayRunRecord): boolean {
+  return (
+    record.status === "completed" ||
+    record.status === "completed_with_failures"
   );
 }
 

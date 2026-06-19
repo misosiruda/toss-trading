@@ -39,6 +39,7 @@ export interface HistoricalReplayWorkflowOptions {
   allocationPolicy?: PaperAllocationPolicy;
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
+  tickDelayMs?: number;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;
@@ -97,7 +98,10 @@ export function createHistoricalReplayWorkflowPlan(
         }),
     ...(input.options.paperExitPolicy === undefined
       ? {}
-      : { paperExitPolicy: input.options.paperExitPolicy })
+      : { paperExitPolicy: input.options.paperExitPolicy }),
+    ...(input.options.tickDelayMs === undefined
+      ? {}
+      : { tickDelayMs: input.options.tickDelayMs })
   };
 
   return {

@@ -196,7 +196,7 @@ export function currentPortfolioSummary(data, timeline) {
       portfolioPointFromVirtualPortfolio(
         progress.currentPortfolio,
         progress.currentPortfolio.simulatedAt,
-        progress.recentPackets?.[0]
+        progress.recentPackets?.at(-1)
       )
     );
   }

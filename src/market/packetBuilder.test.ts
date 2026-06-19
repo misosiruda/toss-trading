@@ -57,6 +57,39 @@ test("MarketPacketBuilder trims candidates to maxCandidates", () => {
   );
 });
 
+test("MarketPacketBuilder preserves held candidates beyond maxCandidates", () => {
+  const result = builder(2).build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "000003",
+          quantity: 1,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 10_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [
+      candidate("000001", 1),
+      candidate("000002", 2),
+      candidate("000003", 3)
+    ]
+  });
+
+  assert.deepEqual(
+    result.packet.candidates.map((item) => item.symbol),
+    ["000001", "000002", "000003"]
+  );
+  const held = result.packet.candidates.find(
+    (item) => item.symbol === "000003"
+  )!;
+  assert.equal(held.positionExists, true);
+  assert.equal(held.sellEligible, true);
+});
+
 test("MarketPacketBuilder sets packet expiry from ttl", () => {
   const result = builder().build({
     portfolio: portfolio(),
@@ -117,6 +150,16 @@ test("MarketPacketBuilder adds deterministic candidate action eligibility", () =
     normalized.featureRefs?.includes("candidate.KR.005930.buyEligible"),
     true
   );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.005930.collectedAt"),
+    true
+  );
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.005930.staleAfter"),
+    true
+  );
+  assert.deepEqual(normalized.dataRefs, ["candidate.KR.005930.source.0"]);
+  assert.deepEqual(normalized.sourceRefs, ["source_005930"]);
   assert.equal(
     normalized.featureScores?.some(
       (featureScore) =>
@@ -359,6 +402,168 @@ test("MarketPacketBuilder blocks buys when candidate market target is reached", 
     true
   );
   assert.equal(krCandidate.budgetTierAllowed, "NONE");
+  assert.equal(usCandidate.buyEligible, true);
+  assert.equal(usCandidate.budgetTierAllowed, "LARGE");
+});
+
+test("MarketPacketBuilder blocks new buys when scheduled position slots are full", () => {
+  const result = new MarketPacketBuilder({
+    packetId: "packet_test_001",
+    generatedAt,
+    expiresInSeconds: 300,
+    maxCandidates: 2,
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 200_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    allocationPolicy: {
+      policyName: "slot_ramp_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.25,
+      deploymentRampDays: 10,
+      rampDayIndex: 1,
+      maxInitialDeploymentRatio: 0.25,
+      maxInitialOpenPositions: 1,
+      maxNewPositionsPerDay: 1,
+      maxConcurrentPositions: 3,
+      positionSlotRampDays: 10
+    }
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      cashKrw: 800_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [candidate("005930", 1), candidate("000660", 2)]
+  });
+
+  const allocation = result.packet.portfolioAllocation;
+  const existing = result.packet.candidates.find(
+    (item) => item.symbol === "005930"
+  )!;
+  const newCandidate = result.packet.candidates.find(
+    (item) => item.symbol === "000660"
+  )!;
+
+  assert.equal(allocation?.scheduledOpenPositionCeiling, 1);
+  assert.equal(allocation?.remainingNewPositionSlots, 0);
+  assert.equal(existing.buyEligible, true);
+  assert.equal(newCandidate.buyEligible, false);
+  assert.equal(
+    newCandidate.blockedReasonCodes?.includes("MAX_NEW_POSITIONS_REACHED"),
+    true
+  );
+});
+
+test("MarketPacketBuilder preserves US eligibility when KR market slots are full", () => {
+  const result = new MarketPacketBuilder({
+    packetId: "packet_test_001",
+    generatedAt,
+    expiresInSeconds: 300,
+    maxCandidates: 3,
+    constraints: {
+      maxNewPositions: 5,
+      maxBudgetPerSymbolKrw: 200_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    allocationPolicy: {
+      policyName: "market_slot_allocation",
+      targetExposureRatio: 0.85,
+      minCashReserveRatio: 0.05,
+      maxBudgetPerDecisionRatio: 0.2,
+      maxSymbolExposureRatio: 0.25,
+      deploymentRampDays: 10,
+      rampDayIndex: 10,
+      maxInitialDeploymentRatio: 0.25,
+      maxInitialOpenPositions: 2,
+      maxNewPositionsPerDay: 2,
+      maxConcurrentPositions: 5,
+      positionSlotRampDays: 10,
+      marketTargetExposureRatios: {
+        KR: 0.425,
+        US: 0.425
+      }
+    }
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      cashKrw: 600_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "035900",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        },
+        {
+          market: "US",
+          symbol: "AMZN",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [
+      candidate("035900", 1),
+      candidate("010140", 2),
+      { ...candidate("PLTR", 3), market: "US" }
+    ]
+  });
+
+  const krCandidate = result.packet.candidates.find(
+    (item) => item.market === "KR" && item.symbol === "010140"
+  )!;
+  const usCandidate = result.packet.candidates.find(
+    (item) => item.market === "US"
+  )!;
+
+  assert.equal(
+    result.packet.portfolioAllocation?.marketAllocations?.KR
+      ?.scheduledOpenPositionCeiling,
+    3
+  );
+  assert.equal(
+    result.packet.portfolioAllocation?.marketAllocations?.US
+      ?.remainingScheduledOpenPositionSlots,
+    2
+  );
+  assert.equal(krCandidate.buyEligible, false);
+  assert.equal(
+    krCandidate.blockedReasonCodes?.includes("MARKET_POSITION_SLOTS_REACHED"),
+    true
+  );
   assert.equal(usCandidate.buyEligible, true);
   assert.equal(usCandidate.budgetTierAllowed, "LARGE");
 });

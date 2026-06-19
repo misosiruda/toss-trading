@@ -128,6 +128,7 @@ export const marketCandidateSchema = z
     budgetTierAllowed: virtualBudgetTierSchema.optional(),
     positionExists: z.boolean().optional(),
     cooldownActive: z.boolean().optional(),
+    dataRefs: z.array(nonEmptyStringSchema).min(1).optional(),
     sourceRefs: z.array(nonEmptyStringSchema).min(1),
     collectedAt: isoDateTimeSchema,
     staleAfter: isoDateTimeSchema
@@ -151,6 +152,7 @@ export const historicalMarketSnapshotSchema = z
     snapshotId: nonEmptyStringSchema,
     market: marketSchema,
     symbol: nonEmptyStringSchema,
+    name: nonEmptyStringSchema.optional(),
     assetType: assetTypeSchema.optional(),
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
@@ -188,6 +190,14 @@ export const portfolioAllocationSchema = z
     minCashReserveRatio: ratioSchema,
     maxBudgetPerDecisionRatio: ratioSchema,
     maxSymbolExposureRatio: ratioSchema,
+    deploymentRampDays: z.number().int().positive().optional(),
+    rampDayIndex: z.number().int().positive().optional(),
+    maxInitialDeploymentRatio: ratioSchema.optional(),
+    maxDailyGrossBuyRatio: ratioSchema.optional(),
+    maxInitialOpenPositions: z.number().int().nonnegative().optional(),
+    maxNewPositionsPerDay: z.number().int().nonnegative().optional(),
+    maxConcurrentPositions: z.number().int().nonnegative().optional(),
+    positionSlotRampDays: z.number().int().positive().optional(),
     marketTargetExposureRatios: z
       .partialRecord(marketSchema, ratioSchema)
       .optional(),
@@ -200,6 +210,17 @@ export const portfolioAllocationSchema = z
     maxBudgetPerDecisionKrw: moneyKrwSchema,
     maxSymbolExposureKrw: moneyKrwSchema,
     minCashReserveKrw: moneyKrwSchema,
+    scheduledExposureCeilingRatio: ratioSchema.optional(),
+    scheduledExposureHeadroomKrw: moneyKrwSchema.optional(),
+    maxDailyGrossBuyBudgetKrw: moneyKrwSchema.optional(),
+    opportunityReserveRatio: ratioSchema.optional(),
+    scheduledOpenPositionCeiling: z.number().int().nonnegative().optional(),
+    remainingScheduledOpenPositionSlots: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional(),
+    remainingNewPositionSlots: z.number().int().nonnegative().optional(),
     marketAllocations: z
       .partialRecord(
         marketSchema,
@@ -207,10 +228,22 @@ export const portfolioAllocationSchema = z
           .object({
             market: marketSchema,
             targetExposureRatio: ratioSchema,
+            scheduledTargetExposureRatio: ratioSchema.optional(),
             currentExposureRatio: ratioSchema,
             targetExposureGapRatio: ratioSchema,
             targetExposureGapKrw: moneyKrwSchema,
-            maxAdditionalBuyBudgetKrw: moneyKrwSchema
+            maxAdditionalBuyBudgetKrw: moneyKrwSchema,
+            currentOpenPositionCount: z.number().int().nonnegative().optional(),
+            scheduledOpenPositionCeiling: z
+              .number()
+              .int()
+              .nonnegative()
+              .optional(),
+            remainingScheduledOpenPositionSlots: z
+              .number()
+              .int()
+              .nonnegative()
+              .optional()
           })
           .strict()
       )

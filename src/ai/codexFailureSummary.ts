@@ -28,9 +28,26 @@ function summarizeCodexStderr(stderr: string | undefined): string | null {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const relevant = lines.filter(isCodexErrorLine);
-  const selected = (relevant.length > 0 ? relevant : lines).slice(-5);
+  const relevant = codexErrorLinesWithContext(lines);
+  const selected = relevant.length > 0 ? relevant.slice(-12) : lines.slice(-5);
   return truncate(selected.join(" | "), MAX_STDERR_SUMMARY_LENGTH);
+}
+
+function codexErrorLinesWithContext(lines: string[]): string[] {
+  const errorLineIndexes = lines
+    .map((line, index) => (isCodexErrorLine(line) ? index : -1))
+    .filter((index) => index >= 0)
+    .slice(-3);
+  const selected: string[] = [];
+  for (const index of errorLineIndexes) {
+    for (let offset = 0; offset < 6 && index + offset < lines.length; offset += 1) {
+      const line = lines[index + offset];
+      if (line !== undefined && !selected.includes(line)) {
+        selected.push(line);
+      }
+    }
+  }
+  return selected.slice(-12);
 }
 
 function isCodexErrorLine(line: string): boolean {

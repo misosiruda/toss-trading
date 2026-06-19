@@ -21,6 +21,11 @@ export function readCodexDecisionProviderConfig(
     "AI_DECISION_OUTPUT_SCHEMA_PATH",
     "CODEX_OUTPUT_SCHEMA_PATH"
   ]);
+  const modelId = readFirstEnvValue(env, [
+    "AI_DECISION_MODEL_ID",
+    "CODEX_DECISION_MODEL_ID",
+    "CODEX_MODEL"
+  ]);
   return {
     enabled: options.enabled ?? env.AI_DECISION_ENABLED === "true",
     codexPath: readFirstEnvValue(env, ["CODEX_EXEC_PATH"]) ?? "codex",
@@ -43,6 +48,7 @@ export function readCodexDecisionProviderConfig(
         "CODEX_ALLOW_WEB_SEARCH",
         "CODEX_DECISION_ALLOW_WEB_SEARCH"
       ]) === "true",
+    ...(modelId === undefined ? {} : { modelId }),
     ...(outputSchemaPath === undefined ? {} : { outputSchemaPath }),
     ...(options.ephemeral === true ? { ephemeral: true } : {})
   };

@@ -265,6 +265,10 @@ function record(
             tradeCount: 1,
             decisionProviderCallCount: 1,
             aiDecisionFailureCount,
+            aiDecisionFailureReasons:
+              aiDecisionFailureCount > 0 ? ["fixture provider failure"] : [],
+            lastAiDecisionFailureSummary:
+              aiDecisionFailureCount > 0 ? "fixture provider failure" : null,
             rejectedCount: 0,
             meaningfulRejectCount: 0,
             dustRejectCount: 0,

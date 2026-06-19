@@ -42,7 +42,14 @@ test("paper risk profile exposes aggressive paper-only limits", () => {
   assert.equal(profile.riskPolicy.minCashReserveRatio, 0.05);
   assert.equal(profile.allocationPolicy.targetExposureRatio, 0.85);
   assert.equal(profile.allocationPolicy.maxBudgetPerDecisionRatio, 0.2);
-  assert.equal(profile.allocationPolicy.maxSymbolExposureRatio, 0.3);
+  assert.equal(profile.allocationPolicy.maxSymbolExposureRatio, 0.25);
+  assert.equal(profile.allocationPolicy.deploymentRampDays, 10);
+  assert.equal(profile.allocationPolicy.maxInitialDeploymentRatio, 0.25);
+  assert.equal(profile.allocationPolicy.maxDailyGrossBuyRatio, 0.12);
+  assert.equal(profile.allocationPolicy.maxInitialOpenPositions, 2);
+  assert.equal(profile.allocationPolicy.maxNewPositionsPerDay, 2);
+  assert.equal(profile.allocationPolicy.maxConcurrentPositions, 5);
+  assert.equal(profile.allocationPolicy.positionSlotRampDays, 10);
 });
 
 test("paper risk profile applies explicit CLI budget override to policy", () => {
@@ -64,7 +71,7 @@ test("paper risk profile scales aggressive paper limits from initial cash", () =
 
   assert.equal(profile.constraints.maxBudgetPerSymbolKrw, 2_000_000);
   assert.equal(profile.riskPolicy.maxBudgetPerDecisionKrw, 2_000_000);
-  assert.equal(profile.riskPolicy.maxSymbolExposureKrw, 3_000_000);
+  assert.equal(profile.riskPolicy.maxSymbolExposureKrw, 2_500_000);
   assert.equal(profile.riskPolicy.targetExposureRatio, 0.85);
   assert.equal(profile.riskPolicy.minCashReserveRatio, 0.05);
 });

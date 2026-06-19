@@ -146,6 +146,12 @@ Codex CLI 판단을 사용할 때도 이 경로는 paper-only `virtual_decision`
 npm run paper:run-from-market-packet -- --data-dir data/paper
 ```
 
+Yahoo snapshot을 쓰지 않고 TossInvest read-only `day:1` chart 캔들을 historical replay 입력으로 만들 수도 있습니다. 이 경로는 주문/계좌 mutation 없이 public search POST와 chart GET만 사용하며 `historical-market-snapshots.jsonl`을 생성합니다.
+
+```powershell
+npm run historical:tossctl:ingest -- --enable --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --interval 1d --start-date 2024-01-01 --end-date 2026-06-17 --count 450 --allow-partial
+```
+
 저장된 `historical-market-snapshots.jsonl`이 있다면 과거 데이터를 simulated time으로 빠르게 흘려보내는 historical replay report를 만들 수 있습니다. dry-run은 AI 호출 없이 deterministic fixture decision으로 `historical-replay-report.json`을 생성합니다.
 
 ```powershell
@@ -164,7 +170,7 @@ npm run historical:replay -- data/paper 2025-01-02T09:00:00+09:00 2025-01-02T15:
 npm run dashboard -- --data-dir data/paper
 ```
 
-기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events` 같은 read-only endpoint만 호출합니다. `/replay/report`는 저장된 `historical-replay-report.json`을 조회할 뿐 dashboard에서 replay를 실행하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
+기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events` 같은 read-only endpoint를 호출합니다. 새 가상 투자 화면의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
 Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. 이 계획은 실투자 활성화가 아니라, 사용자가 dashboard에서 가상 투자 조건을 선택하고 실행 중인 paper simulation과 지난 portfolio/report를 검증할 수 있게 만드는 방향을 다룹니다.
 

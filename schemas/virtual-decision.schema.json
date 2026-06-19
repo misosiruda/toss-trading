@@ -50,9 +50,11 @@
               "holdReasonCode",
               "confidence",
               "budgetKrw",
+              "maxBudgetKrw",
               "thesis",
               "riskFactors",
               "dataRefs",
+              "featureRefs",
               "claimSupport",
               "expiresAt"
             ],
@@ -116,15 +118,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim"],
-                  "anyOf": [
-                    {
-                      "required": ["dataRefs"]
-                    },
-                    {
-                      "required": ["featureRefs"]
-                    }
-                  ],
+                  "required": ["claim", "dataRefs", "featureRefs"],
                   "properties": {
                     "claim": {
                       "type": "string"
@@ -158,9 +152,11 @@
               "action",
               "confidence",
               "budgetKrw",
+              "maxBudgetKrw",
               "thesis",
               "riskFactors",
               "dataRefs",
+              "featureRefs",
               "claimSupport",
               "expiresAt"
             ],
@@ -211,15 +207,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim"],
-                  "anyOf": [
-                    {
-                      "required": ["dataRefs"]
-                    },
-                    {
-                      "required": ["featureRefs"]
-                    }
-                  ],
+                  "required": ["claim", "dataRefs", "featureRefs"],
                   "properties": {
                     "claim": {
                       "type": "string"
@@ -253,10 +241,106 @@
               "action",
               "confidence",
               "budgetKrw",
+              "maxBudgetKrw",
               "reduceOnly",
               "thesis",
               "riskFactors",
               "dataRefs",
+              "featureRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_SELL"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
+              "reduceOnly": {
+                "type": "boolean"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs", "featureRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "maxBudgetKrw",
+              "sellQuantity",
+              "reduceOnly",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "featureRefs",
               "claimSupport",
               "expiresAt"
             ],
@@ -284,11 +368,293 @@
               "sellQuantity": {
                 "type": "number"
               },
+              "reduceOnly": {
+                "type": "boolean"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs", "featureRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "maxBudgetKrw",
+              "sellRatio",
+              "reduceOnly",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "featureRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_SELL"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
               "sellRatio": {
                 "type": "number"
               },
+              "reduceOnly": {
+                "type": "boolean"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs", "featureRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "maxBudgetKrw",
+              "targetWeightPct",
+              "reduceOnly",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "featureRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_SELL"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "maxBudgetKrw": {
+                "type": "integer"
+              },
               "targetWeightPct": {
                 "type": "number"
+              },
+              "reduceOnly": {
+                "type": "boolean"
+              },
+              "thesis": {
+                "type": "string"
+              },
+              "riskFactors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dataRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "featureRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claimSupport": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["claim", "dataRefs", "featureRefs"],
+                  "properties": {
+                    "claim": {
+                      "type": "string"
+                    },
+                    "dataRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "featureRefs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "market",
+              "action",
+              "confidence",
+              "budgetKrw",
+              "maxBudgetKrw",
+              "sellAll",
+              "reduceOnly",
+              "thesis",
+              "riskFactors",
+              "dataRefs",
+              "featureRefs",
+              "claimSupport",
+              "expiresAt"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": ["KR", "US"]
+              },
+              "action": {
+                "type": "string",
+                "enum": ["VIRTUAL_SELL"]
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "budgetKrw": {
+                "type": "integer"
+              },
+              "maxBudgetKrw": {
+                "type": "integer"
               },
               "sellAll": {
                 "type": "boolean"
@@ -322,15 +688,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["claim"],
-                  "anyOf": [
-                    {
-                      "required": ["dataRefs"]
-                    },
-                    {
-                      "required": ["featureRefs"]
-                    }
-                  ],
+                  "required": ["claim", "dataRefs", "featureRefs"],
                   "properties": {
                     "claim": {
                       "type": "string"

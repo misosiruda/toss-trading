@@ -119,6 +119,14 @@ export const historicalReplayRunConfigurationSchema = z
         minCashReserveRatio: z.number().min(0).max(1),
         maxBudgetPerDecisionRatio: z.number().min(0).max(1),
         maxSymbolExposureRatio: z.number().min(0).max(1),
+        deploymentRampDays: z.number().int().positive().optional(),
+        rampDayIndex: z.number().int().positive().optional(),
+        maxInitialDeploymentRatio: z.number().min(0).max(1).optional(),
+        maxDailyGrossBuyRatio: z.number().min(0).max(1).optional(),
+        maxInitialOpenPositions: z.number().int().nonnegative().optional(),
+        maxNewPositionsPerDay: z.number().int().nonnegative().optional(),
+        maxConcurrentPositions: z.number().int().nonnegative().optional(),
+        positionSlotRampDays: z.number().int().positive().optional(),
         marketTargetExposureRatios: z
           .partialRecord(marketSchema, z.number().min(0).max(1))
           .optional()

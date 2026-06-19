@@ -12,6 +12,7 @@ import {
   HistoricalMarketPacketBuilder,
   HistoricalMarketSnapshotIndex
 } from "../market/historicalPacketBuilder.js";
+import { firstCandidateDecisionDataRef } from "../market/candidateDataRefs.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import {
   buildPaperExitPolicyDecision,
@@ -40,6 +41,7 @@ import {
 } from "./replaySamplingPolicy.js";
 import {
   appendHistoricalReplayAuditEvent,
+  enforceProviderDecisionExecutionCaps,
   executeHistoricalReplayDecisionItems,
   recordHistoricalReplayDecision,
   suppressDecisionItemsForSymbols
@@ -174,6 +176,7 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
     )
   );
   let remainingAdditionalBudgetKrw = allocation.maxAdditionalBuyBudgetKrw;
+  let remainingDecisionBudgetKrw = allocation.maxBudgetPerDecisionKrw;
   let remainingCashBudgetKrw = Math.max(
     0,
     packet.virtualPortfolio.cashKrw - allocation.minCashReserveKrw
@@ -195,6 +198,7 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
       candidate,
       currentSymbolExposureKrw,
       remainingAdditionalBudgetKrw,
+      remainingDecisionBudgetKrw,
       remainingCashBudgetKrw,
       remainingMarketBudgetKrw: remainingMarketBudgetByMarket.get(
         candidate.market
@@ -210,6 +214,7 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
       currentSymbolExposureKrw + budgetKrw
     );
     remainingAdditionalBudgetKrw -= budgetKrw;
+    remainingDecisionBudgetKrw -= budgetKrw;
     remainingCashBudgetKrw -= budgetKrw;
     const remainingMarketBudget = remainingMarketBudgetByMarket.get(
       candidate.market
@@ -306,6 +311,7 @@ function firstPricedBudgetKrw(input: {
   candidate: MarketPacket["candidates"][number];
   currentSymbolExposureKrw: number;
   remainingAdditionalBudgetKrw: number;
+  remainingDecisionBudgetKrw: number;
   remainingCashBudgetKrw: number;
   remainingMarketBudgetKrw?: number | undefined;
 }): number {
@@ -325,6 +331,7 @@ function firstPricedBudgetKrw(input: {
       Math.min(
         input.packet.constraints.maxBudgetPerSymbolKrw,
         allocation.maxBudgetPerDecisionKrw,
+        input.remainingDecisionBudgetKrw,
         input.remainingAdditionalBudgetKrw,
         symbolHeadroomKrw,
         input.remainingCashBudgetKrw,
@@ -350,7 +357,7 @@ function firstSourceRef(
   packet: MarketPacket,
   candidate: MarketPacket["candidates"][number]
 ): string {
-  return candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
+  return firstCandidateDecisionDataRef(candidate, `packet:${packet.packetId}`);
 }
 
 export function runHistoricalReplay(
@@ -395,7 +402,8 @@ export function runHistoricalReplay(
       basePolicy: options.allocationPolicy,
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy,
       snapshots: input.snapshots,
-      simulatedAt
+      simulatedAt,
+      tick
     });
     const packetBuild = new HistoricalMarketPacketBuilder({
       packetId: `${options.packetIdPrefix}_${tick.stepIndex}`,
@@ -459,7 +467,7 @@ export function runHistoricalReplay(
         portfolio: currentPortfolio,
         recordedDecision: recordedExitDecision,
         engine,
-        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -534,9 +542,26 @@ export function runHistoricalReplay(
       continue;
     }
 
+    const cappedDecision = enforceProviderDecisionExecutionCaps({
+      packet,
+      portfolio: currentPortfolio,
+      decision: filteredDecision.decision
+    });
+    if (
+      cappedDecision.cappedItemCount > 0 ||
+      cappedDecision.heldItemCount > 0
+    ) {
+      appendHistoricalReplayAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_ALLOCATION_CAPPED",
+        `${cappedDecision.cappedItemCount} BUY item(s) capped, ${cappedDecision.heldItemCount} BUY item(s) converted to HOLD`,
+        tick
+      );
+    }
+
     const recordedDecision = recordHistoricalReplayDecision({
       packet,
-      decision: filteredDecision.decision,
+      decision: cappedDecision.decision,
       source: "provider",
       decisions,
       auditEvents,
@@ -547,7 +572,7 @@ export function runHistoricalReplay(
       portfolio: currentPortfolio,
       recordedDecision,
       engine,
-      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
       paperExitPolicyState,
       auditEvents,
       riskDecisions,
@@ -604,10 +629,16 @@ export function runHistoricalReplay(
 
 function riskPolicyForTick(
   policy: Partial<VirtualRiskPolicy> | undefined,
-  now: Date
+  now: Date,
+  packet: MarketPacket
 ): Partial<VirtualRiskPolicy> {
+  const scheduledExposureCeilingRatio =
+    packet.portfolioAllocation?.scheduledExposureCeilingRatio;
   return {
     ...(policy ?? {}),
+    ...(scheduledExposureCeilingRatio === undefined
+      ? {}
+      : { targetExposureRatio: scheduledExposureCeilingRatio }),
     now
   };
 }
@@ -617,20 +648,38 @@ function allocationPolicyForTick(input: {
   marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | undefined;
   snapshots: HistoricalMarketSnapshot[];
   simulatedAt: Date;
+  tick: SimulatedTick;
 }): PaperAllocationPolicy | undefined {
   if (input.basePolicy === undefined) {
     return undefined;
   }
   if (input.marketRegimeAllocationPolicy === undefined) {
-    return input.basePolicy;
+    return allocationPolicyWithRampDayIndex(input.basePolicy, input.tick);
   }
 
-  return buildMarketRegimeAllocationPolicy({
+  return allocationPolicyWithRampDayIndex(buildMarketRegimeAllocationPolicy({
     basePolicy: input.basePolicy,
     snapshots: input.snapshots,
     simulatedAt: input.simulatedAt,
     policy: input.marketRegimeAllocationPolicy
-  }).allocationPolicy;
+  }).allocationPolicy, input.tick);
+}
+
+function allocationPolicyWithRampDayIndex(
+  policy: PaperAllocationPolicy,
+  tick: SimulatedTick
+): PaperAllocationPolicy {
+  if (
+    policy.deploymentRampDays === undefined ||
+    policy.rampDayIndex !== undefined
+  ) {
+    return policy;
+  }
+
+  return {
+    ...policy,
+    rampDayIndex: tick.stepIndex + 1
+  };
 }
 
 function appendExitPolicyWarnings(

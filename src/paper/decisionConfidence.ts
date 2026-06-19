@@ -6,6 +6,7 @@ import type {
   VirtualDecisionConfidenceBreakdown,
   VirtualDecisionItem
 } from "../domain/schemas.js";
+import { candidateDecisionDataRefs } from "../market/candidateDataRefs.js";
 
 export function bindVirtualDecisionConfidenceBreakdown(input: {
   decision: VirtualDecision;
@@ -69,7 +70,7 @@ function dataCompleteness(
     return 0;
   }
 
-  const sourceRefs = new Set(candidate.sourceRefs);
+  const sourceRefs = new Set(candidateDecisionDataRefs(candidate));
   const decisionRefs = new Set(decision.dataRefs);
   const coveredSourceCount = Array.from(decisionRefs).filter((dataRef) =>
     sourceRefs.has(dataRef)

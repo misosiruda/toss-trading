@@ -110,7 +110,7 @@ test("first priced fixture uses allocation budget when present", () => {
   assert.equal(result.allocationPolicy?.targetExposureRatio, 0.85);
 });
 
-test("first priced fixture spreads allocation budget across candidates", () => {
+test("first priced fixture applies allocation budget as an aggregate decision cap", () => {
   const result = runHistoricalReplay(
     {
       ...runnerOptions(),
@@ -161,14 +161,20 @@ test("first priced fixture spreads allocation budget across candidates", () => {
     result.decisions[0]?.decisions
       .map((decision) => decision.symbol)
       .sort(),
-    ["000660", "005930", "035420"]
+    ["000660"]
   );
   assert.deepEqual(
     result.decisions[0]?.decisions.map((decision) => decision.budgetKrw),
-    [200_000, 200_000, 200_000]
+    [200_000]
   );
-  assert.equal(result.tradeCount, 3);
-  assert.equal(result.finalPortfolio.cashKrw, 400_000);
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.finalPortfolio.cashKrw, 800_000);
+  assert.equal(
+    result.auditEvents.some(
+      (event) => event.eventType === "HISTORICAL_DECISION_ALLOCATION_CAPPED"
+    ),
+    false
+  );
 });
 
 test("first priced fixture respects market allocation budget", () => {
