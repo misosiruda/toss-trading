@@ -151,6 +151,15 @@ export class HistoricalMarketSnapshotIndex {
       simulatedAt: options.simulatedAt,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds
     });
+    const protectedSymbolKeys = portfolioPositionKeys(portfolio);
+    const freshSnapshotKeys = new Set(selectedSnapshots.map(snapshotSymbolKey));
+    for (const symbolKey of protectedSymbolKeys) {
+      if (!freshSnapshotKeys.has(symbolKey)) {
+        warnings.push(
+          `held position ${symbolKey} excluded: no fresh historical snapshot`
+        );
+      }
+    }
     const featureHistoryBySnapshotId = new Map<
       string,
       HistoricalMarketSnapshot[]
@@ -183,7 +192,8 @@ export class HistoricalMarketSnapshotIndex {
           featureHistoryBySnapshotId.get(snapshot.snapshotId) ?? [snapshot]
         )
       })),
-      maxCandidates: options.maxCandidates
+      maxCandidates: options.maxCandidates,
+      protectedSymbolKeys
     });
 
     const candidates = screenedCandidates.map((candidate, index) =>
@@ -261,6 +271,7 @@ function toCandidateDraft(
   return {
     market: snapshot.market,
     symbol: snapshot.symbol,
+    ...(snapshot.name === undefined ? {} : { name: snapshot.name }),
     ...(snapshot.assetType === undefined ? {} : { assetType: snapshot.assetType }),
     ...(snapshot.assetClass === undefined
       ? {}
@@ -289,12 +300,14 @@ function toCandidateDraft(
 function screenHistoricalCandidates(input: {
   candidates: HistoricalCandidateScreenInput[];
   maxCandidates: number;
+  protectedSymbolKeys?: ReadonlySet<string>;
 }): ScreenedHistoricalCandidate[] {
   if (input.maxCandidates <= 0 || input.candidates.length === 0) {
     return [];
   }
 
   const sorted = [...input.candidates].sort(compareScreenInputs);
+  const protectedSymbolKeys = input.protectedSymbolKeys ?? new Set<string>();
   const marketLimit = Math.max(
     1,
     Math.ceil(input.maxCandidates * maxMarketCandidateShare)
@@ -305,8 +318,31 @@ function screenHistoricalCandidates(input: {
   );
   const selected: ScreenedHistoricalCandidate[] = [];
   const selectedIds = new Set<string>();
+  const selectedById = new Map<string, ScreenedHistoricalCandidate>();
   const marketCounts = new Map<string, number>();
   const assetTypeCounts = new Map<string, number>();
+  const selectCandidate = (
+    candidate: HistoricalCandidateScreenInput,
+    reasonCodes: string[]
+  ): boolean => {
+    const existing = selectedById.get(candidate.snapshot.snapshotId);
+    if (existing !== undefined) {
+      existing.reasonCodes = uniqueReasonCodes([
+        ...existing.reasonCodes,
+        ...reasonCodes
+      ]);
+      return false;
+    }
+
+    const screened: ScreenedHistoricalCandidate = {
+      ...candidate,
+      reasonCodes
+    };
+    selected.push(screened);
+    selectedIds.add(candidate.snapshot.snapshotId);
+    selectedById.set(candidate.snapshot.snapshotId, screened);
+    return true;
+  };
 
   for (const candidate of sorted) {
     if (selected.length >= input.maxCandidates) {
@@ -319,13 +355,10 @@ function screenHistoricalCandidates(input: {
     ) {
       continue;
     }
-    selected.push({
-      ...candidate,
-      reasonCodes: ["HISTORICAL_SCREENER_DIVERSIFIED"]
-    });
-    selectedIds.add(candidate.snapshot.snapshotId);
-    incrementCount(marketCounts, candidate.snapshot.market);
-    incrementCount(assetTypeCounts, assetTypeKey(candidate.snapshot));
+    if (selectCandidate(candidate, ["HISTORICAL_SCREENER_DIVERSIFIED"])) {
+      incrementCount(marketCounts, candidate.snapshot.market);
+      incrementCount(assetTypeCounts, assetTypeKey(candidate.snapshot));
+    }
   }
 
   for (const candidate of sorted) {
@@ -335,11 +368,14 @@ function screenHistoricalCandidates(input: {
     if (selectedIds.has(candidate.snapshot.snapshotId)) {
       continue;
     }
-    selected.push({
-      ...candidate,
-      reasonCodes: ["HISTORICAL_SCREENER_SCORE_FILL"]
-    });
-    selectedIds.add(candidate.snapshot.snapshotId);
+    selectCandidate(candidate, ["HISTORICAL_SCREENER_SCORE_FILL"]);
+  }
+
+  for (const candidate of sorted) {
+    if (!protectedSymbolKeys.has(snapshotSymbolKey(candidate.snapshot))) {
+      continue;
+    }
+    selectCandidate(candidate, ["HISTORICAL_HELD_POSITION"]);
   }
 
   return selected;
@@ -358,6 +394,22 @@ function compareScreenInputs(
 
 function assetTypeKey(snapshot: HistoricalMarketSnapshot): string {
   return snapshot.assetType ?? "UNKNOWN";
+}
+
+function snapshotSymbolKey(snapshot: Pick<HistoricalMarketSnapshot, "market" | "symbol">): string {
+  return `${snapshot.market}:${snapshot.symbol}`;
+}
+
+function portfolioPositionKeys(portfolio: VirtualPortfolio): Set<string> {
+  return new Set(
+    portfolio.positions
+      .filter((position) => position.quantity > 0)
+      .map((position) => `${position.market}:${position.symbol}`)
+  );
+}
+
+function uniqueReasonCodes(reasonCodes: string[]): string[] {
+  return Array.from(new Set(reasonCodes)).sort();
 }
 
 function incrementCount(counts: Map<string, number>, key: string): void {

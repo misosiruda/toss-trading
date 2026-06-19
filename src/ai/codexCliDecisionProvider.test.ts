@@ -9,6 +9,7 @@ import {
   VIRTUAL_RISK_POLICY_VERSION
 } from "../paper/decisionIdentity.js";
 import { CodexCliDecisionProvider } from "./codexCliDecisionProvider.js";
+import { summarizeCodexCliDecisionFailure } from "./codexFailureSummary.js";
 import {
   buildPaperDecisionPrompt,
   PAPER_DECISION_PROMPT_VERSION
@@ -184,6 +185,50 @@ test("provider can build ephemeral codex exec command", async () => {
   assert.equal(runner.calls[0]?.args.includes("--ephemeral"), true);
 });
 
+test("provider can isolate codex exec from user config and plugins", async () => {
+  const runner = new FakeRunner({
+    exitCode: 0,
+    stdout: validDecisionJson,
+    stderr: "",
+    timedOut: false
+  });
+
+  await provider(runner, {
+    ignoreUserConfig: true,
+    disabledFeatures: ["plugins", "apps"]
+  }).decide(packet());
+
+  assert.deepEqual(runner.calls[0]?.args.slice(0, 6), [
+    "exec",
+    "--ignore-user-config",
+    "--disable",
+    "plugins",
+    "--disable",
+    "apps"
+  ]);
+});
+
+test("provider passes configured Codex model to exec command and identity metadata", async () => {
+  const runner = new FakeRunner({
+    exitCode: 0,
+    stdout: validDecisionJson,
+    stderr: "",
+    timedOut: false
+  });
+
+  await provider(runner, { modelId: "gpt-5.3-codex-spark" }).decide(packet());
+
+  assert.deepEqual(runner.calls[0]?.args.slice(0, 3), [
+    "exec",
+    "--model",
+    "gpt-5.3-codex-spark"
+  ]);
+  assert.match(
+    runner.calls[0]?.options.stdin ?? "",
+    /"modelId":"gpt-5\.3-codex-spark"/
+  );
+});
+
 test("paper decision prompt requires paper-only guarded output", () => {
   const prompt = buildPaperDecisionPrompt();
 
@@ -206,10 +251,14 @@ test("paper decision prompt requires paper-only guarded output", () => {
   assert.match(prompt, /featureRefs/);
   assert.match(prompt, /Do not propose VIRTUAL_BUY when buyEligible is false/);
   assert.match(prompt, /Non-hold decisions are allowed/);
-  assert.match(prompt, /dataRefs copied from the candidate sourceRefs/);
+  assert.match(prompt, /dataRefs copied from the candidate dataRefs/);
+  assert.match(prompt, /sourceRefs are raw backend trace references/);
+  assert.match(prompt, /same candidate's featureRefs array/);
+  assert.match(prompt, /do not invent refs from visible field names/);
   assert.match(prompt, /claimSupport entries/);
   assert.match(prompt, /claimSupport dataRef/);
-  assert.match(prompt, /dataRefs or featureRefs/);
+  assert.match(prompt, /include maxBudgetKrw and featureRefs/);
+  assert.match(prompt, /dataRefs and featureRefs arrays/);
   assert.match(prompt, /sellQuantity, sellRatio, targetWeightPct, or sellAll/);
   assert.match(prompt, /include holdReasonCode/);
   assert.match(prompt, /INSUFFICIENT_EVIDENCE/);
@@ -239,6 +288,7 @@ test("virtual decision output schema artifact constrains actions", async () => {
   assert.equal(schema.additionalProperties, false);
   assert.equal(schema.properties?.["decisions"]?.required, undefined);
   assert.deepEqual(unsupportedSchemaKeywords(JSON.parse(raw)), []);
+  assert.deepEqual(strictStructuredOutputSchemaViolations(JSON.parse(raw)), []);
   assert.equal(schema.required?.includes("packetHash"), true);
   assert.equal(schema.required?.includes("promptVersion"), true);
   assert.equal(schema.required?.includes("modelId"), true);
@@ -247,10 +297,14 @@ test("virtual decision output schema artifact constrains actions", async () => {
   assert.equal("decisionHash" in (schema.properties ?? {}), false);
 
   const branches = schema.properties?.["decisions"]?.items?.anyOf ?? [];
-  assert.equal(branches.length, 3);
+  assert.equal(branches.length, 7);
   for (const branch of branches) {
     assert.equal(branch.additionalProperties, false);
     assert.equal(branch.required?.includes("claimSupport"), true);
+    assert.deepEqual(
+      [...(branch.required ?? [])].sort(),
+      Object.keys(branch.properties ?? {}).sort()
+    );
     assert.equal(branch.properties?.["maxBudgetKrw"]?.type, "integer");
     assert.equal(branch.properties?.["featureRefs"]?.type, "array");
     assert.equal(branch.properties?.["claimSupport"]?.type, "array");
@@ -259,18 +313,13 @@ test("virtual decision output schema artifact constrains actions", async () => {
       false
     );
     assert.deepEqual(branch.properties?.["claimSupport"]?.items?.required, [
-      "claim"
+      "claim",
+      "dataRefs",
+      "featureRefs"
     ]);
     assert.deepEqual(
-      branch.properties?.["claimSupport"]?.items?.anyOf
-        ?.map((option) => option.required?.[0])
-        .sort(),
-      ["dataRefs", "featureRefs"]
-    );
-    assert.equal(
-      branch.properties?.["claimSupport"]?.items?.properties?.["dataRefs"]
-        ?.type,
-      "array"
+      branch.properties?.["claimSupport"]?.items?.anyOf,
+      undefined
     );
     assert.equal(
       branch.properties?.["claimSupport"]?.items?.properties?.["featureRefs"]
@@ -283,18 +332,24 @@ test("virtual decision output schema artifact constrains actions", async () => {
     );
   }
   assert.deepEqual(
-    branches.map((branch) => branch.properties?.["action"]?.enum?.[0]).sort(),
+    [...new Set(branches.map((branch) => branch.properties?.["action"]?.enum?.[0]))].sort(),
     ["VIRTUAL_BUY", "VIRTUAL_HOLD", "VIRTUAL_SELL"]
   );
-  const holdBranch = branches.find(
+  const holdBranches = branches.filter(
     (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_HOLD"
   );
-  const buyBranch = branches.find(
+  const buyBranches = branches.filter(
     (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_BUY"
   );
-  const sellBranch = branches.find(
+  const sellBranches = branches.filter(
     (branch) => branch.properties?.["action"]?.enum?.[0] === "VIRTUAL_SELL"
   );
+  assert.equal(holdBranches.length, 1);
+  assert.equal(buyBranches.length, 1);
+  assert.equal(sellBranches.length, 5);
+
+  const holdBranch = holdBranches[0];
+  const buyBranch = buyBranches[0];
   for (const branch of [holdBranch, buyBranch]) {
     assert.equal("sellQuantity" in (branch?.properties ?? {}), false);
     assert.equal("sellRatio" in (branch?.properties ?? {}), false);
@@ -314,11 +369,20 @@ test("virtual decision output schema artifact constrains actions", async () => {
       "LOW_LIQUIDITY"
     ]
   );
-  assert.equal(sellBranch?.properties?.["sellQuantity"]?.type, "number");
-  assert.equal(sellBranch?.properties?.["sellRatio"]?.type, "number");
-  assert.equal(sellBranch?.properties?.["targetWeightPct"]?.type, "number");
-  assert.equal(sellBranch?.properties?.["sellAll"]?.type, "boolean");
-  assert.equal(sellBranch?.properties?.["reduceOnly"]?.type, "boolean");
+  assert.deepEqual(
+    sellBranches
+      .map((branch) =>
+        ["sellQuantity", "sellRatio", "targetWeightPct", "sellAll"].filter(
+          (field) => field in (branch.properties ?? {})
+        )
+      )
+      .map((fields) => fields[0] ?? "budgetKrw")
+      .sort(),
+    ["budgetKrw", "sellAll", "sellQuantity", "sellRatio", "targetWeightPct"]
+  );
+  for (const branch of sellBranches) {
+    assert.equal(branch.properties?.["reduceOnly"]?.type, "boolean");
+  }
 });
 
 function unsupportedSchemaKeywords(value: unknown, path = "$"): string[] {
@@ -358,6 +422,68 @@ function unsupportedSchemaKeywords(value: unknown, path = "$"): string[] {
   ]);
 }
 
+function strictStructuredOutputSchemaViolations(
+  value: unknown,
+  path = "$"
+): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      strictStructuredOutputSchemaViolations(item, `${path}[${index}]`)
+    );
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+
+  const node = value as {
+    additionalProperties?: unknown;
+    properties?: unknown;
+    required?: unknown;
+    type?: unknown;
+  };
+  const violations: string[] = [];
+  const propertyKeys =
+    typeof node.properties === "object" && node.properties !== null
+      ? Object.keys(node.properties as Record<string, unknown>)
+      : [];
+  const hasRequired =
+    Array.isArray(node.required) && (node.required as unknown[]).length > 0;
+  if (node.type === "object" && node.additionalProperties !== false) {
+    violations.push(`${path}.additionalProperties`);
+  }
+  if (node.type === "object" && propertyKeys.length > 0) {
+    if (!Array.isArray(node.required)) {
+      violations.push(`${path}.required_missing`);
+    } else {
+      const requiredValues = new Set(node.required);
+      for (const key of propertyKeys) {
+        if (!requiredValues.has(key)) {
+          violations.push(`${path}.required_missing_property:${key}`);
+        }
+      }
+    }
+  }
+  if (hasRequired) {
+    if (node.type !== "object") {
+      violations.push(`${path}.required_without_object_type`);
+    }
+    if (node.additionalProperties !== false) {
+      violations.push(`${path}.required_without_additionalProperties_false`);
+    }
+    if (typeof node.properties !== "object" || node.properties === null) {
+      violations.push(`${path}.required_without_properties`);
+    }
+  }
+
+  return [
+    ...violations,
+    ...Object.entries(value).flatMap(([key, child]) =>
+      strictStructuredOutputSchemaViolations(child, `${path}.${key}`)
+    )
+  ];
+}
+
 test("timeout is reported as AI_DECISION_FAILED", async () => {
   const runner = new FakeRunner({
     exitCode: null,
@@ -370,6 +496,28 @@ test("timeout is reported as AI_DECISION_FAILED", async () => {
 
   assert.equal(result.failure?.code, "AI_DECISION_FAILED");
   assert.equal(result.failure?.reason, "timeout");
+});
+
+test("Codex failure summary keeps multiline API error details", () => {
+  const summary = summarizeCodexCliDecisionFailure({
+    code: "AI_DECISION_FAILED",
+    reason: "exit_code_1",
+    stderr: [
+      "OpenAI Codex v0.140.0-alpha.19",
+      "user prompt omitted",
+      "ERROR: {",
+      "\"error\": {",
+      "\"message\": \"The model gpt-5.3-codex-spark does not exist.\",",
+      "\"type\": \"invalid_request_error\"",
+      "}",
+      "}"
+    ].join("\n")
+  });
+
+  assert.match(summary, /exit_code_1/);
+  assert.match(summary, /gpt-5\.3-codex-spark/);
+  assert.match(summary, /invalid_request_error/);
+  assert.doesNotMatch(summary, /user prompt omitted/);
 });
 
 test("invalid JSON output does not produce a decision", async () => {

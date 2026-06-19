@@ -152,7 +152,10 @@ Historical replay와 batch replay는 명시 옵션으로 paper-only risk profile
 
 - `conservative`는 기존 historical replay 기본 constraint와 같은 보수적 profile입니다.
 - `balanced`는 paper-only 실험에서 신규 포지션 수와 종목별 예산을 중간 수준으로 높입니다.
-- `aggressive_paper`는 더 큰 paper-only notional과 종목 exposure를 허용해 batch 결과 분포를 비교하기 위한 profile입니다.
+- `aggressive_paper`는 terminal `targetExposureRatio=0.85`를 즉시 채우지 않습니다. `deploymentRampDays=10`, day-1 scheduled ceiling `0.25`, day-2 이후 gross buy cap `0.12`, 초기 포지션 슬롯 2개를 사용해 paper-only notional과 포지션 슬롯을 단계적으로 배포합니다.
+- `aggressive_paper`의 `maxBudgetPerDecisionRatio=0.2`는 후보별 cap이 아니라 한 provider decision 안에서 승인되는 BUY 합계 cap입니다.
+- 초기자금 기반 simulation에서 `aggressive_paper`의 symbol exposure cap은 `maxSymbolExposureRatio=0.25`를 따릅니다.
+- dashboard `mixed_global` simulation은 KR/US terminal target을 50/50으로 나누며, ramp 중에는 미관측 시장 quota를 다른 시장이 빌리지 못하게 합니다.
 - CLI override인 `--max-new-positions`, `--max-budget-per-symbol-krw`는 선택한 profile 위에 적용됩니다.
 - 선택된 profile과 정규화된 risk policy는 replay metadata에 남겨 사후 분석에서 재현할 수 있게 합니다.
 

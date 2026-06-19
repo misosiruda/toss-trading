@@ -20,6 +20,7 @@
     "historical:batch:report": "npm run build && node dist/cli/historicalBatchReport.js",
     "historical:batch:replay": "npm run build && node dist/cli/historicalBatchReplay.js",
     "historical:batch:replay:dry": "npm run build && node dist/cli/historicalBatchReplay.js",
+    "historical:tossctl:ingest": "npm run build && node dist/cli/tossInvestHistoricalChartIngest.js",
     "historical:yahoo:ingest": "npm run build && node dist/cli/historicalYahooDailyIngest.js",
     "historical:universe:coverage": "npm run build && node dist/cli/historicalUniverseCoverage.js",
     "historical:replay": "npm run build && node dist/cli/historicalReplay.js",

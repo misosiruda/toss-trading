@@ -6,7 +6,7 @@
 
 국장은 하락 regime이고 미장은 상승 regime인 구간처럼 market별 상태가 다를 수 있다. `marketRegimeAllocationPolicy`는 replay tick마다 현재 시점까지 관측된 스냅샷만 사용해 market별 regime을 분류하고, 선택한 `PaperAllocationPolicy.targetExposureRatio` 안에서 KR/US target exposure를 재분배한다.
 
-이 기능은 전체 투자 비중을 올리는 기능이 아니다. 전체 target exposure, cash reserve, per-decision cap, symbol exposure cap은 기존 paper risk profile이 계속 결정한다. 이 정책은 그 안에서 market별 추가 매수 cap만 조정한다.
+이 기능은 전체 투자 비중을 올리는 기능이 아니다. 전체 terminal target exposure, scheduled exposure ceiling, cash reserve, aggregate per-decision cap, symbol exposure cap은 기존 paper risk profile이 계속 결정한다. 이 정책은 그 안에서 market별 추가 매수 cap만 조정한다.
 
 ## CLI
 
@@ -48,8 +48,8 @@ windowEnd   = simulatedAt
 
 - `batch-replay-manifest.json`: `marketRegimeAllocationPolicy`를 기록한다.
 - `historical-replay-run-metadata.json`: run별 `marketRegimeAllocationPolicy`를 기록한다.
-- `MarketPacket.portfolioAllocation.marketTargetExposureRatios`: tick별로 계산된 KR/US target exposure ratio를 포함한다.
-- `MarketPacket.portfolioAllocation.marketAllocations`: market별 현재 exposure, target gap, 추가 매수 cap을 포함한다.
+- `MarketPacket.portfolioAllocation.marketTargetExposureRatios`: tick별로 계산된 KR/US terminal target exposure ratio를 포함한다.
+- `MarketPacket.portfolioAllocation.marketAllocations`: market별 현재 exposure, scheduled target gap, 추가 매수 cap을 포함한다.
 
 ## Safety Boundary
 

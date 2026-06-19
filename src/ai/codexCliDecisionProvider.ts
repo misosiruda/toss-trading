@@ -35,6 +35,8 @@ export interface CodexCliDecisionProviderConfig {
   prompt?: string;
   promptVersion?: string;
   ephemeral?: boolean;
+  ignoreUserConfig?: boolean;
+  disabledFeatures?: readonly string[];
   now?: () => Date;
 }
 
@@ -142,6 +144,9 @@ export class CodexCliDecisionProvider {
   buildCommand(): CodexCliCommandPreview {
     const args = [
       "exec",
+      ...this.optionalIgnoreUserConfigArgs(),
+      ...this.optionalDisabledFeatureArgs(),
+      ...this.optionalModelArgs(),
       "--sandbox",
       this.config.sandbox,
       ...this.optionalEphemeralArgs(),
@@ -155,6 +160,21 @@ export class CodexCliDecisionProvider {
       args,
       promptVersion: this.config.promptVersion ?? PAPER_DECISION_PROMPT_VERSION
     };
+  }
+
+  private optionalModelArgs(): string[] {
+    return this.config.modelId ? ["--model", this.config.modelId] : [];
+  }
+
+  private optionalIgnoreUserConfigArgs(): string[] {
+    return this.config.ignoreUserConfig === true ? ["--ignore-user-config"] : [];
+  }
+
+  private optionalDisabledFeatureArgs(): string[] {
+    return (this.config.disabledFeatures ?? []).flatMap((feature) => [
+      "--disable",
+      feature
+    ]);
   }
 
   private optionalOutputSchemaArgs(): string[] {

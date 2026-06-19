@@ -327,9 +327,12 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 - 기본값은 `conservative`입니다.
 - `--max-new-positions`, `--max-budget-per-symbol-krw`를 명시하면 선택한 profile의 packet constraint와 paper risk policy에 같은 override가 반영됩니다.
-- 각 profile은 `portfolioAllocation` snapshot을 packet에 추가합니다. 이 snapshot은 현재 노출, 목표 노출, 목표 노출까지의 추가 매수 가능 금액, per-decision budget, symbol exposure cap을 포함합니다.
-- `aggressive_paper`에서 `--initial-cash-krw`가 큰 경우 `maxBudgetPerSymbolKrw`, `maxBudgetPerDecisionKrw`, `maxSymbolExposureKrw`가 profile ratio에 맞춰 확장됩니다.
-- `aggressive_paper`는 더 큰 paper-only 매수 후보와 종목 exposure를 허용해 수익률 분포를 실험하기 위한 profile입니다.
+- 각 profile은 `portfolioAllocation` snapshot을 packet에 추가합니다. 이 snapshot은 현재 노출, terminal target, 현재 ramp 단계의 scheduled exposure ceiling, 추가 매수 가능 금액, aggregate per-decision budget, symbol exposure cap을 포함합니다.
+- `targetExposureRatio`는 최종 목표 노출입니다. `aggressive_paper`는 `deploymentRampDays=10`, `maxInitialDeploymentRatio=0.25`, `maxDailyGrossBuyRatio=0.12`, `maxInitialOpenPositions=2`, `maxNewPositionsPerDay=2`, `positionSlotRampDays=10`을 사용해 초기 자금과 포지션 슬롯을 단계적으로 배포합니다.
+- `maxBudgetPerDecisionRatio`는 후보별 cap이 아니라 한 provider decision 안에서 승인되는 BUY 합계 cap입니다.
+- `aggressive_paper`에서 `--initial-cash-krw`가 큰 경우 `maxBudgetPerSymbolKrw`, `maxBudgetPerDecisionKrw`, `maxSymbolExposureKrw`가 profile ratio에 맞춰 확장됩니다. 초기자금 기반 simulation에서 `maxSymbolExposureKrw`는 `maxSymbolExposureRatio=0.25`를 따릅니다.
+- dashboard `mixed_global` simulation은 KR/US terminal target을 50/50으로 나누고, ramp 중에는 market별 scheduled quota만 추가 매수에 사용할 수 있습니다.
+- `aggressive_paper`는 더 큰 paper-only 매수 후보를 허용하되, 초기 lump-sum 진입과 단일 시장 선점을 막기 위한 profile입니다.
 - 선택된 profile, allocation policy, 정규화된 risk policy는 `batch-replay-manifest.json`과 각 run의 `historical-replay-run-metadata.json`에 기록됩니다.
 - 이 profile은 `VirtualRiskEngine`과 `PaperOrderEngine` 경로에만 적용됩니다. live `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter`로 전파하지 않습니다.
 - profile 이름은 투자 조언, 수익률 보장, 실계좌 성과 예측으로 해석하면 안 됩니다.
@@ -340,15 +343,16 @@ Codex CLI provider를 historical replay에서 사용할 때 `--risk-profile aggr
 
 | Risk profile | Prompt policy | Prompt version |
 | --- | --- | --- |
-| `conservative` | `default` | `paper-v12-historical-replay-v1` |
-| `balanced` | `default` | `paper-v12-historical-replay-v1` |
-| `aggressive_paper` | `aggressive_paper` | `paper-v12-historical-replay-aggressive-paper-v1` |
+| `conservative` | `default` | `paper-v14-historical-replay-v1` |
+| `balanced` | `default` | `paper-v14-historical-replay-v1` |
+| `aggressive_paper` | `aggressive_paper` | `paper-v14-historical-replay-aggressive-paper-v2` |
 
 `aggressive_paper` prompt policy는 다음을 Codex 입력 prompt에 추가합니다.
 
 - paper-only historical replay에만 적용되며 live trading에는 적용하지 않습니다.
 - 월 15~30% 수익률 목표를 쫓기 위해 trade를 강제하지 않습니다.
 - `buyEligible=true`, 강한 `featureScores` 또는 `reasonCodes`, fresh `dataRefs`, packet constraint 내 현금 여력이 동시에 있을 때만 `VIRTUAL_BUY`를 더 적극적으로 검토합니다.
+- `targetExposureRatio`를 즉시 채우려 하지 않고, `scheduledExposureCeilingRatio`, `maxAdditionalBuyBudgetKrw`, `maxBudgetPerDecisionKrw`, market allocation cap 안에서만 `VIRTUAL_BUY`를 검토합니다.
 - `budgetKrw`는 `marketPacket.constraints.maxBudgetPerSymbolKrw`를 넘지 않으며, concentration/drawdown/stale-data/cash-reserve risk를 `riskFactors`에 명시해야 합니다.
 - evidence, eligibility, constraints가 부족하면 `aggressive_paper`에서도 `VIRTUAL_HOLD`가 올바른 판단입니다.
 
@@ -448,6 +452,20 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 Codex CLI provider를 사용할 때도 같은 `--source-data-dir`와 `--universe-path`를 사용합니다. `--use-codex-ai`는 `AI_DECISION_ENABLED=true`가 명시된 경우에만 활성화됩니다.
 
 Historical packet builder는 매 decision step마다 해당 시점까지의 최신 fresh snapshot 전체를 점수화한 뒤 후보를 선별합니다. AI packet은 schema 상 최대 20개 후보로 제한되어 있으므로, broad universe를 그대로 AI에 넘기지 않고 deterministic screener가 점수, 시장 분산, 자산유형 분산을 먼저 적용합니다.
+
+#### Global KR/US/ETF TossInvest Daily Dataset
+
+Yahoo snapshot을 제외하고 TossInvest read-only chart만으로 global broad replay dataset을 만들 때는 같은 universe manifest를 `historical:tossctl:ingest`에 전달합니다. 미장 symbol은 public search API로 TossInvest product code를 resolve한 뒤 `day:1` chart를 조회합니다. 이 수집은 historical replay input만 생성하며 broker API 호출, 주문 생성, replay 실행을 수행하지 않습니다.
+
+```powershell
+npm run historical:tossctl:ingest -- --enable --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --interval 1d --start-date 2024-01-01 --end-date 2026-06-17 --count 450 --allow-partial --json
+```
+
+생성 후에는 같은 universe coverage CLI로 국장/미장/ETF 확보량을 검증합니다.
+
+```powershell
+npm run historical:universe:coverage -- -- --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --range-start 2024-01-01T00:00:00+09:00 --range-end 2026-06-17T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --output-path data/tossinvest-daily-global-broad-2024-01-01-2026-06-17/historical-universe-coverage.json
+```
 
 #### Batch Replay에서 Codex CLI AI 사용
 

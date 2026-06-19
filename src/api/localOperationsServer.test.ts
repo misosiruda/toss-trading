@@ -25,8 +25,18 @@ import {
   FileVirtualTradeStore
 } from "../storage/repositories.js";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
+import type { LocalOperationsServerOptions } from "./localOperationsServer.js";
+import {
+  PAPER_SIMULATION_CREATE_OPERATION,
+  PAPER_SIMULATION_MUTATION_HEADER_NAME,
+  type PaperSimulationRunner,
+  type PaperSimulationRunnerInput,
+  type PaperSimulationRunnerResult
+} from "./paperSimulationRuns.js";
 import {
   LOCAL_OPERATIONS_API_ROUTES,
+  PAPER_SIMULATION_MUTATION_API_ROUTES,
+  PAPER_SIMULATION_MUTATION_METHODS,
   READ_ONLY_HTTP_METHODS
 } from "./localOperationsSurface.js";
 
@@ -40,11 +50,13 @@ async function createTempStorageBaseDir(): Promise<string> {
 }
 
 async function startTestServer(
-  storageBaseDir: string
+  storageBaseDir: string,
+  options: Partial<Omit<LocalOperationsServerOptions, "storageBaseDir">> = {}
 ): Promise<{ server: Server; baseUrl: string }> {
   const server = createLocalOperationsServer({
     storageBaseDir,
-    now: () => now
+    now: () => now,
+    ...options
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -85,8 +97,12 @@ async function fetchText(
   return { response, text };
 }
 
-test("local operations surface manifest is read-only", () => {
+test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...READ_ONLY_HTTP_METHODS], ["GET", "HEAD"]);
+  assert.deepEqual([...PAPER_SIMULATION_MUTATION_METHODS], ["POST"]);
+  assert.deepEqual([...PAPER_SIMULATION_MUTATION_API_ROUTES], [
+    "/paper/simulations"
+  ]);
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
     false
@@ -97,6 +113,12 @@ test("local operations surface manifest is read-only", () => {
   );
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/run_tossctl"),
+    false
+  );
+  assert.equal(
+    (PAPER_SIMULATION_MUTATION_API_ROUTES as readonly string[]).includes(
+      "/place_order"
+    ),
     false
   );
 });
@@ -135,6 +157,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     const moduleScripts = await Promise.all(
       [
         "/dashboard/apiClient.js",
+        "/dashboard/currentSimulationData.js",
         "/dashboard/batchRunRenderers.js",
         "/dashboard/dashboardStatusRenderers.js",
         "/dashboard/decisionRenderers.js",
@@ -148,6 +171,7 @@ test("local operations API serves read-only dashboard assets", async () => {
         "/dashboard/replayProgressRenderers.js",
         "/dashboard/reportViewHelpers.js",
         "/dashboard/router.js",
+        "/dashboard/simulationForm.js",
         "/dashboard/sourceRenderers.js",
         "/dashboard/state.js",
         "/dashboard/tableRenderers.js"
@@ -155,6 +179,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     );
     const rootScript = await fetchText(baseUrl, "/app.js");
     const rootModuleScript = await fetchText(baseUrl, "/apiClient.js");
+    const rootCurrentSimulationDataScript = await fetchText(
+      baseUrl,
+      "/currentSimulationData.js"
+    );
     const rootBatchRunRenderersScript = await fetchText(
       baseUrl,
       "/batchRunRenderers.js"
@@ -191,6 +219,10 @@ test("local operations API serves read-only dashboard assets", async () => {
       baseUrl,
       "/reportViewHelpers.js"
     );
+    const rootSimulationFormScript = await fetchText(
+      baseUrl,
+      "/simulationForm.js"
+    );
     const rootSourceRenderersScript = await fetchText(
       baseUrl,
       "/sourceRenderers.js"
@@ -200,6 +232,20 @@ test("local operations API serves read-only dashboard assets", async () => {
       "/tableRenderers.js"
     );
     const rootStyles = await fetchText(baseUrl, "/styles.css");
+    const virtualPage = await fetchText(baseUrl, "/dashboard/virtual");
+    const newSimulationPage = await fetchText(
+      baseUrl,
+      "/dashboard/virtual/simulations/new"
+    );
+    const historyPage = await fetchText(baseUrl, "/dashboard/virtual/simulations");
+    const activeSimulationPage = await fetchText(
+      baseUrl,
+      "/dashboard/virtual/simulations/current"
+    );
+    const validationPage = await fetchText(
+      baseUrl,
+      "/dashboard/virtual/validation"
+    );
     const replayPage = await fetchText(baseUrl, "/dashboard/virtual-replays");
     const summaryPage = await fetchText(baseUrl, "/dashboard/batch-summary");
     const dashboardScriptText = [
@@ -209,10 +255,16 @@ test("local operations API serves read-only dashboard assets", async () => {
 
     assert.equal(html.response.status, 200);
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
+    assert.equal(virtualPage.response.status, 200);
+    assert.equal(newSimulationPage.response.status, 200);
+    assert.equal(historyPage.response.status, 200);
+    assert.equal(activeSimulationPage.response.status, 200);
+    assert.equal(validationPage.response.status, 200);
     assert.equal(replayPage.response.status, 200);
     assert.equal(summaryPage.response.status, 200);
     assert.equal(rootScript.response.status, 200);
     assert.equal(rootModuleScript.response.status, 200);
+    assert.equal(rootCurrentSimulationDataScript.response.status, 200);
     assert.equal(rootBatchRunRenderersScript.response.status, 200);
     assert.equal(rootDashboardStatusRenderersScript.response.status, 200);
     assert.equal(rootDecisionRenderersScript.response.status, 200);
@@ -222,18 +274,19 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(rootReplayProgressRenderersScript.response.status, 200);
     assert.equal(rootReplayProgressCoordinatorScript.response.status, 200);
     assert.equal(rootReportViewHelpersScript.response.status, 200);
+    assert.equal(rootSimulationFormScript.response.status, 200);
     assert.equal(rootSourceRenderersScript.response.status, 200);
     assert.equal(rootTableRenderersScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
     assert.equal(
       rootStyles.text.includes(
-        'html[data-dashboard-page="virtual-replays"] .metric-grid'
+        'html:not([data-dashboard-page="virtual"]) .metric-grid'
       ),
       true
     );
     assert.equal(
       rootStyles.text.includes(
-        'html[data-dashboard-page="batch-summary"] .metric-grid'
+        'html[data-dashboard-page="validation"]'
       ),
       true
     );
@@ -244,13 +297,40 @@ test("local operations API serves read-only dashboard assets", async () => {
         /text\/javascript/
       );
     }
-    assert.match(html.text, /가상 투자 대시보드/);
+    assert.match(html.text, /Toss Trading Ops/);
     assert.match(html.text, /document\.documentElement\.dataset\.dashboardPage/);
-    assert.match(html.text, /href="styles.css"/);
-    assert.match(html.text, /src="app.js"/);
-    assert.match(html.text, /data-dashboard-route="overview"/);
-    assert.match(html.text, /data-dashboard-route="virtual-replays"/);
-    assert.match(html.text, /data-dashboard-route="batch-summary"/);
+    assert.match(html.text, /href="\/dashboard\/styles.css"/);
+    assert.match(html.text, /src="\/dashboard\/app.js"/);
+    assert.match(html.text, /data-dashboard-route="live"/);
+    assert.match(html.text, /data-dashboard-route="virtual"/);
+    assert.match(html.text, /data-dashboard-route="new-simulation"/);
+    assert.match(html.text, /data-dashboard-route="active-simulation"/);
+    assert.match(html.text, /data-dashboard-route="history"/);
+    assert.match(html.text, /data-dashboard-route="validation"/);
+    assert.match(
+      html.text,
+      /class="panel full batch-run-panel" data-dashboard-page="virtual active-simulation history"/
+    );
+    assert.match(
+      html.text,
+      /class="panel full performance-panel" aria-labelledby="performance-heading"/
+    );
+    assert.match(
+      html.text,
+      /class="panel full benchmark-panel" data-dashboard-page="virtual validation"/
+    );
+    assert.match(
+      html.text,
+      /class="panel full report-panel" aria-labelledby="daily-report-heading"/
+    );
+    assert.match(html.text, /class="panel" data-dashboard-page="virtual validation"/);
+    assert.match(html.text, /id="live-status-heading"/);
+    assert.match(html.text, /id="simulation-home-heading"/);
+    assert.match(html.text, /id="current-simulation-heading"/);
+    assert.match(html.text, /id="new-simulation-heading"/);
+    assert.match(html.text, /id="simulation-config-preview"/);
+    assert.match(html.text, /id="simulation-history-heading"/);
+    assert.match(html.text, /id="validation-center-heading"/);
     assert.match(html.text, /id="daily-report-heading"/);
     assert.match(html.text, /id="performance-heading"/);
     assert.match(html.text, /id="net-worth-chart"/);
@@ -295,6 +375,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="portfolio-risk-detail"/);
     assert.equal(script.response.status, 200);
     assert.match(script.text, /from "\.\/apiClient\.js"/);
+    assert.match(script.text, /from "\.\/currentSimulationData\.js"/);
     assert.match(script.text, /from "\.\/batchRunRenderers\.js"/);
     assert.match(script.text, /from "\.\/dashboardStatusRenderers\.js"/);
     assert.match(script.text, /from "\.\/decisionRenderers\.js"/);
@@ -310,20 +391,26 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /from "\.\/replayProgressRenderers\.js"/);
     assert.match(dashboardScriptText, /from "\.\/reportViewHelpers\.js"/);
     assert.match(script.text, /from "\.\/router\.js"/);
+    assert.match(script.text, /from "\.\/simulationForm\.js"/);
     assert.match(script.text, /from "\.\/sourceRenderers\.js"/);
     assert.match(script.text, /from "\.\/state\.js"/);
     assert.match(script.text, /from "\.\/tableRenderers\.js"/);
+    assert.match(dashboardScriptText, /고려아연/);
+    assert.match(dashboardScriptText, /카카오게임즈/);
+    assert.match(dashboardScriptText, /United States Natural Gas Fund/);
     assert.match(dashboardScriptText, /\/virtual\/portfolio/);
     assert.match(dashboardScriptText, /\/paper\/report/);
     assert.match(dashboardScriptText, /\/replay\/report/);
     assert.match(dashboardScriptText, /\/replay\/progress/);
     assert.match(dashboardScriptText, /\/batch\/replay\/report/);
     assert.match(dashboardScriptText, /\/batch\/replay\/runs/);
+    assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
     assert.match(dashboardScriptText, /\/audit\/events/);
     for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
       assert.equal(dashboardScriptText.includes(routePath), true, routePath);
     }
     assert.match(dashboardScriptText, /fetchEndpointData/);
+    assert.match(dashboardScriptText, /currentSimulationDashboardData/);
     assert.match(dashboardScriptText, /endpointFailures/);
     assert.match(dashboardScriptText, /applyDashboardRoute/);
     assert.match(dashboardScriptText, /dataset\.dashboardPage = page/);
@@ -367,6 +454,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(script.text, /rememberSymbolMetadata/);
     assert.match(dashboardScriptText, /export function renderSourceSummary/);
     assert.match(dashboardScriptText, /export function rememberSymbolMetadata/);
+    assert.match(dashboardScriptText, /export function bindSimulationFormControls/);
+    assert.match(dashboardScriptText, /simulationConfigFromForm/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
     assert.match(script.text, /bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /export function bindDecisionFilterControls/);
@@ -415,7 +504,237 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.doesNotMatch(script.text, /function showDashboardEndpointResult/);
     assert.doesNotMatch(script.text, /data-action-filter/);
     assert.doesNotMatch(script.text, /symbol-filter/);
-    assert.doesNotMatch(dashboardScriptText, /\bPOST\b|\bPUT\b|\bDELETE\b/);
+    assert.match(dashboardScriptText, /\/paper\/simulations/);
+    assert.match(dashboardScriptText, /paper-simulation-create/);
+    assert.doesNotMatch(dashboardScriptText, /\bPUT\b|\bPATCH\b|\bDELETE\b/);
+    assert.doesNotMatch(
+      dashboardScriptText,
+      /\bplace_order\b|\brun_codex_exec\b|\brun_tossctl\b/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create starts a guarded paper-only runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const runnerInput: { value?: PaperSimulationRunnerInput } = {};
+  let resolveRunner!: (value: PaperSimulationRunnerResult) => void;
+  const runnerPromise = new Promise<PaperSimulationRunnerResult>((resolve) => {
+    resolveRunner = resolve;
+  });
+  const runner: PaperSimulationRunner = async (input) => {
+    runnerInput.value = input;
+    return runnerPromise;
+  };
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: runner
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(paperSimulationConfig())
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(result.response.status, 202);
+    assert.equal(result.payload["mode"], "paper_only");
+    assert.equal(result.payload["mutation"], "paper_simulation_create");
+    assert.equal(result.payload["readOnlyLiveTrading"], true);
+    assert.equal(result.payload["activeUrl"], "/dashboard/virtual");
+    const startedRun = runnerInput.value;
+    assert.ok(startedRun);
+    assert.equal(startedRun.storageBaseDir, storageBaseDir);
+    assert.equal(startedRun.config.runType, "batch_replay");
+    assert.equal(startedRun.config.runCount, 2);
+    assert.equal(startedRun.config.decisionProvider.mode, "dry_run_fixture");
+    assert.equal(startedRun.tickDelayMs, 0);
+
+    const conflict = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(paperSimulationConfig({ windowSeed: "other-seed" }))
+    });
+    assert.equal(conflict.response.status, 409);
+    assert.equal(conflict.payload["error"], "paper_simulation_already_running");
+
+    resolveRunner(paperSimulationRunnerResult(startedRun));
+    await runnerPromise;
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create supports explicit dashboard tick pacing override", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const runnerInputs: PaperSimulationRunnerInput[] = [];
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      PAPER_SIMULATION_TICK_DELAY_MS: "125"
+    },
+    paperSimulationRunner: async (input) => {
+      runnerInputs.push(input);
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(paperSimulationConfig())
+    });
+
+    assert.equal(result.response.status, 202);
+    assert.equal(runnerInputs[0]?.tickDelayMs, 125);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create rejects missing guards and cross-origin requests", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const missingHeader = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl
+      },
+      body: JSON.stringify(paperSimulationConfig())
+    });
+    const badOrigin = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: {
+        ...paperSimulationCreateHeaders(baseUrl),
+        origin: "http://evil.example"
+      },
+      body: JSON.stringify(paperSimulationConfig())
+    });
+
+    assert.equal(missingHeader.response.status, 403);
+    assert.equal(missingHeader.payload["error"], "mutation_guard_required");
+    assert.equal(badOrigin.response.status, 403);
+    assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create keeps Codex provider disabled until env explicitly allows it", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_MODE: "paper_only",
+      AI_DECISION_ENABLED: "false"
+    },
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(
+        paperSimulationConfig({
+          aiProvider: "codex_paper_only",
+          maxCodexCallsPerRun: 3
+        })
+      )
+    });
+
+    assert.equal(result.response.status, 400);
+    assert.equal(result.payload["error"], "codex_provider_disabled");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create allows monthly daily Codex call cap", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const runnerInputs: PaperSimulationRunnerInput[] = [];
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_MODE: "paper_only",
+      AI_DECISION_ENABLED: "true"
+    },
+    paperSimulationRunner: async (input) => {
+      runnerInputs.push(input);
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(
+        paperSimulationConfig({
+          aiProvider: "codex_paper_only",
+          maxDecisionCalls: 30,
+          maxCodexCallsPerRun: 30
+        })
+      )
+    });
+
+    assert.equal(result.response.status, 202);
+    assert.equal(
+      runnerInputs[0]?.config.samplingPolicy.maxDecisionCalls,
+      30
+    );
+    assert.equal(
+      runnerInputs[0]?.config.samplingPolicy.maxCodexCallsPerRun,
+      30
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper simulation create reports field-specific numeric limit errors", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, "/paper/simulations", {
+      method: "POST",
+      headers: paperSimulationCreateHeaders(baseUrl),
+      body: JSON.stringify(
+        paperSimulationConfig({
+          maxCodexCallsPerRun: 32
+        })
+      )
+    });
+
+    assert.equal(result.response.status, 400);
+    assert.equal(result.payload["error"], "invalid_simulation_config");
+    assert.match(
+      String(result.payload["message"]),
+      /samplingPolicy\.maxCodexCallsPerRun: Max Codex calls must be 31 or lower/
+    );
+    assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
   }
@@ -518,6 +837,64 @@ test("local operations API serves individual batch replay runs read-only", async
   }
 });
 
+test("local operations API marks legacy completed runs with AI failures", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const batchDir = join(
+    storageBaseDir,
+    "..",
+    "batch-replay",
+    "batch-legacy-ai-failure"
+  );
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const legacyRun = batchReplayRunRecord(0, "completed");
+  legacyRun["summary"] = {
+    ...(legacyRun["summary"] as Record<string, unknown>),
+    aiDecisionFailureCount: 2,
+    aiDecisionFailureReasons: ["invalid_json_schema"],
+    lastAiDecisionFailureSummary: "invalid_json_schema"
+  };
+  await mkdir(batchDir, { recursive: true });
+  await writeFile(
+    join(batchDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-legacy-ai-failure",
+      status: "completed",
+      startedAt: "2026-06-18T17:00:00+09:00",
+      updatedAt: "2026-06-18T17:01:00+09:00",
+      completedAt: "2026-06-18T17:01:00+09:00",
+      sourceDataDir: "data/paper",
+      runCount: 1,
+      completedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      runsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(runsPath, `${JSON.stringify(legacyRun)}\n`, "utf8");
+
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/batch/replay/runs?limit=10");
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+    const statusCounts = result.payload["statusCounts"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["batchStatus"], "completed_with_failures");
+    assert.equal(result.payload["aiDecisionFailureRunCount"], 1);
+    assert.equal(statusCounts["completed_with_failures"], 1);
+    assert.equal(statusCounts["completed"], undefined);
+    assert.equal(runs[0]?.["status"], "completed_with_failures");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API serves live batch replay runs from the latest manifest", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const batchDir = join(storageBaseDir, "..", "batch-replay", "batch-live");
@@ -529,7 +906,19 @@ test("local operations API serves live batch replay runs from the latest manifes
       mode: "paper_only",
       batchId: "batch-live",
       status: "running",
+      startedAt: "2026-06-11T08:59:00+09:00",
       updatedAt: "2026-06-11T09:00:00+09:00",
+      completedAt: null,
+      sourceDataDir: "data/replay",
+      runCount: 3,
+      completedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      decisionProvider: {
+        mode: "codex_cli",
+        maxCallsPerRun: 2
+      },
+      riskProfile: "balanced",
       runsPath
     })}\n`,
     "utf8"
@@ -551,8 +940,243 @@ test("local operations API serves live batch replay runs from the latest manifes
     assert.equal(result.payload["aggregateStatus"], "missing");
     assert.equal(result.payload["batchStatus"], "running");
     assert.equal(result.payload["batchId"], "batch-live");
+    assert.equal(result.payload["batchUpdatedAt"], "2026-06-11T09:00:00+09:00");
+    assert.equal(result.payload["requestedRunCount"], 3);
+    assert.equal(result.payload["decisionProviderMode"], "codex_cli");
+    assert.equal(result.payload["decisionProviderMaxCallsPerRun"], 2);
+    assert.equal(result.payload["riskProfile"], "balanced");
+    assert.equal(result.payload["sourceDataDir"], "data/replay");
     assert.equal(result.payload["count"], 1);
+    assert.deepEqual(result.payload["manifestCounts"], {
+      completed: 1,
+      skipped: 0,
+      failed: 0
+    });
     assert.equal(runs[0]?.["runId"], "run_0");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API serves latest completed manifest runs over aggregate source", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const aggregateDir = join(storageBaseDir, "..", "batch-replay", "batch-old");
+  const aggregateRunsPath = join(aggregateDir, "batch-replay-runs.jsonl");
+  const latestDir = join(storageBaseDir, "..", "batch-replay", "paper_sim_single");
+  const latestRunsPath = join(latestDir, "batch-replay-runs.jsonl");
+
+  await mkdir(aggregateDir, { recursive: true });
+  await mkdir(latestDir, { recursive: true });
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport(aggregateRunsPath))}\n`,
+    "utf8"
+  );
+  await writeFile(
+    aggregateRunsPath,
+    `${JSON.stringify(batchReplayRunRecord(0, "completed"))}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(latestDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "paper_sim_single",
+      status: "completed",
+      startedAt: "2026-06-18T13:41:59+09:00",
+      updatedAt: "2026-06-18T13:42:00+09:00",
+      completedAt: "2026-06-18T13:42:00+09:00",
+      sourceDataDir: "data/paper",
+      runCount: 1,
+      completedCount: 0,
+      skippedCount: 1,
+      failedCount: 0,
+      decisionProvider: {
+        mode: "codex_cli",
+        maxCallsPerRun: 20
+      },
+      riskProfile: "aggressive_paper",
+      runsPath: latestRunsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    latestRunsPath,
+    `${JSON.stringify({
+      ...batchReplayRunRecord(0, "failed"),
+      batchId: "paper_sim_single",
+      runId: "paper_sim_single_run_000000",
+      status: "skipped"
+    })}\n`,
+    "utf8"
+  );
+
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/batch/replay/runs?limit=10");
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["batchStatus"], "completed");
+    assert.equal(result.payload["batchId"], "paper_sim_single");
+    assert.equal(result.payload["batchStartedAt"], "2026-06-18T13:41:59+09:00");
+    assert.equal(result.payload["batchUpdatedAt"], "2026-06-18T13:42:00+09:00");
+    assert.equal(result.payload["batchCompletedAt"], "2026-06-18T13:42:00+09:00");
+    assert.equal(result.payload["requestedRunCount"], 1);
+    assert.deepEqual(result.payload["manifestCounts"], {
+      completed: 0,
+      skipped: 1,
+      failed: 0
+    });
+    assert.equal(result.payload["decisionProviderMode"], "codex_cli");
+    assert.equal(result.payload["decisionProviderMaxCallsPerRun"], 20);
+    assert.equal(result.payload["riskProfile"], "aggressive_paper");
+    assert.equal(result.payload["sourceDataDir"], "data/paper");
+    assert.equal(result.payload["sourceRunsPath"], latestRunsPath);
+    assert.equal(result.payload["count"], 1);
+    assert.equal(runs[0]?.["runId"], "paper_sim_single_run_000000");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("local operations API can include latest batch run artifacts", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const batchDir = join(storageBaseDir, "..", "batch-replay", "paper_sim_single");
+  const runDir = join(batchDir, "runs", "paper_sim_single_run_000000");
+  const sourceDataDir = join(storageBaseDir, "source-data");
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const reportPath = join(runDir, "historical-replay-report.json");
+  const run = {
+    ...batchReplayRunRecord(0, "completed"),
+    batchId: "paper_sim_single",
+    runId: "paper_sim_single_run_000000",
+    storageBaseDir: runDir,
+    reportPath
+  };
+
+  await mkdir(runDir, { recursive: true });
+  await mkdir(sourceDataDir, { recursive: true });
+  await writeFile(
+    createStoragePaths(sourceDataDir).historicalMarketSnapshotsPath,
+    `${JSON.stringify({
+      snapshotId: "hist_api_kr_005930_20250611",
+      market: "KR",
+      symbol: "005930",
+      name: "삼성전자",
+      observedAt: "2026-06-11T09:00:00+09:00",
+      interval: "1d",
+      lastPriceKrw: 70_000,
+      sourceRefs: ["test:source:005930"],
+      createdAt: "2026-06-11T09:00:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(batchDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "paper_sim_single",
+      status: "completed",
+      startedAt: "2026-06-18T13:41:59+09:00",
+      updatedAt: "2026-06-18T13:42:00+09:00",
+      completedAt: "2026-06-18T13:42:00+09:00",
+      sourceDataDir,
+      runCount: 1,
+      completedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      runsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(runsPath, `${JSON.stringify(run)}\n`, "utf8");
+  await writeFile(reportPath, `${JSON.stringify(historicalReplayReport())}\n`, "utf8");
+  await writeFile(
+    join(runDir, "historical-replay-progress.json"),
+    `${JSON.stringify({
+      ...historicalReplayProgress(),
+      status: "completed",
+      completedAt: "2026-06-11T09:01:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(runDir, "historical-replay-decisions.jsonl"),
+    `${JSON.stringify(decision())}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(runDir, "historical-replay-packets.jsonl"),
+    `${JSON.stringify(marketPacketWithoutName())}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(runDir, "historical-replay-risk-decisions.jsonl"),
+    `${JSON.stringify({
+      riskDecisionId: "risk_api_001",
+      packetId: "packet_api_001",
+      market: "KR",
+      symbol: "005930",
+      action: "VIRTUAL_BUY",
+      approved: false,
+      rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
+      checkedRules: ["cash_available"],
+      createdAt: "2026-06-11T09:00:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(runDir, "historical-replay-trades.jsonl"),
+    `${JSON.stringify(trade())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/batch/replay/runs?limit=10&includeLatestRunArtifacts=1"
+    );
+    const artifacts = result.payload["latestRunArtifacts"] as Record<
+      string,
+      unknown
+    >;
+    const report = artifacts["report"] as Record<string, unknown>;
+    const progress = artifacts["progress"] as Record<string, unknown>;
+    const decisions = artifacts["decisions"] as Array<Record<string, unknown>>;
+    const packets = artifacts["packets"] as Array<Record<string, unknown>>;
+    const riskDecisions = artifacts["riskDecisions"] as Array<
+      Record<string, unknown>
+    >;
+    const trades = artifacts["trades"] as Array<Record<string, unknown>>;
+    const candidates = packets[0]?.["candidates"] as Array<
+      Record<string, unknown>
+    >;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["batchStatus"], "completed");
+    assert.equal(artifacts["status"], "ok");
+    assert.equal(artifacts["runId"], "paper_sim_single_run_000000");
+    assert.equal(artifacts["reportStatus"], "ok");
+    assert.equal(report["title"], "Historical Replay Paper Report");
+    assert.equal(artifacts["progressStatus"], "ok");
+    assert.equal(progress["status"], "completed");
+    assert.equal(artifacts["decisionCount"], 1);
+    assert.equal(decisions[0]?.["packetId"], "packet_api_001");
+    assert.equal(artifacts["packetCount"], 1);
+    assert.equal(packets[0]?.["packetId"], "packet_api_001");
+    assert.equal(candidates[0]?.["name"], "삼성전자");
+    assert.equal(artifacts["riskDecisionCount"], 1);
+    assert.equal(riskDecisions[0]?.["riskDecisionId"], "risk_api_001");
+    assert.equal(artifacts["tradeCount"], 1);
+    assert.equal(trades[0]?.["tradeId"], "trade_api_001");
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
   } finally {
     await stopTestServer(server);
   }
@@ -728,6 +1352,73 @@ test("local operations API rejects mutation methods and has no live order endpoi
   }
 });
 
+function paperSimulationCreateHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [PAPER_SIMULATION_MUTATION_HEADER_NAME]: PAPER_SIMULATION_CREATE_OPERATION,
+    origin: baseUrl
+  };
+}
+
+function paperSimulationConfig(
+  overrides: {
+    aiProvider?: "dry_run_fixture" | "codex_paper_only";
+    maxDecisionCalls?: number;
+    maxCodexCallsPerRun?: number;
+    windowSeed?: string;
+  } = {}
+): Record<string, unknown> {
+  return {
+    mode: "paper_only",
+    runType: "batch_replay",
+    runCount: 2,
+    sourceDataDir: "data/replay-2023-01-2026-05-global-yahoo-daily",
+    universe: {
+      preset: "global_broad",
+      market: "mixed_global"
+    },
+    window: {
+      mode: "random_month",
+      seed: overrides.windowSeed ?? "paper-sim-seed-001",
+      startAt: "2024-01-01",
+      endAt: "2024-12-31",
+      windowMonths: 1
+    },
+    samplingPolicy: {
+      decisionFrequency: "once_per_week",
+      stepSeconds: 604800,
+      maxDecisionCalls: overrides.maxDecisionCalls ?? 5,
+      maxCodexCallsPerRun: overrides.maxCodexCallsPerRun ?? 0
+    },
+    capital: {
+      initialCashKrw: 10_000_000
+    },
+    decisionProvider: {
+      mode: overrides.aiProvider ?? "dry_run_fixture",
+      modelId: "gpt-5.3-codex-spark",
+      outputSchema: "schemas/virtual-decision.schema.json"
+    },
+    riskProfile: "balanced",
+    paperExitPolicy: "none",
+    costModel: "standard",
+    benchmarkPolicy: "cash_equal_weight_initial_hold"
+  };
+}
+
+function paperSimulationRunnerResult(
+  input: PaperSimulationRunnerInput
+): PaperSimulationRunnerResult {
+  return {
+    mode: "paper_only",
+    simulationRunId: input.simulationRunId,
+    batchId: input.batchId,
+    status: "completed",
+    outputDir: "data/batch-replay/test",
+    manifestPath: "data/batch-replay/test/batch-replay-manifest.json",
+    runsPath: "data/batch-replay/test/batch-replay-runs.jsonl"
+  };
+}
+
 function portfolio(): VirtualPortfolio {
   return {
     portfolioId: "virtual_default",
@@ -823,6 +1514,18 @@ function marketPacket(): MarketPacket {
       maxBudgetPerSymbolKrw: 100_000,
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
     }
+  };
+}
+
+function marketPacketWithoutName(): MarketPacket {
+  const packet = marketPacket();
+  return {
+    ...packet,
+    candidates: packet.candidates.map((candidate) => {
+      const copy = { ...candidate };
+      delete copy.name;
+      return copy;
+    })
   };
 }
 

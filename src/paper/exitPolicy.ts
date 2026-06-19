@@ -6,6 +6,7 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import { candidateDecisionDataRefs } from "../market/candidateDataRefs.js";
 import { virtualNetWorthKrw } from "./riskPolicy.js";
 
 export interface PaperExitPolicy {
@@ -308,7 +309,7 @@ function exitDecision(input: {
   >;
   thesis: string;
 }): VirtualDecisionItem {
-  const dataRefs = input.candidate.sourceRefs.slice(0, 5);
+  const dataRefs = candidateDecisionDataRefs(input.candidate).slice(0, 5);
   const featureRefs = input.candidate.featureRefs?.slice(0, 8);
   const item: VirtualDecisionItem = {
     market: input.candidate.market,

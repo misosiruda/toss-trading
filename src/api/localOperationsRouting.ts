@@ -59,7 +59,10 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
   "/batch/replay/report": (_url, options) =>
     readBatchReplayAggregateReport(options.storageBaseDir),
   "/batch/replay/runs": (url, options) =>
-    readBatchReplayRuns(options.storageBaseDir, readLimit(url)),
+    readBatchReplayRuns(options.storageBaseDir, readLimit(url), {
+      includeLatestRunArtifacts:
+        url.searchParams.get("includeLatestRunArtifacts") === "1"
+    }),
   "/scheduler/status": (_url, options) =>
     readSchedulerStatus(options.storageBaseDir),
   "/source/health": (_url, options) =>

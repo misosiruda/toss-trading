@@ -45,6 +45,7 @@ import {
 import {
   appendHistoricalReplayAuditEvent,
   executeHistoricalReplayDecisionItem,
+  enforceProviderDecisionExecutionCaps,
   progressEventFromHistoricalReplayExecutionEffect,
   recordHistoricalReplayDecision,
   suppressDecisionItemsForSymbols
@@ -79,6 +80,8 @@ export interface CodexHistoricalReplayRunnerOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   performanceClock?: () => number;
+  tickDelayMs?: number;
+  tickDelay?: (ms: number) => Promise<void>;
   onProgress?: (
     update: HistoricalReplayProgressUpdate
   ) => Promise<void> | void;
@@ -176,7 +179,8 @@ export async function runCodexHistoricalReplay(
       basePolicy: options.allocationPolicy,
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy,
       snapshots: input.snapshots,
-      simulatedAt
+      simulatedAt,
+      tick
     });
     const packetBuildStartedAtMs = performanceClock();
     const packetBuild = new HistoricalMarketPacketBuilder({
@@ -218,6 +222,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
+      await waitForTickPacing(options);
       continue;
     }
 
@@ -257,7 +262,7 @@ export async function runCodexHistoricalReplay(
           portfolio: currentPortfolio,
           decisionItem: item,
           engine,
-          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
           paperExitPolicyState,
           auditEvents,
           riskDecisions,
@@ -324,6 +329,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
+      await waitForTickPacing(options);
       continue;
     }
 
@@ -352,6 +358,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
+      await waitForTickPacing(options);
       continue;
     }
 
@@ -376,6 +383,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
+      await waitForTickPacing(options);
       continue;
     }
 
@@ -414,12 +422,30 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
+      await waitForTickPacing(options);
       continue;
+    }
+
+    const cappedDecision = enforceProviderDecisionExecutionCaps({
+      packet,
+      portfolio: currentPortfolio,
+      decision: filteredDecision.decision
+    });
+    if (
+      cappedDecision.cappedItemCount > 0 ||
+      cappedDecision.heldItemCount > 0
+    ) {
+      appendHistoricalReplayAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_ALLOCATION_CAPPED",
+        `${cappedDecision.cappedItemCount} BUY item(s) capped, ${cappedDecision.heldItemCount} BUY item(s) converted to HOLD`,
+        tick
+      );
     }
 
     const recordedDecision = recordHistoricalReplayDecision({
       packet,
-      decision: filteredDecision.decision,
+      decision: cappedDecision.decision,
       source: "provider",
       decisions,
       auditEvents,
@@ -430,9 +456,9 @@ export async function runCodexHistoricalReplay(
       const execution = executeHistoricalReplayDecisionItem({
         packet,
         portfolio: currentPortfolio,
-        decisionItem: item,
-        engine,
-        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt),
+      decisionItem: item,
+      engine,
+      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -478,6 +504,7 @@ export async function runCodexHistoricalReplay(
         orderExecutionMs
       })
     );
+    await waitForTickPacing(options);
   }
 
   return {
@@ -518,12 +545,34 @@ export async function runCodexHistoricalReplay(
   };
 }
 
+async function waitForTickPacing(
+  options: Pick<CodexHistoricalReplayRunnerOptions, "tickDelayMs" | "tickDelay">
+): Promise<void> {
+  const delayMs = options.tickDelayMs ?? 0;
+  if (delayMs <= 0) {
+    return;
+  }
+  await (options.tickDelay ?? sleep)(delayMs);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function riskPolicyForTick(
   policy: Partial<VirtualRiskPolicy> | undefined,
-  now: Date
+  now: Date,
+  packet: MarketPacket
 ): Partial<VirtualRiskPolicy> {
+  const scheduledExposureCeilingRatio =
+    packet.portfolioAllocation?.scheduledExposureCeilingRatio;
   return {
     ...(policy ?? {}),
+    ...(scheduledExposureCeilingRatio === undefined
+      ? {}
+      : { targetExposureRatio: scheduledExposureCeilingRatio }),
     now
   };
 }
@@ -533,20 +582,38 @@ function allocationPolicyForTick(input: {
   marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | undefined;
   snapshots: HistoricalMarketSnapshot[];
   simulatedAt: Date;
+  tick: SimulatedTick;
 }): PaperAllocationPolicy | undefined {
   if (input.basePolicy === undefined) {
     return undefined;
   }
   if (input.marketRegimeAllocationPolicy === undefined) {
-    return input.basePolicy;
+    return allocationPolicyWithRampDayIndex(input.basePolicy, input.tick);
   }
 
-  return buildMarketRegimeAllocationPolicy({
+  return allocationPolicyWithRampDayIndex(buildMarketRegimeAllocationPolicy({
     basePolicy: input.basePolicy,
     snapshots: input.snapshots,
     simulatedAt: input.simulatedAt,
     policy: input.marketRegimeAllocationPolicy
-  }).allocationPolicy;
+  }).allocationPolicy, input.tick);
+}
+
+function allocationPolicyWithRampDayIndex(
+  policy: PaperAllocationPolicy,
+  tick: SimulatedTick
+): PaperAllocationPolicy {
+  if (
+    policy.deploymentRampDays === undefined ||
+    policy.rampDayIndex !== undefined
+  ) {
+    return policy;
+  }
+
+  return {
+    ...policy,
+    rampDayIndex: tick.stepIndex + 1
+  };
 }
 
 function appendExitPolicyWarnings(

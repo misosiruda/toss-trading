@@ -207,11 +207,11 @@ function validDecision() {
         budgetKrw: 70_000,
         thesis: "Mock packet supports a paper-only virtual buy.",
         riskFactors: ["Paper trading risk."],
-        dataRefs: ["mock_source_001"],
+        dataRefs: ["candidate.KR.005930.source.0"],
         claimSupport: [
           {
             claim: "Mock packet supports a paper-only virtual buy.",
-            dataRefs: ["mock_source_001"]
+            dataRefs: ["candidate.KR.005930.source.0"]
           }
         ],
         expiresAt: "2026-06-11T09:05:00+09:00"

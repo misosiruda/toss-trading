@@ -48,7 +48,7 @@ export function renderDailyReport(report) {
   );
   setText(
     "report-source-result",
-    `${report?.sourceStatus?.status ?? "unknown"} · warnings ${report?.sourceStatus?.warningCount ?? 0}`
+    sourceStatusText(report?.sourceStatus)
   );
   setText("report-disclaimer", report?.disclaimer ?? "-");
 
@@ -77,8 +77,38 @@ export function renderDailyReport(report) {
   appendDefinition(
     detail,
     "Source Warning",
-    (report?.sourceStatus?.warnings ?? []).join(" | ") || "none"
+    sourceWarningText(report?.sourceStatus)
   );
+}
+
+function sourceStatusText(sourceStatus) {
+  const status = sourceStatus?.status ?? "unknown";
+  const warningCount = Number(sourceStatus?.warningCount ?? 0);
+  const routineFilterCount = Number(sourceStatus?.routineFilterCount ?? 0);
+  if (warningCount > 0) {
+    return `${status} · warnings ${warningCount}`;
+  }
+  if (routineFilterCount > 0) {
+    return `${status} · routine filters ${routineFilterCount}`;
+  }
+  return `${status} · warnings 0`;
+}
+
+function sourceWarningText(sourceStatus) {
+  const warnings = Array.isArray(sourceStatus?.warnings)
+    ? sourceStatus.warnings
+    : [];
+  if (warnings.length > 0) {
+    return warnings.join(" | ");
+  }
+
+  const futureCount = Number(sourceStatus?.futureSnapshotFilterCount ?? 0);
+  const staleCount = Number(sourceStatus?.staleSnapshotFilterCount ?? 0);
+  if (futureCount > 0 || staleCount > 0) {
+    return `routine historical filters: future snapshots ${futureCount}, stale snapshots ${staleCount}`;
+  }
+
+  return "none";
 }
 
 export function renderReplayReport(replayPayload) {

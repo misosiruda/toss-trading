@@ -87,6 +87,7 @@ function packetFixture(): MarketPacket {
 
 function decisionFixture(packet: MarketPacket): VirtualDecision {
   const featureRef = "candidate.KR.005930.buyEligible";
+  const dataRef = packet.candidates[0]?.dataRefs?.[0] ?? "mock_source_001";
   return bindDecisionIdentityMetadata(
     {
       packetId: packet.packetId,
@@ -101,12 +102,12 @@ function decisionFixture(packet: MarketPacket): VirtualDecision {
           budgetKrw: 70_000,
           thesis: "Mock packet supports a paper-only virtual buy.",
           riskFactors: ["Paper trading risk."],
-          dataRefs: ["mock_source_001"],
+          dataRefs: [dataRef],
           featureRefs: [featureRef],
           claimSupport: [
             {
               claim: "Mock packet supports a paper-only virtual buy.",
-              dataRefs: ["mock_source_001"],
+              dataRefs: [dataRef],
               featureRefs: [featureRef]
             }
           ],

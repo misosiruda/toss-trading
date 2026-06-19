@@ -27,6 +27,13 @@ interface PaperRiskProfileTemplate {
   maxPositionWeightRatio: number;
   minCashReserveRatio: number;
   minCashReserveKrw: number;
+  deploymentRampDays?: number;
+  maxInitialDeploymentRatio?: number;
+  maxDailyGrossBuyRatio?: number;
+  maxInitialOpenPositions?: number;
+  maxNewPositionsPerDay?: number;
+  maxConcurrentPositions?: number;
+  positionSlotRampDays?: number;
 }
 
 const PROFILE_TEMPLATES: Record<PaperRiskProfileName, PaperRiskProfileTemplate> = {
@@ -58,10 +65,17 @@ const PROFILE_TEMPLATES: Record<PaperRiskProfileName, PaperRiskProfileTemplate> 
     maxSymbolExposureMultiplier: 1.5,
     targetExposureRatio: 0.85,
     maxBudgetPerDecisionRatio: 0.2,
-    maxSymbolExposureRatio: 0.3,
+    maxSymbolExposureRatio: 0.25,
     maxPositionWeightRatio: 0.65,
     minCashReserveRatio: 0.05,
-    minCashReserveKrw: 0
+    minCashReserveKrw: 0,
+    deploymentRampDays: 10,
+    maxInitialDeploymentRatio: 0.25,
+    maxDailyGrossBuyRatio: 0.12,
+    maxInitialOpenPositions: 2,
+    maxNewPositionsPerDay: 2,
+    maxConcurrentPositions: 5,
+    positionSlotRampDays: 10
   }
 };
 
@@ -101,10 +115,13 @@ export function resolvePaperRiskProfile(input: {
     input.initialCashKrw === undefined
       ? Math.round(maxBudgetPerSymbolKrw * template.maxSymbolExposureMultiplier)
       : Math.round(input.initialCashKrw * template.maxSymbolExposureRatio);
-  const maxSymbolExposureKrw = Math.max(
-    Math.round(maxBudgetPerSymbolKrw * template.maxSymbolExposureMultiplier),
-    scaledSymbolExposureKrw
-  );
+  const maxSymbolExposureKrw =
+    input.initialCashKrw === undefined
+      ? Math.max(
+          Math.round(maxBudgetPerSymbolKrw * template.maxSymbolExposureMultiplier),
+          scaledSymbolExposureKrw
+        )
+      : scaledSymbolExposureKrw;
 
   return {
     name,
@@ -126,7 +143,28 @@ export function resolvePaperRiskProfile(input: {
       targetExposureRatio: template.targetExposureRatio,
       minCashReserveRatio: template.minCashReserveRatio,
       maxBudgetPerDecisionRatio: template.maxBudgetPerDecisionRatio,
-      maxSymbolExposureRatio: template.maxSymbolExposureRatio
+      maxSymbolExposureRatio: template.maxSymbolExposureRatio,
+      ...(template.deploymentRampDays === undefined
+        ? {}
+        : { deploymentRampDays: template.deploymentRampDays }),
+      ...(template.maxInitialDeploymentRatio === undefined
+        ? {}
+        : { maxInitialDeploymentRatio: template.maxInitialDeploymentRatio }),
+      ...(template.maxDailyGrossBuyRatio === undefined
+        ? {}
+        : { maxDailyGrossBuyRatio: template.maxDailyGrossBuyRatio }),
+      ...(template.maxInitialOpenPositions === undefined
+        ? {}
+        : { maxInitialOpenPositions: template.maxInitialOpenPositions }),
+      ...(template.maxNewPositionsPerDay === undefined
+        ? {}
+        : { maxNewPositionsPerDay: template.maxNewPositionsPerDay }),
+      ...(template.maxConcurrentPositions === undefined
+        ? {}
+        : { maxConcurrentPositions: template.maxConcurrentPositions }),
+      ...(template.positionSlotRampDays === undefined
+        ? {}
+        : { positionSlotRampDays: template.positionSlotRampDays })
     }
   };
 }

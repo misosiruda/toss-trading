@@ -137,6 +137,7 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
         snapshotId: "hist_spy",
         market: "US",
         symbol: "SPY",
+        name: "SPDR S&P 500 ETF",
         observedAt: "2025-01-02T09:00:00+09:00",
         assetType: "ETF",
         assetClass: "equity",
@@ -150,6 +151,7 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
 
   assert.equal(result.status, "ok");
   assert.equal(candidate?.market, "US");
+  assert.equal(candidate?.name, "SPDR S&P 500 ETF");
   assert.equal(candidate?.assetType, "ETF");
   assert.equal(candidate?.assetClass, "equity");
   assert.equal(candidate?.region, "US");
@@ -230,6 +232,74 @@ test("historical packet builder trims candidates deterministically", () => {
       : [],
     ["000660", "035420"]
   );
+});
+
+test("historical packet builder preserves held positions outside screened top candidates", () => {
+  const result = builder({ maxCandidates: 2 }).build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "999999",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 80_000,
+          updatedAt: "2025-01-02T09:00:00+09:00"
+        }
+      ]
+    },
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_000001_prev",
+        symbol: "000001",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000
+      }),
+      snapshot({
+        snapshotId: "hist_000001_current",
+        symbol: "000001",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 130_000
+      }),
+      snapshot({
+        snapshotId: "hist_000002_prev",
+        symbol: "000002",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000
+      }),
+      snapshot({
+        snapshotId: "hist_000002_current",
+        symbol: "000002",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 125_000
+      }),
+      snapshot({
+        snapshotId: "hist_999999_prev",
+        symbol: "999999",
+        observedAt: "2025-01-02T08:59:00+09:00",
+        lastPriceKrw: 100_000
+      }),
+      snapshot({
+        snapshotId: "hist_999999_current",
+        symbol: "999999",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 80_000
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidates = result.status === "ok" ? result.packet.candidates : [];
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.symbol),
+    ["000001", "000002", "999999"]
+  );
+  assert.equal(result.status === "ok" && result.candidateSnapshotCount, 3);
+  const held = candidates.find((candidate) => candidate.symbol === "999999")!;
+  assert.equal(held.positionExists, true);
+  assert.equal(held.sellEligible, true);
+  assert.equal(held.reasonCodes.includes("HISTORICAL_HELD_POSITION"), true);
 });
 
 test("historical packet builder screens broad universe with market diversification", () => {
@@ -406,6 +476,7 @@ function snapshot(input: {
   snapshotId: string;
   market?: HistoricalMarketSnapshot["market"];
   symbol: string;
+  name?: string;
   observedAt: string;
   assetType?: HistoricalMarketSnapshot["assetType"];
   assetClass?: HistoricalMarketSnapshot["assetClass"];
@@ -420,6 +491,7 @@ function snapshot(input: {
     snapshotId: input.snapshotId,
     market: input.market ?? "KR",
     symbol: input.symbol,
+    ...(input.name === undefined ? {} : { name: input.name }),
     ...(input.assetType === undefined ? {} : { assetType: input.assetType }),
     ...(input.assetClass === undefined ? {} : { assetClass: input.assetClass }),
     ...(input.region === undefined ? {} : { region: input.region }),

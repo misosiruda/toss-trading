@@ -5,6 +5,7 @@ import type {
   VirtualDecision,
   VirtualDecisionItem
 } from "../domain/schemas.js";
+import { candidateDecisionDataRefs } from "../market/candidateDataRefs.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import { missingDecisionIdentityFields } from "./decisionIdentity.js";
 
@@ -178,11 +179,13 @@ export function validateVirtualDecisionAgainstPacket(input: {
       });
     }
 
+    const candidateDataRefs = candidateDecisionDataRefs(candidate);
+
     for (const dataRef of item.dataRefs) {
-      if (!candidate.sourceRefs.includes(dataRef)) {
+      if (!candidateDataRefs.includes(dataRef)) {
         issues.push({
           code: "VIRTUAL_DECISION_DATA_REF_NOT_IN_CANDIDATE",
-          message: `${dataRef} is not a sourceRef for ${item.market}:${item.symbol}`,
+          message: `${dataRef} is not a dataRef for ${item.market}:${item.symbol}`,
           market: item.market,
           symbol: item.symbol,
           action: item.action,
@@ -216,10 +219,10 @@ export function validateVirtualDecisionAgainstPacket(input: {
 
     for (const claimSupport of item.claimSupport ?? []) {
       for (const dataRef of claimSupport.dataRefs ?? []) {
-        if (!candidate.sourceRefs.includes(dataRef)) {
+        if (!candidateDataRefs.includes(dataRef)) {
           issues.push({
             code: "VIRTUAL_DECISION_CLAIM_SUPPORT_DATA_REF_NOT_IN_CANDIDATE",
-            message: `${dataRef} is not a claim support sourceRef for ${item.market}:${item.symbol}`,
+            message: `${dataRef} is not a claim support dataRef for ${item.market}:${item.symbol}`,
             market: item.market,
             symbol: item.symbol,
             action: item.action,

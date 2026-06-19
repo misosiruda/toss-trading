@@ -24,6 +24,8 @@ test("Codex decision provider env prefers AI decision aliases", () => {
     AI_DECISION_ENABLED: "true",
     CODEX_EXEC_PATH: "C:\\Codex\\codex.exe",
     CODEX_EXEC_TIMEOUT_SECONDS: "120",
+    AI_DECISION_MODEL_ID: "gpt-5.3-codex-spark",
+    CODEX_MODEL: "gpt-5.5",
     AI_DECISION_OUTPUT_SCHEMA_PATH: "schemas/ai-schema.json",
     CODEX_OUTPUT_SCHEMA_PATH: "schemas/codex-schema.json",
     AI_DECISION_MAX_RUNS_PER_DAY: "40",
@@ -39,6 +41,7 @@ test("Codex decision provider env prefers AI decision aliases", () => {
     timeoutMs: 120_000,
     maxRunsPerDay: 40,
     allowWebSearch: true,
+    modelId: "gpt-5.3-codex-spark",
     outputSchemaPath: "schemas/ai-schema.json"
   });
 });

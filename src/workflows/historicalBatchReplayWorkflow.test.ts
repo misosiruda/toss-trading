@@ -284,7 +284,7 @@ test("historical batch replay runner can inject Codex-style provider per run", a
   );
 });
 
-test("historical batch replay runner records AI provider failures without failing completed replay", async () => {
+test("historical batch replay runner marks AI provider failures in completed replay", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
   const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
   const sourcePaths = createStoragePaths(sourceDataDir);
@@ -313,15 +313,26 @@ test("historical batch replay runner records AI provider failures without failin
     decisionProviderFactory: () => new FailingCodexBatchProvider()
   });
   const runRecords = await readJsonl(result.runsPath);
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
   const firstSummary = runRecords[0]?.["summary"] as Record<string, unknown>;
 
-  assert.equal(result.status, "completed");
+  assert.equal(result.status, "completed_with_failures");
+  assert.equal(manifest["status"], "completed_with_failures");
   assert.equal(result.completedCount, 1);
   assert.equal(result.failedCount, 0);
-  assert.equal(runRecords[0]?.["status"], "completed");
+  assert.equal(runRecords[0]?.["status"], "completed_with_failures");
   assert.equal(runRecords[0]?.["error"], null);
   assert.equal(firstSummary["decisionProviderCallCount"], 1);
   assert.equal(firstSummary["aiDecisionFailureCount"], 1);
+  assert.deepEqual(firstSummary["aiDecisionFailureReasons"], [
+    "fixture provider failure"
+  ]);
+  assert.equal(
+    firstSummary["lastAiDecisionFailureSummary"],
+    "fixture provider failure"
+  );
   assert.equal(firstSummary["tradeCount"], 0);
   assert.match(String(runRecords[0]?.["reportPath"]), /historical-replay-report\.json$/);
 });

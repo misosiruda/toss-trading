@@ -4,6 +4,7 @@ import type {
   VirtualPortfolio
 } from "../domain/schemas.js";
 import { isFresh } from "../domain/schemas.js";
+import { firstCandidateDecisionDataRef } from "../market/candidateDataRefs.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import {
   bindDecisionIdentityMetadata,
@@ -69,7 +70,10 @@ export class MarketPacketDryRunDecisionProvider implements DecisionProvider {
       packet.constraints.maxBudgetPerSymbolKrw,
       Math.max(candidate.lastPriceKrw ?? 0, 1)
     );
-    const dataRef = candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
+    const dataRef = firstCandidateDecisionDataRef(
+      candidate,
+      `packet:${packet.packetId}`
+    );
 
     return {
       attempted: false,

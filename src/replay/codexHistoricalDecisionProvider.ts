@@ -18,7 +18,7 @@ import type { HistoricalReplayDecisionContext } from "./historicalReplayRunner.j
 export const HISTORICAL_REPLAY_DECISION_PROMPT_VERSION =
   `${PAPER_DECISION_PROMPT_VERSION}-historical-replay-v1`;
 export const HISTORICAL_REPLAY_AGGRESSIVE_PAPER_PROMPT_VERSION =
-  `${PAPER_DECISION_PROMPT_VERSION}-historical-replay-aggressive-paper-v1`;
+  `${PAPER_DECISION_PROMPT_VERSION}-historical-replay-aggressive-paper-v2`;
 
 export type HistoricalReplayPromptPolicyName = "default" | "aggressive_paper";
 
@@ -130,7 +130,7 @@ export function buildHistoricalReplayDecisionPrompt(
     "Historical replay mode: packet.generatedAt is the simulated current time.",
     "Do not infer, request, or use market data after packet.generatedAt.",
     "Do not use future prices, future news, future fills, or future portfolio states.",
-    "Treat packet sourceRefs as the complete evidence set for that simulated time.",
+    "Treat packet candidate dataRefs as the complete evidence citation set for that simulated time; sourceRefs are raw backend trace references only.",
     "If the packet evidence is insufficient, stale, or ambiguous, prefer VIRTUAL_HOLD."
   ];
 
@@ -140,8 +140,9 @@ export function buildHistoricalReplayDecisionPrompt(
       "Use the wider aggressive_paper risk envelope only when packet evidence is strong, fresh, internally consistent, and action eligibility is true.",
       "Do not chase a monthly return target, do not force trades to reach 15-30% returns, and do not guarantee performance.",
       "Prefer VIRTUAL_BUY over VIRTUAL_HOLD only for top-ranked candidates with strong featureScores or reasonCodes, fresh dataRefs, buyEligible=true, and enough cash under packet constraints.",
-      "When marketPacket.portfolioAllocation shows a positive targetExposureGapKrw, prefer filling that gap across eligible top-ranked candidates while staying within maxAdditionalBuyBudgetKrw, maxBudgetPerDecisionKrw, maxSymbolExposureKrw, and marketPacket.constraints.maxBudgetPerSymbolKrw.",
-      "When marketPacket.portfolioAllocation.marketAllocations is present, also keep each VIRTUAL_BUY within that candidate market's maxAdditionalBuyBudgetKrw.",
+      "When marketPacket.portfolioAllocation shows a positive scheduledExposureHeadroomKrw, consider paper BUY only within maxAdditionalBuyBudgetKrw, maxBudgetPerDecisionKrw, maxSymbolExposureKrw, remainingNewPositionSlots, and marketPacket.constraints.maxBudgetPerSymbolKrw.",
+      "Do not try to reach targetExposureRatio immediately; scheduledExposureCeilingRatio is the current exposure ceiling for this decision.",
+      "When marketPacket.portfolioAllocation.marketAllocations is present, also keep the total BUY budget for each candidate market within that market's maxAdditionalBuyBudgetKrw.",
       "When proposing VIRTUAL_BUY, size budgetKrw close to the allowed paper allocation budget only when riskFactors explicitly cover concentration, drawdown, stale-data, target-exposure, and cash-reserve risk.",
       "Use reduce-only VIRTUAL_SELL for existing positions when packet evidence weakens or portfolio state shows concentration, cash, or policy conflict supported by packet data.",
       "VIRTUAL_HOLD remains required when eligibility, evidence, or constraints do not support a non-hold action."

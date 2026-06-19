@@ -53,12 +53,19 @@ import {
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
 
-export type BatchReplayRunStatus = "completed" | "skipped" | "failed";
+export type BatchReplayRunStatus =
+  | "completed"
+  | "completed_with_failures"
+  | "skipped"
+  | "failed";
 export type BatchReplayManifestStatus =
   | "running"
   | "completed"
   | "completed_with_failures";
-export type BatchReplayWindowSamplingMode = "random" | "balanced_regime";
+export type BatchReplayWindowSamplingMode =
+  | "random"
+  | "balanced_regime"
+  | "fixed_range";
 
 export interface BatchReplayRunnerOptions {
   sourceDataDir: string;
@@ -68,11 +75,14 @@ export interface BatchReplayRunnerOptions {
   runCount: number;
   rangeStart: Date;
   rangeEnd: Date;
+  fixedWindow?: ReplayWindowSelection;
   windowMonths?: number;
   timezoneOffsetMinutes?: number;
   generatedAt?: Date;
   stepSeconds?: number;
   speedMultiplier?: number;
+  tickDelayMs?: number;
+  wallClockTimestamps?: boolean;
   everyNSteps?: number;
   candidateChangedOnly?: boolean;
   decisionFrequency?: ReplayDecisionFrequency;
@@ -148,9 +158,11 @@ export interface BatchReplayManifest {
   sourceDataDir: string;
   runsPath: string;
   runCount: number;
+  initialCashKrw: number;
   completedCount: number;
   skippedCount: number;
   failedCount: number;
+  activeRun: BatchReplayActiveRunSnapshot | null;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   riskProfile: PaperRiskProfileName | null;
   allocationPolicy: PaperAllocationPolicy | null;
@@ -158,6 +170,19 @@ export interface BatchReplayManifest {
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
   disclaimer: string;
+}
+
+export interface BatchReplayActiveRunSnapshot {
+  runId: string;
+  runIndex: number;
+  runSeed: string;
+  startedAt: string;
+  storageBaseDir: string;
+  window: ReplayWindowSelection;
+  windowSampling: BatchReplayRunWindowSampling;
+  marketRegime: MarketRegimeClassification;
+  marketRegimesByMarket: MarketRegimesByMarket;
+  dataAvailability: BatchReplayDataAvailabilitySummary;
 }
 
 export interface BatchReplayRunRecord {
@@ -199,6 +224,8 @@ export interface BatchReplayRunSummary {
   tradeCount: number;
   decisionProviderCallCount: number;
   aiDecisionFailureCount: number;
+  aiDecisionFailureReasons: string[];
+  lastAiDecisionFailureSummary: string | null;
   rejectedCount: number;
   meaningfulRejectCount: number;
   dustRejectCount: number;
@@ -263,6 +290,7 @@ export async function runHistoricalBatchReplay(
   ).readAll();
   const windowSamplingMode = options.windowSamplingMode ?? "random";
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
+  const initialCashKrw = options.initialCashKrw ?? DEFAULT_INITIAL_CASH_KRW;
   const initialWindowSamplingSummary = initialWindowSamplingSummaryFor(
     windowSamplingMode,
     options.targetRegimes
@@ -283,9 +311,11 @@ export async function runHistoricalBatchReplay(
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
     runCount: options.runCount,
+    initialCashKrw,
     completedCount: 0,
     skippedCount: 0,
     failedCount: 0,
+    activeRun: null,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
@@ -350,12 +380,54 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
-        skipReason: "DATA_INSUFFICIENT"
+        skipReason: "DATA_INSUFFICIENT",
+        terminalAt: terminalDateForRun({
+          startedAt: runStartedAt,
+          runIndex: 1,
+          wallClock: options.wallClockTimestamps === true
+        })
       });
       records.push(skipped);
       await appendRunRecord(paths.runsPath, skipped);
       continue;
     }
+
+    await writeManifest(paths.manifestPath, {
+      mode: "paper_only",
+      batchId,
+      seed,
+      status: "running",
+      startedAt: startedAt.toISOString(),
+      updatedAt: runStartedAt.toISOString(),
+      completedAt: null,
+      outputDir: paths.outputDir,
+      sourceDataDir: options.sourceDataDir,
+      runsPath: paths.runsPath,
+      runCount: options.runCount,
+      initialCashKrw,
+      completedCount: records.filter(isCompletedRunRecord).length,
+      skippedCount: records.filter((record) => record.status === "skipped").length,
+      failedCount: records.filter((record) => record.status === "failed").length,
+      activeRun: activeRunSnapshot({
+        runId,
+        runIndex,
+        runSeed,
+        runStartedAt,
+        storageBaseDir,
+        window,
+        windowSampling: windowSelection.runWindowSampling,
+        marketRegime,
+        marketRegimesByMarket,
+        availability
+      }),
+      decisionProvider: decisionProviderMetadata,
+      riskProfile: options.riskProfile ?? null,
+      allocationPolicy: options.allocationPolicy ?? null,
+      marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
+      paperExitPolicy,
+      windowSampling: windowSamplingSummary,
+      disclaimer: batchReplayDisclaimer()
+    });
 
     try {
       const decisionProvider = options.decisionProviderFactory?.({
@@ -374,6 +446,9 @@ export async function runHistoricalBatchReplay(
           stepSeconds: options.stepSeconds ?? DEFAULT_STEP_SECONDS,
           speedMultiplier: options.speedMultiplier ?? 1
         }),
+        ...(options.tickDelayMs === undefined
+          ? {}
+          : { tickDelayMs: options.tickDelayMs }),
         samplingPolicy: new ReplaySamplingPolicy({
           ...(options.everyNSteps === undefined
             ? {}
@@ -387,7 +462,7 @@ export async function runHistoricalBatchReplay(
             options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
         }),
         generatedAt: runStartedAt,
-        initialCashKrw: options.initialCashKrw ?? DEFAULT_INITIAL_CASH_KRW,
+        initialCashKrw,
         packetIdPrefix: `${options.packetIdPrefix ?? DEFAULT_PACKET_ID_PREFIX}_${runIndex}`,
         packetExpiresInSeconds:
           options.packetExpiresInSeconds ?? DEFAULT_PACKET_EXPIRES_IN_SECONDS,
@@ -419,12 +494,16 @@ export async function runHistoricalBatchReplay(
         batchRunIndex: runIndex,
         windowSelection: window
       });
+      const summary = summarizeRun(result.report, result.replayResult.auditEvents);
       const completed = runRecord({
         batchId,
         runId,
         runIndex,
         runSeed,
-        status: "completed",
+        status:
+          summary.aiDecisionFailureCount > 0
+            ? "completed_with_failures"
+            : "completed",
         runStartedAt,
         storageBaseDir,
         window,
@@ -433,7 +512,12 @@ export async function runHistoricalBatchReplay(
         marketRegimesByMarket,
         availability,
         reportPath: result.reportPath,
-        summary: summarizeRun(result.report, result.replayResult.auditEvents)
+        summary,
+        terminalAt: terminalDateForRun({
+          startedAt: runStartedAt,
+          runIndex: 1,
+          wallClock: options.wallClockTimestamps === true
+        })
       });
       records.push(completed);
       await appendRunRecord(paths.runsPath, completed);
@@ -451,21 +535,33 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        terminalAt: terminalDateForRun({
+          startedAt: runStartedAt,
+          runIndex: 1,
+          wallClock: options.wallClockTimestamps === true
+        })
       });
       records.push(failed);
       await appendRunRecord(paths.runsPath, failed);
     }
   }
 
-  const completedAt = dateForRun(startedAt, options.runCount);
-  const completedCount = records.filter(
-    (record) => record.status === "completed"
-  ).length;
+  const completedAt = terminalDateForRun({
+    startedAt,
+    runIndex: options.runCount,
+    wallClock: options.wallClockTimestamps === true
+  });
+  const completedCount = records.filter(isCompletedRunRecord).length;
   const skippedCount = records.filter((record) => record.status === "skipped").length;
   const failedCount = records.filter((record) => record.status === "failed").length;
+  const completedWithFailuresCount = records.filter(
+    (record) => record.status === "completed_with_failures"
+  ).length;
   const status: BatchReplayManifestStatus =
-    failedCount > 0 ? "completed_with_failures" : "completed";
+    failedCount > 0 || completedWithFailuresCount > 0
+      ? "completed_with_failures"
+      : "completed";
 
   await writeManifest(paths.manifestPath, {
     mode: "paper_only",
@@ -479,9 +575,11 @@ export async function runHistoricalBatchReplay(
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
     runCount: options.runCount,
+    initialCashKrw,
     completedCount,
     skippedCount,
     failedCount,
+    activeRun: null,
     decisionProvider: decisionProviderMetadata,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
@@ -520,6 +618,22 @@ function selectBatchReplayWindow(input: {
   runSeed: string;
   windowSamplingMode: BatchReplayWindowSamplingMode;
 }): SelectedBatchReplayWindow {
+  if (input.options.fixedWindow !== undefined) {
+    return {
+      window: {
+        ...input.options.fixedWindow,
+        seed: input.runSeed
+      },
+      runWindowSampling: {
+        mode: "fixed_range",
+        targetRegime: null,
+        targetCandidateCount: null,
+        fallbackReason: null
+      },
+      summary: initialWindowSamplingSummaryFor("fixed_range")
+    };
+  }
+
   if (input.windowSamplingMode === "balanced_regime") {
     const selected = selectRegimeBalancedReplayWindow({
       snapshots: input.snapshots,
@@ -596,6 +710,32 @@ function windowSamplingSummaryFromPlan(
   };
 }
 
+function activeRunSnapshot(input: {
+  runId: string;
+  runIndex: number;
+  runSeed: string;
+  runStartedAt: Date;
+  storageBaseDir: string;
+  window: ReplayWindowSelection;
+  windowSampling: BatchReplayRunWindowSampling;
+  marketRegime: MarketRegimeClassification;
+  marketRegimesByMarket: MarketRegimesByMarket;
+  availability: HistoricalDataAvailabilityReport;
+}): BatchReplayActiveRunSnapshot {
+  return {
+    runId: input.runId,
+    runIndex: input.runIndex,
+    runSeed: input.runSeed,
+    startedAt: input.runStartedAt.toISOString(),
+    storageBaseDir: input.storageBaseDir,
+    window: input.window,
+    windowSampling: input.windowSampling,
+    marketRegime: input.marketRegime,
+    marketRegimesByMarket: input.marketRegimesByMarket,
+    dataAvailability: summarizeAvailability(input.availability)
+  };
+}
+
 function runRecord(input: {
   batchId: string;
   runId: string;
@@ -613,8 +753,11 @@ function runRecord(input: {
   summary?: BatchReplayRunSummary;
   error?: string;
   skipReason?: string;
+  terminalAt?: Date;
 }): BatchReplayRunRecord {
-  const terminalAt = dateForRun(input.runStartedAt, 1).toISOString();
+  const terminalAt =
+    input.terminalAt?.toISOString() ??
+    dateForRun(input.runStartedAt, 1).toISOString();
   return {
     mode: "paper_only",
     batchId: input.batchId,
@@ -623,7 +766,7 @@ function runRecord(input: {
     runSeed: input.runSeed,
     status: input.status,
     startedAt: input.runStartedAt.toISOString(),
-    completedAt: input.status === "completed" ? terminalAt : null,
+    completedAt: isCompletedRunStatus(input.status) ? terminalAt : null,
     skippedAt: input.status === "skipped" ? terminalAt : null,
     failedAt: input.status === "failed" ? terminalAt : null,
     storageBaseDir: input.storageBaseDir,
@@ -643,6 +786,11 @@ function summarizeRun(
   report: HistoricalReplayReport,
   auditEvents: AuditEvent[]
 ): BatchReplayRunSummary {
+  const aiDecisionFailureReasons = uniqueRecentValues(
+    auditEvents
+      .filter((event) => event.eventType === "HISTORICAL_AI_DECISION_FAILED")
+      .map((event) => event.summary)
+  );
   return {
     finalVirtualNetWorthKrw: report.portfolio.finalVirtualNetWorthKrw,
     totalReturnRatio: report.benchmarks.strategy.totalReturnRatio,
@@ -651,6 +799,8 @@ function summarizeRun(
     aiDecisionFailureCount: auditEvents.filter(
       (event) => event.eventType === "HISTORICAL_AI_DECISION_FAILED"
     ).length,
+    aiDecisionFailureReasons,
+    lastAiDecisionFailureSummary: aiDecisionFailureReasons.at(-1) ?? null,
     rejectedCount: report.riskSummary.rejectedCount,
     meaningfulRejectCount: report.riskSummary.meaningfulRejectCount,
     dustRejectCount: report.riskSummary.dustRejectCount,
@@ -669,6 +819,24 @@ function summarizeRun(
     finalExposureByMarketKrw: report.analytics.exposureByMarket,
     finalExposureByAssetTypeKrw: report.analytics.exposureByAssetType
   };
+}
+
+function isCompletedRunRecord(record: BatchReplayRunRecord): boolean {
+  return isCompletedRunStatus(record.status);
+}
+
+function isCompletedRunStatus(status: BatchReplayRunStatus): boolean {
+  return status === "completed" || status === "completed_with_failures";
+}
+
+function uniqueRecentValues(values: string[], limit = 5): string[] {
+  const unique: string[] = [];
+  for (const value of values) {
+    if (!unique.includes(value)) {
+      unique.push(value);
+    }
+  }
+  return unique.slice(-limit);
 }
 
 function summarizeAvailability(
@@ -741,6 +909,16 @@ function validateDate(value: Date, label: string): void {
 
 function dateForRun(startedAt: Date, runIndex: number): Date {
   return new Date(startedAt.getTime() + runIndex);
+}
+
+function terminalDateForRun(input: {
+  startedAt: Date;
+  runIndex: number;
+  wallClock: boolean;
+}): Date {
+  return input.wallClock
+    ? new Date()
+    : dateForRun(input.startedAt, input.runIndex);
 }
 
 function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {

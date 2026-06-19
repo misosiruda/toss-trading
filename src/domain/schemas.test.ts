@@ -51,6 +51,7 @@ function validMarketPacket(): unknown {
         ],
         dividendYieldPct: 2.4,
         exDividendDate: "2026-12-27",
+        dataRefs: ["candidate.KR.005930.source.0"],
         sourceRefs: ["external_snapshot_001"],
         collectedAt: now,
         staleAfter: later
@@ -98,6 +99,7 @@ test("valid market packet fixture passes schema validation", () => {
   );
 
   assert.equal(packet.mode, "paper_only");
+  assert.equal(packet.candidates[0]?.dataRefs?.[0], "candidate.KR.005930.source.0");
   assert.equal(packet.candidates[0]?.sourceRefs[0], "external_snapshot_001");
   assert.equal(packet.candidates[0]?.assetType, "STOCK");
   assert.equal(packet.candidates[0]?.assetClass, "equity");
@@ -153,6 +155,7 @@ test("valid historical market snapshot fixture passes schema validation", () => 
       snapshotId: "hist_kr_005930_20250611_090000",
       market: "KR",
       symbol: "005930",
+      name: "Samsung Electronics",
       assetType: "STOCK",
       assetClass: "equity",
       region: "KR",
@@ -171,6 +174,7 @@ test("valid historical market snapshot fixture passes schema validation", () => 
   );
 
   assert.equal(snapshot.symbol, "005930");
+  assert.equal(snapshot.name, "Samsung Electronics");
   assert.equal(snapshot.assetType, "STOCK");
   assert.equal(snapshot.assetClass, "equity");
   assert.equal(snapshot.region, "KR");
