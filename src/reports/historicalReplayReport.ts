@@ -108,6 +108,11 @@ export interface HistoricalReplayCostSummary {
   impactCostKrw: number;
   totalCostKrw: number;
   costModelVersions: string[];
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageParticipationRate: number | null;
+  maxParticipationRate: number | null;
 }
 
 export interface HistoricalReplayRiskSummary {
@@ -250,6 +255,15 @@ export function renderHistoricalReplayReport(
     `spread_cost_krw: ${report.costSummary.spreadCostKrw}`,
     `impact_cost_krw: ${report.costSummary.impactCostKrw}`,
     `total_cost_krw: ${report.costSummary.totalCostKrw}`,
+    `filled_count: ${report.costSummary.filledCount}`,
+    `partial_fill_count: ${report.costSummary.partialFillCount}`,
+    `not_modeled_liquidity_count: ${report.costSummary.notModeledLiquidityCount}`,
+    `average_participation_rate: ${formatNullable(
+      report.costSummary.averageParticipationRate
+    )}`,
+    `max_participation_rate: ${formatNullable(
+      report.costSummary.maxParticipationRate
+    )}`,
     `cost_model_versions: ${
       report.costSummary.costModelVersions.join(", ") || "none"
     }`,
@@ -384,6 +398,9 @@ function summarizeCosts(trades: VirtualTrade[]): HistoricalReplayCostSummary {
   const slippageKrw = sumTradeField(trades, "slippageKrw");
   const spreadCostKrw = sumTradeField(trades, "spreadCostKrw");
   const impactCostKrw = sumTradeField(trades, "impactCostKrw");
+  const participationRates = trades
+    .map((trade) => trade.participationRate)
+    .filter((value): value is number => typeof value === "number");
   const totalCostKrw = trades.reduce((sum, trade) => {
     const componentTotal =
       (trade.feeKrw ?? 0) +
@@ -401,6 +418,23 @@ function summarizeCosts(trades: VirtualTrade[]): HistoricalReplayCostSummary {
     spreadCostKrw,
     impactCostKrw,
     totalCostKrw,
+    filledCount: trades.filter((trade) => trade.fillStatus === "filled").length,
+    partialFillCount: trades.filter((trade) => trade.fillStatus === "partial")
+      .length,
+    notModeledLiquidityCount: trades.filter(
+      (trade) => trade.liquidityStatus === "not_modeled"
+    ).length,
+    averageParticipationRate:
+      participationRates.length > 0
+        ? Number(
+            (
+              participationRates.reduce((sum, value) => sum + value, 0) /
+              participationRates.length
+            ).toFixed(6)
+          )
+        : null,
+    maxParticipationRate:
+      participationRates.length > 0 ? Math.max(...participationRates) : null,
     costModelVersions: Array.from(
       new Set(
         trades

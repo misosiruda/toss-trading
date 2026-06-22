@@ -3,19 +3,19 @@ import {
   type PaperExecutionPolicy
 } from "./executionModel.js";
 
-export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v1";
-export const PAPER_EXECUTION_MODEL_VERSION = "execution_simulator.v1";
+export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v2";
+export const PAPER_EXECUTION_MODEL_VERSION = "execution_simulator.v2";
 
 export interface PaperCostModel {
   modelVersion: typeof PAPER_COST_MODEL_VERSION;
   executionModelVersion: typeof PAPER_EXECUTION_MODEL_VERSION;
-  fillModel: "simple_fill_ratio";
+  fillModel: "simple_fill_ratio_with_participation_cap";
   feeModel: "fixed_bps";
   taxModel: "sell_tax_bps";
   slippageModel: "linear_bps";
   spreadModel: "not_modeled";
   marketImpactModel: "not_modeled";
-  liquidityModel: "not_modeled";
+  liquidityModel: "conservative_when_available";
   executionPolicy: PaperExecutionPolicy;
   costComponents: {
     fee: "fee_bps";
@@ -33,13 +33,13 @@ export function createPaperCostModel(
   return {
     modelVersion: PAPER_COST_MODEL_VERSION,
     executionModelVersion: PAPER_EXECUTION_MODEL_VERSION,
-    fillModel: "simple_fill_ratio",
+    fillModel: "simple_fill_ratio_with_participation_cap",
     feeModel: "fixed_bps",
     taxModel: "sell_tax_bps",
     slippageModel: "linear_bps",
     spreadModel: "not_modeled",
     marketImpactModel: "not_modeled",
-    liquidityModel: "not_modeled",
+    liquidityModel: "conservative_when_available",
     executionPolicy: createPaperExecutionPolicy(policy),
     costComponents: {
       fee: "fee_bps",
@@ -52,7 +52,8 @@ export function createPaperCostModel(
       "paper-only execution simulator",
       "no live broker order",
       "spread and market impact are explicit zero placeholders",
-      "liquidity and partial-fill behavior are not modeled in Q3-1"
+      "volume participation cap applies only when candidate volume is available",
+      "missing volume preserves legacy fill behavior and is reported as not_modeled"
     ]
   };
 }

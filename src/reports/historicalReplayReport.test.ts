@@ -34,8 +34,12 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.tradeSummary.tradeCount, 2);
   assert.equal(report.costSummary.totalCostKrw, 0);
   assert.deepEqual(report.costSummary.costModelVersions, [
-    "paper_cost_model.v1"
+    "paper_cost_model.v2"
   ]);
+  assert.equal(report.costSummary.filledCount, 2);
+  assert.equal(report.costSummary.partialFillCount, 0);
+  assert.equal(report.costSummary.notModeledLiquidityCount, 0);
+  assert.equal(report.costSummary.averageParticipationRate !== null, true);
   assert.equal(report.paperExitPolicy, null);
   assert.equal(report.portfolio.finalCashKrw, 830_000);
   assert.equal(report.portfolio.finalPositionCount, 2);
@@ -83,6 +87,8 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /meaningful_reject_count/);
   assert.match(rendered, /Execution Costs/);
   assert.match(rendered, /total_cost_krw/);
+  assert.match(rendered, /partial_fill_count/);
+  assert.match(rendered, /average_participation_rate/);
   assert.match(rendered, /cost_model_versions/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
@@ -155,12 +161,18 @@ test("historical replay report summarizes execution cost components", () => {
     spreadCostKrw: 4,
     impactCostKrw: 5,
     totalCostKrw: 999,
-    costModelVersion: "paper_cost_model.v1"
+    costModelVersion: "paper_cost_model.v2",
+    fillStatus: "partial",
+    liquidityStatus: "partial",
+    participationRate: 0.1
   };
   result.trades[1] = {
     ...result.trades[1]!,
-    totalCostKrw: 7
+    totalCostKrw: 7,
+    fillStatus: "filled",
+    liquidityStatus: "not_modeled"
   };
+  delete result.trades[1]!.participationRate;
 
   const report = buildHistoricalReplayReport({ result, generatedAt });
 
@@ -170,8 +182,13 @@ test("historical replay report summarizes execution cost components", () => {
   assert.equal(report.costSummary.spreadCostKrw, 4);
   assert.equal(report.costSummary.impactCostKrw, 5);
   assert.equal(report.costSummary.totalCostKrw, 31);
+  assert.equal(report.costSummary.filledCount, 1);
+  assert.equal(report.costSummary.partialFillCount, 1);
+  assert.equal(report.costSummary.notModeledLiquidityCount, 1);
+  assert.equal(report.costSummary.averageParticipationRate, 0.1);
+  assert.equal(report.costSummary.maxParticipationRate, 0.1);
   assert.deepEqual(report.costSummary.costModelVersions, [
-    "paper_cost_model.v1"
+    "paper_cost_model.v2"
   ]);
 });
 
