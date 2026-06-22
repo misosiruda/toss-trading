@@ -18,6 +18,7 @@ import {
 } from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
+  historicalReplayCodexProviderMetadata,
   resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
@@ -33,9 +34,6 @@ const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
-const codexDecisionConfig = readCodexDecisionProviderConfig(process.env, {
-  defaultMaxRunsPerDay: 5
-});
 const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
@@ -73,7 +71,9 @@ if (
 }
 
 const createCodexDelegate = (): CodexCliDecisionProvider =>
-  new CodexCliDecisionProvider(
+  new CodexCliDecisionProvider(createHistoricalCodexDecisionConfig());
+
+const createHistoricalCodexDecisionConfig = () =>
     withHistoricalReplayPrompt(
       readCodexDecisionProviderConfig(process.env, {
         enabled: true,
@@ -81,8 +81,7 @@ const createCodexDelegate = (): CodexCliDecisionProvider =>
         ephemeral: true
       }),
       { riskProfile: riskProfile.name }
-    )
-  );
+    );
 
 if (useCodexAi && !args.includes("--skip-codex-preflight")) {
   await assertCodexPreflight(createCodexDelegate());
@@ -128,14 +127,11 @@ const result = await runHistoricalBatchReplay({
               maxCallsPerReplay: maxCodexCallsPerRun
             }
           ),
-        decisionProviderMetadata: {
-          mode: "codex_cli" as const,
+        decisionProviderMetadata: historicalReplayCodexProviderMetadata({
+          config: createHistoricalCodexDecisionConfig(),
           maxCallsPerRun: maxCodexCallsPerRun,
-          sandbox: "read-only" as const,
-          allowWebSearch: codexDecisionConfig.allowWebSearch,
-          promptPolicy: historicalPromptPolicy.name,
-          promptVersion: historicalPromptPolicy.promptVersion
-        }
+          promptPolicy: historicalPromptPolicy
+        })
       }
     : {}),
   constraints: riskProfile.constraints,

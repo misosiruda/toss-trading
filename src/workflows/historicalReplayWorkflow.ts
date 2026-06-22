@@ -1,9 +1,20 @@
-import type { MarketPacket } from "../domain/schemas.js";
+import type {
+  HistoricalMarketSnapshot,
+  MarketPacket,
+  VirtualPortfolio,
+  VirtualPosition
+} from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
+import { createPaperExecutionPolicy } from "../paper/executionModel.js";
 import {
   buildHistoricalReplayReport,
   type HistoricalReplayReport
 } from "../reports/historicalReplayReport.js";
+import {
+  createReplayResearchManifest,
+  type ReplayResearchManifestReference,
+  replayResearchManifestReference
+} from "../replay/replayRunManifest.js";
 import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore,
@@ -22,9 +33,13 @@ import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAudi
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
 import {
   createHistoricalReplayWorkflowPlan,
+  type HistoricalReplayWorkflowPlan,
   type HistoricalReplayWorkflowOptions
 } from "./historicalReplayWorkflowPlan.js";
-import { writeHistoricalReplayReportArtifact } from "./historicalReplayWorkflowArtifacts.js";
+import {
+  writeHistoricalReplayReportArtifact,
+  writeReplayResearchManifestArtifact
+} from "./historicalReplayWorkflowArtifacts.js";
 
 export type { HistoricalReplayWorkflowOptions } from "./historicalReplayWorkflowPlan.js";
 
@@ -32,6 +47,8 @@ export interface HistoricalReplayWorkflowResult {
   status: "completed";
   mode: "paper_only";
   reportPath: string;
+  researchManifestPath: string;
+  researchManifest: ReplayResearchManifestReference;
   report: HistoricalReplayReport;
   replayResult: HistoricalReplayResult;
 }
@@ -56,6 +73,18 @@ export async function runHistoricalReplayWorkflow(
     replayStartedAt,
     decisionProvider
   });
+  const researchManifest = createWorkflowResearchManifest({
+    plan,
+    snapshots: snapshots.records,
+    corruptLineCount: snapshots.corruptLineCount,
+    hasExplicitDecisionProvider: options.decisionProvider !== undefined,
+    decisionProviderMetadata: options.decisionProviderMetadata,
+    createdAt: replayStartedAt
+  });
+  const researchManifestRef = replayResearchManifestReference({
+    manifest: researchManifest,
+    manifestPath: paths.historicalReplayResearchManifestPath
+  });
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
     startedAt: replayStartedAt,
@@ -69,13 +98,19 @@ export async function runHistoricalReplayWorkflow(
       decisionLogPath: paths.historicalReplayDecisionLogPath,
       riskDecisionLogPath: paths.historicalReplayRiskDecisionLogPath,
       tradeLogPath: paths.historicalReplayTradeLogPath,
-      portfolioTimelinePath: paths.historicalReplayPortfolioTimelinePath
+      portfolioTimelinePath: paths.historicalReplayPortfolioTimelinePath,
+      researchManifestPath: paths.historicalReplayResearchManifestPath
     },
     startedAt: replayStartedAt,
     tickCount: plan.tickCount,
-    metadataContext: plan.metadataContext
+    metadataContext: plan.metadataContext,
+    researchManifest
   });
 
+  await writeReplayResearchManifestArtifact({
+    manifestPath: paths.historicalReplayResearchManifestPath,
+    manifest: researchManifest
+  });
   await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
 
   try {
@@ -92,7 +127,9 @@ export async function runHistoricalReplayWorkflow(
     const reportGeneratedAt = options.generatedAt ?? new Date();
     const report = buildHistoricalReplayReport({
       result: replayResult,
-      generatedAt: reportGeneratedAt
+      generatedAt: reportGeneratedAt,
+      researchManifest,
+      researchManifestPath: paths.historicalReplayResearchManifestPath
     });
 
     await writeHistoricalReplayReportArtifact({
@@ -109,6 +146,8 @@ export async function runHistoricalReplayWorkflow(
       status: "completed",
       mode: "paper_only",
       reportPath: paths.historicalReplayReportPath,
+      researchManifestPath: paths.historicalReplayResearchManifestPath,
+      researchManifest: researchManifestRef,
       report,
       replayResult
     };
@@ -117,6 +156,208 @@ export async function runHistoricalReplayWorkflow(
     await auditLogRecorder.fail(error);
     throw error;
   }
+}
+
+function createWorkflowResearchManifest(input: {
+  plan: HistoricalReplayWorkflowPlan;
+  snapshots: HistoricalMarketSnapshot[];
+  corruptLineCount: number;
+  hasExplicitDecisionProvider: boolean;
+  decisionProviderMetadata: unknown;
+  createdAt: Date;
+}) {
+  const metadata = input.plan.metadataContext;
+  const promptMetadata = resolveDecisionProviderManifestMetadata({
+    hasExplicitDecisionProvider: input.hasExplicitDecisionProvider,
+    decisionProviderMetadata: input.decisionProviderMetadata
+  });
+  return createReplayResearchManifest({
+    runId: metadata.identity.runId,
+    batchId: metadata.identity.batchId,
+    createdAt: input.createdAt,
+    config: {
+      window: metadata.window,
+      configuration: metadata.configuration,
+      initialPortfolio: normalizePortfolioForManifest(input.plan.initialPortfolio)
+    },
+    dataSnapshot: {
+      source: "historical_market_snapshots",
+      corruptLineCount: input.corruptLineCount,
+      snapshots: input.snapshots
+        .map(normalizeSnapshotForManifest)
+        .sort(compareSnapshotManifestEntry)
+    },
+    universe: summarizeReplayUniverse(input.snapshots),
+    coverage: {
+      tickCount: input.plan.tickCount,
+      window: metadata.window,
+      snapshotCount: input.snapshots.length,
+      corruptLineCount: input.corruptLineCount
+    },
+    prompt: promptMetadata.value,
+    schema: {
+      replayResearchManifestVersion: "replay_research_manifest.v1",
+      historicalReplayRunMetadata: "historical_replay_run_metadata.v1",
+      historicalReplayReport: "historical_replay_report.v1"
+    },
+    riskPolicy: {
+      riskProfile: metadata.configuration.riskProfile,
+      riskPolicy: metadata.configuration.riskPolicy,
+      allocationPolicy: metadata.configuration.allocationPolicy,
+      marketRegimeAllocationPolicy:
+        metadata.configuration.marketRegimeAllocationPolicy,
+      paperExitPolicy: metadata.configuration.paperExitPolicy
+    },
+    costModel: {
+      executionPolicy: createPaperExecutionPolicy(undefined)
+    },
+    executionModelVersion: "execution_simulator.v0",
+    warnings: promptMetadata.metadataMissing
+      ? ["DECISION_PROVIDER_METADATA_MISSING"]
+      : []
+  });
+}
+
+function resolveDecisionProviderManifestMetadata(input: {
+  hasExplicitDecisionProvider: boolean;
+  decisionProviderMetadata: unknown;
+}): { value: unknown; metadataMissing: boolean } {
+  if (input.decisionProviderMetadata !== undefined) {
+    return {
+      value: input.decisionProviderMetadata,
+      metadataMissing: false
+    };
+  }
+
+  if (input.hasExplicitDecisionProvider) {
+    return {
+      value: {
+        mode: "unknown_provider",
+        promptPolicy: null,
+        promptVersion: null
+      },
+      metadataMissing: true
+    };
+  }
+
+  return {
+    value: {
+      mode: "deterministic_fixture",
+      promptPolicy: null,
+      promptVersion: null
+    },
+    metadataMissing: false
+  };
+}
+
+function normalizePortfolioForManifest(portfolio: VirtualPortfolio) {
+  return {
+    portfolioId: portfolio.portfolioId,
+    cashKrw: portfolio.cashKrw,
+    updatedAt: portfolio.updatedAt,
+    positions: portfolio.positions.map(normalizePositionForManifest)
+  };
+}
+
+function normalizePositionForManifest(position: VirtualPosition) {
+  return {
+    market: position.market,
+    symbol: position.symbol,
+    assetType: position.assetType ?? null,
+    assetClass: position.assetClass ?? null,
+    region: position.region ?? null,
+    riskTags: position.riskTags ?? [],
+    quantity: position.quantity,
+    averagePriceKrw: position.averagePriceKrw,
+    marketPriceKrw: position.marketPriceKrw ?? null,
+    marketValueKrw: position.marketValueKrw ?? null,
+    unrealizedPnlKrw: position.unrealizedPnlKrw ?? null,
+    priceUpdatedAt: position.priceUpdatedAt ?? null,
+    priceStaleAfter: position.priceStaleAfter ?? null,
+    priceSourceRefs: position.priceSourceRefs ?? [],
+    isPriceStale: position.isPriceStale ?? null,
+    updatedAt: position.updatedAt
+  };
+}
+
+function normalizeSnapshotForManifest(snapshot: HistoricalMarketSnapshot) {
+  return {
+    snapshotId: snapshot.snapshotId,
+    market: snapshot.market,
+    symbol: snapshot.symbol,
+    name: snapshot.name ?? null,
+    assetType: snapshot.assetType ?? null,
+    assetClass: snapshot.assetClass ?? null,
+    region: snapshot.region ?? null,
+    riskTags: snapshot.riskTags ?? [],
+    observedAt: snapshot.observedAt,
+    interval: snapshot.interval,
+    openPriceKrw: snapshot.openPriceKrw ?? null,
+    highPriceKrw: snapshot.highPriceKrw ?? null,
+    lowPriceKrw: snapshot.lowPriceKrw ?? null,
+    closePriceKrw: snapshot.closePriceKrw ?? null,
+    lastPriceKrw: snapshot.lastPriceKrw,
+    volume: snapshot.volume ?? null,
+    sourceRefs: snapshot.sourceRefs,
+    createdAt: snapshot.createdAt
+  };
+}
+
+function summarizeReplayUniverse(
+  snapshots: Array<{ market: string; symbol: string }>
+): Array<{ market: string; symbol: string }> {
+  const seen = new Set<string>();
+  const universe: Array<{ market: string; symbol: string }> = [];
+  for (const snapshot of snapshots) {
+    const key = `${snapshot.market}:${snapshot.symbol}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    universe.push({
+      market: snapshot.market,
+      symbol: snapshot.symbol
+    });
+  }
+
+  return universe.sort((left, right) =>
+    compareText(
+      `${left.market}:${left.symbol}`,
+      `${right.market}:${right.symbol}`
+    )
+  );
+}
+
+function compareSnapshotManifestEntry(
+  left: {
+    market: string;
+    symbol: string;
+    observedAt: string;
+    snapshotId: string;
+  },
+  right: {
+    market: string;
+    symbol: string;
+    observedAt: string;
+    snapshotId: string;
+  }
+): number {
+  return (
+    compareText(left.market, right.market) ||
+    compareText(left.symbol, right.symbol) ||
+    compareText(left.observedAt, right.observedAt) ||
+    compareText(left.snapshotId, right.snapshotId)
+  );
+}
+
+function compareText(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
 }
 
 class FirstPricedCodexHistoricalDecisionProvider

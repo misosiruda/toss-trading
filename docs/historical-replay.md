@@ -51,7 +51,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 
 ## Research Reproducibility Manifest
 
-`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. 현재 Q1-1 단계에서는 `src/domain/schemas.ts`의 `replayResearchManifestSchema`와 `src/replay/replayRunManifest.ts`의 stable hash helper/builder만 추가합니다. 실제 `historical-replay-run-metadata.json`, `batch-replay-manifest.json`, report artifact 연결은 Q1-2에서 별도 PR로 수행합니다.
+`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다.
 
 필수 hash는 `sha256:<64 hex>` 형식이며, hash 대상은 JSON-compatible plain data를 stable key order로 직렬화한 값입니다. `Date`는 ISO string으로 canonicalize하고, `undefined`, `NaN`, `Infinity`, function, symbol, class instance 같은 비 JSON 입력은 fail-closed로 거절합니다.
 
@@ -76,7 +76,9 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 보안/운영 기준:
 
 - 민감 정보 원문을 hash source, manifest, report에 저장하지 않는다.
-- hash가 없는 legacy run은 실행 실패가 아니라 report warning 또는 `reproducibilityStatus: "partial"` 후보로 표시한다.
+- `configHash`에는 요청 configuration뿐 아니라 replay가 실제로 사용하는 초기 `VirtualPortfolio` cash/position state를 포함한다.
+- `dataSnapshotHash`에는 replay packet 생성, 후보 feature, audit reference에 영향을 주는 normalized historical snapshot field를 포함한다.
+- hash가 없는 legacy run은 실행 실패가 아니라 report의 `reproducibility.status: "partial"`과 warning으로 표시한다.
 - 이 manifest는 paper-only 검증 artifact이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않는다.
 
 ## Artifact Contract
@@ -95,6 +97,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 | `historical-replay-report.json` | JSON report | `HistoricalReplayReport` | `HistoricalReplayWorkflow` | `/replay/report` | 최종 summary, warning, failure count 확인 |
 | `historical-replay-progress.json` | JSON snapshot | `HistoricalReplayProgress` | `HistoricalReplayWorkflow` | `/replay/progress` | 실행 중 latest status, processed tick, 최근 event 확인 |
 | `historical-replay-run-metadata.json` | JSON metadata | `HistoricalReplayRunMetadata` | `HistoricalReplayWorkflow` | 없음 | run id, window, profile, log path, status 확인 |
+| `historical-replay-research-manifest.json` | JSON metadata | `ReplayResearchManifest` | `HistoricalReplayWorkflow` | 없음 | config/data/prompt/schema/risk/cost hash 확인 |
 | `historical-replay-packets.jsonl` | JSONL append-only log | `MarketPacket` | `HistoricalReplayWorkflow` | 없음 | simulated tick별 packet 생성 결과 확인 |
 | `historical-replay-decisions.jsonl` | JSONL append-only log | `VirtualDecision` | `HistoricalReplayWorkflow` | 없음 | exit/provider decision과 packet binding 확인 |
 | `historical-replay-risk-decisions.jsonl` | JSONL append-only log | `VirtualRiskDecision` | `HistoricalReplayWorkflow` | 없음 | risk approval/rejection과 reject code 확인 |

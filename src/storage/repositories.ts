@@ -29,6 +29,7 @@ import {
   HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME,
   HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
   HISTORICAL_REPLAY_REPORT_FILE_NAME,
+  HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
   HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME,
   HISTORICAL_REPLAY_TRADES_FILE_NAME,
@@ -53,6 +54,7 @@ export interface StoragePaths {
   historicalReplayReportPath: string;
   historicalReplayProgressPath: string;
   historicalReplayRunMetadataPath: string;
+  historicalReplayResearchManifestPath: string;
   historicalReplayPacketLogPath: string;
   historicalReplayDecisionLogPath: string;
   historicalReplayRiskDecisionLogPath: string;
@@ -85,6 +87,10 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     historicalReplayRunMetadataPath: join(
       baseDir,
       HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME
+    ),
+    historicalReplayResearchManifestPath: join(
+      baseDir,
+      HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME
     ),
     historicalReplayPacketLogPath: join(
       baseDir,

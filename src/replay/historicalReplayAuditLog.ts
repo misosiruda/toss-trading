@@ -8,6 +8,7 @@ import {
   marketSchema,
   marketPacketSchema,
   parseWithSchema,
+  replayResearchManifestSchema,
   virtualActionSchema,
   virtualDecisionSchema,
   virtualRiskDecisionSchema,
@@ -36,7 +37,8 @@ export const historicalReplayAuditLogPathsSchema = z
     decisionLogPath: z.string().trim().min(1),
     riskDecisionLogPath: z.string().trim().min(1),
     tradeLogPath: z.string().trim().min(1),
-    portfolioTimelinePath: z.string().trim().min(1)
+    portfolioTimelinePath: z.string().trim().min(1),
+    researchManifestPath: z.string().trim().min(1)
   })
   .strict();
 
@@ -195,6 +197,7 @@ export const historicalReplayRunMetadataSchema = z
     failedAt: isoDateTimeSchema.nullable(),
     tickCount: z.number().int().nonnegative(),
     logPaths: historicalReplayAuditLogPathsSchema,
+    researchManifest: replayResearchManifestSchema,
     error: z.string().trim().min(1).nullable(),
     disclaimer: z.string().trim().min(1)
   })
@@ -236,6 +239,7 @@ export interface HistoricalReplayAuditLogRecorderOptions {
   startedAt: Date;
   tickCount: number;
   metadataContext: HistoricalReplayRunMetadataContext;
+  researchManifest: z.infer<typeof replayResearchManifestSchema>;
 }
 
 export class HistoricalReplayAuditLogRecorder {
@@ -297,6 +301,7 @@ export class HistoricalReplayAuditLogRecorder {
       failedAt: null,
       tickCount: options.tickCount,
       logPaths: options.paths,
+      researchManifest: options.researchManifest,
       error: null,
       disclaimer: HISTORICAL_REPLAY_PROGRESS_DISCLAIMER
     };

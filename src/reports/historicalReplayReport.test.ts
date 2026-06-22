@@ -43,6 +43,10 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.samplingSummary.skipReasons["STEP_INTERVAL_SKIPPED"], 1);
   assert.equal(report.benchmarks.strategy.initialNetWorthKrw > 0, true);
   assert.equal(report.benchmarks.cashOnly.totalReturnRatio, 0);
+  assert.equal(report.reproducibility.status, "partial");
+  assert.deepEqual(report.reproducibility.warnings, [
+    "RESEARCH_MANIFEST_MISSING"
+  ]);
   assert.notEqual(report.benchmarks.equalWeightBuyAndHold, null);
   assert.equal(
     report.benchmarks.comparisons.strategyVsCashOnly.benchmarkAvailable,
@@ -75,6 +79,8 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /meaningful_reject_count/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
+  assert.match(rendered, /Reproducibility/);
+  assert.match(rendered, /status: partial/);
   assert.match(rendered, /Benchmarks/);
   assert.match(rendered, /equal_weight_buy_and_hold/);
   assert.match(rendered, /benchmark_comparisons/);

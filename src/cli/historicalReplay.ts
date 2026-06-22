@@ -16,6 +16,8 @@ import {
 } from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
+  historicalReplayCodexProviderMetadata,
+  resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
@@ -135,6 +137,9 @@ const riskProfile = resolvePaperRiskProfile({
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
 const paperExitPolicy = readPaperExitPolicyArg();
+const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
+  riskProfile: riskProfile.name
+});
 
 if (checkDataAvailability || requireDataAvailability) {
   const availabilityReport = await readHistoricalDataAvailabilityReport();
@@ -161,17 +166,23 @@ const samplingPolicy = new ReplaySamplingPolicy({
   timezoneOffsetMinutes
 });
 
+const historicalCodexDecisionConfig = withHistoricalReplayPrompt(
+  codexDecisionConfig,
+  { riskProfile: riskProfile.name }
+);
 const decisionProvider = dryRun
   ? undefined
   : new CodexHistoricalReplayDecisionProvider(
-      new CodexCliDecisionProvider(
-        withHistoricalReplayPrompt(
-          codexDecisionConfig,
-          { riskProfile: riskProfile.name }
-        )
-      ),
+      new CodexCliDecisionProvider(historicalCodexDecisionConfig),
       { maxCallsPerReplay: maxCodexCalls }
     );
+const decisionProviderMetadata = dryRun
+  ? undefined
+  : historicalReplayCodexProviderMetadata({
+      config: historicalCodexDecisionConfig,
+      maxCallsPerRun: maxCodexCalls,
+      promptPolicy: historicalPromptPolicy
+    });
 
 const result = await runHistoricalReplayWorkflow({
   storageBaseDir: dataDir,
@@ -182,6 +193,7 @@ const result = await runHistoricalReplayWorkflow({
     speedMultiplier: readNumberArg("--speed-multiplier", 1)
   }),
   ...(decisionProvider === undefined ? {} : { decisionProvider }),
+  ...(decisionProviderMetadata === undefined ? {} : { decisionProviderMetadata }),
   samplingPolicy,
   initialCashKrw,
   packetIdPrefix: readArgValue("--packet-id-prefix") ?? "packet_historical",

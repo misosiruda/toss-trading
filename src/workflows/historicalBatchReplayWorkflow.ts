@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -35,6 +35,10 @@ import type {
   HistoricalMarketSnapshot,
   Market
 } from "../domain/schemas.js";
+import {
+  parseWithSchema,
+  replayResearchManifestSchema
+} from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
@@ -48,6 +52,11 @@ import {
 } from "../replay/regimeBalancedWindowSampler.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
+import {
+  missingReplayResearchManifestReference,
+  replayResearchManifestReference,
+  type ReplayResearchManifestReference
+} from "../replay/replayRunManifest.js";
 import {
   createBatchReplayArtifactPaths,
   safeArtifactPathPart
@@ -109,7 +118,8 @@ export interface BatchReplayRunnerOptions {
 
 export type BatchReplayDecisionProviderMode =
   | "deterministic_fixture"
-  | "codex_cli";
+  | "codex_cli"
+  | "unknown_provider";
 
 export interface BatchReplayDecisionProviderMetadata {
   mode: BatchReplayDecisionProviderMode;
@@ -118,6 +128,16 @@ export interface BatchReplayDecisionProviderMetadata {
   allowWebSearch: boolean;
   promptPolicy: string | null;
   promptVersion: string | null;
+  promptText?: string | null;
+  promptConfig?: {
+    modelId: string | null;
+    schemaVersion: string | null;
+    policyVersion: string | null;
+    outputSchemaPath: string | null;
+    ephemeral: boolean;
+    ignoreUserConfig: boolean;
+    disabledFeatures: readonly string[];
+  } | null;
 }
 
 export interface BatchReplayDecisionProviderContext {
@@ -202,6 +222,7 @@ export interface BatchReplayRunRecord {
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
+  researchManifest: ReplayResearchManifestReference;
   summary: BatchReplayRunSummary | null;
   reportPath: string | null;
   error: string | null;
@@ -283,8 +304,7 @@ export async function runHistoricalBatchReplay(
   const startedAt = options.generatedAt ?? new Date();
   const paths = createBatchReplayArtifactPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
-  const decisionProviderMetadata =
-    options.decisionProviderMetadata ?? defaultDecisionProviderMetadata();
+  const decisionProviderMetadata = batchDecisionProviderMetadata(options);
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
@@ -437,6 +457,9 @@ export async function runHistoricalBatchReplay(
         runSeed,
         window
       });
+      const replayDecisionProviderMetadata =
+        options.decisionProviderMetadata ??
+        (decisionProvider === undefined ? decisionProviderMetadata : undefined);
       const result = await runHistoricalReplayWorkflow({
         storageBaseDir,
         historicalMarketSnapshotsPath: sourcePaths.historicalMarketSnapshotsPath,
@@ -489,6 +512,9 @@ export async function runHistoricalBatchReplay(
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
+        ...(replayDecisionProviderMetadata === undefined
+          ? {}
+          : { decisionProviderMetadata: replayDecisionProviderMetadata }),
         runId,
         batchId,
         batchRunIndex: runIndex,
@@ -511,6 +537,7 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
+        researchManifest: result.researchManifest,
         reportPath: result.reportPath,
         summary,
         terminalAt: terminalDateForRun({
@@ -522,6 +549,8 @@ export async function runHistoricalBatchReplay(
       records.push(completed);
       await appendRunRecord(paths.runsPath, completed);
     } catch (error) {
+      const failedRunResearchManifest =
+        await readRunResearchManifestReference(storageBaseDir);
       const failed = runRecord({
         batchId,
         runId,
@@ -535,6 +564,9 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
+        ...(failedRunResearchManifest === undefined
+          ? {}
+          : { researchManifest: failedRunResearchManifest }),
         error: error instanceof Error ? error.message : String(error),
         terminalAt: terminalDateForRun({
           startedAt: runStartedAt,
@@ -749,6 +781,7 @@ function runRecord(input: {
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
+  researchManifest?: ReplayResearchManifestReference;
   reportPath?: string;
   summary?: BatchReplayRunSummary;
   error?: string;
@@ -775,11 +808,45 @@ function runRecord(input: {
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability),
+    researchManifest:
+      input.researchManifest ??
+      missingReplayResearchManifestReference("RESEARCH_MANIFEST_NOT_CREATED"),
     summary: input.summary ?? null,
     reportPath: input.reportPath ?? null,
     error: input.error ?? null,
     skipReason: input.skipReason ?? null
   };
+}
+
+async function readRunResearchManifestReference(
+  storageBaseDir: string
+): Promise<ReplayResearchManifestReference | undefined> {
+  const manifestPath = createStoragePaths(
+    storageBaseDir
+  ).historicalReplayResearchManifestPath;
+
+  try {
+    const manifest = parseWithSchema(
+      replayResearchManifestSchema,
+      JSON.parse(await readFile(manifestPath, "utf8")),
+      "batchRunReplayResearchManifest"
+    );
+    return replayResearchManifestReference({ manifest, manifestPath });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return undefined;
+    }
+    return {
+      ...missingReplayResearchManifestReference(
+        "RESEARCH_MANIFEST_READ_FAILED"
+      ),
+      manifestPath
+    };
+  }
 }
 
 function summarizeRun(
@@ -924,6 +991,31 @@ function terminalDateForRun(input: {
 function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {
   return {
     mode: "deterministic_fixture",
+    maxCallsPerRun: null,
+    sandbox: null,
+    allowWebSearch: false,
+    promptPolicy: null,
+    promptVersion: null
+  };
+}
+
+function batchDecisionProviderMetadata(
+  options: BatchReplayRunnerOptions
+): BatchReplayDecisionProviderMetadata {
+  if (options.decisionProviderMetadata !== undefined) {
+    return options.decisionProviderMetadata;
+  }
+
+  if (options.decisionProviderFactory !== undefined) {
+    return unknownDecisionProviderMetadata();
+  }
+
+  return defaultDecisionProviderMetadata();
+}
+
+function unknownDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {
+  return {
+    mode: "unknown_provider",
     maxCallsPerRun: null,
     sandbox: null,
     allowWebSearch: false,

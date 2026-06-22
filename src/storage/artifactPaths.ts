@@ -14,6 +14,8 @@ export const HISTORICAL_REPLAY_PROGRESS_FILE_NAME =
   "historical-replay-progress.json";
 export const HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME =
   "historical-replay-run-metadata.json";
+export const HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME =
+  "historical-replay-research-manifest.json";
 export const HISTORICAL_REPLAY_PACKETS_FILE_NAME =
   "historical-replay-packets.jsonl";
 export const HISTORICAL_REPLAY_DECISIONS_FILE_NAME =
@@ -178,6 +180,18 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     writer: "HistoricalReplayWorkflow",
     localOperationsReader: null,
     failureTrace: "run id, window, profile, log paths, status",
+    corruptJsonlPolicy: null
+  },
+  {
+    artifactName: "historicalReplayResearchManifest",
+    fileName: HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
+    relativePath: HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
+    format: "json",
+    role: "metadata",
+    domainContract: "ReplayResearchManifest",
+    writer: "HistoricalReplayWorkflow",
+    localOperationsReader: null,
+    failureTrace: "config/data/prompt/schema/risk/cost reproducibility hashes",
     corruptJsonlPolicy: null
   },
   {
