@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { missingReplayResearchManifestReference } from "./replayRunManifest.js";
+import {
+  createReplayResearchHash,
+  missingReplayResearchManifestReference
+} from "./replayRunManifest.js";
 import { createSelectionTrialRecord } from "./selectionTrialLog.js";
 
 test("selection trial hashes prompt metadata for partial manifest trials", () => {
@@ -56,6 +59,38 @@ test("selection trial hashes risk and exit policy separately", () => {
 
   assert.notEqual(base.config.riskPolicyHash, changedRisk.config.riskPolicyHash);
   assert.notEqual(base.config.exitPolicyHash, changedExit.config.exitPolicyHash);
+});
+
+test("selection trial aligns skipped custom-provider prompt hash with manifest fallback", () => {
+  const decisionProviderMetadata = {
+    mode: "unknown_provider",
+    maxCallsPerRun: null,
+    sandbox: null,
+    allowWebSearch: false,
+    promptPolicy: null,
+    promptVersion: null
+  };
+  const trial = createSelectionTrialRecord({
+    ...trialInput(),
+    decisionProviderMetadata
+  });
+
+  assert.equal(
+    trial.decisionProvider.promptHash,
+    createReplayResearchHash({
+      mode: "unknown_provider",
+      promptPolicy: null,
+      promptVersion: null
+    })
+  );
+  assert.equal(
+    trial.decisionProvider.metadataHash,
+    createReplayResearchHash(decisionProviderMetadata)
+  );
+  assert.notEqual(
+    trial.decisionProvider.promptHash,
+    trial.decisionProvider.metadataHash
+  );
 });
 
 function trialInput() {

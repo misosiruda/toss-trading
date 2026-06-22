@@ -136,7 +136,7 @@ export function createSelectionTrialRecord(
       ),
       promptHash:
         input.researchManifest.promptHash ??
-        hashTrialValue(input.decisionProviderMetadata),
+        hashTrialValue(promptHashFallbackValue(input.decisionProviderMetadata)),
       metadataHash: hashTrialValue(input.decisionProviderMetadata)
     },
     config: {
@@ -180,6 +180,22 @@ function selectionTrialId(
 
 function hashTrialValue(value: unknown): Sha256Hash {
   return createReplayResearchHash(value);
+}
+
+function promptHashFallbackValue(value: unknown): unknown {
+  if (
+    decisionProviderMode(value) === "unknown_provider" &&
+    nullableStringField(value, "promptPolicy") === null &&
+    nullableStringField(value, "promptVersion") === null
+  ) {
+    return {
+      mode: "unknown_provider",
+      promptPolicy: null,
+      promptVersion: null
+    };
+  }
+
+  return value;
 }
 
 function decisionProviderMode(value: unknown): string {
