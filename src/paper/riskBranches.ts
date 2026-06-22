@@ -198,6 +198,16 @@ function evaluatePortfolioExposureRisk(
     profile.unknownMetadataExposureKrw += input.notionalKrw;
   }
 
+  if (
+    hasSectorExposureLimit(input.policy) &&
+    profile.bySector.has(UNKNOWN_EXPOSURE_KEY)
+  ) {
+    appendPortfolioRejectCode(
+      rejectCodes,
+      "VIRTUAL_EXPOSURE_METADATA_MISSING"
+    );
+  }
+
   const strategyBucketExposure = profile.byStrategyBucket.get(
     decisionMetadata.strategyBucket
   ) ?? 0;
@@ -210,7 +220,7 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_BUCKET_BUDGET_EXCEEDED");
+    appendPortfolioRejectCode(rejectCodes, "VIRTUAL_BUCKET_BUDGET_EXCEEDED");
   }
 
   if (
@@ -222,7 +232,7 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_BUCKET_TURNOVER_EXCEEDED");
+    appendPortfolioRejectCode(rejectCodes, "VIRTUAL_BUCKET_TURNOVER_EXCEEDED");
   }
 
   if (
@@ -233,7 +243,7 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_SECTOR_EXPOSURE_EXCEEDED");
+    appendPortfolioRejectCode(rejectCodes, "VIRTUAL_SECTOR_EXPOSURE_EXCEEDED");
   }
 
   if (
@@ -244,7 +254,7 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED");
+    appendPortfolioRejectCode(rejectCodes, "VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED");
   }
 
   if (
@@ -255,7 +265,7 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED");
+    appendPortfolioRejectCode(rejectCodes, "VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED");
   }
 
   if (
@@ -266,7 +276,10 @@ function evaluatePortfolioExposureRisk(
       netWorthKrw: input.netWorthKrw
     })
   ) {
-    rejectCodes.push("VIRTUAL_EXPOSURE_METADATA_MISSING");
+    appendPortfolioRejectCode(
+      rejectCodes,
+      "VIRTUAL_EXPOSURE_METADATA_MISSING"
+    );
   }
 
   return rejectCodes;
@@ -411,4 +424,20 @@ function exceedsLimit(input: {
     input.netWorthKrw > 0 &&
     input.value / input.netWorthKrw > input.ratioLimit
   );
+}
+
+function hasSectorExposureLimit(policy: VirtualRiskPolicy): boolean {
+  return (
+    policy.maxSectorExposureKrw !== undefined ||
+    policy.maxSectorExposureRatio !== undefined
+  );
+}
+
+function appendPortfolioRejectCode(
+  target: VirtualRiskRejectCode[],
+  code: VirtualRiskRejectCode
+): void {
+  if (!target.includes(code)) {
+    target.push(code);
+  }
 }
