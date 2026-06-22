@@ -138,6 +138,9 @@ function executeBuy(
       ...(candidate.riskTags === undefined
         ? {}
         : { riskTags: candidate.riskTags }),
+      ...(candidate.strategyBucket === undefined
+        ? {}
+        : { strategyBucket: candidate.strategyBucket }),
       quantity: fill.quantity,
       averagePriceKrw: Math.round(fill.netAmountKrw / fill.quantity),
       marketPriceKrw: candidate.lastPriceKrw,
@@ -159,7 +162,8 @@ function executeBuy(
       riskDecision,
       "VIRTUAL_BUY",
       fill,
-      candidate.sourceRefs
+      candidate.sourceRefs,
+      resolveExecutionStrategyBucket({ candidate, existing })
     )
   };
 }
@@ -260,7 +264,8 @@ function executeSell(
       riskDecision,
       "VIRTUAL_SELL",
       fill,
-      candidate.sourceRefs
+      candidate.sourceRefs,
+      resolveExecutionStrategyBucket({ candidate, existing })
     )
   };
 }
@@ -285,7 +290,8 @@ function buildTrade(
   riskDecision: VirtualRiskDecision,
   action: "VIRTUAL_BUY" | "VIRTUAL_SELL",
   fill: PaperFill,
-  priceSourceRefs: string[]
+  priceSourceRefs: string[],
+  strategyBucket: VirtualTrade["strategyBucket"] | undefined
 ): VirtualTrade {
   const trade: VirtualTrade = {
     tradeId: `vtrade_${input.packet.packetId}_${input.decision.symbol}_${input.decision.action}`,
@@ -314,6 +320,7 @@ function buildTrade(
     liquidityStatus: fill.liquidityStatus,
     maxParticipationRate: fill.maxParticipationRate,
     priceSourceRefs,
+    ...(strategyBucket === undefined ? {} : { strategyBucket }),
     fillRatio: fill.fillRatio,
     fractionalShares: fill.fractionalShares,
     status: "VIRTUAL_FILLED",
@@ -334,6 +341,13 @@ function buildTrade(
   }
 
   return trade;
+}
+
+function resolveExecutionStrategyBucket(input: {
+  candidate: MarketCandidate;
+  existing: VirtualPortfolio["positions"][number] | undefined;
+}): VirtualTrade["strategyBucket"] | undefined {
+  return input.candidate.strategyBucket ?? input.existing?.strategyBucket;
 }
 
 function rejectLiquidityFill(
@@ -387,6 +401,12 @@ function syncPositionMetadata(
   }
   if (position.riskTags === undefined && candidate.riskTags !== undefined) {
     position.riskTags = candidate.riskTags;
+  }
+  if (
+    position.strategyBucket === undefined &&
+    candidate.strategyBucket !== undefined
+  ) {
+    position.strategyBucket = candidate.strategyBucket;
   }
 }
 

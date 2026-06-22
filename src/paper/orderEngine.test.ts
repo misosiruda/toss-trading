@@ -367,6 +367,7 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
           assetClass: "equity",
           region: "KR",
           riskTags: ["sector_concentrated"],
+          strategyBucket: "swing",
           lastPriceKrw: 70_000,
           ranking: 1,
           reasonCodes: ["RANKING"],
@@ -392,6 +393,8 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
   assert.deepEqual(result.portfolio.positions[0]?.riskTags, [
     "sector_concentrated"
   ]);
+  assert.equal(result.portfolio.positions[0]?.strategyBucket, "swing");
+  assert.equal(result.trade?.strategyBucket, "swing");
 });
 
 test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
@@ -617,6 +620,35 @@ test("PaperOrderEngine updates virtual position on sell", () => {
   assert.equal(result.trade?.action, "VIRTUAL_SELL");
   assert.equal(result.portfolio.cashKrw, 70_000);
   assert.equal(result.portfolio.positions[0]?.quantity, 1);
+});
+
+test("PaperOrderEngine records sell strategy bucket from held position", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          strategyBucket: "long_term",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 70_000,
+      thesis: "Paper-only sell fixture."
+    }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.strategyBucket, "long_term");
 });
 
 test("PaperOrderEngine executes reduce-only sell ratio sizing", () => {

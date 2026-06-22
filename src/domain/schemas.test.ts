@@ -6,7 +6,9 @@ import {
   historicalMarketSnapshotSchema,
   marketPacketSchema,
   parseWithSchema,
-  virtualDecisionSchema
+  virtualDecisionSchema,
+  virtualPositionSchema,
+  virtualTradeSchema
 } from "./schemas.js";
 
 const now = "2026-06-11T09:00:00+09:00";
@@ -33,6 +35,7 @@ function validMarketPacket(): unknown {
         assetClass: "equity",
         region: "KR",
         riskTags: ["sector_concentrated"],
+        strategyBucket: "long_term",
         sector: "Technology",
         industry: "Semiconductors",
         lastPriceKrw: 70_000,
@@ -105,6 +108,7 @@ test("valid market packet fixture passes schema validation", () => {
   assert.equal(packet.candidates[0]?.assetClass, "equity");
   assert.equal(packet.candidates[0]?.region, "KR");
   assert.deepEqual(packet.candidates[0]?.riskTags, ["sector_concentrated"]);
+  assert.equal(packet.candidates[0]?.strategyBucket, "long_term");
   assert.equal(packet.candidates[0]?.sector, "Technology");
   assert.equal(packet.candidates[0]?.industry, "Semiconductors");
   assert.deepEqual(packet.candidates[0]?.eventTags, ["earnings"]);
@@ -159,6 +163,7 @@ test("valid historical market snapshot fixture passes schema validation", () => 
       assetType: "STOCK",
       assetClass: "equity",
       region: "KR",
+      strategyBucket: "swing",
       observedAt: "2025-06-11T09:00:00+09:00",
       interval: "1m",
       openPriceKrw: 70_000,
@@ -178,7 +183,56 @@ test("valid historical market snapshot fixture passes schema validation", () => 
   assert.equal(snapshot.assetType, "STOCK");
   assert.equal(snapshot.assetClass, "equity");
   assert.equal(snapshot.region, "KR");
+  assert.equal(snapshot.strategyBucket, "swing");
   assert.equal(snapshot.interval, "1m");
+});
+
+test("virtual position and trade accept strategy bucket metadata", () => {
+  const position = parseWithSchema(
+    virtualPositionSchema,
+    {
+      market: "KR",
+      symbol: "005930",
+      strategyBucket: "short_term",
+      quantity: 1,
+      averagePriceKrw: 70_000,
+      updatedAt: now
+    },
+    "virtualPosition"
+  );
+  const trade = parseWithSchema(
+    virtualTradeSchema,
+    {
+      tradeId: "vtrade_packet_001_005930_buy",
+      packetId: "packet_20260611_090000",
+      decisionId: "vrisk_packet_001_005930",
+      market: "KR",
+      symbol: "005930",
+      action: "VIRTUAL_BUY",
+      quantity: 1,
+      priceKrw: 70_000,
+      amountKrw: 70_000,
+      strategyBucket: "intraday",
+      status: "VIRTUAL_FILLED",
+      executedAt: now
+    },
+    "virtualTrade"
+  );
+
+  assert.equal(position.strategyBucket, "short_term");
+  assert.equal(trade.strategyBucket, "intraday");
+});
+
+test("strategy bucket rejects unknown bucket names", () => {
+  const packet = validMarketPacket() as {
+    candidates: Array<{ strategyBucket?: string }>;
+  };
+  packet.candidates[0]!.strategyBucket = "day_trade";
+
+  assert.throws(
+    () => parseWithSchema(marketPacketSchema, packet, "marketPacket"),
+    /failed validation/
+  );
 });
 
 test("historical market snapshot rejects inverted high and low prices", () => {

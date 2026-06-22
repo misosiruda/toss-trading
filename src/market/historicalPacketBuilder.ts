@@ -279,6 +279,9 @@ function toCandidateDraft(
       : { assetClass: snapshot.assetClass }),
     ...(snapshot.region === undefined ? {} : { region: snapshot.region }),
     ...(snapshot.riskTags === undefined ? {} : { riskTags: snapshot.riskTags }),
+    ...(snapshot.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: snapshot.strategyBucket }),
     lastPriceKrw: snapshot.lastPriceKrw,
     ...(snapshot.volume === undefined ? {} : { volume: snapshot.volume }),
     ...(features.averageVolume === undefined

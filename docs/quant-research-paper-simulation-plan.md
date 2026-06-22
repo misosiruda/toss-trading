@@ -364,6 +364,12 @@ Aggregation 축:
 
 - 전체 portfolio 기준으로 편중을 계산하고 risk reject를 남길 수 있다.
 
+분할 PR:
+
+- Q4-1: `strategyBucket` schema와 paper artifact propagation을 먼저 추가한다. 이 단계에서는 `VirtualDecision` AI output에 bucket을 열지 않고, backend candidate metadata만 position/trade로 복사한다.
+- Q4-2: `portfolioExposureAggregator`에서 symbol, strategy bucket, asset type/class exposure를 계산한다.
+- Q4-3: sector/country/currency/unknown metadata limit과 bucket turnover rule을 `VirtualRiskEngine`에 연결한다.
+
 ## Milestone Q5. Regime-aware Cash Reserve와 Hedge Policy
 
 목표:
