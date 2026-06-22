@@ -57,6 +57,12 @@ export const isoDateTimeSchema = z.string().refine((value) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp);
 }, "Expected an ISO-compatible date-time string");
+export const sha256HashSchema = z
+  .string()
+  .regex(
+    /^sha256:[a-f0-9]{64}$/,
+    "Expected a sha256 hash with `sha256:` prefix"
+  );
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 const moneyKrwSchema = z.number().int().nonnegative();
@@ -270,6 +276,26 @@ export const marketPacketSchema = z
   })
   .strict();
 
+export const replayResearchManifestSchema = z
+  .object({
+    manifestVersion: z.literal("replay_research_manifest.v1"),
+    mode: z.literal("paper_only"),
+    runId: nonEmptyStringSchema,
+    batchId: nonEmptyStringSchema.nullable(),
+    createdAt: isoDateTimeSchema,
+    configHash: sha256HashSchema,
+    dataSnapshotHash: sha256HashSchema,
+    universeHash: sha256HashSchema,
+    coverageHash: sha256HashSchema,
+    promptHash: sha256HashSchema,
+    schemaHash: sha256HashSchema,
+    riskPolicyHash: sha256HashSchema,
+    costModelHash: sha256HashSchema,
+    executionModelVersion: nonEmptyStringSchema,
+    warnings: z.array(nonEmptyStringSchema).default([])
+  })
+  .strict();
+
 export const virtualDecisionClaimSupportSchema = z
   .object({
     claim: nonEmptyStringSchema,
@@ -460,6 +486,10 @@ export type HistoricalMarketSnapshot = z.infer<
 >;
 export type PortfolioAllocation = z.infer<typeof portfolioAllocationSchema>;
 export type MarketPacket = z.infer<typeof marketPacketSchema>;
+export type Sha256Hash = z.infer<typeof sha256HashSchema>;
+export type ReplayResearchManifest = z.infer<
+  typeof replayResearchManifestSchema
+>;
 export type VirtualDecisionClaimSupport = z.infer<
   typeof virtualDecisionClaimSupportSchema
 >;
