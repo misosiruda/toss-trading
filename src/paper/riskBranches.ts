@@ -208,6 +208,16 @@ function evaluatePortfolioExposureRisk(
     );
   }
 
+  if (
+    hasCountryExposureLimit(input.policy) &&
+    profile.byCountry.has(UNKNOWN_EXPOSURE_KEY)
+  ) {
+    appendPortfolioRejectCode(
+      rejectCodes,
+      "VIRTUAL_EXPOSURE_METADATA_MISSING"
+    );
+  }
+
   const strategyBucketExposure = profile.byStrategyBucket.get(
     decisionMetadata.strategyBucket
   ) ?? 0;
@@ -430,6 +440,13 @@ function hasSectorExposureLimit(policy: VirtualRiskPolicy): boolean {
   return (
     policy.maxSectorExposureKrw !== undefined ||
     policy.maxSectorExposureRatio !== undefined
+  );
+}
+
+function hasCountryExposureLimit(policy: VirtualRiskPolicy): boolean {
+  return (
+    policy.maxCountryExposureKrw !== undefined ||
+    policy.maxCountryExposureRatio !== undefined
   );
 }
 
