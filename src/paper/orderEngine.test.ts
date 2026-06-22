@@ -397,6 +397,38 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
   assert.equal(result.trade?.strategyBucket, "swing");
 });
 
+test("PaperOrderEngine preserves held strategy bucket when adding to a position", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          strategyBucket: "swing"
+        }
+      ]
+    }),
+    portfolio: portfolio({
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          strategyBucket: "long_term",
+          quantity: 1,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 70_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ budgetKrw: 10_000 }),
+    riskPolicy: { now }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.portfolio.positions[0]?.strategyBucket, "long_term");
+  assert.equal(result.trade?.strategyBucket, "long_term");
+});
+
 test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
   const result = new PaperOrderEngine().execute({
     packet: packet(),
@@ -624,7 +656,14 @@ test("PaperOrderEngine updates virtual position on sell", () => {
 
 test("PaperOrderEngine records sell strategy bucket from held position", () => {
   const result = new PaperOrderEngine().execute({
-    packet: packet(),
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          strategyBucket: "swing"
+        }
+      ]
+    }),
     portfolio: portfolio({
       cashKrw: 0,
       positions: [

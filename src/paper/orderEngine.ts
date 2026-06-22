@@ -347,7 +347,7 @@ function resolveExecutionStrategyBucket(input: {
   candidate: MarketCandidate;
   existing: VirtualPortfolio["positions"][number] | undefined;
 }): VirtualTrade["strategyBucket"] | undefined {
-  return input.candidate.strategyBucket ?? input.existing?.strategyBucket;
+  return input.existing?.strategyBucket ?? input.candidate.strategyBucket;
 }
 
 function rejectLiquidityFill(
