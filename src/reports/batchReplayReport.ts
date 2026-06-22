@@ -1,11 +1,17 @@
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
 import type { AssetType, Market } from "../domain/schemas.js";
+import type {
+  SelectionTrialRecord,
+  SelectionTrialRunStatus
+} from "../replay/selectionTrialLog.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
   records: BatchReplayRunRecord[];
+  selectionTrials?: SelectionTrialRecord[];
   generatedAt: Date;
   sourceRunsPath?: string;
+  sourceSelectionTrialsPath?: string;
   title?: string;
   targetReturnThresholds?: number[];
 }
@@ -15,8 +21,10 @@ export interface BatchReplayAggregateReport {
   mode: "paper_only";
   generatedAt: string;
   sourceRunsPath: string | null;
+  sourceSelectionTrialsPath: string | null;
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
+  trialSummary: BatchReplaySelectionTrialSummary | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
   disclaimer: string;
@@ -67,6 +75,29 @@ export interface BatchReplayGroupSummary {
   runIds: string[];
 }
 
+export interface BatchReplaySelectionTrialSummary {
+  trialCount: number;
+  selectedCount: number;
+  unselectedCount: number;
+  statusCounts: Partial<Record<SelectionTrialRunStatus, number>>;
+  aiDecisionFailureTrialCount: number;
+  rejectedTrialCount: number;
+  noTradeTrialCount: number;
+  decisionProviderModes: BatchReplaySelectionTrialBucket[];
+  promptHashes: BatchReplaySelectionTrialBucket[];
+  configHashes: BatchReplaySelectionTrialBucket[];
+  riskPolicyHashes: BatchReplaySelectionTrialBucket[];
+  exitPolicyHashes: BatchReplaySelectionTrialBucket[];
+  riskProfiles: BatchReplaySelectionTrialBucket[];
+  runIds: string[];
+}
+
+export interface BatchReplaySelectionTrialBucket {
+  key: string | null;
+  count: number;
+  runIds: string[];
+}
+
 export interface TargetReturnHitRate {
   threshold: number;
   sampleCount: number;
@@ -81,6 +112,10 @@ export function buildBatchReplayAggregateReport(
   options: BatchReplayAggregateReportOptions
 ): BatchReplayAggregateReport {
   const records = [...options.records].sort(compareRunRecords);
+  const selectionTrials =
+    options.selectionTrials === undefined
+      ? null
+      : [...options.selectionTrials].sort(compareSelectionTrials);
   const targetReturnThresholds = normalizeTargetReturnThresholds(
     options.targetReturnThresholds
   );
@@ -95,6 +130,8 @@ export function buildBatchReplayAggregateReport(
     mode: "paper_only",
     generatedAt: options.generatedAt.toISOString(),
     sourceRunsPath: options.sourceRunsPath ?? null,
+    sourceSelectionTrialsPath:
+      selectionTrials === null ? null : options.sourceSelectionTrialsPath ?? null,
     targetReturnThresholds,
     summary: {
       runCount: records.length,
@@ -106,6 +143,8 @@ export function buildBatchReplayAggregateReport(
       regimeCounts: countRegimes(records),
       regimeCountsByMarket: countRegimesByMarket(records)
     },
+    trialSummary:
+      selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
     disclaimer: batchAggregateDisclaimer()
@@ -121,6 +160,9 @@ export function renderBatchReplayAggregateReport(
     `mode: ${report.mode}`,
     `generated_at: ${report.generatedAt}`,
     `source_runs_path: ${report.sourceRunsPath ?? "null"}`,
+    `source_selection_trials_path: ${
+      report.sourceSelectionTrialsPath ?? "null"
+    }`,
     `target_return_thresholds: ${JSON.stringify(report.targetReturnThresholds)}`,
     "",
     "## Summary",
@@ -131,6 +173,9 @@ export function renderBatchReplayAggregateReport(
     `return_sample_count: ${report.summary.returnSampleCount}`,
     `regime_counts: ${JSON.stringify(report.summary.regimeCounts)}`,
     `regime_counts_by_market: ${JSON.stringify(report.summary.regimeCountsByMarket)}`,
+    "",
+    "## Selection Trials",
+    renderSelectionTrialSummary(report.trialSummary),
     "",
     "## Overall",
     renderGroup(report.overall),
@@ -146,6 +191,91 @@ export function renderBatchReplayAggregateReport(
   ];
 
   return lines.join("\n");
+}
+
+function summarizeSelectionTrials(
+  trials: SelectionTrialRecord[]
+): BatchReplaySelectionTrialSummary {
+  const selectedCount = trials.filter(isSelectedTrial).length;
+
+  return {
+    trialCount: trials.length,
+    selectedCount,
+    unselectedCount: trials.length - selectedCount,
+    statusCounts: countTrialStatuses(trials),
+    aiDecisionFailureTrialCount: trials.filter(
+      (trial) => trial.outcome.aiDecisionFailureCount > 0
+    ).length,
+    rejectedTrialCount: trials.filter((trial) => trial.outcome.rejectedCount > 0)
+      .length,
+    noTradeTrialCount: trials.filter((trial) => trial.outcome.tradeCount === 0)
+      .length,
+    decisionProviderModes: bucketSelectionTrials(
+      trials,
+      (trial) => trial.decisionProvider.mode
+    ),
+    promptHashes: bucketSelectionTrials(
+      trials,
+      (trial) => trial.decisionProvider.promptHash
+    ),
+    configHashes: bucketSelectionTrials(
+      trials,
+      (trial) => trial.config.configHash
+    ),
+    riskPolicyHashes: bucketSelectionTrials(
+      trials,
+      (trial) => trial.config.riskPolicyHash
+    ),
+    exitPolicyHashes: bucketSelectionTrials(
+      trials,
+      (trial) => trial.config.exitPolicyHash
+    ),
+    riskProfiles: bucketSelectionTrials(
+      trials,
+      (trial) => trial.config.riskProfile
+    ),
+    runIds: trials.map((trial) => trial.runId)
+  };
+}
+
+function countTrialStatuses(
+  trials: SelectionTrialRecord[]
+): Partial<Record<SelectionTrialRunStatus, number>> {
+  const counts: Partial<Record<SelectionTrialRunStatus, number>> = {};
+  for (const trial of trials) {
+    counts[trial.status] = (counts[trial.status] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function bucketSelectionTrials(
+  trials: SelectionTrialRecord[],
+  keyFor: (trial: SelectionTrialRecord) => string | null
+): BatchReplaySelectionTrialBucket[] {
+  const buckets = new Map<
+    string,
+    { key: string | null; runIds: string[] }
+  >();
+
+  for (const trial of trials) {
+    const key = keyFor(trial);
+    const bucketKey = key === null ? "null:" : `value:${key}`;
+    const current = buckets.get(bucketKey) ?? { key, runIds: [] };
+    current.runIds.push(trial.runId);
+    buckets.set(bucketKey, current);
+  }
+
+  return Array.from(buckets.values())
+    .map((bucket) => ({
+      key: bucket.key,
+      count: bucket.runIds.length,
+      runIds: bucket.runIds
+    }))
+    .sort(compareSelectionTrialBuckets);
+}
+
+function isSelectedTrial(trial: SelectionTrialRecord): boolean {
+  return (trial.selection as { selected?: boolean }).selected === true;
 }
 
 function summarizeGroup(
@@ -335,6 +465,30 @@ function compareRunRecords(
   return left.runId.localeCompare(right.runId);
 }
 
+function compareSelectionTrials(
+  left: SelectionTrialRecord,
+  right: SelectionTrialRecord
+): number {
+  if (left.runIndex !== right.runIndex) {
+    return left.runIndex - right.runIndex;
+  }
+  return left.runId.localeCompare(right.runId);
+}
+
+function compareSelectionTrialBuckets(
+  left: BatchReplaySelectionTrialBucket,
+  right: BatchReplaySelectionTrialBucket
+): number {
+  if (left.count !== right.count) {
+    return right.count - left.count;
+  }
+  return bucketSortKey(left.key).localeCompare(bucketSortKey(right.key));
+}
+
+function bucketSortKey(value: string | null): string {
+  return value ?? "\uffff";
+}
+
 function renderGroup(group: BatchReplayGroupSummary): string {
   return [
     `run_count: ${group.runCount}`,
@@ -361,6 +515,30 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `total_rejected_count: ${group.totalRejectedCount}`,
     `total_meaningful_reject_count: ${group.totalMeaningfulRejectCount}`,
     `total_dust_reject_count: ${group.totalDustRejectCount}`
+  ].join("\n");
+}
+
+function renderSelectionTrialSummary(
+  summary: BatchReplaySelectionTrialSummary | null
+): string {
+  if (summary === null) {
+    return "trial_summary: null";
+  }
+
+  return [
+    `trial_count: ${summary.trialCount}`,
+    `selected_count: ${summary.selectedCount}`,
+    `unselected_count: ${summary.unselectedCount}`,
+    `status_counts: ${JSON.stringify(summary.statusCounts)}`,
+    `ai_decision_failure_trial_count: ${summary.aiDecisionFailureTrialCount}`,
+    `rejected_trial_count: ${summary.rejectedTrialCount}`,
+    `no_trade_trial_count: ${summary.noTradeTrialCount}`,
+    `decision_provider_modes: ${JSON.stringify(summary.decisionProviderModes)}`,
+    `prompt_hashes: ${JSON.stringify(summary.promptHashes)}`,
+    `config_hashes: ${JSON.stringify(summary.configHashes)}`,
+    `risk_policy_hashes: ${JSON.stringify(summary.riskPolicyHashes)}`,
+    `exit_policy_hashes: ${JSON.stringify(summary.exitPolicyHashes)}`,
+    `risk_profiles: ${JSON.stringify(summary.riskProfiles)}`
   ].join("\n");
 }
 

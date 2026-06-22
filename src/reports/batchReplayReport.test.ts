@@ -5,6 +5,7 @@ import type {
   MarketRegimeClassification,
   MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
+import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
   buildBatchReplayAggregateReport,
@@ -141,6 +142,73 @@ test("batch replay aggregate report counts AI decision failures separately from 
   assert.equal(report.overall.failedCount, 1);
   assert.equal(report.overall.totalAiDecisionFailureCount, 3);
   assert.equal(report.byRegime.bull?.totalAiDecisionFailureCount, 3);
+});
+
+test("batch replay aggregate report summarizes selection trial distribution", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceSelectionTrialsPath:
+      "data/batch/batch-replay-selection-trials.jsonl",
+    records: [
+      record("run_0", 0, "completed", "bull", 0.05, 1_050_000),
+      record("run_1", 1, "completed_with_failures", "bull", 0.01, 1_010_000, 1),
+      record("run_2", 2, "skipped", "insufficient_data", null, null),
+      record("run_3", 3, "failed", "mixed", null, null)
+    ],
+    selectionTrials: [
+      trial("run_0", 0, "completed", hash("a"), hash("b"), 1, 0, 0),
+      trial(
+        "run_1",
+        1,
+        "completed_with_failures",
+        hash("a"),
+        hash("c"),
+        0,
+        1,
+        2
+      ),
+      trial("run_2", 2, "skipped", null, null, 0, 0, 0),
+      trial("run_3", 3, "failed", hash("d"), hash("e"), 0, 0, 0)
+    ]
+  });
+
+  assert.equal(
+    report.sourceSelectionTrialsPath,
+    "data/batch/batch-replay-selection-trials.jsonl"
+  );
+  assert.equal(report.trialSummary?.trialCount, 4);
+  assert.equal(report.trialSummary?.selectedCount, 0);
+  assert.equal(report.trialSummary?.unselectedCount, 4);
+  assert.deepEqual(report.trialSummary?.statusCounts, {
+    completed: 1,
+    completed_with_failures: 1,
+    skipped: 1,
+    failed: 1
+  });
+  assert.equal(report.trialSummary?.aiDecisionFailureTrialCount, 1);
+  assert.equal(report.trialSummary?.rejectedTrialCount, 1);
+  assert.equal(report.trialSummary?.noTradeTrialCount, 3);
+  assert.deepEqual(report.trialSummary?.promptHashes[0], {
+    key: hash("a"),
+    count: 2,
+    runIds: ["run_0", "run_1"]
+  });
+  assert.deepEqual(report.trialSummary?.configHashes.at(-1), {
+    key: null,
+    count: 1,
+    runIds: ["run_2"]
+  });
+  assert.deepEqual(report.trialSummary?.runIds, [
+    "run_0",
+    "run_1",
+    "run_2",
+    "run_3"
+  ]);
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /source_selection_trials_path/
+  );
+  assert.match(renderBatchReplayAggregateReport(report), /prompt_hashes/);
 });
 
 test("batch replay aggregate report handles legacy records without market counts", () => {
@@ -313,6 +381,114 @@ function record(
     error: status === "failed" ? "fixture failure" : null,
     skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null
   };
+}
+
+function trial(
+  runId: string,
+  runIndex: number,
+  status: SelectionTrialRecord["status"],
+  promptHash: SelectionTrialRecord["decisionProvider"]["promptHash"],
+  configHash: SelectionTrialRecord["config"]["configHash"],
+  tradeCount: number,
+  aiDecisionFailureCount: number,
+  rejectedCount: number
+): SelectionTrialRecord {
+  return {
+    mode: "paper_only",
+    trialSchemaVersion: "selection_trial.v1",
+    trialId: `batch-test:trial:${String(runIndex).padStart(6, "0")}:${runId}`,
+    batchId: "batch-test",
+    runId,
+    runIndex,
+    runSeed: `seed:${runIndex}`,
+    status,
+    startedAt: "2026-06-12T01:00:00.000Z",
+    completedAt:
+      status === "completed" || status === "completed_with_failures"
+        ? "2026-06-12T01:00:01.000Z"
+        : null,
+    skippedAt: status === "skipped" ? "2026-06-12T01:00:01.000Z" : null,
+    failedAt: status === "failed" ? "2026-06-12T01:00:01.000Z" : null,
+    window: {
+      seed: `seed:${runIndex}`,
+      rangeStart: "2025-01-01T00:00:00.000Z",
+      rangeEnd: "2025-12-31T23:59:59.999Z",
+      windowMonths: 1,
+      timezoneOffsetMinutes: 540,
+      candidateCount: 12,
+      selectedCandidateIndex: runIndex,
+      selectedMonth: "2025-01",
+      localStartDate: "2025-01-01",
+      localEndDate: "2025-01-31",
+      startAt: "2024-12-31T15:00:00.000Z",
+      endAt: "2025-01-31T14:59:59.999Z"
+    },
+    marketRegime: marketRegime("bull"),
+    decisionProvider: {
+      mode: "deterministic_fixture",
+      promptPolicy: null,
+      promptVersion: null,
+      promptHash,
+      metadataHash: hash("f")
+    },
+    config: {
+      configHash,
+      riskPolicyHash: hash("1"),
+      allocationPolicyHash: hash("2"),
+      marketRegimeAllocationPolicyHash: hash("3"),
+      exitPolicyHash: hash("4"),
+      riskProfile: "balanced",
+      selectionMetric: "total_return_ratio"
+    },
+    outcome: {
+      totalReturnRatio:
+        status === "completed" || status === "completed_with_failures"
+          ? 0.01
+          : null,
+      finalVirtualNetWorthKrw:
+        status === "completed" || status === "completed_with_failures"
+          ? 1_010_000
+          : null,
+      tradeCount,
+      aiDecisionFailureCount,
+      rejectedCount,
+      skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null,
+      error: status === "failed" ? "fixture failure" : null,
+      reportPath:
+        status === "completed" || status === "completed_with_failures"
+          ? `data/batch/${runId}/historical-replay-report.json`
+          : null
+    },
+    selection: {
+      selected: false,
+      selectedBy: null,
+      selectedAt: null,
+      selectionReason: null
+    },
+    researchManifest: {
+      status: promptHash === null ? "partial" : "available",
+      manifestPath:
+        promptHash === null
+          ? null
+          : `data/batch/${runId}/historical-replay-research-manifest.json`,
+      manifestVersion:
+        promptHash === null ? null : "replay_research_manifest.v1",
+      configHash,
+      dataSnapshotHash: null,
+      universeHash: null,
+      coverageHash: null,
+      promptHash,
+      schemaHash: null,
+      riskPolicyHash: null,
+      costModelHash: null,
+      executionModelVersion: null,
+      warnings: promptHash === null ? ["fixture legacy run"] : []
+    }
+  };
+}
+
+function hash(char: string): `sha256:${string}` {
+  return `sha256:${char.repeat(64)}`;
 }
 
 function marketRegime(label: MarketRegimeLabel): MarketRegimeClassification {

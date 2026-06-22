@@ -572,9 +572,14 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-001/batch-replay-runs.jsonl --output-path data/batch-replay/batch-smoke-001/batch-replay-aggregate-report.json --target-return-thresholds "0.15,0.30"
 ```
 
+`batch-replay-runs.jsonl`과 같은 directory에 `batch-replay-selection-trials.jsonl`이 있으면 aggregate report CLI가 자동으로 읽어 `trialSummary`를 추가합니다. 다른 위치의 trial log를 사용해야 하면 `--selection-trials-path`로 명시합니다.
+
 집계 report는 다음 정보를 포함합니다.
 
 - 전체 run 수, completed/skipped/failed count
+- selection trial 수, selected/unselected count, status count
+- prompt/config/risk/exit hash별 trial distribution
+- provider failure, risk reject, no-trade trial count
 - return sample이 있는 completed run 수
 - 전체 및 regime별 평균/중앙값/min/max paper return ratio
 - 전체 및 regime별 win rate
@@ -598,7 +603,7 @@ Run-level `historical-replay-report.json`의 portfolio construction metric:
 
 `cashDragApproxKrw`는 아직 report에 넣지 않습니다. 기준 benchmark와 재투자 가정에 따라 값이 크게 달라질 수 있어, 부정확한 placeholder 대신 후속 PR에서 별도 정의한 뒤 추가합니다.
 
-이 report는 이미 완료된 paper-only batch run record를 읽는 사후 분석 도구입니다. replay 실행, Codex CLI AI 호출, 외부 데이터 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
+이 report는 이미 완료된 paper-only batch run record와 selection trial log를 읽는 사후 분석 도구입니다. replay 실행, Codex CLI AI 호출, 외부 데이터 수집, broker API 호출, 주문 생성은 수행하지 않습니다.
 
 집계된 수익률과 target return hit-rate는 paper-only 시뮬레이션 결과를 요약한 값입니다. 투자 조언, 수익률 보장, 실계좌 성과, live trading signal로 해석하면 안 됩니다.
 
