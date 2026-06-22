@@ -69,6 +69,20 @@ test("research hash preserves own __proto__ keys", () => {
   );
 });
 
+test("research hash uses locale-independent UTF-8 key ordering", () => {
+  const input = {
+    가: 3,
+    ä: 2,
+    z: 1
+  };
+
+  assert.equal(stableStringifyResearchInput(input), '{"z":1,"ä":2,"가":3}');
+  assert.equal(
+    createReplayResearchHash(input),
+    createReplayResearchHash({ z: 1, ä: 2, 가: 3 })
+  );
+});
+
 test("research hash rejects sparse arrays before JSON serialization", () => {
   const sparse = new Array<unknown>(1);
   const deleted = [null];

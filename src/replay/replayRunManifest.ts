@@ -171,12 +171,16 @@ function canonicalPlainObject(
 
   const output = Object.create(null) as { [key: string]: CanonicalJsonValue };
   for (const [key, entry] of Object.entries(value).sort(([left], [right]) =>
-    left.localeCompare(right)
+    compareUtf8PropertyKey(left, right)
   )) {
     output[key] = toCanonicalJsonValue(entry, `${path}.${key}`);
   }
 
   return output;
+}
+
+function compareUtf8PropertyKey(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 }
 
 function isArrayIndexKey(key: string, length: number): boolean {
