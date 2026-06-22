@@ -192,6 +192,8 @@ Official Toss Open API token auth 설계는 [docs/official-token-auth-design.md]
 Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
 Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
 Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbook.md](docs/ai-paper-trading-runbook.md)를 참고합니다.
+퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/quant-research-paper-simulation-review.md](docs/quant-research-paper-simulation-review.md)를 참고합니다.
+퀀트 연구 기반 paper simulation 구현 기획은 [docs/quant-research-paper-simulation-plan.md](docs/quant-research-paper-simulation-plan.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
 코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.

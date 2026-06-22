@@ -416,4 +416,6 @@ npm test
 - [trading-runtime.md](trading-runtime.md)
 - [risk-policy.md](risk-policy.md)
 - [historical-replay.md](historical-replay.md)
+- [quant-research-paper-simulation-review.md](quant-research-paper-simulation-review.md)
+- [quant-research-paper-simulation-plan.md](quant-research-paper-simulation-plan.md)
 - [mcp-tools.md](mcp-tools.md)
