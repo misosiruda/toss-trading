@@ -204,6 +204,54 @@ function serializeRiskPolicy(
     ...(policy.maxPositionWeightRatio === undefined
       ? {}
       : { maxPositionWeightRatio: policy.maxPositionWeightRatio }),
+    ...(policy.maxStrategyBucketExposureKrw === undefined
+      ? {}
+      : {
+          maxStrategyBucketExposureKrw:
+            policy.maxStrategyBucketExposureKrw
+        }),
+    ...(policy.maxStrategyBucketExposureRatio === undefined
+      ? {}
+      : {
+          maxStrategyBucketExposureRatio:
+            policy.maxStrategyBucketExposureRatio
+        }),
+    ...(policy.maxBucketTurnoverKrw === undefined
+      ? {}
+      : { maxBucketTurnoverKrw: policy.maxBucketTurnoverKrw }),
+    ...(policy.maxBucketTurnoverRatio === undefined
+      ? {}
+      : { maxBucketTurnoverRatio: policy.maxBucketTurnoverRatio }),
+    ...(policy.maxSectorExposureKrw === undefined
+      ? {}
+      : { maxSectorExposureKrw: policy.maxSectorExposureKrw }),
+    ...(policy.maxSectorExposureRatio === undefined
+      ? {}
+      : { maxSectorExposureRatio: policy.maxSectorExposureRatio }),
+    ...(policy.maxCountryExposureKrw === undefined
+      ? {}
+      : { maxCountryExposureKrw: policy.maxCountryExposureKrw }),
+    ...(policy.maxCountryExposureRatio === undefined
+      ? {}
+      : { maxCountryExposureRatio: policy.maxCountryExposureRatio }),
+    ...(policy.maxCurrencyExposureKrw === undefined
+      ? {}
+      : { maxCurrencyExposureKrw: policy.maxCurrencyExposureKrw }),
+    ...(policy.maxCurrencyExposureRatio === undefined
+      ? {}
+      : { maxCurrencyExposureRatio: policy.maxCurrencyExposureRatio }),
+    ...(policy.maxUnknownMetadataExposureKrw === undefined
+      ? {}
+      : {
+          maxUnknownMetadataExposureKrw:
+            policy.maxUnknownMetadataExposureKrw
+        }),
+    ...(policy.maxUnknownMetadataExposureRatio === undefined
+      ? {}
+      : {
+          maxUnknownMetadataExposureRatio:
+            policy.maxUnknownMetadataExposureRatio
+        }),
     ...(policy.minCashReserveRatio === undefined
       ? {}
       : { minCashReserveRatio: policy.minCashReserveRatio }),

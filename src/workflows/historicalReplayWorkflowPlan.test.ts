@@ -46,7 +46,13 @@ test("historical replay workflow plan builds runner input and run metadata", () 
       riskProfile: "aggressive_paper",
       riskPolicy: {
         maxBudgetPerDecisionKrw: 200_000,
-        targetExposureRatio: 0.8
+        targetExposureRatio: 0.8,
+        maxStrategyBucketExposureRatio: { long_term: 0.6 },
+        maxBucketTurnoverKrw: { intraday: 50_000 },
+        maxSectorExposureRatio: 0.45,
+        maxCountryExposureRatio: 0.7,
+        maxCurrencyExposureRatio: 0.4,
+        maxUnknownMetadataExposureRatio: 0.1
       },
       paperExitPolicy,
       runId: "   ",
@@ -96,6 +102,32 @@ test("historical replay workflow plan builds runner input and run metadata", () 
   assert.equal(
     plan.metadataContext.configuration.riskPolicy?.targetExposureRatio,
     0.8
+  );
+  assert.deepEqual(
+    plan.metadataContext.configuration.riskPolicy
+      ?.maxStrategyBucketExposureRatio,
+    { long_term: 0.6 }
+  );
+  assert.deepEqual(
+    plan.metadataContext.configuration.riskPolicy?.maxBucketTurnoverKrw,
+    { intraday: 50_000 }
+  );
+  assert.equal(
+    plan.metadataContext.configuration.riskPolicy?.maxSectorExposureRatio,
+    0.45
+  );
+  assert.equal(
+    plan.metadataContext.configuration.riskPolicy?.maxCountryExposureRatio,
+    0.7
+  );
+  assert.equal(
+    plan.metadataContext.configuration.riskPolicy?.maxCurrencyExposureRatio,
+    0.4
+  );
+  assert.equal(
+    plan.metadataContext.configuration.riskPolicy
+      ?.maxUnknownMetadataExposureRatio,
+    0.1
   );
   assert.deepEqual(plan.metadataContext.configuration.paperExitPolicy, {
     takeProfitMode: "full_exit",
