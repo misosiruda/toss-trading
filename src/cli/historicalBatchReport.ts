@@ -19,7 +19,7 @@ import type {
 const args = process.argv.slice(2);
 const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
-const selectionTrialsPathArg = readArgValue("--selection-trials-path");
+const selectionTrialsPathArg = readOptionalArgValue("--selection-trials-path");
 const selectionTrialsPath =
   selectionTrialsPathArg ??
   join(dirname(runsPath), BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME);
@@ -310,6 +310,14 @@ function readRequiredArgValue(name: string): string {
   const value = readArgValue(name);
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${name} is required`);
+  }
+  return value;
+}
+
+function readOptionalArgValue(name: string): string | undefined {
+  const value = readArgValue(name);
+  if (value === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
   }
   return value;
 }

@@ -422,6 +422,42 @@ test("historical batch report CLI tolerates missing selection trial log", () => 
   assert.equal(report["trialSummary"], null);
 });
 
+test("historical batch report CLI rejects missing selection trial path value", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-missing-path",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--selection-trials-path",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--selection-trials-path requires a value/);
+});
+
 test("historical batch report CLI rejects malformed selection trial nested fields", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
