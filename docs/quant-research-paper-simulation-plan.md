@@ -571,13 +571,14 @@ Report 구획:
 
 금지:
 
-- dashboard에서 replay 실행 버튼 추가
+- research report 화면에 신규 replay 실행 버튼 추가
 - live order, Codex execution, TossInvest execution endpoint 추가
 - 투자 조언처럼 읽히는 verdict 문구 추가
 
 테스트:
 
-- API는 read-only `GET`/`HEAD`를 유지한다.
+- 신규 research report 조회 API는 read-only `GET`/`HEAD`로 제한한다.
+- 기존 guarded `POST /paper/simulations` Run 생성 예외를 보존하고, Q9 구현에서 global `GET`/`HEAD` only assertion으로 대체하지 않는다.
 - report가 민감 정보를 mask한다.
 - dashboard 일부 artifact 누락에도 가능한 값을 렌더링한다.
 - report 문구가 성과 보장/종목 추천으로 읽히지 않는다.
