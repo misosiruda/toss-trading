@@ -370,6 +370,64 @@ test("historical batch replay runner marks AI provider failures in completed rep
   assert.match(String(runRecords[0]?.["reportPath"]), /historical-replay-report\.json$/);
 });
 
+test("historical batch replay runner preserves failed run manifest references", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 74_000)
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-provider-throw",
+    seed: "seed-001",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxDecisionCalls: 1,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    decisionProviderFactory: () => new ThrowingCodexBatchProvider()
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const failedRecord = runRecords[0]!;
+  const failedResearchManifest = failedRecord[
+    "researchManifest"
+  ] as Record<string, unknown>;
+  const storedResearchManifest = JSON.parse(
+    await readFile(
+      join(
+        String(failedRecord["storageBaseDir"]),
+        "historical-replay-research-manifest.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+
+  assert.equal(result.status, "completed_with_failures");
+  assert.equal(result.failedCount, 1);
+  assert.equal(failedRecord["status"], "failed");
+  assert.match(String(failedRecord["error"]), /fixture provider threw/);
+  assert.equal(failedResearchManifest["status"], "available");
+  assert.match(
+    String(failedResearchManifest["manifestPath"]),
+    /historical-replay-research-manifest\.json$/
+  );
+  assert.equal(
+    failedResearchManifest["configHash"],
+    storedResearchManifest["configHash"]
+  );
+});
+
 test("historical batch replay runner records selected risk profile", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
   const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
@@ -495,6 +553,12 @@ class FailingCodexBatchProvider {
       },
       command: null
     };
+  }
+}
+
+class ThrowingCodexBatchProvider {
+  async decide(_packet: MarketPacket): Promise<CodexCliDecisionResult> {
+    throw new Error("fixture provider threw after manifest write");
   }
 }
 

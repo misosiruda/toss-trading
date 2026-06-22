@@ -1,4 +1,4 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -35,6 +35,10 @@ import type {
   HistoricalMarketSnapshot,
   Market
 } from "../domain/schemas.js";
+import {
+  parseWithSchema,
+  replayResearchManifestSchema
+} from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
@@ -50,6 +54,7 @@ import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
 import {
   missingReplayResearchManifestReference,
+  replayResearchManifestReference,
   type ReplayResearchManifestReference
 } from "../replay/replayRunManifest.js";
 import {
@@ -529,6 +534,8 @@ export async function runHistoricalBatchReplay(
       records.push(completed);
       await appendRunRecord(paths.runsPath, completed);
     } catch (error) {
+      const failedRunResearchManifest =
+        await readRunResearchManifestReference(storageBaseDir);
       const failed = runRecord({
         batchId,
         runId,
@@ -542,6 +549,9 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
+        ...(failedRunResearchManifest === undefined
+          ? {}
+          : { researchManifest: failedRunResearchManifest }),
         error: error instanceof Error ? error.message : String(error),
         terminalAt: terminalDateForRun({
           startedAt: runStartedAt,
@@ -791,6 +801,37 @@ function runRecord(input: {
     error: input.error ?? null,
     skipReason: input.skipReason ?? null
   };
+}
+
+async function readRunResearchManifestReference(
+  storageBaseDir: string
+): Promise<ReplayResearchManifestReference | undefined> {
+  const manifestPath = createStoragePaths(
+    storageBaseDir
+  ).historicalReplayResearchManifestPath;
+
+  try {
+    const manifest = parseWithSchema(
+      replayResearchManifestSchema,
+      JSON.parse(await readFile(manifestPath, "utf8")),
+      "batchRunReplayResearchManifest"
+    );
+    return replayResearchManifestReference({ manifest, manifestPath });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return undefined;
+    }
+    return {
+      ...missingReplayResearchManifestReference(
+        "RESEARCH_MANIFEST_READ_FAILED"
+      ),
+      manifestPath
+    };
+  }
 }
 
 function summarizeRun(
