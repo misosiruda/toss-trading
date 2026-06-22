@@ -11,6 +11,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { resolveHistoricalReplayPromptPolicy } from "../replay/codexHistoricalDecisionProvider.js";
 
 test("historical replay availability CLI keeps named option values out of positional fallback", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-availability-cli-"));
@@ -97,6 +99,82 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(window["source"], "explicit");
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
+});
+
+test("historical replay CLI records Codex provider metadata in research manifest", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-codex-manifest-cli-"));
+  const fakeCodexDir = mkdtempSync(join(tmpdir(), "fake-codex-cli-"));
+  createFakeCodexExecScript(fakeCodexDir);
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join(process.cwd(), "dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--step-seconds",
+      "60",
+      "--max-codex-calls",
+      "1"
+    ],
+    {
+      cwd: fakeCodexDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_DECISION_MODE: "paper_only",
+        AI_DECISION_ENABLED: "true",
+        CODEX_EXEC_PATH: process.execPath,
+        CODEX_EXEC_TIMEOUT_SECONDS: "5",
+        CODEX_ALLOW_WEB_SEARCH: "false",
+        CODEX_DECISION_ALLOW_WEB_SEARCH: "false"
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy();
+  const expectedCodexPromptHash = createReplayResearchHash({
+    mode: "codex_cli",
+    maxCallsPerRun: 1,
+    sandbox: "read-only",
+    allowWebSearch: false,
+    promptPolicy: historicalPromptPolicy.name,
+    promptVersion: historicalPromptPolicy.promptVersion
+  });
+  const deterministicFixturePromptHash = createReplayResearchHash({
+    mode: "deterministic_fixture",
+    promptPolicy: null,
+    promptVersion: null
+  });
+  const manifest = JSON.parse(
+    readFileSync(
+      join(dataDir, "historical-replay-research-manifest.json"),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+  const metadata = JSON.parse(
+    readFileSync(join(dataDir, "historical-replay-run-metadata.json"), "utf8")
+  ) as Record<string, unknown>;
+  const manifestInMetadata = metadata["researchManifest"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(manifest["promptHash"], expectedCodexPromptHash);
+  assert.notEqual(manifest["promptHash"], deterministicFixturePromptHash);
+  assert.equal(manifestInMetadata["promptHash"], manifest["promptHash"]);
+  assert.deepEqual(manifest["warnings"], []);
 });
 
 test("historical batch replay CLI writes batch manifest and aggregate report", () => {

@@ -16,6 +16,7 @@ import {
 } from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
+  resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
@@ -135,6 +136,9 @@ const riskProfile = resolvePaperRiskProfile({
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
 const paperExitPolicy = readPaperExitPolicyArg();
+const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
+  riskProfile: riskProfile.name
+});
 
 if (checkDataAvailability || requireDataAvailability) {
   const availabilityReport = await readHistoricalDataAvailabilityReport();
@@ -172,6 +176,16 @@ const decisionProvider = dryRun
       ),
       { maxCallsPerReplay: maxCodexCalls }
     );
+const decisionProviderMetadata = dryRun
+  ? undefined
+  : {
+      mode: "codex_cli" as const,
+      maxCallsPerRun: maxCodexCalls,
+      sandbox: "read-only" as const,
+      allowWebSearch: codexDecisionConfig.allowWebSearch,
+      promptPolicy: historicalPromptPolicy.name,
+      promptVersion: historicalPromptPolicy.promptVersion
+    };
 
 const result = await runHistoricalReplayWorkflow({
   storageBaseDir: dataDir,
@@ -182,6 +196,7 @@ const result = await runHistoricalReplayWorkflow({
     speedMultiplier: readNumberArg("--speed-multiplier", 1)
   }),
   ...(decisionProvider === undefined ? {} : { decisionProvider }),
+  ...(decisionProviderMetadata === undefined ? {} : { decisionProviderMetadata }),
   samplingPolicy,
   initialCashKrw,
   packetIdPrefix: readArgValue("--packet-id-prefix") ?? "packet_historical",

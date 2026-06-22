@@ -76,6 +76,8 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 보안/운영 기준:
 
 - 민감 정보 원문을 hash source, manifest, report에 저장하지 않는다.
+- `configHash`에는 요청 configuration뿐 아니라 replay가 실제로 사용하는 초기 `VirtualPortfolio` cash/position state를 포함한다.
+- `dataSnapshotHash`에는 replay packet 생성, 후보 feature, audit reference에 영향을 주는 normalized historical snapshot field를 포함한다.
 - hash가 없는 legacy run은 실행 실패가 아니라 report의 `reproducibility.status: "partial"`과 warning으로 표시한다.
 - 이 manifest는 paper-only 검증 artifact이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않는다.
 

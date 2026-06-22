@@ -4,12 +4,18 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type {
+  AssetRiskTag,
+  AssetType,
+  HistoricalMarketSnapshot,
+  VirtualPortfolio
+} from "../domain/schemas.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import {
   createStoragePaths,
-  FileHistoricalMarketSnapshotStore
+  FileHistoricalMarketSnapshotStore,
+  FileVirtualPortfolioStore
 } from "../storage/repositories.js";
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
 
@@ -207,22 +213,141 @@ test("historical replay workflow writes a stored paper report", async () => {
   );
 });
 
+test("historical replay research manifest hashes initial portfolio and replay snapshot fields", async () => {
+  const baseline = await runWorkflowAndReadResearchManifest({});
+  const withStoredPortfolio = await runWorkflowAndReadResearchManifest({
+    storedPortfolio: portfolioWithPosition()
+  });
+  const withDifferentSnapshotInputs = await runWorkflowAndReadResearchManifest({
+    snapshotInput: {
+      snapshotId: "hist_005930_0900",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000,
+      name: "KODEX 200",
+      assetType: "ETF",
+      riskTags: ["currency_exposed"],
+      openPriceKrw: 69_500,
+      closePriceKrw: 70_500,
+      sourceRefs: ["fixture:changed_source_ref"]
+    }
+  });
+
+  assert.notEqual(
+    baseline["configHash"],
+    withStoredPortfolio["configHash"],
+    "initial portfolio must affect configHash"
+  );
+  assert.notEqual(
+    baseline["dataSnapshotHash"],
+    withDifferentSnapshotInputs["dataSnapshotHash"],
+    "replay-relevant snapshot fields must affect dataSnapshotHash"
+  );
+});
+
 function snapshot(input: {
   snapshotId: string;
   symbol: string;
   observedAt: string;
   lastPriceKrw: number;
+  name?: string;
+  assetType?: AssetType;
+  riskTags?: AssetRiskTag[];
+  openPriceKrw?: number;
+  closePriceKrw?: number;
+  sourceRefs?: string[];
 }): HistoricalMarketSnapshot {
   return {
     snapshotId: input.snapshotId,
     market: "KR",
     symbol: input.symbol,
+    ...(input.name === undefined ? {} : { name: input.name }),
+    ...(input.assetType === undefined ? {} : { assetType: input.assetType }),
+    ...(input.riskTags === undefined ? {} : { riskTags: input.riskTags }),
     observedAt: input.observedAt,
     interval: "1m",
+    ...(input.openPriceKrw === undefined
+      ? {}
+      : { openPriceKrw: input.openPriceKrw }),
+    ...(input.closePriceKrw === undefined
+      ? {}
+      : { closePriceKrw: input.closePriceKrw }),
     lastPriceKrw: input.lastPriceKrw,
     volume: 100_000,
-    sourceRefs: [`fixture:${input.snapshotId}`],
+    sourceRefs: input.sourceRefs ?? [`fixture:${input.snapshotId}`],
     createdAt: "2026-06-12T09:00:00+09:00"
+  };
+}
+
+async function runWorkflowAndReadResearchManifest(input: {
+  storedPortfolio?: VirtualPortfolio;
+  snapshotInput?: Parameters<typeof snapshot>[0];
+}): Promise<Record<string, unknown>> {
+  const storageBaseDir = await mkdtemp(join(tmpdir(), "toss-replay-manifest-"));
+  const paths = createStoragePaths(storageBaseDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    paths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      input.snapshotInput ?? {
+        snapshotId: "hist_005930_0900",
+        symbol: "005930",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        lastPriceKrw: 70_000
+      }
+    )
+  );
+
+  if (input.storedPortfolio !== undefined) {
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(
+      input.storedPortfolio
+    );
+  }
+
+  await runHistoricalReplayWorkflow({
+    storageBaseDir,
+    clock: new SimulatedClock({
+      startAt: new Date("2025-01-02T09:00:00+09:00"),
+      endAt: new Date("2025-01-02T09:00:00+09:00"),
+      stepSeconds: 60
+    }),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    packetIdPrefix: "packet_historical_manifest_hash",
+    packetExpiresInSeconds: 60,
+    maxCandidates: 10,
+    maxSnapshotAgeSeconds: 300,
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  });
+
+  return JSON.parse(
+    await readFile(paths.historicalReplayResearchManifestPath, "utf8")
+  ) as Record<string, unknown>;
+}
+
+function portfolioWithPosition(): VirtualPortfolio {
+  return {
+    portfolioId: "portfolio_fixture_existing_position",
+    cashKrw: 850_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        assetType: "STOCK",
+        quantity: 1,
+        averagePriceKrw: 70_000,
+        marketPriceKrw: 70_000,
+        marketValueKrw: 70_000,
+        priceUpdatedAt: "2025-01-02T09:00:00+09:00",
+        priceSourceRefs: ["fixture:initial_position"],
+        updatedAt: "2025-01-02T09:00:00+09:00"
+      }
+    ],
+    updatedAt: "2025-01-02T09:00:00+09:00"
   };
 }
 

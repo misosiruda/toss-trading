@@ -1,6 +1,8 @@
 import type {
   HistoricalMarketSnapshot,
-  MarketPacket
+  MarketPacket,
+  VirtualPortfolio,
+  VirtualPosition
 } from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import { createPaperExecutionPolicy } from "../paper/executionModel.js";
@@ -75,6 +77,7 @@ export async function runHistoricalReplayWorkflow(
     plan,
     snapshots: snapshots.records,
     corruptLineCount: snapshots.corruptLineCount,
+    hasExplicitDecisionProvider: options.decisionProvider !== undefined,
     decisionProviderMetadata: options.decisionProviderMetadata,
     createdAt: replayStartedAt
   });
@@ -159,31 +162,29 @@ function createWorkflowResearchManifest(input: {
   plan: HistoricalReplayWorkflowPlan;
   snapshots: HistoricalMarketSnapshot[];
   corruptLineCount: number;
+  hasExplicitDecisionProvider: boolean;
   decisionProviderMetadata: unknown;
   createdAt: Date;
 }) {
   const metadata = input.plan.metadataContext;
+  const promptMetadata = resolveDecisionProviderManifestMetadata({
+    hasExplicitDecisionProvider: input.hasExplicitDecisionProvider,
+    decisionProviderMetadata: input.decisionProviderMetadata
+  });
   return createReplayResearchManifest({
     runId: metadata.identity.runId,
     batchId: metadata.identity.batchId,
     createdAt: input.createdAt,
     config: {
       window: metadata.window,
-      configuration: metadata.configuration
+      configuration: metadata.configuration,
+      initialPortfolio: normalizePortfolioForManifest(input.plan.initialPortfolio)
     },
     dataSnapshot: {
       source: "historical_market_snapshots",
       corruptLineCount: input.corruptLineCount,
       snapshots: input.snapshots
-        .map((snapshot) => ({
-          snapshotId: snapshot.snapshotId,
-          market: snapshot.market,
-          symbol: snapshot.symbol,
-          observedAt: snapshot.observedAt,
-          interval: snapshot.interval,
-          lastPriceKrw: snapshot.lastPriceKrw ?? null,
-          volume: snapshot.volume ?? null
-        }))
+        .map(normalizeSnapshotForManifest)
         .sort(compareSnapshotManifestEntry)
     },
     universe: summarizeReplayUniverse(input.snapshots),
@@ -193,11 +194,7 @@ function createWorkflowResearchManifest(input: {
       snapshotCount: input.snapshots.length,
       corruptLineCount: input.corruptLineCount
     },
-    prompt: input.decisionProviderMetadata ?? {
-      mode: "deterministic_fixture",
-      promptPolicy: null,
-      promptVersion: null
-    },
+    prompt: promptMetadata.value,
     schema: {
       replayResearchManifestVersion: "replay_research_manifest.v1",
       historicalReplayRunMetadata: "historical_replay_run_metadata.v1",
@@ -214,8 +211,96 @@ function createWorkflowResearchManifest(input: {
     costModel: {
       executionPolicy: createPaperExecutionPolicy(undefined)
     },
-    executionModelVersion: "execution_simulator.v0"
+    executionModelVersion: "execution_simulator.v0",
+    warnings: promptMetadata.metadataMissing
+      ? ["DECISION_PROVIDER_METADATA_MISSING"]
+      : []
   });
+}
+
+function resolveDecisionProviderManifestMetadata(input: {
+  hasExplicitDecisionProvider: boolean;
+  decisionProviderMetadata: unknown;
+}): { value: unknown; metadataMissing: boolean } {
+  if (input.decisionProviderMetadata !== undefined) {
+    return {
+      value: input.decisionProviderMetadata,
+      metadataMissing: false
+    };
+  }
+
+  if (input.hasExplicitDecisionProvider) {
+    return {
+      value: {
+        mode: "unknown_provider",
+        promptPolicy: null,
+        promptVersion: null
+      },
+      metadataMissing: true
+    };
+  }
+
+  return {
+    value: {
+      mode: "deterministic_fixture",
+      promptPolicy: null,
+      promptVersion: null
+    },
+    metadataMissing: false
+  };
+}
+
+function normalizePortfolioForManifest(portfolio: VirtualPortfolio) {
+  return {
+    portfolioId: portfolio.portfolioId,
+    cashKrw: portfolio.cashKrw,
+    updatedAt: portfolio.updatedAt,
+    positions: portfolio.positions.map(normalizePositionForManifest)
+  };
+}
+
+function normalizePositionForManifest(position: VirtualPosition) {
+  return {
+    market: position.market,
+    symbol: position.symbol,
+    assetType: position.assetType ?? null,
+    assetClass: position.assetClass ?? null,
+    region: position.region ?? null,
+    riskTags: position.riskTags ?? [],
+    quantity: position.quantity,
+    averagePriceKrw: position.averagePriceKrw,
+    marketPriceKrw: position.marketPriceKrw ?? null,
+    marketValueKrw: position.marketValueKrw ?? null,
+    unrealizedPnlKrw: position.unrealizedPnlKrw ?? null,
+    priceUpdatedAt: position.priceUpdatedAt ?? null,
+    priceStaleAfter: position.priceStaleAfter ?? null,
+    priceSourceRefs: position.priceSourceRefs ?? [],
+    isPriceStale: position.isPriceStale ?? null,
+    updatedAt: position.updatedAt
+  };
+}
+
+function normalizeSnapshotForManifest(snapshot: HistoricalMarketSnapshot) {
+  return {
+    snapshotId: snapshot.snapshotId,
+    market: snapshot.market,
+    symbol: snapshot.symbol,
+    name: snapshot.name ?? null,
+    assetType: snapshot.assetType ?? null,
+    assetClass: snapshot.assetClass ?? null,
+    region: snapshot.region ?? null,
+    riskTags: snapshot.riskTags ?? [],
+    observedAt: snapshot.observedAt,
+    interval: snapshot.interval,
+    openPriceKrw: snapshot.openPriceKrw ?? null,
+    highPriceKrw: snapshot.highPriceKrw ?? null,
+    lowPriceKrw: snapshot.lowPriceKrw ?? null,
+    closePriceKrw: snapshot.closePriceKrw ?? null,
+    lastPriceKrw: snapshot.lastPriceKrw,
+    volume: snapshot.volume ?? null,
+    sourceRefs: snapshot.sourceRefs,
+    createdAt: snapshot.createdAt
+  };
 }
 
 function summarizeReplayUniverse(
