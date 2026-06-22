@@ -49,6 +49,7 @@ export type HistoricalMarketPacketBuildResult =
 interface HistoricalCandidateFeatures {
   score: number;
   reasonCodes: string[];
+  averageVolume?: number | undefined;
 }
 
 interface ScreenedHistoricalCandidate {
@@ -198,7 +199,7 @@ export class HistoricalMarketSnapshotIndex {
 
     const candidates = screenedCandidates.map((candidate, index) =>
       toCandidateDraft(candidate.snapshot, index + 1, options, {
-        score: candidate.features.score,
+        ...candidate.features,
         reasonCodes: [
           ...candidate.features.reasonCodes,
           ...candidate.reasonCodes
@@ -279,6 +280,10 @@ function toCandidateDraft(
     ...(snapshot.region === undefined ? {} : { region: snapshot.region }),
     ...(snapshot.riskTags === undefined ? {} : { riskTags: snapshot.riskTags }),
     lastPriceKrw: snapshot.lastPriceKrw,
+    ...(snapshot.volume === undefined ? {} : { volume: snapshot.volume }),
+    ...(features.averageVolume === undefined
+      ? {}
+      : { averageVolume: features.averageVolume }),
     ranking,
     score: features.score,
     reasonCodes: [
@@ -454,7 +459,11 @@ function deriveCandidateFeatures(
     reasonCodes.push(trendReasonCode(windowChangePct));
   }
 
-  const volumeRatio = volumeRatioAgainstAverage(current, previousWindow);
+  const averageVolume = averageHistoricalVolume(previousWindow);
+  const volumeRatio =
+    current.volume !== undefined && averageVolume !== undefined
+      ? current.volume / averageVolume
+      : undefined;
   if (volumeRatio !== undefined) {
     if (volumeRatio >= 1.2) {
       score += 5;
@@ -474,7 +483,8 @@ function deriveCandidateFeatures(
 
   return {
     score: clampScore(score),
-    reasonCodes: Array.from(new Set(reasonCodes)).sort()
+    reasonCodes: Array.from(new Set(reasonCodes)).sort(),
+    ...(averageVolume === undefined ? {} : { averageVolume })
   };
 }
 
@@ -505,11 +515,10 @@ function trendReasonCode(changePct: number): string {
   return "HISTORICAL_TREND_FLAT";
 }
 
-function volumeRatioAgainstAverage(
-  current: HistoricalMarketSnapshot,
+function averageHistoricalVolume(
   previousWindow: HistoricalMarketSnapshot[]
 ): number | undefined {
-  if (current.volume === undefined || previousWindow.length === 0) {
+  if (previousWindow.length === 0) {
     return undefined;
   }
 
@@ -527,7 +536,7 @@ function volumeRatioAgainstAverage(
     return undefined;
   }
 
-  return current.volume / averageVolume;
+  return averageVolume;
 }
 
 function candleReasonCode(snapshot: HistoricalMarketSnapshot): string | undefined {

@@ -91,8 +91,20 @@ function executeBuy(
     action: "VIRTUAL_BUY",
     targetNotionalKrw: normalizedOrder.targetNotionalKrw,
     sourcePriceKrw: candidate.lastPriceKrw,
+    volume: candidate.volume,
+    averageVolume: candidate.averageVolume,
+    liquidityStale: isCandidateLiquidityStale(candidate, riskDecision.createdAt),
     policy: input.executionPolicy
   });
+
+  if (fill.fillStatus === "rejected") {
+    return {
+      portfolio,
+      riskDecision: rejectLiquidityFill(riskDecision, fill),
+      trade: null
+    };
+  }
+
   const existing = portfolio.positions.find(
     (position) =>
       position.market === input.decision.market &&
@@ -199,6 +211,9 @@ function executeSell(
     targetNotionalKrw: normalizedOrder.targetNotionalKrw,
     sourcePriceKrw: candidate.lastPriceKrw,
     averagePriceKrw: existing.averagePriceKrw,
+    volume: candidate.volume,
+    averageVolume: candidate.averageVolume,
+    liquidityStale: isCandidateLiquidityStale(candidate, riskDecision.createdAt),
     quantityOverride: shouldSnapToFullExit({
       normalizedOrder,
       existing,
@@ -208,6 +223,15 @@ function executeSell(
       : undefined,
     policy: input.executionPolicy
   });
+
+  if (fill.fillStatus === "rejected") {
+    return {
+      portfolio,
+      riskDecision: rejectLiquidityFill(riskDecision, fill),
+      trade: null
+    };
+  }
+
   existing.quantity -= fill.quantity;
   existing.marketPriceKrw = candidate.lastPriceKrw;
   existing.marketValueKrw = Math.round(existing.quantity * candidate.lastPriceKrw);
@@ -284,6 +308,11 @@ function buildTrade(
     impactCostKrw: fill.impactCostKrw,
     totalCostKrw: fill.totalCostKrw,
     costModelVersion: PAPER_COST_MODEL_VERSION,
+    requestedNotionalKrw: fill.requestedNotionalKrw,
+    filledNotionalKrw: fill.filledNotionalKrw,
+    fillStatus: fill.fillStatus,
+    liquidityStatus: fill.liquidityStatus,
+    maxParticipationRate: fill.maxParticipationRate,
     priceSourceRefs,
     fillRatio: fill.fillRatio,
     fractionalShares: fill.fractionalShares,
@@ -294,8 +323,53 @@ function buildTrade(
   if (fill.realizedPnlKrw !== undefined) {
     trade.realizedPnlKrw = fill.realizedPnlKrw;
   }
+  if (fill.participationRate !== undefined) {
+    trade.participationRate = fill.participationRate;
+  }
+  if (fill.volume !== undefined) {
+    trade.volume = fill.volume;
+  }
+  if (fill.averageVolume !== undefined) {
+    trade.averageVolume = fill.averageVolume;
+  }
 
   return trade;
+}
+
+function rejectLiquidityFill(
+  riskDecision: VirtualRiskDecision,
+  fill: PaperFill
+): VirtualRiskDecision {
+  const rejectCode =
+    fill.liquidityRejectReason === "stale_liquidity"
+      ? "VIRTUAL_LIQUIDITY_STALE"
+      : "VIRTUAL_LIQUIDITY_INSUFFICIENT";
+
+  return {
+    ...riskDecision,
+    approved: false,
+    rejectCodes: Array.from(new Set([...riskDecision.rejectCodes, rejectCode])),
+    checkedRules: Array.from(
+      new Set([...riskDecision.checkedRules, "liquidity"])
+    )
+  };
+}
+
+function isCandidateLiquidityStale(
+  candidate: MarketCandidate,
+  evaluatedAt: string
+): boolean {
+  if (candidate.volume === undefined && candidate.averageVolume === undefined) {
+    return false;
+  }
+
+  const staleAfterMs = Date.parse(candidate.staleAfter);
+  const evaluatedAtMs = Date.parse(evaluatedAt);
+  return (
+    Number.isFinite(staleAfterMs) &&
+    Number.isFinite(evaluatedAtMs) &&
+    staleAfterMs <= evaluatedAtMs
+  );
 }
 
 function syncPositionMetadata(

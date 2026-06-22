@@ -257,6 +257,15 @@ Q3-1 구현 기준:
 - spread/market impact/liquidity는 이번 PR에서 explicit zero/not-modeled placeholder로 남기고, 실제 participation rate, partial fill, no-fill reject는 Q3-2에서 구현한다.
 - live broker order, live `TradingSignal`, live `OrderIntent`, raw execution surface는 추가하지 않는다.
 
+Q3-2 구현 기준:
+
+- `paper_cost_model.v2` / `execution_simulator.v2`는 기존 fee/tax/slippage 산식을 유지하면서 `conservative_when_available` liquidity model을 추가한다.
+- `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달하고, 과거 window에서 계산한 `averageVolume`은 lookahead 없이 `MarketCandidate.averageVolume`으로 전달한다.
+- volume 또는 averageVolume이 있으면 `maxVolumeParticipationRate` cap을 적용한다. 기본값은 10%이며, 부족하면 partial fill 또는 no-fill reject가 발생한다.
+- volume 정보가 없으면 legacy full-fill 동작을 보존하되 `liquidityStatus: "not_modeled"`로 기록한다.
+- no-fill은 `VirtualTrade`를 만들지 않고 `VirtualRiskDecision.rejectCodes`에 `VIRTUAL_LIQUIDITY_STALE` 또는 `VIRTUAL_LIQUIDITY_INSUFFICIENT`를 남긴다.
+- live broker order, live `TradingSignal`, live `OrderIntent`, raw execution surface는 추가하지 않는다.
+
 예상 log:
 
 ```json
@@ -270,7 +279,8 @@ Q3-1 구현 기준:
   "slippageCostKrw": 0,
   "impactCostKrw": 0,
   "participationRate": 0,
-  "fillStatus": "filled | partial | rejected"
+  "fillStatus": "filled | partial | rejected",
+  "liquidityStatus": "not_modeled | sufficient | partial | rejected | stale"
 }
 ```
 
@@ -279,7 +289,7 @@ Q3-1 구현 기준:
 - volume 부족이면 partial fill 또는 reject된다.
 - stale volume은 liquidity pass로 처리하지 않는다.
 - cost model별 cost breakdown이 report에 남는다.
-- 단순 fillRatio와 새 fill model의 backward compatibility를 확인한다.
+- volume이 없을 때 단순 fillRatio와 legacy fill behavior가 보존된다.
 
 완료 기준:
 

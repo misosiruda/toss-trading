@@ -118,6 +118,24 @@ test("historical packet builder derives trend and volume reason codes from past 
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_TREND_UP"), true);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_VOLUME_ABOVE_AVG"), true);
   assert.equal(candidate.reasonCodes.includes("HISTORICAL_CANDLE_UP"), true);
+  assert.equal(candidate.volume, 300_000);
+  assert.equal(candidate.averageVolume, 110_000);
+  assert.equal(
+    candidate.featureRefs?.includes("candidate.KR.005930.volume"),
+    true
+  );
+  assert.equal(
+    candidate.featureRefs?.includes("candidate.KR.005930.averageVolume"),
+    true
+  );
+  assert.equal(
+    candidate.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.005930.volume" &&
+        featureScore.reasonCode === "VOLUME_AVAILABLE"
+    ),
+    true
+  );
   assert.equal(
     candidate.featureScores?.some(
       (featureScore) =>

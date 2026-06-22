@@ -31,6 +31,8 @@ export interface MarketCandidateDraft {
   sector?: string;
   industry?: string;
   lastPriceKrw?: number;
+  volume?: number;
+  averageVolume?: number;
   ranking?: number;
   score?: number;
   reasonCodes?: string[];
@@ -239,6 +241,12 @@ function normalizeCandidate(
   if (candidate.lastPriceKrw !== undefined) {
     normalized.lastPriceKrw = candidate.lastPriceKrw;
   }
+  if (candidate.volume !== undefined) {
+    normalized.volume = candidate.volume;
+  }
+  if (candidate.averageVolume !== undefined) {
+    normalized.averageVolume = candidate.averageVolume;
+  }
   if (candidate.ranking !== undefined) {
     normalized.ranking = candidate.ranking;
   }
@@ -261,6 +269,12 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
 
   if (candidate.lastPriceKrw !== undefined) {
     refs.push(`${prefix}.lastPriceKrw`);
+  }
+  if (candidate.volume !== undefined) {
+    refs.push(`${prefix}.volume`);
+  }
+  if (candidate.averageVolume !== undefined) {
+    refs.push(`${prefix}.averageVolume`);
   }
   if (candidate.assetType !== undefined) {
     refs.push(`${prefix}.assetType`);
@@ -334,6 +348,17 @@ function buildCandidateFeatureScores(input: {
 
   if (input.candidate.lastPriceKrw !== undefined) {
     addScore("lastPriceKrw", 100, "AVAILABILITY", "PRICE_AVAILABLE");
+  }
+  if (input.candidate.volume !== undefined) {
+    addScore("volume", 100, "AVAILABILITY", "VOLUME_AVAILABLE");
+  }
+  if (input.candidate.averageVolume !== undefined) {
+    addScore(
+      "averageVolume",
+      100,
+      "AVAILABILITY",
+      "AVERAGE_VOLUME_AVAILABLE"
+    );
   }
   if (input.candidate.ranking !== undefined) {
     addScore(

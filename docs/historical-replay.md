@@ -80,7 +80,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 - `dataSnapshotHash`에는 replay packet 생성, 후보 feature, audit reference에 영향을 주는 normalized historical snapshot field를 포함한다.
 - hash가 없는 legacy run은 실행 실패가 아니라 report의 `reproducibility.status: "partial"`과 warning으로 표시한다.
 - 이 manifest는 paper-only 검증 artifact이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않는다.
-- Q3-1 기준 `costModelHash`는 `paper_cost_model.v1` object를 hash한 값이다. 이 object에는 `executionModelVersion`, fill/fee/tax/slippage model name, spread/impact/liquidity placeholder, normalized `executionPolicy`가 포함된다.
+- Q3-2 기준 `costModelHash`는 `paper_cost_model.v2` object를 hash한 값이다. 이 object에는 `executionModelVersion`, fill/fee/tax/slippage model name, spread/impact placeholder, liquidity model name, normalized `executionPolicy`가 포함된다.
 
 ## Artifact Contract
 
@@ -158,7 +158,18 @@ Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까
 
 이 benchmark는 저장된 replay packet과 portfolio timeline만 사용합니다. 외부 지수, 미래 가격, 실계좌 성과와 비교하지 않습니다.
 
-Historical replay report의 `Execution Costs` section은 완료된 `VirtualTrade`에서 fee/tax/slippage/spread/impact cost를 합산합니다. Q3-1에서는 기존 fill 산식을 바꾸지 않고 `paper_cost_model.v1` metadata와 explicit zero placeholder를 남깁니다. Volume participation, partial fill, no-fill liquidity reject는 Q3-2 범위입니다.
+Historical replay report의 `Execution Costs` section은 완료된 `VirtualTrade`에서 fee/tax/slippage/spread/impact cost를 합산합니다.
+
+Q3-2 기준:
+
+- `paper_cost_model.v2` / `execution_simulator.v2`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.
+- `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달되고, 현재 tick 이전 snapshot window에서 계산한 `averageVolume`은 `MarketCandidate.averageVolume`으로 전달됩니다.
+- `VirtualTrade`에는 `requestedNotionalKrw`, `filledNotionalKrw`, `fillStatus`, `liquidityStatus`, `participationRate`, `maxParticipationRate`, `volume`, `averageVolume`이 추가로 기록될 수 있습니다.
+- volume이 충분하면 `fillStatus: "filled"`와 `liquidityStatus: "sufficient"`가 기록됩니다.
+- volume cap 때문에 일부만 체결되면 `fillStatus: "partial"`과 `liquidityStatus: "partial"`가 기록됩니다.
+- volume 정보가 없으면 legacy full-fill behavior를 보존하고 `liquidityStatus: "not_modeled"`로 기록합니다.
+- stale volume 또는 최소 체결 비율 미만 no-fill은 `VirtualTrade`를 만들지 않고 `historical-replay-risk-decisions.jsonl`에 `VIRTUAL_LIQUIDITY_STALE` 또는 `VIRTUAL_LIQUIDITY_INSUFFICIENT` reject code로 남습니다.
+- 이 모델은 paper-only simulator이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않습니다.
 
 ## Flow
 
