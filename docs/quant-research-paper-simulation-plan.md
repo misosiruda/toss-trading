@@ -250,6 +250,13 @@ git diff --check
 - nonlinear market impact placeholder
 - cost model versioning
 
+Q3-1 구현 기준:
+
+- `paper_cost_model.v1` interface를 추가해 fee/tax/slippage/fillRatio 정책을 버전 있는 cost model로 기록한다.
+- `execution_simulator.v1`은 기존 단순 fill 산식을 유지하되 `costModelHash`와 report cost summary에서 비용 가정을 추적한다.
+- spread/market impact/liquidity는 이번 PR에서 explicit zero/not-modeled placeholder로 남기고, 실제 participation rate, partial fill, no-fill reject는 Q3-2에서 구현한다.
+- live broker order, live `TradingSignal`, live `OrderIntent`, raw execution surface는 추가하지 않는다.
+
 예상 log:
 
 ```json

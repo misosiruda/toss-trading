@@ -40,6 +40,7 @@ export interface HistoricalReplayReport {
   analytics: PaperPortfolioAnalytics;
   decisionOutcome: HistoricalReplayDecisionOutcomeSummary;
   tradeSummary: HistoricalReplayTradeSummary;
+  costSummary: HistoricalReplayCostSummary;
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
   reproducibility: ReplayResearchManifestReference;
@@ -99,6 +100,16 @@ export interface HistoricalReplayTradeSummary {
   symbols: string[];
 }
 
+export interface HistoricalReplayCostSummary {
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  costModelVersions: string[];
+}
+
 export interface HistoricalReplayRiskSummary {
   approvedCount: number;
   rejectedCount: number;
@@ -155,6 +166,7 @@ export function buildHistoricalReplayReport(
     }),
     decisionOutcome: summarizeDecisions(result.decisions),
     tradeSummary: summarizeTrades(result.trades),
+    costSummary: summarizeCosts(result.trades),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
     reproducibility:
@@ -230,6 +242,17 @@ export function renderHistoricalReplayReport(
     `virtual_buy_amount_krw: ${report.tradeSummary.virtualBuyAmountKrw}`,
     `virtual_sell_amount_krw: ${report.tradeSummary.virtualSellAmountKrw}`,
     `symbols: ${report.tradeSummary.symbols.join(", ") || "none"}`,
+    "",
+    "## Execution Costs",
+    `fee_krw: ${report.costSummary.feeKrw}`,
+    `tax_krw: ${report.costSummary.taxKrw}`,
+    `slippage_krw: ${report.costSummary.slippageKrw}`,
+    `spread_cost_krw: ${report.costSummary.spreadCostKrw}`,
+    `impact_cost_krw: ${report.costSummary.impactCostKrw}`,
+    `total_cost_krw: ${report.costSummary.totalCostKrw}`,
+    `cost_model_versions: ${
+      report.costSummary.costModelVersions.join(", ") || "none"
+    }`,
     "",
     "## Virtual Risk",
     `approved_count: ${report.riskSummary.approvedCount}`,
@@ -353,6 +376,51 @@ function summarizeTrades(trades: VirtualTrade[]): HistoricalReplayTradeSummary {
       .reduce((sum, trade) => sum + trade.amountKrw, 0),
     symbols: Array.from(new Set(trades.map((trade) => trade.symbol))).sort()
   };
+}
+
+function summarizeCosts(trades: VirtualTrade[]): HistoricalReplayCostSummary {
+  const feeKrw = sumTradeField(trades, "feeKrw");
+  const taxKrw = sumTradeField(trades, "taxKrw");
+  const slippageKrw = sumTradeField(trades, "slippageKrw");
+  const spreadCostKrw = sumTradeField(trades, "spreadCostKrw");
+  const impactCostKrw = sumTradeField(trades, "impactCostKrw");
+  const totalCostKrw = trades.reduce((sum, trade) => {
+    const componentTotal =
+      (trade.feeKrw ?? 0) +
+      (trade.taxKrw ?? 0) +
+      (trade.slippageKrw ?? 0) +
+      (trade.spreadCostKrw ?? 0) +
+      (trade.impactCostKrw ?? 0);
+    return sum + (componentTotal > 0 ? componentTotal : trade.totalCostKrw ?? 0);
+  }, 0);
+
+  return {
+    feeKrw,
+    taxKrw,
+    slippageKrw,
+    spreadCostKrw,
+    impactCostKrw,
+    totalCostKrw,
+    costModelVersions: Array.from(
+      new Set(
+        trades
+          .map((trade) => trade.costModelVersion)
+          .filter((value): value is string => typeof value === "string")
+      )
+    ).sort()
+  };
+}
+
+function sumTradeField(
+  trades: VirtualTrade[],
+  field:
+    | "feeKrw"
+    | "taxKrw"
+    | "slippageKrw"
+    | "spreadCostKrw"
+    | "impactCostKrw"
+): number {
+  return trades.reduce((sum, trade) => sum + (trade[field] ?? 0), 0);
 }
 
 function summarizeRisk(

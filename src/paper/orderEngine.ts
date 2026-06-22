@@ -15,6 +15,7 @@ import {
   type PaperExecutionPolicy,
   type PaperFill
 } from "./executionModel.js";
+import { PAPER_COST_MODEL_VERSION } from "./costModel.js";
 import { isDustPosition, isSellAllDustClose } from "./dustPosition.js";
 import { findCandidate, VirtualRiskEngine, type VirtualRiskPolicy } from "./riskEngine.js";
 
@@ -279,6 +280,10 @@ function buildTrade(
     feeKrw: fill.feeKrw,
     taxKrw: fill.taxKrw,
     slippageKrw: fill.slippageKrw,
+    spreadCostKrw: fill.spreadCostKrw,
+    impactCostKrw: fill.impactCostKrw,
+    totalCostKrw: fill.totalCostKrw,
+    costModelVersion: PAPER_COST_MODEL_VERSION,
     priceSourceRefs,
     fillRatio: fill.fillRatio,
     fractionalShares: fill.fractionalShares,

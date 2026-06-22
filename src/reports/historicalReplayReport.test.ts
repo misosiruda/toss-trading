@@ -32,6 +32,10 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.replaySummary.decisionProviderCallCount, 2);
   assert.equal(report.replaySummary.decisionSkippedCount, 1);
   assert.equal(report.tradeSummary.tradeCount, 2);
+  assert.equal(report.costSummary.totalCostKrw, 0);
+  assert.deepEqual(report.costSummary.costModelVersions, [
+    "paper_cost_model.v1"
+  ]);
   assert.equal(report.paperExitPolicy, null);
   assert.equal(report.portfolio.finalCashKrw, 830_000);
   assert.equal(report.portfolio.finalPositionCount, 2);
@@ -77,6 +81,9 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /avg_exposure_ratio/);
   assert.match(rendered, /time_in_market_ratio/);
   assert.match(rendered, /meaningful_reject_count/);
+  assert.match(rendered, /Execution Costs/);
+  assert.match(rendered, /total_cost_krw/);
+  assert.match(rendered, /cost_model_versions/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
   assert.match(rendered, /Reproducibility/);
@@ -136,6 +143,36 @@ test("historical replay report separates dust no-op from meaningful rejects", ()
 
   assert.equal(report.riskSummary.meaningfulRejectCount, result.rejectedCount);
   assert.equal(report.riskSummary.dustRejectCount, 1);
+});
+
+test("historical replay report summarizes execution cost components", () => {
+  const result = replayResult();
+  result.trades[0] = {
+    ...result.trades[0]!,
+    feeKrw: 10,
+    taxKrw: 2,
+    slippageKrw: 3,
+    spreadCostKrw: 4,
+    impactCostKrw: 5,
+    totalCostKrw: 999,
+    costModelVersion: "paper_cost_model.v1"
+  };
+  result.trades[1] = {
+    ...result.trades[1]!,
+    totalCostKrw: 7
+  };
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.costSummary.feeKrw, 10);
+  assert.equal(report.costSummary.taxKrw, 2);
+  assert.equal(report.costSummary.slippageKrw, 3);
+  assert.equal(report.costSummary.spreadCostKrw, 4);
+  assert.equal(report.costSummary.impactCostKrw, 5);
+  assert.equal(report.costSummary.totalCostKrw, 31);
+  assert.deepEqual(report.costSummary.costModelVersions, [
+    "paper_cost_model.v1"
+  ]);
 });
 
 function replayResult(): HistoricalReplayResult {
