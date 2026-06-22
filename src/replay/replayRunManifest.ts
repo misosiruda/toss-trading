@@ -171,6 +171,11 @@ function canonicalPlainObject(
 
   const output = Object.create(null) as { [key: string]: CanonicalJsonValue };
   for (const [key, entry] of Object.entries(value)) {
+    if (containsLoneSurrogate(key)) {
+      throw new Error(
+        `Research hash input contains malformed Unicode key at ${path}`
+      );
+    }
     output[key] = toCanonicalJsonValue(entry, `${path}.${key}`);
   }
 
@@ -179,6 +184,26 @@ function canonicalPlainObject(
 
 function compareUtf8PropertyKey(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+function containsLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const charCode = value.charCodeAt(index);
+    if (charCode >= 0xd800 && charCode <= 0xdbff) {
+      const nextCharCode = value.charCodeAt(index + 1);
+      if (nextCharCode >= 0xdc00 && nextCharCode <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return true;
+    }
+
+    if (charCode >= 0xdc00 && charCode <= 0xdfff) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function stringifyCanonicalJsonValue(value: CanonicalJsonValue): string {

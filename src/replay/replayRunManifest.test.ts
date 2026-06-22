@@ -96,6 +96,14 @@ test("research hash preserves UTF-8 order for integer-like object keys", () => {
   );
 });
 
+test("research hash rejects malformed Unicode object keys", () => {
+  const first = JSON.parse('{"\\uD800":1}') as Record<string, unknown>;
+  const second = JSON.parse('{"\\uD801":1}') as Record<string, unknown>;
+
+  assert.throws(() => createReplayResearchHash(first), /malformed Unicode key/);
+  assert.throws(() => createReplayResearchHash(second), /malformed Unicode key/);
+});
+
 test("research hash rejects sparse arrays before JSON serialization", () => {
   const sparse = new Array<unknown>(1);
   const deleted = [null];
