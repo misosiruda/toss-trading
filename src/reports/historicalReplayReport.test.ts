@@ -87,6 +87,7 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /exposure_by_asset_class/);
   assert.match(rendered, /exposure_by_strategy_bucket/);
   assert.match(rendered, /unknown_metadata_exposure_ratio/);
+  assert.match(rendered, /symbol_exposures/);
   assert.match(rendered, /meaningful_reject_count/);
   assert.match(rendered, /Execution Costs/);
   assert.match(rendered, /total_cost_krw/);

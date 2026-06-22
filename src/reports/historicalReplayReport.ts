@@ -239,6 +239,7 @@ export function renderHistoricalReplayReport(
     `exposure_by_strategy_bucket: ${JSON.stringify(report.analytics.exposureByStrategyBucket)}`,
     `unknown_metadata_exposure_krw: ${report.analytics.unknownMetadataExposureKrw}`,
     `unknown_metadata_exposure_ratio: ${report.analytics.unknownMetadataExposureRatio}`,
+    `symbol_exposures: ${JSON.stringify(report.analytics.symbolExposures)}`,
     `decision_trade_linkage: ${JSON.stringify(report.analytics.decisionTradeLinkage)}`,
     "",
     "## Decision Outcome",

@@ -131,6 +131,7 @@ export function renderPaperDailyReport(report: PaperDailyReport): string {
     `symbol_allocations: ${report.analytics.symbolAllocations
       .map((allocation) => `${allocation.market}:${allocation.symbol}:${allocation.allocationRatio ?? "null"}`)
       .join(", ") || "none"}`,
+    `symbol_exposures: ${JSON.stringify(report.analytics.symbolExposures)}`,
     `unrealized_pnl_krw: ${formatNullable(report.analytics.virtualPnl.unrealizedPnlKrw)}`,
     `realized_pnl_krw: ${formatNullable(report.analytics.virtualPnl.realizedPnlKrw)}`,
     `decision_trade_linkage: ${JSON.stringify(report.analytics.decisionTradeLinkage)}`,

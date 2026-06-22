@@ -82,6 +82,7 @@ test("rendered sample report masks sensitive values and avoids live-order wordin
   assert.match(rendered, /exposure_by_asset_class/);
   assert.match(rendered, /exposure_by_strategy_bucket/);
   assert.match(rendered, /unknown_metadata_exposure_ratio/);
+  assert.match(rendered, /symbol_exposures/);
   assert.match(rendered, /decision_trade_linkage/);
   assert.match(rendered, /Paper-only virtual simulation/);
   assert.equal(rendered.includes("1234-5678-901234"), false);

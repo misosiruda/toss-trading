@@ -8,7 +8,8 @@ import type {
 import {
   buildPortfolioExposureAggregate,
   type AssetClassExposureKey,
-  type AssetTypeExposureKey
+  type AssetTypeExposureKey,
+  type PortfolioSymbolExposure
 } from "../paper/portfolioExposureAggregator.js";
 import type { StrategyBucketKey } from "../paper/strategyBucketPolicy.js";
 
@@ -21,6 +22,7 @@ export interface PaperPortfolioAnalytics {
   positionAllocationRatio: number | null;
   positionCount: number;
   symbolAllocations: SymbolAllocation[];
+  symbolExposures: PortfolioSymbolExposure[];
   exposureByMarket: Record<Market, number>;
   exposureByAssetType: Record<AssetTypeExposureKey, number>;
   exposureByAssetClass: Record<AssetClassExposureKey, number>;
@@ -102,6 +104,7 @@ export function buildPaperPortfolioAnalytics(input: {
         : null,
     positionCount: input.portfolio?.positions.length ?? 0,
     symbolAllocations: symbolAllocations.sort(compareSymbolAllocation),
+    symbolExposures: exposureAggregate.symbolExposures,
     exposureByMarket: exposureAggregate.exposureByMarketKrw,
     exposureByAssetType: exposureAggregate.exposureByAssetTypeKrw,
     exposureByAssetClass: exposureAggregate.exposureByAssetClassKrw,

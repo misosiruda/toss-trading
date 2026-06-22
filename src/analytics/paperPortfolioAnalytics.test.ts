@@ -27,6 +27,17 @@ test("paper analytics calculates exposure and allocation totals", () => {
   assert.equal(analytics.unknownMetadataExposureKrw, 0);
   assert.equal(analytics.unknownMetadataExposureRatio, 0);
   assert.deepEqual(
+    analytics.symbolExposures.map((exposure) => [
+      exposure.key,
+      exposure.grossExposureKrw,
+      exposure.exposureRatio
+    ]),
+    [
+      ["US:AAPL", 200_000, 0.2],
+      ["KR:005930", 100_000, 0.1]
+    ]
+  );
+  assert.deepEqual(
     analytics.symbolAllocations.map((allocation) => [
       allocation.symbol,
       allocation.assetType
@@ -37,6 +48,57 @@ test("paper analytics calculates exposure and allocation totals", () => {
     ]
   );
   assert.match(analytics.disclaimer, /not investment performance/);
+});
+
+test("paper analytics exposes aggregated symbol exposure for split buckets", () => {
+  const analytics = buildPaperPortfolioAnalytics({
+    portfolio: {
+      portfolioId: "virtual_split_bucket",
+      cashKrw: 750_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          assetClass: "equity",
+          strategyBucket: "long_term",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          updatedAt: "2026-06-11T09:00:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          assetClass: "equity",
+          strategyBucket: "swing",
+          quantity: 1,
+          averagePriceKrw: 150_000,
+          marketValueKrw: 150_000,
+          updatedAt: "2026-06-11T09:00:00+09:00"
+        }
+      ],
+      updatedAt: "2026-06-11T09:00:00+09:00"
+    },
+    decisions: [],
+    trades: []
+  });
+
+  assert.equal(analytics.symbolAllocations.length, 2);
+  assert.equal(analytics.symbolExposures.length, 1);
+  assert.deepEqual(analytics.symbolExposures[0], {
+    key: "KR:005930",
+    market: "KR",
+    symbol: "005930",
+    grossExposureKrw: 250_000,
+    netExposureKrw: 250_000,
+    exposureRatio: 0.25,
+    positionCount: 2,
+    strategyBuckets: ["long_term", "swing"],
+    assetTypes: ["STOCK"],
+    assetClasses: ["equity"]
+  });
 });
 
 test("paper analytics keeps realized pnl null without sell fill metadata", () => {
