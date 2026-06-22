@@ -1,4 +1,5 @@
 import type {
+  AssetRegion,
   MarketCandidate,
   MarketPacket,
   VirtualDecisionItem,
@@ -7,11 +8,19 @@ import type {
 import { normalizeVirtualDecision } from "./decisionNormalizer.js";
 import { isSellAllDustClose } from "./dustPosition.js";
 import {
+  UNKNOWN_EXPOSURE_KEY,
+  positionExposureValueKrw
+} from "./portfolioExposureAggregator.js";
+import {
   minimumCashReserveKrw,
   virtualNetWorthKrw,
   type VirtualRiskPolicy,
   type VirtualRiskRejectCode
 } from "./riskPolicy.js";
+import {
+  UNKNOWN_STRATEGY_BUCKET,
+  type StrategyBucketKey
+} from "./strategyBucketPolicy.js";
 
 export interface VirtualRiskBranchInput {
   packet: MarketPacket;
@@ -67,6 +76,10 @@ export function evaluateVirtualBuyRiskBranch(
   ) {
     rejectCodes.push("VIRTUAL_POSITION_WEIGHT_EXCEEDED");
   }
+
+  rejectCodes.push(
+    ...evaluatePortfolioExposureRisk({ ...input, notionalKrw, netWorthKrw })
+  );
 
   return rejectCodes;
 }
@@ -135,5 +148,267 @@ function portfolioExposureKrw(portfolio: VirtualPortfolio): number {
       (position.marketValueKrw ??
         Math.round(position.quantity * position.averagePriceKrw)),
     0
+  );
+}
+
+interface PortfolioExposureRiskInput extends VirtualRiskBranchInput {
+  notionalKrw: number;
+  netWorthKrw: number;
+}
+
+interface ExposureMetadata {
+  sector: string;
+  country: AssetRegion | typeof UNKNOWN_EXPOSURE_KEY;
+  strategyBucket: StrategyBucketKey;
+  currencyExposed: boolean;
+  metadataMissing: boolean;
+}
+
+interface ExposureProfile {
+  bySector: Map<string, number>;
+  byCountry: Map<AssetRegion | typeof UNKNOWN_EXPOSURE_KEY, number>;
+  byStrategyBucket: Map<StrategyBucketKey, number>;
+  currencyExposureKrw: number;
+  unknownMetadataExposureKrw: number;
+}
+
+function evaluatePortfolioExposureRisk(
+  input: PortfolioExposureRiskInput
+): VirtualRiskRejectCode[] {
+  if (input.notionalKrw <= 0) {
+    return [];
+  }
+
+  const rejectCodes: VirtualRiskRejectCode[] = [];
+  const profile = buildExposureProfile(input);
+  const decisionMetadata = resolveDecisionExposureMetadata(input);
+
+  incrementMap(profile.bySector, decisionMetadata.sector, input.notionalKrw);
+  incrementMap(profile.byCountry, decisionMetadata.country, input.notionalKrw);
+  incrementMap(
+    profile.byStrategyBucket,
+    decisionMetadata.strategyBucket,
+    input.notionalKrw
+  );
+
+  if (decisionMetadata.currencyExposed) {
+    profile.currencyExposureKrw += input.notionalKrw;
+  }
+  if (decisionMetadata.metadataMissing) {
+    profile.unknownMetadataExposureKrw += input.notionalKrw;
+  }
+
+  const strategyBucketExposure = profile.byStrategyBucket.get(
+    decisionMetadata.strategyBucket
+  ) ?? 0;
+  if (
+    exceedsMappedLimit({
+      value: strategyBucketExposure,
+      key: decisionMetadata.strategyBucket,
+      krwLimits: input.policy.maxStrategyBucketExposureKrw,
+      ratioLimits: input.policy.maxStrategyBucketExposureRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_BUCKET_BUDGET_EXCEEDED");
+  }
+
+  if (
+    exceedsMappedLimit({
+      value: input.notionalKrw,
+      key: decisionMetadata.strategyBucket,
+      krwLimits: input.policy.maxBucketTurnoverKrw,
+      ratioLimits: input.policy.maxBucketTurnoverRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_BUCKET_TURNOVER_EXCEEDED");
+  }
+
+  if (
+    exceedsLimit({
+      value: profile.bySector.get(decisionMetadata.sector) ?? 0,
+      krwLimit: input.policy.maxSectorExposureKrw,
+      ratioLimit: input.policy.maxSectorExposureRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_SECTOR_EXPOSURE_EXCEEDED");
+  }
+
+  if (
+    exceedsLimit({
+      value: profile.byCountry.get(decisionMetadata.country) ?? 0,
+      krwLimit: input.policy.maxCountryExposureKrw,
+      ratioLimit: input.policy.maxCountryExposureRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED");
+  }
+
+  if (
+    exceedsLimit({
+      value: profile.currencyExposureKrw,
+      krwLimit: input.policy.maxCurrencyExposureKrw,
+      ratioLimit: input.policy.maxCurrencyExposureRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED");
+  }
+
+  if (
+    exceedsLimit({
+      value: profile.unknownMetadataExposureKrw,
+      krwLimit: input.policy.maxUnknownMetadataExposureKrw,
+      ratioLimit: input.policy.maxUnknownMetadataExposureRatio,
+      netWorthKrw: input.netWorthKrw
+    })
+  ) {
+    rejectCodes.push("VIRTUAL_EXPOSURE_METADATA_MISSING");
+  }
+
+  return rejectCodes;
+}
+
+function buildExposureProfile(input: VirtualRiskBranchInput): ExposureProfile {
+  const profile: ExposureProfile = {
+    bySector: new Map<string, number>(),
+    byCountry: new Map<AssetRegion | typeof UNKNOWN_EXPOSURE_KEY, number>(),
+    byStrategyBucket: new Map<StrategyBucketKey, number>(),
+    currencyExposureKrw: 0,
+    unknownMetadataExposureKrw: 0
+  };
+
+  for (const position of input.portfolio.positions) {
+    const exposureKrw = Math.abs(positionExposureValueKrw(position));
+    const metadata = resolvePositionExposureMetadata(input.packet, position);
+
+    incrementMap(profile.bySector, metadata.sector, exposureKrw);
+    incrementMap(profile.byCountry, metadata.country, exposureKrw);
+    incrementMap(profile.byStrategyBucket, metadata.strategyBucket, exposureKrw);
+    if (metadata.currencyExposed) {
+      profile.currencyExposureKrw += exposureKrw;
+    }
+    if (metadata.metadataMissing) {
+      profile.unknownMetadataExposureKrw += exposureKrw;
+    }
+  }
+
+  return profile;
+}
+
+function resolveDecisionExposureMetadata(
+  input: VirtualRiskBranchInput
+): ExposureMetadata {
+  const existingPosition = input.portfolio.positions.find(
+    (position) =>
+      position.market === input.decision.market &&
+      position.symbol === input.decision.symbol
+  );
+
+  return resolveExposureMetadata({
+    candidate: input.candidate,
+    position: existingPosition
+  });
+}
+
+function resolvePositionExposureMetadata(
+  packet: MarketPacket,
+  position: VirtualPortfolio["positions"][number]
+): ExposureMetadata {
+  return resolveExposureMetadata({
+    position,
+    candidate: packet.candidates.find(
+      (candidate) =>
+        candidate.market === position.market && candidate.symbol === position.symbol
+    )
+  });
+}
+
+function resolveExposureMetadata(input: {
+  candidate: MarketCandidate | undefined;
+  position?: VirtualPortfolio["positions"][number] | undefined;
+}): ExposureMetadata {
+  const sector = normalizeExposureKey(input.candidate?.sector);
+  const country =
+    input.position?.region ?? input.candidate?.region ?? UNKNOWN_EXPOSURE_KEY;
+  const strategyBucket =
+    input.position?.strategyBucket ??
+    input.candidate?.strategyBucket ??
+    UNKNOWN_STRATEGY_BUCKET;
+  const assetType = input.position?.assetType ?? input.candidate?.assetType;
+  const assetClass = input.position?.assetClass ?? input.candidate?.assetClass;
+  const riskTags = input.position?.riskTags ?? input.candidate?.riskTags;
+  const currencyMetadataKnown =
+    country !== UNKNOWN_EXPOSURE_KEY ||
+    assetClass === "currency" ||
+    riskTags?.includes("currency_exposed") === true;
+  const currencyExposed =
+    assetClass === "currency" ||
+    riskTags?.includes("currency_exposed") === true ||
+    country === "US" ||
+    country === "GLOBAL";
+
+  return {
+    sector,
+    country,
+    strategyBucket,
+    currencyExposed,
+    metadataMissing:
+      assetType === undefined ||
+      assetClass === undefined ||
+      (input.position?.strategyBucket === undefined &&
+        input.candidate?.strategyBucket === undefined) ||
+      sector === UNKNOWN_EXPOSURE_KEY ||
+      country === UNKNOWN_EXPOSURE_KEY ||
+      !currencyMetadataKnown
+  };
+}
+
+function normalizeExposureKey(value: string | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : UNKNOWN_EXPOSURE_KEY;
+}
+
+function incrementMap<Key>(map: Map<Key, number>, key: Key, value: number): void {
+  map.set(key, (map.get(key) ?? 0) + value);
+}
+
+function exceedsMappedLimit(input: {
+  value: number;
+  key: string;
+  krwLimits?: Record<string, number> | undefined;
+  ratioLimits?: Record<string, number> | undefined;
+  netWorthKrw: number;
+}): boolean {
+  return exceedsLimit({
+    value: input.value,
+    krwLimit: input.krwLimits?.[input.key],
+    ratioLimit: input.ratioLimits?.[input.key],
+    netWorthKrw: input.netWorthKrw
+  });
+}
+
+function exceedsLimit(input: {
+  value: number;
+  krwLimit?: number | undefined;
+  ratioLimit?: number | undefined;
+  netWorthKrw: number;
+}): boolean {
+  if (
+    input.krwLimit !== undefined &&
+    Number.isFinite(input.krwLimit) &&
+    input.value > input.krwLimit
+  ) {
+    return true;
+  }
+
+  return (
+    input.ratioLimit !== undefined &&
+    Number.isFinite(input.ratioLimit) &&
+    input.netWorthKrw > 0 &&
+    input.value / input.netWorthKrw > input.ratioLimit
   );
 }

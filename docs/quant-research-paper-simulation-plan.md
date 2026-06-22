@@ -368,7 +368,7 @@ Aggregation 축:
 
 - Q4-1: `strategyBucket` schema와 paper artifact propagation을 먼저 추가한다. 이 단계에서는 `VirtualDecision` AI output에 bucket을 열지 않고, backend candidate metadata만 position/trade로 복사한다.
 - Q4-2: `portfolioExposureAggregator`에서 symbol, strategy bucket, asset type/class exposure를 계산하고 report에 노출한다. 이 단계는 계산 산식 고정이며 risk reject 연결은 포함하지 않는다.
-- Q4-3: sector/country/currency/unknown metadata limit과 bucket turnover rule을 `VirtualRiskEngine`에 연결한다.
+- Q4-3: sector/country/currency/unknown metadata limit과 bucket budget/turnover rule을 `VirtualRiskEngine`에 연결한다. country는 현재 schema의 `region`을 사용하고, currency exposure는 `currency_exposed` risk tag, `assetClass=currency`, `region=US|GLOBAL`을 기준으로 보수 판단한다.
 
 ## Milestone Q5. Regime-aware Cash Reserve와 Hedge Policy
 
