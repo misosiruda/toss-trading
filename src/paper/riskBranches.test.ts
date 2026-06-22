@@ -480,6 +480,99 @@ test("buy risk branch rejects bucket budget breaches", () => {
   ]);
 });
 
+test("buy risk branch fails closed when buy bucket metadata is unavailable", () => {
+  const input = {
+    packet: packet({
+      candidates: [
+        candidate({
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          sector: "Technology"
+        })
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 40_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        maxBucketTurnoverKrw: { intraday: 50_000 }
+      }
+    }),
+    candidate: candidate({
+      assetType: "STOCK",
+      assetClass: "equity",
+      region: "KR",
+      sector: "Technology"
+    })
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
+    "VIRTUAL_EXPOSURE_METADATA_MISSING"
+  ]);
+});
+
+test("buy risk branch fails closed when held bucket metadata is unavailable", () => {
+  const input = {
+    packet: packet({
+      candidates: [
+        candidate({
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          strategyBucket: "long_term",
+          sector: "Technology"
+        })
+      ]
+    }),
+    portfolio: portfolio({
+      cashKrw: 700_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "000660",
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          quantity: 2,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 200_000,
+          updatedAt: "2026-06-14T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ budgetKrw: 100_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        maxStrategyBucketExposureRatio: { long_term: 0.9 }
+      }
+    }),
+    candidate: candidate({
+      assetType: "STOCK",
+      assetClass: "equity",
+      region: "KR",
+      strategyBucket: "long_term",
+      sector: "Technology"
+    })
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
+    "VIRTUAL_EXPOSURE_METADATA_MISSING"
+  ]);
+});
+
 test("buy risk branch rejects bucket turnover breaches", () => {
   const input = {
     packet: packet(),
