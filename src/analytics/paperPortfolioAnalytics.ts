@@ -5,6 +5,12 @@ import type {
   VirtualPortfolio,
   VirtualTrade
 } from "../domain/schemas.js";
+import {
+  buildPortfolioExposureAggregate,
+  type AssetClassExposureKey,
+  type AssetTypeExposureKey
+} from "../paper/portfolioExposureAggregator.js";
+import type { StrategyBucketKey } from "../paper/strategyBucketPolicy.js";
 
 export interface PaperPortfolioAnalytics {
   mode: "paper_only";
@@ -16,7 +22,11 @@ export interface PaperPortfolioAnalytics {
   positionCount: number;
   symbolAllocations: SymbolAllocation[];
   exposureByMarket: Record<Market, number>;
-  exposureByAssetType: Record<AssetType | "UNKNOWN", number>;
+  exposureByAssetType: Record<AssetTypeExposureKey, number>;
+  exposureByAssetClass: Record<AssetClassExposureKey, number>;
+  exposureByStrategyBucket: Record<StrategyBucketKey, number>;
+  unknownMetadataExposureKrw: number;
+  unknownMetadataExposureRatio: number;
   virtualPnl: VirtualPnlSummary;
   decisionTradeLinkage: DecisionTradeLinkageSummary;
   disclaimer: string;
@@ -58,6 +68,9 @@ export function buildPaperPortfolioAnalytics(input: {
   const virtualNetWorthKrw = input.portfolio
     ? input.portfolio.cashKrw + positionMarketValueKrw
     : null;
+  const exposureAggregate = buildPortfolioExposureAggregate(
+    input.portfolio ?? emptyPortfolio()
+  );
   const symbolAllocations =
     input.portfolio?.positions.map((position) => {
       const marketValueKrw = positionMarketValue(position);
@@ -89,8 +102,16 @@ export function buildPaperPortfolioAnalytics(input: {
         : null,
     positionCount: input.portfolio?.positions.length ?? 0,
     symbolAllocations: symbolAllocations.sort(compareSymbolAllocation),
-    exposureByMarket: buildExposureByMarket(symbolAllocations),
-    exposureByAssetType: buildExposureByAssetType(symbolAllocations),
+    exposureByMarket: exposureAggregate.exposureByMarketKrw,
+    exposureByAssetType: exposureAggregate.exposureByAssetTypeKrw,
+    exposureByAssetClass: exposureAggregate.exposureByAssetClassKrw,
+    exposureByStrategyBucket: exposureAggregate.exposureByStrategyBucketKrw,
+    unknownMetadataExposureKrw: input.portfolio
+      ? exposureAggregate.unknownMetadataExposureKrw
+      : 0,
+    unknownMetadataExposureRatio: input.portfolio
+      ? exposureAggregate.unknownMetadataExposureRatio
+      : 0,
     virtualPnl: buildVirtualPnl(input.portfolio, input.trades),
     decisionTradeLinkage: buildDecisionTradeLinkage(input.decisions, input.trades),
     disclaimer:
@@ -104,31 +125,6 @@ function positionMarketValue(
   return (
     position.marketValueKrw ??
     Math.round(position.quantity * position.averagePriceKrw)
-  );
-}
-
-function buildExposureByMarket(
-  allocations: SymbolAllocation[]
-): Record<Market, number> {
-  return allocations.reduce<Record<Market, number>>(
-    (byMarket, allocation) => {
-      byMarket[allocation.market] += allocation.marketValueKrw;
-      return byMarket;
-    },
-    { KR: 0, US: 0 }
-  );
-}
-
-function buildExposureByAssetType(
-  allocations: SymbolAllocation[]
-): Record<AssetType | "UNKNOWN", number> {
-  return allocations.reduce<Record<AssetType | "UNKNOWN", number>>(
-    (byAssetType, allocation) => {
-      const key = allocation.assetType ?? "UNKNOWN";
-      byAssetType[key] += allocation.marketValueKrw;
-      return byAssetType;
-    },
-    { STOCK: 0, ETF: 0, UNKNOWN: 0 }
   );
 }
 
@@ -209,4 +205,13 @@ function compareSymbolAllocation(
 
 function roundRatio(value: number): number {
   return Number(value.toFixed(6));
+}
+
+function emptyPortfolio(): VirtualPortfolio {
+  return {
+    portfolioId: "virtual_empty",
+    cashKrw: 0,
+    positions: [],
+    updatedAt: "1970-01-01T00:00:00.000Z"
+  };
 }

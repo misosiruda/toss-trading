@@ -21,6 +21,11 @@ test("paper analytics calculates exposure and allocation totals", () => {
   assert.equal(analytics.exposureByAssetType.STOCK, 100_000);
   assert.equal(analytics.exposureByAssetType.ETF, 200_000);
   assert.equal(analytics.exposureByAssetType.UNKNOWN, 0);
+  assert.equal(analytics.exposureByAssetClass.equity, 300_000);
+  assert.equal(analytics.exposureByStrategyBucket.long_term, 100_000);
+  assert.equal(analytics.exposureByStrategyBucket.hedge, 200_000);
+  assert.equal(analytics.unknownMetadataExposureKrw, 0);
+  assert.equal(analytics.unknownMetadataExposureRatio, 0);
   assert.deepEqual(
     analytics.symbolAllocations.map((allocation) => [
       allocation.symbol,
@@ -93,6 +98,8 @@ function portfolio(): VirtualPortfolio {
         market: "KR",
         symbol: "005930",
         assetType: "STOCK",
+        assetClass: "equity",
+        strategyBucket: "long_term",
         quantity: 1,
         averagePriceKrw: 90_000,
         marketValueKrw: 100_000,
@@ -103,6 +110,8 @@ function portfolio(): VirtualPortfolio {
         market: "US",
         symbol: "AAPL",
         assetType: "ETF",
+        assetClass: "equity",
+        strategyBucket: "hedge",
         quantity: 2,
         averagePriceKrw: 100_000,
         marketValueKrw: 200_000,

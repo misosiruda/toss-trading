@@ -124,6 +124,10 @@ export function renderPaperDailyReport(report: PaperDailyReport): string {
     `position_allocation_ratio: ${formatNullable(report.analytics.positionAllocationRatio)}`,
     `exposure_by_market: ${JSON.stringify(report.analytics.exposureByMarket)}`,
     `exposure_by_asset_type: ${JSON.stringify(report.analytics.exposureByAssetType)}`,
+    `exposure_by_asset_class: ${JSON.stringify(report.analytics.exposureByAssetClass)}`,
+    `exposure_by_strategy_bucket: ${JSON.stringify(report.analytics.exposureByStrategyBucket)}`,
+    `unknown_metadata_exposure_krw: ${report.analytics.unknownMetadataExposureKrw}`,
+    `unknown_metadata_exposure_ratio: ${report.analytics.unknownMetadataExposureRatio}`,
     `symbol_allocations: ${report.analytics.symbolAllocations
       .map((allocation) => `${allocation.market}:${allocation.symbol}:${allocation.allocationRatio ?? "null"}`)
       .join(", ") || "none"}`,

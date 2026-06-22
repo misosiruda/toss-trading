@@ -98,6 +98,29 @@ hedge
 
 metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` bucket으로 보수적으로 취급해야 합니다. `unknown`은 저장 schema의 허용 bucket이 아니라 aggregation용 fallback key입니다.
 
+## Paper Portfolio Exposure Aggregation
+
+`portfolioExposureAggregator`는 paper portfolio의 노출도를 deterministic하게 계산하는 공통 모듈입니다. 이 단계의 목적은 strategy bucket risk gate를 바로 열기 전에, report와 후속 `VirtualRiskEngine` rule이 같은 산식을 쓰도록 만드는 것입니다.
+
+현재 계산 축:
+
+- market
+- symbol
+- asset type
+- asset class
+- strategy bucket
+- gross exposure
+- net exposure
+- unknown metadata exposure
+
+정책 경계:
+
+- 같은 `market:symbol` position row가 여러 bucket에 나뉘어 있어도 symbol exposure는 합산합니다.
+- `assetType`, `assetClass`, `strategyBucket` 중 하나라도 없으면 해당 position의 gross exposure를 `unknownMetadataExposureKrw`에 포함합니다.
+- `UNKNOWN`과 `unknown`은 aggregation fallback key이며, 저장 schema의 실제 strategy bucket enum이 아닙니다.
+- net worth가 0 이하이면 ratio는 `0`으로 고정해 report와 risk rule에서 `NaN`이 전파되지 않게 합니다.
+- 이번 단계는 exposure 계산과 report 노출까지만 담당합니다. 신규 buy reject, bucket budget, turnover, sector/country/currency limit은 후속 `VirtualRiskEngine` rule에서 적용합니다.
+
 ## Paper Trading Policy Parameters
 
 `VirtualRiskEngine`은 paper-only 판단에 대해 다음 정책을 정규화해서 평가합니다.
