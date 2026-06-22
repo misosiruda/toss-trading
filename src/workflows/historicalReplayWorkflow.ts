@@ -5,7 +5,10 @@ import type {
   VirtualPosition
 } from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
-import { createPaperExecutionPolicy } from "../paper/executionModel.js";
+import {
+  createPaperCostModel,
+  PAPER_EXECUTION_MODEL_VERSION
+} from "../paper/costModel.js";
 import {
   buildHistoricalReplayReport,
   type HistoricalReplayReport
@@ -208,10 +211,8 @@ function createWorkflowResearchManifest(input: {
         metadata.configuration.marketRegimeAllocationPolicy,
       paperExitPolicy: metadata.configuration.paperExitPolicy
     },
-    costModel: {
-      executionPolicy: createPaperExecutionPolicy(undefined)
-    },
-    executionModelVersion: "execution_simulator.v0",
+    costModel: createPaperCostModel(),
+    executionModelVersion: PAPER_EXECUTION_MODEL_VERSION,
     warnings: promptMetadata.metadataMissing
       ? ["DECISION_PROVIDER_METADATA_MISSING"]
       : []

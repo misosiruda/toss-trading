@@ -132,6 +132,10 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(stored["title"], "Historical Replay Paper Report");
   assert.match(String(stored["disclaimer"]), /cannot place live orders/);
   assert.equal(
+    (stored["costSummary"] as Record<string, unknown>)["totalCostKrw"],
+    0
+  );
+  assert.equal(
     (stored["reproducibility"] as Record<string, unknown>)["status"],
     "available"
   );
@@ -195,6 +199,17 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.match(String(researchManifest["dataSnapshotHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.match(String(researchManifest["universeHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.match(String(researchManifest["coverageHash"]), /^sha256:[a-f0-9]{64}$/);
+  assert.match(String(researchManifest["costModelHash"]), /^sha256:[a-f0-9]{64}$/);
+  assert.equal(
+    researchManifest["executionModelVersion"],
+    "execution_simulator.v1"
+  );
+  assert.equal(
+    (stored["reproducibility"] as Record<string, unknown>)[
+      "executionModelVersion"
+    ],
+    "execution_simulator.v1"
+  );
   assert.equal(packetLog.length, result.replayResult.packetCount);
   assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);
   assert.equal(riskDecisionLog.length, result.replayResult.riskDecisions.length);

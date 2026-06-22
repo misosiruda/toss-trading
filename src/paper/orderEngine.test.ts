@@ -413,6 +413,10 @@ test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
   assert.equal(result.trade?.feeKrw, 70);
   assert.equal(result.trade?.netAmountKrw, 70_070);
   assert.equal(result.trade?.slippageKrw, 70);
+  assert.equal(result.trade?.spreadCostKrw, 0);
+  assert.equal(result.trade?.impactCostKrw, 0);
+  assert.equal(result.trade?.totalCostKrw, 140);
+  assert.equal(result.trade?.costModelVersion, "paper_cost_model.v1");
   assert.equal(result.portfolio.cashKrw, 929_930);
   assert.equal(result.portfolio.positions[0]?.marketPriceKrw, 70_000);
   assert.equal(result.portfolio.positions[0]?.unrealizedPnlKrw, -140);

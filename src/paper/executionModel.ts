@@ -28,6 +28,9 @@ export interface PaperFill {
   feeKrw: number;
   taxKrw: number;
   slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
   realizedPnlKrw?: number | undefined;
   fillRatio: number;
   fractionalShares: boolean;
@@ -74,6 +77,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
   const slippageKrw = Math.round(
     Math.abs(fillPriceKrw - sourcePriceKrw) * quantity
   );
+  const spreadCostKrw = 0;
+  const impactCostKrw = 0;
+  const totalCostKrw = feeKrw + taxKrw + slippageKrw + spreadCostKrw + impactCostKrw;
   const realizedPnlKrw =
     input.action === "VIRTUAL_SELL" && input.averagePriceKrw !== undefined
       ? netAmountKrw - Math.round(quantity * input.averagePriceKrw)
@@ -89,6 +95,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
     feeKrw,
     taxKrw,
     slippageKrw,
+    spreadCostKrw,
+    impactCostKrw,
+    totalCostKrw,
     realizedPnlKrw,
     fillRatio: policy.fillRatio,
     fractionalShares: policy.allowFractionalShares
