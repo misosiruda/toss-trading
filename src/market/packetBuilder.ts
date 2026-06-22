@@ -12,6 +12,7 @@ import {
   type AssetRiskTag,
   type AssetType,
   type PortfolioAllocation,
+  type StrategyBucket,
   type VirtualPortfolio
 } from "../domain/schemas.js";
 import { buildCandidateDataRefs } from "./candidateDataRefs.js";
@@ -28,6 +29,7 @@ export interface MarketCandidateDraft {
   assetClass?: AssetClass;
   region?: AssetRegion;
   riskTags?: AssetRiskTag[];
+  strategyBucket?: StrategyBucket;
   sector?: string;
   industry?: string;
   lastPriceKrw?: number;
@@ -232,6 +234,9 @@ function normalizeCandidate(
   if (candidate.riskTags !== undefined) {
     normalized.riskTags = candidate.riskTags;
   }
+  if (candidate.strategyBucket !== undefined) {
+    normalized.strategyBucket = candidate.strategyBucket;
+  }
   if (candidate.sector !== undefined) {
     normalized.sector = candidate.sector;
   }
@@ -287,6 +292,9 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
   }
   if (candidate.riskTags && candidate.riskTags.length > 0) {
     refs.push(`${prefix}.riskTags`);
+  }
+  if (candidate.strategyBucket !== undefined) {
+    refs.push(`${prefix}.strategyBucket`);
   }
   if (candidate.ranking !== undefined) {
     refs.push(`${prefix}.ranking`);
@@ -358,6 +366,14 @@ function buildCandidateFeatureScores(input: {
       100,
       "AVAILABILITY",
       "AVERAGE_VOLUME_AVAILABLE"
+    );
+  }
+  if (input.candidate.strategyBucket !== undefined) {
+    addScore(
+      "strategyBucket",
+      100,
+      "AVAILABILITY",
+      "STRATEGY_BUCKET_AVAILABLE"
     );
   }
   if (input.candidate.ranking !== undefined) {

@@ -67,6 +67,37 @@ Artifact 위치 계약:
 
 `virtual_decision` reject는 실거래 risk decision과 섞지 않고 별도 audit event로 기록합니다.
 
+## Paper Strategy Bucket Metadata
+
+장기 투자, 스윙, 단기, 초단기, hedge 전략을 같은 paper portfolio에서 비교하려면 replay artifact가 strategy bucket metadata를 잃지 않아야 합니다.
+
+현재 paper-only contract는 다음 bucket만 허용합니다.
+
+```text
+long_term
+swing
+short_term
+intraday
+hedge
+```
+
+적용 범위:
+
+- `HistoricalMarketSnapshot.strategyBucket`은 historical replay snapshot metadata입니다.
+- `MarketCandidate.strategyBucket`은 backend가 생성한 후보 metadata이며 bucket source of truth입니다.
+- `VirtualPosition.strategyBucket`은 paper fill 이후 position에 보존되는 metadata입니다.
+- `VirtualTrade.strategyBucket`은 paper fill 당시 기록되는 audit metadata입니다.
+
+정책 경계:
+
+- `VirtualDecision` AI output에는 `strategyBucket`을 추가하지 않습니다.
+- AI decision provider가 임의 bucket을 선택하거나 바꾸는 경로를 만들지 않습니다.
+- `PaperOrderEngine`은 candidate 또는 기존 position의 bucket만 position/trade에 복사합니다.
+- 이번 단계는 metadata contract와 artifact propagation만 다룹니다.
+- bucket budget, turnover, sector/country/currency exposure reject는 후속 `portfolioExposureAggregator`와 `VirtualRiskEngine` PR에서 구현합니다.
+
+metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` bucket으로 보수적으로 취급해야 합니다. `unknown`은 저장 schema의 허용 bucket이 아니라 aggregation용 fallback key입니다.
+
 ## Paper Trading Policy Parameters
 
 `VirtualRiskEngine`은 paper-only 판단에 대해 다음 정책을 정규화해서 평가합니다.

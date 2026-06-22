@@ -18,6 +18,13 @@ export const assetRiskTagSchema = z.enum([
   "currency_exposed",
   "sector_concentrated"
 ]);
+export const strategyBucketSchema = z.enum([
+  "long_term",
+  "swing",
+  "short_term",
+  "intraday",
+  "hedge"
+]);
 export const virtualActionSchema = z.enum([
   "VIRTUAL_BUY",
   "VIRTUAL_SELL",
@@ -76,6 +83,7 @@ export const virtualPositionSchema = z
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
     riskTags: z.array(assetRiskTagSchema).optional(),
+    strategyBucket: strategyBucketSchema.optional(),
     quantity: z.number().nonnegative(),
     averagePriceKrw: moneyKrwSchema,
     marketPriceKrw: moneyKrwSchema.optional(),
@@ -116,6 +124,7 @@ export const marketCandidateSchema = z
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
     riskTags: z.array(assetRiskTagSchema).optional(),
+    strategyBucket: strategyBucketSchema.optional(),
     sector: nonEmptyStringSchema.optional(),
     industry: nonEmptyStringSchema.optional(),
     lastPriceKrw: moneyKrwSchema.optional(),
@@ -165,6 +174,7 @@ export const historicalMarketSnapshotSchema = z
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
     riskTags: z.array(assetRiskTagSchema).optional(),
+    strategyBucket: strategyBucketSchema.optional(),
     observedAt: isoDateTimeSchema,
     interval: z.enum(["1m", "5m", "15m", "1h", "1d"]),
     openPriceKrw: moneyKrwSchema.optional(),
@@ -460,6 +470,7 @@ export const virtualTradeSchema = z
     maxParticipationRate: ratioSchema.optional(),
     volume: z.number().nonnegative().optional(),
     averageVolume: z.number().nonnegative().optional(),
+    strategyBucket: strategyBucketSchema.optional(),
     realizedPnlKrw: z.number().optional(),
     priceSourceRefs: z.array(nonEmptyStringSchema).optional(),
     fillRatio: z.number().gt(0).max(1).optional(),
@@ -485,6 +496,7 @@ export type AssetType = z.infer<typeof assetTypeSchema>;
 export type AssetClass = z.infer<typeof assetClassSchema>;
 export type AssetRegion = z.infer<typeof assetRegionSchema>;
 export type AssetRiskTag = z.infer<typeof assetRiskTagSchema>;
+export type StrategyBucket = z.infer<typeof strategyBucketSchema>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
 export type VirtualBudgetTier = z.infer<typeof virtualBudgetTierSchema>;
