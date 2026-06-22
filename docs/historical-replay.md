@@ -111,6 +111,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 | --- | --- | --- | --- |
 | `batch-replay-manifest.json` | `batch-replay/<batchId>/batch-replay-manifest.json` | `readLatestBatchReplayManifest` | `createBatchReplayManifestPath` |
 | `batch-replay-runs.jsonl` | `batch-replay/<batchId>/batch-replay-runs.jsonl` | `/batch/replay/runs` | `resolveBatchReplayRunsArtifactPath` |
+| `batch-replay-selection-trials.jsonl` | `batch-replay/<batchId>/batch-replay-selection-trials.jsonl` | 없음 | `createBatchReplayArtifactPaths` |
 
 JSONL artifact는 read-only 조회에서 정상 line을 계속 반환하고 `corruptLineCount`로 손상 line 수를 노출합니다. 손상된 JSONL 한 줄 때문에 dashboard/API 전체 조회가 실패하면 안 됩니다. JSON snapshot/report가 손상되면 해당 reader는 `status: "corrupt"` 또는 `fileStatus: "corrupt"`로 응답하고 replay 실행이나 주문 생성을 시작하지 않습니다.
 
@@ -303,6 +304,7 @@ data/batch-replay/
 └── batch-smoke-001/
     ├── batch-replay-manifest.json
     ├── batch-replay-runs.jsonl
+    ├── batch-replay-selection-trials.jsonl
     └── runs/
         └── batch-smoke-001_run_000000_202604/
             ├── historical-replay-report.json
@@ -323,6 +325,7 @@ data/batch-replay/
 - Codex CLI AI 호출은 run마다 별도 `CodexCliDecisionProvider`를 생성하고 `codex exec --ephemeral`을 사용합니다. `--max-codex-calls-per-run`은 batch 전체가 아니라 각 run의 paper-only 호출 상한입니다.
 - `--use-codex-ai` 실행 전에는 기본으로 preflight decision을 1회 수행합니다. 이미 Codex 연결을 별도 확인한 경우에만 `--skip-codex-preflight`로 생략합니다.
 - `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
+- `batch-replay-selection-trials.jsonl`은 prompt/config/risk/exit hash, run outcome, `selected=false` selection marker를 모든 completed/skipped/failed run에 대해 기록합니다. 이 파일은 best run만 남기는 selection bias를 막기 위한 research artifact이며, live trading signal이나 자동 strategy selection으로 사용하지 않습니다.
 
 #### Market Regime Balanced Sampling
 

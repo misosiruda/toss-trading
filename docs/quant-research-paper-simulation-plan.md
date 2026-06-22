@@ -154,6 +154,7 @@ git diff --check
 - hash 대상은 JSON stable stringify 기반으로 정의한다.
 - hash가 없는 legacy run은 report에서 `reproducibilityStatus: "partial"`로 표시한다.
 - data file 전체 hash가 비싸면 우선 manifest-level hash와 coverage hash부터 둔다.
+- Q1-2 구현 기준으로 single replay는 `historical-replay-research-manifest.json`을 저장하고, batch run record는 manifest reference를 가진다.
 
 테스트:
 
@@ -203,6 +204,7 @@ git diff --check
 - best run만 report하지 않는다.
 - failed/rejected/no-trade run도 trial distribution에 포함한다.
 - prompt sweep을 parameter sweep과 같은 overfitting risk로 취급한다.
+- Q2-1 구현 기준으로 `batch-replay-selection-trials.jsonl`은 모든 batch run을 `selected=false`로 기록한다. 실제 selected trial 지정과 selection reason은 후속 PR에서 별도 명령/보고서로 추가한다.
 
 테스트:
 

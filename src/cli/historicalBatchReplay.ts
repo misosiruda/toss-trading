@@ -149,6 +149,7 @@ console.log(
       outputDir: result.outputDir,
       manifestPath: result.manifestPath,
       runsPath: result.runsPath,
+      selectionTrialsPath: result.selectionTrialsPath,
       runCount: result.runCount,
       completedCount: result.completedCount,
       skippedCount: result.skippedCount,
