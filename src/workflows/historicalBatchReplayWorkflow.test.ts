@@ -14,6 +14,7 @@ import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
 } from "../storage/repositories.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { runHistoricalBatchReplay } from "./historicalBatchReplayWorkflow.js";
 
 test("historical batch replay runner writes manifest and per-run records", async () => {
@@ -314,6 +315,76 @@ test("historical batch replay runner can inject Codex-style provider per run", a
   assert.equal(
     (runRecords[0]?.["summary"] as Record<string, unknown>)["decisionProviderCallCount"],
     1
+  );
+});
+
+test("historical batch replay runner preserves unknown metadata for custom provider", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_001", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_002", "005930", "2025-02-10T09:00:00+09:00", 74_000)
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-custom-provider",
+    seed: "seed-001",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxDecisionCalls: 1,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    decisionProviderFactory: () => new FakeCodexBatchProvider()
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const manifestProvider = manifest["decisionProvider"] as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+  const firstRecord = runRecords[0]!;
+  const researchManifest = JSON.parse(
+    await readFile(
+      join(
+        String(firstRecord["storageBaseDir"]),
+        "historical-replay-research-manifest.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+
+  assert.equal(result.completedCount, 1);
+  assert.equal(manifestProvider["mode"], "unknown_provider");
+  assert.deepEqual(researchManifest["warnings"], [
+    "DECISION_PROVIDER_METADATA_MISSING"
+  ]);
+  assert.equal(
+    researchManifest["promptHash"],
+    createReplayResearchHash({
+      mode: "unknown_provider",
+      promptPolicy: null,
+      promptVersion: null
+    })
+  );
+  assert.notEqual(
+    researchManifest["promptHash"],
+    createReplayResearchHash({
+      mode: "deterministic_fixture",
+      maxCallsPerRun: null,
+      sandbox: null,
+      allowWebSearch: false,
+      promptPolicy: null,
+      promptVersion: null
+    })
   );
 });
 

@@ -118,7 +118,8 @@ export interface BatchReplayRunnerOptions {
 
 export type BatchReplayDecisionProviderMode =
   | "deterministic_fixture"
-  | "codex_cli";
+  | "codex_cli"
+  | "unknown_provider";
 
 export interface BatchReplayDecisionProviderMetadata {
   mode: BatchReplayDecisionProviderMode;
@@ -293,8 +294,7 @@ export async function runHistoricalBatchReplay(
   const startedAt = options.generatedAt ?? new Date();
   const paths = createBatchReplayArtifactPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
-  const decisionProviderMetadata =
-    options.decisionProviderMetadata ?? defaultDecisionProviderMetadata();
+  const decisionProviderMetadata = batchDecisionProviderMetadata(options);
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
@@ -447,6 +447,9 @@ export async function runHistoricalBatchReplay(
         runSeed,
         window
       });
+      const replayDecisionProviderMetadata =
+        options.decisionProviderMetadata ??
+        (decisionProvider === undefined ? decisionProviderMetadata : undefined);
       const result = await runHistoricalReplayWorkflow({
         storageBaseDir,
         historicalMarketSnapshotsPath: sourcePaths.historicalMarketSnapshotsPath,
@@ -499,7 +502,9 @@ export async function runHistoricalBatchReplay(
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
-        decisionProviderMetadata,
+        ...(replayDecisionProviderMetadata === undefined
+          ? {}
+          : { decisionProviderMetadata: replayDecisionProviderMetadata }),
         runId,
         batchId,
         batchRunIndex: runIndex,
@@ -976,6 +981,31 @@ function terminalDateForRun(input: {
 function defaultDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {
   return {
     mode: "deterministic_fixture",
+    maxCallsPerRun: null,
+    sandbox: null,
+    allowWebSearch: false,
+    promptPolicy: null,
+    promptVersion: null
+  };
+}
+
+function batchDecisionProviderMetadata(
+  options: BatchReplayRunnerOptions
+): BatchReplayDecisionProviderMetadata {
+  if (options.decisionProviderMetadata !== undefined) {
+    return options.decisionProviderMetadata;
+  }
+
+  if (options.decisionProviderFactory !== undefined) {
+    return unknownDecisionProviderMetadata();
+  }
+
+  return defaultDecisionProviderMetadata();
+}
+
+function unknownDecisionProviderMetadata(): BatchReplayDecisionProviderMetadata {
+  return {
+    mode: "unknown_provider",
     maxCallsPerRun: null,
     sandbox: null,
     allowWebSearch: false,
