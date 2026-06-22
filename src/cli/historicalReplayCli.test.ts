@@ -422,6 +422,69 @@ test("historical batch report CLI tolerates missing selection trial log", () => 
   assert.equal(report["trialSummary"], null);
 });
 
+test("historical batch report CLI rejects malformed selection trial nested fields", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const trialsPath = join(batchDir, "batch-replay-selection-trials.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-corrupt",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    trialsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      trialSchemaVersion: "selection_trial.v1",
+      trialId: "batch-corrupt:trial:000000:run_0",
+      batchId: "batch-corrupt",
+      runId: "run_0",
+      runIndex: 0,
+      runSeed: "seed:0",
+      status: "skipped",
+      startedAt: "2026-06-12T01:00:00.000Z",
+      completedAt: null,
+      skippedAt: "2026-06-12T01:00:01.000Z",
+      failedAt: null,
+      window: {},
+      marketRegime: { label: "insufficient_data" },
+      decisionProvider: {},
+      config: {},
+      outcome: {},
+      selection: {},
+      researchManifest: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--selection-trials-path",
+      trialsPath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /invalid selection trial record at line 1/);
+});
+
 test("historical universe coverage CLI writes a JSON coverage report", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-universe-source-"));
   const outputPath = join(dataDir, "historical-universe-coverage.json");

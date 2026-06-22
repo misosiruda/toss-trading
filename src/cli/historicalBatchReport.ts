@@ -5,12 +5,11 @@ import {
   buildBatchReplayAggregateReport,
   renderBatchReplayAggregateReport
 } from "../reports/batchReplayReport.js";
+import { BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME } from "../storage/artifactPaths.js";
 import {
-  BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME
-} from "../storage/artifactPaths.js";
-import type {
-  SelectionTrialRecord,
-  SelectionTrialRunStatus
+  SELECTION_TRIAL_SCHEMA_VERSION,
+  type SelectionTrialRecord,
+  type SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
 import type {
   BatchReplayRunRecord,
@@ -22,7 +21,8 @@ const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
 const selectionTrialsPathArg = readArgValue("--selection-trials-path");
 const selectionTrialsPath =
-  selectionTrialsPathArg ?? join(dirname(runsPath), BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME);
+  selectionTrialsPathArg ??
+  join(dirname(runsPath), BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME);
 const targetReturnThresholds = readOptionalNumberListArg(
   "--target-return-thresholds"
 );
@@ -172,19 +172,73 @@ function isSelectionTrialRecord(
   const record = value as Partial<SelectionTrialRecord>;
   return (
     record.mode === "paper_only" &&
+    record.trialSchemaVersion === SELECTION_TRIAL_SCHEMA_VERSION &&
     typeof record.trialId === "string" &&
     typeof record.batchId === "string" &&
     typeof record.runId === "string" &&
     typeof record.runIndex === "number" &&
+    typeof record.runSeed === "string" &&
     isSelectionTrialStatus(record.status) &&
-    typeof record.decisionProvider === "object" &&
-    record.decisionProvider !== null &&
-    typeof record.config === "object" &&
-    record.config !== null &&
-    typeof record.outcome === "object" &&
-    record.outcome !== null &&
-    typeof record.selection === "object" &&
-    record.selection !== null
+    typeof record.startedAt === "string" &&
+    isNullableString(record.completedAt) &&
+    isNullableString(record.skippedAt) &&
+    isNullableString(record.failedAt) &&
+    isRecord(record.window) &&
+    isRecord(record.marketRegime) &&
+    typeof record.marketRegime["label"] === "string" &&
+    isSelectionTrialDecisionProvider(record.decisionProvider) &&
+    isSelectionTrialConfig(record.config) &&
+    isSelectionTrialOutcome(record.outcome) &&
+    isSelectionTrialSelection(record.selection) &&
+    isRecord(record.researchManifest)
+  );
+}
+
+function isSelectionTrialDecisionProvider(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value["mode"] === "string" &&
+    isNullableString(value["promptPolicy"]) &&
+    isNullableString(value["promptVersion"]) &&
+    isNullableSha256Hash(value["promptHash"]) &&
+    isSha256Hash(value["metadataHash"])
+  );
+}
+
+function isSelectionTrialConfig(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNullableSha256Hash(value["configHash"]) &&
+    isSha256Hash(value["riskPolicyHash"]) &&
+    isSha256Hash(value["allocationPolicyHash"]) &&
+    isSha256Hash(value["marketRegimeAllocationPolicyHash"]) &&
+    isSha256Hash(value["exitPolicyHash"]) &&
+    isNullableString(value["riskProfile"]) &&
+    value["selectionMetric"] === "total_return_ratio"
+  );
+}
+
+function isSelectionTrialOutcome(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNullableNumber(value["totalReturnRatio"]) &&
+    isNullableNumber(value["finalVirtualNetWorthKrw"]) &&
+    isNonNegativeInteger(value["tradeCount"]) &&
+    isNonNegativeInteger(value["aiDecisionFailureCount"]) &&
+    isNonNegativeInteger(value["rejectedCount"]) &&
+    isNullableString(value["skipReason"]) &&
+    isNullableString(value["error"]) &&
+    isNullableString(value["reportPath"])
+  );
+}
+
+function isSelectionTrialSelection(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value["selected"] === "boolean" &&
+    isNullableString(value["selectedBy"]) &&
+    isNullableString(value["selectedAt"]) &&
+    isNullableString(value["selectionReason"])
   );
 }
 
@@ -196,6 +250,36 @@ function isSelectionTrialStatus(
     value === "completed_with_failures" ||
     value === "skipped" ||
     value === "failed"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+  );
+}
+
+function isNullableSha256Hash(
+  value: unknown
+): value is `sha256:${string}` | null {
+  return value === null || isSha256Hash(value);
+}
+
+function isSha256Hash(value: unknown): value is `sha256:${string}` {
+  return (
+    typeof value === "string" && /^sha256:[a-f0-9]{64}$/u.test(value)
   );
 }
 
