@@ -44,7 +44,7 @@ export function createReplayResearchHash(value: unknown): Sha256Hash {
 }
 
 export function stableStringifyResearchInput(value: unknown): string {
-  return JSON.stringify(toCanonicalJsonValue(value, "$"));
+  return stringifyCanonicalJsonValue(toCanonicalJsonValue(value, "$"));
 }
 
 export function createReplayResearchManifest(
@@ -181,6 +181,26 @@ function canonicalPlainObject(
 
 function compareUtf8PropertyKey(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+function stringifyCanonicalJsonValue(value: CanonicalJsonValue): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stringifyCanonicalJsonValue(entry)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    compareUtf8PropertyKey(left, right)
+  );
+  return `{${entries
+    .map(
+      ([key, entry]) =>
+        `${JSON.stringify(key)}:${stringifyCanonicalJsonValue(entry)}`
+    )
+    .join(",")}}`;
 }
 
 function isArrayIndexKey(key: string, length: number): boolean {

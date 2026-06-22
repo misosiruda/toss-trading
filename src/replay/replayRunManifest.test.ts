@@ -83,6 +83,19 @@ test("research hash uses locale-independent UTF-8 key ordering", () => {
   );
 });
 
+test("research hash preserves UTF-8 order for integer-like object keys", () => {
+  const input = {
+    "10": "a",
+    "2": "b"
+  };
+
+  assert.equal(stableStringifyResearchInput(input), '{"10":"a","2":"b"}');
+  assert.equal(
+    createReplayResearchHash(input),
+    createReplayResearchHash({ "2": "b", "10": "a" })
+  );
+});
+
 test("research hash rejects sparse arrays before JSON serialization", () => {
   const sparse = new Array<unknown>(1);
   const deleted = [null];
