@@ -11,6 +11,7 @@ import {
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import type { PaperExitPolicy } from "../paper/exitPolicy.js";
 import {
+  historicalReplayCodexProviderMetadata,
   resolveHistoricalReplayPromptPolicy,
   CodexHistoricalReplayDecisionProvider,
   withHistoricalReplayPrompt
@@ -264,6 +265,22 @@ async function runPaperSimulationFromConfig(
   const promptPolicy = resolveHistoricalReplayPromptPolicy({
     riskProfile: riskProfile.name
   });
+  const codexDecisionProviderConfig = useCodexAi
+    ? withHistoricalReplayPrompt(
+        {
+          ...readCodexDecisionProviderConfig(process.env, {
+            enabled: true,
+            maxRunsPerDay: config.samplingPolicy.maxCodexCallsPerRun,
+            ephemeral: true
+          }),
+          modelId: config.decisionProvider.modelId,
+          outputSchemaPath: config.decisionProvider.outputSchema,
+          ignoreUserConfig: true,
+          disabledFeatures: ["plugins", "apps"]
+        },
+        { riskProfile: riskProfile.name }
+      )
+    : null;
   const result = await runHistoricalBatchReplay({
     sourceDataDir: config.sourceDataDir,
     outputBaseDir: createBatchReplayRootDirForStorage(input.storageBaseDir),
@@ -298,37 +315,17 @@ async function runPaperSimulationFromConfig(
       ? {
           decisionProviderFactory: () =>
             new CodexHistoricalReplayDecisionProvider(
-              new CodexCliDecisionProvider(
-                withHistoricalReplayPrompt(
-                  {
-                    ...readCodexDecisionProviderConfig(process.env, {
-                      enabled: true,
-                      maxRunsPerDay:
-                        config.samplingPolicy.maxCodexCallsPerRun,
-                      ephemeral: true
-                    }),
-                    modelId: config.decisionProvider.modelId,
-                    outputSchemaPath: config.decisionProvider.outputSchema,
-                    ignoreUserConfig: true,
-                    disabledFeatures: ["plugins", "apps"]
-                  },
-                  { riskProfile: riskProfile.name }
-                )
-              ),
+              new CodexCliDecisionProvider(codexDecisionProviderConfig!),
               {
                 maxCallsPerReplay:
                   config.samplingPolicy.maxCodexCallsPerRun
               }
             ),
-          decisionProviderMetadata: {
-            mode: "codex_cli" as const,
+          decisionProviderMetadata: historicalReplayCodexProviderMetadata({
+            config: codexDecisionProviderConfig!,
             maxCallsPerRun: config.samplingPolicy.maxCodexCallsPerRun,
-            sandbox: "read-only" as const,
-            allowWebSearch:
-              readCodexDecisionProviderConfig(process.env).allowWebSearch,
-            promptPolicy: promptPolicy.name,
-            promptVersion: promptPolicy.promptVersion
-          }
+            promptPolicy
+          })
         }
       : {}),
     constraints: riskProfile.constraints,

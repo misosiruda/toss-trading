@@ -28,6 +28,25 @@ export interface HistoricalReplayPromptPolicy {
   promptVersion: string;
 }
 
+export interface HistoricalReplayCodexProviderManifestMetadata {
+  mode: "codex_cli";
+  maxCallsPerRun: number;
+  sandbox: "read-only";
+  allowWebSearch: boolean;
+  promptPolicy: HistoricalReplayPromptPolicyName;
+  promptVersion: string;
+  promptText: string;
+  promptConfig: {
+    modelId: string | null;
+    schemaVersion: string | null;
+    policyVersion: string | null;
+    outputSchemaPath: string | null;
+    ephemeral: boolean;
+    ignoreUserConfig: boolean;
+    disabledFeatures: readonly string[];
+  };
+}
+
 export interface HistoricalReplayPromptPolicyOptions {
   riskProfile?: PaperRiskProfileName;
 }
@@ -101,6 +120,32 @@ export function withHistoricalReplayPrompt(
     ...config,
     prompt: config.prompt ?? policy.prompt,
     promptVersion: config.promptVersion ?? policy.promptVersion
+  };
+}
+
+export function historicalReplayCodexProviderMetadata(input: {
+  config: CodexCliDecisionProviderConfig;
+  maxCallsPerRun: number;
+  promptPolicy: HistoricalReplayPromptPolicy;
+}): HistoricalReplayCodexProviderManifestMetadata {
+  return {
+    mode: "codex_cli",
+    maxCallsPerRun: input.maxCallsPerRun,
+    sandbox: input.config.sandbox,
+    allowWebSearch: input.config.allowWebSearch,
+    promptPolicy: input.promptPolicy.name,
+    promptVersion:
+      input.config.promptVersion ?? input.promptPolicy.promptVersion,
+    promptText: input.config.prompt ?? input.promptPolicy.prompt,
+    promptConfig: {
+      modelId: input.config.modelId ?? null,
+      schemaVersion: input.config.schemaVersion ?? null,
+      policyVersion: input.config.policyVersion ?? null,
+      outputSchemaPath: input.config.outputSchemaPath ?? null,
+      ephemeral: input.config.ephemeral === true,
+      ignoreUserConfig: input.config.ignoreUserConfig === true,
+      disabledFeatures: [...(input.config.disabledFeatures ?? [])]
+    }
   };
 }
 

@@ -7,11 +7,13 @@ import type {
 import type { MarketPacket, VirtualDecision } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import { createStaticDecisionIdentityMetadata } from "../paper/decisionIdentity.js";
+import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
   buildHistoricalReplayDecisionPrompt,
   HISTORICAL_REPLAY_AGGRESSIVE_PAPER_PROMPT_VERSION,
   CodexHistoricalReplayDecisionProvider,
   HISTORICAL_REPLAY_DECISION_PROMPT_VERSION,
+  historicalReplayCodexProviderMetadata,
   resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "./codexHistoricalDecisionProvider.js";
@@ -64,6 +66,34 @@ test("historical replay config keeps read-only sandbox and prompt version", () =
   assert.equal(config.sandbox, "read-only");
   assert.equal(config.promptVersion, HISTORICAL_REPLAY_DECISION_PROMPT_VERSION);
   assert.match(config.prompt ?? "", /Historical replay mode/);
+});
+
+test("historical replay provider metadata hashes final prompt text", () => {
+  const policy = resolveHistoricalReplayPromptPolicy();
+  const config = withHistoricalReplayPrompt({
+    enabled: true,
+    codexPath: "codex",
+    sandbox: "read-only",
+    timeoutMs: 300_000,
+    maxRunsPerDay: 1,
+    allowWebSearch: false
+  });
+  const metadata = historicalReplayCodexProviderMetadata({
+    config,
+    maxCallsPerRun: 1,
+    promptPolicy: policy
+  });
+  const changedPromptMetadata = {
+    ...metadata,
+    promptText: `${metadata.promptText}\nextra replay instruction`
+  };
+
+  assert.equal(metadata.promptText, policy.prompt);
+  assert.equal(metadata.promptVersion, policy.promptVersion);
+  assert.notEqual(
+    createReplayResearchHash(metadata),
+    createReplayResearchHash(changedPromptMetadata)
+  );
 });
 
 test("aggressive paper replay prompt uses separate paper-only policy", () => {

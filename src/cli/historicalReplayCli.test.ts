@@ -12,7 +12,11 @@ import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
-import { resolveHistoricalReplayPromptPolicy } from "../replay/codexHistoricalDecisionProvider.js";
+import {
+  historicalReplayCodexProviderMetadata,
+  resolveHistoricalReplayPromptPolicy,
+  withHistoricalReplayPrompt
+} from "../replay/codexHistoricalDecisionProvider.js";
 
 test("historical replay availability CLI keeps named option values out of positional fallback", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-availability-cli-"));
@@ -144,13 +148,42 @@ test("historical replay CLI records Codex provider metadata in research manifest
 
   assert.equal(result.status, 0, result.stderr);
   const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy();
-  const expectedCodexPromptHash = createReplayResearchHash({
-    mode: "codex_cli",
-    maxCallsPerRun: 1,
-    sandbox: "read-only",
-    allowWebSearch: false,
-    promptPolicy: historicalPromptPolicy.name,
-    promptVersion: historicalPromptPolicy.promptVersion
+  const expectedCodexPromptHash = createReplayResearchHash(
+    historicalReplayCodexProviderMetadata({
+      config: withHistoricalReplayPrompt(
+        {
+          enabled: true,
+          codexPath: process.execPath,
+          sandbox: "read-only",
+          timeoutMs: 5_000,
+          maxRunsPerDay: 5,
+          allowWebSearch: false,
+          ephemeral: true
+        },
+        {}
+      ),
+      maxCallsPerRun: 1,
+      promptPolicy: historicalPromptPolicy
+    })
+  );
+  const sameVersionDifferentPromptHash = createReplayResearchHash({
+    ...historicalReplayCodexProviderMetadata({
+      config: withHistoricalReplayPrompt(
+        {
+          enabled: true,
+          codexPath: process.execPath,
+          sandbox: "read-only",
+          timeoutMs: 5_000,
+          maxRunsPerDay: 5,
+          allowWebSearch: false,
+          ephemeral: true
+        },
+        {}
+      ),
+      maxCallsPerRun: 1,
+      promptPolicy: historicalPromptPolicy
+    }),
+    promptText: `${historicalPromptPolicy.prompt}\nextra prompt boundary`
   });
   const deterministicFixturePromptHash = createReplayResearchHash({
     mode: "deterministic_fixture",
@@ -172,6 +205,7 @@ test("historical replay CLI records Codex provider metadata in research manifest
   >;
 
   assert.equal(manifest["promptHash"], expectedCodexPromptHash);
+  assert.notEqual(manifest["promptHash"], sameVersionDifferentPromptHash);
   assert.notEqual(manifest["promptHash"], deterministicFixturePromptHash);
   assert.equal(manifestInMetadata["promptHash"], manifest["promptHash"]);
   assert.deepEqual(manifest["warnings"], []);

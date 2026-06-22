@@ -128,6 +128,16 @@ export interface BatchReplayDecisionProviderMetadata {
   allowWebSearch: boolean;
   promptPolicy: string | null;
   promptVersion: string | null;
+  promptText?: string | null;
+  promptConfig?: {
+    modelId: string | null;
+    schemaVersion: string | null;
+    policyVersion: string | null;
+    outputSchemaPath: string | null;
+    ephemeral: boolean;
+    ignoreUserConfig: boolean;
+    disabledFeatures: readonly string[];
+  } | null;
 }
 
 export interface BatchReplayDecisionProviderContext {

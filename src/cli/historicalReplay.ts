@@ -16,6 +16,7 @@ import {
 } from "../replay/historicalUniverseCoverage.js";
 import {
   CodexHistoricalReplayDecisionProvider,
+  historicalReplayCodexProviderMetadata,
   resolveHistoricalReplayPromptPolicy,
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
@@ -165,27 +166,23 @@ const samplingPolicy = new ReplaySamplingPolicy({
   timezoneOffsetMinutes
 });
 
+const historicalCodexDecisionConfig = withHistoricalReplayPrompt(
+  codexDecisionConfig,
+  { riskProfile: riskProfile.name }
+);
 const decisionProvider = dryRun
   ? undefined
   : new CodexHistoricalReplayDecisionProvider(
-      new CodexCliDecisionProvider(
-        withHistoricalReplayPrompt(
-          codexDecisionConfig,
-          { riskProfile: riskProfile.name }
-        )
-      ),
+      new CodexCliDecisionProvider(historicalCodexDecisionConfig),
       { maxCallsPerReplay: maxCodexCalls }
     );
 const decisionProviderMetadata = dryRun
   ? undefined
-  : {
-      mode: "codex_cli" as const,
+  : historicalReplayCodexProviderMetadata({
+      config: historicalCodexDecisionConfig,
       maxCallsPerRun: maxCodexCalls,
-      sandbox: "read-only" as const,
-      allowWebSearch: codexDecisionConfig.allowWebSearch,
-      promptPolicy: historicalPromptPolicy.name,
-      promptVersion: historicalPromptPolicy.promptVersion
-    };
+      promptPolicy: historicalPromptPolicy
+    });
 
 const result = await runHistoricalReplayWorkflow({
   storageBaseDir: dataDir,
