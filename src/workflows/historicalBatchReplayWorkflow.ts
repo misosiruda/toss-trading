@@ -58,6 +58,10 @@ import {
   type ReplayResearchManifestReference
 } from "../replay/replayRunManifest.js";
 import {
+  createSelectionTrialRecord,
+  type SelectionTrialRecord
+} from "../replay/selectionTrialLog.js";
+import {
   createBatchReplayArtifactPaths,
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
@@ -159,6 +163,7 @@ export interface BatchReplayResult {
   outputDir: string;
   manifestPath: string;
   runsPath: string;
+  selectionTrialsPath: string;
   runCount: number;
   completedCount: number;
   skippedCount: number;
@@ -177,6 +182,7 @@ export interface BatchReplayManifest {
   outputDir: string;
   sourceDataDir: string;
   runsPath: string;
+  selectionTrialsPath: string;
   runCount: number;
   initialCashKrw: number;
   completedCount: number;
@@ -319,6 +325,7 @@ export async function runHistoricalBatchReplay(
 
   await mkdir(paths.runsDir, { recursive: true });
   await writeFile(paths.runsPath, "", "utf8");
+  await writeFile(paths.selectionTrialsPath, "", "utf8");
   await writeManifest(paths.manifestPath, {
     mode: "paper_only",
     batchId,
@@ -330,6 +337,7 @@ export async function runHistoricalBatchReplay(
     outputDir: paths.outputDir,
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
+    selectionTrialsPath: paths.selectionTrialsPath,
     runCount: options.runCount,
     initialCashKrw,
     completedCount: 0,
@@ -409,6 +417,15 @@ export async function runHistoricalBatchReplay(
       });
       records.push(skipped);
       await appendRunRecord(paths.runsPath, skipped);
+      await appendSelectionTrialRecord(
+        paths.selectionTrialsPath,
+        selectionTrialRecord({
+          record: skipped,
+          decisionProviderMetadata,
+          options,
+          paperExitPolicy
+        })
+      );
       continue;
     }
 
@@ -423,6 +440,7 @@ export async function runHistoricalBatchReplay(
       outputDir: paths.outputDir,
       sourceDataDir: options.sourceDataDir,
       runsPath: paths.runsPath,
+      selectionTrialsPath: paths.selectionTrialsPath,
       runCount: options.runCount,
       initialCashKrw,
       completedCount: records.filter(isCompletedRunRecord).length,
@@ -548,6 +566,15 @@ export async function runHistoricalBatchReplay(
       });
       records.push(completed);
       await appendRunRecord(paths.runsPath, completed);
+      await appendSelectionTrialRecord(
+        paths.selectionTrialsPath,
+        selectionTrialRecord({
+          record: completed,
+          decisionProviderMetadata,
+          options,
+          paperExitPolicy
+        })
+      );
     } catch (error) {
       const failedRunResearchManifest =
         await readRunResearchManifestReference(storageBaseDir);
@@ -576,6 +603,15 @@ export async function runHistoricalBatchReplay(
       });
       records.push(failed);
       await appendRunRecord(paths.runsPath, failed);
+      await appendSelectionTrialRecord(
+        paths.selectionTrialsPath,
+        selectionTrialRecord({
+          record: failed,
+          decisionProviderMetadata,
+          options,
+          paperExitPolicy
+        })
+      );
     }
   }
 
@@ -606,6 +642,7 @@ export async function runHistoricalBatchReplay(
     outputDir: paths.outputDir,
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
+    selectionTrialsPath: paths.selectionTrialsPath,
     runCount: options.runCount,
     initialCashKrw,
     completedCount,
@@ -628,6 +665,7 @@ export async function runHistoricalBatchReplay(
     outputDir: paths.outputDir,
     manifestPath: paths.manifestPath,
     runsPath: paths.runsPath,
+    selectionTrialsPath: paths.selectionTrialsPath,
     runCount: options.runCount,
     completedCount,
     skippedCount,
@@ -925,6 +963,52 @@ async function appendRunRecord(
   record: BatchReplayRunRecord
 ): Promise<void> {
   await appendFile(filePath, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+async function appendSelectionTrialRecord(
+  filePath: string,
+  record: SelectionTrialRecord
+): Promise<void> {
+  await appendFile(filePath, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function selectionTrialRecord(input: {
+  record: BatchReplayRunRecord;
+  decisionProviderMetadata: BatchReplayDecisionProviderMetadata;
+  options: BatchReplayRunnerOptions;
+  paperExitPolicy: NormalizedPaperExitPolicy | null;
+}): SelectionTrialRecord {
+  return createSelectionTrialRecord({
+    batchId: input.record.batchId,
+    runId: input.record.runId,
+    runIndex: input.record.runIndex,
+    runSeed: input.record.runSeed,
+    status: input.record.status,
+    startedAt: input.record.startedAt,
+    completedAt: input.record.completedAt,
+    skippedAt: input.record.skippedAt,
+    failedAt: input.record.failedAt,
+    window: input.record.window,
+    marketRegime: input.record.marketRegime,
+    decisionProviderMetadata: input.decisionProviderMetadata,
+    riskProfile: input.options.riskProfile ?? null,
+    riskPolicy: input.options.riskPolicy,
+    allocationPolicy: input.options.allocationPolicy ?? null,
+    marketRegimeAllocationPolicy:
+      input.options.marketRegimeAllocationPolicy ?? null,
+    paperExitPolicy: input.paperExitPolicy,
+    researchManifest: input.record.researchManifest,
+    totalReturnRatio: input.record.summary?.totalReturnRatio ?? null,
+    finalVirtualNetWorthKrw:
+      input.record.summary?.finalVirtualNetWorthKrw ?? null,
+    tradeCount: input.record.summary?.tradeCount ?? 0,
+    aiDecisionFailureCount:
+      input.record.summary?.aiDecisionFailureCount ?? 0,
+    rejectedCount: input.record.summary?.rejectedCount ?? 0,
+    skipReason: input.record.skipReason,
+    error: input.record.error,
+    reportPath: input.record.reportPath
+  });
 }
 
 async function writeManifest(

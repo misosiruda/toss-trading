@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   BATCH_REPLAY_MANIFEST_FILE_NAME,
   BATCH_REPLAY_RUNS_FILE_NAME,
+  BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME,
   DYNAMIC_STORAGE_ARTIFACT_CONTRACTS,
   HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
   STORAGE_ARTIFACT_CONTRACTS,
@@ -32,6 +33,10 @@ test("batch replay artifact paths keep manifest and runs path in one catalog", (
   assert.equal(
     paths.runsPath,
     join(paths.outputDir, BATCH_REPLAY_RUNS_FILE_NAME)
+  );
+  assert.equal(
+    paths.selectionTrialsPath,
+    join(paths.outputDir, BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME)
   );
 });
 
@@ -133,6 +138,9 @@ test("dynamic batch replay contracts document reader resolution", () => {
   const batchRunContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
     (contract) => contract.artifactName === "batchReplayRuns"
   );
+  const selectionTrialContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
+    (contract) => contract.artifactName === "batchReplaySelectionTrials"
+  );
 
   assert.notEqual(batchRunContract, undefined);
   assert.equal(batchRunContract?.fileName, BATCH_REPLAY_RUNS_FILE_NAME);
@@ -147,6 +155,18 @@ test("dynamic batch replay contracts document reader resolution", () => {
     "resolveBatchReplayRunsArtifactPath"
   );
   assert.equal(batchRunContract?.corruptJsonlPolicy, "skip_line_and_count");
+  assert.notEqual(selectionTrialContract, undefined);
+  assert.equal(
+    selectionTrialContract?.fileName,
+    BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME
+  );
+  assert.equal(selectionTrialContract?.format, "jsonl");
+  assert.equal(selectionTrialContract?.domainContract, "SelectionTrialRecord");
+  assert.equal(selectionTrialContract?.localOperationsReader, null);
+  assert.equal(
+    selectionTrialContract?.corruptJsonlPolicy,
+    "skip_line_and_count"
+  );
 });
 
 test("storage base dir maps to sibling batch replay artifact root", () => {

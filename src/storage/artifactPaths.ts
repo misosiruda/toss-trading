@@ -30,6 +30,8 @@ export const BATCH_REPLAY_ARTIFACT_DIR_NAME = "batch-replay";
 export const BATCH_REPLAY_RUNS_DIR_NAME = "runs";
 export const BATCH_REPLAY_MANIFEST_FILE_NAME = "batch-replay-manifest.json";
 export const BATCH_REPLAY_RUNS_FILE_NAME = "batch-replay-runs.jsonl";
+export const BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME =
+  "batch-replay-selection-trials.jsonl";
 export const BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME =
   "batch-replay-aggregate-report.json";
 
@@ -296,6 +298,21 @@ export const DYNAMIC_STORAGE_ARTIFACT_CONTRACTS: readonly DynamicStorageArtifact
       failureTrace: "per-window run status, skip/failure reason, report path",
       corruptJsonlPolicy: "skip_line_and_count",
       pathResolver: "resolveBatchReplayRunsArtifactPath"
+    },
+    {
+      artifactName: "batchReplaySelectionTrials",
+      fileName: BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME,
+      relativePathPattern:
+        "batch-replay/<batchId>/batch-replay-selection-trials.jsonl",
+      format: "jsonl",
+      role: "append_only_log",
+      domainContract: "SelectionTrialRecord",
+      writer: "HistoricalBatchReplayWorkflow",
+      localOperationsReader: null,
+      failureTrace:
+        "per-run prompt/config/risk/exit hashes and selection status",
+      corruptJsonlPolicy: "skip_line_and_count",
+      pathResolver: "createBatchReplayArtifactPaths"
     }
   ];
 
@@ -304,6 +321,7 @@ export interface BatchReplayArtifactPaths {
   runsDir: string;
   manifestPath: string;
   runsPath: string;
+  selectionTrialsPath: string;
 }
 
 export interface ResolveBatchReplayRunsArtifactPathOptions {
@@ -320,7 +338,11 @@ export function createBatchReplayArtifactPaths(
     outputDir,
     runsDir: join(outputDir, BATCH_REPLAY_RUNS_DIR_NAME),
     manifestPath: join(outputDir, BATCH_REPLAY_MANIFEST_FILE_NAME),
-    runsPath: join(outputDir, BATCH_REPLAY_RUNS_FILE_NAME)
+    runsPath: join(outputDir, BATCH_REPLAY_RUNS_FILE_NAME),
+    selectionTrialsPath: join(
+      outputDir,
+      BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME
+    )
   };
 }
 

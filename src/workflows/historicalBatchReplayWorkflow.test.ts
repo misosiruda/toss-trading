@@ -47,6 +47,7 @@ test("historical batch replay runner writes manifest and per-run records", async
     await readFile(result.manifestPath, "utf8")
   ) as Record<string, unknown>;
   const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
   const firstRecord = runRecords[0]!;
   const firstMetadata = JSON.parse(
     await readFile(
@@ -90,7 +91,10 @@ test("historical batch replay runner writes manifest and per-run records", async
     "random"
   );
   assert.equal(runRecords.length, 2);
+  assert.equal(trialRecords.length, 2);
   assert.equal(firstRecord["status"], "completed");
+  assert.equal(trialRecords[0]?.["status"], "completed");
+  assert.equal(trialRecords[0]?.["trialSchemaVersion"], "selection_trial.v1");
   assert.equal(
     (firstRecord["windowSampling"] as Record<string, unknown>)["mode"],
     "random"
@@ -121,6 +125,26 @@ test("historical batch replay runner writes manifest and per-run records", async
     firstMetadataResearchManifest["configHash"],
     firstResearchManifest["configHash"]
   );
+  assert.equal(
+    (
+      trialRecords[0]?.["decisionProvider"] as Record<string, unknown>
+    )["mode"],
+    "deterministic_fixture"
+  );
+  assert.equal(
+    (
+      trialRecords[0]?.["decisionProvider"] as Record<string, unknown>
+    )["promptHash"],
+    firstResearchManifest["promptHash"]
+  );
+  assert.equal(
+    (trialRecords[0]?.["config"] as Record<string, unknown>)["configHash"],
+    firstResearchManifest["configHash"]
+  );
+  assert.equal(
+    (trialRecords[0]?.["selection"] as Record<string, unknown>)["selected"],
+    false
+  );
   assert.equal(firstIdentity["batchId"], "batch-smoke");
   assert.equal(firstIdentity["runIndex"], 0);
   assert.equal(firstWindow["source"], "random_window");
@@ -150,15 +174,26 @@ test("historical batch replay runner skips insufficient windows", async () => {
     minWindowSnapshots: 1
   });
   const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
   const firstRecord = runRecords[0]!;
+  const firstTrial = trialRecords[0]!;
 
   assert.equal(result.status, "completed");
   assert.equal(result.completedCount, 0);
   assert.equal(result.skippedCount, 1);
   assert.equal(result.failedCount, 0);
   assert.equal(firstRecord["status"], "skipped");
+  assert.equal(firstTrial["status"], "skipped");
+  assert.equal(
+    (firstTrial["outcome"] as Record<string, unknown>)["skipReason"],
+    "DATA_INSUFFICIENT"
+  );
   assert.equal(
     (firstRecord["researchManifest"] as Record<string, unknown>)["status"],
+    "partial"
+  );
+  assert.equal(
+    (firstTrial["researchManifest"] as Record<string, unknown>)["status"],
     "partial"
   );
   assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
@@ -351,7 +386,9 @@ test("historical batch replay runner preserves unknown metadata for custom provi
   ) as Record<string, unknown>;
   const manifestProvider = manifest["decisionProvider"] as Record<string, unknown>;
   const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
   const firstRecord = runRecords[0]!;
+  const firstTrial = trialRecords[0]!;
   const researchManifest = JSON.parse(
     await readFile(
       join(
@@ -364,6 +401,10 @@ test("historical batch replay runner preserves unknown metadata for custom provi
 
   assert.equal(result.completedCount, 1);
   assert.equal(manifestProvider["mode"], "unknown_provider");
+  assert.equal(
+    (firstTrial["decisionProvider"] as Record<string, unknown>)["mode"],
+    "unknown_provider"
+  );
   assert.deepEqual(researchManifest["warnings"], [
     "DECISION_PROVIDER_METADATA_MISSING"
   ]);
@@ -374,6 +415,10 @@ test("historical batch replay runner preserves unknown metadata for custom provi
       promptPolicy: null,
       promptVersion: null
     })
+  );
+  assert.equal(
+    (firstTrial["decisionProvider"] as Record<string, unknown>)["promptHash"],
+    researchManifest["promptHash"]
   );
   assert.notEqual(
     researchManifest["promptHash"],
@@ -470,7 +515,9 @@ test("historical batch replay runner preserves failed run manifest references", 
     decisionProviderFactory: () => new ThrowingCodexBatchProvider()
   });
   const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
   const failedRecord = runRecords[0]!;
+  const failedTrial = trialRecords[0]!;
   const failedResearchManifest = failedRecord[
     "researchManifest"
   ] as Record<string, unknown>;
@@ -487,7 +534,12 @@ test("historical batch replay runner preserves failed run manifest references", 
   assert.equal(result.status, "completed_with_failures");
   assert.equal(result.failedCount, 1);
   assert.equal(failedRecord["status"], "failed");
+  assert.equal(failedTrial["status"], "failed");
   assert.match(String(failedRecord["error"]), /fixture provider threw/);
+  assert.match(
+    String((failedTrial["outcome"] as Record<string, unknown>)["error"]),
+    /fixture provider threw/
+  );
   assert.equal(failedResearchManifest["status"], "available");
   assert.match(
     String(failedResearchManifest["manifestPath"]),
