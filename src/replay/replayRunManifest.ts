@@ -170,9 +170,7 @@ function canonicalPlainObject(
   }
 
   const output = Object.create(null) as { [key: string]: CanonicalJsonValue };
-  for (const [key, entry] of Object.entries(value).sort(([left], [right]) =>
-    compareUtf8PropertyKey(left, right)
-  )) {
+  for (const [key, entry] of Object.entries(value)) {
     output[key] = toCanonicalJsonValue(entry, `${path}.${key}`);
   }
 
