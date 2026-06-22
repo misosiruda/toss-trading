@@ -272,6 +272,10 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const trialRecords = readFileSync(String(output["selectionTrialsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 
   assert.equal(output["status"], "completed");
   assert.equal(output["completedCount"], 1);
@@ -296,6 +300,8 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     "balanced_regime"
   );
   assert.equal(runRecords[0]?.["status"], "completed");
+  assert.equal(trialRecords[0]?.["status"], "completed");
+  assert.equal(trialRecords[0]?.["trialSchemaVersion"], "selection_trial.v1");
   assert.equal(
     (runRecords[0]?.["windowSampling"] as Record<string, unknown>)["targetRegime"],
     "insufficient_data"
@@ -356,6 +362,14 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
 
   assert.equal(aggregateReport["mode"], "paper_only");
   assert.deepEqual(aggregateReport["targetReturnThresholds"], [0.02, 0.05]);
+  assert.equal(
+    aggregateReport["sourceSelectionTrialsPath"],
+    output["selectionTrialsPath"]
+  );
+  const trialSummary = aggregateReport["trialSummary"] as Record<string, unknown>;
+  assert.equal(trialSummary["trialCount"], 1);
+  assert.equal(trialSummary["selectedCount"], 0);
+  assert.equal(trialSummary["unselectedCount"], 1);
   assert.equal(summary["runCount"], 1);
   assert.equal(summary["completedCount"], 1);
   assert.equal(output["decisionProvider"], "deterministic_fixture");
@@ -364,6 +378,147 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     (manifest["decisionProvider"] as Record<string, unknown>)["mode"],
     "deterministic_fixture"
   );
+});
+
+test("historical batch report CLI tolerates missing selection trial log", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-legacy",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /trial_summary: null/);
+  const report = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(report["sourceSelectionTrialsPath"], null);
+  assert.equal(report["trialSummary"], null);
+});
+
+test("historical batch report CLI rejects missing selection trial path value", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-missing-path",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--selection-trials-path",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--selection-trials-path requires a value/);
+});
+
+test("historical batch report CLI rejects malformed selection trial nested fields", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const trialsPath = join(batchDir, "batch-replay-selection-trials.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-corrupt",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    trialsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      trialSchemaVersion: "selection_trial.v1",
+      trialId: "batch-corrupt:trial:000000:run_0",
+      batchId: "batch-corrupt",
+      runId: "run_0",
+      runIndex: 0,
+      runSeed: "seed:0",
+      status: "skipped",
+      startedAt: "2026-06-12T01:00:00.000Z",
+      completedAt: null,
+      skippedAt: "2026-06-12T01:00:01.000Z",
+      failedAt: null,
+      window: {},
+      marketRegime: { label: "insufficient_data" },
+      decisionProvider: {},
+      config: {},
+      outcome: {},
+      selection: {},
+      researchManifest: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--selection-trials-path",
+      trialsPath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /invalid selection trial record at line 1/);
 });
 
 test("historical universe coverage CLI writes a JSON coverage report", () => {

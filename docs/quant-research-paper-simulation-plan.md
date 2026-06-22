@@ -205,6 +205,7 @@ git diff --check
 - failed/rejected/no-trade run도 trial distribution에 포함한다.
 - prompt sweep을 parameter sweep과 같은 overfitting risk로 취급한다.
 - Q2-1 구현 기준으로 `batch-replay-selection-trials.jsonl`은 모든 batch run을 `selected=false`로 기록한다. 실제 selected trial 지정과 selection reason은 후속 PR에서 별도 명령/보고서로 추가한다.
+- Q2-2 구현 기준으로 batch aggregate report는 selection trial log를 읽어 trial count, selected/unselected count, status count, prompt/config/risk/exit hash distribution을 남긴다. 이 단계는 사후 분석용이며 best trial 자동 선택이나 전략 조정은 수행하지 않는다.
 
 테스트:
 
