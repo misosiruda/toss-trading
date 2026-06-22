@@ -7,6 +7,12 @@ import type {
   HistoricalPortfolioTimelineItem,
   HistoricalReplayResult
 } from "../replay/historicalReplayRunner.js";
+import {
+  missingReplayResearchManifestReference,
+  replayResearchManifestReference,
+  type ReplayResearchManifestReference
+} from "../replay/replayRunManifest.js";
+import type { ReplayResearchManifest } from "../domain/schemas.js";
 import { maskSensitiveText } from "../security/masking.js";
 import {
   buildHistoricalReplayBenchmarks,
@@ -17,6 +23,8 @@ export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
   generatedAt: Date;
   title?: string;
+  researchManifest?: ReplayResearchManifest | null;
+  researchManifestPath?: string | null;
 }
 
 export interface HistoricalReplayReport {
@@ -34,6 +42,7 @@ export interface HistoricalReplayReport {
   tradeSummary: HistoricalReplayTradeSummary;
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
+  reproducibility: ReplayResearchManifestReference;
   benchmarks: HistoricalReplayBenchmarkReport;
   sourceWarningSummary: HistoricalReplaySourceWarningSummary;
   portfolioTimeline: HistoricalPortfolioTimelineItem[];
@@ -148,6 +157,13 @@ export function buildHistoricalReplayReport(
     tradeSummary: summarizeTrades(result.trades),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
+    reproducibility:
+      options.researchManifest === undefined || options.researchManifest === null
+        ? missingReplayResearchManifestReference("RESEARCH_MANIFEST_MISSING")
+        : replayResearchManifestReference({
+            manifest: options.researchManifest,
+            manifestPath: options.researchManifestPath ?? "unknown"
+          }),
     benchmarks: buildHistoricalReplayBenchmarks(result),
     sourceWarningSummary: summarizeWarnings(result.warnings),
     portfolioTimeline: result.portfolioTimeline,
@@ -227,6 +243,20 @@ export function renderHistoricalReplayReport(
     `decisions_requested: ${report.samplingSummary.decisionsRequested}`,
     `decisions_skipped: ${report.samplingSummary.decisionsSkipped}`,
     `skip_reasons: ${JSON.stringify(report.samplingSummary.skipReasons)}`,
+    "",
+    "## Reproducibility",
+    `status: ${report.reproducibility.status}`,
+    `manifest_path: ${report.reproducibility.manifestPath ?? "null"}`,
+    `config_hash: ${report.reproducibility.configHash ?? "null"}`,
+    `data_snapshot_hash: ${report.reproducibility.dataSnapshotHash ?? "null"}`,
+    `universe_hash: ${report.reproducibility.universeHash ?? "null"}`,
+    `coverage_hash: ${report.reproducibility.coverageHash ?? "null"}`,
+    `prompt_hash: ${report.reproducibility.promptHash ?? "null"}`,
+    `schema_hash: ${report.reproducibility.schemaHash ?? "null"}`,
+    `risk_policy_hash: ${report.reproducibility.riskPolicyHash ?? "null"}`,
+    `cost_model_hash: ${report.reproducibility.costModelHash ?? "null"}`,
+    `execution_model_version: ${report.reproducibility.executionModelVersion ?? "null"}`,
+    `warnings: ${report.reproducibility.warnings.join(" | ") || "none"}`,
     "",
     "## Benchmarks",
     `strategy: ${formatMetricSummary(report.benchmarks.strategy)}`,

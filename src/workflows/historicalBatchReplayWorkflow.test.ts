@@ -56,8 +56,24 @@ test("historical batch replay runner writes manifest and per-run records", async
       "utf8"
     )
   ) as Record<string, unknown>;
+  const firstResearchManifest = JSON.parse(
+    await readFile(
+      join(
+        String(firstRecord["storageBaseDir"]),
+        "historical-replay-research-manifest.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
   const firstIdentity = firstMetadata["identity"] as Record<string, unknown>;
   const firstWindow = firstMetadata["window"] as Record<string, unknown>;
+  const firstRecordResearchManifest = firstRecord["researchManifest"] as Record<
+    string,
+    unknown
+  >;
+  const firstMetadataResearchManifest = firstMetadata[
+    "researchManifest"
+  ] as Record<string, unknown>;
 
   assert.equal(result.status, "completed");
   assert.equal(result.runCount, 2);
@@ -91,6 +107,19 @@ test("historical batch replay runner writes manifest and per-run records", async
     "bull"
   );
   assert.ok(firstRecord["summary"]);
+  assert.equal(firstRecordResearchManifest["status"], "available");
+  assert.match(
+    String(firstRecordResearchManifest["manifestPath"]),
+    /historical-replay-research-manifest\.json$/
+  );
+  assert.equal(
+    firstRecordResearchManifest["configHash"],
+    firstResearchManifest["configHash"]
+  );
+  assert.equal(
+    firstMetadataResearchManifest["configHash"],
+    firstResearchManifest["configHash"]
+  );
   assert.equal(firstIdentity["batchId"], "batch-smoke");
   assert.equal(firstIdentity["runIndex"], 0);
   assert.equal(firstWindow["source"], "random_window");
@@ -127,6 +156,10 @@ test("historical batch replay runner skips insufficient windows", async () => {
   assert.equal(result.skippedCount, 1);
   assert.equal(result.failedCount, 0);
   assert.equal(firstRecord["status"], "skipped");
+  assert.equal(
+    (firstRecord["researchManifest"] as Record<string, unknown>)["status"],
+    "partial"
+  );
   assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
   assert.equal(firstRecord["reportPath"], null);
   assert.equal(

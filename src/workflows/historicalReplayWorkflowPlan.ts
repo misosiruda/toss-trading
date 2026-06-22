@@ -40,6 +40,7 @@ export interface HistoricalReplayWorkflowOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   tickDelayMs?: number;
+  decisionProviderMetadata?: unknown;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;

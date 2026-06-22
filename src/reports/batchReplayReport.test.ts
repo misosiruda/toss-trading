@@ -257,6 +257,21 @@ function record(
       availableRequiredSymbolCount: 0,
       issues: status === "skipped" ? ["WINDOW_SNAPSHOT_MISSING"] : []
     },
+    researchManifest: {
+      status: "partial",
+      manifestPath: null,
+      manifestVersion: null,
+      configHash: null,
+      dataSnapshotHash: null,
+      universeHash: null,
+      coverageHash: null,
+      promptHash: null,
+      schemaHash: null,
+      riskPolicyHash: null,
+      costModelHash: null,
+      executionModelVersion: null,
+      warnings: ["fixture legacy run"]
+    },
     summary:
       status === "completed"
         ? {

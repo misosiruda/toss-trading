@@ -35,6 +35,22 @@ export interface CreateReplayResearchManifestInput {
   warnings?: string[] | undefined;
 }
 
+export interface ReplayResearchManifestReference {
+  status: "available" | "partial";
+  manifestPath: string | null;
+  manifestVersion: string | null;
+  configHash: Sha256Hash | null;
+  dataSnapshotHash: Sha256Hash | null;
+  universeHash: Sha256Hash | null;
+  coverageHash: Sha256Hash | null;
+  promptHash: Sha256Hash | null;
+  schemaHash: Sha256Hash | null;
+  riskPolicyHash: Sha256Hash | null;
+  costModelHash: Sha256Hash | null;
+  executionModelVersion: string | null;
+  warnings: string[];
+}
+
 export function createReplayResearchHash(value: unknown): Sha256Hash {
   return `${REPLAY_RESEARCH_HASH_ALGORITHM}:${createHash(
     REPLAY_RESEARCH_HASH_ALGORITHM
@@ -45,6 +61,47 @@ export function createReplayResearchHash(value: unknown): Sha256Hash {
 
 export function stableStringifyResearchInput(value: unknown): string {
   return stringifyCanonicalJsonValue(toCanonicalJsonValue(value, "$"));
+}
+
+export function replayResearchManifestReference(input: {
+  manifest: ReplayResearchManifest;
+  manifestPath: string;
+}): ReplayResearchManifestReference {
+  return {
+    status: "available",
+    manifestPath: input.manifestPath,
+    manifestVersion: input.manifest.manifestVersion,
+    configHash: input.manifest.configHash,
+    dataSnapshotHash: input.manifest.dataSnapshotHash,
+    universeHash: input.manifest.universeHash,
+    coverageHash: input.manifest.coverageHash,
+    promptHash: input.manifest.promptHash,
+    schemaHash: input.manifest.schemaHash,
+    riskPolicyHash: input.manifest.riskPolicyHash,
+    costModelHash: input.manifest.costModelHash,
+    executionModelVersion: input.manifest.executionModelVersion,
+    warnings: input.manifest.warnings
+  };
+}
+
+export function missingReplayResearchManifestReference(
+  warning: string
+): ReplayResearchManifestReference {
+  return {
+    status: "partial",
+    manifestPath: null,
+    manifestVersion: null,
+    configHash: null,
+    dataSnapshotHash: null,
+    universeHash: null,
+    coverageHash: null,
+    promptHash: null,
+    schemaHash: null,
+    riskPolicyHash: null,
+    costModelHash: null,
+    executionModelVersion: null,
+    warnings: [warning]
+  };
 }
 
 export function createReplayResearchManifest(

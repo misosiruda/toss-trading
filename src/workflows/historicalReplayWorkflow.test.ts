@@ -99,6 +99,9 @@ test("historical replay workflow writes a stored paper report", async () => {
   const runMetadata = JSON.parse(
     await readFile(paths.historicalReplayRunMetadataPath, "utf8")
   ) as Record<string, unknown>;
+  const researchManifest = JSON.parse(
+    await readFile(paths.historicalReplayResearchManifestPath, "utf8")
+  ) as Record<string, unknown>;
   const packetLog = await readJsonl(paths.historicalReplayPacketLogPath);
   const decisionLog = await readJsonl(paths.historicalReplayDecisionLogPath);
   const riskDecisionLog = await readJsonl(
@@ -112,11 +115,20 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(result.status, "completed");
   assert.equal(result.mode, "paper_only");
   assert.equal(result.reportPath, paths.historicalReplayReportPath);
+  assert.equal(
+    result.researchManifestPath,
+    paths.historicalReplayResearchManifestPath
+  );
+  assert.equal(result.researchManifest.status, "available");
   assert.equal(result.replayResult.packetCount, 2);
   assert.equal(result.replayResult.decisionProviderCallCount, 1);
   assert.equal(result.replayResult.decisionSkippedCount, 1);
   assert.equal(stored["title"], "Historical Replay Paper Report");
   assert.match(String(stored["disclaimer"]), /cannot place live orders/);
+  assert.equal(
+    (stored["reproducibility"] as Record<string, unknown>)["status"],
+    "available"
+  );
   assert.equal(progress["status"], "completed");
   assert.equal(progress["tickCount"], 2);
   assert.equal(progress["decisionProviderCallCount"], 1);
@@ -143,6 +155,11 @@ test("historical replay workflow writes a stored paper report", async () => {
     unknown
   >;
   const runClock = runConfiguration["clock"] as Record<string, unknown>;
+  const runLogPaths = runMetadata["logPaths"] as Record<string, unknown>;
+  const runResearchManifest = runMetadata["researchManifest"] as Record<
+    string,
+    unknown
+  >;
   const runSamplingPolicy = runConfiguration["samplingPolicy"] as Record<
     string,
     unknown
@@ -160,6 +177,18 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(runConfiguration["riskProfile"], null);
   assert.equal(runConfiguration["riskPolicy"], null);
   assert.equal(runConfiguration["paperExitPolicy"], null);
+  assert.equal(
+    runLogPaths["researchManifestPath"],
+    paths.historicalReplayResearchManifestPath
+  );
+  assert.equal(runResearchManifest["manifestVersion"], "replay_research_manifest.v1");
+  assert.equal(
+    runResearchManifest["configHash"],
+    researchManifest["configHash"]
+  );
+  assert.match(String(researchManifest["dataSnapshotHash"]), /^sha256:[a-f0-9]{64}$/);
+  assert.match(String(researchManifest["universeHash"]), /^sha256:[a-f0-9]{64}$/);
+  assert.match(String(researchManifest["coverageHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.equal(packetLog.length, result.replayResult.packetCount);
   assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);
   assert.equal(riskDecisionLog.length, result.replayResult.riskDecisions.length);

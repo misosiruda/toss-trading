@@ -6,6 +6,7 @@ import {
   BATCH_REPLAY_MANIFEST_FILE_NAME,
   BATCH_REPLAY_RUNS_FILE_NAME,
   DYNAMIC_STORAGE_ARTIFACT_CONTRACTS,
+  HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
   STORAGE_ARTIFACT_CONTRACTS,
   createBatchReplayArtifactPaths,
   createBatchReplayManifestPath,
@@ -62,6 +63,10 @@ test("storage artifact catalog matches repository storage paths", () => {
     paths.historicalReplayRunMetadataPath
   );
   assert.equal(
+    catalog["historicalReplayResearchManifest"],
+    paths.historicalReplayResearchManifestPath
+  );
+  assert.equal(
     catalog["historicalReplayPackets"],
     paths.historicalReplayPacketLogPath
   );
@@ -113,6 +118,15 @@ test("storage artifact contracts document reader and corrupt JSONL policy", () =
   }
 
   assert.equal(artifactNames.has("batchReplayRuns"), false);
+  assert.equal(
+    STORAGE_ARTIFACT_CONTRACTS.some(
+      (contract) =>
+        contract.artifactName === "historicalReplayResearchManifest" &&
+        contract.fileName === HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME &&
+        contract.domainContract === "ReplayResearchManifest"
+    ),
+    true
+  );
 });
 
 test("dynamic batch replay contracts document reader resolution", () => {

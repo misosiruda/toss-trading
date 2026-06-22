@@ -49,6 +49,10 @@ import {
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
 import {
+  missingReplayResearchManifestReference,
+  type ReplayResearchManifestReference
+} from "../replay/replayRunManifest.js";
+import {
   createBatchReplayArtifactPaths,
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
@@ -202,6 +206,7 @@ export interface BatchReplayRunRecord {
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
+  researchManifest: ReplayResearchManifestReference;
   summary: BatchReplayRunSummary | null;
   reportPath: string | null;
   error: string | null;
@@ -489,6 +494,7 @@ export async function runHistoricalBatchReplay(
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
+        decisionProviderMetadata,
         runId,
         batchId,
         batchRunIndex: runIndex,
@@ -511,6 +517,7 @@ export async function runHistoricalBatchReplay(
         marketRegime,
         marketRegimesByMarket,
         availability,
+        researchManifest: result.researchManifest,
         reportPath: result.reportPath,
         summary,
         terminalAt: terminalDateForRun({
@@ -749,6 +756,7 @@ function runRecord(input: {
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
+  researchManifest?: ReplayResearchManifestReference;
   reportPath?: string;
   summary?: BatchReplayRunSummary;
   error?: string;
@@ -775,6 +783,9 @@ function runRecord(input: {
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability),
+    researchManifest:
+      input.researchManifest ??
+      missingReplayResearchManifestReference("RESEARCH_MANIFEST_NOT_CREATED"),
     summary: input.summary ?? null,
     reportPath: input.reportPath ?? null,
     error: input.error ?? null,
