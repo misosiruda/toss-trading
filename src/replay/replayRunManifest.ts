@@ -97,9 +97,7 @@ function toCanonicalJsonValue(value: unknown, path: string): CanonicalJsonValue 
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry, index) =>
-      toCanonicalJsonValue(entry, `${path}[${index}]`)
-    );
+    return canonicalArrayValue(value, path);
   }
 
   switch (typeof value) {
@@ -127,6 +125,35 @@ function toCanonicalJsonValue(value: unknown, path: string): CanonicalJsonValue 
   throw new Error(`Research hash input is not supported at ${path}`);
 }
 
+function canonicalArrayValue(
+  value: unknown[],
+  path: string
+): CanonicalJsonValue[] {
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new Error(`Research hash input contains symbol keys at ${path}`);
+  }
+
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if (key !== "length" && !isArrayIndexKey(key, value.length)) {
+      throw new Error(
+        `Research hash input contains non-index array key at ${path}`
+      );
+    }
+  }
+
+  const output: CanonicalJsonValue[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) {
+      throw new Error(
+        `Research hash input contains sparse array hole at ${path}[${index}]`
+      );
+    }
+    output.push(toCanonicalJsonValue(value[index], `${path}[${index}]`));
+  }
+
+  return output;
+}
+
 function canonicalPlainObject(
   value: object,
   path: string
@@ -142,7 +169,7 @@ function canonicalPlainObject(
     throw new Error(`Research hash input contains symbol keys at ${path}`);
   }
 
-  const output: { [key: string]: CanonicalJsonValue } = {};
+  const output = Object.create(null) as { [key: string]: CanonicalJsonValue };
   for (const [key, entry] of Object.entries(value).sort(([left], [right]) =>
     left.localeCompare(right)
   )) {
@@ -150,4 +177,14 @@ function canonicalPlainObject(
   }
 
   return output;
+}
+
+function isArrayIndexKey(key: string, length: number): boolean {
+  const index = Number(key);
+  return (
+    Number.isInteger(index) &&
+    index >= 0 &&
+    index < length &&
+    String(index) === key
+  );
 }

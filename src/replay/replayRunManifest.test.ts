@@ -53,6 +53,32 @@ test("research hash canonicalizes Date values as ISO strings", () => {
   );
 });
 
+test("research hash preserves own __proto__ keys", () => {
+  const withProtoKey = JSON.parse('{"__proto__":{"x":1}}') as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(
+    stableStringifyResearchInput(withProtoKey),
+    '{"__proto__":{"x":1}}'
+  );
+  assert.notEqual(
+    createReplayResearchHash({}),
+    createReplayResearchHash(withProtoKey)
+  );
+});
+
+test("research hash rejects sparse arrays before JSON serialization", () => {
+  const sparse = new Array<unknown>(1);
+  const deleted = [null];
+  delete deleted[0];
+
+  assert.equal(stableStringifyResearchInput([null]), "[null]");
+  assert.throws(() => createReplayResearchHash(sparse), /sparse array hole/);
+  assert.throws(() => createReplayResearchHash(deleted), /sparse array hole/);
+});
+
 test("research hash rejects non JSON-compatible values", () => {
   assert.throws(
     () => createReplayResearchHash({ config: undefined }),
