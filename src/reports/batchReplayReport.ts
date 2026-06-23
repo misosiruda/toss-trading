@@ -134,6 +134,7 @@ export interface BatchReplaySplitMetricRow {
   exitPolicyHash: string;
   riskProfile: string | null;
   roleMetrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>>;
+  splitMetrics: BatchReplaySplitMetric[];
 }
 
 export interface BatchReplayRoleMetric {
@@ -144,7 +145,14 @@ export interface BatchReplayRoleMetric {
   runIds: string[];
 }
 
+export interface BatchReplaySplitMetric {
+  splitId: string;
+  splitRole: ValidationSplitRole;
+  metric: BatchReplayRoleMetric;
+}
+
 export interface BatchReplayHoldoutDegradation {
+  splitId: string;
   splitRole: Exclude<ValidationSplitRole, "train">;
   selectedCandidateKey: string;
   selectedAverageTotalReturnRatio: number | null;
@@ -489,7 +497,8 @@ function buildSplitMetricMatrix(
           firstTrial.config.marketRegimeAllocationPolicyHash,
         exitPolicyHash: firstTrial.config.exitPolicyHash,
         riskProfile: firstTrial.config.riskProfile,
-        roleMetrics: summarizeRoleMetrics(bucket)
+        roleMetrics: summarizeRoleMetrics(bucket),
+        splitMetrics: summarizeSplitMetrics(bucket)
       };
     })
     .sort((left, right) => left.candidateKey.localeCompare(right.candidateKey));
@@ -511,6 +520,27 @@ function summarizeRoleMetrics(
     metrics[role] = summarizeRoleMetric(bucket);
   }
   return metrics;
+}
+
+function summarizeSplitMetrics(
+  joinedTrials: JoinedSelectionTrial[]
+): BatchReplaySplitMetric[] {
+  const splitBuckets = new Map<string, JoinedSelectionTrial[]>();
+
+  for (const joinedTrial of joinedTrials) {
+    const key = splitMetricKey(joinedTrial.splitId, joinedTrial.splitRole);
+    const bucket = splitBuckets.get(key) ?? [];
+    bucket.push(joinedTrial);
+    splitBuckets.set(key, bucket);
+  }
+
+  return Array.from(splitBuckets.values())
+    .map((bucket) => ({
+      splitId: bucket[0]!.splitId,
+      splitRole: bucket[0]!.splitRole,
+      metric: summarizeRoleMetric(bucket)
+    }))
+    .sort(compareSplitMetrics);
 }
 
 function summarizeRoleMetric(
@@ -597,24 +627,25 @@ function buildHoldoutDegradation(
   matrix: BatchReplaySplitMetricRow[],
   selectedCandidate: BatchReplaySplitMetricRow
 ): BatchReplayHoldoutDegradation[] {
-  return (["validation", "test"] as const)
-    .map((splitRole) =>
-      holdoutDegradationForRole(matrix, selectedCandidate, splitRole)
+  return splitHoldoutKeys(matrix)
+    .map(({ splitId, splitRole }) =>
+      holdoutDegradationForSplit(matrix, selectedCandidate, splitId, splitRole)
     )
     .filter(
       (value): value is BatchReplayHoldoutDegradation => value !== null
     );
 }
 
-function holdoutDegradationForRole(
+function holdoutDegradationForSplit(
   matrix: BatchReplaySplitMetricRow[],
   selectedCandidate: BatchReplaySplitMetricRow,
+  splitId: string,
   splitRole: Exclude<ValidationSplitRole, "train">
 ): BatchReplayHoldoutDegradation | null {
   const roleCandidates = matrix
     .map((row) => ({
       row,
-      metric: row.roleMetrics[splitRole] ?? null
+      metric: splitMetricForCandidate(row, splitId, splitRole)?.metric ?? null
     }))
     .filter(
       (entry): entry is { row: BatchReplaySplitMetricRow; metric: BatchReplayRoleMetric } =>
@@ -634,9 +665,9 @@ function holdoutDegradationForRole(
     return null;
   }
 
-  const selectedIndex = roleCandidates.findIndex(
-    (entry) => entry.row.candidateKey === selectedCandidate.candidateKey
-  );
+  const selectedIndex = roleCandidates.findIndex((entry) => {
+    return entry.row.candidateKey === selectedCandidate.candidateKey;
+  });
   const selectedMetric =
     selectedIndex === -1 ? null : roleCandidates[selectedIndex]!.metric;
   const holdoutReturns = roleCandidates.map(
@@ -652,6 +683,7 @@ function holdoutDegradationForRole(
     selectedCandidate.roleMetrics.train?.averageTotalReturnRatio ?? null;
 
   return {
+    splitId,
     splitRole,
     selectedCandidateKey: selectedCandidate.candidateKey,
     selectedAverageTotalReturnRatio: selectedAverage,
@@ -667,6 +699,77 @@ function holdoutDegradationForRole(
     selectedBelowMedian,
     runIds: selectedMetric?.runIds ?? []
   };
+}
+
+function splitHoldoutKeys(
+  matrix: BatchReplaySplitMetricRow[]
+): Array<{ splitId: string; splitRole: Exclude<ValidationSplitRole, "train"> }> {
+  const keys = new Map<
+    string,
+    { splitId: string; splitRole: Exclude<ValidationSplitRole, "train"> }
+  >();
+
+  for (const row of matrix) {
+    for (const splitMetric of row.splitMetrics) {
+      if (
+        splitMetric.splitRole === "train" ||
+        splitMetric.metric.averageTotalReturnRatio === null
+      ) {
+        continue;
+      }
+      keys.set(splitMetricKey(splitMetric.splitId, splitMetric.splitRole), {
+        splitId: splitMetric.splitId,
+        splitRole: splitMetric.splitRole
+      });
+    }
+  }
+
+  return Array.from(keys.values()).sort((left, right) => {
+    const splitDelta = left.splitId.localeCompare(right.splitId);
+    return splitDelta !== 0
+      ? splitDelta
+      : validationSplitRoleOrder(left.splitRole) -
+          validationSplitRoleOrder(right.splitRole);
+  });
+}
+
+function splitMetricForCandidate(
+  row: BatchReplaySplitMetricRow,
+  splitId: string,
+  splitRole: ValidationSplitRole
+): BatchReplaySplitMetric | null {
+  return (
+    row.splitMetrics.find(
+      (metric) =>
+        metric.splitId === splitId && metric.splitRole === splitRole
+    ) ?? null
+  );
+}
+
+function compareSplitMetrics(
+  left: BatchReplaySplitMetric,
+  right: BatchReplaySplitMetric
+): number {
+  const splitDelta = left.splitId.localeCompare(right.splitId);
+  return splitDelta !== 0
+    ? splitDelta
+    : validationSplitRoleOrder(left.splitRole) -
+        validationSplitRoleOrder(right.splitRole);
+}
+
+function validationSplitRoleOrder(role: ValidationSplitRole): number {
+  switch (role) {
+    case "train":
+      return 0;
+    case "validation":
+      return 1;
+    case "test":
+      return 2;
+  }
+}
+
+function splitMetricKey(splitId: string, splitRole: ValidationSplitRole): string {
+  return `${splitId}\u0000${splitRole}`;
 }
 
 function pboLikeScore(

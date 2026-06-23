@@ -552,6 +552,180 @@ test("batch replay aggregate report leaves single-candidate holdouts unscored", 
   );
 });
 
+test("batch replay aggregate report scores PBO-like degradation per holdout split", () => {
+  const promptHash = hash("a");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: [
+      record("candidate_a_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record("candidate_a_split_2_train", 2, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_2"),
+      record("candidate_b_split_2_train", 3, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_2"),
+      record(
+        "candidate_a_split_1_validation",
+        4,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_split_1_validation",
+        5,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_split_2_validation",
+        6,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_split_2_validation",
+        7,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_2_train",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_2_train",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_1_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_1_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_2_validation",
+        6,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_2_validation",
+        7,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.sampledCpcvSplitCount, 4);
+  assert.equal(diagnostics.pboLikeScore, 0.5);
+  assert.deepEqual(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitId,
+      entry.splitRole,
+      entry.selectedBelowMedian
+    ]),
+    [
+      ["split_1", "validation", true],
+      ["split_2", "validation", false]
+    ]
+  );
+});
+
 test("batch replay aggregate report handles legacy records without market counts", () => {
   const legacyRecord = record(
     "legacy_run_0",
@@ -620,7 +794,8 @@ function record(
   totalReturnRatio: number | null,
   finalVirtualNetWorthKrw: number | null,
   aiDecisionFailureCount = 0,
-  validationSplitRole: ValidationSplitRole | null = null
+  validationSplitRole: ValidationSplitRole | null = null,
+  validationSplitId = "wf_report"
 ): BatchReplayRunRecord {
   return {
     mode: "paper_only",
@@ -659,7 +834,7 @@ function record(
         ? null
         : {
             validationProtocol: "walk_forward",
-            splitId: "wf_report",
+            splitId: validationSplitId,
             splitIndex: 0,
             trainStart: "2025-01-01T00:00:00.000Z",
             trainEnd: "2025-01-31T23:59:59.999Z",
