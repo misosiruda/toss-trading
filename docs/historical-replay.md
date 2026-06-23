@@ -696,10 +696,30 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 `validationSplit`이 포함된 run record가 있으면 aggregate report는 `summary.validationSplitRoleCounts`와 `byValidationSplitRole`을 함께 생성합니다. 이 값은 이미 실행된 paper-only 결과를 train/validation/test 역할별로 분리해 보는 사후 분석 metadata이며, strategy 자동 선택이나 live trading signal로 사용하지 않습니다.
 
+selection trial log와 validation split metadata가 함께 있으면 aggregate report는 `overfittingDiagnostics`도 생성합니다. 이 진단은 selection candidate를 provider/provider metadata/prompt/risk/allocation/market-regime allocation/exit/risk profile 조합으로 묶고, train/validation/test role별 return metric matrix와 `splitId:splitRole`별 metric을 만든 뒤 train return sample이 있는 candidate가 2개 이상일 때 train에서 가장 높은 평균 return을 가진 candidate가 비교 가능한 validation/test holdout split에서 median 아래로 떨어지는 비율을 `pboLikeScore`로 기록합니다. holdout return이 median과 같으면 동률로 보고 below-median으로 계산하지 않습니다. `configHash`는 replay window와 initial portfolio까지 포함할 수 있으므로 candidate key에는 쓰지 않고, matrix row의 `configHashes`에 관측값 목록으로 남깁니다. 이는 sampled CPCV/PBO-like 사후 경고 지표이며, Bailey PBO 또는 full CPCV의 엄밀한 구현이라고 해석하지 않습니다.
+
+예상 sampled CPCV split 수를 검증하려면 report CLI에 `--expected-sampled-cpcv-split-count`를 전달합니다.
+이 값을 전달했는데 selection trial log가 없으면 `overfittingDiagnostics`를 생성해 actual split count `0`과 mismatch warning을 기록합니다.
+
+```powershell
+npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-001/batch-replay-runs.jsonl --output-path data/batch-replay/batch-smoke-001/batch-replay-aggregate-report.json --expected-sampled-cpcv-split-count 3
+```
+
+`overfittingDiagnostics`의 주요 필드:
+
+- `sampledCpcvSplitCount`: `splitId:splitRole` 조합 기준으로 관측된 sampled split 수
+- `sampledCpcvSplitCountMatchesExpected`: expected count를 전달한 경우 actual과 일치하는지 여부
+- `splitMetricMatrix`: candidate별 provider metadata hash, train/validation/test 및 `splitId:splitRole` return sample count, average, median, run ID, 관측 `configHashes`
+- `selectedCandidateKey`: train role 평균 return 기준으로 선택된 candidate key
+- `holdoutDegradation`: selected candidate의 validation/test holdout split별 average, rank, 같은 split의 train metric 우선 기준 degradation
+- `pboLikeScore`: train return sample이 있는 candidate가 2개 이상일 때 selected candidate가 return sample이 2개 이상인 holdout split에서 median 아래로 떨어진 비율
+- `warnings`: candidate 수, train/holdout sample, split count가 부족하거나 일부 holdout split이 unscored로 제외될 때의 경고
+
 집계 report는 다음 정보를 포함합니다.
 
 - 전체 run 수, completed/skipped/failed count
 - selection trial 수, selected/unselected count, status count
+- sampled CPCV/PBO-like overfitting diagnostics와 warning
 - prompt/config/risk/exit hash별 trial distribution
 - provider failure, risk reject, no-trade trial count
 - return sample이 있는 completed run 수

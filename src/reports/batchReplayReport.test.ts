@@ -259,6 +259,1145 @@ test("batch replay aggregate report summarizes selection trial distribution", ()
   assert.match(renderBatchReplayAggregateReport(report), /prompt_hashes/);
 });
 
+test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", () => {
+  const promptHash = hash("a");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
+  const candidateAConfigHashes = {
+    train: hash("candidate_a_train_config"),
+    validation: hash("candidate_a_validation_config"),
+    test: hash("candidate_a_test_config")
+  };
+  const candidateBConfigHashes = {
+    train: hash("candidate_b_train_config"),
+    validation: hash("candidate_b_validation_config"),
+    test: hash("candidate_b_test_config")
+  };
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("candidate_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "candidate_a_validation",
+        2,
+        "completed",
+        "bull",
+        -0.05,
+        950_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation",
+        3,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation"
+      ),
+      record("candidate_a_test", 4, "completed", "bull", -0.02, 980_000, 0, "test"),
+      record("candidate_b_test", 5, "completed", "bull", 0.03, 1_030_000, 0, "test")
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        promptHash,
+        candidateAConfigHashes.train,
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_train",
+        1,
+        "completed",
+        promptHash,
+        candidateBConfigHashes.train,
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_validation",
+        2,
+        "completed",
+        promptHash,
+        candidateAConfigHashes.validation,
+        1,
+        0,
+        0,
+        -0.05,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_validation",
+        3,
+        "completed",
+        promptHash,
+        candidateBConfigHashes.validation,
+        1,
+        0,
+        0,
+        0.04,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_test",
+        4,
+        "completed",
+        promptHash,
+        candidateAConfigHashes.test,
+        1,
+        0,
+        0,
+        -0.02,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_test",
+        5,
+        "completed",
+        promptHash,
+        candidateBConfigHashes.test,
+        1,
+        0,
+        0,
+        0.03,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const selectedRow = diagnostics.splitMetricMatrix.find(
+    (row) => row.allocationPolicyHash === candidateAAllocationPolicyHash
+  )!;
+
+  assert.equal(diagnostics.validationProtocol, "sampled_cpcv_pbo_like");
+  assert.equal(diagnostics.expectedSampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, true);
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(diagnostics.splitRoleCounts, {
+    train: 2,
+    validation: 2,
+    test: 2
+  });
+  assert.equal(diagnostics.selectedCandidateKey, selectedRow.candidateKey);
+  assert.deepEqual(new Set(selectedRow.configHashes), new Set([
+    candidateAConfigHashes.train,
+    candidateAConfigHashes.validation,
+    candidateAConfigHashes.test
+  ]));
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, 0.2);
+  assert.equal(selectedRow.roleMetrics.train?.averageTotalReturnRatio, 0.2);
+  assert.equal(selectedRow.roleMetrics.validation?.averageTotalReturnRatio, -0.05);
+  assert.equal(diagnostics.pboLikeScore, 1);
+  assert.deepEqual(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitRole,
+      entry.selectedBelowMedian,
+      entry.degradationFromTrainRatio
+    ]),
+    [
+      ["validation", true, -0.25],
+      ["test", true, -0.22]
+    ]
+  );
+  assert.deepEqual(diagnostics.warnings, []);
+  assert.match(renderBatchReplayAggregateReport(report), /pbo_like_score: 1/);
+  assert.match(renderBatchReplayAggregateReport(report), /split_metric_matrix/);
+});
+
+test("batch replay aggregate report separates provider metadata candidates", () => {
+  const promptHash = hash("same_prompt");
+  const providerAMetadataHash = hash("provider_a_metadata");
+  const providerBMetadataHash = hash("provider_b_metadata");
+  const sharedAllocationPolicyHash = hash("shared_allocation_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("provider_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("provider_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "provider_a_validation",
+        2,
+        "completed",
+        "bull",
+        -0.05,
+        950_000,
+        0,
+        "validation"
+      ),
+      record(
+        "provider_b_validation",
+        3,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "provider_a_train",
+        0,
+        "completed",
+        promptHash,
+        hash("provider_a_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerAMetadataHash }
+      ),
+      trial(
+        "provider_b_train",
+        1,
+        "completed",
+        promptHash,
+        hash("provider_b_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerBMetadataHash }
+      ),
+      trial(
+        "provider_a_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("provider_a_validation_config"),
+        1,
+        0,
+        0,
+        -0.05,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerAMetadataHash }
+      ),
+      trial(
+        "provider_b_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("provider_b_validation_config"),
+        1,
+        0,
+        0,
+        0.04,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerBMetadataHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const metadataHashes = new Set(
+    diagnostics.splitMetricMatrix.map(
+      (row) => row.decisionProviderMetadataHash
+    )
+  );
+
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(metadataHashes, new Set([
+    providerAMetadataHash,
+    providerBMetadataHash
+  ]));
+  assert.match(
+    diagnostics.selectedCandidateKey ?? "",
+    new RegExp(`providerMetadata=${providerAMetadataHash}`)
+  );
+});
+
+test("batch replay aggregate report warns when expected split count lacks trials", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("run_without_trials", 0, "completed", "bull", 0.01, 1_010_000)
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(report.trialSummary, null);
+  assert.equal(diagnostics.expectedSampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 0);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
+  assert.equal(diagnostics.joinedTrialCount, 0);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /no selection trials with validation split metadata/
+  );
+  assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
+});
+
+test("batch replay aggregate report warns when PBO-like samples are insufficient", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train")
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        hash("a"),
+        hash("b"),
+        1,
+        0,
+        0,
+        0.2
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.candidateCount, 1);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 1);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two strategy candidates/
+  );
+  assert.match(diagnostics.warnings.join("\n"), /no validation\/test holdout/);
+  assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
+});
+
+test("batch replay aggregate report requires two train-sampled candidates for PBO-like scoring", () => {
+  const promptHash = hash("train");
+  const candidateAAllocationPolicyHash = hash("train_candidate_a_policy");
+  const candidateBAllocationPolicyHash = hash("train_candidate_b_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record(
+        "candidate_a_train_only_sample",
+        0,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "train"
+      ),
+      record(
+        "candidate_b_train_missing_sample",
+        1,
+        "skipped",
+        "bull",
+        null,
+        null,
+        0,
+        "train"
+      ),
+      record(
+        "candidate_a_validation_sample",
+        2,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation_sample",
+        3,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train_only_sample",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_train_only_sample_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_train_missing_sample",
+        1,
+        "skipped",
+        promptHash,
+        hash("candidate_b_train_missing_sample_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_validation_sample",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_validation_sample_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_validation_sample",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_validation_sample_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(diagnostics.splitRoleCounts, {
+    train: 2,
+    validation: 2
+  });
+  assert.equal(diagnostics.selectedCandidateKey, null);
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, null);
+  assert.deepEqual(diagnostics.holdoutDegradation, []);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two train candidates with return samples/
+  );
+  assert.doesNotMatch(
+    diagnostics.warnings.join("\n"),
+    /no validation\/test holdout return samples/
+  );
+});
+
+test("batch replay aggregate report leaves single-candidate holdouts unscored", () => {
+  const promptHash = hash("a");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("candidate_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "candidate_a_validation",
+        2,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation",
+        3,
+        "skipped",
+        "bull",
+        0,
+        null,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_validation_config"),
+        1,
+        0,
+        0,
+        0.03,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_validation",
+        3,
+        "skipped",
+        promptHash,
+        hash("candidate_b_validation_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const validationDegradation = diagnostics.holdoutDegradation.find(
+    (entry) => entry.splitRole === "validation"
+  )!;
+
+  assert.equal(validationDegradation.candidateCount, 1);
+  assert.equal(validationDegradation.selectedBelowMedian, null);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two holdout candidates with return samples/
+  );
+});
+
+test("batch replay aggregate report warns when any holdout split is unscored", () => {
+  const promptHash = hash("u");
+  const candidateAAllocationPolicyHash = hash("candidate_a_partial_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_partial_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: [
+      record("candidate_a_partial_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_partial_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record("candidate_a_partial_split_2_train", 2, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_2"),
+      record("candidate_b_partial_split_2_train", 3, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_2"),
+      record(
+        "candidate_a_partial_split_1_validation",
+        4,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_partial_split_1_validation",
+        5,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_partial_split_2_validation",
+        6,
+        "completed",
+        "bull",
+        0.02,
+        1_020_000,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_partial_split_2_validation",
+        7,
+        "skipped",
+        "bull",
+        null,
+        null,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_partial_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_partial_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_partial_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_partial_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_partial_split_2_train",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_partial_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_partial_split_2_train",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_partial_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_partial_split_1_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_partial_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_partial_split_1_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_partial_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_partial_split_2_validation",
+        6,
+        "completed",
+        promptHash,
+        hash("candidate_a_partial_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.02,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_partial_split_2_validation",
+        7,
+        "skipped",
+        promptHash,
+        hash("candidate_b_partial_split_2_validation_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.pboLikeScore, 1);
+  assert.deepEqual(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitId,
+      entry.selectedBelowMedian
+    ]),
+    [
+      ["split_1", true],
+      ["split_2", null]
+    ]
+  );
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /unscored holdouts were excluded/
+  );
+});
+
+test("batch replay aggregate report scores PBO-like degradation per holdout split", () => {
+  const promptHash = hash("a");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: [
+      record("candidate_a_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record("candidate_a_split_2_train", 2, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_2"),
+      record("candidate_b_split_2_train", 3, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_2"),
+      record(
+        "candidate_a_split_1_validation",
+        4,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_split_1_validation",
+        5,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_split_2_validation",
+        6,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_split_2_validation",
+        7,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_2_train",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_2_train",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_1_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_1_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_split_2_validation",
+        6,
+        "completed",
+        promptHash,
+        hash("candidate_a_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_split_2_validation",
+        7,
+        "completed",
+        promptHash,
+        hash("candidate_b_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.sampledCpcvSplitCount, 4);
+  assert.equal(diagnostics.pboLikeScore, 0.5);
+  assert.deepEqual(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitId,
+      entry.splitRole,
+      entry.selectedBelowMedian
+    ]),
+    [
+      ["split_1", "validation", true],
+      ["split_2", "validation", false]
+    ]
+  );
+});
+
+test("batch replay aggregate report uses matching split train metric for degradation", () => {
+  const promptHash = hash("d");
+  const candidateAAllocationPolicyHash = hash("candidate_a_degradation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_degradation_policy");
+  const entries: Array<{
+    runId: string;
+    runIndex: number;
+    splitId: string;
+    splitRole: ValidationSplitRole;
+    totalReturnRatio: number;
+    allocationPolicyHash: SelectionTrialRecord["config"]["allocationPolicyHash"];
+  }> = [
+    {
+      runId: "candidate_a_split_1_train_degradation",
+      runIndex: 0,
+      splitId: "split_1",
+      splitRole: "train",
+      totalReturnRatio: 0.3,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_1_train_degradation",
+      runIndex: 1,
+      splitId: "split_1",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_2_train_degradation",
+      runIndex: 2,
+      splitId: "split_2",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_2_train_degradation",
+      runIndex: 3,
+      splitId: "split_2",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_1_validation_degradation",
+      runIndex: 4,
+      splitId: "split_1",
+      splitRole: "validation",
+      totalReturnRatio: 0.05,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_1_validation_degradation",
+      runIndex: 5,
+      splitId: "split_1",
+      splitRole: "validation",
+      totalReturnRatio: 0,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_2_validation_degradation",
+      runIndex: 6,
+      splitId: "split_2",
+      splitRole: "validation",
+      totalReturnRatio: -0.02,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_2_validation_degradation",
+      runIndex: 7,
+      splitId: "split_2",
+      splitRole: "validation",
+      totalReturnRatio: -0.03,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    }
+  ];
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: entries.map((entry) =>
+      record(
+        entry.runId,
+        entry.runIndex,
+        "completed",
+        "bull",
+        entry.totalReturnRatio,
+        Math.round(1_000_000 * (1 + entry.totalReturnRatio)),
+        0,
+        entry.splitRole,
+        entry.splitId
+      )
+    ),
+    selectionTrials: entries.map((entry) =>
+      trial(
+        entry.runId,
+        entry.runIndex,
+        "completed",
+        promptHash,
+        hash(String(entry.runIndex)),
+        1,
+        0,
+        0,
+        entry.totalReturnRatio,
+        { allocationPolicyHash: entry.allocationPolicyHash }
+      )
+    )
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const degradationBySplit = new Map(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitId,
+      entry.degradationFromTrainRatio
+    ])
+  );
+
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, 0.2);
+  assert.equal(degradationBySplit.get("split_1"), -0.25);
+  assert.equal(degradationBySplit.get("split_2"), -0.12);
+});
+
+test("batch replay aggregate report does not mark tied holdouts below median", () => {
+  const promptHash = hash("t");
+  const selectedAllocationPolicyHash = hash("f");
+  const peerAllocationPolicyHash = hash("0");
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record(
+        "selected_tie_train",
+        0,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "train",
+        "tie_split"
+      ),
+      record(
+        "peer_tie_train",
+        1,
+        "completed",
+        "bull",
+        0.1,
+        1_100_000,
+        0,
+        "train",
+        "tie_split"
+      ),
+      record(
+        "selected_tie_validation",
+        2,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "tie_split"
+      ),
+      record(
+        "peer_tie_validation",
+        3,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "tie_split"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "selected_tie_train",
+        0,
+        "completed",
+        promptHash,
+        hash("selected_tie_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: selectedAllocationPolicyHash }
+      ),
+      trial(
+        "peer_tie_train",
+        1,
+        "completed",
+        promptHash,
+        hash("peer_tie_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: peerAllocationPolicyHash }
+      ),
+      trial(
+        "selected_tie_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("selected_tie_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: selectedAllocationPolicyHash }
+      ),
+      trial(
+        "peer_tie_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("peer_tie_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: peerAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const validationDegradation = diagnostics.holdoutDegradation.find(
+    (entry) =>
+      entry.splitId === "tie_split" && entry.splitRole === "validation"
+  );
+
+  assert.equal(diagnostics.pboLikeScore, 0);
+  assert.ok(validationDegradation);
+  assert.equal(validationDegradation.candidateCount, 2);
+  assert.equal(validationDegradation.selectedAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.medianCandidateAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.bestAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.selectedRank, 2);
+  assert.equal(validationDegradation.selectedBelowMedian, false);
+});
+
 test("batch replay aggregate report handles legacy records without market counts", () => {
   const legacyRecord = record(
     "legacy_run_0",
@@ -327,7 +1466,8 @@ function record(
   totalReturnRatio: number | null,
   finalVirtualNetWorthKrw: number | null,
   aiDecisionFailureCount = 0,
-  validationSplitRole: ValidationSplitRole | null = null
+  validationSplitRole: ValidationSplitRole | null = null,
+  validationSplitId = "wf_report"
 ): BatchReplayRunRecord {
   return {
     mode: "paper_only",
@@ -366,7 +1506,7 @@ function record(
         ? null
         : {
             validationProtocol: "walk_forward",
-            splitId: "wf_report",
+            splitId: validationSplitId,
             splitIndex: 0,
             trainStart: "2025-01-01T00:00:00.000Z",
             trainEnd: "2025-01-31T23:59:59.999Z",
@@ -463,7 +1603,13 @@ function trial(
   configHash: SelectionTrialRecord["config"]["configHash"],
   tradeCount: number,
   aiDecisionFailureCount: number,
-  rejectedCount: number
+  rejectedCount: number,
+  totalReturnRatio =
+    status === "completed" || status === "completed_with_failures"
+      ? 0.01
+      : null,
+  configOverrides: Partial<SelectionTrialRecord["config"]> = {},
+  decisionProviderOverrides: Partial<SelectionTrialRecord["decisionProvider"]> = {}
 ): SelectionTrialRecord {
   return {
     mode: "paper_only",
@@ -501,22 +1647,20 @@ function trial(
       promptPolicy: null,
       promptVersion: null,
       promptHash,
-      metadataHash: hash("f")
+      metadataHash: decisionProviderOverrides.metadataHash ?? hash("f")
     },
     config: {
       configHash,
-      riskPolicyHash: hash("1"),
-      allocationPolicyHash: hash("2"),
-      marketRegimeAllocationPolicyHash: hash("3"),
-      exitPolicyHash: hash("4"),
-      riskProfile: "balanced",
+      riskPolicyHash: configOverrides.riskPolicyHash ?? hash("1"),
+      allocationPolicyHash: configOverrides.allocationPolicyHash ?? hash("2"),
+      marketRegimeAllocationPolicyHash:
+        configOverrides.marketRegimeAllocationPolicyHash ?? hash("3"),
+      exitPolicyHash: configOverrides.exitPolicyHash ?? hash("4"),
+      riskProfile: configOverrides.riskProfile ?? "balanced",
       selectionMetric: "total_return_ratio"
     },
     outcome: {
-      totalReturnRatio:
-        status === "completed" || status === "completed_with_failures"
-          ? 0.01
-          : null,
+      totalReturnRatio,
       finalVirtualNetWorthKrw:
         status === "completed" || status === "completed_with_failures"
           ? 1_010_000

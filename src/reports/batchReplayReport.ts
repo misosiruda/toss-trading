@@ -15,6 +15,7 @@ export interface BatchReplayAggregateReportOptions {
   sourceSelectionTrialsPath?: string;
   title?: string;
   targetReturnThresholds?: number[];
+  expectedSampledCpcvSplitCount?: number;
 }
 
 export interface BatchReplayAggregateReport {
@@ -26,6 +27,7 @@ export interface BatchReplayAggregateReport {
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   trialSummary: BatchReplaySelectionTrialSummary | null;
+  overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
   byValidationSplitRole: Partial<
@@ -103,6 +105,67 @@ export interface BatchReplaySelectionTrialBucket {
   runIds: string[];
 }
 
+export interface BatchReplayOverfittingDiagnostics {
+  validationProtocol: "sampled_cpcv_pbo_like";
+  selectionMetric: "total_return_ratio";
+  expectedSampledCpcvSplitCount: number | null;
+  sampledCpcvSplitCount: number;
+  sampledCpcvSplitCountMatchesExpected: boolean | null;
+  joinedTrialCount: number;
+  candidateCount: number;
+  returnSampleCount: number;
+  splitRoleCounts: Partial<Record<ValidationSplitRole, number>>;
+  splitMetricMatrix: BatchReplaySplitMetricRow[];
+  selectedCandidateKey: string | null;
+  selectedTrainAverageTotalReturnRatio: number | null;
+  pboLikeScore: number | null;
+  holdoutDegradation: BatchReplayHoldoutDegradation[];
+  warnings: string[];
+}
+
+export interface BatchReplaySplitMetricRow {
+  candidateKey: string;
+  decisionProviderMode: string;
+  decisionProviderMetadataHash: string;
+  promptHash: string | null;
+  configHashes: Array<string | null>;
+  riskPolicyHash: string;
+  allocationPolicyHash: string;
+  marketRegimeAllocationPolicyHash: string;
+  exitPolicyHash: string;
+  riskProfile: string | null;
+  roleMetrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>>;
+  splitMetrics: BatchReplaySplitMetric[];
+}
+
+export interface BatchReplayRoleMetric {
+  runCount: number;
+  returnSampleCount: number;
+  averageTotalReturnRatio: number | null;
+  medianTotalReturnRatio: number | null;
+  runIds: string[];
+}
+
+export interface BatchReplaySplitMetric {
+  splitId: string;
+  splitRole: ValidationSplitRole;
+  metric: BatchReplayRoleMetric;
+}
+
+export interface BatchReplayHoldoutDegradation {
+  splitId: string;
+  splitRole: Exclude<ValidationSplitRole, "train">;
+  selectedCandidateKey: string;
+  selectedAverageTotalReturnRatio: number | null;
+  selectedRank: number | null;
+  candidateCount: number;
+  medianCandidateAverageTotalReturnRatio: number | null;
+  bestAverageTotalReturnRatio: number | null;
+  degradationFromTrainRatio: number | null;
+  selectedBelowMedian: boolean | null;
+  runIds: string[];
+}
+
 export interface TargetReturnHitRate {
   threshold: number;
   sampleCount: number;
@@ -123,6 +186,10 @@ export function buildBatchReplayAggregateReport(
       : [...options.selectionTrials].sort(compareSelectionTrials);
   const targetReturnThresholds = normalizeTargetReturnThresholds(
     options.targetReturnThresholds
+  );
+  const expectedSampledCpcvSplitCount = normalizeOptionalNonNegativeInteger(
+    options.expectedSampledCpcvSplitCount,
+    "expectedSampledCpcvSplitCount"
   );
   const byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>> = {};
   const byValidationSplitRole: Partial<
@@ -161,6 +228,14 @@ export function buildBatchReplayAggregateReport(
     },
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
+    overfittingDiagnostics:
+      selectionTrials === null && expectedSampledCpcvSplitCount === null
+        ? null
+        : summarizeOverfittingDiagnostics({
+            records,
+            trials: selectionTrials ?? [],
+            expectedSampledCpcvSplitCount
+          }),
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
     byValidationSplitRole,
@@ -194,6 +269,9 @@ export function renderBatchReplayAggregateReport(
     "",
     "## Selection Trials",
     renderSelectionTrialSummary(report.trialSummary),
+    "",
+    "## Overfitting Diagnostics",
+    renderOverfittingDiagnostics(report.overfittingDiagnostics),
     "",
     "## Overall",
     renderGroup(report.overall),
@@ -300,6 +378,516 @@ function bucketSelectionTrials(
 
 function isSelectedTrial(trial: SelectionTrialRecord): boolean {
   return (trial.selection as { selected?: boolean }).selected === true;
+}
+
+interface JoinedSelectionTrial {
+  trial: SelectionTrialRecord;
+  splitId: string;
+  splitRole: ValidationSplitRole;
+  totalReturnRatio: number | null;
+}
+
+function summarizeOverfittingDiagnostics(options: {
+  records: BatchReplayRunRecord[];
+  trials: SelectionTrialRecord[];
+  expectedSampledCpcvSplitCount: number | null;
+}): BatchReplayOverfittingDiagnostics {
+  const joinedTrials = joinSelectionTrialsToValidationSplits(
+    options.records,
+    options.trials
+  );
+  const splitMetricMatrix = buildSplitMetricMatrix(joinedTrials);
+  const trainSampledCandidateCount =
+    countTrainSampledCandidates(splitMetricMatrix);
+  const holdoutReturnSampleCount =
+    countHoldoutReturnSamples(splitMetricMatrix);
+  const sampledCpcvSplitCount = countSampledCpcvSplits(joinedTrials);
+  const sampledCpcvSplitCountMatchesExpected =
+    options.expectedSampledCpcvSplitCount === null
+      ? null
+      : sampledCpcvSplitCount === options.expectedSampledCpcvSplitCount;
+  const selectedCandidate = selectBestTrainCandidate(splitMetricMatrix);
+  const selectedTrainMetric = selectedCandidate?.roleMetrics.train ?? null;
+  const holdoutDegradation =
+    selectedCandidate === null
+      ? []
+      : buildHoldoutDegradation(splitMetricMatrix, selectedCandidate);
+  const warnings = overfittingDiagnosticWarnings({
+    joinedTrialCount: joinedTrials.length,
+    candidateCount: splitMetricMatrix.length,
+    trainSampledCandidateCount,
+    holdoutReturnSampleCount,
+    holdoutDegradation,
+    sampledCpcvSplitCount,
+    expectedSampledCpcvSplitCount: options.expectedSampledCpcvSplitCount,
+    sampledCpcvSplitCountMatchesExpected
+  });
+
+  return {
+    validationProtocol: "sampled_cpcv_pbo_like",
+    selectionMetric: "total_return_ratio",
+    expectedSampledCpcvSplitCount: options.expectedSampledCpcvSplitCount,
+    sampledCpcvSplitCount,
+    sampledCpcvSplitCountMatchesExpected,
+    joinedTrialCount: joinedTrials.length,
+    candidateCount: splitMetricMatrix.length,
+    returnSampleCount: joinedTrials.filter(
+      (trial) => trial.totalReturnRatio !== null
+    ).length,
+    splitRoleCounts: countJoinedTrialSplitRoles(joinedTrials),
+    splitMetricMatrix,
+    selectedCandidateKey: selectedCandidate?.candidateKey ?? null,
+    selectedTrainAverageTotalReturnRatio:
+      selectedTrainMetric?.averageTotalReturnRatio ?? null,
+    pboLikeScore: pboLikeScore(splitMetricMatrix, holdoutDegradation),
+    holdoutDegradation,
+    warnings
+  };
+}
+
+function joinSelectionTrialsToValidationSplits(
+  records: BatchReplayRunRecord[],
+  trials: SelectionTrialRecord[]
+): JoinedSelectionTrial[] {
+  const recordsByRunId = new Map(records.map((record) => [record.runId, record]));
+  const joined: JoinedSelectionTrial[] = [];
+
+  for (const trial of trials) {
+    const record = recordsByRunId.get(trial.runId);
+    const validationSplit = record?.validationSplit ?? null;
+    if (record === undefined || validationSplit === null) {
+      continue;
+    }
+    joined.push({
+      trial,
+      splitId: validationSplit.splitId,
+      splitRole: validationSplit.splitRole,
+      totalReturnRatio:
+        trial.outcome.totalReturnRatio ?? record.summary?.totalReturnRatio ?? null
+    });
+  }
+
+  return joined.sort((left, right) => {
+    if (left.trial.runIndex !== right.trial.runIndex) {
+      return left.trial.runIndex - right.trial.runIndex;
+    }
+    return left.trial.runId.localeCompare(right.trial.runId);
+  });
+}
+
+function buildSplitMetricMatrix(
+  joinedTrials: JoinedSelectionTrial[]
+): BatchReplaySplitMetricRow[] {
+  const candidateBuckets = new Map<string, JoinedSelectionTrial[]>();
+
+  for (const joinedTrial of joinedTrials) {
+    const candidateKey = candidateKeyForTrial(joinedTrial.trial);
+    const bucket = candidateBuckets.get(candidateKey) ?? [];
+    bucket.push(joinedTrial);
+    candidateBuckets.set(candidateKey, bucket);
+  }
+
+  return Array.from(candidateBuckets.entries())
+    .map(([candidateKey, bucket]) => {
+      const firstTrial = bucket[0]!.trial;
+      return {
+        candidateKey,
+        decisionProviderMode: firstTrial.decisionProvider.mode,
+        decisionProviderMetadataHash: firstTrial.decisionProvider.metadataHash,
+        promptHash: firstTrial.decisionProvider.promptHash,
+        configHashes: uniqueNullableStrings(
+          bucket.map((joinedTrial) => joinedTrial.trial.config.configHash)
+        ),
+        riskPolicyHash: firstTrial.config.riskPolicyHash,
+        allocationPolicyHash: firstTrial.config.allocationPolicyHash,
+        marketRegimeAllocationPolicyHash:
+          firstTrial.config.marketRegimeAllocationPolicyHash,
+        exitPolicyHash: firstTrial.config.exitPolicyHash,
+        riskProfile: firstTrial.config.riskProfile,
+        roleMetrics: summarizeRoleMetrics(bucket),
+        splitMetrics: summarizeSplitMetrics(bucket)
+      };
+    })
+    .sort((left, right) => left.candidateKey.localeCompare(right.candidateKey));
+}
+
+function summarizeRoleMetrics(
+  joinedTrials: JoinedSelectionTrial[]
+): Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>> {
+  const roleBuckets = new Map<ValidationSplitRole, JoinedSelectionTrial[]>();
+
+  for (const joinedTrial of joinedTrials) {
+    const bucket = roleBuckets.get(joinedTrial.splitRole) ?? [];
+    bucket.push(joinedTrial);
+    roleBuckets.set(joinedTrial.splitRole, bucket);
+  }
+
+  const metrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>> = {};
+  for (const [role, bucket] of roleBuckets.entries()) {
+    metrics[role] = summarizeRoleMetric(bucket);
+  }
+  return metrics;
+}
+
+function summarizeSplitMetrics(
+  joinedTrials: JoinedSelectionTrial[]
+): BatchReplaySplitMetric[] {
+  const splitBuckets = new Map<string, JoinedSelectionTrial[]>();
+
+  for (const joinedTrial of joinedTrials) {
+    const key = splitMetricKey(joinedTrial.splitId, joinedTrial.splitRole);
+    const bucket = splitBuckets.get(key) ?? [];
+    bucket.push(joinedTrial);
+    splitBuckets.set(key, bucket);
+  }
+
+  return Array.from(splitBuckets.values())
+    .map((bucket) => ({
+      splitId: bucket[0]!.splitId,
+      splitRole: bucket[0]!.splitRole,
+      metric: summarizeRoleMetric(bucket)
+    }))
+    .sort(compareSplitMetrics);
+}
+
+function summarizeRoleMetric(
+  joinedTrials: JoinedSelectionTrial[]
+): BatchReplayRoleMetric {
+  const returns = joinedTrials
+    .map((joinedTrial) => joinedTrial.totalReturnRatio)
+    .filter((value): value is number => value !== null);
+
+  return {
+    runCount: joinedTrials.length,
+    returnSampleCount: returns.length,
+    averageTotalReturnRatio:
+      returns.length === 0 ? null : roundRatio(average(returns)),
+    medianTotalReturnRatio:
+      returns.length === 0 ? null : roundRatio(median(returns)),
+    runIds: joinedTrials.map((joinedTrial) => joinedTrial.trial.runId)
+  };
+}
+
+function candidateKeyForTrial(trial: SelectionTrialRecord): string {
+  return [
+    `provider=${trial.decisionProvider.mode}`,
+    `providerMetadata=${trial.decisionProvider.metadataHash}`,
+    `prompt=${trial.decisionProvider.promptHash ?? "null"}`,
+    `risk=${trial.config.riskPolicyHash}`,
+    `allocation=${trial.config.allocationPolicyHash}`,
+    `regimeAllocation=${trial.config.marketRegimeAllocationPolicyHash}`,
+    `exit=${trial.config.exitPolicyHash}`,
+    `profile=${trial.config.riskProfile ?? "null"}`,
+    `metric=${trial.config.selectionMetric}`
+  ].join("|");
+}
+
+function uniqueNullableStrings(values: Array<string | null>): Array<string | null> {
+  const uniqueStrings = Array.from(
+    new Set(values.filter((value): value is string => value !== null))
+  ).sort((left, right) => left.localeCompare(right));
+  return values.some((value) => value === null)
+    ? [null, ...uniqueStrings]
+    : uniqueStrings;
+}
+
+function countSampledCpcvSplits(joinedTrials: JoinedSelectionTrial[]): number {
+  return new Set(
+    joinedTrials.map((joinedTrial) =>
+      `${joinedTrial.splitId}:${joinedTrial.splitRole}`
+    )
+  ).size;
+}
+
+function countJoinedTrialSplitRoles(
+  joinedTrials: JoinedSelectionTrial[]
+): Partial<Record<ValidationSplitRole, number>> {
+  const counts: Partial<Record<ValidationSplitRole, number>> = {};
+  for (const joinedTrial of joinedTrials) {
+    counts[joinedTrial.splitRole] = (counts[joinedTrial.splitRole] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function selectBestTrainCandidate(
+  matrix: BatchReplaySplitMetricRow[]
+): BatchReplaySplitMetricRow | null {
+  const candidates = trainSampledCandidates(matrix);
+  if (candidates.length < 2) {
+    return null;
+  }
+
+  return candidates.sort((left, right) => {
+    const returnDelta =
+      right.roleMetrics.train!.averageTotalReturnRatio! -
+      left.roleMetrics.train!.averageTotalReturnRatio!;
+    return returnDelta !== 0
+      ? returnDelta
+      : left.candidateKey.localeCompare(right.candidateKey);
+  })[0]!;
+}
+
+function buildHoldoutDegradation(
+  matrix: BatchReplaySplitMetricRow[],
+  selectedCandidate: BatchReplaySplitMetricRow
+): BatchReplayHoldoutDegradation[] {
+  return splitHoldoutKeys(matrix)
+    .map(({ splitId, splitRole }) =>
+      holdoutDegradationForSplit(matrix, selectedCandidate, splitId, splitRole)
+    )
+    .filter(
+      (value): value is BatchReplayHoldoutDegradation => value !== null
+    );
+}
+
+function holdoutDegradationForSplit(
+  matrix: BatchReplaySplitMetricRow[],
+  selectedCandidate: BatchReplaySplitMetricRow,
+  splitId: string,
+  splitRole: Exclude<ValidationSplitRole, "train">
+): BatchReplayHoldoutDegradation | null {
+  const roleCandidates = matrix
+    .map((row) => ({
+      row,
+      metric: splitMetricForCandidate(row, splitId, splitRole)?.metric ?? null
+    }))
+    .filter(
+      (entry): entry is { row: BatchReplaySplitMetricRow; metric: BatchReplayRoleMetric } =>
+        entry.metric?.averageTotalReturnRatio !== null &&
+        entry.metric?.averageTotalReturnRatio !== undefined
+    )
+    .sort((left, right) => {
+      const returnDelta =
+        right.metric.averageTotalReturnRatio! -
+        left.metric.averageTotalReturnRatio!;
+      return returnDelta !== 0
+        ? returnDelta
+        : left.row.candidateKey.localeCompare(right.row.candidateKey);
+    });
+
+  if (roleCandidates.length === 0) {
+    return null;
+  }
+
+  const selectedIndex = roleCandidates.findIndex((entry) => {
+    return entry.row.candidateKey === selectedCandidate.candidateKey;
+  });
+  const selectedMetric =
+    selectedIndex === -1 ? null : roleCandidates[selectedIndex]!.metric;
+  const holdoutReturns = roleCandidates.map(
+    (entry) => entry.metric.averageTotalReturnRatio!
+  );
+  const medianCandidateAverage = roundRatio(median(holdoutReturns));
+  const selectedAverage = selectedMetric?.averageTotalReturnRatio ?? null;
+  const selectedRank = selectedIndex === -1 ? null : selectedIndex + 1;
+  const selectedBelowMedian =
+    selectedAverage === null || roleCandidates.length < 2
+      ? null
+      : selectedAverage < medianCandidateAverage;
+  const splitTrainAverage =
+    splitMetricForCandidate(selectedCandidate, splitId, "train")?.metric
+      .averageTotalReturnRatio ?? null;
+  const trainAverage =
+    splitTrainAverage ??
+    selectedCandidate.roleMetrics.train?.averageTotalReturnRatio ??
+    null;
+
+  return {
+    splitId,
+    splitRole,
+    selectedCandidateKey: selectedCandidate.candidateKey,
+    selectedAverageTotalReturnRatio: selectedAverage,
+    selectedRank,
+    candidateCount: roleCandidates.length,
+    medianCandidateAverageTotalReturnRatio: medianCandidateAverage,
+    bestAverageTotalReturnRatio: roleCandidates[0]!.metric
+      .averageTotalReturnRatio,
+    degradationFromTrainRatio:
+      trainAverage === null || selectedAverage === null
+        ? null
+        : roundRatio(selectedAverage - trainAverage),
+    selectedBelowMedian,
+    runIds: selectedMetric?.runIds ?? []
+  };
+}
+
+function splitHoldoutKeys(
+  matrix: BatchReplaySplitMetricRow[]
+): Array<{ splitId: string; splitRole: Exclude<ValidationSplitRole, "train"> }> {
+  const keys = new Map<
+    string,
+    { splitId: string; splitRole: Exclude<ValidationSplitRole, "train"> }
+  >();
+
+  for (const row of matrix) {
+    for (const splitMetric of row.splitMetrics) {
+      if (
+        splitMetric.splitRole === "train" ||
+        splitMetric.metric.averageTotalReturnRatio === null
+      ) {
+        continue;
+      }
+      keys.set(splitMetricKey(splitMetric.splitId, splitMetric.splitRole), {
+        splitId: splitMetric.splitId,
+        splitRole: splitMetric.splitRole
+      });
+    }
+  }
+
+  return Array.from(keys.values()).sort((left, right) => {
+    const splitDelta = left.splitId.localeCompare(right.splitId);
+    return splitDelta !== 0
+      ? splitDelta
+      : validationSplitRoleOrder(left.splitRole) -
+          validationSplitRoleOrder(right.splitRole);
+  });
+}
+
+function splitMetricForCandidate(
+  row: BatchReplaySplitMetricRow,
+  splitId: string,
+  splitRole: ValidationSplitRole
+): BatchReplaySplitMetric | null {
+  return (
+    row.splitMetrics.find(
+      (metric) =>
+        metric.splitId === splitId && metric.splitRole === splitRole
+    ) ?? null
+  );
+}
+
+function compareSplitMetrics(
+  left: BatchReplaySplitMetric,
+  right: BatchReplaySplitMetric
+): number {
+  const splitDelta = left.splitId.localeCompare(right.splitId);
+  return splitDelta !== 0
+    ? splitDelta
+    : validationSplitRoleOrder(left.splitRole) -
+        validationSplitRoleOrder(right.splitRole);
+}
+
+function validationSplitRoleOrder(role: ValidationSplitRole): number {
+  switch (role) {
+    case "train":
+      return 0;
+    case "validation":
+      return 1;
+    case "test":
+      return 2;
+  }
+}
+
+function splitMetricKey(splitId: string, splitRole: ValidationSplitRole): string {
+  return `${splitId}\u0000${splitRole}`;
+}
+
+function pboLikeScore(
+  matrix: BatchReplaySplitMetricRow[],
+  holdoutDegradation: BatchReplayHoldoutDegradation[]
+): number | null {
+  const scoredHoldouts = holdoutDegradation.filter(
+    (degradation) => degradation.selectedBelowMedian !== null
+  );
+  if (countTrainSampledCandidates(matrix) < 2 || scoredHoldouts.length === 0) {
+    return null;
+  }
+  const belowMedianCount = scoredHoldouts.filter(
+    (degradation) => degradation.selectedBelowMedian === true
+  ).length;
+  return roundRatio(belowMedianCount / scoredHoldouts.length);
+}
+
+function overfittingDiagnosticWarnings(input: {
+  joinedTrialCount: number;
+  candidateCount: number;
+  trainSampledCandidateCount: number;
+  holdoutReturnSampleCount: number;
+  holdoutDegradation: BatchReplayHoldoutDegradation[];
+  sampledCpcvSplitCount: number;
+  expectedSampledCpcvSplitCount: number | null;
+  sampledCpcvSplitCountMatchesExpected: boolean | null;
+}): string[] {
+  const warnings: string[] = [];
+  if (input.joinedTrialCount === 0) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: no selection trials with validation split metadata"
+    );
+  }
+  if (input.candidateCount < 2) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: at least two strategy candidates are required"
+    );
+  }
+  if (input.trainSampledCandidateCount === 0) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: no train return sample exists for candidate selection"
+    );
+  }
+  if (input.trainSampledCandidateCount === 1) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: at least two train candidates with return samples are required for candidate selection"
+    );
+  }
+  if (input.holdoutReturnSampleCount === 0) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: no validation/test holdout return samples exist"
+    );
+  }
+  if (
+    input.holdoutDegradation.length > 0 &&
+    input.holdoutDegradation.some(
+      (degradation) => degradation.selectedBelowMedian === null
+    )
+  ) {
+    warnings.push(
+      "PBO-like diagnostic partial: at least two holdout candidates with return samples are required per scored split; unscored holdouts were excluded from pboLikeScore"
+    );
+  }
+  if (input.sampledCpcvSplitCountMatchesExpected === false) {
+    warnings.push(
+      `sampled CPCV split count mismatch: expected ${input.expectedSampledCpcvSplitCount}, actual ${input.sampledCpcvSplitCount}`
+    );
+  }
+  return warnings;
+}
+
+function trainSampledCandidates(
+  matrix: BatchReplaySplitMetricRow[]
+): BatchReplaySplitMetricRow[] {
+  return matrix.filter((row) => hasTrainReturnSample(row));
+}
+
+function countTrainSampledCandidates(
+  matrix: BatchReplaySplitMetricRow[]
+): number {
+  return trainSampledCandidates(matrix).length;
+}
+
+function hasTrainReturnSample(row: BatchReplaySplitMetricRow): boolean {
+  const trainMetric = row.roleMetrics.train ?? null;
+  return (
+    (trainMetric?.returnSampleCount ?? 0) > 0 &&
+    trainMetric?.averageTotalReturnRatio !== null &&
+    trainMetric?.averageTotalReturnRatio !== undefined
+  );
+}
+
+function countHoldoutReturnSamples(
+  matrix: BatchReplaySplitMetricRow[]
+): number {
+  return matrix.reduce((total, row) => {
+    return (
+      total +
+      row.splitMetrics
+        .filter((splitMetric) => splitMetric.splitRole !== "train")
+        .reduce(
+          (rowTotal, splitMetric) =>
+            rowTotal + splitMetric.metric.returnSampleCount,
+          0
+        )
+    );
+  }, 0);
 }
 
 function summarizeGroup(
@@ -605,6 +1193,36 @@ function renderSelectionTrialSummary(
   ].join("\n");
 }
 
+function renderOverfittingDiagnostics(
+  diagnostics: BatchReplayOverfittingDiagnostics | null
+): string {
+  if (diagnostics === null) {
+    return "overfitting_diagnostics: null";
+  }
+
+  return [
+    `validation_protocol: ${diagnostics.validationProtocol}`,
+    `selection_metric: ${diagnostics.selectionMetric}`,
+    `expected_sampled_cpcv_split_count: ${formatNullable(diagnostics.expectedSampledCpcvSplitCount)}`,
+    `sampled_cpcv_split_count: ${diagnostics.sampledCpcvSplitCount}`,
+    `sampled_cpcv_split_count_matches_expected: ${
+      diagnostics.sampledCpcvSplitCountMatchesExpected === null
+        ? "null"
+        : String(diagnostics.sampledCpcvSplitCountMatchesExpected)
+    }`,
+    `joined_trial_count: ${diagnostics.joinedTrialCount}`,
+    `candidate_count: ${diagnostics.candidateCount}`,
+    `return_sample_count: ${diagnostics.returnSampleCount}`,
+    `split_role_counts: ${JSON.stringify(diagnostics.splitRoleCounts)}`,
+    `selected_candidate_key: ${diagnostics.selectedCandidateKey ?? "null"}`,
+    `selected_train_average_total_return_ratio: ${formatNullable(diagnostics.selectedTrainAverageTotalReturnRatio)}`,
+    `pbo_like_score: ${formatNullable(diagnostics.pboLikeScore)}`,
+    `holdout_degradation: ${JSON.stringify(diagnostics.holdoutDegradation)}`,
+    `warnings: ${JSON.stringify(diagnostics.warnings)}`,
+    `split_metric_matrix: ${JSON.stringify(diagnostics.splitMetricMatrix)}`
+  ].join("\n");
+}
+
 function averageSummaryRatio(
   records: BatchReplayRunRecord[],
   key:
@@ -666,6 +1284,19 @@ function normalizeTargetReturnThresholds(values: number[] | undefined): number[]
     return roundRatio(value);
   });
   return Array.from(new Set(normalized)).sort((left, right) => left - right);
+}
+
+function normalizeOptionalNonNegativeInteger(
+  value: number | undefined,
+  label: string
+): number | null {
+  if (value === undefined) {
+    return null;
+  }
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return value;
 }
 
 function average(values: number[]): number {

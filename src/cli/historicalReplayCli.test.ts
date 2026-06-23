@@ -441,6 +441,60 @@ test("historical batch report CLI tolerates missing selection trial log", () => 
 
   assert.equal(report["sourceSelectionTrialsPath"], null);
   assert.equal(report["trialSummary"], null);
+  assert.equal(report["overfittingDiagnostics"], null);
+});
+
+test("historical batch report CLI warns on expected split count without trial log", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-missing-trials-expected",
+      runId: "run_0",
+      runIndex: 0,
+      status: "completed",
+      summary: { totalReturnRatio: 0.01 },
+      marketRegime: { label: "bull" },
+      dataAvailability: { status: "available" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--expected-sampled-cpcv-split-count",
+      "3",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /sampled_cpcv_split_count_matches_expected: false/);
+  assert.match(result.stdout, /split count mismatch/);
+  const report = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const diagnostics = report["overfittingDiagnostics"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(report["sourceSelectionTrialsPath"], null);
+  assert.equal(report["trialSummary"], null);
+  assert.equal(diagnostics["expectedSampledCpcvSplitCount"], 3);
+  assert.equal(diagnostics["sampledCpcvSplitCount"], 0);
+  assert.equal(diagnostics["sampledCpcvSplitCountMatchesExpected"], false);
 });
 
 test("historical batch replay CLI records validation split roles in aggregate report", () => {
@@ -599,6 +653,85 @@ test("historical batch report CLI rejects missing selection trial path value", (
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--selection-trials-path requires a value/);
+});
+
+test("historical batch report CLI rejects invalid sampled CPCV split count", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-invalid-cpcv-count",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--expected-sampled-cpcv-split-count",
+      "-1",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--expected-sampled-cpcv-split-count must be a non-negative integer/
+  );
+});
+
+test("historical batch report CLI rejects missing sampled CPCV split count value", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-missing-cpcv-count",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--expected-sampled-cpcv-split-count",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--expected-sampled-cpcv-split-count requires a value/
+  );
 });
 
 test("historical batch report CLI rejects malformed selection trial nested fields", () => {
