@@ -65,6 +65,9 @@ Artifact 위치 계약:
 - `VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED`
 - `VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED`
 - `VIRTUAL_EXPOSURE_METADATA_MISSING`
+- `VIRTUAL_HEDGE_NOT_REDUCE_RISK`
+- `VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED`
+- `VIRTUAL_HEDGE_METADATA_MISSING`
 - `VIRTUAL_POSITION_NOT_FOUND`
 - `VIRTUAL_SELL_AMOUNT_REQUIRED`
 - `VIRTUAL_SELL_AMOUNT_EXCEEDED`
@@ -175,6 +178,7 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 | `minCashReserveRatio` | `0.10` | NAV 대비 최소 현금 reserve |
 | `minCashReserveKrw` | `0` | 절대 최소 현금 reserve |
 | `dynamicCashReservePolicy` | disabled | market regime과 high volatility 기준으로 최소 현금 reserve를 상향하는 opt-in policy |
+| `hedgePolicy` | disabled | hedge bucket/inverse exposure BUY가 실제 net downside exposure를 낮추는지 검증하는 opt-in policy |
 | `cooldownEntries` | `[]` | symbol/action 단위의 임시 진입 제한 |
 
 정책 목적:
@@ -185,6 +189,7 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 - `sector_exposure`, `country_exposure`, `currency_exposure`는 한쪽 portfolio 쏠림을 deterministic하게 막습니다.
 - `exposure_metadata`는 sector/country/currency/bucket metadata가 부족한 상태에서 신규 진입을 보수적으로 제한합니다.
 - `bucket_budget`과 `bucket_turnover`는 장기/스윙/단기/초단기/hedge bucket 중 한쪽으로 paper portfolio가 치우치는 것을 줄입니다.
+- `hedge_policy`는 hedge를 수익 전략이 아니라 portfolio downside 방어 action으로만 허용합니다.
 - `cooldown`은 같은 symbol/action/reject code 반복으로 AI가 같은 실수를 빠르게 되풀이하는 상황을 줄이기 위한 입력입니다.
 - `reduceOnly: true`인 `VIRTUAL_SELL`은 리스크 축소성 paper 매도이므로 cooldown 예외로 둡니다.
 
@@ -214,6 +219,30 @@ high volatility는 classified symbol의 absolute return 평균이 `highVolatilit
 - 설정은 `historical-replay-run-metadata.json`의 `configuration.riskPolicy.dynamicCashReservePolicy`와 research manifest hash에 포함됩니다.
 - tick별 `dynamicCashReserveMarketRegime`은 runtime context이며 run metadata의 static configuration에는 저장하지 않습니다.
 - market regime allocation은 market별 target exposure ratio를 조정하고, dynamic cash reserve는 전체 portfolio cash floor를 조정합니다. 두 정책은 서로 대체하지 않습니다.
+
+### Hedge Policy
+
+`hedgePolicy`는 paper-only BUY 중 `strategyBucket=hedge`이거나 `assetClass=inverse`, `riskTags=inverse`인 후보에만 적용되는 opt-in gate입니다. 일반 long/swing/short-term/intraday BUY는 이 policy가 설정되어 있어도 hedge gate를 타지 않습니다.
+
+허용 조건:
+
+- hedge 후보는 `assetType`, `assetClass`, `strategyBucket` metadata를 가져야 합니다.
+- 기본값 기준 hedge 후보의 `strategyBucket`은 반드시 `hedge`여야 합니다.
+- Q5-2 구현은 inverse exposure만 net downside exposure를 낮추는 hedge로 인정합니다.
+- 신규 hedge BUY 이후 `0 <= net downside exposure < current net downside exposure`가 되어야 합니다.
+- 신규 hedge BUY 이후 gross exposure가 `maxGrossExposureKrw` 또는 `maxGrossExposureRatio`를 넘으면 reject합니다.
+
+Reject code:
+
+- `VIRTUAL_HEDGE_METADATA_MISSING`: hedge 여부 또는 기존 portfolio downside exposure를 판단할 metadata가 부족합니다.
+- `VIRTUAL_HEDGE_NOT_REDUCE_RISK`: hedge bucket이 아니거나, inverse exposure가 아니거나, net downside exposure를 낮추지 못하거나, net short 성격으로 뒤집힙니다.
+- `VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED`: hedge가 net exposure를 낮추더라도 gross exposure cap을 넘습니다.
+
+정책 경계:
+
+- 이 정책은 `VirtualRiskEngine`의 paper-only BUY gate에만 연결됩니다.
+- 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
+- hedge cost와 hedge failure 가능성의 report/audit summary 노출은 후속 Q5-3 범위입니다.
 
 ## Live RiskEngine Implementation Boundary
 

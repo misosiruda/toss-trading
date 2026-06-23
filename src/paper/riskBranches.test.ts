@@ -860,6 +860,111 @@ test("buy risk branch rejects bucket turnover breaches", () => {
   ]);
 });
 
+test("buy risk branch rejects hedge proposals that do not reduce downside exposure", () => {
+  const input = {
+    packet: packet({
+      candidates: [
+        candidate({
+          symbol: "251340",
+          assetType: "ETF",
+          assetClass: "inverse",
+          riskTags: ["inverse"],
+          strategyBucket: "hedge",
+          sector: "Hedge"
+        })
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({ symbol: "251340", budgetKrw: 100_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        hedgePolicy: { maxGrossExposureKrw: 1_000_000 }
+      }
+    }),
+    candidate: candidate({
+      symbol: "251340",
+      assetType: "ETF",
+      assetClass: "inverse",
+      riskTags: ["inverse"],
+      strategyBucket: "hedge",
+      sector: "Hedge"
+    })
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
+    "VIRTUAL_HEDGE_NOT_REDUCE_RISK"
+  ]);
+});
+
+test("buy risk branch rejects hedge proposals that only add gross exposure", () => {
+  const input = {
+    packet: packet({
+      candidates: [
+        candidate({
+          symbol: "005930",
+          assetType: "STOCK",
+          assetClass: "equity",
+          strategyBucket: "long_term",
+          sector: "Technology"
+        }),
+        candidate({
+          symbol: "251340",
+          assetType: "ETF",
+          assetClass: "inverse",
+          riskTags: ["inverse"],
+          strategyBucket: "hedge",
+          sector: "Hedge"
+        })
+      ]
+    }),
+    portfolio: portfolio({
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          assetClass: "equity",
+          strategyBucket: "long_term",
+          quantity: 4,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 400_000,
+          updatedAt: "2026-06-14T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ symbol: "251340", budgetKrw: 100_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        hedgePolicy: { maxGrossExposureKrw: 450_000 }
+      }
+    }),
+    candidate: candidate({
+      symbol: "251340",
+      assetType: "ETF",
+      assetClass: "inverse",
+      riskTags: ["inverse"],
+      strategyBucket: "hedge",
+      sector: "Hedge"
+    })
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
+    "VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED"
+  ]);
+});
+
 test("sell risk branch requires sizing for non-dust sell decisions", () => {
   const input = {
     packet: packet(),
