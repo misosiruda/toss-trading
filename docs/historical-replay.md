@@ -599,6 +599,37 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - market regime allocation은 market별 target exposure를 조정하고, dynamic cash reserve는 portfolio 전체 cash floor를 조정합니다.
 - dynamic cash reserve와 hedge policy의 reject summary는 `historical-replay-report.json`의 `riskSummary.policySummary`와 `historical-replay-run-metadata.json`의 `riskPolicySummary`에 기록됩니다. `hedge` summary는 `strategyBucket=hedge`로 기록된 virtual trade의 count, BUY notional, modeled cost도 함께 집계합니다.
 
+### Walk-forward Validation Split
+
+`src/replay/walkForwardSplit.ts`는 Q6 validation protocol의 첫 단계로 deterministic walk-forward split metadata를 생성합니다.
+
+현재 범위:
+
+- 월 단위 rolling train/validation/test window를 생성합니다.
+- `validationProtocol: "walk_forward"`와 `splitId`, `splitIndex`, `trainStart`, `validationStart`, optional `testStart`를 schema로 검증합니다.
+- `walkForwardSplitAssignments()`는 하나의 split을 `train`, `validation`, optional `test` role metadata로 확장합니다.
+- Q6-1은 generator와 schema만 추가합니다. batch replay 실행 window selection, manifest 저장, aggregate report 분리는 Q6-3 범위입니다.
+- embargo/purge duration은 현재 `0`으로 고정됩니다. 실제 excluded sample count 기록은 Q6-2 범위입니다.
+
+예시:
+
+```json
+{
+  "validationProtocol": "walk_forward",
+  "splitId": "wf_001_train_2025-01-01_2025-02-28_validation_2025-03-01_2025-03-31_test_2025-04-01_2025-04-30",
+  "splitIndex": 0,
+  "splitRole": "validation",
+  "trainStart": "2024-12-31T15:00:00.000Z",
+  "trainEnd": "2025-02-28T14:59:59.999Z",
+  "validationStart": "2025-02-28T15:00:00.000Z",
+  "validationEnd": "2025-03-31T14:59:59.999Z",
+  "testStart": "2025-03-31T15:00:00.000Z",
+  "testEnd": "2025-04-30T14:59:59.999Z",
+  "purgeDurationDays": 0,
+  "embargoDurationDays": 0
+}
+```
+
 ### Batch Aggregate Report
 
 batch replay가 생성한 `batch-replay-runs.jsonl`을 읽어 전체 및 market regime별 결과를 집계할 수 있습니다.
