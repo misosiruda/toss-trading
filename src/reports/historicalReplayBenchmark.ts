@@ -211,7 +211,8 @@ function buildInitialPortfolioBuyHoldCurve(
     return [portfolioNetWorth(initialPortfolio)];
   }
 
-  return packets.map((packet) => {
+  const initialNetWorthKrw = portfolioNetWorth(initialPortfolio);
+  const markedCurve = packets.map((packet) => {
     for (const candidate of packet.candidates) {
       if (candidate.lastPriceKrw !== undefined) {
         latestPrices.set(
@@ -231,6 +232,7 @@ function buildInitialPortfolioBuyHoldCurve(
         }, 0)
     );
   });
+  return normalizeStrategyCurve(initialNetWorthKrw, markedCurve);
 }
 
 function normalizeStrategyCurve(
