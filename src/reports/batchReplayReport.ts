@@ -397,6 +397,10 @@ function summarizeOverfittingDiagnostics(options: {
     options.trials
   );
   const splitMetricMatrix = buildSplitMetricMatrix(joinedTrials);
+  const trainSampledCandidateCount =
+    countTrainSampledCandidates(splitMetricMatrix);
+  const holdoutReturnSampleCount =
+    countHoldoutReturnSamples(splitMetricMatrix);
   const sampledCpcvSplitCount = countSampledCpcvSplits(joinedTrials);
   const sampledCpcvSplitCountMatchesExpected =
     options.expectedSampledCpcvSplitCount === null
@@ -411,7 +415,8 @@ function summarizeOverfittingDiagnostics(options: {
   const warnings = overfittingDiagnosticWarnings({
     joinedTrialCount: joinedTrials.length,
     candidateCount: splitMetricMatrix.length,
-    selectedCandidate,
+    trainSampledCandidateCount,
+    holdoutReturnSampleCount,
     holdoutDegradation,
     sampledCpcvSplitCount,
     expectedSampledCpcvSplitCount: options.expectedSampledCpcvSplitCount,
@@ -607,12 +612,8 @@ function countJoinedTrialSplitRoles(
 function selectBestTrainCandidate(
   matrix: BatchReplaySplitMetricRow[]
 ): BatchReplaySplitMetricRow | null {
-  const candidates = matrix.filter(
-    (row) =>
-      row.roleMetrics.train?.averageTotalReturnRatio !== null &&
-      row.roleMetrics.train?.averageTotalReturnRatio !== undefined
-  );
-  if (candidates.length === 0) {
+  const candidates = trainSampledCandidates(matrix);
+  if (candidates.length < 2) {
     return null;
   }
 
@@ -788,7 +789,7 @@ function pboLikeScore(
   const scoredHoldouts = holdoutDegradation.filter(
     (degradation) => degradation.selectedBelowMedian !== null
   );
-  if (matrix.length < 2 || scoredHoldouts.length === 0) {
+  if (countTrainSampledCandidates(matrix) < 2 || scoredHoldouts.length === 0) {
     return null;
   }
   const belowMedianCount = scoredHoldouts.filter(
@@ -800,7 +801,8 @@ function pboLikeScore(
 function overfittingDiagnosticWarnings(input: {
   joinedTrialCount: number;
   candidateCount: number;
-  selectedCandidate: BatchReplaySplitMetricRow | null;
+  trainSampledCandidateCount: number;
+  holdoutReturnSampleCount: number;
   holdoutDegradation: BatchReplayHoldoutDegradation[];
   sampledCpcvSplitCount: number;
   expectedSampledCpcvSplitCount: number | null;
@@ -817,12 +819,17 @@ function overfittingDiagnosticWarnings(input: {
       "PBO-like diagnostic unavailable: at least two strategy candidates are required"
     );
   }
-  if (input.selectedCandidate === null) {
+  if (input.trainSampledCandidateCount === 0) {
     warnings.push(
       "PBO-like diagnostic unavailable: no train return sample exists for candidate selection"
     );
   }
-  if (input.holdoutDegradation.length === 0) {
+  if (input.trainSampledCandidateCount === 1) {
+    warnings.push(
+      "PBO-like diagnostic unavailable: at least two train candidates with return samples are required for candidate selection"
+    );
+  }
+  if (input.holdoutReturnSampleCount === 0) {
     warnings.push(
       "PBO-like diagnostic unavailable: no validation/test holdout return samples exist"
     );
@@ -843,6 +850,44 @@ function overfittingDiagnosticWarnings(input: {
     );
   }
   return warnings;
+}
+
+function trainSampledCandidates(
+  matrix: BatchReplaySplitMetricRow[]
+): BatchReplaySplitMetricRow[] {
+  return matrix.filter((row) => hasTrainReturnSample(row));
+}
+
+function countTrainSampledCandidates(
+  matrix: BatchReplaySplitMetricRow[]
+): number {
+  return trainSampledCandidates(matrix).length;
+}
+
+function hasTrainReturnSample(row: BatchReplaySplitMetricRow): boolean {
+  const trainMetric = row.roleMetrics.train ?? null;
+  return (
+    (trainMetric?.returnSampleCount ?? 0) > 0 &&
+    trainMetric?.averageTotalReturnRatio !== null &&
+    trainMetric?.averageTotalReturnRatio !== undefined
+  );
+}
+
+function countHoldoutReturnSamples(
+  matrix: BatchReplaySplitMetricRow[]
+): number {
+  return matrix.reduce((total, row) => {
+    return (
+      total +
+      row.splitMetrics
+        .filter((splitMetric) => splitMetric.splitRole !== "train")
+        .reduce(
+          (rowTotal, splitMetric) =>
+            rowTotal + splitMetric.metric.returnSampleCount,
+          0
+        )
+    );
+  }, 0);
 }
 
 function summarizeGroup(

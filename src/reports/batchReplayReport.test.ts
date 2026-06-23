@@ -584,6 +584,128 @@ test("batch replay aggregate report warns when PBO-like samples are insufficient
   assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
 });
 
+test("batch replay aggregate report requires two train-sampled candidates for PBO-like scoring", () => {
+  const promptHash = hash("train");
+  const candidateAAllocationPolicyHash = hash("train_candidate_a_policy");
+  const candidateBAllocationPolicyHash = hash("train_candidate_b_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record(
+        "candidate_a_train_only_sample",
+        0,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "train"
+      ),
+      record(
+        "candidate_b_train_missing_sample",
+        1,
+        "skipped",
+        "bull",
+        null,
+        null,
+        0,
+        "train"
+      ),
+      record(
+        "candidate_a_validation_sample",
+        2,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation_sample",
+        3,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train_only_sample",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_train_only_sample_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_train_missing_sample",
+        1,
+        "skipped",
+        promptHash,
+        hash("candidate_b_train_missing_sample_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_validation_sample",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_validation_sample_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_validation_sample",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_validation_sample_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(diagnostics.splitRoleCounts, {
+    train: 2,
+    validation: 2
+  });
+  assert.equal(diagnostics.selectedCandidateKey, null);
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, null);
+  assert.deepEqual(diagnostics.holdoutDegradation, []);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two train candidates with return samples/
+  );
+  assert.doesNotMatch(
+    diagnostics.warnings.join("\n"),
+    /no validation\/test holdout return samples/
+  );
+});
+
 test("batch replay aggregate report leaves single-candidate holdouts unscored", () => {
   const promptHash = hash("a");
   const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
