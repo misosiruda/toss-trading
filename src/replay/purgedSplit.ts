@@ -171,6 +171,19 @@ export const purgedKFoldPlanSchema = z
           message: "split foldCount must match parent foldCount"
         });
       }
+      if (split.sampleCount !== value.sampleCount) {
+        context.addIssue({
+          code: "custom",
+          message: "split sampleCount must match parent sampleCount"
+        });
+      }
+      if (split.embargoDurationDays !== value.embargoDurationDays) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "split embargoDurationDays must match parent embargoDurationDays"
+        });
+      }
     }
   });
 

@@ -171,6 +171,35 @@ test("purged k-fold split schema rejects inconsistent id counts or duplicate ids
   );
 });
 
+test("purged k-fold plan schema rejects split metadata that disagrees with parent plan", () => {
+  const plan = buildPurgedKFoldPlan({
+    planId: "pkf_parent",
+    foldCount: 2,
+    embargoDurationDays: 1,
+    samples: [
+      sample("s1", "2025-01-01T00:00:00.000Z", "2025-01-01T23:59:59.999Z"),
+      sample("s2", "2025-01-02T00:00:00.000Z", "2025-01-02T23:59:59.999Z"),
+      sample("s3", "2025-01-03T00:00:00.000Z", "2025-01-03T23:59:59.999Z"),
+      sample("s4", "2025-01-04T00:00:00.000Z", "2025-01-04T23:59:59.999Z")
+    ]
+  });
+
+  assert.equal(
+    purgedKFoldPlanSchema.safeParse({
+      ...plan,
+      sampleCount: plan.sampleCount + 1
+    }).success,
+    false
+  );
+  assert.equal(
+    purgedKFoldPlanSchema.safeParse({
+      ...plan,
+      embargoDurationDays: plan.embargoDurationDays + 1
+    }).success,
+    false
+  );
+});
+
 function sample(
   sampleId: string,
   labelStart: string,
