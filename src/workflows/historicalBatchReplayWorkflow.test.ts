@@ -10,6 +10,10 @@ import type {
   VirtualDecision
 } from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
+import type {
+  ValidationSplitAssignment,
+  ValidationSplitRole
+} from "../replay/validationProtocol.js";
 import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
@@ -90,6 +94,7 @@ test("historical batch replay runner writes manifest and per-run records", async
     (manifest["windowSampling"] as Record<string, unknown>)["mode"],
     "random"
   );
+  assert.equal(manifest["validationProtocol"], null);
   assert.equal(runRecords.length, 2);
   assert.equal(trialRecords.length, 2);
   assert.equal(firstRecord["status"], "completed");
@@ -99,6 +104,7 @@ test("historical batch replay runner writes manifest and per-run records", async
     (firstRecord["windowSampling"] as Record<string, unknown>)["mode"],
     "random"
   );
+  assert.equal(firstRecord["validationSplit"], null);
   assert.equal(
     (firstRecord["window"] as Record<string, unknown>)["selectedMonth"],
     "2025-02"
@@ -149,6 +155,97 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(firstIdentity["runIndex"], 0);
   assert.equal(firstWindow["source"], "random_window");
   assert.equal(firstWindow["selectedMonth"], "2025-02");
+});
+
+test("historical batch replay runner records validation split assignments", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-split-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-split-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_train", "005930", "2025-01-10T09:00:00+09:00", 70_000)
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_validation",
+      "005930",
+      "2025-02-10T09:00:00+09:00",
+      74_000
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-split",
+    seed: "seed-split",
+    runCount: 2,
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    validationSplitAssignments: [
+      validationAssignment("train", 5),
+      validationAssignment("validation")
+    ]
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+  const manifestValidation = manifest["validationProtocol"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(result.status, "completed");
+  assert.deepEqual(manifestValidation, {
+    validationProtocol: "walk_forward",
+    assignmentCount: 2,
+    roleCounts: {
+      train: 1,
+      validation: 1
+    }
+  });
+  assert.equal(
+    (manifest["windowSampling"] as Record<string, unknown>)["mode"],
+    "fixed_range"
+  );
+  assert.equal(
+    (runRecords[0]?.["validationSplit"] as Record<string, unknown>)["splitRole"],
+    "train"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["startAt"],
+    "2024-12-31T15:00:00.000Z"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["endAt"],
+    "2025-01-26T14:59:59.999Z"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["localStartDate"],
+    "2025-01-01"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["localEndDate"],
+    "2025-01-26"
+  );
+  assert.equal(
+    (runRecords[1]?.["validationSplit"] as Record<string, unknown>)["splitRole"],
+    "validation"
+  );
+  assert.equal(
+    (runRecords[1]?.["window"] as Record<string, unknown>)["startAt"],
+    "2025-01-31T15:00:00.000Z"
+  );
+  assert.equal(
+    (runRecords[1]?.["window"] as Record<string, unknown>)["localStartDate"],
+    "2025-02-01"
+  );
 });
 
 test("historical batch replay runner skips insufficient windows", async () => {
@@ -745,6 +842,28 @@ function snapshot(
     volume: 100_000,
     sourceRefs: [`fixture:${snapshotId}`],
     createdAt: observedAt
+  };
+}
+
+function validationAssignment(
+  splitRole: ValidationSplitRole,
+  embargoDurationDays = 0
+): ValidationSplitAssignment {
+  return {
+    validationProtocol: "walk_forward",
+    splitId: "wf_test",
+    splitIndex: 0,
+    trainStart: "2024-12-31T15:00:00.000Z",
+    trainEnd: "2025-01-31T14:59:59.999Z",
+    validationStart: "2025-01-31T15:00:00.000Z",
+    validationEnd: "2025-02-28T14:59:59.999Z",
+    testStart:
+      splitRole === "test" ? "2025-02-28T15:00:00.000Z" : null,
+    testEnd:
+      splitRole === "test" ? "2025-03-31T14:59:59.999Z" : null,
+    purgeDurationDays: 0,
+    embargoDurationDays,
+    splitRole
   };
 }
 

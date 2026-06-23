@@ -443,6 +443,128 @@ test("historical batch report CLI tolerates missing selection trial log", () => 
   assert.equal(report["trialSummary"], null);
 });
 
+test("historical batch replay CLI records validation split roles in aggregate report", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-split-cli-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-split-cli-output-")
+  );
+  const validationSplitsPath = join(outputBaseDir, "validation-splits.json");
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(
+      snapshot("hist_005930_validation", "005930")
+    )}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    validationSplitsPath,
+    `${JSON.stringify([validationAssignment("validation")], null, 2)}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-split-cli",
+      "--seed",
+      "seed-split",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-01-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60),
+      "--validation-splits-path",
+      validationSplitsPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    readFileSync(String(output["manifestPath"]), "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const validationProtocol = manifest["validationProtocol"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(output["validationSplitsPath"], validationSplitsPath);
+  assert.equal(output["windowSamplingMode"], "fixed_range");
+  assert.deepEqual(validationProtocol["roleCounts"], { validation: 1 });
+  assert.equal(
+    (manifest["windowSampling"] as Record<string, unknown>)["mode"],
+    "fixed_range"
+  );
+  assert.equal(
+    (runRecords[0]?.["validationSplit"] as Record<string, unknown>)["splitRole"],
+    "validation"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["startAt"],
+    "2025-01-31T15:00:00.000Z"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["localStartDate"],
+    "2025-02-01"
+  );
+
+  const aggregateReportPath = join(
+    outputBaseDir,
+    "batch-split-cli",
+    "batch-replay-aggregate-report.json"
+  );
+  const reportResult = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      String(output["runsPath"]),
+      "--output-path",
+      aggregateReportPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(reportResult.status, 0, reportResult.stderr);
+  assert.match(reportResult.stdout, /validation_split_role_counts/);
+  const aggregateReport = JSON.parse(
+    readFileSync(aggregateReportPath, "utf8")
+  ) as Record<string, unknown>;
+  assert.deepEqual(
+    (aggregateReport["summary"] as Record<string, unknown>)[
+      "validationSplitRoleCounts"
+    ],
+    { validation: 1 }
+  );
+  assert.equal(
+    (
+      (aggregateReport["byValidationSplitRole"] as Record<string, unknown>)[
+        "validation"
+      ] as Record<string, unknown>
+    )["completedCount"],
+    1
+  );
+});
+
 test("historical batch report CLI rejects missing selection trial path value", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
@@ -797,6 +919,25 @@ function snapshot(
     volume: 100_000,
     sourceRefs: [`fixture:${snapshotId}`],
     createdAt: observedAt
+  };
+}
+
+function validationAssignment(splitRole: "train" | "validation" | "test") {
+  return {
+    validationProtocol: "walk_forward",
+    splitId: "wf_cli",
+    splitIndex: 0,
+    trainStart: "2024-12-31T15:00:00.000Z",
+    trainEnd: "2025-01-31T14:59:59.999Z",
+    validationStart: "2025-01-31T15:00:00.000Z",
+    validationEnd: "2025-02-28T14:59:59.999Z",
+    testStart:
+      splitRole === "test" ? "2025-02-28T15:00:00.000Z" : null,
+    testEnd:
+      splitRole === "test" ? "2025-03-31T14:59:59.999Z" : null,
+    purgeDurationDays: 0,
+    embargoDurationDays: 0,
+    splitRole
   };
 }
 

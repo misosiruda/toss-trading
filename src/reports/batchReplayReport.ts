@@ -4,6 +4,7 @@ import type {
   SelectionTrialRecord,
   SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
+import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
@@ -27,6 +28,9 @@ export interface BatchReplayAggregateReport {
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
+  byValidationSplitRole: Partial<
+    Record<ValidationSplitRole, BatchReplayGroupSummary>
+  >;
   disclaimer: string;
 }
 
@@ -40,6 +44,7 @@ export interface BatchReplayAggregateSummary {
   regimeCountsByMarket: Partial<
     Record<Market, Partial<Record<MarketRegimeLabel, number>>>
   >;
+  validationSplitRoleCounts: Partial<Record<ValidationSplitRole, number>>;
 }
 
 export interface BatchReplayGroupSummary {
@@ -120,9 +125,19 @@ export function buildBatchReplayAggregateReport(
     options.targetReturnThresholds
   );
   const byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>> = {};
+  const byValidationSplitRole: Partial<
+    Record<ValidationSplitRole, BatchReplayGroupSummary>
+  > = {};
 
   for (const [label, groupRecords] of groupByRegime(records).entries()) {
     byRegime[label] = summarizeGroup(label, groupRecords, targetReturnThresholds);
+  }
+  for (const [role, groupRecords] of groupByValidationSplitRole(records)) {
+    byValidationSplitRole[role] = summarizeGroup(
+      role,
+      groupRecords,
+      targetReturnThresholds
+    );
   }
 
   return {
@@ -141,12 +156,14 @@ export function buildBatchReplayAggregateReport(
       failedCount: records.filter((record) => record.status === "failed").length,
       returnSampleCount: records.filter(hasReturnSample).length,
       regimeCounts: countRegimes(records),
-      regimeCountsByMarket: countRegimesByMarket(records)
+      regimeCountsByMarket: countRegimesByMarket(records),
+      validationSplitRoleCounts: countValidationSplitRoles(records)
     },
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
+    byValidationSplitRole,
     disclaimer: batchAggregateDisclaimer()
   };
 }
@@ -173,6 +190,7 @@ export function renderBatchReplayAggregateReport(
     `return_sample_count: ${report.summary.returnSampleCount}`,
     `regime_counts: ${JSON.stringify(report.summary.regimeCounts)}`,
     `regime_counts_by_market: ${JSON.stringify(report.summary.regimeCountsByMarket)}`,
+    `validation_split_role_counts: ${JSON.stringify(report.summary.validationSplitRoleCounts)}`,
     "",
     "## Selection Trials",
     renderSelectionTrialSummary(report.trialSummary),
@@ -183,6 +201,12 @@ export function renderBatchReplayAggregateReport(
     "## By Regime",
     ...Object.entries(report.byRegime).flatMap(([label, group]) => [
       `### ${label}`,
+      renderGroup(group),
+      ""
+    ]),
+    "## By Validation Split Role",
+    ...Object.entries(report.byValidationSplitRole).flatMap(([role, group]) => [
+      `### ${role}`,
       renderGroup(group),
       ""
     ]),
@@ -438,6 +462,45 @@ function countRegimesByMarket(
     }
   }
   return counts;
+}
+
+function groupByValidationSplitRole(
+  records: BatchReplayRunRecord[]
+): Map<ValidationSplitRole, BatchReplayRunRecord[]> {
+  const groups = new Map<ValidationSplitRole, BatchReplayRunRecord[]>();
+  for (const record of records) {
+    const role = validationSplitRoleForRecord(record);
+    if (role === null) {
+      continue;
+    }
+    const existing = groups.get(role);
+    if (existing === undefined) {
+      groups.set(role, [record]);
+      continue;
+    }
+    existing.push(record);
+  }
+  return groups;
+}
+
+function countValidationSplitRoles(
+  records: BatchReplayRunRecord[]
+): Partial<Record<ValidationSplitRole, number>> {
+  const counts: Partial<Record<ValidationSplitRole, number>> = {};
+  for (const record of records) {
+    const role = validationSplitRoleForRecord(record);
+    if (role === null) {
+      continue;
+    }
+    counts[role] = (counts[role] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function validationSplitRoleForRecord(
+  record: BatchReplayRunRecord
+): ValidationSplitRole | null {
+  return record.validationSplit?.splitRole ?? null;
 }
 
 function hasReturnSample(record: BatchReplayRunRecord): boolean {

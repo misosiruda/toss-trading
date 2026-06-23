@@ -336,10 +336,12 @@ data/batch-replay/
 - availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - `--window-sampling balanced_regime`을 사용하면 requested market regime bucket을 순환하며 window를 선택합니다.
+- `--validation-splits-path`를 사용하면 random/balanced sampling 대신 입력 assignment의 `splitRole`별 fixed window를 실행합니다. 이때 assignment 수는 `--runs`와 같아야 하며, `fixedWindow`와 함께 사용할 수 없습니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
 - Codex CLI AI 호출은 run마다 별도 `CodexCliDecisionProvider`를 생성하고 `codex exec --ephemeral`을 사용합니다. `--max-codex-calls-per-run`은 batch 전체가 아니라 각 run의 paper-only 호출 상한입니다.
 - `--use-codex-ai` 실행 전에는 기본으로 preflight decision을 1회 수행합니다. 이미 Codex 연결을 별도 확인한 경우에만 `--skip-codex-preflight`로 생략합니다.
 - `batch-replay-runs.jsonl`은 후속 aggregate report의 입력으로 사용됩니다.
+- split assignment 실행 시 `batch-replay-manifest.json`의 `validationProtocol`에는 protocol, assignment count, role count가 저장되고 각 run record의 `validationSplit`에는 실제 사용한 assignment가 저장됩니다.
 - `batch-replay-selection-trials.jsonl`은 prompt/config/risk/exit hash, run outcome, `selected=false` selection marker를 모든 completed/skipped/failed run에 대해 기록합니다. 이 파일은 best run만 남기는 selection bias를 막기 위한 research artifact이며, live trading signal이나 자동 strategy selection으로 사용하지 않습니다.
 
 #### Market Regime Balanced Sampling
@@ -610,7 +612,9 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `walkForwardSplitAssignments()`는 하나의 split을 `train`, `validation`, optional `test` role metadata로 확장합니다.
 - `embargoDurationDays`는 split metadata에 기록할 수 있습니다. 기본값은 `0`입니다.
 - `applyValidationEmbargoPolicy()`는 train 후보 sample 중 validation 시작 직전 embargo window에 포함되는 sample을 제외하고 split별 exclusion summary를 계산합니다.
-- Q6-2는 standalone policy 계산과 schema/test 범위입니다. batch replay 실행 window selection, manifest 저장, aggregate report 분리는 Q6-3 범위입니다.
+- Q6-3부터 batch replay는 `--validation-splits-path`로 assignment array를 받아 `train`, `validation`, `test` role window를 fixed range로 실행할 수 있습니다.
+- split assignment는 `batch-replay-manifest.json`의 `validationProtocol` summary, `batch-replay-runs.jsonl`의 `validationSplit`, aggregate report의 `validationSplitRoleCounts`와 `byValidationSplitRole`에 저장됩니다.
+- `train` role assignment에 `embargoDurationDays > 0`이 있으면 batch replay window는 `validationStart - embargoDurationDays` 직전까지로 잘라 embargo sample이 train replay, availability, regime, packet, metric에 포함되지 않게 합니다.
 - purge duration은 현재 `0`으로 고정됩니다. purge 적용과 CPCV/Purged K-Fold 연결은 Q7 범위입니다.
 
 예시:
@@ -652,6 +656,12 @@ Embargo summary 예시:
 }
 ```
 
+Batch replay에 연결할 때 `--validation-splits-path`는 assignment array 또는 `{ "assignments": [...] }` 형식의 JSON 파일을 받습니다. 각 assignment는 하나의 run에 1:1로 대응하므로 파일의 assignment 수와 `--runs` 값이 같아야 합니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-yahoo-daily --output-dir data/batch-replay --batch-id batch-walk-forward-smoke --seed batch-walk-forward-smoke --runs 3 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --validation-splits-path data/validation-splits/walk-forward-assignments.json
+```
+
 ### Batch Aggregate Report
 
 batch replay가 생성한 `batch-replay-runs.jsonl`을 읽어 전체 및 market regime별 결과를 집계할 수 있습니다.
@@ -668,6 +678,8 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 `batch-replay-runs.jsonl`과 같은 directory에 `batch-replay-selection-trials.jsonl`이 있으면 aggregate report CLI가 자동으로 읽어 `trialSummary`를 추가합니다. 다른 위치의 trial log를 사용해야 하면 `--selection-trials-path`로 명시합니다.
 
+`validationSplit`이 포함된 run record가 있으면 aggregate report는 `summary.validationSplitRoleCounts`와 `byValidationSplitRole`을 함께 생성합니다. 이 값은 이미 실행된 paper-only 결과를 train/validation/test 역할별로 분리해 보는 사후 분석 metadata이며, strategy 자동 선택이나 live trading signal로 사용하지 않습니다.
+
 집계 report는 다음 정보를 포함합니다.
 
 - 전체 run 수, completed/skipped/failed count
@@ -679,7 +691,9 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - 전체 및 regime별 win rate
 - 전체 및 regime별 target return threshold hit-rate
 - 전체 및 market별 regime count
+- validation split role count
 - final virtual net worth 평균
+- split role별 평균/중앙값/min/max paper return ratio와 run ID 목록
 - 전체 및 regime별 평균 exposure ratio, cash ratio, time-in-market ratio
 - final cash ratio, final position ratio 평균
 - trade/rejected count 요약
