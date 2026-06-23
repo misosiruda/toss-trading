@@ -66,6 +66,22 @@ test("equal-weight benchmark enters only after the first priced replay packet", 
   assert.equal(benchmarks.equalWeightBuyAndHold?.totalReturnRatio, 0.1);
 });
 
+test("strategy benchmark uses initial portfolio net worth baseline", () => {
+  const benchmarks = buildHistoricalReplayBenchmarks(
+    replayResult({
+      initialNetWorthKrw: 1_000,
+      portfolioTimelineValues: [990],
+      packets: [packet("packet_0", [{ symbol: "AAA", lastPriceKrw: 100 }])]
+    })
+  );
+
+  assert.equal(benchmarks.strategy.initialNetWorthKrw, 1_000);
+  assert.equal(benchmarks.strategy.finalNetWorthKrw, 990);
+  assert.equal(benchmarks.strategy.totalReturnRatio, -0.01);
+  assert.equal(benchmarks.strategy.maxDrawdownRatio, -0.01);
+  assert.equal(benchmarks.cashOnly.totalReturnRatio, 0);
+});
+
 test("equal-weight comparison is unavailable without priced candidates", () => {
   const benchmarks = buildHistoricalReplayBenchmarks(
     replayResult({
@@ -86,11 +102,13 @@ test("equal-weight comparison is unavailable without priced candidates", () => {
 });
 
 function replayResult(input: {
+  initialNetWorthKrw?: number;
   portfolioTimelineValues: number[];
   packets: MarketPacket[];
   trades?: VirtualTrade[];
 }): HistoricalReplayResult {
-  const initialNetWorthKrw = input.portfolioTimelineValues[0] ?? 0;
+  const initialNetWorthKrw =
+    input.initialNetWorthKrw ?? input.portfolioTimelineValues[0] ?? 0;
   const finalNetWorthKrw =
     input.portfolioTimelineValues.at(-1) ?? initialNetWorthKrw;
 

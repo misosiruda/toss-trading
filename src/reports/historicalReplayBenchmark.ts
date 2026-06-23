@@ -47,8 +47,10 @@ export function buildHistoricalReplayBenchmarks(
   const strategyCurve = result.portfolioTimeline.map(
     (item) => item.virtualNetWorthKrw
   );
-  const normalizedStrategyCurve =
-    strategyCurve.length > 0 ? strategyCurve : [initialNetWorthKrw];
+  const normalizedStrategyCurve = normalizeStrategyCurve(
+    initialNetWorthKrw,
+    strategyCurve
+  );
   const tradeAmountKrw = sumTradeAmounts(result.trades);
   const feeDragKrw = sumTradeCosts(result.trades);
   const equalWeightCurve = buildEqualWeightBuyHoldCurve(
@@ -229,6 +231,19 @@ function buildInitialPortfolioBuyHoldCurve(
         }, 0)
     );
   });
+}
+
+function normalizeStrategyCurve(
+  initialNetWorthKrw: number,
+  strategyCurve: number[]
+): number[] {
+  if (strategyCurve.length === 0) {
+    return [initialNetWorthKrw];
+  }
+  if (strategyCurve[0] === initialNetWorthKrw) {
+    return strategyCurve;
+  }
+  return [initialNetWorthKrw, ...strategyCurve];
 }
 
 function portfolioNetWorth(portfolio: VirtualPortfolio): number {
