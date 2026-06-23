@@ -662,6 +662,22 @@ Batch replay에 연결할 때 `--validation-splits-path`는 assignment array 또
 npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-yahoo-daily --output-dir data/batch-replay --batch-id batch-walk-forward-smoke --seed batch-walk-forward-smoke --runs 3 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --validation-splits-path data/validation-splits/walk-forward-assignments.json
 ```
 
+### Purged K-Fold Validation Split
+
+`src/replay/purgedSplit.ts`는 Q7 validation protocol의 첫 단계로 deterministic Purged K-Fold split metadata를 생성합니다.
+
+현재 범위:
+
+- `validationProtocol: "purged_k_fold"` plan과 split schema를 제공합니다.
+- 입력 sample은 `sampleId`, `labelStart`, `labelEnd`를 가져야 하며 label horizon이 유효하지 않으면 fail-closed 됩니다.
+- sample은 `labelStart`, `labelEnd`, `sampleId` 순서로 정렬한 뒤 contiguous K-Fold로 나눕니다.
+- 각 split은 test fold를 제외한 train 후보 중 test label horizon과 겹치는 sample을 `purgedSampleIds`로 제외합니다.
+- `embargoDurationDays > 0`이면 test window 직후 embargo 구간의 train 후보를 `embargoedSampleIds`로 제외합니다.
+- split별 `trainSampleIds`, `testSampleIds`, `purgedSampleIds`, `embargoedSampleIds`, exclusion count를 schema로 검증합니다.
+- Q7-1은 standalone generator와 test 범위입니다. batch replay manifest/report 연결, split metric matrix 저장, CPCV, PBO-like score는 Q7-2 범위입니다.
+
+이 metadata는 leakage 방지를 위한 research validation artifact입니다. replay 실행, AI/provider 판단, risk approval, paper order, live trading signal로 직접 연결하지 않습니다.
+
 ### Batch Aggregate Report
 
 batch replay가 생성한 `batch-replay-runs.jsonl`을 읽어 전체 및 market regime별 결과를 집계할 수 있습니다.
