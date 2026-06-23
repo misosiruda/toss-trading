@@ -608,8 +608,10 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - 월 단위 rolling train/validation/test window를 생성합니다.
 - `validationProtocol: "walk_forward"`와 `splitId`, `splitIndex`, `trainStart`, `validationStart`, optional `testStart`를 schema로 검증합니다.
 - `walkForwardSplitAssignments()`는 하나의 split을 `train`, `validation`, optional `test` role metadata로 확장합니다.
-- Q6-1은 generator와 schema만 추가합니다. batch replay 실행 window selection, manifest 저장, aggregate report 분리는 Q6-3 범위입니다.
-- embargo/purge duration은 현재 `0`으로 고정됩니다. 실제 excluded sample count 기록은 Q6-2 범위입니다.
+- `embargoDurationDays`는 split metadata에 기록할 수 있습니다. 기본값은 `0`입니다.
+- `applyValidationEmbargoPolicy()`는 train 후보 sample 중 validation 시작 직전 embargo window에 포함되는 sample을 제외하고 split별 exclusion summary를 계산합니다.
+- Q6-2는 standalone policy 계산과 schema/test 범위입니다. batch replay 실행 window selection, manifest 저장, aggregate report 분리는 Q6-3 범위입니다.
+- purge duration은 현재 `0`으로 고정됩니다. purge 적용과 CPCV/Purged K-Fold 연결은 Q7 범위입니다.
 
 예시:
 
@@ -626,7 +628,27 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
   "testStart": "2025-03-31T15:00:00.000Z",
   "testEnd": "2025-04-30T14:59:59.999Z",
   "purgeDurationDays": 0,
-  "embargoDurationDays": 0
+  "embargoDurationDays": 5
+}
+```
+
+Embargo summary 예시:
+
+```json
+{
+  "validationProtocol": "walk_forward",
+  "splitId": "wf_001_train_2025-01-01_2025-02-28_validation_2025-03-01_2025-03-31_test_2025-04-01_2025-04-30",
+  "splitIndex": 0,
+  "sampleCount": 60,
+  "trainCandidateSampleCount": 40,
+  "includedTrainSampleCount": 35,
+  "excludedSampleCount": 5,
+  "purgeExcludedSampleCount": 0,
+  "embargoExcludedSampleCount": 5,
+  "purgeDurationDays": 0,
+  "embargoDurationDays": 5,
+  "embargoStart": "2025-02-23T15:00:00.000Z",
+  "embargoEnd": "2025-02-28T14:59:59.999Z"
 }
 ```
 

@@ -33,6 +33,7 @@ test("walk-forward split plan generates deterministic rolling train validation t
   assert.deepEqual(first, second);
   assert.equal(first.validationProtocol, "walk_forward");
   assert.equal(first.splitCount, 3);
+  assert.equal(first.embargoDurationDays, 0);
   assert.deepEqual(
     first.splits.map((split) => ({
       trainStart: split.trainStart,
@@ -169,6 +170,21 @@ test("walk-forward split plan supports multi-month steps", () => {
   );
 });
 
+test("walk-forward split plan records configured embargo duration", () => {
+  const plan = buildWalkForwardSplitPlan({
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-03-31T23:59:59.999+09:00"),
+    trainMonths: 1,
+    validationMonths: 1,
+    embargoDurationDays: 5,
+    timezoneOffsetMinutes: 540
+  });
+
+  assert.equal(plan.embargoDurationDays, 5);
+  assert.equal(plan.splits[0]?.embargoDurationDays, 5);
+  assert.equal(plan.splits[0]?.purgeDurationDays, 0);
+});
+
 test("walk-forward split plan fails closed for invalid config or short ranges", () => {
   assert.throws(
     () =>
@@ -204,5 +220,18 @@ test("walk-forward split plan fails closed for invalid config or short ranges", 
         timezoneOffsetMinutes: 540
       }),
     /trainMonths/
+  );
+
+  assert.throws(
+    () =>
+      buildWalkForwardSplitPlan({
+        rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+        rangeEnd: new Date("2025-03-31T23:59:59.999+09:00"),
+        trainMonths: 1,
+        validationMonths: 1,
+        embargoDurationDays: -1,
+        timezoneOffsetMinutes: 540
+      }),
+    /embargoDurationDays/
   );
 });
