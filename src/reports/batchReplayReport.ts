@@ -673,12 +673,13 @@ function holdoutDegradationForSplit(
   const holdoutReturns = roleCandidates.map(
     (entry) => entry.metric.averageTotalReturnRatio!
   );
+  const medianCandidateAverage = roundRatio(median(holdoutReturns));
   const selectedAverage = selectedMetric?.averageTotalReturnRatio ?? null;
   const selectedRank = selectedIndex === -1 ? null : selectedIndex + 1;
   const selectedBelowMedian =
-    selectedRank === null || roleCandidates.length < 2
+    selectedAverage === null || roleCandidates.length < 2
       ? null
-      : selectedRank > Math.ceil(roleCandidates.length / 2);
+      : selectedAverage < medianCandidateAverage;
   const trainAverage =
     selectedCandidate.roleMetrics.train?.averageTotalReturnRatio ?? null;
 
@@ -689,7 +690,7 @@ function holdoutDegradationForSplit(
     selectedAverageTotalReturnRatio: selectedAverage,
     selectedRank,
     candidateCount: roleCandidates.length,
-    medianCandidateAverageTotalReturnRatio: roundRatio(median(holdoutReturns)),
+    medianCandidateAverageTotalReturnRatio: medianCandidateAverage,
     bestAverageTotalReturnRatio: roleCandidates[0]!.metric
       .averageTotalReturnRatio,
     degradationFromTrainRatio:

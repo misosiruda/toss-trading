@@ -726,6 +726,128 @@ test("batch replay aggregate report scores PBO-like degradation per holdout spli
   );
 });
 
+test("batch replay aggregate report does not mark tied holdouts below median", () => {
+  const promptHash = hash("t");
+  const selectedAllocationPolicyHash = hash("f");
+  const peerAllocationPolicyHash = hash("0");
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record(
+        "selected_tie_train",
+        0,
+        "completed",
+        "bull",
+        0.2,
+        1_200_000,
+        0,
+        "train",
+        "tie_split"
+      ),
+      record(
+        "peer_tie_train",
+        1,
+        "completed",
+        "bull",
+        0.1,
+        1_100_000,
+        0,
+        "train",
+        "tie_split"
+      ),
+      record(
+        "selected_tie_validation",
+        2,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "tie_split"
+      ),
+      record(
+        "peer_tie_validation",
+        3,
+        "completed",
+        "bull",
+        0,
+        1_000_000,
+        0,
+        "validation",
+        "tie_split"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "selected_tie_train",
+        0,
+        "completed",
+        promptHash,
+        hash("selected_tie_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: selectedAllocationPolicyHash }
+      ),
+      trial(
+        "peer_tie_train",
+        1,
+        "completed",
+        promptHash,
+        hash("peer_tie_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: peerAllocationPolicyHash }
+      ),
+      trial(
+        "selected_tie_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("selected_tie_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: selectedAllocationPolicyHash }
+      ),
+      trial(
+        "peer_tie_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("peer_tie_validation_config"),
+        1,
+        0,
+        0,
+        0,
+        { allocationPolicyHash: peerAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const validationDegradation = diagnostics.holdoutDegradation.find(
+    (entry) =>
+      entry.splitId === "tie_split" && entry.splitRole === "validation"
+  );
+
+  assert.equal(diagnostics.pboLikeScore, 0);
+  assert.ok(validationDegradation);
+  assert.equal(validationDegradation.candidateCount, 2);
+  assert.equal(validationDegradation.selectedAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.medianCandidateAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.bestAverageTotalReturnRatio, 0);
+  assert.equal(validationDegradation.selectedRank, 2);
+  assert.equal(validationDegradation.selectedBelowMedian, false);
+});
+
 test("batch replay aggregate report handles legacy records without market counts", () => {
   const legacyRecord = record(
     "legacy_run_0",
