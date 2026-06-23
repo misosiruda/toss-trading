@@ -251,6 +251,60 @@ test("buy risk branch fails closed when held sector metadata is unavailable", ()
   ]);
 });
 
+test("buy risk branch ignores zero-exposure unknown metadata rows", () => {
+  const input = {
+    packet: packet({
+      candidates: [
+        candidate({
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          strategyBucket: "swing",
+          sector: "Technology"
+        })
+      ]
+    }),
+    portfolio: portfolio({
+      cashKrw: 1_000_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "000660",
+          quantity: 0,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 0,
+          updatedAt: "2026-06-14T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ budgetKrw: 100_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        maxSectorExposureRatio: 0.5,
+        maxCountryExposureRatio: 0.5,
+        maxCurrencyExposureRatio: 0.5,
+        maxStrategyBucketExposureRatio: { swing: 0.5 },
+        maxBucketTurnoverKrw: { swing: 200_000 }
+      }
+    }),
+    candidate: candidate({
+      assetType: "STOCK",
+      assetClass: "equity",
+      region: "KR",
+      strategyBucket: "swing",
+      sector: "Technology"
+    })
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), []);
+});
+
 test("buy risk branch rejects country exposure breaches", () => {
   const input = {
     packet: packet({

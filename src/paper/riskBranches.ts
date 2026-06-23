@@ -205,7 +205,7 @@ function evaluatePortfolioExposureRisk(
 
   if (
     hasSectorExposureLimit(input.policy) &&
-    profile.bySector.has(UNKNOWN_EXPOSURE_KEY)
+    (profile.bySector.get(UNKNOWN_EXPOSURE_KEY) ?? 0) > 0
   ) {
     appendPortfolioRejectCode(
       rejectCodes,
@@ -215,7 +215,7 @@ function evaluatePortfolioExposureRisk(
 
   if (
     hasCountryExposureLimit(input.policy) &&
-    profile.byCountry.has(UNKNOWN_EXPOSURE_KEY)
+    (profile.byCountry.get(UNKNOWN_EXPOSURE_KEY) ?? 0) > 0
   ) {
     appendPortfolioRejectCode(
       rejectCodes,
@@ -225,7 +225,7 @@ function evaluatePortfolioExposureRisk(
 
   if (
     hasStrategyBucketLimit(input.policy) &&
-    profile.byStrategyBucket.has(UNKNOWN_STRATEGY_BUCKET)
+    (profile.byStrategyBucket.get(UNKNOWN_STRATEGY_BUCKET) ?? 0) > 0
   ) {
     appendPortfolioRejectCode(
       rejectCodes,
