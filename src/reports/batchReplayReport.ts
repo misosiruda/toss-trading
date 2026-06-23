@@ -127,8 +127,10 @@ export interface BatchReplaySplitMetricRow {
   candidateKey: string;
   decisionProviderMode: string;
   promptHash: string | null;
-  configHash: string | null;
+  configHashes: Array<string | null>;
   riskPolicyHash: string;
+  allocationPolicyHash: string;
+  marketRegimeAllocationPolicyHash: string;
   exitPolicyHash: string;
   riskProfile: string | null;
   roleMetrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>>;
@@ -478,8 +480,13 @@ function buildSplitMetricMatrix(
         candidateKey,
         decisionProviderMode: firstTrial.decisionProvider.mode,
         promptHash: firstTrial.decisionProvider.promptHash,
-        configHash: firstTrial.config.configHash,
+        configHashes: uniqueNullableStrings(
+          bucket.map((joinedTrial) => joinedTrial.trial.config.configHash)
+        ),
         riskPolicyHash: firstTrial.config.riskPolicyHash,
+        allocationPolicyHash: firstTrial.config.allocationPolicyHash,
+        marketRegimeAllocationPolicyHash:
+          firstTrial.config.marketRegimeAllocationPolicyHash,
         exitPolicyHash: firstTrial.config.exitPolicyHash,
         riskProfile: firstTrial.config.riskProfile,
         roleMetrics: summarizeRoleMetrics(bucket)
@@ -528,11 +535,22 @@ function candidateKeyForTrial(trial: SelectionTrialRecord): string {
   return [
     `provider=${trial.decisionProvider.mode}`,
     `prompt=${trial.decisionProvider.promptHash ?? "null"}`,
-    `config=${trial.config.configHash ?? "null"}`,
     `risk=${trial.config.riskPolicyHash}`,
+    `allocation=${trial.config.allocationPolicyHash}`,
+    `regimeAllocation=${trial.config.marketRegimeAllocationPolicyHash}`,
     `exit=${trial.config.exitPolicyHash}`,
-    `profile=${trial.config.riskProfile ?? "null"}`
+    `profile=${trial.config.riskProfile ?? "null"}`,
+    `metric=${trial.config.selectionMetric}`
   ].join("|");
+}
+
+function uniqueNullableStrings(values: Array<string | null>): Array<string | null> {
+  const uniqueStrings = Array.from(
+    new Set(values.filter((value): value is string => value !== null))
+  ).sort((left, right) => left.localeCompare(right));
+  return values.some((value) => value === null)
+    ? [null, ...uniqueStrings]
+    : uniqueStrings;
 }
 
 function countSampledCpcvSplits(joinedTrials: JoinedSelectionTrial[]): number {

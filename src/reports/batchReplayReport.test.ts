@@ -261,8 +261,18 @@ test("batch replay aggregate report summarizes selection trial distribution", ()
 
 test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", () => {
   const promptHash = hash("a");
-  const candidateA = hash("b");
-  const candidateB = hash("c");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
+  const candidateAConfigHashes = {
+    train: hash("candidate_a_train_config"),
+    validation: hash("candidate_a_validation_config"),
+    test: hash("candidate_a_test_config")
+  };
+  const candidateBConfigHashes = {
+    train: hash("candidate_b_train_config"),
+    validation: hash("candidate_b_validation_config"),
+    test: hash("candidate_b_test_config")
+  };
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
     expectedSampledCpcvSplitCount: 3,
@@ -298,73 +308,79 @@ test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", 
         0,
         "completed",
         promptHash,
-        candidateA,
+        candidateAConfigHashes.train,
         1,
         0,
         0,
-        0.2
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
       ),
       trial(
         "candidate_b_train",
         1,
         "completed",
         promptHash,
-        candidateB,
+        candidateBConfigHashes.train,
         1,
         0,
         0,
-        0.1
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
       ),
       trial(
         "candidate_a_validation",
         2,
         "completed",
         promptHash,
-        candidateA,
+        candidateAConfigHashes.validation,
         1,
         0,
         0,
-        -0.05
+        -0.05,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
       ),
       trial(
         "candidate_b_validation",
         3,
         "completed",
         promptHash,
-        candidateB,
+        candidateBConfigHashes.validation,
         1,
         0,
         0,
-        0.04
+        0.04,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
       ),
       trial(
         "candidate_a_test",
         4,
         "completed",
         promptHash,
-        candidateA,
+        candidateAConfigHashes.test,
         1,
         0,
         0,
-        -0.02
+        -0.02,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
       ),
       trial(
         "candidate_b_test",
         5,
         "completed",
         promptHash,
-        candidateB,
+        candidateBConfigHashes.test,
         1,
         0,
         0,
-        0.03
+        0.03,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
       )
     ]
   });
 
   const diagnostics = report.overfittingDiagnostics!;
   const selectedRow = diagnostics.splitMetricMatrix.find(
-    (row) => row.configHash === candidateA
+    (row) => row.allocationPolicyHash === candidateAAllocationPolicyHash
   )!;
 
   assert.equal(diagnostics.validationProtocol, "sampled_cpcv_pbo_like");
@@ -378,6 +394,11 @@ test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", 
     test: 2
   });
   assert.equal(diagnostics.selectedCandidateKey, selectedRow.candidateKey);
+  assert.deepEqual(new Set(selectedRow.configHashes), new Set([
+    candidateAConfigHashes.train,
+    candidateAConfigHashes.validation,
+    candidateAConfigHashes.test
+  ]));
   assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, 0.2);
   assert.equal(selectedRow.roleMetrics.train?.averageTotalReturnRatio, 0.2);
   assert.equal(selectedRow.roleMetrics.validation?.averageTotalReturnRatio, -0.05);
@@ -436,8 +457,8 @@ test("batch replay aggregate report warns when PBO-like samples are insufficient
 
 test("batch replay aggregate report leaves single-candidate holdouts unscored", () => {
   const promptHash = hash("a");
-  const candidateA = hash("b");
-  const candidateB = hash("c");
+  const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_allocation_policy");
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
     expectedSampledCpcvSplitCount: 2,
@@ -471,44 +492,48 @@ test("batch replay aggregate report leaves single-candidate holdouts unscored", 
         0,
         "completed",
         promptHash,
-        candidateA,
+        hash("candidate_a_train_config"),
         1,
         0,
         0,
-        0.2
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
       ),
       trial(
         "candidate_b_train",
         1,
         "completed",
         promptHash,
-        candidateB,
+        hash("candidate_b_train_config"),
         1,
         0,
         0,
-        0.1
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
       ),
       trial(
         "candidate_a_validation",
         2,
         "completed",
         promptHash,
-        candidateA,
+        hash("candidate_a_validation_config"),
         1,
         0,
         0,
-        0.03
+        0.03,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
       ),
       trial(
         "candidate_b_validation",
         3,
         "skipped",
         promptHash,
-        candidateB,
+        hash("candidate_b_validation_config"),
         0,
         0,
         0,
-        null
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
       )
     ]
   });
@@ -735,7 +760,8 @@ function trial(
   totalReturnRatio =
     status === "completed" || status === "completed_with_failures"
       ? 0.01
-      : null
+      : null,
+  configOverrides: Partial<SelectionTrialRecord["config"]> = {}
 ): SelectionTrialRecord {
   return {
     mode: "paper_only",
@@ -777,11 +803,12 @@ function trial(
     },
     config: {
       configHash,
-      riskPolicyHash: hash("1"),
-      allocationPolicyHash: hash("2"),
-      marketRegimeAllocationPolicyHash: hash("3"),
-      exitPolicyHash: hash("4"),
-      riskProfile: "balanced",
+      riskPolicyHash: configOverrides.riskPolicyHash ?? hash("1"),
+      allocationPolicyHash: configOverrides.allocationPolicyHash ?? hash("2"),
+      marketRegimeAllocationPolicyHash:
+        configOverrides.marketRegimeAllocationPolicyHash ?? hash("3"),
+      exitPolicyHash: configOverrides.exitPolicyHash ?? hash("4"),
+      riskProfile: configOverrides.riskProfile ?? "balanced",
       selectionMetric: "total_return_ratio"
     },
     outcome: {

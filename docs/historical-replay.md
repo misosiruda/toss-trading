@@ -696,7 +696,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 `validationSplit`이 포함된 run record가 있으면 aggregate report는 `summary.validationSplitRoleCounts`와 `byValidationSplitRole`을 함께 생성합니다. 이 값은 이미 실행된 paper-only 결과를 train/validation/test 역할별로 분리해 보는 사후 분석 metadata이며, strategy 자동 선택이나 live trading signal로 사용하지 않습니다.
 
-selection trial log와 validation split metadata가 함께 있으면 aggregate report는 `overfittingDiagnostics`도 생성합니다. 이 진단은 selection candidate를 prompt/config/risk/exit/risk profile hash 조합으로 묶고, train/validation/test role별 return metric matrix를 만든 뒤 train에서 가장 높은 평균 return을 가진 candidate가 비교 가능한 validation/test holdout에서 median 이하로 떨어지는 비율을 `pboLikeScore`로 기록합니다. 이는 sampled CPCV/PBO-like 사후 경고 지표이며, Bailey PBO 또는 full CPCV의 엄밀한 구현이라고 해석하지 않습니다.
+selection trial log와 validation split metadata가 함께 있으면 aggregate report는 `overfittingDiagnostics`도 생성합니다. 이 진단은 selection candidate를 provider/prompt/risk/allocation/market-regime allocation/exit/risk profile 조합으로 묶고, train/validation/test role별 return metric matrix를 만든 뒤 train에서 가장 높은 평균 return을 가진 candidate가 비교 가능한 validation/test holdout에서 median 이하로 떨어지는 비율을 `pboLikeScore`로 기록합니다. `configHash`는 replay window와 initial portfolio까지 포함할 수 있으므로 candidate key에는 쓰지 않고, matrix row의 `configHashes`에 관측값 목록으로 남깁니다. 이는 sampled CPCV/PBO-like 사후 경고 지표이며, Bailey PBO 또는 full CPCV의 엄밀한 구현이라고 해석하지 않습니다.
 
 예상 sampled CPCV split 수를 검증하려면 report CLI에 `--expected-sampled-cpcv-split-count`를 전달합니다.
 
@@ -708,7 +708,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 - `sampledCpcvSplitCount`: `splitId:splitRole` 조합 기준으로 관측된 sampled split 수
 - `sampledCpcvSplitCountMatchesExpected`: expected count를 전달한 경우 actual과 일치하는지 여부
-- `splitMetricMatrix`: candidate별 train/validation/test return sample count, average, median, run ID
+- `splitMetricMatrix`: candidate별 train/validation/test return sample count, average, median, run ID, 관측 `configHashes`
 - `selectedCandidateKey`: train role 평균 return 기준으로 선택된 candidate key
 - `holdoutDegradation`: selected candidate의 validation/test average, rank, train 대비 degradation
 - `pboLikeScore`: selected candidate가 return sample이 2개 이상인 holdout에서 median 아래로 떨어진 비율
