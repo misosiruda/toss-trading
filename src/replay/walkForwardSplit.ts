@@ -14,6 +14,7 @@ export interface WalkForwardSplitOptions {
   testMonths?: number;
   stepMonths?: number;
   timezoneOffsetMinutes?: number;
+  embargoDurationDays?: number;
 }
 
 export interface WalkForwardSplitPlan {
@@ -25,6 +26,7 @@ export interface WalkForwardSplitPlan {
   testMonths: number;
   stepMonths: number;
   timezoneOffsetMinutes: number;
+  embargoDurationDays: number;
   splitCount: number;
   splits: ValidationSplit[];
 }
@@ -45,6 +47,7 @@ interface LocalWindow {
 
 const DEFAULT_TIMEZONE_OFFSET_MINUTES = 540;
 const DEFAULT_TEST_MONTHS = 0;
+const DEFAULT_EMBARGO_DURATION_DAYS = 0;
 
 export function buildWalkForwardSplitPlan(
   options: WalkForwardSplitOptions
@@ -55,11 +58,14 @@ export function buildWalkForwardSplitPlan(
   const stepMonths = options.stepMonths ?? options.validationMonths;
   const timezoneOffsetMinutes =
     options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES;
+  const embargoDurationDays =
+    options.embargoDurationDays ?? DEFAULT_EMBARGO_DURATION_DAYS;
   const splits = generateWalkForwardSplits({
     ...options,
     testMonths,
     stepMonths,
-    timezoneOffsetMinutes
+    timezoneOffsetMinutes,
+    embargoDurationDays
   });
 
   if (splits.length === 0) {
@@ -75,6 +81,7 @@ export function buildWalkForwardSplitPlan(
     testMonths,
     stepMonths,
     timezoneOffsetMinutes,
+    embargoDurationDays,
     splitCount: splits.length,
     splits
   };
@@ -155,7 +162,7 @@ function generateWalkForwardSplits(
         testEnd:
           testWindow === null ? null : new Date(testWindow.endMs).toISOString(),
         purgeDurationDays: 0,
-        embargoDurationDays: 0
+        embargoDurationDays: options.embargoDurationDays
       });
       splits.push(split);
     }
@@ -248,6 +255,10 @@ function validateOptions(options: WalkForwardSplitOptions): void {
   validateInteger(
     options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
     "timezoneOffsetMinutes"
+  );
+  validateNonNegativeInteger(
+    options.embargoDurationDays ?? DEFAULT_EMBARGO_DURATION_DAYS,
+    "embargoDurationDays"
   );
 }
 

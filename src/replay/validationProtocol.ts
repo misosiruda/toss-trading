@@ -88,11 +88,80 @@ export const validationSplitAssignmentSchema = validationSplitSchema
     }
   });
 
+export const validationSplitExclusionSummarySchema = z
+  .object({
+    validationProtocol: validationProtocolSchema,
+    splitId: z.string().trim().min(1),
+    splitIndex: z.number().int().nonnegative(),
+    sampleCount: z.number().int().nonnegative(),
+    trainCandidateSampleCount: z.number().int().nonnegative(),
+    includedTrainSampleCount: z.number().int().nonnegative(),
+    excludedSampleCount: z.number().int().nonnegative(),
+    purgeExcludedSampleCount: z.number().int().nonnegative(),
+    embargoExcludedSampleCount: z.number().int().nonnegative(),
+    purgeDurationDays: z.number().int().nonnegative(),
+    embargoDurationDays: z.number().int().nonnegative(),
+    embargoStart: isoDateTimeSchema.nullable(),
+    embargoEnd: isoDateTimeSchema.nullable()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.includedTrainSampleCount + value.excludedSampleCount !==
+      value.trainCandidateSampleCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "includedTrainSampleCount plus excludedSampleCount must equal trainCandidateSampleCount"
+      });
+    }
+    if (
+      value.purgeExcludedSampleCount + value.embargoExcludedSampleCount !==
+      value.excludedSampleCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "purgeExcludedSampleCount plus embargoExcludedSampleCount must equal excludedSampleCount"
+      });
+    }
+    if (value.trainCandidateSampleCount > value.sampleCount) {
+      context.addIssue({
+        code: "custom",
+        message: "trainCandidateSampleCount must not exceed sampleCount"
+      });
+    }
+    if (
+      (value.embargoStart === null && value.embargoEnd !== null) ||
+      (value.embargoStart !== null && value.embargoEnd === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "embargoStart and embargoEnd must both be null or both be present"
+      });
+      return;
+    }
+    if (
+      value.embargoStart !== null &&
+      value.embargoEnd !== null &&
+      Date.parse(value.embargoStart) > Date.parse(value.embargoEnd)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "embargoStart must be before or equal to embargoEnd"
+      });
+    }
+  });
+
 export type ValidationProtocol = z.infer<typeof validationProtocolSchema>;
 export type ValidationSplitRole = z.infer<typeof validationSplitRoleSchema>;
 export type ValidationSplit = z.infer<typeof validationSplitSchema>;
 export type ValidationSplitAssignment = z.infer<
   typeof validationSplitAssignmentSchema
+>;
+export type ValidationSplitExclusionSummary = z.infer<
+  typeof validationSplitExclusionSummarySchema
 >;
 
 function validateChronologicalRange(
