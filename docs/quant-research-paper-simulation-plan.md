@@ -484,7 +484,7 @@ Hedge 정책:
 
 - [x] Q6-1: `walkForwardSplit` generator와 validation split schema를 추가한다. 이 단계는 deterministic split metadata 생성까지만 담당하며 batch replay 실행 선택에는 아직 연결하지 않는다.
 - [x] Q6-2: `embargoPolicy`를 추가하고 split별 embargo excluded sample count summary를 계산한다. 이 단계는 policy 계산과 schema/test까지만 담당하며 batch replay manifest/report 연결은 Q6-3 범위로 남긴다.
-- [ ] Q6-3: batch replay manifest/report에 split role을 연결해 train/validation/test 결과를 분리 조회한다.
+- [x] Q6-3: batch replay `--validation-splits-path` 입력을 추가하고 manifest/run record/report에 split role metadata를 연결해 train/validation/test 결과를 분리 조회한다. 이 단계는 walk-forward assignment 기반 window 실행과 aggregate role grouping까지 담당하며 Purged K-Fold/CPCV는 Q7 범위로 남긴다.
 
 ## Milestone Q7. Purged K-Fold / CPCV / PBO 후보
 
@@ -647,10 +647,11 @@ Report 구획:
 12. Q5-2 hedge policy - 완료
 13. Q6-1 walk-forward split - 완료
 14. Q6-2 embargo - 완료
-15. Q7-1 purged split
-16. Q7-2 PBO-like report
-17. Q8 metric expansion
-18. Q9 research report/dashboard
+15. Q6-3 batch replay split role 연결 - 완료
+16. Q7-1 purged split
+17. Q7-2 PBO-like report
+18. Q8 metric expansion
+19. Q9 research report/dashboard
 
 한 PR에서 피해야 할 조합:
 

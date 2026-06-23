@@ -5,6 +5,7 @@ import type {
   MarketRegimeClassification,
   MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
+import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
@@ -47,6 +48,7 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
       mixed: 1
     }
   });
+  assert.deepEqual(report.summary.validationSplitRoleCounts, {});
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
@@ -87,6 +89,52 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.byRegime.bull?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.bear?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.insufficient_data?.returnSampleCount, 0);
+});
+
+test("batch replay aggregate report groups results by validation split role", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [
+      record(
+        "run_train",
+        0,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "train"
+      ),
+      record(
+        "run_validation",
+        1,
+        "completed",
+        "bear",
+        -0.02,
+        980_000,
+        0,
+        "validation"
+      ),
+      record("run_legacy", 2, "completed", "mixed", 0.01, 1_010_000)
+    ]
+  });
+
+  assert.deepEqual(report.summary.validationSplitRoleCounts, {
+    train: 1,
+    validation: 1
+  });
+  assert.equal(report.byValidationSplitRole.train?.runCount, 1);
+  assert.equal(
+    report.byValidationSplitRole.train?.averageTotalReturnRatio,
+    0.03
+  );
+  assert.equal(report.byValidationSplitRole.validation?.runIds[0], "run_validation");
+  assert.equal(report.byValidationSplitRole.test, undefined);
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /validation_split_role_counts/
+  );
+  assert.match(renderBatchReplayAggregateReport(report), /By Validation Split Role/);
 });
 
 test("batch replay aggregate report calculates target return hit rates", () => {
@@ -278,7 +326,8 @@ function record(
   regime: MarketRegimeLabel,
   totalReturnRatio: number | null,
   finalVirtualNetWorthKrw: number | null,
-  aiDecisionFailureCount = 0
+  aiDecisionFailureCount = 0,
+  validationSplitRole: ValidationSplitRole | null = null
 ): BatchReplayRunRecord {
   return {
     mode: "paper_only",
@@ -312,6 +361,29 @@ function record(
       targetCandidateCount: null,
       fallbackReason: null
     },
+    validationSplit:
+      validationSplitRole === null
+        ? null
+        : {
+            validationProtocol: "walk_forward",
+            splitId: "wf_report",
+            splitIndex: 0,
+            trainStart: "2025-01-01T00:00:00.000Z",
+            trainEnd: "2025-01-31T23:59:59.999Z",
+            validationStart: "2025-02-01T00:00:00.000Z",
+            validationEnd: "2025-02-28T23:59:59.999Z",
+            testStart:
+              validationSplitRole === "test"
+                ? "2025-03-01T00:00:00.000Z"
+                : null,
+            testEnd:
+              validationSplitRole === "test"
+                ? "2025-03-31T23:59:59.999Z"
+                : null,
+            purgeDurationDays: 0,
+            embargoDurationDays: 0,
+            splitRole: validationSplitRole
+          },
     marketRegime: marketRegime(regime),
     marketRegimesByMarket: {
       KR: marketRegime(regime)

@@ -62,6 +62,11 @@ import {
   type SelectionTrialRecord
 } from "../replay/selectionTrialLog.js";
 import {
+  validationSplitAssignmentSchema,
+  type ValidationSplitAssignment,
+  type ValidationSplitRole
+} from "../replay/validationProtocol.js";
+import {
   createBatchReplayArtifactPaths,
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
@@ -113,6 +118,7 @@ export interface BatchReplayRunnerOptions {
   paperExitPolicy?: PaperExitPolicy;
   windowSamplingMode?: BatchReplayWindowSamplingMode;
   targetRegimes?: MarketRegimeLabel[];
+  validationSplitAssignments?: ValidationSplitAssignment[];
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
@@ -195,7 +201,14 @@ export interface BatchReplayManifest {
   marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | null;
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
+  validationProtocol: BatchReplayValidationProtocolSummary | null;
   disclaimer: string;
+}
+
+export interface BatchReplayValidationProtocolSummary {
+  validationProtocol: "walk_forward";
+  assignmentCount: number;
+  roleCounts: Partial<Record<ValidationSplitRole, number>>;
 }
 
 export interface BatchReplayActiveRunSnapshot {
@@ -206,6 +219,7 @@ export interface BatchReplayActiveRunSnapshot {
   storageBaseDir: string;
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
+  validationSplit: ValidationSplitAssignment | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
@@ -225,6 +239,7 @@ export interface BatchReplayRunRecord {
   storageBaseDir: string;
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
+  validationSplit: ValidationSplitAssignment | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
@@ -311,10 +326,21 @@ export async function runHistoricalBatchReplay(
   const paths = createBatchReplayArtifactPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
   const decisionProviderMetadata = batchDecisionProviderMetadata(options);
+  const validationSplitAssignments = normalizeValidationSplitAssignments(
+    options.validationSplitAssignments,
+    options.runCount
+  );
+  const validationProtocolSummary =
+    validationSplitAssignments === null
+      ? null
+      : validationProtocolSummaryFor(validationSplitAssignments);
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
-  const windowSamplingMode = options.windowSamplingMode ?? "random";
+  const windowSamplingMode =
+    validationSplitAssignments === null
+      ? options.windowSamplingMode ?? "random"
+      : "fixed_range";
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
   const initialCashKrw = options.initialCashKrw ?? DEFAULT_INITIAL_CASH_KRW;
   const initialWindowSamplingSummary = initialWindowSamplingSummaryFor(
@@ -350,6 +376,7 @@ export async function runHistoricalBatchReplay(
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: initialWindowSamplingSummary,
+    validationProtocol: validationProtocolSummary,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -362,7 +389,10 @@ export async function runHistoricalBatchReplay(
       snapshots: snapshotRead.records,
       runIndex,
       runSeed,
-      windowSamplingMode
+      windowSamplingMode,
+      ...(validationSplitAssignments === null
+        ? {}
+        : { validationSplitAssignment: validationSplitAssignments[runIndex]! })
     });
     windowSamplingSummary = windowSelection.summary;
     const window = windowSelection.window;
@@ -405,6 +435,7 @@ export async function runHistoricalBatchReplay(
         storageBaseDir,
         window,
         windowSampling: windowSelection.runWindowSampling,
+        validationSplit: windowSelection.validationSplitAssignment ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -454,6 +485,7 @@ export async function runHistoricalBatchReplay(
         storageBaseDir,
         window,
         windowSampling: windowSelection.runWindowSampling,
+        validationSplit: windowSelection.validationSplitAssignment ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability
@@ -464,6 +496,7 @@ export async function runHistoricalBatchReplay(
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
       paperExitPolicy,
       windowSampling: windowSamplingSummary,
+      validationProtocol: validationProtocolSummary,
       disclaimer: batchReplayDisclaimer()
     });
 
@@ -552,6 +585,7 @@ export async function runHistoricalBatchReplay(
         storageBaseDir,
         window,
         windowSampling: windowSelection.runWindowSampling,
+        validationSplit: windowSelection.validationSplitAssignment ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -588,6 +622,7 @@ export async function runHistoricalBatchReplay(
         storageBaseDir,
         window,
         windowSampling: windowSelection.runWindowSampling,
+        validationSplit: windowSelection.validationSplitAssignment ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -655,6 +690,7 @@ export async function runHistoricalBatchReplay(
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
     paperExitPolicy,
     windowSampling: windowSamplingSummary,
+    validationProtocol: validationProtocolSummary,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -679,6 +715,7 @@ interface SelectedBatchReplayWindow {
   runWindowSampling: BatchReplayRunWindowSampling;
   summary: BatchReplayWindowSamplingSummary;
   marketRegime?: MarketRegimeClassification;
+  validationSplitAssignment?: ValidationSplitAssignment;
 }
 
 function selectBatchReplayWindow(input: {
@@ -687,7 +724,29 @@ function selectBatchReplayWindow(input: {
   runIndex: number;
   runSeed: string;
   windowSamplingMode: BatchReplayWindowSamplingMode;
+  validationSplitAssignment?: ValidationSplitAssignment;
 }): SelectedBatchReplayWindow {
+  if (input.validationSplitAssignment !== undefined) {
+    return {
+      window: windowFromValidationSplitAssignment({
+        assignment: input.validationSplitAssignment,
+        runIndex: input.runIndex,
+        runSeed: input.runSeed,
+        candidateCount: input.options.runCount,
+        timezoneOffsetMinutes:
+          input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+      }),
+      runWindowSampling: {
+        mode: "fixed_range",
+        targetRegime: null,
+        targetCandidateCount: null,
+        fallbackReason: null
+      },
+      summary: initialWindowSamplingSummaryFor("fixed_range"),
+      validationSplitAssignment: input.validationSplitAssignment
+    };
+  }
+
   if (input.options.fixedWindow !== undefined) {
     return {
       window: {
@@ -780,6 +839,110 @@ function windowSamplingSummaryFromPlan(
   };
 }
 
+function windowFromValidationSplitAssignment(input: {
+  assignment: ValidationSplitAssignment;
+  runIndex: number;
+  runSeed: string;
+  candidateCount: number;
+  timezoneOffsetMinutes: number;
+}): ReplayWindowSelection {
+  const roleWindow = validationRoleWindow(input.assignment);
+  return {
+    seed: input.runSeed,
+    rangeStart: input.assignment.trainStart,
+    rangeEnd: input.assignment.testEnd ?? input.assignment.validationEnd,
+    windowMonths: 1,
+    timezoneOffsetMinutes: input.timezoneOffsetMinutes,
+    candidateCount: input.candidateCount,
+    selectedCandidateIndex: input.runIndex,
+    selectedMonth: `${input.assignment.splitId}_${input.assignment.splitRole}`,
+    localStartDate: localDatePart(
+      roleWindow.startAt,
+      input.timezoneOffsetMinutes
+    ),
+    localEndDate: localDatePart(roleWindow.endAt, input.timezoneOffsetMinutes),
+    startAt: roleWindow.startAt,
+    endAt: roleWindow.endAt
+  };
+}
+
+function validationRoleWindow(assignment: ValidationSplitAssignment): {
+  startAt: string;
+  endAt: string;
+} {
+  if (assignment.splitRole === "train") {
+    return {
+      startAt: assignment.trainStart,
+      endAt: assignment.trainEnd
+    };
+  }
+  if (assignment.splitRole === "validation") {
+    return {
+      startAt: assignment.validationStart,
+      endAt: assignment.validationEnd
+    };
+  }
+  return {
+    startAt: assignment.testStart!,
+    endAt: assignment.testEnd!
+  };
+}
+
+function localDatePart(
+  isoDateTime: string,
+  timezoneOffsetMinutes: number
+): string {
+  const date = new Date(isoDateTime);
+  if (!Number.isFinite(date.getTime())) {
+    throw new Error("validation split window must be a valid ISO datetime");
+  }
+  const shifted = new Date(
+    date.getTime() + timezoneOffsetMinutes * 60_000
+  );
+  return [
+    shifted.getUTCFullYear(),
+    pad2(shifted.getUTCMonth() + 1),
+    pad2(shifted.getUTCDate())
+  ].join("-");
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function normalizeValidationSplitAssignments(
+  assignments: ValidationSplitAssignment[] | undefined,
+  runCount: number
+): ValidationSplitAssignment[] | null {
+  if (assignments === undefined) {
+    return null;
+  }
+  if (assignments.length === 0) {
+    throw new Error("validationSplitAssignments must not be empty");
+  }
+  if (assignments.length !== runCount) {
+    throw new Error("validationSplitAssignments length must equal runCount");
+  }
+  return assignments.map((assignment) =>
+    validationSplitAssignmentSchema.parse(assignment)
+  );
+}
+
+function validationProtocolSummaryFor(
+  assignments: ValidationSplitAssignment[]
+): BatchReplayValidationProtocolSummary {
+  const roleCounts: Partial<Record<ValidationSplitRole, number>> = {};
+  for (const assignment of assignments) {
+    roleCounts[assignment.splitRole] =
+      (roleCounts[assignment.splitRole] ?? 0) + 1;
+  }
+  return {
+    validationProtocol: "walk_forward",
+    assignmentCount: assignments.length,
+    roleCounts
+  };
+}
+
 function activeRunSnapshot(input: {
   runId: string;
   runIndex: number;
@@ -791,6 +954,7 @@ function activeRunSnapshot(input: {
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
+  validationSplit: ValidationSplitAssignment | null;
 }): BatchReplayActiveRunSnapshot {
   return {
     runId: input.runId,
@@ -800,6 +964,7 @@ function activeRunSnapshot(input: {
     storageBaseDir: input.storageBaseDir,
     window: input.window,
     windowSampling: input.windowSampling,
+    validationSplit: input.validationSplit,
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability)
@@ -816,6 +981,7 @@ function runRecord(input: {
   storageBaseDir: string;
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
+  validationSplit: ValidationSplitAssignment | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
@@ -843,6 +1009,7 @@ function runRecord(input: {
     storageBaseDir: input.storageBaseDir,
     window: input.window,
     windowSampling: input.windowSampling,
+    validationSplit: input.validationSplit,
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability),
@@ -1028,7 +1195,7 @@ function batchReplayRunId(
   return `${safeArtifactPathPart(
     batchId,
     "batch"
-  )}_run_${paddedIndex}_${window.selectedMonth.replace("-", "")}`;
+  )}_run_${paddedIndex}_${safeArtifactPathPart(window.selectedMonth, "window")}`;
 }
 
 function validateBatchOptions(options: BatchReplayRunnerOptions): void {
@@ -1041,6 +1208,18 @@ function validateBatchOptions(options: BatchReplayRunnerOptions): void {
   validateDate(options.rangeEnd, "rangeEnd");
   if (options.rangeStart.getTime() > options.rangeEnd.getTime()) {
     throw new Error("rangeStart must be before or equal to rangeEnd");
+  }
+  if (
+    options.validationSplitAssignments !== undefined &&
+    options.fixedWindow !== undefined
+  ) {
+    throw new Error("validationSplitAssignments cannot be used with fixedWindow");
+  }
+  if (
+    options.validationSplitAssignments !== undefined &&
+    options.validationSplitAssignments.length !== options.runCount
+  ) {
+    throw new Error("validationSplitAssignments length must equal runCount");
   }
 }
 

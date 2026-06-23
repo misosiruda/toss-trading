@@ -24,6 +24,10 @@ import {
   withHistoricalReplayPrompt
 } from "../replay/codexHistoricalDecisionProvider.js";
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
+import {
+  validationSplitAssignmentSchema,
+  type ValidationSplitAssignment
+} from "../replay/validationProtocol.js";
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
@@ -35,6 +39,10 @@ const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
+const validationSplitsPath = readArgValue("--validation-splits-path");
+const validationSplitAssignments = readValidationSplitAssignmentsArg();
+const effectiveWindowSamplingMode =
+  validationSplitAssignments === undefined ? windowSamplingMode : "fixed_range";
 const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
@@ -123,6 +131,9 @@ const result = await runHistoricalBatchReplay({
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
+  ...(validationSplitAssignments === undefined
+    ? {}
+    : { validationSplitAssignments }),
   ...(paperExitPolicy === undefined ? {} : { paperExitPolicy }),
   ...(marketRegimeAllocationPolicy === undefined
     ? {}
@@ -168,7 +179,8 @@ console.log(
       dynamicCashReservePolicy: dynamicCashReservePolicy ?? null,
       paperExitPolicy: paperExitPolicy ?? null,
       marketRegimeAllocationPolicy: marketRegimeAllocationPolicy ?? null,
-      windowSamplingMode,
+      windowSamplingMode: effectiveWindowSamplingMode,
+      validationSplitsPath: validationSplitsPath ?? null,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
     null,
@@ -408,6 +420,35 @@ function readRequiredSymbols():
   }
 
   return values.length === 0 ? undefined : dedupeSymbols(values);
+}
+
+function readValidationSplitAssignmentsArg():
+  | ValidationSplitAssignment[]
+  | undefined {
+  if (validationSplitsPath === undefined) {
+    return undefined;
+  }
+
+  const parsed = JSON.parse(readFileSync(validationSplitsPath, "utf8")) as unknown;
+  const rawAssignments =
+    Array.isArray(parsed) || typeof parsed !== "object" || parsed === null
+      ? parsed
+      : (parsed as { assignments?: unknown }).assignments;
+  if (!Array.isArray(rawAssignments)) {
+    throw new Error("--validation-splits-path must contain an assignment array");
+  }
+
+  return rawAssignments.map((assignment, index) => {
+    try {
+      return validationSplitAssignmentSchema.parse(assignment);
+    } catch (error) {
+      throw new Error(
+        `invalid validation split assignment at index ${index}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  });
 }
 
 function dedupeSymbols(
