@@ -426,6 +426,12 @@ Hedge 정책:
 - market regime allocation과 cash reserve가 분리된 정책으로 설명된다.
 - hedge가 수익 전략이 아니라 방어 정책으로 audit된다.
 
+분할 PR:
+
+- [x] Q5-1: `dynamicCashReservePolicy`를 추가하고 `VirtualRiskEngine` buy gate에 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`를 연결한다. Batch replay CLI는 `--dynamic-cash-reserve` opt-in으로 설정을 risk profile policy에 병합한다.
+- [ ] Q5-2: `hedgePolicy`를 추가하고 hedge intent가 net downside exposure를 줄이는지 deterministic하게 검증한다.
+- [ ] Q5-3: dynamic cash reserve와 hedge 결과를 historical replay report/audit summary에 노출한다.
+
 ## Milestone Q6. Walk-forward와 Embargo Validation Protocol
 
 목표:
@@ -631,7 +637,7 @@ Report 구획:
 8. Q4-1 strategy bucket schema
 9. Q4-2 exposure aggregator
 10. Q4-3 sector/country/currency risk gate
-11. Q5-1 dynamic cash reserve
+11. Q5-1 dynamic cash reserve - 완료
 12. Q5-2 hedge policy
 13. Q6-1 walk-forward split
 14. Q6-2 embargo

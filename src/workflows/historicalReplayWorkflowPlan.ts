@@ -257,7 +257,10 @@ function serializeRiskPolicy(
       : { minCashReserveRatio: policy.minCashReserveRatio }),
     ...(policy.minCashReserveKrw === undefined
       ? {}
-      : { minCashReserveKrw: policy.minCashReserveKrw })
+      : { minCashReserveKrw: policy.minCashReserveKrw }),
+    ...(policy.dynamicCashReservePolicy === undefined
+      ? {}
+      : { dynamicCashReservePolicy: policy.dynamicCashReservePolicy })
   };
 }
 

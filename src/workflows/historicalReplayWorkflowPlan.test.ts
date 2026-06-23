@@ -52,7 +52,13 @@ test("historical replay workflow plan builds runner input and run metadata", () 
         maxSectorExposureRatio: 0.45,
         maxCountryExposureRatio: 0.7,
         maxCurrencyExposureRatio: 0.4,
-        maxUnknownMetadataExposureRatio: 0.1
+        maxUnknownMetadataExposureRatio: 0.1,
+        dynamicCashReservePolicy: {
+          lookbackDays: 20,
+          minSymbols: 1,
+          minSnapshotsPerSymbol: 2,
+          highVolatilityCashReserveRatio: 0.3
+        }
       },
       paperExitPolicy,
       runId: "   ",
@@ -128,6 +134,15 @@ test("historical replay workflow plan builds runner input and run metadata", () 
     plan.metadataContext.configuration.riskPolicy
       ?.maxUnknownMetadataExposureRatio,
     0.1
+  );
+  assert.deepEqual(
+    plan.metadataContext.configuration.riskPolicy?.dynamicCashReservePolicy,
+    {
+      lookbackDays: 20,
+      minSymbols: 1,
+      minSnapshotsPerSymbol: 2,
+      highVolatilityCashReserveRatio: 0.3
+    }
   );
   assert.deepEqual(plan.metadataContext.configuration.paperExitPolicy, {
     takeProfitMode: "full_exit",

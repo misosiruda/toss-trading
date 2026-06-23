@@ -6,6 +6,7 @@ import type {
   VirtualPortfolio
 } from "../domain/schemas.js";
 import { normalizeVirtualDecision } from "./decisionNormalizer.js";
+import { assessDynamicCashReserve } from "./dynamicCashReservePolicy.js";
 import { isSellAllDustClose } from "./dustPosition.js";
 import {
   UNKNOWN_EXPOSURE_KEY,
@@ -35,16 +36,33 @@ export function evaluateVirtualBuyRiskBranch(
 ): VirtualRiskRejectCode[] {
   const rejectCodes: VirtualRiskRejectCode[] = [];
   const notionalKrw = normalizeVirtualDecision(input).targetNotionalKrw;
+  const remainingCashKrw = input.portfolio.cashKrw - notionalKrw;
+  const staticCashReserveKrw = minimumCashReserveKrw(
+    input.portfolio,
+    input.policy
+  );
 
   if (notionalKrw > input.portfolio.cashKrw) {
     rejectCodes.push("VIRTUAL_CASH_EXCEEDED");
   }
 
-  if (
-    input.portfolio.cashKrw - notionalKrw <
-    minimumCashReserveKrw(input.portfolio, input.policy)
-  ) {
+  if (remainingCashKrw < staticCashReserveKrw) {
     rejectCodes.push("VIRTUAL_CASH_RESERVE_BREACHED");
+  }
+
+  const dynamicCashReserve = assessDynamicCashReserve({
+    portfolio: input.portfolio,
+    baseMinimumCashReserveRatio: input.policy.minCashReserveRatio,
+    baseMinimumCashReserveKrw: input.policy.minCashReserveKrw,
+    policy: input.policy.dynamicCashReservePolicy,
+    marketRegime: input.policy.dynamicCashReserveMarketRegime
+  });
+  if (
+    dynamicCashReserve !== null &&
+    dynamicCashReserve.minimumCashReserveKrw > staticCashReserveKrw &&
+    remainingCashKrw < dynamicCashReserve.minimumCashReserveKrw
+  ) {
+    rejectCodes.push("VIRTUAL_REGIME_CASH_RESERVE_BREACHED");
   }
 
   if (notionalKrw > input.policy.maxBudgetPerDecisionKrw) {

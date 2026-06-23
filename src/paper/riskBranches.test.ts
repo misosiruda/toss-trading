@@ -4,9 +4,11 @@ import test from "node:test";
 import type {
   MarketCandidate,
   MarketPacket,
+  HistoricalMarketSnapshot,
   VirtualDecisionItem,
   VirtualPortfolio
 } from "../domain/schemas.js";
+import { classifyDynamicCashReserveRegime } from "./dynamicCashReservePolicy.js";
 import {
   evaluateVirtualBuyRiskBranch,
   evaluateVirtualSellRiskBranch
@@ -35,6 +37,54 @@ test("buy risk branch rejects cash reserve breaches", () => {
 
   assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
     "VIRTUAL_CASH_RESERVE_BREACHED"
+  ]);
+});
+
+test("buy risk branch rejects regime cash reserve breaches separately", () => {
+  const input = {
+    packet: packet(),
+    portfolio: portfolio({ cashKrw: 1_000_000 }),
+    decision: decision({ budgetKrw: 800_000 }),
+    policy: createVirtualRiskPolicy({
+      maxBudgetPerSymbolKrw: 1_000_000,
+      policy: {
+        now,
+        maxBudgetPerDecisionKrw: 1_000_000,
+        maxSymbolExposureKrw: 1_000_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        dynamicCashReservePolicy: {
+          lookbackDays: 3,
+          minSymbols: 1,
+          minSnapshotsPerSymbol: 2
+        },
+        dynamicCashReserveMarketRegime: classifyDynamicCashReserveRegime({
+          policy: {
+            lookbackDays: 3,
+            minSymbols: 1,
+            minSnapshotsPerSymbol: 2
+          },
+          simulatedAt: now,
+          snapshots: [
+            historicalSnapshot(
+              "hist_005930_0613",
+              "2026-06-13T09:00:00+09:00",
+              100_000
+            ),
+            historicalSnapshot(
+              "hist_005930_0614",
+              "2026-06-14T09:00:00+09:00",
+              90_000
+            )
+          ]
+        })
+      }
+    }),
+    candidate: candidate()
+  };
+
+  assert.deepEqual(evaluateVirtualBuyRiskBranch(input), [
+    "VIRTUAL_REGIME_CASH_RESERVE_BREACHED"
   ]);
 });
 
@@ -948,6 +998,24 @@ function candidate(overrides: Partial<MarketCandidate> = {}): MarketCandidate {
     collectedAt: "2026-06-14T08:59:00+09:00",
     staleAfter: "2026-06-14T09:05:00+09:00",
     ...overrides
+  };
+}
+
+function historicalSnapshot(
+  snapshotId: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId,
+    market: "KR",
+    symbol: "005930",
+    observedAt,
+    interval: "1d",
+    lastPriceKrw,
+    volume: 100_000,
+    sourceRefs: [`fixture:${snapshotId}`],
+    createdAt: observedAt
   };
 }
 
