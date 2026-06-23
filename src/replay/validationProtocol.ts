@@ -74,7 +74,19 @@ export const validationSplitAssignmentSchema = validationSplitSchema
   .safeExtend({
     splitRole: validationSplitRoleSchema
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.splitRole === "test" &&
+      (value.testStart === null || value.testEnd === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["splitRole"],
+        message: "test splitRole requires testStart and testEnd"
+      });
+    }
+  });
 
 export type ValidationProtocol = z.infer<typeof validationProtocolSchema>;
 export type ValidationSplitRole = z.infer<typeof validationSplitRoleSchema>;

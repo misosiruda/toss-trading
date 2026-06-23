@@ -112,6 +112,13 @@ test("walk-forward split assignment expands split roles without a test window", 
       true
     );
   }
+  assert.equal(
+    validationSplitAssignmentSchema.safeParse({
+      ...plan.splits[0]!,
+      splitRole: "test"
+    }).success,
+    false
+  );
 });
 
 test("validation split schema rejects overlapping or half-open split metadata", () => {
