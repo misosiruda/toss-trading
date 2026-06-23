@@ -713,7 +713,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - `selectedCandidateKey`: train role 평균 return 기준으로 선택된 candidate key
 - `holdoutDegradation`: selected candidate의 validation/test holdout split별 average, rank, 같은 split의 train metric 우선 기준 degradation
 - `pboLikeScore`: selected candidate가 return sample이 2개 이상인 holdout split에서 median 아래로 떨어진 비율
-- `warnings`: candidate 수, holdout sample, split count가 부족할 때의 경고
+- `warnings`: candidate 수, holdout sample, split count가 부족하거나 일부 holdout split이 unscored로 제외될 때의 경고
 
 집계 report는 다음 정보를 포함합니다.
 

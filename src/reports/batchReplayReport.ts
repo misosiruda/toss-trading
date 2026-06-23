@@ -829,12 +829,12 @@ function overfittingDiagnosticWarnings(input: {
   }
   if (
     input.holdoutDegradation.length > 0 &&
-    input.holdoutDegradation.every(
+    input.holdoutDegradation.some(
       (degradation) => degradation.selectedBelowMedian === null
     )
   ) {
     warnings.push(
-      "PBO-like diagnostic unavailable: at least two holdout candidates with return samples are required per scored role"
+      "PBO-like diagnostic partial: at least two holdout candidates with return samples are required per scored split; unscored holdouts were excluded from pboLikeScore"
     );
   }
   if (input.sampledCpcvSplitCountMatchesExpected === false) {
