@@ -8,6 +8,7 @@ import type {
 import { normalizeVirtualDecision } from "./decisionNormalizer.js";
 import { assessDynamicCashReserve } from "./dynamicCashReservePolicy.js";
 import { isSellAllDustClose } from "./dustPosition.js";
+import { evaluateHedgePolicy } from "./hedgePolicy.js";
 import {
   UNKNOWN_EXPOSURE_KEY,
   positionExposureValueKrw
@@ -97,6 +98,14 @@ export function evaluateVirtualBuyRiskBranch(
 
   rejectCodes.push(
     ...evaluatePortfolioExposureRisk({ ...input, notionalKrw, netWorthKrw })
+  );
+  rejectCodes.push(
+    ...evaluateHedgePolicy({
+      portfolio: input.portfolio,
+      candidate: input.candidate,
+      notionalKrw,
+      policy: input.policy.hedgePolicy
+    })
   );
 
   return rejectCodes;

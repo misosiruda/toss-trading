@@ -260,7 +260,10 @@ function serializeRiskPolicy(
       : { minCashReserveKrw: policy.minCashReserveKrw }),
     ...(policy.dynamicCashReservePolicy === undefined
       ? {}
-      : { dynamicCashReservePolicy: policy.dynamicCashReservePolicy })
+      : { dynamicCashReservePolicy: policy.dynamicCashReservePolicy }),
+    ...(policy.hedgePolicy === undefined
+      ? {}
+      : { hedgePolicy: policy.hedgePolicy })
   };
 }
 

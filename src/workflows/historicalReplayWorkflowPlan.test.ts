@@ -58,6 +58,11 @@ test("historical replay workflow plan builds runner input and run metadata", () 
           minSymbols: 1,
           minSnapshotsPerSymbol: 2,
           highVolatilityCashReserveRatio: 0.3
+        },
+        hedgePolicy: {
+          maxGrossExposureKrw: 1_500_000,
+          maxGrossExposureRatio: 0.9,
+          requireHedgeBucket: true
         }
       },
       paperExitPolicy,
@@ -142,6 +147,14 @@ test("historical replay workflow plan builds runner input and run metadata", () 
       minSymbols: 1,
       minSnapshotsPerSymbol: 2,
       highVolatilityCashReserveRatio: 0.3
+    }
+  );
+  assert.deepEqual(
+    plan.metadataContext.configuration.riskPolicy?.hedgePolicy,
+    {
+      maxGrossExposureKrw: 1_500_000,
+      maxGrossExposureRatio: 0.9,
+      requireHedgeBucket: true
     }
   );
   assert.deepEqual(plan.metadataContext.configuration.paperExitPolicy, {

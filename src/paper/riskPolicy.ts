@@ -6,6 +6,7 @@ import type {
 } from "../domain/schemas.js";
 import type { MarketRegimeClassification } from "../analytics/marketRegimeClassifier.js";
 import type { DynamicCashReservePolicy } from "./dynamicCashReservePolicy.js";
+import type { HedgePolicy } from "./hedgePolicy.js";
 
 export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_PACKET_STALE",
@@ -25,6 +26,9 @@ export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED",
   "VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED",
   "VIRTUAL_EXPOSURE_METADATA_MISSING",
+  "VIRTUAL_HEDGE_NOT_REDUCE_RISK",
+  "VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED",
+  "VIRTUAL_HEDGE_METADATA_MISSING",
   "VIRTUAL_POSITION_NOT_FOUND",
   "VIRTUAL_SELL_AMOUNT_REQUIRED",
   "VIRTUAL_SELL_AMOUNT_EXCEEDED",
@@ -53,6 +57,7 @@ export const VIRTUAL_RISK_RULE_IDS = [
   "country_exposure",
   "currency_exposure",
   "exposure_metadata",
+  "hedge_policy",
   "sell_position",
   "cooldown"
 ] as const;
@@ -88,6 +93,7 @@ export interface VirtualRiskPolicy {
   minCashReserveKrw: number;
   dynamicCashReservePolicy?: DynamicCashReservePolicy | undefined;
   dynamicCashReserveMarketRegime?: MarketRegimeClassification | undefined;
+  hedgePolicy?: HedgePolicy | undefined;
   cooldownEntries: VirtualRiskCooldownEntry[];
   now: Date;
 }
@@ -168,6 +174,9 @@ export function createVirtualRiskPolicy(
           dynamicCashReserveMarketRegime:
             input.policy.dynamicCashReserveMarketRegime
         }),
+    ...(input.policy?.hedgePolicy === undefined
+      ? {}
+      : { hedgePolicy: input.policy.hedgePolicy }),
     cooldownEntries: input.policy?.cooldownEntries ?? [],
     now: input.policy?.now ?? new Date()
   };

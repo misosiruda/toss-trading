@@ -92,6 +92,14 @@ const dynamicCashReservePolicySchema = z
   })
   .strict();
 
+const hedgePolicySchema = z
+  .object({
+    maxGrossExposureKrw: z.number().int().nonnegative().optional(),
+    maxGrossExposureRatio: z.number().min(0).max(10).optional(),
+    requireHedgeBucket: z.boolean().optional()
+  })
+  .strict();
+
 export const historicalReplayRunConfigurationSchema = z
   .object({
     clock: z
@@ -161,7 +169,8 @@ export const historicalReplayRunConfigurationSchema = z
         maxUnknownMetadataExposureRatio: z.number().min(0).max(1).optional(),
         minCashReserveRatio: z.number().min(0).max(1).optional(),
         minCashReserveKrw: z.number().int().nonnegative().optional(),
-        dynamicCashReservePolicy: dynamicCashReservePolicySchema.optional()
+        dynamicCashReservePolicy: dynamicCashReservePolicySchema.optional(),
+        hedgePolicy: hedgePolicySchema.optional()
       })
       .strict()
       .nullable(),
