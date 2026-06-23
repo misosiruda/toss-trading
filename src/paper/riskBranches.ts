@@ -161,6 +161,7 @@ interface ExposureMetadata {
   country: AssetRegion | typeof UNKNOWN_EXPOSURE_KEY;
   strategyBucket: StrategyBucketKey;
   currencyExposed: boolean;
+  currencyMetadataMissing: boolean;
   metadataMissing: boolean;
 }
 
@@ -169,6 +170,7 @@ interface ExposureProfile {
   byCountry: Map<AssetRegion | typeof UNKNOWN_EXPOSURE_KEY, number>;
   byStrategyBucket: Map<StrategyBucketKey, number>;
   currencyExposureKrw: number;
+  unknownCurrencyExposureKrw: number;
   unknownMetadataExposureKrw: number;
 }
 
@@ -193,6 +195,9 @@ function evaluatePortfolioExposureRisk(
 
   if (decisionMetadata.currencyExposed) {
     profile.currencyExposureKrw += input.notionalKrw;
+  }
+  if (decisionMetadata.currencyMetadataMissing) {
+    profile.unknownCurrencyExposureKrw += input.notionalKrw;
   }
   if (decisionMetadata.metadataMissing) {
     profile.unknownMetadataExposureKrw += input.notionalKrw;
@@ -221,6 +226,16 @@ function evaluatePortfolioExposureRisk(
   if (
     hasStrategyBucketLimit(input.policy) &&
     profile.byStrategyBucket.has(UNKNOWN_STRATEGY_BUCKET)
+  ) {
+    appendPortfolioRejectCode(
+      rejectCodes,
+      "VIRTUAL_EXPOSURE_METADATA_MISSING"
+    );
+  }
+
+  if (
+    hasCurrencyExposureLimit(input.policy) &&
+    profile.unknownCurrencyExposureKrw > 0
   ) {
     appendPortfolioRejectCode(
       rejectCodes,
@@ -311,6 +326,7 @@ function buildExposureProfile(input: VirtualRiskBranchInput): ExposureProfile {
     byCountry: new Map<AssetRegion | typeof UNKNOWN_EXPOSURE_KEY, number>(),
     byStrategyBucket: new Map<StrategyBucketKey, number>(),
     currencyExposureKrw: 0,
+    unknownCurrencyExposureKrw: 0,
     unknownMetadataExposureKrw: 0
   };
 
@@ -323,6 +339,9 @@ function buildExposureProfile(input: VirtualRiskBranchInput): ExposureProfile {
     incrementMap(profile.byStrategyBucket, metadata.strategyBucket, exposureKrw);
     if (metadata.currencyExposed) {
       profile.currencyExposureKrw += exposureKrw;
+    }
+    if (metadata.currencyMetadataMissing) {
+      profile.unknownCurrencyExposureKrw += exposureKrw;
     }
     if (metadata.metadataMissing) {
       profile.unknownMetadataExposureKrw += exposureKrw;
@@ -389,6 +408,7 @@ function resolveExposureMetadata(input: {
     country,
     strategyBucket,
     currencyExposed,
+    currencyMetadataMissing: !currencyMetadataKnown,
     metadataMissing:
       assetType === undefined ||
       assetClass === undefined ||
@@ -457,6 +477,13 @@ function hasCountryExposureLimit(policy: VirtualRiskPolicy): boolean {
   return (
     policy.maxCountryExposureKrw !== undefined ||
     policy.maxCountryExposureRatio !== undefined
+  );
+}
+
+function hasCurrencyExposureLimit(policy: VirtualRiskPolicy): boolean {
+  return (
+    policy.maxCurrencyExposureKrw !== undefined ||
+    policy.maxCurrencyExposureRatio !== undefined
   );
 }
 
