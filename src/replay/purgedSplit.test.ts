@@ -200,6 +200,57 @@ test("purged k-fold plan schema rejects split metadata that disagrees with paren
   );
 });
 
+test("purged k-fold plan schema rejects incomplete folds or repeated test samples", () => {
+  const plan = buildPurgedKFoldPlan({
+    planId: "pkf_coverage",
+    foldCount: 2,
+    samples: [
+      sample("s1", "2025-01-01T00:00:00.000Z", "2025-01-01T23:59:59.999Z"),
+      sample("s2", "2025-01-02T00:00:00.000Z", "2025-01-02T23:59:59.999Z"),
+      sample("s3", "2025-01-03T00:00:00.000Z", "2025-01-03T23:59:59.999Z"),
+      sample("s4", "2025-01-04T00:00:00.000Z", "2025-01-04T23:59:59.999Z")
+    ]
+  });
+  const firstSplit = plan.splits[0]!;
+  const secondSplit = plan.splits[1]!;
+
+  assert.equal(
+    purgedKFoldPlanSchema.safeParse({
+      ...plan,
+      splitCount: 1,
+      splits: [firstSplit]
+    }).success,
+    false
+  );
+  assert.equal(
+    purgedKFoldPlanSchema.safeParse({
+      ...plan,
+      splits: [
+        firstSplit,
+        {
+          ...secondSplit,
+          testSampleIds: firstSplit.testSampleIds,
+          trainSampleIds: secondSplit.testSampleIds
+        }
+      ]
+    }).success,
+    false
+  );
+  assert.equal(
+    purgedKFoldPlanSchema.safeParse({
+      ...plan,
+      splits: [
+        firstSplit,
+        {
+          ...secondSplit,
+          splitIndex: firstSplit.splitIndex
+        }
+      ]
+    }).success,
+    false
+  );
+});
+
 function sample(
   sampleId: string,
   labelStart: string,

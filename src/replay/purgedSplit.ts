@@ -158,6 +158,19 @@ export const purgedKFoldPlanSchema = z
         message: "splitCount must equal splits length"
       });
     }
+    if (value.splitCount !== value.foldCount) {
+      context.addIssue({
+        code: "custom",
+        message: "splitCount must equal foldCount"
+      });
+    }
+    if (value.sampleCount < value.foldCount) {
+      context.addIssue({
+        code: "custom",
+        message: "sampleCount must be greater than or equal to foldCount"
+      });
+    }
+    validatePlanSplitCoverage(context, value);
     for (const split of value.splits) {
       if (split.planId !== value.planId) {
         context.addIssue({
@@ -463,6 +476,54 @@ function validateSplitSampleIds(
       code: "custom",
       message:
         "combined train, test, purged, and embargoed sample ids must equal sampleCount"
+    });
+  }
+}
+
+function validatePlanSplitCoverage(
+  context: z.RefinementCtx,
+  value: {
+    foldCount: number;
+    sampleCount: number;
+    splits: ReadonlyArray<{
+      splitIndex: number;
+      testSampleIds: readonly string[];
+    }>;
+  }
+): void {
+  const splitIndexes = new Set(value.splits.map((split) => split.splitIndex));
+  const hasCompleteSplitIndexes =
+    splitIndexes.size === value.foldCount &&
+    Array.from({ length: value.foldCount }, (_, index) => index).every((index) =>
+      splitIndexes.has(index)
+    );
+
+  if (!hasCompleteSplitIndexes) {
+    context.addIssue({
+      code: "custom",
+      message: "split indexes must cover every fold exactly once"
+    });
+  }
+  if (value.splits.some((split) => split.testSampleIds.length === 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "each split must include at least one test sample"
+    });
+  }
+
+  const testSampleIds = value.splits.flatMap((split) => split.testSampleIds);
+  const uniqueTestSampleIds = new Set(testSampleIds);
+
+  if (uniqueTestSampleIds.size !== testSampleIds.length) {
+    context.addIssue({
+      code: "custom",
+      message: "testSampleIds must be disjoint across splits"
+    });
+  }
+  if (testSampleIds.length !== value.sampleCount) {
+    context.addIssue({
+      code: "custom",
+      message: "combined testSampleIds across splits must equal sampleCount"
     });
   }
 }
