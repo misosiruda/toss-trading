@@ -430,7 +430,7 @@ Hedge 정책:
 
 - [x] Q5-1: `dynamicCashReservePolicy`를 추가하고 `VirtualRiskEngine` buy gate에 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`를 연결한다. Batch replay CLI는 `--dynamic-cash-reserve` opt-in으로 설정을 risk profile policy에 병합한다.
 - [x] Q5-2: `hedgePolicy`를 추가하고 hedge intent가 net downside exposure를 줄이는지 deterministic하게 검증한다.
-- [ ] Q5-3: dynamic cash reserve와 hedge 결과를 historical replay report/audit summary에 노출한다.
+- [x] Q5-3: dynamic cash reserve와 hedge 결과를 historical replay report/audit summary에 노출한다.
 
 ## Milestone Q6. Walk-forward와 Embargo Validation Protocol
 

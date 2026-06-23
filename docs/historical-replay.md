@@ -597,6 +597,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - bear, insufficient data, high volatility 구간에서 static reserve보다 높은 reserve가 필요하면 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`를 기록하고 BUY를 reject합니다.
 - 설정은 run metadata의 `configuration.riskPolicy.dynamicCashReservePolicy`와 research manifest hash에 포함됩니다.
 - market regime allocation은 market별 target exposure를 조정하고, dynamic cash reserve는 portfolio 전체 cash floor를 조정합니다.
+- dynamic cash reserve와 hedge policy의 reject summary는 `historical-replay-report.json`의 `riskSummary.policySummary`와 `historical-replay-run-metadata.json`의 `riskPolicySummary`에 기록됩니다. `hedge` summary는 `strategyBucket=hedge`로 기록된 virtual trade의 count, BUY notional, modeled cost도 함께 집계합니다.
 
 ### Batch Aggregate Report
 

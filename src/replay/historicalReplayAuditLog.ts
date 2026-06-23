@@ -23,6 +23,10 @@ import {
   toHistoricalReplayPortfolioProgress,
   type HistoricalReplayProgressUpdate
 } from "./historicalReplayProgress.js";
+import {
+  buildReplayRiskPolicySummary,
+  replayRiskPolicySummarySchema
+} from "./replayRiskPolicySummary.js";
 
 export const historicalReplayAuditStatusSchema = z.enum([
   "running",
@@ -257,6 +261,7 @@ export const historicalReplayRunMetadataSchema = z
     failedAt: isoDateTimeSchema.nullable(),
     tickCount: z.number().int().nonnegative(),
     logPaths: historicalReplayAuditLogPathsSchema,
+    riskPolicySummary: replayRiskPolicySummarySchema,
     researchManifest: replayResearchManifestSchema,
     error: z.string().trim().min(1).nullable(),
     disclaimer: z.string().trim().min(1)
@@ -361,6 +366,10 @@ export class HistoricalReplayAuditLogRecorder {
       failedAt: null,
       tickCount: options.tickCount,
       logPaths: options.paths,
+      riskPolicySummary: buildReplayRiskPolicySummary({
+        riskDecisions: [],
+        trades: []
+      }),
       researchManifest: options.researchManifest,
       error: null,
       disclaimer: HISTORICAL_REPLAY_PROGRESS_DISCLAIMER
@@ -414,6 +423,13 @@ export class HistoricalReplayAuditLogRecorder {
     }
 
     await this.appendPortfolioTimeline(update);
+    this.metadata = {
+      ...this.metadata,
+      riskPolicySummary: buildReplayRiskPolicySummary({
+        riskDecisions: update.riskDecisions,
+        trades: update.trades
+      })
+    };
   }
 
   async complete(completedAt: Date): Promise<void> {

@@ -40,6 +40,8 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.costSummary.partialFillCount, 0);
   assert.equal(report.costSummary.notModeledLiquidityCount, 0);
   assert.equal(report.costSummary.averageParticipationRate !== null, true);
+  assert.equal(report.riskSummary.policySummary.dynamicCashReserve.rejectedCount, 0);
+  assert.equal(report.riskSummary.policySummary.hedge.hedgeTradeCount, 0);
   assert.equal(report.paperExitPolicy, null);
   assert.equal(report.portfolio.finalCashKrw, 830_000);
   assert.equal(report.portfolio.finalPositionCount, 2);
@@ -89,6 +91,8 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /unknown_metadata_exposure_ratio/);
   assert.match(rendered, /symbol_exposures/);
   assert.match(rendered, /meaningful_reject_count/);
+  assert.match(rendered, /dynamic_cash_reserve_policy/);
+  assert.match(rendered, /hedge_policy/);
   assert.match(rendered, /Execution Costs/);
   assert.match(rendered, /total_cost_krw/);
   assert.match(rendered, /partial_fill_count/);
@@ -194,6 +198,67 @@ test("historical replay report summarizes execution cost components", () => {
   assert.deepEqual(report.costSummary.costModelVersions, [
     "paper_cost_model.v2"
   ]);
+});
+
+test("historical replay report exposes dynamic reserve and hedge policy summaries", () => {
+  const result = replayResult();
+  result.riskDecisions.push(
+    {
+      riskDecisionId: "risk_dynamic_fixture",
+      packetId: "packet_historical_report_dynamic",
+      symbol: "005930",
+      approved: false,
+      rejectCodes: ["VIRTUAL_REGIME_CASH_RESERVE_BREACHED"],
+      checkedRules: ["dynamic_cash_reserve"],
+      createdAt: "2025-01-02T09:02:00+09:00"
+    },
+    {
+      riskDecisionId: "risk_hedge_fixture",
+      packetId: "packet_historical_report_hedge",
+      symbol: "252670",
+      approved: false,
+      rejectCodes: ["VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED"],
+      checkedRules: ["hedge_policy"],
+      createdAt: "2025-01-02T09:02:00+09:00"
+    }
+  );
+  result.trades.push({
+    tradeId: "trade_historical_report_hedge",
+    packetId: "packet_historical_report_hedge",
+    decisionId: "decision_historical_report_hedge",
+    market: "KR",
+    symbol: "252670",
+    action: "VIRTUAL_BUY",
+    quantity: 1,
+    priceKrw: 30_000,
+    amountKrw: 30_000,
+    feeKrw: 1,
+    taxKrw: 2,
+    slippageKrw: 3,
+    spreadCostKrw: 4,
+    impactCostKrw: 5,
+    totalCostKrw: 999,
+    strategyBucket: "hedge",
+    status: "VIRTUAL_FILLED",
+    executedAt: "2025-01-02T09:02:00+09:00"
+  });
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.riskSummary.policySummary.dynamicCashReserve.rejectedCount, 1);
+  assert.deepEqual(
+    report.riskSummary.policySummary.dynamicCashReserve.rejectCodes,
+    {
+      VIRTUAL_REGIME_CASH_RESERVE_BREACHED: 1
+    }
+  );
+  assert.equal(report.riskSummary.policySummary.hedge.rejectedCount, 1);
+  assert.deepEqual(report.riskSummary.policySummary.hedge.rejectCodes, {
+    VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED: 1
+  });
+  assert.equal(report.riskSummary.policySummary.hedge.hedgeTradeCount, 1);
+  assert.equal(report.riskSummary.policySummary.hedge.hedgeBuyAmountKrw, 30_000);
+  assert.equal(report.riskSummary.policySummary.hedge.hedgeCostKrw, 15);
 });
 
 function replayResult(): HistoricalReplayResult {

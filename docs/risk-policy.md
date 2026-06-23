@@ -243,7 +243,8 @@ Reject code:
 
 - 이 정책은 `VirtualRiskEngine`의 paper-only BUY gate에만 연결됩니다.
 - 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
-- hedge cost와 hedge failure 가능성의 report/audit summary 노출은 후속 Q5-3 범위입니다.
+- hedge reject와 hedge trade cost는 historical replay report의 `riskSummary.policySummary.hedge`와 run metadata의 `riskPolicySummary.hedge`에 요약됩니다.
+- dynamic cash reserve reject는 historical replay report의 `riskSummary.policySummary.dynamicCashReserve`와 run metadata의 `riskPolicySummary.dynamicCashReserve`에 요약됩니다.
 
 ## Live RiskEngine Implementation Boundary
 
