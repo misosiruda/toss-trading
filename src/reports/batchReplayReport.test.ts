@@ -434,6 +434,99 @@ test("batch replay aggregate report warns when PBO-like samples are insufficient
   assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
 });
 
+test("batch replay aggregate report leaves single-candidate holdouts unscored", () => {
+  const promptHash = hash("a");
+  const candidateA = hash("b");
+  const candidateB = hash("c");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("candidate_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "candidate_a_validation",
+        2,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation",
+        3,
+        "skipped",
+        "bull",
+        0,
+        null,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        promptHash,
+        candidateA,
+        1,
+        0,
+        0,
+        0.2
+      ),
+      trial(
+        "candidate_b_train",
+        1,
+        "completed",
+        promptHash,
+        candidateB,
+        1,
+        0,
+        0,
+        0.1
+      ),
+      trial(
+        "candidate_a_validation",
+        2,
+        "completed",
+        promptHash,
+        candidateA,
+        1,
+        0,
+        0,
+        0.03
+      ),
+      trial(
+        "candidate_b_validation",
+        3,
+        "skipped",
+        promptHash,
+        candidateB,
+        0,
+        0,
+        0,
+        null
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const validationDegradation = diagnostics.holdoutDegradation.find(
+    (entry) => entry.splitRole === "validation"
+  )!;
+
+  assert.equal(validationDegradation.candidateCount, 1);
+  assert.equal(validationDegradation.selectedBelowMedian, null);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two holdout candidates with return samples/
+  );
+});
+
 test("batch replay aggregate report handles legacy records without market counts", () => {
   const legacyRecord = record(
     "legacy_run_0",

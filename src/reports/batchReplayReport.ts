@@ -627,7 +627,7 @@ function holdoutDegradationForRole(
   const selectedAverage = selectedMetric?.averageTotalReturnRatio ?? null;
   const selectedRank = selectedIndex === -1 ? null : selectedIndex + 1;
   const selectedBelowMedian =
-    selectedRank === null
+    selectedRank === null || roleCandidates.length < 2
       ? null
       : selectedRank > Math.ceil(roleCandidates.length / 2);
   const trainAverage =
@@ -704,7 +704,7 @@ function overfittingDiagnosticWarnings(input: {
     )
   ) {
     warnings.push(
-      "PBO-like diagnostic unavailable: selected train candidate has no holdout return samples"
+      "PBO-like diagnostic unavailable: at least two holdout candidates with return samples are required per scored role"
     );
   }
   if (input.sampledCpcvSplitCountMatchesExpected === false) {
