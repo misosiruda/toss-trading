@@ -158,6 +158,20 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(runMetadata["status"], "completed");
   assert.equal(runMetadata["mode"], "paper_only");
   assert.match(String(runMetadata["disclaimer"]), /cannot place live orders/);
+  const runRiskPolicySummary = runMetadata["riskPolicySummary"] as Record<
+    string,
+    unknown
+  >;
+  const runDynamicCashReserveSummary = runRiskPolicySummary[
+    "dynamicCashReserve"
+  ] as Record<string, unknown>;
+  const runHedgeSummary = runRiskPolicySummary["hedge"] as Record<
+    string,
+    unknown
+  >;
+  assert.equal(runDynamicCashReserveSummary["rejectedCount"], 0);
+  assert.equal(runHedgeSummary["rejectedCount"], 0);
+  assert.equal(runHedgeSummary["hedgeTradeCount"], 0);
   const runIdentity = runMetadata["identity"] as Record<string, unknown>;
   const runWindow = runMetadata["window"] as Record<string, unknown>;
   const runConfiguration = runMetadata["configuration"] as Record<

@@ -8,6 +8,10 @@ import type {
   HistoricalReplayResult
 } from "../replay/historicalReplayRunner.js";
 import {
+  buildReplayRiskPolicySummary,
+  type ReplayRiskPolicySummary
+} from "../replay/replayRiskPolicySummary.js";
+import {
   missingReplayResearchManifestReference,
   replayResearchManifestReference,
   type ReplayResearchManifestReference
@@ -121,6 +125,7 @@ export interface HistoricalReplayRiskSummary {
   meaningfulRejectCount: number;
   dustRejectCount: number;
   rejectCodes: Record<string, number>;
+  policySummary: ReplayRiskPolicySummary;
 }
 
 export interface HistoricalReplaySamplingSummary {
@@ -279,6 +284,10 @@ export function renderHistoricalReplayReport(
     `meaningful_reject_count: ${report.riskSummary.meaningfulRejectCount}`,
     `dust_reject_count: ${report.riskSummary.dustRejectCount}`,
     `reject_codes: ${JSON.stringify(report.riskSummary.rejectCodes)}`,
+    `dynamic_cash_reserve_policy: ${JSON.stringify(
+      report.riskSummary.policySummary.dynamicCashReserve
+    )}`,
+    `hedge_policy: ${JSON.stringify(report.riskSummary.policySummary.hedge)}`,
     "",
     "## Sampling",
     `policy: ${JSON.stringify(report.samplingSummary.policy)}`,
@@ -480,7 +489,11 @@ function summarizeRisk(
     dustRejectCount: result.auditEvents.filter(
       (event) => event.eventType === "NO_OP_EXIT_DUST_CLOSED"
     ).length,
-    rejectCodes
+    rejectCodes,
+    policySummary: buildReplayRiskPolicySummary({
+      riskDecisions: result.riskDecisions,
+      trades: result.trades
+    })
   };
 }
 
