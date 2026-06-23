@@ -259,6 +259,181 @@ test("batch replay aggregate report summarizes selection trial distribution", ()
   assert.match(renderBatchReplayAggregateReport(report), /prompt_hashes/);
 });
 
+test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", () => {
+  const promptHash = hash("a");
+  const candidateA = hash("b");
+  const candidateB = hash("c");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("candidate_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "candidate_a_validation",
+        2,
+        "completed",
+        "bull",
+        -0.05,
+        950_000,
+        0,
+        "validation"
+      ),
+      record(
+        "candidate_b_validation",
+        3,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation"
+      ),
+      record("candidate_a_test", 4, "completed", "bull", -0.02, 980_000, 0, "test"),
+      record("candidate_b_test", 5, "completed", "bull", 0.03, 1_030_000, 0, "test")
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        promptHash,
+        candidateA,
+        1,
+        0,
+        0,
+        0.2
+      ),
+      trial(
+        "candidate_b_train",
+        1,
+        "completed",
+        promptHash,
+        candidateB,
+        1,
+        0,
+        0,
+        0.1
+      ),
+      trial(
+        "candidate_a_validation",
+        2,
+        "completed",
+        promptHash,
+        candidateA,
+        1,
+        0,
+        0,
+        -0.05
+      ),
+      trial(
+        "candidate_b_validation",
+        3,
+        "completed",
+        promptHash,
+        candidateB,
+        1,
+        0,
+        0,
+        0.04
+      ),
+      trial(
+        "candidate_a_test",
+        4,
+        "completed",
+        promptHash,
+        candidateA,
+        1,
+        0,
+        0,
+        -0.02
+      ),
+      trial(
+        "candidate_b_test",
+        5,
+        "completed",
+        promptHash,
+        candidateB,
+        1,
+        0,
+        0,
+        0.03
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const selectedRow = diagnostics.splitMetricMatrix.find(
+    (row) => row.configHash === candidateA
+  )!;
+
+  assert.equal(diagnostics.validationProtocol, "sampled_cpcv_pbo_like");
+  assert.equal(diagnostics.expectedSampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, true);
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(diagnostics.splitRoleCounts, {
+    train: 2,
+    validation: 2,
+    test: 2
+  });
+  assert.equal(diagnostics.selectedCandidateKey, selectedRow.candidateKey);
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, 0.2);
+  assert.equal(selectedRow.roleMetrics.train?.averageTotalReturnRatio, 0.2);
+  assert.equal(selectedRow.roleMetrics.validation?.averageTotalReturnRatio, -0.05);
+  assert.equal(diagnostics.pboLikeScore, 1);
+  assert.deepEqual(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitRole,
+      entry.selectedBelowMedian,
+      entry.degradationFromTrainRatio
+    ]),
+    [
+      ["validation", true, -0.25],
+      ["test", true, -0.22]
+    ]
+  );
+  assert.deepEqual(diagnostics.warnings, []);
+  assert.match(renderBatchReplayAggregateReport(report), /pbo_like_score: 1/);
+  assert.match(renderBatchReplayAggregateReport(report), /split_metric_matrix/);
+});
+
+test("batch replay aggregate report warns when PBO-like samples are insufficient", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("candidate_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train")
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_train",
+        0,
+        "completed",
+        hash("a"),
+        hash("b"),
+        1,
+        0,
+        0,
+        0.2
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(diagnostics.candidateCount, 1);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 1);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
+  assert.equal(diagnostics.pboLikeScore, null);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /at least two strategy candidates/
+  );
+  assert.match(diagnostics.warnings.join("\n"), /no validation\/test holdout/);
+  assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
+});
+
 test("batch replay aggregate report handles legacy records without market counts", () => {
   const legacyRecord = record(
     "legacy_run_0",
@@ -463,7 +638,11 @@ function trial(
   configHash: SelectionTrialRecord["config"]["configHash"],
   tradeCount: number,
   aiDecisionFailureCount: number,
-  rejectedCount: number
+  rejectedCount: number,
+  totalReturnRatio =
+    status === "completed" || status === "completed_with_failures"
+      ? 0.01
+      : null
 ): SelectionTrialRecord {
   return {
     mode: "paper_only",
@@ -513,10 +692,7 @@ function trial(
       selectionMetric: "total_return_ratio"
     },
     outcome: {
-      totalReturnRatio:
-        status === "completed" || status === "completed_with_failures"
-          ? 0.01
-          : null,
+      totalReturnRatio,
       finalVirtualNetWorthKrw:
         status === "completed" || status === "completed_with_failures"
           ? 1_010_000

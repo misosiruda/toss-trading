@@ -26,6 +26,9 @@ const selectionTrialsPath =
 const targetReturnThresholds = readOptionalNumberListArg(
   "--target-return-thresholds"
 );
+const expectedSampledCpcvSplitCount = readOptionalNonNegativeIntegerArg(
+  "--expected-sampled-cpcv-split-count"
+);
 const records = await readBatchReplayRunRecords(runsPath);
 const selectionTrials = await readOptionalSelectionTrialRecords({
   filePath: selectionTrialsPath,
@@ -38,7 +41,10 @@ const report = buildBatchReplayAggregateReport({
   ...(selectionTrials === null
     ? {}
     : { selectionTrials, sourceSelectionTrialsPath: selectionTrialsPath }),
-  ...(targetReturnThresholds === undefined ? {} : { targetReturnThresholds })
+  ...(targetReturnThresholds === undefined ? {} : { targetReturnThresholds }),
+  ...(expectedSampledCpcvSplitCount === undefined
+    ? {}
+    : { expectedSampledCpcvSplitCount })
 });
 
 if (outputPath !== undefined) {
@@ -335,4 +341,19 @@ function readOptionalNumberListArg(name: string): number[] | undefined {
     }
     return parsed;
   });
+}
+
+function readOptionalNonNegativeIntegerArg(name: string): number | undefined {
+  const raw = readArgValue(name);
+  if (raw === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
+  }
+  if (raw === undefined || raw.trim().length === 0) {
+    return undefined;
+  }
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return parsed;
 }

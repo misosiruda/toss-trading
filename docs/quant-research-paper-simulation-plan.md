@@ -532,7 +532,7 @@ Hedge 정책:
 작업 단위:
 
 - [x] Q7-1: `purgedSplit` generator를 추가해 deterministic contiguous K-Fold split, label horizon overlap purging, post-test embargo exclusion summary를 생성한다. 이 단계는 standalone validation protocol 계산과 schema/test/docs 범위이며 batch replay manifest/report, split metric matrix, CPCV/PBO score 연결은 Q7-2 범위로 남긴다.
-- [ ] Q7-2: split별 metric matrix, sampled CPCV, PBO-like score, strategy selection degradation report를 batch aggregate/research report에 연결한다.
+- [x] Q7-2: batch aggregate report에 selection trial과 validation split metadata를 join한 split별 metric matrix, sampled CPCV split count 검증, PBO-like score, strategy selection degradation warning을 연결한다. 이 단계는 사후 분석 report만 담당하며 full CPCV/PBO 수학 구현, strategy 자동 선택, replay 실행 정책 변경은 포함하지 않는다.
 
 ## Milestone Q8. Advanced Performance Metrics
 
@@ -654,7 +654,7 @@ Report 구획:
 14. Q6-2 embargo - 완료
 15. Q6-3 batch replay split role 연결 - 완료
 16. Q7-1 purged split - 완료
-17. Q7-2 PBO-like report
+17. Q7-2 PBO-like report - 완료
 18. Q8 metric expansion
 19. Q9 research report/dashboard
 
