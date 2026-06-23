@@ -126,6 +126,7 @@ export interface BatchReplayOverfittingDiagnostics {
 export interface BatchReplaySplitMetricRow {
   candidateKey: string;
   decisionProviderMode: string;
+  decisionProviderMetadataHash: string;
   promptHash: string | null;
   configHashes: Array<string | null>;
   riskPolicyHash: string;
@@ -228,11 +229,11 @@ export function buildBatchReplayAggregateReport(
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overfittingDiagnostics:
-      selectionTrials === null
+      selectionTrials === null && expectedSampledCpcvSplitCount === null
         ? null
         : summarizeOverfittingDiagnostics({
             records,
-            trials: selectionTrials,
+            trials: selectionTrials ?? [],
             expectedSampledCpcvSplitCount
           }),
     overall: summarizeGroup("overall", records, targetReturnThresholds),
@@ -487,6 +488,7 @@ function buildSplitMetricMatrix(
       return {
         candidateKey,
         decisionProviderMode: firstTrial.decisionProvider.mode,
+        decisionProviderMetadataHash: firstTrial.decisionProvider.metadataHash,
         promptHash: firstTrial.decisionProvider.promptHash,
         configHashes: uniqueNullableStrings(
           bucket.map((joinedTrial) => joinedTrial.trial.config.configHash)
@@ -564,6 +566,7 @@ function summarizeRoleMetric(
 function candidateKeyForTrial(trial: SelectionTrialRecord): string {
   return [
     `provider=${trial.decisionProvider.mode}`,
+    `providerMetadata=${trial.decisionProvider.metadataHash}`,
     `prompt=${trial.decisionProvider.promptHash ?? "null"}`,
     `risk=${trial.config.riskPolicyHash}`,
     `allocation=${trial.config.allocationPolicyHash}`,

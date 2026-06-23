@@ -419,6 +419,135 @@ test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", 
   assert.match(renderBatchReplayAggregateReport(report), /split_metric_matrix/);
 });
 
+test("batch replay aggregate report separates provider metadata candidates", () => {
+  const promptHash = hash("same_prompt");
+  const providerAMetadataHash = hash("provider_a_metadata");
+  const providerBMetadataHash = hash("provider_b_metadata");
+  const sharedAllocationPolicyHash = hash("shared_allocation_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 2,
+    records: [
+      record("provider_a_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("provider_b_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "provider_a_validation",
+        2,
+        "completed",
+        "bull",
+        -0.05,
+        950_000,
+        0,
+        "validation"
+      ),
+      record(
+        "provider_b_validation",
+        3,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "provider_a_train",
+        0,
+        "completed",
+        promptHash,
+        hash("provider_a_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerAMetadataHash }
+      ),
+      trial(
+        "provider_b_train",
+        1,
+        "completed",
+        promptHash,
+        hash("provider_b_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerBMetadataHash }
+      ),
+      trial(
+        "provider_a_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("provider_a_validation_config"),
+        1,
+        0,
+        0,
+        -0.05,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerAMetadataHash }
+      ),
+      trial(
+        "provider_b_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("provider_b_validation_config"),
+        1,
+        0,
+        0,
+        0.04,
+        { allocationPolicyHash: sharedAllocationPolicyHash },
+        { metadataHash: providerBMetadataHash }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const metadataHashes = new Set(
+    diagnostics.splitMetricMatrix.map(
+      (row) => row.decisionProviderMetadataHash
+    )
+  );
+
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(metadataHashes, new Set([
+    providerAMetadataHash,
+    providerBMetadataHash
+  ]));
+  assert.match(
+    diagnostics.selectedCandidateKey ?? "",
+    new RegExp(`providerMetadata=${providerAMetadataHash}`)
+  );
+});
+
+test("batch replay aggregate report warns when expected split count lacks trials", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("run_without_trials", 0, "completed", "bull", 0.01, 1_010_000)
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+
+  assert.equal(report.trialSummary, null);
+  assert.equal(diagnostics.expectedSampledCpcvSplitCount, 3);
+  assert.equal(diagnostics.sampledCpcvSplitCount, 0);
+  assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
+  assert.equal(diagnostics.joinedTrialCount, 0);
+  assert.match(
+    diagnostics.warnings.join("\n"),
+    /no selection trials with validation split metadata/
+  );
+  assert.match(diagnostics.warnings.join("\n"), /split count mismatch/);
+});
+
 test("batch replay aggregate report warns when PBO-like samples are insufficient", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -1181,7 +1310,8 @@ function trial(
     status === "completed" || status === "completed_with_failures"
       ? 0.01
       : null,
-  configOverrides: Partial<SelectionTrialRecord["config"]> = {}
+  configOverrides: Partial<SelectionTrialRecord["config"]> = {},
+  decisionProviderOverrides: Partial<SelectionTrialRecord["decisionProvider"]> = {}
 ): SelectionTrialRecord {
   return {
     mode: "paper_only",
@@ -1219,7 +1349,7 @@ function trial(
       promptPolicy: null,
       promptVersion: null,
       promptHash,
-      metadataHash: hash("f")
+      metadataHash: decisionProviderOverrides.metadataHash ?? hash("f")
     },
     config: {
       configHash,
