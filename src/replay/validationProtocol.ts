@@ -71,7 +71,7 @@ export const validationSplitSchema = z
   });
 
 export const validationSplitAssignmentSchema = validationSplitSchema
-  .extend({
+  .safeExtend({
     splitRole: validationSplitRoleSchema
   })
   .strict();
