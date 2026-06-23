@@ -726,6 +726,129 @@ test("batch replay aggregate report scores PBO-like degradation per holdout spli
   );
 });
 
+test("batch replay aggregate report uses matching split train metric for degradation", () => {
+  const promptHash = hash("d");
+  const candidateAAllocationPolicyHash = hash("candidate_a_degradation_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_degradation_policy");
+  const entries: Array<{
+    runId: string;
+    runIndex: number;
+    splitId: string;
+    splitRole: ValidationSplitRole;
+    totalReturnRatio: number;
+    allocationPolicyHash: SelectionTrialRecord["config"]["allocationPolicyHash"];
+  }> = [
+    {
+      runId: "candidate_a_split_1_train_degradation",
+      runIndex: 0,
+      splitId: "split_1",
+      splitRole: "train",
+      totalReturnRatio: 0.3,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_1_train_degradation",
+      runIndex: 1,
+      splitId: "split_1",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_2_train_degradation",
+      runIndex: 2,
+      splitId: "split_2",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_2_train_degradation",
+      runIndex: 3,
+      splitId: "split_2",
+      splitRole: "train",
+      totalReturnRatio: 0.1,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_1_validation_degradation",
+      runIndex: 4,
+      splitId: "split_1",
+      splitRole: "validation",
+      totalReturnRatio: 0.05,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_1_validation_degradation",
+      runIndex: 5,
+      splitId: "split_1",
+      splitRole: "validation",
+      totalReturnRatio: 0,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    },
+    {
+      runId: "candidate_a_split_2_validation_degradation",
+      runIndex: 6,
+      splitId: "split_2",
+      splitRole: "validation",
+      totalReturnRatio: -0.02,
+      allocationPolicyHash: candidateAAllocationPolicyHash
+    },
+    {
+      runId: "candidate_b_split_2_validation_degradation",
+      runIndex: 7,
+      splitId: "split_2",
+      splitRole: "validation",
+      totalReturnRatio: -0.03,
+      allocationPolicyHash: candidateBAllocationPolicyHash
+    }
+  ];
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: entries.map((entry) =>
+      record(
+        entry.runId,
+        entry.runIndex,
+        "completed",
+        "bull",
+        entry.totalReturnRatio,
+        Math.round(1_000_000 * (1 + entry.totalReturnRatio)),
+        0,
+        entry.splitRole,
+        entry.splitId
+      )
+    ),
+    selectionTrials: entries.map((entry) =>
+      trial(
+        entry.runId,
+        entry.runIndex,
+        "completed",
+        promptHash,
+        hash(String(entry.runIndex)),
+        1,
+        0,
+        0,
+        entry.totalReturnRatio,
+        { allocationPolicyHash: entry.allocationPolicyHash }
+      )
+    )
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const degradationBySplit = new Map(
+    diagnostics.holdoutDegradation.map((entry) => [
+      entry.splitId,
+      entry.degradationFromTrainRatio
+    ])
+  );
+
+  assert.equal(diagnostics.selectedTrainAverageTotalReturnRatio, 0.2);
+  assert.equal(degradationBySplit.get("split_1"), -0.25);
+  assert.equal(degradationBySplit.get("split_2"), -0.12);
+});
+
 test("batch replay aggregate report does not mark tied holdouts below median", () => {
   const promptHash = hash("t");
   const selectedAllocationPolicyHash = hash("f");

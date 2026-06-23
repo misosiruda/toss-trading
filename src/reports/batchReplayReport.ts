@@ -680,8 +680,13 @@ function holdoutDegradationForSplit(
     selectedAverage === null || roleCandidates.length < 2
       ? null
       : selectedAverage < medianCandidateAverage;
+  const splitTrainAverage =
+    splitMetricForCandidate(selectedCandidate, splitId, "train")?.metric
+      .averageTotalReturnRatio ?? null;
   const trainAverage =
-    selectedCandidate.roleMetrics.train?.averageTotalReturnRatio ?? null;
+    splitTrainAverage ??
+    selectedCandidate.roleMetrics.train?.averageTotalReturnRatio ??
+    null;
 
   return {
     splitId,

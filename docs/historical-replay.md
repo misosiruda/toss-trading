@@ -710,7 +710,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - `sampledCpcvSplitCountMatchesExpected`: expected count를 전달한 경우 actual과 일치하는지 여부
 - `splitMetricMatrix`: candidate별 train/validation/test 및 `splitId:splitRole` return sample count, average, median, run ID, 관측 `configHashes`
 - `selectedCandidateKey`: train role 평균 return 기준으로 선택된 candidate key
-- `holdoutDegradation`: selected candidate의 validation/test holdout split별 average, rank, train 대비 degradation
+- `holdoutDegradation`: selected candidate의 validation/test holdout split별 average, rank, 같은 split의 train metric 우선 기준 degradation
 - `pboLikeScore`: selected candidate가 return sample이 2개 이상인 holdout split에서 median 아래로 떨어진 비율
 - `warnings`: candidate 수, holdout sample, split count가 부족할 때의 경고
 
