@@ -579,6 +579,10 @@ Metric 후보:
 
 - report가 "수익률 하나"가 아니라 risk/cost/exposure-adjusted view를 제공한다.
 
+구현 상태:
+
+- [x] Q8-1: `performance_metrics.v1` helper를 추가해 historical replay report와 batch aggregate report에 hit ratio, profit factor, average win/loss, tail loss, per-sample Sharpe, CAGR, MDD, Calmar, cost-adjusted/gross return, exposure-adjusted return, sample warning을 노출한다. 이 단계는 deterministic paper-only 사후 metric이며 Sharpe confidence interval, Deflated Sharpe Ratio, dashboard 화면 연결은 포함하지 않는다.
+
 ## Milestone Q9. Research Report와 Dashboard Read-only 표시
 
 목표:
@@ -655,7 +659,7 @@ Report 구획:
 15. Q6-3 batch replay split role 연결 - 완료
 16. Q7-1 purged split - 완료
 17. Q7-2 PBO-like report - 완료
-18. Q8 metric expansion
+18. Q8-1 metric expansion - 완료
 19. Q9 research report/dashboard
 
 한 PR에서 피해야 할 조합:

@@ -160,6 +160,25 @@ Historical replay는 각 simulated tick에서 보유 포지션을 해당 tick까
 
 Historical replay report의 `Execution Costs` section은 완료된 `VirtualTrade`에서 fee/tax/slippage/spread/impact cost를 합산합니다.
 
+Historical replay report의 `Advanced Performance Metrics` section은 `performance_metrics.v1` 산식으로 portfolio timeline과 virtual trade cost를 함께 요약합니다.
+
+포함되는 metric:
+
+- `totalReturnRatio`: final net worth 기준 paper return
+- `grossTotalReturnRatio`: modeled cost를 되돌려 더한 cost-before paper return
+- `costAdjustedTotalReturnRatio`: modeled cost가 반영된 paper return
+- `costDragRatio`: initial net worth 대비 modeled cost
+- `cagrRatio`: replay 기간이 30일 이상일 때만 계산하는 annualized return
+- `maxDrawdownRatio`: timeline peak 대비 drawdown
+- `calmarRatio`: `cagrRatio / abs(maxDrawdownRatio)`
+- `hitRatio`, `profitFactor`, `averageWinRatio`, `averageLossRatio`
+- `tailLossRatio`: return sample이 20개 이상일 때 worst 5% return 평균
+- `sharpeRatio`: sample return 기준이며 annualize하지 않는다
+- `exposureAdjustedReturnRatio`: `totalReturnRatio / avgExposureRatio`
+- `warnings`: sample 부족, zero volatility, annualization 제한, serial correlation 미보정 경고
+
+이 metric은 paper-only 사후 분석용입니다. 짧은 replay, return sample 부족, zero drawdown, zero volatility에서는 숫자를 억지로 만들지 않고 `null`과 warning을 기록합니다. Sharpe는 per-sample 값이며 Lo 방식의 serial-correlation adjustment나 Deflated Sharpe Ratio가 아닙니다.
+
 Q3-2 기준:
 
 - `paper_cost_model.v2` / `execution_simulator.v2`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.
@@ -725,6 +744,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 - return sample이 있는 completed run 수
 - 전체 및 regime별 평균/중앙값/min/max paper return ratio
 - 전체 및 regime별 win rate
+- 전체 및 regime별 advanced performance metric summary와 sample warning
 - 전체 및 regime별 target return threshold hit-rate
 - 전체 및 market별 regime count
 - validation split role count

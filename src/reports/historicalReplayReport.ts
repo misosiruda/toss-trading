@@ -2,6 +2,10 @@ import {
   buildPaperPortfolioAnalytics,
   type PaperPortfolioAnalytics
 } from "../analytics/paperPortfolioAnalytics.js";
+import {
+  summarizeReplayPerformanceMetrics,
+  type ReplayPerformanceMetrics
+} from "../analytics/performanceMetrics.js";
 import type { VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -45,6 +49,7 @@ export interface HistoricalReplayReport {
   decisionOutcome: HistoricalReplayDecisionOutcomeSummary;
   tradeSummary: HistoricalReplayTradeSummary;
   costSummary: HistoricalReplayCostSummary;
+  advancedPerformance: ReplayPerformanceMetrics;
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
   reproducibility: ReplayResearchManifestReference;
@@ -147,6 +152,11 @@ export function buildHistoricalReplayReport(
   options: HistoricalReplayReportOptions
 ): HistoricalReplayReport {
   const result = options.result;
+  const portfolioConstruction = buildPortfolioConstructionMetrics(
+    result.portfolioTimeline,
+    result.allocationPolicy
+  );
+  const costSummary = summarizeCosts(result.trades);
 
   return {
     title: options.title ?? "Historical Replay Paper Report",
@@ -165,10 +175,7 @@ export function buildHistoricalReplayReport(
     allocationPolicy: result.allocationPolicy,
     paperExitPolicy: result.paperExitPolicy,
     portfolio: summarizePortfolio(result.initialPortfolio, result.finalPortfolio),
-    portfolioConstruction: buildPortfolioConstructionMetrics(
-      result.portfolioTimeline,
-      result.allocationPolicy
-    ),
+    portfolioConstruction,
     analytics: buildPaperPortfolioAnalytics({
       portfolio: result.finalPortfolio,
       decisions: result.decisions,
@@ -176,7 +183,12 @@ export function buildHistoricalReplayReport(
     }),
     decisionOutcome: summarizeDecisions(result.decisions),
     tradeSummary: summarizeTrades(result.trades),
-    costSummary: summarizeCosts(result.trades),
+    costSummary,
+    advancedPerformance: summarizeReplayPerformanceMetrics({
+      timeline: result.portfolioTimeline,
+      trades: result.trades,
+      averageExposureRatio: portfolioConstruction.avgExposureRatio
+    }),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
     reproducibility:
@@ -277,6 +289,28 @@ export function renderHistoricalReplayReport(
     `cost_model_versions: ${
       report.costSummary.costModelVersions.join(", ") || "none"
     }`,
+    "",
+    "## Advanced Performance Metrics",
+    `formula_version: ${report.advancedPerformance.formulaVersion}`,
+    `sample_count: ${report.advancedPerformance.sampleCount}`,
+    `initial_net_worth_krw: ${formatNullable(report.advancedPerformance.initialNetWorthKrw)}`,
+    `final_net_worth_krw: ${formatNullable(report.advancedPerformance.finalNetWorthKrw)}`,
+    `total_return_ratio: ${formatNullable(report.advancedPerformance.totalReturnRatio)}`,
+    `gross_total_return_ratio: ${formatNullable(report.advancedPerformance.grossTotalReturnRatio)}`,
+    `cost_adjusted_total_return_ratio: ${formatNullable(report.advancedPerformance.costAdjustedTotalReturnRatio)}`,
+    `cost_drag_ratio: ${formatNullable(report.advancedPerformance.costDragRatio)}`,
+    `cagr_ratio: ${formatNullable(report.advancedPerformance.cagrRatio)}`,
+    `max_drawdown_ratio: ${formatNullable(report.advancedPerformance.maxDrawdownRatio)}`,
+    `calmar_ratio: ${formatNullable(report.advancedPerformance.calmarRatio)}`,
+    `hit_ratio: ${formatNullable(report.advancedPerformance.hitRatio)}`,
+    `profit_factor: ${formatNullable(report.advancedPerformance.profitFactor)}`,
+    `average_win_ratio: ${formatNullable(report.advancedPerformance.averageWinRatio)}`,
+    `average_loss_ratio: ${formatNullable(report.advancedPerformance.averageLossRatio)}`,
+    `tail_loss_ratio: ${formatNullable(report.advancedPerformance.tailLossRatio)}`,
+    `sharpe_ratio: ${formatNullable(report.advancedPerformance.sharpeRatio)}`,
+    `sharpe_annualization_status: ${report.advancedPerformance.sharpeAnnualizationStatus}`,
+    `exposure_adjusted_return_ratio: ${formatNullable(report.advancedPerformance.exposureAdjustedReturnRatio)}`,
+    `warnings: ${report.advancedPerformance.warnings.join(" | ") || "none"}`,
     "",
     "## Virtual Risk",
     `approved_count: ${report.riskSummary.approvedCount}`,

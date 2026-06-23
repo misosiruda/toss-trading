@@ -1,4 +1,8 @@
 import type { MarketRegimeLabel } from "../analytics/marketRegimeClassifier.js";
+import {
+  summarizeReturnDistributionMetrics,
+  type ReturnDistributionMetrics
+} from "../analytics/performanceMetrics.js";
 import type { AssetType, Market } from "../domain/schemas.js";
 import type {
   SelectionTrialRecord,
@@ -61,6 +65,7 @@ export interface BatchReplayGroupSummary {
   minTotalReturnRatio: number | null;
   maxTotalReturnRatio: number | null;
   winRate: number | null;
+  advancedPerformance: ReturnDistributionMetrics;
   targetReturnHitRates: TargetReturnHitRate[];
   averageFinalVirtualNetWorthKrw: number | null;
   averageExposureRatio: number | null;
@@ -933,6 +938,7 @@ function summarizeGroup(
       returns.length === 0
         ? null
         : roundRatio(returns.filter((value) => value > 0).length / returns.length),
+    advancedPerformance: summarizeReturnDistributionMetrics(returns),
     targetReturnHitRates: targetReturnThresholds.map((threshold) =>
       targetReturnHitRate(threshold, returnSamples)
     ),
@@ -1150,6 +1156,7 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `average_total_return_ratio: ${formatNullable(group.averageTotalReturnRatio)}`,
     `median_total_return_ratio: ${formatNullable(group.medianTotalReturnRatio)}`,
     `win_rate: ${formatNullable(group.winRate)}`,
+    `advanced_performance: ${JSON.stringify(group.advancedPerformance)}`,
     `target_return_hit_rates: ${JSON.stringify(group.targetReturnHitRates)}`,
     `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`,
     `average_exposure_ratio: ${formatNullable(group.averageExposureRatio)}`,
