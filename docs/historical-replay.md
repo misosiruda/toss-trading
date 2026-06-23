@@ -614,6 +614,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `applyValidationEmbargoPolicy()`는 train 후보 sample 중 validation 시작 직전 embargo window에 포함되는 sample을 제외하고 split별 exclusion summary를 계산합니다.
 - Q6-3부터 batch replay는 `--validation-splits-path`로 assignment array를 받아 `train`, `validation`, `test` role window를 fixed range로 실행할 수 있습니다.
 - split assignment는 `batch-replay-manifest.json`의 `validationProtocol` summary, `batch-replay-runs.jsonl`의 `validationSplit`, aggregate report의 `validationSplitRoleCounts`와 `byValidationSplitRole`에 저장됩니다.
+- `train` role assignment에 `embargoDurationDays > 0`이 있으면 batch replay window는 `validationStart - embargoDurationDays` 직전까지로 잘라 embargo sample이 train replay, availability, regime, packet, metric에 포함되지 않게 합니다.
 - purge duration은 현재 `0`으로 고정됩니다. purge 적용과 CPCV/Purged K-Fold 연결은 Q7 범위입니다.
 
 예시:

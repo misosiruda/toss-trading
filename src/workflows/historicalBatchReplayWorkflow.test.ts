@@ -188,7 +188,7 @@ test("historical batch replay runner records validation split assignments", asyn
     stepSeconds: 604_800,
     maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
     validationSplitAssignments: [
-      validationAssignment("train"),
+      validationAssignment("train", 5),
       validationAssignment("validation")
     ]
   });
@@ -223,8 +223,16 @@ test("historical batch replay runner records validation split assignments", asyn
     "2024-12-31T15:00:00.000Z"
   );
   assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["endAt"],
+    "2025-01-26T14:59:59.999Z"
+  );
+  assert.equal(
     (runRecords[0]?.["window"] as Record<string, unknown>)["localStartDate"],
     "2025-01-01"
+  );
+  assert.equal(
+    (runRecords[0]?.["window"] as Record<string, unknown>)["localEndDate"],
+    "2025-01-26"
   );
   assert.equal(
     (runRecords[1]?.["validationSplit"] as Record<string, unknown>)["splitRole"],
@@ -838,7 +846,8 @@ function snapshot(
 }
 
 function validationAssignment(
-  splitRole: ValidationSplitRole
+  splitRole: ValidationSplitRole,
+  embargoDurationDays = 0
 ): ValidationSplitAssignment {
   return {
     validationProtocol: "walk_forward",
@@ -853,7 +862,7 @@ function validationAssignment(
     testEnd:
       splitRole === "test" ? "2025-03-31T14:59:59.999Z" : null,
     purgeDurationDays: 0,
-    embargoDurationDays: 0,
+    embargoDurationDays,
     splitRole
   };
 }

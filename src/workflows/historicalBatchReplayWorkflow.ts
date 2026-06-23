@@ -309,6 +309,7 @@ const DEFAULT_PACKET_ID_PREFIX = "packet_batch_replay";
 const DEFAULT_PACKET_EXPIRES_IN_SECONDS = 60;
 const DEFAULT_MAX_CANDIDATES = 10;
 const DEFAULT_MAX_SNAPSHOT_AGE_SECONDS = 300;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CONSTRAINTS: MarketPacketConstraints = {
   maxNewPositions: 3,
   maxBudgetPerSymbolKrw: 100_000,
@@ -873,7 +874,7 @@ function validationRoleWindow(assignment: ValidationSplitAssignment): {
   if (assignment.splitRole === "train") {
     return {
       startAt: assignment.trainStart,
-      endAt: assignment.trainEnd
+      endAt: trainEndExcludingEmbargo(assignment)
     };
   }
   if (assignment.splitRole === "validation") {
@@ -886,6 +887,29 @@ function validationRoleWindow(assignment: ValidationSplitAssignment): {
     startAt: assignment.testStart!,
     endAt: assignment.testEnd!
   };
+}
+
+function trainEndExcludingEmbargo(
+  assignment: ValidationSplitAssignment
+): string {
+  if (assignment.embargoDurationDays === 0) {
+    return assignment.trainEnd;
+  }
+
+  const trainStartMs = Date.parse(assignment.trainStart);
+  const trainEndMs = Date.parse(assignment.trainEnd);
+  const validationStartMs = Date.parse(assignment.validationStart);
+  const embargoStartMs =
+    validationStartMs - assignment.embargoDurationDays * DAY_MS;
+  const effectiveTrainEndMs = Math.min(trainEndMs, embargoStartMs - 1);
+
+  if (effectiveTrainEndMs < trainStartMs) {
+    throw new Error(
+      "validation split train window has no non-embargo replay range"
+    );
+  }
+
+  return new Date(effectiveTrainEndMs).toISOString();
 }
 
 function localDatePart(
