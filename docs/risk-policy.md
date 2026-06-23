@@ -54,6 +54,7 @@ Artifact 위치 계약:
 - `VIRTUAL_PRICE_MISSING`
 - `VIRTUAL_CASH_EXCEEDED`
 - `VIRTUAL_CASH_RESERVE_BREACHED`
+- `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`
 - `VIRTUAL_BUDGET_EXCEEDED`
 - `VIRTUAL_TARGET_EXPOSURE_EXCEEDED`
 - `VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED`
@@ -173,11 +174,13 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 | `maxUnknownMetadataExposureRatio` | disabled | NAV 대비 metadata unknown exposure 최대 비율 |
 | `minCashReserveRatio` | `0.10` | NAV 대비 최소 현금 reserve |
 | `minCashReserveKrw` | `0` | 절대 최소 현금 reserve |
+| `dynamicCashReservePolicy` | disabled | market regime과 high volatility 기준으로 최소 현금 reserve를 상향하는 opt-in policy |
 | `cooldownEntries` | `[]` | symbol/action 단위의 임시 진입 제한 |
 
 정책 목적:
 
 - `cash_reserve`는 모든 현금을 소진하는 BUY를 막습니다.
+- `regime_cash_reserve`는 `dynamicCashReservePolicy`가 설정된 replay에서 시장 regime과 변동성 기준으로 현금 reserve를 추가로 상향합니다.
 - `position_weight`는 NAV가 커져도 단일 종목 집중도가 과도해지지 않게 막습니다.
 - `sector_exposure`, `country_exposure`, `currency_exposure`는 한쪽 portfolio 쏠림을 deterministic하게 막습니다.
 - `exposure_metadata`는 sector/country/currency/bucket metadata가 부족한 상태에서 신규 진입을 보수적으로 제한합니다.
@@ -186,6 +189,31 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 - `reduceOnly: true`인 `VIRTUAL_SELL`은 리스크 축소성 paper 매도이므로 cooldown 예외로 둡니다.
 
 현재 정책은 paper-only `VirtualRiskEngine`에 한정됩니다. 실거래 `RiskEngine`, `TradingSignal`, `OrderIntent`, `OrderRouter` 경로로 전파하지 않습니다.
+
+### Dynamic Cash Reserve
+
+`dynamicCashReservePolicy`는 static `minCashReserveRatio`와 `minCashReserveKrw`를 약화하지 않습니다. 각 replay tick에서 현재 `simulatedAt` 이전 snapshot만 사용해 market regime을 계산하고, static reserve보다 더 높은 reserve가 필요한 경우에만 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`를 추가합니다.
+
+기본 방향:
+
+| Regime | 기본 reserve ratio |
+| --- | ---: |
+| `bull` | `max(static floor, 0.02)` |
+| `sideways` | `0.10` |
+| `mixed` | `0.15` |
+| `bear` | `0.25` |
+| `insufficient_data` | `0.35` |
+| high volatility | `0.30` |
+
+high volatility는 classified symbol의 absolute return 평균이 `highVolatilityReturnThreshold` 이상일 때 적용됩니다. 기본 threshold는 `0.08`입니다.
+
+적용 범위:
+
+- historical/batch replay의 paper-only `VirtualRiskEngine`에서만 사용합니다.
+- `--dynamic-cash-reserve`를 명시한 batch replay에서 risk profile policy 위에 병합됩니다.
+- 설정은 `historical-replay-run-metadata.json`의 `configuration.riskPolicy.dynamicCashReservePolicy`와 research manifest hash에 포함됩니다.
+- tick별 `dynamicCashReserveMarketRegime`은 runtime context이며 run metadata의 static configuration에는 저장하지 않습니다.
+- market regime allocation은 market별 target exposure ratio를 조정하고, dynamic cash reserve는 전체 portfolio cash floor를 조정합니다. 두 정책은 서로 대체하지 않습니다.
 
 ## Live RiskEngine Implementation Boundary
 

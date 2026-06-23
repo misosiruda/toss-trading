@@ -9,6 +9,7 @@ import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
+import type { DynamicCashReservePolicy } from "../paper/dynamicCashReservePolicy.js";
 import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import type { Market, MarketPacket } from "../domain/schemas.js";
@@ -51,6 +52,14 @@ const riskProfile = resolvePaperRiskProfile({
 });
 const paperExitPolicy = readPaperExitPolicyArg();
 const marketRegimeAllocationPolicy = readMarketRegimeAllocationPolicyArg();
+const dynamicCashReservePolicy = readDynamicCashReservePolicyArg();
+const riskPolicy =
+  dynamicCashReservePolicy === undefined
+    ? riskProfile.riskPolicy
+    : {
+        ...riskProfile.riskPolicy,
+        dynamicCashReservePolicy
+      };
 const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
   riskProfile: riskProfile.name
 });
@@ -136,7 +145,7 @@ const result = await runHistoricalBatchReplay({
     : {}),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
-  riskPolicy: riskProfile.riskPolicy,
+  riskPolicy,
   allocationPolicy: riskProfile.allocationPolicy
 });
 
@@ -156,6 +165,7 @@ console.log(
       failedCount: result.failedCount,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
+      dynamicCashReservePolicy: dynamicCashReservePolicy ?? null,
       paperExitPolicy: paperExitPolicy ?? null,
       marketRegimeAllocationPolicy: marketRegimeAllocationPolicy ?? null,
       windowSamplingMode,
@@ -314,6 +324,41 @@ function readMarketRegimeAllocationPolicyArg():
     minSnapshotsPerSymbol: readNumberArg(
       "--market-regime-min-snapshots-per-symbol",
       2
+    )
+  };
+}
+
+function readDynamicCashReservePolicyArg():
+  | DynamicCashReservePolicy
+  | undefined {
+  if (!args.includes("--dynamic-cash-reserve")) {
+    return undefined;
+  }
+
+  const lookbackDays = readNumberArg(
+    "--dynamic-cash-reserve-lookback-days",
+    20
+  );
+  if (!Number.isInteger(lookbackDays) || lookbackDays <= 0) {
+    throw new Error(
+      "--dynamic-cash-reserve-lookback-days must be a positive integer"
+    );
+  }
+
+  return {
+    lookbackDays,
+    minSymbols: readNumberArg("--dynamic-cash-reserve-min-symbols", 1),
+    minSnapshotsPerSymbol: readNumberArg(
+      "--dynamic-cash-reserve-min-snapshots-per-symbol",
+      2
+    ),
+    highVolatilityReturnThreshold: readNumberArg(
+      "--dynamic-cash-reserve-high-volatility-return-threshold",
+      0.08
+    ),
+    highVolatilityCashReserveRatio: readNumberArg(
+      "--dynamic-cash-reserve-high-volatility-ratio",
+      0.3
     )
   };
 }

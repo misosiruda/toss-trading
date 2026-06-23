@@ -66,6 +66,32 @@ export const historicalReplayRunWindowSchema = z
   })
   .strict();
 
+const marketRegimeLabelSchema = z.enum([
+  "bull",
+  "bear",
+  "sideways",
+  "mixed",
+  "insufficient_data"
+]);
+
+const dynamicCashReservePolicySchema = z
+  .object({
+    lookbackDays: z.number().int().positive(),
+    minSymbols: z.number().int().positive().optional(),
+    minSnapshotsPerSymbol: z.number().int().positive().optional(),
+    bullReturnThreshold: z.number().optional(),
+    bearReturnThreshold: z.number().optional(),
+    sidewaysAbsReturnThreshold: z.number().optional(),
+    breadthThreshold: z.number().optional(),
+    minimumCashReserveRatioFloor: z.number().min(0).max(1).optional(),
+    regimeCashReserveRatios: z
+      .partialRecord(marketRegimeLabelSchema, z.number().min(0).max(1))
+      .optional(),
+    highVolatilityReturnThreshold: z.number().min(0).max(1).optional(),
+    highVolatilityCashReserveRatio: z.number().min(0).max(1).optional()
+  })
+  .strict();
+
 export const historicalReplayRunConfigurationSchema = z
   .object({
     clock: z
@@ -134,7 +160,8 @@ export const historicalReplayRunConfigurationSchema = z
           .optional(),
         maxUnknownMetadataExposureRatio: z.number().min(0).max(1).optional(),
         minCashReserveRatio: z.number().min(0).max(1).optional(),
-        minCashReserveKrw: z.number().int().nonnegative().optional()
+        minCashReserveKrw: z.number().int().nonnegative().optional(),
+        dynamicCashReservePolicy: dynamicCashReservePolicySchema.optional()
       })
       .strict()
       .nullable(),

@@ -8,6 +8,17 @@
 
 이 기능은 전체 투자 비중을 올리는 기능이 아니다. 전체 terminal target exposure, scheduled exposure ceiling, cash reserve, aggregate per-decision cap, symbol exposure cap은 기존 paper risk profile이 계속 결정한다. 이 정책은 그 안에서 market별 추가 매수 cap만 조정한다.
 
+## Dynamic Cash Reserve와 책임 분리
+
+`marketRegimeAllocationPolicy`와 `dynamicCashReservePolicy`는 둘 다 market regime classifier를 사용할 수 있지만 책임이 다르다.
+
+| 정책 | 조정 대상 | 목적 |
+| --- | --- | --- |
+| `marketRegimeAllocationPolicy` | `MarketPacket.portfolioAllocation.marketTargetExposureRatios` | KR/US 같은 market별 target exposure 재분배 |
+| `dynamicCashReservePolicy` | `VirtualRiskPolicy`의 effective cash reserve | bear, insufficient data, high volatility 구간의 추가 BUY fail-closed |
+
+`dynamicCashReservePolicy`는 static `minCashReserveRatio`를 낮추지 않는다. bull regime에서도 configured floor와 기본 nonzero floor를 유지하고, bear 또는 high volatility에서는 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`로 별도 reject code를 남긴다.
+
 ## CLI
 
 ```powershell
@@ -50,6 +61,7 @@ windowEnd   = simulatedAt
 - `historical-replay-run-metadata.json`: run별 `marketRegimeAllocationPolicy`를 기록한다.
 - `MarketPacket.portfolioAllocation.marketTargetExposureRatios`: tick별로 계산된 KR/US terminal target exposure ratio를 포함한다.
 - `MarketPacket.portfolioAllocation.marketAllocations`: market별 현재 exposure, scheduled target gap, 추가 매수 cap을 포함한다.
+- `historical-replay-run-metadata.json`: `riskPolicy.dynamicCashReservePolicy`가 설정된 경우 dynamic cash reserve 설정을 기록한다.
 
 ## Safety Boundary
 

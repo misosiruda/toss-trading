@@ -249,6 +249,9 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       String(31 * 24 * 60 * 60),
       "--risk-profile",
       "aggressive_paper",
+      "--dynamic-cash-reserve",
+      "--dynamic-cash-reserve-lookback-days",
+      "10",
       "--paper-take-profit-ratio",
       "0.15",
       "--paper-stop-loss-ratio",
@@ -280,6 +283,13 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(output["status"], "completed");
   assert.equal(output["completedCount"], 1);
   assert.equal(output["riskProfile"], "aggressive_paper");
+  assert.deepEqual(output["dynamicCashReservePolicy"], {
+    lookbackDays: 10,
+    minSymbols: 1,
+    minSnapshotsPerSymbol: 2,
+    highVolatilityReturnThreshold: 0.08,
+    highVolatilityCashReserveRatio: 0.3
+  });
   assert.deepEqual(output["paperExitPolicy"], {
     takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
@@ -323,6 +333,10 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     string,
     unknown
   >;
+  const runRiskPolicy = runConfiguration["riskPolicy"] as Record<
+    string,
+    unknown
+  >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
   assert.deepEqual(runConfiguration["paperExitPolicy"], {
     takeProfitMode: "full_exit",
@@ -332,6 +346,13 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   });
   assert.equal(runConstraints["maxNewPositions"], 5);
   assert.equal(runConstraints["maxBudgetPerSymbolKrw"], 400_000);
+  assert.deepEqual(runRiskPolicy["dynamicCashReservePolicy"], {
+    lookbackDays: 10,
+    minSymbols: 1,
+    minSnapshotsPerSymbol: 2,
+    highVolatilityReturnThreshold: 0.08,
+    highVolatilityCashReserveRatio: 0.3
+  });
 
   const aggregateReportPath = join(
     outputBaseDir,

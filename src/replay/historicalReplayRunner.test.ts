@@ -264,6 +264,59 @@ test("historical replay runner leaves portfolio unchanged on risk reject", () =>
   assert.equal(result.finalPortfolio.positions.length, 0);
 });
 
+test("historical replay runner applies dynamic cash reserve policy per tick", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 800_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      },
+      riskPolicy: {
+        maxBudgetPerDecisionKrw: 800_000,
+        maxSymbolExposureKrw: 800_000,
+        maxPositionWeightRatio: 1,
+        minCashReserveRatio: 0.05,
+        dynamicCashReservePolicy: {
+          lookbackDays: 3,
+          minSymbols: 1,
+          minSnapshotsPerSymbol: 2
+        }
+      }
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_005930_0101",
+          symbol: "005930",
+          observedAt: "2025-01-01T09:00:00+09:00",
+          lastPriceKrw: 900_000
+        }),
+        snapshot({
+          snapshotId: "hist_005930_0102",
+          symbol: "005930",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 800_000
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.tradeCount, 0);
+  assert.equal(result.rejectedCount, 1);
+  assert.equal(result.finalPortfolio.cashKrw, 1_000_000);
+  assert.deepEqual(result.riskDecisions[0]?.rejectCodes, [
+    "VIRTUAL_REGIME_CASH_RESERVE_BREACHED"
+  ]);
+});
+
 test("historical replay runner skips packets when only future snapshots exist", () => {
   const result = runHistoricalReplay(
     {

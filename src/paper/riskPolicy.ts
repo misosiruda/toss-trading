@@ -4,6 +4,8 @@ import type {
   VirtualDecisionItem,
   VirtualPortfolio
 } from "../domain/schemas.js";
+import type { MarketRegimeClassification } from "../analytics/marketRegimeClassifier.js";
+import type { DynamicCashReservePolicy } from "./dynamicCashReservePolicy.js";
 
 export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_PACKET_STALE",
@@ -12,6 +14,7 @@ export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_PRICE_MISSING",
   "VIRTUAL_CASH_EXCEEDED",
   "VIRTUAL_CASH_RESERVE_BREACHED",
+  "VIRTUAL_REGIME_CASH_RESERVE_BREACHED",
   "VIRTUAL_BUDGET_EXCEEDED",
   "VIRTUAL_TARGET_EXPOSURE_EXCEEDED",
   "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED",
@@ -39,6 +42,7 @@ export const VIRTUAL_RISK_RULE_IDS = [
   "candidate_price",
   "cash_limit",
   "cash_reserve",
+  "regime_cash_reserve",
   "budget_limit",
   "target_exposure",
   "symbol_exposure",
@@ -82,6 +86,8 @@ export interface VirtualRiskPolicy {
   maxUnknownMetadataExposureRatio?: number | undefined;
   minCashReserveRatio: number;
   minCashReserveKrw: number;
+  dynamicCashReservePolicy?: DynamicCashReservePolicy | undefined;
+  dynamicCashReserveMarketRegime?: MarketRegimeClassification | undefined;
   cooldownEntries: VirtualRiskCooldownEntry[];
   now: Date;
 }
@@ -153,6 +159,15 @@ export function createVirtualRiskPolicy(
         }),
     minCashReserveRatio: input.policy?.minCashReserveRatio ?? 0.1,
     minCashReserveKrw: input.policy?.minCashReserveKrw ?? 0,
+    ...(input.policy?.dynamicCashReservePolicy === undefined
+      ? {}
+      : { dynamicCashReservePolicy: input.policy.dynamicCashReservePolicy }),
+    ...(input.policy?.dynamicCashReserveMarketRegime === undefined
+      ? {}
+      : {
+          dynamicCashReserveMarketRegime:
+            input.policy.dynamicCashReserveMarketRegime
+        }),
     cooldownEntries: input.policy?.cooldownEntries ?? [],
     now: input.policy?.now ?? new Date()
   };

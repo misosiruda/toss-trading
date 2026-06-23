@@ -37,6 +37,7 @@ import {
   type ReplaySamplingDecision,
   type ReplaySamplingPolicy
 } from "./replaySamplingPolicy.js";
+import { riskPolicyForReplayTick } from "./replayRiskPolicy.js";
 import {
   type HistoricalReplayProgressEvent,
   type HistoricalReplayProgressUpdate,
@@ -262,7 +263,13 @@ export async function runCodexHistoricalReplay(
           portfolio: currentPortfolio,
           decisionItem: item,
           engine,
-          riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
+          riskPolicy: riskPolicyForReplayTick({
+            policy: options.riskPolicy,
+            now: simulatedAt,
+            packet,
+            snapshots: input.snapshots,
+            simulatedAt
+          }),
           paperExitPolicyState,
           auditEvents,
           riskDecisions,
@@ -456,9 +463,15 @@ export async function runCodexHistoricalReplay(
       const execution = executeHistoricalReplayDecisionItem({
         packet,
         portfolio: currentPortfolio,
-      decisionItem: item,
-      engine,
-      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
+        decisionItem: item,
+        engine,
+        riskPolicy: riskPolicyForReplayTick({
+          policy: options.riskPolicy,
+          now: simulatedAt,
+          packet,
+          snapshots: input.snapshots,
+          simulatedAt
+        }),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -559,22 +572,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function riskPolicyForTick(
-  policy: Partial<VirtualRiskPolicy> | undefined,
-  now: Date,
-  packet: MarketPacket
-): Partial<VirtualRiskPolicy> {
-  const scheduledExposureCeilingRatio =
-    packet.portfolioAllocation?.scheduledExposureCeilingRatio;
-  return {
-    ...(policy ?? {}),
-    ...(scheduledExposureCeilingRatio === undefined
-      ? {}
-      : { targetExposureRatio: scheduledExposureCeilingRatio }),
-    now
-  };
 }
 
 function allocationPolicyForTick(input: {

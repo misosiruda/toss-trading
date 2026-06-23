@@ -39,6 +39,7 @@ import {
   type ReplaySamplingPolicy,
   type ReplaySamplingPolicyMetadata
 } from "./replaySamplingPolicy.js";
+import { riskPolicyForReplayTick } from "./replayRiskPolicy.js";
 import {
   appendHistoricalReplayAuditEvent,
   enforceProviderDecisionExecutionCaps,
@@ -467,7 +468,13 @@ export function runHistoricalReplay(
         portfolio: currentPortfolio,
         recordedDecision: recordedExitDecision,
         engine,
-        riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
+        riskPolicy: riskPolicyForReplayTick({
+          policy: options.riskPolicy,
+          now: simulatedAt,
+          packet,
+          snapshots: input.snapshots,
+          simulatedAt
+        }),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -572,7 +579,13 @@ export function runHistoricalReplay(
       portfolio: currentPortfolio,
       recordedDecision,
       engine,
-      riskPolicy: riskPolicyForTick(options.riskPolicy, simulatedAt, packet),
+      riskPolicy: riskPolicyForReplayTick({
+        policy: options.riskPolicy,
+        now: simulatedAt,
+        packet,
+        snapshots: input.snapshots,
+        simulatedAt
+      }),
       paperExitPolicyState,
       auditEvents,
       riskDecisions,
@@ -624,22 +637,6 @@ export function runHistoricalReplay(
     initialPortfolio,
     finalPortfolio: currentPortfolio,
     portfolioTimeline
-  };
-}
-
-function riskPolicyForTick(
-  policy: Partial<VirtualRiskPolicy> | undefined,
-  now: Date,
-  packet: MarketPacket
-): Partial<VirtualRiskPolicy> {
-  const scheduledExposureCeilingRatio =
-    packet.portfolioAllocation?.scheduledExposureCeilingRatio;
-  return {
-    ...(policy ?? {}),
-    ...(scheduledExposureCeilingRatio === undefined
-      ? {}
-      : { targetExposureRatio: scheduledExposureCeilingRatio }),
-    now
   };
 }
 

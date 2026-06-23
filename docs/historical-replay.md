@@ -571,7 +571,32 @@ Batch run record는 전체 window 기준 `marketRegime`과 별도로 `marketRegi
 - `marketRegimesByMarket.US`: US snapshot만 사용해 계산한 label입니다.
 - window 안에 해당 market snapshot이 없으면 해당 key를 만들지 않습니다.
 
-이 metadata는 국장/미장 장세가 서로 다를 때 후속 paper-only market allocation 정책의 입력 후보가 될 수 있습니다. 이번 단계에서는 allocation, risk approval, buy/sell decision을 자동 변경하지 않습니다.
+이 metadata는 국장/미장 장세가 서로 다를 때 후속 paper-only policy의 입력 후보가 될 수 있습니다. 기본 batch replay에서는 metadata로만 저장되며, `--market-regime-allocation` 또는 `--dynamic-cash-reserve`를 명시한 경우에만 각각 market allocation 또는 cash reserve risk gate 입력으로 사용됩니다.
+
+### Dynamic Cash Reserve
+
+Batch replay에서 market regime 기반 현금 reserve를 켜려면 `--dynamic-cash-reserve`를 명시합니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-yahoo-daily --output-dir data/batch-replay --batch-id batch-dynamic-cash-smoke --seed batch-dynamic-cash-smoke --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --dynamic-cash-reserve --dynamic-cash-reserve-lookback-days 20
+```
+
+옵션:
+
+- `--dynamic-cash-reserve`: dynamic cash reserve policy를 활성화합니다.
+- `--dynamic-cash-reserve-lookback-days`: 각 tick에서 regime 계산에 사용할 lookback 일수입니다. 기본값은 `20`입니다.
+- `--dynamic-cash-reserve-min-symbols`: 분류에 필요한 최소 symbol 수입니다. 기본값은 `1`입니다.
+- `--dynamic-cash-reserve-min-snapshots-per-symbol`: symbol별 최소 snapshot 수입니다. 기본값은 `2`입니다.
+- `--dynamic-cash-reserve-high-volatility-return-threshold`: high volatility 판단에 사용할 평균 absolute return threshold입니다. 기본값은 `0.08`입니다.
+- `--dynamic-cash-reserve-high-volatility-ratio`: high volatility일 때 요구할 최소 현금 reserve ratio입니다. 기본값은 `0.30`입니다.
+
+동작:
+
+- static `minCashReserveRatio`와 `minCashReserveKrw`를 낮추지 않습니다.
+- tick별 `simulatedAt` 이후 snapshot은 regime 계산에 사용하지 않습니다.
+- bear, insufficient data, high volatility 구간에서 static reserve보다 높은 reserve가 필요하면 `VIRTUAL_REGIME_CASH_RESERVE_BREACHED`를 기록하고 BUY를 reject합니다.
+- 설정은 run metadata의 `configuration.riskPolicy.dynamicCashReservePolicy`와 research manifest hash에 포함됩니다.
+- market regime allocation은 market별 target exposure를 조정하고, dynamic cash reserve는 portfolio 전체 cash floor를 조정합니다.
 
 ### Batch Aggregate Report
 
