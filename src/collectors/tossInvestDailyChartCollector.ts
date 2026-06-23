@@ -309,6 +309,9 @@ function convertDailyCandlesToSnapshots(input: {
         ...(input.symbol.riskTags === undefined
           ? {}
           : { riskTags: input.symbol.riskTags }),
+        ...(input.symbol.sector === undefined
+          ? {}
+          : { sector: input.symbol.sector }),
         observedAt: observedAt.toISOString(),
         interval: "1d",
         ...optionalPrice("openPriceKrw", readPrice(candle, ["open", "openPrice"])),

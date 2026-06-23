@@ -90,8 +90,10 @@ hedge
 적용 범위:
 
 - `HistoricalMarketSnapshot.strategyBucket`은 historical replay snapshot metadata입니다.
+- `HistoricalMarketSnapshot.sector`는 historical replay snapshot metadata이며, universe/collector가 제공한 경우 candidate로 전달됩니다.
 - `MarketCandidate.strategyBucket`은 backend가 생성한 후보 metadata이며 bucket source of truth입니다.
 - `VirtualPosition.strategyBucket`은 paper fill 이후 position에 보존되는 metadata입니다.
+- `VirtualPosition.sector`는 paper fill 이후 position에 보존되는 exposure metadata입니다.
 - `VirtualTrade.strategyBucket`은 paper fill 당시 기록되는 audit metadata입니다.
 
 정책 경계:
@@ -144,7 +146,8 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 
 - BUY에 대해서만 신규 exposure cap을 적용합니다.
 - `reduceOnly: true`인 SELL은 risk 축소성 paper action이므로 bucket turnover gate에서 제외합니다.
-- sector는 candidate metadata를 source로 사용합니다. 기존 position의 sector가 저장되어 있지 않은 경우 같은 `market:symbol` candidate가 packet에 있으면 해당 candidate sector를 사용하고, 없으면 unknown으로 취급합니다.
+- sector는 position metadata를 우선 사용하고, 없으면 같은 `market:symbol` candidate metadata를 사용합니다. 둘 다 없으면 unknown으로 취급합니다.
+- historical replay에서 sector cap을 켜려면 universe/collector/snapshot 경로가 `HistoricalMarketSnapshot.sector`를 제공해야 합니다. 기존 sectorless replay data는 cap 평가 시 unknown metadata로 남아 fail-closed 될 수 있습니다.
 - country 전용 schema는 아직 열지 않고 기존 `region`을 사용합니다. 별도 ISO country/currency field는 후속 schema 확장 PR에서 검토합니다.
 
 ## Paper Trading Policy Parameters

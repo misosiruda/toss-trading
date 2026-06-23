@@ -261,6 +261,7 @@ Q3-2 구현 기준:
 
 - `paper_cost_model.v2` / `execution_simulator.v2`는 기존 fee/tax/slippage 산식을 유지하면서 `conservative_when_available` liquidity model을 추가한다.
 - `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달하고, 과거 window에서 계산한 `averageVolume`은 lookahead 없이 `MarketCandidate.averageVolume`으로 전달한다.
+- `HistoricalMarketSnapshot.sector`는 `MarketCandidate.sector`로 전달한다. sector cap이 켜진 replay는 universe/collector/snapshot 경로에서 sector metadata를 공급해야 하며, 없으면 unknown metadata fail-closed 정책을 따른다.
 - volume 또는 averageVolume이 있으면 `maxVolumeParticipationRate` cap을 적용한다. 기본값은 10%이며, 부족하면 partial fill 또는 no-fill reject가 발생한다.
 - volume 정보가 없으면 legacy full-fill 동작을 보존하되 `liquidityStatus: "not_modeled"`로 기록한다.
 - no-fill은 `VirtualTrade`를 만들지 않고 `VirtualRiskDecision.rejectCodes`에 `VIRTUAL_LIQUIDITY_STALE` 또는 `VIRTUAL_LIQUIDITY_INSUFFICIENT`를 남긴다.
@@ -341,6 +342,7 @@ Aggregation 축:
 
 - 같은 symbol exposure는 bucket이 달라도 합산한다.
 - sector/country/currency metadata가 없으면 unknown bucket에 보수적으로 넣는다.
+- sector는 paper position metadata를 우선 사용하고, 없으면 packet candidate metadata를 사용한다. historical replay candidate sector는 `HistoricalMarketSnapshot.sector`에서 온다.
 - unknown exposure가 과도하면 신규 진입을 제한한다.
 - bucket별 budget과 turnover를 둔다.
 

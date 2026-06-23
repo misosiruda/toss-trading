@@ -282,6 +282,7 @@ function toCandidateDraft(
     ...(snapshot.strategyBucket === undefined
       ? {}
       : { strategyBucket: snapshot.strategyBucket }),
+    ...(snapshot.sector === undefined ? {} : { sector: snapshot.sector }),
     lastPriceKrw: snapshot.lastPriceKrw,
     ...(snapshot.volume === undefined ? {} : { volume: snapshot.volume }),
     ...(features.averageVolume === undefined

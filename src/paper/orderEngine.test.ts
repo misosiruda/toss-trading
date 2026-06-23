@@ -480,6 +480,7 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
           region: "KR",
           riskTags: ["sector_concentrated"],
           strategyBucket: "swing",
+          sector: "Technology",
           lastPriceKrw: 70_000,
           ranking: 1,
           reasonCodes: ["RANKING"],
@@ -506,6 +507,7 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
     "sector_concentrated"
   ]);
   assert.equal(result.portfolio.positions[0]?.strategyBucket, "swing");
+  assert.equal(result.portfolio.positions[0]?.sector, "Technology");
   assert.equal(result.trade?.strategyBucket, "swing");
 });
 
@@ -525,6 +527,7 @@ test("PaperOrderEngine preserves held strategy bucket when adding to a position"
           market: "KR",
           symbol: "005930",
           strategyBucket: "long_term",
+          sector: "Technology",
           quantity: 1,
           averagePriceKrw: 70_000,
           marketValueKrw: 70_000,
@@ -538,6 +541,7 @@ test("PaperOrderEngine preserves held strategy bucket when adding to a position"
 
   assert.equal(result.riskDecision.approved, true);
   assert.equal(result.portfolio.positions[0]?.strategyBucket, "long_term");
+  assert.equal(result.portfolio.positions[0]?.sector, "Technology");
   assert.equal(result.trade?.strategyBucket, "long_term");
 });
 

@@ -74,7 +74,8 @@ const collectorSymbols =
           ? {}
           : { assetClass: symbol.assetClass }),
         ...(symbol.region === undefined ? {} : { region: symbol.region }),
-        ...(symbol.riskTags === undefined ? {} : { riskTags: symbol.riskTags })
+        ...(symbol.riskTags === undefined ? {} : { riskTags: symbol.riskTags }),
+        ...(symbol.sector === undefined ? {} : { sector: symbol.sector })
       }));
 const result =
   interval === "1d"

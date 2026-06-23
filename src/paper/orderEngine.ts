@@ -141,6 +141,7 @@ function executeBuy(
       ...(candidate.strategyBucket === undefined
         ? {}
         : { strategyBucket: candidate.strategyBucket }),
+      ...(candidate.sector === undefined ? {} : { sector: candidate.sector }),
       quantity: fill.quantity,
       averagePriceKrw: Math.round(fill.netAmountKrw / fill.quantity),
       marketPriceKrw: candidate.lastPriceKrw,
@@ -407,6 +408,9 @@ function syncPositionMetadata(
     candidate.strategyBucket !== undefined
   ) {
     position.strategyBucket = candidate.strategyBucket;
+  }
+  if (position.sector === undefined && candidate.sector !== undefined) {
+    position.sector = candidate.sector;
   }
 }
 

@@ -383,7 +383,9 @@ function resolveExposureMetadata(input: {
   candidate: MarketCandidate | undefined;
   position?: VirtualPortfolio["positions"][number] | undefined;
 }): ExposureMetadata {
-  const sector = normalizeExposureKey(input.candidate?.sector);
+  const sector = normalizeExposureKey(
+    input.position?.sector ?? input.candidate?.sector
+  );
   const country =
     input.position?.region ?? input.candidate?.region ?? UNKNOWN_EXPOSURE_KEY;
   const strategyBucket =

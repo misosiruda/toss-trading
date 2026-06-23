@@ -23,6 +23,7 @@ export interface TossInvestHistoricalChartSymbol {
   assetClass?: AssetClass;
   region?: AssetRegion;
   riskTags?: AssetRiskTag[];
+  sector?: string;
 }
 
 export interface TossInvestHistoricalChartCollectorOptions {
@@ -213,6 +214,9 @@ function convertChartToSnapshots(input: {
         ...(input.symbol.riskTags === undefined
           ? {}
           : { riskTags: input.symbol.riskTags }),
+        ...(input.symbol.sector === undefined
+          ? {}
+          : { sector: input.symbol.sector }),
         observedAt: observedAt.toISOString(),
         interval: intervalToSnapshotInterval[input.interval],
         ...optionalPrice("openPriceKrw", readPrice(candle, ["open", "openPrice"])),

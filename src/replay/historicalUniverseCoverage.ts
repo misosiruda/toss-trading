@@ -23,6 +23,7 @@ export const historicalUniverseMemberSchema = z
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
     riskTags: z.array(assetRiskTagSchema).optional(),
+    sector: z.string().trim().min(1).optional(),
     segment: z.string().trim().min(1).optional(),
     required: z.boolean().default(true),
     tags: z.array(z.string().trim().min(1)).optional()
@@ -86,6 +87,7 @@ export interface HistoricalUniverseCoverageSymbolSummary {
   assetClass: string | null;
   region: string | null;
   riskTags: string[];
+  sector: string | null;
   segment: string | null;
   required: boolean;
   snapshotCount: number;
@@ -377,6 +379,7 @@ function summarizeUniverseMember(input: {
     assetClass: input.member.assetClass ?? null,
     region: input.member.region ?? null,
     riskTags: input.member.riskTags ?? [],
+    sector: input.member.sector ?? null,
     segment: input.member.segment ?? null,
     required: input.member.required,
     snapshotCount: sortedSnapshots.length,

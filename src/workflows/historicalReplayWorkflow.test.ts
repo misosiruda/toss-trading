@@ -242,6 +242,7 @@ test("historical replay research manifest hashes initial portfolio and replay sn
       name: "KODEX 200",
       assetType: "ETF",
       riskTags: ["currency_exposed"],
+      sector: "Broad Market",
       openPriceKrw: 69_500,
       closePriceKrw: 70_500,
       sourceRefs: ["fixture:changed_source_ref"]
@@ -268,6 +269,7 @@ function snapshot(input: {
   name?: string;
   assetType?: AssetType;
   riskTags?: AssetRiskTag[];
+  sector?: string;
   openPriceKrw?: number;
   closePriceKrw?: number;
   sourceRefs?: string[];
@@ -279,6 +281,7 @@ function snapshot(input: {
     ...(input.name === undefined ? {} : { name: input.name }),
     ...(input.assetType === undefined ? {} : { assetType: input.assetType }),
     ...(input.riskTags === undefined ? {} : { riskTags: input.riskTags }),
+    ...(input.sector === undefined ? {} : { sector: input.sector }),
     observedAt: input.observedAt,
     interval: "1m",
     ...(input.openPriceKrw === undefined

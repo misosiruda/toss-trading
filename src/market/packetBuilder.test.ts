@@ -199,7 +199,8 @@ test("MarketPacketBuilder preserves asset taxonomy and feature refs", () => {
         assetClass: "equity",
         region: "KR",
         riskTags: ["sector_concentrated"],
-        strategyBucket: "swing"
+        strategyBucket: "swing",
+        sector: "Technology"
       }
     ]
   });
@@ -210,6 +211,7 @@ test("MarketPacketBuilder preserves asset taxonomy and feature refs", () => {
   assert.equal(normalized.region, "KR");
   assert.deepEqual(normalized.riskTags, ["sector_concentrated"]);
   assert.equal(normalized.strategyBucket, "swing");
+  assert.equal(normalized.sector, "Technology");
   assert.equal(
     normalized.featureRefs?.includes("candidate.KR.069500.assetType"),
     true
@@ -231,12 +233,26 @@ test("MarketPacketBuilder preserves asset taxonomy and feature refs", () => {
     true
   );
   assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.069500.sector"),
+    true
+  );
+  assert.equal(
     normalized.featureScores?.some(
       (featureScore) =>
         featureScore.featureRef === "candidate.KR.069500.strategyBucket" &&
         featureScore.score === 100 &&
         featureScore.scoreType === "AVAILABILITY" &&
         featureScore.reasonCode === "STRATEGY_BUCKET_AVAILABLE"
+    ),
+    true
+  );
+  assert.equal(
+    normalized.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.069500.sector" &&
+        featureScore.score === 100 &&
+        featureScore.scoreType === "AVAILABILITY" &&
+        featureScore.reasonCode === "SECTOR_AVAILABLE"
     ),
     true
   );

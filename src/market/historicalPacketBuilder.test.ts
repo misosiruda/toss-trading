@@ -161,7 +161,8 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
         assetClass: "equity",
         region: "US",
         riskTags: ["currency_exposed"],
-        strategyBucket: "long_term"
+        strategyBucket: "long_term",
+        sector: "Broad Market"
       })
     ]
   });
@@ -176,12 +177,25 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
   assert.equal(candidate?.region, "US");
   assert.deepEqual(candidate?.riskTags, ["currency_exposed"]);
   assert.equal(candidate?.strategyBucket, "long_term");
+  assert.equal(candidate?.sector, "Broad Market");
   assert.equal(
     candidate?.featureRefs?.includes("candidate.US.SPY.assetType"),
     true
   );
   assert.equal(
     candidate?.featureRefs?.includes("candidate.US.SPY.strategyBucket"),
+    true
+  );
+  assert.equal(
+    candidate?.featureRefs?.includes("candidate.US.SPY.sector"),
+    true
+  );
+  assert.equal(
+    candidate?.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.US.SPY.sector" &&
+        featureScore.reasonCode === "SECTOR_AVAILABLE"
+    ),
     true
   );
 });
@@ -507,6 +521,7 @@ function snapshot(input: {
   region?: HistoricalMarketSnapshot["region"];
   riskTags?: HistoricalMarketSnapshot["riskTags"];
   strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
+  sector?: HistoricalMarketSnapshot["sector"];
   lastPriceKrw?: number;
   volume?: number;
   openPriceKrw?: number;
@@ -524,6 +539,7 @@ function snapshot(input: {
     ...(input.strategyBucket === undefined
       ? {}
       : { strategyBucket: input.strategyBucket }),
+    ...(input.sector === undefined ? {} : { sector: input.sector }),
     observedAt: input.observedAt,
     interval: "1m",
     lastPriceKrw: input.lastPriceKrw ?? 70_000,
