@@ -9,6 +9,8 @@ import {
 } from "./portfolioExposureAggregator.js";
 import type { VirtualRiskRejectCode } from "./riskPolicy.js";
 
+const DEFAULT_LEVERAGED_EXPOSURE_MULTIPLIER = 3;
+
 export interface HedgePolicy {
   maxGrossExposureKrw?: number | undefined;
   maxGrossExposureRatio?: number | undefined;
@@ -29,7 +31,8 @@ export function evaluateHedgePolicy(
     return [];
   }
 
-  const hedgeIntent = resolveHedgeIntent(input.candidate);
+  const candidate = input.candidate;
+  const hedgeIntent = resolveHedgeIntent(candidate);
   if (!hedgeIntent.hedgeLike) {
     return [];
   }
@@ -43,8 +46,8 @@ export function evaluateHedgePolicy(
 
   if (
     requireHedgeBucket &&
-    input.candidate?.strategyBucket !== undefined &&
-    input.candidate.strategyBucket !== "hedge"
+    candidate?.strategyBucket !== undefined &&
+    candidate.strategyBucket !== "hedge"
   ) {
     appendRejectCode(rejectCodes, "VIRTUAL_HEDGE_NOT_REDUCE_RISK");
   }
@@ -54,6 +57,13 @@ export function evaluateHedgePolicy(
   }
 
   const downsideExposure = currentNetDownsideExposureKrw(input.portfolio);
+  const hedgeGrossExposureKrw =
+    candidate === undefined
+      ? input.notionalKrw
+      : effectiveExposureKrw(candidate, input.notionalKrw);
+  const hedgeDeltaKrw = hedgeIntent.inverseExposure
+    ? -hedgeGrossExposureKrw
+    : hedgeGrossExposureKrw;
   if (downsideExposure.metadataMissing) {
     appendRejectCode(rejectCodes, "VIRTUAL_HEDGE_METADATA_MISSING");
   }
@@ -61,7 +71,7 @@ export function evaluateHedgePolicy(
   if (
     !reducesNetDownsideExposure({
       currentNetDownsideExposureKrw: downsideExposure.value,
-      hedgeDeltaKrw: -input.notionalKrw
+      hedgeDeltaKrw
     })
   ) {
     appendRejectCode(rejectCodes, "VIRTUAL_HEDGE_NOT_REDUCE_RISK");
@@ -70,7 +80,7 @@ export function evaluateHedgePolicy(
   if (
     exceedsGrossExposureLimit({
       portfolio: input.portfolio,
-      notionalKrw: input.notionalKrw,
+      hedgeGrossExposureKrw,
       policy: input.policy
     })
   ) {
@@ -128,7 +138,7 @@ function downsideExposureContribution(
   position: VirtualPosition
 ): { value: number; metadataMissing: boolean } {
   const exposureKrw = positionExposureValueKrw(position);
-  const grossExposureKrw = Math.abs(exposureKrw);
+  const grossExposureKrw = effectiveExposureKrw(position, exposureKrw);
 
   if (isInverseExposure(position)) {
     return {
@@ -172,12 +182,13 @@ function reducesNetDownsideExposure(input: {
 
 function exceedsGrossExposureLimit(input: {
   portfolio: VirtualPortfolio;
-  notionalKrw: number;
+  hedgeGrossExposureKrw: number;
   policy: HedgePolicy;
 }): boolean {
   const aggregate = buildPortfolioExposureAggregate(input.portfolio);
   const nextGrossExposureKrw =
-    aggregate.totalGrossExposureKrw + input.notionalKrw;
+    currentEffectiveGrossExposureKrw(input.portfolio) +
+    input.hedgeGrossExposureKrw;
 
   if (
     input.policy.maxGrossExposureKrw !== undefined &&
@@ -196,12 +207,44 @@ function exceedsGrossExposureLimit(input: {
   );
 }
 
+function currentEffectiveGrossExposureKrw(portfolio: VirtualPortfolio): number {
+  return portfolio.positions.reduce(
+    (sum, position) =>
+      sum + effectiveExposureKrw(position, positionExposureValueKrw(position)),
+    0
+  );
+}
+
 function isInverseExposure(
   value: Pick<MarketCandidate | VirtualPosition, "assetClass" | "riskTags">
 ): boolean {
   return (
     value.assetClass === "inverse" ||
     value.riskTags?.includes("inverse") === true
+  );
+}
+
+function effectiveExposureKrw(
+  value: Pick<MarketCandidate | VirtualPosition, "assetClass" | "riskTags">,
+  exposureKrw: number
+): number {
+  return Math.abs(exposureKrw) * exposureMultiplier(value);
+}
+
+function exposureMultiplier(
+  value: Pick<MarketCandidate | VirtualPosition, "assetClass" | "riskTags">
+): number {
+  return isLeveragedExposure(value)
+    ? DEFAULT_LEVERAGED_EXPOSURE_MULTIPLIER
+    : 1;
+}
+
+function isLeveragedExposure(
+  value: Pick<MarketCandidate | VirtualPosition, "assetClass" | "riskTags">
+): boolean {
+  return (
+    value.assetClass === "leveraged" ||
+    value.riskTags?.includes("leveraged") === true
   );
 }
 

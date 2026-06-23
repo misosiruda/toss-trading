@@ -229,6 +229,7 @@ high volatility는 classified symbol의 absolute return 평균이 `highVolatilit
 - hedge 후보는 `assetType`, `assetClass`, `strategyBucket` metadata를 가져야 합니다.
 - 기본값 기준 hedge 후보의 `strategyBucket`은 반드시 `hedge`여야 합니다.
 - Q5-2 구현은 inverse exposure만 net downside exposure를 낮추는 hedge로 인정합니다.
+- 정확한 leverage ratio field가 없으므로 `assetClass=leveraged` 또는 `riskTags=leveraged` metadata는 보수적으로 3x effective exposure로 계산합니다.
 - 신규 hedge BUY 이후 `0 <= net downside exposure < current net downside exposure`가 되어야 합니다.
 - 신규 hedge BUY 이후 gross exposure가 `maxGrossExposureKrw` 또는 `maxGrossExposureRatio`를 넘으면 reject합니다.
 

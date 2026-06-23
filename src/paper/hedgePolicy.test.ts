@@ -149,6 +149,58 @@ test("hedge policy rejects hedge sizing that flips net downside short", () => {
   );
 });
 
+test("hedge policy treats leveraged inverse hedge as effective exposure", () => {
+  assert.deepEqual(
+    evaluateHedgePolicy({
+      portfolio: portfolio({
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            assetType: "STOCK",
+            assetClass: "equity",
+            strategyBucket: "long_term",
+            quantity: 1.5,
+            averagePriceKrw: 100_000,
+            marketValueKrw: 150_000,
+            updatedAt: "2026-06-14T08:59:00+09:00"
+          }
+        ]
+      }),
+      candidate: hedgeCandidate({ riskTags: ["inverse", "leveraged"] }),
+      notionalKrw: 100_000,
+      policy: { maxGrossExposureKrw: 1_000_000 }
+    }),
+    ["VIRTUAL_HEDGE_NOT_REDUCE_RISK"]
+  );
+});
+
+test("hedge policy applies leveraged exposure to gross exposure caps", () => {
+  assert.deepEqual(
+    evaluateHedgePolicy({
+      portfolio: portfolio({
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            assetType: "STOCK",
+            assetClass: "equity",
+            strategyBucket: "long_term",
+            quantity: 4,
+            averagePriceKrw: 100_000,
+            marketValueKrw: 400_000,
+            updatedAt: "2026-06-14T08:59:00+09:00"
+          }
+        ]
+      }),
+      candidate: hedgeCandidate({ riskTags: ["inverse", "leveraged"] }),
+      notionalKrw: 100_000,
+      policy: { maxGrossExposureKrw: 650_000 }
+    }),
+    ["VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED"]
+  );
+});
+
 function portfolio(
   overrides: Partial<VirtualPortfolio> = {}
 ): VirtualPortfolio {
