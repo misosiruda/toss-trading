@@ -79,16 +79,24 @@ export function summarizeReplayPerformanceMetrics(input: {
   timeline: NetWorthTimelinePoint[];
   trades: VirtualTrade[];
   averageExposureRatio: number | null;
+  initialNetWorthKrw?: number | null;
 }): ReplayPerformanceMetrics {
   const timeline = input.timeline.filter((point) =>
     Number.isFinite(point.virtualNetWorthKrw)
   );
-  const curve = timeline.map((point) => point.virtualNetWorthKrw);
-  const returns = tickReturns(curve);
+  const timelineCurve = timeline.map((point) => point.virtualNetWorthKrw);
+  const initialNetWorthKrw = resolveInitialNetWorthKrw(
+    timelineCurve[0] ?? null,
+    input.initialNetWorthKrw
+  );
+  const performanceCurve = buildPerformanceCurve(
+    initialNetWorthKrw,
+    timelineCurve
+  );
+  const returns = tickReturns(performanceCurve);
   const distribution = summarizeReturnDistributionMetrics(returns);
   const warnings = [...distribution.warnings];
-  const initialNetWorthKrw = curve[0] ?? null;
-  const finalNetWorthKrw = curve.at(-1) ?? null;
+  const finalNetWorthKrw = timelineCurve.at(-1) ?? null;
   const totalReturnRatio =
     initialNetWorthKrw !== null &&
     finalNetWorthKrw !== null &&
@@ -109,8 +117,8 @@ export function summarizeReplayPerformanceMetrics(input: {
     initialNetWorthKrw !== null && initialNetWorthKrw > 0
       ? roundRatio(totalCostKrw / initialNetWorthKrw)
       : null;
-  const cagrRatio = calculateCagrRatio(timeline, warnings);
-  const maxDrawdownRatio = calculateMaxDrawdownRatio(curve, warnings);
+  const cagrRatio = calculateCagrRatio(timeline, initialNetWorthKrw, warnings);
+  const maxDrawdownRatio = calculateMaxDrawdownRatio(performanceCurve, warnings);
   const calmarRatio =
     cagrRatio !== null && maxDrawdownRatio !== null && maxDrawdownRatio < 0
       ? roundRatio(cagrRatio / Math.abs(maxDrawdownRatio))
@@ -184,6 +192,7 @@ function calculateTailLossRatio(returns: number[], warnings: string[]): number |
 
 function calculateCagrRatio(
   timeline: NetWorthTimelinePoint[],
+  initialNetWorthKrw: number | null,
   warnings: string[]
 ): number | null {
   const first = timeline[0];
@@ -192,7 +201,11 @@ function calculateCagrRatio(
     warnings.push("cagrRatio unavailable: at least two timeline points are required");
     return null;
   }
-  if (first.virtualNetWorthKrw <= 0 || last.virtualNetWorthKrw <= 0) {
+  if (
+    initialNetWorthKrw === null ||
+    initialNetWorthKrw <= 0 ||
+    last.virtualNetWorthKrw <= 0
+  ) {
     warnings.push("cagrRatio unavailable: positive net worth values are required");
     return null;
   }
@@ -210,10 +223,40 @@ function calculateCagrRatio(
     return null;
   }
   return roundRatio(
-    (last.virtualNetWorthKrw / first.virtualNetWorthKrw) **
+    (last.virtualNetWorthKrw / initialNetWorthKrw) **
       (365.25 / durationDays) -
       1
   );
+}
+
+function resolveInitialNetWorthKrw(
+  timelineInitialNetWorthKrw: number | null,
+  explicitInitialNetWorthKrw: number | null | undefined
+): number | null {
+  if (
+    explicitInitialNetWorthKrw !== undefined &&
+    explicitInitialNetWorthKrw !== null &&
+    Number.isFinite(explicitInitialNetWorthKrw)
+  ) {
+    return explicitInitialNetWorthKrw;
+  }
+  return timelineInitialNetWorthKrw;
+}
+
+function buildPerformanceCurve(
+  initialNetWorthKrw: number | null,
+  timelineCurve: number[]
+): number[] {
+  if (initialNetWorthKrw === null) {
+    return timelineCurve;
+  }
+  if (timelineCurve.length === 0) {
+    return [initialNetWorthKrw];
+  }
+  if (timelineCurve[0] === initialNetWorthKrw) {
+    return timelineCurve;
+  }
+  return [initialNetWorthKrw, ...timelineCurve];
 }
 
 function calculateMaxDrawdownRatio(

@@ -187,7 +187,8 @@ export function buildHistoricalReplayReport(
     advancedPerformance: summarizeReplayPerformanceMetrics({
       timeline: result.portfolioTimeline,
       trades: result.trades,
-      averageExposureRatio: portfolioConstruction.avgExposureRatio
+      averageExposureRatio: portfolioConstruction.avgExposureRatio,
+      initialNetWorthKrw: portfolioNetWorth(result.initialPortfolio)
     }),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
@@ -652,6 +653,10 @@ function sumPositionMarketValue(portfolio: VirtualPortfolio): number {
         Math.round(position.quantity * position.averagePriceKrw)),
     0
   );
+}
+
+function portfolioNetWorth(portfolio: VirtualPortfolio): number {
+  return portfolio.cashKrw + sumPositionMarketValue(portfolio);
 }
 
 function average(values: number[]): number {

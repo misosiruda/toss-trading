@@ -218,6 +218,46 @@ test("historical replay report summarizes execution cost components", () => {
   );
 });
 
+test("historical replay report uses initial portfolio net worth as performance baseline", () => {
+  const result = replayResult();
+  result.portfolioTimeline = [
+    {
+      simulatedAt: "2025-01-02T09:00:00.000Z",
+      cashKrw: 990_000,
+      positionCount: 0,
+      positionMarketValueKrw: 0,
+      virtualNetWorthKrw: 990_000
+    }
+  ];
+  result.finalPortfolio = {
+    ...result.finalPortfolio,
+    cashKrw: 990_000,
+    positions: []
+  };
+  result.trades = [
+    {
+      ...result.trades[0]!,
+      feeKrw: 10_000,
+      taxKrw: 0,
+      slippageKrw: 0,
+      spreadCostKrw: 0,
+      impactCostKrw: 0,
+      totalCostKrw: 999
+    }
+  ];
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.advancedPerformance.initialNetWorthKrw, 1_000_000);
+  assert.equal(report.advancedPerformance.finalNetWorthKrw, 990_000);
+  assert.equal(report.advancedPerformance.sampleCount, 1);
+  assert.equal(report.advancedPerformance.totalReturnRatio, -0.01);
+  assert.equal(report.advancedPerformance.costAdjustedTotalReturnRatio, -0.01);
+  assert.equal(report.advancedPerformance.grossTotalReturnRatio, 0);
+  assert.equal(report.advancedPerformance.costDragRatio, 0.01);
+  assert.equal(report.advancedPerformance.maxDrawdownRatio, -0.01);
+});
+
 test("historical replay report exposes dynamic reserve and hedge policy summaries", () => {
   const result = replayResult();
   result.riskDecisions.push(

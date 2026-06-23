@@ -112,3 +112,47 @@ test("replay performance metrics separate gross and cost-adjusted returns", () =
   assert.equal(metrics.exposureAdjustedReturnRatio, 0.2);
   assert.match(metrics.warnings.join("\n"), /at least 3 return samples/);
 });
+
+test("replay performance metrics use explicit pre-trade baseline", () => {
+  const metrics = summarizeReplayPerformanceMetrics({
+    initialNetWorthKrw: 1_000,
+    timeline: [
+      {
+        simulatedAt: "2025-01-01T00:00:00.000Z",
+        virtualNetWorthKrw: 990
+      }
+    ],
+    trades: [
+      {
+        tradeId: "trade_metric_first_tick_cost",
+        packetId: "packet_metric_first_tick_cost",
+        decisionId: "decision_metric_first_tick_cost",
+        market: "KR",
+        symbol: "005930",
+        action: "VIRTUAL_BUY",
+        quantity: 1,
+        priceKrw: 100,
+        amountKrw: 100,
+        feeKrw: 10,
+        taxKrw: 0,
+        slippageKrw: 0,
+        spreadCostKrw: 0,
+        impactCostKrw: 0,
+        totalCostKrw: 999,
+        status: "VIRTUAL_FILLED",
+        executedAt: "2025-01-01T00:00:00.000Z"
+      }
+    ],
+    averageExposureRatio: 0.5
+  });
+
+  assert.equal(metrics.initialNetWorthKrw, 1_000);
+  assert.equal(metrics.finalNetWorthKrw, 990);
+  assert.equal(metrics.sampleCount, 1);
+  assert.equal(metrics.totalReturnRatio, -0.01);
+  assert.equal(metrics.costAdjustedTotalReturnRatio, -0.01);
+  assert.equal(metrics.grossTotalReturnRatio, 0);
+  assert.equal(metrics.costDragRatio, 0.01);
+  assert.equal(metrics.maxDrawdownRatio, -0.01);
+  assert.equal(metrics.exposureAdjustedReturnRatio, -0.02);
+});
