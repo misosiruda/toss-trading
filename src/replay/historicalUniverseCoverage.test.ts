@@ -38,6 +38,7 @@ test("historical universe coverage passes required core while reporting optional
   assert.equal(skHynix?.assetClass, "equity");
   assert.equal(skHynix?.region, "KR");
   assert.deepEqual(skHynix?.riskTags, ["sector_concentrated"]);
+  assert.equal(skHynix?.sector, "Semiconductors");
   assert.deepEqual(report.issues, []);
   assert.deepEqual(report.expectedMonths, ["2025-01", "2025-02"]);
 });
@@ -246,6 +247,7 @@ function universe(): HistoricalUniverseManifest {
         assetClass: "equity",
         region: "KR",
         riskTags: ["sector_concentrated"],
+        sector: "Semiconductors",
         required: true
       },
       { market: "KR", symbol: "035420", required: false }

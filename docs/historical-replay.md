@@ -164,6 +164,7 @@ Q3-2 기준:
 
 - `paper_cost_model.v2` / `execution_simulator.v2`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.
 - `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달되고, 현재 tick 이전 snapshot window에서 계산한 `averageVolume`은 `MarketCandidate.averageVolume`으로 전달됩니다.
+- `HistoricalMarketSnapshot.sector`가 있으면 `MarketCandidate.sector`로 전달되어 sector exposure cap과 evidence `featureRefs`에서 사용할 수 있습니다. sector가 없는 과거 dataset은 unknown metadata로 보수 처리됩니다.
 - `VirtualTrade`에는 `requestedNotionalKrw`, `filledNotionalKrw`, `fillStatus`, `liquidityStatus`, `participationRate`, `maxParticipationRate`, `volume`, `averageVolume`이 추가로 기록될 수 있습니다.
 - volume이 충분하면 `fillStatus: "filled"`와 `liquidityStatus: "sufficient"`가 기록됩니다.
 - volume cap 때문에 일부만 체결되면 `fillStatus: "partial"`과 `liquidityStatus: "partial"`가 기록됩니다.

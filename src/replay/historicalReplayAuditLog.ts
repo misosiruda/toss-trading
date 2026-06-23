@@ -109,6 +109,30 @@ export const historicalReplayRunConfigurationSchema = z
         maxSymbolExposureKrw: z.number().int().nonnegative().optional(),
         targetExposureRatio: z.number().min(0).max(1).optional(),
         maxPositionWeightRatio: z.number().min(0).max(1).optional(),
+        maxStrategyBucketExposureKrw: z
+          .record(z.string().trim().min(1), z.number().int().nonnegative())
+          .optional(),
+        maxStrategyBucketExposureRatio: z
+          .record(z.string().trim().min(1), z.number().min(0).max(1))
+          .optional(),
+        maxBucketTurnoverKrw: z
+          .record(z.string().trim().min(1), z.number().int().nonnegative())
+          .optional(),
+        maxBucketTurnoverRatio: z
+          .record(z.string().trim().min(1), z.number().min(0).max(1))
+          .optional(),
+        maxSectorExposureKrw: z.number().int().nonnegative().optional(),
+        maxSectorExposureRatio: z.number().min(0).max(1).optional(),
+        maxCountryExposureKrw: z.number().int().nonnegative().optional(),
+        maxCountryExposureRatio: z.number().min(0).max(1).optional(),
+        maxCurrencyExposureKrw: z.number().int().nonnegative().optional(),
+        maxCurrencyExposureRatio: z.number().min(0).max(1).optional(),
+        maxUnknownMetadataExposureKrw: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional(),
+        maxUnknownMetadataExposureRatio: z.number().min(0).max(1).optional(),
         minCashReserveRatio: z.number().min(0).max(1).optional(),
         minCashReserveKrw: z.number().int().nonnegative().optional()
       })

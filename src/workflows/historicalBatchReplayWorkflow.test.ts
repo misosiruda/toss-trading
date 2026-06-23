@@ -584,6 +584,12 @@ test("historical batch replay runner records selected risk profile", async () =>
       maxSymbolExposureKrw: 600_000,
       targetExposureRatio: 0.85,
       maxPositionWeightRatio: 0.65,
+      maxStrategyBucketExposureRatio: { long_term: 0.6 },
+      maxBucketTurnoverKrw: { intraday: 50_000 },
+      maxSectorExposureRatio: 0.45,
+      maxCountryExposureRatio: 0.7,
+      maxCurrencyExposureRatio: 0.4,
+      maxUnknownMetadataExposureRatio: 0.1,
       minCashReserveRatio: 0.05,
       minCashReserveKrw: 0
     },
@@ -651,6 +657,14 @@ test("historical batch replay runner records selected risk profile", async () =>
   assert.equal(riskPolicy["maxSymbolExposureKrw"], 600_000);
   assert.equal(riskPolicy["targetExposureRatio"], 0.85);
   assert.equal(riskPolicy["maxPositionWeightRatio"], 0.65);
+  assert.deepEqual(riskPolicy["maxStrategyBucketExposureRatio"], {
+    long_term: 0.6
+  });
+  assert.deepEqual(riskPolicy["maxBucketTurnoverKrw"], { intraday: 50_000 });
+  assert.equal(riskPolicy["maxSectorExposureRatio"], 0.45);
+  assert.equal(riskPolicy["maxCountryExposureRatio"], 0.7);
+  assert.equal(riskPolicy["maxCurrencyExposureRatio"], 0.4);
+  assert.equal(riskPolicy["maxUnknownMetadataExposureRatio"], 0.1);
   assert.equal(riskPolicy["minCashReserveRatio"], 0.05);
 });
 

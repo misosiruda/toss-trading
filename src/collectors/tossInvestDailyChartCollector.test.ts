@@ -14,7 +14,8 @@ test("TossInvest daily chart collector paginates day:1 candles by from cursor", 
         sourceSymbol: "005930.KS",
         assetType: "STOCK",
         assetClass: "equity",
-        region: "KR"
+        region: "KR",
+        sector: "Technology"
       }
     ],
     rangeStart: new Date("2024-01-01T00:00:00+09:00"),
@@ -69,6 +70,7 @@ test("TossInvest daily chart collector paginates day:1 candles by from cursor", 
   assert.equal(result.snapshots[0]?.observedAt, "2024-01-01T15:00:00.000Z");
   assert.equal(result.snapshots[0]?.interval, "1d");
   assert.equal(result.snapshots[0]?.lastPriceKrw, 70_000);
+  assert.equal(result.snapshots[0]?.sector, "Technology");
   assert.equal(result.snapshots[1]?.observedAt, "2026-06-16T15:00:00.000Z");
   assert.equal(result.snapshots[1]?.lastPriceKrw, 79_000);
   assert.deepEqual(result.snapshots[0]?.sourceRefs, [
@@ -93,7 +95,8 @@ test("TossInvest daily chart collector resolves US ticker product codes before d
         assetType: "STOCK",
         assetClass: "equity",
         region: "US",
-        riskTags: ["currency_exposed"]
+        riskTags: ["currency_exposed"],
+        sector: "Technology"
       }
     ],
     rangeStart: new Date("2024-01-01T00:00:00+09:00"),
@@ -137,6 +140,7 @@ test("TossInvest daily chart collector resolves US ticker product codes before d
     "tossinvest_web:c-chart:day:1:US19801212001:2024-01-03"
   ]);
   assert.deepEqual(result.snapshots[0]?.riskTags, ["currency_exposed"]);
+  assert.equal(result.snapshots[0]?.sector, "Technology");
 });
 
 test("TossInvest daily chart collector prefers product codes for the requested market", async () => {

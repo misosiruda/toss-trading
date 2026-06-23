@@ -296,6 +296,9 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
   if (candidate.strategyBucket !== undefined) {
     refs.push(`${prefix}.strategyBucket`);
   }
+  if (candidate.sector !== undefined) {
+    refs.push(`${prefix}.sector`);
+  }
   if (candidate.ranking !== undefined) {
     refs.push(`${prefix}.ranking`);
   }
@@ -375,6 +378,9 @@ function buildCandidateFeatureScores(input: {
       "AVAILABILITY",
       "STRATEGY_BUCKET_AVAILABLE"
     );
+  }
+  if (input.candidate.sector !== undefined) {
+    addScore("sector", 100, "AVAILABILITY", "SECTOR_AVAILABLE");
   }
   if (input.candidate.ranking !== undefined) {
     addScore(

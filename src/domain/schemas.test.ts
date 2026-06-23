@@ -164,6 +164,7 @@ test("valid historical market snapshot fixture passes schema validation", () => 
       assetClass: "equity",
       region: "KR",
       strategyBucket: "swing",
+      sector: "Technology",
       observedAt: "2025-06-11T09:00:00+09:00",
       interval: "1m",
       openPriceKrw: 70_000,
@@ -184,6 +185,7 @@ test("valid historical market snapshot fixture passes schema validation", () => 
   assert.equal(snapshot.assetClass, "equity");
   assert.equal(snapshot.region, "KR");
   assert.equal(snapshot.strategyBucket, "swing");
+  assert.equal(snapshot.sector, "Technology");
   assert.equal(snapshot.interval, "1m");
 });
 
@@ -194,6 +196,7 @@ test("virtual position and trade accept strategy bucket metadata", () => {
       market: "KR",
       symbol: "005930",
       strategyBucket: "short_term",
+      sector: "Technology",
       quantity: 1,
       averagePriceKrw: 70_000,
       updatedAt: now
@@ -220,6 +223,7 @@ test("virtual position and trade accept strategy bucket metadata", () => {
   );
 
   assert.equal(position.strategyBucket, "short_term");
+  assert.equal(position.sector, "Technology");
   assert.equal(trade.strategyBucket, "intraday");
 });
 

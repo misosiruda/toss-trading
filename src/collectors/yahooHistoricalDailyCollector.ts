@@ -277,6 +277,9 @@ function convertYahooChartToSnapshots(input: {
         ...(input.member.riskTags === undefined
           ? {}
           : { riskTags: input.member.riskTags }),
+        ...(input.member.sector === undefined
+          ? {}
+          : { sector: input.member.sector }),
         observedAt: observedAt.toISOString(),
         interval: "1d",
         ...priceFields({

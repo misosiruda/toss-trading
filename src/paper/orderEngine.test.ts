@@ -189,6 +189,82 @@ test("VirtualRiskEngine rejects buy decisions that exceed target exposure", () =
   assert.ok(risk.checkedRules.includes("target_exposure"));
 });
 
+test("VirtualRiskEngine rejects buy decisions that exceed sector exposure", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet({
+      candidates: [
+        {
+          market: "KR",
+          symbol: "000660",
+          name: "Existing Tech",
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          strategyBucket: "long_term",
+          sector: "Technology",
+          lastPriceKrw: 100_000,
+          ranking: 1,
+          reasonCodes: ["RANKING"],
+          sourceRefs: ["external_snapshot_000660"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "005930",
+          name: "Sample Corp",
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          strategyBucket: "swing",
+          sector: "Technology",
+          lastPriceKrw: 70_000,
+          ranking: 2,
+          reasonCodes: ["RANKING"],
+          sourceRefs: ["external_snapshot_001"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        }
+      ],
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 1_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      }
+    }),
+    portfolio: portfolio({
+      cashKrw: 500_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "000660",
+          assetType: "STOCK",
+          assetClass: "equity",
+          region: "KR",
+          strategyBucket: "long_term",
+          quantity: 4,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 400_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({ budgetKrw: 100_000 }),
+    policy: {
+      now,
+      maxBudgetPerDecisionKrw: 1_000_000,
+      maxSymbolExposureKrw: 1_000_000,
+      maxPositionWeightRatio: 1,
+      minCashReserveRatio: 0.05,
+      maxSectorExposureRatio: 0.5
+    }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_SECTOR_EXPOSURE_EXCEEDED"));
+  assert.ok(risk.checkedRules.includes("sector_exposure"));
+});
+
 test("VirtualRiskEngine rejects active symbol action cooldowns", () => {
   const risk = new VirtualRiskEngine().evaluate({
     packet: packet(),
@@ -252,6 +328,42 @@ test("VirtualRiskEngine exempts reduce-only sells from cooldown", () => {
 
   assert.equal(risk.approved, true);
   assert.equal(risk.rejectCodes.includes("VIRTUAL_COOLDOWN_ACTIVE"), false);
+});
+
+test("VirtualRiskEngine exempts reduce-only sells from bucket turnover", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet(),
+    portfolio: portfolio({
+      cashKrw: 0,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 140_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    }),
+    decision: decision({
+      action: "VIRTUAL_SELL",
+      budgetKrw: 70_000,
+      reduceOnly: true,
+      thesis: "Paper-only sell fixture."
+    }),
+    policy: {
+      now,
+      maxBucketTurnoverKrw: { unknown: 1 }
+    }
+  });
+
+  assert.equal(risk.approved, true);
+  assert.equal(
+    risk.rejectCodes.includes("VIRTUAL_BUCKET_TURNOVER_EXCEEDED"),
+    false
+  );
+  assert.ok(risk.checkedRules.includes("bucket_turnover"));
 });
 
 test("VirtualRiskEngine rejects stale decisions", () => {
@@ -368,6 +480,7 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
           region: "KR",
           riskTags: ["sector_concentrated"],
           strategyBucket: "swing",
+          sector: "Technology",
           lastPriceKrw: 70_000,
           ranking: 1,
           reasonCodes: ["RANKING"],
@@ -394,6 +507,7 @@ test("PaperOrderEngine fills valid virtual buy decisions", () => {
     "sector_concentrated"
   ]);
   assert.equal(result.portfolio.positions[0]?.strategyBucket, "swing");
+  assert.equal(result.portfolio.positions[0]?.sector, "Technology");
   assert.equal(result.trade?.strategyBucket, "swing");
 });
 
@@ -413,6 +527,7 @@ test("PaperOrderEngine preserves held strategy bucket when adding to a position"
           market: "KR",
           symbol: "005930",
           strategyBucket: "long_term",
+          sector: "Technology",
           quantity: 1,
           averagePriceKrw: 70_000,
           marketValueKrw: 70_000,
@@ -426,6 +541,7 @@ test("PaperOrderEngine preserves held strategy bucket when adding to a position"
 
   assert.equal(result.riskDecision.approved, true);
   assert.equal(result.portfolio.positions[0]?.strategyBucket, "long_term");
+  assert.equal(result.portfolio.positions[0]?.sector, "Technology");
   assert.equal(result.trade?.strategyBucket, "long_term");
 });
 

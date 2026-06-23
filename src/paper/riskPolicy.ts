@@ -16,6 +16,12 @@ export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_TARGET_EXPOSURE_EXCEEDED",
   "VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED",
   "VIRTUAL_POSITION_WEIGHT_EXCEEDED",
+  "VIRTUAL_BUCKET_BUDGET_EXCEEDED",
+  "VIRTUAL_BUCKET_TURNOVER_EXCEEDED",
+  "VIRTUAL_SECTOR_EXPOSURE_EXCEEDED",
+  "VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED",
+  "VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED",
+  "VIRTUAL_EXPOSURE_METADATA_MISSING",
   "VIRTUAL_POSITION_NOT_FOUND",
   "VIRTUAL_SELL_AMOUNT_REQUIRED",
   "VIRTUAL_SELL_AMOUNT_EXCEEDED",
@@ -37,6 +43,12 @@ export const VIRTUAL_RISK_RULE_IDS = [
   "target_exposure",
   "symbol_exposure",
   "position_weight",
+  "bucket_budget",
+  "bucket_turnover",
+  "sector_exposure",
+  "country_exposure",
+  "currency_exposure",
+  "exposure_metadata",
   "sell_position",
   "cooldown"
 ] as const;
@@ -56,6 +68,18 @@ export interface VirtualRiskPolicy {
   maxSymbolExposureKrw: number;
   targetExposureRatio?: number | undefined;
   maxPositionWeightRatio: number;
+  maxStrategyBucketExposureKrw?: Record<string, number> | undefined;
+  maxStrategyBucketExposureRatio?: Record<string, number> | undefined;
+  maxBucketTurnoverKrw?: Record<string, number> | undefined;
+  maxBucketTurnoverRatio?: Record<string, number> | undefined;
+  maxSectorExposureKrw?: number | undefined;
+  maxSectorExposureRatio?: number | undefined;
+  maxCountryExposureKrw?: number | undefined;
+  maxCountryExposureRatio?: number | undefined;
+  maxCurrencyExposureKrw?: number | undefined;
+  maxCurrencyExposureRatio?: number | undefined;
+  maxUnknownMetadataExposureKrw?: number | undefined;
+  maxUnknownMetadataExposureRatio?: number | undefined;
   minCashReserveRatio: number;
   minCashReserveKrw: number;
   cooldownEntries: VirtualRiskCooldownEntry[];
@@ -79,6 +103,54 @@ export function createVirtualRiskPolicy(
       ? {}
       : { targetExposureRatio: input.policy.targetExposureRatio }),
     maxPositionWeightRatio: input.policy?.maxPositionWeightRatio ?? 0.35,
+    ...(input.policy?.maxStrategyBucketExposureKrw === undefined
+      ? {}
+      : {
+          maxStrategyBucketExposureKrw:
+            input.policy.maxStrategyBucketExposureKrw
+        }),
+    ...(input.policy?.maxStrategyBucketExposureRatio === undefined
+      ? {}
+      : {
+          maxStrategyBucketExposureRatio:
+            input.policy.maxStrategyBucketExposureRatio
+        }),
+    ...(input.policy?.maxBucketTurnoverKrw === undefined
+      ? {}
+      : { maxBucketTurnoverKrw: input.policy.maxBucketTurnoverKrw }),
+    ...(input.policy?.maxBucketTurnoverRatio === undefined
+      ? {}
+      : { maxBucketTurnoverRatio: input.policy.maxBucketTurnoverRatio }),
+    ...(input.policy?.maxSectorExposureKrw === undefined
+      ? {}
+      : { maxSectorExposureKrw: input.policy.maxSectorExposureKrw }),
+    ...(input.policy?.maxSectorExposureRatio === undefined
+      ? {}
+      : { maxSectorExposureRatio: input.policy.maxSectorExposureRatio }),
+    ...(input.policy?.maxCountryExposureKrw === undefined
+      ? {}
+      : { maxCountryExposureKrw: input.policy.maxCountryExposureKrw }),
+    ...(input.policy?.maxCountryExposureRatio === undefined
+      ? {}
+      : { maxCountryExposureRatio: input.policy.maxCountryExposureRatio }),
+    ...(input.policy?.maxCurrencyExposureKrw === undefined
+      ? {}
+      : { maxCurrencyExposureKrw: input.policy.maxCurrencyExposureKrw }),
+    ...(input.policy?.maxCurrencyExposureRatio === undefined
+      ? {}
+      : { maxCurrencyExposureRatio: input.policy.maxCurrencyExposureRatio }),
+    ...(input.policy?.maxUnknownMetadataExposureKrw === undefined
+      ? {}
+      : {
+          maxUnknownMetadataExposureKrw:
+            input.policy.maxUnknownMetadataExposureKrw
+        }),
+    ...(input.policy?.maxUnknownMetadataExposureRatio === undefined
+      ? {}
+      : {
+          maxUnknownMetadataExposureRatio:
+            input.policy.maxUnknownMetadataExposureRatio
+        }),
     minCashReserveRatio: input.policy?.minCashReserveRatio ?? 0.1,
     minCashReserveKrw: input.policy?.minCashReserveKrw ?? 0,
     cooldownEntries: input.policy?.cooldownEntries ?? [],

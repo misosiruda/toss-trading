@@ -17,6 +17,7 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
           assetType: "STOCK",
           assetClass: "equity",
           region: "KR",
+          sector: "Technology",
           required: true
         },
         {
@@ -27,6 +28,7 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
           assetClass: "equity",
           region: "US",
           riskTags: ["currency_exposed"],
+          sector: "Broad Market",
           required: true
         }
       ],
@@ -45,9 +47,11 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
   assert.equal(result.snapshotCount, 4);
   assert.equal(samsung?.lastPriceKrw, 70_000);
   assert.equal(samsung?.assetType, "STOCK");
+  assert.equal(samsung?.sector, "Technology");
   assert.equal(spy?.lastPriceKrw, 780_000);
   assert.equal(spy?.assetType, "ETF");
   assert.equal(spy?.assetClass, "equity");
+  assert.equal(spy?.sector, "Broad Market");
   assert.deepEqual(spy?.riskTags, ["currency_exposed"]);
   assert.deepEqual(spy?.sourceRefs, [
     "yahoo_chart:SPY:2025-01-01",

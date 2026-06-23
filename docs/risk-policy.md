@@ -58,6 +58,12 @@ Artifact 위치 계약:
 - `VIRTUAL_TARGET_EXPOSURE_EXCEEDED`
 - `VIRTUAL_SYMBOL_EXPOSURE_EXCEEDED`
 - `VIRTUAL_POSITION_WEIGHT_EXCEEDED`
+- `VIRTUAL_BUCKET_BUDGET_EXCEEDED`
+- `VIRTUAL_BUCKET_TURNOVER_EXCEEDED`
+- `VIRTUAL_SECTOR_EXPOSURE_EXCEEDED`
+- `VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED`
+- `VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED`
+- `VIRTUAL_EXPOSURE_METADATA_MISSING`
 - `VIRTUAL_POSITION_NOT_FOUND`
 - `VIRTUAL_SELL_AMOUNT_REQUIRED`
 - `VIRTUAL_SELL_AMOUNT_EXCEEDED`
@@ -84,8 +90,10 @@ hedge
 적용 범위:
 
 - `HistoricalMarketSnapshot.strategyBucket`은 historical replay snapshot metadata입니다.
+- `HistoricalMarketSnapshot.sector`는 historical replay snapshot metadata이며, universe/collector가 제공한 경우 candidate로 전달됩니다.
 - `MarketCandidate.strategyBucket`은 backend가 생성한 후보 metadata이며 bucket source of truth입니다.
 - `VirtualPosition.strategyBucket`은 paper fill 이후 position에 보존되는 metadata입니다.
+- `VirtualPosition.sector`는 paper fill 이후 position에 보존되는 exposure metadata입니다.
 - `VirtualTrade.strategyBucket`은 paper fill 당시 기록되는 audit metadata입니다.
 
 정책 경계:
@@ -121,6 +129,27 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 - net worth가 0 이하이면 ratio는 `0`으로 고정해 report와 risk rule에서 `NaN`이 전파되지 않게 합니다.
 - 이번 단계는 exposure 계산과 report 노출까지만 담당합니다. 신규 buy reject, bucket budget, turnover, sector/country/currency limit은 후속 `VirtualRiskEngine` rule에서 적용합니다.
 
+## Paper Portfolio Exposure Risk Gates
+
+`VirtualRiskEngine`은 명시된 policy가 있을 때만 portfolio concentration gate를 적용합니다. 기본값은 disabled이므로 기존 paper replay는 policy를 전달하지 않는 한 새 concentration reject로 바뀌지 않습니다.
+
+현재 적용 gate:
+
+- strategy bucket budget: 신규 BUY 이후 해당 bucket exposure가 policy cap을 넘으면 `VIRTUAL_BUCKET_BUDGET_EXCEEDED`
+- strategy bucket turnover: 신규 BUY notional이 해당 bucket turnover cap을 넘으면 `VIRTUAL_BUCKET_TURNOVER_EXCEEDED`
+- sector exposure: 신규 BUY 이후 같은 sector exposure가 cap을 넘으면 `VIRTUAL_SECTOR_EXPOSURE_EXCEEDED`
+- country exposure: 현재 schema의 `region` metadata를 country axis로 사용하며, cap 초과 시 `VIRTUAL_COUNTRY_EXPOSURE_EXCEEDED`
+- currency exposure: `riskTags`에 `currency_exposed`가 있거나 `assetClass=currency`, 또는 `region=US|GLOBAL`이면 currency exposure로 취급하며, cap 초과 시 `VIRTUAL_CURRENCY_EXPOSURE_EXCEEDED`
+- unknown metadata exposure: asset type/class, strategy bucket, sector, region, currency 판단 metadata 중 하나라도 없으면 해당 gross exposure를 unknown으로 보수 집계하고, cap 초과 시 `VIRTUAL_EXPOSURE_METADATA_MISSING`
+
+정책 경계:
+
+- BUY에 대해서만 신규 exposure cap을 적용합니다.
+- `reduceOnly: true`인 SELL은 risk 축소성 paper action이므로 bucket turnover gate에서 제외합니다.
+- sector는 position metadata를 우선 사용하고, 없으면 같은 `market:symbol` candidate metadata를 사용합니다. 둘 다 없으면 unknown으로 취급합니다.
+- historical replay에서 sector cap을 켜려면 universe/collector/snapshot 경로가 `HistoricalMarketSnapshot.sector`를 제공해야 합니다. 기존 sectorless replay data는 cap 평가 시 unknown metadata로 남아 fail-closed 될 수 있습니다.
+- country 전용 schema는 아직 열지 않고 기존 `region`을 사용합니다. 별도 ISO country/currency field는 후속 schema 확장 PR에서 검토합니다.
+
 ## Paper Trading Policy Parameters
 
 `VirtualRiskEngine`은 paper-only 판단에 대해 다음 정책을 정규화해서 평가합니다.
@@ -130,6 +159,18 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 | `maxBudgetPerDecisionKrw` | packet `maxBudgetPerSymbolKrw` | AI decision 1건의 최대 paper notional |
 | `maxSymbolExposureKrw` | packet `maxBudgetPerSymbolKrw` | 동일 종목의 최대 paper exposure |
 | `maxPositionWeightRatio` | `0.35` | NAV 대비 단일 종목 paper 비중 한도 |
+| `maxStrategyBucketExposureKrw` | disabled | bucket별 최대 paper exposure 금액 |
+| `maxStrategyBucketExposureRatio` | disabled | NAV 대비 bucket별 최대 paper exposure 비율 |
+| `maxBucketTurnoverKrw` | disabled | bucket별 단일 BUY turnover 금액 |
+| `maxBucketTurnoverRatio` | disabled | NAV 대비 bucket별 단일 BUY turnover 비율 |
+| `maxSectorExposureKrw` | disabled | sector별 최대 paper exposure 금액 |
+| `maxSectorExposureRatio` | disabled | NAV 대비 sector별 최대 paper exposure 비율 |
+| `maxCountryExposureKrw` | disabled | country/region별 최대 paper exposure 금액 |
+| `maxCountryExposureRatio` | disabled | NAV 대비 country/region별 최대 paper exposure 비율 |
+| `maxCurrencyExposureKrw` | disabled | currency exposure 최대 금액 |
+| `maxCurrencyExposureRatio` | disabled | NAV 대비 currency exposure 최대 비율 |
+| `maxUnknownMetadataExposureKrw` | disabled | metadata unknown exposure 최대 금액 |
+| `maxUnknownMetadataExposureRatio` | disabled | NAV 대비 metadata unknown exposure 최대 비율 |
 | `minCashReserveRatio` | `0.10` | NAV 대비 최소 현금 reserve |
 | `minCashReserveKrw` | `0` | 절대 최소 현금 reserve |
 | `cooldownEntries` | `[]` | symbol/action 단위의 임시 진입 제한 |
@@ -138,6 +179,9 @@ metadata가 없는 position/candidate는 후속 aggregation에서 `unknown` buck
 
 - `cash_reserve`는 모든 현금을 소진하는 BUY를 막습니다.
 - `position_weight`는 NAV가 커져도 단일 종목 집중도가 과도해지지 않게 막습니다.
+- `sector_exposure`, `country_exposure`, `currency_exposure`는 한쪽 portfolio 쏠림을 deterministic하게 막습니다.
+- `exposure_metadata`는 sector/country/currency/bucket metadata가 부족한 상태에서 신규 진입을 보수적으로 제한합니다.
+- `bucket_budget`과 `bucket_turnover`는 장기/스윙/단기/초단기/hedge bucket 중 한쪽으로 paper portfolio가 치우치는 것을 줄입니다.
 - `cooldown`은 같은 symbol/action/reject code 반복으로 AI가 같은 실수를 빠르게 되풀이하는 상황을 줄이기 위한 입력입니다.
 - `reduceOnly: true`인 `VIRTUAL_SELL`은 리스크 축소성 paper 매도이므로 cooldown 예외로 둡니다.
 
