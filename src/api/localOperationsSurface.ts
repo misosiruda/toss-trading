@@ -1,12 +1,15 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
 export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
 export const PAPER_POLICY_VALIDATION_METHODS = ["POST"] as const;
+export const STRATEGY_BUCKET_TEST_VALIDATION_METHODS = ["POST"] as const;
 
 export type ReadOnlyHttpMethod = (typeof READ_ONLY_HTTP_METHODS)[number];
 export type PaperSimulationMutationMethod =
   (typeof PAPER_SIMULATION_MUTATION_METHODS)[number];
 export type PaperPolicyValidationMethod =
   (typeof PAPER_POLICY_VALIDATION_METHODS)[number];
+export type StrategyBucketTestValidationMethod =
+  (typeof STRATEGY_BUCKET_TEST_VALIDATION_METHODS)[number];
 
 export const LOCAL_OPERATIONS_API_ROUTES = [
   "/health",
@@ -45,6 +48,13 @@ export const PAPER_POLICY_VALIDATION_API_ROUTES = [
 
 export type PaperPolicyValidationApiRoutePath =
   (typeof PAPER_POLICY_VALIDATION_API_ROUTES)[number];
+
+export const STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES = [
+  "/paper/simulations/strategy-bucket-tests/validate"
+] as const;
+
+export type StrategyBucketTestValidationApiRoutePath =
+  (typeof STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES)[number];
 
 export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
   "/",
@@ -129,6 +139,12 @@ export function isPaperPolicyValidationMethod(
   return method === "POST";
 }
 
+export function isStrategyBucketTestValidationMethod(
+  method: string | undefined
+): method is StrategyBucketTestValidationMethod {
+  return method === "POST";
+}
+
 export function isLocalOperationsApiRoutePath(
   pathname: string
 ): pathname is LocalOperationsApiRoutePath {
@@ -150,5 +166,13 @@ export function isPaperPolicyValidationApiRoutePath(
 ): pathname is PaperPolicyValidationApiRoutePath {
   return PAPER_POLICY_VALIDATION_API_ROUTES.includes(
     pathname as PaperPolicyValidationApiRoutePath
+  );
+}
+
+export function isStrategyBucketTestValidationApiRoutePath(
+  pathname: string
+): pathname is StrategyBucketTestValidationApiRoutePath {
+  return STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES.includes(
+    pathname as StrategyBucketTestValidationApiRoutePath
   );
 }

@@ -31,9 +31,12 @@ GET /dashboard/view-model/strategy-test-lab
 GET /dashboard/view-model/risk-gate-trace?limit=8
 GET /dashboard/view-model/validation-lab
 POST /paper/policies/validate
+POST /paper/simulations/strategy-bucket-tests/validate
 ```
 
 `POST /paper/policies/validate`는 validation-only endpoint입니다. explicit operation header와 same-origin local dashboard guard를 요구하지만, 저장소 mutation, replay runner 시작, live order surface를 만들지 않습니다.
+
+`POST /paper/simulations/strategy-bucket-tests/validate`는 strategy bucket isolated test config의 validation-only endpoint입니다. 선택 bucket, policy draft, data directory, split role, date window, sampling/provider config를 backend에서 검증하지만, strategy bucket test record 생성, artifact 저장, replay runner 시작, live order surface를 수행하지 않습니다.
 
 ## 명령
 
