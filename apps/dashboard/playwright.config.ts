@@ -10,12 +10,24 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3002",
     trace: "on-first-retry",
   },
-  webServer: {
-    command: "npm run dev -- --port 3002",
-    url: "http://127.0.0.1:3002/dashboard",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command:
+        "npm --prefix ../.. run dashboard -- --data-dir data/paper --host 127.0.0.1 --port 8789",
+      url: "http://127.0.0.1:8789/health",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: "npm run dev -- --port 3002",
+      env: {
+        DASHBOARD_OPS_API_BASE_URL: "http://127.0.0.1:8789",
+      },
+      url: "http://127.0.0.1:3002/dashboard",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
   projects: [
     {
       name: "chromium-desktop",
