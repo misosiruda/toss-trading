@@ -809,6 +809,20 @@ test("strategy bucket test validation checks configs without starting a runner",
         body: JSON.stringify(reorderedCandidate)
       }
     );
+    const validTimestampCandidate = strategyBucketTestCandidate();
+    validTimestampCandidate.testConfig.window.startAt =
+      "2024-01-01T00:00:00+09:00";
+    validTimestampCandidate.testConfig.window.endAt =
+      "2024-02-01T23:59:59.999+09:00";
+    const validTimestampConfig = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(validTimestampCandidate)
+      }
+    );
     const invalidDateCandidate = strategyBucketTestCandidate();
     invalidDateCandidate.testConfig.window.startAt = "2024-02-31";
     const invalidRolloverDate = await fetchJson(
@@ -830,6 +844,18 @@ test("strategy bucket test validation checks configs without starting a runner",
         method: "POST",
         headers: strategyBucketTestValidationHeaders(baseUrl),
         body: JSON.stringify(invalidTimestampCandidate)
+      }
+    );
+    const nonIsoRolloverCandidate = strategyBucketTestCandidate();
+    nonIsoRolloverCandidate.testConfig.window.startAt = "2024/02/31";
+    nonIsoRolloverCandidate.testConfig.window.endAt = "February 31, 2024";
+    const invalidNonIsoRolloverDate = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(nonIsoRolloverCandidate)
       }
     );
     const invalidCandidate = strategyBucketTestCandidate({
@@ -896,6 +922,8 @@ test("strategy bucket test validation checks configs without starting a runner",
       reorderedConfig.payload["configHash"],
       valid.payload["configHash"]
     );
+    assert.equal(validTimestampConfig.response.status, 200);
+    assert.equal(validTimestampConfig.payload["status"], "valid");
 
     assert.equal(invalidRolloverDate.response.status, 200);
     assert.equal(invalidRolloverDate.payload["status"], "invalid");
@@ -911,6 +939,12 @@ test("strategy bucket test validation checks configs without starting a runner",
     assert.equal(invalidRolloverTimestamp.payload["status"], "invalid");
     assert.match(
       JSON.stringify(invalidRolloverTimestamp.payload["issues"]),
+      /INVALID_WINDOW_DATE/
+    );
+    assert.equal(invalidNonIsoRolloverDate.response.status, 200);
+    assert.equal(invalidNonIsoRolloverDate.payload["status"], "invalid");
+    assert.match(
+      JSON.stringify(invalidNonIsoRolloverDate.payload["issues"]),
       /INVALID_WINDOW_DATE/
     );
 

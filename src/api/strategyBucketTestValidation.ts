@@ -383,16 +383,18 @@ function parseReplayDate(value: string, endOfDay: boolean): Date | null {
     return new Date(`${canonicalDate}T${time}+09:00`);
   }
 
-  const timestampDateMatch = /^(\d{4}-\d{2}-\d{2})(?:[T ].*)$/.exec(value);
+  const timestampDateMatch =
+    /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(
+      value
+    );
   if (
-    timestampDateMatch !== null &&
+    timestampDateMatch === null ||
     !isValidCalendarDate(timestampDateMatch[1]!)
   ) {
     return null;
   }
 
-  const normalized = value;
-  const date = new Date(normalized);
+  const date = new Date(value);
   if (!Number.isFinite(date.getTime())) {
     return null;
   }
