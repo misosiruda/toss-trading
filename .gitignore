@@ -5,6 +5,8 @@ node_modules/
 dist/
 coverage/
 .nyc_output/
+.next/
+out/
 
 # Local environment and secrets
 .env
@@ -21,6 +23,7 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+.vercel/
 
 # Temporary files
 tmp/
