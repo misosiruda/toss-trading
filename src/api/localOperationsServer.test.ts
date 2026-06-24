@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -76,6 +77,52 @@ async function stopTestServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+class FakeDashboardElement {
+  readonly tagName: string;
+  className = "";
+  textContent = "";
+  hidden = false;
+  colSpan = 0;
+  style: Record<string, string> = {};
+  readonly children: FakeDashboardElement[] = [];
+
+  constructor(tagName: string) {
+    this.tagName = tagName;
+  }
+
+  append(...children: FakeDashboardElement[]): void {
+    this.children.push(...children);
+  }
+
+  replaceChildren(...children: FakeDashboardElement[]): void {
+    this.children.splice(0, this.children.length, ...children);
+  }
+}
+
+class FakeDashboardDocument {
+  private readonly elements = new Map<string, FakeDashboardElement>();
+
+  constructor(ids: string[]) {
+    for (const id of ids) {
+      this.elements.set(id, new FakeDashboardElement("div"));
+    }
+  }
+
+  getElementById(id: string): FakeDashboardElement | null {
+    return this.elements.get(id) ?? null;
+  }
+
+  requiredElement(id: string): FakeDashboardElement {
+    const element = this.getElementById(id);
+    assert.ok(element, `missing fake dashboard element: ${id}`);
+    return element;
+  }
+
+  createElement(tagName: string): FakeDashboardElement {
+    return new FakeDashboardElement(tagName);
+  }
 }
 
 async function fetchJson(
@@ -331,6 +378,11 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="simulation-config-preview"/);
     assert.match(html.text, /id="simulation-history-heading"/);
     assert.match(html.text, /id="validation-center-heading"/);
+    assert.match(html.text, /id="research-report-heading"/);
+    assert.match(html.text, /id="research-report-status"/);
+    assert.match(html.text, /id="research-pbo-score"/);
+    assert.match(html.text, /id="research-warning-list"/);
+    assert.match(html.text, /id="research-regime-list"/);
     assert.match(html.text, /id="daily-report-heading"/);
     assert.match(html.text, /id="performance-heading"/);
     assert.match(html.text, /id="net-worth-chart"/);
@@ -402,6 +454,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /\/paper\/report/);
     assert.match(dashboardScriptText, /\/replay\/report/);
     assert.match(dashboardScriptText, /\/replay\/progress/);
+    assert.match(dashboardScriptText, /\/research\/replay\/report/);
     assert.match(dashboardScriptText, /\/batch\/replay\/report/);
     assert.match(dashboardScriptText, /\/batch\/replay\/runs/);
     assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
@@ -423,6 +476,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /export function showDashboardEndpointResult/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
+    assert.match(script.text, /renderReplayResearchReport/);
     assert.match(script.text, /renderReplayProgress/);
     assert.match(script.text, /renderBatchReplayReport/);
     assert.match(script.text, /renderBatchReplayRuns/);
@@ -457,6 +511,12 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /export function bindSimulationFormControls/);
     assert.match(dashboardScriptText, /simulationConfigFromForm/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
+    assert.match(dashboardScriptText, /export function renderReplayResearchReport/);
+    assert.match(dashboardScriptText, /renderResearchWarningList/);
+    assert.match(dashboardScriptText, /researchReportWarnings/);
+    assert.match(dashboardScriptText, /validationProtocol\?\.warnings/);
+    assert.match(dashboardScriptText, /overfittingWarning\?\.warnings/);
+    assert.match(dashboardScriptText, /renderResearchRegimeList/);
     assert.match(script.text, /bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /export function bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /renderDecisionTimeline/);
@@ -513,6 +573,91 @@ test("local operations API serves read-only dashboard assets", async () => {
     );
   } finally {
     await stopTestServer(server);
+  }
+});
+
+test("research report renderer includes nested validation warnings in count and list", async () => {
+  const fakeDocument = new FakeDashboardDocument([
+    "research-report-status",
+    "research-run-count",
+    "research-validation-protocol",
+    "research-pbo-score",
+    "research-provider-failures",
+    "research-risk-rejects",
+    "research-warning-count",
+    "research-report-disclaimer",
+    "research-report-detail",
+    "research-warning-list-count",
+    "research-warning-list",
+    "research-regime-count",
+    "research-regime-list"
+  ]);
+  const globals = globalThis as typeof globalThis & {
+    document?: Document;
+  };
+  const previousDocument = globals.document;
+  globals.document = fakeDocument as unknown as Document;
+
+  try {
+    const moduleUrl = pathToFileURL(
+      join(process.cwd(), "dashboard", "reportRenderers.js")
+    ).href;
+    const { renderReplayResearchReport } = await import(moduleUrl);
+
+    renderReplayResearchReport({
+      status: "ok",
+      report: {
+        warnings: ["top level warning"],
+        validationProtocol: {
+          validationProtocol: "sampled_cpcv_pbo_like",
+          warnings: [
+            "validation warning",
+            "top level warning",
+            "",
+            42
+          ]
+        },
+        overfittingWarning: {
+          pboLikeScore: 0.5,
+          warnings: ["pbo warning", "validation warning"]
+        },
+        runIdentity: {
+          runCount: 2,
+          completedCount: 2,
+          skippedCount: 0,
+          failedCount: 0,
+          returnSampleCount: 2
+        },
+        providerFailureSummary: {
+          totalAiDecisionFailureCount: 0
+        },
+        riskRejectSummary: {
+          totalRejectedCount: 1
+        },
+        regimeBreakdown: []
+      }
+    });
+
+    assert.equal(
+      fakeDocument.requiredElement("research-warning-count").textContent,
+      "3개"
+    );
+    assert.equal(
+      fakeDocument.requiredElement("research-warning-list-count").textContent,
+      "3개"
+    );
+    assert.deepEqual(
+      fakeDocument
+        .requiredElement("research-warning-list")
+        .children.map((child) => child.textContent),
+      ["top level warning", "validation warning", "pbo warning"]
+    );
+  } finally {
+    if (previousDocument === undefined) {
+      delete globals.document;
+    } else {
+      globals.document = previousDocument;
+    }
   }
 });
 

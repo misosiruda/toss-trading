@@ -639,6 +639,7 @@ Report 구획:
 구현 상태:
 
 - [x] Q9-1: 저장된 batch replay aggregate artifact를 `replay_research_report.v1` derived payload로 요약하고, local operations API의 read-only `GET /research/replay/report` route로 노출한다. 이 단계는 report/API contract까지만 포함하며 dashboard 전용 화면, 신규 replay 실행 버튼, live order surface는 포함하지 않는다.
+- [x] Q9-2: dashboard validation 화면에 `GET /research/replay/report` 결과를 read-only 연구 리포트 패널로 표시한다. 이 단계는 저장된 artifact 기반 요약 렌더링만 담당하며 신규 replay 실행 버튼, Codex execution, TossInvest execution, live order surface는 포함하지 않는다.
 
 ## 권장 PR 분리
 
@@ -665,7 +666,7 @@ Report 구획:
 17. Q7-2 PBO-like report - 완료
 18. Q8-1 metric expansion - 완료
 19. Q9-1 research report read-only API - 완료
-20. Q9 dashboard read-only 표시
+20. Q9 dashboard read-only 표시 - 완료
 
 한 PR에서 피해야 할 조합:
 

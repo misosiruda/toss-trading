@@ -845,6 +845,11 @@ th.numeric {
   gap: 14px;
 }
 
+.research-report-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .batch-run-panel {
   display: grid;
   gap: 14px;
@@ -921,6 +926,10 @@ th.numeric {
 
 .batch-replay-kpis {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.research-report-kpis {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .batch-run-kpis {
@@ -1059,7 +1068,24 @@ th.numeric {
   padding-top: 12px;
 }
 
+.research-report-layout {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.15fr)
+    minmax(240px, 0.9fr)
+    minmax(240px, 0.9fr);
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
 .batch-regime-list {
+  display: grid;
+  gap: 10px;
+}
+
+.research-warning-list,
+.research-regime-list {
   display: grid;
   gap: 10px;
 }
@@ -1072,6 +1098,21 @@ th.numeric {
   border-radius: 8px;
   background: var(--panel-muted);
   padding: 12px;
+}
+
+.research-warning-item,
+.research-regime-item {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .batch-regime-header,
@@ -1108,6 +1149,11 @@ th.numeric {
 }
 
 .batch-replay-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.research-report-detail {
   border-top: 1px solid var(--border);
   padding-top: 12px;
 }
@@ -1925,6 +1971,10 @@ th.numeric {
   }
 
   .performance-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .research-report-layout {
     grid-template-columns: 1fr;
   }
 

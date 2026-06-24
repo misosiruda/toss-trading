@@ -81,6 +81,7 @@ export function statusClass(status) {
     status === "error" ||
     status === "blocked" ||
     status === "corrupt" ||
+    status === "invalid" ||
     status === "failed"
   ) {
     return "error";
