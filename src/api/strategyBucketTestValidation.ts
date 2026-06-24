@@ -355,8 +355,14 @@ function parseReplayDate(value: string, endOfDay: boolean): Date | null {
 }
 
 function configHash(candidate: StrategyBucketTestValidationCandidate): string {
+  const hashInput = {
+    mode: candidate.mode,
+    bucket: candidate.bucket,
+    policy: candidate.policy,
+    testConfig: candidate.testConfig
+  };
   return createHash("sha256")
-    .update(JSON.stringify(candidate))
+    .update(JSON.stringify(hashInput))
     .digest("hex");
 }
 

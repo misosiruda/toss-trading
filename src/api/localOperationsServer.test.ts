@@ -782,6 +782,17 @@ test("strategy bucket test validation checks configs without starting a runner",
         body: JSON.stringify(strategyBucketTestCandidate())
       }
     );
+    const retryCandidate = strategyBucketTestCandidate();
+    retryCandidate.requestId = "strategy-bucket-test-validation-retry-002";
+    const sameConfigRetry = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(retryCandidate)
+      }
+    );
     const invalidCandidate = strategyBucketTestCandidate({
       bucket: "short_term"
     });
@@ -836,6 +847,11 @@ test("strategy bucket test validation checks configs without starting a runner",
     assert.equal(valid.payload["validatedForStrategyBucketTestConfig"], true);
     assert.equal(valid.payload["bucket"], "long_term");
     assert.equal(typeof valid.payload["configHash"], "string");
+    assert.equal(sameConfigRetry.response.status, 200);
+    assert.equal(
+      sameConfigRetry.payload["configHash"],
+      valid.payload["configHash"]
+    );
 
     assert.equal(invalid.response.status, 200);
     assert.equal(invalid.payload["status"], "invalid");
