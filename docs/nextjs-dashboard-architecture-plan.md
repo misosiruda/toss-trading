@@ -115,8 +115,8 @@ apps/dashboard/
 │   │   └── lab/
 │   │       ├── policies/page.tsx
 │   │       ├── strategy-tests/page.tsx
-│   │       ├── strategy-tests/[bucket]/new/page.tsx
-│   │       ├── strategy-tests/[testId]/page.tsx
+│   │       ├── strategy-tests/buckets/[bucket]/new/page.tsx
+│   │       ├── strategy-tests/tests/[testId]/page.tsx
 │   │       ├── replays/new/page.tsx
 │   │       └── runs/[runId]/page.tsx
 │   ├── layout.tsx
@@ -142,8 +142,8 @@ apps/dashboard/
 | `/dashboard/audit` | audit event, rejected action, failure trace 조회 | 없음 |
 | `/dashboard/lab/policies` | paper-only portfolio policy builder | policy draft 저장 후보 |
 | `/dashboard/lab/strategy-tests` | 전략 버킷별 test matrix와 결과 비교 | 없음 |
-| `/dashboard/lab/strategy-tests/[bucket]/new` | 특정 strategy bucket 단독 replay/test 생성 | guarded paper-only mutation |
-| `/dashboard/lab/strategy-tests/[testId]` | 실행 중인 bucket test progress, event, partial metric 조회 | 없음 |
+| `/dashboard/lab/strategy-tests/buckets/[bucket]/new` | 특정 strategy bucket 단독 replay/test 생성 | guarded paper-only mutation |
+| `/dashboard/lab/strategy-tests/tests/[testId]` | 실행 중인 bucket test progress, event, partial metric 조회 | 없음 |
 | `/dashboard/lab/replays/new` | paper simulation 생성 | guarded paper-only mutation |
 | `/dashboard/lab/runs/[runId]` | 실행 상세, progress, report | 없음 |
 
@@ -335,7 +335,7 @@ interface StrategyBucketTestHeartbeatView {
 interface StrategyBucketTestResultSummary {
   testId: string;
   bucket: StrategyBucket;
-  validationSplitRole: "train" | "validation" | "test" | "holdout" | "unknown";
+  validationSplitRole: "train" | "validation" | "test" | null;
   totalReturnRatio: number | null;
   maxDrawdownRatio: number | null;
   turnoverRatio: number | null;
@@ -353,6 +353,8 @@ interface StrategyBucketComparisonView {
 ```
 
 프론트는 이 ViewModel로 전략별 독립 test 가능 여부와 결과를 보여준다. 특정 bucket test 생성 request는 browser에서 임의로 계산하지 않고 backend가 policy, universe, date range, cash rule, hedge dependency를 검증한 뒤 기존 paper-only replay runner에 전달해야 한다.
+
+`validationSplitRole`은 현재 `validationProtocolSchema`의 `train`, `validation`, `test` role과 맞춘다. holdout 진단은 별도 warning/metric으로 파생해야 하며 split role 값으로 저장하지 않는다.
 
 ### `RiskGateTraceViewModel`
 
