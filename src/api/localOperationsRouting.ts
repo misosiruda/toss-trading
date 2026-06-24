@@ -1,5 +1,11 @@
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import {
+  readDashboardPortfolioComplianceViewModel,
+  readDashboardRiskGateTraceViewModel,
+  readDashboardStrategyTestLabViewModel,
+  readDashboardValidationLabViewModel
+} from "./dashboardViewModels.js";
+import {
   healthResponse,
   readAuditEvents,
   readBatchReplayAggregateReport,
@@ -66,6 +72,14 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
       includeLatestRunArtifacts:
         url.searchParams.get("includeLatestRunArtifacts") === "1"
     }),
+  "/dashboard/view-model/portfolio-compliance": (_url, options) =>
+    readDashboardPortfolioComplianceViewModel(options.storageBaseDir),
+  "/dashboard/view-model/strategy-test-lab": (_url, options) =>
+    readDashboardStrategyTestLabViewModel(options.storageBaseDir),
+  "/dashboard/view-model/risk-gate-trace": (url, options) =>
+    readDashboardRiskGateTraceViewModel(options.storageBaseDir, readLimit(url)),
+  "/dashboard/view-model/validation-lab": (_url, options) =>
+    readDashboardValidationLabViewModel(options.storageBaseDir),
   "/scheduler/status": (_url, options) =>
     readSchedulerStatus(options.storageBaseDir),
   "/source/health": (_url, options) =>

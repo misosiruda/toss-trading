@@ -1,0 +1,1077 @@
+import { readFile } from "node:fs/promises";
+
+import type { BatchReplayAggregateReport } from "../reports/batchReplayReport.js";
+import { buildReplayResearchReport } from "../reports/replayResearchReport.js";
+import {
+  createStoragePaths,
+  FileAuditLog,
+  FileVirtualDecisionStore,
+  FileVirtualPortfolioStore,
+  FileVirtualTradeStore
+} from "../storage/repositories.js";
+import type {
+  AuditEvent,
+  Market,
+  StrategyBucket,
+  VirtualAction,
+  VirtualDecision,
+  VirtualDecisionItem,
+  VirtualPortfolio,
+  VirtualPosition,
+  VirtualTrade
+} from "../domain/schemas.js";
+
+const STRATEGY_BUCKETS = [
+  "long_term",
+  "swing",
+  "short_term",
+  "intraday",
+  "hedge"
+] as const satisfies readonly StrategyBucket[];
+
+type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
+type JsonFileStatus = "missing" | "ok" | "corrupt";
+type JsonlReadStatus = "missing" | "ok" | "degraded";
+type RiskGateTraceArtifactFamily = "historical_replay" | "virtual";
+type MarketRegimeView =
+  | "bull"
+  | "bear"
+  | "sideways"
+  | "mixed"
+  | "insufficient_data";
+type HoldingPeriodHint =
+  | "multi_month"
+  | "multi_week"
+  | "multi_day"
+  | "intraday"
+  | "hedge";
+
+interface JsonFileRead {
+  status: JsonFileStatus;
+  value: unknown | null;
+}
+
+interface JsonlRead {
+  status: JsonlReadStatus;
+  records: Record<string, unknown>[];
+  corruptLineCount: number;
+}
+
+interface BucketComplianceRow {
+  bucket: StrategyBucket;
+  targetWeightRatio: number;
+  currentWeightRatio: number;
+  gapRatio: number;
+  exposureKrw: number;
+  turnoverRatio: number | null;
+  status: "ok" | "under" | "over" | "missing";
+  primaryReason: string | null;
+}
+
+interface CashComplianceView {
+  marketRegime: MarketRegimeView;
+  targetCashRatio: number;
+  currentCashRatio: number;
+  minimumCashReserveKrw: number;
+  cashGapKrw: number;
+  ruleSource: "static" | "dynamic_regime" | "high_volatility" | "fallback";
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+}
+
+interface HedgeComplianceView {
+  hedgeEnabled: boolean;
+  hedgeExposureKrw: number;
+  hedgeExposureRatio: number;
+  grossExposureKrw: number;
+  netDownsideExposureKrw: number;
+  estimatedDownsideReductionKrw: number | null;
+  hedgeCostKrw: number;
+  hedgeTradeCount: number;
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+  status: "ok" | "ineffective" | "over_hedged" | "missing";
+}
+
+interface ExposureBucket {
+  key: string;
+  exposureKrw: number;
+  exposureRatio: number;
+}
+
+interface ExposureComplianceView {
+  grossExposureKrw: number;
+  grossExposureRatio: number;
+  byMarket: ExposureBucket[];
+  byStrategyBucket: ExposureBucket[];
+  maxSymbolExposure: ExposureBucket | null;
+  status: DashboardViewModelStatus;
+}
+
+interface RiskGateSummaryView {
+  decisionRecordCount: number;
+  decisionItemCount: number;
+  actionableDecisionCount: number;
+  simulatedTradeCount: number;
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+}
+
+export interface PolicyComplianceViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "portfolio-compliance";
+  asOf: string | null;
+  portfolioId: string | null;
+  virtualNetWorthKrw: number;
+  policyStatus: "missing";
+  bucketCompliance: BucketComplianceRow[];
+  cashCompliance: CashComplianceView;
+  hedgeCompliance: HedgeComplianceView;
+  exposureCompliance: ExposureComplianceView;
+  riskGateSummary: RiskGateSummaryView;
+  sourceStatus: {
+    portfolio: "ok" | "missing";
+    decisions: JsonlReadStatus;
+    trades: JsonlReadStatus;
+    auditEvents: JsonlReadStatus;
+    batchAggregate: JsonFileStatus;
+  };
+  warnings: string[];
+  status: DashboardViewModelStatus;
+}
+
+interface StrategyBucketTestCapability {
+  bucket: StrategyBucket;
+  canRunIsolatedReplay: boolean;
+  requiredPolicyFields: string[];
+  defaultHoldingPeriodHint: HoldingPeriodHint;
+  disabledReason: string | null;
+}
+
+interface StrategyBucketTestResultSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  validationSplitRole: "train" | "validation" | "test" | null;
+  totalReturnRatio: number | null;
+  maxDrawdownRatio: number | null;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
+  riskRejectRate: number | null;
+  providerFailureRate: number | null;
+  warnings: string[];
+}
+
+interface StrategyBucketComparisonView {
+  rows: StrategyBucketTestResultSummary[];
+  baselineBucket: StrategyBucket | null;
+  selectionWarning: string | null;
+}
+
+export interface StrategyBucketTestLabViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "strategy-test-lab";
+  policyId: string;
+  policyStatus: "missing";
+  supportedBuckets: StrategyBucketTestCapability[];
+  activeTests: unknown[];
+  recentResults: StrategyBucketTestResultSummary[];
+  comparison: StrategyBucketComparisonView;
+  sourceStatus: {
+    batchAggregate: JsonFileStatus;
+  };
+  status: "ok";
+}
+
+interface RiskDecisionSnapshot {
+  riskDecisionId: string | null;
+  packetId: string;
+  symbol: string | null;
+  approved: boolean;
+  rejectCodes: string[];
+}
+
+interface RiskGateTraceRow {
+  packetId: string;
+  decisionId: string;
+  market: Market;
+  symbol: string;
+  action: VirtualAction;
+  strategyBucket: StrategyBucket | "unknown";
+  aiThesis: string | null;
+  evidenceRefs: string[];
+  normalizedBudgetKrw: number | null;
+  riskApproved: boolean;
+  rejectCodes: string[];
+  simulatedExecutionStatus: "filled" | "partial" | "rejected" | "none";
+  auditEventRefs: string[];
+}
+
+export interface RiskGateTraceViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "risk-gate-trace";
+  sourceFamily: RiskGateTraceArtifactFamily;
+  traces: RiskGateTraceRow[];
+  count: number;
+  totalDecisionItemCount: number;
+  sourceStatus: {
+    decisions: JsonlReadStatus;
+    trades: JsonlReadStatus;
+    riskDecisions: JsonlReadStatus;
+    auditEvents: JsonlReadStatus;
+  };
+}
+
+export interface ValidationLabViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "validation-lab";
+  status: "missing" | "ok" | "corrupt" | "invalid";
+  aggregateReportStatus: "missing" | "ok" | "corrupt" | "invalid";
+  sourceGeneratedAt: string | null;
+  runIdentity: unknown | null;
+  reproducibilityHashes: unknown | null;
+  validationProtocol: unknown | null;
+  dataUniverseCoverage: unknown | null;
+  promptTrialDistribution: unknown | null;
+  overfittingWarning: unknown | null;
+  providerFailureSummary: unknown | null;
+  riskRejectSummary: unknown | null;
+  exposureBreakdown: unknown | null;
+  warnings: string[];
+  executionAssumptions: {
+    paperOnly: true;
+    liveTradingEnabled: false;
+    orderPlacementEnabled: false;
+  };
+}
+
+export async function readDashboardPortfolioComplianceViewModel(
+  storageBaseDir: string
+): Promise<PolicyComplianceViewModel> {
+  const paths = createStoragePaths(storageBaseDir);
+  const [portfolio, decisions, trades, auditEvents, aggregate] =
+    await Promise.all([
+      new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read(),
+      new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll(),
+      new FileVirtualTradeStore(paths.virtualTradesPath).readAll(),
+      new FileAuditLog(paths.auditLogPath).readAll(),
+      readJsonFile(paths.batchReplayAggregateReportPath)
+    ]);
+  const exposure = portfolioExposure(portfolio);
+  const decisionItems = flattenDecisionItems(decisions.records);
+  const riskRejectCodes = rejectCodeCounts(decisionItems, auditEvents.records);
+  const rejectedCount = countCurrentRejected(decisionItems, auditEvents.records);
+  const marketRegime = inferMarketRegime(aggregate.value);
+  const bucketCompliance = bucketComplianceRows(exposure, trades.records);
+  const cashCompliance = cashComplianceView({
+    portfolio,
+    virtualNetWorthKrw: exposure.virtualNetWorthKrw,
+    marketRegime,
+    rejectedCount,
+    rejectCodes: riskRejectCodes
+  });
+  const hedgeCompliance = hedgeComplianceView({
+    exposure,
+    trades: trades.records,
+    rejectedCount,
+    rejectCodes: riskRejectCodes
+  });
+  const warnings = [
+    "portfolio policy artifact is not available; target weights are reported as missing",
+    "strategy bucket isolated replay artifacts are not available in this ViewModel"
+  ];
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "portfolio-compliance",
+    asOf: portfolio?.updatedAt ?? null,
+    portfolioId: portfolio?.portfolioId ?? null,
+    virtualNetWorthKrw: exposure.virtualNetWorthKrw,
+    policyStatus: "missing",
+    bucketCompliance,
+    cashCompliance,
+    hedgeCompliance,
+    exposureCompliance: exposureComplianceView(exposure, portfolio !== null),
+    riskGateSummary: {
+      decisionRecordCount: decisions.records.length,
+      decisionItemCount: decisionItems.length,
+      actionableDecisionCount: decisionItems.filter(
+        ({ item }) => item.action !== "VIRTUAL_HOLD"
+      ).length,
+      simulatedTradeCount: trades.records.length,
+      rejectedCount,
+      rejectCodes: riskRejectCodes
+    },
+    sourceStatus: {
+      portfolio: portfolio === null ? "missing" : "ok",
+      decisions: jsonlStatus(decisions.corruptLineCount),
+      trades: jsonlStatus(trades.corruptLineCount),
+      auditEvents: jsonlStatus(auditEvents.corruptLineCount),
+      batchAggregate: aggregate.status
+    },
+    warnings,
+    status: portfolio === null ? "missing" : "watch"
+  };
+}
+
+export async function readDashboardStrategyTestLabViewModel(
+  storageBaseDir: string
+): Promise<StrategyBucketTestLabViewModel> {
+  const aggregate = await readJsonFile(
+    createStoragePaths(storageBaseDir).batchReplayAggregateReportPath
+  );
+  const recentResults: StrategyBucketTestResultSummary[] = [];
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "strategy-test-lab",
+    policyId: "paper_policy_unconfigured",
+    policyStatus: "missing",
+    supportedBuckets: STRATEGY_BUCKETS.map((bucket) => ({
+      bucket,
+      canRunIsolatedReplay: false,
+      requiredPolicyFields: requiredPolicyFieldsFor(bucket),
+      defaultHoldingPeriodHint: holdingPeriodHintFor(bucket),
+      disabledReason:
+        "paper-only isolated strategy bucket replay mutation is not implemented yet"
+    })),
+    activeTests: [],
+    recentResults,
+    comparison: {
+      rows: recentResults,
+      baselineBucket: null,
+      selectionWarning:
+        aggregate.status === "ok"
+          ? "portfolio-level batch aggregate is available, but isolated strategy bucket result artifacts are missing"
+          : "batch replay aggregate is missing; strategy bucket comparison is unavailable"
+    },
+    sourceStatus: {
+      batchAggregate: aggregate.status
+    },
+    status: "ok"
+  };
+}
+
+export async function readDashboardRiskGateTraceViewModel(
+  storageBaseDir: string,
+  limit: number
+): Promise<RiskGateTraceViewModel> {
+  const paths = createStoragePaths(storageBaseDir);
+  const [
+    virtualDecisions,
+    virtualTrades,
+    historicalDecisions,
+    historicalTrades,
+    historicalRiskDecisions,
+    auditEvents
+  ] = await Promise.all([
+    new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll(),
+    new FileVirtualTradeStore(paths.virtualTradesPath).readAll(),
+    new FileVirtualDecisionStore(paths.historicalReplayDecisionLogPath).readAll(),
+    new FileVirtualTradeStore(paths.historicalReplayTradeLogPath).readAll(),
+    readJsonlRecords(paths.historicalReplayRiskDecisionLogPath),
+    new FileAuditLog(paths.auditLogPath).readAll()
+  ]);
+  const useHistoricalFamily =
+    historicalDecisions.records.length > 0 ||
+    historicalTrades.records.length > 0 ||
+    historicalRiskDecisions.status !== "missing";
+  const sourceFamily: RiskGateTraceArtifactFamily = useHistoricalFamily
+    ? "historical_replay"
+    : "virtual";
+  const decisions = useHistoricalFamily ? historicalDecisions : virtualDecisions;
+  const trades = useHistoricalFamily ? historicalTrades : virtualTrades;
+  const riskDecisionRead = useHistoricalFamily
+    ? historicalRiskDecisions
+    : emptyJsonlRead("missing");
+  const riskDecisions = riskDecisionRead.records
+    .map(parseRiskDecision)
+    .filter((record): record is RiskDecisionSnapshot => record !== null);
+  const rows = flattenDecisionItems(decisions.records).map(
+    ({ record, item, itemIndex }) =>
+      riskGateTraceRow({
+        record,
+        item,
+        itemIndex,
+        trades: trades.records,
+        riskDecisions,
+        auditEvents: auditEvents.records
+      })
+  );
+  const traces = rows.slice(-limit).reverse();
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "risk-gate-trace",
+    sourceFamily,
+    traces,
+    count: traces.length,
+    totalDecisionItemCount: rows.length,
+    sourceStatus: {
+      decisions: storeJsonlStatus(
+        decisions.records.length,
+        decisions.corruptLineCount
+      ),
+      trades: storeJsonlStatus(trades.records.length, trades.corruptLineCount),
+      riskDecisions: riskDecisionRead.status,
+      auditEvents: jsonlStatus(auditEvents.corruptLineCount)
+    }
+  };
+}
+
+export async function readDashboardValidationLabViewModel(
+  storageBaseDir: string
+): Promise<ValidationLabViewModel> {
+  const aggregate = await readJsonFile(
+    createStoragePaths(storageBaseDir).batchReplayAggregateReportPath
+  );
+
+  if (aggregate.status !== "ok") {
+    return validationLabUnavailable(aggregate.status);
+  }
+  if (!isBatchReplayAggregateReportShape(aggregate.value)) {
+    return validationLabUnavailable("invalid");
+  }
+
+  try {
+    const report = buildReplayResearchReport({
+      aggregateReport: aggregate.value,
+      generatedAt: new Date()
+    });
+
+    return {
+      mode: "paper_only",
+      readOnly: true,
+      viewModel: "validation-lab",
+      status: "ok",
+      aggregateReportStatus: "ok",
+      sourceGeneratedAt: report.sourceGeneratedAt,
+      runIdentity: report.runIdentity,
+      reproducibilityHashes: report.reproducibilityHashes,
+      validationProtocol: report.validationProtocol,
+      dataUniverseCoverage: report.dataUniverseCoverage,
+      promptTrialDistribution: report.promptTrialDistribution,
+      overfittingWarning: report.overfittingWarning,
+      providerFailureSummary: report.providerFailureSummary,
+      riskRejectSummary: report.riskRejectSummary,
+      exposureBreakdown: report.exposureBreakdown,
+      warnings: report.warnings,
+      executionAssumptions: {
+        paperOnly: true,
+        liveTradingEnabled: false,
+        orderPlacementEnabled: false
+      }
+    };
+  } catch {
+    return validationLabUnavailable("invalid");
+  }
+}
+
+function portfolioExposure(portfolio: VirtualPortfolio | null): {
+  virtualNetWorthKrw: number;
+  grossExposureKrw: number;
+  cashRatio: number;
+  byMarket: Map<string, number>;
+  byBucket: Record<StrategyBucket, number>;
+  bySymbol: Map<string, number>;
+  hedgeExposureKrw: number;
+} {
+  const byMarket = new Map<string, number>();
+  const byBucket = emptyBucketAmounts();
+  const bySymbol = new Map<string, number>();
+  let grossExposureKrw = 0;
+  let hedgeExposureKrw = 0;
+
+  for (const position of portfolio?.positions ?? []) {
+    const value = positionMarketValue(position);
+    grossExposureKrw += value;
+    byMarket.set(position.market, (byMarket.get(position.market) ?? 0) + value);
+    bySymbol.set(
+      `${position.market}:${position.symbol}`,
+      (bySymbol.get(`${position.market}:${position.symbol}`) ?? 0) + value
+    );
+    if (position.strategyBucket !== undefined) {
+      byBucket[position.strategyBucket] += value;
+    }
+    if (isHedgePosition(position)) {
+      hedgeExposureKrw += value;
+    }
+  }
+
+  const virtualNetWorthKrw = (portfolio?.cashKrw ?? 0) + grossExposureKrw;
+  return {
+    virtualNetWorthKrw,
+    grossExposureKrw,
+    cashRatio: ratio(portfolio?.cashKrw ?? 0, virtualNetWorthKrw),
+    byMarket,
+    byBucket,
+    bySymbol,
+    hedgeExposureKrw
+  };
+}
+
+function bucketComplianceRows(
+  exposure: ReturnType<typeof portfolioExposure>,
+  trades: VirtualTrade[]
+): BucketComplianceRow[] {
+  return STRATEGY_BUCKETS.map((bucket) => {
+    const exposureKrw = exposure.byBucket[bucket];
+    return {
+      bucket,
+      targetWeightRatio: 0,
+      currentWeightRatio: ratio(exposureKrw, exposure.virtualNetWorthKrw),
+      gapRatio: ratio(exposureKrw, exposure.virtualNetWorthKrw),
+      exposureKrw,
+      turnoverRatio: bucketTurnoverRatio(
+        bucket,
+        trades,
+        exposure.virtualNetWorthKrw
+      ),
+      status: "missing",
+      primaryReason: "portfolio policy artifact is not available"
+    };
+  });
+}
+
+function cashComplianceView(input: {
+  portfolio: VirtualPortfolio | null;
+  virtualNetWorthKrw: number;
+  marketRegime: MarketRegimeView;
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+}): CashComplianceView {
+  const currentCashKrw = input.portfolio?.cashKrw ?? 0;
+  return {
+    marketRegime: input.marketRegime,
+    targetCashRatio: 0,
+    currentCashRatio: ratio(currentCashKrw, input.virtualNetWorthKrw),
+    minimumCashReserveKrw: 0,
+    cashGapKrw: 0,
+    ruleSource: "fallback",
+    rejectedCount: input.rejectedCount,
+    rejectCodes: input.rejectCodes
+  };
+}
+
+function hedgeComplianceView(input: {
+  exposure: ReturnType<typeof portfolioExposure>;
+  trades: VirtualTrade[];
+  rejectedCount: number;
+  rejectCodes: Record<string, number>;
+}): HedgeComplianceView {
+  const hedgeTradeCount = input.trades.filter(
+    (trade) => trade.strategyBucket === "hedge"
+  ).length;
+  const hedgeCostKrw = input.trades
+    .filter((trade) => trade.strategyBucket === "hedge")
+    .reduce((sum, trade) => sum + (trade.totalCostKrw ?? 0), 0);
+
+  return {
+    hedgeEnabled: input.exposure.hedgeExposureKrw > 0 || hedgeTradeCount > 0,
+    hedgeExposureKrw: input.exposure.hedgeExposureKrw,
+    hedgeExposureRatio: ratio(
+      input.exposure.hedgeExposureKrw,
+      input.exposure.virtualNetWorthKrw
+    ),
+    grossExposureKrw: input.exposure.grossExposureKrw,
+    netDownsideExposureKrw: Math.max(
+      0,
+      input.exposure.grossExposureKrw - input.exposure.hedgeExposureKrw
+    ),
+    estimatedDownsideReductionKrw: null,
+    hedgeCostKrw,
+    hedgeTradeCount,
+    rejectedCount: input.rejectedCount,
+    rejectCodes: input.rejectCodes,
+    status: "missing"
+  };
+}
+
+function exposureComplianceView(
+  exposure: ReturnType<typeof portfolioExposure>,
+  hasPortfolio: boolean
+): ExposureComplianceView {
+  return {
+    grossExposureKrw: exposure.grossExposureKrw,
+    grossExposureRatio: ratio(
+      exposure.grossExposureKrw,
+      exposure.virtualNetWorthKrw
+    ),
+    byMarket: mapToExposureBuckets(
+      exposure.byMarket,
+      exposure.virtualNetWorthKrw
+    ),
+    byStrategyBucket: STRATEGY_BUCKETS.map((bucket) => ({
+      key: bucket,
+      exposureKrw: exposure.byBucket[bucket],
+      exposureRatio: ratio(
+        exposure.byBucket[bucket],
+        exposure.virtualNetWorthKrw
+      )
+    })),
+    maxSymbolExposure: maxExposureBucket(
+      exposure.bySymbol,
+      exposure.virtualNetWorthKrw
+    ),
+    status: hasPortfolio ? "ok" : "missing"
+  };
+}
+
+function riskGateTraceRow(input: {
+  record: VirtualDecision;
+  item: VirtualDecisionItem;
+  itemIndex: number;
+  trades: VirtualTrade[];
+  riskDecisions: RiskDecisionSnapshot[];
+  auditEvents: AuditEvent[];
+}): RiskGateTraceRow {
+  const trade = input.trades.find(
+    (candidate) =>
+      candidate.packetId === input.record.packetId &&
+      candidate.symbol === input.item.symbol &&
+      candidate.action === input.item.action
+  );
+  const riskDecision = input.riskDecisions.find(
+    (candidate) =>
+      candidate.packetId === input.record.packetId &&
+      (candidate.symbol === input.item.symbol || candidate.symbol === null)
+  );
+  const executionStatus = simulatedExecutionStatus(trade ?? null);
+  const auditEventRefs = matchingAuditEventRefs(
+    input.auditEvents,
+    input.record.packetId,
+    input.item.symbol
+  );
+  const riskApproved =
+    riskDecision?.approved ??
+    (input.item.action === "VIRTUAL_HOLD" ||
+      executionStatus === "filled" ||
+      executionStatus === "partial");
+
+  return {
+    packetId: input.record.packetId,
+    decisionId: decisionItemId(input.record, input.item, input.itemIndex),
+    market: input.item.market,
+    symbol: input.item.symbol,
+    action: input.item.action,
+    strategyBucket: trade?.strategyBucket ?? "unknown",
+    aiThesis: input.item.thesis,
+    evidenceRefs: evidenceRefs(input.item),
+    normalizedBudgetKrw: input.item.budgetKrw,
+    riskApproved,
+    rejectCodes:
+      riskDecision?.rejectCodes ??
+      (input.item.holdReasonCode ? [input.item.holdReasonCode] : []),
+    simulatedExecutionStatus: executionStatus,
+    auditEventRefs
+  };
+}
+
+function flattenDecisionItems(
+  records: VirtualDecision[]
+): Array<{
+  record: VirtualDecision;
+  item: VirtualDecisionItem;
+  itemIndex: number;
+}> {
+  return records.flatMap((record) =>
+    record.decisions.map((item, itemIndex) => ({ record, item, itemIndex }))
+  );
+}
+
+function validationLabUnavailable(
+  status: "missing" | "corrupt" | "invalid"
+): ValidationLabViewModel {
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "validation-lab",
+    status,
+    aggregateReportStatus: status,
+    sourceGeneratedAt: null,
+    runIdentity: null,
+    reproducibilityHashes: null,
+    validationProtocol: null,
+    dataUniverseCoverage: null,
+    promptTrialDistribution: null,
+    overfittingWarning: null,
+    providerFailureSummary: null,
+    riskRejectSummary: null,
+    exposureBreakdown: null,
+    warnings:
+      status === "missing"
+        ? ["batch replay aggregate report is missing"]
+        : ["batch replay aggregate report is not usable"],
+    executionAssumptions: {
+      paperOnly: true,
+      liveTradingEnabled: false,
+      orderPlacementEnabled: false
+    }
+  };
+}
+
+function requiredPolicyFieldsFor(bucket: StrategyBucket): string[] {
+  if (bucket === "hedge") {
+    return [
+      "hedgeEnabled",
+      "targetWeightRatio",
+      "downsideExposureRule",
+      "hedgeCostLimitRatio"
+    ];
+  }
+  return [
+    "targetWeightRatio",
+    "minWeightRatio",
+    "maxWeightRatio",
+    "holdingPeriodHint",
+    "maxTurnoverRatio"
+  ];
+}
+
+function holdingPeriodHintFor(bucket: StrategyBucket): HoldingPeriodHint {
+  switch (bucket) {
+    case "long_term":
+      return "multi_month";
+    case "swing":
+      return "multi_week";
+    case "short_term":
+      return "multi_day";
+    case "intraday":
+      return "intraday";
+    case "hedge":
+      return "hedge";
+  }
+}
+
+function positionMarketValue(position: VirtualPosition): number {
+  return Math.round(
+    position.marketValueKrw ?? position.averagePriceKrw * position.quantity
+  );
+}
+
+function isHedgePosition(position: VirtualPosition): boolean {
+  return (
+    position.strategyBucket === "hedge" ||
+    position.assetClass === "inverse" ||
+    (position.riskTags ?? []).includes("inverse")
+  );
+}
+
+function bucketTurnoverRatio(
+  bucket: StrategyBucket,
+  trades: VirtualTrade[],
+  virtualNetWorthKrw: number
+): number | null {
+  const amount = trades
+    .filter((trade) => trade.strategyBucket === bucket)
+    .reduce((sum, trade) => sum + (trade.grossAmountKrw ?? trade.amountKrw), 0);
+  return virtualNetWorthKrw > 0 ? ratio(amount, virtualNetWorthKrw) : null;
+}
+
+function rejectCodeCounts(
+  decisionItems: Array<{ item: VirtualDecisionItem }>,
+  auditEvents: AuditEvent[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const { item } of decisionItems) {
+    if (item.holdReasonCode !== undefined) {
+      counts[item.holdReasonCode] = (counts[item.holdReasonCode] ?? 0) + 1;
+    }
+  }
+  for (const event of auditEvents) {
+    if (event.eventType.toUpperCase().includes("REJECT")) {
+      counts[event.eventType] = (counts[event.eventType] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function countRejectedAuditEvents(events: AuditEvent[]): number {
+  return events.filter((event) => event.eventType.toUpperCase().includes("REJECT"))
+    .length;
+}
+
+function countCurrentRejected(
+  decisionItems: Array<{ item: VirtualDecisionItem }>,
+  auditEvents: AuditEvent[]
+): number {
+  return (
+    decisionItems.filter(({ item }) => item.holdReasonCode !== undefined).length +
+    countRejectedAuditEvents(auditEvents)
+  );
+}
+
+function inferMarketRegime(value: unknown): MarketRegimeView {
+  const summary = readRecordField(value, "summary");
+  const regimeCounts = readRecordField(summary, "regimeCounts");
+  if (regimeCounts === null) {
+    return "insufficient_data";
+  }
+
+  const counts = Object.entries(regimeCounts)
+    .map(([key, entry]) => [key, readNumber(entry)] as const)
+    .filter((entry): entry is readonly [string, number] => entry[1] !== null)
+    .filter(([key]) => key !== "insufficient_data");
+  if (counts.length === 0) {
+    return "insufficient_data";
+  }
+
+  counts.sort((left, right) => right[1] - left[1]);
+  if (counts.length > 1 && counts[0]![1] === counts[1]![1]) {
+    return "mixed";
+  }
+
+  const regime = counts[0]![0];
+  return regime === "bull" || regime === "bear" || regime === "sideways"
+    ? regime
+    : "mixed";
+}
+
+function parseRiskDecision(
+  value: Record<string, unknown>
+): RiskDecisionSnapshot | null {
+  const packetId = readStringField(value, "packetId");
+  const approved = value["approved"];
+  if (packetId === null || typeof approved !== "boolean") {
+    return null;
+  }
+  return {
+    riskDecisionId: readStringField(value, "riskDecisionId"),
+    packetId,
+    symbol: readStringField(value, "symbol"),
+    approved,
+    rejectCodes: stringArray(value["rejectCodes"])
+  };
+}
+
+function simulatedExecutionStatus(
+  trade: VirtualTrade | null
+): "filled" | "partial" | "rejected" | "none" {
+  if (trade === null) {
+    return "none";
+  }
+  if (trade.fillStatus !== undefined) {
+    return trade.fillStatus;
+  }
+  switch (trade.status) {
+    case "VIRTUAL_FILLED":
+      return "filled";
+    case "VIRTUAL_REJECTED":
+      return "rejected";
+    case "VIRTUAL_PENDING":
+    case "VIRTUAL_EXPIRED":
+      return "none";
+  }
+}
+
+function decisionItemId(
+  record: VirtualDecision,
+  item: VirtualDecisionItem,
+  itemIndex: number
+): string {
+  return (
+    record.decisionHash ??
+    `${record.packetId}:${item.market}:${item.symbol}:${itemIndex}`
+  );
+}
+
+function evidenceRefs(item: VirtualDecisionItem): string[] {
+  return [...item.dataRefs, ...(item.featureRefs ?? [])];
+}
+
+function matchingAuditEventRefs(
+  events: AuditEvent[],
+  packetId: string,
+  symbol: string
+): string[] {
+  return events
+    .filter(
+      (event) =>
+        event.summary.includes(packetId) ||
+        event.summary.includes(symbol) ||
+        event.maskedRefs.includes(packetId) ||
+        event.maskedRefs.includes(symbol)
+    )
+    .map((event) => event.eventId);
+}
+
+function mapToExposureBuckets(
+  source: Map<string, number>,
+  virtualNetWorthKrw: number
+): ExposureBucket[] {
+  return [...source.entries()]
+    .map(([key, exposureKrw]) => ({
+      key,
+      exposureKrw,
+      exposureRatio: ratio(exposureKrw, virtualNetWorthKrw)
+    }))
+    .sort((left, right) => right.exposureKrw - left.exposureKrw);
+}
+
+function maxExposureBucket(
+  source: Map<string, number>,
+  virtualNetWorthKrw: number
+): ExposureBucket | null {
+  return mapToExposureBuckets(source, virtualNetWorthKrw)[0] ?? null;
+}
+
+function emptyBucketAmounts(): Record<StrategyBucket, number> {
+  return {
+    long_term: 0,
+    swing: 0,
+    short_term: 0,
+    intraday: 0,
+    hedge: 0
+  };
+}
+
+function jsonlStatus(corruptLineCount: number): JsonlReadStatus {
+  return corruptLineCount > 0 ? "degraded" : "ok";
+}
+
+function storeJsonlStatus(
+  recordCount: number,
+  corruptLineCount: number
+): JsonlReadStatus {
+  if (corruptLineCount > 0) {
+    return "degraded";
+  }
+  return recordCount > 0 ? "ok" : "missing";
+}
+
+async function readJsonFile(filePath: string): Promise<JsonFileRead> {
+  try {
+    return { status: "ok", value: JSON.parse(await readFile(filePath, "utf8")) };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing", value: null };
+    }
+    if (error instanceof SyntaxError) {
+      return { status: "corrupt", value: null };
+    }
+    throw error;
+  }
+}
+
+async function readJsonlRecords(filePath: string): Promise<JsonlRead> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { status: "missing", records: [], corruptLineCount: 0 };
+    }
+    throw error;
+  }
+
+  const records: Record<string, unknown>[] = [];
+  let corruptLineCount = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (isRecord(parsed)) {
+        records.push(parsed);
+      } else {
+        corruptLineCount += 1;
+      }
+    } catch {
+      corruptLineCount += 1;
+    }
+  }
+
+  return {
+    status: corruptLineCount > 0 ? "degraded" : "ok",
+    records,
+    corruptLineCount
+  };
+}
+
+function emptyJsonlRead(status: JsonlReadStatus): JsonlRead {
+  return {
+    status,
+    records: [],
+    corruptLineCount: 0
+  };
+}
+
+function isBatchReplayAggregateReportShape(
+  value: unknown
+): value is BatchReplayAggregateReport {
+  if (!isRecord(value) || value["mode"] !== "paper_only") {
+    return false;
+  }
+  const summary = readRecordField(value, "summary");
+  const overall = readRecordField(value, "overall");
+  return (
+    readStringField(value, "generatedAt") !== null &&
+    readNumberField(summary, "runCount") !== null &&
+    readNumberField(summary, "completedCount") !== null &&
+    readNumberField(summary, "skippedCount") !== null &&
+    readNumberField(summary, "failedCount") !== null &&
+    readNumberField(summary, "returnSampleCount") !== null &&
+    readNumberField(overall, "runCount") !== null &&
+    readNumberField(overall, "completedCount") !== null &&
+    readNumberField(overall, "returnSampleCount") !== null
+  );
+}
+
+function readRecordField(
+  value: unknown,
+  key: string
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const field = value[key];
+  return isRecord(field) ? field : null;
+}
+
+function readStringField(
+  value: Record<string, unknown>,
+  key: string
+): string | null {
+  const field = value[key];
+  return typeof field === "string" && field.trim().length > 0 ? field : null;
+}
+
+function readNumberField(
+  value: Record<string, unknown> | null,
+  key: string
+): number | null {
+  if (value === null) {
+    return null;
+  }
+  return readNumber(value[key]);
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function ratio(numerator: number, denominator: number): number {
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}

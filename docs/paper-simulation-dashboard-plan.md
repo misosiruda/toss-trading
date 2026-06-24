@@ -359,6 +359,10 @@ GET /replay/report
 GET /replay/progress
 GET /batch/replay/report
 GET /batch/replay/runs
+GET /dashboard/view-model/portfolio-compliance
+GET /dashboard/view-model/strategy-test-lab
+GET /dashboard/view-model/risk-gate-trace
+GET /dashboard/view-model/validation-lab
 GET /scheduler/status
 GET /source/health
 GET /market/packets

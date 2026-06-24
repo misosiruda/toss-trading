@@ -235,6 +235,10 @@ GET /replay/progress
 GET /research/replay/report
 GET /batch/replay/report
 GET /batch/replay/runs
+GET /dashboard/view-model/portfolio-compliance
+GET /dashboard/view-model/strategy-test-lab
+GET /dashboard/view-model/risk-gate-trace
+GET /dashboard/view-model/validation-lab
 GET /scheduler/status
 GET /source/health
 GET /market/packets
@@ -242,6 +246,8 @@ GET /audit/events
 ```
 
 `GET /research/replay/report`는 저장된 batch replay aggregate artifact를 `replay_research_report.v1` 요약 payload로 파생해 validation, overfitting warning, provider failure, risk reject, exposure summary를 read-only로 보여준다.
+
+`GET /dashboard/view-model/*`는 Next.js dashboard 전환을 위한 화면 전용 read model이다. browser가 raw artifact를 직접 조합하지 않도록 backend가 portfolio compliance, strategy test capability, risk gate trace, validation lab 요약을 계산해서 내려준다. policy draft 저장소와 isolated strategy bucket replay artifact가 없으면 해당 값은 `missing` 또는 disabled capability로 표현한다.
 
 Dashboard의 `/dashboard/virtual/validation` 화면은 같은 payload를 연구 리포트 패널로 렌더링한다. 이 패널은 저장된 artifact 조회와 요약 표시만 수행하며 replay 실행, Codex CLI 실행, TossInvest collection, live order를 trigger하지 않는다.
 

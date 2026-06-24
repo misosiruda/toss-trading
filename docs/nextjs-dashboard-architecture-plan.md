@@ -680,6 +680,16 @@ npm run check
 - browser가 raw artifact를 직접 조합하지 않게 한다.
 - ViewModel 계산은 backend module에 둔다.
 
+초기 구현 기준:
+
+- `GET /dashboard/view-model/portfolio-compliance`
+- `GET /dashboard/view-model/strategy-test-lab`
+- `GET /dashboard/view-model/risk-gate-trace`
+- `GET /dashboard/view-model/validation-lab`
+- policy draft 저장소가 없는 값은 `policyStatus: "missing"` 또는 row-level `status: "missing"`으로 내려준다.
+- strategy bucket isolated replay mutation과 결과 artifact가 없는 값은 disabled capability 또는 empty result로 내려준다.
+- live order, raw `codex exec`, raw `tossctl` 실행 surface는 추가하지 않는다.
+
 ### N3. Read-only Next dashboard
 
 범위:
