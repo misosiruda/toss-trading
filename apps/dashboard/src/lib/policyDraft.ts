@@ -122,6 +122,24 @@ export function validatePolicyDraft(
   }
 
   for (const bucket of draft.buckets) {
+    if (isPctOutsideInclusiveRange(bucket.targetWeightPct)) {
+      issues.push({
+        code: "BUCKET_TARGET_WEIGHT_OUT_OF_RANGE",
+        message: `${bucket.bucket} target weight must stay between 0% and 100%.`
+      });
+    }
+    if (isPctOutsideInclusiveRange(bucket.minWeightPct)) {
+      issues.push({
+        code: "BUCKET_MIN_WEIGHT_OUT_OF_RANGE",
+        message: `${bucket.bucket} minimum weight must stay between 0% and 100%.`
+      });
+    }
+    if (isPctOutsideInclusiveRange(bucket.maxWeightPct)) {
+      issues.push({
+        code: "BUCKET_MAX_WEIGHT_OUT_OF_RANGE",
+        message: `${bucket.bucket} maximum weight must stay between 0% and 100%.`
+      });
+    }
     if (bucket.minWeightPct > bucket.maxWeightPct) {
       issues.push({
         code: "BUCKET_MIN_EXCEEDS_MAX",
@@ -290,6 +308,10 @@ function sum(values: number[]): number {
 
 function toRatio(value: number): number {
   return roundPct(value) / 100;
+}
+
+function isPctOutsideInclusiveRange(value: number): boolean {
+  return value < 0 || value > 100;
 }
 
 function roundPct(value: number): number {

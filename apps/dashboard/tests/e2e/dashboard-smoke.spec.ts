@@ -91,6 +91,16 @@ test("renders paper policy builder draft validation without mutation controls", 
     page.getByText("long_term target must stay between")
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Reset draft" }).click();
+  await page.getByLabel("Long-term minimum").fill("-10");
+  await expect(
+    page.getByText("long_term minimum weight must stay between 0% and 100%.")
+  ).toBeVisible();
+  await expect(page.getByText("backend-ready")).toHaveCount(0);
+  await expect(page.getByLabel("PortfolioPolicy preview")).toContainText(
+    "BUCKET_MIN_WEIGHT_OUT_OF_RANGE"
+  );
+
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
   ).toHaveCount(0);
