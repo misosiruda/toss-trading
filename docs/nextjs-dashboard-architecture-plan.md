@@ -354,7 +354,7 @@ interface StrategyBucketComparisonView {
 
 프론트는 이 ViewModel로 전략별 독립 test 가능 여부와 결과를 보여준다. 특정 bucket test 생성 request는 browser에서 임의로 계산하지 않고 backend가 policy, universe, date range, cash rule, hedge dependency를 검증한 뒤 기존 paper-only replay runner에 전달해야 한다.
 
-`validationSplitRole`은 현재 `validationProtocolSchema`의 `train`, `validation`, `test` role과 맞춘다. holdout 진단은 별도 warning/metric으로 파생해야 하며 split role 값으로 저장하지 않는다.
+`validationSplitRole`은 현재 `validationSplitRoleSchema`의 `train`, `validation`, `test` role과 맞춘다. holdout 진단은 별도 warning/metric으로 파생해야 하며 split role 값으로 저장하지 않는다.
 
 ### `RiskGateTraceViewModel`
 
