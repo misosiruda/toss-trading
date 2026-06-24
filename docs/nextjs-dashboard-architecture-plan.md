@@ -728,6 +728,12 @@ npm run check
 - live policy mutation
 - live `OrderIntent` 생성
 
+첫 구현 단위:
+
+- `/dashboard/lab/policies` route에서 local draft form과 JSON preview를 먼저 제공한다.
+- 이 단계의 validation은 frontend local guard이며, backend policy validation을 대체하지 않는다.
+- policy draft 저장, replay 생성, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
+
 ### N5. Strategy Bucket Test Lab
 
 범위:

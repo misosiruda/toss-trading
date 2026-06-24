@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
 type AxeRunResult = {
@@ -56,6 +56,62 @@ test("renders paper-only dashboard readiness without live mutation controls", as
     page.getByRole("link", { name: /order|trade|buy|sell/i })
   ).toHaveCount(0);
 
+  await expectNoAxeViolations(page);
+});
+
+test("renders paper policy builder draft validation without mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/lab/policies");
+
+  await expect(
+    page.getByRole("heading", { name: "Paper Policy Builder" })
+  ).toBeVisible();
+  await expect(page.getByText("paper-only draft")).toBeVisible();
+  await expect(page.getByText("not stored")).toBeVisible();
+  await expect(page.getByText("required later")).toBeVisible();
+  await expect(page.getByText("disabled")).toBeVisible();
+
+  await expect(page.getByLabel("Policy name")).toHaveValue(
+    "Balanced paper policy draft"
+  );
+  await expect(page.getByLabel("Long-term target")).toHaveValue("35");
+  await expect(page.getByLabel("Target cash reserve")).toHaveValue("15");
+  await expect(page.getByText("Draft passes local validation")).toBeVisible();
+  await expect(page.getByLabel("PortfolioPolicy preview")).toContainText(
+    "backendValidationRequired"
+  );
+
+  await page.getByRole("button", { name: "Validate draft" }).click();
+  await expect(page.getByText("local checks 1")).toBeVisible();
+
+  await page.getByLabel("Long-term target").fill("60");
+  await expect(page.getByText("Total allocation is 125.00%")).toBeVisible();
+  await expect(
+    page.getByText("long_term target must stay between")
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Reset draft" }).click();
+  await page.getByLabel("Long-term minimum").fill("-10");
+  await expect(
+    page.getByText("long_term minimum weight must stay between 0% and 100%.")
+  ).toBeVisible();
+  await expect(page.getByText("backend-ready")).toHaveCount(0);
+  await expect(page.getByLabel("PortfolioPolicy preview")).toContainText(
+    "BUCKET_MIN_WEIGHT_OUT_OF_RANGE"
+  );
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+async function expectNoAxeViolations(page: Page) {
   await page.addScriptTag({ content: axe.source });
   const accessibility = await page.evaluate(async () => {
     const axeApi = (
@@ -67,4 +123,4 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   });
 
   expect(accessibility.violations).toEqual([]);
-});
+}
