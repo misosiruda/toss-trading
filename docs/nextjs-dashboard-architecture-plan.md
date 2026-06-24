@@ -35,6 +35,7 @@
 - 전략 버킷별 target/current/gap을 한 화면에서 본다.
 - 장세별 target cash와 현재 cash gap을 명확히 본다.
 - hedge가 downside exposure를 줄였는지, 아니면 gross exposure만 늘렸는지 추적한다.
+- 장기, 스윙, 단기, 초단기, hedge 전략을 각각 독립 replay/test 단위로 실행하고 비교한다.
 - AI 판단, deterministic risk gate, simulated execution, report를 한 trace로 연결한다.
 - 여러 run이 아니라 여러 policy 후보를 비교한다.
 - 향후 live 관제 화면으로 확장해도 deterministic backend final gate와 audit boundary가 흔들리지 않게 한다.
@@ -113,6 +114,8 @@ apps/dashboard/
 │   │   ├── validation/page.tsx
 │   │   └── lab/
 │   │       ├── policies/page.tsx
+│   │       ├── strategy-tests/page.tsx
+│   │       ├── strategy-tests/[bucket]/new/page.tsx
 │   │       ├── replays/new/page.tsx
 │   │       └── runs/[runId]/page.tsx
 │   ├── layout.tsx
@@ -137,6 +140,8 @@ apps/dashboard/
 | `/dashboard/validation` | policy 후보별 OOS, PBO-like, regime robustness 비교 | 없음 |
 | `/dashboard/audit` | audit event, rejected action, failure trace 조회 | 없음 |
 | `/dashboard/lab/policies` | paper-only portfolio policy builder | policy draft 저장 후보 |
+| `/dashboard/lab/strategy-tests` | 전략 버킷별 test matrix와 결과 비교 | 없음 |
+| `/dashboard/lab/strategy-tests/[bucket]/new` | 특정 strategy bucket 단독 replay/test 생성 | guarded paper-only mutation |
 | `/dashboard/lab/replays/new` | paper simulation 생성 | guarded paper-only mutation |
 | `/dashboard/lab/runs/[runId]` | 실행 상세, progress, report | 없음 |
 
@@ -261,6 +266,58 @@ interface StrategyBucketAnalyticsRow {
 }
 ```
 
+### `StrategyBucketTestLabViewModel`
+
+```ts
+interface StrategyBucketTestLabViewModel {
+  mode: "paper_only";
+  policyId: string;
+  supportedBuckets: StrategyBucketTestCapability[];
+  activeTests: StrategyBucketTestSummary[];
+  recentResults: StrategyBucketTestResultSummary[];
+  comparison: StrategyBucketComparisonView;
+}
+
+interface StrategyBucketTestCapability {
+  bucket: StrategyBucket;
+  canRunIsolatedReplay: boolean;
+  requiredPolicyFields: string[];
+  defaultHoldingPeriodHint: "multi_month" | "multi_week" | "multi_day" | "intraday" | "hedge";
+  disabledReason: string | null;
+}
+
+interface StrategyBucketTestSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  startedAt: string | null;
+  completedAt: string | null;
+  runId: string | null;
+  configHash: string;
+}
+
+interface StrategyBucketTestResultSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  validationSplitRole: "train" | "validation" | "test" | "holdout" | "unknown";
+  totalReturnRatio: number | null;
+  maxDrawdownRatio: number | null;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
+  riskRejectRate: number | null;
+  providerFailureRate: number | null;
+  warnings: string[];
+}
+
+interface StrategyBucketComparisonView {
+  rows: StrategyBucketTestResultSummary[];
+  baselineBucket: StrategyBucket | null;
+  selectionWarning: string | null;
+}
+```
+
+프론트는 이 ViewModel로 전략별 독립 test 가능 여부와 결과를 보여준다. 특정 bucket test 생성 request는 browser에서 임의로 계산하지 않고 backend가 policy, universe, date range, cash rule, hedge dependency를 검증한 뒤 기존 paper-only replay runner에 전달해야 한다.
+
 ### `RiskGateTraceViewModel`
 
 ```ts
@@ -295,9 +352,11 @@ GET  /dashboard/view-model/live-readiness
 GET  /dashboard/view-model/portfolio-compliance
 GET  /dashboard/view-model/strategy-bucket-analytics
 GET  /dashboard/view-model/risk-gate-trace
+GET  /dashboard/view-model/strategy-test-lab
 GET  /dashboard/view-model/validation-lab
 GET  /dashboard/view-model/audit
 POST /paper/simulations
+POST /paper/simulations/strategy-bucket-tests
 ```
 
 원칙:
@@ -305,8 +364,10 @@ POST /paper/simulations
 - `GET /dashboard/view-model/*`는 read-only다.
 - ViewModel API는 raw account number, token, order ID, execution detail을 masking한다.
 - portfolio compliance, hedge effectiveness, cash reserve rule, cost, turnover, validation metric은 backend가 계산한다.
+- strategy bucket별 isolated test 가능 여부, test config hash, 결과 비교 metric도 backend가 계산한다.
 - Next.js BFF는 backend ViewModel을 그대로 렌더링하거나 화면 상태에 맞게 얇게 reshape한다.
 - `POST /paper/simulations`는 기존 same-origin/header/body guard를 유지하고, Next.js Server Action 또는 Route Handler에서 한 번 더 operation intent를 검증한다.
+- `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다.
 
 ## Next.js 설계 기준
 
@@ -328,6 +389,7 @@ POST /paper/simulations
 | live readiness | SSR, no-store |
 | active replay progress | Client polling 또는 SSE 후보, server-authenticated endpoint |
 | portfolio compliance | SSR initial load + controlled refresh |
+| strategy test lab | SSR initial load + Client Component filter/table |
 | validation lab aggregate | SSR, 짧은 TTL 또는 explicit refresh |
 | static labels/taxonomy | cached server function 후보 |
 | paper simulation create form | Server Action + Client Component form |
@@ -379,6 +441,54 @@ POST /paper/simulations
 - risk profile은 preset template일 뿐이다.
 - 최종 policy validation은 backend가 수행한다.
 - invalid policy는 replay 생성에 사용할 수 없다.
+- policy builder는 전체 포트폴리오 policy를 만든다. 전략별 성능과 risk gate 동작 검증은 `Strategy Test Lab`에서 별도 실행한다.
+
+### Strategy Test Lab
+
+목적:
+
+- 장기, 스윙, 단기, 초단기, hedge 전략을 각각 독립적인 paper-only replay/test 단위로 실행한다.
+- 전체 portfolio policy가 좋아 보이는 경우에도 특정 bucket이 과도한 turnover, cost drag, drawdown, risk rejection을 만들고 있는지 분리해서 확인한다.
+- isolated bucket test와 full portfolio replay 결과를 나란히 비교해 조합 효과와 개별 전략 품질을 구분한다.
+
+주요 UI:
+
+- strategy bucket selector: `long_term`, `swing`, `short_term`, `intraday`, `hedge`
+- bucket별 date range, market, universe, validation split selector
+- bucket policy snapshot preview
+- isolated test 생성 버튼
+- enabled bucket 전체 test matrix 생성 버튼
+- active bucket test progress table
+- bucket별 result matrix
+- full portfolio replay 대비 delta view
+- rejected decision, provider failure, cost drag, turnover warning filter
+
+생성 흐름:
+
+1. 사용자가 `PortfolioPolicy`에서 test할 strategy bucket을 선택한다.
+2. 프론트는 선택한 bucket과 test 조건만 Server Action 또는 Route Handler에 전달한다.
+3. backend는 해당 bucket이 독립 test 가능한지 검증한다.
+4. backend는 bucket policy, cash reserve rule, hedge dependency, universe, date range, validation split을 typed config로 고정한다.
+5. guarded paper-only runner가 해당 bucket test를 실행한다.
+6. 결과는 `StrategyBucketTestLabViewModel`과 `ValidationLab`에서 비교 가능해야 한다.
+
+전체 bucket matrix 생성 흐름:
+
+1. 사용자가 enabled bucket 전체 test를 요청한다.
+2. 프론트는 `PortfolioPolicy` id와 공통 test 조건만 전달한다.
+3. backend가 enabled bucket 목록을 확정하고 bucket별 typed config를 만든다.
+4. 각 bucket은 서로 다른 `testId`와 `configHash`를 가진 독립 test로 기록된다.
+5. 프론트는 하나의 aggregate run으로 합치지 않고 bucket별 progress와 결과를 matrix로 보여준다.
+
+정책:
+
+- 프론트가 bucket별 performance metric을 직접 계산하지 않는다.
+- bucket test는 실거래 주문 preview가 아니다.
+- `hedge` bucket은 독립 수익률보다 downside exposure reduction과 cost drag를 중심으로 평가한다.
+- `intraday` bucket은 market calendar, timezone, liquidity, slippage 가정을 별도 표시한다.
+- isolated test 결과가 좋더라도 full portfolio allocation으로 자동 승격하지 않는다.
+- 전체 bucket matrix 실행도 bucket별 독립 test들의 묶음일 뿐이며, 이를 full portfolio replay로 오인하게 표현하지 않는다.
+- 여러 bucket 중 best result만 선택하는 UI는 selection bias warning을 함께 표시한다.
 
 ### Portfolio Compliance
 
@@ -433,11 +543,12 @@ sequenceDiagram
 
 목적:
 
-- best run 하나를 고르는 화면이 아니라 policy 후보의 반복 가능성을 비교하는 화면이다.
+- best run 하나를 고르는 화면이 아니라 policy 후보와 strategy bucket 후보의 반복 가능성을 비교하는 화면이다.
 
 표시:
 
 - policy별 OOS return
+- strategy bucket별 isolated OOS return
 - drawdown distribution
 - turnover distribution
 - cost drag
@@ -447,12 +558,15 @@ sequenceDiagram
 - provider failure rate
 - risk reject rate
 - selection trial count
+- isolated bucket test count
+- full portfolio replay 대비 bucket contribution
 
 경고:
 
 - 표본 수 부족
 - 특정 regime 편중
 - prompt/config selection bias
+- strategy bucket selection bias
 - high turnover/high cost
 - hedge ineffective
 
@@ -501,6 +615,7 @@ npm run check
 
 - backend view model contract
 - `portfolio-compliance`
+- `strategy-test-lab`
 - `risk-gate-trace`
 - `validation-lab` read model 후보
 - contract test
@@ -533,13 +648,34 @@ npm run check
 - backend policy validation
 - guarded paper simulation create
 - generated config preview
+- strategy bucket별 test 가능 여부 표시
 
 금지:
 
 - live policy mutation
 - live `OrderIntent` 생성
 
-### N5. Compliance analytics 확장
+### N5. Strategy Bucket Test Lab
+
+범위:
+
+- bucket selector와 isolated test 생성 화면
+- `long_term`, `swing`, `short_term`, `intraday`, `hedge`별 test config form
+- backend bucket test validation
+- guarded paper-only bucket replay 생성
+- active bucket test progress view
+- strategy bucket result matrix
+- full portfolio replay 대비 delta view
+
+검증:
+
+- 각 bucket별 E2E test 생성 smoke
+- enabled bucket 전체 matrix 생성 smoke
+- invalid bucket policy rejection
+- selection bias warning rendering
+- live order CTA 부재 확인
+
+### N6. Compliance analytics 확장
 
 범위:
 
@@ -548,7 +684,7 @@ npm run check
 - hedge effectiveness
 - bucket-level cost and turnover
 
-### N6. Static dashboard deprecation
+### N7. Static dashboard deprecation
 
 조건:
 
@@ -569,8 +705,11 @@ npm run check
 - paper simulation mutation guard test
 - Next.js route rendering smoke test
 - policy builder form validation test
+- strategy bucket test form validation test
+- strategy bucket isolated replay mutation guard test
 - risk gate trace rendering test
 - strategy bucket compliance rendering test
+- strategy bucket comparison rendering test
 - Playwright E2E
 - Storybook 또는 component catalog
 - accessibility smoke
@@ -580,6 +719,10 @@ E2E 기준:
 
 - live readiness route에 주문 CTA가 없어야 한다.
 - policy builder가 invalid weight sum을 막아야 한다.
+- 각 strategy bucket별 test 생성 화면이 bucket 전용 조건을 전달해야 한다.
+- enabled bucket 전체 test 요청은 bucket별 독립 test record로 분리되어야 한다.
+- isolated bucket test 생성은 operation header와 same-origin guard를 유지해야 한다.
+- `hedge` bucket 결과는 단순 수익률 순위가 아니라 downside reduction, cost drag, exposure effect를 표시해야 한다.
 - paper simulation create는 operation header와 same-origin guard를 유지해야 한다.
 - risk gate trace에서 rejected decision이 체결로 오인되지 않아야 한다.
 - validation lab은 best run 단일 선택을 성과 보장처럼 표현하지 않아야 한다.
@@ -598,6 +741,8 @@ E2E 기준:
 이 전환 계획이 완료됐다고 말하려면 다음 조건을 만족해야 한다.
 
 - 사용자가 Next.js dashboard에서 policy 단위로 paper simulation을 만들 수 있다.
+- 사용자가 장기, 스윙, 단기, 초단기, hedge strategy bucket별로 독립 paper test를 만들 수 있다.
+- 사용자가 isolated strategy bucket test와 full portfolio replay 결과를 비교할 수 있다.
 - 사용자가 strategy bucket, cash, hedge compliance를 한 화면에서 볼 수 있다.
 - 사용자가 AI decision, risk gate, simulated execution trace를 연결해서 볼 수 있다.
 - 사용자가 policy 후보를 validation lab에서 비교할 수 있다.
