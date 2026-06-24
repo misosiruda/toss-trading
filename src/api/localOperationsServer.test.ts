@@ -793,6 +793,33 @@ test("strategy bucket test validation checks configs without starting a runner",
         body: JSON.stringify(retryCandidate)
       }
     );
+    const reorderedCandidate = strategyBucketTestCandidate();
+    reorderedCandidate.policy = reverseObjectKeys(
+      reorderedCandidate.policy
+    ) as PolicyCandidate;
+    reorderedCandidate.testConfig = reverseObjectKeys(
+      reorderedCandidate.testConfig
+    ) as StrategyBucketTestCandidate["testConfig"];
+    const reorderedConfig = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(reorderedCandidate)
+      }
+    );
+    const invalidDateCandidate = strategyBucketTestCandidate();
+    invalidDateCandidate.testConfig.window.startAt = "2024-02-31";
+    const invalidRolloverDate = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(invalidDateCandidate)
+      }
+    );
     const invalidCandidate = strategyBucketTestCandidate({
       bucket: "short_term"
     });
@@ -846,11 +873,27 @@ test("strategy bucket test validation checks configs without starting a runner",
     assert.equal(valid.payload["status"], "valid");
     assert.equal(valid.payload["validatedForStrategyBucketTestConfig"], true);
     assert.equal(valid.payload["bucket"], "long_term");
-    assert.equal(typeof valid.payload["configHash"], "string");
+    assert.match(String(valid.payload["configHash"]), /^sha256:[a-f0-9]{64}$/);
     assert.equal(sameConfigRetry.response.status, 200);
     assert.equal(
       sameConfigRetry.payload["configHash"],
       valid.payload["configHash"]
+    );
+    assert.equal(reorderedConfig.response.status, 200);
+    assert.equal(
+      reorderedConfig.payload["configHash"],
+      valid.payload["configHash"]
+    );
+
+    assert.equal(invalidRolloverDate.response.status, 200);
+    assert.equal(invalidRolloverDate.payload["status"], "invalid");
+    assert.equal(
+      invalidRolloverDate.payload["validatedForStrategyBucketTestConfig"],
+      false
+    );
+    assert.match(
+      JSON.stringify(invalidRolloverDate.payload["issues"]),
+      /INVALID_WINDOW_DATE/
     );
 
     assert.equal(invalid.response.status, 200);
@@ -2014,6 +2057,22 @@ function strategyBucketTestValidationHeaders(baseUrl: string): HeadersInit {
       STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
     origin: baseUrl
   };
+}
+
+function reverseObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => reverseObjectKeys(entry));
+  }
+
+  if (value !== null && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value).reverse()) {
+      output[key] = reverseObjectKeys(entry);
+    }
+    return output;
+  }
+
+  return value;
 }
 
 type StrategyBucketName =

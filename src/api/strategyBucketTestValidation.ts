@@ -1,9 +1,13 @@
-import { createHash } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
-import { strategyBucketSchema, type StrategyBucket } from "../domain/schemas.js";
+import {
+  strategyBucketSchema,
+  type Sha256Hash,
+  type StrategyBucket
+} from "../domain/schemas.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import {
   parsePaperPolicyValidationCandidate,
   PaperPolicyValidationRequestError,
@@ -102,7 +106,7 @@ export interface StrategyBucketTestValidationResponse {
   bucket: StrategyBucket;
   policyId: string;
   policyHash: string;
-  configHash: string;
+  configHash: Sha256Hash;
   issueCount: number;
   issues: StrategyBucketTestValidationIssue[];
   summary: {
@@ -344,9 +348,22 @@ function validateSelectedBucket(
 }
 
 function parseReplayDate(value: string, endOfDay: boolean): Date | null {
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+09:00`
-    : value;
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnlyMatch) {
+    const canonicalDate = dateOnlyMatch[0];
+    const roundTripDate = new Date(`${canonicalDate}T00:00:00.000Z`);
+    if (
+      !Number.isFinite(roundTripDate.getTime()) ||
+      roundTripDate.toISOString().slice(0, 10) !== canonicalDate
+    ) {
+      return null;
+    }
+
+    const time = endOfDay ? "23:59:59.999" : "00:00:00.000";
+    return new Date(`${canonicalDate}T${time}+09:00`);
+  }
+
+  const normalized = value;
   const date = new Date(normalized);
   if (!Number.isFinite(date.getTime())) {
     return null;
@@ -354,16 +371,14 @@ function parseReplayDate(value: string, endOfDay: boolean): Date | null {
   return date;
 }
 
-function configHash(candidate: StrategyBucketTestValidationCandidate): string {
+function configHash(candidate: StrategyBucketTestValidationCandidate): Sha256Hash {
   const hashInput = {
     mode: candidate.mode,
     bucket: candidate.bucket,
     policy: candidate.policy,
     testConfig: candidate.testConfig
   };
-  return createHash("sha256")
-    .update(JSON.stringify(hashInput))
-    .digest("hex");
+  return createReplayResearchHash(hashInput);
 }
 
 function formatSchemaIssues(
