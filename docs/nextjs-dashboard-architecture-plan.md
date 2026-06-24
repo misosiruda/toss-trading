@@ -116,6 +116,7 @@ apps/dashboard/
 │   │       ├── policies/page.tsx
 │   │       ├── strategy-tests/page.tsx
 │   │       ├── strategy-tests/[bucket]/new/page.tsx
+│   │       ├── strategy-tests/[testId]/page.tsx
 │   │       ├── replays/new/page.tsx
 │   │       └── runs/[runId]/page.tsx
 │   ├── layout.tsx
@@ -142,6 +143,7 @@ apps/dashboard/
 | `/dashboard/lab/policies` | paper-only portfolio policy builder | policy draft 저장 후보 |
 | `/dashboard/lab/strategy-tests` | 전략 버킷별 test matrix와 결과 비교 | 없음 |
 | `/dashboard/lab/strategy-tests/[bucket]/new` | 특정 strategy bucket 단독 replay/test 생성 | guarded paper-only mutation |
+| `/dashboard/lab/strategy-tests/[testId]` | 실행 중인 bucket test progress, event, partial metric 조회 | 없음 |
 | `/dashboard/lab/replays/new` | paper simulation 생성 | guarded paper-only mutation |
 | `/dashboard/lab/runs/[runId]` | 실행 상세, progress, report | 없음 |
 
@@ -294,6 +296,40 @@ interface StrategyBucketTestSummary {
   completedAt: string | null;
   runId: string | null;
   configHash: string;
+  progress: StrategyBucketTestProgressView;
+  heartbeat: StrategyBucketTestHeartbeatView;
+}
+
+interface StrategyBucketTestProgressView {
+  phase:
+    | "queued"
+    | "loading_data"
+    | "building_packets"
+    | "calling_provider"
+    | "risk_gate"
+    | "simulating_execution"
+    | "writing_artifacts"
+    | "aggregating_report"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  progressRatio: number | null;
+  completedPacketCount: number;
+  totalPacketCount: number | null;
+  decisionCount: number;
+  riskApprovedCount: number;
+  riskRejectedCount: number;
+  simulatedTradeCount: number;
+  providerFailureCount: number;
+  latestMessage: string | null;
+  latestAuditEventRef: string | null;
+  updatedAt: string;
+}
+
+interface StrategyBucketTestHeartbeatView {
+  status: "fresh" | "stale" | "missing";
+  lastSeenAt: string | null;
+  staleAfterSeconds: number;
 }
 
 interface StrategyBucketTestResultSummary {
@@ -353,8 +389,10 @@ GET  /dashboard/view-model/portfolio-compliance
 GET  /dashboard/view-model/strategy-bucket-analytics
 GET  /dashboard/view-model/risk-gate-trace
 GET  /dashboard/view-model/strategy-test-lab
+GET  /dashboard/view-model/strategy-test-lab/tests/{testId}/progress
 GET  /dashboard/view-model/validation-lab
 GET  /dashboard/view-model/audit
+GET  /dashboard/stream/strategy-bucket-tests/{testId}
 POST /paper/simulations
 POST /paper/simulations/strategy-bucket-tests
 ```
@@ -365,9 +403,11 @@ POST /paper/simulations/strategy-bucket-tests
 - ViewModel API는 raw account number, token, order ID, execution detail을 masking한다.
 - portfolio compliance, hedge effectiveness, cash reserve rule, cost, turnover, validation metric은 backend가 계산한다.
 - strategy bucket별 isolated test 가능 여부, test config hash, 결과 비교 metric도 backend가 계산한다.
+- active bucket test progress는 backend artifact, manifest, audit event에서 계산한 summary만 내려준다. raw provider output이나 sensitive execution detail을 browser로 직접 흘리지 않는다.
 - Next.js BFF는 backend ViewModel을 그대로 렌더링하거나 화면 상태에 맞게 얇게 reshape한다.
 - `POST /paper/simulations`는 기존 same-origin/header/body guard를 유지하고, Next.js Server Action 또는 Route Handler에서 한 번 더 operation intent를 검증한다.
 - `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다.
+- `GET /dashboard/stream/strategy-bucket-tests/{testId}`는 active test progress SSE 후보 endpoint다. SSE를 지원하지 못하는 환경에서는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress` polling fallback을 사용한다.
 
 ## Next.js 설계 기준
 
@@ -387,9 +427,9 @@ POST /paper/simulations/strategy-bucket-tests
 | 데이터 | 전략 |
 | --- | --- |
 | live readiness | SSR, no-store |
-| active replay progress | Client polling 또는 SSE 후보, server-authenticated endpoint |
+| active replay progress | SSE preferred, polling fallback, server-authenticated endpoint |
 | portfolio compliance | SSR initial load + controlled refresh |
-| strategy test lab | SSR initial load + Client Component filter/table |
+| strategy test lab | SSR initial load + Client Component filter/table/progress subscription |
 | validation lab aggregate | SSR, 짧은 TTL 또는 explicit refresh |
 | static labels/taxonomy | cached server function 후보 |
 | paper simulation create form | Server Action + Client Component form |
@@ -459,6 +499,9 @@ POST /paper/simulations/strategy-bucket-tests
 - isolated test 생성 버튼
 - enabled bucket 전체 test matrix 생성 버튼
 - active bucket test progress table
+- active test detail timeline
+- per-phase progress meter
+- stale heartbeat warning
 - bucket별 result matrix
 - full portfolio replay 대비 delta view
 - rejected decision, provider failure, cost drag, turnover warning filter
@@ -470,7 +513,8 @@ POST /paper/simulations/strategy-bucket-tests
 3. backend는 해당 bucket이 독립 test 가능한지 검증한다.
 4. backend는 bucket policy, cash reserve rule, hedge dependency, universe, date range, validation split을 typed config로 고정한다.
 5. guarded paper-only runner가 해당 bucket test를 실행한다.
-6. 결과는 `StrategyBucketTestLabViewModel`과 `ValidationLab`에서 비교 가능해야 한다.
+6. 실행 중 progress는 phase, processed packet count, decision/risk/trade count, latest audit ref로 갱신된다.
+7. 결과는 `StrategyBucketTestLabViewModel`과 `ValidationLab`에서 비교 가능해야 한다.
 
 전체 bucket matrix 생성 흐름:
 
@@ -479,6 +523,15 @@ POST /paper/simulations/strategy-bucket-tests
 3. backend가 enabled bucket 목록을 확정하고 bucket별 typed config를 만든다.
 4. 각 bucket은 서로 다른 `testId`와 `configHash`를 가진 독립 test로 기록된다.
 5. 프론트는 하나의 aggregate run으로 합치지 않고 bucket별 progress와 결과를 matrix로 보여준다.
+
+실시간 progress 표시:
+
+- active test row는 `queued`, `loading_data`, `building_packets`, `calling_provider`, `risk_gate`, `simulating_execution`, `writing_artifacts`, `aggregating_report`, `completed` 같은 phase를 표시한다.
+- progress ratio를 계산할 수 있으면 progress bar를 표시하고, total packet count를 모르면 indeterminate 상태로 표시한다.
+- decision count, risk rejected count, provider failure count, simulated trade count는 test 중에도 갱신된다.
+- heartbeat가 stale이면 "중단"으로 단정하지 않고 `stale` 상태와 마지막 update 시각을 보여준다.
+- 최신 audit event ref와 reject code summary는 masking된 summary만 보여준다.
+- 사용자가 수동 새로고침하지 않아도 SSE 또는 polling fallback으로 progress가 갱신되어야 한다.
 
 정책:
 
@@ -664,6 +717,8 @@ npm run check
 - backend bucket test validation
 - guarded paper-only bucket replay 생성
 - active bucket test progress view
+- per-phase progress timeline
+- SSE 또는 polling fallback 기반 progress refresh
 - strategy bucket result matrix
 - full portfolio replay 대비 delta view
 
@@ -671,6 +726,8 @@ npm run check
 
 - 각 bucket별 E2E test 생성 smoke
 - enabled bucket 전체 matrix 생성 smoke
+- active test progress refresh smoke
+- stale heartbeat warning rendering
 - invalid bucket policy rejection
 - selection bias warning rendering
 - live order CTA 부재 확인
@@ -707,9 +764,11 @@ npm run check
 - policy builder form validation test
 - strategy bucket test form validation test
 - strategy bucket isolated replay mutation guard test
+- strategy bucket progress ViewModel contract test
 - risk gate trace rendering test
 - strategy bucket compliance rendering test
 - strategy bucket comparison rendering test
+- active strategy bucket progress rendering test
 - Playwright E2E
 - Storybook 또는 component catalog
 - accessibility smoke
@@ -722,6 +781,8 @@ E2E 기준:
 - 각 strategy bucket별 test 생성 화면이 bucket 전용 조건을 전달해야 한다.
 - enabled bucket 전체 test 요청은 bucket별 독립 test record로 분리되어야 한다.
 - isolated bucket test 생성은 operation header와 same-origin guard를 유지해야 한다.
+- 실행 중인 bucket test는 phase, progress, heartbeat, latest audit ref를 화면에서 갱신해야 한다.
+- stale heartbeat는 완료나 실패로 오인되지 않아야 한다.
 - `hedge` bucket 결과는 단순 수익률 순위가 아니라 downside reduction, cost drag, exposure effect를 표시해야 한다.
 - paper simulation create는 operation header와 same-origin guard를 유지해야 한다.
 - risk gate trace에서 rejected decision이 체결로 오인되지 않아야 한다.
@@ -742,6 +803,7 @@ E2E 기준:
 
 - 사용자가 Next.js dashboard에서 policy 단위로 paper simulation을 만들 수 있다.
 - 사용자가 장기, 스윙, 단기, 초단기, hedge strategy bucket별로 독립 paper test를 만들 수 있다.
+- 사용자가 진행 중인 strategy bucket test의 phase, progress, heartbeat, partial count를 실시간으로 볼 수 있다.
 - 사용자가 isolated strategy bucket test와 full portfolio replay 결과를 비교할 수 있다.
 - 사용자가 strategy bucket, cash, hedge compliance를 한 화면에서 볼 수 있다.
 - 사용자가 AI decision, risk gate, simulated execution trace를 연결해서 볼 수 있다.
@@ -753,6 +815,6 @@ E2E 기준:
 
 - Next.js package manager를 root `npm` workspace로 통합할지, 독립 package로 둘지 결정 필요
 - UI primitive를 shadcn/ui로 둘지, 최소 자체 component로 시작할지 결정 필요
-- progress transport를 polling으로 시작할지 SSE로 시작할지 결정 필요
+- SSE progress stream의 reconnect 정책과 polling fallback interval 결정 필요
 - policy draft를 file artifact로 저장할지, DB schema를 먼저 둘지 결정 필요
 - 기존 정적 dashboard를 언제 archive할지 결정 필요
