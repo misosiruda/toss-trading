@@ -146,7 +146,8 @@ export function parseStrategyBucketTestValidationCandidate(
 
 export function validateStrategyBucketTestCandidate(
   value: unknown,
-  validatedAt = new Date()
+  validatedAt = new Date(),
+  env: NodeJS.ProcessEnv = process.env
 ): StrategyBucketTestValidationResponse {
   const candidate = parseStrategyBucketTestValidationCandidate(value);
   const policy = parsePolicyCandidate(candidate.policy);
@@ -163,7 +164,7 @@ export function validateStrategyBucketTestCandidate(
     });
   }
 
-  validateTestConfig(candidate, policy, issues);
+  validateTestConfig(candidate, policy, issues, env);
 
   const bucketPolicy = policy.strategyBuckets.find(
     (bucket) => bucket.bucket === candidate.bucket
@@ -217,11 +218,12 @@ function parsePolicyCandidate(value: unknown): PaperPolicyValidationCandidate {
 function validateTestConfig(
   candidate: StrategyBucketTestValidationCandidate,
   policy: PaperPolicyValidationCandidate,
-  issues: StrategyBucketTestValidationIssue[]
+  issues: StrategyBucketTestValidationIssue[],
+  env: NodeJS.ProcessEnv
 ): void {
   validateSafeDataDir(candidate.testConfig.sourceDataDir, issues);
   validateWindow(candidate, issues);
-  validateDecisionProvider(candidate, issues);
+  validateDecisionProvider(candidate, issues, env);
   validateSelectedBucket(candidate, policy, issues);
 }
 
@@ -289,17 +291,39 @@ function validateWindow(
 
 function validateDecisionProvider(
   candidate: StrategyBucketTestValidationCandidate,
-  issues: StrategyBucketTestValidationIssue[]
+  issues: StrategyBucketTestValidationIssue[],
+  env: NodeJS.ProcessEnv
 ): void {
-  if (
-    candidate.testConfig.decisionProvider.mode === "codex_paper_only" &&
-    candidate.testConfig.samplingPolicy.maxCodexCallsPerRun <= 0
-  ) {
+  if (candidate.testConfig.decisionProvider.mode !== "codex_paper_only") {
+    return;
+  }
+
+  if (candidate.testConfig.samplingPolicy.maxCodexCallsPerRun <= 0) {
     issues.push({
       code: "CODEX_CALL_LIMIT_INVALID",
       path: "testConfig.samplingPolicy.maxCodexCallsPerRun",
       message:
         "Codex paper-only provider requires maxCodexCallsPerRun greater than 0.",
+      severity: "error"
+    });
+  }
+
+  if ((env.AI_DECISION_MODE ?? "paper_only") !== "paper_only") {
+    issues.push({
+      code: "AI_DECISION_MODE_INVALID",
+      path: "testConfig.decisionProvider.mode",
+      message:
+        "AI_DECISION_MODE must be paper_only before Codex paper-only bucket tests can be validated.",
+      severity: "error"
+    });
+  }
+
+  if (env.AI_DECISION_ENABLED !== "true") {
+    issues.push({
+      code: "CODEX_PROVIDER_DISABLED",
+      path: "testConfig.decisionProvider.mode",
+      message:
+        "AI_DECISION_ENABLED=true is required before Codex paper-only bucket tests can be validated.",
       severity: "error"
     });
   }
@@ -351,16 +375,20 @@ function parseReplayDate(value: string, endOfDay: boolean): Date | null {
   const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (dateOnlyMatch) {
     const canonicalDate = dateOnlyMatch[0];
-    const roundTripDate = new Date(`${canonicalDate}T00:00:00.000Z`);
-    if (
-      !Number.isFinite(roundTripDate.getTime()) ||
-      roundTripDate.toISOString().slice(0, 10) !== canonicalDate
-    ) {
+    if (!isValidCalendarDate(canonicalDate)) {
       return null;
     }
 
     const time = endOfDay ? "23:59:59.999" : "00:00:00.000";
     return new Date(`${canonicalDate}T${time}+09:00`);
+  }
+
+  const timestampDateMatch = /^(\d{4}-\d{2}-\d{2})(?:[T ].*)$/.exec(value);
+  if (
+    timestampDateMatch !== null &&
+    !isValidCalendarDate(timestampDateMatch[1]!)
+  ) {
+    return null;
   }
 
   const normalized = value;
@@ -369,6 +397,14 @@ function parseReplayDate(value: string, endOfDay: boolean): Date | null {
     return null;
   }
   return date;
+}
+
+function isValidCalendarDate(value: string): boolean {
+  const roundTripDate = new Date(`${value}T00:00:00.000Z`);
+  return (
+    Number.isFinite(roundTripDate.getTime()) &&
+    roundTripDate.toISOString().slice(0, 10) === value
+  );
 }
 
 function configHash(candidate: StrategyBucketTestValidationCandidate): Sha256Hash {

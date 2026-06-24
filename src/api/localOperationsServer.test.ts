@@ -820,6 +820,18 @@ test("strategy bucket test validation checks configs without starting a runner",
         body: JSON.stringify(invalidDateCandidate)
       }
     );
+    const invalidTimestampCandidate = strategyBucketTestCandidate();
+    invalidTimestampCandidate.testConfig.window.startAt =
+      "2024-02-31T00:00:00Z";
+    const invalidRolloverTimestamp = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(invalidTimestampCandidate)
+      }
+    );
     const invalidCandidate = strategyBucketTestCandidate({
       bucket: "short_term"
     });
@@ -895,6 +907,12 @@ test("strategy bucket test validation checks configs without starting a runner",
       JSON.stringify(invalidRolloverDate.payload["issues"]),
       /INVALID_WINDOW_DATE/
     );
+    assert.equal(invalidRolloverTimestamp.response.status, 200);
+    assert.equal(invalidRolloverTimestamp.payload["status"], "invalid");
+    assert.match(
+      JSON.stringify(invalidRolloverTimestamp.payload["issues"]),
+      /INVALID_WINDOW_DATE/
+    );
 
     assert.equal(invalid.response.status, 200);
     assert.equal(invalid.payload["status"], "invalid");
@@ -911,6 +929,89 @@ test("strategy bucket test validation checks configs without starting a runner",
     assert.equal(badOrigin.response.status, 403);
     assert.equal(badOrigin.payload["error"], "origin_not_allowed");
     assert.equal(badOrigin.payload["replayRunnerStarted"], false);
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test validation keeps Codex provider disabled until env explicitly allows it", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_MODE: "paper_only",
+      AI_DECISION_ENABLED: "false"
+    },
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(
+          strategyBucketTestCandidate({
+            aiProvider: "codex_paper_only",
+            maxCodexCallsPerRun: 3
+          })
+        )
+      }
+    );
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["status"], "invalid");
+    assert.equal(result.payload["validatedForStrategyBucketTestConfig"], false);
+    assert.match(
+      JSON.stringify(result.payload["issues"]),
+      /CODEX_PROVIDER_DISABLED/
+    );
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test validation accepts enabled Codex paper-only boundary", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_MODE: "paper_only",
+      AI_DECISION_ENABLED: "true"
+    },
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(
+          strategyBucketTestCandidate({
+            aiProvider: "codex_paper_only",
+            maxCodexCallsPerRun: 3
+          })
+        )
+      }
+    );
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["status"], "valid");
+    assert.equal(result.payload["validatedForStrategyBucketTestConfig"], true);
+    assert.equal(result.payload["replayRunnerStarted"], false);
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -2198,7 +2299,9 @@ function policyCandidate(): PolicyCandidate {
 
 function strategyBucketTestCandidate(
   overrides: {
+    aiProvider?: "dry_run_fixture" | "codex_paper_only";
     bucket?: StrategyBucketName;
+    maxCodexCallsPerRun?: number;
   } = {}
 ): StrategyBucketTestCandidate {
   return {
@@ -2223,13 +2326,13 @@ function strategyBucketTestCandidate(
         decisionFrequency: "once_per_week",
         stepSeconds: 604800,
         maxDecisionCalls: 5,
-        maxCodexCallsPerRun: 0
+        maxCodexCallsPerRun: overrides.maxCodexCallsPerRun ?? 0
       },
       capital: {
         initialCashKrw: 10_000_000
       },
       decisionProvider: {
-        mode: "dry_run_fixture",
+        mode: overrides.aiProvider ?? "dry_run_fixture",
         modelId: "dry-run",
         outputSchema: "schemas/virtual-decision.schema.json"
       }

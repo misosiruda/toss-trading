@@ -168,7 +168,8 @@ async function handleStrategyBucketTestValidation(
     });
     const payload = validateStrategyBucketTestCandidate(
       body,
-      options.now?.() ?? new Date()
+      options.now?.() ?? new Date(),
+      options.env ?? process.env
     );
     writeJson(response, 200, payload);
   } catch (error) {
