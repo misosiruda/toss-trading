@@ -699,6 +699,14 @@ npm run check
 - risk gate trace read-only
 - validation lab read-only
 
+구현 기준:
+
+- `/dashboard` Server Component가 Local Operations API의 dashboard ViewModel을 병렬 조회한다.
+- ViewModel API base URL은 server-only env인 `DASHBOARD_OPS_API_BASE_URL` 또는 `OPS_API_BASE_URL`을 사용한다.
+- backend API가 내려가 있거나 일부 ViewModel이 실패해도 해당 패널만 offline/invalid 상태로 표시한다.
+- browser bundle은 raw artifact를 직접 읽거나 조합하지 않는다.
+- 화면에는 live order, broker mutation, raw command 실행 control을 추가하지 않는다.
+
 검증:
 
 - Server Component fetch contract test
