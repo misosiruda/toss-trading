@@ -331,6 +331,11 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(html.text, /id="simulation-config-preview"/);
     assert.match(html.text, /id="simulation-history-heading"/);
     assert.match(html.text, /id="validation-center-heading"/);
+    assert.match(html.text, /id="research-report-heading"/);
+    assert.match(html.text, /id="research-report-status"/);
+    assert.match(html.text, /id="research-pbo-score"/);
+    assert.match(html.text, /id="research-warning-list"/);
+    assert.match(html.text, /id="research-regime-list"/);
     assert.match(html.text, /id="daily-report-heading"/);
     assert.match(html.text, /id="performance-heading"/);
     assert.match(html.text, /id="net-worth-chart"/);
@@ -402,6 +407,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /\/paper\/report/);
     assert.match(dashboardScriptText, /\/replay\/report/);
     assert.match(dashboardScriptText, /\/replay\/progress/);
+    assert.match(dashboardScriptText, /\/research\/replay\/report/);
     assert.match(dashboardScriptText, /\/batch\/replay\/report/);
     assert.match(dashboardScriptText, /\/batch\/replay\/runs/);
     assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
@@ -423,6 +429,7 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /export function showDashboardEndpointResult/);
     assert.match(script.text, /renderDailyReport/);
     assert.match(script.text, /renderReplayReport/);
+    assert.match(script.text, /renderReplayResearchReport/);
     assert.match(script.text, /renderReplayProgress/);
     assert.match(script.text, /renderBatchReplayReport/);
     assert.match(script.text, /renderBatchReplayRuns/);
@@ -457,6 +464,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /export function bindSimulationFormControls/);
     assert.match(dashboardScriptText, /simulationConfigFromForm/);
     assert.match(dashboardScriptText, /renderReplayTimeline/);
+    assert.match(dashboardScriptText, /export function renderReplayResearchReport/);
+    assert.match(dashboardScriptText, /renderResearchWarningList/);
+    assert.match(dashboardScriptText, /renderResearchRegimeList/);
     assert.match(script.text, /bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /export function bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /renderDecisionTimeline/);

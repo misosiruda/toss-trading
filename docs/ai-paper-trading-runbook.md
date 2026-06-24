@@ -243,6 +243,8 @@ GET /audit/events
 
 `GET /research/replay/report`는 저장된 batch replay aggregate artifact를 `replay_research_report.v1` 요약 payload로 파생해 validation, overfitting warning, provider failure, risk reject, exposure summary를 read-only로 보여준다.
 
+Dashboard의 `/dashboard/virtual/validation` 화면은 같은 payload를 연구 리포트 패널로 렌더링한다. 이 패널은 저장된 artifact 조회와 요약 표시만 수행하며 replay 실행, Codex CLI 실행, TossInvest collection, live order를 trigger하지 않는다.
+
 `POST`, `PUT`, `PATCH`, `DELETE`는 허용하지 않는다. Dashboard는 replay 실행, Codex CLI 실행, TossInvest collection, paper run, live order를 trigger하지 않는다.
 
 ## 실행 후 검토

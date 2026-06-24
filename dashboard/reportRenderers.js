@@ -223,6 +223,194 @@ export function renderBatchReplayReport(batchPayload) {
   renderBatchRegimeList(report?.byRegime ?? {});
 }
 
+export function renderReplayResearchReport(researchPayload) {
+  const report = researchPayload?.report ?? null;
+  const status = researchPayload?.status ?? "missing";
+  const runIdentity = report?.runIdentity ?? {};
+  const validationProtocol = report?.validationProtocol ?? {};
+  const overfittingWarning = report?.overfittingWarning ?? {};
+  const providerFailure = report?.providerFailureSummary ?? {};
+  const riskReject = report?.riskRejectSummary ?? {};
+  const warnings = Array.isArray(report?.warnings) ? report.warnings : [];
+
+  setStatus("research-report-status", status, status);
+  setText("research-run-count", `${runIdentity.runCount ?? 0}회`);
+  setText(
+    "research-validation-protocol",
+    validationProtocol.validationProtocol ??
+      validationProtocol.overfittingDiagnosticStatus ??
+      "-"
+  );
+  setText("research-pbo-score", formatRatio(overfittingWarning.pboLikeScore));
+  setText(
+    "research-provider-failures",
+    `${providerFailure.totalAiDecisionFailureCount ?? 0}건`
+  );
+  setText(
+    "research-risk-rejects",
+    `${riskReject.totalRejectedCount ?? 0}건`
+  );
+  setText("research-warning-count", `${warnings.length}개`);
+  setText(
+    "research-report-disclaimer",
+    report?.disclaimer ?? "저장된 연구 리포트 없음"
+  );
+
+  const detail = document.getElementById("research-report-detail");
+  clear(detail);
+  appendDefinition(detail, "생성 시각", formatDateTime(report?.generatedAt));
+  appendDefinition(
+    detail,
+    "원본 생성 시각",
+    formatDateTime(report?.sourceGeneratedAt)
+  );
+  appendDefinition(detail, "입력 로그", report?.sourceRunsPath ?? "-");
+  appendDefinition(
+    detail,
+    "완료/제외/실패",
+    `${runIdentity.completedCount ?? 0} completed / ${runIdentity.skippedCount ?? 0} skipped / ${runIdentity.failedCount ?? 0} failed`
+  );
+  appendDefinition(
+    detail,
+    "Return sample",
+    `${runIdentity.returnSampleCount ?? 0}개`
+  );
+  appendDefinition(
+    detail,
+    "Validation roles",
+    summarizeRecord(validationProtocol.validationSplitRoleCounts)
+  );
+  appendDefinition(
+    detail,
+    "Trial 분포",
+    researchTrialSummary(report?.promptTrialDistribution)
+  );
+  appendDefinition(
+    detail,
+    "Hash bucket",
+    researchBucketSummary(report?.reproducibilityHashes)
+  );
+  appendDefinition(
+    detail,
+    "노출",
+    researchExposureSummary(report?.exposureBreakdown)
+  );
+  appendDefinition(
+    detail,
+    "Cost/Benchmark",
+    `${report?.costBreakdown?.status ?? "unavailable"} / ${report?.benchmarkComparison?.status ?? "unavailable"}`
+  );
+
+  renderResearchWarningList(warnings, status);
+  renderResearchRegimeList(report?.regimeBreakdown ?? []);
+}
+
+function renderResearchWarningList(warnings, status) {
+  const list = document.getElementById("research-warning-list");
+  clear(list);
+  setText(
+    "research-warning-list-count",
+    warnings.length ? `${warnings.length}개` : "-"
+  );
+
+  if (!warnings.length) {
+    list?.append(
+      emptyState(
+        status === "ok"
+          ? "연구 리포트 경고 없음"
+          : "표시할 연구 리포트 artifact 없음"
+      )
+    );
+    return;
+  }
+
+  for (const warning of warnings.slice(0, 6)) {
+    const item = document.createElement("div");
+    item.className = "research-warning-item";
+    item.textContent = warning;
+    list?.append(item);
+  }
+}
+
+function renderResearchRegimeList(groups) {
+  const list = document.getElementById("research-regime-list");
+  clear(list);
+  setText(
+    "research-regime-count",
+    groups.length ? `${groups.length}개 그룹` : "-"
+  );
+
+  if (!groups.length) {
+    list?.append(emptyState("장세별 연구 요약 없음"));
+    return;
+  }
+
+  for (const group of groups
+    .slice()
+    .sort((left, right) => regimeSortKey(left.key) - regimeSortKey(right.key))) {
+    const item = document.createElement("article");
+    item.className = "research-regime-item";
+    const header = document.createElement("div");
+    header.className = "batch-regime-header";
+    const title = document.createElement("strong");
+    title.textContent = regimeLabel(group.key);
+    const count = document.createElement("span");
+    count.textContent = `${group.completedCount ?? 0}/${group.runCount ?? 0} completed`;
+    header.append(title, count);
+
+    const metrics = document.createElement("div");
+    metrics.className = "batch-regime-metrics";
+    metrics.append(
+      batchRegimeMetric(
+        "평균",
+        formatSignedRatio(group.averageTotalReturnRatio),
+        group.averageTotalReturnRatio
+      ),
+      batchRegimeMetric("승률", formatRatio(group.winRate), group.winRate),
+      batchRegimeMetric(
+        "Risk",
+        `${group.totalRejectedCount ?? 0}건`,
+        null
+      )
+    );
+
+    item.append(header, metrics);
+    list?.append(item);
+  }
+}
+
+function researchBucketSummary(hashes) {
+  if (!hashes) {
+    return "-";
+  }
+  const promptCount = hashes.promptHashes?.length ?? 0;
+  const configCount = hashes.configHashes?.length ?? 0;
+  const riskCount = hashes.riskPolicyHashes?.length ?? 0;
+  const exitCount = hashes.exitPolicyHashes?.length ?? 0;
+  return `prompt ${promptCount} · config ${configCount} · risk ${riskCount} · exit ${exitCount}`;
+}
+
+function researchTrialSummary(distribution) {
+  if (!distribution || distribution.trialCount === null) {
+    return "unavailable";
+  }
+  return [
+    `${distribution.trialCount} trials`,
+    `selected ${distribution.selectedCount ?? 0}`
+  ].join(" · ");
+}
+
+function researchExposureSummary(exposure) {
+  if (!exposure) {
+    return "-";
+  }
+  return [
+    `평균 노출 ${formatRatio(exposure.averageExposureRatio)}`,
+    `현금 ${formatRatio(exposure.averageCashRatio)}`,
+    `시장 ${formatExposureBreakdown(exposure.averageFinalExposureByMarketKrw)}`
+  ].join(" · ");
+}
+
 function renderBatchRegimeList(byRegime) {
   const list = document.getElementById("batch-regime-list");
   clear(list);

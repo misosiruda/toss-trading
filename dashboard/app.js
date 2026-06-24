@@ -26,6 +26,7 @@ import {
 import {
   renderBatchReplayReport,
   renderDailyReport,
+  renderReplayResearchReport,
   renderReplayReport
 } from "./reportRenderers.js";
 import {
@@ -142,6 +143,7 @@ function renderDashboard(data) {
   renderDailyReport(report);
   renderReplayReport(dashboardData.replay);
   renderReplayProgress(dashboardData.replayProgress);
+  renderReplayResearchReport(dashboardData.researchReplay);
   renderBatchReplayReport(dashboardData.batchReplay);
   renderBatchReplayRuns(dashboardData.batchRuns);
   scheduleBatchRunsPolling(dashboardData.batchRuns);
