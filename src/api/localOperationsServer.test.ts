@@ -978,6 +978,175 @@ test("local operations API serves derived replay research report read-only", asy
   }
 });
 
+test("local operations API serves dashboard ViewModel contracts read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    portfolioId: "virtual_default",
+    cashKrw: 800_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 2,
+        averagePriceKrw: 70_000,
+        marketValueKrw: 150_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      },
+      {
+        market: "US",
+        symbol: "SH",
+        assetClass: "inverse",
+        strategyBucket: "hedge",
+        quantity: 1,
+        averagePriceKrw: 50_000,
+        marketValueKrw: 50_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ],
+    updatedAt: "2026-06-11T09:00:00+09:00"
+  });
+  await new FileVirtualDecisionStore(paths.virtualDecisionsPath).append(
+    decision()
+  );
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: "audit_api_002",
+    eventType: "VIRTUAL_RISK_REJECTED",
+    actor: "system",
+    summary:
+      "packet_api_001 005930 rejected account 1234-5678-901234 order ord_abcdef123456",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:02:00+09:00"
+  });
+  await writeFile(
+    paths.historicalReplayRiskDecisionLogPath,
+    `${JSON.stringify({
+      riskDecisionId: "risk_api_001",
+      packetId: "packet_api_001",
+      symbol: "005930",
+      approved: false,
+      rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
+      checkedRules: ["cash_available"],
+      createdAt: "2026-06-11T09:00:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(
+      batchReplayAggregateReport(
+        "data/batch-replay/batch-smoke/account-1234-5678-901234-ord_abcdef123456/batch-replay-runs.jsonl"
+      )
+    )}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const portfolioCompliance = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const riskGateTrace = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/risk-gate-trace?limit=5"
+    );
+    const validationLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const validationHead = await fetch(
+      `${baseUrl}/dashboard/view-model/validation-lab`,
+      { method: "HEAD" }
+    );
+    const bucketRows = portfolioCompliance.payload["bucketCompliance"] as Array<
+      Record<string, unknown>
+    >;
+    const hedgeCompliance = portfolioCompliance.payload[
+      "hedgeCompliance"
+    ] as Record<string, unknown>;
+    const cashCompliance = portfolioCompliance.payload[
+      "cashCompliance"
+    ] as Record<string, unknown>;
+    const supportedBuckets = strategyTestLab.payload[
+      "supportedBuckets"
+    ] as Array<Record<string, unknown>>;
+    const comparison = strategyTestLab.payload[
+      "comparison"
+    ] as Record<string, unknown>;
+    const traces = riskGateTrace.payload["traces"] as Array<
+      Record<string, unknown>
+    >;
+    const validationProtocol = validationLab.payload[
+      "validationProtocol"
+    ] as Record<string, unknown>;
+    const overfittingWarning = validationLab.payload[
+      "overfittingWarning"
+    ] as Record<string, unknown>;
+    const text = JSON.stringify({
+      portfolioCompliance: portfolioCompliance.payload,
+      strategyTestLab: strategyTestLab.payload,
+      riskGateTrace: riskGateTrace.payload,
+      validationLab: validationLab.payload
+    });
+
+    assert.equal(portfolioCompliance.response.status, 200);
+    assert.equal(portfolioCompliance.payload["mode"], "paper_only");
+    assert.equal(portfolioCompliance.payload["readOnly"], true);
+    assert.equal(
+      portfolioCompliance.payload["viewModel"],
+      "portfolio-compliance"
+    );
+    assert.equal(portfolioCompliance.payload["policyStatus"], "missing");
+    assert.equal(portfolioCompliance.payload["virtualNetWorthKrw"], 1_000_000);
+    assert.equal(
+      bucketRows.find((row) => row["bucket"] === "long_term")?.["exposureKrw"],
+      150_000
+    );
+    assert.equal(hedgeCompliance["hedgeExposureKrw"], 50_000);
+    assert.equal(cashCompliance["marketRegime"], "bull");
+
+    assert.equal(strategyTestLab.response.status, 200);
+    assert.equal(strategyTestLab.payload["viewModel"], "strategy-test-lab");
+    assert.equal(supportedBuckets.length, 5);
+    assert.equal(
+      supportedBuckets.every(
+        (bucket) => bucket["canRunIsolatedReplay"] === false
+      ),
+      true
+    );
+    assert.match(
+      String(comparison["selectionWarning"]),
+      /isolated strategy bucket/
+    );
+
+    assert.equal(riskGateTrace.response.status, 200);
+    assert.equal(riskGateTrace.payload["viewModel"], "risk-gate-trace");
+    assert.equal(traces.length, 1);
+    assert.equal(traces[0]?.["riskApproved"], false);
+    assert.deepEqual(traces[0]?.["rejectCodes"], ["VIRTUAL_CASH_EXCEEDED"]);
+    assert.deepEqual(traces[0]?.["auditEventRefs"], ["audit_api_002"]);
+
+    assert.equal(validationLab.response.status, 200);
+    assert.equal(validationLab.payload["viewModel"], "validation-lab");
+    assert.equal(validationLab.payload["status"], "ok");
+    assert.equal(validationProtocol["pboLikeScore"], 0.25);
+    assert.equal(overfittingWarning["status"], "available");
+    assert.equal(validationHead.status, 200);
+    assert.equal(await validationHead.text(), "");
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API returns null research report for invalid aggregate artifact", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
@@ -1816,6 +1985,9 @@ function batchReplayAggregateReport(
     mode: "paper_only",
     generatedAt: "2026-06-11T09:00:00+09:00",
     sourceRunsPath,
+    sourceSelectionTrialsPath:
+      "data/batch-replay/batch-smoke/batch-replay-selection-trials.jsonl",
+    targetReturnThresholds: [0.15, 0.3],
     summary: {
       runCount: 4,
       completedCount: 3,
@@ -1826,7 +1998,88 @@ function batchReplayAggregateReport(
         bull: 2,
         bear: 1,
         insufficient_data: 1
+      },
+      validationSplitRoleCounts: {
+        train: 2,
+        validation: 1,
+        test: 1
       }
+    },
+    trialSummary: {
+      trialCount: 4,
+      selectedCount: 1,
+      unselectedCount: 3,
+      statusCounts: {
+        completed: 3,
+        skipped: 1
+      },
+      aiDecisionFailureTrialCount: 0,
+      rejectedTrialCount: 1,
+      noTradeTrialCount: 1,
+      decisionProviderModes: [
+        {
+          key: "deterministic_fixture",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      promptHashes: [
+        {
+          key: "sha256:prompt",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      configHashes: [
+        {
+          key: "sha256:config",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      riskPolicyHashes: [
+        {
+          key: "sha256:risk",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      exitPolicyHashes: [
+        {
+          key: "sha256:exit",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      riskProfiles: [
+        {
+          key: "balanced",
+          count: 4,
+          runIds: ["run_0", "run_1", "run_2", "run_3"]
+        }
+      ],
+      runIds: ["run_0", "run_1", "run_2", "run_3"]
+    },
+    overfittingDiagnostics: {
+      validationProtocol: "sampled_cpcv_pbo_like",
+      selectionMetric: "total_return_ratio",
+      expectedSampledCpcvSplitCount: 4,
+      sampledCpcvSplitCount: 4,
+      sampledCpcvSplitCountMatchesExpected: true,
+      joinedTrialCount: 4,
+      candidateCount: 2,
+      returnSampleCount: 3,
+      splitRoleCounts: {
+        train: 2,
+        validation: 1,
+        test: 1
+      },
+      splitMetricMatrix: [],
+      selectedCandidateKey: "deterministic_fixture|sha256:prompt",
+      selectedTrainAverageTotalReturnRatio: 0.02,
+      pboLikeScore: 0.25,
+      holdoutDegradation: [],
+      warnings: ["selection bias warning"]
     },
     overall: {
       key: "overall",
@@ -1841,9 +2094,20 @@ function batchReplayAggregateReport(
       maxTotalReturnRatio: 0.045,
       winRate: 0.666667,
       averageFinalVirtualNetWorthKrw: 1_015_000,
+      averageExposureRatio: 0.55,
+      averageCashRatio: 0.45,
+      averageTimeInMarketRatio: 0.8,
+      averageFinalCashRatio: 0.35,
+      averageFinalPositionRatio: 0.65,
+      averageTargetExposureRatio: 0.75,
+      averageTargetExposureGapRatio: 0.08,
+      averageFinalTargetExposureGapRatio: 0.05,
       totalTradeCount: 8,
       averageTradeCount: 2.666667,
+      totalAiDecisionFailureCount: 0,
       totalRejectedCount: 1,
+      totalMeaningfulRejectCount: 1,
+      totalDustRejectCount: 0,
       runIds: ["run_0", "run_1", "run_2", "run_3"]
     },
     byRegime: {
@@ -1885,6 +2149,62 @@ function batchReplayAggregateReport(
       },
       insufficient_data: {
         key: "insufficient_data",
+        runCount: 1,
+        completedCount: 0,
+        skippedCount: 1,
+        failedCount: 0,
+        returnSampleCount: 0,
+        averageTotalReturnRatio: null,
+        medianTotalReturnRatio: null,
+        minTotalReturnRatio: null,
+        maxTotalReturnRatio: null,
+        winRate: null,
+        averageFinalVirtualNetWorthKrw: null,
+        totalTradeCount: 0,
+        averageTradeCount: null,
+        totalRejectedCount: 0,
+        runIds: ["run_3"]
+      }
+    },
+    byValidationSplitRole: {
+      train: {
+        key: "train",
+        runCount: 2,
+        completedCount: 2,
+        skippedCount: 0,
+        failedCount: 0,
+        returnSampleCount: 2,
+        averageTotalReturnRatio: 0.02,
+        medianTotalReturnRatio: 0.02,
+        minTotalReturnRatio: 0.005,
+        maxTotalReturnRatio: 0.035,
+        winRate: 1,
+        averageFinalVirtualNetWorthKrw: 1_020_000,
+        totalTradeCount: 4,
+        averageTradeCount: 2,
+        totalRejectedCount: 0,
+        runIds: ["run_0", "run_1"]
+      },
+      validation: {
+        key: "validation",
+        runCount: 1,
+        completedCount: 1,
+        skippedCount: 0,
+        failedCount: 0,
+        returnSampleCount: 1,
+        averageTotalReturnRatio: -0.01,
+        medianTotalReturnRatio: -0.01,
+        minTotalReturnRatio: -0.01,
+        maxTotalReturnRatio: -0.01,
+        winRate: 0,
+        averageFinalVirtualNetWorthKrw: 990_000,
+        totalTradeCount: 2,
+        averageTradeCount: 2,
+        totalRejectedCount: 1,
+        runIds: ["run_2"]
+      },
+      test: {
+        key: "test",
         runCount: 1,
         completedCount: 0,
         skippedCount: 1,

@@ -203,6 +203,7 @@ flowchart TD
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.ts`
 - `src/api/localOperationsRouting.ts`
+- `src/api/dashboardViewModels.ts`
 - `src/api/localOperationsReaders.ts`
 - `src/api/localOperationsDashboardAssets.ts`
 - `src/api/localOperationsResponse.ts`
@@ -365,6 +366,7 @@ flowchart TD
 | `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard ES module/static path 기준 |
 | `src/api/localOperationsServer.ts` | HTTP server bootstrap, method guard, dashboard asset/API dispatch |
 | `src/api/localOperationsRouting.ts` | Local Operations API route handler table과 query parameter parsing |
+| `src/api/dashboardViewModels.ts` | Next.js dashboard 전환용 read-only ViewModel 계산 |
 | `src/api/localOperationsReaders.ts` | storage/report artifact read-only payload 생성 |
 | `src/api/localOperationsDashboardAssets.ts` | dashboard document/module/static asset 매핑과 응답 |
 | `src/api/localOperationsResponse.ts` | masked JSON response writer |
