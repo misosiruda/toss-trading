@@ -107,7 +107,7 @@ export default async function DashboardPage() {
         </section>
 
         <footer className="border-t border-[var(--border)] pt-4 text-xs leading-5 text-[var(--muted)]">
-          <span className="font-mono">{viewModels.apiBaseUrl}</span>
+          <span className="font-mono">{viewModels.apiBaseLabel}</span>
           <span aria-hidden="true"> · </span>
           <span>fetched {formatDateTime(viewModels.fetchedAt)}</span>
         </footer>

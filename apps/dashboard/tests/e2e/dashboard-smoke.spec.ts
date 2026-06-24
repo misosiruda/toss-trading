@@ -21,6 +21,8 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(page.getByText("TRADING_ENABLED")).toBeVisible();
   await expect(page.getByText("ViewModel API")).toBeVisible();
   await expect(page.getByText("4/4 online")).toBeVisible();
+  await expect(page.getByText("configured operations endpoint")).toBeVisible();
+  await expect(page.getByText("127.0.0.1:8789")).toHaveCount(0);
   await expect(page.getByText("OrderRouter")).toBeVisible();
   await expect(page.getByText("Mutation tools")).toBeVisible();
 

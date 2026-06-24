@@ -173,7 +173,7 @@ export type ViewModelResult<T> =
     };
 
 export interface DashboardViewModels {
-  apiBaseUrl: string;
+  apiBaseLabel: string;
   fetchedAt: string;
   portfolio: ViewModelResult<PolicyComplianceViewModel>;
   strategyLab: ViewModelResult<StrategyBucketTestLabViewModel>;
@@ -185,33 +185,38 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
 const FETCH_TIMEOUT_MS = 2_000;
 
 export async function readDashboardViewModels(): Promise<DashboardViewModels> {
-  const apiBaseUrl = readOperationsApiBaseUrl();
+  const apiConfig = readOperationsApiConfig();
+  const apiBaseUrl = apiConfig.baseUrl;
   const fetchedAt = new Date().toISOString();
   const [portfolio, strategyLab, riskGate, validationLab] = await Promise.all([
     fetchViewModel<PolicyComplianceViewModel>(
       apiBaseUrl,
       "/dashboard/view-model/portfolio-compliance",
-      "portfolio-compliance"
+      "portfolio-compliance",
+      isPolicyComplianceViewModel
     ),
     fetchViewModel<StrategyBucketTestLabViewModel>(
       apiBaseUrl,
       "/dashboard/view-model/strategy-test-lab",
-      "strategy-test-lab"
+      "strategy-test-lab",
+      isStrategyBucketTestLabViewModel
     ),
     fetchViewModel<RiskGateTraceViewModel>(
       apiBaseUrl,
       "/dashboard/view-model/risk-gate-trace?limit=8",
-      "risk-gate-trace"
+      "risk-gate-trace",
+      isRiskGateTraceViewModel
     ),
     fetchViewModel<ValidationLabViewModel>(
       apiBaseUrl,
       "/dashboard/view-model/validation-lab",
-      "validation-lab"
+      "validation-lab",
+      isValidationLabViewModel
     )
   ]);
 
   return {
-    apiBaseUrl,
+    apiBaseLabel: apiConfig.label,
     fetchedAt,
     portfolio,
     strategyLab,
@@ -229,19 +234,30 @@ export function countOnlineViewModels(viewModels: DashboardViewModels): number {
   ].filter((result) => result.status === "ok").length;
 }
 
-function readOperationsApiBaseUrl(): string {
+function readOperationsApiConfig(): { baseUrl: string; label: string } {
   const value = (
     process.env.DASHBOARD_OPS_API_BASE_URL ??
     process.env.OPS_API_BASE_URL ??
     DEFAULT_API_BASE_URL
   ).trim();
-  return (value.length > 0 ? value : DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (value.length > 0 ? value : DEFAULT_API_BASE_URL).replace(
+    /\/+$/,
+    ""
+  );
+  return {
+    baseUrl,
+    label:
+      baseUrl === DEFAULT_API_BASE_URL
+        ? "default local operations endpoint"
+        : "configured operations endpoint"
+  };
 }
 
 async function fetchViewModel<T>(
   apiBaseUrl: string,
   endpoint: string,
-  expectedViewModel: DashboardViewModelName
+  expectedViewModel: DashboardViewModelName,
+  validator: (value: unknown) => value is T
 ): Promise<ViewModelResult<T>> {
   const fetchedAt = new Date().toISOString();
   const controller = new AbortController();
@@ -266,7 +282,10 @@ async function fetchViewModel<T>(
     }
 
     const data: unknown = await response.json();
-    if (!isViewModelPayload(data, expectedViewModel)) {
+    if (
+      !isViewModelPayload(data, expectedViewModel) ||
+      !validator(data)
+    ) {
       return {
         status: "invalid",
         endpoint,
@@ -280,7 +299,7 @@ async function fetchViewModel<T>(
       status: "ok",
       endpoint,
       fetchedAt,
-      data: data as T
+      data
     };
   } catch (error) {
     return {
@@ -301,19 +320,301 @@ async function fetchViewModel<T>(
 function isViewModelPayload(
   value: unknown,
   expectedViewModel: DashboardViewModelName
-): value is {
+): value is Record<string, unknown> & {
   mode: "paper_only";
   readOnly: true;
   viewModel: DashboardViewModelName;
 } {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "mode" in value &&
-    "readOnly" in value &&
-    "viewModel" in value &&
-    value.mode === "paper_only" &&
-    value.readOnly === true &&
-    value.viewModel === expectedViewModel
+    isRecord(value) &&
+    value["mode"] === "paper_only" &&
+    value["readOnly"] === true &&
+    value["viewModel"] === expectedViewModel
   );
+}
+
+function isPolicyComplianceViewModel(
+  value: unknown
+): value is PolicyComplianceViewModel {
+  if (!isViewModelPayload(value, "portfolio-compliance")) {
+    return false;
+  }
+  return (
+    isNullableString(value.asOf) &&
+    isNullableString(value.portfolioId) &&
+    isNumber(value.virtualNetWorthKrw) &&
+    value.policyStatus === "missing" &&
+    Array.isArray(value.bucketCompliance) &&
+    value.bucketCompliance.every(isBucketComplianceRow) &&
+    isCashCompliance(value.cashCompliance) &&
+    isHedgeCompliance(value.hedgeCompliance) &&
+    isExposureCompliance(value.exposureCompliance) &&
+    isRiskGateSummary(value.riskGateSummary) &&
+    isSourceStatus(value.sourceStatus) &&
+    isStringArray(value.warnings) &&
+    isViewModelStatus(value.status)
+  );
+}
+
+function isStrategyBucketTestLabViewModel(
+  value: unknown
+): value is StrategyBucketTestLabViewModel {
+  if (!isViewModelPayload(value, "strategy-test-lab")) {
+    return false;
+  }
+  return (
+    typeof value.policyId === "string" &&
+    value.policyStatus === "missing" &&
+    Array.isArray(value.supportedBuckets) &&
+    value.supportedBuckets.every(isStrategyBucketCapability) &&
+    Array.isArray(value.activeTests) &&
+    Array.isArray(value.recentResults) &&
+    isStrategyComparison(value.comparison) &&
+    isSourceStatus(value.sourceStatus) &&
+    value.status === "ok"
+  );
+}
+
+function isRiskGateTraceViewModel(
+  value: unknown
+): value is RiskGateTraceViewModel {
+  if (!isViewModelPayload(value, "risk-gate-trace")) {
+    return false;
+  }
+  return (
+    (value.sourceFamily === "historical_replay" ||
+      value.sourceFamily === "virtual") &&
+    Array.isArray(value.traces) &&
+    value.traces.every(isRiskGateTraceRow) &&
+    isNumber(value.count) &&
+    isNumber(value.totalDecisionItemCount) &&
+    isSourceStatus(value.sourceStatus)
+  );
+}
+
+function isValidationLabViewModel(
+  value: unknown
+): value is ValidationLabViewModel {
+  if (!isViewModelPayload(value, "validation-lab")) {
+    return false;
+  }
+  return (
+    isValidationStatus(value.status) &&
+    isValidationStatus(value.aggregateReportStatus) &&
+    isNullableString(value.sourceGeneratedAt) &&
+    isStringArray(value.warnings) &&
+    isRecord(value.executionAssumptions) &&
+    value.executionAssumptions["paperOnly"] === true &&
+    value.executionAssumptions["liveTradingEnabled"] === false &&
+    value.executionAssumptions["orderPlacementEnabled"] === false
+  );
+}
+
+function isBucketComplianceRow(value: unknown): value is BucketComplianceRow {
+  return (
+    isRecord(value) &&
+    isStrategyBucket(value["bucket"]) &&
+    isNumber(value["targetWeightRatio"]) &&
+    isNumber(value["currentWeightRatio"]) &&
+    isNumber(value["gapRatio"]) &&
+    isNumber(value["exposureKrw"]) &&
+    isNullableNumber(value["turnoverRatio"]) &&
+    (value["status"] === "ok" ||
+      value["status"] === "under" ||
+      value["status"] === "over" ||
+      value["status"] === "missing") &&
+    isNullableString(value["primaryReason"])
+  );
+}
+
+function isCashCompliance(value: unknown): value is PolicyComplianceViewModel["cashCompliance"] {
+  return (
+    isRecord(value) &&
+    typeof value["marketRegime"] === "string" &&
+    isNumber(value["targetCashRatio"]) &&
+    isNumber(value["currentCashRatio"]) &&
+    isNumber(value["minimumCashReserveKrw"]) &&
+    isNumber(value["cashGapKrw"]) &&
+    typeof value["ruleSource"] === "string" &&
+    isNumber(value["rejectedCount"]) &&
+    isNumberRecord(value["rejectCodes"])
+  );
+}
+
+function isHedgeCompliance(
+  value: unknown
+): value is PolicyComplianceViewModel["hedgeCompliance"] {
+  return (
+    isRecord(value) &&
+    typeof value["hedgeEnabled"] === "boolean" &&
+    isNumber(value["hedgeExposureKrw"]) &&
+    isNumber(value["hedgeExposureRatio"]) &&
+    isNumber(value["grossExposureKrw"]) &&
+    isNumber(value["netDownsideExposureKrw"]) &&
+    isNullableNumber(value["estimatedDownsideReductionKrw"]) &&
+    isNumber(value["hedgeCostKrw"]) &&
+    isNumber(value["hedgeTradeCount"]) &&
+    isNumber(value["rejectedCount"]) &&
+    isNumberRecord(value["rejectCodes"]) &&
+    (value["status"] === "ok" ||
+      value["status"] === "ineffective" ||
+      value["status"] === "over_hedged" ||
+      value["status"] === "missing")
+  );
+}
+
+function isExposureCompliance(
+  value: unknown
+): value is PolicyComplianceViewModel["exposureCompliance"] {
+  return (
+    isRecord(value) &&
+    isNumber(value["grossExposureKrw"]) &&
+    isNumber(value["grossExposureRatio"]) &&
+    Array.isArray(value["byMarket"]) &&
+    value["byMarket"].every(isExposureBucket) &&
+    Array.isArray(value["byStrategyBucket"]) &&
+    value["byStrategyBucket"].every(isExposureBucket) &&
+    (value["maxSymbolExposure"] === null ||
+      isExposureBucket(value["maxSymbolExposure"])) &&
+    isViewModelStatus(value["status"])
+  );
+}
+
+function isRiskGateSummary(
+  value: unknown
+): value is PolicyComplianceViewModel["riskGateSummary"] {
+  return (
+    isRecord(value) &&
+    isNumber(value["decisionRecordCount"]) &&
+    isNumber(value["decisionItemCount"]) &&
+    isNumber(value["actionableDecisionCount"]) &&
+    isNumber(value["simulatedTradeCount"]) &&
+    isNumber(value["rejectedCount"]) &&
+    isNumberRecord(value["rejectCodes"])
+  );
+}
+
+function isStrategyBucketCapability(
+  value: unknown
+): value is StrategyBucketTestLabViewModel["supportedBuckets"][number] {
+  return (
+    isRecord(value) &&
+    isStrategyBucket(value["bucket"]) &&
+    typeof value["canRunIsolatedReplay"] === "boolean" &&
+    isStringArray(value["requiredPolicyFields"]) &&
+    typeof value["defaultHoldingPeriodHint"] === "string" &&
+    isNullableString(value["disabledReason"])
+  );
+}
+
+function isStrategyComparison(
+  value: unknown
+): value is StrategyBucketTestLabViewModel["comparison"] {
+  return (
+    isRecord(value) &&
+    Array.isArray(value["rows"]) &&
+    (value["baselineBucket"] === null || isStrategyBucket(value["baselineBucket"])) &&
+    isNullableString(value["selectionWarning"])
+  );
+}
+
+function isRiskGateTraceRow(
+  value: unknown
+): value is RiskGateTraceViewModel["traces"][number] {
+  return (
+    isRecord(value) &&
+    typeof value["packetId"] === "string" &&
+    typeof value["decisionId"] === "string" &&
+    typeof value["market"] === "string" &&
+    typeof value["symbol"] === "string" &&
+    typeof value["action"] === "string" &&
+    (isStrategyBucket(value["strategyBucket"]) ||
+      value["strategyBucket"] === "unknown") &&
+    isNullableString(value["aiThesis"]) &&
+    isStringArray(value["evidenceRefs"]) &&
+    isNullableNumber(value["normalizedBudgetKrw"]) &&
+    typeof value["riskApproved"] === "boolean" &&
+    isStringArray(value["rejectCodes"]) &&
+    (value["simulatedExecutionStatus"] === "filled" ||
+      value["simulatedExecutionStatus"] === "partial" ||
+      value["simulatedExecutionStatus"] === "rejected" ||
+      value["simulatedExecutionStatus"] === "none") &&
+    isStringArray(value["auditEventRefs"])
+  );
+}
+
+function isExposureBucket(value: unknown): value is ExposureBucket {
+  return (
+    isRecord(value) &&
+    typeof value["key"] === "string" &&
+    isNumber(value["exposureKrw"]) &&
+    isNumber(value["exposureRatio"])
+  );
+}
+
+function isSourceStatus(value: unknown): value is Record<string, JsonReadStatus> {
+  return isRecord(value) && Object.values(value).every(isJsonReadStatus);
+}
+
+function isJsonReadStatus(value: unknown): value is JsonReadStatus {
+  return (
+    value === "missing" ||
+    value === "ok" ||
+    value === "corrupt" ||
+    value === "degraded"
+  );
+}
+
+function isViewModelStatus(value: unknown): value is ViewModelStatus {
+  return (
+    value === "ok" ||
+    value === "watch" ||
+    value === "breach" ||
+    value === "missing"
+  );
+}
+
+function isValidationStatus(
+  value: unknown
+): value is ValidationLabViewModel["status"] {
+  return (
+    value === "missing" ||
+    value === "ok" ||
+    value === "corrupt" ||
+    value === "invalid"
+  );
+}
+
+function isStrategyBucket(value: unknown): value is StrategyBucket {
+  return (
+    value === "long_term" ||
+    value === "swing" ||
+    value === "short_term" ||
+    value === "intraday" ||
+    value === "hedge"
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isNumberRecord(value: unknown): value is Record<string, number> {
+  return isRecord(value) && Object.values(value).every(isNumber);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || isNumber(value);
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
