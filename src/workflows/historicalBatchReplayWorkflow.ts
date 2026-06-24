@@ -1089,7 +1089,7 @@ function summarizeRun(
   );
   return {
     finalVirtualNetWorthKrw: report.portfolio.finalVirtualNetWorthKrw,
-    totalReturnRatio: report.benchmarks.strategy.totalReturnRatio,
+    totalReturnRatio: report.advancedPerformance.totalReturnRatio,
     tradeCount: report.tradeSummary.tradeCount,
     decisionProviderCallCount: report.replaySummary.decisionProviderCallCount,
     aiDecisionFailureCount: auditEvents.filter(

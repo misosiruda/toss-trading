@@ -52,6 +52,15 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
+  assert.equal(report.overall.advancedPerformance.formulaVersion, "performance_metrics.v1");
+  assert.equal(report.overall.advancedPerformance.sampleCount, 3);
+  assert.equal(report.overall.advancedPerformance.hitRatio, 0.666667);
+  assert.equal(report.overall.advancedPerformance.profitFactor, 7);
+  assert.notEqual(report.overall.advancedPerformance.sharpeRatio, null);
+  assert.match(
+    report.overall.advancedPerformance.warnings.join("\n"),
+    /at least 20 return samples/
+  );
   assert.equal(report.overall.averageExposureRatio, 0.2);
   assert.equal(report.overall.averageCashRatio, 0.8);
   assert.equal(report.overall.averageTimeInMarketRatio, 1);
@@ -89,6 +98,10 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.byRegime.bull?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.bear?.averageTotalReturnRatio, 0.02);
   assert.equal(report.byRegime.insufficient_data?.returnSampleCount, 0);
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /advanced_performance/
+  );
 });
 
 test("batch replay aggregate report groups results by validation split role", () => {

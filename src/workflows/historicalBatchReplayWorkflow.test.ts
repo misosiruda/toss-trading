@@ -53,6 +53,13 @@ test("historical batch replay runner writes manifest and per-run records", async
   const runRecords = await readJsonl(result.runsPath);
   const trialRecords = await readJsonl(result.selectionTrialsPath);
   const firstRecord = runRecords[0]!;
+  const firstReport = JSON.parse(
+    await readFile(String(firstRecord["reportPath"]), "utf8")
+  ) as Record<string, unknown>;
+  const firstSummary = firstRecord["summary"] as Record<string, unknown>;
+  const firstAdvancedPerformance = firstReport[
+    "advancedPerformance"
+  ] as Record<string, unknown>;
   const firstMetadata = JSON.parse(
     await readFile(
       join(
@@ -118,6 +125,10 @@ test("historical batch replay runner writes manifest and per-run records", async
     "bull"
   );
   assert.ok(firstRecord["summary"]);
+  assert.equal(
+    firstSummary["totalReturnRatio"],
+    firstAdvancedPerformance["totalReturnRatio"]
+  );
   assert.equal(firstRecordResearchManifest["status"], "available");
   assert.match(
     String(firstRecordResearchManifest["manifestPath"]),

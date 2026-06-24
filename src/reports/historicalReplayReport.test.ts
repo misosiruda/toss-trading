@@ -40,6 +40,13 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.costSummary.partialFillCount, 0);
   assert.equal(report.costSummary.notModeledLiquidityCount, 0);
   assert.equal(report.costSummary.averageParticipationRate !== null, true);
+  assert.equal(report.advancedPerformance.formulaVersion, "performance_metrics.v1");
+  assert.equal(report.advancedPerformance.sampleCount, 2);
+  assert.equal(report.advancedPerformance.sharpeRatio, null);
+  assert.match(
+    report.advancedPerformance.warnings.join("\n"),
+    /at least 3 return samples/
+  );
   assert.equal(report.riskSummary.policySummary.dynamicCashReserve.rejectedCount, 0);
   assert.equal(report.riskSummary.policySummary.hedge.hedgeTradeCount, 0);
   assert.equal(report.paperExitPolicy, null);
@@ -98,6 +105,11 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /partial_fill_count/);
   assert.match(rendered, /average_participation_rate/);
   assert.match(rendered, /cost_model_versions/);
+  assert.match(rendered, /Advanced Performance Metrics/);
+  assert.match(rendered, /cost_adjusted_total_return_ratio/);
+  assert.match(rendered, /gross_total_return_ratio/);
+  assert.match(rendered, /sharpe_annualization_status/);
+  assert.match(rendered, /exposure_adjusted_return_ratio/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
   assert.match(rendered, /Reproducibility/);
@@ -198,6 +210,52 @@ test("historical replay report summarizes execution cost components", () => {
   assert.deepEqual(report.costSummary.costModelVersions, [
     "paper_cost_model.v2"
   ]);
+  assert.equal(report.advancedPerformance.costDragRatio! > 0, true);
+  assert.equal(
+    report.advancedPerformance.grossTotalReturnRatio! >
+      report.advancedPerformance.costAdjustedTotalReturnRatio!,
+    true
+  );
+});
+
+test("historical replay report uses initial portfolio net worth as performance baseline", () => {
+  const result = replayResult();
+  result.portfolioTimeline = [
+    {
+      simulatedAt: "2025-01-02T09:00:00.000Z",
+      cashKrw: 990_000,
+      positionCount: 0,
+      positionMarketValueKrw: 0,
+      virtualNetWorthKrw: 990_000
+    }
+  ];
+  result.finalPortfolio = {
+    ...result.finalPortfolio,
+    cashKrw: 990_000,
+    positions: []
+  };
+  result.trades = [
+    {
+      ...result.trades[0]!,
+      feeKrw: 10_000,
+      taxKrw: 0,
+      slippageKrw: 0,
+      spreadCostKrw: 0,
+      impactCostKrw: 0,
+      totalCostKrw: 999
+    }
+  ];
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.advancedPerformance.initialNetWorthKrw, 1_000_000);
+  assert.equal(report.advancedPerformance.finalNetWorthKrw, 990_000);
+  assert.equal(report.advancedPerformance.sampleCount, 1);
+  assert.equal(report.advancedPerformance.totalReturnRatio, -0.01);
+  assert.equal(report.advancedPerformance.costAdjustedTotalReturnRatio, -0.01);
+  assert.equal(report.advancedPerformance.grossTotalReturnRatio, 0);
+  assert.equal(report.advancedPerformance.costDragRatio, 0.01);
+  assert.equal(report.advancedPerformance.maxDrawdownRatio, -0.01);
 });
 
 test("historical replay report exposes dynamic reserve and hedge policy summaries", () => {

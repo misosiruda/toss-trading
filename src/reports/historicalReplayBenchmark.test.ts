@@ -66,6 +66,52 @@ test("equal-weight benchmark enters only after the first priced replay packet", 
   assert.equal(benchmarks.equalWeightBuyAndHold?.totalReturnRatio, 0.1);
 });
 
+test("strategy benchmark uses initial portfolio net worth baseline", () => {
+  const benchmarks = buildHistoricalReplayBenchmarks(
+    replayResult({
+      initialNetWorthKrw: 1_000,
+      portfolioTimelineValues: [990],
+      packets: [packet("packet_0", [{ symbol: "AAA", lastPriceKrw: 100 }])]
+    })
+  );
+
+  assert.equal(benchmarks.strategy.initialNetWorthKrw, 1_000);
+  assert.equal(benchmarks.strategy.finalNetWorthKrw, 990);
+  assert.equal(benchmarks.strategy.totalReturnRatio, -0.01);
+  assert.equal(benchmarks.strategy.maxDrawdownRatio, -0.01);
+  assert.equal(benchmarks.cashOnly.totalReturnRatio, 0);
+});
+
+test("initial portfolio buy-and-hold uses initial net worth baseline", () => {
+  const initialPortfolio = portfolio(0, [
+    {
+      market: "KR",
+      symbol: "AAA",
+      quantity: 1,
+      averagePriceKrw: 100,
+      marketValueKrw: 100,
+      updatedAt: "2025-01-01T00:00:00.000Z"
+    }
+  ]);
+  const benchmarks = buildHistoricalReplayBenchmarks(
+    replayResult({
+      initialPortfolio,
+      portfolioTimelineValues: [120],
+      packets: [packet("packet_0", [{ symbol: "AAA", lastPriceKrw: 120 }])]
+    })
+  );
+
+  assert.equal(benchmarks.strategy.totalReturnRatio, 0.2);
+  assert.equal(benchmarks.initialPortfolioBuyAndHold.initialNetWorthKrw, 100);
+  assert.equal(benchmarks.initialPortfolioBuyAndHold.finalNetWorthKrw, 120);
+  assert.equal(benchmarks.initialPortfolioBuyAndHold.totalReturnRatio, 0.2);
+  assert.equal(
+    benchmarks.comparisons.strategyVsInitialPortfolioBuyAndHold
+      .totalReturnDeltaRatio,
+    0
+  );
+});
+
 test("equal-weight comparison is unavailable without priced candidates", () => {
   const benchmarks = buildHistoricalReplayBenchmarks(
     replayResult({
@@ -86,11 +132,18 @@ test("equal-weight comparison is unavailable without priced candidates", () => {
 });
 
 function replayResult(input: {
+  initialNetWorthKrw?: number;
+  initialPortfolio?: VirtualPortfolio;
   portfolioTimelineValues: number[];
   packets: MarketPacket[];
   trades?: VirtualTrade[];
 }): HistoricalReplayResult {
-  const initialNetWorthKrw = input.portfolioTimelineValues[0] ?? 0;
+  const initialNetWorthKrw =
+    input.initialNetWorthKrw ??
+    (input.initialPortfolio === undefined
+      ? input.portfolioTimelineValues[0]
+      : portfolioNetWorth(input.initialPortfolio)) ??
+    0;
   const finalNetWorthKrw =
     input.portfolioTimelineValues.at(-1) ?? initialNetWorthKrw;
 
@@ -123,7 +176,7 @@ function replayResult(input: {
       tradesCreated: input.trades?.length ?? 0,
       maxCandidatesPerStep: 10
     },
-    initialPortfolio: portfolio(initialNetWorthKrw),
+    initialPortfolio: input.initialPortfolio ?? portfolio(initialNetWorthKrw),
     finalPortfolio: portfolio(finalNetWorthKrw),
     portfolioTimeline: input.portfolioTimelineValues.map((value, index) => ({
       simulatedAt: new Date(Date.UTC(2025, 0, 1, 0, index, 0)).toISOString(),
@@ -166,13 +219,29 @@ function packet(
   };
 }
 
-function portfolio(cashKrw: number): VirtualPortfolio {
+function portfolio(
+  cashKrw: number,
+  positions: VirtualPortfolio["positions"] = []
+): VirtualPortfolio {
   return {
     portfolioId: "virtual_default",
     cashKrw,
-    positions: [],
+    positions,
     updatedAt: "2025-01-01T00:00:00.000Z"
   };
+}
+
+function portfolioNetWorth(portfolio: VirtualPortfolio): number {
+  return (
+    portfolio.cashKrw +
+    portfolio.positions.reduce(
+      (sum, position) =>
+        sum +
+        (position.marketValueKrw ??
+          Math.round(position.quantity * position.averagePriceKrw)),
+      0
+    )
+  );
 }
 
 function trade(input: { amountKrw: number; feeKrw: number }): VirtualTrade {
