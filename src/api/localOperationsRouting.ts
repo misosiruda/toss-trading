@@ -7,6 +7,7 @@ import {
   readHistoricalReplayProgress,
   readHistoricalReplayReport,
   readMarketPackets,
+  readReplayResearchReport,
   readSchedulerStatus,
   readSourceHealth,
   readVirtualDecisions,
@@ -56,6 +57,8 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
     readHistoricalReplayReport(options.storageBaseDir),
   "/replay/progress": (_url, options) =>
     readHistoricalReplayProgress(options.storageBaseDir),
+  "/research/replay/report": (_url, options) =>
+    readReplayResearchReport(options.storageBaseDir),
   "/batch/replay/report": (_url, options) =>
     readBatchReplayAggregateReport(options.storageBaseDir),
   "/batch/replay/runs": (url, options) =>

@@ -232,6 +232,7 @@ GET /virtual/trades
 GET /paper/report
 GET /replay/report
 GET /replay/progress
+GET /research/replay/report
 GET /batch/replay/report
 GET /batch/replay/runs
 GET /scheduler/status
@@ -239,6 +240,8 @@ GET /source/health
 GET /market/packets
 GET /audit/events
 ```
+
+`GET /research/replay/report`는 저장된 batch replay aggregate artifact를 `replay_research_report.v1` 요약 payload로 파생해 validation, overfitting warning, provider failure, risk reject, exposure summary를 read-only로 보여준다.
 
 `POST`, `PUT`, `PATCH`, `DELETE`는 허용하지 않는다. Dashboard는 replay 실행, Codex CLI 실행, TossInvest collection, paper run, live order를 trigger하지 않는다.
 

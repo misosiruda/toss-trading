@@ -24,6 +24,8 @@ import {
   FileVirtualPortfolioStore,
   FileVirtualTradeStore
 } from "../storage/repositories.js";
+import { buildReplayResearchReport } from "../reports/replayResearchReport.js";
+import type { BatchReplayAggregateReport } from "../reports/batchReplayReport.js";
 
 export function healthResponse(): Record<string, unknown> {
   return {
@@ -152,6 +154,29 @@ export async function readBatchReplayAggregateReport(
     readOnly: true,
     status: report.status,
     report: report.value
+  };
+}
+
+export async function readReplayResearchReport(
+  storageBaseDir: string
+): Promise<Record<string, unknown>> {
+  const paths = createStoragePaths(storageBaseDir);
+  const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
+  const report =
+    aggregate.status === "ok" && isRecord(aggregate.value)
+      ? buildReplayResearchReport({
+          aggregateReport:
+            aggregate.value as unknown as BatchReplayAggregateReport,
+          generatedAt: new Date()
+        })
+      : null;
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    status: aggregate.status,
+    aggregateReportStatus: aggregate.status,
+    report
   };
 }
 

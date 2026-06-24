@@ -792,6 +792,47 @@ test("local operations API serves stored batch replay aggregate report read-only
   }
 });
 
+test("local operations API serves derived replay research report read-only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(
+      batchReplayAggregateReport(
+        "data/batch-replay/batch-smoke/account-1234-5678-901234-ord_abcdef123456/batch-replay-runs.jsonl"
+      )
+    )}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/research/replay/report");
+    const report = result.payload["report"] as Record<string, unknown>;
+    const runIdentity = report["runIdentity"] as Record<string, unknown>;
+    const executionAssumptions = report["executionAssumptions"] as Record<
+      string,
+      unknown
+    >;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(report["title"], "Replay Research Paper Report");
+    assert.equal(report["mode"], "paper_only");
+    assert.equal(runIdentity["runCount"], 4);
+    assert.equal(executionAssumptions["paperOnly"], true);
+    assert.equal(executionAssumptions["liveTradingEnabled"], false);
+    assert.equal(executionAssumptions["orderPlacementEnabled"], false);
+    assert.equal(text.includes("1234-5678-901234"), false);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API serves individual batch replay runs read-only", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
