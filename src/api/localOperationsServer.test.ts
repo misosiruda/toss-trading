@@ -39,12 +39,19 @@ import {
   PAPER_POLICY_VALIDATION_OPERATION
 } from "./paperPolicyValidation.js";
 import {
+  STRATEGY_BUCKET_TEST_VALIDATION_HEADER_NAME,
+  STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
+  STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
+} from "./strategyBucketTestValidation.js";
+import {
   LOCAL_OPERATIONS_API_ROUTES,
   PAPER_POLICY_VALIDATION_API_ROUTES,
   PAPER_POLICY_VALIDATION_METHODS,
   PAPER_SIMULATION_MUTATION_API_ROUTES,
   PAPER_SIMULATION_MUTATION_METHODS,
-  READ_ONLY_HTTP_METHODS
+  READ_ONLY_HTTP_METHODS,
+  STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES,
+  STRATEGY_BUCKET_TEST_VALIDATION_METHODS
 } from "./localOperationsSurface.js";
 
 const now = new Date("2026-06-11T09:00:00+09:00");
@@ -160,6 +167,10 @@ test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...PAPER_POLICY_VALIDATION_API_ROUTES], [
     "/paper/policies/validate"
   ]);
+  assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_METHODS], ["POST"]);
+  assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES], [
+    STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
+  ]);
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
     false
@@ -180,6 +191,12 @@ test("local operations surface keeps live mutations disabled", () => {
   );
   assert.equal(
     (PAPER_POLICY_VALIDATION_API_ROUTES as readonly string[]).includes(
+      "/place_order"
+    ),
+    false
+  );
+  assert.equal(
+    (STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES as readonly string[]).includes(
       "/place_order"
     ),
     false
@@ -739,6 +756,102 @@ test("paper policy validation checks drafts without starting a runner", async ()
     assert.equal(missingHeader.payload["error"], "validation_guard_required");
     assert.equal(badOrigin.response.status, 403);
     assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test validation checks configs without starting a runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const valid = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(strategyBucketTestCandidate())
+      }
+    );
+    const invalidCandidate = strategyBucketTestCandidate({
+      bucket: "short_term"
+    });
+    const disabledBucketPolicy = invalidCandidate.policy.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(disabledBucketPolicy);
+    disabledBucketPolicy.targetWeightRatio = 0;
+    const invalid = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestValidationHeaders(baseUrl),
+        body: JSON.stringify(invalidCandidate)
+      }
+    );
+    const missingHeader = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: baseUrl
+        },
+        body: JSON.stringify(strategyBucketTestCandidate())
+      }
+    );
+    const badOrigin = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_VALIDATION_ROUTE,
+      {
+        method: "POST",
+        headers: {
+          ...strategyBucketTestValidationHeaders(baseUrl),
+          origin: "http://evil.example"
+        },
+        body: JSON.stringify(strategyBucketTestCandidate())
+      }
+    );
+
+    assert.equal(valid.response.status, 200);
+    assert.equal(valid.payload["mode"], "paper_only");
+    assert.equal(valid.payload["validation"], "strategy_bucket_test");
+    assert.equal(valid.payload["readOnly"], true);
+    assert.equal(valid.payload["storageMutationEnabled"], false);
+    assert.equal(valid.payload["liveTradingEnabled"], false);
+    assert.equal(valid.payload["orderPlacementEnabled"], false);
+    assert.equal(valid.payload["replayRunnerStarted"], false);
+    assert.equal(valid.payload["status"], "valid");
+    assert.equal(valid.payload["validatedForStrategyBucketTestConfig"], true);
+    assert.equal(valid.payload["bucket"], "long_term");
+    assert.equal(typeof valid.payload["configHash"], "string");
+
+    assert.equal(invalid.response.status, 200);
+    assert.equal(invalid.payload["status"], "invalid");
+    assert.equal(
+      invalid.payload["validatedForStrategyBucketTestConfig"],
+      false
+    );
+    assert.equal(invalid.payload["replayRunnerStarted"], false);
+    assert.match(JSON.stringify(invalid.payload["issues"]), /BUCKET_DISABLED/);
+
+    assert.equal(missingHeader.response.status, 403);
+    assert.equal(missingHeader.payload["error"], "validation_guard_required");
+    assert.equal(missingHeader.payload["replayRunnerStarted"], false);
+    assert.equal(badOrigin.response.status, 403);
+    assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(badOrigin.payload["replayRunnerStarted"], false);
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -1878,6 +1991,57 @@ function paperPolicyValidationHeaders(baseUrl: string): HeadersInit {
   };
 }
 
+function strategyBucketTestValidationHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [STRATEGY_BUCKET_TEST_VALIDATION_HEADER_NAME]:
+      STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
+    origin: baseUrl
+  };
+}
+
+type StrategyBucketName =
+  | "long_term"
+  | "swing"
+  | "short_term"
+  | "intraday"
+  | "hedge";
+
+interface StrategyBucketTestCandidate {
+  mode: "paper_only";
+  requestId: string;
+  bucket: StrategyBucketName;
+  policy: PolicyCandidate;
+  testConfig: {
+    sourceDataDir: string;
+    universe: {
+      preset: string;
+      market: "mixed_global" | "kr" | "us";
+    };
+    validationSplitRole: "train" | "validation" | "test";
+    window: {
+      seed: string;
+      startAt: string;
+      endAt: string;
+      windowMonths: number;
+    };
+    samplingPolicy: {
+      decisionFrequency: "every_tick" | "once_per_day" | "once_per_week";
+      stepSeconds: number;
+      maxDecisionCalls: number;
+      maxCodexCallsPerRun: number;
+    };
+    capital: {
+      initialCashKrw: number;
+    };
+    decisionProvider: {
+      mode: "dry_run_fixture" | "codex_paper_only";
+      modelId: string;
+      outputSchema: "schemas/virtual-decision.schema.json";
+    };
+  };
+}
+
 interface PolicyCandidateBucket {
   bucket: string;
   targetWeightRatio: number;
@@ -1954,6 +2118,47 @@ function policyCandidate(): PolicyCandidate {
       backendValidationRequired: true
     },
     warnings: []
+  };
+}
+
+function strategyBucketTestCandidate(
+  overrides: {
+    bucket?: StrategyBucketName;
+  } = {}
+): StrategyBucketTestCandidate {
+  return {
+    mode: "paper_only",
+    requestId: "strategy-bucket-test-validation-001",
+    bucket: overrides.bucket ?? "long_term",
+    policy: policyCandidate(),
+    testConfig: {
+      sourceDataDir: "data/replay-2023-01-2026-05-global-yahoo-daily",
+      universe: {
+        preset: "global_broad",
+        market: "mixed_global"
+      },
+      validationSplitRole: "validation",
+      window: {
+        seed: "strategy-bucket-test-seed-001",
+        startAt: "2024-01-01",
+        endAt: "2024-02-01",
+        windowMonths: 1
+      },
+      samplingPolicy: {
+        decisionFrequency: "once_per_week",
+        stepSeconds: 604800,
+        maxDecisionCalls: 5,
+        maxCodexCallsPerRun: 0
+      },
+      capital: {
+        initialCashKrw: 10_000_000
+      },
+      decisionProvider: {
+        mode: "dry_run_fixture",
+        modelId: "dry-run",
+        outputSchema: "schemas/virtual-decision.schema.json"
+      }
+    }
   };
 }
 

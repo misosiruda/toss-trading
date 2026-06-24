@@ -396,6 +396,7 @@ GET  /dashboard/view-model/validation-lab
 GET  /dashboard/view-model/audit
 GET  /dashboard/stream/strategy-bucket-tests/{testId}
 POST /paper/simulations
+POST /paper/simulations/strategy-bucket-tests/validate
 POST /paper/simulations/strategy-bucket-tests
 ```
 
@@ -408,6 +409,7 @@ POST /paper/simulations/strategy-bucket-tests
 - active bucket test progress는 backend artifact, manifest, audit event에서 계산한 summary만 내려준다. raw provider output이나 sensitive execution detail을 browser로 직접 흘리지 않는다.
 - Next.js BFF는 backend ViewModel을 그대로 렌더링하거나 화면 상태에 맞게 얇게 reshape한다.
 - `POST /paper/simulations`는 기존 same-origin/header/body guard를 유지하고, Next.js Server Action 또는 Route Handler에서 한 번 더 operation intent를 검증한다.
+- `POST /paper/simulations/strategy-bucket-tests/validate`는 strategy bucket test 생성 전 validation-only endpoint다. 선택 bucket, policy draft, source data dir, split role, date window, sampling/provider config를 backend에서 검증하지만 test record 생성, artifact 저장, replay runner 시작은 하지 않는다.
 - `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다.
 - `GET /dashboard/stream/strategy-bucket-tests/{testId}`는 active test progress SSE 후보 endpoint다. SSE를 지원하지 못하는 환경에서는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress` polling fallback을 사용한다.
 
@@ -773,6 +775,15 @@ npm run check
 - active bucket test progress와 result matrix는 backend ViewModel의 `activeTests`, `recentResults`, `comparison`을 표시하되, artifact가 없으면 empty state로 둔다.
 - 이 단계는 test 생성 mutation, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
 - live order, broker mutation, raw command 실행 surface를 추가하지 않는다.
+
+두 번째 구현 단위:
+
+- Local Operations API에 `POST /paper/simulations/strategy-bucket-tests/validate` validation-only endpoint를 둔다.
+- backend validation은 `PortfolioPolicy` candidate와 선택한 strategy bucket, source data dir, validation split, date window, sampling policy, decision provider boundary를 deterministic하게 검증한다.
+- validation endpoint는 explicit operation header와 same-origin local dashboard guard를 요구한다.
+- 응답에는 `readOnly`, `storageMutationEnabled`, `liveTradingEnabled`, `orderPlacementEnabled`, `replayRunnerStarted`를 명시해 validation-only 범위를 고정한다.
+- 이 단계는 strategy bucket test record 생성, artifact 저장, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
+- strategy bucket isolated test 생성 mutation과 progress stream은 후속 PR 범위로 둔다.
 
 ### N6. Compliance analytics 확장
 
