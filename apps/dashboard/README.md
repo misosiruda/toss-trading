@@ -1,26 +1,26 @@
 # Toss Trading Dashboard
 
-Next.js App Router dashboard for the paper-only operations surface.
+paper-only 운영 화면을 제공하는 Next.js App Router 대시보드입니다.
 
-## Scope
+## 범위
 
-- Shows live trading disabled readiness posture.
-- Keeps backend behavior unchanged.
-- Does not expose live order, broker mutation, raw `codex exec`, or raw `tossctl` surfaces.
-- Renders read-only backend ViewModel data from Local Operations API.
-- Keeps unavailable ViewModel reads isolated to the affected dashboard panel.
+- live trading 비활성화 상태와 준비 상태를 표시합니다.
+- backend 동작은 변경하지 않습니다.
+- live order, broker mutation, raw `codex exec`, raw `tossctl` 인터페이스를 노출하지 않습니다.
+- Local Operations API에서 read-only backend ViewModel 데이터를 읽어 화면에 표시합니다.
+- 사용할 수 없는 ViewModel read는 해당 dashboard panel의 상태로만 격리합니다.
 
-## Data Source
+## 데이터 소스
 
-The app reads ViewModels server-side from Local Operations API.
+앱은 Local Operations API에서 ViewModel을 server-side로 읽습니다.
 
 ```powershell
 $env:DASHBOARD_OPS_API_BASE_URL = "http://127.0.0.1:8787"
 ```
 
-If `DASHBOARD_OPS_API_BASE_URL` is not set, the app falls back to `OPS_API_BASE_URL`, then `http://127.0.0.1:8787`.
+`DASHBOARD_OPS_API_BASE_URL`이 설정되지 않으면 `OPS_API_BASE_URL`, `http://127.0.0.1:8787` 순서로 대체 값을 사용합니다.
 
-Read-only endpoints consumed by `/dashboard`:
+`/dashboard`가 사용하는 read-only endpoint는 다음과 같습니다.
 
 ```text
 GET /dashboard/view-model/portfolio-compliance
@@ -29,7 +29,7 @@ GET /dashboard/view-model/risk-gate-trace?limit=8
 GET /dashboard/view-model/validation-lab
 ```
 
-## Commands
+## 명령
 
 ```powershell
 npm --prefix apps/dashboard run dev
@@ -38,4 +38,4 @@ npm --prefix apps/dashboard run lint
 npm --prefix apps/dashboard run test:e2e
 ```
 
-`test:e2e` starts the root Local Operations API on `127.0.0.1:8789` and the Next.js dashboard on `127.0.0.1:3002`. The smoke test verifies the read-only ViewModel contract, absence of live mutation controls, and axe-core accessibility checks.
+`test:e2e`는 root Local Operations API를 `127.0.0.1:8789`에서 시작하고 Next.js dashboard를 `127.0.0.1:3002`에서 시작합니다. smoke test는 read-only ViewModel contract, live mutation control 미노출, axe-core 접근성 검사를 확인합니다.
