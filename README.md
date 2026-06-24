@@ -172,7 +172,7 @@ npm run dashboard -- --data-dir data/paper
 
 기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events` 같은 read-only endpoint를 호출합니다. 새 가상 투자 화면의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
-Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. 이 계획은 실투자 활성화가 아니라, 사용자가 dashboard에서 가상 투자 조건을 선택하고 실행 중인 paper simulation과 지난 portfolio/report를 검증할 수 있게 만드는 방향을 다룹니다.
+Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
 
 ## Roadmap
 
@@ -200,6 +200,7 @@ Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbo
 대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
 AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investment-process-refactoring-plan.md](docs/ai-investment-process-refactoring-plan.md)를 참고합니다.
 Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
+Next.js 기반 dashboard 전환 기획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다.
 
 ## Disclaimer
 

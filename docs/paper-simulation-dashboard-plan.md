@@ -1,5 +1,9 @@
 # Paper Simulation Dashboard Plan
 
+> 이 문서는 기존 정적 `dashboard/`를 paper-only simulation viewer/product flow로 확장하기 위한 계획이다.
+> 전략 버킷, dynamic cash reserve, hedge, validation lab을 future live 관제까지 포용하는 Next.js 전환 계획은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)를 따른다.
+> 아래 "현재 상태"에는 정적 dashboard 제품화 착수 당시 기준이 일부 포함되어 있다. 구현 완료 후의 dashboard 전환 판단은 Next.js 전환 계획과 README의 최신 실행 설명을 우선한다.
+
 ## 목적
 
 이 문서는 현재 CLI 실행 결과를 보여주는 dashboard를, paper-only 알고리즘 검증 제품으로 확장하기 위한 기획과 구현 순서를 정리한다.
@@ -13,15 +17,15 @@
 현재 구조의 장점:
 
 - dashboard가 replay를 직접 실행하지 않는다.
-- Local Operations API는 `GET`/`HEAD`만 허용한다.
+- 조회 surface는 `GET`/`HEAD`만 허용하고, paper simulation 생성은 별도 guarded `POST /paper/simulations`만 허용한다.
 - 저장된 artifact를 읽기만 하므로 live trading surface와 분리되어 있다.
 
-현재 구조의 한계:
+정적 dashboard 구조의 남은 한계:
 
-- 사용자가 dashboard에서 simulation 조건을 선택할 수 없다.
-- 현재 실행 중인 simulation을 run 단위로 관리하지 못한다.
-- single replay, batch replay, current virtual portfolio, aggregate report가 제품 흐름으로 연결되어 있지 않다.
-- 지난 simulation 조건과 결과를 비교해 "이 알고리즘을 실험할 가치가 있는가"를 판단하기 어렵다.
+- 정적 dashboard form은 run 조건 선택까지는 지원하지만, `PortfolioPolicy` 중심의 전략 버킷/현금/hedge policy 설계 화면은 아니다.
+- 실행 중인 simulation과 completed run은 artifact 중심으로 보이며, policy 후보 단위의 URL/상태/검증 lifecycle로 완전히 분리되어 있지 않다.
+- single replay, batch replay, current virtual portfolio, aggregate report가 `PortfolioPolicy` 제품 흐름으로 연결되어 있지 않다.
+- 지난 simulation 조건과 결과를 policy 후보 관점으로 비교해 "이 알고리즘을 실험할 가치가 있는가"를 판단하기 어렵다.
 
 ## 제품 방향
 
