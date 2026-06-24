@@ -833,6 +833,25 @@ test("local operations API serves derived replay research report read-only", asy
   }
 });
 
+test("local operations API returns null research report for invalid aggregate artifact", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(paths.batchReplayAggregateReportPath, "{}\n", "utf8");
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, "/research/replay/report");
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["status"], "invalid");
+    assert.equal(result.payload["aggregateReportStatus"], "invalid");
+    assert.equal(result.payload["report"], null);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API serves individual batch replay runs read-only", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);

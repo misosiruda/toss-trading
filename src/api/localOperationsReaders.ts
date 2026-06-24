@@ -162,20 +162,29 @@ export async function readReplayResearchReport(
 ): Promise<Record<string, unknown>> {
   const paths = createStoragePaths(storageBaseDir);
   const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
-  const report =
-    aggregate.status === "ok" && isRecord(aggregate.value)
-      ? buildReplayResearchReport({
-          aggregateReport:
-            aggregate.value as unknown as BatchReplayAggregateReport,
+  let status: "missing" | "ok" | "corrupt" | "invalid" = aggregate.status;
+  let report = null;
+
+  if (aggregate.status === "ok") {
+    if (isBatchReplayAggregateReportShape(aggregate.value)) {
+      try {
+        report = buildReplayResearchReport({
+          aggregateReport: aggregate.value,
           generatedAt: new Date()
-        })
-      : null;
+        });
+      } catch {
+        status = "invalid";
+      }
+    } else {
+      status = "invalid";
+    }
+  }
 
   return {
     mode: "paper_only",
     readOnly: true,
-    status: aggregate.status,
-    aggregateReportStatus: aggregate.status,
+    status,
+    aggregateReportStatus: status,
     report
   };
 }
@@ -673,6 +682,34 @@ function readSourceRunsPath(value: unknown): string | null {
     return null;
   }
   return sourceRunsPath;
+}
+
+function isBatchReplayAggregateReportShape(
+  value: unknown
+): value is BatchReplayAggregateReport {
+  if (!isRecord(value) || value["mode"] !== "paper_only") {
+    return false;
+  }
+  if (readStringField(value, "generatedAt") === null) {
+    return false;
+  }
+
+  const summary = readRecordField(value, "summary");
+  const overall = readRecordField(value, "overall");
+  if (summary === null || overall === null) {
+    return false;
+  }
+
+  return (
+    readNumberFieldOrNull(summary, "runCount") !== null &&
+    readNumberFieldOrNull(summary, "completedCount") !== null &&
+    readNumberFieldOrNull(summary, "skippedCount") !== null &&
+    readNumberFieldOrNull(summary, "failedCount") !== null &&
+    readNumberFieldOrNull(summary, "returnSampleCount") !== null &&
+    readNumberFieldOrNull(overall, "runCount") !== null &&
+    readNumberFieldOrNull(overall, "completedCount") !== null &&
+    readNumberFieldOrNull(overall, "returnSampleCount") !== null
+  );
 }
 
 function emptyJsonlResult(status: "blocked" | "missing"): {
