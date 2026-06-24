@@ -32,6 +32,7 @@ const STRATEGY_BUCKETS = [
 type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
 type JsonFileStatus = "missing" | "ok" | "corrupt";
 type JsonlReadStatus = "missing" | "ok" | "degraded";
+type RiskGateTraceArtifactFamily = "historical_replay" | "virtual";
 type MarketRegimeView =
   | "bull"
   | "bear"
@@ -211,6 +212,7 @@ export interface RiskGateTraceViewModel {
   mode: "paper_only";
   readOnly: true;
   viewModel: "risk-gate-trace";
+  sourceFamily: RiskGateTraceArtifactFamily;
   traces: RiskGateTraceRow[];
   count: number;
   totalDecisionItemCount: number;
@@ -261,9 +263,7 @@ export async function readDashboardPortfolioComplianceViewModel(
   const exposure = portfolioExposure(portfolio);
   const decisionItems = flattenDecisionItems(decisions.records);
   const riskRejectCodes = rejectCodeCounts(decisionItems, auditEvents.records);
-  const rejectedCount =
-    readAggregateRejectedCount(aggregate.value) ??
-    countRejectedAuditEvents(auditEvents.records);
+  const rejectedCount = countCurrentRejected(decisionItems, auditEvents.records);
   const marketRegime = inferMarketRegime(aggregate.value);
   const bucketCompliance = bucketComplianceRows(exposure, trades.records);
   const cashCompliance = cashComplianceView({
@@ -362,12 +362,33 @@ export async function readDashboardRiskGateTraceViewModel(
   limit: number
 ): Promise<RiskGateTraceViewModel> {
   const paths = createStoragePaths(storageBaseDir);
-  const [decisions, trades, riskDecisionRead, auditEvents] = await Promise.all([
+  const [
+    virtualDecisions,
+    virtualTrades,
+    historicalDecisions,
+    historicalTrades,
+    historicalRiskDecisions,
+    auditEvents
+  ] = await Promise.all([
     new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll(),
     new FileVirtualTradeStore(paths.virtualTradesPath).readAll(),
+    new FileVirtualDecisionStore(paths.historicalReplayDecisionLogPath).readAll(),
+    new FileVirtualTradeStore(paths.historicalReplayTradeLogPath).readAll(),
     readJsonlRecords(paths.historicalReplayRiskDecisionLogPath),
     new FileAuditLog(paths.auditLogPath).readAll()
   ]);
+  const useHistoricalFamily =
+    historicalDecisions.records.length > 0 ||
+    historicalTrades.records.length > 0 ||
+    historicalRiskDecisions.status !== "missing";
+  const sourceFamily: RiskGateTraceArtifactFamily = useHistoricalFamily
+    ? "historical_replay"
+    : "virtual";
+  const decisions = useHistoricalFamily ? historicalDecisions : virtualDecisions;
+  const trades = useHistoricalFamily ? historicalTrades : virtualTrades;
+  const riskDecisionRead = useHistoricalFamily
+    ? historicalRiskDecisions
+    : emptyJsonlRead("missing");
   const riskDecisions = riskDecisionRead.records
     .map(parseRiskDecision)
     .filter((record): record is RiskDecisionSnapshot => record !== null);
@@ -388,12 +409,16 @@ export async function readDashboardRiskGateTraceViewModel(
     mode: "paper_only",
     readOnly: true,
     viewModel: "risk-gate-trace",
+    sourceFamily,
     traces,
     count: traces.length,
     totalDecisionItemCount: rows.length,
     sourceStatus: {
-      decisions: jsonlStatus(decisions.corruptLineCount),
-      trades: jsonlStatus(trades.corruptLineCount),
+      decisions: storeJsonlStatus(
+        decisions.records.length,
+        decisions.corruptLineCount
+      ),
+      trades: storeJsonlStatus(trades.records.length, trades.corruptLineCount),
       riskDecisions: riskDecisionRead.status,
       auditEvents: jsonlStatus(auditEvents.corruptLineCount)
     }
@@ -772,9 +797,14 @@ function countRejectedAuditEvents(events: AuditEvent[]): number {
     .length;
 }
 
-function readAggregateRejectedCount(value: unknown): number | null {
-  const overall = readRecordField(value, "overall");
-  return readNumberField(overall, "totalRejectedCount");
+function countCurrentRejected(
+  decisionItems: Array<{ item: VirtualDecisionItem }>,
+  auditEvents: AuditEvent[]
+): number {
+  return (
+    decisionItems.filter(({ item }) => item.holdReasonCode !== undefined).length +
+    countRejectedAuditEvents(auditEvents)
+  );
 }
 
 function inferMarketRegime(value: unknown): MarketRegimeView {
@@ -905,6 +935,16 @@ function jsonlStatus(corruptLineCount: number): JsonlReadStatus {
   return corruptLineCount > 0 ? "degraded" : "ok";
 }
 
+function storeJsonlStatus(
+  recordCount: number,
+  corruptLineCount: number
+): JsonlReadStatus {
+  if (corruptLineCount > 0) {
+    return "degraded";
+  }
+  return recordCount > 0 ? "ok" : "missing";
+}
+
 async function readJsonFile(filePath: string): Promise<JsonFileRead> {
   try {
     return { status: "ok", value: JSON.parse(await readFile(filePath, "utf8")) };
@@ -953,6 +993,14 @@ async function readJsonlRecords(filePath: string): Promise<JsonlRead> {
     status: corruptLineCount > 0 ? "degraded" : "ok",
     records,
     corruptLineCount
+  };
+}
+
+function emptyJsonlRead(status: JsonlReadStatus): JsonlRead {
+  return {
+    status,
+    records: [],
+    corruptLineCount: 0
   };
 }
 

@@ -1010,12 +1010,18 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
   await new FileVirtualDecisionStore(paths.virtualDecisionsPath).append(
     decision()
   );
+  await new FileVirtualDecisionStore(paths.historicalReplayDecisionLogPath).append(
+    replayDecision()
+  );
+  await new FileVirtualTradeStore(paths.historicalReplayTradeLogPath).append(
+    replayTrade()
+  );
   await new FileAuditLog(paths.auditLogPath).append({
     eventId: "audit_api_002",
     eventType: "VIRTUAL_RISK_REJECTED",
     actor: "system",
     summary:
-      "packet_api_001 005930 rejected account 1234-5678-901234 order ord_abcdef123456",
+      "packet_replay_001 035420 rejected account 1234-5678-901234 order ord_abcdef123456",
     maskedRefs: [],
     createdAt: "2026-06-11T09:02:00+09:00"
   });
@@ -1023,8 +1029,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     paths.historicalReplayRiskDecisionLogPath,
     `${JSON.stringify({
       riskDecisionId: "risk_api_001",
-      packetId: "packet_api_001",
-      symbol: "005930",
+      packetId: "packet_replay_001",
+      symbol: "035420",
       approved: false,
       rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
       checkedRules: ["cash_available"],
@@ -1127,7 +1133,10 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
 
     assert.equal(riskGateTrace.response.status, 200);
     assert.equal(riskGateTrace.payload["viewModel"], "risk-gate-trace");
+    assert.equal(riskGateTrace.payload["sourceFamily"], "historical_replay");
     assert.equal(traces.length, 1);
+    assert.equal(traces[0]?.["packetId"], "packet_replay_001");
+    assert.equal(traces[0]?.["symbol"], "035420");
     assert.equal(traces[0]?.["riskApproved"], false);
     assert.deepEqual(traces[0]?.["rejectCodes"], ["VIRTUAL_CASH_EXCEEDED"]);
     assert.deepEqual(traces[0]?.["auditEventRefs"], ["audit_api_002"]);
@@ -1142,6 +1151,49 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard portfolio compliance keeps reject count scoped to current artifacts", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const staleAggregate = batchReplayAggregateReport();
+  const staleOverall = staleAggregate["overall"] as Record<string, unknown>;
+  staleOverall["totalRejectedCount"] = 99;
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(staleAggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const riskGateSummary = result.payload["riskGateSummary"] as Record<
+      string,
+      unknown
+    >;
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const hedgeCompliance = result.payload["hedgeCompliance"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["status"], "missing");
+    assert.equal(riskGateSummary["decisionItemCount"], 0);
+    assert.equal(riskGateSummary["rejectedCount"], 0);
+    assert.deepEqual(riskGateSummary["rejectCodes"], {});
+    assert.equal(cashCompliance["rejectedCount"], 0);
+    assert.equal(hedgeCompliance["rejectedCount"], 0);
   } finally {
     await stopTestServer(server);
   }
@@ -1831,6 +1883,26 @@ function decision(): VirtualDecision {
   };
 }
 
+function replayDecision(): VirtualDecision {
+  return {
+    packetId: "packet_replay_001",
+    summary: "Historical replay decision",
+    decisions: [
+      {
+        market: "KR",
+        symbol: "035420",
+        action: "VIRTUAL_BUY",
+        confidence: 0.7,
+        budgetKrw: 80_000,
+        thesis: "Historical replay thesis references order ord_abcdef123456",
+        riskFactors: ["Replay risk factor"],
+        dataRefs: ["historical_replay:packet:packet_replay_001"],
+        expiresAt: "2026-06-11T09:05:00+09:00"
+      }
+    ]
+  };
+}
+
 function trade(): VirtualTrade {
   return {
     tradeId: "trade_api_001",
@@ -1843,6 +1915,22 @@ function trade(): VirtualTrade {
     priceKrw: 70_000,
     amountKrw: 70_000,
     status: "VIRTUAL_FILLED",
+    executedAt: "2026-06-11T09:01:00+09:00"
+  };
+}
+
+function replayTrade(): VirtualTrade {
+  return {
+    tradeId: "trade_replay_001",
+    packetId: "packet_replay_001",
+    decisionId: "decision_replay_001",
+    market: "KR",
+    symbol: "035420",
+    action: "VIRTUAL_BUY",
+    quantity: 1,
+    priceKrw: 80_000,
+    amountKrw: 80_000,
+    status: "VIRTUAL_REJECTED",
     executedAt: "2026-06-11T09:01:00+09:00"
   };
 }
