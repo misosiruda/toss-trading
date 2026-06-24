@@ -15,7 +15,7 @@ toss-trading/
 ├── package.json               # Node.js scripts와 의존성
 ├── tsconfig.json              # TypeScript strict compiler 설정
 ├── .codex/                    # Codex MCP 설정 예시
-├── apps/                      # 후보: future Next.js dashboard app
+├── apps/                      # Next.js dashboard app 등 frontend package
 ├── dashboard/                 # read-only local dashboard ES module 정적 파일
 ├── data/                      # 로컬 실행 산출물. Git source of truth 아님
 ├── docs/                      # 아키텍처, 정책, 운영, 리팩토링 문서
@@ -196,7 +196,7 @@ flowchart TD
 
 ### Read-only dashboard/API 변경
 
-현재 구현은 `dashboard/`의 정적 HTML/CSS/ES module과 `src/api`의 Local Operations API가 담당한다. 전략 버킷, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 future Next.js 전환 계획은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)를 기준으로 한다.
+현재 구현은 `dashboard/`의 정적 HTML/CSS/ES module과 `src/api`의 Local Operations API가 담당한다. `apps/dashboard`는 Next.js 전환을 위한 별도 app skeleton이며, 전략 버킷, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 future Next.js 전환 계획은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)를 기준으로 한다.
 
 수정 후보:
 
