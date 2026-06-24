@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   countOnlineViewModels,
   readDashboardViewModels,
@@ -62,6 +63,13 @@ export default async function DashboardPage() {
                 tone={onlineCount === 4 ? "ok" : "watch"}
                 value={`${onlineCount}/4 online`}
               />
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/lab/policies"
+              >
+                <span className="text-[var(--muted)]">Policy lab</span>
+                <span className="text-[var(--accent)]">Builder</span>
+              </Link>
             </div>
           </div>
         </header>
