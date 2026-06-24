@@ -6,6 +6,7 @@ export const endpoints = {
   report: "/paper/report",
   replay: "/replay/report",
   replayProgress: "/replay/progress",
+  researchReplay: "/research/replay/report",
   batchReplay: "/batch/replay/report",
   batchRuns: "/batch/replay/runs?limit=50&includeLatestRunArtifacts=1",
   scheduler: "/scheduler/status",

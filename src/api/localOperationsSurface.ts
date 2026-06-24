@@ -13,6 +13,7 @@ export const LOCAL_OPERATIONS_API_ROUTES = [
   "/paper/report",
   "/replay/report",
   "/replay/progress",
+  "/research/replay/report",
   "/batch/replay/report",
   "/batch/replay/runs",
   "/scheduler/status",
