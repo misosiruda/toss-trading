@@ -234,7 +234,7 @@ export function countOnlineViewModels(viewModels: DashboardViewModels): number {
   ].filter((result) => result.status === "ok").length;
 }
 
-function readOperationsApiConfig(): { baseUrl: string; label: string } {
+export function readOperationsApiConfig(): { baseUrl: string; label: string } {
   const value =
     [
       process.env.DASHBOARD_OPS_API_BASE_URL,

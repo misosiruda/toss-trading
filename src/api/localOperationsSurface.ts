@@ -1,9 +1,12 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
 export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
+export const PAPER_POLICY_VALIDATION_METHODS = ["POST"] as const;
 
 export type ReadOnlyHttpMethod = (typeof READ_ONLY_HTTP_METHODS)[number];
 export type PaperSimulationMutationMethod =
   (typeof PAPER_SIMULATION_MUTATION_METHODS)[number];
+export type PaperPolicyValidationMethod =
+  (typeof PAPER_POLICY_VALIDATION_METHODS)[number];
 
 export const LOCAL_OPERATIONS_API_ROUTES = [
   "/health",
@@ -35,6 +38,13 @@ export const PAPER_SIMULATION_MUTATION_API_ROUTES = [
 
 export type PaperSimulationMutationApiRoutePath =
   (typeof PAPER_SIMULATION_MUTATION_API_ROUTES)[number];
+
+export const PAPER_POLICY_VALIDATION_API_ROUTES = [
+  "/paper/policies/validate"
+] as const;
+
+export type PaperPolicyValidationApiRoutePath =
+  (typeof PAPER_POLICY_VALIDATION_API_ROUTES)[number];
 
 export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
   "/",
@@ -113,6 +123,12 @@ export function isPaperSimulationMutationMethod(
   return method === "POST";
 }
 
+export function isPaperPolicyValidationMethod(
+  method: string | undefined
+): method is PaperPolicyValidationMethod {
+  return method === "POST";
+}
+
 export function isLocalOperationsApiRoutePath(
   pathname: string
 ): pathname is LocalOperationsApiRoutePath {
@@ -126,5 +142,13 @@ export function isPaperSimulationMutationApiRoutePath(
 ): pathname is PaperSimulationMutationApiRoutePath {
   return PAPER_SIMULATION_MUTATION_API_ROUTES.includes(
     pathname as PaperSimulationMutationApiRoutePath
+  );
+}
+
+export function isPaperPolicyValidationApiRoutePath(
+  pathname: string
+): pathname is PaperPolicyValidationApiRoutePath {
+  return PAPER_POLICY_VALIDATION_API_ROUTES.includes(
+    pathname as PaperPolicyValidationApiRoutePath
   );
 }

@@ -734,6 +734,14 @@ npm run check
 - 이 단계의 validation은 frontend local guard이며, backend policy validation을 대체하지 않는다.
 - policy draft 저장, replay 생성, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
 
+두 번째 구현 단위:
+
+- Local Operations API에 `POST /paper/policies/validate` validation-only endpoint를 둔다.
+- Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side proxy로 validation request를 전달한다.
+- backend validation은 `PortfolioPolicy` candidate의 strategy bucket, cash, hedge, exposure, execution boundary를 deterministic하게 검증한다.
+- validation endpoint는 explicit operation header와 same-origin local dashboard guard를 요구하지만, policy 저장, replay runner 시작, live `OrderIntent` 생성을 수행하지 않는다.
+- policy draft 저장, replay 생성, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
+
 ### N5. Strategy Bucket Test Lab
 
 범위:

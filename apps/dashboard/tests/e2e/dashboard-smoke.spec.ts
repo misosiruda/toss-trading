@@ -68,8 +68,8 @@ test("renders paper policy builder draft validation without mutation controls", 
     page.getByRole("heading", { name: "Paper Policy Builder" })
   ).toBeVisible();
   await expect(page.getByText("paper-only draft")).toBeVisible();
-  await expect(page.getByText("not stored")).toBeVisible();
-  await expect(page.getByText("required later")).toBeVisible();
+  await expect(page.getByText("not stored", { exact: true })).toBeVisible();
+  await expect(page.getByText("required", { exact: true })).toBeVisible();
   await expect(page.getByText("disabled")).toBeVisible();
 
   await expect(page.getByLabel("Policy name")).toHaveValue(
@@ -84,6 +84,9 @@ test("renders paper policy builder draft validation without mutation controls", 
 
   await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByText("local checks 1")).toBeVisible();
+  await page.getByRole("button", { name: "Backend validate" }).click();
+  await expect(page.getByText("Backend validation valid")).toBeVisible();
+  await expect(page.getByText("storage mutation disabled")).toBeVisible();
 
   await page.getByLabel("Long-term target").fill("60");
   await expect(page.getByText("Total allocation is 125.00%")).toBeVisible();
@@ -100,6 +103,11 @@ test("renders paper policy builder draft validation without mutation controls", 
   await expect(page.getByLabel("PortfolioPolicy preview")).toContainText(
     "BUCKET_MIN_WEIGHT_OUT_OF_RANGE"
   );
+  await page.getByRole("button", { name: "Backend validate" }).click();
+  await expect(page.getByText("Backend validation invalid")).toBeVisible();
+  await expect(
+    page.getByText("BUCKET_MIN_WEIGHT_OUT_OF_RANGE:")
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
