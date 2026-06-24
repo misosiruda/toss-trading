@@ -21,7 +21,8 @@ export default defineConfig({
     {
       command: "npm run dev -- --port 3002",
       env: {
-        DASHBOARD_OPS_API_BASE_URL: "http://127.0.0.1:8789",
+        DASHBOARD_OPS_API_BASE_URL: "",
+        OPS_API_BASE_URL: "http://127.0.0.1:8789",
       },
       url: "http://127.0.0.1:3002/dashboard",
       reuseExistingServer: !process.env.CI,

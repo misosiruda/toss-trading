@@ -235,15 +235,16 @@ export function countOnlineViewModels(viewModels: DashboardViewModels): number {
 }
 
 function readOperationsApiConfig(): { baseUrl: string; label: string } {
-  const value = (
-    process.env.DASHBOARD_OPS_API_BASE_URL ??
-    process.env.OPS_API_BASE_URL ??
-    DEFAULT_API_BASE_URL
-  ).trim();
-  const baseUrl = (value.length > 0 ? value : DEFAULT_API_BASE_URL).replace(
-    /\/+$/,
-    ""
-  );
+  const value =
+    [
+      process.env.DASHBOARD_OPS_API_BASE_URL,
+      process.env.OPS_API_BASE_URL,
+      DEFAULT_API_BASE_URL
+    ]
+      .map((candidate) => candidate?.trim())
+      .find((candidate): candidate is string => Boolean(candidate)) ??
+    DEFAULT_API_BASE_URL;
+  const baseUrl = value.replace(/\/+$/, "");
   return {
     baseUrl,
     label:
