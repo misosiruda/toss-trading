@@ -70,6 +70,13 @@ export default async function DashboardPage() {
                 <span className="text-[var(--muted)]">Policy lab</span>
                 <span className="text-[var(--accent)]">Builder</span>
               </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/lab/strategy-tests"
+              >
+                <span className="text-[var(--muted)]">Strategy lab</span>
+                <span className="text-[var(--accent)]">Buckets</span>
+              </Link>
             </div>
           </div>
         </header>

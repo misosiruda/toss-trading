@@ -766,6 +766,14 @@ npm run check
 - selection bias warning rendering
 - live order CTA 부재 확인
 
+첫 구현 단위:
+
+- `/dashboard/lab/strategy-tests` route를 read-only Server Component로 추가한다.
+- 화면은 `GET /dashboard/view-model/strategy-test-lab` 응답을 직접 사용해 bucket별 isolated replay capability, required policy fields, default holding period hint, disabled reason을 표시한다.
+- active bucket test progress와 result matrix는 backend ViewModel의 `activeTests`, `recentResults`, `comparison`을 표시하되, artifact가 없으면 empty state로 둔다.
+- 이 단계는 test 생성 mutation, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
+- live order, broker mutation, raw command 실행 surface를 추가하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:

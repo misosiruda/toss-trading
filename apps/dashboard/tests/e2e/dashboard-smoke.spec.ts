@@ -48,6 +48,65 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(
     page.getByRole("heading", { name: "Validation Lab" })
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Strategy lab Buckets/i })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders strategy bucket test lab without mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/lab/strategy-tests");
+
+  await expect(
+    page.getByRole("heading", { name: "Strategy Bucket Test Lab" })
+  ).toBeVisible();
+  await expect(page.getByText("Strategy Lab")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("not connected")).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Bucket Test Readiness" })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Long-term" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Swing" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Short-term" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Intraday" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hedge" })).toBeVisible();
+  await expect(
+    page.getByText(
+      "paper-only isolated strategy bucket replay mutation is not implemented yet"
+    )
+  ).toHaveCount(5);
+
+  await expect(
+    page.getByRole("heading", { name: "Bucket Test Progress" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("No active bucket tests are reported by backend ViewModel.")
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Bucket Result Matrix" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("No isolated bucket result artifacts are available.")
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Selection Warning" })
+  ).toBeVisible();
+  await expect(
+    page.getByText(/isolated strategy bucket result artifacts are missing/)
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
