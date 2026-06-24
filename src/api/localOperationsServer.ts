@@ -12,10 +12,18 @@ import {
 import { writeJson } from "./localOperationsResponse.js";
 import { routeRequest } from "./localOperationsRouting.js";
 import {
+  isPaperPolicyValidationApiRoutePath,
+  isPaperPolicyValidationMethod,
   isPaperSimulationMutationApiRoutePath,
   isPaperSimulationMutationMethod,
   isReadOnlyHttpMethod
 } from "./localOperationsSurface.js";
+import {
+  PAPER_POLICY_VALIDATION_HEADER_NAME,
+  PAPER_POLICY_VALIDATION_OPERATION,
+  PaperPolicyValidationRequestError,
+  validatePaperPolicyCandidate
+} from "./paperPolicyValidation.js";
 import {
   createPaperSimulationRun,
   PAPER_SIMULATION_CREATE_OPERATION,
@@ -68,6 +76,13 @@ async function handleRequest(
       await handlePaperSimulationCreate(request, response, options);
       return;
     }
+    if (
+      isPaperPolicyValidationApiRoutePath(url.pathname) &&
+      isPaperPolicyValidationMethod(request.method)
+    ) {
+      await handlePaperPolicyValidation(request, response, options);
+      return;
+    }
 
     if (!isReadOnlyHttpMethod(request.method)) {
       writeJson(response, 405, {
@@ -106,6 +121,87 @@ async function handleRequest(
   }
 }
 
+async function handlePaperPolicyValidation(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: LocalOperationsServerOptions
+): Promise<void> {
+  const guard = validatePaperPolicyValidationGuard(request);
+  if (guard !== null) {
+    writeJson(response, guard.statusCode, {
+      error: guard.code,
+      message: guard.message,
+      readOnly: true,
+      storageMutationEnabled: false,
+      liveTradingEnabled: false,
+      orderPlacementEnabled: false
+    });
+    return;
+  }
+
+  try {
+    const body = await readJsonBody(request, {
+      operationName: "paper policy validation",
+      maxBytes: 32_768,
+      createError: (message, statusCode, code) =>
+        new PaperPolicyValidationRequestError(message, statusCode, code)
+    });
+    const payload = validatePaperPolicyCandidate(
+      body,
+      options.now?.() ?? new Date()
+    );
+    writeJson(response, 200, payload);
+  } catch (error) {
+    if (error instanceof PaperPolicyValidationRequestError) {
+      writeJson(response, error.statusCode, {
+        error: error.code,
+        message: error.message,
+        readOnly: true,
+        storageMutationEnabled: false,
+        liveTradingEnabled: false,
+        orderPlacementEnabled: false
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function validatePaperPolicyValidationGuard(
+  request: IncomingMessage
+): { statusCode: number; code: string; message: string } | null {
+  if (
+    request.headers[PAPER_POLICY_VALIDATION_HEADER_NAME] !==
+    PAPER_POLICY_VALIDATION_OPERATION
+  ) {
+    return {
+      statusCode: 403,
+      code: "validation_guard_required",
+      message: "paper policy validation requires an explicit operation header"
+    };
+  }
+
+  const contentType = request.headers["content-type"] ?? "";
+  if (!String(contentType).toLowerCase().includes("application/json")) {
+    return {
+      statusCode: 415,
+      code: "unsupported_media_type",
+      message: "paper policy validation accepts application/json only"
+    };
+  }
+
+  if (!isSameOriginRequest(request)) {
+    return {
+      statusCode: 403,
+      code: "origin_not_allowed",
+      message: "paper policy validation is limited to same-origin dashboard requests"
+    };
+  }
+
+  return null;
+}
+
 async function handlePaperSimulationCreate(
   request: IncomingMessage,
   response: ServerResponse,
@@ -123,7 +219,12 @@ async function handlePaperSimulationCreate(
   }
 
   try {
-    const body = await readJsonBody(request);
+    const body = await readJsonBody(request, {
+      operationName: "paper simulation create",
+      maxBytes: 32_768,
+      createError: (message, statusCode, code) =>
+        new PaperSimulationRequestError(message, statusCode, code)
+    });
     const payload = createPaperSimulationRun(body, options);
     writeJson(response, 202, payload);
   } catch (error) {
@@ -199,15 +300,26 @@ function isLocalHostname(hostname: string): boolean {
   );
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+async function readJsonBody(
+  request: IncomingMessage,
+  options: {
+    operationName: string;
+    maxBytes: number;
+    createError: (
+      message: string,
+      statusCode: number,
+      code: string
+    ) => Error;
+  }
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let totalSize = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalSize += buffer.byteLength;
-    if (totalSize > 32_768) {
-      throw new PaperSimulationRequestError(
-        "paper simulation create body is too large",
+    if (totalSize > options.maxBytes) {
+      throw options.createError(
+        `${options.operationName} body is too large`,
         413,
         "request_body_too_large"
       );
@@ -218,8 +330,8 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
-    throw new PaperSimulationRequestError(
-      "paper simulation create body must be valid JSON",
+    throw options.createError(
+      `${options.operationName} body must be valid JSON`,
       400,
       "invalid_json"
     );

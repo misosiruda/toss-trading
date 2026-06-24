@@ -35,7 +35,13 @@ import {
   type PaperSimulationRunnerResult
 } from "./paperSimulationRuns.js";
 import {
+  PAPER_POLICY_VALIDATION_HEADER_NAME,
+  PAPER_POLICY_VALIDATION_OPERATION
+} from "./paperPolicyValidation.js";
+import {
   LOCAL_OPERATIONS_API_ROUTES,
+  PAPER_POLICY_VALIDATION_API_ROUTES,
+  PAPER_POLICY_VALIDATION_METHODS,
   PAPER_SIMULATION_MUTATION_API_ROUTES,
   PAPER_SIMULATION_MUTATION_METHODS,
   READ_ONLY_HTTP_METHODS
@@ -150,6 +156,10 @@ test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...PAPER_SIMULATION_MUTATION_API_ROUTES], [
     "/paper/simulations"
   ]);
+  assert.deepEqual([...PAPER_POLICY_VALIDATION_METHODS], ["POST"]);
+  assert.deepEqual([...PAPER_POLICY_VALIDATION_API_ROUTES], [
+    "/paper/policies/validate"
+  ]);
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
     false
@@ -164,6 +174,12 @@ test("local operations surface keeps live mutations disabled", () => {
   );
   assert.equal(
     (PAPER_SIMULATION_MUTATION_API_ROUTES as readonly string[]).includes(
+      "/place_order"
+    ),
+    false
+  );
+  assert.equal(
+    (PAPER_POLICY_VALIDATION_API_ROUTES as readonly string[]).includes(
       "/place_order"
     ),
     false
@@ -658,6 +674,74 @@ test("research report renderer includes nested validation warnings in count and 
     } else {
       globals.document = previousDocument;
     }
+  }
+});
+
+test("paper policy validation checks drafts without starting a runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const valid = await fetchJson(baseUrl, "/paper/policies/validate", {
+      method: "POST",
+      headers: paperPolicyValidationHeaders(baseUrl),
+      body: JSON.stringify(policyCandidate())
+    });
+    const invalidCandidate = policyCandidate();
+    invalidCandidate.strategyBuckets[0]!.minWeightRatio = -0.1;
+    const invalid = await fetchJson(baseUrl, "/paper/policies/validate", {
+      method: "POST",
+      headers: paperPolicyValidationHeaders(baseUrl),
+      body: JSON.stringify(invalidCandidate)
+    });
+    const missingHeader = await fetchJson(baseUrl, "/paper/policies/validate", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl
+      },
+      body: JSON.stringify(policyCandidate())
+    });
+    const badOrigin = await fetchJson(baseUrl, "/paper/policies/validate", {
+      method: "POST",
+      headers: {
+        ...paperPolicyValidationHeaders(baseUrl),
+        origin: "http://evil.example"
+      },
+      body: JSON.stringify(policyCandidate())
+    });
+
+    assert.equal(valid.response.status, 200);
+    assert.equal(valid.payload["mode"], "paper_only");
+    assert.equal(valid.payload["validation"], "paper_policy");
+    assert.equal(valid.payload["readOnly"], true);
+    assert.equal(valid.payload["storageMutationEnabled"], false);
+    assert.equal(valid.payload["liveTradingEnabled"], false);
+    assert.equal(valid.payload["orderPlacementEnabled"], false);
+    assert.equal(valid.payload["status"], "valid");
+    assert.equal(valid.payload["validatedForPaperSimulationConfig"], true);
+
+    assert.equal(invalid.response.status, 200);
+    assert.equal(invalid.payload["status"], "invalid");
+    assert.equal(invalid.payload["validatedForPaperSimulationConfig"], false);
+    assert.match(
+      JSON.stringify(invalid.payload["issues"]),
+      /BUCKET_MIN_WEIGHT_OUT_OF_RANGE/
+    );
+
+    assert.equal(missingHeader.response.status, 403);
+    assert.equal(missingHeader.payload["error"], "validation_guard_required");
+    assert.equal(badOrigin.response.status, 403);
+    assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
   }
 });
 
@@ -1783,6 +1867,114 @@ function paperSimulationCreateHeaders(baseUrl: string): HeadersInit {
     "content-type": "application/json",
     [PAPER_SIMULATION_MUTATION_HEADER_NAME]: PAPER_SIMULATION_CREATE_OPERATION,
     origin: baseUrl
+  };
+}
+
+function paperPolicyValidationHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [PAPER_POLICY_VALIDATION_HEADER_NAME]: PAPER_POLICY_VALIDATION_OPERATION,
+    origin: baseUrl
+  };
+}
+
+interface PolicyCandidateBucket {
+  bucket: string;
+  targetWeightRatio: number;
+  minWeightRatio: number;
+  maxWeightRatio: number;
+  maxTurnoverRatio: number;
+  maxDrawdownRatio: number;
+  holdingPeriodHint: string;
+  enabledAssetClasses: string[];
+}
+
+interface PolicyCandidate {
+  mode: "paper_only";
+  policyId: string;
+  version: string;
+  name: string;
+  validationStatus: "valid" | "invalid";
+  strategyBuckets: PolicyCandidateBucket[];
+  cashPolicy: {
+    targetCashRatio: number;
+    minimumCashReserveKrw: number;
+    ruleSource: string;
+  };
+  hedgePolicy: {
+    hedgeEnabled: boolean;
+    hedgeTargetRatio: number;
+    maxCostRatio: number;
+  };
+  exposurePolicy: {
+    maxSymbolExposureRatio: number;
+    maxCountryExposureRatio: number;
+    maxCurrencyExposureRatio: number;
+  };
+  executionBoundary: {
+    liveTradingEnabled: false;
+    orderPlacementEnabled: false;
+    backendValidationRequired: true;
+  };
+  warnings: string[];
+}
+
+function policyCandidate(): PolicyCandidate {
+  return {
+    mode: "paper_only",
+    policyId: "local-draft",
+    version: "draft.v1",
+    name: "Balanced paper policy draft",
+    validationStatus: "valid",
+    strategyBuckets: [
+      policyCandidateBucket("long_term", 0.35, 0.2, 0.5, 0.15, 0.18, "multi_month"),
+      policyCandidateBucket("swing", 0.2, 0.1, 0.3, 0.35, 0.12, "multi_week"),
+      policyCandidateBucket("short_term", 0.15, 0, 0.25, 0.5, 0.08, "multi_day"),
+      policyCandidateBucket("intraday", 0.1, 0, 0.15, 1, 0.04, "intraday"),
+      policyCandidateBucket("hedge", 0.05, 0, 0.15, 0.4, 0.06, "hedge")
+    ],
+    cashPolicy: {
+      targetCashRatio: 0.15,
+      minimumCashReserveKrw: 1_000_000,
+      ruleSource: "dynamic_regime"
+    },
+    hedgePolicy: {
+      hedgeEnabled: true,
+      hedgeTargetRatio: 0.05,
+      maxCostRatio: 0.015
+    },
+    exposurePolicy: {
+      maxSymbolExposureRatio: 0.2,
+      maxCountryExposureRatio: 0.7,
+      maxCurrencyExposureRatio: 0.7
+    },
+    executionBoundary: {
+      liveTradingEnabled: false,
+      orderPlacementEnabled: false,
+      backendValidationRequired: true
+    },
+    warnings: []
+  };
+}
+
+function policyCandidateBucket(
+  bucket: string,
+  targetWeightRatio: number,
+  minWeightRatio: number,
+  maxWeightRatio: number,
+  maxTurnoverRatio: number,
+  maxDrawdownRatio: number,
+  holdingPeriodHint: string
+): PolicyCandidateBucket {
+  return {
+    bucket,
+    targetWeightRatio,
+    minWeightRatio,
+    maxWeightRatio,
+    maxTurnoverRatio,
+    maxDrawdownRatio,
+    holdingPeriodHint,
+    enabledAssetClasses: bucket === "hedge" ? ["inverse_etf"] : ["equity", "etf"]
   };
 }
 

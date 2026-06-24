@@ -27,16 +27,104 @@ const CASH_RULE_OPTIONS: Array<{ label: string; value: CashRuleSource }> = [
   { label: "Fallback", value: "fallback" }
 ];
 
+interface BackendPolicyValidationIssue {
+  code: string;
+  path: string;
+  message: string;
+  severity: "error";
+}
+
+interface BackendPolicyValidationResponse {
+  mode: "paper_only";
+  validation: "paper_policy";
+  readOnly: true;
+  storageMutationEnabled: false;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  policyHash: string;
+  status: "valid" | "invalid";
+  validatedForPaperSimulationConfig: boolean;
+  issueCount: number;
+  issues: BackendPolicyValidationIssue[];
+}
+
+type BackendValidationState =
+  | { status: "idle" }
+  | { status: "pending"; previewJson: string }
+  | {
+      status: "ready";
+      previewJson: string;
+      response: BackendPolicyValidationResponse;
+    }
+  | { status: "error"; previewJson: string; message: string };
+
 export function PolicyBuilderForm() {
   const [draft, setDraft] = useState<PortfolioPolicyDraft>(() =>
     createDefaultPolicyDraft()
   );
   const [validationRunCount, setValidationRunCount] = useState(0);
+  const [backendValidation, setBackendValidation] =
+    useState<BackendValidationState>({ status: "idle" });
   const validation = useMemo(() => validatePolicyDraft(draft), [draft]);
   const preview = useMemo(
     () => buildPolicyPreview(draft, validation),
     [draft, validation]
   );
+  const previewJson = useMemo(() => JSON.stringify(preview), [preview]);
+  const visibleBackendValidation = currentBackendValidation(
+    backendValidation,
+    previewJson
+  );
+
+  async function validateWithBackend() {
+    const requestPreviewJson = previewJson;
+    setBackendValidation({ status: "pending", previewJson: requestPreviewJson });
+
+    try {
+      const response = await fetch("/dashboard/lab/policies/validate", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: requestPreviewJson
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isBackendPolicyValidationResponse(payload)) {
+        setBackendValidation((current) =>
+          isPendingBackendValidation(current, requestPreviewJson)
+            ? {
+                status: "error",
+                previewJson: requestPreviewJson,
+                message: readErrorMessage(payload, response.status)
+              }
+            : current
+        );
+        return;
+      }
+      setBackendValidation((current) =>
+        isPendingBackendValidation(current, requestPreviewJson)
+          ? {
+              status: "ready",
+              previewJson: requestPreviewJson,
+              response: payload
+            }
+          : current
+      );
+    } catch (error) {
+      setBackendValidation((current) =>
+        isPendingBackendValidation(current, requestPreviewJson)
+          ? {
+              status: "error",
+              previewJson: requestPreviewJson,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Backend validation request failed"
+            }
+          : current
+      );
+    }
+  }
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
@@ -268,10 +356,21 @@ export function PolicyBuilderForm() {
               Validate draft
             </button>
             <button
+              className="rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={visibleBackendValidation.status === "pending"}
+              onClick={() => void validateWithBackend()}
+              type="button"
+            >
+              {visibleBackendValidation.status === "pending"
+                ? "Backend validating"
+                : "Backend validate"}
+            </button>
+            <button
               className="rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm font-semibold"
               onClick={() => {
                 setDraft(createDefaultPolicyDraft());
                 setValidationRunCount(0);
+                setBackendValidation({ status: "idle" });
               }}
               type="button"
             >
@@ -318,6 +417,7 @@ export function PolicyBuilderForm() {
               ))}
             </ul>
           )}
+          <BackendValidationPanel state={visibleBackendValidation} />
         </section>
 
         <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
@@ -339,6 +439,84 @@ export function PolicyBuilderForm() {
           </pre>
         </section>
       </aside>
+    </div>
+  );
+}
+
+function BackendValidationPanel({ state }: { state: BackendValidationState }) {
+  if (state.status === "idle") {
+    return (
+      <p
+        aria-live="polite"
+        className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Backend validation not run. Draft is not stored.
+      </p>
+    );
+  }
+
+  if (state.status === "pending") {
+    return (
+      <p
+        aria-live="polite"
+        className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Backend validation pending. Draft is being checked without storage
+        mutation.
+      </p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p
+        aria-live="polite"
+        className="mt-3 rounded-[8px] border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3 text-sm leading-5 text-[var(--danger)]"
+      >
+        Backend validation unavailable. {state.message}
+      </p>
+    );
+  }
+
+  const validation = state.response;
+  return (
+    <div
+      aria-live="polite"
+      className={`mt-3 rounded-[8px] border p-3 text-sm leading-5 ${
+        validation.status === "valid"
+          ? "border-[var(--success-soft)] bg-[var(--success-soft)] text-[var(--success)]"
+          : "border-[var(--danger-soft)] bg-[var(--danger-soft)] text-[var(--danger)]"
+      }`}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-semibold">
+            Backend validation {validation.status}
+          </p>
+          <p className="mt-1 font-mono text-xs">
+            hash {validation.policyHash.slice(0, 12)} · storage mutation
+            disabled
+          </p>
+        </div>
+        <StatusBadge
+          tone={validation.validatedForPaperSimulationConfig ? "ok" : "blocked"}
+          value={
+            validation.validatedForPaperSimulationConfig
+              ? "config-valid"
+              : "blocked"
+          }
+        />
+      </div>
+      {validation.issues.length === 0 ? null : (
+        <ul className="mt-3 space-y-1">
+          {validation.issues.map((issue) => (
+            <li key={`${issue.path}:${issue.code}`}>
+              <span className="font-mono text-xs">{issue.code}</span>:{" "}
+              {issue.message}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -519,4 +697,64 @@ function updateBucket(
 function parseNumericInput(value: string): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isBackendPolicyValidationResponse(
+  value: unknown
+): value is BackendPolicyValidationResponse {
+  return (
+    isRecord(value) &&
+    value["mode"] === "paper_only" &&
+    value["validation"] === "paper_policy" &&
+    value["readOnly"] === true &&
+    value["storageMutationEnabled"] === false &&
+    value["liveTradingEnabled"] === false &&
+    value["orderPlacementEnabled"] === false &&
+    typeof value["policyHash"] === "string" &&
+    (value["status"] === "valid" || value["status"] === "invalid") &&
+    typeof value["validatedForPaperSimulationConfig"] === "boolean" &&
+    typeof value["issueCount"] === "number" &&
+    Array.isArray(value["issues"]) &&
+    value["issues"].every(isBackendPolicyValidationIssue)
+  );
+}
+
+function isBackendPolicyValidationIssue(
+  value: unknown
+): value is BackendPolicyValidationIssue {
+  return (
+    isRecord(value) &&
+    typeof value["code"] === "string" &&
+    typeof value["path"] === "string" &&
+    typeof value["message"] === "string" &&
+    value["severity"] === "error"
+  );
+}
+
+function readErrorMessage(value: unknown, status: number): string {
+  if (isRecord(value) && typeof value["message"] === "string") {
+    return value["message"];
+  }
+  return `Backend validation returned HTTP ${status}`;
+}
+
+function currentBackendValidation(
+  state: BackendValidationState,
+  previewJson: string
+): BackendValidationState {
+  if (state.status === "idle") {
+    return state;
+  }
+  return state.previewJson === previewJson ? state : { status: "idle" };
+}
+
+function isPendingBackendValidation(
+  state: BackendValidationState,
+  previewJson: string
+): state is Extract<BackendValidationState, { status: "pending" }> {
+  return state.status === "pending" && state.previewJson === previewJson;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

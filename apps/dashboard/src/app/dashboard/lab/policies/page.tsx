@@ -38,7 +38,7 @@ export default function PolicyBuilderPage() {
           className="grid gap-3 md:grid-cols-3"
         >
           <BoundaryCard label="Persistence" value="not stored" />
-          <BoundaryCard label="Backend validation" value="required later" />
+          <BoundaryCard label="Backend validation" value="required" />
           <BoundaryCard label="Live mutation" value="disabled" />
         </section>
 
