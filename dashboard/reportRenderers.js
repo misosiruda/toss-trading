@@ -231,7 +231,7 @@ export function renderReplayResearchReport(researchPayload) {
   const overfittingWarning = report?.overfittingWarning ?? {};
   const providerFailure = report?.providerFailureSummary ?? {};
   const riskReject = report?.riskRejectSummary ?? {};
-  const warnings = Array.isArray(report?.warnings) ? report.warnings : [];
+  const warnings = researchReportWarnings(report);
 
   setStatus("research-report-status", status, status);
   setText("research-run-count", `${runIdentity.runCount ?? 0}회`);
@@ -329,6 +329,30 @@ function renderResearchWarningList(warnings, status) {
     item.className = "research-warning-item";
     item.textContent = warning;
     list?.append(item);
+  }
+}
+
+function researchReportWarnings(report) {
+  const warnings = [];
+  appendUniqueWarnings(warnings, report?.warnings);
+  appendUniqueWarnings(warnings, report?.validationProtocol?.warnings);
+  appendUniqueWarnings(warnings, report?.overfittingWarning?.warnings);
+  return warnings;
+}
+
+function appendUniqueWarnings(target, values) {
+  if (!Array.isArray(values)) {
+    return;
+  }
+  const existing = new Set(target);
+  for (const value of values) {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      continue;
+    }
+    if (!existing.has(value)) {
+      existing.add(value);
+      target.push(value);
+    }
   }
 }
 
