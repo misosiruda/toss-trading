@@ -90,22 +90,39 @@ export interface StrategyBucketTestLabViewModel {
   viewModel: "strategy-test-lab";
   policyId: string;
   policyStatus: "missing";
-  supportedBuckets: Array<{
-    bucket: StrategyBucket;
-    canRunIsolatedReplay: boolean;
-    requiredPolicyFields: string[];
-    defaultHoldingPeriodHint: string;
-    disabledReason: string | null;
-  }>;
+  supportedBuckets: StrategyBucketTestCapability[];
   activeTests: unknown[];
-  recentResults: unknown[];
-  comparison: {
-    rows: unknown[];
-    baselineBucket: StrategyBucket | null;
-    selectionWarning: string | null;
-  };
+  recentResults: StrategyBucketTestResultSummary[];
+  comparison: StrategyBucketComparisonView;
   sourceStatus: Record<string, JsonReadStatus>;
   status: "ok";
+}
+
+export interface StrategyBucketTestCapability {
+  bucket: StrategyBucket;
+  canRunIsolatedReplay: boolean;
+  requiredPolicyFields: string[];
+  defaultHoldingPeriodHint: string;
+  disabledReason: string | null;
+}
+
+export interface StrategyBucketTestResultSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  validationSplitRole: "train" | "validation" | "test" | null;
+  totalReturnRatio: number | null;
+  maxDrawdownRatio: number | null;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
+  riskRejectRate: number | null;
+  providerFailureRate: number | null;
+  warnings: string[];
+}
+
+export interface StrategyBucketComparisonView {
+  rows: StrategyBucketTestResultSummary[];
+  baselineBucket: StrategyBucket | null;
+  selectionWarning: string | null;
 }
 
 export interface RiskGateTraceViewModel {
@@ -181,6 +198,12 @@ export interface DashboardViewModels {
   validationLab: ViewModelResult<ValidationLabViewModel>;
 }
 
+export interface StrategyTestLabPageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  strategyLab: ViewModelResult<StrategyBucketTestLabViewModel>;
+}
+
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
 const FETCH_TIMEOUT_MS = 2_000;
 
@@ -232,6 +255,23 @@ export function countOnlineViewModels(viewModels: DashboardViewModels): number {
     viewModels.riskGate,
     viewModels.validationLab
   ].filter((result) => result.status === "ok").length;
+}
+
+export async function readStrategyTestLabPageData(): Promise<StrategyTestLabPageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const strategyLab = await fetchViewModel<StrategyBucketTestLabViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/strategy-test-lab",
+    "strategy-test-lab",
+    isStrategyBucketTestLabViewModel
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    strategyLab
+  };
 }
 
 export function readOperationsApiConfig(): { baseUrl: string; label: string } {
@@ -370,6 +410,7 @@ function isStrategyBucketTestLabViewModel(
     value.supportedBuckets.every(isStrategyBucketCapability) &&
     Array.isArray(value.activeTests) &&
     Array.isArray(value.recentResults) &&
+    value.recentResults.every(isStrategyBucketResultSummary) &&
     isStrategyComparison(value.comparison) &&
     isSourceStatus(value.sourceStatus) &&
     value.status === "ok"
@@ -497,7 +538,7 @@ function isRiskGateSummary(
 
 function isStrategyBucketCapability(
   value: unknown
-): value is StrategyBucketTestLabViewModel["supportedBuckets"][number] {
+): value is StrategyBucketTestCapability {
   return (
     isRecord(value) &&
     isStrategyBucket(value["bucket"]) &&
@@ -508,12 +549,34 @@ function isStrategyBucketCapability(
   );
 }
 
+function isStrategyBucketResultSummary(
+  value: unknown
+): value is StrategyBucketTestResultSummary {
+  return (
+    isRecord(value) &&
+    typeof value["testId"] === "string" &&
+    isStrategyBucket(value["bucket"]) &&
+    (value["validationSplitRole"] === null ||
+      value["validationSplitRole"] === "train" ||
+      value["validationSplitRole"] === "validation" ||
+      value["validationSplitRole"] === "test") &&
+    isNullableNumber(value["totalReturnRatio"]) &&
+    isNullableNumber(value["maxDrawdownRatio"]) &&
+    isNullableNumber(value["turnoverRatio"]) &&
+    isNullableNumber(value["costDragRatio"]) &&
+    isNullableNumber(value["riskRejectRate"]) &&
+    isNullableNumber(value["providerFailureRate"]) &&
+    isStringArray(value["warnings"])
+  );
+}
+
 function isStrategyComparison(
   value: unknown
 ): value is StrategyBucketTestLabViewModel["comparison"] {
   return (
     isRecord(value) &&
     Array.isArray(value["rows"]) &&
+    value["rows"].every(isStrategyBucketResultSummary) &&
     (value["baselineBucket"] === null || isStrategyBucket(value["baselineBucket"])) &&
     isNullableString(value["selectionWarning"])
   );
