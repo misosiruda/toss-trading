@@ -410,7 +410,7 @@ POST /paper/simulations/strategy-bucket-tests
 - Next.js BFF는 backend ViewModel을 그대로 렌더링하거나 화면 상태에 맞게 얇게 reshape한다.
 - `POST /paper/simulations`는 기존 same-origin/header/body guard를 유지하고, Next.js Server Action 또는 Route Handler에서 한 번 더 operation intent를 검증한다.
 - `POST /paper/simulations/strategy-bucket-tests/validate`는 strategy bucket test 생성 전 validation-only endpoint다. 선택 bucket, policy draft, source data dir, split role, date window, sampling/provider config를 backend에서 검증하지만 test record 생성, artifact 저장, replay runner 시작은 하지 않는다.
-- `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다.
+- `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다. 초기 구현은 queued test record와 audit event 생성까지만 허용하고, replay runner 시작은 별도 guard가 붙은 후속 PR에서 연결한다.
 - `GET /dashboard/stream/strategy-bucket-tests/{testId}`는 active test progress SSE 후보 endpoint다. SSE를 지원하지 못하는 환경에서는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress` polling fallback을 사용한다.
 
 ## Next.js 설계 기준
@@ -791,6 +791,13 @@ npm run check
 - Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side proxy로 validation request를 전달한다.
 - 화면은 backend validation result, `configHash`, issue list, `replayRunnerStarted: false` boundary를 표시한다.
 - 이 단계는 strategy bucket test record 생성, artifact 저장, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
+
+네 번째 구현 단위:
+
+- Local Operations API에 `POST /paper/simulations/strategy-bucket-tests` guarded create endpoint를 둔다.
+- endpoint는 validation-only candidate와 같은 schema를 사용하고, backend validation을 통과한 요청만 append-only strategy bucket test record와 audit event로 저장한다.
+- 응답은 `storageMutationEnabled: true`, `liveTradingEnabled: false`, `orderPlacementEnabled: false`, `replayRunnerStarted: false`를 명시해 저장 mutation과 runner 시작을 분리한다.
+- 이 단계는 Next.js create button, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
 
 ### N6. Compliance analytics 확장
 

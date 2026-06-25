@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -44,6 +44,11 @@ import {
   STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
 } from "./strategyBucketTestValidation.js";
 import {
+  STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME,
+  STRATEGY_BUCKET_TEST_CREATE_OPERATION,
+  STRATEGY_BUCKET_TEST_CREATE_ROUTE
+} from "./strategyBucketTestRuns.js";
+import {
   LOCAL_OPERATIONS_API_ROUTES,
   PAPER_POLICY_VALIDATION_API_ROUTES,
   PAPER_POLICY_VALIDATION_METHODS,
@@ -51,7 +56,9 @@ import {
   PAPER_SIMULATION_MUTATION_METHODS,
   READ_ONLY_HTTP_METHODS,
   STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES,
-  STRATEGY_BUCKET_TEST_VALIDATION_METHODS
+  STRATEGY_BUCKET_TEST_VALIDATION_METHODS,
+  STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES,
+  STRATEGY_BUCKET_TEST_MUTATION_METHODS
 } from "./localOperationsSurface.js";
 
 const now = new Date("2026-06-11T09:00:00+09:00");
@@ -157,6 +164,29 @@ async function fetchText(
   return { response, text };
 }
 
+async function readJsonlRecords(
+  filePath: string
+): Promise<Array<Record<string, unknown>>> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
 test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...READ_ONLY_HTTP_METHODS], ["GET", "HEAD"]);
   assert.deepEqual([...PAPER_SIMULATION_MUTATION_METHODS], ["POST"]);
@@ -170,6 +200,10 @@ test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_METHODS], ["POST"]);
   assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES], [
     STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
+  ]);
+  assert.deepEqual([...STRATEGY_BUCKET_TEST_MUTATION_METHODS], ["POST"]);
+  assert.deepEqual([...STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES], [
+    STRATEGY_BUCKET_TEST_CREATE_ROUTE
   ]);
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
@@ -197,6 +231,12 @@ test("local operations surface keeps live mutations disabled", () => {
   );
   assert.equal(
     (STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES as readonly string[]).includes(
+      "/place_order"
+    ),
+    false
+  );
+  assert.equal(
+    (STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES as readonly string[]).includes(
       "/place_order"
     ),
     false
@@ -1046,6 +1086,173 @@ test("strategy bucket test validation accepts enabled Codex paper-only boundary"
     assert.equal(result.payload["status"], "valid");
     assert.equal(result.payload["validatedForStrategyBucketTestConfig"], true);
     assert.equal(result.payload["replayRunnerStarted"], false);
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test create writes a queued record without starting a runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(strategyBucketTestCandidate())
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const auditEvents = await readJsonlRecords(paths.auditLogPath);
+    const record = records[0];
+    const progress = record?.["progress"] as Record<string, unknown> | undefined;
+    const heartbeat = record?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+    const safety = record?.["safety"] as Record<string, unknown> | undefined;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(result.payload["mode"], "paper_only");
+    assert.equal(result.payload["mutation"], "strategy_bucket_test_create");
+    assert.equal(result.payload["status"], "queued");
+    assert.equal(result.payload["bucket"], "long_term");
+    assert.equal(result.payload["storageMutationEnabled"], true);
+    assert.equal(result.payload["liveTradingEnabled"], false);
+    assert.equal(result.payload["orderPlacementEnabled"], false);
+    assert.equal(result.payload["replayRunnerStarted"], false);
+    assert.match(String(result.payload["configHash"]), /^sha256:[a-f0-9]{64}$/);
+    assert.equal("progressUrl" in result.payload, false);
+    assert.equal(records.length, 1);
+    assert.equal(record?.["mode"], "paper_only");
+    assert.equal(record?.["recordType"], "strategy_bucket_test_record");
+    assert.equal(record?.["testId"], result.payload["testId"]);
+    assert.equal(record?.["requestId"], "strategy-bucket-test-validation-001");
+    assert.equal(record?.["status"], "queued");
+    assert.equal(record?.["runId"], null);
+    assert.equal(record?.["configHash"], result.payload["configHash"]);
+    assert.equal(record?.["policyId"], "local-draft");
+    assert.equal(record?.["validationSplitRole"], "validation");
+    assert.equal(record?.["decisionProviderMode"], "dry_run_fixture");
+    assert.equal(progress?.["phase"], "queued");
+    assert.equal(progress?.["completedPacketCount"], 0);
+    assert.equal(progress?.["decisionCount"], 0);
+    assert.equal(progress?.["simulatedTradeCount"], 0);
+    assert.equal(progress?.["latestAuditEventRef"], auditEvents[0]?.["eventId"]);
+    assert.equal(heartbeat?.["status"], "fresh");
+    assert.equal(safety?.["storageMutationEnabled"], true);
+    assert.equal(safety?.["liveTradingEnabled"], false);
+    assert.equal(safety?.["orderPlacementEnabled"], false);
+    assert.equal(safety?.["replayRunnerStarted"], false);
+    assert.equal(auditEvents.length, 1);
+    assert.equal(auditEvents[0]?.["eventType"], "STRATEGY_BUCKET_TEST_QUEUED");
+    assert.match(
+      String(auditEvents[0]?.["summary"]),
+      /replay runner not started/
+    );
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test create rejects invalid configs before writing records", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const candidate = strategyBucketTestCandidate({ bucket: "short_term" });
+    const disabledBucketPolicy = candidate.policy.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(disabledBucketPolicy);
+    disabledBucketPolicy.targetWeightRatio = 0;
+
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(candidate)
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const auditEvents = await readJsonlRecords(paths.auditLogPath);
+
+    assert.equal(result.response.status, 400);
+    assert.equal(result.payload["error"], "invalid_strategy_bucket_test_config");
+    assert.equal(result.payload["storageMutationEnabled"], false);
+    assert.equal(result.payload["liveTradingEnabled"], false);
+    assert.equal(result.payload["orderPlacementEnabled"], false);
+    assert.equal(result.payload["replayRunnerStarted"], false);
+    assert.match(JSON.stringify(result.payload["issues"]), /BUCKET_DISABLED/);
+    assert.equal(records.length, 0);
+    assert.equal(auditEvents.length, 0);
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test create rejects missing guards and cross-origin requests", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const missingHeader = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_CREATE_ROUTE,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: baseUrl
+        },
+        body: JSON.stringify(strategyBucketTestCandidate())
+      }
+    );
+    const badOrigin = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_CREATE_ROUTE,
+      {
+        method: "POST",
+        headers: {
+          ...strategyBucketTestCreateHeaders(baseUrl),
+          origin: "http://evil.example"
+        },
+        body: JSON.stringify(strategyBucketTestCandidate())
+      }
+    );
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const auditEvents = await readJsonlRecords(paths.auditLogPath);
+
+    assert.equal(missingHeader.response.status, 403);
+    assert.equal(missingHeader.payload["error"], "mutation_guard_required");
+    assert.equal(missingHeader.payload["storageMutationEnabled"], false);
+    assert.equal(missingHeader.payload["replayRunnerStarted"], false);
+    assert.equal(badOrigin.response.status, 403);
+    assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(badOrigin.payload["storageMutationEnabled"], false);
+    assert.equal(badOrigin.payload["replayRunnerStarted"], false);
+    assert.equal(records.length, 0);
+    assert.equal(auditEvents.length, 0);
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -2190,6 +2397,15 @@ function strategyBucketTestValidationHeaders(baseUrl: string): HeadersInit {
     "content-type": "application/json",
     [STRATEGY_BUCKET_TEST_VALIDATION_HEADER_NAME]:
       STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
+    origin: baseUrl
+  };
+}
+
+function strategyBucketTestCreateHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME]:
+      STRATEGY_BUCKET_TEST_CREATE_OPERATION,
     origin: baseUrl
   };
 }
