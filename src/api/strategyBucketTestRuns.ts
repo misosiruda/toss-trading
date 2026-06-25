@@ -98,7 +98,6 @@ export interface StrategyBucketTestCreateResponse {
   bucket: StrategyBucket;
   configHash: string;
   recordPath: string;
-  progressUrl: string;
   storageMutationEnabled: true;
   liveTradingEnabled: false;
   orderPlacementEnabled: false;
@@ -206,7 +205,6 @@ export async function createStrategyBucketTestRun(
     bucket: candidate.bucket,
     configHash: validation.configHash,
     recordPath: paths.strategyBucketTestRecordsPath,
-    progressUrl: `/dashboard/view-model/strategy-test-lab/tests/${testId}/progress`,
     storageMutationEnabled: true,
     liveTradingEnabled: false,
     orderPlacementEnabled: false,

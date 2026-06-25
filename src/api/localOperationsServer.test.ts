@@ -1128,10 +1128,7 @@ test("strategy bucket test create writes a queued record without starting a runn
     assert.equal(result.payload["orderPlacementEnabled"], false);
     assert.equal(result.payload["replayRunnerStarted"], false);
     assert.match(String(result.payload["configHash"]), /^sha256:[a-f0-9]{64}$/);
-    assert.match(
-      String(result.payload["progressUrl"]),
-      /\/dashboard\/view-model\/strategy-test-lab\/tests\/.+\/progress/
-    );
+    assert.equal("progressUrl" in result.payload, false);
     assert.equal(records.length, 1);
     assert.equal(record?.["mode"], "paper_only");
     assert.equal(record?.["recordType"], "strategy_bucket_test_record");
