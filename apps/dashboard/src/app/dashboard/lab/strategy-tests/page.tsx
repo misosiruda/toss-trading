@@ -8,6 +8,7 @@ import {
   type StrategyBucketTestResultSummary,
   type ViewModelResult
 } from "@/lib/dashboardViewModels";
+import { StrategyBucketTestValidationForm } from "./StrategyBucketTestValidationForm";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -130,6 +131,8 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
           ))}
         </div>
       </section>
+
+      <StrategyBucketTestValidationForm />
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <ProgressPanel activeTests={data.activeTests} />

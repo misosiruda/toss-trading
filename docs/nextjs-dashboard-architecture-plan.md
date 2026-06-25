@@ -785,6 +785,13 @@ npm run check
 - 이 단계는 strategy bucket test record 생성, artifact 저장, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
 - strategy bucket isolated test 생성 mutation과 progress stream은 후속 PR 범위로 둔다.
 
+세 번째 구현 단위:
+
+- `/dashboard/lab/strategy-tests`에 validation-only bucket test config form을 연결한다.
+- Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side proxy로 validation request를 전달한다.
+- 화면은 backend validation result, `configHash`, issue list, `replayRunnerStarted: false` boundary를 표시한다.
+- 이 단계는 strategy bucket test record 생성, artifact 저장, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:
