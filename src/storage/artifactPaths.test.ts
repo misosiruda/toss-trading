@@ -9,6 +9,7 @@ import {
   DYNAMIC_STORAGE_ARTIFACT_CONTRACTS,
   HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
   STORAGE_ARTIFACT_CONTRACTS,
+  STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
   createBatchReplayArtifactPaths,
   createBatchReplayManifestPath,
   createBatchReplayRootDirForStorage,
@@ -95,6 +96,10 @@ test("storage artifact catalog matches repository storage paths", () => {
     catalog["batchReplayAggregateReport"],
     paths.batchReplayAggregateReportPath
   );
+  assert.equal(
+    catalog["strategyBucketTestRecords"],
+    paths.strategyBucketTestRecordsPath
+  );
 });
 
 test("storage artifact contracts document reader and corrupt JSONL policy", () => {
@@ -129,6 +134,16 @@ test("storage artifact contracts document reader and corrupt JSONL policy", () =
         contract.artifactName === "historicalReplayResearchManifest" &&
         contract.fileName === HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME &&
         contract.domainContract === "ReplayResearchManifest"
+    ),
+    true
+  );
+  assert.equal(
+    STORAGE_ARTIFACT_CONTRACTS.some(
+      (contract) =>
+        contract.artifactName === "strategyBucketTestRecords" &&
+        contract.fileName === STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME &&
+        contract.domainContract === "StrategyBucketTestRecord" &&
+        contract.localOperationsReader === null
     ),
     true
   );

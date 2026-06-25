@@ -34,6 +34,8 @@ export const BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME =
   "batch-replay-selection-trials.jsonl";
 export const BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME =
   "batch-replay-aggregate-report.json";
+export const STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME =
+  "strategy-bucket-test-records.jsonl";
 
 export type StorageArtifactFormat = "json" | "jsonl";
 export type StorageArtifactRole =
@@ -267,6 +269,18 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     localOperationsReader: "/batch/replay/report",
     failureTrace: "aggregate replay result and AI decision failure count",
     corruptJsonlPolicy: null
+  },
+  {
+    artifactName: "strategyBucketTestRecords",
+    fileName: STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
+    relativePath: STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
+    format: "jsonl",
+    role: "append_only_log",
+    domainContract: "StrategyBucketTestRecord",
+    writer: "StrategyBucketTestRuns",
+    localOperationsReader: null,
+    failureTrace: "strategy bucket test id, config hash, queued progress state",
+    corruptJsonlPolicy: "skip_line_and_count"
   }
 ];
 

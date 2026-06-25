@@ -18,7 +18,9 @@ import {
   isPaperSimulationMutationMethod,
   isReadOnlyHttpMethod,
   isStrategyBucketTestValidationApiRoutePath,
-  isStrategyBucketTestValidationMethod
+  isStrategyBucketTestValidationMethod,
+  isStrategyBucketTestMutationApiRoutePath,
+  isStrategyBucketTestMutationMethod
 } from "./localOperationsSurface.js";
 import {
   PAPER_POLICY_VALIDATION_HEADER_NAME,
@@ -38,6 +40,12 @@ import {
   StrategyBucketTestValidationRequestError,
   validateStrategyBucketTestCandidate
 } from "./strategyBucketTestValidation.js";
+import {
+  STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME,
+  STRATEGY_BUCKET_TEST_CREATE_OPERATION,
+  StrategyBucketTestCreateRequestError,
+  createStrategyBucketTestRun
+} from "./strategyBucketTestRuns.js";
 import type {
   LocalOperationsServerOptions,
   StartLocalOperationsServerOptions
@@ -98,6 +106,13 @@ async function handleRequest(
       await handleStrategyBucketTestValidation(request, response, options);
       return;
     }
+    if (
+      isStrategyBucketTestMutationApiRoutePath(url.pathname) &&
+      isStrategyBucketTestMutationMethod(request.method)
+    ) {
+      await handleStrategyBucketTestCreate(request, response, options);
+      return;
+    }
 
     if (!isReadOnlyHttpMethod(request.method)) {
       writeJson(response, 405, {
@@ -134,6 +149,88 @@ async function handleRequest(
       readOnly: true
     });
   }
+}
+
+async function handleStrategyBucketTestCreate(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: LocalOperationsServerOptions
+): Promise<void> {
+  const guard = validateStrategyBucketTestCreateGuard(request);
+  if (guard !== null) {
+    writeJson(response, guard.statusCode, {
+      error: guard.code,
+      message: guard.message,
+      readOnly: false,
+      storageMutationEnabled: false,
+      liveTradingEnabled: false,
+      orderPlacementEnabled: false,
+      replayRunnerStarted: false
+    });
+    return;
+  }
+
+  try {
+    const body = await readJsonBody(request, {
+      operationName: "strategy bucket test create",
+      maxBytes: 65_536,
+      createError: (message, statusCode, code) =>
+        new StrategyBucketTestCreateRequestError(message, statusCode, code)
+    });
+    const payload = await createStrategyBucketTestRun(body, options);
+    writeJson(response, 202, payload);
+  } catch (error) {
+    if (error instanceof StrategyBucketTestCreateRequestError) {
+      writeJson(response, error.statusCode, {
+        error: error.code,
+        message: error.message,
+        ...(error.issues === undefined ? {} : { issues: error.issues }),
+        readOnly: false,
+        storageMutationEnabled: false,
+        liveTradingEnabled: false,
+        orderPlacementEnabled: false,
+        replayRunnerStarted: false
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function validateStrategyBucketTestCreateGuard(
+  request: IncomingMessage
+): { statusCode: number; code: string; message: string } | null {
+  if (
+    request.headers[STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME] !==
+    STRATEGY_BUCKET_TEST_CREATE_OPERATION
+  ) {
+    return {
+      statusCode: 403,
+      code: "mutation_guard_required",
+      message: "strategy bucket test create requires an explicit operation header"
+    };
+  }
+
+  const contentType = request.headers["content-type"] ?? "";
+  if (!String(contentType).toLowerCase().includes("application/json")) {
+    return {
+      statusCode: 415,
+      code: "unsupported_media_type",
+      message: "strategy bucket test create accepts application/json only"
+    };
+  }
+
+  if (!isSameOriginRequest(request)) {
+    return {
+      statusCode: 403,
+      code: "origin_not_allowed",
+      message:
+        "strategy bucket test create is limited to same-origin dashboard requests"
+    };
+  }
+
+  return null;
 }
 
 async function handleStrategyBucketTestValidation(

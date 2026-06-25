@@ -93,7 +93,7 @@ MCP server와 local operations HTTP API는 모두 운영 조회 surface지만 en
 - MCP: Codex tool 호출용 read-only interface
 - Local Operations API: dashboard와 로컬 브라우저 조회용 HTTP interface
 
-Local Operations API의 route와 method 기준은 `src/api/localOperationsSurface.ts`가 source of truth다. HTTP API도 `GET`/`HEAD`만 허용하고 `POST`/`PUT`/`PATCH`/`DELETE` 요청은 `405`로 거절한다.
+Local Operations API의 route와 method 기준은 `src/api/localOperationsSurface.ts`가 source of truth다. 조회 endpoint는 `GET`/`HEAD`만 허용한다. 예외적으로 paper simulation 생성, policy validation, strategy bucket test validation/create는 same-origin, JSON body, explicit operation header를 통과한 allowlisted `POST`만 처리한다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 계속 노출하지 않는다.
 
 ## Future Tool Policy
 
