@@ -109,6 +109,27 @@ test("renders strategy bucket test lab without mutation controls", async ({
   ).toBeVisible();
 
   await expect(
+    page.getByRole("heading", { name: "Bucket Test Config" })
+  ).toBeVisible();
+  await expect(page.locator("#test-bucket")).toHaveValue("long_term");
+  await expect(page.locator("#source-data-dir")).toHaveValue(
+    "data/replay-2023-01-2026-05-global-yahoo-daily"
+  );
+  await expect(
+    page.getByLabel("Strategy bucket test request preview")
+  ).toContainText("strategy-test-lab-long_term-seed");
+
+  await page.getByRole("button", { name: "Validate bucket config" }).click();
+  await expect(page.getByText("Strategy validation valid")).toBeVisible();
+  await expect(page.getByText("runner not started")).toBeVisible();
+  await expect(page.getByText("config-valid")).toBeVisible();
+
+  await page.locator("#start-at").fill("2024/02/31");
+  await page.getByRole("button", { name: "Validate bucket config" }).click();
+  await expect(page.getByText("Strategy validation invalid")).toBeVisible();
+  await expect(page.getByText("INVALID_WINDOW_DATE:")).toBeVisible();
+
+  await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
   ).toHaveCount(0);
   await expect(

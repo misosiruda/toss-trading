@@ -38,6 +38,8 @@ POST /paper/simulations/strategy-bucket-tests/validate
 
 `POST /paper/simulations/strategy-bucket-tests/validate`는 strategy bucket isolated test config의 validation-only endpoint입니다. 선택 bucket, policy draft, data directory, split role, date window, sampling/provider config를 backend에서 검증하지만, strategy bucket test record 생성, artifact 저장, replay runner 시작, live order surface를 수행하지 않습니다.
 
+`/dashboard/lab/strategy-tests/validate`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 validation request를 server-side로 전달할 뿐이며, strategy bucket test record 생성, artifact 저장, replay runner 시작을 수행하지 않습니다.
+
 ## 명령
 
 ```powershell
