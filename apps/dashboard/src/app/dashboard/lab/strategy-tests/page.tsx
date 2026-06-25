@@ -6,6 +6,7 @@ import {
   type StrategyBucketTestCapability,
   type StrategyBucketTestLabViewModel,
   type StrategyBucketTestResultSummary,
+  type StrategyBucketTestSummary,
   type ViewModelResult
 } from "@/lib/dashboardViewModels";
 import { StrategyBucketTestValidationForm } from "./StrategyBucketTestValidationForm";
@@ -76,9 +77,9 @@ export default async function StrategyTestsPage() {
             value="backend ViewModel"
           />
           <BoundaryCard
-            label="Replay mutation"
-            tone="blocked"
-            value="not connected"
+            label="Queued records"
+            tone="watch"
+            value="create only"
           />
           <BoundaryCard
             label="Live order"
@@ -209,7 +210,11 @@ function BucketCapabilityCard({
   );
 }
 
-function ProgressPanel({ activeTests }: { activeTests: unknown[] }) {
+function ProgressPanel({
+  activeTests
+}: {
+  activeTests: StrategyBucketTestSummary[];
+}) {
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow="active progress" title="Bucket Test Progress" />
@@ -218,6 +223,7 @@ function ProgressPanel({ activeTests }: { activeTests: unknown[] }) {
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Test</th>
+              <th className="py-2 pr-3 font-medium">Bucket</th>
               <th className="py-2 pr-3 font-medium">Phase</th>
               <th className="py-2 pr-3 font-medium">Heartbeat</th>
               <th className="py-2 font-medium">Progress</th>
@@ -226,19 +232,38 @@ function ProgressPanel({ activeTests }: { activeTests: unknown[] }) {
           <tbody>
             {activeTests.length === 0 ? (
               <tr>
-                <td className="py-4 text-[var(--muted)]" colSpan={4}>
+                <td className="py-4 text-[var(--muted)]" colSpan={5}>
                   No active bucket tests are reported by backend ViewModel.
                 </td>
               </tr>
             ) : (
-              activeTests.map((_, index) => (
-                <tr className="border-t border-[var(--border)]" key={index}>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    active-{index + 1}
+              activeTests.map((test) => (
+                <tr className="border-t border-[var(--border)]" key={test.testId}>
+                  <td className="max-w-[18rem] break-words py-2 pr-3 font-mono text-xs">
+                    {test.testId}
                   </td>
-                  <td className="py-2 pr-3">reported</td>
-                  <td className="py-2 pr-3">reported</td>
-                  <td className="py-2">reported</td>
+                  <td className="py-2 pr-3">{BUCKET_LABELS[test.bucket]}</td>
+                  <td className="py-2 pr-3">
+                    <div className="font-mono text-xs">{test.progress.phase}</div>
+                    <div className="mt-1 text-xs text-[var(--muted)]">
+                      {test.progress.latestMessage ?? "No progress message"}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    <div>{test.heartbeat.status}</div>
+                    <div className="mt-1 font-mono text-xs text-[var(--muted)]">
+                      {test.heartbeat.lastSeenAt ?? "missing"}
+                    </div>
+                  </td>
+                  <td className="py-2">
+                    <div className="font-mono text-xs">
+                      {formatNullableRatio(test.progress.progressRatio)}
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--muted)]">
+                      decisions {test.progress.decisionCount} · rejected{" "}
+                      {test.progress.riskRejectedCount}
+                    </div>
+                  </td>
                 </tr>
               ))
             )}

@@ -1111,12 +1111,29 @@ test("strategy bucket test create writes a queued record without starting a runn
     });
     const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
     const auditEvents = await readJsonlRecords(paths.auditLogPath);
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
     const record = records[0];
     const progress = record?.["progress"] as Record<string, unknown> | undefined;
     const heartbeat = record?.["heartbeat"] as
       | Record<string, unknown>
       | undefined;
     const safety = record?.["safety"] as Record<string, unknown> | undefined;
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const activeProgress = activeTests[0]?.["progress"] as
+      | Record<string, unknown>
+      | undefined;
+    const activeHeartbeat = activeTests[0]?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+    const sourceStatus = strategyTestLab.payload["sourceStatus"] as Record<
+      string,
+      unknown
+    >;
 
     assert.equal(result.response.status, 202);
     assert.equal(result.payload["mode"], "paper_only");
@@ -1156,6 +1173,18 @@ test("strategy bucket test create writes a queued record without starting a runn
       String(auditEvents[0]?.["summary"]),
       /replay runner not started/
     );
+    assert.equal(strategyTestLab.response.status, 200);
+    assert.equal(activeTests.length, 1);
+    assert.equal(activeTests[0]?.["testId"], result.payload["testId"]);
+    assert.equal(activeTests[0]?.["bucket"], "long_term");
+    assert.equal(activeTests[0]?.["status"], "queued");
+    assert.equal(activeTests[0]?.["runId"], null);
+    assert.equal(activeTests[0]?.["configHash"], result.payload["configHash"]);
+    assert.equal(activeProgress?.["phase"], "queued");
+    assert.equal(activeProgress?.["decisionCount"], 0);
+    assert.equal(activeProgress?.["riskRejectedCount"], 0);
+    assert.equal(activeHeartbeat?.["status"], "fresh");
+    assert.equal(sourceStatus["strategyBucketTestRecords"], "ok");
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);

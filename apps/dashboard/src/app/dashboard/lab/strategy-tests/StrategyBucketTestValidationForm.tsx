@@ -61,6 +61,21 @@ interface StrategyBucketTestValidationResponse {
   validatedAt: string;
 }
 
+interface StrategyBucketTestCreateResponse {
+  mode: "paper_only";
+  mutation: "strategy_bucket_test_create";
+  status: "queued";
+  testId: string;
+  bucket: StrategyBucket;
+  configHash: string;
+  recordPath: string;
+  storageMutationEnabled: true;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  replayRunnerStarted: false;
+  disclaimer: string;
+}
+
 type BackendValidationState =
   | { status: "idle" }
   | { status: "pending"; requestJson: string }
@@ -68,6 +83,16 @@ type BackendValidationState =
       status: "ready";
       requestJson: string;
       response: StrategyBucketTestValidationResponse;
+    }
+  | { status: "error"; requestJson: string; message: string };
+
+type CreateState =
+  | { status: "idle" }
+  | { status: "pending"; requestJson: string }
+  | {
+      status: "queued";
+      requestJson: string;
+      response: StrategyBucketTestCreateResponse;
     }
   | { status: "error"; requestJson: string; message: string };
 
@@ -91,6 +116,9 @@ export function StrategyBucketTestValidationForm() {
   const [initialCashKrw, setInitialCashKrw] = useState(10_000_000);
   const [backendValidation, setBackendValidation] =
     useState<BackendValidationState>({ status: "idle" });
+  const [createState, setCreateState] = useState<CreateState>({
+    status: "idle"
+  });
 
   const policyDraft = useMemo(() => createDefaultPolicyDraft(), []);
   const policyValidation = useMemo(
@@ -107,7 +135,7 @@ export function StrategyBucketTestValidationForm() {
   const requestPreview = useMemo(
     () => ({
       mode: "paper_only",
-      requestId: `strategy-test-lab-${bucket}-validation`,
+      requestId: `strategy-test-lab-${bucket}-candidate`,
       bucket,
       policy: policyPreview,
       testConfig: {
@@ -167,6 +195,13 @@ export function StrategyBucketTestValidationForm() {
     backendValidation,
     requestJson
   );
+  const visibleCreateState = currentCreateState(createState, requestJson);
+  const canCreateQueuedRecord =
+    visibleBackendValidation.status === "ready" &&
+    visibleBackendValidation.response.status === "valid" &&
+    visibleBackendValidation.response.validatedForStrategyBucketTestConfig &&
+    visibleCreateState.status !== "pending" &&
+    visibleCreateState.status !== "queued";
 
   async function validateWithBackend() {
     const currentRequestJson = requestJson;
@@ -174,6 +209,7 @@ export function StrategyBucketTestValidationForm() {
       status: "pending",
       requestJson: currentRequestJson
     });
+    setCreateState({ status: "idle" });
 
     try {
       const response = await fetch("/dashboard/lab/strategy-tests/validate", {
@@ -216,6 +252,63 @@ export function StrategyBucketTestValidationForm() {
                 error instanceof Error
                   ? error.message
                   : "Strategy bucket validation request failed"
+            }
+          : current
+      );
+    }
+  }
+
+  async function createQueuedRecord() {
+    const currentRequestJson = requestJson;
+    if (!canCreateQueuedRecord) {
+      return;
+    }
+    setCreateState({
+      status: "pending",
+      requestJson: currentRequestJson
+    });
+
+    try {
+      const response = await fetch("/dashboard/lab/strategy-tests/create", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: currentRequestJson
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isStrategyBucketTestCreateResponse(payload)) {
+        setCreateState((current) =>
+          isPendingCreate(current, currentRequestJson)
+            ? {
+                status: "error",
+                requestJson: currentRequestJson,
+                message: readErrorMessage(payload, response.status)
+              }
+            : current
+        );
+        return;
+      }
+
+      setCreateState((current) =>
+        isPendingCreate(current, currentRequestJson)
+          ? {
+              status: "queued",
+              requestJson: currentRequestJson,
+              response: payload
+            }
+          : current
+      );
+    } catch (error) {
+      setCreateState((current) =>
+        isPendingCreate(current, currentRequestJson)
+          ? {
+              status: "error",
+              requestJson: currentRequestJson,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Strategy bucket test create request failed"
             }
           : current
       );
@@ -417,6 +510,18 @@ export function StrategyBucketTestValidationForm() {
                 : "Validate bucket config"}
             </button>
             <button
+              className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canCreateQueuedRecord}
+              onClick={() => void createQueuedRecord()}
+              type="button"
+            >
+              {visibleCreateState.status === "pending"
+                ? "Queueing record"
+                : visibleCreateState.status === "queued"
+                  ? "Queued record created"
+                : "Queue bucket test record"}
+            </button>
+            <button
               className="rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm font-semibold"
               onClick={() => {
                 setBucket("long_term");
@@ -434,6 +539,7 @@ export function StrategyBucketTestValidationForm() {
                 setMaxCodexCallsPerRun(0);
                 setInitialCashKrw(10_000_000);
                 setBackendValidation({ status: "idle" });
+                setCreateState({ status: "idle" });
               }}
               type="button"
             >
@@ -442,6 +548,10 @@ export function StrategyBucketTestValidationForm() {
           </div>
 
           <BackendValidationPanel state={visibleBackendValidation} />
+          <CreateResultPanel
+            canCreateQueuedRecord={canCreateQueuedRecord}
+            state={visibleCreateState}
+          />
         </div>
 
         <aside className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3">
@@ -556,6 +666,79 @@ function BackendValidationPanel({ state }: { state: BackendValidationState }) {
   );
 }
 
+function CreateResultPanel({
+  canCreateQueuedRecord,
+  state
+}: {
+  canCreateQueuedRecord: boolean;
+  state: CreateState;
+}) {
+  if (state.status === "idle") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        {canCreateQueuedRecord
+          ? "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+          : "Queued test record not created. Run backend validation first."}
+      </p>
+    );
+  }
+
+  if (state.status === "pending") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Creating queued record. Replay runner remains disabled.
+      </p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3 text-sm leading-5 text-[var(--danger)]"
+      >
+        Strategy bucket test record was not queued. {state.message}
+      </p>
+    );
+  }
+
+  const result = state.response;
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-semibold">Strategy bucket test queued</p>
+          <p className="mt-1 font-mono text-xs">
+            {result.testId} · runner not started
+          </p>
+        </div>
+        <StatusBadge tone="ok" value="storage mutation enabled" />
+      </div>
+      <dl className="mt-3 grid gap-2 md:grid-cols-3">
+        <Metric label="Bucket" value={result.bucket} />
+        <Metric label="Status" value={result.status} />
+        <Metric
+          label="Config"
+          value={result.configHash.slice(0, 19)}
+        />
+      </dl>
+      <p className="mt-3 text-xs leading-5">
+        live orders disabled · order placement disabled · replay runner not
+        started
+      </p>
+    </div>
+  );
+}
+
 function NumberField({
   id,
   label,
@@ -634,10 +817,30 @@ function currentBackendValidation(
   return state;
 }
 
+function currentCreateState(
+  state: CreateState,
+  requestJson: string
+): CreateState {
+  if (state.status === "idle") {
+    return state;
+  }
+  if (state.requestJson !== requestJson) {
+    return { status: "idle" };
+  }
+  return state;
+}
+
 function isPendingBackendValidation(
   state: BackendValidationState,
   requestJson: string
 ): state is Extract<BackendValidationState, { status: "pending" }> {
+  return state.status === "pending" && state.requestJson === requestJson;
+}
+
+function isPendingCreate(
+  state: CreateState,
+  requestJson: string
+): state is Extract<CreateState, { status: "pending" }> {
   return state.status === "pending" && state.requestJson === requestJson;
 }
 
@@ -665,6 +868,38 @@ function isStrategyBucketTestValidationResponse(
     Array.isArray(value["issues"]) &&
     isRecord(value["summary"]) &&
     typeof value["validatedAt"] === "string"
+  );
+}
+
+function isStrategyBucketTestCreateResponse(
+  value: unknown
+): value is StrategyBucketTestCreateResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    value["mode"] === "paper_only" &&
+    value["mutation"] === "strategy_bucket_test_create" &&
+    value["status"] === "queued" &&
+    typeof value["testId"] === "string" &&
+    isStrategyBucket(value["bucket"]) &&
+    typeof value["configHash"] === "string" &&
+    typeof value["recordPath"] === "string" &&
+    value["storageMutationEnabled"] === true &&
+    value["liveTradingEnabled"] === false &&
+    value["orderPlacementEnabled"] === false &&
+    value["replayRunnerStarted"] === false &&
+    typeof value["disclaimer"] === "string"
+  );
+}
+
+function isStrategyBucket(value: unknown): value is StrategyBucket {
+  return (
+    value === "long_term" ||
+    value === "swing" ||
+    value === "short_term" ||
+    value === "intraday" ||
+    value === "hedge"
   );
 }
 

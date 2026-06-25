@@ -91,7 +91,7 @@ export interface StrategyBucketTestLabViewModel {
   policyId: string;
   policyStatus: "missing";
   supportedBuckets: StrategyBucketTestCapability[];
-  activeTests: unknown[];
+  activeTests: StrategyBucketTestSummary[];
   recentResults: StrategyBucketTestResultSummary[];
   comparison: StrategyBucketComparisonView;
   sourceStatus: Record<string, JsonReadStatus>;
@@ -117,6 +117,46 @@ export interface StrategyBucketTestResultSummary {
   riskRejectRate: number | null;
   providerFailureRate: number | null;
   warnings: string[];
+}
+
+export interface StrategyBucketTestSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  startedAt: string | null;
+  completedAt: string | null;
+  runId: string | null;
+  configHash: string;
+  progress: {
+    phase:
+      | "queued"
+      | "loading_data"
+      | "building_packets"
+      | "calling_provider"
+      | "risk_gate"
+      | "simulating_execution"
+      | "writing_artifacts"
+      | "aggregating_report"
+      | "completed"
+      | "failed"
+      | "cancelled";
+    progressRatio: number | null;
+    completedPacketCount: number;
+    totalPacketCount: number | null;
+    decisionCount: number;
+    riskApprovedCount: number;
+    riskRejectedCount: number;
+    simulatedTradeCount: number;
+    providerFailureCount: number;
+    latestMessage: string | null;
+    latestAuditEventRef: string | null;
+    updatedAt: string;
+  };
+  heartbeat: {
+    status: "fresh" | "stale" | "missing";
+    lastSeenAt: string | null;
+    staleAfterSeconds: number;
+  };
 }
 
 export interface StrategyBucketComparisonView {
@@ -409,6 +449,7 @@ function isStrategyBucketTestLabViewModel(
     Array.isArray(value.supportedBuckets) &&
     value.supportedBuckets.every(isStrategyBucketCapability) &&
     Array.isArray(value.activeTests) &&
+    value.activeTests.every(isStrategyBucketTestSummary) &&
     Array.isArray(value.recentResults) &&
     value.recentResults.every(isStrategyBucketResultSummary) &&
     isStrategyComparison(value.comparison) &&
@@ -570,6 +611,56 @@ function isStrategyBucketResultSummary(
   );
 }
 
+function isStrategyBucketTestSummary(
+  value: unknown
+): value is StrategyBucketTestSummary {
+  return (
+    isRecord(value) &&
+    typeof value["testId"] === "string" &&
+    isStrategyBucket(value["bucket"]) &&
+    isStrategyBucketTestStatus(value["status"]) &&
+    isNullableString(value["startedAt"]) &&
+    isNullableString(value["completedAt"]) &&
+    isNullableString(value["runId"]) &&
+    typeof value["configHash"] === "string" &&
+    isStrategyBucketTestProgress(value["progress"]) &&
+    isStrategyBucketTestHeartbeat(value["heartbeat"])
+  );
+}
+
+function isStrategyBucketTestProgress(
+  value: unknown
+): value is StrategyBucketTestSummary["progress"] {
+  return (
+    isRecord(value) &&
+    isStrategyBucketTestPhase(value["phase"]) &&
+    isNullableNumber(value["progressRatio"]) &&
+    isNumber(value["completedPacketCount"]) &&
+    isNullableNumber(value["totalPacketCount"]) &&
+    isNumber(value["decisionCount"]) &&
+    isNumber(value["riskApprovedCount"]) &&
+    isNumber(value["riskRejectedCount"]) &&
+    isNumber(value["simulatedTradeCount"]) &&
+    isNumber(value["providerFailureCount"]) &&
+    isNullableString(value["latestMessage"]) &&
+    isNullableString(value["latestAuditEventRef"]) &&
+    typeof value["updatedAt"] === "string"
+  );
+}
+
+function isStrategyBucketTestHeartbeat(
+  value: unknown
+): value is StrategyBucketTestSummary["heartbeat"] {
+  return (
+    isRecord(value) &&
+    (value["status"] === "fresh" ||
+      value["status"] === "stale" ||
+      value["status"] === "missing") &&
+    isNullableString(value["lastSeenAt"]) &&
+    isNumber(value["staleAfterSeconds"])
+  );
+}
+
 function isStrategyComparison(
   value: unknown
 ): value is StrategyBucketTestLabViewModel["comparison"] {
@@ -656,6 +747,36 @@ function isStrategyBucket(value: unknown): value is StrategyBucket {
     value === "short_term" ||
     value === "intraday" ||
     value === "hedge"
+  );
+}
+
+function isStrategyBucketTestStatus(
+  value: unknown
+): value is StrategyBucketTestSummary["status"] {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function isStrategyBucketTestPhase(
+  value: unknown
+): value is StrategyBucketTestSummary["progress"]["phase"] {
+  return (
+    value === "queued" ||
+    value === "loading_data" ||
+    value === "building_packets" ||
+    value === "calling_provider" ||
+    value === "risk_gate" ||
+    value === "simulating_execution" ||
+    value === "writing_artifacts" ||
+    value === "aggregating_report" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
   );
 }
 

@@ -251,7 +251,7 @@ GET /audit/events
 
 Dashboard의 `/dashboard/virtual/validation` 화면은 같은 payload를 연구 리포트 패널로 렌더링한다. 이 패널은 저장된 artifact 조회와 요약 표시만 수행하며 replay 실행, Codex CLI 실행, TossInvest collection, live order를 trigger하지 않는다.
 
-조회 endpoint는 `GET`/`HEAD`만 허용한다. Guarded `POST` 예외는 `/paper/simulations`, `/paper/policies/validate`, `/paper/simulations/strategy-bucket-tests/validate`, `/paper/simulations/strategy-bucket-tests`처럼 `src/api/localOperationsSurface.ts`에 명시된 route만 허용하며 same-origin, JSON body, explicit operation header를 요구한다. Strategy bucket test create는 queued record와 audit event만 저장하고 replay runner는 시작하지 않는다. Dashboard는 Codex CLI 실행, TossInvest collection, live order를 trigger하지 않는다.
+조회 endpoint는 `GET`/`HEAD`만 허용한다. Guarded `POST` 예외는 `/paper/simulations`, `/paper/policies/validate`, `/paper/simulations/strategy-bucket-tests/validate`, `/paper/simulations/strategy-bucket-tests`처럼 `src/api/localOperationsSurface.ts`에 명시된 route만 허용하며 same-origin, JSON body, explicit operation header를 요구한다. Strategy bucket test create와 Next.js `/dashboard/lab/strategy-tests/create` proxy는 queued record와 audit event만 저장하고 replay runner는 시작하지 않는다. Dashboard는 Codex CLI 실행, TossInvest collection, live order를 trigger하지 않는다.
 
 ## 실행 후 검토
 

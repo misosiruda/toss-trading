@@ -62,7 +62,7 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expectNoAxeViolations(page);
 });
 
-test("renders strategy bucket test lab without mutation controls", async ({
+test("renders strategy bucket test lab with queued create boundary", async ({
   page,
 }) => {
   await page.goto("/dashboard/lab/strategy-tests");
@@ -72,7 +72,7 @@ test("renders strategy bucket test lab without mutation controls", async ({
   ).toBeVisible();
   await expect(page.getByText("Strategy Lab")).toBeVisible();
   await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
-  await expect(page.getByText("not connected")).toBeVisible();
+  await expect(page.getByText("create only")).toBeVisible();
   await expect(page.getByText("not exposed")).toBeVisible();
 
   await expect(
@@ -85,15 +85,12 @@ test("renders strategy bucket test lab without mutation controls", async ({
   await expect(page.getByRole("heading", { name: "Hedge" })).toBeVisible();
   await expect(
     page.getByText(
-      "paper-only isolated strategy bucket replay mutation is not implemented yet"
+      "paper-only queued record creation is available; replay runner is not connected yet"
     )
   ).toHaveCount(5);
 
   await expect(
     page.getByRole("heading", { name: "Bucket Test Progress" })
-  ).toBeVisible();
-  await expect(
-    page.getByText("No active bucket tests are reported by backend ViewModel.")
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Bucket Result Matrix" })
@@ -118,16 +115,35 @@ test("renders strategy bucket test lab without mutation controls", async ({
   await expect(
     page.getByLabel("Strategy bucket test request preview")
   ).toContainText("strategy-test-lab-long_term-seed");
+  await expect(
+    page.getByRole("button", { name: "Queue bucket test record" })
+  ).toBeDisabled();
 
   await page.getByRole("button", { name: "Validate bucket config" }).click();
   await expect(page.getByText("Strategy validation valid")).toBeVisible();
-  await expect(page.getByText("runner not started")).toBeVisible();
+  await expect(
+    page.getByText(/config sha256:[a-f0-9]{12}.*runner not started/)
+  ).toBeVisible();
   await expect(page.getByText("config-valid")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+    )
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Queue bucket test record" }).click();
+  await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
+  await expect(page.getByText("storage mutation enabled")).toBeVisible();
+  await expect(page.getByText("live orders disabled")).toBeVisible();
+  await expect(page.getByText("order placement disabled")).toBeVisible();
 
   await page.locator("#start-at").fill("2024/02/31");
   await page.getByRole("button", { name: "Validate bucket config" }).click();
   await expect(page.getByText("Strategy validation invalid")).toBeVisible();
   await expect(page.getByText("INVALID_WINDOW_DATE:")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Queue bucket test record" })
+  ).toBeDisabled();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
