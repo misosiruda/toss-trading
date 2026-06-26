@@ -802,6 +802,15 @@ npm run check
 - 이 단계는 guarded paper simulation create까지 연결하지만, policy artifact persistence, policy별 replay report 연결, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
 - live order, live `OrderIntent`, broker mutation, raw command 실행 surface를 추가하지 않는다.
 
+네 번째 구현 단위:
+
+- Local Operations API에 `POST /paper/policies` guarded create endpoint를 둔다.
+- endpoint는 `POST /paper/policies/validate`와 같은 `PortfolioPolicy` candidate schema를 사용하고, backend validation을 통과한 draft만 append-only policy artifact와 audit event로 저장한다.
+- Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 `POST /paper/policies`를 server-side proxy로 전달한다.
+- proxy는 dashboard intent header, dashboard mutation token, positive same-origin request metadata, `application/json` content type을 요구한다.
+- 이 단계는 policy artifact persistence만 구현하고, replay runner의 policy artifact 적용, policy별 replay report 연결, DB schema migration은 후속 PR 범위로 둔다.
+- live order, live `OrderIntent`, broker mutation, raw command 실행 surface를 추가하지 않는다.
+
 ### N5. Strategy Bucket Test Lab
 
 범위:

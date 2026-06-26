@@ -31,6 +31,7 @@ const DEFAULT_SIMULATION_SOURCE_DATA_DIR =
   "data/replay-2023-01-2026-05-global-yahoo-daily";
 const DEFAULT_SIMULATION_MODEL_ID = "gpt-5.3-codex-spark";
 const DASHBOARD_INTENT_HEADER_NAME = "x-toss-trading-dashboard-intent";
+const PAPER_POLICY_CREATE_INTENT = "paper-policy-create";
 const PAPER_SIMULATION_CREATE_INTENT = "paper-simulation-create";
 const DASHBOARD_MUTATION_TOKEN_HEADER_NAME =
   "x-toss-trading-dashboard-mutation-token";
@@ -63,6 +64,32 @@ type BackendValidationState =
       status: "ready";
       previewJson: string;
       response: BackendPolicyValidationResponse;
+    }
+  | { status: "error"; previewJson: string; message: string };
+
+interface PaperPolicyCreateResponse {
+  mode: "paper_only";
+  mutation: "paper_policy_create";
+  status: "stored";
+  policyRecordId: string;
+  policyId: string;
+  version: string;
+  policyHash: string;
+  recordPath: string;
+  storageMutationEnabled: true;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  replayRunnerStarted: false;
+  disclaimer: string;
+}
+
+type PaperPolicyCreateState =
+  | { status: "idle" }
+  | { status: "pending"; previewJson: string }
+  | {
+      status: "ready";
+      previewJson: string;
+      response: PaperPolicyCreateResponse;
     }
   | { status: "error"; previewJson: string; message: string };
 
@@ -140,6 +167,8 @@ export function PolicyBuilderForm() {
   );
   const [simulationRunCount, setSimulationRunCount] = useState(1);
   const [mutationToken, setMutationToken] = useState("");
+  const [paperPolicyCreate, setPaperPolicyCreate] =
+    useState<PaperPolicyCreateState>({ status: "idle" });
   const [paperSimulationCreate, setPaperSimulationCreate] =
     useState<PaperSimulationCreateState>({ status: "idle" });
   const validation = useMemo(() => validatePolicyDraft(draft), [draft]);
@@ -152,6 +181,15 @@ export function PolicyBuilderForm() {
     backendValidation,
     previewJson
   );
+  const visiblePaperPolicyCreate = currentPaperPolicyCreate(
+    paperPolicyCreate,
+    previewJson
+  );
+  const paperPolicyCreateDisabledReason = readPaperPolicyCreateDisabledReason({
+    backendValidation: visibleBackendValidation,
+    createState: visiblePaperPolicyCreate,
+    mutationToken
+  });
   const paperSimulationConfig = useMemo(
     () =>
       buildPaperSimulationConfig(
@@ -224,6 +262,65 @@ export function PolicyBuilderForm() {
                 error instanceof Error
                   ? error.message
                   : "Backend validation request failed"
+            }
+          : current
+      );
+    }
+  }
+
+  async function createPaperPolicyArtifact() {
+    if (paperPolicyCreateDisabledReason !== null) {
+      return;
+    }
+
+    const requestPreviewJson = previewJson;
+    setPaperPolicyCreate({
+      status: "pending",
+      previewJson: requestPreviewJson
+    });
+
+    try {
+      const response = await fetch("/dashboard/lab/policies/create", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [DASHBOARD_INTENT_HEADER_NAME]: PAPER_POLICY_CREATE_INTENT,
+          [DASHBOARD_MUTATION_TOKEN_HEADER_NAME]: mutationToken.trim()
+        },
+        body: requestPreviewJson
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isPaperPolicyCreateResponse(payload)) {
+        setPaperPolicyCreate((current) =>
+          isPendingPaperPolicyCreate(current, requestPreviewJson)
+            ? {
+                status: "error",
+                previewJson: requestPreviewJson,
+                message: readErrorMessage(payload, response.status)
+              }
+            : current
+        );
+        return;
+      }
+      setPaperPolicyCreate((current) =>
+        isPendingPaperPolicyCreate(current, requestPreviewJson)
+          ? {
+              status: "ready",
+              previewJson: requestPreviewJson,
+              response: payload
+            }
+          : current
+      );
+    } catch (error) {
+      setPaperPolicyCreate((current) =>
+        isPendingPaperPolicyCreate(current, requestPreviewJson)
+          ? {
+              status: "error",
+              previewJson: requestPreviewJson,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Paper policy create request failed"
             }
           : current
       );
@@ -537,6 +634,7 @@ export function PolicyBuilderForm() {
                 setDraft(createDefaultPolicyDraft());
                 setValidationRunCount(0);
                 setBackendValidation({ status: "idle" });
+                setPaperPolicyCreate({ status: "idle" });
                 setPaperSimulationCreate({ status: "idle" });
                 setSimulationSourceDataDir(DEFAULT_SIMULATION_SOURCE_DATA_DIR);
                 setSimulationRunCount(1);
@@ -590,6 +688,14 @@ export function PolicyBuilderForm() {
           <BackendValidationPanel state={visibleBackendValidation} />
         </section>
 
+        <PaperPolicyCreatePanel
+          createState={visiblePaperPolicyCreate}
+          disabledReason={paperPolicyCreateDisabledReason}
+          mutationToken={mutationToken}
+          onCreate={() => void createPaperPolicyArtifact()}
+          onMutationTokenChange={setMutationToken}
+        />
+
         <PaperSimulationCreatePanel
           config={paperSimulationConfig}
           createState={visiblePaperSimulationCreate}
@@ -622,6 +728,140 @@ export function PolicyBuilderForm() {
           </pre>
         </section>
       </aside>
+    </div>
+  );
+}
+
+function PaperPolicyCreatePanel({
+  createState,
+  disabledReason,
+  mutationToken,
+  onCreate,
+  onMutationTokenChange
+}: {
+  createState: PaperPolicyCreateState;
+  disabledReason: string | null;
+  mutationToken: string;
+  onCreate: () => void;
+  onMutationTokenChange: (value: string) => void;
+}) {
+  const canCreate = disabledReason === null;
+
+  return (
+    <section
+      aria-label="Paper policy artifact create"
+      className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs text-[var(--muted)]">
+            POST /paper/policies
+          </p>
+          <h2 className="mt-1 text-base font-semibold">
+            Policy Artifact Save
+          </h2>
+        </div>
+        <StatusBadge tone={canCreate ? "ok" : "blocked"} value="guarded" />
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        <label
+          className="grid gap-2 text-sm"
+          htmlFor="paper-policy-mutation-token"
+        >
+          Mutation token
+          <input
+            autoComplete="off"
+            className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+            id="paper-policy-mutation-token"
+            onChange={(event) => onMutationTokenChange(event.target.value)}
+            type="password"
+            value={mutationToken}
+          />
+        </label>
+
+        {disabledReason === null ? (
+          <p
+            aria-live="polite"
+            className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+          >
+            Backend validation passed. The current policy draft can be stored as
+            an append-only paper artifact.
+          </p>
+        ) : (
+          <p
+            aria-live="polite"
+            className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+          >
+            {disabledReason}
+          </p>
+        )}
+
+        <button
+          className="rounded-[6px] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!canCreate}
+          onClick={onCreate}
+          type="button"
+        >
+          {createState.status === "pending"
+            ? "Saving policy artifact"
+            : "Save policy artifact"}
+        </button>
+
+        <PaperPolicyCreateStatus state={createState} />
+      </div>
+    </section>
+  );
+}
+
+function PaperPolicyCreateStatus({
+  state
+}: {
+  state: PaperPolicyCreateState;
+}) {
+  if (state.status === "idle") {
+    return null;
+  }
+
+  if (state.status === "pending") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Paper policy artifact save request pending.
+      </p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3 text-sm leading-5 text-[var(--danger)]"
+      >
+        Paper policy artifact save failed. {state.message}
+      </p>
+    );
+  }
+
+  const response = state.response;
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+    >
+      <p className="font-semibold">Paper policy artifact stored</p>
+      <p
+        className="mt-1 font-mono text-xs"
+        data-testid="paper-policy-created-record-id"
+      >
+        {response.policyRecordId} · {response.policyHash.slice(0, 12)}
+      </p>
+      <p className="mt-1 font-mono text-xs">
+        storage mutation enabled · replay runner not started · live orders
+        disabled
+      </p>
     </div>
   );
 }
@@ -1118,6 +1358,41 @@ function policyHashSeed(policyHash: string): string {
   return `policy-${seedSuffix || "validated"}`;
 }
 
+function readPaperPolicyCreateDisabledReason({
+  backendValidation,
+  createState,
+  mutationToken
+}: {
+  backendValidation: BackendValidationState;
+  createState: PaperPolicyCreateState;
+  mutationToken: string;
+}): string | null {
+  if (createState.status === "pending") {
+    return "Paper policy artifact save request is pending.";
+  }
+
+  if (backendValidation.status === "pending") {
+    return "Backend validation is pending.";
+  }
+
+  if (backendValidation.status !== "ready") {
+    return "Backend validation is required before policy artifact save.";
+  }
+
+  if (
+    backendValidation.response.status !== "valid" ||
+    !backendValidation.response.validatedForPaperSimulationConfig
+  ) {
+    return "Backend validation must pass before policy artifact save.";
+  }
+
+  if (mutationToken.trim() === "") {
+    return "Dashboard mutation token is required.";
+  }
+
+  return null;
+}
+
 function readPaperSimulationDisabledReason({
   backendValidation,
   config,
@@ -1197,6 +1472,27 @@ function isBackendPolicyValidationIssue(
   );
 }
 
+function isPaperPolicyCreateResponse(
+  value: unknown
+): value is PaperPolicyCreateResponse {
+  return (
+    isRecord(value) &&
+    value["mode"] === "paper_only" &&
+    value["mutation"] === "paper_policy_create" &&
+    value["status"] === "stored" &&
+    typeof value["policyRecordId"] === "string" &&
+    typeof value["policyId"] === "string" &&
+    typeof value["version"] === "string" &&
+    typeof value["policyHash"] === "string" &&
+    typeof value["recordPath"] === "string" &&
+    value["storageMutationEnabled"] === true &&
+    value["liveTradingEnabled"] === false &&
+    value["orderPlacementEnabled"] === false &&
+    value["replayRunnerStarted"] === false &&
+    typeof value["disclaimer"] === "string"
+  );
+}
+
 function isPaperSimulationCreateResponse(
   value: unknown
 ): value is PaperSimulationCreateResponse {
@@ -1240,6 +1536,23 @@ function isPendingBackendValidation(
   state: BackendValidationState,
   previewJson: string
 ): state is Extract<BackendValidationState, { status: "pending" }> {
+  return state.status === "pending" && state.previewJson === previewJson;
+}
+
+function currentPaperPolicyCreate(
+  state: PaperPolicyCreateState,
+  previewJson: string
+): PaperPolicyCreateState {
+  if (state.status === "idle") {
+    return state;
+  }
+  return state.previewJson === previewJson ? state : { status: "idle" };
+}
+
+function isPendingPaperPolicyCreate(
+  state: PaperPolicyCreateState,
+  previewJson: string
+): state is Extract<PaperPolicyCreateState, { status: "pending" }> {
   return state.status === "pending" && state.previewJson === previewJson;
 }
 

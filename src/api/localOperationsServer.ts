@@ -14,6 +14,8 @@ import { routeRequest } from "./localOperationsRouting.js";
 import {
   isPaperPolicyValidationApiRoutePath,
   isPaperPolicyValidationMethod,
+  isPaperPolicyMutationApiRoutePath,
+  isPaperPolicyMutationMethod,
   isPaperSimulationMutationApiRoutePath,
   isPaperSimulationMutationMethod,
   isReadOnlyHttpMethod,
@@ -28,6 +30,12 @@ import {
   PaperPolicyValidationRequestError,
   validatePaperPolicyCandidate
 } from "./paperPolicyValidation.js";
+import {
+  PAPER_POLICY_CREATE_HEADER_NAME,
+  PAPER_POLICY_CREATE_OPERATION,
+  PaperPolicyCreateRequestError,
+  createPaperPolicyRecord
+} from "./paperPolicyRecords.js";
 import {
   createPaperSimulationRun,
   PAPER_SIMULATION_CREATE_OPERATION,
@@ -100,6 +108,13 @@ async function handleRequest(
       return;
     }
     if (
+      isPaperPolicyMutationApiRoutePath(url.pathname) &&
+      isPaperPolicyMutationMethod(request.method)
+    ) {
+      await handlePaperPolicyCreate(request, response, options);
+      return;
+    }
+    if (
       isStrategyBucketTestValidationApiRoutePath(url.pathname) &&
       isStrategyBucketTestValidationMethod(request.method)
     ) {
@@ -149,6 +164,87 @@ async function handleRequest(
       readOnly: true
     });
   }
+}
+
+async function handlePaperPolicyCreate(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: LocalOperationsServerOptions
+): Promise<void> {
+  const guard = validatePaperPolicyCreateGuard(request);
+  if (guard !== null) {
+    writeJson(response, guard.statusCode, {
+      error: guard.code,
+      message: guard.message,
+      readOnly: false,
+      storageMutationEnabled: false,
+      liveTradingEnabled: false,
+      orderPlacementEnabled: false,
+      replayRunnerStarted: false
+    });
+    return;
+  }
+
+  try {
+    const body = await readJsonBody(request, {
+      operationName: "paper policy create",
+      maxBytes: 32_768,
+      createError: (message, statusCode, code) =>
+        new PaperPolicyCreateRequestError(message, statusCode, code)
+    });
+    const payload = await createPaperPolicyRecord(body, options);
+    writeJson(response, 202, payload);
+  } catch (error) {
+    if (error instanceof PaperPolicyCreateRequestError) {
+      writeJson(response, error.statusCode, {
+        error: error.code,
+        message: error.message,
+        ...(error.issues === undefined ? {} : { issues: error.issues }),
+        readOnly: false,
+        storageMutationEnabled: false,
+        liveTradingEnabled: false,
+        orderPlacementEnabled: false,
+        replayRunnerStarted: false
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function validatePaperPolicyCreateGuard(
+  request: IncomingMessage
+): { statusCode: number; code: string; message: string } | null {
+  if (
+    request.headers[PAPER_POLICY_CREATE_HEADER_NAME] !==
+    PAPER_POLICY_CREATE_OPERATION
+  ) {
+    return {
+      statusCode: 403,
+      code: "mutation_guard_required",
+      message: "paper policy create requires an explicit operation header"
+    };
+  }
+
+  const contentType = request.headers["content-type"] ?? "";
+  if (!String(contentType).toLowerCase().includes("application/json")) {
+    return {
+      statusCode: 415,
+      code: "unsupported_media_type",
+      message: "paper policy create accepts application/json only"
+    };
+  }
+
+  if (!isSameOriginRequest(request)) {
+    return {
+      statusCode: 403,
+      code: "origin_not_allowed",
+      message: "paper policy create is limited to same-origin dashboard requests"
+    };
+  }
+
+  return null;
 }
 
 async function handleStrategyBucketTestCreate(

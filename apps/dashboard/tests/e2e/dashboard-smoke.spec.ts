@@ -381,7 +381,7 @@ test("renders paper policy builder draft validation without live mutation contro
     page.getByRole("heading", { name: "Paper Policy Builder" })
   ).toBeVisible();
   await expect(page.getByText("paper-only draft")).toBeVisible();
-  await expect(page.getByText("not stored", { exact: true })).toBeVisible();
+  await expect(page.getByText("guarded save", { exact: true })).toBeVisible();
   await expect(page.getByText("required", { exact: true })).toBeVisible();
   await expect(page.getByText("guarded create", { exact: true })).toBeVisible();
   await expect(page.getByText("disabled")).toBeVisible();
@@ -399,6 +399,12 @@ test("renders paper policy builder draft validation without live mutation contro
     page.getByRole("heading", { name: "Paper Simulation Create" })
   ).toBeVisible();
   await expect(
+    page.getByRole("heading", { name: "Policy Artifact Save" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save policy artifact" })
+  ).toBeDisabled();
+  await expect(
     page.getByLabel("Policy paper simulation config preview")
   ).toContainText("Backend validation is required");
   await expect(
@@ -413,6 +419,87 @@ test("renders paper policy builder draft validation without live mutation contro
   await expect(
     page.getByLabel("Policy paper simulation config preview")
   ).toContainText('"seed": "policy-');
+  const policyPreviewText = await page
+    .getByLabel("PortfolioPolicy preview")
+    .textContent();
+  expect(policyPreviewText).toBeTruthy();
+  const createPolicyBody = JSON.parse(policyPreviewText ?? "{}") as Record<
+    string,
+    unknown
+  >;
+  const missingPolicyIntentCreate = await request.post(
+    "/dashboard/lab/policies/create",
+    {
+      data: createPolicyBody
+    }
+  );
+  expect(missingPolicyIntentCreate.status()).toBe(403);
+  expect(await missingPolicyIntentCreate.json()).toMatchObject({
+    error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const invalidPolicyMutationTokenCreate = await request.post(
+    "/dashboard/lab/policies/create",
+    {
+      data: createPolicyBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": "wrong-token",
+        "x-toss-trading-dashboard-intent": "paper-policy-create"
+      }
+    }
+  );
+  expect(invalidPolicyMutationTokenCreate.status()).toBe(403);
+  expect(await invalidPolicyMutationTokenCreate.json()).toMatchObject({
+    error: "mutation_token_invalid",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const nonJsonPolicyCreate = await request.post(
+    "/dashboard/lab/policies/create",
+    {
+      data: JSON.stringify(createPolicyBody),
+      headers: {
+        "content-type": "text/plain",
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-policy-create"
+      }
+    }
+  );
+  expect(nonJsonPolicyCreate.status()).toBe(415);
+  expect(await nonJsonPolicyCreate.json()).toMatchObject({
+    error: "unsupported_media_type",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const missingPolicyMetadataCreate = await request.post(
+    "/dashboard/lab/policies/create",
+    {
+      data: createPolicyBody,
+      headers: {
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-policy-create"
+      }
+    }
+  );
+  expect(missingPolicyMetadataCreate.status()).toBe(403);
+  expect(await missingPolicyMetadataCreate.json()).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
   const simulationPreviewText = await page
     .getByLabel("Policy paper simulation config preview")
     .textContent();
@@ -551,12 +638,24 @@ test("renders paper policy builder draft validation without live mutation contro
     liveTradingEnabled: false,
     orderPlacementEnabled: false
   });
-  await page.locator("#paper-simulation-mutation-token").fill(
+  await page.locator("#paper-policy-mutation-token").fill(
     DASHBOARD_MUTATION_TOKEN
   );
   await expect(
+    page.getByRole("button", { name: "Save policy artifact" })
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Save policy artifact" }).click();
+  await expect(page.getByText("Paper policy artifact stored")).toBeVisible();
+  await expect(page.getByTestId("paper-policy-created-record-id")).toContainText(
+    /^portfolio_policy_/
+  );
+  await expect(page.getByText("replay runner not started")).toBeVisible();
+  await expect(
     page.getByLabel("Policy paper simulation config preview")
   ).not.toContainText(DASHBOARD_MUTATION_TOKEN);
+  await expect(page.getByLabel("PortfolioPolicy preview")).not.toContainText(
+    DASHBOARD_MUTATION_TOKEN
+  );
   await expect(
     page.getByRole("button", { name: "Create paper simulation" })
   ).toBeEnabled();
@@ -571,6 +670,9 @@ test("renders paper policy builder draft validation without live mutation contro
   ).toContainText("Backend validation is required");
   await expect(
     page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Save policy artifact" })
   ).toBeDisabled();
 
   await page.getByRole("button", { name: "Reset draft" }).click();
@@ -589,6 +691,9 @@ test("renders paper policy builder draft validation without live mutation contro
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Save policy artifact" })
   ).toBeDisabled();
 
   await expect(
