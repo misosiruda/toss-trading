@@ -6,9 +6,9 @@ import {
   type StrategyBucketTestCapability,
   type StrategyBucketTestLabViewModel,
   type StrategyBucketTestResultSummary,
-  type StrategyBucketTestSummary,
   type ViewModelResult
 } from "@/lib/dashboardViewModels";
+import { StrategyBucketTestProgressPanel } from "./StrategyBucketTestProgressPanel";
 import { StrategyBucketTestValidationForm } from "./StrategyBucketTestValidationForm";
 
 export const dynamic = "force-dynamic";
@@ -136,7 +136,15 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
       <StrategyBucketTestValidationForm />
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <ProgressPanel activeTests={data.activeTests} />
+        <StrategyBucketTestProgressPanel
+          initialActiveTests={data.activeTests}
+          key={data.activeTests
+            .map(
+              (test) =>
+                `${test.testId}:${test.status}:${test.progress.phase}:${test.progress.updatedAt}`
+            )
+            .join("\n")}
+        />
         <ResultsPanel results={data.recentResults} />
       </section>
 
@@ -207,74 +215,6 @@ function BucketCapabilityCard({
         {bucket.disabledReason ?? "isolated replay available"}
       </p>
     </article>
-  );
-}
-
-function ProgressPanel({
-  activeTests
-}: {
-  activeTests: StrategyBucketTestSummary[];
-}) {
-  return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
-      <SectionHeader eyebrow="active progress" title="Bucket Test Progress" />
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[var(--muted)]">
-            <tr>
-              <th className="py-2 pr-3 font-medium">Test</th>
-              <th className="py-2 pr-3 font-medium">Bucket</th>
-              <th className="py-2 pr-3 font-medium">Phase</th>
-              <th className="py-2 pr-3 font-medium">Heartbeat</th>
-              <th className="py-2 font-medium">Progress</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeTests.length === 0 ? (
-              <tr>
-                <td className="py-4 text-[var(--muted)]" colSpan={5}>
-                  No active bucket tests are reported by backend ViewModel.
-                </td>
-              </tr>
-            ) : (
-              activeTests.map((test) => (
-                <tr
-                  className="border-t border-[var(--border)]"
-                  data-testid={`strategy-bucket-active-test-${test.testId}`}
-                  key={test.testId}
-                >
-                  <td className="max-w-[18rem] break-words py-2 pr-3 font-mono text-xs">
-                    {test.testId}
-                  </td>
-                  <td className="py-2 pr-3">{BUCKET_LABELS[test.bucket]}</td>
-                  <td className="py-2 pr-3">
-                    <div className="font-mono text-xs">{test.progress.phase}</div>
-                    <div className="mt-1 text-xs text-[var(--muted)]">
-                      {test.progress.latestMessage ?? "No progress message"}
-                    </div>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <div>{test.heartbeat.status}</div>
-                    <div className="mt-1 font-mono text-xs text-[var(--muted)]">
-                      {test.heartbeat.lastSeenAt ?? "missing"}
-                    </div>
-                  </td>
-                  <td className="py-2">
-                    <div className="font-mono text-xs">
-                      {formatNullableRatio(test.progress.progressRatio)}
-                    </div>
-                    <div className="mt-1 text-xs text-[var(--muted)]">
-                      decisions {test.progress.decisionCount} · rejected{" "}
-                      {test.progress.riskRejectedCount}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 

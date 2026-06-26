@@ -2432,3 +2432,23 @@
 - Fix review 1: create proxy는 body를 읽기 전에 incoming `content-type`이 `application/json`인지 확인하고 아니면 `unsupported_media_type` 415로 차단합니다.
 - Fix review 2: 실패 응답은 기존 guard payload와 동일하게 storage mutation, live trading, order placement, replay runner를 모두 false로 유지합니다.
 - Fix review 3: E2E는 valid token과 same-origin evidence가 있어도 `text/plain` create 요청이 storage mutation 없이 415로 차단되는지 검증합니다.
+
+## Strategy Bucket Test Progress Polling
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 strategy bucket test의 read-only progress 조회와 Next.js polling fallback만 다룹니다.
+- Local Operations API는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress`에서 append-only record의 최신 parseable progress summary를 반환합니다.
+- replay runner 시작, SSE stream, result metric aggregation, live order surface는 추가하지 않습니다.
+
+### Review 2: ViewModel and UI Contract
+
+- progress endpoint는 `mode: paper_only`, `readOnly: true`, `storageMutationEnabled: false`, `liveTradingEnabled: false`, `orderPlacementEnabled: false`, `replayRunnerStarted: false`를 명시합니다.
+- Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side read-only proxy로 동작합니다.
+- active progress table은 SSR initial snapshot을 렌더링한 뒤 queued/running test만 polling fallback으로 갱신합니다.
+
+### Review 3: Tests and Docs
+
+- backend test는 queued record가 단건 progress endpoint에서도 동일한 test id, phase, heartbeat, count로 조회되는지 확인합니다.
+- E2E는 queued create 이후 progress route payload와 progressbar 렌더링, live order/trade/buy/sell control 부재를 확인합니다.
+- docs는 N5 여섯 번째 구현 단위가 polling fallback만 포함하고 runner/SSE/result aggregation은 제외한다고 명시합니다.

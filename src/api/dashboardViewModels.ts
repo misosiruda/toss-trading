@@ -238,6 +238,22 @@ export interface StrategyBucketTestLabViewModel {
   status: "ok";
 }
 
+export interface StrategyBucketTestProgressViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "strategy-test-progress";
+  testId: string;
+  test: StrategyBucketTestSummary | null;
+  sourceStatus: {
+    strategyBucketTestRecords: JsonlReadStatus;
+  };
+  storageMutationEnabled: false;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  replayRunnerStarted: false;
+  status: "ok" | "missing" | "invalid";
+}
+
 interface RiskDecisionSnapshot {
   riskDecisionId: string | null;
   packetId: string;
@@ -417,6 +433,43 @@ export async function readDashboardStrategyTestLabViewModel(
       strategyBucketTestRecords: strategyBucketTestRecords.status
     },
     status: "ok"
+  };
+}
+
+export async function readDashboardStrategyBucketTestProgressViewModel(
+  storageBaseDir: string,
+  testId: string,
+  now: Date = new Date()
+): Promise<StrategyBucketTestProgressViewModel> {
+  const normalizedTestId = testId.trim();
+  const paths = createStoragePaths(storageBaseDir);
+  const strategyBucketTestRecords = await readJsonlRecords(
+    paths.strategyBucketTestRecordsPath
+  );
+  const test =
+    normalizedTestId.length === 0
+      ? null
+      : latestStrategyBucketTestById(
+          strategyBucketTestRecords.records,
+          normalizedTestId,
+          now
+        );
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "strategy-test-progress",
+    testId: normalizedTestId,
+    test,
+    sourceStatus: {
+      strategyBucketTestRecords: strategyBucketTestRecords.status
+    },
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false,
+    status:
+      normalizedTestId.length === 0 ? "invalid" : test === null ? "missing" : "ok"
   };
 }
 
@@ -846,6 +899,25 @@ function latestActiveStrategyBucketTests(
   }
 
   return activeTests;
+}
+
+function latestStrategyBucketTestById(
+  records: Record<string, unknown>[],
+  testId: string,
+  now: Date
+): StrategyBucketTestSummary | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index];
+    if (record === undefined) {
+      continue;
+    }
+    const summary = parseStrategyBucketTestSummary(record, now);
+    if (summary?.testId === testId) {
+      return summary;
+    }
+  }
+
+  return null;
 }
 
 function parseStrategyBucketTestProgress(

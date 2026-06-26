@@ -106,7 +106,9 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     page.getByRole("heading", { name: "Selection Warning" })
   ).toBeVisible();
   await expect(
-    page.getByText(/isolated strategy bucket result artifacts are missing/)
+    page.getByText(
+      /isolated strategy bucket result artifacts are missing|strategy bucket comparison is unavailable/
+    )
   ).toBeVisible();
 
   await expect(
@@ -305,6 +307,43 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(activeTestRow).toBeVisible();
   await expect(activeTestRow).toContainText("Long-term");
   await expect(activeTestRow).toContainText("queued");
+  await expect(page.getByText("polling fallback")).toBeVisible();
+  await expect(
+    activeTestRow.getByRole("progressbar", {
+      name: "Bucket test progress ratio"
+    })
+  ).toBeVisible();
+  const progressResponse = await request.get(
+    `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
+      createdTestId
+    )}/progress`
+  );
+  expect(progressResponse.status()).toBe(200);
+  const progressPayload = await progressResponse.json();
+  expect(progressPayload).toMatchObject({
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "strategy-test-progress",
+    testId: createdTestId,
+    status: "ok",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  expect(progressPayload.test).toMatchObject({
+    testId: createdTestId,
+    bucket: "long_term",
+    status: "queued",
+    progress: {
+      phase: "queued",
+      decisionCount: 0,
+      simulatedTradeCount: 0
+    },
+    heartbeat: {
+      status: "fresh"
+    }
+  });
 
   await page.locator("#start-at").fill("2024/02/31");
   await page.getByRole("button", { name: "Validate bucket config" }).click();

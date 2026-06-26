@@ -486,20 +486,20 @@ function ExposureSummary({ exposure }: { exposure: ExposureBucket[] }) {
   return (
     <div className="rounded-[8px] border border-[var(--border)] p-3">
       <h3 className="text-sm font-semibold">Market Exposure</h3>
-      <dl className="mt-3 grid gap-2 text-sm">
-        {exposure.length === 0 ? (
-          <div className="text-[var(--muted)]">missing</div>
-        ) : (
-          exposure.map((entry) => (
+      {exposure.length === 0 ? (
+        <p className="mt-3 text-sm text-[var(--muted)]">missing</p>
+      ) : (
+        <dl className="mt-3 grid gap-2 text-sm">
+          {exposure.map((entry) => (
             <div className="flex justify-between gap-3" key={entry.key}>
               <dt>{entry.key}</dt>
               <dd className="font-mono text-xs">
                 {formatKrw(entry.exposureKrw)} / {formatRatio(entry.exposureRatio)}
               </dd>
             </div>
-          ))
-        )}
-      </dl>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }

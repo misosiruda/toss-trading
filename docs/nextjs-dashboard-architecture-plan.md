@@ -806,6 +806,14 @@ npm run check
 - `GET /dashboard/view-model/strategy-test-lab`은 append-only strategy bucket test record를 읽어 queued/running active test summary를 반환한다.
 - 이 단계는 replay runner 시작, SSE/polling progress refresh, result metric aggregation을 구현하지 않는다.
 
+여섯 번째 구현 단위:
+
+- Local Operations API에 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress` read-only endpoint를 추가한다.
+- endpoint는 append-only strategy bucket test record에서 해당 `testId`의 최신 parseable record를 찾아 phase, heartbeat, decision/risk/trade count를 반환한다.
+- `/dashboard/lab/strategy-tests/tests/{testId}/progress` Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side read-only proxy로 동작한다.
+- `/dashboard/lab/strategy-tests` active progress table은 SSR initial snapshot을 렌더링한 뒤 queued/running test에 대해 polling fallback으로 progress를 갱신한다.
+- 이 단계는 replay runner 시작, SSE stream, result metric aggregation, full portfolio delta view를 구현하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:
