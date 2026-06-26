@@ -162,6 +162,59 @@ interface StrategyBucketTestResultSummary {
   warnings: string[];
 }
 
+type StrategyBucketTestPhase =
+  | "queued"
+  | "loading_data"
+  | "building_packets"
+  | "calling_provider"
+  | "risk_gate"
+  | "simulating_execution"
+  | "writing_artifacts"
+  | "aggregating_report"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+type StrategyBucketTestStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+interface StrategyBucketTestProgressView {
+  phase: StrategyBucketTestPhase;
+  progressRatio: number | null;
+  completedPacketCount: number;
+  totalPacketCount: number | null;
+  decisionCount: number;
+  riskApprovedCount: number;
+  riskRejectedCount: number;
+  simulatedTradeCount: number;
+  providerFailureCount: number;
+  latestMessage: string | null;
+  latestAuditEventRef: string | null;
+  updatedAt: string;
+}
+
+interface StrategyBucketTestHeartbeatView {
+  status: "fresh" | "stale" | "missing";
+  lastSeenAt: string | null;
+  staleAfterSeconds: number;
+}
+
+interface StrategyBucketTestSummary {
+  testId: string;
+  bucket: StrategyBucket;
+  status: StrategyBucketTestStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  runId: string | null;
+  configHash: string;
+  progress: StrategyBucketTestProgressView;
+  heartbeat: StrategyBucketTestHeartbeatView;
+}
+
 interface StrategyBucketComparisonView {
   rows: StrategyBucketTestResultSummary[];
   baselineBucket: StrategyBucket | null;
@@ -175,11 +228,12 @@ export interface StrategyBucketTestLabViewModel {
   policyId: string;
   policyStatus: "missing";
   supportedBuckets: StrategyBucketTestCapability[];
-  activeTests: unknown[];
+  activeTests: StrategyBucketTestSummary[];
   recentResults: StrategyBucketTestResultSummary[];
   comparison: StrategyBucketComparisonView;
   sourceStatus: {
     batchAggregate: JsonFileStatus;
+    strategyBucketTestRecords: JsonlReadStatus;
   };
   status: "ok";
 }
@@ -319,10 +373,18 @@ export async function readDashboardPortfolioComplianceViewModel(
 }
 
 export async function readDashboardStrategyTestLabViewModel(
-  storageBaseDir: string
+  storageBaseDir: string,
+  now: Date = new Date()
 ): Promise<StrategyBucketTestLabViewModel> {
-  const aggregate = await readJsonFile(
-    createStoragePaths(storageBaseDir).batchReplayAggregateReportPath
+  const paths = createStoragePaths(storageBaseDir);
+  const [aggregate, strategyBucketTestRecords] = await Promise.all([
+    readJsonFile(paths.batchReplayAggregateReportPath),
+    readJsonlRecords(paths.strategyBucketTestRecordsPath)
+  ]);
+  const activeTests = latestActiveStrategyBucketTests(
+    strategyBucketTestRecords.records,
+    now,
+    20
   );
   const recentResults: StrategyBucketTestResultSummary[] = [];
 
@@ -338,9 +400,9 @@ export async function readDashboardStrategyTestLabViewModel(
       requiredPolicyFields: requiredPolicyFieldsFor(bucket),
       defaultHoldingPeriodHint: holdingPeriodHintFor(bucket),
       disabledReason:
-        "paper-only isolated strategy bucket replay mutation is not implemented yet"
+        "paper-only queued record creation is available; replay runner is not connected yet"
     })),
-    activeTests: [],
+    activeTests,
     recentResults,
     comparison: {
       rows: recentResults,
@@ -351,7 +413,8 @@ export async function readDashboardStrategyTestLabViewModel(
           : "batch replay aggregate is missing; strategy bucket comparison is unavailable"
     },
     sourceStatus: {
-      batchAggregate: aggregate.status
+      batchAggregate: aggregate.status,
+      strategyBucketTestRecords: strategyBucketTestRecords.status
     },
     status: "ok"
   };
@@ -716,6 +779,209 @@ function validationLabUnavailable(
   };
 }
 
+function parseStrategyBucketTestSummary(
+  value: Record<string, unknown>,
+  now: Date
+): StrategyBucketTestSummary | null {
+  const testId = readStringField(value, "testId");
+  const bucket = value["bucket"];
+  const status = value["status"];
+  const configHash = readStringField(value, "configHash");
+  const progress = readRecordField(value, "progress");
+  const heartbeat = readRecordField(value, "heartbeat");
+  if (
+    testId === null ||
+    !isStrategyBucket(bucket) ||
+    !isStrategyBucketTestStatus(status) ||
+    configHash === null ||
+    progress === null ||
+    heartbeat === null
+  ) {
+    return null;
+  }
+
+  const progressView = parseStrategyBucketTestProgress(progress);
+  const heartbeatView = parseStrategyBucketTestHeartbeat(heartbeat, now);
+  if (progressView === null || heartbeatView === null) {
+    return null;
+  }
+
+  return {
+    testId,
+    bucket,
+    status,
+    startedAt: readNullableStringField(value, "startedAt"),
+    completedAt: readNullableStringField(value, "completedAt"),
+    runId: readNullableStringField(value, "runId"),
+    configHash,
+    progress: progressView,
+    heartbeat: heartbeatView
+  };
+}
+
+function latestActiveStrategyBucketTests(
+  records: Record<string, unknown>[],
+  now: Date,
+  limit: number
+): StrategyBucketTestSummary[] {
+  const activeTests: StrategyBucketTestSummary[] = [];
+  const seenTestIds = new Set<string>();
+
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (activeTests.length >= limit) {
+      break;
+    }
+    const record = records[index];
+    if (record === undefined) {
+      continue;
+    }
+    const summary = parseStrategyBucketTestSummary(record, now);
+    if (summary === null || seenTestIds.has(summary.testId)) {
+      continue;
+    }
+    seenTestIds.add(summary.testId);
+    if (isActiveStrategyBucketTest(summary.status)) {
+      activeTests.push(summary);
+    }
+  }
+
+  return activeTests;
+}
+
+function parseStrategyBucketTestProgress(
+  value: Record<string, unknown>
+): StrategyBucketTestProgressView | null {
+  const phase = value["phase"];
+  const progressRatio = readNullableNumber(value["progressRatio"]);
+  const completedPacketCount = readNumberField(value, "completedPacketCount");
+  const totalPacketCount = readNullableNumber(value["totalPacketCount"]);
+  const decisionCount = readNumberField(value, "decisionCount");
+  const riskApprovedCount = readNumberField(value, "riskApprovedCount");
+  const riskRejectedCount = readNumberField(value, "riskRejectedCount");
+  const simulatedTradeCount = readNumberField(value, "simulatedTradeCount");
+  const providerFailureCount = readNumberField(value, "providerFailureCount");
+  const updatedAt = readStringField(value, "updatedAt");
+  if (
+    !isStrategyBucketTestPhase(phase) ||
+    progressRatio === undefined ||
+    completedPacketCount === null ||
+    totalPacketCount === undefined ||
+    decisionCount === null ||
+    riskApprovedCount === null ||
+    riskRejectedCount === null ||
+    simulatedTradeCount === null ||
+    providerFailureCount === null ||
+    updatedAt === null
+  ) {
+    return null;
+  }
+
+  return {
+    phase,
+    progressRatio,
+    completedPacketCount,
+    totalPacketCount,
+    decisionCount,
+    riskApprovedCount,
+    riskRejectedCount,
+    simulatedTradeCount,
+    providerFailureCount,
+    latestMessage: readNullableStringField(value, "latestMessage"),
+    latestAuditEventRef: readNullableStringField(value, "latestAuditEventRef"),
+    updatedAt
+  };
+}
+
+function parseStrategyBucketTestHeartbeat(
+  value: Record<string, unknown>,
+  now: Date
+): StrategyBucketTestHeartbeatView | null {
+  const status = value["status"];
+  const staleAfterSeconds = readNumberField(value, "staleAfterSeconds");
+  if (
+    !isStrategyBucketTestHeartbeatStatus(status) ||
+    staleAfterSeconds === null ||
+    staleAfterSeconds <= 0
+  ) {
+    return null;
+  }
+  const lastSeenAt = readNullableStringField(value, "lastSeenAt");
+  return {
+    status: strategyBucketHeartbeatStatus(lastSeenAt, staleAfterSeconds, now),
+    lastSeenAt,
+    staleAfterSeconds
+  };
+}
+
+function strategyBucketHeartbeatStatus(
+  lastSeenAt: string | null,
+  staleAfterSeconds: number,
+  now: Date
+): StrategyBucketTestHeartbeatView["status"] {
+  if (lastSeenAt === null) {
+    return "missing";
+  }
+
+  const lastSeenTime = Date.parse(lastSeenAt);
+  if (!Number.isFinite(lastSeenTime)) {
+    return "missing";
+  }
+
+  return now.getTime() - lastSeenTime > staleAfterSeconds * 1000
+    ? "stale"
+    : "fresh";
+}
+
+function isActiveStrategyBucketTest(status: StrategyBucketTestStatus): boolean {
+  return status === "queued" || status === "running";
+}
+
+function isStrategyBucketTestStatus(
+  value: unknown
+): value is StrategyBucketTestStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function isStrategyBucketTestPhase(
+  value: unknown
+): value is StrategyBucketTestPhase {
+  return (
+    value === "queued" ||
+    value === "loading_data" ||
+    value === "building_packets" ||
+    value === "calling_provider" ||
+    value === "risk_gate" ||
+    value === "simulating_execution" ||
+    value === "writing_artifacts" ||
+    value === "aggregating_report" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function isStrategyBucketTestHeartbeatStatus(
+  value: unknown
+): value is StrategyBucketTestHeartbeatView["status"] {
+  return value === "fresh" || value === "stale" || value === "missing";
+}
+
+function isStrategyBucket(value: unknown): value is StrategyBucket {
+  return (
+    value === "long_term" ||
+    value === "swing" ||
+    value === "short_term" ||
+    value === "intraday" ||
+    value === "hedge"
+  );
+}
+
 function requiredPolicyFieldsFor(bucket: StrategyBucket): string[] {
   if (bucket === "hedge") {
     return [
@@ -1044,6 +1310,14 @@ function readStringField(
   return typeof field === "string" && field.trim().length > 0 ? field : null;
 }
 
+function readNullableStringField(
+  value: Record<string, unknown>,
+  key: string
+): string | null {
+  const field = value[key];
+  return field === null ? null : readStringField(value, key);
+}
+
 function readNumberField(
   value: Record<string, unknown> | null,
   key: string
@@ -1056,6 +1330,13 @@ function readNumberField(
 
 function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readNullableNumber(value: unknown): number | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return readNumber(value) ?? undefined;
 }
 
 function stringArray(value: unknown): string[] {

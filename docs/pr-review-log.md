@@ -2359,3 +2359,76 @@
 
 - P2 `Aggregate sellable position rows before rejecting sells`: `evaluateSellPosition`이 첫 matching position row만 보지 않고 동일 market/symbol position row 전체의 quantity를 합산해 SELL 가능 수량을 판단하도록 수정했습니다.
 - 추가 테스트: duplicate position row sellable quantity aggregation.
+
+## Strategy Bucket Test Create UI
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 Next.js strategy test lab에서 validation을 통과한 현재 request에 대해 queued strategy bucket test record를 생성하는 route handler와 UI 연결만 다룹니다.
+- replay runner 시작, SSE/polling progress refresh, result metric aggregation, live order surface는 추가하지 않았습니다.
+- `/dashboard/lab/strategy-tests/create`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side proxy만 수행합니다.
+- backend create 응답과 UI copy는 `storageMutationEnabled: true`, `liveTradingEnabled: false`, `orderPlacementEnabled: false`, `replayRunnerStarted: false` 경계를 노출합니다.
+
+### Review 2: ViewModel and Persistence Contract
+
+- `GET /dashboard/view-model/strategy-test-lab`은 `strategy-bucket-test-records.jsonl`을 읽어 queued/running record를 active test summary로 반환합니다.
+- malformed strategy bucket test record는 화면 contract를 깨지 않도록 ViewModel summary에서 제외합니다.
+- active test table은 test id, bucket, phase, heartbeat, progress count만 표시하고 raw provider output이나 live execution detail을 표시하지 않습니다.
+- backend test는 create endpoint가 queued record와 audit event를 저장하고 runner를 호출하지 않으며, ViewModel active summary가 같은 `testId`와 `configHash`를 노출하는지 확인합니다.
+
+### Review 3: Tests and Docs
+
+- Next.js E2E는 validation 전 create button disabled, validation 성공 후 queued record 생성, invalid window에서 create button disabled, live order/trade/buy/sell control 부재를 확인합니다.
+- docs는 Next.js create route handler가 queued record와 audit event만 저장하고 replay runner를 시작하지 않는다고 명시합니다.
+- `npm run check`, `npm --prefix apps/dashboard run build`, `npm --prefix apps/dashboard run lint`, `npm --prefix apps/dashboard run test:e2e`, targeted Local Operations API tests, `git diff --check`를 실행했습니다.
+- changed-file forbidden boundary grep에서 신규 live order, raw command, `replayRunnerStarted: true`, `orderPlacementEnabled: true` surface는 확인되지 않았습니다.
+
+### Codex Review Fix
+
+- Review finding: `/dashboard/lab/strategy-tests/create`가 어떤 incoming POST에도 backend operation header와 origin을 주입해 queued record 저장 mutation을 proxy할 수 있었습니다.
+- Fix review 1: create proxy는 backend 호출 전에 `x-toss-trading-dashboard-intent: strategy-bucket-test-create`를 요구하고, 누락 시 `dashboard_intent_required`로 403을 반환합니다.
+- Fix review 2: create proxy는 incoming `origin`/`referer`/`sec-fetch-site`에서 명시적인 cross-origin metadata를 확인하고, 해당 요청은 `same_origin_required`로 403을 반환합니다.
+- Fix review 3: E2E는 intent 누락 요청과 cross-origin 요청이 storage mutation 없이 차단되는지 확인하고, 정상 UI create flow는 기존 queued record boundary를 유지하는지 확인합니다.
+
+### Codex Review Fix 2
+
+- Review finding: queued/running strategy bucket test의 persisted heartbeat status를 그대로 렌더링하면 `staleAfterSeconds`가 지난 record도 `fresh`로 보일 수 있었습니다.
+- Review finding: dashboard intent header가 있어도 `origin`, `referer`, `sec-fetch-site`가 모두 없는 direct POST는 create proxy를 통과할 수 있었습니다.
+- Fix review 1: strategy test lab ViewModel은 조회 시점의 `now`와 `lastSeenAt + staleAfterSeconds`를 비교해 heartbeat status를 `fresh`, `stale`, `missing`으로 재계산합니다.
+- Fix review 2: Local Operations routing은 테스트와 운영 기준 시각이 어긋나지 않도록 strategy test lab ViewModel에 server `now`를 전달합니다.
+- Fix review 3: create proxy는 dashboard intent header 외에도 positive same-origin `origin`, `referer`, `sec-fetch-site` evidence를 요구하고, metadata가 없으면 `same_origin_required`로 403을 반환합니다.
+
+### Codex Review Fix 3
+
+- Review finding: create 성공 후 client local result만 갱신되고 server-rendered active test count/progress table은 이전 ViewModel snapshot에 머물 수 있었습니다.
+- Fix review 1: create state가 현재 request의 `queued` 상태로 전환되면 `router.refresh()`를 한 번 호출해 strategy test lab Server Component 데이터를 다시 읽습니다.
+- Fix review 2: create 결과 test id와 active progress row에 test id 기반 `data-testid`를 추가해 같은 queued record가 progress table에 반영되는지 E2E에서 검증합니다.
+- Fix review 3: E2E는 create 성공 후 새 test id가 `Bucket Test Progress` row로 나타나고 bucket/phase가 표시되는지 확인합니다.
+
+### Codex Review Fix 4
+
+- Review finding: append-only record에 같은 `testId`의 queued record 뒤 terminal record가 추가되면, status 필터를 먼저 적용한 active summary가 과거 queued row를 계속 표시할 수 있었습니다.
+- Fix review 1: strategy test lab ViewModel은 record를 뒤에서 앞으로 읽어 `testId`별 최신 parseable record를 먼저 선택합니다.
+- Fix review 2: 최신 record가 `completed`, `failed`, `cancelled`이면 해당 `testId`의 과거 queued/running record를 active summary에 포함하지 않습니다.
+- Fix review 3: Local Operations API 테스트는 같은 `testId`의 queued record 뒤 completed record가 append된 경우 active test list가 비는지 검증합니다.
+
+### Codex Review Fix 5
+
+- Review finding: create proxy가 `origin`/usable `referer` 없이 `sec-fetch-site: same-site`만 있어도 same-origin fallback으로 허용할 수 있었습니다.
+- Fix review 1: create proxy fallback은 `sec-fetch-site: same-origin`만 positive same-origin evidence로 인정합니다.
+- Fix review 2: `sec-fetch-site: same-site` 직접 POST는 dashboard intent header가 있어도 `same_origin_required` 403으로 차단합니다.
+- Fix review 3: E2E는 same-site metadata request가 storage mutation 없이 거절되는지 검증합니다.
+
+### Codex Review Fix 6
+
+- Review finding: create proxy가 public dashboard intent header와 request metadata만으로 queued record mutation을 허용할 수 있었습니다.
+- Fix review 1: create proxy는 server-side `DASHBOARD_MUTATION_TOKEN`과 request `x-toss-trading-dashboard-mutation-token` header가 일치하지 않으면 fail-closed 처리합니다.
+- Fix review 2: strategy bucket test form은 mutation token 입력값을 create request header로만 전달하고 request preview나 result payload에는 표시하지 않습니다.
+- Fix review 3: E2E는 missing/invalid token, missing metadata, same-site metadata, cross-origin metadata가 storage mutation 없이 차단되고 valid token flow만 queued record를 생성하는지 검증합니다.
+
+### Codex Review Fix 7
+
+- Review finding: create proxy가 incoming `content-type`을 확인하지 않고 body를 읽은 뒤 backend에 `application/json`으로 전달할 수 있었습니다.
+- Fix review 1: create proxy는 body를 읽기 전에 incoming `content-type`이 `application/json`인지 확인하고 아니면 `unsupported_media_type` 415로 차단합니다.
+- Fix review 2: 실패 응답은 기존 guard payload와 동일하게 storage mutation, live trading, order placement, replay runner를 모두 false로 유지합니다.
+- Fix review 3: E2E는 valid token과 same-origin evidence가 있어도 `text/plain` create 요청이 storage mutation 없이 415로 차단되는지 검증합니다.

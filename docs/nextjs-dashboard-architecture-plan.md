@@ -799,6 +799,13 @@ npm run check
 - 응답은 `storageMutationEnabled: true`, `liveTradingEnabled: false`, `orderPlacementEnabled: false`, `replayRunnerStarted: false`를 명시해 저장 mutation과 runner 시작을 분리한다.
 - 이 단계는 Next.js create button, replay runner 시작, SSE/polling progress refresh를 구현하지 않는다.
 
+다섯 번째 구현 단위:
+
+- `/dashboard/lab/strategy-tests/create` Next.js route handler를 추가해 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 한다. 이 proxy는 backend operation header를 주입하기 전에 dashboard intent header와 positive same-origin request metadata를 요구한다.
+- `/dashboard/lab/strategy-tests` form은 backend validation이 통과한 현재 request에 대해서만 queued test record 생성을 허용한다.
+- `GET /dashboard/view-model/strategy-test-lab`은 append-only strategy bucket test record를 읽어 queued/running active test summary를 반환한다.
+- 이 단계는 replay runner 시작, SSE/polling progress refresh, result metric aggregation을 구현하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:

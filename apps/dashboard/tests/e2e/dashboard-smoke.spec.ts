@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+const DASHBOARD_MUTATION_TOKEN = "playwright-dashboard-mutation-token";
+
 type AxeRunResult = {
   violations: Array<{
     id: string;
@@ -62,17 +64,19 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expectNoAxeViolations(page);
 });
 
-test("renders strategy bucket test lab without mutation controls", async ({
+test("renders strategy bucket test lab with queued create boundary", async ({
   page,
+  request,
 }) => {
   await page.goto("/dashboard/lab/strategy-tests");
+  const dashboardOrigin = new URL(page.url()).origin;
 
   await expect(
     page.getByRole("heading", { name: "Strategy Bucket Test Lab" })
   ).toBeVisible();
   await expect(page.getByText("Strategy Lab")).toBeVisible();
   await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
-  await expect(page.getByText("not connected")).toBeVisible();
+  await expect(page.getByText("create only")).toBeVisible();
   await expect(page.getByText("not exposed")).toBeVisible();
 
   await expect(
@@ -85,15 +89,12 @@ test("renders strategy bucket test lab without mutation controls", async ({
   await expect(page.getByRole("heading", { name: "Hedge" })).toBeVisible();
   await expect(
     page.getByText(
-      "paper-only isolated strategy bucket replay mutation is not implemented yet"
+      "paper-only queued record creation is available; replay runner is not connected yet"
     )
   ).toHaveCount(5);
 
   await expect(
     page.getByRole("heading", { name: "Bucket Test Progress" })
-  ).toBeVisible();
-  await expect(
-    page.getByText("No active bucket tests are reported by backend ViewModel.")
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Bucket Result Matrix" })
@@ -118,16 +119,200 @@ test("renders strategy bucket test lab without mutation controls", async ({
   await expect(
     page.getByLabel("Strategy bucket test request preview")
   ).toContainText("strategy-test-lab-long_term-seed");
+  const requestPreviewText = await page
+    .getByLabel("Strategy bucket test request preview")
+    .textContent();
+  expect(requestPreviewText).toBeTruthy();
+  const createRequestBody = JSON.parse(requestPreviewText ?? "{}") as Record<
+    string,
+    unknown
+  >;
+  const missingIntentCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody
+    }
+  );
+  expect(missingIntentCreate.status()).toBe(403);
+  const missingIntentPayload = await missingIntentCreate.json();
+  expect(missingIntentPayload).toMatchObject({
+    error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const missingMutationTokenCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(missingMutationTokenCreate.status()).toBe(403);
+  const missingMutationTokenPayload = await missingMutationTokenCreate.json();
+  expect(missingMutationTokenPayload).toMatchObject({
+    error: "mutation_token_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const invalidMutationTokenCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": "wrong-token",
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(invalidMutationTokenCreate.status()).toBe(403);
+  const invalidMutationTokenPayload = await invalidMutationTokenCreate.json();
+  expect(invalidMutationTokenPayload).toMatchObject({
+    error: "mutation_token_invalid",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const nonJsonContentTypeCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: JSON.stringify(createRequestBody),
+      headers: {
+        "content-type": "text/plain",
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(nonJsonContentTypeCreate.status()).toBe(415);
+  const nonJsonContentTypePayload = await nonJsonContentTypeCreate.json();
+  expect(nonJsonContentTypePayload).toMatchObject({
+    error: "unsupported_media_type",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const missingMetadataCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(missingMetadataCreate.status()).toBe(403);
+  const missingMetadataPayload = await missingMetadataCreate.json();
+  expect(missingMetadataPayload).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const sameSiteMetadataCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        "sec-fetch-site": "same-site",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(sameSiteMetadataCreate.status()).toBe(403);
+  const sameSiteMetadataPayload = await sameSiteMetadataCreate.json();
+  expect(sameSiteMetadataPayload).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const crossOriginCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        origin: "http://evil.example",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(crossOriginCreate.status()).toBe(403);
+  const crossOriginPayload = await crossOriginCreate.json();
+  expect(crossOriginPayload).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  await expect(
+    page.getByRole("button", { name: "Queue bucket test record" })
+  ).toBeDisabled();
 
   await page.getByRole("button", { name: "Validate bucket config" }).click();
   await expect(page.getByText("Strategy validation valid")).toBeVisible();
-  await expect(page.getByText("runner not started")).toBeVisible();
+  await expect(
+    page.getByText(/config sha256:[a-f0-9]{12}.*runner not started/)
+  ).toBeVisible();
   await expect(page.getByText("config-valid")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+    )
+  ).toHaveCount(0);
+  await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
+  await expect(
+    page.getByLabel("Strategy bucket test request preview")
+  ).not.toContainText(DASHBOARD_MUTATION_TOKEN);
+  await expect(
+    page.getByText(
+      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+    )
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Queue bucket test record" }).click();
+  await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
+  await expect(page.getByText("storage mutation enabled")).toBeVisible();
+  await expect(page.getByText("live orders disabled")).toBeVisible();
+  await expect(page.getByText("order placement disabled")).toBeVisible();
+  const createdTestIdLine = page.getByTestId("strategy-bucket-created-test-id");
+  await expect(createdTestIdLine).toContainText(/^strategy_bucket_test_/);
+  const createdTestIdText = await createdTestIdLine.textContent();
+  const createdTestId = createdTestIdText?.split(" · ")[0] ?? "";
+  expect(createdTestId).toMatch(/^strategy_bucket_test_/);
+  const activeTestRow = page
+    .getByTestId(`strategy-bucket-active-test-${createdTestId}`)
+    .first();
+  await expect(activeTestRow).toBeVisible();
+  await expect(activeTestRow).toContainText("Long-term");
+  await expect(activeTestRow).toContainText("queued");
 
   await page.locator("#start-at").fill("2024/02/31");
   await page.getByRole("button", { name: "Validate bucket config" }).click();
   await expect(page.getByText("Strategy validation invalid")).toBeVisible();
   await expect(page.getByText("INVALID_WINDOW_DATE:")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Queue bucket test record" })
+  ).toBeDisabled();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })

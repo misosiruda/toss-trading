@@ -1111,12 +1111,29 @@ test("strategy bucket test create writes a queued record without starting a runn
     });
     const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
     const auditEvents = await readJsonlRecords(paths.auditLogPath);
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
     const record = records[0];
     const progress = record?.["progress"] as Record<string, unknown> | undefined;
     const heartbeat = record?.["heartbeat"] as
       | Record<string, unknown>
       | undefined;
     const safety = record?.["safety"] as Record<string, unknown> | undefined;
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const activeProgress = activeTests[0]?.["progress"] as
+      | Record<string, unknown>
+      | undefined;
+    const activeHeartbeat = activeTests[0]?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+    const sourceStatus = strategyTestLab.payload["sourceStatus"] as Record<
+      string,
+      unknown
+    >;
 
     assert.equal(result.response.status, 202);
     assert.equal(result.payload["mode"], "paper_only");
@@ -1156,7 +1173,124 @@ test("strategy bucket test create writes a queued record without starting a runn
       String(auditEvents[0]?.["summary"]),
       /replay runner not started/
     );
+    assert.equal(strategyTestLab.response.status, 200);
+    assert.equal(activeTests.length, 1);
+    assert.equal(activeTests[0]?.["testId"], result.payload["testId"]);
+    assert.equal(activeTests[0]?.["bucket"], "long_term");
+    assert.equal(activeTests[0]?.["status"], "queued");
+    assert.equal(activeTests[0]?.["runId"], null);
+    assert.equal(activeTests[0]?.["configHash"], result.payload["configHash"]);
+    assert.equal(activeProgress?.["phase"], "queued");
+    assert.equal(activeProgress?.["decisionCount"], 0);
+    assert.equal(activeProgress?.["riskRejectedCount"], 0);
+    assert.equal(activeHeartbeat?.["status"], "fresh");
+    assert.equal(sourceStatus["strategyBucketTestRecords"], "ok");
     assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test lab ViewModel recomputes stale heartbeat status", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(strategyBucketTestCandidate())
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const record = records[0];
+    assert.ok(record);
+    const heartbeat = record["heartbeat"] as Record<string, unknown>;
+    heartbeat["status"] = "fresh";
+    heartbeat["lastSeenAt"] = new Date(
+      now.getTime() - 121_000
+    ).toISOString();
+    heartbeat["staleAfterSeconds"] = 120;
+    await writeFile(
+      paths.strategyBucketTestRecordsPath,
+      `${JSON.stringify(record)}\n`,
+      "utf8"
+    );
+
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const activeHeartbeat = activeTests[0]?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(activeTests.length, 1);
+    assert.equal(activeTests[0]?.["testId"], result.payload["testId"]);
+    assert.equal(activeHeartbeat?.["status"], "stale");
+    assert.equal(activeHeartbeat?.["lastSeenAt"], heartbeat["lastSeenAt"]);
+    assert.equal(activeHeartbeat?.["staleAfterSeconds"], 120);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test lab ViewModel removes terminal latest records from active tests", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(strategyBucketTestCandidate())
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const queuedRecord = records[0];
+    assert.ok(queuedRecord);
+    const completedAt = new Date(now.getTime() + 60_000).toISOString();
+    const queuedProgress = queuedRecord["progress"] as Record<string, unknown>;
+    const queuedHeartbeat = queuedRecord["heartbeat"] as Record<string, unknown>;
+    const completedRecord = {
+      ...queuedRecord,
+      status: "completed",
+      completedAt,
+      progress: {
+        ...queuedProgress,
+        phase: "completed",
+        progressRatio: 1,
+        completedPacketCount: 1,
+        totalPacketCount: 1,
+        latestMessage: "completed",
+        updatedAt: completedAt
+      },
+      heartbeat: {
+        ...queuedHeartbeat,
+        lastSeenAt: completedAt
+      }
+    };
+    await writeFile(
+      paths.strategyBucketTestRecordsPath,
+      `${JSON.stringify(queuedRecord)}\n${JSON.stringify(completedRecord)}\n`,
+      "utf8"
+    );
+
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(queuedRecord["testId"], result.payload["testId"]);
+    assert.equal(activeTests.length, 0);
   } finally {
     await stopTestServer(server);
   }
