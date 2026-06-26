@@ -2452,3 +2452,9 @@
 - backend test는 queued record가 단건 progress endpoint에서도 동일한 test id, phase, heartbeat, count로 조회되는지 확인합니다.
 - E2E는 queued create 이후 progress route payload와 progressbar 렌더링, live order/trade/buy/sell control 부재를 확인합니다.
 - docs는 N5 여섯 번째 구현 단위가 polling fallback만 포함하고 runner/SSE/result aggregation은 제외한다고 명시합니다.
+
+### Codex Review Follow-up: Overlapping Refresh Guard
+
+- Fix review 1: progress refresh는 in-flight `AbortController`가 있으면 다음 interval/manual refresh를 시작하지 않습니다.
+- Fix review 2: active test set이 바뀌면 진행 중인 request를 abort하고 request id가 맞는 최신 응답만 state에 반영합니다.
+- Fix review 3: `fetchProgressUpdates`는 shared `AbortSignal`을 각 progress fetch에 전달해 cleanup 시 누적 요청을 중단합니다.

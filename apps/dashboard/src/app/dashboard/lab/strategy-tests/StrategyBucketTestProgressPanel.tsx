@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   isStrategyBucketTestProgressViewModel,
@@ -26,6 +26,8 @@ export function StrategyBucketTestProgressPanel({
 }) {
   const [activeTests, setActiveTests] = useState(initialActiveTests);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const inFlightRefreshRef = useRef<AbortController | null>(null);
+  const refreshRequestIdRef = useRef(0);
   const latestProgressUpdatedAt = readLatestProgressUpdatedAt(activeTests);
   const activeTestIds = useMemo(
     () =>
@@ -39,57 +41,56 @@ export function StrategyBucketTestProgressPanel({
     [activeTests]
   );
 
+  const refreshProgress = useCallback(async () => {
+    if (activeTestIds.length === 0) {
+      return;
+    }
+    if (inFlightRefreshRef.current !== null) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const requestId = refreshRequestIdRef.current + 1;
+    refreshRequestIdRef.current = requestId;
+    inFlightRefreshRef.current = controller;
+
+    try {
+      const updates = await fetchProgressUpdates(activeTestIds, controller.signal);
+      if (controller.signal.aborted || refreshRequestIdRef.current !== requestId) {
+        return;
+      }
+      setActiveTests((current) => mergeProgressUpdates(current, updates));
+      setRefreshError(null);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setRefreshError(
+          error instanceof Error
+            ? error.message
+            : "Strategy bucket progress refresh failed"
+        );
+      }
+    } finally {
+      if (inFlightRefreshRef.current === controller) {
+        inFlightRefreshRef.current = null;
+      }
+    }
+  }, [activeTestIds]);
+
   useEffect(() => {
     if (activeTestIds.length === 0) {
       return;
     }
 
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const updates = await fetchProgressUpdates(activeTestIds);
-        if (cancelled) {
-          return;
-        }
-        setActiveTests((current) => mergeProgressUpdates(current, updates));
-        setRefreshError(null);
-      } catch (error) {
-        if (!cancelled) {
-          setRefreshError(
-            error instanceof Error
-              ? error.message
-              : "Strategy bucket progress refresh failed"
-          );
-        }
-      }
-    };
-
     const interval = window.setInterval(() => {
-      void refresh();
+      void refreshProgress();
     }, POLLING_INTERVAL_MS);
 
     return () => {
-      cancelled = true;
+      inFlightRefreshRef.current?.abort();
+      inFlightRefreshRef.current = null;
       window.clearInterval(interval);
     };
-  }, [activeTestIds]);
-
-  async function refreshNow() {
-    if (activeTestIds.length === 0) {
-      return;
-    }
-    try {
-      const updates = await fetchProgressUpdates(activeTestIds);
-      setActiveTests((current) => mergeProgressUpdates(current, updates));
-      setRefreshError(null);
-    } catch (error) {
-      setRefreshError(
-        error instanceof Error
-          ? error.message
-          : "Strategy bucket progress refresh failed"
-      );
-    }
-  }
+  }, [activeTestIds.length, refreshProgress]);
 
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
@@ -107,7 +108,7 @@ export function StrategyBucketTestProgressPanel({
           <button
             className="rounded-[6px] border border-[var(--border)] px-2 py-1 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             disabled={activeTestIds.length === 0}
-            onClick={() => void refreshNow()}
+            onClick={() => void refreshProgress()}
             type="button"
           >
             Refresh progress
@@ -197,7 +198,8 @@ export function StrategyBucketTestProgressPanel({
 }
 
 async function fetchProgressUpdates(
-  testIds: string[]
+  testIds: string[],
+  signal: AbortSignal
 ): Promise<StrategyBucketTestProgressViewModel[]> {
   return Promise.all(
     testIds.map(async (testId) => {
@@ -209,7 +211,8 @@ async function fetchProgressUpdates(
           cache: "no-store",
           headers: {
             accept: "application/json"
-          }
+          },
+          signal
         }
       );
       const payload: unknown = await response.json();
