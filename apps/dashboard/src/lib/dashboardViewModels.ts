@@ -39,9 +39,11 @@ export interface PolicyComplianceViewModel {
     marketRegime: string;
     targetCashRatio: number;
     currentCashRatio: number;
+    currentCashKrw: number;
     minimumCashReserveKrw: number;
     cashGapKrw: number;
     ruleSource: string;
+    status: "ok" | "under_reserved" | "missing";
     rejectedCount: number;
     rejectCodes: Record<string, number>;
   };
@@ -74,9 +76,52 @@ export interface PolicyComplianceViewModel {
     rejectedCount: number;
     rejectCodes: Record<string, number>;
   };
+  complianceAnalytics: ComplianceAnalyticsView;
   sourceStatus: Record<string, JsonReadStatus>;
   warnings: string[];
   status: ViewModelStatus;
+}
+
+export interface ComplianceAnalyticsView {
+  strategyBucket: {
+    occupiedBucketCount: number;
+    missingPolicyTargetCount: number;
+    largestBucket: ExposureBucket | null;
+    concentrationRatio: number | null;
+    status: ViewModelStatus;
+  };
+  cashReserve: {
+    currentCashKrw: number;
+    currentCashRatio: number;
+    targetCashRatio: number;
+    minimumCashReserveKrw: number;
+    cashGapKrw: number;
+    reserveStatus: "ok" | "under_reserved" | "missing";
+    marketRegime: string;
+    ruleSource: string;
+  };
+  hedgeEffectiveness: {
+    hedgeCoverageRatio: number | null;
+    netDownsideExposureRatio: number | null;
+    costDragRatio: number | null;
+    status: "ok" | "ineffective" | "over_hedged" | "missing";
+  };
+  costTurnover: {
+    totalTradeAmountKrw: number;
+    totalCostKrw: number;
+    totalTurnoverRatio: number | null;
+    totalCostDragRatio: number | null;
+    byStrategyBucket: BucketCostTurnoverRow[];
+  };
+}
+
+export interface BucketCostTurnoverRow {
+  bucket: StrategyBucket;
+  tradeCount: number;
+  grossTradeAmountKrw: number;
+  totalCostKrw: number;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
 }
 
 export interface ExposureBucket {
@@ -448,6 +493,7 @@ function isPolicyComplianceViewModel(
     isHedgeCompliance(value.hedgeCompliance) &&
     isExposureCompliance(value.exposureCompliance) &&
     isRiskGateSummary(value.riskGateSummary) &&
+    isComplianceAnalytics(value.complianceAnalytics) &&
     isSourceStatus(value.sourceStatus) &&
     isStringArray(value.warnings) &&
     isViewModelStatus(value.status)
@@ -553,9 +599,13 @@ function isCashCompliance(value: unknown): value is PolicyComplianceViewModel["c
     typeof value["marketRegime"] === "string" &&
     isNumber(value["targetCashRatio"]) &&
     isNumber(value["currentCashRatio"]) &&
+    isNumber(value["currentCashKrw"]) &&
     isNumber(value["minimumCashReserveKrw"]) &&
     isNumber(value["cashGapKrw"]) &&
     typeof value["ruleSource"] === "string" &&
+    (value["status"] === "ok" ||
+      value["status"] === "under_reserved" ||
+      value["status"] === "missing") &&
     isNumber(value["rejectedCount"]) &&
     isNumberRecord(value["rejectCodes"])
   );
@@ -611,6 +661,69 @@ function isRiskGateSummary(
     isNumber(value["simulatedTradeCount"]) &&
     isNumber(value["rejectedCount"]) &&
     isNumberRecord(value["rejectCodes"])
+  );
+}
+
+function isComplianceAnalytics(
+  value: unknown
+): value is ComplianceAnalyticsView {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const strategyBucket = value["strategyBucket"];
+  const cashReserve = value["cashReserve"];
+  const hedgeEffectiveness = value["hedgeEffectiveness"];
+  const costTurnover = value["costTurnover"];
+
+  return (
+    isRecord(strategyBucket) &&
+    isNumber(strategyBucket["occupiedBucketCount"]) &&
+    isNumber(strategyBucket["missingPolicyTargetCount"]) &&
+    (strategyBucket["largestBucket"] === null ||
+      isExposureBucket(strategyBucket["largestBucket"])) &&
+    isNullableNumber(strategyBucket["concentrationRatio"]) &&
+    isViewModelStatus(strategyBucket["status"]) &&
+    isRecord(cashReserve) &&
+    isNumber(cashReserve["currentCashKrw"]) &&
+    isNumber(cashReserve["currentCashRatio"]) &&
+    isNumber(cashReserve["targetCashRatio"]) &&
+    isNumber(cashReserve["minimumCashReserveKrw"]) &&
+    isNumber(cashReserve["cashGapKrw"]) &&
+    (cashReserve["reserveStatus"] === "ok" ||
+      cashReserve["reserveStatus"] === "under_reserved" ||
+      cashReserve["reserveStatus"] === "missing") &&
+    typeof cashReserve["marketRegime"] === "string" &&
+    typeof cashReserve["ruleSource"] === "string" &&
+    isRecord(hedgeEffectiveness) &&
+    isNullableNumber(hedgeEffectiveness["hedgeCoverageRatio"]) &&
+    isNullableNumber(hedgeEffectiveness["netDownsideExposureRatio"]) &&
+    isNullableNumber(hedgeEffectiveness["costDragRatio"]) &&
+    (hedgeEffectiveness["status"] === "ok" ||
+      hedgeEffectiveness["status"] === "ineffective" ||
+      hedgeEffectiveness["status"] === "over_hedged" ||
+      hedgeEffectiveness["status"] === "missing") &&
+    isRecord(costTurnover) &&
+    isNumber(costTurnover["totalTradeAmountKrw"]) &&
+    isNumber(costTurnover["totalCostKrw"]) &&
+    isNullableNumber(costTurnover["totalTurnoverRatio"]) &&
+    isNullableNumber(costTurnover["totalCostDragRatio"]) &&
+    Array.isArray(costTurnover["byStrategyBucket"]) &&
+    costTurnover["byStrategyBucket"].every(isBucketCostTurnoverRow)
+  );
+}
+
+function isBucketCostTurnoverRow(
+  value: unknown
+): value is BucketCostTurnoverRow {
+  return (
+    isRecord(value) &&
+    isStrategyBucket(value["bucket"]) &&
+    isNumber(value["tradeCount"]) &&
+    isNumber(value["grossTradeAmountKrw"]) &&
+    isNumber(value["totalCostKrw"]) &&
+    isNullableNumber(value["turnoverRatio"]) &&
+    isNullableNumber(value["costDragRatio"])
   );
 }
 

@@ -72,9 +72,11 @@ interface CashComplianceView {
   marketRegime: MarketRegimeView;
   targetCashRatio: number;
   currentCashRatio: number;
+  currentCashKrw: number;
   minimumCashReserveKrw: number;
   cashGapKrw: number;
   ruleSource: "static" | "dynamic_regime" | "high_volatility" | "fallback";
+  status: "ok" | "under_reserved" | "missing";
   rejectedCount: number;
   rejectCodes: Record<string, number>;
 }
@@ -117,6 +119,48 @@ interface RiskGateSummaryView {
   rejectCodes: Record<string, number>;
 }
 
+interface BucketCostTurnoverRow {
+  bucket: StrategyBucket;
+  tradeCount: number;
+  grossTradeAmountKrw: number;
+  totalCostKrw: number;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
+}
+
+interface ComplianceAnalyticsView {
+  strategyBucket: {
+    occupiedBucketCount: number;
+    missingPolicyTargetCount: number;
+    largestBucket: ExposureBucket | null;
+    concentrationRatio: number | null;
+    status: DashboardViewModelStatus;
+  };
+  cashReserve: {
+    currentCashKrw: number;
+    currentCashRatio: number;
+    targetCashRatio: number;
+    minimumCashReserveKrw: number;
+    cashGapKrw: number;
+    reserveStatus: CashComplianceView["status"];
+    marketRegime: MarketRegimeView;
+    ruleSource: CashComplianceView["ruleSource"];
+  };
+  hedgeEffectiveness: {
+    hedgeCoverageRatio: number | null;
+    netDownsideExposureRatio: number | null;
+    costDragRatio: number | null;
+    status: HedgeComplianceView["status"];
+  };
+  costTurnover: {
+    totalTradeAmountKrw: number;
+    totalCostKrw: number;
+    totalTurnoverRatio: number | null;
+    totalCostDragRatio: number | null;
+    byStrategyBucket: BucketCostTurnoverRow[];
+  };
+}
+
 export interface PolicyComplianceViewModel {
   mode: "paper_only";
   readOnly: true;
@@ -130,6 +174,7 @@ export interface PolicyComplianceViewModel {
   hedgeCompliance: HedgeComplianceView;
   exposureCompliance: ExposureComplianceView;
   riskGateSummary: RiskGateSummaryView;
+  complianceAnalytics: ComplianceAnalyticsView;
   sourceStatus: {
     portfolio: "ok" | "missing";
     decisions: JsonlReadStatus;
@@ -376,6 +421,14 @@ export async function readDashboardPortfolioComplianceViewModel(
       rejectedCount,
       rejectCodes: riskRejectCodes
     },
+    complianceAnalytics: complianceAnalyticsView({
+      exposure,
+      bucketCompliance,
+      cashCompliance,
+      hedgeCompliance,
+      trades: trades.records,
+      hasPortfolio: portfolio !== null
+    }),
     sourceStatus: {
       portfolio: portfolio === null ? "missing" : "ok",
       decisions: jsonlStatus(decisions.corruptLineCount),
@@ -663,13 +716,25 @@ function cashComplianceView(input: {
   rejectCodes: Record<string, number>;
 }): CashComplianceView {
   const currentCashKrw = input.portfolio?.cashKrw ?? 0;
+  const rule = cashReserveRule(input.marketRegime);
+  const minimumCashReserveKrw = Math.round(
+    input.virtualNetWorthKrw * rule.targetCashRatio
+  );
+  const cashGapKrw = Math.max(0, minimumCashReserveKrw - currentCashKrw);
   return {
     marketRegime: input.marketRegime,
-    targetCashRatio: 0,
+    targetCashRatio: rule.targetCashRatio,
     currentCashRatio: ratio(currentCashKrw, input.virtualNetWorthKrw),
-    minimumCashReserveKrw: 0,
-    cashGapKrw: 0,
-    ruleSource: "fallback",
+    currentCashKrw,
+    minimumCashReserveKrw,
+    cashGapKrw,
+    ruleSource: rule.ruleSource,
+    status:
+      input.portfolio === null
+        ? "missing"
+        : cashGapKrw > 0
+          ? "under_reserved"
+          : "ok",
     rejectedCount: input.rejectedCount,
     rejectCodes: input.rejectCodes
   };
@@ -686,7 +751,11 @@ function hedgeComplianceView(input: {
   ).length;
   const hedgeCostKrw = input.trades
     .filter((trade) => trade.strategyBucket === "hedge")
-    .reduce((sum, trade) => sum + (trade.totalCostKrw ?? 0), 0);
+    .reduce((sum, trade) => sum + tradeCostKrw(trade), 0);
+  const hedgeCoverageRatio =
+    input.exposure.grossExposureKrw > 0
+      ? ratio(input.exposure.hedgeExposureKrw, input.exposure.grossExposureKrw)
+      : 0;
 
   return {
     hedgeEnabled: input.exposure.hedgeExposureKrw > 0 || hedgeTradeCount > 0,
@@ -700,12 +769,22 @@ function hedgeComplianceView(input: {
       0,
       input.exposure.grossExposureKrw - input.exposure.hedgeExposureKrw
     ),
-    estimatedDownsideReductionKrw: null,
+    estimatedDownsideReductionKrw:
+      input.exposure.hedgeExposureKrw > 0
+        ? Math.min(input.exposure.hedgeExposureKrw, input.exposure.grossExposureKrw)
+        : null,
     hedgeCostKrw,
     hedgeTradeCount,
     rejectedCount: input.rejectedCount,
     rejectCodes: input.rejectCodes,
-    status: "missing"
+    status:
+      input.exposure.grossExposureKrw <= 0
+        ? "missing"
+        : input.exposure.hedgeExposureKrw <= 0 && hedgeTradeCount === 0
+          ? "ineffective"
+          : hedgeCoverageRatio > 0.4
+            ? "over_hedged"
+            : "ok"
   };
 }
 
@@ -736,6 +815,107 @@ function exposureComplianceView(
       exposure.virtualNetWorthKrw
     ),
     status: hasPortfolio ? "ok" : "missing"
+  };
+}
+
+function complianceAnalyticsView(input: {
+  exposure: ReturnType<typeof portfolioExposure>;
+  bucketCompliance: BucketComplianceRow[];
+  cashCompliance: CashComplianceView;
+  hedgeCompliance: HedgeComplianceView;
+  trades: VirtualTrade[];
+  hasPortfolio: boolean;
+}): ComplianceAnalyticsView {
+  const bucketExposures = STRATEGY_BUCKETS.map((bucket) => ({
+    key: bucket,
+    exposureKrw: input.exposure.byBucket[bucket],
+    exposureRatio: ratio(
+      input.exposure.byBucket[bucket],
+      input.exposure.virtualNetWorthKrw
+    )
+  }));
+  const occupiedBuckets = bucketExposures.filter(
+    (bucket) => bucket.exposureKrw > 0
+  );
+  const largestBucket = maxExposureBucketFromBuckets(bucketExposures);
+  const costTurnoverRows = bucketCostTurnoverRows(
+    input.trades,
+    input.exposure.virtualNetWorthKrw
+  );
+  const totalTradeAmountKrw = input.trades.reduce(
+    (sum, trade) => sum + tradeAmountKrw(trade),
+    0
+  );
+  const totalCostKrw = input.trades.reduce(
+    (sum, trade) => sum + tradeCostKrw(trade),
+    0
+  );
+  const hedgeCoverageRatio =
+    input.exposure.grossExposureKrw > 0
+      ? ratio(
+          input.hedgeCompliance.hedgeExposureKrw,
+          input.exposure.grossExposureKrw
+        )
+      : null;
+
+  return {
+    strategyBucket: {
+      occupiedBucketCount: occupiedBuckets.length,
+      missingPolicyTargetCount: input.bucketCompliance.filter(
+        (row) => row.status === "missing"
+      ).length,
+      largestBucket,
+      concentrationRatio:
+        largestBucket === null
+          ? null
+          : ratio(largestBucket.exposureKrw, input.exposure.grossExposureKrw),
+      status: !input.hasPortfolio
+        ? "missing"
+        : input.bucketCompliance.some((row) => row.status === "missing")
+          ? "watch"
+          : "ok"
+    },
+    cashReserve: {
+      currentCashKrw: input.cashCompliance.currentCashKrw,
+      currentCashRatio: input.cashCompliance.currentCashRatio,
+      targetCashRatio: input.cashCompliance.targetCashRatio,
+      minimumCashReserveKrw: input.cashCompliance.minimumCashReserveKrw,
+      cashGapKrw: input.cashCompliance.cashGapKrw,
+      reserveStatus: input.cashCompliance.status,
+      marketRegime: input.cashCompliance.marketRegime,
+      ruleSource: input.cashCompliance.ruleSource
+    },
+    hedgeEffectiveness: {
+      hedgeCoverageRatio,
+      netDownsideExposureRatio:
+        input.exposure.grossExposureKrw > 0
+          ? ratio(
+              input.hedgeCompliance.netDownsideExposureKrw,
+              input.exposure.grossExposureKrw
+            )
+          : null,
+      costDragRatio:
+        input.hedgeCompliance.hedgeExposureKrw > 0
+          ? ratio(
+              input.hedgeCompliance.hedgeCostKrw,
+              input.hedgeCompliance.hedgeExposureKrw
+            )
+          : null,
+      status: input.hedgeCompliance.status
+    },
+    costTurnover: {
+      totalTradeAmountKrw,
+      totalCostKrw,
+      totalTurnoverRatio:
+        input.exposure.virtualNetWorthKrw > 0
+          ? ratio(totalTradeAmountKrw, input.exposure.virtualNetWorthKrw)
+          : null,
+      totalCostDragRatio:
+        totalTradeAmountKrw > 0
+          ? ratio(totalCostKrw, totalTradeAmountKrw)
+          : null,
+      byStrategyBucket: costTurnoverRows
+    }
   };
 }
 
@@ -1110,6 +1290,83 @@ function bucketTurnoverRatio(
     .filter((trade) => trade.strategyBucket === bucket)
     .reduce((sum, trade) => sum + (trade.grossAmountKrw ?? trade.amountKrw), 0);
   return virtualNetWorthKrw > 0 ? ratio(amount, virtualNetWorthKrw) : null;
+}
+
+function cashReserveRule(marketRegime: MarketRegimeView): {
+  targetCashRatio: number;
+  ruleSource: CashComplianceView["ruleSource"];
+} {
+  switch (marketRegime) {
+    case "bull":
+      return { targetCashRatio: 0.05, ruleSource: "dynamic_regime" };
+    case "sideways":
+      return { targetCashRatio: 0.15, ruleSource: "dynamic_regime" };
+    case "bear":
+      return { targetCashRatio: 0.3, ruleSource: "dynamic_regime" };
+    case "mixed":
+      return { targetCashRatio: 0.2, ruleSource: "dynamic_regime" };
+    case "insufficient_data":
+      return { targetCashRatio: 0.2, ruleSource: "fallback" };
+  }
+}
+
+function bucketCostTurnoverRows(
+  trades: VirtualTrade[],
+  virtualNetWorthKrw: number
+): BucketCostTurnoverRow[] {
+  return STRATEGY_BUCKETS.map((bucket) => {
+    const bucketTrades = trades.filter(
+      (trade) => trade.strategyBucket === bucket
+    );
+    const grossTradeAmountKrw = bucketTrades.reduce(
+      (sum, trade) => sum + tradeAmountKrw(trade),
+      0
+    );
+    const totalCostKrw = bucketTrades.reduce(
+      (sum, trade) => sum + tradeCostKrw(trade),
+      0
+    );
+    return {
+      bucket,
+      tradeCount: bucketTrades.length,
+      grossTradeAmountKrw,
+      totalCostKrw,
+      turnoverRatio:
+        virtualNetWorthKrw > 0
+          ? ratio(grossTradeAmountKrw, virtualNetWorthKrw)
+          : null,
+      costDragRatio:
+        grossTradeAmountKrw > 0 ? ratio(totalCostKrw, grossTradeAmountKrw) : null
+    };
+  });
+}
+
+function tradeAmountKrw(trade: VirtualTrade): number {
+  return trade.grossAmountKrw ?? trade.filledNotionalKrw ?? trade.amountKrw;
+}
+
+function tradeCostKrw(trade: VirtualTrade): number {
+  const componentTotal =
+    (trade.feeKrw ?? 0) +
+    (trade.taxKrw ?? 0) +
+    (trade.slippageKrw ?? 0) +
+    (trade.spreadCostKrw ?? 0) +
+    (trade.impactCostKrw ?? 0);
+  return componentTotal > 0 ? componentTotal : trade.totalCostKrw ?? 0;
+}
+
+function maxExposureBucketFromBuckets(
+  buckets: ExposureBucket[]
+): ExposureBucket | null {
+  return buckets.reduce<ExposureBucket | null>((current, bucket) => {
+    if (bucket.exposureKrw <= 0) {
+      return current;
+    }
+    if (current === null || bucket.exposureKrw > current.exposureKrw) {
+      return bucket;
+    }
+    return current;
+  }, null);
 }
 
 function rejectCodeCounts(

@@ -1,8 +1,10 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   countOnlineViewModels,
   readDashboardViewModels,
   type BucketComplianceRow,
+  type ComplianceAnalyticsView,
   type ExposureBucket,
   type FetchStatus,
   type JsonReadStatus,
@@ -159,6 +161,7 @@ function PortfolioPanel({
           value={String(data.riskGateSummary.rejectedCount)}
         />
       </div>
+      <ComplianceAnalyticsGrid analytics={data.complianceAnalytics} />
 
       <div className="mt-5 overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -185,6 +188,113 @@ function PortfolioPanel({
       </div>
       <SourceStatusList sourceStatus={data.sourceStatus} />
     </section>
+  );
+}
+
+function ComplianceAnalyticsGrid({
+  analytics
+}: {
+  analytics: ComplianceAnalyticsView;
+}) {
+  const topCostBucket = analytics.costTurnover.byStrategyBucket
+    .filter((bucket) => bucket.totalCostKrw > 0)
+    .sort((left, right) => right.totalCostKrw - left.totalCostKrw)[0];
+
+  return (
+    <section aria-label="Compliance Analytics" className="mt-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-sm font-semibold">Compliance Analytics</h3>
+        <Badge
+          tone={statusTone(analytics.strategyBucket.status)}
+          value={analytics.strategyBucket.status}
+        />
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <AnalyticsSummary
+          badgeValue={analytics.strategyBucket.status}
+          detail={`largest ${
+            analytics.strategyBucket.largestBucket?.key ?? "missing"
+          }`}
+          label="Strategy Bucket Mix"
+          tone={statusTone(analytics.strategyBucket.status)}
+          value={`${analytics.strategyBucket.occupiedBucketCount}/5 active`}
+        >
+          concentration{" "}
+          {formatNullableRatio(analytics.strategyBucket.concentrationRatio)}
+        </AnalyticsSummary>
+        <AnalyticsSummary
+          detail={`${analytics.cashReserve.marketRegime} / ${analytics.cashReserve.ruleSource}`}
+          label="Cash Reserve"
+          badgeValue={analytics.cashReserve.reserveStatus}
+          tone={statusTone(analytics.cashReserve.reserveStatus)}
+          value={formatRatio(analytics.cashReserve.currentCashRatio)}
+        >
+          target {formatRatio(analytics.cashReserve.targetCashRatio)} · gap{" "}
+          {formatKrw(analytics.cashReserve.cashGapKrw)}
+        </AnalyticsSummary>
+        <AnalyticsSummary
+          detail={`net downside ${formatNullableRatio(
+            analytics.hedgeEffectiveness.netDownsideExposureRatio
+          )}`}
+          label="Hedge Effectiveness"
+          badgeValue={analytics.hedgeEffectiveness.status}
+          tone={statusTone(analytics.hedgeEffectiveness.status)}
+          value={formatNullableRatio(
+            analytics.hedgeEffectiveness.hedgeCoverageRatio
+          )}
+        >
+          cost drag {formatNullableRatio(analytics.hedgeEffectiveness.costDragRatio)}
+        </AnalyticsSummary>
+        <AnalyticsSummary
+          detail={
+            topCostBucket === undefined
+              ? "no bucket cost"
+              : `${BUCKET_LABELS[topCostBucket.bucket]} ${formatKrw(
+                  topCostBucket.totalCostKrw
+                )}`
+          }
+          label="Cost & Turnover"
+          value={formatNullableRatio(analytics.costTurnover.totalTurnoverRatio)}
+        >
+          cost {formatKrw(analytics.costTurnover.totalCostKrw)} · drag{" "}
+          {formatNullableRatio(analytics.costTurnover.totalCostDragRatio)}
+        </AnalyticsSummary>
+      </div>
+    </section>
+  );
+}
+
+function AnalyticsSummary({
+  badgeValue,
+  children,
+  detail,
+  label,
+  tone,
+  value
+}: {
+  badgeValue?: string;
+  children: ReactNode;
+  detail: string;
+  label: string;
+  tone?: "ok" | "watch" | "blocked";
+  value: string;
+}) {
+  return (
+    <article className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <h4 className="text-xs font-medium uppercase text-[var(--muted)]">
+          {label}
+        </h4>
+        {badgeValue === undefined || tone === undefined ? null : (
+          <Badge tone={tone} value={badgeValue} />
+        )}
+      </div>
+      <p className="mt-2 break-words font-mono text-sm font-semibold">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{children}</p>
+      <p className="mt-1 break-words font-mono text-xs text-[var(--muted)]">
+        {detail}
+      </p>
+    </article>
   );
 }
 
@@ -615,6 +725,10 @@ function formatRatio(value: number): string {
     maximumFractionDigits: 2,
     style: "percent"
   }).format(value);
+}
+
+function formatNullableRatio(value: number | null): string {
+  return value === null ? "missing" : formatRatio(value);
 }
 
 function formatDateTime(value: string): string {

@@ -2464,3 +2464,24 @@
 - Fix review 1: stale heartbeat가 된 queued/running test도 계속 polling 대상에 포함해 이후 fresh/terminal append-only record를 받을 수 있게 했습니다.
 - Fix review 2: progress endpoint가 completed/failed/cancelled 최신 record를 반환하면 active progress table에서 해당 row를 제거합니다.
 - Fix review 3: active row lifecycle 판정은 server ViewModel active list와 동일하게 test status 기준 queued/running으로 제한합니다.
+
+## Dashboard Compliance Analytics
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 기존 `portfolio-compliance` read-only ViewModel과 `/dashboard` summary 렌더링만 확장합니다.
+- 새 저장 schema, migration, policy artifact persistence, replay runner, SSE stream, live order surface는 추가하지 않습니다.
+- browser client는 strategy bucket, cash reserve, hedge, cost/turnover metric을 재계산하지 않고 backend ViewModel을 렌더링만 합니다.
+
+### Review 2: ViewModel and UI Contract
+
+- `PolicyComplianceViewModel`에 `complianceAnalytics`를 추가해 strategy bucket mix, cash reserve, hedge effectiveness, cost/turnover 요약을 한 payload에서 제공합니다.
+- dynamic cash reserve는 backend가 market regime을 기준으로 target ratio, minimum reserve, cash gap, reserve status를 계산합니다.
+- hedge effectiveness는 hedge exposure coverage, net downside exposure ratio, hedge cost drag proxy를 read-only metric으로 노출합니다.
+- `/dashboard`는 `Compliance Analytics` section을 추가하고 기존 portfolio compliance table과 risk gate summary contract를 유지합니다.
+
+### Review 3: Tests and Docs
+
+- backend ViewModel contract test는 dynamic cash reserve, hedge coverage, hedge cost drag, strategy bucket concentration, bucket-level cost/turnover 값을 검증합니다.
+- Next.js E2E는 `/dashboard`에서 `Compliance Analytics`, `Strategy Bucket Mix`, `Cash Reserve`, `Hedge Effectiveness`, `Cost & Turnover`가 표시되는지 확인합니다.
+- docs는 N6 첫 구현 단위와 제외 범위를 분리해 runner/SSE/result aggregation/live order surface가 이번 PR 범위가 아님을 명시합니다.

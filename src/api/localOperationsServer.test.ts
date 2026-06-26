@@ -1810,6 +1810,27 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
   await new FileVirtualDecisionStore(paths.virtualDecisionsPath).append(
     decision()
   );
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    strategyBucket: "long_term",
+    grossAmountKrw: 70_000,
+    feeKrw: 70,
+    slippageKrw: 70,
+    totalCostKrw: 999
+  });
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    tradeId: "trade_api_hedge",
+    decisionId: "decision_api_hedge",
+    market: "US",
+    symbol: "SH",
+    priceKrw: 50_000,
+    amountKrw: 50_000,
+    grossAmountKrw: 50_000,
+    feeKrw: 10,
+    totalCostKrw: 999,
+    strategyBucket: "hedge"
+  });
   await new FileVirtualDecisionStore(paths.historicalReplayDecisionLogPath).append(
     replayDecision()
   );
@@ -1879,6 +1900,17 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const cashCompliance = portfolioCompliance.payload[
       "cashCompliance"
     ] as Record<string, unknown>;
+    const complianceAnalytics = portfolioCompliance.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const strategyBucketAnalytics = complianceAnalytics["strategyBucket"]!;
+    const cashReserveAnalytics = complianceAnalytics["cashReserve"]!;
+    const hedgeEffectivenessAnalytics =
+      complianceAnalytics["hedgeEffectiveness"]!;
+    const costTurnoverAnalytics = complianceAnalytics["costTurnover"]!;
+    const bucketCostRows = costTurnoverAnalytics[
+      "byStrategyBucket"
+    ] as Array<Record<string, unknown>>;
     const supportedBuckets = strategyTestLab.payload[
       "supportedBuckets"
     ] as Array<Record<string, unknown>>;
@@ -1916,6 +1948,37 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     );
     assert.equal(hedgeCompliance["hedgeExposureKrw"], 50_000);
     assert.equal(cashCompliance["marketRegime"], "bull");
+    assert.equal(cashCompliance["targetCashRatio"], 0.05);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 50_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(strategyBucketAnalytics["occupiedBucketCount"], 2);
+    assert.equal(strategyBucketAnalytics["missingPolicyTargetCount"], 5);
+    assert.equal(
+      (strategyBucketAnalytics["largestBucket"] as Record<string, unknown>)["key"],
+      "long_term"
+    );
+    assert.equal(strategyBucketAnalytics["concentrationRatio"], 0.75);
+    assert.equal(cashReserveAnalytics["currentCashKrw"], 800_000);
+    assert.equal(cashReserveAnalytics["reserveStatus"], "ok");
+    assert.equal(hedgeEffectivenessAnalytics["hedgeCoverageRatio"], 0.25);
+    assert.equal(hedgeEffectivenessAnalytics["netDownsideExposureRatio"], 0.75);
+    assert.equal(hedgeEffectivenessAnalytics["costDragRatio"], 0.0002);
+    assert.equal(hedgeEffectivenessAnalytics["status"], "ok");
+    assert.equal(costTurnoverAnalytics["totalTradeAmountKrw"], 120_000);
+    assert.equal(costTurnoverAnalytics["totalCostKrw"], 150);
+    assert.equal(costTurnoverAnalytics["totalTurnoverRatio"], 0.12);
+    assert.equal(costTurnoverAnalytics["totalCostDragRatio"], 0.00125);
+    assert.equal(
+      bucketCostRows.find((row) => row["bucket"] === "long_term")?.[
+        "totalCostKrw"
+      ],
+      140
+    );
+    assert.equal(
+      bucketCostRows.find((row) => row["bucket"] === "hedge")?.["totalCostKrw"],
+      10
+    );
 
     assert.equal(strategyTestLab.response.status, 200);
     assert.equal(strategyTestLab.payload["viewModel"], "strategy-test-lab");
