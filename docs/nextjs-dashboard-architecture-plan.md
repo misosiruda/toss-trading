@@ -900,6 +900,18 @@ npm run check
 - 기존 `dashboard/`는 compatibility route 또는 archive로 전환
 - Local Operations API의 static asset allowlist는 제거 전 별도 PR에서 정리
 
+첫 번째 구현 단위:
+
+- Local Operations API가 제공하는 기존 정적 `/dashboard`를 legacy static compatibility view로 명시한다.
+- 정적 dashboard HTML은 migration 기간 동안 유지되는 read-only 호환 조회 화면임을 화면 상단에 표시한다.
+- 정적 dashboard asset 응답에는 `x-toss-trading-dashboard-surface: legacy-static-compat` header를 붙여 Next.js 기본 UI와 구분한다.
+- CLI와 README는 Next.js `apps/dashboard`를 기본 operator UI로 안내하고, Local Operations API의 `/dashboard`는 compatibility view로 설명한다.
+
+제외 범위:
+
+- 이번 단계에서는 기존 `dashboard/` asset allowlist를 제거하지 않는다.
+- static dashboard archive 이동, redirect 전환, Next.js deployment routing 통합은 별도 PR에서 다룬다.
+
 ## 테스트 전략
 
 필수 테스트 축:

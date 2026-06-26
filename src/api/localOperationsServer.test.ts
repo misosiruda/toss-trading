@@ -28,6 +28,9 @@ import {
 import { createLocalOperationsServer } from "./localOperationsServer.js";
 import type { LocalOperationsServerOptions } from "./localOperationsServer.js";
 import {
+  LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
+} from "./localOperationsDashboardAssets.js";
+import {
   PAPER_SIMULATION_CREATE_OPERATION,
   PAPER_SIMULATION_MUTATION_HEADER_NAME,
   type PaperSimulationRunner,
@@ -375,6 +378,10 @@ test("local operations API serves read-only dashboard assets", async () => {
 
     assert.equal(html.response.status, 200);
     assert.match(html.response.headers.get("content-type") ?? "", /text\/html/);
+    assert.equal(
+      html.response.headers.get("x-toss-trading-dashboard-surface"),
+      LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
+    );
     assert.equal(virtualPage.response.status, 200);
     assert.equal(newSimulationPage.response.status, 200);
     assert.equal(historyPage.response.status, 200);
@@ -399,6 +406,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(rootTableRenderersScript.response.status, 200);
     assert.equal(rootStyles.response.status, 200);
     assert.equal(
+      rootStyles.response.headers.get("x-toss-trading-dashboard-surface"),
+      LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
+    );
+    assert.equal(
       rootStyles.text.includes(
         'html:not([data-dashboard-page="virtual"]) .metric-grid'
       ),
@@ -418,6 +429,10 @@ test("local operations API serves read-only dashboard assets", async () => {
       );
     }
     assert.match(html.text, /Toss Trading Ops/);
+    assert.match(html.text, /legacy compatibility dashboard/);
+    assert.match(html.text, /정적 dashboard는 호환 조회 화면입니다/);
+    assert.match(html.text, /Next\.js <code>apps\/dashboard<\/code>/);
+    assert.match(html.text, /read-only legacy/);
     assert.match(html.text, /document\.documentElement\.dataset\.dashboardPage/);
     assert.match(html.text, /href="\/dashboard\/styles.css"/);
     assert.match(html.text, /src="\/dashboard\/app.js"/);

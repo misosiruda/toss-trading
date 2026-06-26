@@ -12,6 +12,8 @@ export interface DashboardAsset {
   contentType: string;
 }
 
+export const LEGACY_DASHBOARD_SURFACE_HEADER_VALUE = "legacy-static-compat";
+
 export function readDashboardAsset(pathname: string): DashboardAsset | null {
   if (
     (LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS as readonly string[]).includes(
@@ -58,7 +60,9 @@ export async function writeDashboardAsset(
   const body = await readFile(join(process.cwd(), "dashboard", asset.fileName));
   response.writeHead(200, {
     "content-type": asset.contentType,
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    "x-toss-trading-dashboard-surface":
+      LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
   });
   response.end(headOnly ? undefined : body);
 }
