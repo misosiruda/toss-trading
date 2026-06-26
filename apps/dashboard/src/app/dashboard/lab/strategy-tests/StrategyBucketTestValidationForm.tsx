@@ -21,6 +21,9 @@ const DECISION_FREQUENCY_OPTIONS = [
   { label: "Daily", stepSeconds: 86400, value: "once_per_day" },
   { label: "Every tick", stepSeconds: 300, value: "every_tick" }
 ] as const;
+const STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER =
+  "x-toss-trading-dashboard-intent";
+const STRATEGY_BUCKET_TEST_CREATE_INTENT = "strategy-bucket-test-create";
 
 type DecisionFrequency = (typeof DECISION_FREQUENCY_OPTIONS)[number]["value"];
 type DecisionProviderMode = "dry_run_fixture" | "codex_paper_only";
@@ -272,7 +275,9 @@ export function StrategyBucketTestValidationForm() {
       const response = await fetch("/dashboard/lab/strategy-tests/create", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          [STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER]:
+            STRATEGY_BUCKET_TEST_CREATE_INTENT
         },
         body: currentRequestJson
       });

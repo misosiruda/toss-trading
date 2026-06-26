@@ -64,6 +64,7 @@ test("renders paper-only dashboard readiness without live mutation controls", as
 
 test("renders strategy bucket test lab with queued create boundary", async ({
   page,
+  request,
 }) => {
   await page.goto("/dashboard/lab/strategy-tests");
 
@@ -115,6 +116,48 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(
     page.getByLabel("Strategy bucket test request preview")
   ).toContainText("strategy-test-lab-long_term-seed");
+  const requestPreviewText = await page
+    .getByLabel("Strategy bucket test request preview")
+    .textContent();
+  expect(requestPreviewText).toBeTruthy();
+  const createRequestBody = JSON.parse(requestPreviewText ?? "{}") as Record<
+    string,
+    unknown
+  >;
+  const missingIntentCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody
+    }
+  );
+  expect(missingIntentCreate.status()).toBe(403);
+  const missingIntentPayload = await missingIntentCreate.json();
+  expect(missingIntentPayload).toMatchObject({
+    error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const crossOriginCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        origin: "http://evil.example",
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(crossOriginCreate.status()).toBe(403);
+  const crossOriginPayload = await crossOriginCreate.json();
+  expect(crossOriginPayload).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
   await expect(
     page.getByRole("button", { name: "Queue bucket test record" })
   ).toBeDisabled();

@@ -2382,3 +2382,10 @@
 - docs는 Next.js create route handler가 queued record와 audit event만 저장하고 replay runner를 시작하지 않는다고 명시합니다.
 - `npm run check`, `npm --prefix apps/dashboard run build`, `npm --prefix apps/dashboard run lint`, `npm --prefix apps/dashboard run test:e2e`, targeted Local Operations API tests, `git diff --check`를 실행했습니다.
 - changed-file forbidden boundary grep에서 신규 live order, raw command, `replayRunnerStarted: true`, `orderPlacementEnabled: true` surface는 확인되지 않았습니다.
+
+### Codex Review Fix
+
+- Review finding: `/dashboard/lab/strategy-tests/create`가 어떤 incoming POST에도 backend operation header와 origin을 주입해 queued record 저장 mutation을 proxy할 수 있었습니다.
+- Fix review 1: create proxy는 backend 호출 전에 `x-toss-trading-dashboard-intent: strategy-bucket-test-create`를 요구하고, 누락 시 `dashboard_intent_required`로 403을 반환합니다.
+- Fix review 2: create proxy는 incoming `origin`/`referer`/`sec-fetch-site`에서 명시적인 cross-origin metadata를 확인하고, 해당 요청은 `same_origin_required`로 403을 반환합니다.
+- Fix review 3: E2E는 intent 누락 요청과 cross-origin 요청이 storage mutation 없이 차단되는지 확인하고, 정상 UI create flow는 기존 queued record boundary를 유지하는지 확인합니다.

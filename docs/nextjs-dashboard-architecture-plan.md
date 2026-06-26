@@ -801,7 +801,7 @@ npm run check
 
 다섯 번째 구현 단위:
 
-- `/dashboard/lab/strategy-tests/create` Next.js route handler를 추가해 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 한다.
+- `/dashboard/lab/strategy-tests/create` Next.js route handler를 추가해 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 한다. 이 proxy는 backend operation header를 주입하기 전에 dashboard intent header를 요구하고 명시적인 cross-origin request metadata를 차단한다.
 - `/dashboard/lab/strategy-tests` form은 backend validation이 통과한 현재 request에 대해서만 queued test record 생성을 허용한다.
 - `GET /dashboard/view-model/strategy-test-lab`은 append-only strategy bucket test record를 읽어 queued/running active test summary를 반환한다.
 - 이 단계는 replay runner 시작, SSE/polling progress refresh, result metric aggregation을 구현하지 않는다.
