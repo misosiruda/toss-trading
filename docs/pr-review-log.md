@@ -2411,3 +2411,10 @@
 - Fix review 1: strategy test lab ViewModel은 record를 뒤에서 앞으로 읽어 `testId`별 최신 parseable record를 먼저 선택합니다.
 - Fix review 2: 최신 record가 `completed`, `failed`, `cancelled`이면 해당 `testId`의 과거 queued/running record를 active summary에 포함하지 않습니다.
 - Fix review 3: Local Operations API 테스트는 같은 `testId`의 queued record 뒤 completed record가 append된 경우 active test list가 비는지 검증합니다.
+
+### Codex Review Fix 5
+
+- Review finding: create proxy가 `origin`/usable `referer` 없이 `sec-fetch-site: same-site`만 있어도 same-origin fallback으로 허용할 수 있었습니다.
+- Fix review 1: create proxy fallback은 `sec-fetch-site: same-origin`만 positive same-origin evidence로 인정합니다.
+- Fix review 2: `sec-fetch-site: same-site` 직접 POST는 dashboard intent header가 있어도 `same_origin_required` 403으로 차단합니다.
+- Fix review 3: E2E는 same-site metadata request가 storage mutation 없이 거절되는지 검증합니다.

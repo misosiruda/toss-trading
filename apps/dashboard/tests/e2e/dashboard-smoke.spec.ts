@@ -157,6 +157,25 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     orderPlacementEnabled: false,
     replayRunnerStarted: false
   });
+  const sameSiteMetadataCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: createRequestBody,
+      headers: {
+        "sec-fetch-site": "same-site",
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(sameSiteMetadataCreate.status()).toBe(403);
+  const sameSiteMetadataPayload = await sameSiteMetadataCreate.json();
+  expect(sameSiteMetadataPayload).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
   const crossOriginCreate = await request.post(
     "/dashboard/lab/strategy-tests/create",
     {

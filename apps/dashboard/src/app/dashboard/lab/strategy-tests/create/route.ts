@@ -93,7 +93,7 @@ function isSameOriginDashboardRequest(request: NextRequest): boolean {
 
   const fetchSite = request.headers.get("sec-fetch-site");
   if (fetchSite !== null) {
-    return fetchSite === "same-origin" || fetchSite === "same-site";
+    return fetchSite === "same-origin";
   }
 
   return false;
