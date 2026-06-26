@@ -2513,3 +2513,10 @@
 - Fix review 1: 현재 `portfolio-compliance` ViewModel은 `policyStatus: missing`이므로 cash reserve rule을 static `DEFAULT_MIN_CASH_RESERVE_RATIO` 기준으로 제한했습니다.
 - Fix review 2: `insufficient_data`에서 cash 25% 포트폴리오가 policy 미확인 상태에서는 `ok`로 유지되는 회귀 테스트로 갱신했습니다.
 - Fix review 3: bear aggregate report에서 cash 20% 포트폴리오가 dynamic 25% 기준으로 잘못 `under_reserved`가 되지 않는 회귀 테스트를 추가했습니다.
+
+### Codex Review Fix 5
+
+- Review finding: hedge coverage가 hedge leg까지 포함한 gross exposure를 denominator로 사용해 inverse hedge의 downside coverage를 과소 표시할 수 있었습니다.
+- Fix review 1: `hedgePolicy`의 downside/inverse exposure 산식을 공유하는 `summarizePortfolioDownsideExposure` helper를 export했습니다.
+- Fix review 2: dashboard hedge coverage와 net downside ratio는 gross exposure가 아니라 non-hedge downside exposure를 denominator로 사용합니다.
+- Fix review 3: 100k long exposure와 100k inverse hedge position에서 coverage 100%, net downside 0을 반환하는 회귀 테스트를 추가했습니다.

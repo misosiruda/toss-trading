@@ -20,6 +20,7 @@ import type {
   VirtualPosition,
   VirtualTrade
 } from "../domain/schemas.js";
+import { summarizePortfolioDownsideExposure } from "../paper/hedgePolicy.js";
 import { DEFAULT_MIN_CASH_RESERVE_RATIO } from "../paper/riskPolicy.js";
 
 const STRATEGY_BUCKETS = [
@@ -651,12 +652,21 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
   byBucket: Record<StrategyBucket, number>;
   bySymbol: Map<string, number>;
   hedgeExposureKrw: number;
+  downsideExposureKrw: number;
+  netDownsideExposureKrw: number;
 } {
   const byMarket = new Map<string, number>();
   const byBucket = emptyBucketAmounts();
   const bySymbol = new Map<string, number>();
   let grossExposureKrw = 0;
-  let hedgeExposureKrw = 0;
+  const downsideExposure =
+    portfolio === null
+      ? {
+          downsideExposureKrw: 0,
+          hedgeExposureKrw: 0,
+          netDownsideExposureKrw: 0
+        }
+      : summarizePortfolioDownsideExposure(portfolio);
 
   for (const position of portfolio?.positions ?? []) {
     const value = positionMarketValue(position);
@@ -669,9 +679,6 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
     if (position.strategyBucket !== undefined) {
       byBucket[position.strategyBucket] += value;
     }
-    if (isHedgePosition(position)) {
-      hedgeExposureKrw += value;
-    }
   }
 
   const virtualNetWorthKrw = (portfolio?.cashKrw ?? 0) + grossExposureKrw;
@@ -682,7 +689,9 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
     byMarket,
     byBucket,
     bySymbol,
-    hedgeExposureKrw
+    hedgeExposureKrw: downsideExposure.hedgeExposureKrw,
+    downsideExposureKrw: downsideExposure.downsideExposureKrw,
+    netDownsideExposureKrw: downsideExposure.netDownsideExposureKrw
   };
 }
 
@@ -754,8 +763,11 @@ function hedgeComplianceView(input: {
     .filter((trade) => trade.strategyBucket === "hedge")
     .reduce((sum, trade) => sum + tradeCostKrw(trade), 0);
   const hedgeCoverageRatio =
-    input.exposure.grossExposureKrw > 0
-      ? ratio(input.exposure.hedgeExposureKrw, input.exposure.grossExposureKrw)
+    input.exposure.downsideExposureKrw > 0
+      ? ratio(
+          input.exposure.hedgeExposureKrw,
+          input.exposure.downsideExposureKrw
+        )
       : 0;
 
   return {
@@ -766,20 +778,20 @@ function hedgeComplianceView(input: {
       input.exposure.virtualNetWorthKrw
     ),
     grossExposureKrw: input.exposure.grossExposureKrw,
-    netDownsideExposureKrw: Math.max(
-      0,
-      input.exposure.grossExposureKrw - input.exposure.hedgeExposureKrw
-    ),
+    netDownsideExposureKrw: input.exposure.netDownsideExposureKrw,
     estimatedDownsideReductionKrw:
       input.exposure.hedgeExposureKrw > 0
-        ? Math.min(input.exposure.hedgeExposureKrw, input.exposure.grossExposureKrw)
+        ? Math.min(
+            input.exposure.hedgeExposureKrw,
+            input.exposure.downsideExposureKrw
+          )
         : null,
     hedgeCostKrw,
     hedgeTradeCount,
     rejectedCount: input.rejectedCount,
     rejectCodes: input.rejectCodes,
     status:
-      input.exposure.grossExposureKrw <= 0
+      input.exposure.downsideExposureKrw <= 0
         ? "missing"
         : input.exposure.hedgeExposureKrw <= 0
           ? "ineffective"
@@ -852,10 +864,10 @@ function complianceAnalyticsView(input: {
     0
   );
   const hedgeCoverageRatio =
-    input.exposure.grossExposureKrw > 0
+    input.exposure.downsideExposureKrw > 0
       ? ratio(
           input.hedgeCompliance.hedgeExposureKrw,
-          input.exposure.grossExposureKrw
+          input.exposure.downsideExposureKrw
         )
       : null;
 
@@ -889,10 +901,10 @@ function complianceAnalyticsView(input: {
     hedgeEffectiveness: {
       hedgeCoverageRatio,
       netDownsideExposureRatio:
-        input.exposure.grossExposureKrw > 0
+        input.exposure.downsideExposureKrw > 0
           ? ratio(
               input.hedgeCompliance.netDownsideExposureKrw,
-              input.exposure.grossExposureKrw
+              input.exposure.downsideExposureKrw
             )
           : null,
       costDragRatio:
@@ -1271,14 +1283,6 @@ function holdingPeriodHintFor(bucket: StrategyBucket): HoldingPeriodHint {
 function positionMarketValue(position: VirtualPosition): number {
   return Math.round(
     position.marketValueKrw ?? position.averagePriceKrw * position.quantity
-  );
-}
-
-function isHedgePosition(position: VirtualPosition): boolean {
-  return (
-    position.strategyBucket === "hedge" ||
-    position.assetClass === "inverse" ||
-    (position.riskTags ?? []).includes("inverse")
   );
 }
 

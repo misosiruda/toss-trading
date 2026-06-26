@@ -1788,6 +1788,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       {
         market: "KR",
         symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
         strategyBucket: "long_term",
         quantity: 2,
         averagePriceKrw: 70_000,
@@ -1962,8 +1964,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(strategyBucketAnalytics["concentrationRatio"], 0.75);
     assert.equal(cashReserveAnalytics["currentCashKrw"], 800_000);
     assert.equal(cashReserveAnalytics["reserveStatus"], "ok");
-    assert.equal(hedgeEffectivenessAnalytics["hedgeCoverageRatio"], 0.25);
-    assert.equal(hedgeEffectivenessAnalytics["netDownsideExposureRatio"], 0.75);
+    assert.equal(hedgeEffectivenessAnalytics["hedgeCoverageRatio"], 1 / 3);
+    assert.equal(hedgeEffectivenessAnalytics["netDownsideExposureRatio"], 2 / 3);
     assert.equal(hedgeEffectivenessAnalytics["costDragRatio"], 0.0002);
     assert.equal(hedgeEffectivenessAnalytics["status"], "ok");
     assert.equal(costTurnoverAnalytics["totalTradeAmountKrw"], 120_000);
@@ -2233,6 +2235,8 @@ test("dashboard hedge compliance requires current hedge exposure for ok status",
       {
         market: "KR",
         symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
         strategyBucket: "long_term",
         quantity: 2,
         averagePriceKrw: 70_000,
@@ -2278,6 +2282,66 @@ test("dashboard hedge compliance requires current hedge exposure for ok status",
     assert.equal(hedgeEffectiveness["netDownsideExposureRatio"], 1);
     assert.equal(hedgeEffectiveness["costDragRatio"], null);
     assert.equal(hedgeEffectiveness["status"], "ineffective");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard hedge compliance uses downside exposure as coverage denominator", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 800_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
+        strategyBucket: "long_term",
+        quantity: 1,
+        averagePriceKrw: 100_000,
+        marketValueKrw: 100_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      },
+      {
+        market: "US",
+        symbol: "SH",
+        assetClass: "inverse",
+        riskTags: ["inverse"],
+        strategyBucket: "hedge",
+        quantity: 1,
+        averagePriceKrw: 100_000,
+        marketValueKrw: 100_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const hedgeCompliance = result.payload["hedgeCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const hedgeEffectiveness = complianceAnalytics["hedgeEffectiveness"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(hedgeCompliance["grossExposureKrw"], 200_000);
+    assert.equal(hedgeCompliance["hedgeExposureKrw"], 100_000);
+    assert.equal(hedgeCompliance["netDownsideExposureKrw"], 0);
+    assert.equal(hedgeCompliance["estimatedDownsideReductionKrw"], 100_000);
+    assert.equal(hedgeEffectiveness["hedgeCoverageRatio"], 1);
+    assert.equal(hedgeEffectiveness["netDownsideExposureRatio"], 0);
+    assert.equal(hedgeEffectiveness["status"], "over_hedged");
   } finally {
     await stopTestServer(server);
   }

@@ -5,7 +5,10 @@ import type {
   MarketCandidate,
   VirtualPortfolio
 } from "../domain/schemas.js";
-import { evaluateHedgePolicy } from "./hedgePolicy.js";
+import {
+  evaluateHedgePolicy,
+  summarizePortfolioDownsideExposure
+} from "./hedgePolicy.js";
 
 test("hedge policy allows inverse hedge that reduces net downside exposure", () => {
   assert.deepEqual(
@@ -198,6 +201,46 @@ test("hedge policy applies leveraged exposure to gross exposure caps", () => {
       policy: { maxGrossExposureKrw: 650_000 }
     }),
     ["VIRTUAL_HEDGE_GROSS_EXPOSURE_EXCEEDED"]
+  );
+});
+
+test("hedge policy summarizes downside exposure separately from hedge legs", () => {
+  assert.deepEqual(
+    summarizePortfolioDownsideExposure(
+      portfolio({
+        positions: [
+          {
+            market: "KR",
+            symbol: "005930",
+            assetType: "STOCK",
+            assetClass: "equity",
+            strategyBucket: "long_term",
+            quantity: 1,
+            averagePriceKrw: 100_000,
+            marketValueKrw: 100_000,
+            updatedAt: "2026-06-14T08:59:00+09:00"
+          },
+          {
+            market: "KR",
+            symbol: "251340",
+            assetType: "ETF",
+            assetClass: "inverse",
+            riskTags: ["inverse"],
+            strategyBucket: "hedge",
+            quantity: 1,
+            averagePriceKrw: 100_000,
+            marketValueKrw: 100_000,
+            updatedAt: "2026-06-14T08:59:00+09:00"
+          }
+        ]
+      })
+    ),
+    {
+      downsideExposureKrw: 100_000,
+      hedgeExposureKrw: 100_000,
+      netDownsideExposureKrw: 0,
+      metadataMissing: false
+    }
   );
 });
 
