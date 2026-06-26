@@ -20,9 +20,6 @@ import type {
   VirtualPosition,
   VirtualTrade
 } from "../domain/schemas.js";
-import {
-  DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS
-} from "../paper/dynamicCashReservePolicy.js";
 import { DEFAULT_MIN_CASH_RESERVE_RATIO } from "../paper/riskPolicy.js";
 
 const STRATEGY_BUCKETS = [
@@ -720,7 +717,7 @@ function cashComplianceView(input: {
   rejectCodes: Record<string, number>;
 }): CashComplianceView {
   const currentCashKrw = input.portfolio?.cashKrw ?? 0;
-  const rule = cashReserveRule(input.marketRegime);
+  const rule = cashReserveRule();
   const minimumCashReserveKrw = Math.round(
     input.virtualNetWorthKrw * rule.targetCashRatio
   );
@@ -1296,23 +1293,13 @@ function bucketTurnoverRatio(
   return virtualNetWorthKrw > 0 ? ratio(amount, virtualNetWorthKrw) : null;
 }
 
-function cashReserveRule(marketRegime: MarketRegimeView): {
+function cashReserveRule(): {
   targetCashRatio: number;
   ruleSource: CashComplianceView["ruleSource"];
 } {
-  const dynamicTargetRatio = DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS[marketRegime];
-  const targetCashRatio = Math.max(
-    DEFAULT_MIN_CASH_RESERVE_RATIO,
-    dynamicTargetRatio
-  );
   return {
-    targetCashRatio,
-    ruleSource:
-      targetCashRatio <= DEFAULT_MIN_CASH_RESERVE_RATIO
-        ? "static"
-        : marketRegime === "insufficient_data"
-          ? "fallback"
-          : "dynamic_regime"
+    targetCashRatio: DEFAULT_MIN_CASH_RESERVE_RATIO,
+    ruleSource: "static"
   };
 }
 

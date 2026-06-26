@@ -2063,7 +2063,7 @@ test("dashboard portfolio compliance keeps reject count scoped to current artifa
   }
 });
 
-test("dashboard cash compliance aligns insufficient data fallback with risk policy", async () => {
+test("dashboard cash compliance stays static when dynamic reserve policy is missing", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
   await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
@@ -2099,14 +2099,71 @@ test("dashboard cash compliance aligns insufficient data fallback with risk poli
 
     assert.equal(result.response.status, 200);
     assert.equal(cashCompliance["marketRegime"], "insufficient_data");
-    assert.equal(cashCompliance["targetCashRatio"], 0.35);
-    assert.equal(cashCompliance["minimumCashReserveKrw"], 350_000);
-    assert.equal(cashCompliance["cashGapKrw"], 100_000);
-    assert.equal(cashCompliance["ruleSource"], "fallback");
-    assert.equal(cashCompliance["status"], "under_reserved");
-    assert.equal(cashReserve["targetCashRatio"], 0.35);
-    assert.equal(cashReserve["reserveStatus"], "under_reserved");
-    assert.equal(cashReserve["ruleSource"], "fallback");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "ok");
+    assert.equal(cashReserve["ruleSource"], "static");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard cash compliance does not apply bear dynamic reserve without policy", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 200_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 10,
+        averagePriceKrw: 80_000,
+        marketValueKrw: 800_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  const aggregateReport = batchReplayAggregateReport();
+  const summary = aggregateReport["summary"] as Record<string, unknown>;
+  summary["regimeCounts"] = { bear: 2 };
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(aggregateReport)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const cashReserve = complianceAnalytics["cashReserve"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(cashCompliance["marketRegime"], "bear");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "ok");
+    assert.equal(cashReserve["ruleSource"], "static");
   } finally {
     await stopTestServer(server);
   }

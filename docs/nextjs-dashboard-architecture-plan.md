@@ -868,7 +868,7 @@ npm run check
 범위:
 
 - strategy bucket analytics
-- dynamic cash reserve compliance
+- cash reserve compliance
 - hedge effectiveness
 - bucket-level cost and turnover
 
@@ -876,7 +876,7 @@ npm run check
 
 - 기존 `portfolio-compliance` ViewModel에 `complianceAnalytics` 요약을 추가한다.
 - backend가 strategy bucket 활성 개수, 최대 bucket 집중도, 정책 target 누락 수를 계산한다.
-- backend가 market regime 기반 cash reserve target, 현재 cash gap, reserve status를 계산한다.
+- backend가 policy artifact가 없는 현재 범위에서는 static cash reserve floor 기준으로 현재 cash gap과 reserve status를 계산하고, market regime은 context로만 표시한다.
 - backend가 hedge exposure coverage, net downside exposure ratio, hedge cost drag proxy를 계산한다.
 - backend가 strategy bucket별 거래대금, cost, turnover, cost drag를 계산한다.
 - `/dashboard`는 새 ViewModel 필드를 read-only summary로 렌더링한다.

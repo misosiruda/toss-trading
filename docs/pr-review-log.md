@@ -2506,3 +2506,10 @@
 - Fix review 1: `DEFAULT_MIN_CASH_RESERVE_RATIO`와 `DEFAULT_MIN_CASH_RESERVE_KRW`를 risk policy 모듈에서 export하고 risk policy 생성 default도 같은 상수를 사용하도록 변경했습니다.
 - Fix review 2: dashboard cash reserve target은 static floor와 dynamic regime ratio의 `max`를 사용하고, static floor가 지배하면 `ruleSource: static`으로 표시합니다.
 - Fix review 3: bull aggregate report에서 cash 5% 포트폴리오가 `under_reserved`로 표시되는 회귀 테스트를 추가했습니다.
+
+### Codex Review Fix 4
+
+- Review finding: `dynamicCashReservePolicy`는 opt-in인데 dashboard가 policy artifact 없이 aggregate regime만 보고 bear/insufficient_data dynamic reserve를 적용해 Risk Engine 기본 static reserve와 다른 status를 표시할 수 있었습니다.
+- Fix review 1: 현재 `portfolio-compliance` ViewModel은 `policyStatus: missing`이므로 cash reserve rule을 static `DEFAULT_MIN_CASH_RESERVE_RATIO` 기준으로 제한했습니다.
+- Fix review 2: `insufficient_data`에서 cash 25% 포트폴리오가 policy 미확인 상태에서는 `ok`로 유지되는 회귀 테스트로 갱신했습니다.
+- Fix review 3: bear aggregate report에서 cash 20% 포트폴리오가 dynamic 25% 기준으로 잘못 `under_reserved`가 되지 않는 회귀 테스트를 추가했습니다.
