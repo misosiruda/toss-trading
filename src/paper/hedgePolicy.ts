@@ -17,6 +17,13 @@ export interface HedgePolicy {
   requireHedgeBucket?: boolean | undefined;
 }
 
+export interface PortfolioDownsideExposureSummary {
+  downsideExposureKrw: number;
+  hedgeExposureKrw: number;
+  netDownsideExposureKrw: number;
+  metadataMissing: boolean;
+}
+
 export interface EvaluateHedgePolicyInput {
   portfolio: VirtualPortfolio;
   candidate: MarketCandidate | undefined;
@@ -122,16 +129,37 @@ function currentNetDownsideExposureKrw(portfolio: VirtualPortfolio): {
   value: number;
   metadataMissing: boolean;
 } {
-  let value = 0;
+  const summary = summarizePortfolioDownsideExposure(portfolio);
+
+  return {
+    value: summary.netDownsideExposureKrw,
+    metadataMissing: summary.metadataMissing
+  };
+}
+
+export function summarizePortfolioDownsideExposure(
+  portfolio: VirtualPortfolio
+): PortfolioDownsideExposureSummary {
+  let downsideExposureKrw = 0;
+  let hedgeExposureKrw = 0;
   let metadataMissing = false;
 
   for (const position of portfolio.positions) {
     const contribution = downsideExposureContribution(position);
-    value += contribution.value;
+    if (contribution.value < 0) {
+      hedgeExposureKrw += Math.abs(contribution.value);
+    } else {
+      downsideExposureKrw += contribution.value;
+    }
     metadataMissing = metadataMissing || contribution.metadataMissing;
   }
 
-  return { value, metadataMissing };
+  return {
+    downsideExposureKrw,
+    hedgeExposureKrw,
+    netDownsideExposureKrw: Math.max(0, downsideExposureKrw - hedgeExposureKrw),
+    metadataMissing
+  };
 }
 
 function downsideExposureContribution(

@@ -1788,6 +1788,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       {
         market: "KR",
         symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
         strategyBucket: "long_term",
         quantity: 2,
         averagePriceKrw: 70_000,
@@ -1810,6 +1812,27 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
   await new FileVirtualDecisionStore(paths.virtualDecisionsPath).append(
     decision()
   );
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    strategyBucket: "long_term",
+    grossAmountKrw: 70_000,
+    feeKrw: 70,
+    slippageKrw: 70,
+    totalCostKrw: 999
+  });
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    tradeId: "trade_api_hedge",
+    decisionId: "decision_api_hedge",
+    market: "US",
+    symbol: "SH",
+    priceKrw: 50_000,
+    amountKrw: 50_000,
+    grossAmountKrw: 50_000,
+    feeKrw: 10,
+    totalCostKrw: 999,
+    strategyBucket: "hedge"
+  });
   await new FileVirtualDecisionStore(paths.historicalReplayDecisionLogPath).append(
     replayDecision()
   );
@@ -1879,6 +1902,17 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const cashCompliance = portfolioCompliance.payload[
       "cashCompliance"
     ] as Record<string, unknown>;
+    const complianceAnalytics = portfolioCompliance.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const strategyBucketAnalytics = complianceAnalytics["strategyBucket"]!;
+    const cashReserveAnalytics = complianceAnalytics["cashReserve"]!;
+    const hedgeEffectivenessAnalytics =
+      complianceAnalytics["hedgeEffectiveness"]!;
+    const costTurnoverAnalytics = complianceAnalytics["costTurnover"]!;
+    const bucketCostRows = costTurnoverAnalytics[
+      "byStrategyBucket"
+    ] as Array<Record<string, unknown>>;
     const supportedBuckets = strategyTestLab.payload[
       "supportedBuckets"
     ] as Array<Record<string, unknown>>;
@@ -1916,6 +1950,38 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     );
     assert.equal(hedgeCompliance["hedgeExposureKrw"], 50_000);
     assert.equal(cashCompliance["marketRegime"], "bull");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(strategyBucketAnalytics["occupiedBucketCount"], 2);
+    assert.equal(strategyBucketAnalytics["missingPolicyTargetCount"], 5);
+    assert.equal(
+      (strategyBucketAnalytics["largestBucket"] as Record<string, unknown>)["key"],
+      "long_term"
+    );
+    assert.equal(strategyBucketAnalytics["concentrationRatio"], 0.75);
+    assert.equal(cashReserveAnalytics["currentCashKrw"], 800_000);
+    assert.equal(cashReserveAnalytics["reserveStatus"], "ok");
+    assert.equal(hedgeEffectivenessAnalytics["hedgeCoverageRatio"], 1 / 3);
+    assert.equal(hedgeEffectivenessAnalytics["netDownsideExposureRatio"], 2 / 3);
+    assert.equal(hedgeEffectivenessAnalytics["costDragRatio"], 0.0002);
+    assert.equal(hedgeEffectivenessAnalytics["status"], "ok");
+    assert.equal(costTurnoverAnalytics["totalTradeAmountKrw"], 120_000);
+    assert.equal(costTurnoverAnalytics["totalCostKrw"], 150);
+    assert.equal(costTurnoverAnalytics["totalTurnoverRatio"], 0.12);
+    assert.equal(costTurnoverAnalytics["totalCostDragRatio"], 0.00125);
+    assert.equal(
+      bucketCostRows.find((row) => row["bucket"] === "long_term")?.[
+        "totalCostKrw"
+      ],
+      140
+    );
+    assert.equal(
+      bucketCostRows.find((row) => row["bucket"] === "hedge")?.["totalCostKrw"],
+      10
+    );
 
     assert.equal(strategyTestLab.response.status, 200);
     assert.equal(strategyTestLab.payload["viewModel"], "strategy-test-lab");
@@ -1994,6 +2060,288 @@ test("dashboard portfolio compliance keeps reject count scoped to current artifa
     assert.deepEqual(riskGateSummary["rejectCodes"], {});
     assert.equal(cashCompliance["rejectedCount"], 0);
     assert.equal(hedgeCompliance["rejectedCount"], 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard cash compliance stays static when dynamic reserve policy is missing", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 250_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 10,
+        averagePriceKrw: 75_000,
+        marketValueKrw: 750_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const cashReserve = complianceAnalytics["cashReserve"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(cashCompliance["marketRegime"], "insufficient_data");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "ok");
+    assert.equal(cashReserve["ruleSource"], "static");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard cash compliance does not apply bear dynamic reserve without policy", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 200_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 10,
+        averagePriceKrw: 80_000,
+        marketValueKrw: 800_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  const aggregateReport = batchReplayAggregateReport();
+  const summary = aggregateReport["summary"] as Record<string, unknown>;
+  summary["regimeCounts"] = { bear: 2 };
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(aggregateReport)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const cashReserve = complianceAnalytics["cashReserve"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(cashCompliance["marketRegime"], "bear");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "ok");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "ok");
+    assert.equal(cashReserve["ruleSource"], "static");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard cash compliance preserves static reserve floor in bull regimes", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 50_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 10,
+        averagePriceKrw: 95_000,
+        marketValueKrw: 950_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const cashReserve = complianceAnalytics["cashReserve"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(cashCompliance["marketRegime"], "bull");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 50_000);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "under_reserved");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "under_reserved");
+    assert.equal(cashReserve["ruleSource"], "static");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard hedge compliance requires current hedge exposure for ok status", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 850_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
+        strategyBucket: "long_term",
+        quantity: 2,
+        averagePriceKrw: 70_000,
+        marketValueKrw: 150_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    tradeId: "trade_stale_hedge",
+    decisionId: "decision_stale_hedge",
+    market: "US",
+    symbol: "SH",
+    priceKrw: 50_000,
+    amountKrw: 50_000,
+    grossAmountKrw: 50_000,
+    feeKrw: 10,
+    strategyBucket: "hedge"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const hedgeCompliance = result.payload["hedgeCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const hedgeEffectiveness = complianceAnalytics["hedgeEffectiveness"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(hedgeCompliance["grossExposureKrw"], 150_000);
+    assert.equal(hedgeCompliance["hedgeExposureKrw"], 0);
+    assert.equal(hedgeCompliance["hedgeTradeCount"], 1);
+    assert.equal(hedgeCompliance["status"], "ineffective");
+    assert.equal(hedgeEffectiveness["hedgeCoverageRatio"], 0);
+    assert.equal(hedgeEffectiveness["netDownsideExposureRatio"], 1);
+    assert.equal(hedgeEffectiveness["costDragRatio"], null);
+    assert.equal(hedgeEffectiveness["status"], "ineffective");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard hedge compliance uses downside exposure as coverage denominator", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 800_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        assetType: "STOCK",
+        assetClass: "equity",
+        strategyBucket: "long_term",
+        quantity: 1,
+        averagePriceKrw: 100_000,
+        marketValueKrw: 100_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      },
+      {
+        market: "US",
+        symbol: "SH",
+        assetClass: "inverse",
+        riskTags: ["inverse"],
+        strategyBucket: "hedge",
+        quantity: 1,
+        averagePriceKrw: 100_000,
+        marketValueKrw: 100_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const hedgeCompliance = result.payload["hedgeCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const hedgeEffectiveness = complianceAnalytics["hedgeEffectiveness"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(hedgeCompliance["grossExposureKrw"], 200_000);
+    assert.equal(hedgeCompliance["hedgeExposureKrw"], 100_000);
+    assert.equal(hedgeCompliance["netDownsideExposureKrw"], 0);
+    assert.equal(hedgeCompliance["estimatedDownsideReductionKrw"], 100_000);
+    assert.equal(hedgeEffectiveness["hedgeCoverageRatio"], 1);
+    assert.equal(hedgeEffectiveness["netDownsideExposureRatio"], 0);
+    assert.equal(hedgeEffectiveness["status"], "over_hedged");
   } finally {
     await stopTestServer(server);
   }

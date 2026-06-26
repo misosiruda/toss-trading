@@ -42,6 +42,13 @@ test("renders paper-only dashboard readiness without live mutation controls", as
     page.getByRole("heading", { name: "Portfolio Compliance" })
   ).toBeVisible();
   await expect(
+    page.getByRole("heading", { name: "Compliance Analytics" })
+  ).toBeVisible();
+  await expect(page.getByText("Strategy Bucket Mix")).toBeVisible();
+  await expect(page.getByText("Cash Reserve")).toBeVisible();
+  await expect(page.getByText("Hedge Effectiveness")).toBeVisible();
+  await expect(page.getByText("Cost & Turnover")).toBeVisible();
+  await expect(
     page.getByRole("heading", { name: "Strategy Test Lab" })
   ).toBeVisible();
   await expect(

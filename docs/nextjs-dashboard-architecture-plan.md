@@ -196,6 +196,7 @@ interface PolicyComplianceViewModel {
   hedgeCompliance: HedgeComplianceView;
   exposureCompliance: ExposureComplianceView;
   riskGateSummary: RiskGateSummaryView;
+  complianceAnalytics: ComplianceAnalyticsView;
   status: "ok" | "watch" | "breach" | "missing";
 }
 
@@ -218,9 +219,11 @@ interface CashComplianceView {
   marketRegime: "bull" | "bear" | "sideways" | "mixed" | "insufficient_data";
   targetCashRatio: number;
   currentCashRatio: number;
+  currentCashKrw: number;
   minimumCashReserveKrw: number;
   cashGapKrw: number;
   ruleSource: "static" | "dynamic_regime" | "high_volatility" | "fallback";
+  status: "ok" | "under_reserved" | "missing";
   rejectedCount: number;
   rejectCodes: Record<string, number>;
 }
@@ -241,6 +244,52 @@ interface HedgeComplianceView {
   rejectedCount: number;
   rejectCodes: Record<string, number>;
   status: "ok" | "ineffective" | "over_hedged" | "missing";
+}
+```
+
+### `ComplianceAnalyticsView`
+
+```ts
+interface ComplianceAnalyticsView {
+  strategyBucket: {
+    occupiedBucketCount: number;
+    missingPolicyTargetCount: number;
+    largestBucket: ExposureBucket | null;
+    concentrationRatio: number | null;
+    status: "ok" | "watch" | "breach" | "missing";
+  };
+  cashReserve: {
+    currentCashKrw: number;
+    currentCashRatio: number;
+    targetCashRatio: number;
+    minimumCashReserveKrw: number;
+    cashGapKrw: number;
+    reserveStatus: "ok" | "under_reserved" | "missing";
+    marketRegime: "bull" | "bear" | "sideways" | "mixed" | "insufficient_data";
+    ruleSource: "static" | "dynamic_regime" | "high_volatility" | "fallback";
+  };
+  hedgeEffectiveness: {
+    hedgeCoverageRatio: number | null;
+    netDownsideExposureRatio: number | null;
+    costDragRatio: number | null;
+    status: "ok" | "ineffective" | "over_hedged" | "missing";
+  };
+  costTurnover: {
+    totalTradeAmountKrw: number;
+    totalCostKrw: number;
+    totalTurnoverRatio: number | null;
+    totalCostDragRatio: number | null;
+    byStrategyBucket: BucketCostTurnoverRow[];
+  };
+}
+
+interface BucketCostTurnoverRow {
+  bucket: StrategyBucket;
+  tradeCount: number;
+  grossTradeAmountKrw: number;
+  totalCostKrw: number;
+  turnoverRatio: number | null;
+  costDragRatio: number | null;
 }
 ```
 
@@ -819,9 +868,24 @@ npm run check
 범위:
 
 - strategy bucket analytics
-- dynamic cash reserve compliance
+- cash reserve compliance
 - hedge effectiveness
 - bucket-level cost and turnover
+
+첫 번째 구현 단위:
+
+- 기존 `portfolio-compliance` ViewModel에 `complianceAnalytics` 요약을 추가한다.
+- backend가 strategy bucket 활성 개수, 최대 bucket 집중도, 정책 target 누락 수를 계산한다.
+- backend가 policy artifact가 없는 현재 범위에서는 static cash reserve floor 기준으로 현재 cash gap과 reserve status를 계산하고, market regime은 context로만 표시한다.
+- backend가 hedge exposure coverage, net downside exposure ratio, hedge cost drag proxy를 계산한다.
+- backend가 strategy bucket별 거래대금, cost, turnover, cost drag를 계산한다.
+- `/dashboard`는 새 ViewModel 필드를 read-only summary로 렌더링한다.
+
+제외 범위:
+
+- 새 저장 schema, migration, policy artifact persistence는 추가하지 않는다.
+- strategy bucket replay runner, SSE, result aggregation, live order surface는 추가하지 않는다.
+- browser client는 compliance metric을 재계산하지 않고 backend ViewModel을 렌더링만 한다.
 
 ### N7. Static dashboard deprecation
 

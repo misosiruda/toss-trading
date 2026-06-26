@@ -8,6 +8,9 @@ import type { MarketRegimeClassification } from "../analytics/marketRegimeClassi
 import type { DynamicCashReservePolicy } from "./dynamicCashReservePolicy.js";
 import type { HedgePolicy } from "./hedgePolicy.js";
 
+export const DEFAULT_MIN_CASH_RESERVE_RATIO = 0.1;
+export const DEFAULT_MIN_CASH_RESERVE_KRW = 0;
+
 export const VIRTUAL_RISK_REJECT_CODES = [
   "VIRTUAL_PACKET_STALE",
   "VIRTUAL_DECISION_STALE",
@@ -163,8 +166,10 @@ export function createVirtualRiskPolicy(
           maxUnknownMetadataExposureRatio:
             input.policy.maxUnknownMetadataExposureRatio
         }),
-    minCashReserveRatio: input.policy?.minCashReserveRatio ?? 0.1,
-    minCashReserveKrw: input.policy?.minCashReserveKrw ?? 0,
+    minCashReserveRatio:
+      input.policy?.minCashReserveRatio ?? DEFAULT_MIN_CASH_RESERVE_RATIO,
+    minCashReserveKrw:
+      input.policy?.minCashReserveKrw ?? DEFAULT_MIN_CASH_RESERVE_KRW,
     ...(input.policy?.dynamicCashReservePolicy === undefined
       ? {}
       : { dynamicCashReservePolicy: input.policy.dynamicCashReservePolicy }),
