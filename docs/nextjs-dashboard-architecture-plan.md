@@ -793,6 +793,15 @@ npm run check
 - validation endpoint는 explicit operation header와 same-origin local dashboard guard를 요구하지만, policy 저장, replay runner 시작, live `OrderIntent` 생성을 수행하지 않는다.
 - policy draft 저장, replay 생성, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
 
+세 번째 구현 단위:
+
+- `/dashboard/lab/policies`에 backend validation을 통과한 현재 `PortfolioPolicy` draft 기준 paper simulation create panel을 연결한다.
+- Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 `POST /paper/simulations`를 server-side proxy로 전달한다.
+- proxy는 dashboard intent header, dashboard mutation token, positive same-origin request metadata, `application/json` content type을 요구한다.
+- 현재 backend `PaperSimulationRunConfig`는 `PortfolioPolicy` artifact를 직접 받지 않으므로, policy builder는 `policyHash`를 simulation seed에 반영해 재현 가능한 create request를 만들고 policy draft 저장 또는 runner policy artifact 적용은 수행하지 않는다.
+- 이 단계는 guarded paper simulation create까지 연결하지만, policy artifact persistence, policy별 replay report 연결, strategy bucket isolated test 생성은 후속 PR 범위로 둔다.
+- live order, live `OrderIntent`, broker mutation, raw command 실행 surface를 추가하지 않는다.
+
 ### N5. Strategy Bucket Test Lab
 
 범위:

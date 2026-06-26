@@ -370,10 +370,12 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expectNoAxeViolations(page);
 });
 
-test("renders paper policy builder draft validation without mutation controls", async ({
+test("renders paper policy builder draft validation without live mutation controls", async ({
   page,
+  request,
 }) => {
   await page.goto("/dashboard/lab/policies");
+  const dashboardOrigin = new URL(page.url()).origin;
 
   await expect(
     page.getByRole("heading", { name: "Paper Policy Builder" })
@@ -381,6 +383,7 @@ test("renders paper policy builder draft validation without mutation controls", 
   await expect(page.getByText("paper-only draft")).toBeVisible();
   await expect(page.getByText("not stored", { exact: true })).toBeVisible();
   await expect(page.getByText("required", { exact: true })).toBeVisible();
+  await expect(page.getByText("guarded create", { exact: true })).toBeVisible();
   await expect(page.getByText("disabled")).toBeVisible();
 
   await expect(page.getByLabel("Policy name")).toHaveValue(
@@ -392,18 +395,183 @@ test("renders paper policy builder draft validation without mutation controls", 
   await expect(page.getByLabel("PortfolioPolicy preview")).toContainText(
     "backendValidationRequired"
   );
+  await expect(
+    page.getByRole("heading", { name: "Paper Simulation Create" })
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Policy paper simulation config preview")
+  ).toContainText("Backend validation is required");
+  await expect(
+    page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeDisabled();
 
   await page.getByRole("button", { name: "Validate draft" }).click();
   await expect(page.getByText("local checks 1")).toBeVisible();
   await page.getByRole("button", { name: "Backend validate" }).click();
   await expect(page.getByText("Backend validation valid")).toBeVisible();
   await expect(page.getByText("storage mutation disabled")).toBeVisible();
+  await expect(
+    page.getByLabel("Policy paper simulation config preview")
+  ).toContainText('"seed": "policy-');
+  const simulationPreviewText = await page
+    .getByLabel("Policy paper simulation config preview")
+    .textContent();
+  expect(simulationPreviewText).toBeTruthy();
+  const createSimulationBody = JSON.parse(
+    simulationPreviewText ?? "{}"
+  ) as Record<string, unknown>;
+  expect(createSimulationBody).toMatchObject({
+    mode: "paper_only",
+    runType: "batch_replay",
+    riskProfile: "balanced",
+    decisionProvider: {
+      mode: "dry_run_fixture"
+    }
+  });
+  const missingIntentCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody
+    }
+  );
+  expect(missingIntentCreate.status()).toBe(403);
+  expect(await missingIntentCreate.json()).toMatchObject({
+    error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const missingMutationTokenCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(missingMutationTokenCreate.status()).toBe(403);
+  expect(await missingMutationTokenCreate.json()).toMatchObject({
+    error: "mutation_token_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const invalidMutationTokenCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": "wrong-token",
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(invalidMutationTokenCreate.status()).toBe(403);
+  expect(await invalidMutationTokenCreate.json()).toMatchObject({
+    error: "mutation_token_invalid",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const nonJsonContentTypeCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: JSON.stringify(createSimulationBody),
+      headers: {
+        "content-type": "text/plain",
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(nonJsonContentTypeCreate.status()).toBe(415);
+  expect(await nonJsonContentTypeCreate.json()).toMatchObject({
+    error: "unsupported_media_type",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const missingMetadataCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody,
+      headers: {
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(missingMetadataCreate.status()).toBe(403);
+  expect(await missingMetadataCreate.json()).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const sameSiteMetadataCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody,
+      headers: {
+        "sec-fetch-site": "same-site",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(sameSiteMetadataCreate.status()).toBe(403);
+  expect(await sameSiteMetadataCreate.json()).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  const crossOriginCreate = await request.post(
+    "/dashboard/lab/policies/simulations/create",
+    {
+      data: createSimulationBody,
+      headers: {
+        origin: "http://evil.example",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "paper-simulation-create"
+      }
+    }
+  );
+  expect(crossOriginCreate.status()).toBe(403);
+  expect(await crossOriginCreate.json()).toMatchObject({
+    error: "same_origin_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false
+  });
+  await page.locator("#paper-simulation-mutation-token").fill(
+    DASHBOARD_MUTATION_TOKEN
+  );
+  await expect(
+    page.getByLabel("Policy paper simulation config preview")
+  ).not.toContainText(DASHBOARD_MUTATION_TOKEN);
+  await expect(
+    page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeEnabled();
 
   await page.getByLabel("Long-term target").fill("60");
   await expect(page.getByText("Total allocation is 125.00%")).toBeVisible();
   await expect(
     page.getByText("long_term target must stay between")
   ).toBeVisible();
+  await expect(
+    page.getByLabel("Policy paper simulation config preview")
+  ).toContainText("Backend validation is required");
+  await expect(
+    page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeDisabled();
 
   await page.getByRole("button", { name: "Reset draft" }).click();
   await page.getByLabel("Long-term minimum").fill("-10");
@@ -419,6 +587,9 @@ test("renders paper policy builder draft validation without mutation controls", 
   await expect(
     page.getByText("BUCKET_MIN_WEIGHT_OUT_OF_RANGE:")
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create paper simulation" })
+  ).toBeDisabled();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })

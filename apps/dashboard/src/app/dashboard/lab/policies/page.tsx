@@ -35,10 +35,11 @@ export default function PolicyBuilderPage() {
 
         <section
           aria-label="Policy safety boundary"
-          className="grid gap-3 md:grid-cols-3"
+          className="grid gap-3 md:grid-cols-4"
         >
           <BoundaryCard label="Persistence" value="not stored" />
           <BoundaryCard label="Backend validation" value="required" />
+          <BoundaryCard label="Paper simulation" value="guarded create" />
           <BoundaryCard label="Live mutation" value="disabled" />
         </section>
 
