@@ -2,6 +2,7 @@ import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import {
   readDashboardPortfolioComplianceViewModel,
   readDashboardRiskGateTraceViewModel,
+  readDashboardStrategyBucketTestProgressViewModel,
   readDashboardStrategyTestLabViewModel,
   readDashboardValidationLabViewModel
 } from "./dashboardViewModels.js";
@@ -30,6 +31,16 @@ export async function routeRequest(
   url: URL,
   options: LocalOperationsServerOptions
 ): Promise<unknown | null> {
+  const strategyBucketTestProgressTestId =
+    readStrategyBucketTestProgressTestId(url.pathname);
+  if (strategyBucketTestProgressTestId !== null) {
+    return readDashboardStrategyBucketTestProgressViewModel(
+      options.storageBaseDir,
+      strategyBucketTestProgressTestId,
+      readNow(options)
+    );
+  }
+
   if (!isLocalOperationsApiRoutePath(url.pathname)) {
     return null;
   }
@@ -116,4 +127,27 @@ function readDate(url: URL, options: LocalOperationsServerOptions): string {
 
 function readNow(options: LocalOperationsServerOptions): Date {
   return options.now?.() ?? new Date();
+}
+
+function readStrategyBucketTestProgressTestId(pathname: string): string | null {
+  const prefix = "/dashboard/view-model/strategy-test-lab/tests/";
+  const suffix = "/progress";
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
+    return null;
+  }
+
+  const encodedTestId = pathname.slice(prefix.length, -suffix.length);
+  if (encodedTestId.length === 0 || encodedTestId.includes("/")) {
+    return null;
+  }
+
+  try {
+    const decodedTestId = decodeURIComponent(encodedTestId).trim();
+    if (decodedTestId.length === 0 || decodedTestId.includes("/")) {
+      return null;
+    }
+    return decodedTestId;
+  } catch {
+    return null;
+  }
 }

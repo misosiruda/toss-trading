@@ -11,6 +11,7 @@ export type FetchStatus = "ok" | "offline" | "invalid";
 export type DashboardViewModelName =
   | "portfolio-compliance"
   | "strategy-test-lab"
+  | "strategy-test-progress"
   | "risk-gate-trace"
   | "validation-lab";
 
@@ -163,6 +164,22 @@ export interface StrategyBucketComparisonView {
   rows: StrategyBucketTestResultSummary[];
   baselineBucket: StrategyBucket | null;
   selectionWarning: string | null;
+}
+
+export interface StrategyBucketTestProgressViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "strategy-test-progress";
+  testId: string;
+  test: StrategyBucketTestSummary | null;
+  sourceStatus: {
+    strategyBucketTestRecords: JsonReadStatus;
+  };
+  storageMutationEnabled: false;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  replayRunnerStarted: false;
+  status: "ok" | "missing" | "invalid";
 }
 
 export interface RiskGateTraceViewModel {
@@ -455,6 +472,26 @@ function isStrategyBucketTestLabViewModel(
     isStrategyComparison(value.comparison) &&
     isSourceStatus(value.sourceStatus) &&
     value.status === "ok"
+  );
+}
+
+export function isStrategyBucketTestProgressViewModel(
+  value: unknown
+): value is StrategyBucketTestProgressViewModel {
+  if (!isViewModelPayload(value, "strategy-test-progress")) {
+    return false;
+  }
+  return (
+    typeof value.testId === "string" &&
+    (value.test === null || isStrategyBucketTestSummary(value.test)) &&
+    isSourceStatus(value.sourceStatus) &&
+    value.storageMutationEnabled === false &&
+    value.liveTradingEnabled === false &&
+    value.orderPlacementEnabled === false &&
+    value.replayRunnerStarted === false &&
+    (value.status === "ok" ||
+      value.status === "missing" ||
+      value.status === "invalid")
   );
 }
 

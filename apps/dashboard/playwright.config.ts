@@ -13,7 +13,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "npm --prefix ../.. run dashboard -- --data-dir data/paper --host 127.0.0.1 --port 8789",
+        "node tests/e2e/prepare-e2e-data.mjs && npm --prefix ../.. run dashboard -- --data-dir apps/dashboard/.e2e-data/paper --host 127.0.0.1 --port 8789",
       url: "http://127.0.0.1:8789/health",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

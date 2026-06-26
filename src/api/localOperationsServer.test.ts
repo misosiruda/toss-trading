@@ -1115,6 +1115,24 @@ test("strategy bucket test create writes a queued record without starting a runn
       baseUrl,
       "/dashboard/view-model/strategy-test-lab"
     );
+    const progressDetail = await fetchJson(
+      baseUrl,
+      `/dashboard/view-model/strategy-test-lab/tests/${encodeURIComponent(
+        String(result.payload["testId"])
+      )}/progress`
+    );
+    const missingProgressDetail = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab/tests/missing-test/progress"
+    );
+    const progressDetailMutation = await fetch(
+      `${baseUrl}/dashboard/view-model/strategy-test-lab/tests/${encodeURIComponent(
+        String(result.payload["testId"])
+      )}/progress`,
+      { method: "POST" }
+    );
+    const progressDetailMutationPayload =
+      (await progressDetailMutation.json()) as Record<string, unknown>;
     const record = records[0];
     const progress = record?.["progress"] as Record<string, unknown> | undefined;
     const heartbeat = record?.["heartbeat"] as
@@ -1134,6 +1152,18 @@ test("strategy bucket test create writes a queued record without starting a runn
       string,
       unknown
     >;
+    const progressDetailTest = progressDetail.payload["test"] as
+      | Record<string, unknown>
+      | null;
+    const progressDetailProgress = progressDetailTest?.["progress"] as
+      | Record<string, unknown>
+      | undefined;
+    const progressDetailHeartbeat = progressDetailTest?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+    const progressDetailSourceStatus = progressDetail.payload[
+      "sourceStatus"
+    ] as Record<string, unknown>;
 
     assert.equal(result.response.status, 202);
     assert.equal(result.payload["mode"], "paper_only");
@@ -1185,6 +1215,28 @@ test("strategy bucket test create writes a queued record without starting a runn
     assert.equal(activeProgress?.["riskRejectedCount"], 0);
     assert.equal(activeHeartbeat?.["status"], "fresh");
     assert.equal(sourceStatus["strategyBucketTestRecords"], "ok");
+    assert.equal(progressDetail.response.status, 200);
+    assert.equal(progressDetail.payload["mode"], "paper_only");
+    assert.equal(progressDetail.payload["readOnly"], true);
+    assert.equal(progressDetail.payload["viewModel"], "strategy-test-progress");
+    assert.equal(progressDetail.payload["testId"], result.payload["testId"]);
+    assert.equal(progressDetail.payload["status"], "ok");
+    assert.equal(progressDetail.payload["storageMutationEnabled"], false);
+    assert.equal(progressDetail.payload["liveTradingEnabled"], false);
+    assert.equal(progressDetail.payload["orderPlacementEnabled"], false);
+    assert.equal(progressDetail.payload["replayRunnerStarted"], false);
+    assert.equal(progressDetailTest?.["testId"], result.payload["testId"]);
+    assert.equal(progressDetailTest?.["status"], "queued");
+    assert.equal(progressDetailProgress?.["phase"], "queued");
+    assert.equal(progressDetailProgress?.["decisionCount"], 0);
+    assert.equal(progressDetailHeartbeat?.["status"], "fresh");
+    assert.equal(progressDetailSourceStatus["strategyBucketTestRecords"], "ok");
+    assert.equal(missingProgressDetail.response.status, 200);
+    assert.equal(missingProgressDetail.payload["status"], "missing");
+    assert.equal(missingProgressDetail.payload["test"], null);
+    assert.equal(progressDetailMutation.status, 405);
+    assert.equal(progressDetailMutationPayload["readOnly"], true);
+    assert.equal(progressDetailMutationPayload["error"], "method_not_allowed");
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -1284,13 +1336,29 @@ test("strategy bucket test lab ViewModel removes terminal latest records from ac
       baseUrl,
       "/dashboard/view-model/strategy-test-lab"
     );
+    const progressDetail = await fetchJson(
+      baseUrl,
+      `/dashboard/view-model/strategy-test-lab/tests/${encodeURIComponent(
+        String(result.payload["testId"])
+      )}/progress`
+    );
     const activeTests = strategyTestLab.payload["activeTests"] as Array<
       Record<string, unknown>
     >;
+    const progressDetailTest = progressDetail.payload["test"] as
+      | Record<string, unknown>
+      | null;
+    const progressDetailProgress = progressDetailTest?.["progress"] as
+      | Record<string, unknown>
+      | undefined;
 
     assert.equal(result.response.status, 202);
     assert.equal(queuedRecord["testId"], result.payload["testId"]);
     assert.equal(activeTests.length, 0);
+    assert.equal(progressDetail.response.status, 200);
+    assert.equal(progressDetail.payload["status"], "ok");
+    assert.equal(progressDetailTest?.["status"], "completed");
+    assert.equal(progressDetailProgress?.["phase"], "completed");
   } finally {
     await stopTestServer(server);
   }
