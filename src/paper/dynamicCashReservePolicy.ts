@@ -57,7 +57,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MINIMUM_CASH_RESERVE_RATIO_FLOOR = 0.02;
 const DEFAULT_HIGH_VOLATILITY_RETURN_THRESHOLD = 0.08;
 const DEFAULT_HIGH_VOLATILITY_CASH_RESERVE_RATIO = 0.3;
-const DEFAULT_REGIME_CASH_RESERVE_RATIOS: Record<MarketRegimeLabel, number> = {
+export const DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS: Readonly<
+  Record<MarketRegimeLabel, number>
+> = {
   bull: DEFAULT_MINIMUM_CASH_RESERVE_RATIO_FLOOR,
   sideways: 0.1,
   mixed: 0.15,
@@ -118,7 +120,7 @@ export function assessDynamicCashReserve(
 
   const marketRegimeLabel = input.marketRegime?.label ?? "insufficient_data";
   const regimeRatios = {
-    ...DEFAULT_REGIME_CASH_RESERVE_RATIOS,
+    ...DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS,
     ...(input.policy.regimeCashReserveRatios ?? {})
   };
   const floorRatio =

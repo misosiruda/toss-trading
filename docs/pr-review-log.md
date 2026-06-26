@@ -2492,3 +2492,10 @@
 - Fix review 1: hedge status는 gross exposure가 있고 current hedge exposure가 0 이하이면 hedge trade 이력과 무관하게 `ineffective`로 판정하도록 변경했습니다.
 - Fix review 2: `hedgeEnabled`의 이력 표시 의미는 유지하되, healthy/over-hedged 판정 경로는 positive current hedge exposure가 있을 때만 도달하게 했습니다.
 - Fix review 3: 현재 long-term exposure만 있고 stale hedge trade가 남은 ViewModel test를 추가해 hedge compliance와 compliance analytics가 모두 `ineffective`를 반환하는지 검증합니다.
+
+### Codex Review Fix 2
+
+- Review finding: dashboard cash fallback이 `insufficient_data`에서 20% reserve를 표시해 risk engine의 dynamic cash reserve default 35%와 어긋날 수 있었습니다.
+- Fix review 1: `DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS`를 risk policy 모듈에서 export하고 dashboard ViewModel이 같은 상수를 참조하도록 변경했습니다.
+- Fix review 2: dashboard cash reserve rule은 `insufficient_data`를 `fallback` source로 유지하되 target ratio는 risk policy default 35%를 사용합니다.
+- Fix review 3: aggregate report가 없는 `insufficient_data` 상황에서 cash 25% 포트폴리오가 `under_reserved`로 표시되는 회귀 테스트를 추가했습니다.

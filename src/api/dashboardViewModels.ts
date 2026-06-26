@@ -20,6 +20,9 @@ import type {
   VirtualPosition,
   VirtualTrade
 } from "../domain/schemas.js";
+import {
+  DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS
+} from "../paper/dynamicCashReservePolicy.js";
 
 const STRATEGY_BUCKETS = [
   "long_term",
@@ -1296,18 +1299,11 @@ function cashReserveRule(marketRegime: MarketRegimeView): {
   targetCashRatio: number;
   ruleSource: CashComplianceView["ruleSource"];
 } {
-  switch (marketRegime) {
-    case "bull":
-      return { targetCashRatio: 0.05, ruleSource: "dynamic_regime" };
-    case "sideways":
-      return { targetCashRatio: 0.15, ruleSource: "dynamic_regime" };
-    case "bear":
-      return { targetCashRatio: 0.3, ruleSource: "dynamic_regime" };
-    case "mixed":
-      return { targetCashRatio: 0.2, ruleSource: "dynamic_regime" };
-    case "insufficient_data":
-      return { targetCashRatio: 0.2, ruleSource: "fallback" };
-  }
+  return {
+    targetCashRatio: DEFAULT_DYNAMIC_CASH_RESERVE_RATIOS[marketRegime],
+    ruleSource:
+      marketRegime === "insufficient_data" ? "fallback" : "dynamic_regime"
+  };
 }
 
 function bucketCostTurnoverRows(
