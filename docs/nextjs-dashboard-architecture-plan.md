@@ -903,7 +903,8 @@ npm run check
 첫 번째 구현 단위:
 
 - Local Operations API가 제공하는 기존 정적 `/dashboard`를 legacy static compatibility view로 명시한다.
-- 정적 dashboard HTML은 migration 기간 동안 유지되는 read-only 호환 조회 화면임을 화면 상단에 표시한다.
+- 정적 dashboard HTML은 migration 기간 동안 유지되는 legacy compatibility 화면임을 화면 상단에 표시한다.
+- 정적 dashboard는 read-only 조회 영역과 guarded paper-only simulation 생성 flow가 함께 있으므로 전체 surface를 read-only로 표시하지 않는다.
 - 정적 dashboard asset 응답에는 `x-toss-trading-dashboard-surface: legacy-static-compat` header를 붙여 Next.js 기본 UI와 구분한다.
 - CLI와 README는 Next.js `apps/dashboard`를 기본 operator UI로 안내하고, Local Operations API의 `/dashboard`는 compatibility view로 설명한다.
 

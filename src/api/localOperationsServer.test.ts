@@ -430,9 +430,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     }
     assert.match(html.text, /Toss Trading Ops/);
     assert.match(html.text, /legacy compatibility dashboard/);
-    assert.match(html.text, /정적 dashboard는 호환 조회 화면입니다/);
+    assert.match(html.text, /정적 dashboard는 legacy 호환 화면입니다/);
     assert.match(html.text, /Next\.js <code>apps\/dashboard<\/code>/);
-    assert.match(html.text, /read-only legacy/);
+    assert.match(html.text, /guarded paper-only simulation 생성 flow 호환/);
+    assert.match(html.text, /paper-only legacy/);
     assert.match(html.text, /document\.documentElement\.dataset\.dashboardPage/);
     assert.match(html.text, /href="\/dashboard\/styles.css"/);
     assert.match(html.text, /src="\/dashboard\/app.js"/);

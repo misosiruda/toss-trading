@@ -1,7 +1,7 @@
 # Toss Trading Dashboard
 
 paper-only 운영 화면을 제공하는 Next.js App Router 대시보드입니다.
-기존 Local Operations API의 정적 `/dashboard`는 migration 기간 동안 legacy compatibility 조회 화면으로만 유지됩니다.
+기존 Local Operations API의 정적 `/dashboard`는 migration 기간 동안 legacy compatibility 화면으로 유지됩니다.
 
 ## 범위
 
