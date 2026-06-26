@@ -9,6 +9,9 @@ const STRATEGY_BUCKET_TEST_CREATE_OPERATION =
   "paper-strategy-bucket-test-create";
 const DASHBOARD_INTENT_HEADER_NAME = "x-toss-trading-dashboard-intent";
 const STRATEGY_BUCKET_TEST_CREATE_INTENT = "strategy-bucket-test-create";
+const DASHBOARD_MUTATION_TOKEN_HEADER_NAME =
+  "x-toss-trading-dashboard-mutation-token";
+const DASHBOARD_MUTATION_TOKEN_ENV_NAME = "DASHBOARD_MUTATION_TOKEN";
 
 export async function POST(request: NextRequest) {
   const guardResponse = validateCreateProxyRequest(request);
@@ -66,10 +69,44 @@ function validateCreateProxyRequest(request: NextRequest) {
     );
   }
 
+  const mutationTokenGuard = validateDashboardMutationToken(request);
+  if (mutationTokenGuard !== null) {
+    return mutationTokenGuard;
+  }
+
   if (!isSameOriginDashboardRequest(request)) {
     return createGuardFailure(
       "same_origin_required",
       "strategy bucket test create proxy only accepts same-origin dashboard requests"
+    );
+  }
+
+  return null;
+}
+
+function validateDashboardMutationToken(request: NextRequest) {
+  const expectedToken = process.env[DASHBOARD_MUTATION_TOKEN_ENV_NAME]?.trim();
+  if (expectedToken === undefined || expectedToken === "") {
+    return createGuardFailure(
+      "mutation_token_unconfigured",
+      "strategy bucket test create requires a runtime dashboard mutation token"
+    );
+  }
+
+  const receivedToken = request.headers
+    .get(DASHBOARD_MUTATION_TOKEN_HEADER_NAME)
+    ?.trim();
+  if (receivedToken === undefined || receivedToken === "") {
+    return createGuardFailure(
+      "mutation_token_required",
+      "strategy bucket test create requires a dashboard mutation token"
+    );
+  }
+
+  if (!isEqualToken(receivedToken, expectedToken)) {
+    return createGuardFailure(
+      "mutation_token_invalid",
+      "strategy bucket test create received an invalid dashboard mutation token"
     );
   }
 
@@ -97,6 +134,19 @@ function isSameOriginDashboardRequest(request: NextRequest): boolean {
   }
 
   return false;
+}
+
+function isEqualToken(receivedToken: string, expectedToken: string): boolean {
+  if (receivedToken.length !== expectedToken.length) {
+    return false;
+  }
+
+  let difference = 0;
+  for (let index = 0; index < expectedToken.length; index += 1) {
+    difference |=
+      receivedToken.charCodeAt(index) ^ expectedToken.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 function readIncomingRequestOrigin(request: NextRequest): string {

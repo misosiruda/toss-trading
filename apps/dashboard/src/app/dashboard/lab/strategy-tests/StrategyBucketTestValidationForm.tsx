@@ -25,6 +25,8 @@ const DECISION_FREQUENCY_OPTIONS = [
 const STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER =
   "x-toss-trading-dashboard-intent";
 const STRATEGY_BUCKET_TEST_CREATE_INTENT = "strategy-bucket-test-create";
+const STRATEGY_BUCKET_TEST_CREATE_MUTATION_TOKEN_HEADER =
+  "x-toss-trading-dashboard-mutation-token";
 
 type DecisionFrequency = (typeof DECISION_FREQUENCY_OPTIONS)[number]["value"];
 type DecisionProviderMode = "dry_run_fixture" | "codex_paper_only";
@@ -120,6 +122,7 @@ export function StrategyBucketTestValidationForm() {
     useState<DecisionProviderMode>("dry_run_fixture");
   const [maxCodexCallsPerRun, setMaxCodexCallsPerRun] = useState(0);
   const [initialCashKrw, setInitialCashKrw] = useState(10_000_000);
+  const [mutationToken, setMutationToken] = useState("");
   const [backendValidation, setBackendValidation] =
     useState<BackendValidationState>({ status: "idle" });
   const [createState, setCreateState] = useState<CreateState>({
@@ -202,10 +205,12 @@ export function StrategyBucketTestValidationForm() {
     requestJson
   );
   const visibleCreateState = currentCreateState(createState, requestJson);
+  const trimmedMutationToken = mutationToken.trim();
   const canCreateQueuedRecord =
     visibleBackendValidation.status === "ready" &&
     visibleBackendValidation.response.status === "valid" &&
     visibleBackendValidation.response.validatedForStrategyBucketTestConfig &&
+    trimmedMutationToken.length > 0 &&
     visibleCreateState.status !== "pending" &&
     visibleCreateState.status !== "queued";
 
@@ -295,7 +300,9 @@ export function StrategyBucketTestValidationForm() {
         headers: {
           "content-type": "application/json",
           [STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER]:
-            STRATEGY_BUCKET_TEST_CREATE_INTENT
+            STRATEGY_BUCKET_TEST_CREATE_INTENT,
+          [STRATEGY_BUCKET_TEST_CREATE_MUTATION_TOKEN_HEADER]:
+            trimmedMutationToken
         },
         body: currentRequestJson
       });
@@ -521,6 +528,21 @@ export function StrategyBucketTestValidationForm() {
             />
           </div>
 
+          <label
+            className="grid gap-2 text-sm font-medium"
+            htmlFor="mutation-token"
+          >
+            Mutation token
+            <input
+              autoComplete="off"
+              className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+              id="mutation-token"
+              onChange={(event) => setMutationToken(event.target.value)}
+              type="password"
+              value={mutationToken}
+            />
+          </label>
+
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               className="rounded-[6px] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
@@ -561,6 +583,7 @@ export function StrategyBucketTestValidationForm() {
                 setDecisionProvider("dry_run_fixture");
                 setMaxCodexCallsPerRun(0);
                 setInitialCashKrw(10_000_000);
+                setMutationToken("");
                 setBackendValidation({ status: "idle" });
                 setCreateState({ status: "idle" });
               }}
@@ -704,7 +727,7 @@ function CreateResultPanel({
       >
         {canCreateQueuedRecord
           ? "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
-          : "Queued test record not created. Run backend validation first."}
+          : "Queued test record not created. Backend validation and mutation token are required."}
       </p>
     );
   }

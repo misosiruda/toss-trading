@@ -2418,3 +2418,10 @@
 - Fix review 1: create proxy fallback은 `sec-fetch-site: same-origin`만 positive same-origin evidence로 인정합니다.
 - Fix review 2: `sec-fetch-site: same-site` 직접 POST는 dashboard intent header가 있어도 `same_origin_required` 403으로 차단합니다.
 - Fix review 3: E2E는 same-site metadata request가 storage mutation 없이 거절되는지 검증합니다.
+
+### Codex Review Fix 6
+
+- Review finding: create proxy가 public dashboard intent header와 request metadata만으로 queued record mutation을 허용할 수 있었습니다.
+- Fix review 1: create proxy는 server-side `DASHBOARD_MUTATION_TOKEN`과 request `x-toss-trading-dashboard-mutation-token` header가 일치하지 않으면 fail-closed 처리합니다.
+- Fix review 2: strategy bucket test form은 mutation token 입력값을 create request header로만 전달하고 request preview나 result payload에는 표시하지 않습니다.
+- Fix review 3: E2E는 missing/invalid token, missing metadata, same-site metadata, cross-origin metadata가 storage mutation 없이 차단되고 valid token flow만 queued record를 생성하는지 검증합니다.
