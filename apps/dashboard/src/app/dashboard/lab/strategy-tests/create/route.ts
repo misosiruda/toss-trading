@@ -96,7 +96,7 @@ function isSameOriginDashboardRequest(request: NextRequest): boolean {
     return fetchSite === "same-origin" || fetchSite === "same-site";
   }
 
-  return true;
+  return false;
 }
 
 function readIncomingRequestOrigin(request: NextRequest): string {

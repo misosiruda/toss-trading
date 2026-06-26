@@ -41,7 +41,7 @@ POST /paper/simulations/strategy-bucket-tests
 
 `/dashboard/lab/strategy-tests/validate`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 validation request를 server-side로 전달할 뿐이며, strategy bucket test record 생성, artifact 저장, replay runner 시작을 수행하지 않습니다.
 
-`/dashboard/lab/strategy-tests/create`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 `x-toss-trading-dashboard-intent`를 요구하고 명시적인 cross-origin `origin`/`referer`/`sec-fetch-site` metadata를 차단한 뒤 validation을 통과한 strategy bucket test 설정을 server-side로 전달해 append-only queued record와 audit event를 저장합니다.
+`/dashboard/lab/strategy-tests/create`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 `x-toss-trading-dashboard-intent`와 positive same-origin `origin`/`referer`/`sec-fetch-site` metadata를 요구한 뒤 validation을 통과한 strategy bucket test 설정을 server-side로 전달해 append-only queued record와 audit event를 저장합니다.
 
 `POST /paper/simulations/strategy-bucket-tests`는 backend guarded mutation endpoint입니다. validation을 통과한 strategy bucket test 설정만 append-only queued record와 audit event로 저장합니다. replay runner 시작, live order surface, raw command execution은 수행하지 않습니다.
 

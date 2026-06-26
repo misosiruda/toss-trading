@@ -373,7 +373,8 @@ export async function readDashboardPortfolioComplianceViewModel(
 }
 
 export async function readDashboardStrategyTestLabViewModel(
-  storageBaseDir: string
+  storageBaseDir: string,
+  now: Date = new Date()
 ): Promise<StrategyBucketTestLabViewModel> {
   const paths = createStoragePaths(storageBaseDir);
   const [aggregate, strategyBucketTestRecords] = await Promise.all([
@@ -381,7 +382,7 @@ export async function readDashboardStrategyTestLabViewModel(
     readJsonlRecords(paths.strategyBucketTestRecordsPath)
   ]);
   const activeTests = strategyBucketTestRecords.records
-    .map(parseStrategyBucketTestSummary)
+    .map((record) => parseStrategyBucketTestSummary(record, now))
     .filter((record): record is StrategyBucketTestSummary => record !== null)
     .filter((record) => isActiveStrategyBucketTest(record.status))
     .slice(-20)
@@ -780,7 +781,8 @@ function validationLabUnavailable(
 }
 
 function parseStrategyBucketTestSummary(
-  value: Record<string, unknown>
+  value: Record<string, unknown>,
+  now: Date
 ): StrategyBucketTestSummary | null {
   const testId = readStringField(value, "testId");
   const bucket = value["bucket"];
@@ -800,7 +802,7 @@ function parseStrategyBucketTestSummary(
   }
 
   const progressView = parseStrategyBucketTestProgress(progress);
-  const heartbeatView = parseStrategyBucketTestHeartbeat(heartbeat);
+  const heartbeatView = parseStrategyBucketTestHeartbeat(heartbeat, now);
   if (progressView === null || heartbeatView === null) {
     return null;
   }
@@ -863,18 +865,43 @@ function parseStrategyBucketTestProgress(
 }
 
 function parseStrategyBucketTestHeartbeat(
-  value: Record<string, unknown>
+  value: Record<string, unknown>,
+  now: Date
 ): StrategyBucketTestHeartbeatView | null {
   const status = value["status"];
   const staleAfterSeconds = readNumberField(value, "staleAfterSeconds");
-  if (!isStrategyBucketTestHeartbeatStatus(status) || staleAfterSeconds === null) {
+  if (
+    !isStrategyBucketTestHeartbeatStatus(status) ||
+    staleAfterSeconds === null ||
+    staleAfterSeconds <= 0
+  ) {
     return null;
   }
+  const lastSeenAt = readNullableStringField(value, "lastSeenAt");
   return {
-    status,
-    lastSeenAt: readNullableStringField(value, "lastSeenAt"),
+    status: strategyBucketHeartbeatStatus(lastSeenAt, staleAfterSeconds, now),
+    lastSeenAt,
     staleAfterSeconds
   };
+}
+
+function strategyBucketHeartbeatStatus(
+  lastSeenAt: string | null,
+  staleAfterSeconds: number,
+  now: Date
+): StrategyBucketTestHeartbeatView["status"] {
+  if (lastSeenAt === null) {
+    return "missing";
+  }
+
+  const lastSeenTime = Date.parse(lastSeenAt);
+  if (!Number.isFinite(lastSeenTime)) {
+    return "missing";
+  }
+
+  return now.getTime() - lastSeenTime > staleAfterSeconds * 1000
+    ? "stale"
+    : "fresh";
 }
 
 function isActiveStrategyBucketTest(status: StrategyBucketTestStatus): boolean {

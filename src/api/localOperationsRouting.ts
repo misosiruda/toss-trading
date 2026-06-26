@@ -75,7 +75,10 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
   "/dashboard/view-model/portfolio-compliance": (_url, options) =>
     readDashboardPortfolioComplianceViewModel(options.storageBaseDir),
   "/dashboard/view-model/strategy-test-lab": (_url, options) =>
-    readDashboardStrategyTestLabViewModel(options.storageBaseDir),
+    readDashboardStrategyTestLabViewModel(
+      options.storageBaseDir,
+      readNow(options)
+    ),
   "/dashboard/view-model/risk-gate-trace": (url, options) =>
     readDashboardRiskGateTraceViewModel(options.storageBaseDir, readLimit(url)),
   "/dashboard/view-model/validation-lab": (_url, options) =>

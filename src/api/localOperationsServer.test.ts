@@ -1191,6 +1191,54 @@ test("strategy bucket test create writes a queued record without starting a runn
   }
 });
 
+test("strategy bucket test lab ViewModel recomputes stale heartbeat status", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(strategyBucketTestCandidate())
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const record = records[0];
+    assert.ok(record);
+    const heartbeat = record["heartbeat"] as Record<string, unknown>;
+    heartbeat["status"] = "fresh";
+    heartbeat["lastSeenAt"] = new Date(
+      now.getTime() - 121_000
+    ).toISOString();
+    heartbeat["staleAfterSeconds"] = 120;
+    await writeFile(
+      paths.strategyBucketTestRecordsPath,
+      `${JSON.stringify(record)}\n`,
+      "utf8"
+    );
+
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const activeHeartbeat = activeTests[0]?.["heartbeat"] as
+      | Record<string, unknown>
+      | undefined;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(activeTests.length, 1);
+    assert.equal(activeTests[0]?.["testId"], result.payload["testId"]);
+    assert.equal(activeHeartbeat?.["status"], "stale");
+    assert.equal(activeHeartbeat?.["lastSeenAt"], heartbeat["lastSeenAt"]);
+    assert.equal(activeHeartbeat?.["staleAfterSeconds"], 120);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("strategy bucket test create rejects invalid configs before writing records", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
