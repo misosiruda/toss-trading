@@ -53,6 +53,19 @@
     </header>
 
     <main class="dashboard-shell">
+      <section class="legacy-compat-notice" aria-labelledby="legacy-compat-heading">
+        <div>
+          <p class="eyebrow">legacy compatibility dashboard</p>
+          <h1 id="legacy-compat-heading">정적 dashboard는 legacy 호환 화면입니다</h1>
+          <p>
+            새 운영 UI의 기본 화면은 Next.js <code>apps/dashboard</code>입니다. 이 정적 화면은 migration 기간 동안
+            기존 local artifact 조회와 guarded paper-only simulation 생성 flow 호환을 위해 유지되며, live order,
+            broker mutation, raw command 실행을 제공하지 않습니다.
+          </p>
+        </div>
+        <span class="status-pill neutral">paper-only legacy</span>
+      </section>
+
       <section class="metric-grid" aria-label="가상 포트폴리오 요약">
         <div class="metric-panel">
           <span class="metric-label">가상 순자산</span>

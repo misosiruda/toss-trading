@@ -14,7 +14,12 @@ await startLocalOperationsServer({
 });
 
 console.log(`Local operations API listening on http://${host}:${port}`);
-console.log(`Paper dashboard available at http://${host}:${port}/dashboard`);
+console.log(
+  `Legacy static dashboard compatibility view available at http://${host}:${port}/dashboard`
+);
+console.log(
+  "Next.js dashboard is the primary operator UI: npm --prefix apps/dashboard run dev"
+);
 console.log("mode=paper_only read_only=true");
 
 function readArgValue(name: string): string | undefined {

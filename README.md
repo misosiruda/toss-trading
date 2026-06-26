@@ -164,13 +164,14 @@ Codex CLI를 historical replay decision provider로 사용할 때도 `AI_DECISIO
 npm run historical:replay -- data/paper 2025-01-02T09:00:00+09:00 2025-01-02T15:30:00+09:00 60 5
 ```
 
-가상 투자 상태는 같은 local operations server에서 read-only dashboard로 볼 수 있습니다.
+가상 투자 상태와 정책 중심 운영 화면은 Next.js dashboard를 기본 UI로 사용합니다. Local Operations API를 먼저 띄운 뒤 Next.js app을 별도 프로세스로 실행합니다.
 
 ```powershell
-npm run dashboard -- --data-dir data/paper
+npm run ops:api -- --data-dir data/paper
+npm --prefix apps/dashboard run dev
 ```
 
-기본 URL은 `http://127.0.0.1:8787/dashboard`입니다. `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 화면은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events`, `/dashboard/view-model/portfolio-compliance`, `/dashboard/view-model/strategy-test-lab`, `/dashboard/view-model/risk-gate-trace`, `/dashboard/view-model/validation-lab` 같은 read-only endpoint를 호출합니다. 새 가상 투자 화면의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. Strategy bucket test create endpoint와 Next.js strategy test lab route handler는 validation을 통과한 설정을 queued record와 audit event로만 저장하며 replay runner를 시작하지 않습니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
+Next.js 기본 URL은 `http://127.0.0.1:3000/dashboard`입니다. Local Operations API의 `http://127.0.0.1:8787/dashboard`는 migration 기간 동안 유지되는 legacy static compatibility 화면이며, 응답 헤더 `x-toss-trading-dashboard-surface: legacy-static-compat`로 식별됩니다. legacy static view의 `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 영역은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events`, `/dashboard/view-model/portfolio-compliance`, `/dashboard/view-model/strategy-test-lab`, `/dashboard/view-model/risk-gate-trace`, `/dashboard/view-model/validation-lab` 같은 read-only endpoint를 호출합니다. legacy static view의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. Strategy bucket test create endpoint와 Next.js strategy test lab route handler는 validation을 통과한 설정을 queued record와 audit event로만 저장하며 replay runner를 시작하지 않습니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
 Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
 
