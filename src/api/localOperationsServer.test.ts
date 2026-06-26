@@ -1948,9 +1948,10 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     );
     assert.equal(hedgeCompliance["hedgeExposureKrw"], 50_000);
     assert.equal(cashCompliance["marketRegime"], "bull");
-    assert.equal(cashCompliance["targetCashRatio"], 0.02);
-    assert.equal(cashCompliance["minimumCashReserveKrw"], 20_000);
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
     assert.equal(cashCompliance["cashGapKrw"], 0);
+    assert.equal(cashCompliance["ruleSource"], "static");
     assert.equal(cashCompliance["status"], "ok");
     assert.equal(strategyBucketAnalytics["occupiedBucketCount"], 2);
     assert.equal(strategyBucketAnalytics["missingPolicyTargetCount"], 5);
@@ -2106,6 +2107,60 @@ test("dashboard cash compliance aligns insufficient data fallback with risk poli
     assert.equal(cashReserve["targetCashRatio"], 0.35);
     assert.equal(cashReserve["reserveStatus"], "under_reserved");
     assert.equal(cashReserve["ruleSource"], "fallback");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard cash compliance preserves static reserve floor in bull regimes", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 50_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 10,
+        averagePriceKrw: 95_000,
+        marketValueKrw: 950_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport())}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const cashCompliance = result.payload["cashCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const cashReserve = complianceAnalytics["cashReserve"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(cashCompliance["marketRegime"], "bull");
+    assert.equal(cashCompliance["targetCashRatio"], 0.1);
+    assert.equal(cashCompliance["minimumCashReserveKrw"], 100_000);
+    assert.equal(cashCompliance["cashGapKrw"], 50_000);
+    assert.equal(cashCompliance["ruleSource"], "static");
+    assert.equal(cashCompliance["status"], "under_reserved");
+    assert.equal(cashReserve["targetCashRatio"], 0.1);
+    assert.equal(cashReserve["reserveStatus"], "under_reserved");
+    assert.equal(cashReserve["ruleSource"], "static");
   } finally {
     await stopTestServer(server);
   }
