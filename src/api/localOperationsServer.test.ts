@@ -1239,6 +1239,63 @@ test("strategy bucket test lab ViewModel recomputes stale heartbeat status", asy
   }
 });
 
+test("strategy bucket test lab ViewModel removes terminal latest records from active tests", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(strategyBucketTestCandidate())
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const queuedRecord = records[0];
+    assert.ok(queuedRecord);
+    const completedAt = new Date(now.getTime() + 60_000).toISOString();
+    const queuedProgress = queuedRecord["progress"] as Record<string, unknown>;
+    const queuedHeartbeat = queuedRecord["heartbeat"] as Record<string, unknown>;
+    const completedRecord = {
+      ...queuedRecord,
+      status: "completed",
+      completedAt,
+      progress: {
+        ...queuedProgress,
+        phase: "completed",
+        progressRatio: 1,
+        completedPacketCount: 1,
+        totalPacketCount: 1,
+        latestMessage: "completed",
+        updatedAt: completedAt
+      },
+      heartbeat: {
+        ...queuedHeartbeat,
+        lastSeenAt: completedAt
+      }
+    };
+    await writeFile(
+      paths.strategyBucketTestRecordsPath,
+      `${JSON.stringify(queuedRecord)}\n${JSON.stringify(completedRecord)}\n`,
+      "utf8"
+    );
+
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(queuedRecord["testId"], result.payload["testId"]);
+    assert.equal(activeTests.length, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("strategy bucket test create rejects invalid configs before writing records", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);

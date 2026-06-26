@@ -2404,3 +2404,10 @@
 - Fix review 1: create state가 현재 request의 `queued` 상태로 전환되면 `router.refresh()`를 한 번 호출해 strategy test lab Server Component 데이터를 다시 읽습니다.
 - Fix review 2: create 결과 test id와 active progress row에 test id 기반 `data-testid`를 추가해 같은 queued record가 progress table에 반영되는지 E2E에서 검증합니다.
 - Fix review 3: E2E는 create 성공 후 새 test id가 `Bucket Test Progress` row로 나타나고 bucket/phase가 표시되는지 확인합니다.
+
+### Codex Review Fix 4
+
+- Review finding: append-only record에 같은 `testId`의 queued record 뒤 terminal record가 추가되면, status 필터를 먼저 적용한 active summary가 과거 queued row를 계속 표시할 수 있었습니다.
+- Fix review 1: strategy test lab ViewModel은 record를 뒤에서 앞으로 읽어 `testId`별 최신 parseable record를 먼저 선택합니다.
+- Fix review 2: 최신 record가 `completed`, `failed`, `cancelled`이면 해당 `testId`의 과거 queued/running record를 active summary에 포함하지 않습니다.
+- Fix review 3: Local Operations API 테스트는 같은 `testId`의 queued record 뒤 completed record가 append된 경우 active test list가 비는지 검증합니다.

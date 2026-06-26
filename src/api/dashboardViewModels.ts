@@ -381,12 +381,11 @@ export async function readDashboardStrategyTestLabViewModel(
     readJsonFile(paths.batchReplayAggregateReportPath),
     readJsonlRecords(paths.strategyBucketTestRecordsPath)
   ]);
-  const activeTests = strategyBucketTestRecords.records
-    .map((record) => parseStrategyBucketTestSummary(record, now))
-    .filter((record): record is StrategyBucketTestSummary => record !== null)
-    .filter((record) => isActiveStrategyBucketTest(record.status))
-    .slice(-20)
-    .reverse();
+  const activeTests = latestActiveStrategyBucketTests(
+    strategyBucketTestRecords.records,
+    now,
+    20
+  );
   const recentResults: StrategyBucketTestResultSummary[] = [];
 
   return {
@@ -818,6 +817,35 @@ function parseStrategyBucketTestSummary(
     progress: progressView,
     heartbeat: heartbeatView
   };
+}
+
+function latestActiveStrategyBucketTests(
+  records: Record<string, unknown>[],
+  now: Date,
+  limit: number
+): StrategyBucketTestSummary[] {
+  const activeTests: StrategyBucketTestSummary[] = [];
+  const seenTestIds = new Set<string>();
+
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (activeTests.length >= limit) {
+      break;
+    }
+    const record = records[index];
+    if (record === undefined) {
+      continue;
+    }
+    const summary = parseStrategyBucketTestSummary(record, now);
+    if (summary === null || seenTestIds.has(summary.testId)) {
+      continue;
+    }
+    seenTestIds.add(summary.testId);
+    if (isActiveStrategyBucketTest(summary.status)) {
+      activeTests.push(summary);
+    }
+  }
+
+  return activeTests;
 }
 
 function parseStrategyBucketTestProgress(
