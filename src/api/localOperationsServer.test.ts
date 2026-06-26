@@ -2062,6 +2062,66 @@ test("dashboard portfolio compliance keeps reject count scoped to current artifa
   }
 });
 
+test("dashboard hedge compliance requires current hedge exposure for ok status", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+    ...portfolio(),
+    cashKrw: 850_000,
+    positions: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        quantity: 2,
+        averagePriceKrw: 70_000,
+        marketValueKrw: 150_000,
+        updatedAt: "2026-06-11T09:00:00+09:00"
+      }
+    ]
+  });
+  await new FileVirtualTradeStore(paths.virtualTradesPath).append({
+    ...trade(),
+    tradeId: "trade_stale_hedge",
+    decisionId: "decision_stale_hedge",
+    market: "US",
+    symbol: "SH",
+    priceKrw: 50_000,
+    amountKrw: 50_000,
+    grossAmountKrw: 50_000,
+    feeKrw: 10,
+    strategyBucket: "hedge"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/portfolio-compliance"
+    );
+    const hedgeCompliance = result.payload["hedgeCompliance"] as Record<
+      string,
+      unknown
+    >;
+    const complianceAnalytics = result.payload[
+      "complianceAnalytics"
+    ] as Record<string, Record<string, unknown>>;
+    const hedgeEffectiveness = complianceAnalytics["hedgeEffectiveness"]!;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(hedgeCompliance["grossExposureKrw"], 150_000);
+    assert.equal(hedgeCompliance["hedgeExposureKrw"], 0);
+    assert.equal(hedgeCompliance["hedgeTradeCount"], 1);
+    assert.equal(hedgeCompliance["status"], "ineffective");
+    assert.equal(hedgeEffectiveness["hedgeCoverageRatio"], 0);
+    assert.equal(hedgeEffectiveness["netDownsideExposureRatio"], 1);
+    assert.equal(hedgeEffectiveness["costDragRatio"], null);
+    assert.equal(hedgeEffectiveness["status"], "ineffective");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API returns null research report for invalid aggregate artifact", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);

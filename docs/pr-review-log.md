@@ -2485,3 +2485,10 @@
 - backend ViewModel contract test는 dynamic cash reserve, hedge coverage, hedge cost drag, strategy bucket concentration, bucket-level cost/turnover 값을 검증합니다.
 - Next.js E2E는 `/dashboard`에서 `Compliance Analytics`, `Strategy Bucket Mix`, `Cash Reserve`, `Hedge Effectiveness`, `Cost & Turnover`가 표시되는지 확인합니다.
 - docs는 N6 첫 구현 단위와 제외 범위를 분리해 runner/SSE/result aggregation/live order surface가 이번 PR 범위가 아님을 명시합니다.
+
+### Codex Review Fix
+
+- Review finding: 현재 hedge position이 없고 과거 hedge trade만 남은 경우 hedge coverage가 0인데도 hedge status가 `ok`로 떨어질 수 있었습니다.
+- Fix review 1: hedge status는 gross exposure가 있고 current hedge exposure가 0 이하이면 hedge trade 이력과 무관하게 `ineffective`로 판정하도록 변경했습니다.
+- Fix review 2: `hedgeEnabled`의 이력 표시 의미는 유지하되, healthy/over-hedged 판정 경로는 positive current hedge exposure가 있을 때만 도달하게 했습니다.
+- Fix review 3: 현재 long-term exposure만 있고 stale hedge trade가 남은 ViewModel test를 추가해 hedge compliance와 compliance analytics가 모두 `ineffective`를 반환하는지 검증합니다.

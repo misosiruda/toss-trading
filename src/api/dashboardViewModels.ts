@@ -780,7 +780,7 @@ function hedgeComplianceView(input: {
     status:
       input.exposure.grossExposureKrw <= 0
         ? "missing"
-        : input.exposure.hedgeExposureKrw <= 0 && hedgeTradeCount === 0
+        : input.exposure.hedgeExposureKrw <= 0
           ? "ineffective"
           : hedgeCoverageRatio > 0.4
             ? "over_hedged"
