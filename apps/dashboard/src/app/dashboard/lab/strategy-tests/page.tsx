@@ -238,7 +238,11 @@ function ProgressPanel({
               </tr>
             ) : (
               activeTests.map((test) => (
-                <tr className="border-t border-[var(--border)]" key={test.testId}>
+                <tr
+                  className="border-t border-[var(--border)]"
+                  data-testid={`strategy-bucket-active-test-${test.testId}`}
+                  key={test.testId}
+                >
                   <td className="max-w-[18rem] break-words py-2 pr-3 font-mono text-xs">
                     {test.testId}
                   </td>

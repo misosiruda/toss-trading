@@ -197,6 +197,17 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(page.getByText("storage mutation enabled")).toBeVisible();
   await expect(page.getByText("live orders disabled")).toBeVisible();
   await expect(page.getByText("order placement disabled")).toBeVisible();
+  const createdTestIdLine = page.getByTestId("strategy-bucket-created-test-id");
+  await expect(createdTestIdLine).toContainText(/^strategy_bucket_test_/);
+  const createdTestIdText = await createdTestIdLine.textContent();
+  const createdTestId = createdTestIdText?.split(" · ")[0] ?? "";
+  expect(createdTestId).toMatch(/^strategy_bucket_test_/);
+  const activeTestRow = page
+    .getByTestId(`strategy-bucket-active-test-${createdTestId}`)
+    .first();
+  await expect(activeTestRow).toBeVisible();
+  await expect(activeTestRow).toContainText("Long-term");
+  await expect(activeTestRow).toContainText("queued");
 
   await page.locator("#start-at").fill("2024/02/31");
   await page.getByRole("button", { name: "Validate bucket config" }).click();

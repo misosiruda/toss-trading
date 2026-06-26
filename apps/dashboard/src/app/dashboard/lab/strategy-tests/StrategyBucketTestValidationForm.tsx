@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   buildPolicyPreview,
   createDefaultPolicyDraft,
@@ -100,6 +101,8 @@ type CreateState =
   | { status: "error"; requestJson: string; message: string };
 
 export function StrategyBucketTestValidationForm() {
+  const router = useRouter();
+  const refreshedCreateRequestRef = useRef<string | null>(null);
   const [bucket, setBucket] = useState<StrategyBucket>("long_term");
   const [sourceDataDir, setSourceDataDir] = useState(
     "data/replay-2023-01-2026-05-global-yahoo-daily"
@@ -205,6 +208,21 @@ export function StrategyBucketTestValidationForm() {
     visibleBackendValidation.response.validatedForStrategyBucketTestConfig &&
     visibleCreateState.status !== "pending" &&
     visibleCreateState.status !== "queued";
+
+  useEffect(() => {
+    if (visibleCreateState.status === "idle") {
+      refreshedCreateRequestRef.current = null;
+      return;
+    }
+    if (visibleCreateState.status !== "queued") {
+      return;
+    }
+    if (refreshedCreateRequestRef.current === visibleCreateState.requestJson) {
+      return;
+    }
+    refreshedCreateRequestRef.current = visibleCreateState.requestJson;
+    router.refresh();
+  }, [router, visibleCreateState]);
 
   async function validateWithBackend() {
     const currentRequestJson = requestJson;
@@ -722,7 +740,10 @@ function CreateResultPanel({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-semibold">Strategy bucket test queued</p>
-          <p className="mt-1 font-mono text-xs">
+          <p
+            className="mt-1 font-mono text-xs"
+            data-testid="strategy-bucket-created-test-id"
+          >
             {result.testId} · runner not started
           </p>
         </div>

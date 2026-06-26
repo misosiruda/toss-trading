@@ -2397,3 +2397,10 @@
 - Fix review 1: strategy test lab ViewModel은 조회 시점의 `now`와 `lastSeenAt + staleAfterSeconds`를 비교해 heartbeat status를 `fresh`, `stale`, `missing`으로 재계산합니다.
 - Fix review 2: Local Operations routing은 테스트와 운영 기준 시각이 어긋나지 않도록 strategy test lab ViewModel에 server `now`를 전달합니다.
 - Fix review 3: create proxy는 dashboard intent header 외에도 positive same-origin `origin`, `referer`, `sec-fetch-site` evidence를 요구하고, metadata가 없으면 `same_origin_required`로 403을 반환합니다.
+
+### Codex Review Fix 3
+
+- Review finding: create 성공 후 client local result만 갱신되고 server-rendered active test count/progress table은 이전 ViewModel snapshot에 머물 수 있었습니다.
+- Fix review 1: create state가 현재 request의 `queued` 상태로 전환되면 `router.refresh()`를 한 번 호출해 strategy test lab Server Component 데이터를 다시 읽습니다.
+- Fix review 2: create 결과 test id와 active progress row에 test id 기반 `data-testid`를 추가해 같은 queued record가 progress table에 반영되는지 E2E에서 검증합니다.
+- Fix review 3: E2E는 create 성공 후 새 test id가 `Bucket Test Progress` row로 나타나고 bucket/phase가 표시되는지 확인합니다.
