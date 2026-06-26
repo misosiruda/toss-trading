@@ -27,6 +27,14 @@ const CASH_RULE_OPTIONS: Array<{ label: string; value: CashRuleSource }> = [
   { label: "Fallback", value: "fallback" }
 ];
 
+const DEFAULT_SIMULATION_SOURCE_DATA_DIR =
+  "data/replay-2023-01-2026-05-global-yahoo-daily";
+const DEFAULT_SIMULATION_MODEL_ID = "gpt-5.3-codex-spark";
+const DASHBOARD_INTENT_HEADER_NAME = "x-toss-trading-dashboard-intent";
+const PAPER_SIMULATION_CREATE_INTENT = "paper-simulation-create";
+const DASHBOARD_MUTATION_TOKEN_HEADER_NAME =
+  "x-toss-trading-dashboard-mutation-token";
+
 interface BackendPolicyValidationIssue {
   code: string;
   path: string;
@@ -58,6 +66,68 @@ type BackendValidationState =
     }
   | { status: "error"; previewJson: string; message: string };
 
+interface PolicyPaperSimulationConfig {
+  mode: "paper_only";
+  runType: "batch_replay";
+  runCount: number;
+  sourceDataDir: string;
+  universe: {
+    preset: "global_broad";
+    market: "mixed_global";
+  };
+  window: {
+    mode: "random_month";
+    seed: string;
+    startAt: "2024-01-01";
+    endAt: "2024-12-31";
+    windowMonths: 1;
+  };
+  samplingPolicy: {
+    decisionFrequency: "once_per_week";
+    stepSeconds: 604800;
+    maxDecisionCalls: 5;
+    maxCodexCallsPerRun: 0;
+  };
+  capital: {
+    initialCashKrw: 10000000;
+  };
+  decisionProvider: {
+    mode: "dry_run_fixture";
+    modelId: string;
+    outputSchema: "schemas/virtual-decision.schema.json";
+  };
+  riskProfile: "balanced";
+  paperExitPolicy: "none";
+  costModel: "standard";
+  benchmarkPolicy: "cash_equal_weight_initial_hold";
+}
+
+interface PaperSimulationCreateResponse {
+  mode: "paper_only";
+  mutation: "paper_simulation_create";
+  status: "accepted";
+  simulationRunId: string;
+  batchId: string;
+  runType: "single_replay" | "batch_replay";
+  requestedRunCount: number;
+  sourceDataDir: string;
+  outputBaseDir: string;
+  activeUrl: string;
+  historyUrl: string;
+  readOnlyLiveTrading: true;
+  disclaimer: string;
+}
+
+type PaperSimulationCreateState =
+  | { status: "idle" }
+  | { status: "pending"; configJson: string }
+  | {
+      status: "ready";
+      configJson: string;
+      response: PaperSimulationCreateResponse;
+    }
+  | { status: "error"; configJson: string; message: string };
+
 export function PolicyBuilderForm() {
   const [draft, setDraft] = useState<PortfolioPolicyDraft>(() =>
     createDefaultPolicyDraft()
@@ -65,6 +135,13 @@ export function PolicyBuilderForm() {
   const [validationRunCount, setValidationRunCount] = useState(0);
   const [backendValidation, setBackendValidation] =
     useState<BackendValidationState>({ status: "idle" });
+  const [simulationSourceDataDir, setSimulationSourceDataDir] = useState(
+    DEFAULT_SIMULATION_SOURCE_DATA_DIR
+  );
+  const [simulationRunCount, setSimulationRunCount] = useState(1);
+  const [mutationToken, setMutationToken] = useState("");
+  const [paperSimulationCreate, setPaperSimulationCreate] =
+    useState<PaperSimulationCreateState>({ status: "idle" });
   const validation = useMemo(() => validatePolicyDraft(draft), [draft]);
   const preview = useMemo(
     () => buildPolicyPreview(draft, validation),
@@ -75,6 +152,33 @@ export function PolicyBuilderForm() {
     backendValidation,
     previewJson
   );
+  const paperSimulationConfig = useMemo(
+    () =>
+      buildPaperSimulationConfig(
+        visibleBackendValidation,
+        simulationSourceDataDir,
+        simulationRunCount
+      ),
+    [simulationRunCount, simulationSourceDataDir, visibleBackendValidation]
+  );
+  const paperSimulationConfigJson = useMemo(
+    () =>
+      paperSimulationConfig === null
+        ? ""
+        : JSON.stringify(paperSimulationConfig),
+    [paperSimulationConfig]
+  );
+  const visiblePaperSimulationCreate = currentPaperSimulationCreate(
+    paperSimulationCreate,
+    paperSimulationConfigJson
+  );
+  const paperSimulationDisabledReason = readPaperSimulationDisabledReason({
+    backendValidation: visibleBackendValidation,
+    config: paperSimulationConfig,
+    createState: visiblePaperSimulationCreate,
+    mutationToken,
+    sourceDataDir: simulationSourceDataDir
+  });
 
   async function validateWithBackend() {
     const requestPreviewJson = previewJson;
@@ -120,6 +224,68 @@ export function PolicyBuilderForm() {
                 error instanceof Error
                   ? error.message
                   : "Backend validation request failed"
+            }
+          : current
+      );
+    }
+  }
+
+  async function createPaperSimulation() {
+    if (paperSimulationDisabledReason !== null || paperSimulationConfig === null) {
+      return;
+    }
+
+    const requestConfigJson = JSON.stringify(paperSimulationConfig);
+    setPaperSimulationCreate({
+      status: "pending",
+      configJson: requestConfigJson
+    });
+
+    try {
+      const response = await fetch(
+        "/dashboard/lab/policies/simulations/create",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [DASHBOARD_INTENT_HEADER_NAME]: PAPER_SIMULATION_CREATE_INTENT,
+            [DASHBOARD_MUTATION_TOKEN_HEADER_NAME]: mutationToken.trim()
+          },
+          body: requestConfigJson
+        }
+      );
+      const payload: unknown = await response.json();
+      if (!response.ok || !isPaperSimulationCreateResponse(payload)) {
+        setPaperSimulationCreate((current) =>
+          isPendingPaperSimulationCreate(current, requestConfigJson)
+            ? {
+                status: "error",
+                configJson: requestConfigJson,
+                message: readErrorMessage(payload, response.status)
+              }
+            : current
+        );
+        return;
+      }
+      setPaperSimulationCreate((current) =>
+        isPendingPaperSimulationCreate(current, requestConfigJson)
+          ? {
+              status: "ready",
+              configJson: requestConfigJson,
+              response: payload
+            }
+          : current
+      );
+    } catch (error) {
+      setPaperSimulationCreate((current) =>
+        isPendingPaperSimulationCreate(current, requestConfigJson)
+          ? {
+              status: "error",
+              configJson: requestConfigJson,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Paper simulation create request failed"
             }
           : current
       );
@@ -371,6 +537,10 @@ export function PolicyBuilderForm() {
                 setDraft(createDefaultPolicyDraft());
                 setValidationRunCount(0);
                 setBackendValidation({ status: "idle" });
+                setPaperSimulationCreate({ status: "idle" });
+                setSimulationSourceDataDir(DEFAULT_SIMULATION_SOURCE_DATA_DIR);
+                setSimulationRunCount(1);
+                setMutationToken("");
               }}
               type="button"
             >
@@ -420,6 +590,19 @@ export function PolicyBuilderForm() {
           <BackendValidationPanel state={visibleBackendValidation} />
         </section>
 
+        <PaperSimulationCreatePanel
+          config={paperSimulationConfig}
+          createState={visiblePaperSimulationCreate}
+          disabledReason={paperSimulationDisabledReason}
+          mutationToken={mutationToken}
+          onCreate={() => void createPaperSimulation()}
+          onMutationTokenChange={setMutationToken}
+          onRunCountChange={setSimulationRunCount}
+          onSourceDataDirChange={setSimulationSourceDataDir}
+          runCount={simulationRunCount}
+          sourceDataDir={simulationSourceDataDir}
+        />
+
         <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -439,6 +622,183 @@ export function PolicyBuilderForm() {
           </pre>
         </section>
       </aside>
+    </div>
+  );
+}
+
+function PaperSimulationCreatePanel({
+  config,
+  createState,
+  disabledReason,
+  mutationToken,
+  onCreate,
+  onMutationTokenChange,
+  onRunCountChange,
+  onSourceDataDirChange,
+  runCount,
+  sourceDataDir
+}: {
+  config: PolicyPaperSimulationConfig | null;
+  createState: PaperSimulationCreateState;
+  disabledReason: string | null;
+  mutationToken: string;
+  onCreate: () => void;
+  onMutationTokenChange: (value: string) => void;
+  onRunCountChange: (value: number) => void;
+  onSourceDataDirChange: (value: string) => void;
+  runCount: number;
+  sourceDataDir: string;
+}) {
+  const canCreate = disabledReason === null;
+
+  return (
+    <section
+      aria-label="Policy paper simulation create"
+      className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs text-[var(--muted)]">
+            POST /paper/simulations
+          </p>
+          <h2 className="mt-1 text-base font-semibold">
+            Paper Simulation Create
+          </h2>
+        </div>
+        <StatusBadge tone={canCreate ? "ok" : "blocked"} value="guarded" />
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        <label
+          className="grid gap-2 text-sm"
+          htmlFor="policy-simulation-source-data-dir"
+        >
+          Source data dir
+          <input
+            className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+            id="policy-simulation-source-data-dir"
+            onChange={(event) => onSourceDataDirChange(event.target.value)}
+            value={sourceDataDir}
+          />
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberField
+            id="policy-simulation-run-count"
+            label="Run count"
+            max={20}
+            min={1}
+            onChange={(value) => onRunCountChange(clampRunCount(value))}
+            value={runCount}
+          />
+          <label
+            className="grid gap-2 text-sm"
+            htmlFor="paper-simulation-mutation-token"
+          >
+            Mutation token
+            <input
+              autoComplete="off"
+              className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+              id="paper-simulation-mutation-token"
+              onChange={(event) => onMutationTokenChange(event.target.value)}
+              type="password"
+              value={mutationToken}
+            />
+          </label>
+        </div>
+
+        {disabledReason === null ? (
+          <p
+            aria-live="polite"
+            className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+          >
+            Backend validation passed. This creates a paper-only simulation
+            request through the guarded backend endpoint.
+          </p>
+        ) : (
+          <p
+            aria-live="polite"
+            className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+          >
+            {disabledReason}
+          </p>
+        )}
+
+        <pre
+          aria-label="Policy paper simulation config preview"
+          className="max-h-[300px] overflow-auto whitespace-pre-wrap break-words rounded-[6px] bg-[var(--panel-muted)] p-3 font-mono text-xs leading-5 text-[var(--muted)]"
+          tabIndex={0}
+        >
+          {config === null
+            ? "Backend validation is required before config generation."
+            : JSON.stringify(config, null, 2)}
+        </pre>
+
+        <button
+          className="rounded-[6px] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!canCreate}
+          onClick={onCreate}
+          type="button"
+        >
+          {createState.status === "pending"
+            ? "Creating paper simulation"
+            : "Create paper simulation"}
+        </button>
+
+        <PaperSimulationCreateStatus state={createState} />
+      </div>
+    </section>
+  );
+}
+
+function PaperSimulationCreateStatus({
+  state
+}: {
+  state: PaperSimulationCreateState;
+}) {
+  if (state.status === "idle") {
+    return null;
+  }
+
+  if (state.status === "pending") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Paper simulation create request pending.
+      </p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3 text-sm leading-5 text-[var(--danger)]"
+      >
+        Paper simulation create failed. {state.message}
+      </p>
+    );
+  }
+
+  const response = state.response;
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+    >
+      <p className="font-semibold">Paper simulation accepted</p>
+      <p
+        className="mt-1 font-mono text-xs"
+        data-testid="policy-paper-simulation-created-run-id"
+      >
+        {response.simulationRunId} · {response.batchId}
+      </p>
+      <p className="mt-1 font-mono text-xs">
+        runType {response.runType} · runCount {response.requestedRunCount} ·
+        live orders disabled
+      </p>
     </div>
   );
 }
@@ -699,6 +1059,112 @@ function parseNumericInput(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function clampRunCount(value: number): number {
+  return Math.min(20, Math.max(1, Math.trunc(value)));
+}
+
+function buildPaperSimulationConfig(
+  state: BackendValidationState,
+  sourceDataDir: string,
+  runCount: number
+): PolicyPaperSimulationConfig | null {
+  if (
+    state.status !== "ready" ||
+    state.response.status !== "valid" ||
+    !state.response.validatedForPaperSimulationConfig
+  ) {
+    return null;
+  }
+
+  return {
+    mode: "paper_only",
+    runType: "batch_replay",
+    runCount: clampRunCount(runCount),
+    sourceDataDir: sourceDataDir.trim(),
+    universe: {
+      preset: "global_broad",
+      market: "mixed_global"
+    },
+    window: {
+      mode: "random_month",
+      seed: policyHashSeed(state.response.policyHash),
+      startAt: "2024-01-01",
+      endAt: "2024-12-31",
+      windowMonths: 1
+    },
+    samplingPolicy: {
+      decisionFrequency: "once_per_week",
+      stepSeconds: 604800,
+      maxDecisionCalls: 5,
+      maxCodexCallsPerRun: 0
+    },
+    capital: {
+      initialCashKrw: 10000000
+    },
+    decisionProvider: {
+      mode: "dry_run_fixture",
+      modelId: DEFAULT_SIMULATION_MODEL_ID,
+      outputSchema: "schemas/virtual-decision.schema.json"
+    },
+    riskProfile: "balanced",
+    paperExitPolicy: "none",
+    costModel: "standard",
+    benchmarkPolicy: "cash_equal_weight_initial_hold"
+  };
+}
+
+function policyHashSeed(policyHash: string): string {
+  const seedSuffix = policyHash.replace(/[^a-zA-Z0-9]/gu, "").slice(0, 24);
+  return `policy-${seedSuffix || "validated"}`;
+}
+
+function readPaperSimulationDisabledReason({
+  backendValidation,
+  config,
+  createState,
+  mutationToken,
+  sourceDataDir
+}: {
+  backendValidation: BackendValidationState;
+  config: PolicyPaperSimulationConfig | null;
+  createState: PaperSimulationCreateState;
+  mutationToken: string;
+  sourceDataDir: string;
+}): string | null {
+  if (createState.status === "pending") {
+    return "Paper simulation create request is pending.";
+  }
+
+  if (backendValidation.status === "pending") {
+    return "Backend validation is pending.";
+  }
+
+  if (backendValidation.status !== "ready") {
+    return "Backend validation is required before paper simulation create.";
+  }
+
+  if (
+    backendValidation.response.status !== "valid" ||
+    !backendValidation.response.validatedForPaperSimulationConfig
+  ) {
+    return "Backend validation must pass before paper simulation create.";
+  }
+
+  if (config === null) {
+    return "Paper simulation config is not available.";
+  }
+
+  if (sourceDataDir.trim() === "") {
+    return "Source data dir is required.";
+  }
+
+  if (mutationToken.trim() === "") {
+    return "Dashboard mutation token is required.";
+  }
+
+  return null;
+}
+
 function isBackendPolicyValidationResponse(
   value: unknown
 ): value is BackendPolicyValidationResponse {
@@ -731,11 +1197,33 @@ function isBackendPolicyValidationIssue(
   );
 }
 
+function isPaperSimulationCreateResponse(
+  value: unknown
+): value is PaperSimulationCreateResponse {
+  return (
+    isRecord(value) &&
+    value["mode"] === "paper_only" &&
+    value["mutation"] === "paper_simulation_create" &&
+    value["status"] === "accepted" &&
+    typeof value["simulationRunId"] === "string" &&
+    typeof value["batchId"] === "string" &&
+    (value["runType"] === "single_replay" ||
+      value["runType"] === "batch_replay") &&
+    typeof value["requestedRunCount"] === "number" &&
+    typeof value["sourceDataDir"] === "string" &&
+    typeof value["outputBaseDir"] === "string" &&
+    typeof value["activeUrl"] === "string" &&
+    typeof value["historyUrl"] === "string" &&
+    value["readOnlyLiveTrading"] === true &&
+    typeof value["disclaimer"] === "string"
+  );
+}
+
 function readErrorMessage(value: unknown, status: number): string {
   if (isRecord(value) && typeof value["message"] === "string") {
     return value["message"];
   }
-  return `Backend validation returned HTTP ${status}`;
+  return `Backend request returned HTTP ${status}`;
 }
 
 function currentBackendValidation(
@@ -753,6 +1241,23 @@ function isPendingBackendValidation(
   previewJson: string
 ): state is Extract<BackendValidationState, { status: "pending" }> {
   return state.status === "pending" && state.previewJson === previewJson;
+}
+
+function currentPaperSimulationCreate(
+  state: PaperSimulationCreateState,
+  configJson: string
+): PaperSimulationCreateState {
+  if (state.status === "idle") {
+    return state;
+  }
+  return state.configJson === configJson ? state : { status: "idle" };
+}
+
+function isPendingPaperSimulationCreate(
+  state: PaperSimulationCreateState,
+  configJson: string
+): state is Extract<PaperSimulationCreateState, { status: "pending" }> {
+  return state.status === "pending" && state.configJson === configJson;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
