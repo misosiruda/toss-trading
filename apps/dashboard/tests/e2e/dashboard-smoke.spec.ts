@@ -183,6 +183,28 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     orderPlacementEnabled: false,
     replayRunnerStarted: false
   });
+  const nonJsonContentTypeCreate = await request.post(
+    "/dashboard/lab/strategy-tests/create",
+    {
+      data: JSON.stringify(createRequestBody),
+      headers: {
+        "content-type": "text/plain",
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-mutation-token": DASHBOARD_MUTATION_TOKEN,
+        "x-toss-trading-dashboard-intent": "strategy-bucket-test-create"
+      }
+    }
+  );
+  expect(nonJsonContentTypeCreate.status()).toBe(415);
+  const nonJsonContentTypePayload = await nonJsonContentTypeCreate.json();
+  expect(nonJsonContentTypePayload).toMatchObject({
+    error: "unsupported_media_type",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
   const missingMetadataCreate = await request.post(
     "/dashboard/lab/strategy-tests/create",
     {

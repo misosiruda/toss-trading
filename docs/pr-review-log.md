@@ -2425,3 +2425,10 @@
 - Fix review 1: create proxy는 server-side `DASHBOARD_MUTATION_TOKEN`과 request `x-toss-trading-dashboard-mutation-token` header가 일치하지 않으면 fail-closed 처리합니다.
 - Fix review 2: strategy bucket test form은 mutation token 입력값을 create request header로만 전달하고 request preview나 result payload에는 표시하지 않습니다.
 - Fix review 3: E2E는 missing/invalid token, missing metadata, same-site metadata, cross-origin metadata가 storage mutation 없이 차단되고 valid token flow만 queued record를 생성하는지 검증합니다.
+
+### Codex Review Fix 7
+
+- Review finding: create proxy가 incoming `content-type`을 확인하지 않고 body를 읽은 뒤 backend에 `application/json`으로 전달할 수 있었습니다.
+- Fix review 1: create proxy는 body를 읽기 전에 incoming `content-type`이 `application/json`인지 확인하고 아니면 `unsupported_media_type` 415로 차단합니다.
+- Fix review 2: 실패 응답은 기존 guard payload와 동일하게 storage mutation, live trading, order placement, replay runner를 모두 false로 유지합니다.
+- Fix review 3: E2E는 valid token과 same-origin evidence가 있어도 `text/plain` create 요청이 storage mutation 없이 415로 차단되는지 검증합니다.

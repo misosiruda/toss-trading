@@ -81,6 +81,24 @@ function validateCreateProxyRequest(request: NextRequest) {
     );
   }
 
+  const contentTypeGuard = validateJsonContentType(request);
+  if (contentTypeGuard !== null) {
+    return contentTypeGuard;
+  }
+
+  return null;
+}
+
+function validateJsonContentType(request: NextRequest) {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return createGuardFailure(
+      "unsupported_media_type",
+      "strategy bucket test create proxy accepts application/json only",
+      415
+    );
+  }
+
   return null;
 }
 
@@ -178,7 +196,7 @@ function readSameOriginMatch(
   }
 }
 
-function createGuardFailure(error: string, message: string) {
+function createGuardFailure(error: string, message: string, status = 403) {
   return NextResponse.json(
     {
       error,
@@ -189,6 +207,6 @@ function createGuardFailure(error: string, message: string) {
       orderPlacementEnabled: false,
       replayRunnerStarted: false
     },
-    { status: 403 }
+    { status }
   );
 }
