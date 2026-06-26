@@ -32,11 +32,7 @@ export function StrategyBucketTestProgressPanel({
   const activeTestIds = useMemo(
     () =>
       activeTests
-        .filter(
-          (test) =>
-            (test.status === "queued" || test.status === "running") &&
-            test.heartbeat.status === "fresh"
-        )
+        .filter(isActiveStrategyBucketTest)
         .map((test) => test.testId),
     [activeTests]
   );
@@ -235,16 +231,30 @@ function mergeProgressUpdates(
   );
 
   let changed = false;
-  const next = current.map((test) => {
+  const next: StrategyBucketTestSummary[] = [];
+  for (const test of current) {
     const updated = byTestId.get(test.testId);
-    if (updated === undefined || progressUpdateKey(updated) === progressUpdateKey(test)) {
-      return test;
+    if (updated === undefined) {
+      next.push(test);
+      continue;
+    }
+    if (!isActiveStrategyBucketTest(updated)) {
+      changed = true;
+      continue;
+    }
+    if (progressUpdateKey(updated) === progressUpdateKey(test)) {
+      next.push(test);
+      continue;
     }
     changed = true;
-    return updated;
-  });
+    next.push(updated);
+  }
 
   return changed ? next : current;
+}
+
+function isActiveStrategyBucketTest(test: StrategyBucketTestSummary): boolean {
+  return test.status === "queued" || test.status === "running";
 }
 
 function readLatestProgressUpdatedAt(

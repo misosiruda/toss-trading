@@ -2458,3 +2458,9 @@
 - Fix review 1: progress refresh는 in-flight `AbortController`가 있으면 다음 interval/manual refresh를 시작하지 않습니다.
 - Fix review 2: active test set이 바뀌면 진행 중인 request를 abort하고 request id가 맞는 최신 응답만 state에 반영합니다.
 - Fix review 3: `fetchProgressUpdates`는 shared `AbortSignal`을 각 progress fetch에 전달해 cleanup 시 누적 요청을 중단합니다.
+
+### Codex Review Follow-up: Active Row Lifecycle
+
+- Fix review 1: stale heartbeat가 된 queued/running test도 계속 polling 대상에 포함해 이후 fresh/terminal append-only record를 받을 수 있게 했습니다.
+- Fix review 2: progress endpoint가 completed/failed/cancelled 최신 record를 반환하면 active progress table에서 해당 row를 제거합니다.
+- Fix review 3: active row lifecycle 판정은 server ViewModel active list와 동일하게 test status 기준 queued/running으로 제한합니다.
