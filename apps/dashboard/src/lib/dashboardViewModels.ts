@@ -265,6 +265,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
   exposureBreakdown: unknown | null;
@@ -274,6 +275,33 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface ValidationCandidateComparisonView {
+  status: "available" | "missing";
+  selectionMetric: string | null;
+  selectedCandidateKey: string | null;
+  candidateCount: number;
+  returnSampleCount: number;
+  rows: ValidationCandidateComparisonRow[];
+  warnings: string[];
+}
+
+export interface ValidationCandidateComparisonRow {
+  candidateKey: string;
+  selected: boolean;
+  decisionProviderMode: string;
+  promptHash: string | null;
+  riskProfile: string | null;
+  configHashes: Array<string | null>;
+  trainAverageTotalReturnRatio: number | null;
+  validationAverageTotalReturnRatio: number | null;
+  testAverageTotalReturnRatio: number | null;
+  trainReturnSampleCount: number;
+  validationReturnSampleCount: number;
+  testReturnSampleCount: number;
+  runIds: string[];
+  holdoutDegradationCount: number;
 }
 
 export type ViewModelResult<T> =
@@ -336,7 +364,8 @@ export async function readDashboardViewModels(): Promise<DashboardViewModels> {
       apiBaseUrl,
       "/dashboard/view-model/validation-lab",
       "validation-lab",
-      isValidationLabViewModel
+      isValidationLabViewModel,
+      withValidationLabCandidateComparisonFallback
     )
   ]);
 
@@ -400,7 +429,8 @@ async function fetchViewModel<T>(
   apiBaseUrl: string,
   endpoint: string,
   expectedViewModel: DashboardViewModelName,
-  validator: (value: unknown) => value is T
+  validator: (value: unknown) => value is T,
+  normalize: (value: unknown) => unknown = (value) => value
 ): Promise<ViewModelResult<T>> {
   const fetchedAt = new Date().toISOString();
   const controller = new AbortController();
@@ -425,9 +455,10 @@ async function fetchViewModel<T>(
     }
 
     const data: unknown = await response.json();
+    const normalizedData = normalize(data);
     if (
-      !isViewModelPayload(data, expectedViewModel) ||
-      !validator(data)
+      !isViewModelPayload(normalizedData, expectedViewModel) ||
+      !validator(normalizedData)
     ) {
       return {
         status: "invalid",
@@ -442,7 +473,7 @@ async function fetchViewModel<T>(
       status: "ok",
       endpoint,
       fetchedAt,
-      data
+      data: normalizedData
     };
   } catch (error) {
     return {
@@ -569,6 +600,7 @@ function isValidationLabViewModel(
     isValidationStatus(value.aggregateReportStatus) &&
     isNullableString(value.sourceGeneratedAt) &&
     isStringArray(value.warnings) &&
+    isValidationCandidateComparison(value.candidateComparison) &&
     isRecord(value.executionAssumptions) &&
     value.executionAssumptions["paperOnly"] === true &&
     value.executionAssumptions["liveTradingEnabled"] === false &&
@@ -820,6 +852,75 @@ function isStrategyComparison(
     value["rows"].every(isStrategyBucketResultSummary) &&
     (value["baselineBucket"] === null || isStrategyBucket(value["baselineBucket"])) &&
     isNullableString(value["selectionWarning"])
+  );
+}
+
+export function withValidationLabCandidateComparisonFallback(
+  value: unknown
+): unknown {
+  if (!isRecord(value) || value["candidateComparison"] !== undefined) {
+    return value;
+  }
+  return {
+    ...value,
+    candidateComparison: missingValidationCandidateComparison([
+      "candidate comparison unavailable: Local Operations API response does not include candidateComparison"
+    ])
+  };
+}
+
+function isValidationCandidateComparison(
+  value: unknown
+): value is ValidationCandidateComparisonView {
+  return (
+    isRecord(value) &&
+    (value["status"] === "available" || value["status"] === "missing") &&
+    isNullableString(value["selectionMetric"]) &&
+    isNullableString(value["selectedCandidateKey"]) &&
+    isNumber(value["candidateCount"]) &&
+    isNumber(value["returnSampleCount"]) &&
+    Array.isArray(value["rows"]) &&
+    value["rows"].every(isValidationCandidateComparisonRow) &&
+    isStringArray(value["warnings"])
+  );
+}
+
+function missingValidationCandidateComparison(
+  warnings: string[] = []
+): ValidationCandidateComparisonView {
+  return {
+    status: "missing",
+    selectionMetric: null,
+    selectedCandidateKey: null,
+    candidateCount: 0,
+    returnSampleCount: 0,
+    rows: [],
+    warnings
+  };
+}
+
+function isValidationCandidateComparisonRow(
+  value: unknown
+): value is ValidationCandidateComparisonRow {
+  return (
+    isRecord(value) &&
+    typeof value["candidateKey"] === "string" &&
+    typeof value["selected"] === "boolean" &&
+    typeof value["decisionProviderMode"] === "string" &&
+    isNullableString(value["promptHash"]) &&
+    isNullableString(value["riskProfile"]) &&
+    Array.isArray(value["configHashes"]) &&
+    value["configHashes"].every(
+      (entry) => typeof entry === "string" || entry === null
+    ) &&
+    isNullableNumber(value["trainAverageTotalReturnRatio"]) &&
+    isNullableNumber(value["validationAverageTotalReturnRatio"]) &&
+    isNullableNumber(value["testAverageTotalReturnRatio"]) &&
+    isNumber(value["trainReturnSampleCount"]) &&
+    isNumber(value["validationReturnSampleCount"]) &&
+    isNumber(value["testReturnSampleCount"]) &&
+    isStringArray(value["runIds"]) &&
+    isNumber(value["holdoutDegradationCount"])
   );
 }
 

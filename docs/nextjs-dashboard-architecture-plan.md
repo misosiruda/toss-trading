@@ -764,6 +764,13 @@ npm run check
 - E2E route smoke
 - accessibility smoke
 
+두 번째 구현 단위:
+
+- `/dashboard` Validation Lab에 stored batch aggregate의 `overfittingDiagnostics.splitMetricMatrix`를 읽은 candidate comparison table을 추가한다.
+- backend `ValidationLabViewModel`은 selection metric, selected candidate key, candidate count, split별 train/validation/test return sample을 read-only summary로 제공한다.
+- 화면은 best run 단일 선택을 성과 보장처럼 표시하지 않고, 후보별 split metric과 holdout degradation count를 비교 정보로만 렌더링한다.
+- 이 단계는 replay 실행, strategy selection 자동화, policy mutation, live order surface를 추가하지 않는다.
+
 ### N4. Paper-only policy builder
 
 범위:
