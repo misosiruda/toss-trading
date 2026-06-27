@@ -1026,7 +1026,7 @@ function flattenDecisionItems(
 function validationCandidateComparison(
   aggregate: BatchReplayAggregateReport
 ): ValidationCandidateComparisonView {
-  const diagnostics = aggregate.overfittingDiagnostics;
+  const diagnostics = aggregate.overfittingDiagnostics ?? null;
   if (
     diagnostics === null ||
     diagnostics.splitMetricMatrix.length === 0 ||
