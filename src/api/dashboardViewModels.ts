@@ -1820,7 +1820,8 @@ function auditCountKey(value: string): string {
     /account(number)?|token|secret|orderid|executionid|cookie|authorization/gi,
     "sensitive"
   );
-  return masked.length > 0 ? masked : "unknown";
+  const normalized = masked.length > 0 ? masked : "unknown";
+  return normalized === "__proto__" ? "[__proto__]" : normalized;
 }
 
 function auditSafeText(value: string): string {

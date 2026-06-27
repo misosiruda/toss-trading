@@ -2338,6 +2338,45 @@ test("dashboard audit ViewModel counts prototype-like audit keys", async () => {
   }
 });
 
+test("dashboard audit ViewModel escapes __proto__ audit count keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: "audit_proto_key_001",
+    eventType: "__proto__",
+    actor: "__proto__",
+    summary: "synthetic audit event with proto key",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["[__proto__]"], 1);
+    assert.equal(actorCounts["[__proto__]"], 1);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(eventTypeCounts, "__proto__"),
+      false
+    );
+    assert.equal(result.payload["totalCount"], 1);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard audit ViewModel marks all-corrupt logs as degraded breach", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
