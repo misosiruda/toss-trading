@@ -1807,7 +1807,7 @@ function countAuditEventField(
   events: AuditEvent[],
   field: "eventType" | "actor"
 ): Record<string, number> {
-  const counts: Record<string, number> = {};
+  const counts = Object.create(null) as Record<string, number>;
   for (const event of events) {
     const key = auditCountKey(event[field]);
     counts[key] = (counts[key] ?? 0) + 1;

@@ -2294,6 +2294,50 @@ test("dashboard audit ViewModel masks sensitive count keys", async () => {
   }
 });
 
+test("dashboard audit ViewModel counts prototype-like audit keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const auditLog = new FileAuditLog(paths.auditLogPath);
+  await auditLog.append({
+    eventId: "audit_prototype_key_001",
+    eventType: "constructor",
+    actor: "toString",
+    summary: "synthetic audit event with prototype-like keys",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  await auditLog.append({
+    eventId: "audit_prototype_key_002",
+    eventType: "constructor",
+    actor: "toString",
+    summary: "synthetic audit event with repeated prototype-like keys",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:04:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=2"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["constructor"], 2);
+    assert.equal(actorCounts["toString"], 2);
+    assert.equal(result.payload["totalCount"], 2);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard audit ViewModel marks all-corrupt logs as degraded breach", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
