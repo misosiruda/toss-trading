@@ -364,7 +364,8 @@ export async function readDashboardViewModels(): Promise<DashboardViewModels> {
       apiBaseUrl,
       "/dashboard/view-model/validation-lab",
       "validation-lab",
-      isValidationLabViewModel
+      isValidationLabViewModel,
+      withValidationLabCandidateComparisonFallback
     )
   ]);
 
@@ -428,7 +429,8 @@ async function fetchViewModel<T>(
   apiBaseUrl: string,
   endpoint: string,
   expectedViewModel: DashboardViewModelName,
-  validator: (value: unknown) => value is T
+  validator: (value: unknown) => value is T,
+  normalize: (value: unknown) => unknown = (value) => value
 ): Promise<ViewModelResult<T>> {
   const fetchedAt = new Date().toISOString();
   const controller = new AbortController();
@@ -453,9 +455,10 @@ async function fetchViewModel<T>(
     }
 
     const data: unknown = await response.json();
+    const normalizedData = normalize(data);
     if (
-      !isViewModelPayload(data, expectedViewModel) ||
-      !validator(data)
+      !isViewModelPayload(normalizedData, expectedViewModel) ||
+      !validator(normalizedData)
     ) {
       return {
         status: "invalid",
@@ -470,7 +473,7 @@ async function fetchViewModel<T>(
       status: "ok",
       endpoint,
       fetchedAt,
-      data
+      data: normalizedData
     };
   } catch (error) {
     return {
@@ -852,6 +855,20 @@ function isStrategyComparison(
   );
 }
 
+export function withValidationLabCandidateComparisonFallback(
+  value: unknown
+): unknown {
+  if (!isRecord(value) || value["candidateComparison"] !== undefined) {
+    return value;
+  }
+  return {
+    ...value,
+    candidateComparison: missingValidationCandidateComparison([
+      "candidate comparison unavailable: Local Operations API response does not include candidateComparison"
+    ])
+  };
+}
+
 function isValidationCandidateComparison(
   value: unknown
 ): value is ValidationCandidateComparisonView {
@@ -866,6 +883,20 @@ function isValidationCandidateComparison(
     value["rows"].every(isValidationCandidateComparisonRow) &&
     isStringArray(value["warnings"])
   );
+}
+
+function missingValidationCandidateComparison(
+  warnings: string[] = []
+): ValidationCandidateComparisonView {
+  return {
+    status: "missing",
+    selectionMetric: null,
+    selectedCandidateKey: null,
+    candidateCount: 0,
+    returnSampleCount: 0,
+    rows: [],
+    warnings
+  };
 }
 
 function isValidationCandidateComparisonRow(
