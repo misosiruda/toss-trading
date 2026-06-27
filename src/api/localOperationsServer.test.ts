@@ -1506,6 +1506,122 @@ test("strategy bucket test lab ViewModel removes terminal latest records from ac
   }
 });
 
+test("strategy bucket test lab ViewModel compares completed bucket results to portfolio baseline", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(baseUrl, STRATEGY_BUCKET_TEST_CREATE_ROUTE, {
+      method: "POST",
+      headers: strategyBucketTestCreateHeaders(baseUrl),
+      body: JSON.stringify(
+        strategyBucketTestCandidate({
+          bucket: "swing"
+        })
+      )
+    });
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const queuedRecord = records[0];
+    assert.ok(queuedRecord);
+    const completedAt = new Date(now.getTime() + 90_000).toISOString();
+    const queuedProgress = queuedRecord["progress"] as Record<string, unknown>;
+    const queuedHeartbeat = queuedRecord["heartbeat"] as Record<string, unknown>;
+    const completedRecord = {
+      ...queuedRecord,
+      status: "completed",
+      startedAt: now.toISOString(),
+      completedAt,
+      runId: "strategy_bucket_run_swing_completed",
+      progress: {
+        ...queuedProgress,
+        phase: "completed",
+        progressRatio: 1,
+        completedPacketCount: 12,
+        totalPacketCount: 12,
+        decisionCount: 12,
+        riskApprovedCount: 10,
+        riskRejectedCount: 2,
+        simulatedTradeCount: 4,
+        providerFailureCount: 0,
+        latestMessage: "completed",
+        updatedAt: completedAt
+      },
+      heartbeat: {
+        ...queuedHeartbeat,
+        lastSeenAt: completedAt
+      },
+      result: {
+        totalReturnRatio: 0.05,
+        maxDrawdownRatio: 0.02,
+        turnoverRatio: 0.4,
+        costDragRatio: 0.003,
+        riskRejectRate: 0.166667,
+        providerFailureRate: 0,
+        warnings: ["bucket result uses isolated swing replay"]
+      }
+    };
+    await writeFile(
+      paths.batchReplayAggregateReportPath,
+      `${JSON.stringify(batchReplayAggregateReport())}\n`,
+      "utf8"
+    );
+    await writeFile(
+      paths.strategyBucketTestRecordsPath,
+      `${JSON.stringify(queuedRecord)}\n${JSON.stringify(completedRecord)}\n`,
+      "utf8"
+    );
+
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const recentResults = strategyTestLab.payload["recentResults"] as Array<
+      Record<string, unknown>
+    >;
+    const comparison = strategyTestLab.payload["comparison"] as Record<
+      string,
+      unknown
+    >;
+    const portfolioBaseline = comparison["portfolioBaseline"] as Record<
+      string,
+      unknown
+    >;
+    const portfolioDeltaRows = comparison["portfolioDeltaRows"] as Array<
+      Record<string, unknown>
+    >;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(activeTests.length, 0);
+    assert.equal(recentResults.length, 1);
+    assert.equal(recentResults[0]?.["testId"], result.payload["testId"]);
+    assert.equal(recentResults[0]?.["bucket"], "swing");
+    assert.equal(recentResults[0]?.["status"], "completed");
+    assert.equal(recentResults[0]?.["validationSplitRole"], "validation");
+    assert.equal(recentResults[0]?.["totalReturnRatio"], 0.05);
+    assert.equal(recentResults[0]?.["maxDrawdownRatio"], 0.02);
+    assert.deepEqual(recentResults[0]?.["warnings"], [
+      "bucket result uses isolated swing replay"
+    ]);
+    assert.equal(portfolioBaseline["source"], "batch_aggregate_overall");
+    assert.equal(portfolioBaseline["returnSampleCount"], 3);
+    assert.equal(portfolioBaseline["averageTotalReturnRatio"], 0.015);
+    assert.equal(portfolioDeltaRows.length, 1);
+    assert.equal(portfolioDeltaRows[0]?.["testId"], result.payload["testId"]);
+    assert.equal(portfolioDeltaRows[0]?.["bucket"], "swing");
+    assert.equal(portfolioDeltaRows[0]?.["totalReturnDeltaRatio"], 0.035);
+    assert.match(
+      String(comparison["selectionWarning"]),
+      /paper-only evidence/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("strategy bucket test create rejects invalid configs before writing records", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);

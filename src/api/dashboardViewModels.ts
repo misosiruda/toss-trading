@@ -200,6 +200,7 @@ interface StrategyBucketTestCapability {
 interface StrategyBucketTestResultSummary {
   testId: string;
   bucket: StrategyBucket;
+  status: StrategyBucketTestStatus;
   validationSplitRole: "train" | "validation" | "test" | null;
   totalReturnRatio: number | null;
   maxDrawdownRatio: number | null;
@@ -208,6 +209,20 @@ interface StrategyBucketTestResultSummary {
   riskRejectRate: number | null;
   providerFailureRate: number | null;
   warnings: string[];
+}
+
+interface StrategyBucketPortfolioBaseline {
+  source: "batch_aggregate_overall";
+  runCount: number;
+  completedCount: number;
+  returnSampleCount: number;
+  averageTotalReturnRatio: number | null;
+}
+
+interface StrategyBucketPortfolioDeltaRow {
+  testId: string;
+  bucket: StrategyBucket;
+  totalReturnDeltaRatio: number | null;
 }
 
 type StrategyBucketTestPhase =
@@ -266,6 +281,8 @@ interface StrategyBucketTestSummary {
 interface StrategyBucketComparisonView {
   rows: StrategyBucketTestResultSummary[];
   baselineBucket: StrategyBucket | null;
+  portfolioBaseline: StrategyBucketPortfolioBaseline | null;
+  portfolioDeltaRows: StrategyBucketPortfolioDeltaRow[];
   selectionWarning: string | null;
 }
 
@@ -527,7 +544,19 @@ export async function readDashboardStrategyTestLabViewModel(
     now,
     20
   );
-  const recentResults: StrategyBucketTestResultSummary[] = [];
+  const recentResults = latestStrategyBucketTestResults(
+    strategyBucketTestRecords.records,
+    now,
+    20
+  );
+  const portfolioBaseline =
+    aggregate.status === "ok" && isBatchReplayAggregateReportShape(aggregate.value)
+      ? strategyBucketPortfolioBaseline(aggregate.value)
+      : null;
+  const portfolioDeltaRows = strategyBucketPortfolioDeltaRows(
+    recentResults,
+    portfolioBaseline
+  );
 
   return {
     mode: "paper_only",
@@ -548,10 +577,13 @@ export async function readDashboardStrategyTestLabViewModel(
     comparison: {
       rows: recentResults,
       baselineBucket: null,
-      selectionWarning:
-        aggregate.status === "ok"
-          ? "portfolio-level batch aggregate is available, but isolated strategy bucket result artifacts are missing"
-          : "batch replay aggregate is missing; strategy bucket comparison is unavailable"
+      portfolioBaseline,
+      portfolioDeltaRows,
+      selectionWarning: strategyBucketComparisonWarning(
+        aggregate.status,
+        recentResults,
+        portfolioBaseline
+      )
     },
     sourceStatus: {
       batchAggregate: aggregate.status,
@@ -1337,6 +1369,117 @@ function latestActiveStrategyBucketTests(
   return activeTests;
 }
 
+function latestStrategyBucketTestResults(
+  records: Record<string, unknown>[],
+  now: Date,
+  limit: number
+): StrategyBucketTestResultSummary[] {
+  const results: StrategyBucketTestResultSummary[] = [];
+  const seenTestIds = new Set<string>();
+
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (results.length >= limit) {
+      break;
+    }
+    const record = records[index];
+    if (record === undefined) {
+      continue;
+    }
+    const summary = parseStrategyBucketTestSummary(record, now);
+    if (summary === null || seenTestIds.has(summary.testId)) {
+      continue;
+    }
+    seenTestIds.add(summary.testId);
+    if (!isTerminalStrategyBucketTest(summary.status)) {
+      continue;
+    }
+    const result = parseStrategyBucketTestResultSummary(record, summary);
+    if (result !== null) {
+      results.push(result);
+    }
+  }
+
+  return results;
+}
+
+function parseStrategyBucketTestResultSummary(
+  record: Record<string, unknown>,
+  summary: StrategyBucketTestSummary
+): StrategyBucketTestResultSummary | null {
+  const validationSplitRole = readValidationSplitRole(record["validationSplitRole"]);
+  const resultRecord = readRecordField(record, "result") ?? record;
+  const warnings = stringArray(resultRecord["warnings"]);
+  if (summary.status !== "completed" && warnings.length === 0) {
+    warnings.push(`strategy bucket test ended with status ${summary.status}`);
+  }
+
+  return {
+    testId: summary.testId,
+    bucket: summary.bucket,
+    status: summary.status,
+    validationSplitRole,
+    totalReturnRatio: readMetricRatio(resultRecord, "totalReturnRatio"),
+    maxDrawdownRatio: readMetricRatio(resultRecord, "maxDrawdownRatio"),
+    turnoverRatio: readMetricRatio(resultRecord, "turnoverRatio"),
+    costDragRatio: readMetricRatio(resultRecord, "costDragRatio"),
+    riskRejectRate: readMetricRatio(resultRecord, "riskRejectRate"),
+    providerFailureRate: readMetricRatio(resultRecord, "providerFailureRate"),
+    warnings
+  };
+}
+
+function strategyBucketPortfolioBaseline(
+  aggregate: BatchReplayAggregateReport
+): StrategyBucketPortfolioBaseline | null {
+  const overall = aggregate.overall;
+  if (overall.returnSampleCount <= 0) {
+    return null;
+  }
+  return {
+    source: "batch_aggregate_overall",
+    runCount: overall.runCount,
+    completedCount: overall.completedCount,
+    returnSampleCount: overall.returnSampleCount,
+    averageTotalReturnRatio: overall.averageTotalReturnRatio
+  };
+}
+
+function strategyBucketPortfolioDeltaRows(
+  results: StrategyBucketTestResultSummary[],
+  baseline: StrategyBucketPortfolioBaseline | null
+): StrategyBucketPortfolioDeltaRow[] {
+  if (baseline === null) {
+    return [];
+  }
+  return results.map((result) => ({
+    testId: result.testId,
+    bucket: result.bucket,
+    totalReturnDeltaRatio:
+      result.totalReturnRatio === null ||
+      baseline.averageTotalReturnRatio === null
+        ? null
+        : roundRatio(
+            result.totalReturnRatio - baseline.averageTotalReturnRatio
+          )
+  }));
+}
+
+function strategyBucketComparisonWarning(
+  aggregateStatus: JsonFileStatus,
+  results: StrategyBucketTestResultSummary[],
+  baseline: StrategyBucketPortfolioBaseline | null
+): string | null {
+  if (results.length === 0) {
+    return aggregateStatus === "ok"
+      ? "portfolio-level batch aggregate is available, but isolated strategy bucket result artifacts are missing"
+      : "batch replay aggregate is missing; strategy bucket comparison is unavailable";
+  }
+  if (baseline === null) {
+    return "isolated strategy bucket results are available, but full portfolio baseline is unavailable";
+  }
+  return "comparison uses completed strategy bucket result records and batch aggregate overall return; it is paper-only evidence, not strategy selection advice";
+}
+
 function latestStrategyBucketTestById(
   records: Record<string, unknown>[],
   testId: string,
@@ -1442,6 +1585,29 @@ function strategyBucketHeartbeatStatus(
 
 function isActiveStrategyBucketTest(status: StrategyBucketTestStatus): boolean {
   return status === "queued" || status === "running";
+}
+
+function isTerminalStrategyBucketTest(status: StrategyBucketTestStatus): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function readValidationSplitRole(
+  value: unknown
+): "train" | "validation" | "test" | null {
+  return value === "train" || value === "validation" || value === "test"
+    ? value
+    : null;
+}
+
+function readMetricRatio(
+  value: Record<string, unknown>,
+  key: string
+): number | null {
+  return readNullableNumber(value[key]) ?? null;
+}
+
+function roundRatio(value: number): number {
+  return Number(value.toFixed(10));
 }
 
 function isStrategyBucketTestStatus(

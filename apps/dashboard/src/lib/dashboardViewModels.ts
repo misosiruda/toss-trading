@@ -156,6 +156,7 @@ export interface StrategyBucketTestCapability {
 export interface StrategyBucketTestResultSummary {
   testId: string;
   bucket: StrategyBucket;
+  status: "completed" | "failed" | "cancelled";
   validationSplitRole: "train" | "validation" | "test" | null;
   totalReturnRatio: number | null;
   maxDrawdownRatio: number | null;
@@ -164,6 +165,20 @@ export interface StrategyBucketTestResultSummary {
   riskRejectRate: number | null;
   providerFailureRate: number | null;
   warnings: string[];
+}
+
+export interface StrategyBucketPortfolioBaseline {
+  source: "batch_aggregate_overall";
+  runCount: number;
+  completedCount: number;
+  returnSampleCount: number;
+  averageTotalReturnRatio: number | null;
+}
+
+export interface StrategyBucketPortfolioDeltaRow {
+  testId: string;
+  bucket: StrategyBucket;
+  totalReturnDeltaRatio: number | null;
 }
 
 export interface StrategyBucketTestSummary {
@@ -209,6 +224,8 @@ export interface StrategyBucketTestSummary {
 export interface StrategyBucketComparisonView {
   rows: StrategyBucketTestResultSummary[];
   baselineBucket: StrategyBucket | null;
+  portfolioBaseline: StrategyBucketPortfolioBaseline | null;
+  portfolioDeltaRows: StrategyBucketPortfolioDeltaRow[];
   selectionWarning: string | null;
 }
 
@@ -886,6 +903,9 @@ function isStrategyBucketResultSummary(
     isRecord(value) &&
     typeof value["testId"] === "string" &&
     isStrategyBucket(value["bucket"]) &&
+    (value["status"] === "completed" ||
+      value["status"] === "failed" ||
+      value["status"] === "cancelled") &&
     (value["validationSplitRole"] === null ||
       value["validationSplitRole"] === "train" ||
       value["validationSplitRole"] === "validation" ||
@@ -958,7 +978,35 @@ function isStrategyComparison(
     Array.isArray(value["rows"]) &&
     value["rows"].every(isStrategyBucketResultSummary) &&
     (value["baselineBucket"] === null || isStrategyBucket(value["baselineBucket"])) &&
+    (value["portfolioBaseline"] === null ||
+      isStrategyBucketPortfolioBaseline(value["portfolioBaseline"])) &&
+    Array.isArray(value["portfolioDeltaRows"]) &&
+    value["portfolioDeltaRows"].every(isStrategyBucketPortfolioDeltaRow) &&
     isNullableString(value["selectionWarning"])
+  );
+}
+
+function isStrategyBucketPortfolioBaseline(
+  value: unknown
+): value is StrategyBucketPortfolioBaseline {
+  return (
+    isRecord(value) &&
+    value["source"] === "batch_aggregate_overall" &&
+    isNumber(value["runCount"]) &&
+    isNumber(value["completedCount"]) &&
+    isNumber(value["returnSampleCount"]) &&
+    isNullableNumber(value["averageTotalReturnRatio"])
+  );
+}
+
+function isStrategyBucketPortfolioDeltaRow(
+  value: unknown
+): value is StrategyBucketPortfolioDeltaRow {
+  return (
+    isRecord(value) &&
+    typeof value["testId"] === "string" &&
+    isStrategyBucket(value["bucket"]) &&
+    isNullableNumber(value["totalReturnDeltaRatio"])
   );
 }
 

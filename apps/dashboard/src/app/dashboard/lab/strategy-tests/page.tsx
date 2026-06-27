@@ -3,6 +3,7 @@ import {
   readStrategyTestLabPageData,
   type JsonReadStatus,
   type StrategyBucket,
+  type StrategyBucketComparisonView,
   type StrategyBucketTestCapability,
   type StrategyBucketTestLabViewModel,
   type StrategyBucketTestResultSummary,
@@ -148,25 +149,8 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
         <ResultsPanel results={data.recentResults} />
       </section>
 
-      <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
-        <SectionHeader eyebrow="comparison" title="Selection Warning" />
-        <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-          {data.comparison.selectionWarning ??
-            "No isolated bucket comparison warning is available."}
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <Metric
-            label="Baseline bucket"
-            value={data.comparison.baselineBucket ?? "missing"}
-          />
-          <Metric
-            label="Comparison rows"
-            value={String(data.comparison.rows.length)}
-          />
-          <Metric label="Lab status" value={data.status} />
-        </div>
-        <SourceStatusList sourceStatus={data.sourceStatus} />
-      </section>
+      <ComparisonPanel comparison={data.comparison} labStatus={data.status} />
+      <SourceStatusList sourceStatus={data.sourceStatus} />
     </>
   );
 }
@@ -231,6 +215,8 @@ function ResultsPanel({
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Bucket</th>
+              <th className="py-2 pr-3 font-medium">Status</th>
+              <th className="py-2 pr-3 font-medium">Split</th>
               <th className="py-2 pr-3 font-medium">Return</th>
               <th className="py-2 pr-3 font-medium">Drawdown</th>
               <th className="py-2 pr-3 font-medium">Turnover</th>
@@ -240,7 +226,7 @@ function ResultsPanel({
           <tbody>
             {results.length === 0 ? (
               <tr>
-                <td className="py-4 text-[var(--muted)]" colSpan={5}>
+                <td className="py-4 text-[var(--muted)]" colSpan={7}>
                   No isolated bucket result artifacts are available.
                 </td>
               </tr>
@@ -248,6 +234,10 @@ function ResultsPanel({
               results.map((result) => (
                 <tr className="border-t border-[var(--border)]" key={result.testId}>
                   <td className="py-2 pr-3">{BUCKET_LABELS[result.bucket]}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{result.status}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">
+                    {result.validationSplitRole ?? "missing"}
+                  </td>
                   <td className="py-2 pr-3 font-mono text-xs">
                     {formatNullableRatio(result.totalReturnRatio)}
                   </td>
@@ -264,6 +254,88 @@ function ResultsPanel({
                   </td>
                 </tr>
               ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ComparisonPanel({
+  comparison,
+  labStatus
+}: {
+  comparison: StrategyBucketComparisonView;
+  labStatus: string;
+}) {
+  const baseline = comparison.portfolioBaseline;
+  const deltaByTestId = new Map(
+    comparison.portfolioDeltaRows.map((row) => [row.testId, row])
+  );
+
+  return (
+    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+      <SectionHeader
+        eyebrow="comparison"
+        title="Full Portfolio Baseline Comparison"
+      />
+      <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+        {comparison.selectionWarning ??
+          "No isolated bucket comparison warning is available."}
+      </p>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <Metric
+          label="Baseline source"
+          value={baseline?.source ?? "missing"}
+        />
+        <Metric
+          label="Baseline return"
+          value={formatNullableRatio(baseline?.averageTotalReturnRatio ?? null)}
+        />
+        <Metric
+          label="Comparison rows"
+          value={String(comparison.rows.length)}
+        />
+        <Metric label="Lab status" value={labStatus} />
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="text-xs uppercase text-[var(--muted)]">
+            <tr>
+              <th className="py-2 pr-3 font-medium">Bucket</th>
+              <th className="py-2 pr-3 font-medium">Bucket return</th>
+              <th className="py-2 pr-3 font-medium">Portfolio baseline</th>
+              <th className="py-2 font-medium">Return delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.rows.length === 0 ? (
+              <tr>
+                <td className="py-4 text-[var(--muted)]" colSpan={4}>
+                  No bucket result is available for portfolio baseline comparison.
+                </td>
+              </tr>
+            ) : (
+              comparison.rows.map((row) => {
+                const delta = deltaByTestId.get(row.testId);
+                return (
+                  <tr className="border-t border-[var(--border)]" key={row.testId}>
+                    <td className="py-2 pr-3">{BUCKET_LABELS[row.bucket]}</td>
+                    <td className="py-2 pr-3 font-mono text-xs">
+                      {formatNullableRatio(row.totalReturnRatio)}
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-xs">
+                      {formatNullableRatio(
+                        baseline?.averageTotalReturnRatio ?? null
+                      )}
+                    </td>
+                    <td className="py-2 font-mono text-xs">
+                      {formatNullableRatio(delta?.totalReturnDeltaRatio ?? null)}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
