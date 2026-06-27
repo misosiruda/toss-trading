@@ -22,6 +22,7 @@ import type {
 } from "../domain/schemas.js";
 import { summarizePortfolioDownsideExposure } from "../paper/hedgePolicy.js";
 import { DEFAULT_MIN_CASH_RESERVE_RATIO } from "../paper/riskPolicy.js";
+import { maskSensitiveText } from "../security/masking.js";
 
 const STRATEGY_BUCKETS = [
   "long_term",
@@ -1738,10 +1739,10 @@ function matchingAuditEventRefs(
 function auditEventRow(event: AuditEvent): DashboardAuditEventRow {
   return {
     eventId: event.eventId,
-    eventType: event.eventType,
-    actor: event.actor,
-    summary: event.summary,
-    maskedRefs: event.maskedRefs,
+    eventType: auditSafeText(event.eventType),
+    actor: auditSafeText(event.actor),
+    summary: auditSafeText(event.summary),
+    maskedRefs: event.maskedRefs.map(auditSafeText),
     createdAt: event.createdAt,
     severity: auditEventSeverity(event),
     category: auditEventCategory(event),
@@ -1808,9 +1809,25 @@ function countAuditEventField(
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const event of events) {
-    counts[event[field]] = (counts[event[field]] ?? 0) + 1;
+    const key = auditCountKey(event[field]);
+    counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
+}
+
+function auditCountKey(value: string): string {
+  const masked = auditSafeText(value.trim()).replace(
+    /account(number)?|token|secret|orderid|executionid|cookie|authorization/gi,
+    "sensitive"
+  );
+  return masked.length > 0 ? masked : "unknown";
+}
+
+function auditSafeText(value: string): string {
+  return maskSensitiveText(value).replace(
+    /(ord|exec)_[A-Za-z0-9_-]{6,}/g,
+    "$1_****"
+  );
 }
 
 function latestAuditEventAt(events: AuditEvent[]): string | null {
@@ -1854,11 +1871,11 @@ function auditViewModelStatus(input: {
   rejectedActionCount: number;
   failureTraceCount: number;
 }): DashboardViewModelStatus {
-  if (input.totalCount === 0) {
-    return "missing";
-  }
   if (input.corruptLineCount > 0 || input.failureTraceCount > 0) {
     return "breach";
+  }
+  if (input.totalCount === 0) {
+    return "missing";
   }
   if (input.rejectedActionCount > 0) {
     return "watch";

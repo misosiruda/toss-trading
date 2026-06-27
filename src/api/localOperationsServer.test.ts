@@ -2257,6 +2257,72 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
   }
 });
 
+test("dashboard audit ViewModel masks sensitive count keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: "audit_sensitive_key_001",
+    eventType: "VIRTUAL_RISK_REJECTED_ord_abcdef123456",
+    actor: "account 1234-5678-901234",
+    summary: "synthetic rejected paper-only event",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["VIRTUAL_RISK_REJECTED_ord_****"], 1);
+    assert.equal(actorCounts["sensitive ****-****-****"], 1);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.equal(text.includes("1234-5678-901234"), false);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard audit ViewModel marks all-corrupt logs as degraded breach", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(paths.auditLogPath, "not-json\n", "utf8");
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const sourceStatus = result.payload["sourceStatus"] as Record<
+      string,
+      unknown
+    >;
+    const warnings = result.payload["warnings"] as string[];
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "audit");
+    assert.equal(result.payload["count"], 0);
+    assert.equal(result.payload["totalCount"], 0);
+    assert.equal(sourceStatus["auditEvents"], "degraded");
+    assert.equal(result.payload["status"], "breach");
+    assert.match(warnings.join("\n"), /1 corrupt audit log line/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard validation lab treats omitted split metric matrix as missing comparison", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
