@@ -1027,9 +1027,12 @@ function validationCandidateComparison(
   aggregate: BatchReplayAggregateReport
 ): ValidationCandidateComparisonView {
   const diagnostics = aggregate.overfittingDiagnostics ?? null;
+  const splitMetricMatrix = Array.isArray(diagnostics?.splitMetricMatrix)
+    ? diagnostics.splitMetricMatrix
+    : [];
   if (
     diagnostics === null ||
-    diagnostics.splitMetricMatrix.length === 0 ||
+    splitMetricMatrix.length === 0 ||
     diagnostics.candidateCount === 0
   ) {
     return {
@@ -1046,7 +1049,7 @@ function validationCandidateComparison(
     };
   }
 
-  const rows = diagnostics.splitMetricMatrix
+  const rows = splitMetricMatrix
     .map((row): ValidationCandidateComparisonRow => {
       const trainMetric = row.roleMetrics.train;
       const validationMetric = row.roleMetrics.validation;

@@ -2218,6 +2218,46 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
   }
 });
 
+test("dashboard validation lab treats omitted split metric matrix as missing comparison", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const legacyAggregate = batchReplayAggregateReport();
+  const legacyDiagnostics = legacyAggregate["overfittingDiagnostics"] as Record<
+    string,
+    unknown
+  >;
+  delete legacyDiagnostics["splitMetricMatrix"];
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(legacyAggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const candidateComparison = result.payload[
+      "candidateComparison"
+    ] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "validation-lab");
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(candidateComparison["status"], "missing");
+    assert.equal(candidateComparison["candidateCount"], 2);
+    assert.deepEqual(candidateComparison["rows"], []);
+    assert.match(
+      JSON.stringify(candidateComparison["warnings"]),
+      /candidate split metric matrix is unavailable/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard portfolio compliance keeps reject count scoped to current artifacts", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
