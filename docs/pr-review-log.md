@@ -2540,3 +2540,10 @@
 - backend test는 completed swing bucket record가 active list에서 제외되고 result matrix, baseline, delta row로 표시되는지 검증합니다.
 - Next.js E2E는 completed swing result와 full portfolio baseline comparison panel이 desktop/mobile에서 표시되는지 확인합니다.
 - docs는 N5 일곱 번째 구현 단위와 제외 범위를 분리해 runner/SSE/matrix 생성/live order surface가 이번 PR 범위가 아님을 명시합니다.
+
+### Codex Review Fix
+
+- Review finding: aggregate `overall.returnSampleCount`는 양수지만 `overall.averageTotalReturnRatio`가 누락되거나 non-numeric이면 `portfolioBaseline.averageTotalReturnRatio`가 JSON 응답에서 빠질 수 있었습니다.
+- Fix review 1: baseline 생성 전에 `averageTotalReturnRatio`를 `number | null`로 검증하고, missing/non-numeric 값이면 baseline 자체를 unavailable로 둡니다.
+- Fix review 2: baseline이 unavailable이면 `portfolioDeltaRows`는 빈 배열로 유지하고 selection warning은 full portfolio baseline unavailable 상태를 표시합니다.
+- Fix review 3: completed bucket result가 있는 상태에서 malformed aggregate baseline metric을 제거한 회귀 테스트를 추가했습니다.

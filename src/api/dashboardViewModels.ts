@@ -1432,7 +1432,13 @@ function strategyBucketPortfolioBaseline(
   aggregate: BatchReplayAggregateReport
 ): StrategyBucketPortfolioBaseline | null {
   const overall = aggregate.overall;
+  const averageTotalReturnRatio = readNullableNumber(
+    overall.averageTotalReturnRatio
+  );
   if (overall.returnSampleCount <= 0) {
+    return null;
+  }
+  if (averageTotalReturnRatio === undefined) {
     return null;
   }
   return {
@@ -1440,7 +1446,7 @@ function strategyBucketPortfolioBaseline(
     runCount: overall.runCount,
     completedCount: overall.completedCount,
     returnSampleCount: overall.returnSampleCount,
-    averageTotalReturnRatio: overall.averageTotalReturnRatio
+    averageTotalReturnRatio
   };
 }
 

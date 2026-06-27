@@ -1617,6 +1617,32 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
       String(comparison["selectionWarning"]),
       /paper-only evidence/
     );
+
+    const malformedAggregate = batchReplayAggregateReport();
+    const malformedOverall = malformedAggregate["overall"] as Record<
+      string,
+      unknown
+    >;
+    delete malformedOverall["averageTotalReturnRatio"];
+    await writeFile(
+      paths.batchReplayAggregateReportPath,
+      `${JSON.stringify(malformedAggregate)}\n`,
+      "utf8"
+    );
+
+    const malformedStrategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const malformedComparison = malformedStrategyTestLab.payload[
+      "comparison"
+    ] as Record<string, unknown>;
+    assert.equal(malformedComparison["portfolioBaseline"], null);
+    assert.deepEqual(malformedComparison["portfolioDeltaRows"], []);
+    assert.match(
+      String(malformedComparison["selectionWarning"]),
+      /full portfolio baseline is unavailable/
+    );
   } finally {
     await stopTestServer(server);
   }
