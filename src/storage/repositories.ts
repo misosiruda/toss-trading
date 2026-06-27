@@ -34,6 +34,7 @@ import {
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME,
   HISTORICAL_REPLAY_TRADES_FILE_NAME,
   MARKET_PACKETS_FILE_NAME,
+  PORTFOLIO_POLICY_RECORDS_FILE_NAME,
   STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
   TOSSINVEST_SOURCES_FILE_NAME,
   VIRTUAL_DECISIONS_FILE_NAME,
@@ -63,6 +64,7 @@ export interface StoragePaths {
   historicalReplayPortfolioTimelinePath: string;
   batchReplayAggregateReportPath: string;
   strategyBucketTestRecordsPath: string;
+  portfolioPolicyRecordsPath: string;
 }
 
 export function createStoragePaths(baseDir: string): StoragePaths {
@@ -121,6 +123,10 @@ export function createStoragePaths(baseDir: string): StoragePaths {
     strategyBucketTestRecordsPath: join(
       baseDir,
       STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME
+    ),
+    portfolioPolicyRecordsPath: join(
+      baseDir,
+      PORTFOLIO_POLICY_RECORDS_FILE_NAME
     )
   };
 }

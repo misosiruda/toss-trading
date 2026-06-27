@@ -1,6 +1,7 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
 export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
 export const PAPER_POLICY_VALIDATION_METHODS = ["POST"] as const;
+export const PAPER_POLICY_MUTATION_METHODS = ["POST"] as const;
 export const STRATEGY_BUCKET_TEST_VALIDATION_METHODS = ["POST"] as const;
 export const STRATEGY_BUCKET_TEST_MUTATION_METHODS = ["POST"] as const;
 
@@ -9,6 +10,8 @@ export type PaperSimulationMutationMethod =
   (typeof PAPER_SIMULATION_MUTATION_METHODS)[number];
 export type PaperPolicyValidationMethod =
   (typeof PAPER_POLICY_VALIDATION_METHODS)[number];
+export type PaperPolicyMutationMethod =
+  (typeof PAPER_POLICY_MUTATION_METHODS)[number];
 export type StrategyBucketTestValidationMethod =
   (typeof STRATEGY_BUCKET_TEST_VALIDATION_METHODS)[number];
 export type StrategyBucketTestMutationMethod =
@@ -51,6 +54,11 @@ export const PAPER_POLICY_VALIDATION_API_ROUTES = [
 
 export type PaperPolicyValidationApiRoutePath =
   (typeof PAPER_POLICY_VALIDATION_API_ROUTES)[number];
+
+export const PAPER_POLICY_MUTATION_API_ROUTES = ["/paper/policies"] as const;
+
+export type PaperPolicyMutationApiRoutePath =
+  (typeof PAPER_POLICY_MUTATION_API_ROUTES)[number];
 
 export const STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES = [
   "/paper/simulations/strategy-bucket-tests/validate"
@@ -149,6 +157,12 @@ export function isPaperPolicyValidationMethod(
   return method === "POST";
 }
 
+export function isPaperPolicyMutationMethod(
+  method: string | undefined
+): method is PaperPolicyMutationMethod {
+  return method === "POST";
+}
+
 export function isStrategyBucketTestValidationMethod(
   method: string | undefined
 ): method is StrategyBucketTestValidationMethod {
@@ -182,6 +196,14 @@ export function isPaperPolicyValidationApiRoutePath(
 ): pathname is PaperPolicyValidationApiRoutePath {
   return PAPER_POLICY_VALIDATION_API_ROUTES.includes(
     pathname as PaperPolicyValidationApiRoutePath
+  );
+}
+
+export function isPaperPolicyMutationApiRoutePath(
+  pathname: string
+): pathname is PaperPolicyMutationApiRoutePath {
+  return PAPER_POLICY_MUTATION_API_ROUTES.includes(
+    pathname as PaperPolicyMutationApiRoutePath
   );
 }
 

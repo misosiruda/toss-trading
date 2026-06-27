@@ -36,6 +36,8 @@ export const BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME =
   "batch-replay-aggregate-report.json";
 export const STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME =
   "strategy-bucket-test-records.jsonl";
+export const PORTFOLIO_POLICY_RECORDS_FILE_NAME =
+  "portfolio-policy-records.jsonl";
 
 export type StorageArtifactFormat = "json" | "jsonl";
 export type StorageArtifactRole =
@@ -280,6 +282,18 @@ export const STORAGE_ARTIFACT_CONTRACTS: readonly StorageArtifactContract[] = [
     writer: "StrategyBucketTestRuns",
     localOperationsReader: null,
     failureTrace: "strategy bucket test id, config hash, queued progress state",
+    corruptJsonlPolicy: "skip_line_and_count"
+  },
+  {
+    artifactName: "portfolioPolicyRecords",
+    fileName: PORTFOLIO_POLICY_RECORDS_FILE_NAME,
+    relativePath: PORTFOLIO_POLICY_RECORDS_FILE_NAME,
+    format: "jsonl",
+    role: "append_only_log",
+    domainContract: "PaperPolicyRecord",
+    writer: "PaperPolicyRecords",
+    localOperationsReader: null,
+    failureTrace: "policy id, policy hash, validation summary, safety boundary",
     corruptJsonlPolicy: "skip_line_and_count"
   }
 ];

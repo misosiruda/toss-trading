@@ -42,6 +42,11 @@ import {
   PAPER_POLICY_VALIDATION_OPERATION
 } from "./paperPolicyValidation.js";
 import {
+  PAPER_POLICY_CREATE_HEADER_NAME,
+  PAPER_POLICY_CREATE_OPERATION,
+  PAPER_POLICY_CREATE_ROUTE
+} from "./paperPolicyRecords.js";
+import {
   STRATEGY_BUCKET_TEST_VALIDATION_HEADER_NAME,
   STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
   STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
@@ -55,6 +60,8 @@ import {
   LOCAL_OPERATIONS_API_ROUTES,
   PAPER_POLICY_VALIDATION_API_ROUTES,
   PAPER_POLICY_VALIDATION_METHODS,
+  PAPER_POLICY_MUTATION_API_ROUTES,
+  PAPER_POLICY_MUTATION_METHODS,
   PAPER_SIMULATION_MUTATION_API_ROUTES,
   PAPER_SIMULATION_MUTATION_METHODS,
   READ_ONLY_HTTP_METHODS,
@@ -200,6 +207,10 @@ test("local operations surface keeps live mutations disabled", () => {
   assert.deepEqual([...PAPER_POLICY_VALIDATION_API_ROUTES], [
     "/paper/policies/validate"
   ]);
+  assert.deepEqual([...PAPER_POLICY_MUTATION_METHODS], ["POST"]);
+  assert.deepEqual([...PAPER_POLICY_MUTATION_API_ROUTES], [
+    PAPER_POLICY_CREATE_ROUTE
+  ]);
   assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_METHODS], ["POST"]);
   assert.deepEqual([...STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES], [
     STRATEGY_BUCKET_TEST_VALIDATION_ROUTE
@@ -228,6 +239,12 @@ test("local operations surface keeps live mutations disabled", () => {
   );
   assert.equal(
     (PAPER_POLICY_VALIDATION_API_ROUTES as readonly string[]).includes(
+      "/place_order"
+    ),
+    false
+  );
+  assert.equal(
+    (PAPER_POLICY_MUTATION_API_ROUTES as readonly string[]).includes(
       "/place_order"
     ),
     false
@@ -812,6 +829,112 @@ test("paper policy validation checks drafts without starting a runner", async ()
     assert.equal(missingHeader.payload["error"], "validation_guard_required");
     assert.equal(badOrigin.response.status, 403);
     assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("paper policy create stores validated draft without starting a runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const result = await fetchJson(baseUrl, PAPER_POLICY_CREATE_ROUTE, {
+      method: "POST",
+      headers: paperPolicyCreateHeaders(baseUrl),
+      body: JSON.stringify(policyCandidate())
+    });
+    const invalidCandidate = policyCandidate();
+    invalidCandidate.strategyBuckets[0]!.minWeightRatio = -0.1;
+    const invalid = await fetchJson(baseUrl, PAPER_POLICY_CREATE_ROUTE, {
+      method: "POST",
+      headers: paperPolicyCreateHeaders(baseUrl),
+      body: JSON.stringify(invalidCandidate)
+    });
+    const missingHeader = await fetchJson(baseUrl, PAPER_POLICY_CREATE_ROUTE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl
+      },
+      body: JSON.stringify(policyCandidate())
+    });
+    const badOrigin = await fetchJson(baseUrl, PAPER_POLICY_CREATE_ROUTE, {
+      method: "POST",
+      headers: {
+        ...paperPolicyCreateHeaders(baseUrl),
+        origin: "http://evil.example"
+      },
+      body: JSON.stringify(policyCandidate())
+    });
+    const nonJsonContentType = await fetchJson(baseUrl, PAPER_POLICY_CREATE_ROUTE, {
+      method: "POST",
+      headers: {
+        [PAPER_POLICY_CREATE_HEADER_NAME]: PAPER_POLICY_CREATE_OPERATION,
+        "content-type": "text/plain",
+        origin: baseUrl
+      },
+      body: JSON.stringify(policyCandidate())
+    });
+    const records = await readJsonlRecords(paths.portfolioPolicyRecordsPath);
+    const auditEvents = await readJsonlRecords(paths.auditLogPath);
+    const record = records[0];
+    const safety = record?.["safety"] as Record<string, unknown> | undefined;
+    const validation = record?.["validation"] as Record<string, unknown> | undefined;
+    const validationSummary = validation?.["summary"] as
+      | Record<string, unknown>
+      | undefined;
+
+    assert.equal(result.response.status, 202);
+    assert.equal(result.payload["mode"], "paper_only");
+    assert.equal(result.payload["mutation"], "paper_policy_create");
+    assert.equal(result.payload["status"], "stored");
+    assert.equal(result.payload["policyId"], "local-draft");
+    assert.equal(result.payload["version"], "draft.v1");
+    assert.equal(result.payload["storageMutationEnabled"], true);
+    assert.equal(result.payload["liveTradingEnabled"], false);
+    assert.equal(result.payload["orderPlacementEnabled"], false);
+    assert.equal(result.payload["replayRunnerStarted"], false);
+    assert.equal(result.payload["recordPath"], paths.portfolioPolicyRecordsPath);
+    assert.equal(records.length, 1);
+    assert.equal(record?.["mode"], "paper_only");
+    assert.equal(record?.["recordType"], "portfolio_policy_record");
+    assert.equal(record?.["policyRecordId"], result.payload["policyRecordId"]);
+    assert.equal(record?.["policyHash"], result.payload["policyHash"]);
+    assert.equal(record?.["status"], "stored");
+    assert.equal(record?.["validationStatus"], "valid");
+    assert.equal(validation?.["issueCount"], 0);
+    assert.equal(validationSummary?.["backendValidationRequired"], true);
+    assert.equal(safety?.["storageMutationEnabled"], true);
+    assert.equal(safety?.["liveTradingEnabled"], false);
+    assert.equal(safety?.["orderPlacementEnabled"], false);
+    assert.equal(safety?.["replayRunnerStarted"], false);
+    assert.equal(auditEvents.length, 1);
+    assert.equal(auditEvents[0]?.["eventType"], "PAPER_POLICY_STORED");
+    assert.match(
+      String(auditEvents[0]?.["summary"]),
+      /replay runner not started/
+    );
+    assert.equal(invalid.response.status, 400);
+    assert.equal(invalid.payload["error"], "invalid_paper_policy");
+    assert.match(
+      JSON.stringify(invalid.payload["issues"]),
+      /BUCKET_MIN_WEIGHT_OUT_OF_RANGE/
+    );
+    assert.equal(missingHeader.response.status, 403);
+    assert.equal(missingHeader.payload["error"], "mutation_guard_required");
+    assert.equal(badOrigin.response.status, 403);
+    assert.equal(badOrigin.payload["error"], "origin_not_allowed");
+    assert.equal(nonJsonContentType.response.status, 415);
+    assert.equal(nonJsonContentType.payload["error"], "unsupported_media_type");
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -2954,6 +3077,14 @@ function paperPolicyValidationHeaders(baseUrl: string): HeadersInit {
   return {
     "content-type": "application/json",
     [PAPER_POLICY_VALIDATION_HEADER_NAME]: PAPER_POLICY_VALIDATION_OPERATION,
+    origin: baseUrl
+  };
+}
+
+function paperPolicyCreateHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [PAPER_POLICY_CREATE_HEADER_NAME]: PAPER_POLICY_CREATE_OPERATION,
     origin: baseUrl
   };
 }

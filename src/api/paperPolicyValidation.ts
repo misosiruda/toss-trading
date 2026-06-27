@@ -40,7 +40,7 @@ const policyBucketCandidateSchema = z
   })
   .strict();
 
-const paperPolicyValidationCandidateSchema = z
+export const paperPolicyValidationCandidateSchema = z
   .object({
     mode: z.literal("paper_only"),
     policyId: z.string().min(1).max(120),
