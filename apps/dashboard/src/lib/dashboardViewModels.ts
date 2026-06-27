@@ -265,6 +265,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
   exposureBreakdown: unknown | null;
@@ -274,6 +275,33 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface ValidationCandidateComparisonView {
+  status: "available" | "missing";
+  selectionMetric: string | null;
+  selectedCandidateKey: string | null;
+  candidateCount: number;
+  returnSampleCount: number;
+  rows: ValidationCandidateComparisonRow[];
+  warnings: string[];
+}
+
+export interface ValidationCandidateComparisonRow {
+  candidateKey: string;
+  selected: boolean;
+  decisionProviderMode: string;
+  promptHash: string | null;
+  riskProfile: string | null;
+  configHashes: Array<string | null>;
+  trainAverageTotalReturnRatio: number | null;
+  validationAverageTotalReturnRatio: number | null;
+  testAverageTotalReturnRatio: number | null;
+  trainReturnSampleCount: number;
+  validationReturnSampleCount: number;
+  testReturnSampleCount: number;
+  runIds: string[];
+  holdoutDegradationCount: number;
 }
 
 export type ViewModelResult<T> =

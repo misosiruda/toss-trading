@@ -354,6 +354,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
   exposureBreakdown: unknown | null;
@@ -363,6 +364,33 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+interface ValidationCandidateComparisonView {
+  status: "available" | "missing";
+  selectionMetric: string | null;
+  selectedCandidateKey: string | null;
+  candidateCount: number;
+  returnSampleCount: number;
+  rows: ValidationCandidateComparisonRow[];
+  warnings: string[];
+}
+
+interface ValidationCandidateComparisonRow {
+  candidateKey: string;
+  selected: boolean;
+  decisionProviderMode: string;
+  promptHash: string | null;
+  riskProfile: string | null;
+  configHashes: Array<string | null>;
+  trainAverageTotalReturnRatio: number | null;
+  validationAverageTotalReturnRatio: number | null;
+  testAverageTotalReturnRatio: number | null;
+  trainReturnSampleCount: number;
+  validationReturnSampleCount: number;
+  testReturnSampleCount: number;
+  runIds: string[];
+  holdoutDegradationCount: number;
 }
 
 export async function readDashboardPortfolioComplianceViewModel(
@@ -629,6 +657,7 @@ export async function readDashboardValidationLabViewModel(
       dataUniverseCoverage: report.dataUniverseCoverage,
       promptTrialDistribution: report.promptTrialDistribution,
       overfittingWarning: report.overfittingWarning,
+      candidateComparison: validationCandidateComparison(aggregate.value),
       providerFailureSummary: report.providerFailureSummary,
       riskRejectSummary: report.riskRejectSummary,
       exposureBreakdown: report.exposureBreakdown,
@@ -994,6 +1023,117 @@ function flattenDecisionItems(
   );
 }
 
+function validationCandidateComparison(
+  aggregate: BatchReplayAggregateReport
+): ValidationCandidateComparisonView {
+  const diagnostics = aggregate.overfittingDiagnostics;
+  if (
+    diagnostics === null ||
+    diagnostics.splitMetricMatrix.length === 0 ||
+    diagnostics.candidateCount === 0
+  ) {
+    return {
+      status: "missing",
+      selectionMetric: diagnostics?.selectionMetric ?? null,
+      selectedCandidateKey: diagnostics?.selectedCandidateKey ?? null,
+      candidateCount: diagnostics?.candidateCount ?? 0,
+      returnSampleCount: diagnostics?.returnSampleCount ?? 0,
+      rows: [],
+      warnings: [
+        ...(diagnostics?.warnings ?? []),
+        "candidate split metric matrix is unavailable"
+      ]
+    };
+  }
+
+  const rows = diagnostics.splitMetricMatrix
+    .map((row): ValidationCandidateComparisonRow => {
+      const trainMetric = row.roleMetrics.train;
+      const validationMetric = row.roleMetrics.validation;
+      const testMetric = row.roleMetrics.test;
+      return {
+        candidateKey: row.candidateKey,
+        selected: row.candidateKey === diagnostics.selectedCandidateKey,
+        decisionProviderMode: row.decisionProviderMode,
+        promptHash: row.promptHash,
+        riskProfile: row.riskProfile,
+        configHashes: row.configHashes,
+        trainAverageTotalReturnRatio:
+          trainMetric?.averageTotalReturnRatio ?? null,
+        validationAverageTotalReturnRatio:
+          validationMetric?.averageTotalReturnRatio ?? null,
+        testAverageTotalReturnRatio: testMetric?.averageTotalReturnRatio ?? null,
+        trainReturnSampleCount: trainMetric?.returnSampleCount ?? 0,
+        validationReturnSampleCount: validationMetric?.returnSampleCount ?? 0,
+        testReturnSampleCount: testMetric?.returnSampleCount ?? 0,
+        runIds: uniqueStrings([
+          ...(trainMetric?.runIds ?? []),
+          ...(validationMetric?.runIds ?? []),
+          ...(testMetric?.runIds ?? [])
+        ]),
+        holdoutDegradationCount: diagnostics.holdoutDegradation.filter(
+          (degradation) => degradation.selectedCandidateKey === row.candidateKey
+        ).length
+      };
+    })
+    .sort(compareValidationCandidateRows);
+
+  return {
+    status: "available",
+    selectionMetric: diagnostics.selectionMetric,
+    selectedCandidateKey: diagnostics.selectedCandidateKey,
+    candidateCount: diagnostics.candidateCount,
+    returnSampleCount: diagnostics.returnSampleCount,
+    rows,
+    warnings: diagnostics.warnings
+  };
+}
+
+function compareValidationCandidateRows(
+  left: ValidationCandidateComparisonRow,
+  right: ValidationCandidateComparisonRow
+): number {
+  if (left.selected !== right.selected) {
+    return left.selected ? -1 : 1;
+  }
+  const validationDelta = compareNullableNumbersDescending(
+    left.validationAverageTotalReturnRatio,
+    right.validationAverageTotalReturnRatio
+  );
+  if (validationDelta !== 0) {
+    return validationDelta;
+  }
+  const testDelta = compareNullableNumbersDescending(
+    left.testAverageTotalReturnRatio,
+    right.testAverageTotalReturnRatio
+  );
+  return testDelta !== 0
+    ? testDelta
+    : left.candidateKey.localeCompare(right.candidateKey);
+}
+
+function compareNullableNumbersDescending(
+  left: number | null,
+  right: number | null
+): number {
+  if (left === right) {
+    return 0;
+  }
+  if (left === null) {
+    return 1;
+  }
+  if (right === null) {
+    return -1;
+  }
+  return right - left;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values)).sort((left, right) =>
+    left.localeCompare(right)
+  );
+}
+
 function validationLabUnavailable(
   status: "missing" | "corrupt" | "invalid"
 ): ValidationLabViewModel {
@@ -1010,6 +1150,18 @@ function validationLabUnavailable(
     dataUniverseCoverage: null,
     promptTrialDistribution: null,
     overfittingWarning: null,
+    candidateComparison: {
+      status: "missing",
+      selectionMetric: null,
+      selectedCandidateKey: null,
+      candidateCount: 0,
+      returnSampleCount: 0,
+      rows: [],
+      warnings:
+        status === "missing"
+          ? ["batch replay aggregate report is missing"]
+          : ["batch replay aggregate report is not usable"]
+    },
     providerFailureSummary: null,
     riskRejectSummary: null,
     exposureBreakdown: null,

@@ -12,6 +12,7 @@ import {
   type RiskGateTraceViewModel,
   type StrategyBucket,
   type StrategyBucketTestLabViewModel,
+  type ValidationCandidateComparisonView,
   type ValidationLabViewModel,
   type ViewModelResult,
   type ViewModelStatus
@@ -479,7 +480,116 @@ function ValidationPanel({
         />
         <ObjectSummary title="Risk rejects" value={data.riskRejectSummary} />
       </div>
+      <ValidationCandidateComparison
+        comparison={data.candidateComparison}
+      />
       <PolicyWarnings warnings={data.warnings} />
+    </section>
+  );
+}
+
+function ValidationCandidateComparison({
+  comparison
+}: {
+  comparison: ValidationCandidateComparisonView;
+}) {
+  return (
+    <section aria-label="Policy Candidate Comparison" className="mt-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Policy Candidate Comparison</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Read-only split metric matrix from stored batch aggregate artifacts.
+          </p>
+        </div>
+        <Badge
+          tone={comparison.status === "available" ? "ok" : "watch"}
+          value={comparison.status}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <Metric label="Candidates" value={String(comparison.candidateCount)} />
+        <Metric
+          label="Return samples"
+          value={String(comparison.returnSampleCount)}
+        />
+        <Metric
+          label="Selection metric"
+          value={comparison.selectionMetric ?? "missing"}
+        />
+      </div>
+
+      {comparison.rows.length === 0 ? (
+        <div className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]">
+          Candidate comparison unavailable from the current aggregate artifact.
+        </div>
+      ) : (
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-[var(--muted)]">
+              <tr>
+                <th className="py-2 pr-3 font-medium">Candidate</th>
+                <th className="py-2 pr-3 font-medium">Provider</th>
+                <th className="py-2 pr-3 font-medium">Train</th>
+                <th className="py-2 pr-3 font-medium">Validation</th>
+                <th className="py-2 pr-3 font-medium">Test</th>
+                <th className="py-2 font-medium">Holdout</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {comparison.rows.map((row) => (
+                <tr key={row.candidateKey}>
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-mono text-xs">
+                        {shortenCandidateKey(row.candidateKey)}
+                      </span>
+                      {row.selected ? (
+                        <Badge tone="watch" value="selected in train" />
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-col gap-1">
+                      <span>{row.decisionProviderMode}</span>
+                      <span className="font-mono text-xs text-[var(--muted)]">
+                        {row.riskProfile ?? "risk profile missing"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-xs">
+                    {formatNullableRatio(row.trainAverageTotalReturnRatio)}
+                    <br />
+                    n={row.trainReturnSampleCount}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-xs">
+                    {formatNullableRatio(row.validationAverageTotalReturnRatio)}
+                    <br />
+                    n={row.validationReturnSampleCount}
+                  </td>
+                  <td className="py-2 pr-3 font-mono text-xs">
+                    {formatNullableRatio(row.testAverageTotalReturnRatio)}
+                    <br />
+                    n={row.testReturnSampleCount}
+                  </td>
+                  <td className="py-2 font-mono text-xs">
+                    {row.holdoutDegradationCount} degradation checks
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {comparison.warnings.length === 0 ? null : (
+        <ul className="mt-3 space-y-2 text-sm leading-5 text-[var(--muted)]">
+          {comparison.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -752,4 +862,8 @@ function formatObject(value: unknown): string {
     return serialized;
   }
   return `${serialized.slice(0, 900)}...`;
+}
+
+function shortenCandidateKey(value: string): string {
+  return value.length <= 48 ? value : `${value.slice(0, 45)}...`;
 }

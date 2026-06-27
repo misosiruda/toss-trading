@@ -2067,6 +2067,12 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const overfittingWarning = validationLab.payload[
       "overfittingWarning"
     ] as Record<string, unknown>;
+    const candidateComparison = validationLab.payload[
+      "candidateComparison"
+    ] as Record<string, unknown>;
+    const candidateComparisonRows = candidateComparison["rows"] as Array<
+      Record<string, unknown>
+    >;
     const text = JSON.stringify({
       portfolioCompliance: portfolioCompliance.payload,
       strategyTestLab: strategyTestLab.payload,
@@ -2151,6 +2157,21 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(validationLab.payload["status"], "ok");
     assert.equal(validationProtocol["pboLikeScore"], 0.25);
     assert.equal(overfittingWarning["status"], "available");
+    assert.equal(candidateComparison["status"], "available");
+    assert.equal(candidateComparison["candidateCount"], 2);
+    assert.equal(candidateComparison["selectionMetric"], "total_return_ratio");
+    assert.equal(candidateComparisonRows.length, 2);
+    assert.equal(candidateComparisonRows[0]?.["selected"], true);
+    assert.equal(
+      candidateComparisonRows[0]?.["validationAverageTotalReturnRatio"],
+      0.01
+    );
+    assert.equal(candidateComparisonRows[0]?.["holdoutDegradationCount"], 1);
+    assert.deepEqual(candidateComparisonRows[0]?.["runIds"], [
+      "run_0",
+      "run_1",
+      "run_2"
+    ]);
     assert.equal(validationHead.status, 200);
     assert.equal(await validationHead.text(), "");
     assert.equal(text.includes("1234-5678-901234"), false);
@@ -3684,11 +3705,84 @@ function batchReplayAggregateReport(
         validation: 1,
         test: 1
       },
-      splitMetricMatrix: [],
+      splitMetricMatrix: [
+        {
+          candidateKey: "deterministic_fixture|sha256:prompt",
+          decisionProviderMode: "deterministic_fixture",
+          decisionProviderMetadataHash: "sha256:provider",
+          promptHash: "sha256:prompt",
+          configHashes: ["sha256:config"],
+          riskPolicyHash: "sha256:risk",
+          allocationPolicyHash: "sha256:allocation",
+          marketRegimeAllocationPolicyHash: "sha256:regime-allocation",
+          exitPolicyHash: "sha256:exit",
+          riskProfile: "balanced",
+          roleMetrics: {
+            train: {
+              runCount: 1,
+              returnSampleCount: 1,
+              averageTotalReturnRatio: 0.02,
+              medianTotalReturnRatio: 0.02,
+              runIds: ["run_0"]
+            },
+            validation: {
+              runCount: 1,
+              returnSampleCount: 1,
+              averageTotalReturnRatio: 0.01,
+              medianTotalReturnRatio: 0.01,
+              runIds: ["run_1"]
+            },
+            test: {
+              runCount: 1,
+              returnSampleCount: 1,
+              averageTotalReturnRatio: -0.005,
+              medianTotalReturnRatio: -0.005,
+              runIds: ["run_2"]
+            }
+          },
+          splitMetrics: []
+        },
+        {
+          candidateKey: "deterministic_fixture|sha256:prompt-b",
+          decisionProviderMode: "deterministic_fixture",
+          decisionProviderMetadataHash: "sha256:provider",
+          promptHash: "sha256:prompt-b",
+          configHashes: ["sha256:config-b"],
+          riskPolicyHash: "sha256:risk",
+          allocationPolicyHash: "sha256:allocation",
+          marketRegimeAllocationPolicyHash: "sha256:regime-allocation",
+          exitPolicyHash: "sha256:exit",
+          riskProfile: "balanced",
+          roleMetrics: {
+            train: {
+              runCount: 1,
+              returnSampleCount: 1,
+              averageTotalReturnRatio: 0.005,
+              medianTotalReturnRatio: 0.005,
+              runIds: ["run_3"]
+            }
+          },
+          splitMetrics: []
+        }
+      ],
       selectedCandidateKey: "deterministic_fixture|sha256:prompt",
       selectedTrainAverageTotalReturnRatio: 0.02,
       pboLikeScore: 0.25,
-      holdoutDegradation: [],
+      holdoutDegradation: [
+        {
+          splitId: "split-validation-001",
+          splitRole: "validation",
+          selectedCandidateKey: "deterministic_fixture|sha256:prompt",
+          selectedAverageTotalReturnRatio: 0.01,
+          selectedRank: 1,
+          candidateCount: 2,
+          medianCandidateAverageTotalReturnRatio: 0.0075,
+          bestAverageTotalReturnRatio: 0.01,
+          degradationFromTrainRatio: -0.01,
+          selectedBelowMedian: false,
+          runIds: ["run_1"]
+        }
+      ],
       warnings: ["selection bias warning"]
     },
     overall: {
