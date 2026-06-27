@@ -2547,3 +2547,10 @@
 - Fix review 1: baseline 생성 전에 `averageTotalReturnRatio`를 `number | null`로 검증하고, missing/non-numeric 값이면 baseline 자체를 unavailable로 둡니다.
 - Fix review 2: baseline이 unavailable이면 `portfolioDeltaRows`는 빈 배열로 유지하고 selection warning은 full portfolio baseline unavailable 상태를 표시합니다.
 - Fix review 3: completed bucket result가 있는 상태에서 malformed aggregate baseline metric을 제거한 회귀 테스트를 추가했습니다.
+
+### Codex Review Fix 2
+
+- Review finding: failed/cancelled terminal record에 partial `totalReturnRatio`가 있으면 portfolio delta comparison에서 completed evidence처럼 표시될 수 있었습니다.
+- Fix review 1: `recentResults`는 terminal record 전체를 유지하되, `comparison.rows`와 `portfolioDeltaRows`는 `status: completed` result만 사용합니다.
+- Fix review 2: completed result가 없고 terminal result만 있으면 comparison warning을 completed result unavailable 상태로 표시합니다.
+- Fix review 3: failed partial result가 `recentResults`에는 남지만 `comparison.rows`와 delta row에는 포함되지 않는 회귀 테스트를 추가했습니다.

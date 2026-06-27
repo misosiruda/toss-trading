@@ -1527,6 +1527,42 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
     const completedAt = new Date(now.getTime() + 90_000).toISOString();
     const queuedProgress = queuedRecord["progress"] as Record<string, unknown>;
     const queuedHeartbeat = queuedRecord["heartbeat"] as Record<string, unknown>;
+    const failedPartialRecord = {
+      ...queuedRecord,
+      testId: "strategy_bucket_test_failed_partial",
+      requestId: "strategy-bucket-test-failed-partial",
+      status: "failed",
+      startedAt: now.toISOString(),
+      completedAt,
+      runId: "strategy_bucket_run_swing_failed_partial",
+      progress: {
+        ...queuedProgress,
+        phase: "completed",
+        progressRatio: 1,
+        completedPacketCount: 3,
+        totalPacketCount: 12,
+        decisionCount: 3,
+        riskApprovedCount: 2,
+        riskRejectedCount: 1,
+        simulatedTradeCount: 1,
+        providerFailureCount: 1,
+        latestMessage: "failed after partial result write",
+        updatedAt: completedAt
+      },
+      heartbeat: {
+        ...queuedHeartbeat,
+        lastSeenAt: completedAt
+      },
+      result: {
+        totalReturnRatio: 0.2,
+        maxDrawdownRatio: 0.08,
+        turnoverRatio: 0.1,
+        costDragRatio: 0.001,
+        riskRejectRate: 0.333333,
+        providerFailureRate: 0.333333,
+        warnings: ["partial result from failed bucket replay"]
+      }
+    };
     const completedRecord = {
       ...queuedRecord,
       status: "completed",
@@ -1568,7 +1604,9 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
     );
     await writeFile(
       paths.strategyBucketTestRecordsPath,
-      `${JSON.stringify(queuedRecord)}\n${JSON.stringify(completedRecord)}\n`,
+      `${JSON.stringify(queuedRecord)}\n${JSON.stringify(
+        failedPartialRecord
+      )}\n${JSON.stringify(completedRecord)}\n`,
       "utf8"
     );
 
@@ -1586,6 +1624,7 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
       string,
       unknown
     >;
+    const comparisonRows = comparison["rows"] as Array<Record<string, unknown>>;
     const portfolioBaseline = comparison["portfolioBaseline"] as Record<
       string,
       unknown
@@ -1596,7 +1635,7 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
 
     assert.equal(result.response.status, 202);
     assert.equal(activeTests.length, 0);
-    assert.equal(recentResults.length, 1);
+    assert.equal(recentResults.length, 2);
     assert.equal(recentResults[0]?.["testId"], result.payload["testId"]);
     assert.equal(recentResults[0]?.["bucket"], "swing");
     assert.equal(recentResults[0]?.["status"], "completed");
@@ -1606,9 +1645,17 @@ test("strategy bucket test lab ViewModel compares completed bucket results to po
     assert.deepEqual(recentResults[0]?.["warnings"], [
       "bucket result uses isolated swing replay"
     ]);
+    assert.equal(
+      recentResults[1]?.["testId"],
+      "strategy_bucket_test_failed_partial"
+    );
+    assert.equal(recentResults[1]?.["status"], "failed");
+    assert.equal(recentResults[1]?.["totalReturnRatio"], 0.2);
     assert.equal(portfolioBaseline["source"], "batch_aggregate_overall");
     assert.equal(portfolioBaseline["returnSampleCount"], 3);
     assert.equal(portfolioBaseline["averageTotalReturnRatio"], 0.015);
+    assert.equal(comparisonRows.length, 1);
+    assert.equal(comparisonRows[0]?.["testId"], result.payload["testId"]);
     assert.equal(portfolioDeltaRows.length, 1);
     assert.equal(portfolioDeltaRows[0]?.["testId"], result.payload["testId"]);
     assert.equal(portfolioDeltaRows[0]?.["bucket"], "swing");

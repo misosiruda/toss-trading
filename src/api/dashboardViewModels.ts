@@ -549,12 +549,15 @@ export async function readDashboardStrategyTestLabViewModel(
     now,
     20
   );
+  const comparableResults = recentResults.filter(
+    (result) => result.status === "completed"
+  );
   const portfolioBaseline =
     aggregate.status === "ok" && isBatchReplayAggregateReportShape(aggregate.value)
       ? strategyBucketPortfolioBaseline(aggregate.value)
       : null;
   const portfolioDeltaRows = strategyBucketPortfolioDeltaRows(
-    recentResults,
+    comparableResults,
     portfolioBaseline
   );
 
@@ -575,13 +578,14 @@ export async function readDashboardStrategyTestLabViewModel(
     activeTests,
     recentResults,
     comparison: {
-      rows: recentResults,
+      rows: comparableResults,
       baselineBucket: null,
       portfolioBaseline,
       portfolioDeltaRows,
       selectionWarning: strategyBucketComparisonWarning(
         aggregate.status,
         recentResults,
+        comparableResults,
         portfolioBaseline
       )
     },
@@ -1473,12 +1477,16 @@ function strategyBucketPortfolioDeltaRows(
 function strategyBucketComparisonWarning(
   aggregateStatus: JsonFileStatus,
   results: StrategyBucketTestResultSummary[],
+  comparableResults: StrategyBucketTestResultSummary[],
   baseline: StrategyBucketPortfolioBaseline | null
 ): string | null {
   if (results.length === 0) {
     return aggregateStatus === "ok"
       ? "portfolio-level batch aggregate is available, but isolated strategy bucket result artifacts are missing"
       : "batch replay aggregate is missing; strategy bucket comparison is unavailable";
+  }
+  if (comparableResults.length === 0) {
+    return "terminal strategy bucket results are available, but completed bucket results are unavailable for portfolio comparison";
   }
   if (baseline === null) {
     return "isolated strategy bucket results are available, but full portfolio baseline is unavailable";
