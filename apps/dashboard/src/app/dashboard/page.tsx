@@ -542,8 +542,17 @@ function ValidationCandidateComparison({
                 <tr key={row.candidateKey}>
                   <td className="py-2 pr-3">
                     <div className="flex flex-col gap-1">
-                      <span className="font-mono text-xs">
-                        {shortenCandidateKey(row.candidateKey)}
+                      <span
+                        className="max-w-[28rem] break-all font-mono text-xs"
+                        title={row.candidateKey}
+                      >
+                        {formatCandidateKeyLabel(row.candidateKey)}
+                      </span>
+                      <span className="max-w-[28rem] break-all font-mono text-[11px] leading-4 text-[var(--muted)]">
+                        prompt {formatCandidateIdentifier(row.promptHash)}
+                      </span>
+                      <span className="max-w-[28rem] break-all font-mono text-[11px] leading-4 text-[var(--muted)]">
+                        config {formatCandidateIdentifierList(row.configHashes)}
                       </span>
                       {row.selected ? (
                         <Badge tone="watch" value="selected in train" />
@@ -864,6 +873,19 @@ function formatObject(value: unknown): string {
   return `${serialized.slice(0, 900)}...`;
 }
 
-function shortenCandidateKey(value: string): string {
-  return value.length <= 48 ? value : `${value.slice(0, 45)}...`;
+function formatCandidateKeyLabel(value: string): string {
+  return value.length <= 72
+    ? value
+    : `${value.slice(0, 34)}...${value.slice(-34)}`;
+}
+
+function formatCandidateIdentifier(value: string | null): string {
+  return value ?? "missing";
+}
+
+function formatCandidateIdentifierList(values: Array<string | null>): string {
+  if (values.length === 0) {
+    return "missing";
+  }
+  return values.map(formatCandidateIdentifier).join(", ");
 }

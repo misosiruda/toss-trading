@@ -61,10 +61,13 @@ test("renders paper-only dashboard readiness without live mutation controls", as
     page.getByRole("heading", { name: "Policy Candidate Comparison" })
   ).toBeVisible();
   await expect(
-    page.getByText(
-      "Candidate comparison unavailable from the current aggregate artifact."
-    )
+    page.getByText("prompt sha256:prompt-alpha-differentiator")
   ).toBeVisible();
+  await expect(
+    page.getByText("prompt sha256:prompt-beta-differentiator")
+  ).toBeVisible();
+  await expect(page.getByText("config sha256:config-alpha")).toBeVisible();
+  await expect(page.getByText("config sha256:config-beta")).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Strategy lab Buckets/i })
   ).toBeVisible();
