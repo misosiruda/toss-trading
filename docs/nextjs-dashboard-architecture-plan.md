@@ -912,6 +912,28 @@ npm run check
 - strategy bucket replay runner, SSE, result aggregation, live order surface는 추가하지 않는다.
 - browser client는 compliance metric을 재계산하지 않고 backend ViewModel을 렌더링만 한다.
 
+### N6-2. Audit event review
+
+조건:
+
+- operator가 Next.js dashboard에서 audit event, rejected action, failure trace를 read-only로 확인할 수 있어야 한다.
+- raw `/audit/events` 응답과 별개로 dashboard contract에는 `viewModel`, summary count, source status, warning이 포함되어야 한다.
+- audit 화면은 retry, replay runner start, live order, direct command 실행을 노출하지 않는다.
+
+첫 번째 구현 단위:
+
+- Local Operations API에 `GET /dashboard/view-model/audit` read-only ViewModel을 추가한다.
+- backend가 최근 audit event, event type count, actor count, rejected action count, failure trace count, latest event timestamp를 계산한다.
+- backend가 audit event type과 summary를 기준으로 severity와 category를 결정하되, 주문 가능 여부나 재시도 여부는 판단하지 않는다.
+- Next.js `/dashboard/audit` route가 audit ViewModel을 서버 컴포넌트에서 조회하고 summary와 event table을 렌더링한다.
+- E2E는 audit 화면에 mutation control이 없고 민감 계좌/주문 문자열이 masking된 상태로 표시되는지 검증한다.
+
+제외 범위:
+
+- audit event schema migration은 추가하지 않는다.
+- audit event replay, retry, runner start, live order surface는 추가하지 않는다.
+- SSE stream이나 실시간 push는 추가하지 않는다.
+
 ### N7. Static dashboard deprecation
 
 조건:

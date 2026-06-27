@@ -566,6 +566,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
     assert.match(dashboardScriptText, /\/audit\/events/);
     for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
+      if (routePath === "/dashboard/view-model/audit") {
+        continue;
+      }
       assert.equal(dashboardScriptText.includes(routePath), true, routePath);
     }
     assert.match(dashboardScriptText, /fetchEndpointData/);
@@ -2028,10 +2031,17 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       baseUrl,
       "/dashboard/view-model/validation-lab"
     );
+    const auditView = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=5"
+    );
     const validationHead = await fetch(
       `${baseUrl}/dashboard/view-model/validation-lab`,
       { method: "HEAD" }
     );
+    const auditHead = await fetch(`${baseUrl}/dashboard/view-model/audit`, {
+      method: "HEAD"
+    });
     const bucketRows = portfolioCompliance.payload["bucketCompliance"] as Array<
       Record<string, unknown>
     >;
@@ -2073,11 +2083,21 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const candidateComparisonRows = candidateComparison["rows"] as Array<
       Record<string, unknown>
     >;
+    const auditViewEvents = auditView.payload["events"] as Array<
+      Record<string, unknown>
+    >;
+    const auditEventTypeCounts = auditView.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const auditSourceStatus = auditView.payload[
+      "sourceStatus"
+    ] as Record<string, unknown>;
     const text = JSON.stringify({
       portfolioCompliance: portfolioCompliance.payload,
       strategyTestLab: strategyTestLab.payload,
       riskGateTrace: riskGateTrace.payload,
-      validationLab: validationLab.payload
+      validationLab: validationLab.payload,
+      auditView: auditView.payload
     });
 
     assert.equal(portfolioCompliance.response.status, 200);
@@ -2172,8 +2192,27 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "run_1",
       "run_2"
     ]);
+
+    assert.equal(auditView.response.status, 200);
+    assert.equal(auditView.payload["viewModel"], "audit");
+    assert.equal(auditView.payload["readOnly"], true);
+    assert.equal(auditView.payload["count"], 1);
+    assert.equal(auditView.payload["totalCount"], 1);
+    assert.equal(auditView.payload["rejectedActionCount"], 1);
+    assert.equal(auditView.payload["failureTraceCount"], 0);
+    assert.equal(auditView.payload["latestEventAt"], "2026-06-11T09:02:00+09:00");
+    assert.equal(auditView.payload["status"], "watch");
+    assert.equal(auditViewEvents[0]?.["eventId"], "audit_api_002");
+    assert.equal(auditViewEvents[0]?.["severity"], "warning");
+    assert.equal(auditViewEvents[0]?.["category"], "risk_gate");
+    assert.equal(auditViewEvents[0]?.["rejectedAction"], true);
+    assert.equal(auditEventTypeCounts["VIRTUAL_RISK_REJECTED"], 1);
+    assert.equal(auditSourceStatus["auditEvents"], "ok");
+
     assert.equal(validationHead.status, 200);
     assert.equal(await validationHead.text(), "");
+    assert.equal(auditHead.status, 200);
+    assert.equal(await auditHead.text(), "");
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);
@@ -2213,6 +2252,155 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
       JSON.stringify(candidateComparison["warnings"]),
       /candidate split metric matrix is unavailable/
     );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard audit ViewModel masks sensitive count keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: "audit_sensitive_key_001",
+    eventType: "VIRTUAL_RISK_REJECTED_ord_abcdef123456",
+    actor: "account 1234-5678-901234",
+    summary: "synthetic rejected paper-only event",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["VIRTUAL_RISK_REJECTED_ord_****"], 1);
+    assert.equal(actorCounts["sensitive ****-****-****"], 1);
+    assert.equal(text.includes("ord_abcdef123456"), false);
+    assert.equal(text.includes("1234-5678-901234"), false);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard audit ViewModel counts prototype-like audit keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const auditLog = new FileAuditLog(paths.auditLogPath);
+  await auditLog.append({
+    eventId: "audit_prototype_key_001",
+    eventType: "constructor",
+    actor: "toString",
+    summary: "synthetic audit event with prototype-like keys",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  await auditLog.append({
+    eventId: "audit_prototype_key_002",
+    eventType: "constructor",
+    actor: "toString",
+    summary: "synthetic audit event with repeated prototype-like keys",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:04:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=2"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["constructor"], 2);
+    assert.equal(actorCounts["toString"], 2);
+    assert.equal(result.payload["totalCount"], 2);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard audit ViewModel escapes __proto__ audit count keys", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: "audit_proto_key_001",
+    eventType: "__proto__",
+    actor: "__proto__",
+    summary: "synthetic audit event with proto key",
+    maskedRefs: [],
+    createdAt: "2026-06-11T09:03:00+09:00"
+  });
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const eventTypeCounts = result.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const actorCounts = result.payload["actorCounts"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(eventTypeCounts["[__proto__]"], 1);
+    assert.equal(actorCounts["[__proto__]"], 1);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(eventTypeCounts, "__proto__"),
+      false
+    );
+    assert.equal(result.payload["totalCount"], 1);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard audit ViewModel marks all-corrupt logs as degraded breach", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  await writeFile(paths.auditLogPath, "not-json\n", "utf8");
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=1"
+    );
+    const sourceStatus = result.payload["sourceStatus"] as Record<
+      string,
+      unknown
+    >;
+    const warnings = result.payload["warnings"] as string[];
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "audit");
+    assert.equal(result.payload["count"], 0);
+    assert.equal(result.payload["totalCount"], 0);
+    assert.equal(sourceStatus["auditEvents"], "degraded");
+    assert.equal(result.payload["status"], "breach");
+    assert.match(warnings.join("\n"), /1 corrupt audit log line/);
   } finally {
     await stopTestServer(server);
   }

@@ -80,6 +80,13 @@ export default async function DashboardPage() {
                 <span className="text-[var(--muted)]">Strategy lab</span>
                 <span className="text-[var(--accent)]">Buckets</span>
               </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/audit"
+              >
+                <span className="text-[var(--muted)]">Audit</span>
+                <span className="text-[var(--accent)]">Events</span>
+              </Link>
             </div>
           </div>
         </header>

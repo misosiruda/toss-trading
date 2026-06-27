@@ -82,6 +82,48 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expectNoAxeViolations(page);
 });
 
+test("renders audit event review without mutation controls", async ({ page }) => {
+  await page.goto("/dashboard/audit");
+
+  await expect(
+    page.getByRole("heading", { name: "Audit Event Review" })
+  ).toBeVisible();
+  await expect(page.getByText("Paper-only audit")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Audit Summary" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Audit Events" })
+  ).toBeVisible();
+  await expect(page.getByText("Total events")).toBeVisible();
+  await expect(page.getByText("Rejected actions")).toBeVisible();
+  await expect(page.getByText("Failure traces")).toBeVisible();
+  await expect(page.getByText("Event Type Counts")).toBeVisible();
+  const auditTable = page.getByRole("table");
+  await expect(auditTable.getByText("VIRTUAL_RISK_REJECTED")).toBeVisible();
+  await expect(auditTable.getByText("AI_PROVIDER_FAILURE")).toBeVisible();
+  await expect(auditTable.getByText("risk_gate")).toBeVisible();
+  await expect(auditTable.getByText("simulation")).toBeVisible();
+  await expect(auditTable.getByText("failure", { exact: true })).toBeVisible();
+  await expect(auditTable.getByText("warning", { exact: true })).toBeVisible();
+  await expect(auditTable.getByText("ord_****")).toBeVisible();
+  await expect(page.getByText("ord_abcdef123456")).toHaveCount(0);
+  await expect(page.getByText("1234-5678-901234")).toHaveCount(0);
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
 test("renders strategy bucket test lab with queued create boundary", async ({
   page,
   request,
@@ -288,7 +330,7 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     page.getByRole("button", { name: "Queue bucket test record" })
   ).toBeDisabled();
 
-  await page.getByRole("button", { name: "Validate bucket config" }).click();
+  await activateButton(page, "Validate bucket config");
   await expect(page.getByText("Strategy validation valid")).toBeVisible();
   await expect(
     page.getByText(/config sha256:[a-f0-9]{12}.*runner not started/)
@@ -309,7 +351,7 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     )
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Queue bucket test record" }).click();
+  await activateButton(page, "Queue bucket test record");
   await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
   await expect(page.getByText("storage mutation enabled")).toBeVisible();
   await expect(page.getByText("live orders disabled")).toBeVisible();
@@ -364,7 +406,7 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   });
 
   await page.locator("#start-at").fill("2024/02/31");
-  await page.getByRole("button", { name: "Validate bucket config" }).click();
+  await activateButton(page, "Validate bucket config");
   await expect(page.getByText("Strategy validation invalid")).toBeVisible();
   await expect(page.getByText("INVALID_WINDOW_DATE:")).toBeVisible();
   await expect(
@@ -716,6 +758,12 @@ test("renders paper policy builder draft validation without live mutation contro
 
   await expectNoAxeViolations(page);
 });
+
+async function activateButton(page: Page, buttonName: string) {
+  const button = page.getByRole("button", { name: buttonName });
+  await button.focus();
+  await page.keyboard.press("Enter");
+}
 
 async function expectNoAxeViolations(page: Page) {
   await page.addScriptTag({ content: axe.source });

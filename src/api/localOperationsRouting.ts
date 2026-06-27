@@ -1,5 +1,6 @@
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import {
+  readDashboardAuditViewModel,
   readDashboardPortfolioComplianceViewModel,
   readDashboardRiskGateTraceViewModel,
   readDashboardStrategyBucketTestProgressViewModel,
@@ -94,6 +95,8 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
     readDashboardRiskGateTraceViewModel(options.storageBaseDir, readLimit(url)),
   "/dashboard/view-model/validation-lab": (_url, options) =>
     readDashboardValidationLabViewModel(options.storageBaseDir),
+  "/dashboard/view-model/audit": (url, options) =>
+    readDashboardAuditViewModel(options.storageBaseDir, readLimit(url)),
   "/scheduler/status": (_url, options) =>
     readSchedulerStatus(options.storageBaseDir),
   "/source/health": (_url, options) =>

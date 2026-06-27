@@ -13,7 +13,8 @@ export type DashboardViewModelName =
   | "strategy-test-lab"
   | "strategy-test-progress"
   | "risk-gate-trace"
-  | "validation-lab";
+  | "validation-lab"
+  | "audit";
 
 export interface BucketComplianceRow {
   bucket: StrategyBucket;
@@ -304,6 +305,42 @@ export interface ValidationCandidateComparisonRow {
   holdoutDegradationCount: number;
 }
 
+export interface DashboardAuditEventRow {
+  eventId: string;
+  eventType: string;
+  actor: string;
+  summary: string;
+  maskedRefs: string[];
+  createdAt: string;
+  severity: "info" | "warning" | "failure";
+  category:
+    | "risk_gate"
+    | "paper_policy"
+    | "strategy_test"
+    | "simulation"
+    | "market_data"
+    | "system";
+  rejectedAction: boolean;
+  failureTrace: boolean;
+}
+
+export interface DashboardAuditViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "audit";
+  events: DashboardAuditEventRow[];
+  count: number;
+  totalCount: number;
+  rejectedActionCount: number;
+  failureTraceCount: number;
+  eventTypeCounts: Record<string, number>;
+  actorCounts: Record<string, number>;
+  latestEventAt: string | null;
+  sourceStatus: Record<string, JsonReadStatus>;
+  warnings: string[];
+  status: ViewModelStatus;
+}
+
 export type ViewModelResult<T> =
   | {
       status: "ok";
@@ -332,6 +369,12 @@ export interface StrategyTestLabPageData {
   apiBaseLabel: string;
   fetchedAt: string;
   strategyLab: ViewModelResult<StrategyBucketTestLabViewModel>;
+}
+
+export interface AuditPageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  audit: ViewModelResult<DashboardAuditViewModel>;
 }
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
@@ -402,6 +445,23 @@ export async function readStrategyTestLabPageData(): Promise<StrategyTestLabPage
     apiBaseLabel: apiConfig.label,
     fetchedAt,
     strategyLab
+  };
+}
+
+export async function readAuditPageData(): Promise<AuditPageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const audit = await fetchViewModel<DashboardAuditViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/audit?limit=30",
+    "audit",
+    isDashboardAuditViewModel
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    audit
   };
 }
 
@@ -605,6 +665,53 @@ function isValidationLabViewModel(
     value.executionAssumptions["paperOnly"] === true &&
     value.executionAssumptions["liveTradingEnabled"] === false &&
     value.executionAssumptions["orderPlacementEnabled"] === false
+  );
+}
+
+function isDashboardAuditViewModel(
+  value: unknown
+): value is DashboardAuditViewModel {
+  if (!isViewModelPayload(value, "audit")) {
+    return false;
+  }
+  return (
+    Array.isArray(value.events) &&
+    value.events.every(isDashboardAuditEventRow) &&
+    isNumber(value.count) &&
+    isNumber(value.totalCount) &&
+    isNumber(value.rejectedActionCount) &&
+    isNumber(value.failureTraceCount) &&
+    isNumberRecord(value.eventTypeCounts) &&
+    isNumberRecord(value.actorCounts) &&
+    isNullableString(value.latestEventAt) &&
+    isSourceStatus(value.sourceStatus) &&
+    isStringArray(value.warnings) &&
+    isViewModelStatus(value.status)
+  );
+}
+
+function isDashboardAuditEventRow(
+  value: unknown
+): value is DashboardAuditEventRow {
+  return (
+    isRecord(value) &&
+    typeof value["eventId"] === "string" &&
+    typeof value["eventType"] === "string" &&
+    typeof value["actor"] === "string" &&
+    typeof value["summary"] === "string" &&
+    isStringArray(value["maskedRefs"]) &&
+    typeof value["createdAt"] === "string" &&
+    (value["severity"] === "info" ||
+      value["severity"] === "warning" ||
+      value["severity"] === "failure") &&
+    (value["category"] === "risk_gate" ||
+      value["category"] === "paper_policy" ||
+      value["category"] === "strategy_test" ||
+      value["category"] === "simulation" ||
+      value["category"] === "market_data" ||
+      value["category"] === "system") &&
+    typeof value["rejectedAction"] === "boolean" &&
+    typeof value["failureTrace"] === "boolean"
   );
 }
 
