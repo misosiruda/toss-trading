@@ -32,6 +32,7 @@ export const LOCAL_OPERATIONS_API_ROUTES = [
   "/dashboard/view-model/strategy-test-lab",
   "/dashboard/view-model/risk-gate-trace",
   "/dashboard/view-model/validation-lab",
+  "/dashboard/view-model/audit",
   "/scheduler/status",
   "/source/health",
   "/market/packets",

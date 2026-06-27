@@ -211,3 +211,29 @@ await writeFile(
   `${JSON.stringify(aggregate, null, 2)}\n`,
   "utf8"
 );
+
+const auditEvents = [
+  {
+    eventId: "audit_e2e_001",
+    eventType: "VIRTUAL_RISK_REJECTED",
+    actor: "risk-engine",
+    summary:
+      "packet_e2e_001 005930 rejected account 1234-5678-901234 order ord_abcdef123456",
+    maskedRefs: [],
+    createdAt: "2026-06-27T00:01:00.000Z"
+  },
+  {
+    eventId: "audit_e2e_002",
+    eventType: "AI_PROVIDER_FAILURE",
+    actor: "decision-provider",
+    summary: "provider timeout during paper-only replay",
+    maskedRefs: ["packet_e2e_002"],
+    createdAt: "2026-06-27T00:02:00.000Z"
+  }
+];
+
+await writeFile(
+  resolve(dataDir, "audit-events.jsonl"),
+  `${auditEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
+  "utf8"
+);

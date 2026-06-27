@@ -566,6 +566,9 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
     assert.match(dashboardScriptText, /\/audit\/events/);
     for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
+      if (routePath === "/dashboard/view-model/audit") {
+        continue;
+      }
       assert.equal(dashboardScriptText.includes(routePath), true, routePath);
     }
     assert.match(dashboardScriptText, /fetchEndpointData/);
@@ -2028,10 +2031,17 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       baseUrl,
       "/dashboard/view-model/validation-lab"
     );
+    const auditView = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/audit?limit=5"
+    );
     const validationHead = await fetch(
       `${baseUrl}/dashboard/view-model/validation-lab`,
       { method: "HEAD" }
     );
+    const auditHead = await fetch(`${baseUrl}/dashboard/view-model/audit`, {
+      method: "HEAD"
+    });
     const bucketRows = portfolioCompliance.payload["bucketCompliance"] as Array<
       Record<string, unknown>
     >;
@@ -2073,11 +2083,21 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const candidateComparisonRows = candidateComparison["rows"] as Array<
       Record<string, unknown>
     >;
+    const auditViewEvents = auditView.payload["events"] as Array<
+      Record<string, unknown>
+    >;
+    const auditEventTypeCounts = auditView.payload[
+      "eventTypeCounts"
+    ] as Record<string, unknown>;
+    const auditSourceStatus = auditView.payload[
+      "sourceStatus"
+    ] as Record<string, unknown>;
     const text = JSON.stringify({
       portfolioCompliance: portfolioCompliance.payload,
       strategyTestLab: strategyTestLab.payload,
       riskGateTrace: riskGateTrace.payload,
-      validationLab: validationLab.payload
+      validationLab: validationLab.payload,
+      auditView: auditView.payload
     });
 
     assert.equal(portfolioCompliance.response.status, 200);
@@ -2172,8 +2192,27 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "run_1",
       "run_2"
     ]);
+
+    assert.equal(auditView.response.status, 200);
+    assert.equal(auditView.payload["viewModel"], "audit");
+    assert.equal(auditView.payload["readOnly"], true);
+    assert.equal(auditView.payload["count"], 1);
+    assert.equal(auditView.payload["totalCount"], 1);
+    assert.equal(auditView.payload["rejectedActionCount"], 1);
+    assert.equal(auditView.payload["failureTraceCount"], 0);
+    assert.equal(auditView.payload["latestEventAt"], "2026-06-11T09:02:00+09:00");
+    assert.equal(auditView.payload["status"], "watch");
+    assert.equal(auditViewEvents[0]?.["eventId"], "audit_api_002");
+    assert.equal(auditViewEvents[0]?.["severity"], "warning");
+    assert.equal(auditViewEvents[0]?.["category"], "risk_gate");
+    assert.equal(auditViewEvents[0]?.["rejectedAction"], true);
+    assert.equal(auditEventTypeCounts["VIRTUAL_RISK_REJECTED"], 1);
+    assert.equal(auditSourceStatus["auditEvents"], "ok");
+
     assert.equal(validationHead.status, 200);
     assert.equal(await validationHead.text(), "");
+    assert.equal(auditHead.status, 200);
+    assert.equal(await auditHead.text(), "");
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);

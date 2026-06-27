@@ -393,6 +393,47 @@ interface ValidationCandidateComparisonRow {
   holdoutDegradationCount: number;
 }
 
+type DashboardAuditEventSeverity = "info" | "warning" | "failure";
+type DashboardAuditEventCategory =
+  | "risk_gate"
+  | "paper_policy"
+  | "strategy_test"
+  | "simulation"
+  | "market_data"
+  | "system";
+
+interface DashboardAuditEventRow {
+  eventId: string;
+  eventType: string;
+  actor: string;
+  summary: string;
+  maskedRefs: string[];
+  createdAt: string;
+  severity: DashboardAuditEventSeverity;
+  category: DashboardAuditEventCategory;
+  rejectedAction: boolean;
+  failureTrace: boolean;
+}
+
+export interface DashboardAuditViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "audit";
+  events: DashboardAuditEventRow[];
+  count: number;
+  totalCount: number;
+  rejectedActionCount: number;
+  failureTraceCount: number;
+  eventTypeCounts: Record<string, number>;
+  actorCounts: Record<string, number>;
+  latestEventAt: string | null;
+  sourceStatus: {
+    auditEvents: JsonlReadStatus;
+  };
+  warnings: string[];
+  status: DashboardViewModelStatus;
+}
+
 export async function readDashboardPortfolioComplianceViewModel(
   storageBaseDir: string
 ): Promise<PolicyComplianceViewModel> {
@@ -671,6 +712,52 @@ export async function readDashboardValidationLabViewModel(
   } catch {
     return validationLabUnavailable("invalid");
   }
+}
+
+export async function readDashboardAuditViewModel(
+  storageBaseDir: string,
+  limit: number
+): Promise<DashboardAuditViewModel> {
+  const paths = createStoragePaths(storageBaseDir);
+  const auditEvents = await new FileAuditLog(paths.auditLogPath).readAll();
+  const recentEvents = auditEvents.records.slice(-limit).reverse();
+  const rejectedActionCount = auditEvents.records.filter(isRejectedAuditEvent)
+    .length;
+  const failureTraceCount = auditEvents.records.filter(isFailureAuditEvent)
+    .length;
+  const warnings = auditWarnings({
+    totalCount: auditEvents.records.length,
+    corruptLineCount: auditEvents.corruptLineCount,
+    rejectedActionCount,
+    failureTraceCount
+  });
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "audit",
+    events: recentEvents.map(auditEventRow),
+    count: recentEvents.length,
+    totalCount: auditEvents.records.length,
+    rejectedActionCount,
+    failureTraceCount,
+    eventTypeCounts: countAuditEventField(auditEvents.records, "eventType"),
+    actorCounts: countAuditEventField(auditEvents.records, "actor"),
+    latestEventAt: latestAuditEventAt(auditEvents.records),
+    sourceStatus: {
+      auditEvents: storeJsonlStatus(
+        auditEvents.records.length,
+        auditEvents.corruptLineCount
+      )
+    },
+    warnings,
+    status: auditViewModelStatus({
+      totalCount: auditEvents.records.length,
+      corruptLineCount: auditEvents.corruptLineCount,
+      rejectedActionCount,
+      failureTraceCount
+    })
+  };
 }
 
 function portfolioExposure(portfolio: VirtualPortfolio | null): {
@@ -1646,6 +1733,137 @@ function matchingAuditEventRefs(
         event.maskedRefs.includes(symbol)
     )
     .map((event) => event.eventId);
+}
+
+function auditEventRow(event: AuditEvent): DashboardAuditEventRow {
+  return {
+    eventId: event.eventId,
+    eventType: event.eventType,
+    actor: event.actor,
+    summary: event.summary,
+    maskedRefs: event.maskedRefs,
+    createdAt: event.createdAt,
+    severity: auditEventSeverity(event),
+    category: auditEventCategory(event),
+    rejectedAction: isRejectedAuditEvent(event),
+    failureTrace: isFailureAuditEvent(event)
+  };
+}
+
+function auditEventSeverity(event: AuditEvent): DashboardAuditEventSeverity {
+  if (isFailureAuditEvent(event)) {
+    return "failure";
+  }
+  if (isRejectedAuditEvent(event) || auditEventText(event).includes("WARN")) {
+    return "warning";
+  }
+  return "info";
+}
+
+function auditEventCategory(event: AuditEvent): DashboardAuditEventCategory {
+  const text = auditEventText(event);
+  if (text.includes("RISK")) {
+    return "risk_gate";
+  }
+  if (text.includes("POLICY")) {
+    return "paper_policy";
+  }
+  if (text.includes("STRATEGY_BUCKET") || text.includes("BUCKET_TEST")) {
+    return "strategy_test";
+  }
+  if (text.includes("SIMULATION") || text.includes("REPLAY")) {
+    return "simulation";
+  }
+  if (text.includes("MARKET") || text.includes("SOURCE")) {
+    return "market_data";
+  }
+  return "system";
+}
+
+function isRejectedAuditEvent(event: AuditEvent): boolean {
+  const text = auditEventText(event);
+  return (
+    text.includes("REJECT") ||
+    text.includes("BLOCK") ||
+    text.includes("DENIED")
+  );
+}
+
+function isFailureAuditEvent(event: AuditEvent): boolean {
+  const text = auditEventText(event);
+  return (
+    text.includes("FAIL") ||
+    text.includes("ERROR") ||
+    text.includes("EXCEPTION")
+  );
+}
+
+function auditEventText(event: AuditEvent): string {
+  return `${event.eventType} ${event.summary}`.toUpperCase();
+}
+
+function countAuditEventField(
+  events: AuditEvent[],
+  field: "eventType" | "actor"
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const event of events) {
+    counts[event[field]] = (counts[event[field]] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function latestAuditEventAt(events: AuditEvent[]): string | null {
+  const latest = events.reduce<AuditEvent | null>((current, event) => {
+    if (current === null) {
+      return event;
+    }
+    return Date.parse(event.createdAt) > Date.parse(current.createdAt)
+      ? event
+      : current;
+  }, null);
+  return latest?.createdAt ?? null;
+}
+
+function auditWarnings(input: {
+  totalCount: number;
+  corruptLineCount: number;
+  rejectedActionCount: number;
+  failureTraceCount: number;
+}): string[] {
+  const warnings: string[] = [];
+  if (input.totalCount === 0) {
+    warnings.push("audit log is empty; no rejected action or failure trace is available");
+  }
+  if (input.corruptLineCount > 0) {
+    warnings.push(
+      `${input.corruptLineCount} corrupt audit log line(s) were excluded from the ViewModel`
+    );
+  }
+  if (input.rejectedActionCount > 0 || input.failureTraceCount > 0) {
+    warnings.push(
+      "rejected and failure events are shown as trace evidence only; this ViewModel cannot retry or place orders"
+    );
+  }
+  return warnings;
+}
+
+function auditViewModelStatus(input: {
+  totalCount: number;
+  corruptLineCount: number;
+  rejectedActionCount: number;
+  failureTraceCount: number;
+}): DashboardViewModelStatus {
+  if (input.totalCount === 0) {
+    return "missing";
+  }
+  if (input.corruptLineCount > 0 || input.failureTraceCount > 0) {
+    return "breach";
+  }
+  if (input.rejectedActionCount > 0) {
+    return "watch";
+  }
+  return "ok";
 }
 
 function mapToExposureBuckets(
