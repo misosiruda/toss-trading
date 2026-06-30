@@ -72,6 +72,9 @@ test("renders paper-only dashboard readiness without live mutation controls", as
     page.getByRole("link", { name: /Strategy lab Buckets/i })
   ).toBeVisible();
   await expect(
+    page.getByRole("link", { name: /Portfolio Compliance/i })
+  ).toBeVisible();
+  await expect(
     page.getByRole("link", { name: /Live Readiness Status/i })
   ).toBeVisible();
   await expect(
@@ -79,6 +82,76 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Validation Lab/i })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders portfolio compliance detail without mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/portfolio");
+
+  await expect(
+    page.getByRole("heading", { name: "Portfolio Compliance", exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Paper-only portfolio")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+
+  await expect(page.getByText("Net worth")).toBeVisible();
+  await expect(page.getByText("Cash ratio")).toBeVisible();
+  await expect(page.getByText("Risk rejects")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Bucket Allocation Matrix" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: "Bucket allocation compliance table" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Compliance Breaches" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Compliance Analytics" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Strategy Bucket Mix" })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cash Reserve" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Hedge Effectiveness" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cost & Turnover" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Exposure Compliance" })
+  ).toBeVisible();
+  await expect(page.getByText("Market Exposure")).toBeVisible();
+  await expect(page.getByText("Strategy Bucket Exposure")).toBeVisible();
+  await expect(page.getByText("Max Symbol Exposure")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Cost and Turnover" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: "Bucket cost and turnover table" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Risk Gate Summary" })
+  ).toBeVisible();
+  await expect(page.getByText("Reject Codes")).toBeVisible();
+  await expect(
+    page.getByText(
+      "portfolio policy artifact is not available; target weights are reported as missing"
+    )
   ).toBeVisible();
 
   await expect(

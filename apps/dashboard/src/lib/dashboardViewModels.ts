@@ -438,6 +438,12 @@ export interface LiveReadinessPageData {
   liveReadiness: ViewModelResult<LiveReadinessViewModel>;
 }
 
+export interface PortfolioCompliancePageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  portfolio: ViewModelResult<PolicyComplianceViewModel>;
+}
+
 export interface StrategyTestLabPageData {
   apiBaseLabel: string;
   fetchedAt: string;
@@ -530,6 +536,23 @@ export async function readLiveReadinessPageData(): Promise<LiveReadinessPageData
     apiBaseLabel: apiConfig.label,
     fetchedAt,
     liveReadiness
+  };
+}
+
+export async function readPortfolioCompliancePageData(): Promise<PortfolioCompliancePageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const portfolio = await fetchViewModel<PolicyComplianceViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/portfolio-compliance",
+    "portfolio-compliance",
+    isPolicyComplianceViewModel
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    portfolio
   };
 }
 
