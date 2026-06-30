@@ -692,6 +692,20 @@ sequenceDiagram
 - high turnover/high cost
 - hedge ineffective
 
+첫 번째 구현 단위:
+
+- Next.js `/dashboard/validation` route를 추가해 `GET /dashboard/view-model/validation-lab` read-only ViewModel을 서버 컴포넌트에서 조회한다.
+- `/dashboard` 요약 패널과 전용 `/dashboard/validation` 화면은 같은 route-local 렌더링 컴포넌트를 공유한다.
+- 전용 화면은 candidate split metric matrix, selected-in-train 표시, validation/overfitting/provider/risk reject summary를 한 화면에서 보여준다.
+- candidate comparison은 paper-only validation evidence로만 표시하고 strategy recommendation 또는 performance guarantee로 표현하지 않는다.
+- Playwright E2E는 candidate row, selected-in-train badge, no live order/trade/buy/sell control, accessibility smoke를 검증한다.
+
+제외 범위:
+
+- backend validation metric 산식, overfitting diagnostic 산식, risk/order/execution policy는 변경하지 않는다.
+- strategy 자동 선택, 추천 CTA, replay runner 시작, SSE stream, live order surface는 추가하지 않는다.
+- browser client는 validation metric을 재계산하지 않고 backend ViewModel을 렌더링만 한다.
+
 ## Migration Plan
 
 ### N0. 문서 기준선

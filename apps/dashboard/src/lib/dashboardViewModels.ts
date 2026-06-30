@@ -400,6 +400,12 @@ export interface RiskGateTracePageData {
   riskGate: ViewModelResult<RiskGateTraceViewModel>;
 }
 
+export interface ValidationLabPageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  validationLab: ViewModelResult<ValidationLabViewModel>;
+}
+
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
 const FETCH_TIMEOUT_MS = 2_000;
 
@@ -502,6 +508,24 @@ export async function readRiskGateTracePageData(): Promise<RiskGateTracePageData
     apiBaseLabel: apiConfig.label,
     fetchedAt,
     riskGate
+  };
+}
+
+export async function readValidationLabPageData(): Promise<ValidationLabPageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const validationLab = await fetchViewModel<ValidationLabViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/validation-lab",
+    "validation-lab",
+    isValidationLabViewModel,
+    withValidationLabCandidateComparisonFallback
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    validationLab
   };
 }
 

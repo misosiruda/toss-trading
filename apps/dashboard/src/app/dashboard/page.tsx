@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RiskGateTracePanel } from "./RiskGateTracePanel";
+import { ValidationLabPanel } from "./ValidationLabPanel";
 import {
   countOnlineViewModels,
   readDashboardViewModels,
@@ -12,7 +13,6 @@ import {
   type PolicyComplianceViewModel,
   type StrategyBucket,
   type StrategyBucketTestLabViewModel,
-  type ValidationCandidateComparisonView,
   type ValidationLabViewModel,
   type ViewModelResult,
   type ViewModelStatus
@@ -89,6 +89,13 @@ export default async function DashboardPage() {
               </Link>
               <Link
                 className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/validation"
+              >
+                <span className="text-[var(--muted)]">Validation</span>
+                <span className="text-[var(--accent)]">Lab</span>
+              </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
                 href="/dashboard/audit"
               >
                 <span className="text-[var(--muted)]">Audit</span>
@@ -135,7 +142,7 @@ export default async function DashboardPage() {
 
         <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
           <StrategyLabPanel result={viewModels.strategyLab} />
-          <ValidationPanel result={viewModels.validationLab} />
+          <ValidationLabPanel result={viewModels.validationLab} />
         </section>
 
         <footer className="border-t border-[var(--border)] pt-4 text-xs leading-5 text-[var(--muted)]">
@@ -362,184 +369,6 @@ function StrategyLabPanel({
   );
 }
 
-function ValidationPanel({
-  result
-}: {
-  result: ViewModelResult<ValidationLabViewModel>;
-}) {
-  if (result.status !== "ok") {
-    return <UnavailablePanel result={result} title="Validation Lab" />;
-  }
-
-  const data = result.data;
-  return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
-      <PanelHeader
-        eyebrow={data.aggregateReportStatus}
-        status={data.status}
-        title="Validation Lab"
-      />
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Metric
-          label="Generated"
-          value={
-            data.sourceGeneratedAt === null
-              ? "missing"
-              : formatDateTime(data.sourceGeneratedAt)
-          }
-        />
-        <Metric
-          label="Paper-only"
-          value={data.executionAssumptions.paperOnly ? "true" : "false"}
-        />
-        <Metric
-          label="Order placement"
-          value={
-            data.executionAssumptions.orderPlacementEnabled
-              ? "enabled"
-              : "disabled"
-          }
-        />
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <ObjectSummary
-          title="Validation protocol"
-          value={data.validationProtocol}
-        />
-        <ObjectSummary
-          title="Overfitting warning"
-          value={data.overfittingWarning}
-        />
-        <ObjectSummary
-          title="Provider failure"
-          value={data.providerFailureSummary}
-        />
-        <ObjectSummary title="Risk rejects" value={data.riskRejectSummary} />
-      </div>
-      <ValidationCandidateComparison
-        comparison={data.candidateComparison}
-      />
-      <PolicyWarnings warnings={data.warnings} />
-    </section>
-  );
-}
-
-function ValidationCandidateComparison({
-  comparison
-}: {
-  comparison: ValidationCandidateComparisonView;
-}) {
-  return (
-    <section aria-label="Policy Candidate Comparison" className="mt-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold">Policy Candidate Comparison</h3>
-          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-            Read-only split metric matrix from stored batch aggregate artifacts.
-          </p>
-        </div>
-        <Badge
-          tone={comparison.status === "available" ? "ok" : "watch"}
-          value={comparison.status}
-        />
-      </div>
-
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <Metric label="Candidates" value={String(comparison.candidateCount)} />
-        <Metric
-          label="Return samples"
-          value={String(comparison.returnSampleCount)}
-        />
-        <Metric
-          label="Selection metric"
-          value={comparison.selectionMetric ?? "missing"}
-        />
-      </div>
-
-      {comparison.rows.length === 0 ? (
-        <div className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]">
-          Candidate comparison unavailable from the current aggregate artifact.
-        </div>
-      ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-[var(--muted)]">
-              <tr>
-                <th className="py-2 pr-3 font-medium">Candidate</th>
-                <th className="py-2 pr-3 font-medium">Provider</th>
-                <th className="py-2 pr-3 font-medium">Train</th>
-                <th className="py-2 pr-3 font-medium">Validation</th>
-                <th className="py-2 pr-3 font-medium">Test</th>
-                <th className="py-2 font-medium">Holdout</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {comparison.rows.map((row) => (
-                <tr key={row.candidateKey}>
-                  <td className="py-2 pr-3">
-                    <div className="flex flex-col gap-1">
-                      <span
-                        className="max-w-[28rem] break-all font-mono text-xs"
-                        title={row.candidateKey}
-                      >
-                        {formatCandidateKeyLabel(row.candidateKey)}
-                      </span>
-                      <span className="max-w-[28rem] break-all font-mono text-[11px] leading-4 text-[var(--muted)]">
-                        prompt {formatCandidateIdentifier(row.promptHash)}
-                      </span>
-                      <span className="max-w-[28rem] break-all font-mono text-[11px] leading-4 text-[var(--muted)]">
-                        config {formatCandidateIdentifierList(row.configHashes)}
-                      </span>
-                      {row.selected ? (
-                        <Badge tone="watch" value="selected in train" />
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <div className="flex flex-col gap-1">
-                      <span>{row.decisionProviderMode}</span>
-                      <span className="font-mono text-xs text-[var(--muted)]">
-                        {row.riskProfile ?? "risk profile missing"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    {formatNullableRatio(row.trainAverageTotalReturnRatio)}
-                    <br />
-                    n={row.trainReturnSampleCount}
-                  </td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    {formatNullableRatio(row.validationAverageTotalReturnRatio)}
-                    <br />
-                    n={row.validationReturnSampleCount}
-                  </td>
-                  <td className="py-2 pr-3 font-mono text-xs">
-                    {formatNullableRatio(row.testAverageTotalReturnRatio)}
-                    <br />
-                    n={row.testReturnSampleCount}
-                  </td>
-                  <td className="py-2 font-mono text-xs">
-                    {row.holdoutDegradationCount} degradation checks
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {comparison.warnings.length === 0 ? null : (
-        <ul className="mt-3 space-y-2 text-sm leading-5 text-[var(--muted)]">
-          {comparison.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function UnavailablePanel<T>({
   result,
   title
@@ -687,21 +516,6 @@ function PolicyWarnings({ warnings }: { warnings: string[] }) {
   );
 }
 
-function ObjectSummary({ title, value }: { title: string; value: unknown }) {
-  return (
-    <article className="rounded-[8px] border border-[var(--border)] p-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <pre
-        aria-label={`${title} summary`}
-        className="mt-3 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-[6px] bg-[var(--panel-muted)] p-3 font-mono text-xs leading-5 text-[var(--muted)]"
-        tabIndex={0}
-      >
-        {formatObject(value)}
-      </pre>
-    </article>
-  );
-}
-
 function SourceStatusList({
   sourceStatus
 }: {
@@ -797,32 +611,4 @@ function formatDateTime(value: string): string {
     timeStyle: "medium",
     timeZone: "Asia/Seoul"
   }).format(date);
-}
-
-function formatObject(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "missing";
-  }
-  const serialized = JSON.stringify(value, null, 2);
-  if (serialized.length <= 900) {
-    return serialized;
-  }
-  return `${serialized.slice(0, 900)}...`;
-}
-
-function formatCandidateKeyLabel(value: string): string {
-  return value.length <= 72
-    ? value
-    : `${value.slice(0, 34)}...${value.slice(-34)}`;
-}
-
-function formatCandidateIdentifier(value: string | null): string {
-  return value ?? "missing";
-}
-
-function formatCandidateIdentifierList(values: Array<string | null>): string {
-  if (values.length === 0) {
-    return "missing";
-  }
-  return values.map(formatCandidateIdentifier).join(", ");
 }
