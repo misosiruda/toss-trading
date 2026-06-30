@@ -74,6 +74,9 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(
     page.getByRole("link", { name: /Risk Gate Trace/i })
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Validation Lab/i })
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
@@ -119,6 +122,56 @@ test("renders risk gate trace detail without treating rejects as fills", async (
   await expect(rejectedTraceRow).toContainText("VIRTUAL_CASH_EXCEEDED");
   await expect(rejectedTraceRow).toContainText("audit_replay_e2e_001");
   await expect(rejectedTraceRow).not.toContainText("filled");
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders validation lab detail without strategy recommendation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/validation");
+
+  await expect(
+    page.getByRole("heading", { name: "Validation Lab", exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByText("Paper-only validation", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Validation Lab Detail" })
+  ).toBeVisible();
+  await expect(page.getByText("train evidence only")).toBeVisible();
+  await expect(page.getByText("Candidate rows")).toBeVisible();
+  await expect(page.getByText("Policy Candidate Comparison")).toBeVisible();
+
+  const comparisonTable = page.getByRole("table", {
+    name: "Policy candidate comparison table",
+  });
+  await expect(
+    comparisonTable.getByText("sha256:prompt-alpha-differentiator")
+  ).toBeVisible();
+  await expect(
+    comparisonTable.getByText("sha256:prompt-beta-differentiator")
+  ).toBeVisible();
+  await expect(comparisonTable.getByText("sha256:config-alpha")).toBeVisible();
+  await expect(comparisonTable.getByText("sha256:config-beta")).toBeVisible();
+  await expect(comparisonTable.getByText("selected in train")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Candidate comparison is paper-only validation evidence. It is not a strategy recommendation or performance guarantee."
+    )
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })

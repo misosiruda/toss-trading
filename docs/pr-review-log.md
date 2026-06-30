@@ -2601,3 +2601,23 @@
 - E2E fixture는 historical replay decision, risk decision, rejected trade, audit event를 명시적으로 준비합니다.
 - Playwright E2E는 `/dashboard/risk-gate`에서 rejected row가 `filled`를 포함하지 않고 mutation control이 없는지 검증합니다.
 - docs는 Risk Gate Trace 첫 구현 단위와 제외 범위를 분리해 risk/order/execution backend 변경이 이번 PR 범위가 아님을 명시합니다.
+
+## Validation Lab Detail Route
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 Next.js `/dashboard/validation` read-only route와 기존 `/dashboard` validation summary component 재사용만 다룹니다.
+- backend validation metric 산식, overfitting diagnostic 산식, risk/order/execution policy는 변경하지 않습니다.
+- strategy 자동 선택, 추천 CTA, replay runner 시작, SSE stream, live order surface는 추가하지 않습니다.
+
+### Review 2: ViewModel and UI Contract
+
+- `/dashboard/validation`은 `GET /dashboard/view-model/validation-lab` ViewModel을 서버 컴포넌트에서 조회합니다.
+- candidate comparison table은 split metric matrix, prompt/config hash, selected-in-train badge, train/validation/test metric을 같은 계약으로 렌더링합니다.
+- 전용 화면은 candidate comparison을 paper-only validation evidence로 표현하고 strategy recommendation 또는 performance guarantee로 표현하지 않습니다.
+
+### Review 3: Tests and Docs
+
+- Playwright E2E는 `/dashboard/validation`에서 candidate rows, selected-in-train badge, recommendation disclaimer, mutation control 부재를 검증합니다.
+- horizontal scroll table은 keyboard focus가 가능하게 처리해 axe smoke 기준을 유지합니다.
+- docs는 Validation Lab 첫 구현 단위와 제외 범위를 분리해 runner/recommendation/live order surface가 이번 PR 범위가 아님을 명시합니다.
