@@ -2574,3 +2574,10 @@
 - backend test는 matrix create가 5개 bucket queued record와 audit event를 저장하고 replay runner를 호출하지 않는지 검증합니다.
 - E2E는 matrix proxy guard와 validation/token 이후 UI에서 enabled bucket matrix가 queue되는 흐름을 확인합니다.
 - docs는 N5 여덟 번째 구현 단위와 제외 범위를 분리해 matrix create가 runner/SSE/result aggregation/live order surface를 포함하지 않음을 명시합니다.
+
+### Codex Review Fix
+
+- Review finding: 120자 seed에 bucket suffix를 그대로 붙이면 strategy bucket validation seed limit을 초과해 matrix create가 500으로 실패할 수 있었습니다.
+- Fix review 1: matrix-derived seed는 원본 seed prefix, 원본 seed/bucket hash, bucket suffix를 조합하되 120자 제한 안으로 clamp합니다.
+- Fix review 2: derived candidate validation에서 schema error가 발생해도 `StrategyBucketTestCreateRequestError`로 변환해 Local Operations API가 fail-closed error response로 처리하도록 했습니다.
+- Fix review 3: matrix create backend test가 120자 seed를 사용하는 회귀 케이스를 검증하도록 보강했습니다.

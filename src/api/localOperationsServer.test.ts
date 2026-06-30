@@ -1400,7 +1400,9 @@ test("strategy bucket test matrix create writes independent queued records witho
   });
 
   try {
-    const matrixRequest = strategyBucketTestMatrixCandidate();
+    const matrixRequest = strategyBucketTestMatrixCandidate({
+      windowSeed: "s".repeat(120)
+    });
     const result = await fetchJson(
       baseUrl,
       STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE,
@@ -1464,6 +1466,10 @@ test("strategy bucket test matrix create writes independent queued records witho
     );
     assert.equal(
       new Set(records.map((record) => record["testId"])).size,
+      expectedBuckets.length
+    );
+    assert.equal(
+      new Set(records.map((record) => record["configHash"])).size,
       expectedBuckets.length
     );
     assert.deepEqual(
@@ -3857,6 +3863,7 @@ function strategyBucketTestCandidate(
     aiProvider?: "dry_run_fixture" | "codex_paper_only";
     bucket?: StrategyBucketName;
     maxCodexCallsPerRun?: number;
+    windowSeed?: string;
   } = {}
 ): StrategyBucketTestCandidate {
   return {
@@ -3872,7 +3879,7 @@ function strategyBucketTestCandidate(
       },
       validationSplitRole: "validation",
       window: {
-        seed: "strategy-bucket-test-seed-001",
+        seed: overrides.windowSeed ?? "strategy-bucket-test-seed-001",
         startAt: "2024-01-01",
         endAt: "2024-02-01",
         windowMonths: 1

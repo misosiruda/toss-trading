@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 import {
@@ -32,6 +34,9 @@ export const STRATEGY_BUCKET_TEST_MATRIX_CREATE_OPERATION =
   "paper-strategy-bucket-test-matrix-create";
 export const STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME =
   "x-toss-trading-operation";
+
+const STRATEGY_BUCKET_TEST_SEED_MAX_LENGTH = 120;
+const MATRIX_BUCKET_SEED_HASH_LENGTH = 12;
 
 export type StrategyBucketTestStatus =
   | "queued"
@@ -326,10 +331,31 @@ function candidateForMatrixBucket(
       ...request.candidate.testConfig,
       window: {
         ...request.candidate.testConfig.window,
-        seed: `${seedBase}-${bucket}`
+        seed: matrixBucketSeedFor(seedBase, bucket)
       }
     }
   };
+}
+
+function matrixBucketSeedFor(seedBase: string, bucket: StrategyBucket): string {
+  const suffix = `-${shortMatrixBucketSeedHash(seedBase, bucket)}-${bucket}`;
+  const prefixLength = Math.max(
+    0,
+    STRATEGY_BUCKET_TEST_SEED_MAX_LENGTH - suffix.length
+  );
+  return `${seedBase.slice(0, prefixLength)}${suffix}`;
+}
+
+function shortMatrixBucketSeedHash(
+  seedBase: string,
+  bucket: StrategyBucket
+): string {
+  return createHash("sha256")
+    .update(seedBase)
+    .update("\0")
+    .update(bucket)
+    .digest("hex")
+    .slice(0, MATRIX_BUCKET_SEED_HASH_LENGTH);
 }
 
 function prepareStrategyBucketTestRun(
@@ -337,11 +363,7 @@ function prepareStrategyBucketTestRun(
   createdAt: Date,
   env: NodeJS.ProcessEnv
 ): { auditEventId: string; record: StrategyBucketTestRecord } {
-  const validation = validateStrategyBucketTestCandidate(
-    candidate,
-    createdAt,
-    env
-  );
+  const validation = validateCandidateForCreate(candidate, createdAt, env);
   if (!validation.validatedForStrategyBucketTestConfig) {
     throw new StrategyBucketTestCreateRequestError(
       "strategy bucket test config must pass validation before a test record can be created",
@@ -400,6 +422,25 @@ function prepareStrategyBucketTestRun(
       }
     }
   };
+}
+
+function validateCandidateForCreate(
+  candidate: StrategyBucketTestValidationCandidate,
+  createdAt: Date,
+  env: NodeJS.ProcessEnv
+): ReturnType<typeof validateStrategyBucketTestCandidate> {
+  try {
+    return validateStrategyBucketTestCandidate(candidate, createdAt, env);
+  } catch (error) {
+    if (error instanceof StrategyBucketTestValidationRequestError) {
+      throw new StrategyBucketTestCreateRequestError(
+        error.message,
+        error.statusCode,
+        error.code
+      );
+    }
+    throw error;
+  }
 }
 
 function strategyBucketTestCreateResponse(
