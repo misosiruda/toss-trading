@@ -110,7 +110,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 
 | Artifact | 경로 패턴 | Reader | 경로 검증 |
 | --- | --- | --- | --- |
-| `batch-replay-manifest.json` | `batch-replay/<batchId>/batch-replay-manifest.json` | `readLatestBatchReplayManifest` | `createBatchReplayManifestPath` |
+| `batch-replay-manifest.json` | `batch-replay/<batchId>/batch-replay-manifest.json` | `readBatchReplayManifests` | `createBatchReplayManifestPath` |
 | `batch-replay-runs.jsonl` | `batch-replay/<batchId>/batch-replay-runs.jsonl` | `/batch/replay/runs` | `resolveBatchReplayRunsArtifactPath` |
 | `batch-replay-selection-trials.jsonl` | `batch-replay/<batchId>/batch-replay-selection-trials.jsonl` | 없음 | `createBatchReplayArtifactPaths` |
 

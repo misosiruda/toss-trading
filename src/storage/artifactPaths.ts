@@ -309,7 +309,7 @@ export const DYNAMIC_STORAGE_ARTIFACT_CONTRACTS: readonly DynamicStorageArtifact
       role: "metadata",
       domainContract: "BatchReplayManifest",
       writer: "HistoricalBatchReplayWorkflow",
-      localOperationsReader: "readLatestBatchReplayManifest",
+      localOperationsReader: "readBatchReplayManifests",
       failureTrace: "batch id, run status, latest runsPath",
       corruptJsonlPolicy: null,
       pathResolver: "createBatchReplayManifestPath"

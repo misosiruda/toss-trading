@@ -414,6 +414,69 @@ export interface DashboardAuditViewModel {
   status: ViewModelStatus;
 }
 
+export interface BatchReplayRunSummary {
+  runId: string;
+  batchId: string | null;
+  status: string;
+  runIndex: number | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  skippedAt: string | null;
+  marketRegimeLabel: string | null;
+  totalReturnRatio: number | null;
+  finalVirtualNetWorthKrw: number | null;
+  tradeCount: number | null;
+  rejectedCount: number | null;
+  aiDecisionFailureCount: number | null;
+  storageBaseDir: string | null;
+  reportPath: string | null;
+  error: string | null;
+  skipReason: string | null;
+}
+
+export type RunArtifactReadStatus = JsonReadStatus | "blocked" | "invalid";
+
+export interface BatchReplayRunArtifacts {
+  status: string;
+  runId: string | null;
+  runStatus: string | null;
+  reportStatus: RunArtifactReadStatus;
+  progressStatus: RunArtifactReadStatus;
+  decisionsStatus: RunArtifactReadStatus;
+  riskDecisionsStatus: RunArtifactReadStatus;
+  tradesStatus: RunArtifactReadStatus;
+  reportTitle: string | null;
+  progressStatusLabel: string | null;
+  simulatedAt: string | null;
+  completedTickCount: number | null;
+  tickCount: number | null;
+  decisionCount: number;
+  totalDecisionCount: number;
+  riskDecisionCount: number;
+  totalRiskDecisionCount: number;
+  tradeCount: number;
+  totalTradeCount: number;
+  rejectedCount: number | null;
+  currentVirtualNetWorthKrw: number | null;
+  currentCashKrw: number | null;
+  currentPositionCount: number | null;
+}
+
+export interface RunDetailView {
+  mode: "paper_only";
+  readOnly: true;
+  runId: string;
+  batchId: string | null;
+  batchStatus: string | null;
+  sourceRunsPath: string | null;
+  run: BatchReplayRunSummary | null;
+  artifacts: BatchReplayRunArtifacts | null;
+  latestArtifactsRunId: string | null;
+  warnings: string[];
+  status: "ok" | "missing";
+}
+
 export type ViewModelResult<T> =
   | {
       status: "ok";
@@ -472,6 +535,12 @@ export interface ValidationLabPageData {
   apiBaseLabel: string;
   fetchedAt: string;
   validationLab: ViewModelResult<ValidationLabViewModel>;
+}
+
+export interface RunDetailPageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  runDetail: ViewModelResult<RunDetailView>;
 }
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
@@ -631,6 +700,25 @@ export async function readValidationLabPageData(): Promise<ValidationLabPageData
   };
 }
 
+export async function readRunDetailPageData(
+  runId: string
+): Promise<RunDetailPageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const endpoint = `/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=${encodeURIComponent(runId)}`;
+  const runDetail = await fetchBatchReplayRunDetail(
+    apiConfig.baseUrl,
+    endpoint,
+    runId
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    runDetail
+  };
+}
+
 export function readOperationsApiConfig(): { baseUrl: string; label: string } {
   const value =
     [
@@ -649,6 +737,67 @@ export function readOperationsApiConfig(): { baseUrl: string; label: string } {
         ? "default local operations endpoint"
         : "configured operations endpoint"
   };
+}
+
+async function fetchBatchReplayRunDetail(
+  apiBaseUrl: string,
+  endpoint: string,
+  runId: string
+): Promise<ViewModelResult<RunDetailView>> {
+  const fetchedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return {
+        status: "offline",
+        endpoint,
+        fetchedAt,
+        data: null,
+        message: `Local Operations API returned HTTP ${response.status}`
+      };
+    }
+
+    const data: unknown = await response.json();
+    const view = normalizeRunDetailView(data, runId);
+    if (view === null) {
+      return {
+        status: "invalid",
+        endpoint,
+        fetchedAt,
+        data: null,
+        message: "Batch replay run response did not match the dashboard contract"
+      };
+    }
+
+    return {
+      status: "ok",
+      endpoint,
+      fetchedAt,
+      data: view
+    };
+  } catch (error) {
+    return {
+      status: "offline",
+      endpoint,
+      fetchedAt,
+      data: null,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Local Operations API request failed"
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchViewModel<T>(
@@ -715,6 +864,251 @@ async function fetchViewModel<T>(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeRunDetailView(
+  value: unknown,
+  runId: string
+): RunDetailView | null {
+  if (
+    !isRecord(value) ||
+    value["mode"] !== "paper_only" ||
+    value["readOnly"] !== true ||
+    !Array.isArray(value["runs"])
+  ) {
+    return null;
+  }
+
+  const rawArtifacts = isRecord(value["latestRunArtifacts"])
+    ? value["latestRunArtifacts"]
+    : null;
+  const artifacts = normalizeBatchReplayRunArtifacts(rawArtifacts);
+  const batchId = readNullableString(value["batchId"]);
+  const batchStatus = readNullableString(value["batchStatus"]);
+  const activeRun = normalizeActiveBatchReplayRunSummary(
+    value["activeRun"],
+    {
+      artifacts,
+      batchId,
+      batchStatus
+    }
+  );
+  const runs = value["runs"]
+    .map(normalizeBatchReplayRunSummary)
+    .filter((run): run is BatchReplayRunSummary => run !== null);
+  const selectedRun = normalizeBatchReplayRunSummary(value["selectedRun"]);
+  const run = findRunDetailTargetRun({
+    activeRun,
+    batchId,
+    batchStatus,
+    lookupId: runId,
+    runs,
+    selectedRun
+  });
+  const resolvedRunId = run?.runId ?? runId;
+  const latestArtifactsRunId = artifacts?.runId ?? null;
+  const warnings =
+    artifacts !== null &&
+    latestArtifactsRunId !== null &&
+    latestArtifactsRunId !== resolvedRunId
+      ? [
+          "latest run artifacts belong to a different run; detail artifacts are unavailable for this run"
+        ]
+      : [];
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    runId: resolvedRunId,
+    batchId,
+    batchStatus,
+    sourceRunsPath: readNullableString(value["sourceRunsPath"]),
+    run,
+    artifacts: latestArtifactsRunId === resolvedRunId ? artifacts : null,
+    latestArtifactsRunId,
+    warnings,
+    status: run === null ? "missing" : "ok"
+  };
+}
+
+function findRunDetailTargetRun({
+  activeRun,
+  batchId,
+  batchStatus,
+  lookupId,
+  runs,
+  selectedRun
+}: {
+  activeRun: BatchReplayRunSummary | null;
+  batchId: string | null;
+  batchStatus: string | null;
+  lookupId: string;
+  runs: BatchReplayRunSummary[];
+  selectedRun: BatchReplayRunSummary | null;
+}): BatchReplayRunSummary | null {
+  const directRun = runs.find((candidate) => candidate.runId === lookupId);
+  if (directRun !== undefined) {
+    return directRun;
+  }
+  if (
+    selectedRun !== null &&
+    (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)
+  ) {
+    return selectedRun;
+  }
+  if (activeRun !== null && activeRun.runId === lookupId) {
+    return activeRun;
+  }
+  if (
+    activeRun !== null &&
+    batchId === lookupId &&
+    (batchStatus === "running" || runs.length === 0)
+  ) {
+    return activeRun;
+  }
+  return (
+    [...runs].reverse().find((candidate) => candidate.batchId === lookupId) ??
+    (activeRun !== null && batchId === lookupId ? activeRun : null) ??
+    null
+  );
+}
+
+function normalizeActiveBatchReplayRunSummary(
+  value: unknown,
+  context: {
+    artifacts: BatchReplayRunArtifacts | null;
+    batchId: string | null;
+    batchStatus: string | null;
+  }
+): BatchReplayRunSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const runId = readString(value["runId"]) ?? context.artifacts?.runId ?? null;
+  if (runId === null) {
+    return null;
+  }
+  const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
+  const status =
+    readString(value["status"]) ??
+    context.artifacts?.runStatus ??
+    (context.batchStatus === "running" ? "running" : "active");
+
+  return {
+    runId,
+    batchId: context.batchId,
+    status,
+    runIndex: readNullableNumber(value["runIndex"]),
+    startedAt: readNullableString(value["startedAt"]),
+    completedAt: null,
+    failedAt: null,
+    skippedAt: null,
+    marketRegimeLabel: readNullableString(marketRegime["label"]),
+    totalReturnRatio: null,
+    finalVirtualNetWorthKrw: null,
+    tradeCount: null,
+    rejectedCount: null,
+    aiDecisionFailureCount: null,
+    storageBaseDir: readNullableString(value["storageBaseDir"]),
+    reportPath: null,
+    error: null,
+    skipReason: null
+  };
+}
+
+function normalizeBatchReplayRunSummary(
+  value: unknown
+): BatchReplayRunSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const runId = readString(value["runId"]);
+  const status = readString(value["status"]);
+  if (runId === null || status === null) {
+    return null;
+  }
+  const summary = isRecord(value["summary"]) ? value["summary"] : {};
+  const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
+
+  return {
+    runId,
+    batchId: readNullableString(value["batchId"]),
+    status,
+    runIndex: readNullableNumber(value["runIndex"]),
+    startedAt: readNullableString(value["startedAt"]),
+    completedAt: readNullableString(value["completedAt"]),
+    failedAt: readNullableString(value["failedAt"]),
+    skippedAt: readNullableString(value["skippedAt"]),
+    marketRegimeLabel: readNullableString(marketRegime["label"]),
+    totalReturnRatio: readNullableNumber(summary["totalReturnRatio"]),
+    finalVirtualNetWorthKrw: readNullableNumber(
+      summary["finalVirtualNetWorthKrw"]
+    ),
+    tradeCount: readNullableNumber(summary["tradeCount"]),
+    rejectedCount: readNullableNumber(summary["rejectedCount"]),
+    aiDecisionFailureCount: readNullableNumber(
+      summary["aiDecisionFailureCount"]
+    ),
+    storageBaseDir: readNullableString(value["storageBaseDir"]),
+    reportPath: readNullableString(value["reportPath"]),
+    error: readNullableString(value["error"]),
+    skipReason: readNullableString(value["skipReason"])
+  };
+}
+
+function normalizeBatchReplayRunArtifacts(
+  value: Record<string, unknown> | null
+): BatchReplayRunArtifacts | null {
+  if (value === null) {
+    return null;
+  }
+  const status = readString(value["status"]);
+  if (status === null) {
+    return null;
+  }
+  const report = isRecord(value["report"]) ? value["report"] : null;
+  const progress = isRecord(value["progress"]) ? value["progress"] : null;
+  const currentPortfolio =
+    progress !== null && isRecord(progress["currentPortfolio"])
+      ? progress["currentPortfolio"]
+      : null;
+
+  return {
+    status,
+    runId: readNullableString(value["runId"]),
+    runStatus: readNullableString(value["runStatus"]),
+    reportStatus: readJsonReadStatus(value["reportStatus"]),
+    progressStatus: readJsonReadStatus(value["progressStatus"]),
+    decisionsStatus: readJsonReadStatus(value["decisionsStatus"]),
+    riskDecisionsStatus: readJsonReadStatus(value["riskDecisionsStatus"]),
+    tradesStatus: readJsonReadStatus(value["tradesStatus"]),
+    reportTitle: report === null ? null : readNullableString(report["title"]),
+    progressStatusLabel:
+      progress === null ? null : readNullableString(progress["status"]),
+    simulatedAt: progress === null ? null : readNullableString(progress["simulatedAt"]),
+    completedTickCount:
+      progress === null ? null : readNullableNumber(progress["completedTickCount"]),
+    tickCount: progress === null ? null : readNullableNumber(progress["tickCount"]),
+    decisionCount: readNumberOrZero(value["decisionCount"]),
+    totalDecisionCount: readNumberOrZero(value["totalDecisionCount"]),
+    riskDecisionCount: readNumberOrZero(value["riskDecisionCount"]),
+    totalRiskDecisionCount: readNumberOrZero(value["totalRiskDecisionCount"]),
+    tradeCount: readNumberOrZero(value["tradeCount"]),
+    totalTradeCount: readNumberOrZero(value["totalTradeCount"]),
+    rejectedCount: progress === null ? null : readNullableNumber(progress["rejectedCount"]),
+    currentVirtualNetWorthKrw:
+      currentPortfolio === null
+        ? null
+        : readNullableNumber(currentPortfolio["virtualNetWorthKrw"]),
+    currentCashKrw:
+      currentPortfolio === null
+        ? null
+        : readNullableNumber(currentPortfolio["cashKrw"]),
+    currentPositionCount:
+      currentPortfolio === null
+        ? null
+        : readNullableNumber(currentPortfolio["positionCount"])
+  };
 }
 
 function isViewModelPayload(
@@ -1416,6 +1810,33 @@ function isStrategyBucketTestPhase(
     value === "failed" ||
     value === "cancelled"
   );
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function readNullableString(value: unknown): string | null {
+  return value === null || typeof value === "string" ? value : null;
+}
+
+function readNullableNumber(value: unknown): number | null {
+  return isNumber(value) ? value : null;
+}
+
+function readNumberOrZero(value: unknown): number {
+  return isNumber(value) ? value : 0;
+}
+
+function readJsonReadStatus(value: unknown): RunArtifactReadStatus {
+  return value === "ok" ||
+    value === "missing" ||
+    value === "corrupt" ||
+    value === "degraded" ||
+    value === "blocked" ||
+    value === "invalid"
+    ? value
+    : "invalid";
 }
 
 function isStringArray(value: unknown): value is string[] {

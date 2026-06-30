@@ -330,6 +330,372 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
   }
 });
 
+test("run detail page data reads latest batch replay artifacts", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  const originalOpsBaseUrl = process.env.OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  delete process.env.OPS_API_BASE_URL;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      String(url),
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=paper_sim_single"
+    );
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    return new Response(
+      JSON.stringify({
+        mode: "paper_only",
+        readOnly: true,
+        status: "ok",
+        aggregateStatus: "missing",
+        batchStatus: "completed",
+        batchId: "paper_sim_single",
+        sourceRunsPath:
+          "apps/dashboard/.e2e-data/batch-replay/paper_sim_single/batch-replay-runs.jsonl",
+        runs: [
+          {
+            mode: "paper_only",
+            batchId: "paper_sim_single",
+            runId: "paper_sim_single_run_000000",
+            runIndex: 0,
+            status: "completed",
+            startedAt: "2026-06-27T00:01:00.000Z",
+            completedAt: "2026-06-27T00:05:00.000Z",
+            skippedAt: null,
+            failedAt: null,
+            storageBaseDir:
+              "apps/dashboard/.e2e-data/batch-replay/paper_sim_single/runs/paper_sim_single_run_000000",
+            reportPath:
+              "apps/dashboard/.e2e-data/batch-replay/paper_sim_single/runs/paper_sim_single_run_000000/historical-replay-report.json",
+            marketRegime: {
+              label: "bull"
+            },
+            summary: {
+              finalVirtualNetWorthKrw: 1025000,
+              totalReturnRatio: 0.025,
+              tradeCount: 1,
+              rejectedCount: 1,
+              aiDecisionFailureCount: 0
+            },
+            error: null,
+            skipReason: null
+          }
+        ],
+        latestRunArtifacts: {
+          status: "ok",
+          runId: "paper_sim_single_run_000000",
+          runStatus: "completed",
+          reportStatus: "ok",
+          report: {
+            title: "Historical Replay Paper Report"
+          },
+          progressStatus: "ok",
+          progress: {
+            status: "completed",
+            simulatedAt: "2026-06-27T00:05:00.000Z",
+            completedTickCount: 2,
+            tickCount: 3,
+            rejectedCount: 1,
+            currentPortfolio: {
+              virtualNetWorthKrw: 1000000,
+              cashKrw: 930000,
+              positionCount: 1
+            }
+          },
+          decisionsStatus: "ok",
+          decisionCount: 1,
+          totalDecisionCount: 1,
+          riskDecisionsStatus: "ok",
+          riskDecisionCount: 1,
+          totalRiskDecisionCount: 1,
+          tradesStatus: "ok",
+          tradeCount: 1,
+          totalTradeCount: 1
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const { readRunDetailPageData } = await loadDashboardViewModelsModule();
+    const pageData = await readRunDetailPageData("paper_sim_single");
+
+    assert.equal(pageData.apiBaseLabel, "configured operations endpoint");
+    assert.equal(pageData.runDetail.status, "ok");
+    assert.equal(pageData.runDetail.data.mode, "paper_only");
+    assert.equal(pageData.runDetail.data.readOnly, true);
+    assert.equal(pageData.runDetail.data.status, "ok");
+    assert.equal(
+      pageData.runDetail.data.runId,
+      "paper_sim_single_run_000000"
+    );
+    assert.equal(
+      pageData.runDetail.data.run.runId,
+      "paper_sim_single_run_000000"
+    );
+    assert.equal(
+      pageData.runDetail.data.artifacts.reportTitle,
+      "Historical Replay Paper Report"
+    );
+    assert.equal(
+      pageData.runDetail.data.artifacts.currentVirtualNetWorthKrw,
+      1000000
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+    if (originalOpsBaseUrl === undefined) {
+      delete process.env.OPS_API_BASE_URL;
+    } else {
+      process.env.OPS_API_BASE_URL = originalOpsBaseUrl;
+    }
+  }
+});
+
+test("run detail page data resolves active batch before terminal records", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  const originalOpsBaseUrl = process.env.OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  delete process.env.OPS_API_BASE_URL;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      String(url),
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=paper_sim_active"
+    );
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    return new Response(
+      JSON.stringify({
+        mode: "paper_only",
+        readOnly: true,
+        status: "running",
+        aggregateStatus: "missing",
+        batchStatus: "running",
+        batchId: "paper_sim_active",
+        sourceRunsPath:
+          "apps/dashboard/.e2e-data/batch-replay/paper_sim_active/batch-replay-runs.jsonl",
+        activeRun: {
+          runId: "paper_sim_active_run_000000_20240101",
+          runIndex: 0,
+          runSeed: "policy-active-seed:0",
+          startedAt: "2026-06-27T00:01:00.000Z",
+          storageBaseDir:
+            "apps/dashboard/.e2e-data/batch-replay/paper_sim_active/runs/paper_sim_active_run_000000_20240101",
+          marketRegime: {
+            label: "mixed"
+          }
+        },
+        runs: [],
+        latestRunArtifacts: {
+          status: "ok",
+          runId: "paper_sim_active_run_000000_20240101",
+          runStatus: null,
+          reportStatus: "missing",
+          progressStatus: "ok",
+          progress: {
+            status: "running",
+            simulatedAt: "2026-06-27T00:02:00.000Z",
+            completedTickCount: 1,
+            tickCount: 3,
+            rejectedCount: 0,
+            currentPortfolio: {
+              virtualNetWorthKrw: 1000000,
+              cashKrw: 1000000,
+              positionCount: 0
+            }
+          },
+          decisionsStatus: "missing",
+          decisionCount: 0,
+          totalDecisionCount: 0,
+          riskDecisionsStatus: "missing",
+          riskDecisionCount: 0,
+          totalRiskDecisionCount: 0,
+          tradesStatus: "missing",
+          tradeCount: 0,
+          totalTradeCount: 0
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const { readRunDetailPageData } = await loadDashboardViewModelsModule();
+    const pageData = await readRunDetailPageData("paper_sim_active");
+
+    assert.equal(pageData.runDetail.status, "ok");
+    assert.equal(pageData.runDetail.data.status, "ok");
+    assert.equal(
+      pageData.runDetail.data.runId,
+      "paper_sim_active_run_000000_20240101"
+    );
+    assert.equal(pageData.runDetail.data.run.status, "running");
+    assert.equal(pageData.runDetail.data.run.batchId, "paper_sim_active");
+    assert.equal(pageData.runDetail.data.artifacts.progressStatus, "ok");
+    assert.equal(
+      pageData.runDetail.data.artifacts.progressStatusLabel,
+      "running"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+    if (originalOpsBaseUrl === undefined) {
+      delete process.env.OPS_API_BASE_URL;
+    } else {
+      process.env.OPS_API_BASE_URL = originalOpsBaseUrl;
+    }
+  }
+});
+
+test("run detail page data uses selected run outside returned page", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  const originalOpsBaseUrl = process.env.OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  delete process.env.OPS_API_BASE_URL;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      String(url),
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=paper_sim_old_run_000000"
+    );
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    return new Response(
+      JSON.stringify({
+        mode: "paper_only",
+        readOnly: true,
+        status: "ok",
+        aggregateStatus: "missing",
+        batchStatus: "completed",
+        batchId: "paper_sim_old",
+        sourceRunsPath:
+          "apps/dashboard/.e2e-data/batch-replay/paper_sim_old/batch-replay-runs.jsonl",
+        runs: [
+          {
+            mode: "paper_only",
+            batchId: "paper_sim_old",
+            runId: "paper_sim_old_run_000104",
+            runIndex: 104,
+            status: "completed",
+            startedAt: "2026-06-27T00:11:00.000Z",
+            completedAt: "2026-06-27T00:15:00.000Z",
+            skippedAt: null,
+            failedAt: null,
+            storageBaseDir:
+              "apps/dashboard/.e2e-data/batch-replay/paper_sim_old/runs/paper_sim_old_run_000104",
+            reportPath: null,
+            marketRegime: {
+              label: "mixed"
+            },
+            summary: {
+              finalVirtualNetWorthKrw: 1000104,
+              totalReturnRatio: 0.00104,
+              tradeCount: 1,
+              rejectedCount: 0,
+              aiDecisionFailureCount: 0
+            }
+          }
+        ],
+        selectedRun: {
+          mode: "paper_only",
+          batchId: "paper_sim_old",
+          runId: "paper_sim_old_run_000000",
+          runIndex: 0,
+          status: "completed",
+          startedAt: "2026-06-27T00:01:00.000Z",
+          completedAt: "2026-06-27T00:05:00.000Z",
+          skippedAt: null,
+          failedAt: null,
+          storageBaseDir:
+            "apps/dashboard/.e2e-data/batch-replay/paper_sim_old/runs/paper_sim_old_run_000000",
+          reportPath:
+            "apps/dashboard/.e2e-data/batch-replay/paper_sim_old/runs/paper_sim_old_run_000000/historical-replay-report.json",
+          marketRegime: {
+            label: "bear"
+          },
+          summary: {
+            finalVirtualNetWorthKrw: 995000,
+            totalReturnRatio: -0.005,
+            tradeCount: 2,
+            rejectedCount: 1,
+            aiDecisionFailureCount: 0
+          }
+        },
+        latestRunArtifacts: {
+          status: "ok",
+          runId: "paper_sim_old_run_000000",
+          runStatus: "completed",
+          reportStatus: "ok",
+          report: {
+            title: "Historical Replay Paper Report"
+          },
+          progressStatus: "ok",
+          progress: {
+            status: "completed",
+            simulatedAt: "2026-06-27T00:05:00.000Z",
+            completedTickCount: 2,
+            tickCount: 3,
+            rejectedCount: 1,
+            currentPortfolio: {
+              virtualNetWorthKrw: 995000,
+              cashKrw: 900000,
+              positionCount: 1
+            }
+          },
+          decisionsStatus: "ok",
+          decisionCount: 2,
+          totalDecisionCount: 2,
+          riskDecisionsStatus: "ok",
+          riskDecisionCount: 2,
+          totalRiskDecisionCount: 2,
+          tradesStatus: "ok",
+          tradeCount: 2,
+          totalTradeCount: 2
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const { readRunDetailPageData } = await loadDashboardViewModelsModule();
+    const pageData = await readRunDetailPageData("paper_sim_old_run_000000");
+
+    assert.equal(pageData.runDetail.status, "ok");
+    assert.equal(pageData.runDetail.data.status, "ok");
+    assert.equal(pageData.runDetail.data.runId, "paper_sim_old_run_000000");
+    assert.equal(pageData.runDetail.data.run.runIndex, 0);
+    assert.equal(pageData.runDetail.data.run.marketRegimeLabel, "bear");
+    assert.equal(
+      pageData.runDetail.data.artifacts.currentVirtualNetWorthKrw,
+      995000
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+    if (originalOpsBaseUrl === undefined) {
+      delete process.env.OPS_API_BASE_URL;
+    } else {
+      process.env.OPS_API_BASE_URL = originalOpsBaseUrl;
+    }
+  }
+});
+
 test("hedge missing status is not treated as a compliance breach", async () => {
   const { isHedgeComplianceBreachStatus } =
     await loadDashboardViewModelsModule();
