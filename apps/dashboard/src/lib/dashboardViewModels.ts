@@ -879,15 +879,31 @@ function normalizeRunDetailView(
     return null;
   }
 
-  const runs = value["runs"]
-    .map(normalizeBatchReplayRunSummary)
-    .filter((run): run is BatchReplayRunSummary => run !== null);
-  const run = findRunDetailTargetRun(runs, runId);
-  const resolvedRunId = run?.runId ?? runId;
   const rawArtifacts = isRecord(value["latestRunArtifacts"])
     ? value["latestRunArtifacts"]
     : null;
   const artifacts = normalizeBatchReplayRunArtifacts(rawArtifacts);
+  const batchId = readNullableString(value["batchId"]);
+  const batchStatus = readNullableString(value["batchStatus"]);
+  const activeRun = normalizeActiveBatchReplayRunSummary(
+    value["activeRun"],
+    {
+      artifacts,
+      batchId,
+      batchStatus
+    }
+  );
+  const runs = value["runs"]
+    .map(normalizeBatchReplayRunSummary)
+    .filter((run): run is BatchReplayRunSummary => run !== null);
+  const run = findRunDetailTargetRun({
+    activeRun,
+    batchId,
+    batchStatus,
+    lookupId: runId,
+    runs
+  });
+  const resolvedRunId = run?.runId ?? runId;
   const latestArtifactsRunId = artifacts?.runId ?? null;
   const warnings =
     artifacts !== null &&
@@ -902,8 +918,8 @@ function normalizeRunDetailView(
     mode: "paper_only",
     readOnly: true,
     runId: resolvedRunId,
-    batchId: readNullableString(value["batchId"]),
-    batchStatus: readNullableString(value["batchStatus"]),
+    batchId,
+    batchStatus,
     sourceRunsPath: readNullableString(value["sourceRunsPath"]),
     run,
     artifacts: latestArtifactsRunId === resolvedRunId ? artifacts : null,
@@ -913,18 +929,81 @@ function normalizeRunDetailView(
   };
 }
 
-function findRunDetailTargetRun(
-  runs: BatchReplayRunSummary[],
-  lookupId: string
-): BatchReplayRunSummary | null {
+function findRunDetailTargetRun({
+  activeRun,
+  batchId,
+  batchStatus,
+  lookupId,
+  runs
+}: {
+  activeRun: BatchReplayRunSummary | null;
+  batchId: string | null;
+  batchStatus: string | null;
+  lookupId: string;
+  runs: BatchReplayRunSummary[];
+}): BatchReplayRunSummary | null {
   const directRun = runs.find((candidate) => candidate.runId === lookupId);
   if (directRun !== undefined) {
     return directRun;
   }
+  if (activeRun !== null && activeRun.runId === lookupId) {
+    return activeRun;
+  }
+  if (
+    activeRun !== null &&
+    batchId === lookupId &&
+    (batchStatus === "running" || runs.length === 0)
+  ) {
+    return activeRun;
+  }
   return (
     [...runs].reverse().find((candidate) => candidate.batchId === lookupId) ??
+    (activeRun !== null && batchId === lookupId ? activeRun : null) ??
     null
   );
+}
+
+function normalizeActiveBatchReplayRunSummary(
+  value: unknown,
+  context: {
+    artifacts: BatchReplayRunArtifacts | null;
+    batchId: string | null;
+    batchStatus: string | null;
+  }
+): BatchReplayRunSummary | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const runId = readString(value["runId"]) ?? context.artifacts?.runId ?? null;
+  if (runId === null) {
+    return null;
+  }
+  const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
+  const status =
+    readString(value["status"]) ??
+    context.artifacts?.runStatus ??
+    (context.batchStatus === "running" ? "running" : "active");
+
+  return {
+    runId,
+    batchId: context.batchId,
+    status,
+    runIndex: readNullableNumber(value["runIndex"]),
+    startedAt: readNullableString(value["startedAt"]),
+    completedAt: null,
+    failedAt: null,
+    skippedAt: null,
+    marketRegimeLabel: readNullableString(marketRegime["label"]),
+    totalReturnRatio: null,
+    finalVirtualNetWorthKrw: null,
+    tradeCount: null,
+    rejectedCount: null,
+    aiDecisionFailureCount: null,
+    storageBaseDir: readNullableString(value["storageBaseDir"]),
+    reportPath: null,
+    error: null,
+    skipReason: null
+  };
 }
 
 function normalizeBatchReplayRunSummary(

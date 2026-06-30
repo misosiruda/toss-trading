@@ -458,6 +458,106 @@ test("run detail page data reads latest batch replay artifacts", async () => {
   }
 });
 
+test("run detail page data resolves active batch before terminal records", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  const originalOpsBaseUrl = process.env.OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  delete process.env.OPS_API_BASE_URL;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      String(url),
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1"
+    );
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    return new Response(
+      JSON.stringify({
+        mode: "paper_only",
+        readOnly: true,
+        status: "running",
+        aggregateStatus: "missing",
+        batchStatus: "running",
+        batchId: "paper_sim_active",
+        sourceRunsPath:
+          "apps/dashboard/.e2e-data/batch-replay/paper_sim_active/batch-replay-runs.jsonl",
+        activeRun: {
+          runId: "paper_sim_active_run_000000_20240101",
+          runIndex: 0,
+          runSeed: "policy-active-seed:0",
+          startedAt: "2026-06-27T00:01:00.000Z",
+          storageBaseDir:
+            "apps/dashboard/.e2e-data/batch-replay/paper_sim_active/runs/paper_sim_active_run_000000_20240101",
+          marketRegime: {
+            label: "mixed"
+          }
+        },
+        runs: [],
+        latestRunArtifacts: {
+          status: "ok",
+          runId: "paper_sim_active_run_000000_20240101",
+          runStatus: null,
+          reportStatus: "missing",
+          progressStatus: "ok",
+          progress: {
+            status: "running",
+            simulatedAt: "2026-06-27T00:02:00.000Z",
+            completedTickCount: 1,
+            tickCount: 3,
+            rejectedCount: 0,
+            currentPortfolio: {
+              virtualNetWorthKrw: 1000000,
+              cashKrw: 1000000,
+              positionCount: 0
+            }
+          },
+          decisionsStatus: "missing",
+          decisionCount: 0,
+          totalDecisionCount: 0,
+          riskDecisionsStatus: "missing",
+          riskDecisionCount: 0,
+          totalRiskDecisionCount: 0,
+          tradesStatus: "missing",
+          tradeCount: 0,
+          totalTradeCount: 0
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const { readRunDetailPageData } = await loadDashboardViewModelsModule();
+    const pageData = await readRunDetailPageData("paper_sim_active");
+
+    assert.equal(pageData.runDetail.status, "ok");
+    assert.equal(pageData.runDetail.data.status, "ok");
+    assert.equal(
+      pageData.runDetail.data.runId,
+      "paper_sim_active_run_000000_20240101"
+    );
+    assert.equal(pageData.runDetail.data.run.status, "running");
+    assert.equal(pageData.runDetail.data.run.batchId, "paper_sim_active");
+    assert.equal(pageData.runDetail.data.artifacts.progressStatus, "ok");
+    assert.equal(
+      pageData.runDetail.data.artifacts.progressStatusLabel,
+      "running"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+    if (originalOpsBaseUrl === undefined) {
+      delete process.env.OPS_API_BASE_URL;
+    } else {
+      process.env.OPS_API_BASE_URL = originalOpsBaseUrl;
+    }
+  }
+});
+
 test("hedge missing status is not treated as a compliance breach", async () => {
   const { isHedgeComplianceBreachStatus } =
     await loadDashboardViewModelsModule();
