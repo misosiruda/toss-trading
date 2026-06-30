@@ -2641,3 +2641,10 @@
 - backend 통합 테스트는 endpoint, HEAD 응답, default paper-only boundary, secret value 미노출을 검증합니다.
 - dashboard unit test는 `readLiveReadinessPageData`가 `GET /dashboard/view-model/live-readiness`를 no-store로 호출하고 contract를 검증하는지 확인합니다.
 - Playwright E2E는 `/dashboard/live-readiness`에서 readiness check, gateway exposure, mutation control 부재, axe smoke를 검증합니다.
+
+### Codex Review Fix
+
+- Review finding: `AI_DECISION_MODE`가 누락된 기본 배포에서 live readiness ViewModel이 `disabled`로 표시되어 기존 paper-only backend gate의 기본값과 어긋났습니다.
+- Fix review 1: `readDashboardLiveReadinessViewModel`의 missing `AI_DECISION_MODE` 기본값을 `paper_only`로 맞췄습니다.
+- Fix review 2: `AI_DECISION_MODE`가 없는 env에서도 `/dashboard/view-model/live-readiness`가 `environment.aiDecisionMode: "paper_only"`를 반환하는 통합 테스트를 추가했습니다.
+- Fix review 3: 이 변경은 readiness 표시 정규화만 다루며 `AI_DECISION_ENABLED` 또는 주문 가능 상태를 변경하지 않습니다.

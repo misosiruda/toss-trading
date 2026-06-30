@@ -2605,6 +2605,37 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
   }
 });
 
+test("dashboard live readiness defaults missing AI decision mode to paper_only", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_ENABLED: "false",
+      BROKER_PROVIDER: "mock",
+      TOSS_OPEN_API_AUTH_ENABLED: "false",
+      TRADING_ENABLED: "false"
+    }
+  });
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/live-readiness"
+    );
+    const environment = result.payload["environment"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "live-readiness");
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(environment["aiDecisionMode"], "paper_only");
+    assert.equal(environment["aiDecisionEnabled"], false);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard live readiness exposes safe auth summary without secrets", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const { server, baseUrl } = await startTestServer(storageBaseDir, {

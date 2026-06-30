@@ -512,7 +512,7 @@ export async function readDashboardLiveReadinessViewModel(
 ): Promise<LiveReadinessViewModel> {
   const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
   const tradingEnabled = env.TRADING_ENABLED === "true";
-  const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "disabled";
+  const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "paper_only";
   const aiDecisionEnabled = env.AI_DECISION_ENABLED === "true";
   const authSummary = summarizeTossOpenApiAuthConfig(
     readTossOpenApiAuthConfig(env)
