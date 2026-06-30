@@ -2636,6 +2636,47 @@ test("dashboard live readiness defaults missing AI decision mode to paper_only",
   }
 });
 
+test("dashboard live readiness blocks non-paper AI decision mode", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_ENABLED: "false",
+      AI_DECISION_MODE: "live",
+      BROKER_PROVIDER: "mock",
+      TOSS_OPEN_API_AUTH_ENABLED: "false",
+      TRADING_ENABLED: "false"
+    }
+  });
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/live-readiness"
+    );
+    const checks = result.payload["checks"] as Array<Record<string, unknown>>;
+    const warnings = result.payload["warnings"] as string[];
+    const environment = result.payload["environment"] as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "live-readiness");
+    assert.equal(result.payload["status"], "breach");
+    assert.equal(environment["aiDecisionMode"], "live");
+    assert.equal(environment["aiDecisionEnabled"], false);
+    assert.equal(
+      checks.find((check) => check["key"] === "ai_decision_mode")?.["tone"],
+      "blocked"
+    );
+    assert.deepEqual(warnings, [
+      "AI_DECISION_MODE=live is outside the paper-only dashboard boundary"
+    ]);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard live readiness exposes safe auth summary without secrets", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const { server, baseUrl } = await startTestServer(storageBaseDir, {

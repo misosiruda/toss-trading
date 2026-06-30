@@ -169,6 +169,7 @@ export interface LiveReadinessCheck {
   key:
     | "trading_enabled"
     | "broker_provider"
+    | "ai_decision_mode"
     | "official_auth_config"
     | "read_only_account_snapshot"
     | "live_order_gateway"
@@ -919,6 +920,7 @@ function isLiveReadinessCheck(value: unknown): value is LiveReadinessCheck {
     isRecord(value) &&
     (value["key"] === "trading_enabled" ||
       value["key"] === "broker_provider" ||
+      value["key"] === "ai_decision_mode" ||
       value["key"] === "official_auth_config" ||
       value["key"] === "read_only_account_snapshot" ||
       value["key"] === "live_order_gateway" ||

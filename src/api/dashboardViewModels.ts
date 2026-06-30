@@ -70,6 +70,7 @@ interface LiveReadinessCheck {
   key:
     | "trading_enabled"
     | "broker_provider"
+    | "ai_decision_mode"
     | "official_auth_config"
     | "read_only_account_snapshot"
     | "live_order_gateway"
@@ -513,6 +514,7 @@ export async function readDashboardLiveReadinessViewModel(
   const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
   const tradingEnabled = env.TRADING_ENABLED === "true";
   const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "paper_only";
+  const isPaperOnlyAiMode = aiDecisionMode === "paper_only";
   const aiDecisionEnabled = env.AI_DECISION_ENABLED === "true";
   const authSummary = summarizeTossOpenApiAuthConfig(
     readTossOpenApiAuthConfig(env)
@@ -529,6 +531,9 @@ export async function readDashboardLiveReadinessViewModel(
       : []),
     ...(brokerProvider !== "mock"
       ? [`BROKER_PROVIDER=${brokerProvider} is reported only; no mutation path is enabled`]
+      : []),
+    ...(!isPaperOnlyAiMode
+      ? [`AI_DECISION_MODE=${aiDecisionMode} is outside the paper-only dashboard boundary`]
       : []),
     ...(authSummary.status === "invalid"
       ? ["Toss Open API auth config is invalid; read-only account snapshot is unavailable"]
@@ -553,6 +558,15 @@ export async function readDashboardLiveReadinessViewModel(
         brokerProvider === "mock"
           ? "Mock broker provider is the expected paper-only default."
           : "Provider is surfaced for operator awareness only; order placement remains disabled."
+    },
+    {
+      key: "ai_decision_mode",
+      label: "AI_DECISION_MODE",
+      value: aiDecisionMode,
+      tone: isPaperOnlyAiMode ? "ok" : "blocked",
+      detail: isPaperOnlyAiMode
+        ? "AI decision mode is constrained to paper-only output."
+        : "Non-paper AI decision modes are treated as a boundary breach for this dashboard."
     },
     {
       key: "official_auth_config",
@@ -637,7 +651,7 @@ export async function readDashboardLiveReadinessViewModel(
     checks,
     warnings,
     status:
-      tradingEnabled || authSummary.status === "invalid"
+      tradingEnabled || !isPaperOnlyAiMode || authSummary.status === "invalid"
         ? "breach"
         : brokerProvider === "mock"
           ? "ok"

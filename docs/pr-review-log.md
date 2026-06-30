@@ -2648,3 +2648,10 @@
 - Fix review 1: `readDashboardLiveReadinessViewModel`의 missing `AI_DECISION_MODE` 기본값을 `paper_only`로 맞췄습니다.
 - Fix review 2: `AI_DECISION_MODE`가 없는 env에서도 `/dashboard/view-model/live-readiness`가 `environment.aiDecisionMode: "paper_only"`를 반환하는 통합 테스트를 추가했습니다.
 - Fix review 3: 이 변경은 readiness 표시 정규화만 다루며 `AI_DECISION_ENABLED` 또는 주문 가능 상태를 변경하지 않습니다.
+
+### Codex Review Fix 2
+
+- Review finding: `AI_DECISION_MODE`가 `paper_only`가 아닌 값이어도 `TRADING_ENABLED=false`, `BROKER_PROVIDER=mock`이면 live readiness status가 `ok`로 남았습니다.
+- Fix review 1: non-paper `AI_DECISION_MODE`를 paper-only dashboard boundary breach로 분류하고 warning을 추가했습니다.
+- Fix review 2: `ai_decision_mode` readiness check를 추가해 설정값과 blocked tone을 별도 check row로 노출합니다.
+- Fix review 3: `AI_DECISION_MODE=live`에서도 live order gateway, OrderRouter, MCP mutation tool exposure는 계속 disabled/not connected/not exposed로 남는 read-only 경계를 유지합니다.
