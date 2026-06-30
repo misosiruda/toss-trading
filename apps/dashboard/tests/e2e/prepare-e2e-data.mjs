@@ -212,6 +212,62 @@ await writeFile(
   "utf8"
 );
 
+const strategyBucketTestRecords = [
+  {
+    mode: "paper_only",
+    recordType: "strategy_bucket_test_record",
+    testId: "strategy_bucket_test_e2e_completed_swing",
+    requestId: "e2e-completed-swing",
+    bucket: "swing",
+    status: "completed",
+    createdAt: "2026-06-27T00:00:00.000Z",
+    startedAt: "2026-06-27T00:01:00.000Z",
+    completedAt: "2026-06-27T00:05:00.000Z",
+    runId: "strategy_bucket_run_e2e_swing",
+    policyId: "paper_policy_e2e",
+    policyHash: "sha256:policy-e2e",
+    configHash:
+      "sha256:strategy-bucket-completed-swing-config-0000000000000000000",
+    sourceDataDir: "data/replay-2023-01-2026-05-global-yahoo-daily",
+    validationSplitRole: "test",
+    decisionProviderMode: "dry_run_fixture",
+    progress: {
+      phase: "completed",
+      progressRatio: 1,
+      completedPacketCount: 12,
+      totalPacketCount: 12,
+      decisionCount: 12,
+      riskApprovedCount: 10,
+      riskRejectedCount: 2,
+      simulatedTradeCount: 4,
+      providerFailureCount: 0,
+      latestMessage: "Strategy bucket test completed.",
+      latestAuditEventRef: "audit_strategy_bucket_e2e_completed",
+      updatedAt: "2026-06-27T00:05:00.000Z"
+    },
+    heartbeat: {
+      status: "fresh",
+      lastSeenAt: "2026-06-27T00:05:00.000Z",
+      staleAfterSeconds: 120
+    },
+    result: {
+      totalReturnRatio: 0.024,
+      maxDrawdownRatio: 0.018,
+      turnoverRatio: 0.42,
+      costDragRatio: 0.003,
+      riskRejectRate: 0.1667,
+      providerFailureRate: 0,
+      warnings: ["bucket result is compared against full portfolio baseline"]
+    }
+  }
+];
+
+await writeFile(
+  resolve(dataDir, "strategy-bucket-test-records.jsonl"),
+  `${strategyBucketTestRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+  "utf8"
+);
+
 const auditEvents = [
   {
     eventId: "audit_e2e_001",

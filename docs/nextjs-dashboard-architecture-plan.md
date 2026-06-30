@@ -888,6 +888,14 @@ npm run check
 - `/dashboard/lab/strategy-tests` active progress table은 SSR initial snapshot을 렌더링한 뒤 queued/running test에 대해 polling fallback으로 progress를 갱신한다.
 - 이 단계는 replay runner 시작, SSE stream, result metric aggregation, full portfolio delta view를 구현하지 않는다.
 
+일곱 번째 구현 단위:
+
+- `GET /dashboard/view-model/strategy-test-lab`은 append-only strategy bucket test record에서 `completed`, `failed`, `cancelled` 상태의 최신 parseable record를 `recentResults`로 반환한다.
+- 완료된 bucket result의 `totalReturnRatio`, `maxDrawdownRatio`, `turnoverRatio`, `costDragRatio`, `riskRejectRate`, `providerFailureRate`, `validationSplitRole`, warning을 backend ViewModel에서만 파싱한다.
+- stored batch aggregate report의 `overall.averageTotalReturnRatio`를 full portfolio baseline으로 사용하고, bucket result와 baseline의 paper-only delta를 `comparison.portfolioDeltaRows`로 내려준다.
+- `/dashboard/lab/strategy-tests`는 result matrix와 full portfolio baseline comparison panel을 렌더링한다.
+- 이 단계는 replay runner 시작, SSE stream, enabled bucket 전체 matrix 생성, strategy 자동 선택, 투자 조언성 best bucket 추천을 구현하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:

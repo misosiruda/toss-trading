@@ -2520,3 +2520,37 @@
 - Fix review 1: `hedgePolicy`의 downside/inverse exposure 산식을 공유하는 `summarizePortfolioDownsideExposure` helper를 export했습니다.
 - Fix review 2: dashboard hedge coverage와 net downside ratio는 gross exposure가 아니라 non-hedge downside exposure를 denominator로 사용합니다.
 - Fix review 3: 100k long exposure와 100k inverse hedge position에서 coverage 100%, net downside 0을 반환하는 회귀 테스트를 추가했습니다.
+
+## Strategy Bucket Result Comparison
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 strategy bucket test lab의 completed/failed/cancelled result summary와 full portfolio baseline comparison 표시만 다룹니다.
+- replay runner 시작, SSE stream, enabled bucket 전체 matrix 생성, strategy 자동 선택, live order surface는 추가하지 않습니다.
+- 비교 문구는 paper-only evidence로 제한하고 투자 조언성 best bucket 추천을 하지 않습니다.
+
+### Review 2: ViewModel and UI Contract
+
+- `GET /dashboard/view-model/strategy-test-lab`은 append-only strategy bucket test record의 최신 terminal record를 `recentResults`로 내려줍니다.
+- stored batch aggregate report의 `overall.averageTotalReturnRatio`만 full portfolio baseline으로 사용하고, bucket result 대비 delta는 backend ViewModel에서 계산합니다.
+- Next.js `/dashboard/lab/strategy-tests`는 result matrix와 `Full Portfolio Baseline Comparison` panel을 렌더링하며 browser에서 metric을 재계산하지 않습니다.
+
+### Review 3: Tests and Docs
+
+- backend test는 completed swing bucket record가 active list에서 제외되고 result matrix, baseline, delta row로 표시되는지 검증합니다.
+- Next.js E2E는 completed swing result와 full portfolio baseline comparison panel이 desktop/mobile에서 표시되는지 확인합니다.
+- docs는 N5 일곱 번째 구현 단위와 제외 범위를 분리해 runner/SSE/matrix 생성/live order surface가 이번 PR 범위가 아님을 명시합니다.
+
+### Codex Review Fix
+
+- Review finding: aggregate `overall.returnSampleCount`는 양수지만 `overall.averageTotalReturnRatio`가 누락되거나 non-numeric이면 `portfolioBaseline.averageTotalReturnRatio`가 JSON 응답에서 빠질 수 있었습니다.
+- Fix review 1: baseline 생성 전에 `averageTotalReturnRatio`를 `number | null`로 검증하고, missing/non-numeric 값이면 baseline 자체를 unavailable로 둡니다.
+- Fix review 2: baseline이 unavailable이면 `portfolioDeltaRows`는 빈 배열로 유지하고 selection warning은 full portfolio baseline unavailable 상태를 표시합니다.
+- Fix review 3: completed bucket result가 있는 상태에서 malformed aggregate baseline metric을 제거한 회귀 테스트를 추가했습니다.
+
+### Codex Review Fix 2
+
+- Review finding: failed/cancelled terminal record에 partial `totalReturnRatio`가 있으면 portfolio delta comparison에서 completed evidence처럼 표시될 수 있었습니다.
+- Fix review 1: `recentResults`는 terminal record 전체를 유지하되, `comparison.rows`와 `portfolioDeltaRows`는 `status: completed` result만 사용합니다.
+- Fix review 2: completed result가 없고 terminal result만 있으면 comparison warning을 completed result unavailable 상태로 표시합니다.
+- Fix review 3: failed partial result가 `recentResults`에는 남지만 `comparison.rows`와 delta row에는 포함되지 않는 회귀 테스트를 추가했습니다.

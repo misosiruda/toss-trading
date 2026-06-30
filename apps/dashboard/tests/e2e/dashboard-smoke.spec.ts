@@ -159,17 +159,33 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(
     page.getByRole("heading", { name: "Bucket Result Matrix" })
   ).toBeVisible();
+  const resultMatrix = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Bucket Result Matrix" }),
+  });
+  await expect(resultMatrix.getByRole("cell", { name: "Swing" })).toBeVisible();
   await expect(
-    page.getByText("No isolated bucket result artifacts are available.")
+    resultMatrix.getByRole("cell", { name: "completed" })
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Selection Warning" })
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      /isolated strategy bucket result artifacts are missing|strategy bucket comparison is unavailable/
+    resultMatrix.getByText(
+      "bucket result is compared against full portfolio baseline"
     )
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Full Portfolio Baseline Comparison" })
+  ).toBeVisible();
+  const comparisonPanel = page.locator("section").filter({
+    has: page.getByRole("heading", {
+      name: "Full Portfolio Baseline Comparison",
+    }),
+  });
+  await expect(
+    comparisonPanel.getByText(
+      "comparison uses completed strategy bucket result records and batch aggregate overall return; it is paper-only evidence, not strategy selection advice"
+    )
+  ).toBeVisible();
+  await expect(comparisonPanel.getByText("batch_aggregate_overall")).toBeVisible();
+  await expect(comparisonPanel.getByText("0.9%")).toBeVisible();
 
   await expect(
     page.getByRole("heading", { name: "Bucket Test Config" })
