@@ -705,7 +705,7 @@ export async function readRunDetailPageData(
 ): Promise<RunDetailPageData> {
   const apiConfig = readOperationsApiConfig();
   const fetchedAt = new Date().toISOString();
-  const endpoint = "/batch/replay/runs?limit=100&includeLatestRunArtifacts=1";
+  const endpoint = `/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=${encodeURIComponent(runId)}`;
   const runDetail = await fetchBatchReplayRunDetail(
     apiConfig.baseUrl,
     endpoint,

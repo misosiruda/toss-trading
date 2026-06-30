@@ -103,7 +103,7 @@ function RunDetailViewPanel({ data }: { data: RunDetailView }) {
         <h2 className="text-base font-semibold">Run artifact unavailable</h2>
         <p className="mt-2 break-words font-mono text-xs">{data.runId}</p>
         <p className="mt-2">
-          The run or batch id was not found in the latest batch replay run
+          The run or batch id was not found in the selected batch replay run
           index.
         </p>
       </section>

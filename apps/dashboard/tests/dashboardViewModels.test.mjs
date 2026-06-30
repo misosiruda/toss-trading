@@ -339,7 +339,7 @@ test("run detail page data reads latest batch replay artifacts", async () => {
   globalThis.fetch = async (url, init) => {
     assert.equal(
       String(url),
-      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1"
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=paper_sim_single"
     );
     assert.equal(init.cache, "no-store");
     assert.equal(init.headers.accept, "application/json");
@@ -467,7 +467,7 @@ test("run detail page data resolves active batch before terminal records", async
   globalThis.fetch = async (url, init) => {
     assert.equal(
       String(url),
-      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1"
+      "http://ops.test/batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=paper_sim_active"
     );
     assert.equal(init.cache, "no-store");
     assert.equal(init.headers.accept, "application/json");

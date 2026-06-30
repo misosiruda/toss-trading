@@ -83,7 +83,8 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
   "/batch/replay/runs": (url, options) =>
     readBatchReplayRuns(options.storageBaseDir, readLimit(url), {
       includeLatestRunArtifacts:
-        url.searchParams.get("includeLatestRunArtifacts") === "1"
+        url.searchParams.get("includeLatestRunArtifacts") === "1",
+      runId: readRunLookupId(url)
     }),
   "/dashboard/view-model/live-readiness": (_url, options) =>
     readDashboardLiveReadinessViewModel(options.env, readNow(options)),
@@ -129,6 +130,15 @@ function readDate(url: URL, options: LocalOperationsServerOptions): string {
     return raw;
   }
   return readNow(options).toISOString().slice(0, 10);
+}
+
+function readRunLookupId(url: URL): string | null {
+  const raw = url.searchParams.get("runId");
+  if (raw === null) {
+    return null;
+  }
+  const value = raw.trim();
+  return value.length > 0 && value.length <= 200 ? value : null;
 }
 
 function readNow(options: LocalOperationsServerOptions): Date {

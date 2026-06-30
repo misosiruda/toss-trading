@@ -192,16 +192,30 @@ export async function readReplayResearchReport(
 export async function readBatchReplayRuns(
   storageBaseDir: string,
   limit: number,
-  options: { includeLatestRunArtifacts?: boolean } = {}
+  options: { includeLatestRunArtifacts?: boolean; runId?: string | null } = {}
 ): Promise<Record<string, unknown>> {
   const paths = createStoragePaths(storageBaseDir);
   const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
-  const latestManifest = await readLatestBatchReplayManifest(storageBaseDir);
-  const manifestRunsPath = readManifestRunsPath(latestManifest?.manifest ?? null);
+  const manifests = await readBatchReplayManifests(storageBaseDir);
+  const lookupId = normalizeRunLookupId(options.runId ?? null);
+  const selectedManifest =
+    lookupId === null
+      ? (manifests[0] ?? null)
+      : await findBatchReplayManifestForLookup({
+          lookupId,
+          manifests,
+          storageBaseDir
+        });
+  const manifestRunsPath = readManifestRunsPath(
+    selectedManifest?.manifest ?? null
+  );
   const aggregateRunsPath = readSourceRunsPath(aggregate.value);
-  const sourceRunsPath = manifestRunsPath ?? aggregateRunsPath;
-  const batchStatus = latestManifest?.status ?? null;
-  const manifestMetadata = await readBatchReplayManifestMetadata(latestManifest);
+  const sourceRunsPath =
+    lookupId !== null && selectedManifest === null
+      ? aggregateRunsPath
+      : (manifestRunsPath ?? aggregateRunsPath);
+  const batchStatus = selectedManifest?.status ?? null;
+  const manifestMetadata = await readBatchReplayManifestMetadata(selectedManifest);
 
   if (sourceRunsPath === null) {
     return {
@@ -210,7 +224,7 @@ export async function readBatchReplayRuns(
       status: "missing",
       aggregateStatus: aggregate.status,
       batchStatus,
-      batchId: latestManifest?.batchId ?? null,
+      batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
       sourceRunsPath: null,
       runs: [],
@@ -232,7 +246,7 @@ export async function readBatchReplayRuns(
       status: "blocked",
       aggregateStatus: aggregate.status,
       batchStatus,
-      batchId: latestManifest?.batchId ?? null,
+      batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
       sourceRunsPath,
       runs: [],
@@ -244,15 +258,17 @@ export async function readBatchReplayRuns(
     };
   }
 
-const result = await readJsonlRecords(runsPath);
+  const result = await readJsonlRecords(runsPath);
   const records = result.records.map(normalizeBatchReplayRunRecord);
   const runs = takeLast(records, limit);
   const latestRunArtifacts = options.includeLatestRunArtifacts
     ? await readLatestRunArtifacts({
         storageBaseDir,
-        activeRun: readRecordField(latestManifest?.manifest ?? null, "activeRun"),
+        activeRun: readRecordField(selectedManifest?.manifest ?? null, "activeRun"),
+        batchId: selectedManifest?.batchId ?? null,
+        lookupId,
         sourceDataDir: readStringFieldOrNull(
-          latestManifest?.manifest ?? null,
+          selectedManifest?.manifest ?? null,
           "sourceDataDir"
         ),
         records
@@ -270,7 +286,7 @@ const result = await readJsonlRecords(runsPath);
     status,
     aggregateStatus: aggregate.status,
     batchStatus: normalizedBatchStatus,
-    batchId: latestManifest?.batchId ?? null,
+    batchId: selectedManifest?.batchId ?? null,
     ...manifestMetadata,
     sourceRunsPath,
     runs,
@@ -286,15 +302,12 @@ const result = await readJsonlRecords(runsPath);
 async function readLatestRunArtifacts(input: {
   storageBaseDir: string;
   activeRun: Record<string, unknown> | null;
+  batchId: string | null;
+  lookupId: string | null;
   sourceDataDir: string | null;
   records: Record<string, unknown>[];
 }): Promise<Record<string, unknown> | null> {
-  const run =
-    input.activeRun ??
-    [...input.records]
-      .reverse()
-      .find((record) => readStringField(record, "storageBaseDir") !== null) ??
-    null;
+  const run = selectBatchReplayRunForArtifacts(input);
   if (run === null) {
     return null;
   }
@@ -413,6 +426,48 @@ async function readLatestRunArtifacts(input: {
     totalTradeCount: trades.records.length,
     tradeCorruptLineCount: trades.corruptLineCount
   };
+}
+
+function selectBatchReplayRunForArtifacts(input: {
+  activeRun: Record<string, unknown> | null;
+  batchId: string | null;
+  lookupId: string | null;
+  records: Record<string, unknown>[];
+}): Record<string, unknown> | null {
+  if (input.lookupId !== null) {
+    const activeRunId =
+      input.activeRun === null
+        ? null
+        : readStringField(input.activeRun, "runId");
+    if (
+      input.activeRun !== null &&
+      (activeRunId === input.lookupId || input.batchId === input.lookupId)
+    ) {
+      return input.activeRun;
+    }
+
+    const exactRun = input.records.find(
+      (record) => readStringField(record, "runId") === input.lookupId
+    );
+    if (exactRun !== undefined) {
+      return exactRun;
+    }
+
+    const latestBatchRun = [...input.records]
+      .reverse()
+      .find((record) => readStringField(record, "batchId") === input.lookupId);
+    if (latestBatchRun !== undefined) {
+      return latestBatchRun;
+    }
+  }
+
+  return (
+    input.activeRun ??
+    [...input.records]
+      .reverse()
+      .find((record) => readStringField(record, "storageBaseDir") !== null) ??
+    null
+  );
 }
 
 interface SourceSnapshotNameCacheEntry {
@@ -796,16 +851,16 @@ interface BatchReplayManifestSnapshot {
   manifest: Record<string, unknown>;
 }
 
-async function readLatestBatchReplayManifest(
+async function readBatchReplayManifests(
   storageBaseDir: string
-): Promise<BatchReplayManifestSnapshot | null> {
+): Promise<BatchReplayManifestSnapshot[]> {
   const batchReplayDir = createBatchReplayRootDirForStorage(storageBaseDir);
   let entries;
   try {
     entries = await readdir(batchReplayDir, { withFileTypes: true });
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      return null;
+      return [];
     }
     throw error;
   }
@@ -834,7 +889,7 @@ async function readLatestBatchReplayManifest(
     });
   }
 
-  return manifests.sort(compareBatchReplayManifests)[0] ?? null;
+  return manifests.sort(compareBatchReplayManifests);
 }
 
 function readManifestRunsPath(value: unknown): string | null {
@@ -842,6 +897,71 @@ function readManifestRunsPath(value: unknown): string | null {
     return null;
   }
   return readStringField(value, "runsPath");
+}
+
+async function findBatchReplayManifestForLookup(input: {
+  lookupId: string;
+  manifests: BatchReplayManifestSnapshot[];
+  storageBaseDir: string;
+}): Promise<BatchReplayManifestSnapshot | null> {
+  const directMatch = input.manifests.find((manifest) =>
+    batchReplayManifestMatchesLookup(manifest, input.lookupId)
+  );
+  if (directMatch !== undefined) {
+    return directMatch;
+  }
+
+  for (const manifest of input.manifests) {
+    const sourceRunsPath = readManifestRunsPath(manifest.manifest);
+    if (sourceRunsPath === null) {
+      continue;
+    }
+    const runsPath = resolveBatchReplayRunsArtifactPath(sourceRunsPath, {
+      storageBaseDir: input.storageBaseDir
+    });
+    if (runsPath === null) {
+      continue;
+    }
+    const result = await readJsonlRecords(runsPath);
+    if (
+      result.records.some((record) =>
+        batchReplayRunRecordMatchesLookup(record, input.lookupId)
+      )
+    ) {
+      return manifest;
+    }
+  }
+
+  return null;
+}
+
+function batchReplayManifestMatchesLookup(
+  manifest: BatchReplayManifestSnapshot,
+  lookupId: string
+): boolean {
+  if (manifest.batchId === lookupId) {
+    return true;
+  }
+  const activeRun = readRecordField(manifest.manifest, "activeRun");
+  return readStringFieldOrNull(activeRun, "runId") === lookupId;
+}
+
+function batchReplayRunRecordMatchesLookup(
+  record: Record<string, unknown>,
+  lookupId: string
+): boolean {
+  return (
+    readStringField(record, "runId") === lookupId ||
+    readStringField(record, "batchId") === lookupId
+  );
+}
+
+function normalizeRunLookupId(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 async function readBatchReplayManifestMetadata(

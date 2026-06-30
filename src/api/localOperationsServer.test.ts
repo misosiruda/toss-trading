@@ -3556,6 +3556,113 @@ test("local operations API serves latest completed manifest runs over aggregate 
   }
 });
 
+test("local operations API selects requested batch replay run id", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const oldDir = join(storageBaseDir, "..", "batch-replay", "paper_sim_old");
+  const oldRunDir = join(oldDir, "runs", "paper_sim_old_run_000000");
+  const oldRunsPath = join(oldDir, "batch-replay-runs.jsonl");
+  const latestDir = join(
+    storageBaseDir,
+    "..",
+    "batch-replay",
+    "paper_sim_latest"
+  );
+  const latestRunsPath = join(latestDir, "batch-replay-runs.jsonl");
+  const oldRun = {
+    ...batchReplayRunRecord(0, "completed"),
+    batchId: "paper_sim_old",
+    runId: "paper_sim_old_run_000000",
+    storageBaseDir: oldRunDir,
+    reportPath: join(oldRunDir, "historical-replay-report.json")
+  };
+
+  await mkdir(oldRunDir, { recursive: true });
+  await mkdir(latestDir, { recursive: true });
+  await writeFile(
+    join(oldDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "paper_sim_old",
+      status: "completed",
+      startedAt: "2026-06-18T13:41:59+09:00",
+      updatedAt: "2026-06-18T13:42:00+09:00",
+      completedAt: "2026-06-18T13:42:00+09:00",
+      sourceDataDir: "data/paper",
+      runCount: 1,
+      completedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      runsPath: oldRunsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(latestDir, "batch-replay-manifest.json"),
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "paper_sim_latest",
+      status: "completed",
+      startedAt: "2026-06-18T14:41:59+09:00",
+      updatedAt: "2026-06-18T14:42:00+09:00",
+      completedAt: "2026-06-18T14:42:00+09:00",
+      sourceDataDir: "data/paper",
+      runCount: 1,
+      completedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      runsPath: latestRunsPath
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(oldRunsPath, `${JSON.stringify(oldRun)}\n`, "utf8");
+  await writeFile(
+    latestRunsPath,
+    `${JSON.stringify({
+      ...batchReplayRunRecord(0, "completed"),
+      batchId: "paper_sim_latest",
+      runId: "paper_sim_latest_run_000000"
+    })}\n`,
+    "utf8"
+  );
+  await writeFile(
+    join(oldRunDir, "historical-replay-progress.json"),
+    `${JSON.stringify({
+      ...historicalReplayProgress(),
+      status: "completed",
+      completedAt: "2026-06-11T09:01:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/batch/replay/runs?limit=10&includeLatestRunArtifacts=1&runId=paper_sim_old_run_000000"
+    );
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+    const artifacts = result.payload["latestRunArtifacts"] as Record<
+      string,
+      unknown
+    >;
+    const progress = artifacts["progress"] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["batchId"], "paper_sim_old");
+    assert.equal(result.payload["batchStatus"], "completed");
+    assert.equal(result.payload["sourceRunsPath"], oldRunsPath);
+    assert.equal(runs[0]?.["runId"], "paper_sim_old_run_000000");
+    assert.equal(artifacts["status"], "ok");
+    assert.equal(artifacts["runId"], "paper_sim_old_run_000000");
+    assert.equal(artifacts["progressStatus"], "ok");
+    assert.equal(progress["status"], "completed");
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API can include latest batch run artifacts", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const batchDir = join(storageBaseDir, "..", "batch-replay", "paper_sim_single");

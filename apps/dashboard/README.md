@@ -38,7 +38,7 @@ GET /dashboard/view-model/strategy-test-lab
 GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress
 GET /dashboard/view-model/risk-gate-trace?limit=8
 GET /dashboard/view-model/validation-lab
-GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1
+GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=<route-segment>
 POST /paper/policies/validate
 POST /paper/policies
 POST /paper/simulations
@@ -66,7 +66,7 @@ POST /paper/simulations/strategy-bucket-tests
 
 `POST /paper/simulations/strategy-bucket-tests`는 backend guarded mutation endpoint입니다. validation을 통과한 strategy bucket test 설정만 append-only queued record와 audit event로 저장합니다. replay runner 시작, live order surface, raw command execution은 수행하지 않습니다.
 
-`/dashboard/lab/runs/[runId]`는 `GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1`을 server-side로 조회해 run index, progress snapshot, report title, decision/risk/execution artifact count를 렌더링합니다. route segment가 실제 `runId`와 일치하지 않으면 같은 `batchId`의 최신 run record를 detail 대상으로 사용합니다. terminal run record가 아직 없는 running batch에서는 manifest `activeRun`과 latest artifact snapshot을 detail 대상으로 사용합니다. 이 화면은 저장된 latest artifact만 표시하며, replay runner 시작, order placement, raw command execution은 수행하지 않습니다.
+`/dashboard/lab/runs/[runId]`는 `GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=<route-segment>`을 server-side로 조회해 run index, progress snapshot, report title, decision/risk/execution artifact count를 렌더링합니다. Local Operations API는 `runId` query를 사용해 최신 batch뿐 아니라 요청한 run 또는 batch를 소유한 batch manifest를 선택합니다. route segment가 실제 `runId`와 일치하지 않으면 같은 `batchId`의 최신 run record를 detail 대상으로 사용합니다. terminal run record가 아직 없는 running batch에서는 manifest `activeRun`과 latest artifact snapshot을 detail 대상으로 사용합니다. 이 화면은 저장된 artifact만 표시하며, replay runner 시작, order placement, raw command execution은 수행하지 않습니다.
 
 ## 명령
 

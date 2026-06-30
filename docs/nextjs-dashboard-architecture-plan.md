@@ -869,8 +869,9 @@ npm run check
 다섯 번째 구현 단위:
 
 - `/dashboard/lab/runs/[runId]` route를 추가해 policy builder에서 반환된 paper simulation batch id 또는 실제 replay run id를 read-only 상세 화면으로 열 수 있게 한다.
-- Server Component는 `GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1`만 조회하고, browser client가 raw artifact file을 직접 읽지 않는다.
+- Server Component는 `GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1&runId=<route-segment>`만 조회하고, browser client가 raw artifact file을 직접 읽지 않는다.
 - 화면은 run summary, latest artifact read status, progress snapshot, decision/risk/execution count, source boundary를 표시한다.
+- Local Operations API는 `runId` query를 사용해 최신 batch뿐 아니라 요청한 run 또는 batch를 소유한 batch manifest를 선택한다.
 - route segment가 실제 run id와 일치하지 않으면 같은 `batchId`의 최신 run record를 detail 대상으로 사용한다.
 - terminal run record가 아직 없는 running batch에서는 manifest `activeRun`과 latest artifact snapshot을 detail 대상으로 사용한다.
 - `latestRunArtifacts`가 detail 대상 `runId`와 다르면 run index summary만 렌더링하고 artifact detail은 unavailable 상태로 둔다.
