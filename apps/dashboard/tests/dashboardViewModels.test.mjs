@@ -329,3 +329,13 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
     }
   }
 });
+
+test("hedge missing status is not treated as a compliance breach", async () => {
+  const { isHedgeComplianceBreachStatus } =
+    await loadDashboardViewModelsModule();
+
+  assert.equal(isHedgeComplianceBreachStatus("ok"), false);
+  assert.equal(isHedgeComplianceBreachStatus("missing"), false);
+  assert.equal(isHedgeComplianceBreachStatus("ineffective"), true);
+  assert.equal(isHedgeComplianceBreachStatus("over_hedged"), true);
+});

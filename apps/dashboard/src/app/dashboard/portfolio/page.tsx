@@ -12,7 +12,10 @@ import type {
   ViewModelResult,
   ViewModelStatus
 } from "@/lib/dashboardViewModels";
-import { readPortfolioCompliancePageData } from "@/lib/dashboardViewModels";
+import {
+  isHedgeComplianceBreachStatus,
+  readPortfolioCompliancePageData
+} from "@/lib/dashboardViewModels";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -251,9 +254,8 @@ function ComplianceBreachList({
             detail: `gap ${formatKrw(data.cashCompliance.cashGapKrw)}`
           }
         ]),
-    ...(data.hedgeCompliance.status === "ok"
-      ? []
-      : [
+    ...(isHedgeComplianceBreachStatus(data.hedgeCompliance.status)
+      ? [
           {
             key: "hedge",
             label: "Hedge",
@@ -262,7 +264,8 @@ function ComplianceBreachList({
               data.complianceAnalytics.hedgeEffectiveness.hedgeCoverageRatio
             )}`
           }
-        ]),
+        ]
+      : []),
     ...(data.exposureCompliance.status === "ok"
       ? []
       : [

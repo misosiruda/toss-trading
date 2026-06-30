@@ -84,6 +84,12 @@ export interface PolicyComplianceViewModel {
   status: ViewModelStatus;
 }
 
+export function isHedgeComplianceBreachStatus(
+  status: PolicyComplianceViewModel["hedgeCompliance"]["status"]
+): boolean {
+  return status !== "ok" && status !== "missing";
+}
+
 export interface ComplianceAnalyticsView {
   strategyBucket: {
     occupiedBucketCount: number;
