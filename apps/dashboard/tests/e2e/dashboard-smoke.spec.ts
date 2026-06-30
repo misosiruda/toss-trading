@@ -120,7 +120,12 @@ test("renders portfolio compliance detail without mutation controls", async ({
     page.getByRole("heading", { name: "Compliance Breaches" })
   ).toBeVisible();
   await expect(page.getByTestId("portfolio-breach-hedge")).toContainText(
-    "coverage missing"
+    "ineffective"
+  );
+  await expect(
+    page.getByTestId("portfolio-breach-hedge").getByText("ineffective")
+  ).toHaveClass(
+    /text-\[var\(--danger\)\]/
   );
   await expect(
     page.getByRole("heading", { name: "Compliance Analytics" })

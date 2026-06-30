@@ -763,6 +763,7 @@ function statusTone(status: string): "ok" | "watch" | "blocked" {
     status === "under" ||
     status === "over" ||
     status === "under_reserved" ||
+    status === "ineffective" ||
     status === "over_hedged"
   ) {
     return "blocked";
