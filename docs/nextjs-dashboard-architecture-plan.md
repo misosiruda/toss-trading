@@ -447,6 +447,7 @@ GET  /dashboard/stream/strategy-bucket-tests/{testId}
 POST /paper/simulations
 POST /paper/simulations/strategy-bucket-tests/validate
 POST /paper/simulations/strategy-bucket-tests
+POST /paper/simulations/strategy-bucket-tests/matrix
 ```
 
 원칙:
@@ -460,6 +461,7 @@ POST /paper/simulations/strategy-bucket-tests
 - `POST /paper/simulations`는 기존 same-origin/header/body guard를 유지하고, Next.js Server Action 또는 Route Handler에서 한 번 더 operation intent를 검증한다.
 - `POST /paper/simulations/strategy-bucket-tests/validate`는 strategy bucket test 생성 전 validation-only endpoint다. 선택 bucket, policy draft, source data dir, split role, date window, sampling/provider config를 backend에서 검증하지만 test record 생성, artifact 저장, replay runner 시작은 하지 않는다.
 - `POST /paper/simulations/strategy-bucket-tests`는 paper-only bucket replay 생성 후보 endpoint다. 구현 시 기존 simulation guard와 동일한 same-origin, operation header, typed config validation, audit event를 요구해야 한다. 초기 구현은 queued test record와 audit event 생성까지만 허용하고, replay runner 시작은 별도 guard가 붙은 후속 PR에서 연결한다.
+- `POST /paper/simulations/strategy-bucket-tests/matrix`는 현재 validation candidate의 policy snapshot에서 target weight가 0보다 큰 bucket을 backend가 확정하고, 각 bucket을 독립 queued test record로 저장한다. 이 endpoint도 별도 operation header, same-origin, JSON body guard를 요구하며 replay runner는 시작하지 않는다.
 - `GET /dashboard/stream/strategy-bucket-tests/{testId}`는 active test progress SSE 후보 endpoint다. SSE를 지원하지 못하는 환경에서는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress` polling fallback을 사용한다.
 
 ## Next.js 설계 기준
@@ -572,8 +574,8 @@ POST /paper/simulations/strategy-bucket-tests
 전체 bucket matrix 생성 흐름:
 
 1. 사용자가 enabled bucket 전체 test를 요청한다.
-2. 프론트는 `PortfolioPolicy` id와 공통 test 조건만 전달한다.
-3. backend가 enabled bucket 목록을 확정하고 bucket별 typed config를 만든다.
+2. 프론트는 현재 validation candidate의 `PortfolioPolicy` snapshot과 공통 test 조건을 Next.js route handler에 전달한다.
+3. backend가 target weight가 0보다 큰 enabled bucket 목록을 확정하고 bucket별 typed config를 만든다.
 4. 각 bucket은 서로 다른 `testId`와 `configHash`를 가진 독립 test로 기록된다.
 5. 프론트는 하나의 aggregate run으로 합치지 않고 bucket별 progress와 결과를 matrix로 보여준다.
 
@@ -895,6 +897,14 @@ npm run check
 - stored batch aggregate report의 `overall.averageTotalReturnRatio`를 full portfolio baseline으로 사용하고, bucket result와 baseline의 paper-only delta를 `comparison.portfolioDeltaRows`로 내려준다.
 - `/dashboard/lab/strategy-tests`는 result matrix와 full portfolio baseline comparison panel을 렌더링한다.
 - 이 단계는 replay runner 시작, SSE stream, enabled bucket 전체 matrix 생성, strategy 자동 선택, 투자 조언성 best bucket 추천을 구현하지 않는다.
+
+여덟 번째 구현 단위:
+
+- Local Operations API에 `POST /paper/simulations/strategy-bucket-tests/matrix` guarded create endpoint를 둔다.
+- endpoint는 현재 validation candidate의 `PortfolioPolicy` snapshot에서 target weight가 0보다 큰 enabled bucket을 확정하고, bucket별 `requestId`, seed, `testId`, `configHash`를 가진 독립 queued test record와 audit event를 저장한다.
+- `/dashboard/lab/strategy-tests/matrix-create` Next.js route handler는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 server-side proxy로 전달하고, dashboard intent header, dashboard mutation token, positive same-origin request metadata, `application/json` content type을 요구한다.
+- `/dashboard/lab/strategy-tests` form은 backend validation이 통과한 현재 request에 대해서만 enabled bucket matrix 생성을 허용하고, 생성 결과를 하나의 aggregate run이 아닌 bucket별 queued record 목록으로 표시한다.
+- 이 단계는 replay runner 시작, SSE stream, result metric aggregation, strategy 자동 선택, 투자 조언성 best bucket 추천, live order surface를 구현하지 않는다.
 
 ### N6. Compliance analytics 확장
 

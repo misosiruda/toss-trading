@@ -205,6 +205,12 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     string,
     unknown
   >;
+  const matrixCreateRequestBody = {
+    mode: "paper_only",
+    mutation: "strategy_bucket_test_matrix_create",
+    matrixId: "strategy-test-lab-matrix-validation",
+    candidate: createRequestBody
+  };
   const missingIntentCreate = await request.post(
     "/dashboard/lab/strategy-tests/create",
     {
@@ -215,6 +221,40 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   const missingIntentPayload = await missingIntentCreate.json();
   expect(missingIntentPayload).toMatchObject({
     error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const missingIntentMatrixCreate = await request.post(
+    "/dashboard/lab/strategy-tests/matrix-create",
+    {
+      data: matrixCreateRequestBody
+    }
+  );
+  expect(missingIntentMatrixCreate.status()).toBe(403);
+  expect(await missingIntentMatrixCreate.json()).toMatchObject({
+    error: "dashboard_intent_required",
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false
+  });
+  const missingMutationTokenMatrixCreate = await request.post(
+    "/dashboard/lab/strategy-tests/matrix-create",
+    {
+      data: matrixCreateRequestBody,
+      headers: {
+        origin: dashboardOrigin,
+        "sec-fetch-site": "same-origin",
+        "x-toss-trading-dashboard-intent":
+          "strategy-bucket-test-matrix-create"
+      }
+    }
+  );
+  expect(missingMutationTokenMatrixCreate.status()).toBe(403);
+  expect(await missingMutationTokenMatrixCreate.json()).toMatchObject({
+    error: "mutation_token_required",
     storageMutationEnabled: false,
     liveTradingEnabled: false,
     orderPlacementEnabled: false,
@@ -366,12 +406,45 @@ test("renders strategy bucket test lab with queued create boundary", async ({
       "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
     )
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Backend validation passed. Enabled buckets can be queued as independent paper-only records."
+    )
+  ).toBeVisible();
+
+  await activateButton(page, "Queue enabled bucket matrix");
+  await expect(page.getByText("Strategy bucket matrix queued")).toBeVisible();
+  const matrixCreatedLine = page.getByTestId(
+    "strategy-bucket-matrix-created-id"
+  );
+  await expect(matrixCreatedLine).toContainText(
+    "strategy-test-lab-matrix-validation"
+  );
+  await expect(matrixCreatedLine).toContainText("5 bucket records");
+  await expect(matrixCreatedLine).toContainText("runner not started");
+  await expect(
+    page.getByTestId("strategy-bucket-matrix-test-long_term")
+  ).toContainText("Long-term");
+  await expect(
+    page.getByTestId("strategy-bucket-matrix-test-swing")
+  ).toContainText("Swing");
+  await expect(
+    page.getByTestId("strategy-bucket-matrix-test-short_term")
+  ).toContainText("Short-term");
+  await expect(
+    page.getByTestId("strategy-bucket-matrix-test-intraday")
+  ).toContainText("Intraday");
+  await expect(
+    page.getByTestId("strategy-bucket-matrix-test-hedge")
+  ).toContainText("Hedge");
 
   await activateButton(page, "Queue bucket test record");
   await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
-  await expect(page.getByText("storage mutation enabled")).toBeVisible();
-  await expect(page.getByText("live orders disabled")).toBeVisible();
-  await expect(page.getByText("order placement disabled")).toBeVisible();
+  await expect(
+    page.getByText("storage mutation enabled").first()
+  ).toBeVisible();
+  await expect(page.getByText("live orders disabled").first()).toBeVisible();
+  await expect(page.getByText("order placement disabled").first()).toBeVisible();
   const createdTestIdLine = page.getByTestId("strategy-bucket-created-test-id");
   await expect(createdTestIdLine).toContainText(/^strategy_bucket_test_/);
   const createdTestIdText = await createdTestIdLine.textContent();
