@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   buildPolicyPreview,
@@ -1039,6 +1040,14 @@ function PaperSimulationCreateStatus({
         runType {response.runType} · runCount {response.requestedRunCount} ·
         live orders disabled
       </p>
+      <Link
+        className="mt-3 inline-flex rounded-[6px] border border-[var(--success)] px-3 py-2 text-sm font-semibold"
+        href={`/dashboard/lab/runs/${encodeURIComponent(
+          response.simulationRunId
+        )}`}
+      >
+        Open run detail
+      </Link>
     </div>
   );
 }

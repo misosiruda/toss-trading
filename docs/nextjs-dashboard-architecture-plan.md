@@ -866,6 +866,14 @@ npm run check
 - 이 단계는 policy artifact persistence만 구현하고, replay runner의 policy artifact 적용, policy별 replay report 연결, DB schema migration은 후속 PR 범위로 둔다.
 - live order, live `OrderIntent`, broker mutation, raw command 실행 surface를 추가하지 않는다.
 
+다섯 번째 구현 단위:
+
+- `/dashboard/lab/runs/[runId]` route를 추가해 policy builder에서 생성된 paper simulation run id를 read-only 상세 화면으로 열 수 있게 한다.
+- Server Component는 `GET /batch/replay/runs?limit=100&includeLatestRunArtifacts=1`만 조회하고, browser client가 raw artifact file을 직접 읽지 않는다.
+- 화면은 run summary, latest artifact read status, progress snapshot, decision/risk/execution count, source boundary를 표시한다.
+- `latestRunArtifacts`가 요청한 `runId`와 다르면 run index summary만 렌더링하고 artifact detail은 unavailable 상태로 둔다.
+- 이 단계는 replay runner 시작, SSE stream, historical artifact backfill, policy별 report materialization, live order surface를 추가하지 않는다.
+
 ### N5. Strategy Bucket Test Lab
 
 범위:

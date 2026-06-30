@@ -365,6 +365,47 @@ test("renders audit event review without mutation controls", async ({ page }) =>
   await expectNoAxeViolations(page);
 });
 
+test("renders batch replay run detail without mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/lab/runs/paper_sim_single_run_000000");
+
+  await expect(
+    page.getByRole("heading", { name: "Run Detail", exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Paper-only run detail")).toBeVisible();
+  await expect(
+    page.getByLabel("Run detail safety boundary").getByText("/batch/replay/runs")
+  ).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "paper_sim_single_run_000000" })
+  ).toBeVisible();
+  await expect(page.getByText("Historical Replay Paper Report")).toBeVisible();
+  await expect(page.getByText("2.5%")).toBeVisible();
+  await expect(page.getByText("1,025,000 KRW")).toBeVisible();
+  await expect(page.getByText("1,000,000 KRW")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Replay Progress Snapshot" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Decision Risk Execution Counts" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Read-only Source Boundary" })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
 test("renders strategy bucket test lab with queued create boundary", async ({
   page,
   request,
