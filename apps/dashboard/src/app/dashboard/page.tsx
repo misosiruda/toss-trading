@@ -68,6 +68,13 @@ export default async function DashboardPage() {
               />
               <Link
                 className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/portfolio"
+              >
+                <span className="text-[var(--muted)]">Portfolio</span>
+                <span className="text-[var(--accent)]">Compliance</span>
+              </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
                 href="/dashboard/lab/policies"
               >
                 <span className="text-[var(--muted)]">Policy lab</span>

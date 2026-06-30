@@ -812,6 +812,13 @@ npm run check
 - `/dashboard`에는 상세 화면 링크만 추가하고 기존 portfolio, strategy lab, risk gate, validation lab 집계는 그대로 유지한다.
 - 이 단계는 official API 실제 호출, account snapshot 조회, auth token 발급, live order gateway 연결, broker mutation, raw command 실행 surface를 추가하지 않는다.
 
+네 번째 구현 단위:
+
+- `/dashboard/portfolio` Server Component를 추가해 `GET /dashboard/view-model/portfolio-compliance`만 조회한다.
+- 화면은 bucket target/current/gap matrix, cash reserve, hedge effectiveness, exposure concentration, cost/turnover, risk gate reject summary를 backend ViewModel 기준으로 렌더링한다.
+- `/dashboard`에는 portfolio compliance 상세 화면 링크만 추가한다.
+- 이 단계는 browser-side metric 재계산, portfolio policy mutation, 새 저장 schema, migration, replay runner 시작, live order surface를 추가하지 않는다.
+
 ### N4. Paper-only policy builder
 
 범위:

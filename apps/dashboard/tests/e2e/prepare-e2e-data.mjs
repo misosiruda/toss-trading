@@ -9,6 +9,33 @@ const dataDir = resolve(dashboardRoot, ".e2e-data", "paper");
 await rm(dataDir, { force: true, recursive: true });
 await mkdir(dataDir, { recursive: true });
 
+await writeFile(
+  resolve(dataDir, "virtual-portfolio.json"),
+  `${JSON.stringify(
+    {
+      portfolioId: "virtual_e2e",
+      cashKrw: 850_000,
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          assetType: "STOCK",
+          assetClass: "equity",
+          strategyBucket: "long_term",
+          quantity: 2,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 150_000,
+          updatedAt: "2026-06-27T00:00:00.000Z"
+        }
+      ],
+      updatedAt: "2026-06-27T00:00:00.000Z"
+    },
+    null,
+    2
+  )}\n`,
+  "utf8"
+);
+
 const candidatePrefix =
   "provider=deterministic_fixture|providerMetadata=sha256:provider|";
 const aggregate = {
