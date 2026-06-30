@@ -2655,3 +2655,10 @@
 - Fix review 1: non-paper `AI_DECISION_MODE`를 paper-only dashboard boundary breach로 분류하고 warning을 추가했습니다.
 - Fix review 2: `ai_decision_mode` readiness check를 추가해 설정값과 blocked tone을 별도 check row로 노출합니다.
 - Fix review 3: `AI_DECISION_MODE=live`에서도 live order gateway, OrderRouter, MCP mutation tool exposure는 계속 disabled/not connected/not exposed로 남는 read-only 경계를 유지합니다.
+
+### Codex Review Fix 3
+
+- Review finding: `TOSS_OPEN_API_BASE_URL`에 URL userinfo, query, hash credential이 포함되면 safe auth summary의 `baseUrl`로 노출될 수 있었습니다.
+- Fix review 1: `summarizeTossOpenApiAuthConfig`에서 summary `baseUrl`을 origin/path만 남기도록 sanitize했습니다.
+- Fix review 2: malformed URL은 safe summary에서 raw value 대신 `[invalid-url]`로 표시해 credential-like text 노출을 막습니다.
+- Fix review 3: config 단위 테스트와 live readiness 통합 테스트가 URL userinfo/query/hash token 미노출을 검증합니다.

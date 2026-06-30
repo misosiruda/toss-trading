@@ -2685,7 +2685,8 @@ test("dashboard live readiness exposes safe auth summary without secrets", async
       AI_DECISION_MODE: "paper_only",
       BROKER_PROVIDER: "official_toss_open_api",
       TOSS_OPEN_API_AUTH_ENABLED: "true",
-      TOSS_OPEN_API_BASE_URL: "https://openapi.tossinvest.com",
+      TOSS_OPEN_API_BASE_URL:
+        "https://url-user:url-secret@openapi.tossinvest.com/v1?token=url-token#frag",
       TOSS_OPEN_API_CLIENT_ID: "local-client-id",
       TOSS_OPEN_API_CLIENT_SECRET: "local-client-secret",
       TRADING_ENABLED: "true"
@@ -2713,6 +2714,7 @@ test("dashboard live readiness exposes safe auth summary without secrets", async
     assert.equal(result.payload["status"], "breach");
     assert.equal(officialApi["authEnabled"], true);
     assert.equal(officialApi["authStatus"], "ready");
+    assert.equal(officialApi["baseUrl"], "https://openapi.tossinvest.com/v1");
     assert.equal(officialApi["clientIdConfigured"], true);
     assert.equal(officialApi["clientCredentialConfigured"], true);
     assert.equal(officialApi["snapshotStatus"], "configured");
@@ -2726,6 +2728,10 @@ test("dashboard live readiness exposes safe auth summary without secrets", async
     );
     assert.equal(text.includes("local-client-id"), false);
     assert.equal(text.includes("local-client-secret"), false);
+    assert.equal(text.includes("url-user"), false);
+    assert.equal(text.includes("url-secret"), false);
+    assert.equal(text.includes("url-token"), false);
+    assert.equal(text.includes("frag"), false);
   } finally {
     await stopTestServer(server);
   }

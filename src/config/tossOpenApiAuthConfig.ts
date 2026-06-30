@@ -88,11 +88,21 @@ export function summarizeTossOpenApiAuthConfig(
   return {
     enabled: config.enabled,
     status: config.status,
-    baseUrl: config.baseUrl,
+    baseUrl: sanitizeBaseUrlForSummary(config.baseUrl),
     hasClientId: config.clientId !== undefined,
     hasClientSecret: config.clientSecret !== undefined,
     issues: config.issues
   };
+}
+
+function sanitizeBaseUrlForSummary(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const pathname = parsed.pathname === "/" ? "" : parsed.pathname;
+    return `${parsed.origin}${pathname}`;
+  } catch {
+    return "[invalid-url]";
+  }
 }
 
 function readOptionalEnvValue(value: string | undefined): string | undefined {
