@@ -420,15 +420,17 @@ test("run detail page data reads latest batch replay artifacts", async () => {
 
   try {
     const { readRunDetailPageData } = await loadDashboardViewModelsModule();
-    const pageData = await readRunDetailPageData(
-      "paper_sim_single_run_000000"
-    );
+    const pageData = await readRunDetailPageData("paper_sim_single");
 
     assert.equal(pageData.apiBaseLabel, "configured operations endpoint");
     assert.equal(pageData.runDetail.status, "ok");
     assert.equal(pageData.runDetail.data.mode, "paper_only");
     assert.equal(pageData.runDetail.data.readOnly, true);
     assert.equal(pageData.runDetail.data.status, "ok");
+    assert.equal(
+      pageData.runDetail.data.runId,
+      "paper_sim_single_run_000000"
+    );
     assert.equal(
       pageData.runDetail.data.run.runId,
       "paper_sim_single_run_000000"

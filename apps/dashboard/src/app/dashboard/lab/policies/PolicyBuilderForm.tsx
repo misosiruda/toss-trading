@@ -1046,7 +1046,7 @@ function PaperSimulationCreateStatus({
           response.simulationRunId
         )}`}
       >
-        Open run detail
+        Open latest run detail
       </Link>
     </div>
   );

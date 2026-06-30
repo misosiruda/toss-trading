@@ -882,14 +882,17 @@ function normalizeRunDetailView(
   const runs = value["runs"]
     .map(normalizeBatchReplayRunSummary)
     .filter((run): run is BatchReplayRunSummary => run !== null);
-  const run = runs.find((candidate) => candidate.runId === runId) ?? null;
+  const run = findRunDetailTargetRun(runs, runId);
+  const resolvedRunId = run?.runId ?? runId;
   const rawArtifacts = isRecord(value["latestRunArtifacts"])
     ? value["latestRunArtifacts"]
     : null;
   const artifacts = normalizeBatchReplayRunArtifacts(rawArtifacts);
   const latestArtifactsRunId = artifacts?.runId ?? null;
   const warnings =
-    artifacts !== null && latestArtifactsRunId !== null && latestArtifactsRunId !== runId
+    artifacts !== null &&
+    latestArtifactsRunId !== null &&
+    latestArtifactsRunId !== resolvedRunId
       ? [
           "latest run artifacts belong to a different run; detail artifacts are unavailable for this run"
         ]
@@ -898,16 +901,30 @@ function normalizeRunDetailView(
   return {
     mode: "paper_only",
     readOnly: true,
-    runId,
+    runId: resolvedRunId,
     batchId: readNullableString(value["batchId"]),
     batchStatus: readNullableString(value["batchStatus"]),
     sourceRunsPath: readNullableString(value["sourceRunsPath"]),
     run,
-    artifacts: latestArtifactsRunId === runId ? artifacts : null,
+    artifacts: latestArtifactsRunId === resolvedRunId ? artifacts : null,
     latestArtifactsRunId,
     warnings,
     status: run === null ? "missing" : "ok"
   };
+}
+
+function findRunDetailTargetRun(
+  runs: BatchReplayRunSummary[],
+  lookupId: string
+): BatchReplayRunSummary | null {
+  const directRun = runs.find((candidate) => candidate.runId === lookupId);
+  if (directRun !== undefined) {
+    return directRun;
+  }
+  return (
+    [...runs].reverse().find((candidate) => candidate.batchId === lookupId) ??
+    null
+  );
 }
 
 function normalizeBatchReplayRunSummary(

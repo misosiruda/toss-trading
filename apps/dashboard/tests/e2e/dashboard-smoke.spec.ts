@@ -368,7 +368,7 @@ test("renders audit event review without mutation controls", async ({ page }) =>
 test("renders batch replay run detail without mutation controls", async ({
   page,
 }) => {
-  await page.goto("/dashboard/lab/runs/paper_sim_single_run_000000");
+  await page.goto("/dashboard/lab/runs/paper_sim_single");
 
   await expect(
     page.getByRole("heading", { name: "Run Detail", exact: true })
