@@ -3575,6 +3575,22 @@ test("local operations API selects requested batch replay run id", async () => {
     storageBaseDir: oldRunDir,
     reportPath: join(oldRunDir, "historical-replay-report.json")
   };
+  const oldRuns = [
+    oldRun,
+    ...Array.from({ length: 104 }, (_, index) => {
+      const runIndex = index + 1;
+      return {
+        ...batchReplayRunRecord(runIndex, "completed"),
+        batchId: "paper_sim_old",
+        runId: `paper_sim_old_run_${String(runIndex).padStart(6, "0")}`,
+        storageBaseDir: join(
+          oldDir,
+          "runs",
+          `paper_sim_old_run_${String(runIndex).padStart(6, "0")}`
+        )
+      };
+    })
+  ];
 
   await mkdir(oldRunDir, { recursive: true });
   await mkdir(latestDir, { recursive: true });
@@ -3614,7 +3630,11 @@ test("local operations API selects requested batch replay run id", async () => {
     })}\n`,
     "utf8"
   );
-  await writeFile(oldRunsPath, `${JSON.stringify(oldRun)}\n`, "utf8");
+  await writeFile(
+    oldRunsPath,
+    `${oldRuns.map((run) => JSON.stringify(run)).join("\n")}\n`,
+    "utf8"
+  );
   await writeFile(
     latestRunsPath,
     `${JSON.stringify({
@@ -3642,6 +3662,7 @@ test("local operations API selects requested batch replay run id", async () => {
       "/batch/replay/runs?limit=10&includeLatestRunArtifacts=1&runId=paper_sim_old_run_000000"
     );
     const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+    const selectedRun = result.payload["selectedRun"] as Record<string, unknown>;
     const artifacts = result.payload["latestRunArtifacts"] as Record<
       string,
       unknown
@@ -3653,7 +3674,13 @@ test("local operations API selects requested batch replay run id", async () => {
     assert.equal(result.payload["batchId"], "paper_sim_old");
     assert.equal(result.payload["batchStatus"], "completed");
     assert.equal(result.payload["sourceRunsPath"], oldRunsPath);
-    assert.equal(runs[0]?.["runId"], "paper_sim_old_run_000000");
+    assert.equal(result.payload["count"], 10);
+    assert.equal(result.payload["totalCount"], 105);
+    assert.equal(
+      runs.some((run) => run["runId"] === "paper_sim_old_run_000000"),
+      false
+    );
+    assert.equal(selectedRun["runId"], "paper_sim_old_run_000000");
     assert.equal(artifacts["status"], "ok");
     assert.equal(artifacts["runId"], "paper_sim_old_run_000000");
     assert.equal(artifacts["progressStatus"], "ok");

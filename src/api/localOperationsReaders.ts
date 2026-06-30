@@ -228,6 +228,7 @@ export async function readBatchReplayRuns(
       ...manifestMetadata,
       sourceRunsPath: null,
       runs: [],
+      selectedRun: null,
       count: 0,
       totalCount: 0,
       statusCounts: {},
@@ -250,6 +251,7 @@ export async function readBatchReplayRuns(
       ...manifestMetadata,
       sourceRunsPath,
       runs: [],
+      selectedRun: null,
       count: 0,
       totalCount: 0,
       statusCounts: {},
@@ -261,11 +263,19 @@ export async function readBatchReplayRuns(
   const result = await readJsonlRecords(runsPath);
   const records = result.records.map(normalizeBatchReplayRunRecord);
   const runs = takeLast(records, limit);
+  const activeRun = readRecordField(selectedManifest?.manifest ?? null, "activeRun");
+  const batchId = selectedManifest?.batchId ?? null;
+  const selectedRun = selectBatchReplayRunForLookup({
+    activeRun,
+    batchId,
+    lookupId,
+    records
+  });
   const latestRunArtifacts = options.includeLatestRunArtifacts
     ? await readLatestRunArtifacts({
         storageBaseDir,
-        activeRun: readRecordField(selectedManifest?.manifest ?? null, "activeRun"),
-        batchId: selectedManifest?.batchId ?? null,
+        activeRun,
+        batchId,
         lookupId,
         sourceDataDir: readStringFieldOrNull(
           selectedManifest?.manifest ?? null,
@@ -286,10 +296,11 @@ export async function readBatchReplayRuns(
     status,
     aggregateStatus: aggregate.status,
     batchStatus: normalizedBatchStatus,
-    batchId: selectedManifest?.batchId ?? null,
+    batchId,
     ...manifestMetadata,
     sourceRunsPath,
     runs,
+    selectedRun,
     count: runs.length,
     totalCount: records.length,
     statusCounts: countRunStatuses(records),
@@ -426,6 +437,40 @@ async function readLatestRunArtifacts(input: {
     totalTradeCount: trades.records.length,
     tradeCorruptLineCount: trades.corruptLineCount
   };
+}
+
+function selectBatchReplayRunForLookup(input: {
+  activeRun: Record<string, unknown> | null;
+  batchId: string | null;
+  lookupId: string | null;
+  records: Record<string, unknown>[];
+}): Record<string, unknown> | null {
+  if (input.lookupId === null) {
+    return null;
+  }
+
+  const activeRunId =
+    input.activeRun === null ? null : readStringField(input.activeRun, "runId");
+  if (
+    input.activeRun !== null &&
+    (activeRunId === input.lookupId || input.batchId === input.lookupId)
+  ) {
+    return input.activeRun;
+  }
+
+  const exactRun = input.records.find(
+    (record) => readStringField(record, "runId") === input.lookupId
+  );
+  if (exactRun !== undefined) {
+    return exactRun;
+  }
+
+  return (
+    [...input.records]
+      .reverse()
+      .find((record) => readStringField(record, "batchId") === input.lookupId) ??
+    null
+  );
 }
 
 function selectBatchReplayRunForArtifacts(input: {

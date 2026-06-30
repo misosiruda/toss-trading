@@ -896,12 +896,14 @@ function normalizeRunDetailView(
   const runs = value["runs"]
     .map(normalizeBatchReplayRunSummary)
     .filter((run): run is BatchReplayRunSummary => run !== null);
+  const selectedRun = normalizeBatchReplayRunSummary(value["selectedRun"]);
   const run = findRunDetailTargetRun({
     activeRun,
     batchId,
     batchStatus,
     lookupId: runId,
-    runs
+    runs,
+    selectedRun
   });
   const resolvedRunId = run?.runId ?? runId;
   const latestArtifactsRunId = artifacts?.runId ?? null;
@@ -934,17 +936,25 @@ function findRunDetailTargetRun({
   batchId,
   batchStatus,
   lookupId,
-  runs
+  runs,
+  selectedRun
 }: {
   activeRun: BatchReplayRunSummary | null;
   batchId: string | null;
   batchStatus: string | null;
   lookupId: string;
   runs: BatchReplayRunSummary[];
+  selectedRun: BatchReplayRunSummary | null;
 }): BatchReplayRunSummary | null {
   const directRun = runs.find((candidate) => candidate.runId === lookupId);
   if (directRun !== undefined) {
     return directRun;
+  }
+  if (
+    selectedRun !== null &&
+    (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)
+  ) {
+    return selectedRun;
   }
   if (activeRun !== null && activeRun.runId === lookupId) {
     return activeRun;
