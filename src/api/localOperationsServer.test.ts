@@ -3696,6 +3696,7 @@ test("local operations API returns no artifacts for missing requested batch repl
   const batchDir = join(storageBaseDir, "batch-replay", "aggregate-fallback");
   const runDir = join(batchDir, "runs", "run_0");
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const missingRunId = `stale_${"x".repeat(220)}`;
   const run = {
     ...batchReplayRunRecord(0, "completed"),
     batchId: "aggregate-fallback",
@@ -3726,7 +3727,7 @@ test("local operations API returns no artifacts for missing requested batch repl
   try {
     const result = await fetchJson(
       baseUrl,
-      "/batch/replay/runs?limit=10&includeLatestRunArtifacts=1&runId=stale_run_id"
+      `/batch/replay/runs?limit=10&includeLatestRunArtifacts=1&runId=${missingRunId}`
     );
     const runs = result.payload["runs"] as Array<Record<string, unknown>>;
 

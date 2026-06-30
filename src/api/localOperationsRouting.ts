@@ -138,7 +138,7 @@ function readRunLookupId(url: URL): string | null {
     return null;
   }
   const value = raw.trim();
-  return value.length > 0 && value.length <= 200 ? value : null;
+  return value.length > 0 ? value : null;
 }
 
 function readNow(options: LocalOperationsServerOptions): Date {
