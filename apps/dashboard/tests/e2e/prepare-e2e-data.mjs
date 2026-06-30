@@ -268,6 +268,64 @@ await writeFile(
   "utf8"
 );
 
+const historicalReplayDecision = {
+  packetId: "packet_replay_001",
+  summary: "Historical replay decision",
+  decisions: [
+    {
+      market: "KR",
+      symbol: "035420",
+      action: "VIRTUAL_BUY",
+      confidence: 0.7,
+      budgetKrw: 80_000,
+      thesis: "Historical replay thesis for risk gate E2E",
+      riskFactors: ["Replay risk factor"],
+      dataRefs: ["historical_replay:packet:packet_replay_001"],
+      expiresAt: "2026-06-27T00:05:00.000Z"
+    }
+  ]
+};
+
+await writeFile(
+  resolve(dataDir, "historical-replay-decisions.jsonl"),
+  `${JSON.stringify(historicalReplayDecision)}\n`,
+  "utf8"
+);
+
+await writeFile(
+  resolve(dataDir, "historical-replay-risk-decisions.jsonl"),
+  `${JSON.stringify({
+    riskDecisionId: "risk_replay_e2e_001",
+    packetId: "packet_replay_001",
+    market: "KR",
+    symbol: "035420",
+    action: "VIRTUAL_BUY",
+    approved: false,
+    rejectCodes: ["VIRTUAL_CASH_EXCEEDED"],
+    checkedRules: ["cash_available"],
+    createdAt: "2026-06-27T00:01:00.000Z"
+  })}\n`,
+  "utf8"
+);
+
+await writeFile(
+  resolve(dataDir, "historical-replay-trades.jsonl"),
+  `${JSON.stringify({
+    tradeId: "trade_replay_e2e_001",
+    packetId: "packet_replay_001",
+    decisionId: "decision_replay_e2e_001",
+    market: "KR",
+    symbol: "035420",
+    action: "VIRTUAL_BUY",
+    quantity: 1,
+    priceKrw: 80_000,
+    amountKrw: 80_000,
+    status: "VIRTUAL_REJECTED",
+    executedAt: "2026-06-27T00:01:00.000Z"
+  })}\n`,
+  "utf8"
+);
+
 const auditEvents = [
   {
     eventId: "audit_e2e_001",
@@ -277,6 +335,15 @@ const auditEvents = [
       "packet_e2e_001 005930 rejected account 1234-5678-901234 order ord_abcdef123456",
     maskedRefs: [],
     createdAt: "2026-06-27T00:01:00.000Z"
+  },
+  {
+    eventId: "audit_replay_e2e_001",
+    eventType: "VIRTUAL_RISK_REJECTED",
+    actor: "risk-engine",
+    summary:
+      "packet_replay_001 035420 rejected account 1234-5678-901234 order ord_abcdef123456",
+    maskedRefs: [],
+    createdAt: "2026-06-27T00:01:30.000Z"
   },
   {
     eventId: "audit_e2e_002",

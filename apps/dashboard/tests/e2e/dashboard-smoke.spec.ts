@@ -71,6 +71,54 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(
     page.getByRole("link", { name: /Strategy lab Buckets/i })
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Risk Gate Trace/i })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders risk gate trace detail without treating rejects as fills", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/risk-gate");
+
+  await expect(
+    page.getByRole("heading", { name: "Risk Gate Trace", exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Paper-only risk")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Decision to Risk Gate Trace" })
+  ).toBeVisible();
+  await expect(page.getByText("AI decision", { exact: true })).toBeVisible();
+  await expect(page.getByText("deterministic verdict", { exact: true })).toBeVisible();
+  await expect(page.getByText("simulated status", { exact: true })).toBeVisible();
+
+  const riskTraceTable = page.getByRole("table", {
+    name: "Risk gate trace table",
+  });
+  const rejectedTraceRow = riskTraceTable.getByRole("row").filter({
+    hasText: "packet_replay_001",
+  });
+  await expect(rejectedTraceRow).toContainText("KR:035420");
+  await expect(rejectedTraceRow).toContainText("VIRTUAL_BUY");
+  await expect(rejectedTraceRow).toContainText("risk rejected");
+  await expect(rejectedTraceRow).toContainText("not executed by risk gate");
+  await expect(rejectedTraceRow).toContainText("raw status rejected");
+  await expect(rejectedTraceRow).toContainText("VIRTUAL_CASH_EXCEEDED");
+  await expect(rejectedTraceRow).toContainText("audit_replay_e2e_001");
+  await expect(rejectedTraceRow).not.toContainText("filled");
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
@@ -104,13 +152,13 @@ test("renders audit event review without mutation controls", async ({ page }) =>
   await expect(page.getByText("Failure traces")).toBeVisible();
   await expect(page.getByText("Event Type Counts")).toBeVisible();
   const auditTable = page.getByRole("table");
-  await expect(auditTable.getByText("VIRTUAL_RISK_REJECTED")).toBeVisible();
+  await expect(auditTable.getByText("VIRTUAL_RISK_REJECTED")).toHaveCount(2);
   await expect(auditTable.getByText("AI_PROVIDER_FAILURE")).toBeVisible();
-  await expect(auditTable.getByText("risk_gate")).toBeVisible();
+  await expect(auditTable.getByText("risk_gate")).toHaveCount(2);
   await expect(auditTable.getByText("simulation")).toBeVisible();
   await expect(auditTable.getByText("failure", { exact: true })).toBeVisible();
-  await expect(auditTable.getByText("warning", { exact: true })).toBeVisible();
-  await expect(auditTable.getByText("ord_****")).toBeVisible();
+  await expect(auditTable.getByText("warning", { exact: true })).toHaveCount(2);
+  await expect(auditTable.getByText("ord_****")).toHaveCount(2);
   await expect(page.getByText("ord_abcdef123456")).toHaveCount(0);
   await expect(page.getByText("1234-5678-901234")).toHaveCount(0);
 
@@ -462,11 +510,18 @@ test("renders strategy bucket test lab with queued create boundary", async ({
       name: "Bucket test progress ratio"
     })
   ).toBeVisible();
-  const progressResponse = await request.get(
-    `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
-      createdTestId
-    )}/progress`
-  );
+  const progressUrl = `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
+    createdTestId
+  )}/progress`;
+  let progressResponse = await request.get(progressUrl);
+  for (
+    let attempt = 0;
+    attempt < 5 && progressResponse.status() !== 200;
+    attempt += 1
+  ) {
+    await page.waitForTimeout(200);
+    progressResponse = await request.get(progressUrl);
+  }
   expect(progressResponse.status()).toBe(200);
   const progressPayload = await progressResponse.json();
   expect(progressPayload).toMatchObject({

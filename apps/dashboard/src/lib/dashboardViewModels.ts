@@ -394,6 +394,12 @@ export interface AuditPageData {
   audit: ViewModelResult<DashboardAuditViewModel>;
 }
 
+export interface RiskGateTracePageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  riskGate: ViewModelResult<RiskGateTraceViewModel>;
+}
+
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
 const FETCH_TIMEOUT_MS = 2_000;
 
@@ -479,6 +485,23 @@ export async function readAuditPageData(): Promise<AuditPageData> {
     apiBaseLabel: apiConfig.label,
     fetchedAt,
     audit
+  };
+}
+
+export async function readRiskGateTracePageData(): Promise<RiskGateTracePageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const riskGate = await fetchViewModel<RiskGateTraceViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/risk-gate-trace?limit=30",
+    "risk-gate-trace",
+    isRiskGateTraceViewModel
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    riskGate
   };
 }
 

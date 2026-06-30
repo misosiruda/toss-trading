@@ -2581,3 +2581,23 @@
 - Fix review 1: matrix-derived seed는 원본 seed prefix, 원본 seed/bucket hash, bucket suffix를 조합하되 120자 제한 안으로 clamp합니다.
 - Fix review 2: derived candidate validation에서 schema error가 발생해도 `StrategyBucketTestCreateRequestError`로 변환해 Local Operations API가 fail-closed error response로 처리하도록 했습니다.
 - Fix review 3: matrix create backend test가 120자 seed를 사용하는 회귀 케이스를 검증하도록 보강했습니다.
+
+## Risk Gate Trace Detail Route
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 Next.js `/dashboard/risk-gate` read-only route와 기존 `/dashboard` risk gate summary component 재사용만 다룹니다.
+- backend risk engine rule, paper execution policy, audit schema, migration은 변경하지 않습니다.
+- replay runner 시작, retry action, live order surface, raw command execution surface는 추가하지 않습니다.
+
+### Review 2: ViewModel and UI Contract
+
+- `/dashboard/risk-gate`는 `GET /dashboard/view-model/risk-gate-trace?limit=30` ViewModel을 서버 컴포넌트에서 조회합니다.
+- trace row는 AI decision, normalized budget, deterministic risk verdict, simulated execution status, evidence refs, audit refs를 같은 행에서 연결합니다.
+- risk reject row는 `risk rejected`와 `not executed by risk gate`를 표시해 rejected decision이 filled execution처럼 보이지 않게 합니다.
+
+### Review 3: Tests and Docs
+
+- E2E fixture는 historical replay decision, risk decision, rejected trade, audit event를 명시적으로 준비합니다.
+- Playwright E2E는 `/dashboard/risk-gate`에서 rejected row가 `filled`를 포함하지 않고 mutation control이 없는지 검증합니다.
+- docs는 Risk Gate Trace 첫 구현 단위와 제외 범위를 분리해 risk/order/execution backend 변경이 이번 PR 범위가 아님을 명시합니다.
