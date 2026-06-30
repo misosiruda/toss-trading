@@ -569,7 +569,10 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /includeLatestRunArtifacts=1/);
     assert.match(dashboardScriptText, /\/audit\/events/);
     for (const routePath of LOCAL_OPERATIONS_API_ROUTES) {
-      if (routePath === "/dashboard/view-model/audit") {
+      if (
+        routePath === "/dashboard/view-model/audit" ||
+        routePath === "/dashboard/view-model/live-readiness"
+      ) {
         continue;
       }
       assert.equal(dashboardScriptText.includes(routePath), true, routePath);
@@ -2332,9 +2335,21 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     )}\n`,
     "utf8"
   );
-  const { server, baseUrl } = await startTestServer(storageBaseDir);
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_ENABLED: "true",
+      AI_DECISION_MODE: "paper_only",
+      BROKER_PROVIDER: "mock",
+      TOSS_OPEN_API_AUTH_ENABLED: "false",
+      TRADING_ENABLED: "false"
+    }
+  });
 
   try {
+    const liveReadiness = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/live-readiness"
+    );
     const portfolioCompliance = await fetchJson(
       baseUrl,
       "/dashboard/view-model/portfolio-compliance"
@@ -2359,9 +2374,25 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       `${baseUrl}/dashboard/view-model/validation-lab`,
       { method: "HEAD" }
     );
+    const liveReadinessHead = await fetch(
+      `${baseUrl}/dashboard/view-model/live-readiness`,
+      { method: "HEAD" }
+    );
     const auditHead = await fetch(`${baseUrl}/dashboard/view-model/audit`, {
       method: "HEAD"
     });
+    const liveReadinessEnvironment = liveReadiness.payload[
+      "environment"
+    ] as Record<string, unknown>;
+    const liveReadinessOfficialApi = liveReadiness.payload[
+      "officialApi"
+    ] as Record<string, unknown>;
+    const liveReadinessOrderGateway = liveReadiness.payload[
+      "orderGateway"
+    ] as Record<string, unknown>;
+    const liveReadinessChecks = liveReadiness.payload["checks"] as Array<
+      Record<string, unknown>
+    >;
     const bucketRows = portfolioCompliance.payload["bucketCompliance"] as Array<
       Record<string, unknown>
     >;
@@ -2413,12 +2444,43 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "sourceStatus"
     ] as Record<string, unknown>;
     const text = JSON.stringify({
+      liveReadiness: liveReadiness.payload,
       portfolioCompliance: portfolioCompliance.payload,
       strategyTestLab: strategyTestLab.payload,
       riskGateTrace: riskGateTrace.payload,
       validationLab: validationLab.payload,
       auditView: auditView.payload
     });
+
+    assert.equal(liveReadiness.response.status, 200);
+    assert.equal(liveReadiness.payload["mode"], "paper_only");
+    assert.equal(liveReadiness.payload["readOnly"], true);
+    assert.equal(liveReadiness.payload["viewModel"], "live-readiness");
+    assert.equal(liveReadiness.payload["status"], "ok");
+    assert.equal(liveReadinessEnvironment["tradingEnabled"], false);
+    assert.equal(liveReadinessEnvironment["brokerProvider"], "mock");
+    assert.equal(liveReadinessEnvironment["aiDecisionMode"], "paper_only");
+    assert.equal(liveReadinessEnvironment["aiDecisionEnabled"], true);
+    assert.equal(liveReadinessOfficialApi["authStatus"], "disabled");
+    assert.equal(
+      liveReadinessOfficialApi["snapshotStatus"],
+      "disabled"
+    );
+    assert.equal(liveReadinessOrderGateway["orderPlacementEnabled"], false);
+    assert.equal(liveReadinessOrderGateway["rawTossctlExecutionEnabled"], false);
+    assert.equal(liveReadinessOrderGateway["rawCodexExecEnabled"], false);
+    assert.equal(
+      liveReadinessChecks.find((check) => check["key"] === "trading_enabled")?.[
+        "value"
+      ],
+      "false"
+    );
+    assert.equal(
+      liveReadinessChecks.find(
+        (check) => check["key"] === "mcp_mutation_tool_exposure"
+      )?.["value"],
+      "not exposed"
+    );
 
     assert.equal(portfolioCompliance.response.status, 200);
     assert.equal(portfolioCompliance.payload["mode"], "paper_only");
@@ -2531,11 +2593,67 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
 
     assert.equal(validationHead.status, 200);
     assert.equal(await validationHead.text(), "");
+    assert.equal(liveReadinessHead.status, 200);
+    assert.equal(await liveReadinessHead.text(), "");
     assert.equal(auditHead.status, 200);
     assert.equal(await auditHead.text(), "");
     assert.equal(text.includes("1234-5678-901234"), false);
     assert.equal(text.includes("ord_abcdef123456"), false);
     assert.match(text, /\*\*\*\*/);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard live readiness exposes safe auth summary without secrets", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    env: {
+      AI_DECISION_ENABLED: "false",
+      AI_DECISION_MODE: "paper_only",
+      BROKER_PROVIDER: "official_toss_open_api",
+      TOSS_OPEN_API_AUTH_ENABLED: "true",
+      TOSS_OPEN_API_BASE_URL: "https://openapi.tossinvest.com",
+      TOSS_OPEN_API_CLIENT_ID: "local-client-id",
+      TOSS_OPEN_API_CLIENT_SECRET: "local-client-secret",
+      TRADING_ENABLED: "true"
+    }
+  });
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/live-readiness"
+    );
+    const officialApi = result.payload["officialApi"] as Record<
+      string,
+      unknown
+    >;
+    const orderGateway = result.payload["orderGateway"] as Record<
+      string,
+      unknown
+    >;
+    const checks = result.payload["checks"] as Array<Record<string, unknown>>;
+    const text = JSON.stringify(result.payload);
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "live-readiness");
+    assert.equal(result.payload["status"], "breach");
+    assert.equal(officialApi["authEnabled"], true);
+    assert.equal(officialApi["authStatus"], "ready");
+    assert.equal(officialApi["clientIdConfigured"], true);
+    assert.equal(officialApi["clientCredentialConfigured"], true);
+    assert.equal(officialApi["snapshotStatus"], "configured");
+    assert.equal(orderGateway["liveOrderGatewayStatus"], "disabled");
+    assert.equal(orderGateway["orderRouterConnectionStatus"], "not_connected");
+    assert.equal(orderGateway["mcpMutationToolExposureStatus"], "not_exposed");
+    assert.equal(orderGateway["orderPlacementEnabled"], false);
+    assert.equal(
+      checks.find((check) => check["key"] === "trading_enabled")?.["tone"],
+      "blocked"
+    );
+    assert.equal(text.includes("local-client-id"), false);
+    assert.equal(text.includes("local-client-secret"), false);
   } finally {
     await stopTestServer(server);
   }

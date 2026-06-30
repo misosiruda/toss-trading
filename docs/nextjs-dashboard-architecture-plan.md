@@ -136,6 +136,7 @@ apps/dashboard/
 | Route | 목적 | Mutation |
 | --- | --- | --- |
 | `/dashboard` | live trading disabled/readiness 상태 | 없음 |
+| `/dashboard/live-readiness` | official API read-only readiness와 live order gateway disabled 상태 | 없음 |
 | `/dashboard/portfolio` | strategy bucket, cash, hedge compliance | 없음 |
 | `/dashboard/risk-gate` | AI decision -> risk gate -> simulated execution trace | 없음 |
 | `/dashboard/validation` | policy 후보별 OOS, PBO-like, regime robustness 비교 | 없음 |
@@ -764,6 +765,7 @@ npm run check
 초기 구현 기준:
 
 - `GET /dashboard/view-model/portfolio-compliance`
+- `GET /dashboard/view-model/live-readiness`
 - `GET /dashboard/view-model/strategy-test-lab`
 - `GET /dashboard/view-model/risk-gate-trace`
 - `GET /dashboard/view-model/validation-lab`
@@ -800,6 +802,15 @@ npm run check
 - backend `ValidationLabViewModel`은 selection metric, selected candidate key, candidate count, split별 train/validation/test return sample을 read-only summary로 제공한다.
 - 화면은 best run 단일 선택을 성과 보장처럼 표시하지 않고, 후보별 split metric과 holdout degradation count를 비교 정보로만 렌더링한다.
 - 이 단계는 replay 실행, strategy selection 자동화, policy mutation, live order surface를 추가하지 않는다.
+
+세 번째 구현 단위:
+
+- Local Operations API에 `GET /dashboard/view-model/live-readiness` read-only endpoint를 둔다.
+- endpoint는 `TRADING_ENABLED`, `BROKER_PROVIDER`, `AI_DECISION_MODE`, official Open API auth safe summary, account snapshot config readiness, live order gateway disabled 상태를 하나의 ViewModel로 반환한다.
+- official auth credential 값은 응답에 포함하지 않고, `clientIdConfigured`, `clientCredentialConfigured`, `issueCodes` 같은 safe summary만 반환한다.
+- `/dashboard/live-readiness` Server Component는 이 ViewModel만 조회해 readiness check와 gateway exposure를 렌더링한다.
+- `/dashboard`에는 상세 화면 링크만 추가하고 기존 portfolio, strategy lab, risk gate, validation lab 집계는 그대로 유지한다.
+- 이 단계는 official API 실제 호출, account snapshot 조회, auth token 발급, live order gateway 연결, broker mutation, raw command 실행 surface를 추가하지 않는다.
 
 ### N4. Paper-only policy builder
 

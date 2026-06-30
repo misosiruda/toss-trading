@@ -22,6 +22,11 @@ import type {
 } from "../domain/schemas.js";
 import { summarizePortfolioDownsideExposure } from "../paper/hedgePolicy.js";
 import { DEFAULT_MIN_CASH_RESERVE_RATIO } from "../paper/riskPolicy.js";
+import {
+  readTossOpenApiAuthConfig,
+  summarizeTossOpenApiAuthConfig,
+  type TossOpenApiAuthConfigStatus
+} from "../config/tossOpenApiAuthConfig.js";
 import { maskSensitiveText } from "../security/masking.js";
 
 const STRATEGY_BUCKETS = [
@@ -35,6 +40,7 @@ const STRATEGY_BUCKETS = [
 type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
 type JsonFileStatus = "missing" | "ok" | "corrupt";
 type JsonlReadStatus = "missing" | "ok" | "degraded";
+type LiveReadinessTone = "ok" | "watch" | "blocked";
 type RiskGateTraceArtifactFamily = "historical_replay" | "virtual";
 type MarketRegimeView =
   | "bull"
@@ -58,6 +64,54 @@ interface JsonlRead {
   status: JsonlReadStatus;
   records: Record<string, unknown>[];
   corruptLineCount: number;
+}
+
+interface LiveReadinessCheck {
+  key:
+    | "trading_enabled"
+    | "broker_provider"
+    | "official_auth_config"
+    | "read_only_account_snapshot"
+    | "live_order_gateway"
+    | "order_router_connection"
+    | "mcp_mutation_tool_exposure";
+  label: string;
+  value: string;
+  tone: LiveReadinessTone;
+  detail: string;
+}
+
+export interface LiveReadinessViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "live-readiness";
+  generatedAt: string;
+  environment: {
+    tradingEnabled: boolean;
+    brokerProvider: string;
+    aiDecisionMode: string;
+    aiDecisionEnabled: boolean;
+  };
+  officialApi: {
+    authEnabled: boolean;
+    authStatus: TossOpenApiAuthConfigStatus;
+    baseUrl: string;
+    clientIdConfigured: boolean;
+    clientCredentialConfigured: boolean;
+    issueCodes: string[];
+    snapshotStatus: "disabled" | "configured" | "invalid";
+  };
+  orderGateway: {
+    liveOrderGatewayStatus: "disabled";
+    orderRouterConnectionStatus: "not_connected";
+    mcpMutationToolExposureStatus: "not_exposed";
+    orderPlacementEnabled: false;
+    rawTossctlExecutionEnabled: false;
+    rawCodexExecEnabled: false;
+  };
+  checks: LiveReadinessCheck[];
+  warnings: string[];
+  status: DashboardViewModelStatus;
 }
 
 interface BucketComplianceRow {
@@ -450,6 +504,145 @@ export interface DashboardAuditViewModel {
   };
   warnings: string[];
   status: DashboardViewModelStatus;
+}
+
+export async function readDashboardLiveReadinessViewModel(
+  env: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date()
+): Promise<LiveReadinessViewModel> {
+  const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
+  const tradingEnabled = env.TRADING_ENABLED === "true";
+  const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "disabled";
+  const aiDecisionEnabled = env.AI_DECISION_ENABLED === "true";
+  const authSummary = summarizeTossOpenApiAuthConfig(
+    readTossOpenApiAuthConfig(env)
+  );
+  const snapshotStatus =
+    authSummary.status === "ready"
+      ? "configured"
+      : authSummary.status === "invalid"
+        ? "invalid"
+        : "disabled";
+  const warnings = [
+    ...(tradingEnabled
+      ? ["TRADING_ENABLED=true is outside the paper-only dashboard boundary"]
+      : []),
+    ...(brokerProvider !== "mock"
+      ? [`BROKER_PROVIDER=${brokerProvider} is reported only; no mutation path is enabled`]
+      : []),
+    ...(authSummary.status === "invalid"
+      ? ["Toss Open API auth config is invalid; read-only account snapshot is unavailable"]
+      : [])
+  ];
+  const checks: LiveReadinessCheck[] = [
+    {
+      key: "trading_enabled",
+      label: "TRADING_ENABLED",
+      value: String(tradingEnabled),
+      tone: tradingEnabled ? "blocked" : "ok",
+      detail: tradingEnabled
+        ? "Paper-only dashboard treats live trading enablement as a boundary breach."
+        : "Live trading is disabled for this operations surface."
+    },
+    {
+      key: "broker_provider",
+      label: "BROKER_PROVIDER",
+      value: brokerProvider,
+      tone: brokerProvider === "mock" ? "ok" : "watch",
+      detail:
+        brokerProvider === "mock"
+          ? "Mock broker provider is the expected paper-only default."
+          : "Provider is surfaced for operator awareness only; order placement remains disabled."
+    },
+    {
+      key: "official_auth_config",
+      label: "Official API auth",
+      value: authSummary.status,
+      tone:
+        authSummary.status === "ready"
+          ? "ok"
+          : authSummary.status === "invalid"
+            ? "blocked"
+            : "watch",
+      detail:
+        authSummary.status === "ready"
+          ? "Official read-only auth config is present; secret values are not exposed."
+          : authSummary.status === "invalid"
+            ? `Invalid safe auth summary: ${authSummary.issues
+                .map((issue) => issue.code)
+                .join(", ")}`
+            : "Official read-only auth is disabled by default."
+    },
+    {
+      key: "read_only_account_snapshot",
+      label: "Read-only account snapshot",
+      value: snapshotStatus,
+      tone: authSummary.status === "invalid" ? "blocked" : "watch",
+      detail:
+        snapshotStatus === "configured"
+          ? "Read-only account snapshot can be wired through the official API reader."
+          : "No live account snapshot is pulled by this readiness ViewModel."
+    },
+    {
+      key: "live_order_gateway",
+      label: "Live order gateway",
+      value: "disabled",
+      tone: "blocked",
+      detail: "No live order gateway is enabled from the dashboard surface."
+    },
+    {
+      key: "order_router_connection",
+      label: "OrderRouter",
+      value: "not connected",
+      tone: "blocked",
+      detail: "Dashboard does not connect to a live OrderRouter."
+    },
+    {
+      key: "mcp_mutation_tool_exposure",
+      label: "MCP mutation tools",
+      value: "not exposed",
+      tone: "blocked",
+      detail: "No place_order, raw tossctl, or raw codex exec tool is exposed."
+    }
+  ];
+
+  return {
+    mode: "paper_only",
+    readOnly: true,
+    viewModel: "live-readiness",
+    generatedAt: now.toISOString(),
+    environment: {
+      tradingEnabled,
+      brokerProvider,
+      aiDecisionMode,
+      aiDecisionEnabled
+    },
+    officialApi: {
+      authEnabled: authSummary.enabled,
+      authStatus: authSummary.status,
+      baseUrl: authSummary.baseUrl,
+      clientIdConfigured: authSummary.hasClientId,
+      clientCredentialConfigured: authSummary.hasClientSecret,
+      issueCodes: authSummary.issues.map((issue) => issue.code),
+      snapshotStatus
+    },
+    orderGateway: {
+      liveOrderGatewayStatus: "disabled",
+      orderRouterConnectionStatus: "not_connected",
+      mcpMutationToolExposureStatus: "not_exposed",
+      orderPlacementEnabled: false,
+      rawTossctlExecutionEnabled: false,
+      rawCodexExecEnabled: false
+    },
+    checks,
+    warnings,
+    status:
+      tradingEnabled || authSummary.status === "invalid"
+        ? "breach"
+        : brokerProvider === "mock"
+          ? "ok"
+          : "watch"
+  };
 }
 
 export async function readDashboardPortfolioComplianceViewModel(

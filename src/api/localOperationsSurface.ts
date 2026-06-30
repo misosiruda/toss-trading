@@ -28,6 +28,7 @@ export const LOCAL_OPERATIONS_API_ROUTES = [
   "/research/replay/report",
   "/batch/replay/report",
   "/batch/replay/runs",
+  "/dashboard/view-model/live-readiness",
   "/dashboard/view-model/portfolio-compliance",
   "/dashboard/view-model/strategy-test-lab",
   "/dashboard/view-model/risk-gate-trace",

@@ -2621,3 +2621,23 @@
 - Playwright E2E는 `/dashboard/validation`에서 candidate rows, selected-in-train badge, recommendation disclaimer, mutation control 부재를 검증합니다.
 - horizontal scroll table은 keyboard focus가 가능하게 처리해 axe smoke 기준을 유지합니다.
 - docs는 Validation Lab 첫 구현 단위와 제외 범위를 분리해 runner/recommendation/live order surface가 이번 PR 범위가 아님을 명시합니다.
+
+## Live Readiness Detail Route
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 Local Operations API의 `GET /dashboard/view-model/live-readiness` read-only endpoint와 Next.js `/dashboard/live-readiness` 상세 화면만 다룹니다.
+- official API 실제 호출, auth token 발급, account snapshot 조회, live order gateway 연결, broker mutation, raw command 실행 surface는 추가하지 않습니다.
+- `/dashboard`에는 상세 화면 링크만 추가하고 기존 4개 ViewModel 집계 범위는 유지합니다.
+
+### Review 2: ViewModel and Secret Handling
+
+- `LiveReadinessViewModel`은 `TRADING_ENABLED`, `BROKER_PROVIDER`, `AI_DECISION_MODE`, official Open API auth safe summary, gateway disabled 상태를 분리해 반환합니다.
+- official auth config는 기존 safe summary를 재사용하고 `clientIdConfigured`, `clientCredentialConfigured`, `issueCodes`만 노출하며 credential value는 응답 JSON에 포함하지 않습니다.
+- `TRADING_ENABLED=true` 또는 invalid auth config는 readiness status를 breach로 표시하지만 주문 가능 상태로 전환하지 않습니다.
+
+### Review 3: Tests and UI Contract
+
+- backend 통합 테스트는 endpoint, HEAD 응답, default paper-only boundary, secret value 미노출을 검증합니다.
+- dashboard unit test는 `readLiveReadinessPageData`가 `GET /dashboard/view-model/live-readiness`를 no-store로 호출하고 contract를 검증하는지 확인합니다.
+- Playwright E2E는 `/dashboard/live-readiness`에서 readiness check, gateway exposure, mutation control 부재, axe smoke를 검증합니다.

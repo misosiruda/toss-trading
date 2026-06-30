@@ -1,6 +1,7 @@
 import { buildPaperDailyReport } from "../reports/paperDailyReport.js";
 import {
   readDashboardAuditViewModel,
+  readDashboardLiveReadinessViewModel,
   readDashboardPortfolioComplianceViewModel,
   readDashboardRiskGateTraceViewModel,
   readDashboardStrategyBucketTestProgressViewModel,
@@ -84,6 +85,8 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
       includeLatestRunArtifacts:
         url.searchParams.get("includeLatestRunArtifacts") === "1"
     }),
+  "/dashboard/view-model/live-readiness": (_url, options) =>
+    readDashboardLiveReadinessViewModel(options.env, readNow(options)),
   "/dashboard/view-model/portfolio-compliance": (_url, options) =>
     readDashboardPortfolioComplianceViewModel(options.storageBaseDir),
   "/dashboard/view-model/strategy-test-lab": (_url, options) =>

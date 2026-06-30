@@ -82,6 +82,13 @@ export default async function DashboardPage() {
               </Link>
               <Link
                 className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/live-readiness"
+              >
+                <span className="text-[var(--muted)]">Live Readiness</span>
+                <span className="text-[var(--accent)]">Status</span>
+              </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
                 href="/dashboard/risk-gate"
               >
                 <span className="text-[var(--muted)]">Risk Gate</span>
