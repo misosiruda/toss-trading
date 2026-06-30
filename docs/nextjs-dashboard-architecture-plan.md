@@ -647,6 +647,20 @@ sequenceDiagram
 - simulated fill status
 - audit references
 
+첫 번째 구현 단위:
+
+- Next.js `/dashboard/risk-gate` route를 추가해 `GET /dashboard/view-model/risk-gate-trace` read-only ViewModel을 서버 컴포넌트에서 조회한다.
+- 화면은 AI decision, normalized budget, deterministic risk verdict, reject code, simulated execution status, audit reference를 한 trace row에서 연결해서 보여준다.
+- rejected trace는 `risk rejected`와 `not executed by risk gate`를 별도 표기하고, raw simulated status를 보조 정보로만 둔다.
+- `/dashboard` 요약 패널과 전용 `/dashboard/risk-gate` 화면은 같은 route-local 렌더링 컴포넌트를 공유한다.
+- Playwright E2E는 rejected decision row가 `filled`로 표시되지 않고 mutation control이 없는지 검증한다.
+
+제외 범위:
+
+- risk engine rule, order execution policy, audit schema, migration은 변경하지 않는다.
+- replay runner 시작, SSE stream, retry action, live order surface는 추가하지 않는다.
+- browser client는 risk trace metric을 재계산하지 않고 backend ViewModel을 렌더링만 한다.
+
 ### Validation Lab
 
 목적:
