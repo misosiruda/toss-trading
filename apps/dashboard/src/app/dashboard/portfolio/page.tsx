@@ -258,8 +258,8 @@ function ComplianceBreachList({
             key: "hedge",
             label: "Hedge",
             status: data.hedgeCompliance.status,
-            detail: `coverage ${formatRatio(
-              data.hedgeCompliance.hedgeExposureRatio
+            detail: `coverage ${formatNullableRatio(
+              data.complianceAnalytics.hedgeEffectiveness.hedgeCoverageRatio
             )}`
           }
         ]),
@@ -290,6 +290,7 @@ function ComplianceBreachList({
       {breaches.map((breach) => (
         <li
           className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3"
+          data-testid={`portfolio-breach-${breach.key}`}
           key={breach.key}
         >
           <div className="flex items-start justify-between gap-3">

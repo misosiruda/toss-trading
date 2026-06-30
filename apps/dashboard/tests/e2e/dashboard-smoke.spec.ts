@@ -119,6 +119,9 @@ test("renders portfolio compliance detail without mutation controls", async ({
   await expect(
     page.getByRole("heading", { name: "Compliance Breaches" })
   ).toBeVisible();
+  await expect(page.getByTestId("portfolio-breach-hedge")).toContainText(
+    "coverage missing"
+  );
   await expect(
     page.getByRole("heading", { name: "Compliance Analytics" })
   ).toBeVisible();
