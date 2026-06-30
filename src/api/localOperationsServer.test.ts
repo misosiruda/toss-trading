@@ -3690,6 +3690,59 @@ test("local operations API selects requested batch replay run id", async () => {
   }
 });
 
+test("local operations API returns no artifacts for missing requested batch replay run id", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const batchDir = join(storageBaseDir, "batch-replay", "aggregate-fallback");
+  const runDir = join(batchDir, "runs", "run_0");
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const run = {
+    ...batchReplayRunRecord(0, "completed"),
+    batchId: "aggregate-fallback",
+    runId: "run_0",
+    storageBaseDir: runDir,
+    reportPath: join(runDir, "historical-replay-report.json")
+  };
+
+  await mkdir(runDir, { recursive: true });
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(batchReplayAggregateReport(runsPath))}\n`,
+    "utf8"
+  );
+  await writeFile(runsPath, `${JSON.stringify(run)}\n`, "utf8");
+  await writeFile(
+    join(runDir, "historical-replay-progress.json"),
+    `${JSON.stringify({
+      ...historicalReplayProgress(),
+      status: "completed",
+      completedAt: "2026-06-11T09:01:00+09:00"
+    })}\n`,
+    "utf8"
+  );
+
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/batch/replay/runs?limit=10&includeLatestRunArtifacts=1&runId=stale_run_id"
+    );
+    const runs = result.payload["runs"] as Array<Record<string, unknown>>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["readOnly"], true);
+    assert.equal(result.payload["sourceRunsPath"], runsPath);
+    assert.equal(result.payload["count"], 1);
+    assert.equal(result.payload["totalCount"], 1);
+    assert.equal(runs[0]?.["runId"], "run_0");
+    assert.equal(result.payload["selectedRun"], null);
+    assert.equal(result.payload["latestRunArtifacts"], null);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("local operations API can include latest batch run artifacts", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const batchDir = join(storageBaseDir, "..", "batch-replay", "paper_sim_single");

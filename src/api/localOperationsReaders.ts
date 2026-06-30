@@ -504,6 +504,8 @@ function selectBatchReplayRunForArtifacts(input: {
     if (latestBatchRun !== undefined) {
       return latestBatchRun;
     }
+
+    return null;
   }
 
   return (
