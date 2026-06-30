@@ -2621,3 +2621,44 @@
 - Playwright E2E는 `/dashboard/validation`에서 candidate rows, selected-in-train badge, recommendation disclaimer, mutation control 부재를 검증합니다.
 - horizontal scroll table은 keyboard focus가 가능하게 처리해 axe smoke 기준을 유지합니다.
 - docs는 Validation Lab 첫 구현 단위와 제외 범위를 분리해 runner/recommendation/live order surface가 이번 PR 범위가 아님을 명시합니다.
+
+## Live Readiness Detail Route
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 Local Operations API의 `GET /dashboard/view-model/live-readiness` read-only endpoint와 Next.js `/dashboard/live-readiness` 상세 화면만 다룹니다.
+- official API 실제 호출, auth token 발급, account snapshot 조회, live order gateway 연결, broker mutation, raw command 실행 surface는 추가하지 않습니다.
+- `/dashboard`에는 상세 화면 링크만 추가하고 기존 4개 ViewModel 집계 범위는 유지합니다.
+
+### Review 2: ViewModel and Secret Handling
+
+- `LiveReadinessViewModel`은 `TRADING_ENABLED`, `BROKER_PROVIDER`, `AI_DECISION_MODE`, official Open API auth safe summary, gateway disabled 상태를 분리해 반환합니다.
+- official auth config는 기존 safe summary를 재사용하고 `clientIdConfigured`, `clientCredentialConfigured`, `issueCodes`만 노출하며 credential value는 응답 JSON에 포함하지 않습니다.
+- `TRADING_ENABLED=true` 또는 invalid auth config는 readiness status를 breach로 표시하지만 주문 가능 상태로 전환하지 않습니다.
+
+### Review 3: Tests and UI Contract
+
+- backend 통합 테스트는 endpoint, HEAD 응답, default paper-only boundary, secret value 미노출을 검증합니다.
+- dashboard unit test는 `readLiveReadinessPageData`가 `GET /dashboard/view-model/live-readiness`를 no-store로 호출하고 contract를 검증하는지 확인합니다.
+- Playwright E2E는 `/dashboard/live-readiness`에서 readiness check, gateway exposure, mutation control 부재, axe smoke를 검증합니다.
+
+### Codex Review Fix
+
+- Review finding: `AI_DECISION_MODE`가 누락된 기본 배포에서 live readiness ViewModel이 `disabled`로 표시되어 기존 paper-only backend gate의 기본값과 어긋났습니다.
+- Fix review 1: `readDashboardLiveReadinessViewModel`의 missing `AI_DECISION_MODE` 기본값을 `paper_only`로 맞췄습니다.
+- Fix review 2: `AI_DECISION_MODE`가 없는 env에서도 `/dashboard/view-model/live-readiness`가 `environment.aiDecisionMode: "paper_only"`를 반환하는 통합 테스트를 추가했습니다.
+- Fix review 3: 이 변경은 readiness 표시 정규화만 다루며 `AI_DECISION_ENABLED` 또는 주문 가능 상태를 변경하지 않습니다.
+
+### Codex Review Fix 2
+
+- Review finding: `AI_DECISION_MODE`가 `paper_only`가 아닌 값이어도 `TRADING_ENABLED=false`, `BROKER_PROVIDER=mock`이면 live readiness status가 `ok`로 남았습니다.
+- Fix review 1: non-paper `AI_DECISION_MODE`를 paper-only dashboard boundary breach로 분류하고 warning을 추가했습니다.
+- Fix review 2: `ai_decision_mode` readiness check를 추가해 설정값과 blocked tone을 별도 check row로 노출합니다.
+- Fix review 3: `AI_DECISION_MODE=live`에서도 live order gateway, OrderRouter, MCP mutation tool exposure는 계속 disabled/not connected/not exposed로 남는 read-only 경계를 유지합니다.
+
+### Codex Review Fix 3
+
+- Review finding: `TOSS_OPEN_API_BASE_URL`에 URL userinfo, query, hash credential이 포함되면 safe auth summary의 `baseUrl`로 노출될 수 있었습니다.
+- Fix review 1: `summarizeTossOpenApiAuthConfig`에서 summary `baseUrl`을 origin/path만 남기도록 sanitize했습니다.
+- Fix review 2: malformed URL은 safe summary에서 raw value 대신 `[invalid-url]`로 표시해 credential-like text 노출을 막습니다.
+- Fix review 3: config 단위 테스트와 live readiness 통합 테스트가 URL userinfo/query/hash token 미노출을 검증합니다.

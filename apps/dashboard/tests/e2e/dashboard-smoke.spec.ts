@@ -72,10 +72,69 @@ test("renders paper-only dashboard readiness without live mutation controls", as
     page.getByRole("link", { name: /Strategy lab Buckets/i })
   ).toBeVisible();
   await expect(
+    page.getByRole("link", { name: /Live Readiness Status/i })
+  ).toBeVisible();
+  await expect(
     page.getByRole("link", { name: /Risk Gate Trace/i })
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Validation Lab/i })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders live readiness detail without live mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/live-readiness");
+
+  await expect(
+    page.getByRole("heading", { name: "Live Readiness", exact: true })
+  ).toBeVisible();
+  await expect(page.getByText("Paper-only readiness")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByLabel("Live readiness safety boundary")
+      .getByText("not exposed")
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Live Readiness Detail" })
+  ).toBeVisible();
+  await expect(page.getByText("TRADING_ENABLED").first()).toBeVisible();
+  await expect(page.getByText("BROKER_PROVIDER").first()).toBeVisible();
+  await expect(page.getByText("AI_DECISION_MODE").first()).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Official Read-only API" })
+  ).toBeVisible();
+  await expect(page.getByText("Credential values are not included")).toBeVisible();
+
+  const gatewayPanel = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Gateway Exposure" }),
+  });
+  await expect(gatewayPanel.getByText("disabled").first()).toBeVisible();
+  await expect(gatewayPanel.getByText("not_connected")).toBeVisible();
+  await expect(gatewayPanel.getByText("not_exposed")).toBeVisible();
+  await expect(gatewayPanel.getByText("false").first()).toBeVisible();
+
+  await expect(page.getByText("Readiness Checks")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "TRADING_ENABLED" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OrderRouter" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "MCP mutation tools" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("No place_order, raw tossctl, or raw codex exec tool is exposed.")
   ).toBeVisible();
 
   await expect(

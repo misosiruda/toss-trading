@@ -59,3 +59,87 @@ test("validation lab fallback preserves existing candidate comparison", async ()
 
   assert.equal(withValidationLabCandidateComparisonFallback(payload), payload);
 });
+
+test("live readiness page data reads safe ViewModel contract", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  const originalOpsBaseUrl = process.env.OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  delete process.env.OPS_API_BASE_URL;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(
+      String(url),
+      "http://ops.test/dashboard/view-model/live-readiness"
+    );
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    return new Response(
+      JSON.stringify({
+        mode: "paper_only",
+        readOnly: true,
+        viewModel: "live-readiness",
+        generatedAt: "2026-06-30T00:00:00.000Z",
+        environment: {
+          tradingEnabled: false,
+          brokerProvider: "mock",
+          aiDecisionMode: "paper_only",
+          aiDecisionEnabled: true
+        },
+        officialApi: {
+          authEnabled: false,
+          authStatus: "disabled",
+          baseUrl: "https://openapi.tossinvest.com",
+          clientIdConfigured: false,
+          clientCredentialConfigured: false,
+          issueCodes: [],
+          snapshotStatus: "disabled"
+        },
+        orderGateway: {
+          liveOrderGatewayStatus: "disabled",
+          orderRouterConnectionStatus: "not_connected",
+          mcpMutationToolExposureStatus: "not_exposed",
+          orderPlacementEnabled: false,
+          rawTossctlExecutionEnabled: false,
+          rawCodexExecEnabled: false
+        },
+        checks: [
+          {
+            key: "trading_enabled",
+            label: "TRADING_ENABLED",
+            value: "false",
+            tone: "ok",
+            detail: "Live trading is disabled for this operations surface."
+          }
+        ],
+        warnings: [],
+        status: "ok"
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const { readLiveReadinessPageData } = await loadDashboardViewModelsModule();
+    const pageData = await readLiveReadinessPageData();
+
+    assert.equal(pageData.apiBaseLabel, "configured operations endpoint");
+    assert.equal(pageData.liveReadiness.status, "ok");
+    assert.equal(pageData.liveReadiness.data.viewModel, "live-readiness");
+    assert.equal(
+      pageData.liveReadiness.data.orderGateway.orderPlacementEnabled,
+      false
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+    if (originalOpsBaseUrl === undefined) {
+      delete process.env.OPS_API_BASE_URL;
+    } else {
+      process.env.OPS_API_BASE_URL = originalOpsBaseUrl;
+    }
+  }
+});

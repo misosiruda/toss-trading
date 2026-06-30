@@ -9,6 +9,7 @@ export type ViewModelStatus = "ok" | "watch" | "breach" | "missing";
 export type JsonReadStatus = "missing" | "ok" | "corrupt" | "degraded";
 export type FetchStatus = "ok" | "offline" | "invalid";
 export type DashboardViewModelName =
+  | "live-readiness"
   | "portfolio-compliance"
   | "strategy-test-lab"
   | "strategy-test-progress"
@@ -129,6 +130,55 @@ export interface ExposureBucket {
   key: string;
   exposureKrw: number;
   exposureRatio: number;
+}
+
+export interface LiveReadinessViewModel {
+  mode: "paper_only";
+  readOnly: true;
+  viewModel: "live-readiness";
+  generatedAt: string;
+  environment: {
+    tradingEnabled: boolean;
+    brokerProvider: string;
+    aiDecisionMode: string;
+    aiDecisionEnabled: boolean;
+  };
+  officialApi: {
+    authEnabled: boolean;
+    authStatus: "disabled" | "ready" | "invalid";
+    baseUrl: string;
+    clientIdConfigured: boolean;
+    clientCredentialConfigured: boolean;
+    issueCodes: string[];
+    snapshotStatus: "disabled" | "configured" | "invalid";
+  };
+  orderGateway: {
+    liveOrderGatewayStatus: "disabled";
+    orderRouterConnectionStatus: "not_connected";
+    mcpMutationToolExposureStatus: "not_exposed";
+    orderPlacementEnabled: false;
+    rawTossctlExecutionEnabled: false;
+    rawCodexExecEnabled: false;
+  };
+  checks: LiveReadinessCheck[];
+  warnings: string[];
+  status: ViewModelStatus;
+}
+
+export interface LiveReadinessCheck {
+  key:
+    | "trading_enabled"
+    | "broker_provider"
+    | "ai_decision_mode"
+    | "official_auth_config"
+    | "read_only_account_snapshot"
+    | "live_order_gateway"
+    | "order_router_connection"
+    | "mcp_mutation_tool_exposure";
+  label: string;
+  value: string;
+  tone: "ok" | "watch" | "blocked";
+  detail: string;
 }
 
 export interface StrategyBucketTestLabViewModel {
@@ -382,6 +432,12 @@ export interface DashboardViewModels {
   validationLab: ViewModelResult<ValidationLabViewModel>;
 }
 
+export interface LiveReadinessPageData {
+  apiBaseLabel: string;
+  fetchedAt: string;
+  liveReadiness: ViewModelResult<LiveReadinessViewModel>;
+}
+
 export interface StrategyTestLabPageData {
   apiBaseLabel: string;
   fetchedAt: string;
@@ -458,6 +514,23 @@ export function countOnlineViewModels(viewModels: DashboardViewModels): number {
     viewModels.riskGate,
     viewModels.validationLab
   ].filter((result) => result.status === "ok").length;
+}
+
+export async function readLiveReadinessPageData(): Promise<LiveReadinessPageData> {
+  const apiConfig = readOperationsApiConfig();
+  const fetchedAt = new Date().toISOString();
+  const liveReadiness = await fetchViewModel<LiveReadinessViewModel>(
+    apiConfig.baseUrl,
+    "/dashboard/view-model/live-readiness",
+    "live-readiness",
+    isLiveReadinessViewModel
+  );
+
+  return {
+    apiBaseLabel: apiConfig.label,
+    fetchedAt,
+    liveReadiness
+  };
 }
 
 export async function readStrategyTestLabPageData(): Promise<StrategyTestLabPageData> {
@@ -631,6 +704,24 @@ function isViewModelPayload(
   );
 }
 
+function isLiveReadinessViewModel(
+  value: unknown
+): value is LiveReadinessViewModel {
+  if (!isViewModelPayload(value, "live-readiness")) {
+    return false;
+  }
+  return (
+    typeof value.generatedAt === "string" &&
+    isLiveReadinessEnvironment(value.environment) &&
+    isLiveReadinessOfficialApi(value.officialApi) &&
+    isLiveReadinessOrderGateway(value.orderGateway) &&
+    Array.isArray(value.checks) &&
+    value.checks.every(isLiveReadinessCheck) &&
+    isStringArray(value.warnings) &&
+    isViewModelStatus(value.status)
+  );
+}
+
 function isPolicyComplianceViewModel(
   value: unknown
 ): value is PolicyComplianceViewModel {
@@ -776,6 +867,71 @@ function isDashboardAuditEventRow(
       value["category"] === "system") &&
     typeof value["rejectedAction"] === "boolean" &&
     typeof value["failureTrace"] === "boolean"
+  );
+}
+
+function isLiveReadinessEnvironment(
+  value: unknown
+): value is LiveReadinessViewModel["environment"] {
+  return (
+    isRecord(value) &&
+    typeof value["tradingEnabled"] === "boolean" &&
+    typeof value["brokerProvider"] === "string" &&
+    typeof value["aiDecisionMode"] === "string" &&
+    typeof value["aiDecisionEnabled"] === "boolean"
+  );
+}
+
+function isLiveReadinessOfficialApi(
+  value: unknown
+): value is LiveReadinessViewModel["officialApi"] {
+  return (
+    isRecord(value) &&
+    typeof value["authEnabled"] === "boolean" &&
+    (value["authStatus"] === "disabled" ||
+      value["authStatus"] === "ready" ||
+      value["authStatus"] === "invalid") &&
+    typeof value["baseUrl"] === "string" &&
+    typeof value["clientIdConfigured"] === "boolean" &&
+    typeof value["clientCredentialConfigured"] === "boolean" &&
+    isStringArray(value["issueCodes"]) &&
+    (value["snapshotStatus"] === "disabled" ||
+      value["snapshotStatus"] === "configured" ||
+      value["snapshotStatus"] === "invalid")
+  );
+}
+
+function isLiveReadinessOrderGateway(
+  value: unknown
+): value is LiveReadinessViewModel["orderGateway"] {
+  return (
+    isRecord(value) &&
+    value["liveOrderGatewayStatus"] === "disabled" &&
+    value["orderRouterConnectionStatus"] === "not_connected" &&
+    value["mcpMutationToolExposureStatus"] === "not_exposed" &&
+    value["orderPlacementEnabled"] === false &&
+    value["rawTossctlExecutionEnabled"] === false &&
+    value["rawCodexExecEnabled"] === false
+  );
+}
+
+function isLiveReadinessCheck(value: unknown): value is LiveReadinessCheck {
+  return (
+    isRecord(value) &&
+    (value["key"] === "trading_enabled" ||
+      value["key"] === "broker_provider" ||
+      value["key"] === "ai_decision_mode" ||
+      value["key"] === "official_auth_config" ||
+      value["key"] === "read_only_account_snapshot" ||
+      value["key"] === "live_order_gateway" ||
+      value["key"] === "order_router_connection" ||
+      value["key"] === "mcp_mutation_tool_exposure") &&
+    typeof value["label"] === "string" &&
+    typeof value["value"] === "string" &&
+    (value["tone"] === "ok" ||
+      value["tone"] === "watch" ||
+      value["tone"] === "blocked") &&
+    typeof value["detail"] === "string"
   );
 }
 

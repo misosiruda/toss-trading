@@ -83,3 +83,41 @@ test("Toss Open API auth summary does not expose credential values", () => {
   assert.equal(serialized.includes("local-client-id"), false);
   assert.equal(serialized.includes("local-client-secret"), false);
 });
+
+test("Toss Open API auth summary sanitizes base URL credentials", () => {
+  const config = readTossOpenApiAuthConfig({
+    TOSS_OPEN_API_AUTH_ENABLED: "true",
+    TOSS_OPEN_API_BASE_URL:
+      "https://url-user:url-secret@openapi.tossinvest.com/v1?token=url-token#frag",
+    TOSS_OPEN_API_CLIENT_ID: "local-client-id",
+    TOSS_OPEN_API_CLIENT_SECRET: "local-client-secret"
+  });
+  const summary = summarizeTossOpenApiAuthConfig(config);
+  const serialized = JSON.stringify(summary);
+
+  assert.equal(config.status, "ready");
+  assert.equal(
+    summary.baseUrl,
+    "https://openapi.tossinvest.com/v1"
+  );
+  assert.equal(serialized.includes("url-user"), false);
+  assert.equal(serialized.includes("url-secret"), false);
+  assert.equal(serialized.includes("url-token"), false);
+  assert.equal(serialized.includes("frag"), false);
+});
+
+test("Toss Open API auth summary masks malformed base URL", () => {
+  const config = readTossOpenApiAuthConfig({
+    TOSS_OPEN_API_AUTH_ENABLED: "true",
+    TOSS_OPEN_API_BASE_URL: "not-a-url?token=url-token",
+    TOSS_OPEN_API_CLIENT_ID: "local-client-id",
+    TOSS_OPEN_API_CLIENT_SECRET: "local-client-secret"
+  });
+  const summary = summarizeTossOpenApiAuthConfig(config);
+  const serialized = JSON.stringify(summary);
+
+  assert.equal(config.status, "invalid");
+  assert.equal(summary.baseUrl, "[invalid-url]");
+  assert.equal(serialized.includes("not-a-url"), false);
+  assert.equal(serialized.includes("url-token"), false);
+});
