@@ -25,6 +25,8 @@ const DECISION_FREQUENCY_OPTIONS = [
 const STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER =
   "x-toss-trading-dashboard-intent";
 const STRATEGY_BUCKET_TEST_CREATE_INTENT = "strategy-bucket-test-create";
+const STRATEGY_BUCKET_TEST_MATRIX_CREATE_INTENT =
+  "strategy-bucket-test-matrix-create";
 const STRATEGY_BUCKET_TEST_CREATE_MUTATION_TOKEN_HEADER =
   "x-toss-trading-dashboard-mutation-token";
 
@@ -82,6 +84,21 @@ interface StrategyBucketTestCreateResponse {
   disclaimer: string;
 }
 
+interface StrategyBucketTestMatrixCreateResponse {
+  mode: "paper_only";
+  mutation: "strategy_bucket_test_matrix_create";
+  status: "queued";
+  matrixId: string;
+  bucketCount: number;
+  queuedTests: StrategyBucketTestCreateResponse[];
+  recordPath: string;
+  storageMutationEnabled: true;
+  liveTradingEnabled: false;
+  orderPlacementEnabled: false;
+  replayRunnerStarted: false;
+  disclaimer: string;
+}
+
 type BackendValidationState =
   | { status: "idle" }
   | { status: "pending"; requestJson: string }
@@ -99,6 +116,16 @@ type CreateState =
       status: "queued";
       requestJson: string;
       response: StrategyBucketTestCreateResponse;
+    }
+  | { status: "error"; requestJson: string; message: string };
+
+type MatrixCreateState =
+  | { status: "idle" }
+  | { status: "pending"; requestJson: string }
+  | {
+      status: "queued";
+      requestJson: string;
+      response: StrategyBucketTestMatrixCreateResponse;
     }
   | { status: "error"; requestJson: string; message: string };
 
@@ -126,6 +153,9 @@ export function StrategyBucketTestValidationForm() {
   const [backendValidation, setBackendValidation] =
     useState<BackendValidationState>({ status: "idle" });
   const [createState, setCreateState] = useState<CreateState>({
+    status: "idle"
+  });
+  const [matrixCreateState, setMatrixCreateState] = useState<MatrixCreateState>({
     status: "idle"
   });
 
@@ -200,11 +230,28 @@ export function StrategyBucketTestValidationForm() {
     () => JSON.stringify(requestPreview),
     [requestPreview]
   );
+  const matrixRequestPreview = useMemo(
+    () => ({
+      mode: "paper_only",
+      mutation: "strategy_bucket_test_matrix_create",
+      matrixId: `strategy-test-lab-matrix-${validationSplitRole}`,
+      candidate: requestPreview
+    }),
+    [requestPreview, validationSplitRole]
+  );
+  const matrixRequestJson = useMemo(
+    () => JSON.stringify(matrixRequestPreview),
+    [matrixRequestPreview]
+  );
   const visibleBackendValidation = currentBackendValidation(
     backendValidation,
     requestJson
   );
   const visibleCreateState = currentCreateState(createState, requestJson);
+  const visibleMatrixCreateState = currentMatrixCreateState(
+    matrixCreateState,
+    matrixRequestJson
+  );
   const trimmedMutationToken = mutationToken.trim();
   const canCreateQueuedRecord =
     visibleBackendValidation.status === "ready" &&
@@ -213,6 +260,13 @@ export function StrategyBucketTestValidationForm() {
     trimmedMutationToken.length > 0 &&
     visibleCreateState.status !== "pending" &&
     visibleCreateState.status !== "queued";
+  const canCreateBucketMatrix =
+    visibleBackendValidation.status === "ready" &&
+    visibleBackendValidation.response.status === "valid" &&
+    visibleBackendValidation.response.validatedForStrategyBucketTestConfig &&
+    trimmedMutationToken.length > 0 &&
+    visibleMatrixCreateState.status !== "pending" &&
+    visibleMatrixCreateState.status !== "queued";
 
   useEffect(() => {
     if (visibleCreateState.status === "idle") {
@@ -229,6 +283,22 @@ export function StrategyBucketTestValidationForm() {
     router.refresh();
   }, [router, visibleCreateState]);
 
+  useEffect(() => {
+    if (visibleMatrixCreateState.status === "idle") {
+      return;
+    }
+    if (visibleMatrixCreateState.status !== "queued") {
+      return;
+    }
+    if (
+      refreshedCreateRequestRef.current === visibleMatrixCreateState.requestJson
+    ) {
+      return;
+    }
+    refreshedCreateRequestRef.current = visibleMatrixCreateState.requestJson;
+    router.refresh();
+  }, [router, visibleMatrixCreateState]);
+
   async function validateWithBackend() {
     const currentRequestJson = requestJson;
     setBackendValidation({
@@ -236,6 +306,7 @@ export function StrategyBucketTestValidationForm() {
       requestJson: currentRequestJson
     });
     setCreateState({ status: "idle" });
+    setMatrixCreateState({ status: "idle" });
 
     try {
       const response = await fetch("/dashboard/lab/strategy-tests/validate", {
@@ -339,6 +410,70 @@ export function StrategyBucketTestValidationForm() {
                 error instanceof Error
                   ? error.message
                   : "Strategy bucket test create request failed"
+            }
+          : current
+      );
+    }
+  }
+
+  async function createBucketMatrix() {
+    const currentMatrixRequestJson = matrixRequestJson;
+    if (!canCreateBucketMatrix) {
+      return;
+    }
+    setMatrixCreateState({
+      status: "pending",
+      requestJson: currentMatrixRequestJson
+    });
+
+    try {
+      const response = await fetch(
+        "/dashboard/lab/strategy-tests/matrix-create",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [STRATEGY_BUCKET_TEST_CREATE_INTENT_HEADER]:
+              STRATEGY_BUCKET_TEST_MATRIX_CREATE_INTENT,
+            [STRATEGY_BUCKET_TEST_CREATE_MUTATION_TOKEN_HEADER]:
+              trimmedMutationToken
+          },
+          body: currentMatrixRequestJson
+        }
+      );
+      const payload: unknown = await response.json();
+      if (!response.ok || !isStrategyBucketTestMatrixCreateResponse(payload)) {
+        setMatrixCreateState((current) =>
+          isPendingMatrixCreate(current, currentMatrixRequestJson)
+            ? {
+                status: "error",
+                requestJson: currentMatrixRequestJson,
+                message: readErrorMessage(payload, response.status)
+              }
+            : current
+        );
+        return;
+      }
+
+      setMatrixCreateState((current) =>
+        isPendingMatrixCreate(current, currentMatrixRequestJson)
+          ? {
+              status: "queued",
+              requestJson: currentMatrixRequestJson,
+              response: payload
+            }
+          : current
+      );
+    } catch (error) {
+      setMatrixCreateState((current) =>
+        isPendingMatrixCreate(current, currentMatrixRequestJson)
+          ? {
+              status: "error",
+              requestJson: currentMatrixRequestJson,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Strategy bucket test matrix create request failed"
             }
           : current
       );
@@ -556,6 +691,18 @@ export function StrategyBucketTestValidationForm() {
             </button>
             <button
               className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canCreateBucketMatrix}
+              onClick={() => void createBucketMatrix()}
+              type="button"
+            >
+              {visibleMatrixCreateState.status === "pending"
+                ? "Queueing matrix"
+                : visibleMatrixCreateState.status === "queued"
+                  ? "Bucket matrix queued"
+                : "Queue enabled bucket matrix"}
+            </button>
+            <button
+              className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!canCreateQueuedRecord}
               onClick={() => void createQueuedRecord()}
               type="button"
@@ -586,6 +733,7 @@ export function StrategyBucketTestValidationForm() {
                 setMutationToken("");
                 setBackendValidation({ status: "idle" });
                 setCreateState({ status: "idle" });
+                setMatrixCreateState({ status: "idle" });
               }}
               type="button"
             >
@@ -597,6 +745,10 @@ export function StrategyBucketTestValidationForm() {
           <CreateResultPanel
             canCreateQueuedRecord={canCreateQueuedRecord}
             state={visibleCreateState}
+          />
+          <MatrixCreateResultPanel
+            canCreateBucketMatrix={canCreateBucketMatrix}
+            state={visibleMatrixCreateState}
           />
         </div>
 
@@ -788,6 +940,89 @@ function CreateResultPanel({
   );
 }
 
+function MatrixCreateResultPanel({
+  canCreateBucketMatrix,
+  state
+}: {
+  canCreateBucketMatrix: boolean;
+  state: MatrixCreateState;
+}) {
+  if (state.status === "idle") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        {canCreateBucketMatrix
+          ? "Backend validation passed. Enabled buckets can be queued as independent paper-only records."
+          : "Bucket matrix not created. Backend validation and mutation token are required."}
+      </p>
+    );
+  }
+
+  if (state.status === "pending") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3 text-sm leading-5 text-[var(--muted)]"
+      >
+        Creating bucket matrix records. Replay runner remains disabled.
+      </p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p
+        aria-live="polite"
+        className="rounded-[8px] border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3 text-sm leading-5 text-[var(--danger)]"
+      >
+        Strategy bucket matrix was not queued. {state.message}
+      </p>
+    );
+  }
+
+  const result = state.response;
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-[8px] border border-[var(--success-soft)] bg-[var(--success-soft)] p-3 text-sm leading-5 text-[var(--success)]"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-semibold">Strategy bucket matrix queued</p>
+          <p
+            className="mt-1 font-mono text-xs"
+            data-testid="strategy-bucket-matrix-created-id"
+          >
+            {result.matrixId} · {result.bucketCount} bucket records · runner not
+            started
+          </p>
+        </div>
+        <StatusBadge tone="ok" value="storage mutation enabled" />
+      </div>
+      <ul className="mt-3 grid gap-2 md:grid-cols-2">
+        {result.queuedTests.map((queuedTest) => (
+          <li
+            className="rounded-[6px] border border-current/20 p-2"
+            data-testid={`strategy-bucket-matrix-test-${queuedTest.bucket}`}
+            key={queuedTest.testId}
+          >
+            <span className="font-semibold">{BUCKET_LABELS[queuedTest.bucket]}</span>
+            <span className="mt-1 block break-all font-mono text-xs">
+              {queuedTest.testId}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs leading-5">
+        live orders disabled · order placement disabled · replay runner not
+        started
+      </p>
+    </div>
+  );
+}
+
 function NumberField({
   id,
   label,
@@ -879,6 +1114,19 @@ function currentCreateState(
   return state;
 }
 
+function currentMatrixCreateState(
+  state: MatrixCreateState,
+  requestJson: string
+): MatrixCreateState {
+  if (state.status === "idle") {
+    return state;
+  }
+  if (state.requestJson !== requestJson) {
+    return { status: "idle" };
+  }
+  return state;
+}
+
 function isPendingBackendValidation(
   state: BackendValidationState,
   requestJson: string
@@ -890,6 +1138,13 @@ function isPendingCreate(
   state: CreateState,
   requestJson: string
 ): state is Extract<CreateState, { status: "pending" }> {
+  return state.status === "pending" && state.requestJson === requestJson;
+}
+
+function isPendingMatrixCreate(
+  state: MatrixCreateState,
+  requestJson: string
+): state is Extract<MatrixCreateState, { status: "pending" }> {
   return state.status === "pending" && state.requestJson === requestJson;
 }
 
@@ -933,6 +1188,29 @@ function isStrategyBucketTestCreateResponse(
     typeof value["testId"] === "string" &&
     isStrategyBucket(value["bucket"]) &&
     typeof value["configHash"] === "string" &&
+    typeof value["recordPath"] === "string" &&
+    value["storageMutationEnabled"] === true &&
+    value["liveTradingEnabled"] === false &&
+    value["orderPlacementEnabled"] === false &&
+    value["replayRunnerStarted"] === false &&
+    typeof value["disclaimer"] === "string"
+  );
+}
+
+function isStrategyBucketTestMatrixCreateResponse(
+  value: unknown
+): value is StrategyBucketTestMatrixCreateResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    value["mode"] === "paper_only" &&
+    value["mutation"] === "strategy_bucket_test_matrix_create" &&
+    value["status"] === "queued" &&
+    typeof value["matrixId"] === "string" &&
+    typeof value["bucketCount"] === "number" &&
+    Array.isArray(value["queuedTests"]) &&
+    value["queuedTests"].every(isStrategyBucketTestCreateResponse) &&
     typeof value["recordPath"] === "string" &&
     value["storageMutationEnabled"] === true &&
     value["liveTradingEnabled"] === false &&

@@ -53,6 +53,8 @@ import {
 } from "./strategyBucketTestValidation.js";
 import {
   STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME,
+  STRATEGY_BUCKET_TEST_MATRIX_CREATE_OPERATION,
+  STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE,
   STRATEGY_BUCKET_TEST_CREATE_OPERATION,
   STRATEGY_BUCKET_TEST_CREATE_ROUTE
 } from "./strategyBucketTestRuns.js";
@@ -217,7 +219,8 @@ test("local operations surface keeps live mutations disabled", () => {
   ]);
   assert.deepEqual([...STRATEGY_BUCKET_TEST_MUTATION_METHODS], ["POST"]);
   assert.deepEqual([...STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES], [
-    STRATEGY_BUCKET_TEST_CREATE_ROUTE
+    STRATEGY_BUCKET_TEST_CREATE_ROUTE,
+    STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE
   ]);
   assert.equal(
     (LOCAL_OPERATIONS_API_ROUTES as readonly string[]).includes("/place_order"),
@@ -1379,6 +1382,134 @@ test("strategy bucket test create writes a queued record without starting a runn
     assert.equal(progressDetailMutation.status, 405);
     assert.equal(progressDetailMutationPayload["readOnly"], true);
     assert.equal(progressDetailMutationPayload["error"], "method_not_allowed");
+    assert.equal(runnerCallCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("strategy bucket test matrix create writes independent queued records without starting a runner", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  let runnerCallCount = 0;
+  const { server, baseUrl } = await startTestServer(storageBaseDir, {
+    paperSimulationRunner: async (input) => {
+      runnerCallCount += 1;
+      return paperSimulationRunnerResult(input);
+    }
+  });
+
+  try {
+    const matrixRequest = strategyBucketTestMatrixCandidate({
+      windowSeed: "s".repeat(120)
+    });
+    const result = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestMatrixCreateHeaders(baseUrl),
+        body: JSON.stringify(matrixRequest)
+      }
+    );
+    const wrongOperationHeader = await fetchJson(
+      baseUrl,
+      STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE,
+      {
+        method: "POST",
+        headers: strategyBucketTestCreateHeaders(baseUrl),
+        body: JSON.stringify(matrixRequest)
+      }
+    );
+    const records = await readJsonlRecords(paths.strategyBucketTestRecordsPath);
+    const auditEvents = await readJsonlRecords(paths.auditLogPath);
+    const strategyTestLab = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/strategy-test-lab"
+    );
+    const queuedTests = result.payload["queuedTests"] as Array<
+      Record<string, unknown>
+    >;
+    const activeTests = strategyTestLab.payload["activeTests"] as Array<
+      Record<string, unknown>
+    >;
+    const expectedBuckets = [
+      "long_term",
+      "swing",
+      "short_term",
+      "intraday",
+      "hedge"
+    ];
+
+    assert.equal(result.response.status, 202);
+    assert.equal(result.payload["mode"], "paper_only");
+    assert.equal(
+      result.payload["mutation"],
+      "strategy_bucket_test_matrix_create"
+    );
+    assert.equal(result.payload["status"], "queued");
+    assert.equal(result.payload["matrixId"], "strategy-bucket-test-matrix-001");
+    assert.equal(result.payload["bucketCount"], expectedBuckets.length);
+    assert.equal(result.payload["storageMutationEnabled"], true);
+    assert.equal(result.payload["liveTradingEnabled"], false);
+    assert.equal(result.payload["orderPlacementEnabled"], false);
+    assert.equal(result.payload["replayRunnerStarted"], false);
+    assert.equal(queuedTests.length, expectedBuckets.length);
+    assert.deepEqual(
+      queuedTests.map((test) => test["bucket"]),
+      expectedBuckets
+    );
+    assert.equal(records.length, expectedBuckets.length);
+    assert.deepEqual(
+      records.map((record) => record["bucket"]),
+      expectedBuckets
+    );
+    assert.equal(
+      new Set(records.map((record) => record["testId"])).size,
+      expectedBuckets.length
+    );
+    assert.equal(
+      new Set(records.map((record) => record["configHash"])).size,
+      expectedBuckets.length
+    );
+    assert.deepEqual(
+      records.map((record) => record["requestId"]),
+      expectedBuckets.map(
+        (bucket) => `strategy-bucket-test-matrix-001-${bucket}`
+      )
+    );
+    assert.deepEqual(
+      records.map((record) => record["status"]),
+      expectedBuckets.map(() => "queued")
+    );
+    assert.deepEqual(
+      records.map((record) => record["runId"]),
+      expectedBuckets.map(() => null)
+    );
+    assert.deepEqual(
+      records.map((record) => {
+        const safety = record["safety"] as Record<string, unknown>;
+        return safety["replayRunnerStarted"];
+      }),
+      expectedBuckets.map(() => false)
+    );
+    assert.equal(auditEvents.length, expectedBuckets.length);
+    assert.deepEqual(
+      auditEvents.map((event) => event["eventType"]),
+      expectedBuckets.map(() => "STRATEGY_BUCKET_TEST_QUEUED")
+    );
+    assert.equal(strategyTestLab.response.status, 200);
+    assert.equal(activeTests.length, expectedBuckets.length);
+    assert.deepEqual(
+      activeTests.map((test) => test["bucket"]).sort(),
+      [...expectedBuckets].sort()
+    );
+    assert.equal(wrongOperationHeader.response.status, 403);
+    assert.equal(
+      wrongOperationHeader.payload["error"],
+      "mutation_guard_required"
+    );
+    assert.equal(wrongOperationHeader.payload["replayRunnerStarted"], false);
     assert.equal(runnerCallCount, 0);
   } finally {
     await stopTestServer(server);
@@ -3581,6 +3712,15 @@ function strategyBucketTestCreateHeaders(baseUrl: string): HeadersInit {
   };
 }
 
+function strategyBucketTestMatrixCreateHeaders(baseUrl: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    [STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME]:
+      STRATEGY_BUCKET_TEST_MATRIX_CREATE_OPERATION,
+    origin: baseUrl
+  };
+}
+
 function reverseObjectKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => reverseObjectKeys(entry));
@@ -3723,6 +3863,7 @@ function strategyBucketTestCandidate(
     aiProvider?: "dry_run_fixture" | "codex_paper_only";
     bucket?: StrategyBucketName;
     maxCodexCallsPerRun?: number;
+    windowSeed?: string;
   } = {}
 ): StrategyBucketTestCandidate {
   return {
@@ -3738,7 +3879,7 @@ function strategyBucketTestCandidate(
       },
       validationSplitRole: "validation",
       window: {
-        seed: "strategy-bucket-test-seed-001",
+        seed: overrides.windowSeed ?? "strategy-bucket-test-seed-001",
         startAt: "2024-01-01",
         endAt: "2024-02-01",
         windowMonths: 1
@@ -3758,6 +3899,17 @@ function strategyBucketTestCandidate(
         outputSchema: "schemas/virtual-decision.schema.json"
       }
     }
+  };
+}
+
+function strategyBucketTestMatrixCandidate(
+  overrides: Parameters<typeof strategyBucketTestCandidate>[0] = {}
+): Record<string, unknown> {
+  return {
+    mode: "paper_only",
+    mutation: "strategy_bucket_test_matrix_create",
+    matrixId: "strategy-bucket-test-matrix-001",
+    candidate: strategyBucketTestCandidate(overrides)
   };
 }
 

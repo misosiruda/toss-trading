@@ -2554,3 +2554,30 @@
 - Fix review 1: `recentResults`는 terminal record 전체를 유지하되, `comparison.rows`와 `portfolioDeltaRows`는 `status: completed` result만 사용합니다.
 - Fix review 2: completed result가 없고 terminal result만 있으면 comparison warning을 completed result unavailable 상태로 표시합니다.
 - Fix review 3: failed partial result가 `recentResults`에는 남지만 `comparison.rows`와 delta row에는 포함되지 않는 회귀 테스트를 추가했습니다.
+
+## Strategy Bucket Matrix Create
+
+### Review 1: Scope and Boundary
+
+- 이번 PR은 enabled strategy bucket 전체를 독립 queued test record로 저장하는 matrix create 경로만 다룹니다.
+- 각 bucket은 별도 `testId`, `requestId`, seed, `configHash`를 가진 append-only record와 audit event로 저장됩니다.
+- replay runner 시작, SSE stream, result metric aggregation, strategy 자동 선택, live order surface는 추가하지 않습니다.
+
+### Review 2: Guard and Determinism
+
+- Local Operations API는 `/paper/simulations/strategy-bucket-tests/matrix`에서 별도 operation header `paper-strategy-bucket-test-matrix-create`를 요구합니다.
+- Next.js proxy는 backend operation header를 주입하기 전에 dashboard intent header, dashboard mutation token, same-origin metadata, `application/json` content type을 검증합니다.
+- enabled bucket 목록은 browser가 임의로 넘긴 배열이 아니라 backend가 `PortfolioPolicy` snapshot의 positive target weight에서 확정합니다.
+
+### Review 3: Tests and Docs
+
+- backend test는 matrix create가 5개 bucket queued record와 audit event를 저장하고 replay runner를 호출하지 않는지 검증합니다.
+- E2E는 matrix proxy guard와 validation/token 이후 UI에서 enabled bucket matrix가 queue되는 흐름을 확인합니다.
+- docs는 N5 여덟 번째 구현 단위와 제외 범위를 분리해 matrix create가 runner/SSE/result aggregation/live order surface를 포함하지 않음을 명시합니다.
+
+### Codex Review Fix
+
+- Review finding: 120자 seed에 bucket suffix를 그대로 붙이면 strategy bucket validation seed limit을 초과해 matrix create가 500으로 실패할 수 있었습니다.
+- Fix review 1: matrix-derived seed는 원본 seed prefix, 원본 seed/bucket hash, bucket suffix를 조합하되 120자 제한 안으로 clamp합니다.
+- Fix review 2: derived candidate validation에서 schema error가 발생해도 `StrategyBucketTestCreateRequestError`로 변환해 Local Operations API가 fail-closed error response로 처리하도록 했습니다.
+- Fix review 3: matrix create backend test가 120자 seed를 사용하는 회귀 케이스를 검증하도록 보강했습니다.

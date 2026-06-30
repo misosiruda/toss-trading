@@ -51,7 +51,10 @@ import {
 import {
   STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME,
   STRATEGY_BUCKET_TEST_CREATE_OPERATION,
+  STRATEGY_BUCKET_TEST_MATRIX_CREATE_OPERATION,
+  STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE,
   StrategyBucketTestCreateRequestError,
+  createStrategyBucketTestMatrixRun,
   createStrategyBucketTestRun
 } from "./strategyBucketTestRuns.js";
 import type {
@@ -273,7 +276,10 @@ async function handleStrategyBucketTestCreate(
       createError: (message, statusCode, code) =>
         new StrategyBucketTestCreateRequestError(message, statusCode, code)
     });
-    const payload = await createStrategyBucketTestRun(body, options);
+    const payload =
+      readRequestPathname(request) === STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE
+        ? await createStrategyBucketTestMatrixRun(body, options)
+        : await createStrategyBucketTestRun(body, options);
     writeJson(response, 202, payload);
   } catch (error) {
     if (error instanceof StrategyBucketTestCreateRequestError) {
@@ -299,7 +305,7 @@ function validateStrategyBucketTestCreateGuard(
 ): { statusCode: number; code: string; message: string } | null {
   if (
     request.headers[STRATEGY_BUCKET_TEST_CREATE_HEADER_NAME] !==
-    STRATEGY_BUCKET_TEST_CREATE_OPERATION
+    expectedStrategyBucketTestCreateOperation(request)
   ) {
     return {
       statusCode: 403,
@@ -327,6 +333,18 @@ function validateStrategyBucketTestCreateGuard(
   }
 
   return null;
+}
+
+function expectedStrategyBucketTestCreateOperation(
+  request: IncomingMessage
+): string {
+  return readRequestPathname(request) === STRATEGY_BUCKET_TEST_MATRIX_CREATE_ROUTE
+    ? STRATEGY_BUCKET_TEST_MATRIX_CREATE_OPERATION
+    : STRATEGY_BUCKET_TEST_CREATE_OPERATION;
+}
+
+function readRequestPathname(request: IncomingMessage): string {
+  return new URL(request.url ?? "/", "http://127.0.0.1").pathname;
 }
 
 async function handleStrategyBucketTestValidation(

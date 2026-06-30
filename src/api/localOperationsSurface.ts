@@ -69,7 +69,8 @@ export type StrategyBucketTestValidationApiRoutePath =
   (typeof STRATEGY_BUCKET_TEST_VALIDATION_API_ROUTES)[number];
 
 export const STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES = [
-  "/paper/simulations/strategy-bucket-tests"
+  "/paper/simulations/strategy-bucket-tests",
+  "/paper/simulations/strategy-bucket-tests/matrix"
 ] as const;
 
 export type StrategyBucketTestMutationApiRoutePath =
