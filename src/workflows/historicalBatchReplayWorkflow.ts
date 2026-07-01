@@ -26,6 +26,7 @@ import {
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
 import {
   assessHistoricalDataAvailability,
+  type HistoricalDataAvailabilityCalendarOptions,
   type HistoricalDataAvailabilityReport,
   type HistoricalDataAvailabilitySymbolRequirement
 } from "../replay/historicalDataAvailability.js";
@@ -122,6 +123,7 @@ export interface BatchReplayRunnerOptions {
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
+  calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
   decisionProviderFactory?: BatchReplayDecisionProviderFactory;
   decisionProviderMetadata?: BatchReplayDecisionProviderMetadata;
 }
@@ -410,7 +412,10 @@ export async function runHistoricalBatchReplay(
       minWindowSnapshots: options.minWindowSnapshots ?? 1,
       minSnapshotsPerRequiredSymbol:
         options.minSnapshotsPerRequiredSymbol ?? 1,
-      requiredSymbols: options.requiredSymbols ?? []
+      requiredSymbols: options.requiredSymbols ?? [],
+      ...(options.calendarValidation === undefined
+        ? {}
+        : { calendarValidation: options.calendarValidation })
     });
     const marketRegime =
       windowSelection.marketRegime ??
