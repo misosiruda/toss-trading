@@ -243,9 +243,16 @@ function calendarSnapshotSummary(input: {
     exchange: input.rule.exchange,
     sessionDate
   });
+  const matchingFixture =
+    fixture !== undefined &&
+    fixture.market === input.snapshot.market &&
+    fixture.market === input.rule.market &&
+    fixture.timezone === input.rule.timezone
+      ? fixture
+      : undefined;
   const classification = classifyMarketCalendarTimestamp({
     observedAt: input.snapshot.observedAt,
-    fixture
+    fixture: matchingFixture
   });
 
   return {

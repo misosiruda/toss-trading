@@ -199,6 +199,57 @@ test("historical data availability fails closed for calendar validation warnings
   );
 });
 
+test("historical data availability rejects calendar fixtures with mismatched rule metadata", () => {
+  const report = assessHistoricalDataAvailability({
+    snapshots: [
+      snapshot("hist_005930_wrong_fixture", "005930", "2025-02-04T15:00:00.000Z")
+    ],
+    windowStart: new Date("2025-02-04T00:00:00.000Z"),
+    windowEnd: new Date("2025-02-04T23:59:59.999Z"),
+    calendarValidation: {
+      rules: [
+        {
+          market: "KR",
+          exchange: "NYSE",
+          timezone: "America/New_York"
+        }
+      ],
+      fixtures: [
+        parseMarketCalendarFixture({
+          calendarId: "calendar.nyse.2025-02-04",
+          exchange: "NYSE",
+          market: "US",
+          timezone: "America/New_York",
+          sessionDate: "2025-02-04",
+          marketOpen: "2025-02-04T14:30:00.000Z",
+          marketClose: "2025-02-04T21:00:00.000Z",
+          isHoliday: false,
+          sourceRefs: ["manual_calendar_fixture:NYSE:2025-02-04"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        })
+      ]
+    }
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.ok(report.issues.includes("CALENDAR_FIXTURE_MISSING"));
+  assert.equal(report.calendarValidation?.rejectedSnapshotCount, 1);
+  assert.deepEqual(report.calendarValidation?.rejectedSnapshots, [
+    {
+      snapshotId: "hist_005930_wrong_fixture",
+      market: "KR",
+      symbol: "005930",
+      observedAt: "2025-02-04T15:00:00.000Z",
+      exchange: "NYSE",
+      timezone: "America/New_York",
+      sessionDate: "2025-02-04",
+      calendarId: null,
+      status: "fixture_missing",
+      warningCodes: ["CALENDAR_FIXTURE_MISSING"]
+    }
+  ]);
+});
+
 test("historical data availability rejects invalid options", () => {
   assert.throws(
     () =>
