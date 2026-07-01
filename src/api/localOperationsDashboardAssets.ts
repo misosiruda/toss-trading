@@ -4,7 +4,8 @@ import { join } from "node:path";
 
 import {
   LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS,
-  LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS
+  LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS,
+  LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS
 } from "./localOperationsSurface.js";
 
 export interface DashboardAsset {
@@ -13,6 +14,15 @@ export interface DashboardAsset {
 }
 
 export const LEGACY_DASHBOARD_SURFACE_HEADER_VALUE = "legacy-static-compat";
+const LEGACY_DASHBOARD_REDIRECT_STATUS = 308;
+const LEGACY_DASHBOARD_REDIRECT_MAP: Readonly<Record<string, string>> =
+  LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS;
+
+export function readLegacyDashboardRedirectLocation(
+  pathname: string
+): string | null {
+  return LEGACY_DASHBOARD_REDIRECT_MAP[pathname] ?? null;
+}
 
 export function readDashboardAsset(pathname: string): DashboardAsset | null {
   if (
@@ -65,4 +75,21 @@ export async function writeDashboardAsset(
       LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
   });
   response.end(headOnly ? undefined : body);
+}
+
+export function writeLegacyDashboardRedirect(
+  response: ServerResponse,
+  location: string,
+  headOnly = false
+): void {
+  response.writeHead(LEGACY_DASHBOARD_REDIRECT_STATUS, {
+    location,
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
+    "x-toss-trading-dashboard-surface":
+      LEGACY_DASHBOARD_SURFACE_HEADER_VALUE
+  });
+  response.end(
+    headOnly ? undefined : `Legacy dashboard route moved to ${location}`
+  );
 }

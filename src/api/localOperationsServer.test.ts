@@ -61,6 +61,7 @@ import {
 import {
   LOCAL_OPERATIONS_API_ROUTES,
   LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS,
+  LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS,
   PAPER_POLICY_VALIDATION_API_ROUTES,
   PAPER_POLICY_VALIDATION_METHODS,
   PAPER_POLICY_MUTATION_API_ROUTES,
@@ -175,6 +176,17 @@ async function fetchText(
   const response = await fetch(`${baseUrl}${path}`);
   const text = await response.text();
   return { response, text };
+}
+
+async function fetchRedirect(
+  baseUrl: string,
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    ...init,
+    redirect: "manual"
+  });
 }
 
 async function readJsonlRecords(
@@ -390,12 +402,22 @@ test("local operations API serves read-only dashboard assets", async () => {
       baseUrl,
       "/dashboard/virtual/validation"
     );
-    const replayPage = await fetchText(baseUrl, "/dashboard/virtual-replays");
-    const summaryPage = await fetchText(baseUrl, "/dashboard/batch-summary");
-    const legacyAliasPages = await Promise.all(
+    const legacyAliasRedirects = await Promise.all(
       LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS.map(async (path) => ({
         path,
-        page: await fetchText(baseUrl, path)
+        response: await fetchRedirect(baseUrl, path)
+      }))
+    );
+    const legacyAliasHeadRedirects = await Promise.all(
+      LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS.map(async (path) => ({
+        path,
+        response: await fetchRedirect(baseUrl, path, { method: "HEAD" })
+      }))
+    );
+    const legacyAliasPostRejections = await Promise.all(
+      LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS.map(async (path) => ({
+        path,
+        result: await fetchJson(baseUrl, path, { method: "POST" })
       }))
     );
     const dashboardScriptText = [
@@ -414,21 +436,32 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(historyPage.response.status, 200);
     assert.equal(activeSimulationPage.response.status, 200);
     assert.equal(validationPage.response.status, 200);
-    assert.equal(replayPage.response.status, 200);
-    assert.equal(summaryPage.response.status, 200);
-    for (const { path, page } of legacyAliasPages) {
-      assert.equal(page.response.status, 200, path);
-      assert.match(
-        page.response.headers.get("content-type") ?? "",
-        /text\/html/,
+    for (const { path, response } of legacyAliasRedirects) {
+      assert.equal(response.status, 308, path);
+      assert.equal(
+        response.headers.get("location"),
+        LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS[path],
         path
       );
       assert.equal(
-        page.response.headers.get("x-toss-trading-dashboard-surface"),
+        response.headers.get("x-toss-trading-dashboard-surface"),
         LEGACY_DASHBOARD_SURFACE_HEADER_VALUE,
         path
       );
-      assert.match(page.text, /legacy compatibility dashboard/, path);
+      assert.equal(response.headers.get("cache-control"), "no-store", path);
+    }
+    for (const { path, response } of legacyAliasHeadRedirects) {
+      assert.equal(response.status, 308, path);
+      assert.equal(
+        response.headers.get("location"),
+        LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS[path],
+        path
+      );
+      assert.equal(await response.text(), "", path);
+    }
+    for (const { path, result } of legacyAliasPostRejections) {
+      assert.equal(result.response.status, 405, path);
+      assert.equal(result.payload["readOnly"], true, path);
     }
     assert.equal(rootScript.response.status, 200);
     assert.equal(rootModuleScript.response.status, 200);
