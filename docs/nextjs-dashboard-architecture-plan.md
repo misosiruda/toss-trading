@@ -1126,5 +1126,5 @@ E2E 기준:
 
 보류 항목:
 
-- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 별도 archive/deployment PR에서 다룬다.
-- SSE progress stream은 polling fallback만으로 operator 확인 요구를 충족하지 못하는 실제 latency 문제가 확인될 때 별도 설계한다.
+- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 RH1에서 다룬다.
+- SSE progress stream은 polling fallback만으로 operator 확인 요구를 충족하지 못하는 실제 latency 문제가 확인될 때 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 후속 범위로 재평가한다.
