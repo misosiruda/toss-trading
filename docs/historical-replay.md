@@ -307,13 +307,21 @@ npm run historical:availability -- -- --data-dir data/paper --random-window --ra
 npm run historical:availability -- -- --data-dir data/paper --start-at 2025-02-01T00:00:00+09:00 --end-at 2025-02-28T23:59:59.999+09:00 --required-symbols KR:005930,KR:000660 --min-snapshots-per-symbol 1
 ```
 
+Calendar fixture도 availability gate에 연결할 수 있습니다. Fixture 파일은 JSON array 또는 JSONL을 지원하며, market별 rule은 `MARKET:EXCHANGE:TIMEZONE` 형식으로 지정합니다.
+
+```powershell
+npm run historical:availability -- -- --data-dir data/paper --start-at 2025-02-01T00:00:00+09:00 --end-at 2025-02-28T23:59:59.999+09:00 --calendar-fixtures-path data/calendar/market-calendar.jsonl --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York
+```
+
+Calendar fixture가 지정되면 휴장일, fixture 누락, session mismatch, timezone mismatch가 availability issue로 기록되고 `insufficient`로 fail-closed 처리됩니다. 이 옵션은 availability preflight에만 연결되어 있으며, batch sampler의 calendar-aware window 선택과 report/dashboard warning 표시는 RH2 후속 범위입니다.
+
 실제 replay 실행 전에 데이터 부족을 fail-closed로 막으려면 `--require-data-availability`를 사용합니다.
 
 ```powershell
 npm run historical:replay:dry -- -- --data-dir data/paper --random-window --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --random-window-seed batch-seed-001 --window-months 1 --require-data-availability
 ```
 
-availability report는 저장된 `historical-market-snapshots.jsonl`만 읽습니다. 외부 데이터 수집, broker API 호출, replay 실행, 주문 생성은 수행하지 않습니다.
+availability report는 저장된 `historical-market-snapshots.jsonl`과 명시적으로 지정한 calendar fixture 파일만 읽습니다. 외부 데이터 수집, broker API 호출, replay 실행, 주문 생성은 수행하지 않습니다.
 
 ### Batch Run Metadata
 
@@ -424,7 +432,7 @@ Codex CLI provider를 historical replay에서 사용할 때 `--risk-profile aggr
 `aggressive_paper` prompt policy는 다음을 Codex 입력 prompt에 추가합니다.
 
 - paper-only historical replay에만 적용되며 live trading에는 적용하지 않습니다.
-- 월 15~30% 수익률 목표를 쫓기 위해 trade를 강제하지 않습니다.
+- 월 15\~30% 수익률 목표를 쫓기 위해 trade를 강제하지 않습니다.
 - `buyEligible=true`, 강한 `featureScores` 또는 `reasonCodes`, fresh `dataRefs`, packet constraint 내 현금 여력이 동시에 있을 때만 `VIRTUAL_BUY`를 더 적극적으로 검토합니다.
 - `targetExposureRatio`를 즉시 채우려 하지 않고, `scheduledExposureCeilingRatio`, `maxAdditionalBuyBudgetKrw`, `maxBudgetPerDecisionKrw`, market allocation cap 안에서만 `VIRTUAL_BUY`를 검토합니다.
 - `budgetKrw`는 `marketPacket.constraints.maxBudgetPerSymbolKrw`를 넘지 않으며, concentration/drawdown/stale-data/cash-reserve risk를 `riskFactors`에 명시해야 합니다.

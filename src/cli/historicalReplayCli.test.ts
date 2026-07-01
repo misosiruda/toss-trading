@@ -51,6 +51,139 @@ test("historical replay availability CLI keeps named option values out of positi
   assert.equal(report.status, "available");
 });
 
+test("historical replay availability CLI applies calendar fixture validation", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-calendar-cli-"));
+  const calendarPath = join(dataDir, "market-calendar.json");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_calendar", "005930"))}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    calendarPath,
+    JSON.stringify([calendarFixture({ isHoliday: false })]),
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T00:00:00+09:00",
+      "--end-at",
+      "2025-02-03T23:59:59.999+09:00",
+      "--check-data-availability",
+      "--calendar-fixtures-path",
+      calendarPath,
+      "--calendar-rule",
+      "KR:KRX:Asia/Seoul"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout) as {
+    status: string;
+    calendarValidation: {
+      fixtureCount: number;
+      ruleCount: number;
+      checkedSnapshotCount: number;
+      rejectedSnapshotCount: number;
+    };
+  };
+  assert.equal(report.status, "available");
+  assert.equal(report.calendarValidation.fixtureCount, 1);
+  assert.equal(report.calendarValidation.ruleCount, 1);
+  assert.equal(report.calendarValidation.checkedSnapshotCount, 1);
+  assert.equal(report.calendarValidation.rejectedSnapshotCount, 0);
+});
+
+test("historical replay availability CLI fails closed for holiday calendar fixtures", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-calendar-cli-"));
+  const calendarPath = join(dataDir, "market-calendar.jsonl");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_holiday", "005930"))}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    calendarPath,
+    `${JSON.stringify(calendarFixture({ isHoliday: true }))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T00:00:00+09:00",
+      "--end-at",
+      "2025-02-03T23:59:59.999+09:00",
+      "--check-data-availability",
+      "--calendar-fixtures-path",
+      calendarPath,
+      "--calendar-rule",
+      "KR:KRX:Asia/Seoul"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 1);
+  const report = JSON.parse(result.stdout) as {
+    status: string;
+    issues: string[];
+    calendarValidation: {
+      rejectedSnapshotCount: number;
+      warningCounts: Record<string, number>;
+    };
+  };
+  assert.equal(report.status, "insufficient");
+  assert.deepEqual(report.issues, ["CALENDAR_HOLIDAY_SAMPLE"]);
+  assert.equal(report.calendarValidation.rejectedSnapshotCount, 1);
+  assert.equal(
+    report.calendarValidation.warningCounts["CALENDAR_HOLIDAY_SAMPLE"],
+    1
+  );
+});
+
+test("historical replay availability CLI rejects calendar rules without fixture path", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-calendar-cli-"));
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_calendar_rule", "005930"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T00:00:00+09:00",
+      "--end-at",
+      "2025-02-03T23:59:59.999+09:00",
+      "--check-data-availability",
+      "--calendar-rule",
+      "KR:KRX:Asia/Seoul"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--calendar-rule requires --calendar-fixtures-path/);
+});
+
 test("historical replay CLI writes batch run metadata", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-batch-metadata-cli-"));
   mkdirSync(dataDir, { recursive: true });
@@ -1071,6 +1204,22 @@ function validationAssignment(splitRole: "train" | "validation" | "test") {
     purgeDurationDays: 0,
     embargoDurationDays: 0,
     splitRole
+  };
+}
+
+function calendarFixture(input: { isHoliday: boolean }) {
+  return {
+    calendarId: "calendar.krx.2025-02-03",
+    exchange: "KRX",
+    market: "KR",
+    timezone: "Asia/Seoul",
+    sessionDate: "2025-02-03",
+    marketOpen: input.isHoliday ? null : "2025-02-03T00:00:00.000Z",
+    marketClose: input.isHoliday ? null : "2025-02-03T06:30:00.000Z",
+    isHoliday: input.isHoliday,
+    ...(input.isHoliday ? { holidayName: "KRX holiday fixture" } : {}),
+    sourceRefs: ["manual_calendar_fixture:KRX:2025-02-03"],
+    createdAt: "2026-07-01T00:00:00.000Z"
   };
 }
 
