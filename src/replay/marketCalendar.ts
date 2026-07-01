@@ -283,6 +283,18 @@ function readSessionDate(value: unknown): string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new Error("sessionDate must use YYYY-MM-DD");
   }
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error("sessionDate must be a valid calendar date");
+  }
   return value;
 }
 
@@ -299,6 +311,9 @@ function readNullableIsoDateTime(
 
 function readIsoDateTime(record: Record<string, unknown>, field: string): string {
   const value = readNonEmptyString(record, field);
+  if (!hasExplicitTimeZoneOffset(value)) {
+    throw new Error(`${field} must include an explicit timezone offset`);
+  }
   if (!Number.isFinite(Date.parse(value))) {
     throw new Error(`${field} must be an ISO-compatible date-time string`);
   }
@@ -306,11 +321,18 @@ function readIsoDateTime(record: Record<string, unknown>, field: string): string
 }
 
 function parseDate(value: Date | string, field: string): Date {
+  if (typeof value === "string" && !hasExplicitTimeZoneOffset(value)) {
+    throw new Error(`${field} must include an explicit timezone offset`);
+  }
   const date = typeof value === "string" ? new Date(value) : value;
   if (!Number.isFinite(date.getTime())) {
     throw new Error(`${field} must be a valid date`);
   }
   return date;
+}
+
+function hasExplicitTimeZoneOffset(value: string): boolean {
+  return /T.+(?:Z|[+-]\d{2}:\d{2})$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

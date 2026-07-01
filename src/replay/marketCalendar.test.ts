@@ -163,6 +163,49 @@ test("market calendar fixture parser rejects malformed session fixtures", () => 
       }),
     /holiday fixture/
   );
+  assert.throws(
+    () =>
+      parseMarketCalendarFixture({
+        calendarId: "calendar.krx.offsetless",
+        exchange: "KRX",
+        market: "KR",
+        timezone: "Asia/Seoul",
+        sessionDate: "2025-01-02",
+        marketOpen: "2025-01-02T09:00:00",
+        marketClose: "2025-01-02T15:30:00",
+        isHoliday: false,
+        sourceRefs: ["manual_calendar_fixture:KRX:2025-01-02"],
+        createdAt: "2026-07-01T00:00:00.000Z"
+      }),
+    /timezone offset/
+  );
+  assert.throws(
+    () =>
+      classifyMarketCalendarTimestamp({
+        observedAt: "2025-01-02T00:00:00"
+      }),
+    /timezone offset/
+  );
+});
+
+test("market calendar fixture parser rejects impossible holiday dates", () => {
+  assert.throws(
+    () =>
+      parseMarketCalendarFixture({
+        calendarId: "calendar.nyse.invalid-date",
+        exchange: "NYSE",
+        market: "US",
+        timezone: "America/New_York",
+        sessionDate: "2025-02-31",
+        marketOpen: null,
+        marketClose: null,
+        isHoliday: true,
+        holidayName: "Invalid holiday fixture",
+        sourceRefs: ["manual_calendar_fixture:NYSE:2025-02-31"],
+        createdAt: "2026-07-01T00:00:00.000Z"
+      }),
+    /valid calendar date/
+  );
 });
 
 test("market calendar index rejects duplicate exchange session dates", () => {
