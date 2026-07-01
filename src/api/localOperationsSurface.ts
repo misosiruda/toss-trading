@@ -77,7 +77,7 @@ export const STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES = [
 export type StrategyBucketTestMutationApiRoutePath =
   (typeof STRATEGY_BUCKET_TEST_MUTATION_API_ROUTES)[number];
 
-export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
+export const LOCAL_OPERATIONS_LEGACY_DASHBOARD_DOCUMENT_PATHS = [
   "/",
   "/dashboard",
   "/dashboard/",
@@ -90,11 +90,25 @@ export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
   "/dashboard/virtual/simulations/current",
   "/dashboard/virtual/simulations/current/",
   "/dashboard/virtual/validation",
-  "/dashboard/virtual/validation/",
+  "/dashboard/virtual/validation/"
+] as const;
+
+export type LocalOperationsLegacyDashboardDocumentPath =
+  (typeof LOCAL_OPERATIONS_LEGACY_DASHBOARD_DOCUMENT_PATHS)[number];
+
+export const LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS = [
   "/dashboard/virtual-replays",
   "/dashboard/virtual-replays/",
   "/dashboard/batch-summary",
   "/dashboard/batch-summary/"
+] as const;
+
+export type LocalOperationsLegacyDashboardAliasPath =
+  (typeof LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS)[number];
+
+export const LOCAL_OPERATIONS_DASHBOARD_DOCUMENT_PATHS = [
+  ...LOCAL_OPERATIONS_LEGACY_DASHBOARD_DOCUMENT_PATHS,
+  ...LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS
 ] as const;
 
 export const LOCAL_OPERATIONS_DASHBOARD_ASSET_PATHS = [
