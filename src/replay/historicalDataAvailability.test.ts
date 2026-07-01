@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import { assessHistoricalDataAvailability } from "./historicalDataAvailability.js";
+import { parseFxRateSnapshotFixture } from "./fxSnapshotFreshness.js";
 import {
   parseMarketCalendarFixture,
   type MarketCalendarFixture
@@ -250,6 +251,79 @@ test("historical data availability rejects calendar fixtures with mismatched rul
   ]);
 });
 
+test("historical data availability fails closed for FX validation warnings", () => {
+  const report = assessHistoricalDataAvailability({
+    snapshots: [
+      snapshot("hist_spy_fresh", "SPY", "2025-01-02T14:30:00.000Z", {
+        market: "US",
+        sourceRefs: [
+          "fixture:hist_spy_fresh",
+          "yahoo_fx:KRW=X:2025-01-02"
+        ]
+      }),
+      snapshot("hist_qqq_missing_fx", "QQQ", "2025-01-02T15:00:00.000Z", {
+        market: "US",
+        sourceRefs: ["fixture:hist_qqq_missing_fx"]
+      }),
+      snapshot("hist_005930_ignored", "005930", "2025-01-02T16:00:00.000Z"),
+      snapshot("hist_iwm_stale_fx", "IWM", "2025-01-03T00:00:00.000Z", {
+        market: "US",
+        sourceRefs: [
+          "fixture:hist_iwm_stale_fx",
+          "yahoo_fx:KRW=X:2025-01-02"
+        ]
+      })
+    ],
+    windowStart: new Date("2025-01-02T00:00:00.000Z"),
+    windowEnd: new Date("2025-01-03T00:00:00.000Z"),
+    minWindowSnapshots: 1,
+    fxValidation: {
+      fixtures: [
+        parseFxRateSnapshotFixture({
+          fxId: "fx.usdkrw.2025-01-02",
+          pair: "USD/KRW",
+          sourceSymbol: "KRW=X",
+          observedAt: "2025-01-02T00:00:00.000Z",
+          rate: 1460.25,
+          staleAfter: "2025-01-03T00:00:00.000Z",
+          sourceRefs: ["yahoo_fx:KRW=X:2025-01-02"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        })
+      ]
+    }
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.ok(report.issues.includes("VIRTUAL_FX_MISSING"));
+  assert.ok(report.issues.includes("VIRTUAL_FX_STALE"));
+  assert.equal(report.fxValidation?.checkedSnapshotCount, 3);
+  assert.equal(report.fxValidation?.rejectedSnapshotCount, 2);
+  assert.equal(report.fxValidation?.warningCounts.VIRTUAL_FX_MISSING, 1);
+  assert.equal(report.fxValidation?.warningCounts.VIRTUAL_FX_STALE, 1);
+  assert.deepEqual(
+    report.fxValidation?.rejectedSnapshots.map((summary) => ({
+      snapshotId: summary.snapshotId,
+      sourceRef: summary.sourceRef,
+      status: summary.status,
+      warningCodes: summary.warningCodes
+    })),
+    [
+      {
+        snapshotId: "hist_qqq_missing_fx",
+        sourceRef: null,
+        status: "missing",
+        warningCodes: ["VIRTUAL_FX_MISSING"]
+      },
+      {
+        snapshotId: "hist_iwm_stale_fx",
+        sourceRef: "yahoo_fx:KRW=X:2025-01-02",
+        status: "stale",
+        warningCodes: ["VIRTUAL_FX_STALE"]
+      }
+    ]
+  );
+});
+
 test("historical data availability rejects invalid options", () => {
   assert.throws(
     () =>
@@ -290,17 +364,21 @@ test("historical data availability rejects invalid options", () => {
 function snapshot(
   snapshotId: string,
   symbol: string,
-  observedAt: string
+  observedAt: string,
+  options: {
+    market?: HistoricalMarketSnapshot["market"];
+    sourceRefs?: string[];
+  } = {}
 ): HistoricalMarketSnapshot {
   return {
     snapshotId,
-    market: "KR",
+    market: options.market ?? "KR",
     symbol,
     observedAt,
     interval: "1m",
     lastPriceKrw: 70_000,
     volume: 100_000,
-    sourceRefs: [`fixture:${snapshotId}`],
+    sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
     createdAt: observedAt
   };
 }

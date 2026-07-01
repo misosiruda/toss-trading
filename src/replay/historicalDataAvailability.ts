@@ -11,6 +11,13 @@ import {
   type MarketCalendarTimezone,
   type MarketCalendarWarningCode
 } from "./marketCalendar.js";
+import {
+  classifyFxSnapshotFreshness,
+  type FxRatePair,
+  type FxRateSnapshotFixture,
+  type FxSnapshotFreshnessStatus,
+  type FxSnapshotWarningCode
+} from "./fxSnapshotFreshness.js";
 
 export interface HistoricalDataAvailabilitySymbolRequirement {
   market: Market;
@@ -26,6 +33,7 @@ export interface HistoricalDataAvailabilityOptions {
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
   calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
+  fxValidation?: HistoricalDataAvailabilityFxOptions;
 }
 
 export interface HistoricalDataAvailabilityCalendarRule {
@@ -37,6 +45,11 @@ export interface HistoricalDataAvailabilityCalendarRule {
 export interface HistoricalDataAvailabilityCalendarOptions {
   fixtures: MarketCalendarFixture[];
   rules: HistoricalDataAvailabilityCalendarRule[];
+}
+
+export interface HistoricalDataAvailabilityFxOptions {
+  fixtures: FxRateSnapshotFixture[];
+  requiredMarkets?: Market[];
 }
 
 export interface HistoricalDataAvailabilitySymbolSummary {
@@ -80,6 +93,36 @@ export interface HistoricalDataAvailabilityCalendarReport {
   issues: MarketCalendarWarningCode[];
 }
 
+export interface HistoricalDataAvailabilityFxSnapshotSummary {
+  snapshotId: string;
+  market: Market;
+  symbol: string;
+  observedAt: string;
+  sourceRef: string | null;
+  fxId: string | null;
+  pair: FxRatePair;
+  sourceSymbol: string | null;
+  fxObservedAt: string | null;
+  staleAfter: string | null;
+  status: FxSnapshotFreshnessStatus;
+  warningCodes: FxSnapshotWarningCode[];
+}
+
+export type HistoricalDataAvailabilityFxWarningCounts = Record<
+  FxSnapshotWarningCode,
+  number
+>;
+
+export interface HistoricalDataAvailabilityFxReport {
+  fixtureCount: number;
+  requiredMarkets: Market[];
+  checkedSnapshotCount: number;
+  rejectedSnapshotCount: number;
+  warningCounts: HistoricalDataAvailabilityFxWarningCounts;
+  rejectedSnapshots: HistoricalDataAvailabilityFxSnapshotSummary[];
+  issues: FxSnapshotWarningCode[];
+}
+
 export interface HistoricalDataAvailabilityReport {
   status: "available" | "insufficient";
   mode: "paper_only";
@@ -99,11 +142,14 @@ export interface HistoricalDataAvailabilityReport {
   insufficientRequiredSymbols: HistoricalDataAvailabilitySymbolSummary[];
   symbolSummaries: HistoricalDataAvailabilitySymbolSummary[];
   calendarValidation: HistoricalDataAvailabilityCalendarReport | null;
+  fxValidation: HistoricalDataAvailabilityFxReport | null;
   issues: string[];
 }
 
 const DEFAULT_MIN_WINDOW_SNAPSHOTS = 1;
 const DEFAULT_MIN_SNAPSHOTS_PER_REQUIRED_SYMBOL = 1;
+const DEFAULT_FX_REQUIRED_MARKETS: Market[] = ["US"];
+const FX_SOURCE_REF_PREFIX = "yahoo_fx:";
 
 export function assessHistoricalDataAvailability(
   options: HistoricalDataAvailabilityOptions
@@ -139,6 +185,13 @@ export function assessHistoricalDataAvailability(
           snapshots: windowSnapshots,
           calendarValidation: options.calendarValidation
         });
+  const fxValidation =
+    options.fxValidation === undefined
+      ? null
+      : assessFxValidation({
+          snapshots: windowSnapshots,
+          fxValidation: options.fxValidation
+        });
   const requiredSymbols = dedupeRequirements(options.requiredSymbols ?? []);
   const requiredKeys = new Set(requiredSymbols.map(symbolKey));
   const symbolSummaries = summarizeSymbols({
@@ -162,7 +215,8 @@ export function assessHistoricalDataAvailability(
     minWindowSnapshots,
     missingRequiredSymbols,
     insufficientRequiredSymbols,
-    calendarValidation
+    calendarValidation,
+    fxValidation
   });
 
   return {
@@ -186,6 +240,7 @@ export function assessHistoricalDataAvailability(
     insufficientRequiredSymbols,
     symbolSummaries,
     calendarValidation,
+    fxValidation,
     issues
   };
 }
@@ -328,6 +383,128 @@ function calendarIssues(
     .map(([warningCode]) => warningCode);
 }
 
+function assessFxValidation(input: {
+  snapshots: HistoricalMarketSnapshot[];
+  fxValidation: HistoricalDataAvailabilityFxOptions;
+}): HistoricalDataAvailabilityFxReport {
+  const requiredMarkets = fxRequiredMarkets(input.fxValidation.requiredMarkets);
+  const fixtureBySourceRef = fxFixtureSourceRefMap(input.fxValidation.fixtures);
+  const rejectedSnapshots: HistoricalDataAvailabilityFxSnapshotSummary[] = [];
+  const warningCounts = emptyFxWarningCounts();
+  let checkedSnapshotCount = 0;
+
+  for (const snapshot of input.snapshots) {
+    if (!requiredMarkets.has(snapshot.market)) {
+      continue;
+    }
+    checkedSnapshotCount += 1;
+    const summary = fxSnapshotSummary({
+      snapshot,
+      fixtureBySourceRef
+    });
+
+    for (const warningCode of summary.warningCodes) {
+      warningCounts[warningCode] += 1;
+    }
+
+    if (summary.warningCodes.length > 0 || summary.status !== "fresh") {
+      rejectedSnapshots.push(summary);
+    }
+  }
+
+  return {
+    fixtureCount: input.fxValidation.fixtures.length,
+    requiredMarkets: Array.from(requiredMarkets).sort(),
+    checkedSnapshotCount,
+    rejectedSnapshotCount: rejectedSnapshots.length,
+    warningCounts,
+    rejectedSnapshots,
+    issues: fxIssues(warningCounts)
+  };
+}
+
+function fxSnapshotSummary(input: {
+  snapshot: HistoricalMarketSnapshot;
+  fixtureBySourceRef: Map<string, FxRateSnapshotFixture>;
+}): HistoricalDataAvailabilityFxSnapshotSummary {
+  const sourceRef = input.snapshot.sourceRefs.find(isFxSourceRef) ?? null;
+  const fixture =
+    sourceRef === null ? undefined : input.fixtureBySourceRef.get(sourceRef);
+  const assessment = classifyFxSnapshotFreshness({
+    priceObservedAt: input.snapshot.observedAt,
+    ...(fixture === undefined ? { pair: "USD/KRW" } : { fixture })
+  });
+
+  return {
+    snapshotId: input.snapshot.snapshotId,
+    market: input.snapshot.market,
+    symbol: input.snapshot.symbol,
+    observedAt: input.snapshot.observedAt,
+    sourceRef,
+    fxId: assessment.fxId,
+    pair: assessment.pair,
+    sourceSymbol: assessment.sourceSymbol,
+    fxObservedAt: assessment.observedAt,
+    staleAfter: assessment.staleAfter,
+    status: assessment.status,
+    warningCodes: assessment.warningCodes
+  };
+}
+
+function fxRequiredMarkets(markets: Market[] | undefined): Set<Market> {
+  const values = markets ?? DEFAULT_FX_REQUIRED_MARKETS;
+  if (values.length === 0) {
+    throw new Error("fxValidation.requiredMarkets must not be empty");
+  }
+  const requiredMarkets = new Set<Market>();
+  for (const market of values) {
+    if (market !== "KR" && market !== "US") {
+      throw new Error("fxValidation.requiredMarkets must contain KR or US");
+    }
+    requiredMarkets.add(market);
+  }
+  return requiredMarkets;
+}
+
+function fxFixtureSourceRefMap(
+  fixtures: FxRateSnapshotFixture[]
+): Map<string, FxRateSnapshotFixture> {
+  const bySourceRef = new Map<string, FxRateSnapshotFixture>();
+  for (const fixture of fixtures) {
+    for (const sourceRef of fixture.sourceRefs) {
+      if (!isFxSourceRef(sourceRef)) {
+        continue;
+      }
+      if (bySourceRef.has(sourceRef)) {
+        throw new Error(`duplicate FX fixture sourceRef: ${sourceRef}`);
+      }
+      bySourceRef.set(sourceRef, fixture);
+    }
+  }
+  return bySourceRef;
+}
+
+function isFxSourceRef(sourceRef: string): boolean {
+  return sourceRef.startsWith(FX_SOURCE_REF_PREFIX);
+}
+
+function emptyFxWarningCounts(): HistoricalDataAvailabilityFxWarningCounts {
+  return {
+    VIRTUAL_FX_MISSING: 0,
+    VIRTUAL_FX_STALE: 0
+  };
+}
+
+function fxIssues(
+  warningCounts: HistoricalDataAvailabilityFxWarningCounts
+): FxSnapshotWarningCode[] {
+  return (
+    Object.entries(warningCounts) as Array<[FxSnapshotWarningCode, number]>
+  )
+    .filter(([, count]) => count > 0)
+    .map(([warningCode]) => warningCode);
+}
+
 function summarizeSymbols(input: {
   snapshots: HistoricalMarketSnapshot[];
   windowSnapshots: HistoricalMarketSnapshot[];
@@ -377,6 +554,7 @@ function availabilityIssues(input: {
   missingRequiredSymbols: HistoricalDataAvailabilitySymbolRequirement[];
   insufficientRequiredSymbols: HistoricalDataAvailabilitySymbolSummary[];
   calendarValidation: HistoricalDataAvailabilityCalendarReport | null;
+  fxValidation: HistoricalDataAvailabilityFxReport | null;
 }): string[] {
   const issues: string[] = [];
 
@@ -400,6 +578,12 @@ function availabilityIssues(input: {
     input.calendarValidation.rejectedSnapshotCount > 0
   ) {
     issues.push(...input.calendarValidation.issues);
+  }
+  if (
+    input.fxValidation !== null &&
+    input.fxValidation.rejectedSnapshotCount > 0
+  ) {
+    issues.push(...input.fxValidation.issues);
   }
 
   return Array.from(new Set(issues));

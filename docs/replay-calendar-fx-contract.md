@@ -22,10 +22,12 @@
 - Batch random/balanced sampler는 `calendarValidation` 입력이 있고 calendar-valid 후보가 하나 이상 있으면 calendar-invalid 후보를 제외한 뒤 deterministic window selection을 수행한다. Calendar-valid 후보가 하나도 없으면 기존 availability preflight가 selected run을 fail-closed skip한다.
 - `src/replay/fxSnapshotFreshness.ts`는 `USD/KRW` FX fixture parsing과 price snapshot timestamp 기준 freshness 분류를 제공한다.
 - FX fixture가 없으면 `VIRTUAL_FX_MISSING`, price snapshot timestamp가 `staleAfter` 이상이면 `VIRTUAL_FX_STALE`로 fail-closed 후보를 반환한다.
+- `assessHistoricalDataAvailability()`는 optional `fxValidation` 입력이 있을 때 window snapshot 중 required market의 `yahoo_fx:<symbol>:<date>` source ref를 FX fixture와 대조하고 missing/stale FX를 fail-closed issue로 보고한다.
+- `runHistoricalBatchReplay()`는 optional `fxValidation` 입력을 batch run별 availability preflight에 전달하고, FX issue가 있는 window를 replay 실행 전 `DATA_INSUFFICIENT`로 skip한다.
 
 현재 구현이 아직 가지지 않는 RH2 contract는 후속 구현 PR에서 별도 구현한다.
 
-- FX snapshot stale policy의 replay availability gate, report, audit event 연결
+- FX snapshot stale policy의 CLI fixture 입력, aggregate report, audit event 연결
 - calendar/FX warning의 report/dashboard 연결
 
 ## Contract 목표
