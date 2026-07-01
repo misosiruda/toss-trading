@@ -89,6 +89,18 @@ export function classifyFxSnapshotFreshness(input: {
     };
   }
 
+  if (priceObservedAt.getTime() < Date.parse(input.fixture.observedAt)) {
+    return {
+      status: "missing",
+      fxId: input.fixture.fxId,
+      pair,
+      sourceSymbol: input.fixture.sourceSymbol,
+      observedAt: input.fixture.observedAt,
+      staleAfter: input.fixture.staleAfter,
+      warningCodes: ["VIRTUAL_FX_MISSING"]
+    };
+  }
+
   if (priceObservedAt.getTime() >= Date.parse(input.fixture.staleAfter)) {
     return {
       status: "stale",

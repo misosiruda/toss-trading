@@ -161,6 +161,7 @@ Validation 기준:
 - `pair`는 후속 구현 첫 범위에서 `USD/KRW`만 허용한다.
 - `rate`는 finite positive number여야 한다.
 - `observedAt < staleAfter`가 성립해야 한다.
+- price snapshot timestamp가 `observedAt`보다 앞서면 아직 관측되지 않은 FX source이므로 `VIRTUAL_FX_MISSING` reject/warning 후보가 된다.
 - price snapshot timestamp가 `staleAfter` 이상이면 `VIRTUAL_FX_STALE` reject/warning 후보가 된다.
 - FX source가 없으면 USD snapshot의 KRW 환산은 실패해야 하며, silent fallback을 사용하지 않는다.
 

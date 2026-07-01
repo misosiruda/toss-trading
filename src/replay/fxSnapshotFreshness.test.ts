@@ -60,6 +60,26 @@ test("FX snapshot freshness fails closed when fixture is missing", () => {
   );
 });
 
+test("FX snapshot freshness rejects fixtures observed after the price timestamp", () => {
+  const fixture = parseFxRateSnapshotFixture(baseFixture());
+
+  assert.deepEqual(
+    classifyFxSnapshotFreshness({
+      priceObservedAt: "2025-01-01T23:59:59.000Z",
+      fixture
+    }),
+    {
+      status: "missing",
+      fxId: "fx.usdkrw.2025-01-02",
+      pair: "USD/KRW",
+      sourceSymbol: "KRW=X",
+      observedAt: "2025-01-02T00:00:00.000Z",
+      staleAfter: "2025-01-03T00:00:00.000Z",
+      warningCodes: ["VIRTUAL_FX_MISSING"]
+    }
+  );
+});
+
 test("FX snapshot freshness treats staleAfter boundary as stale", () => {
   const fixture = parseFxRateSnapshotFixture(baseFixture());
 
