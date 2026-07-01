@@ -15,10 +15,12 @@
 - `HistoricalMarketPacketBuilder`는 `simulatedAt` 이후 snapshot과 `maxSnapshotAgeSeconds`보다 오래된 snapshot을 제외한다.
 - `YahooHistoricalDailyCollector`는 USD snapshot을 KRW로 환산할 때 `yahoo_fx:<symbol>:<date>` source ref를 추가한다.
 - `src/replay/marketCalendar.ts`는 calendar fixture parsing, duplicate `exchange + sessionDate` index guard, IANA timezone 기반 local date 계산, session/holiday timestamp classification을 제공한다.
+- `assessHistoricalDataAvailability()`는 optional `calendarValidation` 입력이 있을 때 window snapshot을 market별 calendar rule과 fixture로 검증하고, 휴장일/fixture 누락/session mismatch/timezone mismatch를 fail-closed issue로 보고한다.
 
 현재 구현이 아직 가지지 않는 RH2 contract는 후속 구현 PR에서 별도 구현한다.
 
-- replay window와 batch sampler의 calendar-aware validation 연결
+- calendar fixture 파일 loading과 CLI option 연결
+- historical replay runner와 batch sampler의 calendar-aware validation 연결
 - FX snapshot stale policy
 - calendar/FX warning의 report/dashboard 연결
 

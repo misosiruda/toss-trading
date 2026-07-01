@@ -2,6 +2,15 @@ import type {
   HistoricalMarketSnapshot,
   Market
 } from "../domain/schemas.js";
+import {
+  classifyMarketCalendarTimestamp,
+  localDatePart,
+  MarketCalendarFixtureIndex,
+  type MarketCalendarFixture,
+  type MarketCalendarStatus,
+  type MarketCalendarTimezone,
+  type MarketCalendarWarningCode
+} from "./marketCalendar.js";
 
 export interface HistoricalDataAvailabilitySymbolRequirement {
   market: Market;
@@ -16,6 +25,18 @@ export interface HistoricalDataAvailabilityOptions {
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
+  calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
+}
+
+export interface HistoricalDataAvailabilityCalendarRule {
+  market: Market;
+  exchange: string;
+  timezone: MarketCalendarTimezone;
+}
+
+export interface HistoricalDataAvailabilityCalendarOptions {
+  fixtures: MarketCalendarFixture[];
+  rules: HistoricalDataAvailabilityCalendarRule[];
 }
 
 export interface HistoricalDataAvailabilitySymbolSummary {
@@ -29,6 +50,34 @@ export interface HistoricalDataAvailabilitySymbolSummary {
   lastWindowObservedAt: string | null;
   required: boolean;
   available: boolean;
+}
+
+export interface HistoricalDataAvailabilityCalendarSnapshotSummary {
+  snapshotId: string;
+  market: Market;
+  symbol: string;
+  observedAt: string;
+  exchange: string | null;
+  timezone: MarketCalendarTimezone | null;
+  sessionDate: string | null;
+  calendarId: string | null;
+  status: MarketCalendarStatus;
+  warningCodes: MarketCalendarWarningCode[];
+}
+
+export type HistoricalDataAvailabilityCalendarWarningCounts = Record<
+  MarketCalendarWarningCode,
+  number
+>;
+
+export interface HistoricalDataAvailabilityCalendarReport {
+  fixtureCount: number;
+  ruleCount: number;
+  checkedSnapshotCount: number;
+  rejectedSnapshotCount: number;
+  warningCounts: HistoricalDataAvailabilityCalendarWarningCounts;
+  rejectedSnapshots: HistoricalDataAvailabilityCalendarSnapshotSummary[];
+  issues: MarketCalendarWarningCode[];
 }
 
 export interface HistoricalDataAvailabilityReport {
@@ -49,6 +98,7 @@ export interface HistoricalDataAvailabilityReport {
   missingRequiredSymbols: HistoricalDataAvailabilitySymbolRequirement[];
   insufficientRequiredSymbols: HistoricalDataAvailabilitySymbolSummary[];
   symbolSummaries: HistoricalDataAvailabilitySymbolSummary[];
+  calendarValidation: HistoricalDataAvailabilityCalendarReport | null;
   issues: string[];
 }
 
@@ -82,6 +132,13 @@ export function assessHistoricalDataAvailability(
   const windowSnapshots = sortedSnapshots.filter((snapshot) =>
     isInsideWindow(snapshot, options.windowStart, options.windowEnd)
   );
+  const calendarValidation =
+    options.calendarValidation === undefined
+      ? null
+      : assessCalendarValidation({
+          snapshots: windowSnapshots,
+          calendarValidation: options.calendarValidation
+        });
   const requiredSymbols = dedupeRequirements(options.requiredSymbols ?? []);
   const requiredKeys = new Set(requiredSymbols.map(symbolKey));
   const symbolSummaries = summarizeSymbols({
@@ -104,7 +161,8 @@ export function assessHistoricalDataAvailability(
     windowSnapshotCount: windowSnapshots.length,
     minWindowSnapshots,
     missingRequiredSymbols,
-    insufficientRequiredSymbols
+    insufficientRequiredSymbols,
+    calendarValidation
   });
 
   return {
@@ -127,8 +185,140 @@ export function assessHistoricalDataAvailability(
     missingRequiredSymbols,
     insufficientRequiredSymbols,
     symbolSummaries,
+    calendarValidation,
     issues
   };
+}
+
+function assessCalendarValidation(input: {
+  snapshots: HistoricalMarketSnapshot[];
+  calendarValidation: HistoricalDataAvailabilityCalendarOptions;
+}): HistoricalDataAvailabilityCalendarReport {
+  const ruleByMarket = marketCalendarRuleMap(input.calendarValidation.rules);
+  const fixtureIndex = new MarketCalendarFixtureIndex(
+    input.calendarValidation.fixtures
+  );
+  const rejectedSnapshots: HistoricalDataAvailabilityCalendarSnapshotSummary[] = [];
+  const warningCounts = emptyCalendarWarningCounts();
+
+  for (const snapshot of input.snapshots) {
+    const rule = ruleByMarket.get(snapshot.market);
+    const summary =
+      rule === undefined
+        ? missingCalendarRuleSummary(snapshot)
+        : calendarSnapshotSummary({
+            snapshot,
+            rule,
+            fixtureIndex
+          });
+
+    for (const warningCode of summary.warningCodes) {
+      warningCounts[warningCode] += 1;
+    }
+
+    if (summary.warningCodes.length > 0 || summary.status !== "session_open") {
+      rejectedSnapshots.push(summary);
+    }
+  }
+
+  return {
+    fixtureCount: input.calendarValidation.fixtures.length,
+    ruleCount: ruleByMarket.size,
+    checkedSnapshotCount: input.snapshots.length,
+    rejectedSnapshotCount: rejectedSnapshots.length,
+    warningCounts,
+    rejectedSnapshots,
+    issues: calendarIssues(warningCounts)
+  };
+}
+
+function calendarSnapshotSummary(input: {
+  snapshot: HistoricalMarketSnapshot;
+  rule: HistoricalDataAvailabilityCalendarRule;
+  fixtureIndex: MarketCalendarFixtureIndex;
+}): HistoricalDataAvailabilityCalendarSnapshotSummary {
+  const observedAt = new Date(input.snapshot.observedAt);
+  const sessionDate = localDatePart(observedAt, input.rule.timezone);
+  const fixture = input.fixtureIndex.get({
+    exchange: input.rule.exchange,
+    sessionDate
+  });
+  const classification = classifyMarketCalendarTimestamp({
+    observedAt: input.snapshot.observedAt,
+    fixture
+  });
+
+  return {
+    snapshotId: input.snapshot.snapshotId,
+    market: input.snapshot.market,
+    symbol: input.snapshot.symbol,
+    observedAt: input.snapshot.observedAt,
+    exchange: input.rule.exchange,
+    timezone: input.rule.timezone,
+    sessionDate,
+    calendarId: classification.calendarId,
+    status: classification.status,
+    warningCodes: classification.warningCodes
+  };
+}
+
+function missingCalendarRuleSummary(
+  snapshot: HistoricalMarketSnapshot
+): HistoricalDataAvailabilityCalendarSnapshotSummary {
+  return {
+    snapshotId: snapshot.snapshotId,
+    market: snapshot.market,
+    symbol: snapshot.symbol,
+    observedAt: snapshot.observedAt,
+    exchange: null,
+    timezone: null,
+    sessionDate: null,
+    calendarId: null,
+    status: "fixture_missing",
+    warningCodes: ["CALENDAR_FIXTURE_MISSING"]
+  };
+}
+
+function marketCalendarRuleMap(
+  rules: HistoricalDataAvailabilityCalendarRule[]
+): Map<Market, HistoricalDataAvailabilityCalendarRule> {
+  if (rules.length === 0) {
+    throw new Error("calendarValidation.rules must not be empty");
+  }
+
+  const rulesByMarket = new Map<Market, HistoricalDataAvailabilityCalendarRule>();
+  for (const rule of rules) {
+    if (rule.exchange.trim().length === 0) {
+      throw new Error("calendarValidation rule exchange must not be empty");
+    }
+    if (rulesByMarket.has(rule.market)) {
+      throw new Error(
+        `duplicate calendarValidation rule for market: ${rule.market}`
+      );
+    }
+    rulesByMarket.set(rule.market, rule);
+  }
+  return rulesByMarket;
+}
+
+function emptyCalendarWarningCounts():
+  HistoricalDataAvailabilityCalendarWarningCounts {
+  return {
+    CALENDAR_FIXTURE_MISSING: 0,
+    CALENDAR_HOLIDAY_SAMPLE: 0,
+    CALENDAR_SESSION_MISMATCH: 0,
+    CALENDAR_TIMEZONE_MISMATCH: 0
+  };
+}
+
+function calendarIssues(
+  warningCounts: HistoricalDataAvailabilityCalendarWarningCounts
+): MarketCalendarWarningCode[] {
+  return (
+    Object.entries(warningCounts) as Array<[MarketCalendarWarningCode, number]>
+  )
+    .filter(([, count]) => count > 0)
+    .map(([warningCode]) => warningCode);
 }
 
 function summarizeSymbols(input: {
@@ -179,6 +369,7 @@ function availabilityIssues(input: {
   minWindowSnapshots: number;
   missingRequiredSymbols: HistoricalDataAvailabilitySymbolRequirement[];
   insufficientRequiredSymbols: HistoricalDataAvailabilitySymbolSummary[];
+  calendarValidation: HistoricalDataAvailabilityCalendarReport | null;
 }): string[] {
   const issues: string[] = [];
 
@@ -196,6 +387,12 @@ function availabilityIssues(input: {
   }
   if (input.insufficientRequiredSymbols.length > 0) {
     issues.push("REQUIRED_SYMBOL_SNAPSHOT_COUNT_BELOW_MINIMUM");
+  }
+  if (
+    input.calendarValidation !== null &&
+    input.calendarValidation.rejectedSnapshotCount > 0
+  ) {
+    issues.push(...input.calendarValidation.issues);
   }
 
   return Array.from(new Set(issues));
