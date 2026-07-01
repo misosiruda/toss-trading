@@ -15,6 +15,7 @@ import type {
   ValidationSplitRole
 } from "../replay/validationProtocol.js";
 import { parseMarketCalendarFixture } from "../replay/marketCalendar.js";
+import { parseFxRateSnapshotFixture } from "../replay/fxSnapshotFreshness.js";
 import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
@@ -386,6 +387,86 @@ test("historical batch replay runner skips windows rejected by calendar validati
   assert.deepEqual(
     (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
     ["CALENDAR_HOLIDAY_SAMPLE"]
+  );
+});
+
+test("historical batch replay runner skips windows rejected by FX validation", async () => {
+  const sourceDataDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-fx-source-")
+  );
+  const outputBaseDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-fx-output-")
+  );
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_spy_stale_fx",
+      "SPY",
+      "2025-02-03T14:30:00.000Z",
+      70_000,
+      {
+        market: "US",
+        sourceRefs: [
+          "fixture:hist_spy_stale_fx",
+          "yahoo_fx:KRW=X:2025-02-02"
+        ]
+      }
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-fx-skip",
+    seed: "seed-fx",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00.000Z"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999Z"),
+    fixedWindow: {
+      seed: "seed-fx",
+      rangeStart: "2025-02-01T00:00:00.000Z",
+      rangeEnd: "2025-02-28T23:59:59.999Z",
+      windowMonths: 1,
+      timezoneOffsetMinutes: 0,
+      candidateCount: 1,
+      selectedCandidateIndex: 0,
+      selectedMonth: "2025-02",
+      localStartDate: "2025-02-01",
+      localEndDate: "2025-02-28",
+      startAt: "2025-02-01T00:00:00.000Z",
+      endAt: "2025-02-28T23:59:59.999Z"
+    },
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    minWindowSnapshots: 1,
+    fxValidation: {
+      fixtures: [
+        parseFxRateSnapshotFixture({
+          fxId: "fx.usdkrw.2025-02-02",
+          pair: "USD/KRW",
+          sourceSymbol: "KRW=X",
+          observedAt: "2025-02-02T00:00:00.000Z",
+          rate: 1460.25,
+          staleAfter: "2025-02-03T00:00:00.000Z",
+          sourceRefs: ["yahoo_fx:KRW=X:2025-02-02"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        })
+      ]
+    }
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const firstRecord = runRecords[0]!;
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.completedCount, 0);
+  assert.equal(result.skippedCount, 1);
+  assert.equal(firstRecord["status"], "skipped");
+  assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
+  assert.deepEqual(
+    (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
+    ["VIRTUAL_FX_STALE"]
   );
 });
 
@@ -1103,17 +1184,21 @@ function snapshot(
   snapshotId: string,
   symbol: string,
   observedAt: string,
-  lastPriceKrw: number
+  lastPriceKrw: number,
+  options: {
+    market?: HistoricalMarketSnapshot["market"];
+    sourceRefs?: string[];
+  } = {}
 ): HistoricalMarketSnapshot {
   return {
     snapshotId,
-    market: "KR",
+    market: options.market ?? "KR",
     symbol,
     observedAt,
     interval: "1d",
     lastPriceKrw,
     volume: 100_000,
-    sourceRefs: [`fixture:${snapshotId}`],
+    sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
     createdAt: observedAt
   };
 }
