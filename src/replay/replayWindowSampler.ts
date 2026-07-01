@@ -4,6 +4,7 @@ export interface ReplayWindowSamplerOptions {
   seed: string | number;
   windowMonths?: number;
   timezoneOffsetMinutes?: number;
+  candidateFilter?: ReplayWindowCandidateFilter;
 }
 
 export interface ReplayWindowSelection {
@@ -26,13 +27,17 @@ interface LocalMonth {
   monthIndex: number;
 }
 
-interface ReplayWindowCandidate {
+export interface ReplayWindowCandidate {
   selectedMonth: string;
   localStartDate: string;
   localEndDate: string;
   startMs: number;
   endMs: number;
 }
+
+export type ReplayWindowCandidateFilter = (
+  candidate: ReplayWindowCandidate
+) => boolean;
 
 const DEFAULT_TIMEZONE_OFFSET_MINUTES = 540;
 const DEFAULT_WINDOW_MONTHS = 1;
@@ -49,7 +54,10 @@ export function selectReplayWindow(
     rangeStart: options.rangeStart,
     rangeEnd: options.rangeEnd,
     windowMonths,
-    timezoneOffsetMinutes
+    timezoneOffsetMinutes,
+    ...(options.candidateFilter === undefined
+      ? {}
+      : { candidateFilter: options.candidateFilter })
   });
 
   if (candidates.length === 0) {
@@ -90,6 +98,7 @@ export function replayWindowCandidates(input: {
   rangeEnd: Date;
   windowMonths?: number;
   timezoneOffsetMinutes?: number;
+  candidateFilter?: ReplayWindowCandidateFilter;
 }): ReplayWindowCandidate[] {
   validateDate(input.rangeStart, "rangeStart");
   validateDate(input.rangeEnd, "rangeEnd");
@@ -128,13 +137,22 @@ export function replayWindowCandidates(input: {
       continue;
     }
 
-    candidates.push({
+    const candidate = {
       selectedMonth: formatLocalMonth(cursor),
       localStartDate: formatLocalDate(cursor.year, cursor.monthIndex, 1),
       localEndDate: formatLocalEndDate(nextWindowMonth),
       startMs: windowStartMs,
       endMs: windowEndMs
-    });
+    };
+
+    if (
+      input.candidateFilter !== undefined &&
+      !input.candidateFilter(candidate)
+    ) {
+      continue;
+    }
+
+    candidates.push(candidate);
   }
 
   return candidates;

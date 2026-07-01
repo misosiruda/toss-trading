@@ -19,10 +19,10 @@
 - `historicalReplay` CLI의 `--check-data-availability`와 `--require-data-availability`는 optional `--calendar-fixtures-path`, `--calendar-rule` 입력을 받아 JSON array 또는 JSONL calendar fixture를 availability gate에 연결할 수 있다.
 - `runHistoricalBatchReplay()`는 optional `calendarValidation` 입력을 batch run별 availability preflight에 전달하고, calendar issue가 있는 window를 replay 실행 전 `DATA_INSUFFICIENT`로 skip한다.
 - `historicalBatchReplay` CLI는 optional `--calendar-fixtures-path`, `--calendar-rule` 입력을 `runHistoricalBatchReplay()`의 run별 availability preflight에 전달한다.
+- Batch random/balanced sampler는 `calendarValidation` 입력이 있고 calendar-valid 후보가 하나 이상 있으면 calendar-invalid 후보를 제외한 뒤 deterministic window selection을 수행한다. Calendar-valid 후보가 하나도 없으면 기존 availability preflight가 selected run을 fail-closed skip한다.
 
 현재 구현이 아직 가지지 않는 RH2 contract는 후속 구현 PR에서 별도 구현한다.
 
-- calendar-aware window candidate filtering
 - FX snapshot stale policy
 - calendar/FX warning의 report/dashboard 연결
 

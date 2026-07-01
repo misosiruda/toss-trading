@@ -79,6 +79,34 @@ test("regime balanced sampler excludes unavailable target regimes", () => {
   assert.equal(second.targetRegime, "bear");
 });
 
+test("regime balanced sampler filters candidates before bucket assignment", () => {
+  const selection = selectRegimeBalancedReplayWindow({
+    snapshots: snapshotsByMonth([
+      ["2025-01", 100, 106],
+      ["2025-02", 100, 94],
+      ["2025-03", 100, 100.5]
+    ]),
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-03-31T23:59:59.999+09:00"),
+    seed: "balanced-filter-seed",
+    runIndex: 0,
+    targetRegimes: ["bull", "bear"],
+    candidateFilter: (candidate) => candidate.selectedMonth !== "2025-01"
+  });
+
+  assert.equal(selection.window.selectedMonth, "2025-02");
+  assert.equal(selection.targetRegime, "bear");
+  assert.deepEqual(selection.plan.activeTargetRegimes, ["bear"]);
+  assert.deepEqual(selection.plan.unavailableTargetRegimes, ["bull"]);
+  assert.deepEqual(selection.plan.bucketCounts, {
+    bull: 0,
+    bear: 1,
+    sideways: 1,
+    mixed: 0,
+    insufficient_data: 0
+  });
+});
+
 test("regime balanced sampler fails when no requested regimes are available", () => {
   assert.throws(
     () =>

@@ -6,6 +6,7 @@ import {
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import {
   replayWindowCandidates,
+  type ReplayWindowCandidateFilter,
   type ReplayWindowSelection
 } from "./replayWindowSampler.js";
 
@@ -25,6 +26,7 @@ export interface RegimeBalancedWindowSamplerOptions {
   windowMonths?: number;
   timezoneOffsetMinutes?: number;
   targetRegimes?: MarketRegimeLabel[];
+  candidateFilter?: ReplayWindowCandidateFilter;
 }
 
 export interface RegimeBalancedWindowSamplerPlan {
@@ -79,7 +81,10 @@ export function selectRegimeBalancedReplayWindow(
     rangeStart: options.rangeStart,
     rangeEnd: options.rangeEnd,
     windowMonths,
-    timezoneOffsetMinutes
+    timezoneOffsetMinutes,
+    ...(options.candidateFilter === undefined
+      ? {}
+      : { candidateFilter: options.candidateFilter })
   });
 
   if (classifiedCandidates.length === 0) {
@@ -148,6 +153,7 @@ function classifiedReplayWindowCandidates(input: {
   rangeEnd: Date;
   windowMonths: number;
   timezoneOffsetMinutes: number;
+  candidateFilter?: ReplayWindowCandidateFilter;
 }): ClassifiedReplayWindowCandidate[] {
   return replayWindowCandidates(input).map((candidate, candidateIndex) => ({
     candidateIndex,

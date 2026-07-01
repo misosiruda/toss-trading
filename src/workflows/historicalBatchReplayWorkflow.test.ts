@@ -389,6 +389,100 @@ test("historical batch replay runner skips windows rejected by calendar validati
   );
 });
 
+test("historical batch replay runner filters calendar-invalid window candidates", async () => {
+  const sourceDataDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-calendar-filter-source-")
+  );
+  const outputBaseDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-calendar-filter-output-")
+  );
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_202501_holiday",
+      "005930",
+      "2025-01-03T09:00:00+09:00",
+      70_000
+    )
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_202502_session",
+      "005930",
+      "2025-02-03T09:00:00+09:00",
+      72_000
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-calendar-filter",
+    seed: "seed-calendar-filter",
+    runCount: 1,
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    minWindowSnapshots: 1,
+    calendarValidation: {
+      rules: [
+        {
+          market: "KR",
+          exchange: "KRX",
+          timezone: "Asia/Seoul"
+        }
+      ],
+      fixtures: [
+        parseMarketCalendarFixture({
+          calendarId: "calendar.krx.2025-01-03",
+          exchange: "KRX",
+          market: "KR",
+          timezone: "Asia/Seoul",
+          sessionDate: "2025-01-03",
+          marketOpen: null,
+          marketClose: null,
+          isHoliday: true,
+          holidayName: "KRX holiday fixture",
+          sourceRefs: ["manual_calendar_fixture:KRX:2025-01-03"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        }),
+        parseMarketCalendarFixture({
+          calendarId: "calendar.krx.2025-02-03",
+          exchange: "KRX",
+          market: "KR",
+          timezone: "Asia/Seoul",
+          sessionDate: "2025-02-03",
+          marketOpen: "2025-02-03T00:00:00.000Z",
+          marketClose: "2025-02-03T06:30:00.000Z",
+          isHoliday: false,
+          sourceRefs: ["manual_calendar_fixture:KRX:2025-02-03"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        })
+      ]
+    }
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const firstRecord = runRecords[0]!;
+  const window = firstRecord["window"] as Record<string, unknown>;
+  const availability = firstRecord["dataAvailability"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.completedCount, 1);
+  assert.equal(result.skippedCount, 0);
+  assert.equal(firstRecord["status"], "completed");
+  assert.equal(window["selectedMonth"], "2025-02");
+  assert.equal(window["candidateCount"], 1);
+  assert.deepEqual(availability["issues"], []);
+});
+
 test("historical batch replay runner balances windows by market regime", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
   const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
