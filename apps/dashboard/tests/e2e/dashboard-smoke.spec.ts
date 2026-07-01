@@ -2,6 +2,36 @@ import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
 const DASHBOARD_MUTATION_TOKEN = "playwright-dashboard-mutation-token";
+const DASHBOARD_BOUNDARY_ROUTES = [
+  "/dashboard",
+  "/dashboard/component-catalog",
+  "/dashboard/portfolio",
+  "/dashboard/live-readiness",
+  "/dashboard/risk-gate",
+  "/dashboard/validation",
+  "/dashboard/audit",
+  "/dashboard/lab/runs/paper_sim_single",
+  "/dashboard/lab/strategy-tests",
+  "/dashboard/lab/strategy-tests/buckets/hedge/new",
+  "/dashboard/lab/policies",
+] as const;
+const FORBIDDEN_DASHBOARD_ENDPOINTS = [
+  "/place_order",
+  "/place_market_order",
+  "/enable_live_trading",
+  "/update_risk_policy",
+  "/api/place_order",
+  "/api/tossctl",
+  "/api/codex/exec",
+  "/dashboard/place_order",
+  "/dashboard/orders",
+  "/dashboard/broker",
+  "/dashboard/tossctl",
+  "/dashboard/codex/exec",
+  "/dashboard/natural-language-order",
+] as const;
+const FORBIDDEN_DASHBOARD_REQUEST_PATH =
+  /(?:^|\/)(?:place_order|place_market_order|enable_live_trading|update_risk_policy|orders?|broker|tossctl|codex[-_/]exec|natural-language-order)(?:\/|$)/i;
 
 type AxeRunResult = {
   violations: Array<{
@@ -95,6 +125,37 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   ).toHaveCount(0);
 
   await expectNoAxeViolations(page);
+});
+
+test("dashboard smoke routes do not expose live order or raw command endpoints", async ({
+  page,
+  request,
+}) => {
+  const forbiddenRequests: string[] = [];
+  page.on("request", (routeRequest) => {
+    const requestUrl = new URL(routeRequest.url());
+    if (FORBIDDEN_DASHBOARD_REQUEST_PATH.test(requestUrl.pathname)) {
+      forbiddenRequests.push(requestUrl.pathname);
+    }
+  });
+
+  for (const route of DASHBOARD_BOUNDARY_ROUTES) {
+    await page.goto(route);
+    await expect(page.locator("body")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
+  }
+
+  expect(forbiddenRequests).toEqual([]);
+
+  for (const endpoint of FORBIDDEN_DASHBOARD_ENDPOINTS) {
+    const response = await request.get(endpoint);
+    expect(response.status(), endpoint).toBe(404);
+  }
 });
 
 test("renders component catalog without backend mutation controls", async ({
