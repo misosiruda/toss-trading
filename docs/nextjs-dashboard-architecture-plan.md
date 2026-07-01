@@ -1091,20 +1091,40 @@ E2E 기준:
 
 이 전환 계획이 완료됐다고 말하려면 다음 조건을 만족해야 한다.
 
-- 사용자가 Next.js dashboard에서 policy 단위로 paper simulation을 만들 수 있다.
-- 사용자가 장기, 스윙, 단기, 초단기, hedge strategy bucket별로 독립 paper test를 만들 수 있다.
-- 사용자가 진행 중인 strategy bucket test의 phase, progress, heartbeat, partial count를 실시간으로 볼 수 있다.
-- 사용자가 isolated strategy bucket test와 full portfolio replay 결과를 비교할 수 있다.
-- 사용자가 strategy bucket, cash, hedge compliance를 한 화면에서 볼 수 있다.
-- 사용자가 AI decision, risk gate, simulated execution trace를 연결해서 볼 수 있다.
-- 사용자가 policy 후보를 validation lab에서 비교할 수 있다.
-- 모든 계산 값은 backend ViewModel 또는 deterministic backend report에서 온다.
-- live order, broker mutation, natural language order surface는 여전히 없다.
+- [x] 사용자가 Next.js dashboard에서 policy 단위로 paper simulation을 만들 수 있다.
+  - 구현 위치: `/dashboard/lab/policies`, `/dashboard/lab/policies/simulations/create`
+  - 범위: backend validation을 통과한 policy hash를 simulation seed에 반영하는 guarded paper-only create flow
+- [x] 사용자가 장기, 스윙, 단기, 초단기, hedge strategy bucket별로 독립 paper test를 만들 수 있다.
+  - 구현 위치: `/dashboard/lab/strategy-tests`, `/dashboard/lab/strategy-tests/buckets/[bucket]/new`, `/dashboard/lab/strategy-tests/create`
+  - 범위: bucket별 queued record 생성까지이며 replay runner 시작은 별도 guard 전까지 금지
+- [x] 사용자가 진행 중인 strategy bucket test의 phase, progress, heartbeat, partial count를 실시간에 가깝게 볼 수 있다.
+  - 구현 위치: `/dashboard/lab/strategy-tests/tests/[testId]/progress`, `StrategyBucketTestProgressPanel`
+  - 범위: polling fallback 기반 갱신이다. SSE stream은 아직 도입하지 않는다.
+- [x] 사용자가 isolated strategy bucket test와 full portfolio replay 결과를 비교할 수 있다.
+  - 구현 위치: `GET /dashboard/view-model/strategy-test-lab`, `/dashboard/lab/strategy-tests`
+  - 범위: completed/failed/cancelled record와 stored batch aggregate baseline의 paper-only delta 표시
+- [x] 사용자가 strategy bucket, cash, hedge compliance를 한 화면에서 볼 수 있다.
+  - 구현 위치: `GET /dashboard/view-model/portfolio-compliance`, `/dashboard/portfolio`, `/dashboard`
+- [x] 사용자가 AI decision, risk gate, simulated execution trace를 연결해서 볼 수 있다.
+  - 구현 위치: `GET /dashboard/view-model/risk-gate-trace`, `/dashboard/risk-gate`
+- [x] 사용자가 policy 후보를 validation lab에서 비교할 수 있다.
+  - 구현 위치: `GET /dashboard/view-model/validation-lab`, `/dashboard/validation`
+- [x] 모든 계산 값은 backend ViewModel 또는 deterministic backend report에서 온다.
+  - 구현 기준: browser는 portfolio compliance, strategy lab, risk trace, validation lab metric을 재계산하지 않는다.
+- [x] live order, broker mutation, natural language order surface는 여전히 없다.
+  - 검증 기준: dashboard E2E와 Local Operations API tests가 live order, broker mutation, raw command surface 부재를 확인한다.
 
 ## 남은 의사결정
 
-- Next.js package manager를 root `npm` workspace로 통합할지, 독립 package로 둘지 결정 필요
-- UI primitive를 shadcn/ui로 둘지, 최소 자체 component로 시작할지 결정 필요
-- SSE progress stream의 reconnect 정책과 polling fallback interval 결정 필요
-- policy draft를 file artifact로 저장할지, DB schema를 먼저 둘지 결정 필요
-- 기존 정적 dashboard를 언제 archive할지 결정 필요
+현재 구현에서 결정된 항목:
+
+- Next.js dashboard는 독립 `apps/dashboard/package.json`과 root `npm --prefix apps/dashboard ...` 명령을 유지한다.
+- UI primitive는 shadcn/ui 도입 없이 repository-local CSS token과 route-local component로 시작한다.
+- active strategy bucket progress는 SSE 없이 polling fallback을 기본 구현으로 둔다.
+- policy draft는 DB schema보다 append-only file artifact를 먼저 사용한다.
+- Local Operations API의 기존 정적 `/dashboard`는 legacy static compatibility view로 명시하고, asset 응답에 `x-toss-trading-dashboard-surface: legacy-static-compat` header를 붙인다.
+
+보류 항목:
+
+- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 별도 archive/deployment PR에서 다룬다.
+- SSE progress stream은 polling fallback만으로 operator 확인 요구를 충족하지 못하는 실제 latency 문제가 확인될 때 별도 설계한다.
