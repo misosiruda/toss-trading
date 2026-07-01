@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
+import { readCalendarValidationOptionsFromArgs } from "./calendarValidationArgs.js";
 import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
 import {
   parsePaperRiskProfileName,
@@ -37,6 +38,7 @@ const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
 const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
+const calendarValidation = readCalendarValidationOptionsFromArgs(args);
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
 const validationSplitsPath = readArgValue("--validation-splits-path");
@@ -129,6 +131,7 @@ const result = await runHistoricalBatchReplay({
   minWindowSnapshots: readNumberArg("--min-window-snapshots", 1),
   minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
+  ...(calendarValidation === undefined ? {} : { calendarValidation }),
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(validationSplitAssignments === undefined
