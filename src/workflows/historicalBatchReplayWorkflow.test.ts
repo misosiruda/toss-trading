@@ -14,6 +14,7 @@ import type {
   ValidationSplitAssignment,
   ValidationSplitRole
 } from "../replay/validationProtocol.js";
+import { parseMarketCalendarFixture } from "../replay/marketCalendar.js";
 import {
   createStoragePaths,
   FileHistoricalMarketSnapshotStore
@@ -313,6 +314,78 @@ test("historical batch replay runner skips insufficient windows", async () => {
   assert.deepEqual(
     (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
     ["WINDOW_SNAPSHOT_MISSING", "WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"]
+  );
+});
+
+test("historical batch replay runner skips windows rejected by calendar validation", async () => {
+  const sourceDataDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-calendar-source-")
+  );
+  const outputBaseDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-calendar-output-")
+  );
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_holiday",
+      "005930",
+      "2025-02-03T09:00:00+09:00",
+      70_000
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-calendar-skip",
+    seed: "seed-calendar",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    minWindowSnapshots: 1,
+    calendarValidation: {
+      rules: [
+        {
+          market: "KR",
+          exchange: "KRX",
+          timezone: "Asia/Seoul"
+        }
+      ],
+      fixtures: [
+        parseMarketCalendarFixture({
+          calendarId: "calendar.krx.2025-02-03",
+          exchange: "KRX",
+          market: "KR",
+          timezone: "Asia/Seoul",
+          sessionDate: "2025-02-03",
+          marketOpen: null,
+          marketClose: null,
+          isHoliday: true,
+          holidayName: "KRX holiday fixture",
+          sourceRefs: ["manual_calendar_fixture:KRX:2025-02-03"],
+          createdAt: "2026-07-01T00:00:00.000Z"
+        })
+      ]
+    }
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
+  const firstRecord = runRecords[0]!;
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.completedCount, 0);
+  assert.equal(result.skippedCount, 1);
+  assert.equal(firstRecord["status"], "skipped");
+  assert.equal(trialRecords[0]?.["status"], "skipped");
+  assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
+  assert.equal(firstRecord["reportPath"], null);
+  assert.deepEqual(
+    (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
+    ["CALENDAR_HOLIDAY_SAMPLE"]
   );
 });
 

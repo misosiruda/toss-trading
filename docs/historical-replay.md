@@ -363,6 +363,7 @@ data/batch-replay/
 - batch runner는 source data directory의 `historical-market-snapshots.jsonl`을 읽고, run별 출력은 batch output directory 아래에 분리해 씁니다.
 - 각 run은 `seed:runIndex`를 사용해 deterministic random window를 선택합니다.
 - availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
+- `runHistoricalBatchReplay()`에 `calendarValidation`을 직접 전달하면 각 run availability preflight가 calendar fixture issue도 fail-closed로 평가합니다. Batch CLI의 calendar fixture option은 후속 범위입니다.
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - `--window-sampling balanced_regime`을 사용하면 requested market regime bucket을 순환하며 window를 선택합니다.
 - `--validation-splits-path`를 사용하면 random/balanced sampling 대신 입력 assignment의 `splitRole`별 fixed window를 실행합니다. 이때 assignment 수는 `--runs`와 같아야 하며, `fixedWindow`와 함께 사용할 수 없습니다.
