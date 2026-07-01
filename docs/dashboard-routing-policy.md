@@ -65,6 +65,5 @@ AI는 paper-only decision/evidence provider이며, final sizing과 gate는 deter
 
 ## 후속 PR 범위
 
-- static dashboard compatibility route 정리 또는 archive 이동
-- README와 deployment 안내 갱신
+- static dashboard archive 또는 redirect 전환
 - dashboard smoke/E2E와 no-live-order boundary 검증 보강

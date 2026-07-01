@@ -3,6 +3,8 @@
 paper-only 운영 화면을 제공하는 Next.js App Router 대시보드입니다.
 기존 Local Operations API의 정적 `/dashboard`는 migration 기간 동안 legacy compatibility 화면으로 유지됩니다.
 
+기본 operator URL은 `http://127.0.0.1:3000/dashboard`입니다. Local Operations API의 `http://127.0.0.1:8787/dashboard`는 local/internal legacy compatibility 확인에만 사용합니다.
+
 ## 범위
 
 - live trading 비활성화 상태와 준비 상태를 표시합니다.
@@ -31,6 +33,12 @@ $env:DASHBOARD_MUTATION_TOKEN = "<runtime-dashboard-mutation-token>"
 
 `DASHBOARD_OPS_API_BASE_URL`이 비어 있거나 설정되지 않으면 `OPS_API_BASE_URL`, `http://127.0.0.1:8787` 순서로 대체 값을 사용합니다.
 `DASHBOARD_MUTATION_TOKEN`은 `/dashboard/lab/policies/create`, `/dashboard/lab/policies/simulations/create`, `/dashboard/lab/strategy-tests/create`에서 사용하는 server-side runtime secret이며 repository에 저장하지 않습니다.
+
+## 배포 라우팅
+
+현재 저장소에는 Next.js dashboard와 Local Operations API를 하나의 public host 뒤에 배치하는 repo-managed deployment routing 설정 파일이 없습니다. 배포 환경에서 `/dashboard`를 외부 operator-facing route로 노출한다면 Next.js dashboard deployment로 연결해야 합니다.
+
+Local Operations API는 Next.js BFF가 호출하는 backend/internal route로 격리합니다. 같은 host 뒤에 둘 경우 `/dashboard` route precedence는 Next.js가 가져야 하며, Local Operations API static `/dashboard`는 외부 기본 route로 노출하지 않습니다.
 
 `/dashboard`가 사용하는 read-only endpoint는 다음과 같습니다.
 
