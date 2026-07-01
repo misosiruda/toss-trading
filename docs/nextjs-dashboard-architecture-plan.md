@@ -141,6 +141,7 @@ apps/dashboard/
 | `/dashboard/risk-gate` | AI decision -> risk gate -> simulated execution trace | 없음 |
 | `/dashboard/validation` | policy 후보별 OOS, PBO-like, regime robustness 비교 | 없음 |
 | `/dashboard/audit` | audit event, rejected action, failure trace 조회 | 없음 |
+| `/dashboard/component-catalog` | dashboard UI primitive와 상태 variant 확인 | 없음 |
 | `/dashboard/lab/policies` | paper-only portfolio policy builder | policy draft 저장 후보 |
 | `/dashboard/lab/strategy-tests` | 전략 버킷별 test matrix와 결과 비교 | 없음 |
 | `/dashboard/lab/strategy-tests/buckets/[bucket]/new` | 특정 strategy bucket 단독 replay/test 생성 | guarded paper-only mutation |
@@ -1052,7 +1053,7 @@ npm run check
 - strategy bucket comparison rendering test
 - active strategy bucket progress rendering test
 - Playwright E2E
-- Storybook 또는 component catalog
+- `/dashboard/component-catalog` 기반 component catalog 또는 Storybook
 - accessibility smoke
 - security boundary test
 

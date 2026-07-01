@@ -115,6 +115,13 @@ export default async function DashboardPage() {
                 <span className="text-[var(--muted)]">Audit</span>
                 <span className="text-[var(--accent)]">Events</span>
               </Link>
+              <Link
+                className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 font-medium"
+                href="/dashboard/component-catalog"
+              >
+                <span className="text-[var(--muted)]">Components</span>
+                <span className="text-[var(--accent)]">Catalog</span>
+              </Link>
             </div>
           </div>
         </header>
