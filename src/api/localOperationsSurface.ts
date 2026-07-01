@@ -107,8 +107,8 @@ export type LocalOperationsLegacyDashboardAliasPath =
   (typeof LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS)[number];
 
 export const LOCAL_OPERATIONS_LEGACY_DASHBOARD_REDIRECTS = {
-  "/dashboard/virtual-replays": "/dashboard/virtual/simulations",
-  "/dashboard/virtual-replays/": "/dashboard/virtual/simulations",
+  "/dashboard/virtual-replays": "/dashboard/virtual/simulations/current",
+  "/dashboard/virtual-replays/": "/dashboard/virtual/simulations/current",
   "/dashboard/batch-summary": "/dashboard/virtual/validation",
   "/dashboard/batch-summary/": "/dashboard/virtual/validation"
 } as const satisfies Record<LocalOperationsLegacyDashboardAliasPath, string>;
