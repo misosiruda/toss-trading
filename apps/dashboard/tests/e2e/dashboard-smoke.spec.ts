@@ -467,6 +467,9 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(page.getByRole("heading", { name: "Intraday" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hedge" })).toBeVisible();
   await expect(
+    page.getByRole("link", { name: "Open bucket test" })
+  ).toHaveCount(5);
+  await expect(
     page.getByText(
       "paper-only queued record creation is available; replay runner is not connected yet"
     )
@@ -827,6 +830,56 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(
     page.getByRole("button", { name: "Queue bucket test record" })
   ).toBeDisabled();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders bucket-specific strategy test route with locked bucket boundary", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/lab/strategy-tests/buckets/hedge/new");
+
+  await expect(
+    page.getByRole("heading", { name: "Hedge Bucket Test" })
+  ).toBeVisible();
+  await expect(page.getByText("Isolated Strategy Bucket Test")).toBeVisible();
+  await expect(page.getByText("queued record only")).toBeVisible();
+  await expect(page.getByText("not started")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Hedge Test Config" })
+  ).toBeVisible();
+  await expect(page.locator("#test-bucket")).toHaveValue("hedge");
+  await expect(page.locator("#test-bucket")).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Queue enabled bucket matrix" })
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Strategy bucket test request preview")
+  ).toContainText('"bucket": "hedge"');
+  await expect(
+    page.getByLabel("Strategy bucket test request preview")
+  ).toContainText("strategy-test-lab-hedge-seed");
+
+  await activateButton(page, "Validate bucket config");
+  await expect(page.getByText("Strategy validation valid")).toBeVisible();
+  await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
+  await expect(
+    page.getByText(
+      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+    )
+  ).toBeVisible();
+  await activateButton(page, "Queue bucket test record");
+  await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
+  await expect(page.getByText("Bucket").last()).toBeVisible();
+  await expect(page.getByText("hedge").last()).toBeVisible();
+  await expect(page.getByText("replay runner not started")).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })

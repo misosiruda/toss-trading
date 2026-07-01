@@ -129,10 +129,16 @@ type MatrixCreateState =
     }
   | { status: "error"; requestJson: string; message: string };
 
-export function StrategyBucketTestValidationForm() {
+export function StrategyBucketTestValidationForm({
+  initialBucket = "long_term",
+  lockedBucket = false
+}: {
+  initialBucket?: StrategyBucket;
+  lockedBucket?: boolean;
+}) {
   const router = useRouter();
   const refreshedCreateRequestRef = useRef<string | null>(null);
-  const [bucket, setBucket] = useState<StrategyBucket>("long_term");
+  const [bucket, setBucket] = useState<StrategyBucket>(initialBucket);
   const [sourceDataDir, setSourceDataDir] = useState(
     "data/replay-2023-01-2026-05-global-yahoo-daily"
   );
@@ -261,6 +267,7 @@ export function StrategyBucketTestValidationForm() {
     visibleCreateState.status !== "pending" &&
     visibleCreateState.status !== "queued";
   const canCreateBucketMatrix =
+    !lockedBucket &&
     visibleBackendValidation.status === "ready" &&
     visibleBackendValidation.response.status === "valid" &&
     visibleBackendValidation.response.validatedForStrategyBucketTestConfig &&
@@ -485,9 +492,13 @@ export function StrategyBucketTestValidationForm() {
       <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-mono text-xs text-[var(--muted)]">
-            validation-only
+            {lockedBucket ? "isolated-bucket" : "validation-only"}
           </p>
-          <h2 className="mt-1 text-base font-semibold">Bucket Test Config</h2>
+          <h2 className="mt-1 text-base font-semibold">
+            {lockedBucket
+              ? `${BUCKET_LABELS[initialBucket]} Test Config`
+              : "Bucket Test Config"}
+          </h2>
         </div>
         <StatusBadge tone="blocked" value="runner disabled" />
       </div>
@@ -499,6 +510,7 @@ export function StrategyBucketTestValidationForm() {
               Bucket
               <select
                 className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                disabled={lockedBucket}
                 id="test-bucket"
                 onChange={(event) =>
                   setBucket(event.target.value as StrategyBucket)
@@ -689,18 +701,20 @@ export function StrategyBucketTestValidationForm() {
                 ? "Validating bucket"
                 : "Validate bucket config"}
             </button>
-            <button
-              className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!canCreateBucketMatrix}
-              onClick={() => void createBucketMatrix()}
-              type="button"
-            >
-              {visibleMatrixCreateState.status === "pending"
-                ? "Queueing matrix"
-                : visibleMatrixCreateState.status === "queued"
-                  ? "Bucket matrix queued"
-                : "Queue enabled bucket matrix"}
-            </button>
+            {lockedBucket ? null : (
+              <button
+                className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canCreateBucketMatrix}
+                onClick={() => void createBucketMatrix()}
+                type="button"
+              >
+                {visibleMatrixCreateState.status === "pending"
+                  ? "Queueing matrix"
+                  : visibleMatrixCreateState.status === "queued"
+                    ? "Bucket matrix queued"
+                    : "Queue enabled bucket matrix"}
+              </button>
+            )}
             <button
               className="rounded-[6px] bg-[var(--success)] px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!canCreateQueuedRecord}
@@ -716,7 +730,7 @@ export function StrategyBucketTestValidationForm() {
             <button
               className="rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm font-semibold"
               onClick={() => {
-                setBucket("long_term");
+                setBucket(initialBucket);
                 setSourceDataDir(
                   "data/replay-2023-01-2026-05-global-yahoo-daily"
                 );
@@ -746,10 +760,12 @@ export function StrategyBucketTestValidationForm() {
             canCreateQueuedRecord={canCreateQueuedRecord}
             state={visibleCreateState}
           />
-          <MatrixCreateResultPanel
-            canCreateBucketMatrix={canCreateBucketMatrix}
-            state={visibleMatrixCreateState}
-          />
+          {lockedBucket ? null : (
+            <MatrixCreateResultPanel
+              canCreateBucketMatrix={canCreateBucketMatrix}
+              state={visibleMatrixCreateState}
+            />
+          )}
         </div>
 
         <aside className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3">
