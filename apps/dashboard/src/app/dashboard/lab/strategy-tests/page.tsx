@@ -198,6 +198,12 @@ function BucketCapabilityCard({
       <p className="mt-4 text-sm leading-5 text-[var(--muted)]">
         {bucket.disabledReason ?? "isolated replay available"}
       </p>
+      <Link
+        className="mt-4 inline-flex rounded-[6px] border border-[var(--border)] px-3 py-2 text-sm font-semibold"
+        href={`/dashboard/lab/strategy-tests/buckets/${bucket.bucket}/new`}
+      >
+        Open bucket test
+      </Link>
     </article>
   );
 }

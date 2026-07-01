@@ -965,6 +965,13 @@ npm run check
 - `/dashboard/lab/strategy-tests` form은 backend validation이 통과한 현재 request에 대해서만 enabled bucket matrix 생성을 허용하고, 생성 결과를 하나의 aggregate run이 아닌 bucket별 queued record 목록으로 표시한다.
 - 이 단계는 replay runner 시작, SSE stream, result metric aggregation, strategy 자동 선택, 투자 조언성 best bucket 추천, live order surface를 구현하지 않는다.
 
+아홉 번째 구현 단위:
+
+- `/dashboard/lab/strategy-tests/buckets/[bucket]/new` route를 추가해 `long_term`, `swing`, `short_term`, `intraday`, `hedge`별 isolated test config 진입점을 분리한다.
+- bucket 전용 route는 기존 validation/create form을 재사용하되 URL의 bucket 값을 form 초기값으로 고정하고, bucket selector와 enabled bucket matrix 생성 UI를 비활성화한다.
+- `/dashboard/lab/strategy-tests`의 bucket capability card는 각 bucket 전용 route로 이동하는 링크를 제공한다.
+- 이 단계는 신규 backend endpoint, replay runner 시작, SSE stream, result metric aggregation, strategy 자동 선택, 투자 조언성 best bucket 추천, live order surface를 구현하지 않는다.
+
 ### N6. Compliance analytics 확장
 
 범위:
