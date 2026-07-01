@@ -181,10 +181,33 @@ test("market calendar fixture parser rejects malformed session fixtures", () => 
   );
   assert.throws(
     () =>
+      parseMarketCalendarFixture({
+        calendarId: "calendar.krx.normalized-invalid-timestamp",
+        exchange: "KRX",
+        market: "KR",
+        timezone: "Asia/Seoul",
+        sessionDate: "2025-03-03",
+        marketOpen: "2025-02-31T00:00:00.000Z",
+        marketClose: "2025-03-03T06:30:00.000Z",
+        isHoliday: false,
+        sourceRefs: ["manual_calendar_fixture:KRX:2025-03-03"],
+        createdAt: "2026-07-01T00:00:00.000Z"
+      }),
+    /valid calendar date/
+  );
+  assert.throws(
+    () =>
       classifyMarketCalendarTimestamp({
         observedAt: "2025-01-02T00:00:00"
       }),
     /timezone offset/
+  );
+  assert.throws(
+    () =>
+      classifyMarketCalendarTimestamp({
+        observedAt: "2025-02-31T00:00:00.000Z"
+      }),
+    /valid calendar date/
   );
 });
 
