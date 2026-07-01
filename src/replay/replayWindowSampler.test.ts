@@ -79,6 +79,32 @@ test("replay window sampler supports multi-month windows", () => {
   );
 });
 
+test("replay window sampler applies candidate filters before selection", () => {
+  const candidates = replayWindowCandidates({
+    rangeStart: new Date("2023-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2023-03-31T23:59:59.999+09:00"),
+    windowMonths: 1,
+    timezoneOffsetMinutes: 540,
+    candidateFilter: (candidate) => candidate.selectedMonth !== "2023-02"
+  });
+  const selection = selectReplayWindow({
+    rangeStart: new Date("2023-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2023-03-31T23:59:59.999+09:00"),
+    seed: "filtered-seed",
+    windowMonths: 1,
+    timezoneOffsetMinutes: 540,
+    candidateFilter: (candidate) => candidate.selectedMonth === "2023-02"
+  });
+
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.selectedMonth),
+    ["2023-01", "2023-03"]
+  );
+  assert.equal(selection.candidateCount, 1);
+  assert.equal(selection.selectedCandidateIndex, 0);
+  assert.equal(selection.selectedMonth, "2023-02");
+});
+
 test("replay window sampler fails closed when no full window fits", () => {
   assert.throws(
     () =>

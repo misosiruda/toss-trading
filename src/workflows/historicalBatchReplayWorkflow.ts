@@ -43,7 +43,10 @@ import {
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import {
+  replayWindowCandidates,
   selectReplayWindow,
+  type ReplayWindowCandidate,
+  type ReplayWindowCandidateFilter,
   type ReplayWindowSelection
 } from "../replay/replayWindowSampler.js";
 import {
@@ -770,7 +773,18 @@ function selectBatchReplayWindow(input: {
   }
 
   if (input.windowSamplingMode === "balanced_regime") {
-    const selected = selectRegimeBalancedReplayWindow({
+    const candidateFilterOption = calendarValidReplayWindowCandidateFilterOption({
+      snapshots: input.snapshots,
+      rangeStart: input.options.rangeStart,
+      rangeEnd: input.options.rangeEnd,
+      windowMonths: input.options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
+      timezoneOffsetMinutes:
+        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
+      ...(input.options.calendarValidation === undefined
+        ? {}
+        : { calendarValidation: input.options.calendarValidation })
+    });
+    const balancedSelectionOptions = {
       snapshots: input.snapshots,
       rangeStart: input.options.rangeStart,
       rangeEnd: input.options.rangeEnd,
@@ -781,6 +795,10 @@ function selectBatchReplayWindow(input: {
         input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
       targetRegimes:
         input.options.targetRegimes ?? DEFAULT_BALANCED_REGIME_TARGETS
+    };
+    const selected = selectCalendarFilteredRegimeBalancedReplayWindow({
+      selectionOptions: balancedSelectionOptions,
+      candidateFilterOption
     });
 
     return {
@@ -803,7 +821,18 @@ function selectBatchReplayWindow(input: {
       seed: input.runSeed,
       windowMonths: input.options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
       timezoneOffsetMinutes:
-        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
+      ...calendarValidReplayWindowCandidateFilterOption({
+        snapshots: input.snapshots,
+        rangeStart: input.options.rangeStart,
+        rangeEnd: input.options.rangeEnd,
+        windowMonths: input.options.windowMonths ?? DEFAULT_WINDOW_MONTHS,
+        timezoneOffsetMinutes:
+          input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
+        ...(input.options.calendarValidation === undefined
+          ? {}
+          : { calendarValidation: input.options.calendarValidation })
+      })
     }),
     runWindowSampling: {
       mode: "random",
@@ -813,6 +842,89 @@ function selectBatchReplayWindow(input: {
     },
     summary: initialWindowSamplingSummaryFor("random")
   };
+}
+
+function selectCalendarFilteredRegimeBalancedReplayWindow(input: {
+  selectionOptions: Parameters<typeof selectRegimeBalancedReplayWindow>[0];
+  candidateFilterOption: { candidateFilter?: ReplayWindowCandidateFilter };
+}): ReturnType<typeof selectRegimeBalancedReplayWindow> {
+  if (input.candidateFilterOption.candidateFilter === undefined) {
+    return selectRegimeBalancedReplayWindow(input.selectionOptions);
+  }
+
+  try {
+    return selectRegimeBalancedReplayWindow({
+      ...input.selectionOptions,
+      candidateFilter: input.candidateFilterOption.candidateFilter
+    });
+  } catch (error) {
+    if (!isNoRequestedMarketRegimeWindowsError(error)) {
+      throw error;
+    }
+    return selectRegimeBalancedReplayWindow(input.selectionOptions);
+  }
+}
+
+function isNoRequestedMarketRegimeWindowsError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "No requested market regime windows are available"
+  );
+}
+
+function calendarValidReplayWindowCandidateFilterOption(input: {
+  snapshots: HistoricalMarketSnapshot[];
+  calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
+  rangeStart: Date;
+  rangeEnd: Date;
+  windowMonths: number;
+  timezoneOffsetMinutes: number;
+}): { candidateFilter?: ReplayWindowCandidateFilter } {
+  const candidateFilter = calendarValidReplayWindowCandidateFilter(input);
+  if (candidateFilter === undefined) {
+    return {};
+  }
+
+  const hasCalendarValidCandidate = replayWindowCandidates({
+    rangeStart: input.rangeStart,
+    rangeEnd: input.rangeEnd,
+    windowMonths: input.windowMonths,
+    timezoneOffsetMinutes: input.timezoneOffsetMinutes
+  }).some(candidateFilter);
+
+  return hasCalendarValidCandidate ? { candidateFilter } : {};
+}
+
+function calendarValidReplayWindowCandidateFilter(input: {
+  snapshots: HistoricalMarketSnapshot[];
+  calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
+}): ReplayWindowCandidateFilter | undefined {
+  const calendarValidation = input.calendarValidation;
+  if (calendarValidation === undefined) {
+    return undefined;
+  }
+
+  return (candidate) =>
+    isCalendarValidReplayWindowCandidate({
+      candidate,
+      snapshots: input.snapshots,
+      calendarValidation
+    });
+}
+
+function isCalendarValidReplayWindowCandidate(input: {
+  candidate: ReplayWindowCandidate;
+  snapshots: HistoricalMarketSnapshot[];
+  calendarValidation: HistoricalDataAvailabilityCalendarOptions;
+}): boolean {
+  const availability = assessHistoricalDataAvailability({
+    snapshots: input.snapshots,
+    windowStart: new Date(input.candidate.startMs),
+    windowEnd: new Date(input.candidate.endMs),
+    minWindowSnapshots: 0,
+    calendarValidation: input.calendarValidation
+  });
+  return availability.calendarValidation?.rejectedSnapshotCount === 0;
 }
 
 function initialWindowSamplingSummaryFor(
