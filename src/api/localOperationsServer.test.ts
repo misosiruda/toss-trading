@@ -60,6 +60,7 @@ import {
 } from "./strategyBucketTestRuns.js";
 import {
   LOCAL_OPERATIONS_API_ROUTES,
+  LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS,
   PAPER_POLICY_VALIDATION_API_ROUTES,
   PAPER_POLICY_VALIDATION_METHODS,
   PAPER_POLICY_MUTATION_API_ROUTES,
@@ -391,6 +392,12 @@ test("local operations API serves read-only dashboard assets", async () => {
     );
     const replayPage = await fetchText(baseUrl, "/dashboard/virtual-replays");
     const summaryPage = await fetchText(baseUrl, "/dashboard/batch-summary");
+    const legacyAliasPages = await Promise.all(
+      LOCAL_OPERATIONS_LEGACY_DASHBOARD_ALIAS_PATHS.map(async (path) => ({
+        path,
+        page: await fetchText(baseUrl, path)
+      }))
+    );
     const dashboardScriptText = [
       script.text,
       ...moduleScripts.map((moduleScript) => moduleScript.text)
@@ -409,6 +416,20 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.equal(validationPage.response.status, 200);
     assert.equal(replayPage.response.status, 200);
     assert.equal(summaryPage.response.status, 200);
+    for (const { path, page } of legacyAliasPages) {
+      assert.equal(page.response.status, 200, path);
+      assert.match(
+        page.response.headers.get("content-type") ?? "",
+        /text\/html/,
+        path
+      );
+      assert.equal(
+        page.response.headers.get("x-toss-trading-dashboard-surface"),
+        LEGACY_DASHBOARD_SURFACE_HEADER_VALUE,
+        path
+      );
+      assert.match(page.text, /legacy compatibility dashboard/, path);
+    }
     assert.equal(rootScript.response.status, 200);
     assert.equal(rootModuleScript.response.status, 200);
     assert.equal(rootCurrentSimulationDataScript.response.status, 200);
@@ -4018,6 +4039,10 @@ test("local operations API serves paper report and scheduler status", async () =
     >;
 
     assert.equal(report.response.status, 200);
+    assert.equal(
+      report.response.headers.get("x-toss-trading-dashboard-surface"),
+      null
+    );
     assert.equal(report.payload["title"], "Paper Trading Daily Report");
     assert.match(String(report.payload["disclaimer"]), /cannot place live orders/);
     assert.equal(scheduler.response.status, 200);
