@@ -36,7 +36,7 @@ $env:DASHBOARD_MUTATION_TOKEN = "<runtime-dashboard-mutation-token>"
 
 ## 배포 라우팅
 
-현재 저장소에는 Next.js dashboard와 Local Operations API를 하나의 public host 뒤에 배치하는 repo-managed deployment routing 설정 파일이 없습니다. 배포 환경에서 `/dashboard`를 외부 operator-facing route로 노출한다면 Next.js dashboard deployment로 연결해야 합니다.
+현재 저장소에는 Next.js dashboard와 Local Operations API를 하나의 public host 뒤에 배치하는 repo-managed deployment routing 설정 파일이 없습니다. `apps/dashboard/next.config.ts`는 존재하지만 현재 `allowedDevOrigins`와 turbopack root만 설정하며 deployment rewrite/redirect를 정의하지 않습니다. 배포 환경에서 `/dashboard`를 외부 operator-facing route로 노출한다면 Next.js dashboard deployment로 연결해야 합니다.
 
 Local Operations API는 Next.js BFF가 호출하는 backend/internal route로 격리합니다. 같은 host 뒤에 둘 경우 `/dashboard` route precedence는 Next.js가 가져야 하며, Local Operations API static `/dashboard`는 외부 기본 route로 노출하지 않습니다.
 
