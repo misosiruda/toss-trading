@@ -6,6 +6,7 @@ import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
 import { readCalendarValidationOptionsFromArgs } from "./calendarValidationArgs.js";
 import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
+import { readFxValidationOptionsFromArgs } from "./fxValidationArgs.js";
 import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
@@ -39,6 +40,7 @@ const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
 const requiredSymbols = readRequiredSymbols();
 const calendarValidation = readCalendarValidationOptionsFromArgs(args);
+const fxValidation = readFxValidationOptionsFromArgs(args);
 const windowSamplingMode = readWindowSamplingModeArg();
 const targetRegimes = readTargetRegimesArg();
 const validationSplitsPath = readArgValue("--validation-splits-path");
@@ -132,6 +134,7 @@ const result = await runHistoricalBatchReplay({
   minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
   ...(calendarValidation === undefined ? {} : { calendarValidation }),
+  ...(fxValidation === undefined ? {} : { fxValidation }),
   windowSamplingMode,
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(validationSplitAssignments === undefined

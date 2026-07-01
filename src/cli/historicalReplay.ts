@@ -7,6 +7,10 @@ import {
   CALENDAR_VALIDATION_VALUE_OPTION_NAMES,
   readCalendarValidationOptionsFromArgs
 } from "./calendarValidationArgs.js";
+import {
+  FX_VALIDATION_VALUE_OPTION_NAMES,
+  readFxValidationOptionsFromArgs
+} from "./fxValidationArgs.js";
 import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
 import {
   parsePaperRiskProfileName,
@@ -69,6 +73,7 @@ const VALUE_OPTION_NAMES = new Set([
   "--required-symbols",
   "--universe-path",
   ...CALENDAR_VALIDATION_VALUE_OPTION_NAMES,
+  ...FX_VALIDATION_VALUE_OPTION_NAMES,
   "--run-id",
   "--batch-id",
   "--batch-run-index"
@@ -340,6 +345,7 @@ async function readHistoricalDataAvailabilityReport() {
   ).readAll();
   const requiredSymbols = readRequiredSymbols();
   const calendarValidation = readCalendarValidationOptionsFromArgs(args);
+  const fxValidation = readFxValidationOptionsFromArgs(args);
 
   return assessHistoricalDataAvailability({
     snapshots: result.records,
@@ -352,7 +358,8 @@ async function readHistoricalDataAvailabilityReport() {
       1
     ),
     ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
-    ...(calendarValidation === undefined ? {} : { calendarValidation })
+    ...(calendarValidation === undefined ? {} : { calendarValidation }),
+    ...(fxValidation === undefined ? {} : { fxValidation })
   });
 }
 

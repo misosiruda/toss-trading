@@ -184,6 +184,94 @@ test("historical replay availability CLI rejects calendar rules without fixture 
   assert.match(result.stderr, /--calendar-rule requires --calendar-fixtures-path/);
 });
 
+test("historical replay availability CLI applies FX fixture validation", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-fx-cli-"));
+  const fxPath = join(dataDir, "fx-fixtures.jsonl");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(
+      snapshot("hist_spy_fx", "SPY", {
+        market: "US",
+        observedAt: "2025-02-03T14:30:00.000Z",
+        sourceRefs: [
+          "fixture:hist_spy_fx",
+          "yahoo_fx:KRW=X:2025-02-02"
+        ]
+      })
+    )}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    fxPath,
+    `${JSON.stringify(
+      fxFixture({ staleAfter: "2025-02-03T00:00:00.000Z" })
+    )}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T00:00:00.000Z",
+      "--end-at",
+      "2025-02-03T23:59:59.999Z",
+      "--check-data-availability",
+      "--fx-fixtures-path",
+      fxPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 1);
+  const report = JSON.parse(result.stdout) as {
+    status: string;
+    issues: string[];
+    fxValidation: {
+      rejectedSnapshotCount: number;
+      warningCounts: Record<string, number>;
+    };
+  };
+  assert.equal(report.status, "insufficient");
+  assert.deepEqual(report.issues, ["VIRTUAL_FX_STALE"]);
+  assert.equal(report.fxValidation.rejectedSnapshotCount, 1);
+  assert.equal(report.fxValidation.warningCounts["VIRTUAL_FX_STALE"], 1);
+});
+
+test("historical replay availability CLI rejects FX required markets without fixture path", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "historical-fx-cli-"));
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(
+    join(dataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_spy_fx_required", "SPY"))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--data-dir",
+      dataDir,
+      "--start-at",
+      "2025-02-03T00:00:00.000Z",
+      "--end-at",
+      "2025-02-03T23:59:59.999Z",
+      "--check-data-availability",
+      "--fx-required-market",
+      "US"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--fx-required-market requires --fx-fixtures-path/);
+});
+
 test("historical replay CLI writes batch run metadata", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-batch-metadata-cli-"));
   mkdirSync(dataDir, { recursive: true });
@@ -609,6 +697,94 @@ test("historical batch replay CLI applies calendar fixture validation", () => {
   assert.equal(runRecords[0]?.["reportPath"], null);
   assert.equal(trialRecords[0]?.["status"], "skipped");
   assert.deepEqual(availability["issues"], ["CALENDAR_HOLIDAY_SAMPLE"]);
+});
+
+test("historical batch replay CLI applies FX fixture validation", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-fx-cli-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-fx-cli-output-")
+  );
+  const fxPath = join(sourceDataDir, "fx-fixtures.jsonl");
+  const validationSplitsPath = join(outputBaseDir, "validation-splits.json");
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(
+      snapshot("hist_spy_batch_fx", "SPY", {
+        market: "US",
+        observedAt: "2025-02-03T14:30:00.000Z",
+        sourceRefs: [
+          "fixture:hist_spy_batch_fx",
+          "yahoo_fx:KRW=X:2025-02-02"
+        ]
+      })
+    )}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    fxPath,
+    `${JSON.stringify(
+      fxFixture({ staleAfter: "2025-02-03T00:00:00.000Z" })
+    )}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    validationSplitsPath,
+    `${JSON.stringify([validationAssignment("validation")], null, 2)}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-fx-cli",
+      "--seed",
+      "seed-fx",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00.000Z",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999Z",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60),
+      "--min-window-snapshots",
+      "1",
+      "--validation-splits-path",
+      validationSplitsPath,
+      "--fx-fixtures-path",
+      fxPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const availability = runRecords[0]?.["dataAvailability"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(output["status"], "completed");
+  assert.equal(output["completedCount"], 0);
+  assert.equal(output["skippedCount"], 1);
+  assert.equal(runRecords[0]?.["status"], "skipped");
+  assert.equal(runRecords[0]?.["skipReason"], "DATA_INSUFFICIENT");
+  assert.deepEqual(availability["issues"], ["VIRTUAL_FX_STALE"]);
 });
 
 test("historical batch report CLI tolerates missing selection trial log", () => {
@@ -1249,18 +1425,23 @@ test("historical batch replay CLI uses ephemeral Codex sessions per run", () => 
 
 function snapshot(
   snapshotId: string,
-  symbol: string
+  symbol: string,
+  options: {
+    market?: HistoricalMarketSnapshot["market"];
+    observedAt?: string;
+    sourceRefs?: string[];
+  } = {}
 ): HistoricalMarketSnapshot {
-  const observedAt = "2025-02-03T09:00:00+09:00";
+  const observedAt = options.observedAt ?? "2025-02-03T09:00:00+09:00";
   return {
     snapshotId,
-    market: "KR",
+    market: options.market ?? "KR",
     symbol,
     observedAt,
     interval: "1m",
     lastPriceKrw: 70_000,
     volume: 100_000,
-    sourceRefs: [`fixture:${snapshotId}`],
+    sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
     createdAt: observedAt
   };
 }
@@ -1296,6 +1477,19 @@ function calendarFixture(input: { isHoliday: boolean }) {
     isHoliday: input.isHoliday,
     ...(input.isHoliday ? { holidayName: "KRX holiday fixture" } : {}),
     sourceRefs: ["manual_calendar_fixture:KRX:2025-02-03"],
+    createdAt: "2026-07-01T00:00:00.000Z"
+  };
+}
+
+function fxFixture(input: { staleAfter?: string } = {}) {
+  return {
+    fxId: "fx.usdkrw.2025-02-02",
+    pair: "USD/KRW",
+    sourceSymbol: "KRW=X",
+    observedAt: "2025-02-02T00:00:00.000Z",
+    rate: 1460.25,
+    staleAfter: input.staleAfter ?? "2025-02-04T00:00:00.000Z",
+    sourceRefs: ["yahoo_fx:KRW=X:2025-02-02"],
     createdAt: "2026-07-01T00:00:00.000Z"
   };
 }
