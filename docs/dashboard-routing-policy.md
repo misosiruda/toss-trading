@@ -12,12 +12,13 @@
 
 ## Surface 책임
 
-| Surface | 기본 URL | 책임 | 금지 |
+| Surface | 기본 URL 또는 route | 책임 | 금지 |
 | --- | --- | --- | --- |
 | Next.js dashboard | `http://127.0.0.1:3000/dashboard` | 기본 operator UI, server-side ViewModel 조회, guarded paper-only action proxy | live order, broker mutation, natural language order, raw `codex exec`, raw `tossctl` |
 | Local Operations legacy static dashboard | `http://127.0.0.1:8787/dashboard` | migration 기간의 compatibility view, 기존 정적 asset 확인 | 기본 operator 진입점 역할, live order, broker mutation, raw command 실행 |
 | Local Operations dashboard ViewModel API | `http://127.0.0.1:8787/dashboard/view-model/*` | deterministic backend가 계산한 read model 제공 | browser가 domain truth를 직접 재계산하게 하는 raw artifact UI contract |
-| Local Operations guarded paper endpoint | `http://127.0.0.1:8787/paper/*` | same-origin, JSON body, explicit operation header를 통과한 paper-only validation/create | live `TradingSignal`, live `OrderIntent`, raw command 실행, unguarded mutation |
+| Local Operations paper report API | `GET http://127.0.0.1:8787/paper/report` | 저장된 paper report를 읽는 read-only JSON route | mutation, replay runner 시작, live order, raw command 실행 |
+| Local Operations guarded paper POST endpoints | `POST /paper/policies/validate`, `POST /paper/policies`, `POST /paper/simulations`, `POST /paper/simulations/strategy-bucket-tests/validate`, `POST /paper/simulations/strategy-bucket-tests`, `POST /paper/simulations/strategy-bucket-tests/matrix` | same-origin, JSON body, explicit operation header를 통과한 paper-only validation/create | live `TradingSignal`, live `OrderIntent`, raw command 실행, unguarded mutation |
 
 ## Archive 정책
 
