@@ -784,7 +784,7 @@ function selectBatchReplayWindow(input: {
         ? {}
         : { calendarValidation: input.options.calendarValidation })
     });
-    const selected = selectRegimeBalancedReplayWindow({
+    const balancedSelectionOptions = {
       snapshots: input.snapshots,
       rangeStart: input.options.rangeStart,
       rangeEnd: input.options.rangeEnd,
@@ -794,8 +794,11 @@ function selectBatchReplayWindow(input: {
       timezoneOffsetMinutes:
         input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES,
       targetRegimes:
-        input.options.targetRegimes ?? DEFAULT_BALANCED_REGIME_TARGETS,
-      ...candidateFilterOption
+        input.options.targetRegimes ?? DEFAULT_BALANCED_REGIME_TARGETS
+    };
+    const selected = selectCalendarFilteredRegimeBalancedReplayWindow({
+      selectionOptions: balancedSelectionOptions,
+      candidateFilterOption
     });
 
     return {
@@ -839,6 +842,34 @@ function selectBatchReplayWindow(input: {
     },
     summary: initialWindowSamplingSummaryFor("random")
   };
+}
+
+function selectCalendarFilteredRegimeBalancedReplayWindow(input: {
+  selectionOptions: Parameters<typeof selectRegimeBalancedReplayWindow>[0];
+  candidateFilterOption: { candidateFilter?: ReplayWindowCandidateFilter };
+}): ReturnType<typeof selectRegimeBalancedReplayWindow> {
+  if (input.candidateFilterOption.candidateFilter === undefined) {
+    return selectRegimeBalancedReplayWindow(input.selectionOptions);
+  }
+
+  try {
+    return selectRegimeBalancedReplayWindow({
+      ...input.selectionOptions,
+      candidateFilter: input.candidateFilterOption.candidateFilter
+    });
+  } catch (error) {
+    if (!isNoRequestedMarketRegimeWindowsError(error)) {
+      throw error;
+    }
+    return selectRegimeBalancedReplayWindow(input.selectionOptions);
+  }
+}
+
+function isNoRequestedMarketRegimeWindowsError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "No requested market regime windows are available"
+  );
 }
 
 function calendarValidReplayWindowCandidateFilterOption(input: {
