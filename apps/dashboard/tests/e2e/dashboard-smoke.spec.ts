@@ -83,6 +83,43 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(
     page.getByRole("link", { name: /Validation Lab/i })
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Components Catalog/i })
+  ).toBeVisible();
+
+  await expect(
+    page.getByRole("button", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /order|trade|buy|sell/i })
+  ).toHaveCount(0);
+
+  await expectNoAxeViolations(page);
+});
+
+test("renders component catalog without backend mutation controls", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/component-catalog");
+
+  await expect(
+    page.getByRole("heading", { name: "Component Catalog" })
+  ).toBeVisible();
+  await expect(page.getByText("Dashboard component catalog")).toBeVisible();
+  await expect(page.getByText("Storybook 대체 검증 표면")).toBeVisible();
+  await expect(page.getByText("backend ViewModel", { exact: true })).toBeVisible();
+  await expect(page.getByText("read-only", { exact: true })).toBeVisible();
+  await expect(page.getByText("not exposed")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Status and Metric Cards" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Bucket Allocation Table" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Guarded Form Controls" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Preview only" })).toBeDisabled();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
