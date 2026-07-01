@@ -51,6 +51,13 @@ export interface BatchReplayAggregateSummary {
     Record<Market, Partial<Record<MarketRegimeLabel, number>>>
   >;
   validationSplitRoleCounts: Partial<Record<ValidationSplitRole, number>>;
+  dataAvailabilityIssues: BatchReplayDataAvailabilityIssueSummary[];
+}
+
+export interface BatchReplayDataAvailabilityIssueSummary {
+  code: string;
+  count: number;
+  runIds: string[];
 }
 
 export interface BatchReplayGroupSummary {
@@ -229,7 +236,8 @@ export function buildBatchReplayAggregateReport(
       returnSampleCount: records.filter(hasReturnSample).length,
       regimeCounts: countRegimes(records),
       regimeCountsByMarket: countRegimesByMarket(records),
-      validationSplitRoleCounts: countValidationSplitRoles(records)
+      validationSplitRoleCounts: countValidationSplitRoles(records),
+      dataAvailabilityIssues: summarizeDataAvailabilityIssues(records)
     },
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
@@ -271,6 +279,7 @@ export function renderBatchReplayAggregateReport(
     `regime_counts: ${JSON.stringify(report.summary.regimeCounts)}`,
     `regime_counts_by_market: ${JSON.stringify(report.summary.regimeCountsByMarket)}`,
     `validation_split_role_counts: ${JSON.stringify(report.summary.validationSplitRoleCounts)}`,
+    `data_availability_issues: ${JSON.stringify(report.summary.dataAvailabilityIssues)}`,
     "",
     "## Selection Trials",
     renderSelectionTrialSummary(report.trialSummary),
@@ -1089,6 +1098,38 @@ function countValidationSplitRoles(
     counts[role] = (counts[role] ?? 0) + 1;
   }
   return counts;
+}
+
+function summarizeDataAvailabilityIssues(
+  records: BatchReplayRunRecord[]
+): BatchReplayDataAvailabilityIssueSummary[] {
+  const issuesByCode = new Map<string, string[]>();
+
+  for (const record of records) {
+    for (const issue of new Set(record.dataAvailability.issues)) {
+      const runIds = issuesByCode.get(issue) ?? [];
+      runIds.push(record.runId);
+      issuesByCode.set(issue, runIds);
+    }
+  }
+
+  return Array.from(issuesByCode.entries())
+    .map(([code, runIds]) => ({
+      code,
+      count: runIds.length,
+      runIds
+    }))
+    .sort(compareDataAvailabilityIssueSummaries);
+}
+
+function compareDataAvailabilityIssueSummaries(
+  left: BatchReplayDataAvailabilityIssueSummary,
+  right: BatchReplayDataAvailabilityIssueSummary
+): number {
+  if (left.count !== right.count) {
+    return right.count - left.count;
+  }
+  return left.code.localeCompare(right.code);
 }
 
 function validationSplitRoleForRecord(
