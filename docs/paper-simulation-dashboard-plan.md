@@ -1,31 +1,39 @@
 # Paper Simulation Dashboard Plan
 
-> 이 문서는 기존 정적 `dashboard/`를 paper-only simulation viewer/product flow로 확장하기 위한 계획이다.
-> 전략 버킷, dynamic cash reserve, hedge, validation lab을 future live 관제까지 포용하는 Next.js 전환 계획은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)를 따른다.
-> 아래 "현재 상태"에는 정적 dashboard 제품화 착수 당시 기준이 일부 포함되어 있다. 구현 완료 후의 dashboard 전환 판단은 Next.js 전환 계획과 README의 최신 실행 설명을 우선한다.
+> 이 문서는 기존 정적 `dashboard/`를 paper-only simulation viewer/product flow로 확장하기 위해 작성된 초기 제품화 계획이다.
+> 현재 운영 UI와 완료 판단은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)와 [apps/dashboard/README.md](../apps/dashboard/README.md)를 우선한다.
+> 이 문서의 PR 분해 계획은 정적 dashboard 제품화 착수 당시의 historical planning record로 유지한다.
 
 ## 목적
 
-이 문서는 현재 CLI 실행 결과를 보여주는 dashboard를, paper-only 알고리즘 검증 제품으로 확장하기 위한 기획과 구현 순서를 정리한다.
+이 문서는 CLI artifact viewer로 시작한 dashboard를 paper-only 알고리즘 검증 제품으로 확장하기 위한 기획과 구현 순서를 정리한다.
 
 핵심 목표는 실투자 실행이 아니다. Toss Securities Open API 신청이 통과되어도, 현재 단계에서는 실계좌 주문을 만들지 않고 알고리즘이 투자할 가치가 있는지 paper-only simulation으로 검증한다.
 
 ## 현재 상태
 
-현재 dashboard는 `npm run historical:*` 또는 `npm run paper:*` CLI가 만든 artifact를 Local Operations API가 read-only로 읽고, 정적 dashboard가 이를 표시하는 구조다.
+현재 운영 UI의 기준은 Next.js `apps/dashboard`다. 기존 Local Operations API의 정적 `/dashboard`는 migration 기간 동안 legacy static compatibility view로 유지한다.
+
+현재 구현된 Next.js dashboard 범위:
+
+- `/dashboard`와 `/dashboard/live-readiness`가 live trading disabled, broker mutation disabled, `OrderRouter` not connected 상태를 보여준다.
+- `/dashboard/lab/policies`가 `PortfolioPolicy` draft, local/backend validation, guarded paper simulation create flow를 제공한다.
+- `/dashboard/lab/strategy-tests`와 `/dashboard/lab/strategy-tests/buckets/[bucket]/new`가 장기, 스윙, 단기, 초단기, hedge strategy bucket별 isolated paper test config와 queued record 생성을 제공한다.
+- `/dashboard/lab/strategy-tests/tests/{testId}/progress`가 queued/running strategy bucket test의 phase, heartbeat, decision/risk/trade count를 polling fallback으로 갱신한다.
+- `/dashboard/lab/runs/[runId]`가 저장된 batch replay run summary와 latest artifact snapshot을 read-only로 보여준다.
+- `/dashboard/portfolio`, `/dashboard/risk-gate`, `/dashboard/validation`, `/dashboard/audit`가 backend ViewModel과 deterministic report 기반의 compliance, risk trace, validation comparison, audit review를 표시한다.
 
 현재 구조의 장점:
 
-- dashboard가 replay를 직접 실행하지 않는다.
-- 조회 surface는 `GET`/`HEAD`만 허용하고, paper simulation 생성은 별도 guarded `POST /paper/simulations`만 허용한다.
-- 저장된 artifact를 읽기만 하므로 live trading surface와 분리되어 있다.
+- browser는 portfolio, strategy, risk, validation metric을 직접 계산하지 않고 backend ViewModel 또는 deterministic report를 렌더링한다.
+- paper simulation create, policy save, strategy bucket test create는 same-origin, intent header, mutation token, backend validation을 요구하는 guarded paper-only mutation으로 제한된다.
+- strategy bucket test create는 append-only queued record와 audit event까지만 저장하고 replay runner를 시작하지 않는다.
+- live order, broker mutation, natural language order, raw `codex exec`, raw `tossctl` 실행 surface는 없다.
 
-정적 dashboard 구조의 남은 한계:
+남은 보류 항목:
 
-- 정적 dashboard form은 run 조건 선택까지는 지원하지만, `PortfolioPolicy` 중심의 전략 버킷/현금/hedge policy 설계 화면은 아니다.
-- 실행 중인 simulation과 completed run은 artifact 중심으로 보이며, policy 후보 단위의 URL/상태/검증 lifecycle로 완전히 분리되어 있지 않다.
-- single replay, batch replay, current virtual portfolio, aggregate report가 `PortfolioPolicy` 제품 흐름으로 연결되어 있지 않다.
-- 지난 simulation 조건과 결과를 policy 후보 관점으로 비교해 "이 알고리즘을 실험할 가치가 있는가"를 판단하기 어렵다.
+- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 별도 archive/deployment PR에서 다룬다.
+- SSE progress stream은 polling fallback만으로 operator 확인 요구를 충족하지 못하는 실제 latency 문제가 확인될 때 별도 설계한다.
 
 ## 제품 방향
 
@@ -642,6 +650,8 @@ flowchart TD
 
 ## PR 분해 계획
 
+아래 PR 1~8은 정적 dashboard 제품화 착수 당시의 초기 분해 기록이다. 현재 완료 판단은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)의 완료 기준과 `apps/dashboard/README.md`를 우선한다.
+
 ### PR 1. Dashboard IA and Simulation Product Spec
 
 목표:
@@ -796,13 +806,21 @@ flowchart TD
 
 ## 완료 기준
 
-이 계획이 완료되면 사용자는 dashboard에서 다음을 할 수 있어야 한다.
+이 계획의 핵심 사용자 흐름은 현재 Next.js dashboard 전환 기준으로 충족된 상태다.
 
-- 실투자 dashboard가 아직 비활성 상태임을 확인한다.
-- 가상 투자 조건을 선택한다.
-- paper-only simulation을 시작한다.
-- 실행 중인 simulation을 실시간으로 관찰한다.
-- 지난 simulation portfolio와 report를 다시 본다.
-- 여러 simulation 결과를 비교해 알고리즘의 투자 가치 검증 근거를 본다.
+- [x] 실투자 dashboard가 아직 비활성 상태임을 확인한다.
+  - 구현 위치: `/dashboard`, `/dashboard/live-readiness`
+- [x] 가상 투자 조건을 선택한다.
+  - 구현 위치: `/dashboard/lab/policies`, `/dashboard/lab/strategy-tests`, `/dashboard/lab/strategy-tests/buckets/[bucket]/new`
+- [x] paper-only simulation을 시작한다.
+  - 구현 위치: `/dashboard/lab/policies/simulations/create`
+  - 범위: guarded `POST /paper/simulations` flow이며 live order로 연결하지 않는다.
+- [x] 실행 중인 strategy bucket test를 관찰한다.
+  - 구현 위치: `/dashboard/lab/strategy-tests`, `/dashboard/lab/strategy-tests/tests/{testId}/progress`
+  - 범위: polling fallback 기반 phase, heartbeat, partial count 갱신
+- [x] 지난 simulation portfolio와 report를 다시 본다.
+  - 구현 위치: `/dashboard/lab/runs/[runId]`
+- [x] 여러 simulation 결과를 비교해 알고리즘의 paper-only 검증 근거를 본다.
+  - 구현 위치: `/dashboard/validation`, `/dashboard/lab/strategy-tests`
 
-완료 후에도 실계좌 주문은 여전히 불가능해야 한다.
+완료 후에도 실계좌 주문은 여전히 불가능해야 한다. 현재 dashboard/API/MCP surface는 live order, broker mutation, natural language order, raw `codex exec`, raw `tossctl` 실행을 노출하지 않는다.
