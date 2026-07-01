@@ -171,3 +171,25 @@
 - 투자 성과가 아니라 backend engineering quality를 보여줌
 - mock demo만으로 프로젝트를 설명 가능
 - financial advice로 오해될 표현이 없음
+
+## Milestone 10: Research Hardening
+
+목표:
+
+- Next.js dashboard와 legacy static dashboard routing 정리
+- KR/US exchange calendar, timezone, FX stale rule 정합성 강화
+- date-scoped universe lifecycle snapshot 도입
+- slippage, nonlinear market impact, volatility-adjusted cost 모델 확장
+- Sharpe 계열 통계 검증과 selection bias warning 추가
+- full CPCV/PBO 검증 구조 확장
+- Triple Barrier Method와 meta-labeling evaluation layer 검토
+
+완료 기준:
+
+- paper-only historical replay 결과가 calendar, FX, universe lifecycle, cost model 경고를 함께 기록함
+- 여러 strategy/prompt/policy 후보 비교 시 overfitting과 Sharpe 통계 경고가 report에 남음
+- label/evaluation layer가 sizing/risk gate 책임을 침범하지 않음
+- Next.js dashboard가 operator UI 기준으로 정리되고 legacy surface가 archive 또는 compatibility surface로 명확히 분리됨
+- live order, broker mutation, raw `codex exec`, raw `tossctl` 실행 surface가 추가되지 않음
+
+자세한 계획은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)를 참고합니다.
