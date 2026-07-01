@@ -6,8 +6,10 @@ import {
 } from "node:http";
 
 import {
+  readLegacyDashboardRedirectLocation,
   readDashboardAsset,
-  writeDashboardAsset
+  writeDashboardAsset,
+  writeLegacyDashboardRedirect
 } from "./localOperationsDashboardAssets.js";
 import { writeJson } from "./localOperationsResponse.js";
 import { routeRequest } from "./localOperationsRouting.js";
@@ -137,6 +139,18 @@ async function handleRequest(
         error: "method_not_allowed",
         readOnly: true
       });
+      return;
+    }
+
+    const legacyDashboardRedirectLocation = readLegacyDashboardRedirectLocation(
+      url.pathname
+    );
+    if (legacyDashboardRedirectLocation !== null) {
+      writeLegacyDashboardRedirect(
+        response,
+        legacyDashboardRedirectLocation,
+        request.method === "HEAD"
+      );
       return;
     }
 

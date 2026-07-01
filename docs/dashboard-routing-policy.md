@@ -27,7 +27,7 @@
 - `dashboard/`는 Local Operations API static asset source로 남긴다.
 - legacy static response는 `x-toss-trading-dashboard-surface: legacy-static-compat` header로 Next.js 기본 UI와 구분한다.
 - legacy static 화면은 compatibility 문구를 유지한다.
-- `/dashboard/virtual-replays`, `/dashboard/batch-summary` 같은 legacy static alias는 route compatibility로만 유지한다.
+- `/dashboard/virtual-replays`, `/dashboard/batch-summary` 같은 legacy static alias는 canonical legacy static route로 redirect하는 compatibility route로만 유지한다.
 - archive 이동을 시작할 때는 `dashboard/` asset source 변경, `src/api/localOperationsSurface.ts` allowlist 변경, Local Operations API dashboard asset test를 같은 PR 범위에 포함해야 한다.
 
 ## Deployment routing 기준
