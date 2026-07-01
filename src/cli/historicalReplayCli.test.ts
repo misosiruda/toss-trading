@@ -534,6 +534,83 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   );
 });
 
+test("historical batch replay CLI applies calendar fixture validation", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-calendar-cli-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-calendar-cli-output-")
+  );
+  const calendarPath = join(sourceDataDir, "market-calendar.jsonl");
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    `${JSON.stringify(snapshot("hist_005930_batch_calendar", "005930"))}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    calendarPath,
+    `${JSON.stringify(calendarFixture({ isHoliday: true }))}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-calendar-cli",
+      "--seed",
+      "seed-calendar",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--step-seconds",
+      "604800",
+      "--max-snapshot-age-seconds",
+      String(31 * 24 * 60 * 60),
+      "--min-window-snapshots",
+      "1",
+      "--calendar-fixtures-path",
+      calendarPath,
+      "--calendar-rule",
+      "KR:KRX:Asia/Seoul"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const trialRecords = readFileSync(String(output["selectionTrialsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const availability = runRecords[0]?.["dataAvailability"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(output["status"], "completed");
+  assert.equal(output["completedCount"], 0);
+  assert.equal(output["skippedCount"], 1);
+  assert.equal(runRecords[0]?.["status"], "skipped");
+  assert.equal(runRecords[0]?.["skipReason"], "DATA_INSUFFICIENT");
+  assert.equal(runRecords[0]?.["reportPath"], null);
+  assert.equal(trialRecords[0]?.["status"], "skipped");
+  assert.deepEqual(availability["issues"], ["CALENDAR_HOLIDAY_SAMPLE"]);
+});
+
 test("historical batch report CLI tolerates missing selection trial log", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");

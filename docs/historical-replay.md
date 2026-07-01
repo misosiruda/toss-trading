@@ -313,7 +313,7 @@ Calendar fixture도 availability gate에 연결할 수 있습니다. Fixture 파
 npm run historical:availability -- -- --data-dir data/paper --start-at 2025-02-01T00:00:00+09:00 --end-at 2025-02-28T23:59:59.999+09:00 --calendar-fixtures-path data/calendar/market-calendar.jsonl --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York
 ```
 
-Calendar fixture가 지정되면 휴장일, fixture 누락, session mismatch, timezone mismatch가 availability issue로 기록되고 `insufficient`로 fail-closed 처리됩니다. 이 옵션은 availability preflight에만 연결되어 있으며, batch sampler의 calendar-aware window 선택과 report/dashboard warning 표시는 RH2 후속 범위입니다.
+Calendar fixture가 지정되면 휴장일, fixture 누락, session mismatch, timezone mismatch가 availability issue로 기록되고 `insufficient`로 fail-closed 처리됩니다. 이 옵션은 availability preflight에만 연결되어 있으며, batch replay CLI에서도 같은 fixture와 rule 옵션을 run별 preflight에 전달합니다. Batch sampler의 calendar-aware window 선택과 report/dashboard warning 표시는 RH2 후속 범위입니다.
 
 실제 replay 실행 전에 데이터 부족을 fail-closed로 막으려면 `--require-data-availability`를 사용합니다.
 
@@ -363,7 +363,13 @@ data/batch-replay/
 - batch runner는 source data directory의 `historical-market-snapshots.jsonl`을 읽고, run별 출력은 batch output directory 아래에 분리해 씁니다.
 - 각 run은 `seed:runIndex`를 사용해 deterministic random window를 선택합니다.
 - availability check가 `insufficient`이면 해당 run은 `skipped`로 기록되고 replay workflow를 실행하지 않습니다.
-- `runHistoricalBatchReplay()`에 `calendarValidation`을 직접 전달하면 각 run availability preflight가 calendar fixture issue도 fail-closed로 평가합니다. Batch CLI의 calendar fixture option은 후속 범위입니다.
+- `runHistoricalBatchReplay()`에 `calendarValidation`을 직접 전달하거나 batch CLI에 `--calendar-fixtures-path`, `--calendar-rule`을 지정하면 각 run availability preflight가 calendar fixture issue도 fail-closed로 평가합니다.
+- Batch CLI calendar fixture option 예시:
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2026-04-12-2026-06-12 --output-dir data/batch-replay --batch-id batch-calendar-smoke --seed batch-calendar-seed --runs 10 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --window-months 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1 --calendar-fixtures-path data/calendar/market-calendar.jsonl --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York
+```
+
 - 각 run record는 `marketRegime`을 포함합니다. label은 `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` 중 하나입니다.
 - `--window-sampling balanced_regime`을 사용하면 requested market regime bucket을 순환하며 window를 선택합니다.
 - `--validation-splits-path`를 사용하면 random/balanced sampling 대신 입력 assignment의 `splitRole`별 fixed window를 실행합니다. 이때 assignment 수는 `--runs`와 같아야 하며, `fixedWindow`와 함께 사용할 수 없습니다.
