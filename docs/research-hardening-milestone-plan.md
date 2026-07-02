@@ -209,7 +209,8 @@
 현재 결정:
 
 - 첫 PR 범위는 `sharpe_validation.v1` contract와 schema 정의로 제한한다.
-- Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 계산기와 report/dashboard 연결은 후속 PR에서 다룬다.
+- 두 번째 PR 범위는 standalone sample Sharpe calculator와 unit test로 제한한다.
+- Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 계산과 report/dashboard 연결은 후속 PR에서 다룬다.
 
 작업 범위:
 
