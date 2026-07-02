@@ -208,6 +208,12 @@ AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investm
 Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
 Next.js 기반 dashboard 전환 기획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다.
 
+## License
+
+이 저장소는 공개 검토를 위한 source-available repository입니다. 오픈소스 라이선스를 부여하지 않습니다.
+
+별도 서면 허가 없이 이 소프트웨어와 문서를 사용, 복제, 수정, 병합, 게시, 배포, 재라이선스, 판매, 호스팅, 운영하거나 파생 저작물을 만들 수 없습니다. 자세한 조건은 [LICENSE](LICENSE)를 따릅니다.
+
 ## Disclaimer
 
 이 프로젝트는 Toss Securities와 제휴되었거나 보증받은 프로젝트가 아닙니다. `tossinvest-cli` 같은 비공식 도구를 언급하더라도 이는 시스템 설계와 read-only 정보 수집 가능성을 검토하기 위한 것이며 투자 조언이나 실거래 권유가 아닙니다. 모든 예시는 시스템 설계를 설명하기 위한 placeholder이며 실제 계좌, 실제 주문, 실제 투자 판단을 포함하지 않습니다.
