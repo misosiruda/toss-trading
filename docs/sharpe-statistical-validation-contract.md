@@ -16,6 +16,7 @@
 - `src/analytics/sharpeValidation.ts`는 standalone `calculateSharpeValidationReport()`를 제공한다. 이 helper는 finite return sample에서 sample Sharpe, mean, volatility, skewness, excess kurtosis, autocorrelation diagnostic을 계산한다.
 - `HistoricalReplayReport`는 single replay return sample을 기준으로 `sharpeValidation` field를 기록하고 Markdown render에 read-only section을 표시한다.
 - single `HistoricalReplayReport.sharpeValidation`은 lag 5까지의 autocorrelation diagnostic을 요청한다.
+- `BatchReplayAggregateReport`는 `overall`, `byRegime`, `byValidationSplitRole` group summary마다 같은 group return sample 기준의 `sharpeValidation` field를 기록한다.
 
 ## Contract 목표
 
@@ -61,7 +62,7 @@ interface SharpeValidationMetrics {
 }
 ```
 
-현재 구현은 schema, unavailable placeholder helper, standalone sample calculator, single `HistoricalReplayReport.sharpeValidation` 연결을 제공한다. `BatchReplayAggregateReport`, `ReplayResearchReport`, dashboard ViewModel에 이 field를 연결하는 작업은 후속 PR 범위다.
+현재 구현은 schema, unavailable placeholder helper, standalone sample calculator, single `HistoricalReplayReport.sharpeValidation` 연결, `BatchReplayAggregateReport` group summary 연결을 제공한다. `ReplayResearchReport`, dashboard ViewModel에 이 field를 연결하는 작업은 후속 PR 범위다.
 
 ## Warning Code
 
@@ -95,7 +96,7 @@ interface SharpeValidationMetrics {
 후속 PR은 다음 순서로 연결한다.
 
 1. 완료: `HistoricalReplayReport.sharpeValidation` field와 Markdown render section에 single replay 검증 결과를 연결한다.
-2. `BatchReplayAggregateReport` group summary에 Sharpe validation을 연결한다.
+2. 완료: `BatchReplayAggregateReport` group summary에 Sharpe validation을 연결한다.
 3. Probabilistic Sharpe Ratio, Deflated Sharpe Ratio, Lo-adjusted Sharpe 계산을 selection context와 함께 확장한다.
 4. `ReplayResearchReport`와 Next.js Validation Lab에서 unavailable/available 상태와 warning을 read-only로 표시한다.
 
