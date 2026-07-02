@@ -624,7 +624,7 @@ test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
   assert.equal(result.trade?.spreadCostKrw, 0);
   assert.equal(result.trade?.impactCostKrw, 0);
   assert.equal(result.trade?.totalCostKrw, 140);
-  assert.equal(result.trade?.costModelVersion, "paper_cost_model.v2");
+  assert.equal(result.trade?.costModelVersion, "paper_cost_model.v3");
   assert.equal(result.trade?.fillStatus, "filled");
   assert.equal(result.trade?.liquidityStatus, "not_modeled");
   assert.equal(result.trade?.requestedNotionalKrw, 70_000);
@@ -672,6 +672,142 @@ test("PaperOrderEngine records partial fills when volume participation caps noti
   assert.equal(result.trade?.averageVolume, 10);
   assert.equal(result.trade?.quantity, 1);
   assert.equal(result.portfolio.cashKrw, 930_000);
+});
+
+test("PaperOrderEngine records participation-based market impact costs", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 10,
+          averageVolume: 10
+        }
+      ],
+      constraints: {
+        maxNewPositions: 3,
+        maxBudgetPerSymbolKrw: 1_000_000,
+        allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+      }
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: {
+      now,
+      maxBudgetPerDecisionKrw: 1_000_000,
+      maxSymbolExposureKrw: 1_000_000,
+      maxPositionWeightRatio: 1,
+      minCashReserveRatio: 0
+    },
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.fillStatus, "filled");
+  assert.equal(result.trade?.liquidityStatus, "sufficient");
+  assert.equal(result.trade?.participationRate, 0.1);
+  assert.equal(result.trade?.grossAmountKrw, 70_000);
+  assert.equal(result.trade?.impactCostKrw, 350);
+  assert.equal(result.trade?.totalCostKrw, 350);
+  assert.equal(result.trade?.netAmountKrw, 70_350);
+  assert.equal(result.portfolio.cashKrw, 929_650);
+  assert.equal(result.portfolio.positions[0]?.unrealizedPnlKrw, -350);
+});
+
+test("PaperOrderEngine bases market impact on rounded whole-share fills", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 100,
+          averageVolume: 100
+        }
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 100_000 }),
+    riskPolicy: { now },
+    executionPolicy: {
+      allowFractionalShares: false,
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.quantity, 1);
+  assert.equal(result.trade?.requestedNotionalKrw, 100_000);
+  assert.equal(result.trade?.filledNotionalKrw, 70_000);
+  assert.equal(result.trade?.participationRate, 0.01);
+  assert.equal(result.trade?.impactCostKrw, 35);
+  assert.equal(result.trade?.totalCostKrw, 35);
+  assert.equal(result.trade?.netAmountKrw, 70_035);
+  assert.equal(result.portfolio.cashKrw, 929_965);
+});
+
+test("PaperOrderEngine rejects buy fills when modeled impact exceeds cash", () => {
+  const startingPortfolio = portfolio({ cashKrw: 70_000 });
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 10,
+          averageVolume: 10
+        }
+      ]
+    }),
+    portfolio: startingPortfolio,
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: {
+      now,
+      minCashReserveRatio: 0,
+      maxPositionWeightRatio: 1
+    },
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, false);
+  assert.ok(result.riskDecision.rejectCodes.includes("VIRTUAL_CASH_EXCEEDED"));
+  assert.equal(result.trade, null);
+  assert.deepEqual(result.portfolio, startingPortfolio);
+});
+
+test("PaperOrderEngine rejects buy fills when modeled impact breaches cash reserve", () => {
+  const startingPortfolio = portfolio({ cashKrw: 80_000 });
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 10,
+          averageVolume: 10
+        }
+      ]
+    }),
+    portfolio: startingPortfolio,
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: {
+      now,
+      minCashReserveRatio: 0,
+      minCashReserveKrw: 10_000,
+      maxPositionWeightRatio: 1
+    },
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, false);
+  assert.ok(
+    result.riskDecision.rejectCodes.includes("VIRTUAL_CASH_RESERVE_BREACHED")
+  );
+  assert.equal(result.trade, null);
+  assert.deepEqual(result.portfolio, startingPortfolio);
 });
 
 test("PaperOrderEngine rejects no-fill liquidity without creating a trade", () => {

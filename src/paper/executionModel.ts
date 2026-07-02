@@ -16,6 +16,7 @@ export interface PaperExecutionPolicy {
   maxVolumeParticipationRate: number;
   minLiquidityFillRatio: number;
   rejectStaleLiquidity: boolean;
+  marketImpactBpsPerParticipationRate: number;
 }
 
 export interface PaperFillInput {
@@ -69,7 +70,11 @@ export function createPaperExecutionPolicy(
     allowFractionalShares: policy?.allowFractionalShares ?? true,
     maxVolumeParticipationRate: policy?.maxVolumeParticipationRate ?? 0.1,
     minLiquidityFillRatio: policy?.minLiquidityFillRatio ?? 0.1,
-    rejectStaleLiquidity: policy?.rejectStaleLiquidity ?? true
+    rejectStaleLiquidity: policy?.rejectStaleLiquidity ?? true,
+    marketImpactBpsPerParticipationRate: normalizeNonnegativeNumber(
+      policy?.marketImpactBpsPerParticipationRate,
+      0
+    )
   };
 }
 
@@ -142,15 +147,26 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
     input.action === "VIRTUAL_SELL"
       ? Math.round((grossAmountKrw * policy.taxBps) / 10_000)
       : 0;
-  const netAmountKrw =
-    input.action === "VIRTUAL_BUY"
-      ? grossAmountKrw + feeKrw + taxKrw
-      : Math.max(0, grossAmountKrw - feeKrw - taxKrw);
   const slippageKrw = Math.round(
     Math.abs(fillPriceKrw - sourcePriceKrw) * quantity
   );
   const spreadCostKrw = 0;
-  const impactCostKrw = 0;
+  const filledParticipationRate = calculateFilledParticipationRate({
+    quantity,
+    volume: input.volume,
+    averageVolume: input.averageVolume
+  });
+  const impactCostKrw = calculateMarketImpactCost({
+    grossAmountKrw,
+    participationRate: filledParticipationRate,
+    policy
+  });
+  const explicitExecutionCostKrw =
+    feeKrw + taxKrw + spreadCostKrw + impactCostKrw;
+  const netAmountKrw =
+    input.action === "VIRTUAL_BUY"
+      ? grossAmountKrw + explicitExecutionCostKrw
+      : Math.max(0, grossAmountKrw - explicitExecutionCostKrw);
   const totalCostKrw =
     feeKrw + taxKrw + slippageKrw + spreadCostKrw + impactCostKrw;
   const realizedPnlKrw =
@@ -178,9 +194,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
     filledNotionalKrw: grossAmountKrw,
     fillStatus: liquidityDecision.fillStatus,
     liquidityStatus: liquidityDecision.liquidityStatus,
-    ...(liquidityDecision.participationRate === undefined
+    ...(filledParticipationRate === undefined
       ? {}
-      : { participationRate: liquidityDecision.participationRate }),
+      : { participationRate: filledParticipationRate }),
     maxParticipationRate: liquidityDecision.maxParticipationRate,
     ...(liquidityDecision.volume === undefined
       ? {}
@@ -242,4 +258,62 @@ function applySlippage(
     0,
     Math.round(priceKrw * (1 + (direction * policy.slippageBps) / 10_000))
   );
+}
+
+function calculateMarketImpactCost(input: {
+  grossAmountKrw: number;
+  participationRate: number | undefined;
+  policy: PaperExecutionPolicy;
+}): number {
+  if (
+    input.participationRate === undefined ||
+    input.participationRate <= 0 ||
+    input.policy.marketImpactBpsPerParticipationRate <= 0
+  ) {
+    return 0;
+  }
+
+  const impactBps =
+    input.participationRate * input.policy.marketImpactBpsPerParticipationRate;
+  return Math.round((input.grossAmountKrw * impactBps) / 10_000);
+}
+
+function calculateFilledParticipationRate(input: {
+  quantity: number;
+  volume: number | undefined;
+  averageVolume: number | undefined;
+}): number | undefined {
+  const effectiveVolume = effectiveVolumeForParticipation(input);
+  if (effectiveVolume === undefined || input.quantity <= 0) {
+    return undefined;
+  }
+  return roundRatio(input.quantity / effectiveVolume);
+}
+
+function effectiveVolumeForParticipation(input: {
+  volume: number | undefined;
+  averageVolume: number | undefined;
+}): number | undefined {
+  const volumes = [input.volume, input.averageVolume].filter(
+    (value): value is number =>
+      value !== undefined && Number.isFinite(value) && value > 0
+  );
+  if (volumes.length === 0) {
+    return undefined;
+  }
+  return Math.min(...volumes);
+}
+
+function normalizeNonnegativeNumber(
+  value: number | undefined,
+  fallback: number
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, value);
+}
+
+function roundRatio(value: number): number {
+  return Number(value.toFixed(6));
 }

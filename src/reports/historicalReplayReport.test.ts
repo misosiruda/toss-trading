@@ -34,7 +34,7 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.tradeSummary.tradeCount, 2);
   assert.equal(report.costSummary.totalCostKrw, 0);
   assert.deepEqual(report.costSummary.costModelVersions, [
-    "paper_cost_model.v2"
+    "paper_cost_model.v3"
   ]);
   assert.equal(report.costSummary.filledCount, 2);
   assert.equal(report.costSummary.partialFillCount, 0);
@@ -181,7 +181,7 @@ test("historical replay report summarizes execution cost components", () => {
     spreadCostKrw: 4,
     impactCostKrw: 5,
     totalCostKrw: 999,
-    costModelVersion: "paper_cost_model.v2",
+    costModelVersion: "paper_cost_model.v3",
     fillStatus: "partial",
     liquidityStatus: "partial",
     participationRate: 0.1
@@ -208,7 +208,7 @@ test("historical replay report summarizes execution cost components", () => {
   assert.equal(report.costSummary.averageParticipationRate, 0.1);
   assert.equal(report.costSummary.maxParticipationRate, 0.1);
   assert.deepEqual(report.costSummary.costModelVersions, [
-    "paper_cost_model.v2"
+    "paper_cost_model.v3"
   ]);
   assert.equal(report.advancedPerformance.costDragRatio! > 0, true);
   assert.equal(

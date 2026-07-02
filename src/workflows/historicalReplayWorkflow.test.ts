@@ -222,13 +222,13 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.match(String(researchManifest["costModelHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.equal(
     researchManifest["executionModelVersion"],
-    "execution_simulator.v2"
+    "execution_simulator.v3"
   );
   assert.equal(
     (stored["reproducibility"] as Record<string, unknown>)[
       "executionModelVersion"
     ],
-    "execution_simulator.v2"
+    "execution_simulator.v3"
   );
   assert.equal(packetLog.length, result.replayResult.packetCount);
   assert.equal(decisionLog.length, result.replayResult.decisionRecordCount);

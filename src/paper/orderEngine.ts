@@ -10,6 +10,7 @@ import {
   normalizeVirtualDecision,
   type NormalizedVirtualOrder
 } from "./decisionNormalizer.js";
+import { assessDynamicCashReserve } from "./dynamicCashReservePolicy.js";
 import {
   buildPaperFill,
   type PaperExecutionPolicy,
@@ -18,6 +19,11 @@ import {
 import { PAPER_COST_MODEL_VERSION } from "./costModel.js";
 import { isDustPosition, isSellAllDustClose } from "./dustPosition.js";
 import { findCandidate, VirtualRiskEngine, type VirtualRiskPolicy } from "./riskEngine.js";
+import {
+  createVirtualRiskPolicy,
+  minimumCashReserveKrw,
+  type VirtualRiskRejectCode
+} from "./riskPolicy.js";
 
 export interface PaperOrderInput {
   packet: MarketPacket;
@@ -101,6 +107,19 @@ function executeBuy(
     return {
       portfolio,
       riskDecision: rejectLiquidityFill(riskDecision, fill),
+      trade: null
+    };
+  }
+
+  const fundingRiskDecision = rejectInsufficientBuyFunding({
+    input,
+    riskDecision,
+    fill
+  });
+  if (fundingRiskDecision !== null) {
+    return {
+      portfolio,
+      riskDecision: fundingRiskDecision,
       trade: null
     };
   }
@@ -366,6 +385,58 @@ function rejectLiquidityFill(
     rejectCodes: Array.from(new Set([...riskDecision.rejectCodes, rejectCode])),
     checkedRules: Array.from(
       new Set([...riskDecision.checkedRules, "liquidity"])
+    )
+  };
+}
+
+function rejectInsufficientBuyFunding(input: {
+  input: PaperOrderInput;
+  riskDecision: VirtualRiskDecision;
+  fill: PaperFill;
+}): VirtualRiskDecision | null {
+  const policy = createVirtualRiskPolicy({
+    maxBudgetPerSymbolKrw: input.input.packet.constraints.maxBudgetPerSymbolKrw,
+    policy: input.input.riskPolicy
+  });
+  const remainingCashKrw =
+    input.input.portfolio.cashKrw - input.fill.netAmountKrw;
+  const staticCashReserveKrw = minimumCashReserveKrw(
+    input.input.portfolio,
+    policy
+  );
+  const rejectCodes: VirtualRiskRejectCode[] = [];
+
+  if (input.fill.netAmountKrw > input.input.portfolio.cashKrw) {
+    rejectCodes.push("VIRTUAL_CASH_EXCEEDED");
+  }
+  if (remainingCashKrw < staticCashReserveKrw) {
+    rejectCodes.push("VIRTUAL_CASH_RESERVE_BREACHED");
+  }
+
+  const dynamicCashReserve = assessDynamicCashReserve({
+    portfolio: input.input.portfolio,
+    baseMinimumCashReserveRatio: policy.minCashReserveRatio,
+    baseMinimumCashReserveKrw: policy.minCashReserveKrw,
+    policy: policy.dynamicCashReservePolicy,
+    marketRegime: policy.dynamicCashReserveMarketRegime
+  });
+  if (
+    dynamicCashReserve !== null &&
+    dynamicCashReserve.minimumCashReserveKrw > staticCashReserveKrw &&
+    remainingCashKrw < dynamicCashReserve.minimumCashReserveKrw
+  ) {
+    rejectCodes.push("VIRTUAL_REGIME_CASH_RESERVE_BREACHED");
+  }
+
+  if (rejectCodes.length === 0) {
+    return null;
+  }
+
+  return {
+    ...input.riskDecision,
+    approved: false,
+    rejectCodes: Array.from(
+      new Set([...input.riskDecision.rejectCodes, ...rejectCodes])
     )
   };
 }

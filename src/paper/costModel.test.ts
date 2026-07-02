@@ -36,12 +36,31 @@ test("paper cost model exposes versioned execution assumptions", () => {
   assert.equal(model.executionPolicy.maxVolumeParticipationRate, 0.05);
   assert.equal(model.executionPolicy.minLiquidityFillRatio, 0.2);
   assert.equal(model.executionPolicy.rejectStaleLiquidity, true);
+  assert.equal(model.executionPolicy.marketImpactBpsPerParticipationRate, 0);
   assert.match(createReplayResearchHash(model), /^sha256:[a-f0-9]{64}$/);
+});
+
+test("paper cost model records opt-in market impact assumptions", () => {
+  const model = createPaperCostModel({
+    marketImpactBpsPerParticipationRate: 500
+  });
+
+  assert.equal(model.marketImpactModel, "linear_participation_bps");
+  assert.equal(model.costComponents.marketImpact, "participation_rate_bps");
+  assert.equal(model.executionPolicy.marketImpactBpsPerParticipationRate, 500);
+  assert.match(
+    model.assumptions.join("\n"),
+    /market impact cost uses filled notional and filled volume participation rate/
+  );
 });
 
 test("paper cost model hash changes when execution cost policy changes", () => {
   const baseline = createReplayResearchHash(createPaperCostModel());
   const withFee = createReplayResearchHash(createPaperCostModel({ feeBps: 10 }));
+  const withMarketImpact = createReplayResearchHash(
+    createPaperCostModel({ marketImpactBpsPerParticipationRate: 500 })
+  );
 
   assert.notEqual(baseline, withFee);
+  assert.notEqual(baseline, withMarketImpact);
 });
