@@ -494,7 +494,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - 기본 coverage status는 required symbol만 기준으로 판단합니다.
 - optional symbol까지 강제하려면 `--require-optional-symbols` 또는 batch replay의 `--require-optional-universe-symbols`를 사용합니다.
 
-Universe manifest lifecycle snapshot contract:
+`Universe manifest` 생명주기 snapshot 계약:
 
 - `snapshotDate`: `YYYY-MM-DD` 형식의 필수 날짜입니다. 이 값은 universe 구성과 lifecycle metadata가 어느 날짜 기준인지 고정합니다.
 - `lifecycleStatus`: symbol 단위 status이며 `active`, `suspended`, `delisted`, `unknown` 중 하나입니다.
