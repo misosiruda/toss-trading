@@ -181,7 +181,7 @@ Historical replay report의 `Advanced Performance Metrics` section은 `performan
 - `exposureAdjustedReturnRatio`: `totalReturnRatio / avgExposureRatio`
 - `warnings`: sample 부족, zero volatility, annualization 제한, serial correlation 미보정 경고
 
-이 metric은 paper-only 사후 분석용입니다. 짧은 replay, return sample 부족, zero drawdown, zero volatility에서는 숫자를 억지로 만들지 않고 `null`과 warning을 기록합니다. Sharpe는 per-sample 값이며 Lo 방식의 serial-correlation adjustment나 Deflated Sharpe Ratio가 아닙니다.
+이 metric은 paper-only 사후 분석용입니다. 짧은 replay, return sample 부족, zero drawdown, zero volatility에서는 숫자를 억지로 만들지 않고 `null`과 warning을 기록합니다. `advancedPerformance.sharpeRatio`는 per-sample 값이며 Lo 방식의 serial-correlation adjustment나 Deflated Sharpe Ratio가 아닙니다. Lo-style 조정값은 별도 `sharpeValidation.metrics.loAdjustedSharpe` field에 기록됩니다.
 
 Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_validation.v1` schema로 single replay return sample을 검증합니다.
 
@@ -192,7 +192,8 @@ Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_v
 - `sample`: return sample count, minimum sample count, annualization 상태
 - `distribution`: mean, volatility, skewness, excess kurtosis, lag 5까지의 autocorrelation diagnostic
 - `metrics.sampleSharpe`: standalone sample Sharpe 결과
-- `metrics.loAdjustedSharpe`, `metrics.probabilisticSharpeRatio`, `metrics.deflatedSharpeRatio`: 후속 계산 전까지 `not_implemented`
+- `metrics.loAdjustedSharpe`: `autocorrelationMaxLag`가 지정된 경우 Lo-style serial correlation adjusted Sharpe 계산
+- `metrics.probabilisticSharpeRatio`, `metrics.deflatedSharpeRatio`: 후속 계산 전까지 `not_implemented`
 - `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `multipleTestingAdjustment=none`으로 기록
 - `warnings`: insufficient sample, zero volatility, serial correlation 미보정, 미구현 metric 경고
 
@@ -762,7 +763,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 새로 생성되는 batch run record의 `summary.costSummary`는 single `HistoricalReplayReport.costSummary`에서 가져온 fee, tax, slippage, spread, market impact, total cost, fill count, participation rate, cost model version을 보관합니다. Aggregate report는 이 값을 `overall.costSummary`, `byRegime.*.costSummary`, `byValidationSplitRole.*.costSummary`로 합산합니다. `summary.costSummary`가 없는 legacy run record는 비용 sample에서 제외되며, replay research report는 cost sample이 하나도 없을 때만 `costBreakdown.status="unavailable"` warning을 남깁니다.
 
-Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, 아직 계산하지 않는 PSR/DSR/Lo-adjusted Sharpe 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, dashboard 표시 연결은 후속 PR 범위입니다.
+Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, Lo-style adjusted Sharpe, 아직 계산하지 않는 PSR/DSR 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, dashboard 표시 연결은 후속 PR 범위입니다.
 
 `historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
 
