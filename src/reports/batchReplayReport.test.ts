@@ -65,6 +65,13 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.equal(report.overall.advancedPerformance.hitRatio, 0.666667);
   assert.equal(report.overall.advancedPerformance.profitFactor, 7);
   assert.notEqual(report.overall.advancedPerformance.sharpeRatio, null);
+  assert.equal(report.overall.sharpeValidation.schemaVersion, "sharpe_validation.v1");
+  assert.equal(report.overall.sharpeValidation.sample.returnSampleCount, 3);
+  assert.equal(report.overall.sharpeValidation.status, "unavailable");
+  assert.equal(
+    report.overall.sharpeValidation.metrics.sampleSharpe.status,
+    "insufficient_sample"
+  );
   assert.match(
     report.overall.advancedPerformance.warnings.join("\n"),
     /at least 20 return samples/
@@ -114,12 +121,57 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   );
   assert.match(
     renderBatchReplayAggregateReport(report),
+    /sharpe_validation/
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
     /data_availability_issues/
   );
   assert.match(
     renderBatchReplayAggregateReport(report),
     /cost_summary/
   );
+});
+
+test("batch replay aggregate report connects Sharpe validation diagnostics", () => {
+  const returns = [
+    0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
+    0.01, 0.01, 0.01, 0.01, 0.01, -0.01, -0.01, -0.01, -0.01, -0.01,
+    -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01
+  ];
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-07-02T00:00:00.000Z"),
+    records: returns.map((returnRatio, index) =>
+      record(
+        `run_sharpe_${index}`,
+        index,
+        "completed",
+        "bull",
+        returnRatio,
+        Math.round(1_000_000 * (1 + returnRatio))
+      )
+    )
+  });
+
+  assert.equal(report.overall.sharpeValidation.status, "available");
+  assert.equal(report.overall.sharpeValidation.sample.returnSampleCount, 30);
+  assert.equal(report.overall.sharpeValidation.selectionContext.candidateCount, null);
+  assert.equal(report.overall.sharpeValidation.selectionContext.trialCount, 30);
+  assert.equal(
+    report.overall.sharpeValidation.distribution.autocorrelation.maxLag,
+    5
+  );
+  assert.equal(
+    report.overall.sharpeValidation.distribution.autocorrelation.lagCount,
+    5
+  );
+  assert.match(
+    report.overall.sharpeValidation.warnings
+      .map((warning) => warning.code)
+      .join("\n"),
+    /NON_IID_RETURN_SAMPLE/
+  );
+  assert.match(renderBatchReplayAggregateReport(report), /sharpe_validation/);
 });
 
 test("batch replay aggregate report summarizes execution cost components", () => {

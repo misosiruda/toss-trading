@@ -3,6 +3,10 @@ import {
   summarizeReturnDistributionMetrics,
   type ReturnDistributionMetrics
 } from "../analytics/performanceMetrics.js";
+import {
+  calculateSharpeValidationReport,
+  type SharpeValidationReport
+} from "../analytics/sharpeValidation.js";
 import type { AssetType, Market } from "../domain/schemas.js";
 import type {
   SelectionTrialRecord,
@@ -78,6 +82,7 @@ export interface BatchReplayGroupSummary {
   maxTotalReturnRatio: number | null;
   winRate: number | null;
   advancedPerformance: ReturnDistributionMetrics;
+  sharpeValidation: SharpeValidationReport;
   targetReturnHitRates: TargetReturnHitRate[];
   averageFinalVirtualNetWorthKrw: number | null;
   averageExposureRatio: number | null;
@@ -240,6 +245,7 @@ export interface TargetReturnHitRate {
 }
 
 const DEFAULT_TARGET_RETURN_THRESHOLDS = [0.15, 0.3];
+const BATCH_REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG = 5;
 
 export function buildBatchReplayAggregateReport(
   options: BatchReplayAggregateReportOptions
@@ -1013,6 +1019,17 @@ function summarizeGroup(
         ? null
         : roundRatio(returns.filter((value) => value > 0).length / returns.length),
     advancedPerformance: summarizeReturnDistributionMetrics(returns),
+    sharpeValidation: calculateSharpeValidationReport({
+      returns,
+      autocorrelationMaxLag:
+        BATCH_REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG,
+      selectionContext: {
+        candidateCount: null,
+        trialCount: returns.length === 0 ? null : returns.length,
+        selectedByMetric: null,
+        multipleTestingAdjustment: "unknown"
+      }
+    }),
     targetReturnHitRates: targetReturnThresholds.map((threshold) =>
       targetReturnHitRate(threshold, returnSamples)
     ),
@@ -1345,6 +1362,7 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `median_total_return_ratio: ${formatNullable(group.medianTotalReturnRatio)}`,
     `win_rate: ${formatNullable(group.winRate)}`,
     `advanced_performance: ${JSON.stringify(group.advancedPerformance)}`,
+    `sharpe_validation: ${JSON.stringify(group.sharpeValidation)}`,
     `target_return_hit_rates: ${JSON.stringify(group.targetReturnHitRates)}`,
     `average_final_virtual_net_worth_krw: ${formatNullable(group.averageFinalVirtualNetWorthKrw)}`,
     `average_exposure_ratio: ${formatNullable(group.averageExposureRatio)}`,

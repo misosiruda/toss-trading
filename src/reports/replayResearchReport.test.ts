@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { calculateSharpeValidationReport } from "../analytics/sharpeValidation.js";
 import type {
   BatchReplayAggregateReport,
   BatchReplayGroupSummary
@@ -302,6 +303,15 @@ function groupSummary(
       sharpeAnnualizationStatus: "not_annualized",
       warnings: []
     },
+    sharpeValidation: calculateSharpeValidationReport({
+      returns: [0.05, -0.01],
+      selectionContext: {
+        candidateCount: null,
+        trialCount: 2,
+        selectedByMetric: null,
+        multipleTestingAdjustment: "unknown"
+      }
+    }),
     targetReturnHitRates: [],
     averageFinalVirtualNetWorthKrw: 1_020_000,
     averageExposureRatio: 0.42,
