@@ -198,6 +198,8 @@ export function calculateSharpeValidationReport(
     sampleSharpe,
     sampleCount: excessReturns.length,
     minimumSampleCount,
+    meanReturnRatio: meanReturnRatioRaw,
+    volatilityRatio: volatilityRatioRaw,
     skewness,
     excessKurtosis,
     benchmarkSharpeRatio,
@@ -450,6 +452,8 @@ function calculateProbabilisticSharpeRatio(input: {
   sampleSharpe: SharpeValidationEstimate;
   sampleCount: number;
   minimumSampleCount: number;
+  meanReturnRatio: number | null;
+  volatilityRatio: number | null;
   skewness: number | null;
   excessKurtosis: number | null;
   benchmarkSharpeRatio: number | null;
@@ -462,7 +466,7 @@ function calculateProbabilisticSharpeRatio(input: {
       : "probabilistic_sharpe_ratio uses excess return samples after subtracting riskFreeRateRatio",
     input.annualizationFactor === null
       ? "probabilistic_sharpe_ratio keeps the sample Sharpe periodicity"
-      : "probabilistic_sharpe_ratio uses the annualized sample Sharpe",
+      : "probabilistic_sharpe_ratio converts annualized Sharpe inputs back to sample frequency before the z-score",
     "probabilistic_sharpe_ratio uses a normal CDF approximation with sample skewness and total kurtosis derived from excess kurtosis"
   ];
   if (input.sampleCount < input.minimumSampleCount) {
@@ -506,10 +510,28 @@ function calculateProbabilisticSharpeRatio(input: {
       ]
     });
   }
+  if (
+    input.meanReturnRatio === null ||
+    input.volatilityRatio === null ||
+    input.volatilityRatio === 0
+  ) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  const sampleFrequencySharpe =
+    input.meanReturnRatio / input.volatilityRatio;
+  const sampleFrequencyBenchmarkSharpe =
+    input.annualizationFactor === null
+      ? input.benchmarkSharpeRatio
+      : input.benchmarkSharpeRatio / Math.sqrt(input.annualizationFactor);
   const denominatorTerm =
     1 -
-    input.skewness * input.sampleSharpe.value +
-    ((input.excessKurtosis + 2) / 4) * input.sampleSharpe.value ** 2;
+    input.skewness * sampleFrequencySharpe +
+    ((input.excessKurtosis + 2) / 4) * sampleFrequencySharpe ** 2;
   if (!Number.isFinite(denominatorTerm) || denominatorTerm <= 0) {
     return probabilityShell({
       status: "not_applicable",
@@ -522,7 +544,7 @@ function calculateProbabilisticSharpeRatio(input: {
     });
   }
   const zScore =
-    ((input.sampleSharpe.value - input.benchmarkSharpeRatio) *
+    ((sampleFrequencySharpe - sampleFrequencyBenchmarkSharpe) *
       Math.sqrt(input.sampleCount - 1)) /
     Math.sqrt(denominatorTerm);
   const probability = normalCdf(zScore);

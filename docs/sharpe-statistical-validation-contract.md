@@ -89,6 +89,7 @@ interface SharpeValidationMetrics {
 - `autocorrelationMaxLag`가 지정되면 lag별 autocorrelation coefficient를 계산하고, 절댓값이 0.2 이상인 coefficient가 있으면 `NON_IID_RETURN_SAMPLE` warning을 남긴다.
 - standalone calculator는 sample Sharpe, Lo-style adjusted Sharpe, 명시적 benchmark가 있는 Probabilistic Sharpe Ratio를 `computed`로 채울 수 있다.
 - PSR 후보는 skewness, kurtosis, benchmark Sharpe가 충분할 때만 계산한다.
+- PSR z-score 계산은 sample frequency Sharpe 기준으로 수행한다. `returnFrequency`와 `annualizationFactor`가 있어 `sampleSharpe.value`가 annualized 상태여도 observed Sharpe와 benchmark Sharpe를 sample frequency로 환산한 뒤 계산한다.
 - DSR 후보는 candidate/trial context가 충분할 때만 계산한다.
 - 여러 strategy, prompt, risk profile, allocation policy 후보 중 best result를 고른 경우 `selectionContext`와 warning을 함께 기록한다.
 
