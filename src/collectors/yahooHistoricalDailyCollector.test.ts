@@ -9,6 +9,7 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
     universe: parseHistoricalUniverseManifest({
       mode: "paper_only_historical_universe",
       universeId: "global-fixture",
+      snapshotDate: "2025-01-01",
       symbols: [
         {
           market: "KR",
@@ -64,6 +65,7 @@ test("Yahoo historical collector records per-symbol failures without throwing th
     universe: parseHistoricalUniverseManifest({
       mode: "paper_only_historical_universe",
       universeId: "failure-fixture",
+      snapshotDate: "2025-01-01",
       symbols: [
         {
           market: "US",

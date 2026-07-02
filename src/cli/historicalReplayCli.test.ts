@@ -1528,6 +1528,7 @@ function universe() {
   return {
     mode: "paper_only_historical_universe",
     universeId: "fixture-expanded",
+    snapshotDate: "2025-01-01",
     symbols: [
       { market: "KR", symbol: "005930", required: true },
       { market: "KR", symbol: "000660", required: true },

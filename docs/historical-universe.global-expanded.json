@@ -1,6 +1,7 @@
 {
   "mode": "paper_only_historical_universe",
   "universeId": "global-paper-expanded-v1",
+  "snapshotDate": "2026-06-17",
   "description": "Paper-only global historical replay universe. All symbols are required so KR, US, STOCK, and ETF coverage failures stop replay experiments before analysis.",
   "symbols": [
     {

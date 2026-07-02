@@ -1,6 +1,7 @@
 {
   "mode": "paper_only_historical_universe",
   "universeId": "global-paper-broad-v1",
+  "snapshotDate": "2026-06-17",
   "description": "Paper-only broad global historical replay universe. Core symbols are required. Expansion symbols are optional and should be guarded by minimum available count checks before replay.",
   "symbols": [
     {"market":"KR","symbol":"000660","sourceSymbol":"000660.KS","segment":"kr_stock_core","required":true,"assetType":"STOCK","assetClass":"equity","region":"KR","tags":["semiconductor","large_cap"]},

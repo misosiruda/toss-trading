@@ -13,6 +13,18 @@ import {
 } from "../domain/schemas.js";
 import type { HistoricalDataAvailabilitySymbolRequirement } from "./historicalDataAvailability.js";
 
+const isoCalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD calendar date")
+  .refine(isValidCalendarDate, "Expected a valid calendar date");
+
+export const historicalInstrumentLifecycleStatusSchema = z.enum([
+  "active",
+  "suspended",
+  "delisted",
+  "unknown"
+]);
+
 export const historicalUniverseMemberSchema = z
   .object({
     market: marketSchema,
@@ -25,6 +37,9 @@ export const historicalUniverseMemberSchema = z
     riskTags: z.array(assetRiskTagSchema).optional(),
     sector: z.string().trim().min(1).optional(),
     segment: z.string().trim().min(1).optional(),
+    lifecycleStatus: historicalInstrumentLifecycleStatusSchema.default(
+      "unknown"
+    ),
     required: z.boolean().default(true),
     tags: z.array(z.string().trim().min(1)).optional()
   })
@@ -34,6 +49,7 @@ export const historicalUniverseManifestSchema = z
   .object({
     mode: z.literal("paper_only_historical_universe"),
     universeId: z.string().trim().min(1),
+    snapshotDate: isoCalendarDateSchema,
     description: z.string().trim().min(1).optional(),
     symbols: z.array(historicalUniverseMemberSchema).min(1),
     disclaimer: z.string().trim().min(1)
@@ -698,4 +714,17 @@ function validateRatio(value: number, label: string): void {
 
 function roundRatio(value: number): number {
   return Number(value.toFixed(6));
+}
+
+function isValidCalendarDate(value: string): boolean {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }

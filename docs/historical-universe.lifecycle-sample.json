@@ -1,0 +1,59 @@
+{
+  "mode": "paper_only_historical_universe",
+  "universeId": "rh3-lifecycle-sample-v1",
+  "snapshotDate": "2025-03-31",
+  "description": "Paper-only lifecycle status sample for historical replay universe schema validation.",
+  "symbols": [
+    {
+      "market": "KR",
+      "symbol": "RH3ACTIVE",
+      "sourceSymbol": "RH3ACTIVE.KS",
+      "segment": "schema_sample",
+      "required": true,
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR",
+      "lifecycleStatus": "active",
+      "tags": ["schema_sample"]
+    },
+    {
+      "market": "KR",
+      "symbol": "RH3SUSP",
+      "sourceSymbol": "RH3SUSP.KQ",
+      "segment": "schema_sample",
+      "required": false,
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "KR",
+      "lifecycleStatus": "suspended",
+      "tags": ["schema_sample"]
+    },
+    {
+      "market": "US",
+      "symbol": "RH3DELIST",
+      "sourceSymbol": "RH3DELIST",
+      "segment": "schema_sample",
+      "required": false,
+      "assetType": "STOCK",
+      "assetClass": "equity",
+      "region": "US",
+      "riskTags": ["currency_exposed"],
+      "lifecycleStatus": "delisted",
+      "tags": ["schema_sample"]
+    },
+    {
+      "market": "US",
+      "symbol": "RH3UNKNOWN",
+      "sourceSymbol": "RH3UNKNOWN",
+      "segment": "schema_sample",
+      "required": false,
+      "assetType": "ETF",
+      "assetClass": "equity",
+      "region": "US",
+      "riskTags": ["currency_exposed"],
+      "lifecycleStatus": "unknown",
+      "tags": ["schema_sample"]
+    }
+  ],
+  "disclaimer": "Paper-only lifecycle contract fixture for deterministic replay schema validation."
+}
