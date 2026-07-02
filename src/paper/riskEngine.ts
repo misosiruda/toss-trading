@@ -55,6 +55,16 @@ export class VirtualRiskEngine {
       appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_PRICE_MISSING");
     }
 
+    if (
+      input.decision.action !== "VIRTUAL_HOLD" &&
+      hasIneligibleLifecycle(candidate)
+    ) {
+      appendVirtualRiskRejectCode(
+        rejectCodes,
+        "VIRTUAL_LIFECYCLE_NOT_ELIGIBLE"
+      );
+    }
+
     if (isVirtualRiskCooldownActive(input.decision, policy)) {
       appendVirtualRiskRejectCode(rejectCodes, "VIRTUAL_COOLDOWN_ACTIVE");
     }
@@ -104,6 +114,21 @@ function isFresh(expiresAt: string, now: Date): boolean {
   } catch {
     return false;
   }
+}
+
+function hasIneligibleLifecycle(
+  candidate: MarketCandidate | undefined
+): boolean {
+  if (
+    candidate?.lifecycleStatus !== undefined &&
+    candidate.lifecycleStatus !== "active"
+  ) {
+    return true;
+  }
+
+  return (candidate?.blockedReasonCodes ?? []).some((reasonCode) =>
+    reasonCode.startsWith("LIFECYCLE_")
+  );
 }
 
 export function findCandidate(

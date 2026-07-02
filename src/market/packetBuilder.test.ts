@@ -188,6 +188,49 @@ test("MarketPacketBuilder adds deterministic candidate action eligibility", () =
   );
 });
 
+test("MarketPacketBuilder blocks non-active lifecycle candidates", () => {
+  const result = builder().build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 10_000,
+          marketValueKrw: 10_000,
+          updatedAt: "2026-06-11T08:59:00+09:00"
+        }
+      ]
+    },
+    candidates: [
+      {
+        ...candidate("005930", 1),
+        lifecycleStatus: "suspended"
+      }
+    ]
+  });
+
+  const normalized = result.packet.candidates[0]!;
+  assert.equal(normalized.lifecycleStatus, "suspended");
+  assert.equal(normalized.buyEligible, false);
+  assert.equal(normalized.sellEligible, false);
+  assert.deepEqual(normalized.blockedReasonCodes, ["LIFECYCLE_SUSPENDED"]);
+  assert.equal(
+    normalized.featureRefs?.includes("candidate.KR.005930.lifecycleStatus"),
+    true
+  );
+  assert.equal(
+    normalized.featureScores?.some(
+      (featureScore) =>
+        featureScore.featureRef === "candidate.KR.005930.lifecycleStatus" &&
+        featureScore.score === 0 &&
+        featureScore.reasonCode === "LIFECYCLE_SUSPENDED"
+    ),
+    true
+  );
+});
+
 test("MarketPacketBuilder preserves asset taxonomy and feature refs", () => {
   const result = builder().build({
     portfolio: portfolio(),

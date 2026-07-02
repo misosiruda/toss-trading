@@ -102,6 +102,9 @@ export function createHistoricalReplayWorkflowPlan(
     ...(input.options.paperExitPolicy === undefined
       ? {}
       : { paperExitPolicy: input.options.paperExitPolicy }),
+    ...(input.options.universeManifest === undefined
+      ? {}
+      : { universeManifest: input.options.universeManifest }),
     ...(input.options.tickDelayMs === undefined
       ? {}
       : { tickDelayMs: input.options.tickDelayMs })

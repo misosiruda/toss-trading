@@ -7,6 +7,7 @@ import {
   assetTypeSchema,
   type AssetType,
   type HistoricalMarketSnapshot,
+  instrumentLifecycleStatusSchema,
   type Market,
   marketSchema,
   parseWithSchema
@@ -18,12 +19,8 @@ const isoCalendarDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD calendar date")
   .refine(isValidCalendarDate, "Expected a valid calendar date");
 
-export const historicalInstrumentLifecycleStatusSchema = z.enum([
-  "active",
-  "suspended",
-  "delisted",
-  "unknown"
-]);
+export const historicalInstrumentLifecycleStatusSchema =
+  instrumentLifecycleStatusSchema;
 
 export const historicalUniverseMemberSchema = z
   .object({
@@ -37,13 +34,17 @@ export const historicalUniverseMemberSchema = z
     riskTags: z.array(assetRiskTagSchema).optional(),
     sector: z.string().trim().min(1).optional(),
     segment: z.string().trim().min(1).optional(),
-    lifecycleStatus: historicalInstrumentLifecycleStatusSchema.default(
-      "unknown"
-    ),
+    lifecycleStatus: historicalInstrumentLifecycleStatusSchema.optional(),
     required: z.boolean().default(true),
     tags: z.array(z.string().trim().min(1)).optional()
   })
-  .strict();
+  .strict()
+  .transform((member) => ({
+    ...member,
+    lifecycleStatus: member.lifecycleStatus ?? "unknown",
+    lifecycleStatusSource:
+      member.lifecycleStatus === undefined ? "defaulted" : "explicit"
+  }));
 
 export const historicalUniverseManifestSchema = z
   .object({

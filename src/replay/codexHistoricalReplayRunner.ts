@@ -51,6 +51,7 @@ import {
   recordHistoricalReplayDecision,
   suppressDecisionItemsForSymbols
 } from "./historicalReplayDecisionBoundary.js";
+import type { HistoricalUniverseManifest } from "./historicalUniverseCoverage.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -80,6 +81,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   allocationPolicy?: PaperAllocationPolicy;
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
+  universeManifest?: HistoricalUniverseManifest;
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
@@ -193,7 +195,10 @@ export async function runCodexHistoricalReplay(
       constraints: options.constraints,
       ...(allocationPolicy === undefined
         ? {}
-        : { allocationPolicy })
+        : { allocationPolicy }),
+      ...(options.universeManifest === undefined
+        ? {}
+        : { universeManifest: options.universeManifest })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
