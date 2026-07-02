@@ -745,6 +745,8 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 `batch-replay-runs.jsonl`과 같은 directory에 `batch-replay-selection-trials.jsonl`이 있으면 aggregate report CLI가 자동으로 읽어 `trialSummary`를 추가합니다. 다른 위치의 trial log를 사용해야 하면 `--selection-trials-path`로 명시합니다.
 
+새로 생성되는 batch run record의 `summary.costSummary`는 single `HistoricalReplayReport.costSummary`에서 가져온 fee, tax, slippage, spread, market impact, total cost, fill count, participation rate, cost model version을 보관합니다. Aggregate report는 이 값을 `overall.costSummary`, `byRegime.*.costSummary`, `byValidationSplitRole.*.costSummary`로 합산합니다. `summary.costSummary`가 없는 legacy run record는 비용 sample에서 제외되며, replay research report는 cost sample이 하나도 없을 때만 `costBreakdown.status="unavailable"` warning을 남깁니다.
+
 `historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
 
 ```powershell

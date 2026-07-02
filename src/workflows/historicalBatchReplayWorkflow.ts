@@ -18,7 +18,10 @@ import {
 } from "../paper/exitPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
-import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
+import type {
+  HistoricalReplayCostSummary,
+  HistoricalReplayReport
+} from "../reports/historicalReplayReport.js";
 import {
   createStoragePaths,
   FileAuditLog,
@@ -273,6 +276,7 @@ export interface BatchReplayDataAvailabilitySummary {
 export interface BatchReplayRunSummary {
   finalVirtualNetWorthKrw: number;
   totalReturnRatio: number | null;
+  costSummary?: HistoricalReplayCostSummary | undefined;
   tradeCount: number;
   decisionProviderCallCount: number;
   aiDecisionFailureCount: number;
@@ -1237,6 +1241,7 @@ function summarizeRun(
   return {
     finalVirtualNetWorthKrw: report.portfolio.finalVirtualNetWorthKrw,
     totalReturnRatio: report.advancedPerformance.totalReturnRatio,
+    costSummary: report.costSummary,
     tradeCount: report.tradeSummary.tradeCount,
     decisionProviderCallCount: report.replaySummary.decisionProviderCallCount,
     aiDecisionFailureCount: auditEvents.filter(

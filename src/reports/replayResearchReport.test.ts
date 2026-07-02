@@ -38,7 +38,12 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.equal(report.executionAssumptions.paperOnly, true);
   assert.equal(report.executionAssumptions.liveTradingEnabled, false);
   assert.equal(report.executionAssumptions.orderPlacementEnabled, false);
-  assert.equal(report.costBreakdown.status, "unavailable");
+  assert.equal(report.costBreakdown.status, "available");
+  assert.equal(report.costBreakdown.totalCostKrw, 30);
+  assert.equal(report.costBreakdown.impactCostKrw, 7);
+  assert.deepEqual(report.costBreakdown.costModelVersions, [
+    "paper_cost_model.v3"
+  ]);
   assert.equal(report.exposureBreakdown.averageExposureRatio, 0.42);
   assert.equal(report.regimeBreakdown.length, 2);
   assert.equal(report.bucketBreakdown.validationSplitRoles.length, 2);
@@ -75,6 +80,28 @@ test("replay research report records unavailable sections when trials are absent
   assert.match(
     report.warnings.join("\n"),
     /validation split role counts unavailable/
+  );
+});
+
+test("replay research report keeps legacy aggregate cost breakdown unavailable", () => {
+  const aggregate = aggregateReport();
+  aggregate.overall = {
+    ...aggregate.overall,
+    costSummary: emptyCostSummary()
+  };
+  const report = buildReplayResearchReport({
+    aggregateReport: aggregate,
+    generatedAt: new Date("2026-06-24T09:00:00+09:00")
+  });
+
+  assert.equal(report.costBreakdown.status, "unavailable");
+  assert.match(
+    report.costBreakdown.reason ?? "",
+    /per-run execution cost components/
+  );
+  assert.match(
+    report.warnings.join("\n"),
+    /cost breakdown unavailable/
   );
 });
 
@@ -289,11 +316,56 @@ function groupSummary(
     averageFinalExposureByAssetTypeKrw: { STOCK: 420_000 },
     totalTradeCount: 3,
     averageTradeCount: 1.5,
+    costSummary: costSummary(),
     totalAiDecisionFailureCount: 0,
     totalRejectedCount: 0,
     totalMeaningfulRejectCount: 0,
     totalDustRejectCount: 0,
     runIds: ["run_0", "run_1"],
     ...overrides
+  };
+}
+
+function costSummary(): BatchReplayGroupSummary["costSummary"] {
+  return {
+    sampleCount: 2,
+    tradeCount: 3,
+    feeKrw: 11,
+    taxKrw: 2,
+    slippageKrw: 4,
+    spreadCostKrw: 6,
+    impactCostKrw: 7,
+    totalCostKrw: 30,
+    averageCostPerRunKrw: 15,
+    averageCostPerTradeKrw: 10,
+    filledCount: 2,
+    partialFillCount: 1,
+    notModeledLiquidityCount: 0,
+    averageRunParticipationRate: 0.15,
+    maxParticipationRate: 0.25,
+    costModelVersions: ["paper_cost_model.v3"],
+    runIds: ["run_0", "run_1"]
+  };
+}
+
+function emptyCostSummary(): BatchReplayGroupSummary["costSummary"] {
+  return {
+    sampleCount: 0,
+    tradeCount: 0,
+    feeKrw: 0,
+    taxKrw: 0,
+    slippageKrw: 0,
+    spreadCostKrw: 0,
+    impactCostKrw: 0,
+    totalCostKrw: 0,
+    averageCostPerRunKrw: null,
+    averageCostPerTradeKrw: null,
+    filledCount: 0,
+    partialFillCount: 0,
+    notModeledLiquidityCount: 0,
+    averageRunParticipationRate: null,
+    maxParticipationRate: null,
+    costModelVersions: [],
+    runIds: []
   };
 }
