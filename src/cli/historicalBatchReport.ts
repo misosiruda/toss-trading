@@ -11,18 +11,24 @@ import {
   type SelectionTrialRecord,
   type SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
+import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import type {
   BatchReplayRunRecord,
   BatchReplayRunStatus
 } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
+const HISTORICAL_UNIVERSE_COVERAGE_FILE_NAME = "historical-universe-coverage.json";
 const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
 const selectionTrialsPathArg = readOptionalArgValue("--selection-trials-path");
+const universeCoveragePathArg = readOptionalArgValue("--universe-coverage-path");
 const selectionTrialsPath =
   selectionTrialsPathArg ??
   join(dirname(runsPath), BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME);
+const universeCoveragePath =
+  universeCoveragePathArg ??
+  join(dirname(runsPath), HISTORICAL_UNIVERSE_COVERAGE_FILE_NAME);
 const targetReturnThresholds = readOptionalNumberListArg(
   "--target-return-thresholds"
 );
@@ -34,6 +40,10 @@ const selectionTrials = await readOptionalSelectionTrialRecords({
   filePath: selectionTrialsPath,
   required: selectionTrialsPathArg !== undefined
 });
+const universeCoverageReport = await readOptionalUniverseCoverageReport({
+  filePath: universeCoveragePath,
+  required: universeCoveragePathArg !== undefined
+});
 const report = buildBatchReplayAggregateReport({
   records,
   generatedAt: new Date(),
@@ -41,6 +51,12 @@ const report = buildBatchReplayAggregateReport({
   ...(selectionTrials === null
     ? {}
     : { selectionTrials, sourceSelectionTrialsPath: selectionTrialsPath }),
+  ...(universeCoverageReport === null
+    ? {}
+    : {
+        universeCoverageReport,
+        sourceUniverseCoveragePath: universeCoveragePath
+      }),
   ...(targetReturnThresholds === undefined ? {} : { targetReturnThresholds }),
   ...(expectedSampledCpcvSplitCount === undefined
     ? {}
@@ -104,6 +120,41 @@ async function readOptionalSelectionTrialRecords(options: {
   }
 }
 
+async function readOptionalUniverseCoverageReport(options: {
+  filePath: string;
+  required: boolean;
+}): Promise<HistoricalUniverseCoverageReport | null> {
+  try {
+    return await readUniverseCoverageReport(options.filePath);
+  } catch (error) {
+    if (!options.required && isFileNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function readUniverseCoverageReport(
+  filePath: string
+): Promise<HistoricalUniverseCoverageReport> {
+  const raw = await readFile(filePath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `invalid universe coverage JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  if (!isUniverseCoverageReport(parsed)) {
+    throw new Error("invalid universe coverage report");
+  }
+  return parsed;
+}
+
 async function readSelectionTrialRecords(
   filePath: string
 ): Promise<SelectionTrialRecord[]> {
@@ -135,6 +186,41 @@ async function readSelectionTrialRecords(
   }
 
   return records;
+}
+
+function isUniverseCoverageReport(
+  value: unknown
+): value is HistoricalUniverseCoverageReport {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value["mode"] === "paper_only" &&
+    typeof value["universeId"] === "string" &&
+    (value["status"] === "available" || value["status"] === "insufficient") &&
+    typeof value["rangeStart"] === "string" &&
+    typeof value["rangeEnd"] === "string" &&
+    isNonNegativeInteger(value["universeSymbolCount"]) &&
+    isNonNegativeInteger(value["requiredSymbolCount"]) &&
+    isNonNegativeInteger(value["optionalSymbolCount"]) &&
+    isNonNegativeInteger(value["availableSymbolCount"]) &&
+    isNonNegativeInteger(value["availableRequiredSymbolCount"]) &&
+    isNonNegativeInteger(value["availableOptionalSymbolCount"]) &&
+    isNonNegativeInteger(value["corruptLineCount"]) &&
+    Array.isArray(value["missingRequiredSymbols"]) &&
+    Array.isArray(value["missingOptionalSymbols"]) &&
+    Array.isArray(value["insufficientRequiredSymbols"]) &&
+    Array.isArray(value["insufficientOptionalSymbols"]) &&
+    Array.isArray(value["missingRequiredMarkets"]) &&
+    Array.isArray(value["missingRequiredAssetTypes"]) &&
+    Array.isArray(value["insufficientAvailableMarketSymbolCounts"]) &&
+    Array.isArray(value["insufficientAvailableAssetTypeSymbolCounts"]) &&
+    isRecord(value["availableMarketSymbolCounts"]) &&
+    isRecord(value["availableAssetTypeSymbolCounts"]) &&
+    Array.isArray(value["issues"]) &&
+    value["issues"].every((issue) => typeof issue === "string")
+  );
 }
 
 function isBatchReplayRunRecord(value: unknown): value is BatchReplayRunRecord {

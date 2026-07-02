@@ -7,6 +7,7 @@ import type {
 } from "../analytics/marketRegimeClassifier.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
+import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
   buildBatchReplayAggregateReport,
@@ -1475,6 +1476,34 @@ test("batch replay aggregate report handles legacy records without market counts
   assert.deepEqual(report.summary.regimeCountsByMarket, {});
 });
 
+test("batch replay aggregate report surfaces universe coverage warnings", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceUniverseCoveragePath: "data/source/historical-universe-coverage.json",
+    universeCoverageReport: universeCoverageReport(),
+    records: [record("run_0", 0, "completed", "bull", 0.01, 1_010_000)]
+  });
+  const rendered = renderBatchReplayAggregateReport(report);
+
+  assert.equal(
+    report.sourceUniverseCoveragePath,
+    "data/source/historical-universe-coverage.json"
+  );
+  assert.equal(report.universeCoverage?.status, "insufficient");
+  assert.equal(report.universeCoverage?.availableRequiredSymbolCount, 1);
+  assert.equal(report.universeCoverage?.missingRequiredSymbolCount, 1);
+  assert.match(
+    report.universeCoverage?.warnings.join("\n") ?? "",
+    /universe selection bias warning/
+  );
+  assert.match(
+    report.universeCoverage?.warnings.join("\n") ?? "",
+    /REQUIRED_UNIVERSE_SYMBOL_MISSING/
+  );
+  assert.match(rendered, /## Universe Coverage/);
+  assert.match(rendered, /source_universe_coverage_path/);
+});
+
 test("batch replay aggregate report renders paper-only disclaimer", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -1663,6 +1692,59 @@ function withDataAvailabilityIssues(
       status: issues.length === 0 ? "available" : "insufficient",
       issues
     }
+  };
+}
+
+function universeCoverageReport(
+  overrides: Partial<HistoricalUniverseCoverageReport> = {}
+): HistoricalUniverseCoverageReport {
+  return {
+    mode: "paper_only",
+    universeId: "test-universe",
+    status: "insufficient",
+    rangeStart: "2025-01-01T00:00:00.000Z",
+    rangeEnd: "2025-01-31T14:59:59.999Z",
+    timezoneOffsetMinutes: 540,
+    expectedMonths: ["2025-01"],
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 2,
+    minAvailableMarketSymbolCounts: { KR: 2 },
+    minAvailableAssetTypeSymbolCounts: { STOCK: 2 },
+    requireOptionalSymbols: false,
+    requiredMarkets: ["KR"],
+    requiredAssetTypes: ["STOCK"],
+    availableMarkets: ["KR"],
+    availableAssetTypes: ["STOCK"],
+    availableSymbolCount: 1,
+    availableMarketSymbolCounts: { KR: 1 },
+    availableAssetTypeSymbolCounts: { STOCK: 1 },
+    missingRequiredMarkets: [],
+    missingRequiredAssetTypes: [],
+    insufficientAvailableMarketSymbolCounts: [
+      { market: "KR", minimum: 2, available: 1 }
+    ],
+    insufficientAvailableAssetTypeSymbolCounts: [
+      { assetType: "STOCK", minimum: 2, available: 1 }
+    ],
+    corruptLineCount: 0,
+    universeSymbolCount: 3,
+    requiredSymbolCount: 2,
+    optionalSymbolCount: 1,
+    availableRequiredSymbolCount: 1,
+    availableOptionalSymbolCount: 0,
+    missingRequiredSymbols: [{ market: "KR", symbol: "MISSING_REQUIRED" }],
+    missingOptionalSymbols: [{ market: "KR", symbol: "MISSING_OPTIONAL" }],
+    insufficientRequiredSymbols: [],
+    insufficientOptionalSymbols: [],
+    symbolSummaries: [],
+    issues: [
+      "REQUIRED_UNIVERSE_SYMBOL_MISSING",
+      "AVAILABLE_MARKET_SYMBOL_COUNT_BELOW_MINIMUM"
+    ],
+    disclaimer:
+      "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal.",
+    ...overrides
   };
 }
 

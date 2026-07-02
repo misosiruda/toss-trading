@@ -1,7 +1,8 @@
 import type {
   BatchReplayAggregateReport,
   BatchReplayGroupSummary,
-  BatchReplaySelectionTrialBucket
+  BatchReplaySelectionTrialBucket,
+  BatchReplayUniverseCoverageSummary
 } from "./batchReplayReport.js";
 
 export const REPLAY_RESEARCH_REPORT_VERSION = "replay_research_report.v1";
@@ -70,6 +71,25 @@ export interface ReplayResearchValidationProtocol {
 export interface ReplayResearchDataUniverseCoverage {
   regimeCounts: Record<string, number>;
   regimeCountsByMarket: Record<string, Record<string, number>>;
+  coverageReportStatus: "available" | "insufficient" | "missing";
+  sourcePath: string | null;
+  universeId: string | null;
+  rangeStart: string | null;
+  rangeEnd: string | null;
+  universeSymbolCount: number | null;
+  requiredSymbolCount: number | null;
+  optionalSymbolCount: number | null;
+  availableSymbolCount: number | null;
+  availableRequiredSymbolCount: number | null;
+  availableOptionalSymbolCount: number | null;
+  missingRequiredSymbolCount: number | null;
+  missingOptionalSymbolCount: number | null;
+  insufficientRequiredSymbolCount: number | null;
+  insufficientOptionalSymbolCount: number | null;
+  availableMarketSymbolCounts: Record<string, number>;
+  availableAssetTypeSymbolCounts: Record<string, number>;
+  issues: string[];
+  warnings: string[];
 }
 
 export interface ReplayResearchPromptTrialDistribution {
@@ -174,6 +194,7 @@ export function buildReplayResearchReport(
   const overall = aggregate.overall;
   const trialSummary = aggregate.trialSummary ?? null;
   const diagnostics = aggregate.overfittingDiagnostics ?? null;
+  const universeCoverage = aggregate.universeCoverage ?? null;
   const regimeBreakdown = groupBreakdown(aggregate.byRegime);
   const validationRoleBreakdown = groupBreakdown(
     aggregate.byValidationSplitRole
@@ -222,7 +243,8 @@ export function buildReplayResearchReport(
       regimeCounts: numberMap(aggregate.summary.regimeCounts),
       regimeCountsByMarket: nestedNumberMap(
         aggregate.summary.regimeCountsByMarket
-      )
+      ),
+      ...researchUniverseCoverage(universeCoverage)
     },
     promptTrialDistribution: {
       trialCount: trialSummary?.trialCount ?? null,
@@ -345,6 +367,61 @@ function groupBreakdown(
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
+function researchUniverseCoverage(
+  coverage: BatchReplayUniverseCoverageSummary | null
+): Omit<
+  ReplayResearchDataUniverseCoverage,
+  "regimeCounts" | "regimeCountsByMarket"
+> {
+  if (coverage === null) {
+    return {
+      coverageReportStatus: "missing",
+      sourcePath: null,
+      universeId: null,
+      rangeStart: null,
+      rangeEnd: null,
+      universeSymbolCount: null,
+      requiredSymbolCount: null,
+      optionalSymbolCount: null,
+      availableSymbolCount: null,
+      availableRequiredSymbolCount: null,
+      availableOptionalSymbolCount: null,
+      missingRequiredSymbolCount: null,
+      missingOptionalSymbolCount: null,
+      insufficientRequiredSymbolCount: null,
+      insufficientOptionalSymbolCount: null,
+      availableMarketSymbolCounts: {},
+      availableAssetTypeSymbolCounts: {},
+      issues: [],
+      warnings: []
+    };
+  }
+
+  return {
+    coverageReportStatus: coverage.status,
+    sourcePath: coverage.sourcePath,
+    universeId: coverage.universeId,
+    rangeStart: coverage.rangeStart,
+    rangeEnd: coverage.rangeEnd,
+    universeSymbolCount: coverage.universeSymbolCount,
+    requiredSymbolCount: coverage.requiredSymbolCount,
+    optionalSymbolCount: coverage.optionalSymbolCount,
+    availableSymbolCount: coverage.availableSymbolCount,
+    availableRequiredSymbolCount: coverage.availableRequiredSymbolCount,
+    availableOptionalSymbolCount: coverage.availableOptionalSymbolCount,
+    missingRequiredSymbolCount: coverage.missingRequiredSymbolCount,
+    missingOptionalSymbolCount: coverage.missingOptionalSymbolCount,
+    insufficientRequiredSymbolCount: coverage.insufficientRequiredSymbolCount,
+    insufficientOptionalSymbolCount: coverage.insufficientOptionalSymbolCount,
+    availableMarketSymbolCounts: numberMap(coverage.availableMarketSymbolCounts),
+    availableAssetTypeSymbolCounts: numberMap(
+      coverage.availableAssetTypeSymbolCounts
+    ),
+    issues: [...coverage.issues],
+    warnings: [...coverage.warnings]
+  };
+}
+
 function buckets(
   values: BatchReplaySelectionTrialBucket[] | undefined
 ): ReplayResearchBucket[] {
@@ -376,6 +453,13 @@ function researchWarnings(report: BatchReplayAggregateReport): string[] {
     warnings.push(
       "validation split role counts unavailable: batch records do not include validation split metadata"
     );
+  }
+  if (report.universeCoverage === null || report.universeCoverage === undefined) {
+    warnings.push(
+      "universe coverage unavailable: aggregate report has no historical universe coverage summary"
+    );
+  } else {
+    warnings.push(...report.universeCoverage.warnings);
   }
   warnings.push(
     "cost breakdown unavailable: aggregate report does not contain per-run execution cost components"

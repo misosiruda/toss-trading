@@ -505,7 +505,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - manifest에 없는 replay symbol은 `unknown`으로 간주해 candidate trading을 차단합니다.
 - 명시된 `active`가 아닌 `suspended`, `delisted`, `unknown` status와 manifest 누락 symbol은 buy/sell eligibility를 차단하고 `VirtualRiskEngine`의 `VIRTUAL_LIFECYCLE_NOT_ELIGIBLE` reject code로 fail-closed 처리됩니다.
 - schema sample은 `docs/historical-universe.lifecycle-sample.json`에 둡니다.
-- coverage/dashboard 표시는 RH3 후속 PR에서 별도로 연결합니다.
+- coverage report는 batch aggregate report와 replay research dashboard에 read-only summary와 universe selection bias warning으로 연결합니다.
 
 coverage report 생성:
 
@@ -743,6 +743,14 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 ```
 
 `batch-replay-runs.jsonl`과 같은 directory에 `batch-replay-selection-trials.jsonl`이 있으면 aggregate report CLI가 자동으로 읽어 `trialSummary`를 추가합니다. 다른 위치의 trial log를 사용해야 하면 `--selection-trials-path`로 명시합니다.
+
+`historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
+
+```powershell
+npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-001/batch-replay-runs.jsonl --universe-coverage-path data/replay-2023-01-2026-05-yahoo-daily/historical-universe-coverage.json --output-path data/batch-replay/batch-smoke-001/batch-replay-aggregate-report.json
+```
+
+coverage summary는 `universeCoverage`에 저장되고, `status=insufficient` 또는 optional coverage gap이 있으면 `universe selection bias warning`을 함께 기록합니다. 이 값은 완료된 paper-only artifact를 해석하기 위한 read-only 경고이며 strategy 자동 선택, live signal, 주문 생성으로 연결하지 않습니다.
 
 `validationSplit`이 포함된 run record가 있으면 aggregate report는 `summary.validationSplitRoleCounts`와 `byValidationSplitRole`을 함께 생성합니다. 이 값은 이미 실행된 paper-only 결과를 train/validation/test 역할별로 분리해 보는 사후 분석 metadata이며, strategy 자동 선택이나 live trading signal로 사용하지 않습니다.
 

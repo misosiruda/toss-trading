@@ -8,6 +8,7 @@ import type {
   SelectionTrialRecord,
   SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
+import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
@@ -17,6 +18,8 @@ export interface BatchReplayAggregateReportOptions {
   generatedAt: Date;
   sourceRunsPath?: string;
   sourceSelectionTrialsPath?: string;
+  sourceUniverseCoveragePath?: string;
+  universeCoverageReport?: HistoricalUniverseCoverageReport | null;
   title?: string;
   targetReturnThresholds?: number[];
   expectedSampledCpcvSplitCount?: number;
@@ -28,10 +31,12 @@ export interface BatchReplayAggregateReport {
   generatedAt: string;
   sourceRunsPath: string | null;
   sourceSelectionTrialsPath: string | null;
+  sourceUniverseCoveragePath?: string | null;
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
+  universeCoverage?: BatchReplayUniverseCoverageSummary | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
   byValidationSplitRole: Partial<
@@ -135,6 +140,33 @@ export interface BatchReplayOverfittingDiagnostics {
   warnings: string[];
 }
 
+export interface BatchReplayUniverseCoverageSummary {
+  sourcePath: string | null;
+  universeId: string;
+  status: "available" | "insufficient";
+  rangeStart: string;
+  rangeEnd: string;
+  universeSymbolCount: number;
+  requiredSymbolCount: number;
+  optionalSymbolCount: number;
+  availableSymbolCount: number;
+  availableRequiredSymbolCount: number;
+  availableOptionalSymbolCount: number;
+  missingRequiredSymbolCount: number;
+  missingOptionalSymbolCount: number;
+  insufficientRequiredSymbolCount: number;
+  insufficientOptionalSymbolCount: number;
+  missingRequiredMarketCount: number;
+  missingRequiredAssetTypeCount: number;
+  insufficientAvailableMarketSymbolCount: number;
+  insufficientAvailableAssetTypeSymbolCount: number;
+  corruptLineCount: number;
+  availableMarketSymbolCounts: Partial<Record<Market, number>>;
+  availableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
+  issues: string[];
+  warnings: string[];
+}
+
 export interface BatchReplaySplitMetricRow {
   candidateKey: string;
   decisionProviderMode: string;
@@ -203,6 +235,10 @@ export function buildBatchReplayAggregateReport(
     options.expectedSampledCpcvSplitCount,
     "expectedSampledCpcvSplitCount"
   );
+  const universeCoverage = summarizeUniverseCoverage(
+    options.universeCoverageReport ?? null,
+    options.sourceUniverseCoveragePath ?? null
+  );
   const byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>> = {};
   const byValidationSplitRole: Partial<
     Record<ValidationSplitRole, BatchReplayGroupSummary>
@@ -226,6 +262,7 @@ export function buildBatchReplayAggregateReport(
     sourceRunsPath: options.sourceRunsPath ?? null,
     sourceSelectionTrialsPath:
       selectionTrials === null ? null : options.sourceSelectionTrialsPath ?? null,
+    sourceUniverseCoveragePath: universeCoverage?.sourcePath ?? null,
     targetReturnThresholds,
     summary: {
       runCount: records.length,
@@ -249,6 +286,7 @@ export function buildBatchReplayAggregateReport(
             trials: selectionTrials ?? [],
             expectedSampledCpcvSplitCount
           }),
+    universeCoverage,
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
     byValidationSplitRole,
@@ -268,6 +306,9 @@ export function renderBatchReplayAggregateReport(
     `source_selection_trials_path: ${
       report.sourceSelectionTrialsPath ?? "null"
     }`,
+    `source_universe_coverage_path: ${
+      report.sourceUniverseCoveragePath ?? "null"
+    }`,
     `target_return_thresholds: ${JSON.stringify(report.targetReturnThresholds)}`,
     "",
     "## Summary",
@@ -286,6 +327,9 @@ export function renderBatchReplayAggregateReport(
     "",
     "## Overfitting Diagnostics",
     renderOverfittingDiagnostics(report.overfittingDiagnostics),
+    "",
+    "## Universe Coverage",
+    renderUniverseCoverage(report.universeCoverage ?? null),
     "",
     "## Overall",
     renderGroup(report.overall),
@@ -1269,6 +1313,108 @@ function renderOverfittingDiagnostics(
     `warnings: ${JSON.stringify(diagnostics.warnings)}`,
     `split_metric_matrix: ${JSON.stringify(diagnostics.splitMetricMatrix)}`
   ].join("\n");
+}
+
+function renderUniverseCoverage(
+  coverage: BatchReplayUniverseCoverageSummary | null
+): string {
+  if (coverage === null) {
+    return "universe_coverage: null";
+  }
+
+  return [
+    `universe_id: ${coverage.universeId}`,
+    `status: ${coverage.status}`,
+    `range: ${coverage.rangeStart}..${coverage.rangeEnd}`,
+    `available_symbols: ${coverage.availableSymbolCount}/${coverage.universeSymbolCount}`,
+    `available_required_symbols: ${coverage.availableRequiredSymbolCount}/${coverage.requiredSymbolCount}`,
+    `available_optional_symbols: ${coverage.availableOptionalSymbolCount}/${coverage.optionalSymbolCount}`,
+    `missing_required_symbol_count: ${coverage.missingRequiredSymbolCount}`,
+    `missing_optional_symbol_count: ${coverage.missingOptionalSymbolCount}`,
+    `insufficient_required_symbol_count: ${coverage.insufficientRequiredSymbolCount}`,
+    `insufficient_optional_symbol_count: ${coverage.insufficientOptionalSymbolCount}`,
+    `available_market_symbol_counts: ${JSON.stringify(coverage.availableMarketSymbolCounts)}`,
+    `available_asset_type_symbol_counts: ${JSON.stringify(coverage.availableAssetTypeSymbolCounts)}`,
+    `issues: ${JSON.stringify(coverage.issues)}`,
+    `warnings: ${JSON.stringify(coverage.warnings)}`
+  ].join("\n");
+}
+
+function summarizeUniverseCoverage(
+  coverage: HistoricalUniverseCoverageReport | null,
+  sourcePath: string | null
+): BatchReplayUniverseCoverageSummary | null {
+  if (coverage === null) {
+    return null;
+  }
+
+  const summary: Omit<BatchReplayUniverseCoverageSummary, "warnings"> = {
+    sourcePath,
+    universeId: coverage.universeId,
+    status: coverage.status,
+    rangeStart: coverage.rangeStart,
+    rangeEnd: coverage.rangeEnd,
+    universeSymbolCount: coverage.universeSymbolCount,
+    requiredSymbolCount: coverage.requiredSymbolCount,
+    optionalSymbolCount: coverage.optionalSymbolCount,
+    availableSymbolCount: coverage.availableSymbolCount,
+    availableRequiredSymbolCount: coverage.availableRequiredSymbolCount,
+    availableOptionalSymbolCount: coverage.availableOptionalSymbolCount,
+    missingRequiredSymbolCount: coverage.missingRequiredSymbols.length,
+    missingOptionalSymbolCount: coverage.missingOptionalSymbols.length,
+    insufficientRequiredSymbolCount: coverage.insufficientRequiredSymbols.length,
+    insufficientOptionalSymbolCount:
+      coverage.insufficientOptionalSymbols.length,
+    missingRequiredMarketCount: coverage.missingRequiredMarkets.length,
+    missingRequiredAssetTypeCount: coverage.missingRequiredAssetTypes.length,
+    insufficientAvailableMarketSymbolCount:
+      coverage.insufficientAvailableMarketSymbolCounts.length,
+    insufficientAvailableAssetTypeSymbolCount:
+      coverage.insufficientAvailableAssetTypeSymbolCounts.length,
+    corruptLineCount: coverage.corruptLineCount,
+    availableMarketSymbolCounts: coverage.availableMarketSymbolCounts,
+    availableAssetTypeSymbolCounts: coverage.availableAssetTypeSymbolCounts,
+    issues: [...coverage.issues]
+  };
+
+  return {
+    ...summary,
+    warnings: universeCoverageWarnings(summary)
+  };
+}
+
+function universeCoverageWarnings(
+  summary: Omit<BatchReplayUniverseCoverageSummary, "warnings">
+): string[] {
+  const warnings: string[] = [];
+  if (summary.status === "insufficient") {
+    warnings.push(
+      [
+        "universe selection bias warning:",
+        `coverage status is insufficient for ${summary.universeId};`,
+        `available_required_symbols=${summary.availableRequiredSymbolCount}/${summary.requiredSymbolCount};`,
+        `available_symbols=${summary.availableSymbolCount}/${summary.universeSymbolCount}`
+      ].join(" ")
+    );
+  }
+  if (
+    summary.missingOptionalSymbolCount > 0 ||
+    summary.insufficientOptionalSymbolCount > 0
+  ) {
+    warnings.push(
+      [
+        "universe selection bias warning:",
+        `optional coverage is incomplete for ${summary.universeId};`,
+        `available_optional_symbols=${summary.availableOptionalSymbolCount}/${summary.optionalSymbolCount}`
+      ].join(" ")
+    );
+  }
+  if (summary.issues.length > 0) {
+    warnings.push(
+      `universe coverage issues: ${summary.issues.slice().sort().join(",")}`
+    );
+  }
+  return warnings;
 }
 
 function averageSummaryRatio(
