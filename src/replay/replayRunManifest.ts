@@ -26,6 +26,7 @@ export interface CreateReplayResearchManifestInput {
   config: unknown;
   dataSnapshot: unknown;
   universe: unknown;
+  universeSnapshotDate?: string | null | undefined;
   coverage: unknown;
   prompt: unknown;
   schema: unknown;
@@ -118,6 +119,7 @@ export function createReplayResearchManifest(
       configHash: createReplayResearchHash(input.config),
       dataSnapshotHash: createReplayResearchHash(input.dataSnapshot),
       universeHash: createReplayResearchHash(input.universe),
+      universeSnapshotDate: input.universeSnapshotDate ?? null,
       coverageHash: createReplayResearchHash(input.coverage),
       promptHash: createReplayResearchHash(input.prompt),
       schemaHash: createReplayResearchHash(input.schema),

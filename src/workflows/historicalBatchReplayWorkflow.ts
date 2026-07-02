@@ -32,6 +32,7 @@ import {
   type HistoricalDataAvailabilityReport,
   type HistoricalDataAvailabilitySymbolRequirement
 } from "../replay/historicalDataAvailability.js";
+import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 import type {
   AssetType,
   AuditEvent,
@@ -128,6 +129,7 @@ export interface BatchReplayRunnerOptions {
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
+  universeManifest?: HistoricalUniverseManifest;
   calendarValidation?: HistoricalDataAvailabilityCalendarOptions;
   fxValidation?: HistoricalDataAvailabilityFxOptions;
   decisionProviderFactory?: BatchReplayDecisionProviderFactory;
@@ -578,6 +580,9 @@ export async function runHistoricalBatchReplay(
         ...(options.paperExitPolicy === undefined
           ? {}
           : { paperExitPolicy: options.paperExitPolicy }),
+        ...(options.universeManifest === undefined
+          ? {}
+          : { universeManifest: options.universeManifest }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
         ...(replayDecisionProviderMetadata === undefined
           ? {}

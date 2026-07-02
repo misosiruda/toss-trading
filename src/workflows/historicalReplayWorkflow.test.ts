@@ -17,6 +17,11 @@ import {
   FileHistoricalMarketSnapshotStore,
   FileVirtualPortfolioStore
 } from "../storage/repositories.js";
+import {
+  parseHistoricalUniverseManifest,
+  type HistoricalUniverseManifest
+} from "../replay/historicalUniverseCoverage.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
 
 test("historical replay workflow writes a stored paper report", async () => {
@@ -212,6 +217,7 @@ test("historical replay workflow writes a stored paper report", async () => {
   );
   assert.match(String(researchManifest["dataSnapshotHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.match(String(researchManifest["universeHash"]), /^sha256:[a-f0-9]{64}$/);
+  assert.equal(researchManifest["universeSnapshotDate"], null);
   assert.match(String(researchManifest["coverageHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.match(String(researchManifest["costModelHash"]), /^sha256:[a-f0-9]{64}$/);
   assert.equal(
@@ -247,6 +253,15 @@ test("historical replay research manifest hashes initial portfolio and replay sn
   const withStoredPortfolio = await runWorkflowAndReadResearchManifest({
     storedPortfolio: portfolioWithPosition()
   });
+  const withUniverseManifest = await runWorkflowAndReadResearchManifest({
+    universeManifest: universeManifest()
+  });
+  const withChangedUniverseManifest = await runWorkflowAndReadResearchManifest({
+    universeManifest: universeManifest({
+      snapshotDate: "2025-04-30",
+      lifecycleStatus: "delisted"
+    })
+  });
   const withDifferentSnapshotInputs = await runWorkflowAndReadResearchManifest({
     snapshotInput: {
       snapshotId: "hist_005930_0900",
@@ -272,6 +287,22 @@ test("historical replay research manifest hashes initial portfolio and replay sn
     baseline["dataSnapshotHash"],
     withDifferentSnapshotInputs["dataSnapshotHash"],
     "replay-relevant snapshot fields must affect dataSnapshotHash"
+  );
+  assert.equal(
+    baseline["universeHash"],
+    createReplayResearchHash([{ market: "KR", symbol: "005930" }]),
+    "legacy no-universe path must keep hashing the observed symbol summary array"
+  );
+  assert.equal(withUniverseManifest["universeSnapshotDate"], "2025-03-31");
+  assert.notEqual(
+    baseline["universeHash"],
+    withUniverseManifest["universeHash"],
+    "explicit universe manifest must replace snapshot-derived universe hash source"
+  );
+  assert.notEqual(
+    withUniverseManifest["universeHash"],
+    withChangedUniverseManifest["universeHash"],
+    "universe snapshot date and lifecycle metadata must affect universeHash"
   );
 });
 
@@ -314,6 +345,7 @@ function snapshot(input: {
 async function runWorkflowAndReadResearchManifest(input: {
   storedPortfolio?: VirtualPortfolio;
   snapshotInput?: Parameters<typeof snapshot>[0];
+  universeManifest?: HistoricalUniverseManifest;
 }): Promise<Record<string, unknown>> {
   const storageBaseDir = await mkdtemp(join(tmpdir(), "toss-replay-manifest-"));
   const paths = createStoragePaths(storageBaseDir);
@@ -353,12 +385,37 @@ async function runWorkflowAndReadResearchManifest(input: {
       maxNewPositions: 3,
       maxBudgetPerSymbolKrw: 100_000,
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-    }
+    },
+    ...(input.universeManifest === undefined
+      ? {}
+      : { universeManifest: input.universeManifest })
   });
 
   return JSON.parse(
     await readFile(paths.historicalReplayResearchManifestPath, "utf8")
   ) as Record<string, unknown>;
+}
+
+function universeManifest(
+  overrides: {
+    snapshotDate?: string;
+    lifecycleStatus?: "active" | "suspended" | "delisted" | "unknown";
+  } = {}
+): HistoricalUniverseManifest {
+  return parseHistoricalUniverseManifest({
+    mode: "paper_only_historical_universe",
+    universeId: "fixture-replay-universe",
+    snapshotDate: overrides.snapshotDate ?? "2025-03-31",
+    symbols: [
+      {
+        market: "KR",
+        symbol: "005930",
+        lifecycleStatus: overrides.lifecycleStatus ?? "active",
+        required: true
+      }
+    ],
+    disclaimer: "Paper-only fixture."
+  });
 }
 
 function portfolioWithPosition(): VirtualPortfolio {

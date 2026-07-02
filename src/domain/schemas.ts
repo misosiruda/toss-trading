@@ -64,6 +64,10 @@ export const isoDateTimeSchema = z.string().refine((value) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp);
 }, "Expected an ISO-compatible date-time string");
+const isoCalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD calendar date")
+  .refine(isValidCalendarDate, "Expected a valid calendar date");
 export const sha256HashSchema = z
   .string()
   .regex(
@@ -300,6 +304,7 @@ export const replayResearchManifestSchema = z
     configHash: sha256HashSchema,
     dataSnapshotHash: sha256HashSchema,
     universeHash: sha256HashSchema,
+    universeSnapshotDate: isoCalendarDateSchema.nullable().default(null),
     coverageHash: sha256HashSchema,
     promptHash: sha256HashSchema,
     schemaHash: sha256HashSchema,
@@ -587,5 +592,18 @@ function hasVirtualSellSizingV2(value: {
     value.sellRatio !== undefined ||
     value.targetWeightPct !== undefined ||
     value.sellAll === true
+  );
+}
+
+function isValidCalendarDate(value: string): boolean {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
   );
 }

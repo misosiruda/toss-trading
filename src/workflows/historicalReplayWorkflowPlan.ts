@@ -20,6 +20,7 @@ import type { HistoricalReplayInput } from "../replay/historicalReplayRunner.js"
 import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
+import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
@@ -41,6 +42,7 @@ export interface HistoricalReplayWorkflowOptions {
   paperExitPolicy?: PaperExitPolicy;
   tickDelayMs?: number;
   decisionProviderMetadata?: unknown;
+  universeManifest?: HistoricalUniverseManifest;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;

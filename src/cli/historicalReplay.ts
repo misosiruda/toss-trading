@@ -83,6 +83,7 @@ const args = process.argv.slice(2);
 const positionalArgs = collectPositionalArgs(args);
 const dryRun = args.includes("--dry-run");
 const dataDir = readArgValue("--data-dir") ?? positionalArgs[0] ?? "data/paper";
+const universeManifest = readUniverseManifestArg();
 const timezoneOffsetMinutes = readNumberArg("--timezone-offset-minutes", 540);
 const replayWindow = args.includes("--random-window")
   ? selectReplayWindow({
@@ -214,6 +215,7 @@ const result = await runHistoricalReplayWorkflow({
   ...(batchId === undefined ? {} : { batchId }),
   ...(batchRunIndex === undefined ? {} : { batchRunIndex }),
   ...(replayWindow === null ? {} : { windowSelection: replayWindow }),
+  ...(universeManifest === undefined ? {} : { universeManifest }),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
   riskPolicy: riskProfile.riskPolicy,
@@ -272,6 +274,16 @@ function readArgValue(name: string): string | undefined {
   }
 
   return value;
+}
+
+function readUniverseManifestArg() {
+  const universePath = readArgValue("--universe-path");
+  if (universePath === undefined) {
+    return undefined;
+  }
+  return parseHistoricalUniverseManifest(
+    JSON.parse(readFileSync(universePath, "utf8"))
+  );
 }
 
 function readRequiredArgValue(name: string): string {
@@ -367,13 +379,9 @@ function readRequiredSymbols():
   | Array<{ market: Market; symbol: string }>
   | undefined {
   const values: Array<{ market: Market; symbol: string }> = [];
-  const universePath = readArgValue("--universe-path");
-  if (universePath !== undefined) {
-    const universe = parseHistoricalUniverseManifest(
-      JSON.parse(readFileSync(universePath, "utf8"))
-    );
+  if (universeManifest !== undefined) {
     values.push(
-      ...requiredSymbolsFromHistoricalUniverse(universe, {
+      ...requiredSymbolsFromHistoricalUniverse(universeManifest, {
         includeOptional: args.includes("--require-optional-universe-symbols")
       })
     );
