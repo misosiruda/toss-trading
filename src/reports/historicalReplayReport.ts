@@ -3,9 +3,14 @@ import {
   type PaperPortfolioAnalytics
 } from "../analytics/paperPortfolioAnalytics.js";
 import {
+  buildReplayReturnSamples,
   summarizeReplayPerformanceMetrics,
   type ReplayPerformanceMetrics
 } from "../analytics/performanceMetrics.js";
+import {
+  calculateSharpeValidationReport,
+  type SharpeValidationReport
+} from "../analytics/sharpeValidation.js";
 import type { VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -26,6 +31,8 @@ import {
   buildHistoricalReplayBenchmarks,
   type HistoricalReplayBenchmarkReport
 } from "./historicalReplayBenchmark.js";
+
+const REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG = 5;
 
 export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
@@ -50,6 +57,7 @@ export interface HistoricalReplayReport {
   tradeSummary: HistoricalReplayTradeSummary;
   costSummary: HistoricalReplayCostSummary;
   advancedPerformance: ReplayPerformanceMetrics;
+  sharpeValidation: SharpeValidationReport;
   riskSummary: HistoricalReplayRiskSummary;
   samplingSummary: HistoricalReplaySamplingSummary;
   reproducibility: ReplayResearchManifestReference;
@@ -157,6 +165,7 @@ export function buildHistoricalReplayReport(
     result.allocationPolicy
   );
   const costSummary = summarizeCosts(result.trades);
+  const initialNetWorthKrw = portfolioNetWorth(result.initialPortfolio);
 
   return {
     title: options.title ?? "Historical Replay Paper Report",
@@ -188,7 +197,20 @@ export function buildHistoricalReplayReport(
       timeline: result.portfolioTimeline,
       trades: result.trades,
       averageExposureRatio: portfolioConstruction.avgExposureRatio,
-      initialNetWorthKrw: portfolioNetWorth(result.initialPortfolio)
+      initialNetWorthKrw
+    }),
+    sharpeValidation: calculateSharpeValidationReport({
+      returns: buildReplayReturnSamples({
+        timeline: result.portfolioTimeline,
+        initialNetWorthKrw
+      }),
+      autocorrelationMaxLag: REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG,
+      selectionContext: {
+        candidateCount: 1,
+        trialCount: 1,
+        selectedByMetric: "single_historical_replay",
+        multipleTestingAdjustment: "none"
+      }
     }),
     riskSummary: summarizeRisk(result),
     samplingSummary: summarizeSampling(result),
@@ -312,6 +334,21 @@ export function renderHistoricalReplayReport(
     `sharpe_annualization_status: ${report.advancedPerformance.sharpeAnnualizationStatus}`,
     `exposure_adjusted_return_ratio: ${formatNullable(report.advancedPerformance.exposureAdjustedReturnRatio)}`,
     `warnings: ${report.advancedPerformance.warnings.join(" | ") || "none"}`,
+    "",
+    "## Sharpe Statistical Validation",
+    `schema_version: ${report.sharpeValidation.schemaVersion}`,
+    `status: ${report.sharpeValidation.status}`,
+    `return_sample_count: ${report.sharpeValidation.sample.returnSampleCount}`,
+    `minimum_sample_count: ${report.sharpeValidation.sample.minimumSampleCount}`,
+    `return_frequency: ${report.sharpeValidation.sample.returnFrequency}`,
+    `annualization_status: ${report.sharpeValidation.sample.annualizationStatus}`,
+    `sample_sharpe_status: ${report.sharpeValidation.metrics.sampleSharpe.status}`,
+    `sample_sharpe_value: ${formatNullable(report.sharpeValidation.metrics.sampleSharpe.value)}`,
+    `lo_adjusted_sharpe_status: ${report.sharpeValidation.metrics.loAdjustedSharpe.status}`,
+    `probabilistic_sharpe_ratio_status: ${report.sharpeValidation.metrics.probabilisticSharpeRatio.status}`,
+    `deflated_sharpe_ratio_status: ${report.sharpeValidation.metrics.deflatedSharpeRatio.status}`,
+    `selection_context: ${JSON.stringify(report.sharpeValidation.selectionContext)}`,
+    `warnings: ${report.sharpeValidation.warnings.map((warning) => warning.code).join(" | ") || "none"}`,
     "",
     "## Virtual Risk",
     `approved_count: ${report.riskSummary.approvedCount}`,

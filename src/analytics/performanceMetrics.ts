@@ -93,7 +93,10 @@ export function summarizeReplayPerformanceMetrics(input: {
     initialNetWorthKrw,
     timelineCurve
   );
-  const returns = tickReturns(performanceCurve);
+  const returns = buildReplayReturnSamples({
+    timeline: input.timeline,
+    initialNetWorthKrw: input.initialNetWorthKrw
+  });
   const distribution = summarizeReturnDistributionMetrics(returns);
   const warnings = [...distribution.warnings];
   const finalNetWorthKrw = timelineCurve.at(-1) ?? null;
@@ -157,6 +160,21 @@ export function summarizeReplayPerformanceMetrics(input: {
     exposureAdjustedReturnRatio,
     warnings
   };
+}
+
+export function buildReplayReturnSamples(input: {
+  timeline: NetWorthTimelinePoint[];
+  initialNetWorthKrw?: number | null | undefined;
+}): number[] {
+  const timeline = input.timeline.filter((point) =>
+    Number.isFinite(point.virtualNetWorthKrw)
+  );
+  const timelineCurve = timeline.map((point) => point.virtualNetWorthKrw);
+  const initialNetWorthKrw = resolveInitialNetWorthKrw(
+    timelineCurve[0] ?? null,
+    input.initialNetWorthKrw
+  );
+  return tickReturns(buildPerformanceCurve(initialNetWorthKrw, timelineCurve));
 }
 
 function calculateSharpeRatio(returns: number[], warnings: string[]): number | null {

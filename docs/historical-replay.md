@@ -183,7 +183,20 @@ Historical replay report의 `Advanced Performance Metrics` section은 `performan
 
 이 metric은 paper-only 사후 분석용입니다. 짧은 replay, return sample 부족, zero drawdown, zero volatility에서는 숫자를 억지로 만들지 않고 `null`과 warning을 기록합니다. Sharpe는 per-sample 값이며 Lo 방식의 serial-correlation adjustment나 Deflated Sharpe Ratio가 아닙니다.
 
-RH5 후속 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
+Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_validation.v1` schema로 single replay return sample을 검증합니다.
+
+포함되는 field:
+
+- `schemaVersion`: `sharpe_validation.v1`
+- `status`: sample Sharpe 계산 가능 여부
+- `sample`: return sample count, minimum sample count, annualization 상태
+- `distribution`: mean, volatility, skewness, excess kurtosis, lag 5까지의 autocorrelation diagnostic
+- `metrics.sampleSharpe`: standalone sample Sharpe 결과
+- `metrics.loAdjustedSharpe`, `metrics.probabilisticSharpeRatio`, `metrics.deflatedSharpeRatio`: 후속 계산 전까지 `not_implemented`
+- `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `multipleTestingAdjustment=none`으로 기록
+- `warnings`: insufficient sample, zero volatility, serial correlation 미보정, 미구현 metric 경고
+
+RH5 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
 
 Q3-2 기준:
 
