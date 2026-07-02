@@ -13,7 +13,8 @@
 - return sample이 3개 미만이거나 volatility가 0이면 `null`과 warning을 반환한다.
 - 현재 `sharpeRatio`는 serial correlation adjustment, confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio를 계산하지 않는다.
 - batch aggregate report는 group별 return sample로 `advancedPerformance`를 계산하고, selection trial이 있을 때 sampled CPCV/PBO-like warning을 별도 section에 남긴다.
-- `src/analytics/sharpeValidation.ts`는 standalone `calculateSharpeValidationReport()`를 제공한다. 이 helper는 finite return sample에서 sample Sharpe, mean, volatility, skewness, excess kurtosis, autocorrelation diagnostic을 계산하지만 아직 report/dashboard payload에 연결되지 않는다.
+- `src/analytics/sharpeValidation.ts`는 standalone `calculateSharpeValidationReport()`를 제공한다. 이 helper는 finite return sample에서 sample Sharpe, mean, volatility, skewness, excess kurtosis, autocorrelation diagnostic을 계산한다.
+- `HistoricalReplayReport`는 single replay return sample을 기준으로 `sharpeValidation` field를 기록하고 Markdown render에 read-only section을 표시한다.
 
 ## Contract 목표
 
@@ -59,7 +60,7 @@ interface SharpeValidationMetrics {
 }
 ```
 
-현재 구현은 schema, unavailable placeholder helper, standalone sample calculator를 제공한다. `HistoricalReplayReport`, `BatchReplayAggregateReport`, `ReplayResearchReport`, dashboard ViewModel에 이 field를 연결하는 작업은 후속 PR 범위다.
+현재 구현은 schema, unavailable placeholder helper, standalone sample calculator, single `HistoricalReplayReport.sharpeValidation` 연결을 제공한다. `BatchReplayAggregateReport`, `ReplayResearchReport`, dashboard ViewModel에 이 field를 연결하는 작업은 후속 PR 범위다.
 
 ## Warning Code
 
@@ -92,7 +93,7 @@ interface SharpeValidationMetrics {
 
 후속 PR은 다음 순서로 연결한다.
 
-1. `HistoricalReplayReport.advancedPerformance` 또는 별도 `sharpeValidation` field에 single replay 검증 결과를 연결한다.
+1. 완료: `HistoricalReplayReport.sharpeValidation` field와 Markdown render section에 single replay 검증 결과를 연결한다.
 2. `BatchReplayAggregateReport` group summary에 Sharpe validation을 연결한다.
 3. Probabilistic Sharpe Ratio, Deflated Sharpe Ratio, Lo-adjusted Sharpe 계산을 selection context와 함께 확장한다.
 4. `ReplayResearchReport`와 Next.js Validation Lab에서 unavailable/available 상태와 warning을 read-only로 표시한다.

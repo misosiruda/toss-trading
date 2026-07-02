@@ -43,6 +43,18 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.advancedPerformance.formulaVersion, "performance_metrics.v1");
   assert.equal(report.advancedPerformance.sampleCount, 2);
   assert.equal(report.advancedPerformance.sharpeRatio, null);
+  assert.equal(report.sharpeValidation.schemaVersion, "sharpe_validation.v1");
+  assert.equal(report.sharpeValidation.status, "unavailable");
+  assert.equal(report.sharpeValidation.sample.returnSampleCount, 2);
+  assert.equal(report.sharpeValidation.metrics.sampleSharpe.status, "insufficient_sample");
+  assert.equal(
+    report.sharpeValidation.selectionContext.multipleTestingAdjustment,
+    "none"
+  );
+  assert.match(
+    report.sharpeValidation.warnings.map((warning) => warning.code).join("\n"),
+    /INSUFFICIENT_RETURN_SAMPLES/
+  );
   assert.match(
     report.advancedPerformance.warnings.join("\n"),
     /at least 3 return samples/
@@ -110,6 +122,11 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /gross_total_return_ratio/);
   assert.match(rendered, /sharpe_annualization_status/);
   assert.match(rendered, /exposure_adjusted_return_ratio/);
+  assert.match(rendered, /Sharpe Statistical Validation/);
+  assert.match(rendered, /schema_version: sharpe_validation\.v1/);
+  assert.match(rendered, /sample_sharpe_status: insufficient_sample/);
+  assert.match(rendered, /deflated_sharpe_ratio_status: not_implemented/);
+  assert.match(rendered, /selection_context/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);
   assert.match(rendered, /Reproducibility/);
