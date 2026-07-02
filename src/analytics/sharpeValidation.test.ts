@@ -48,14 +48,80 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.equal(report.metrics.sampleSharpe.status, "computed");
   assert.equal(report.metrics.sampleSharpe.value, 0.374554);
   assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
+  assert.equal(report.metrics.loAdjustedSharpe.status, "computed");
+  assert.equal(report.metrics.loAdjustedSharpe.value, 0.461839);
+  assert.equal(report.metrics.loAdjustedSharpe.confidenceInterval95, null);
+  assert.equal(
+    report.distribution.autocorrelation.adjustmentStatus,
+    "computed"
+  );
   assert.equal(report.distribution.autocorrelation.lagCount, 2);
   assert.deepEqual(
     report.warnings.map((warning) => warning.code),
     [
-      "SERIAL_CORRELATION_NOT_ADJUSTED",
       "NON_IID_RETURN_SAMPLE",
       "SHARPE_VALIDATION_NOT_IMPLEMENTED"
     ]
+  );
+  assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
+test("Sharpe validation calculator computes Lo-style autocorrelation adjustment", () => {
+  const returns = [
+    0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02,
+    0.02, 0.02, 0.02, 0.02, 0.02, 0.005, 0.005, 0.005, 0.005, 0.005,
+    0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005
+  ];
+
+  const report = calculateSharpeValidationReport({
+    returns,
+    autocorrelationMaxLag: 5,
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 30
+    }
+  });
+
+  assert.equal(report.status, "available");
+  assert.equal(report.metrics.sampleSharpe.status, "computed");
+  assert.equal(report.metrics.sampleSharpe.value, 1.638653);
+  assert.equal(report.metrics.loAdjustedSharpe.status, "computed");
+  assert.equal(report.metrics.loAdjustedSharpe.value, 0.745356);
+  assert.equal(
+    report.distribution.autocorrelation.adjustmentStatus,
+    "computed"
+  );
+  assert.equal(report.distribution.autocorrelation.maxLag, 5);
+  assert.equal(report.distribution.autocorrelation.lagCount, 5);
+  assert.match(
+    report.warnings.map((warning) => warning.code).join("\n"),
+    /NON_IID_RETURN_SAMPLE/
+  );
+  assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
+test("Sharpe validation calculator keeps Lo adjustment unavailable without autocorrelation", () => {
+  const report = calculateSharpeValidationReport({
+    returns: Array.from({ length: 30 }, (_, index) =>
+      index % 2 === 0 ? 0.01 : 0.02
+    ),
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 10
+    }
+  });
+
+  assert.equal(report.status, "available");
+  assert.equal(report.metrics.sampleSharpe.status, "computed");
+  assert.equal(report.metrics.loAdjustedSharpe.status, "not_applicable");
+  assert.equal(report.metrics.loAdjustedSharpe.value, null);
+  assert.equal(
+    report.distribution.autocorrelation.adjustmentStatus,
+    "not_required"
+  );
+  assert.match(
+    report.warnings.map((warning) => warning.code).join("\n"),
+    /SERIAL_CORRELATION_NOT_ADJUSTED/
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
 });
@@ -79,6 +145,7 @@ test("Sharpe validation calculator keeps full precision before report rounding",
   assert.ok(report.distribution.volatilityRatio > 0);
   assert.ok(report.distribution.volatilityRatio < 0.000001);
   assert.equal(report.metrics.sampleSharpe.status, "computed");
+  assert.equal(report.metrics.loAdjustedSharpe.status, "not_applicable");
   assert.equal(
     report.warnings.some((warning) => warning.code === "ZERO_RETURN_VOLATILITY"),
     false
@@ -141,7 +208,8 @@ test("unavailable Sharpe validation report exposes deterministic schema defaults
   assert.equal(report.metrics.sampleSharpe.status, "insufficient_sample");
   assert.equal(report.metrics.sampleSharpe.value, null);
   assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
-  assert.equal(report.metrics.loAdjustedSharpe.status, "not_implemented");
+  assert.equal(report.metrics.loAdjustedSharpe.status, "insufficient_sample");
+  assert.equal(report.metrics.loAdjustedSharpe.value, null);
   assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
   assert.equal(report.metrics.deflatedSharpeRatio.status, "not_implemented");
   assert.equal(report.selectionContext.multipleTestingAdjustment, "unknown");

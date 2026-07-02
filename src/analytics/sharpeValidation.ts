@@ -176,15 +176,6 @@ export function calculateSharpeValidationReport(
   );
   const skewness = calculateSkewness(excessReturns);
   const excessKurtosis = calculateExcessKurtosis(excessReturns);
-  const warnings = sharpeValidationWarnings({
-    sampleCount: excessReturns.length,
-    minimumSampleCount,
-    volatilityRatio: volatilityRatioRaw,
-    autocorrelation,
-    skewness,
-    excessKurtosis,
-    selectionContext: input.selectionContext
-  });
   const sampleSharpe = calculateSampleSharpe({
     sampleCount: excessReturns.length,
     minimumSampleCount,
@@ -193,6 +184,29 @@ export function calculateSharpeValidationReport(
     annualizationFactor,
     benchmarkSharpeRatio,
     riskFreeRateRatio
+  });
+  const loAdjustedSharpe = calculateLoAdjustedSharpe({
+    sampleSharpe,
+    sampleCount: excessReturns.length,
+    minimumSampleCount,
+    annualizationFactor,
+    benchmarkSharpeRatio,
+    riskFreeRateRatio,
+    autocorrelation
+  });
+  const adjustedAutocorrelation = autocorrelationWithAdjustmentStatus(
+    autocorrelation,
+    loAdjustedSharpe.status === "computed"
+  );
+  const warnings = sharpeValidationWarnings({
+    sampleCount: excessReturns.length,
+    minimumSampleCount,
+    volatilityRatio: volatilityRatioRaw,
+    autocorrelation: adjustedAutocorrelation,
+    loAdjustedSharpeStatus: loAdjustedSharpe.status,
+    skewness,
+    excessKurtosis,
+    selectionContext: input.selectionContext
   });
 
   return {
@@ -212,14 +226,11 @@ export function calculateSharpeValidationReport(
       volatilityRatio,
       skewness,
       excessKurtosis,
-      autocorrelation
+      autocorrelation: adjustedAutocorrelation
     },
     metrics: {
       sampleSharpe,
-      loAdjustedSharpe: unavailableEstimate(
-        "lo_adjusted_sharpe",
-        "Lo-style serial correlation adjustment is reserved for a follow-up PR"
-      ),
+      loAdjustedSharpe,
       probabilisticSharpeRatio: {
         metric: "probabilistic_sharpe_ratio",
         status: "not_implemented",
@@ -276,7 +287,8 @@ export function createUnavailableSharpeValidationReport(input: {
       ),
       loAdjustedSharpe: unavailableEstimate(
         "lo_adjusted_sharpe",
-        "Lo-style serial correlation adjustment is not computed in this contract PR"
+        input.reason,
+        unavailableMetricStatusForReason(input.reasonCode)
       ),
       probabilisticSharpeRatio: {
         metric: "probabilistic_sharpe_ratio",
@@ -308,7 +320,7 @@ export function createUnavailableSharpeValidationReport(input: {
         code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
         severity: "info",
         message:
-          "RH5 first PR defines the sharpe_validation.v1 schema without wiring a calculator into reports"
+          "PSR and DSR are intentionally left for follow-up PRs"
       }
     ]
   };
@@ -332,7 +344,8 @@ function calculateSampleSharpe(input: {
       : "sample_sharpe is annualized with sqrt(annualizationFactor)"
   ];
   if (input.sampleCount < input.minimumSampleCount) {
-    return computedEstimateShell({
+    return estimateShell({
+      metric: "sample_sharpe",
       status: "insufficient_sample",
       value: null,
       benchmarkSharpeRatio: input.benchmarkSharpeRatio,
@@ -344,7 +357,8 @@ function calculateSampleSharpe(input: {
     input.volatilityRatio === null ||
     input.volatilityRatio === 0
   ) {
-    return computedEstimateShell({
+    return estimateShell({
+      metric: "sample_sharpe",
       status: "not_applicable",
       value: null,
       benchmarkSharpeRatio: input.benchmarkSharpeRatio,
@@ -356,7 +370,8 @@ function calculateSampleSharpe(input: {
     input.annualizationFactor === null
       ? rawSharpe
       : rawSharpe * Math.sqrt(input.annualizationFactor);
-  return computedEstimateShell({
+  return estimateShell({
+    metric: "sample_sharpe",
     status: "computed",
     value: roundRatio(sharpe),
     benchmarkSharpeRatio: input.benchmarkSharpeRatio,
@@ -364,14 +379,82 @@ function calculateSampleSharpe(input: {
   });
 }
 
-function computedEstimateShell(input: {
+function calculateLoAdjustedSharpe(input: {
+  sampleSharpe: SharpeValidationEstimate;
+  sampleCount: number;
+  minimumSampleCount: number;
+  annualizationFactor: number | null;
+  benchmarkSharpeRatio: number | null;
+  riskFreeRateRatio: number | null;
+  autocorrelation: SharpeAutocorrelationSummary;
+}): SharpeValidationEstimate {
+  const methodNotes = [
+    input.riskFreeRateRatio === null
+      ? "lo_adjusted_sharpe uses raw return samples because riskFreeRateRatio is not provided"
+      : "lo_adjusted_sharpe uses excess return samples after subtracting riskFreeRateRatio",
+    input.annualizationFactor === null
+      ? "lo_adjusted_sharpe keeps the sample Sharpe periodicity because annualizationFactor is not provided"
+      : "lo_adjusted_sharpe adjusts the annualized sample Sharpe with Lo-style autocorrelation variance inflation",
+    "lo_adjusted_sharpe uses available autocorrelation lags as a bounded deterministic correction"
+  ];
+  if (input.sampleCount < input.minimumSampleCount) {
+    return estimateShell({
+      metric: "lo_adjusted_sharpe",
+      status: "insufficient_sample",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  if (input.sampleSharpe.status !== "computed" || input.sampleSharpe.value === null) {
+    return estimateShell({
+      metric: "lo_adjusted_sharpe",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  if (input.autocorrelation.coefficients.length === 0) {
+    return estimateShell({
+      metric: "lo_adjusted_sharpe",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  const varianceInflation = loVarianceInflationFactor({
+    coefficients: input.autocorrelation.coefficients,
+    annualizationFactor: input.annualizationFactor
+  });
+  if (varianceInflation === null || varianceInflation <= 0) {
+    return estimateShell({
+      metric: "lo_adjusted_sharpe",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  return estimateShell({
+    metric: "lo_adjusted_sharpe",
+    status: "computed",
+    value: roundRatio(input.sampleSharpe.value / Math.sqrt(varianceInflation)),
+    benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+    methodNotes
+  });
+}
+
+function estimateShell(input: {
+  metric: SharpeValidationEstimateMetricName;
   status: SharpeValidationMetricStatus;
   value: number | null;
   benchmarkSharpeRatio: number | null;
   methodNotes: string[];
 }): SharpeValidationEstimate {
   return {
-    metric: "sample_sharpe",
+    metric: input.metric,
     status: input.status,
     value: input.value,
     standardError: null,
@@ -417,6 +500,7 @@ function sharpeValidationWarnings(input: {
   minimumSampleCount: number;
   volatilityRatio: number | null;
   autocorrelation: SharpeAutocorrelationSummary;
+  loAdjustedSharpeStatus: SharpeValidationMetricStatus;
   skewness: number | null;
   excessKurtosis: number | null;
   selectionContext: Partial<SharpeValidationSelectionContext> | undefined;
@@ -439,7 +523,8 @@ function sharpeValidationWarnings(input: {
   if (
     input.sampleCount >= input.minimumSampleCount &&
     input.volatilityRatio !== null &&
-    input.volatilityRatio > 0
+    input.volatilityRatio > 0 &&
+    input.loAdjustedSharpeStatus !== "computed"
   ) {
     warnings.push({
       code: "SERIAL_CORRELATION_NOT_ADJUSTED",
@@ -485,9 +570,44 @@ function sharpeValidationWarnings(input: {
     code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
     severity: "info",
     message:
-      "PSR, DSR, and Lo-adjusted Sharpe are intentionally left for follow-up PRs"
+      "PSR and DSR are intentionally left for follow-up PRs"
   });
   return warnings;
+}
+
+function autocorrelationWithAdjustmentStatus(
+  autocorrelation: SharpeAutocorrelationSummary,
+  adjusted: boolean
+): SharpeAutocorrelationSummary {
+  if (!adjusted || autocorrelation.coefficients.length === 0) {
+    return autocorrelation;
+  }
+  return {
+    ...autocorrelation,
+    adjustmentStatus: "computed"
+  };
+}
+
+function loVarianceInflationFactor(input: {
+  coefficients: SharpeAutocorrelationCoefficient[];
+  annualizationFactor: number | null;
+}): number | null {
+  const finiteCoefficients = input.coefficients.filter(
+    (
+      coefficient
+    ): coefficient is SharpeAutocorrelationCoefficient & { coefficient: number } =>
+      coefficient.coefficient !== null
+  );
+  if (finiteCoefficients.length === 0) {
+    return null;
+  }
+  const q = input.annualizationFactor ?? finiteCoefficients.length + 1;
+  const weightedAutocorrelationSum = finiteCoefficients.reduce(
+    (sum, coefficient) =>
+      sum + (1 - Math.min(coefficient.lag, q) / q) * coefficient.coefficient,
+    0
+  );
+  return 1 + 2 * weightedAutocorrelationSum;
 }
 
 function summarizeAutocorrelation(
