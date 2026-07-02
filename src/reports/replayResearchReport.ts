@@ -1,5 +1,6 @@
 import type {
   BatchReplayAggregateReport,
+  BatchReplayCostBreakdownSummary,
   BatchReplayGroupSummary,
   BatchReplaySelectionTrialBucket,
   BatchReplayUniverseCoverageSummary
@@ -28,7 +29,7 @@ export interface ReplayResearchReport {
   promptTrialDistribution: ReplayResearchPromptTrialDistribution;
   riskAllocationPolicy: ReplayResearchRiskAllocationPolicy;
   executionAssumptions: ReplayResearchExecutionAssumptions;
-  costBreakdown: ReplayResearchAvailabilitySection;
+  costBreakdown: ReplayResearchCostBreakdown;
   exposureBreakdown: ReplayResearchExposureBreakdown;
   regimeBreakdown: ReplayResearchGroupBreakdown[];
   bucketBreakdown: ReplayResearchBucketBreakdown;
@@ -121,6 +122,27 @@ export interface ReplayResearchExecutionAssumptions {
 export interface ReplayResearchAvailabilitySection {
   status: "available" | "unavailable";
   reason: string | null;
+}
+
+export interface ReplayResearchCostBreakdown
+  extends ReplayResearchAvailabilitySection {
+  sampleCount: number;
+  tradeCount: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  averageCostPerRunKrw: number | null;
+  averageCostPerTradeKrw: number | null;
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageRunParticipationRate: number | null;
+  maxParticipationRate: number | null;
+  costModelVersions: string[];
+  runIds: string[];
 }
 
 export interface ReplayResearchExposureBreakdown {
@@ -276,11 +298,7 @@ export function buildReplayResearchReport(
       replayExecutedByThisReport: false,
       orderPlacementEnabled: false
     },
-    costBreakdown: {
-      status: "unavailable",
-      reason:
-        "aggregate report does not contain per-run execution cost components"
-    },
+    costBreakdown: researchCostBreakdown(overall.costSummary),
     exposureBreakdown: {
       averageExposureRatio: readNumber(overall.averageExposureRatio),
       averageCashRatio: readNumber(overall.averageCashRatio),
@@ -422,6 +440,59 @@ function researchUniverseCoverage(
   };
 }
 
+function researchCostBreakdown(
+  costSummary: BatchReplayCostBreakdownSummary | null | undefined
+): ReplayResearchCostBreakdown {
+  const summary = costSummary ?? emptyCostBreakdownSummary();
+  const status = summary.sampleCount === 0 ? "unavailable" : "available";
+  return {
+    status,
+    reason:
+      status === "unavailable"
+        ? "aggregate report does not contain per-run execution cost components"
+        : null,
+    sampleCount: summary.sampleCount,
+    tradeCount: summary.tradeCount,
+    feeKrw: summary.feeKrw,
+    taxKrw: summary.taxKrw,
+    slippageKrw: summary.slippageKrw,
+    spreadCostKrw: summary.spreadCostKrw,
+    impactCostKrw: summary.impactCostKrw,
+    totalCostKrw: summary.totalCostKrw,
+    averageCostPerRunKrw: summary.averageCostPerRunKrw,
+    averageCostPerTradeKrw: summary.averageCostPerTradeKrw,
+    filledCount: summary.filledCount,
+    partialFillCount: summary.partialFillCount,
+    notModeledLiquidityCount: summary.notModeledLiquidityCount,
+    averageRunParticipationRate: summary.averageRunParticipationRate,
+    maxParticipationRate: summary.maxParticipationRate,
+    costModelVersions: [...summary.costModelVersions],
+    runIds: [...summary.runIds]
+  };
+}
+
+function emptyCostBreakdownSummary(): BatchReplayCostBreakdownSummary {
+  return {
+    sampleCount: 0,
+    tradeCount: 0,
+    feeKrw: 0,
+    taxKrw: 0,
+    slippageKrw: 0,
+    spreadCostKrw: 0,
+    impactCostKrw: 0,
+    totalCostKrw: 0,
+    averageCostPerRunKrw: null,
+    averageCostPerTradeKrw: null,
+    filledCount: 0,
+    partialFillCount: 0,
+    notModeledLiquidityCount: 0,
+    averageRunParticipationRate: null,
+    maxParticipationRate: null,
+    costModelVersions: [],
+    runIds: []
+  };
+}
+
 function buckets(
   values: BatchReplaySelectionTrialBucket[] | undefined
 ): ReplayResearchBucket[] {
@@ -461,9 +532,11 @@ function researchWarnings(report: BatchReplayAggregateReport): string[] {
   } else {
     warnings.push(...report.universeCoverage.warnings);
   }
-  warnings.push(
-    "cost breakdown unavailable: aggregate report does not contain per-run execution cost components"
-  );
+  if ((report.overall.costSummary?.sampleCount ?? 0) === 0) {
+    warnings.push(
+      "cost breakdown unavailable: aggregate report does not contain per-run execution cost components"
+    );
+  }
   warnings.push(
     "benchmark comparison unavailable: aggregate report does not contain per-run benchmark comparison samples"
   );

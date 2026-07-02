@@ -92,10 +92,31 @@ export interface BatchReplayGroupSummary {
   averageFinalExposureByAssetTypeKrw: Partial<Record<AssetType | "UNKNOWN", number>>;
   totalTradeCount: number;
   averageTradeCount: number | null;
+  costSummary: BatchReplayCostBreakdownSummary;
   totalAiDecisionFailureCount: number;
   totalRejectedCount: number;
   totalMeaningfulRejectCount: number;
   totalDustRejectCount: number;
+  runIds: string[];
+}
+
+export interface BatchReplayCostBreakdownSummary {
+  sampleCount: number;
+  tradeCount: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  averageCostPerRunKrw: number | null;
+  averageCostPerTradeKrw: number | null;
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageRunParticipationRate: number | null;
+  maxParticipationRate: number | null;
+  costModelVersions: string[];
   runIds: string[];
 }
 
@@ -1030,6 +1051,7 @@ function summarizeGroup(
     totalTradeCount: tradeCounts.reduce((sum, value) => sum + value, 0),
     averageTradeCount:
       tradeCounts.length === 0 ? null : roundRatio(average(tradeCounts)),
+    costSummary: summarizeCostBreakdown(records),
     totalAiDecisionFailureCount: aiDecisionFailureCounts.reduce(
       (sum, value) => sum + value,
       0
@@ -1045,6 +1067,87 @@ function summarizeGroup(
     ),
     runIds: records.map((record) => record.runId)
   };
+}
+
+function summarizeCostBreakdown(
+  records: BatchReplayRunRecord[]
+): BatchReplayCostBreakdownSummary {
+  const costRecords = records.filter(
+    (
+      record
+    ): record is BatchReplayRunRecord & {
+      summary: NonNullable<BatchReplayRunRecord["summary"]> & {
+        costSummary: NonNullable<
+          NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+        >;
+      };
+    } => isCompletedRunRecord(record) && record.summary?.costSummary !== undefined
+  );
+  const costSummaries = costRecords.map((record) => record.summary.costSummary);
+  const totalCostKrw = sumCostField(costSummaries, "totalCostKrw");
+  const tradeCount = costRecords.reduce(
+    (sum, record) => sum + record.summary.tradeCount,
+    0
+  );
+  const averageParticipationRates = costSummaries
+    .map((summary) => summary.averageParticipationRate)
+    .filter((value): value is number => typeof value === "number");
+  const maxParticipationRates = costSummaries
+    .map((summary) => summary.maxParticipationRate)
+    .filter((value): value is number => typeof value === "number");
+
+  return {
+    sampleCount: costRecords.length,
+    tradeCount,
+    feeKrw: sumCostField(costSummaries, "feeKrw"),
+    taxKrw: sumCostField(costSummaries, "taxKrw"),
+    slippageKrw: sumCostField(costSummaries, "slippageKrw"),
+    spreadCostKrw: sumCostField(costSummaries, "spreadCostKrw"),
+    impactCostKrw: sumCostField(costSummaries, "impactCostKrw"),
+    totalCostKrw,
+    averageCostPerRunKrw:
+      costRecords.length === 0
+        ? null
+        : Math.round(totalCostKrw / costRecords.length),
+    averageCostPerTradeKrw:
+      tradeCount === 0 ? null : Math.round(totalCostKrw / tradeCount),
+    filledCount: sumCostField(costSummaries, "filledCount"),
+    partialFillCount: sumCostField(costSummaries, "partialFillCount"),
+    notModeledLiquidityCount: sumCostField(
+      costSummaries,
+      "notModeledLiquidityCount"
+    ),
+    averageRunParticipationRate:
+      averageParticipationRates.length === 0
+        ? null
+        : roundRatio(average(averageParticipationRates)),
+    maxParticipationRate:
+      maxParticipationRates.length === 0
+        ? null
+        : Math.max(...maxParticipationRates),
+    costModelVersions: Array.from(
+      new Set(costSummaries.flatMap((summary) => summary.costModelVersions))
+    ).sort(),
+    runIds: costRecords.map((record) => record.runId)
+  };
+}
+
+function sumCostField(
+  summaries: Array<
+    NonNullable<NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]>
+  >,
+  field:
+    | "feeKrw"
+    | "taxKrw"
+    | "slippageKrw"
+    | "spreadCostKrw"
+    | "impactCostKrw"
+    | "totalCostKrw"
+    | "filledCount"
+    | "partialFillCount"
+    | "notModeledLiquidityCount"
+): number {
+  return summaries.reduce((sum, summary) => sum + summary[field], 0);
 }
 
 function targetReturnHitRate(
@@ -1254,6 +1357,7 @@ function renderGroup(group: BatchReplayGroupSummary): string {
     `average_final_target_exposure_gap_ratio: ${formatNullable(group.averageFinalTargetExposureGapRatio)}`,
     `average_final_exposure_by_market_krw: ${JSON.stringify(group.averageFinalExposureByMarketKrw)}`,
     `average_final_exposure_by_asset_type_krw: ${JSON.stringify(group.averageFinalExposureByAssetTypeKrw)}`,
+    `cost_summary: ${JSON.stringify(group.costSummary)}`,
     `total_ai_decision_failure_count: ${group.totalAiDecisionFailureCount}`,
     `total_rejected_count: ${group.totalRejectedCount}`,
     `total_meaningful_reject_count: ${group.totalMeaningfulRejectCount}`,

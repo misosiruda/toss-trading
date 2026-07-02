@@ -83,6 +83,8 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
     ETF: 100_000,
     STOCK: 100_000
   });
+  assert.equal(report.overall.costSummary.sampleCount, 3);
+  assert.equal(report.overall.costSummary.totalCostKrw, 0);
   assert.equal(report.overall.totalAiDecisionFailureCount, 0);
   assert.equal(report.overall.totalMeaningfulRejectCount, 0);
   assert.equal(report.overall.totalDustRejectCount, 0);
@@ -114,6 +116,97 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
     renderBatchReplayAggregateReport(report),
     /data_availability_issues/
   );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /cost_summary/
+  );
+});
+
+test("batch replay aggregate report summarizes execution cost components", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-07-02T00:00:00.000Z"),
+    records: [
+      withCostSummary(
+        record("run_cost_0", 0, "completed", "bull", 0.01, 1_010_000),
+        {
+          feeKrw: 10,
+          taxKrw: 2,
+          slippageKrw: 3,
+          spreadCostKrw: 4,
+          impactCostKrw: 5,
+          totalCostKrw: 24,
+          filledCount: 1,
+          partialFillCount: 0,
+          notModeledLiquidityCount: 0,
+          averageParticipationRate: 0.1,
+          maxParticipationRate: 0.1,
+          costModelVersions: ["paper_cost_model.v3"]
+        }
+      ),
+      withCostSummary(
+        record("run_cost_1", 1, "completed", "bull", 0.02, 1_020_000),
+        {
+          feeKrw: 1,
+          taxKrw: 0,
+          slippageKrw: 1,
+          spreadCostKrw: 2,
+          impactCostKrw: 2,
+          totalCostKrw: 6,
+          filledCount: 1,
+          partialFillCount: 1,
+          notModeledLiquidityCount: 0,
+          averageParticipationRate: 0.2,
+          maxParticipationRate: 0.25,
+          costModelVersions: ["paper_cost_model.v3"]
+        }
+      ),
+      withoutCostSummary(
+        record("run_legacy", 2, "completed", "bear", 0.01, 1_010_000)
+      ),
+      nonCompletedRecordWithSummary(
+        record("run_skipped_with_summary", 3, "completed", "bear", 0.03, 1_030_000),
+        "skipped",
+        {
+          feeKrw: 100,
+          taxKrw: 100,
+          slippageKrw: 100,
+          spreadCostKrw: 100,
+          impactCostKrw: 100,
+          totalCostKrw: 500,
+          filledCount: 5,
+          partialFillCount: 5,
+          notModeledLiquidityCount: 5,
+          averageParticipationRate: 0.9,
+          maxParticipationRate: 0.9
+        }
+      )
+    ]
+  });
+
+  assert.equal(report.overall.costSummary.sampleCount, 2);
+  assert.equal(report.overall.costSummary.tradeCount, 2);
+  assert.equal(report.overall.costSummary.feeKrw, 11);
+  assert.equal(report.overall.costSummary.taxKrw, 2);
+  assert.equal(report.overall.costSummary.slippageKrw, 4);
+  assert.equal(report.overall.costSummary.spreadCostKrw, 6);
+  assert.equal(report.overall.costSummary.impactCostKrw, 7);
+  assert.equal(report.overall.costSummary.totalCostKrw, 30);
+  assert.equal(report.overall.costSummary.averageCostPerRunKrw, 15);
+  assert.equal(report.overall.costSummary.averageCostPerTradeKrw, 15);
+  assert.equal(report.overall.costSummary.filledCount, 2);
+  assert.equal(report.overall.costSummary.partialFillCount, 1);
+  assert.equal(report.overall.costSummary.averageRunParticipationRate, 0.15);
+  assert.equal(report.overall.costSummary.maxParticipationRate, 0.25);
+  assert.deepEqual(report.overall.costSummary.costModelVersions, [
+    "paper_cost_model.v3"
+  ]);
+  assert.deepEqual(report.overall.costSummary.runIds, [
+    "run_cost_0",
+    "run_cost_1"
+  ]);
+  assert.equal(report.overall.totalTradeCount, 3);
+  assert.equal(report.byRegime.bull?.costSummary.totalCostKrw, 30);
+  assert.equal(report.byRegime.bear?.costSummary.sampleCount, 0);
 });
 
 test("batch replay aggregate report summarizes calendar and FX availability issues", () => {
@@ -1671,13 +1764,92 @@ function record(
               STOCK: 100_000,
               ETF: 100_000,
               UNKNOWN: 0
-            }
+            },
+            costSummary: costSummary()
           }
         : null,
     reportPath:
       status === "completed" ? `data/batch/${runId}/historical-replay-report.json` : null,
     error: status === "failed" ? "fixture failure" : null,
     skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null
+  };
+}
+
+function costSummary(
+  overrides: Partial<
+    NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+  > = {}
+): NonNullable<BatchReplayRunRecord["summary"]>["costSummary"] {
+  return {
+    feeKrw: 0,
+    taxKrw: 0,
+    slippageKrw: 0,
+    spreadCostKrw: 0,
+    impactCostKrw: 0,
+    totalCostKrw: 0,
+    costModelVersions: ["paper_cost_model.v3"],
+    filledCount: 1,
+    partialFillCount: 0,
+    notModeledLiquidityCount: 0,
+    averageParticipationRate: null,
+    maxParticipationRate: null,
+    ...overrides
+  };
+}
+
+function withCostSummary(
+  value: BatchReplayRunRecord,
+  overrides: Partial<
+    NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+  >
+): BatchReplayRunRecord {
+  if (value.summary === null) {
+    return value;
+  }
+  return {
+    ...value,
+    summary: {
+      ...value.summary,
+      costSummary: costSummary(overrides)
+    }
+  };
+}
+
+function withoutCostSummary(value: BatchReplayRunRecord): BatchReplayRunRecord {
+  if (value.summary === null) {
+    return value;
+  }
+  const summary = { ...value.summary };
+  delete summary.costSummary;
+  return {
+    ...value,
+    summary
+  };
+}
+
+function nonCompletedRecordWithSummary(
+  value: BatchReplayRunRecord,
+  status: "skipped" | "failed",
+  costOverrides: Partial<
+    NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+  >
+): BatchReplayRunRecord {
+  if (value.summary === null) {
+    return value;
+  }
+  return {
+    ...value,
+    status,
+    completedAt: null,
+    skippedAt: status === "skipped" ? "2026-06-12T01:00:01.000Z" : null,
+    failedAt: status === "failed" ? "2026-06-12T01:00:01.000Z" : null,
+    reportPath: null,
+    error: status === "failed" ? "fixture failure" : null,
+    skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null,
+    summary: {
+      ...value.summary,
+      costSummary: costSummary(costOverrides)
+    }
   };
 }
 

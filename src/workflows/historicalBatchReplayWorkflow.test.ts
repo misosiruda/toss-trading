@@ -60,6 +60,8 @@ test("historical batch replay runner writes manifest and per-run records", async
     await readFile(String(firstRecord["reportPath"]), "utf8")
   ) as Record<string, unknown>;
   const firstSummary = firstRecord["summary"] as Record<string, unknown>;
+  const firstSummaryCost = firstSummary["costSummary"] as Record<string, unknown>;
+  const firstReportCost = firstReport["costSummary"] as Record<string, unknown>;
   const firstAdvancedPerformance = firstReport[
     "advancedPerformance"
   ] as Record<string, unknown>;
@@ -131,6 +133,11 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(
     firstSummary["totalReturnRatio"],
     firstAdvancedPerformance["totalReturnRatio"]
+  );
+  assert.equal(firstSummaryCost["totalCostKrw"], firstReportCost["totalCostKrw"]);
+  assert.deepEqual(
+    firstSummaryCost["costModelVersions"],
+    firstReportCost["costModelVersions"]
   );
   assert.equal(firstRecordResearchManifest["status"], "available");
   assert.match(
