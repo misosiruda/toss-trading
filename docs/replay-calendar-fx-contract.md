@@ -26,11 +26,12 @@
 - `runHistoricalBatchReplay()`는 optional `fxValidation` 입력을 batch run별 availability preflight에 전달하고, FX issue가 있는 window를 replay 실행 전 `DATA_INSUFFICIENT`로 skip한다.
 - `historicalReplay` CLI의 `--check-data-availability`와 `--require-data-availability`는 optional `--fx-fixtures-path`, `--fx-required-market` 입력을 받아 JSON array 또는 JSONL FX fixture를 availability gate에 연결할 수 있다.
 - `historicalBatchReplay` CLI는 optional `--fx-fixtures-path`, `--fx-required-market` 입력을 `runHistoricalBatchReplay()`의 run별 availability preflight에 전달한다.
+- Batch aggregate report는 run-level `dataAvailability.issues`를 code별 count와 run id 목록으로 집계해 calendar/FX reject issue가 report artifact에 남도록 한다.
 
 현재 구현이 아직 가지지 않는 RH2 contract는 후속 구현 PR에서 별도 구현한다.
 
-- FX snapshot stale policy의 aggregate report, audit event 연결
-- calendar/FX warning의 report/dashboard 연결
+- FX snapshot stale policy의 audit event 연결
+- calendar/FX warning의 dashboard 연결
 
 ## Contract 목표
 

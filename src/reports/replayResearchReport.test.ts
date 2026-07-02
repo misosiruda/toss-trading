@@ -111,7 +111,8 @@ function aggregateReport(
       validationSplitRoleCounts: overrides.validationSplitRoleCounts ?? {
         train: 1,
         validation: 1
-      }
+      },
+      dataAvailabilityIssues: []
     },
     trialSummary:
       overrides.trialSummary === undefined

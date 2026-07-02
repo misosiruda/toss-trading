@@ -49,6 +49,13 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
     }
   });
   assert.deepEqual(report.summary.validationSplitRoleCounts, {});
+  assert.deepEqual(report.summary.dataAvailabilityIssues, [
+    {
+      code: "WINDOW_SNAPSHOT_MISSING",
+      count: 1,
+      runIds: ["run_3"]
+    }
+  ]);
   assert.equal(report.overall.averageTotalReturnRatio, 0.02);
   assert.equal(report.overall.medianTotalReturnRatio, 0.02);
   assert.equal(report.overall.winRate, 0.666667);
@@ -101,6 +108,43 @@ test("batch replay aggregate report summarizes overall and regime returns", () =
   assert.match(
     renderBatchReplayAggregateReport(report),
     /advanced_performance/
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /data_availability_issues/
+  );
+});
+
+test("batch replay aggregate report summarizes calendar and FX availability issues", () => {
+  const calendarRejected = withDataAvailabilityIssues(
+    record("run_calendar", 0, "skipped", "insufficient_data", null, null),
+    ["CALENDAR_HOLIDAY_SAMPLE", "VIRTUAL_FX_STALE"]
+  );
+  const fxRejected = withDataAvailabilityIssues(
+    record("run_fx", 1, "skipped", "insufficient_data", null, null),
+    ["VIRTUAL_FX_STALE"]
+  );
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-07-01T00:00:00.000Z"),
+    records: [calendarRejected, fxRejected]
+  });
+
+  assert.deepEqual(report.summary.dataAvailabilityIssues, [
+    {
+      code: "VIRTUAL_FX_STALE",
+      count: 2,
+      runIds: ["run_calendar", "run_fx"]
+    },
+    {
+      code: "CALENDAR_HOLIDAY_SAMPLE",
+      count: 1,
+      runIds: ["run_calendar"]
+    }
+  ]);
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /VIRTUAL_FX_STALE/
   );
 });
 
@@ -1605,6 +1649,20 @@ function record(
       status === "completed" ? `data/batch/${runId}/historical-replay-report.json` : null,
     error: status === "failed" ? "fixture failure" : null,
     skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null
+  };
+}
+
+function withDataAvailabilityIssues(
+  value: BatchReplayRunRecord,
+  issues: string[]
+): BatchReplayRunRecord {
+  return {
+    ...value,
+    dataAvailability: {
+      ...value.dataAvailability,
+      status: issues.length === 0 ? "available" : "insufficient",
+      issues
+    }
   };
 }
 
