@@ -21,6 +21,7 @@ import {
   parseHistoricalUniverseManifest,
   type HistoricalUniverseManifest
 } from "../replay/historicalUniverseCoverage.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
 
 test("historical replay workflow writes a stored paper report", async () => {
@@ -286,6 +287,11 @@ test("historical replay research manifest hashes initial portfolio and replay sn
     baseline["dataSnapshotHash"],
     withDifferentSnapshotInputs["dataSnapshotHash"],
     "replay-relevant snapshot fields must affect dataSnapshotHash"
+  );
+  assert.equal(
+    baseline["universeHash"],
+    createReplayResearchHash([{ market: "KR", symbol: "005930" }]),
+    "legacy no-universe path must keep hashing the observed symbol summary array"
   );
   assert.equal(withUniverseManifest["universeSnapshotDate"], "2025-03-31");
   assert.notEqual(

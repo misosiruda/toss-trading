@@ -234,11 +234,7 @@ function replayUniverseForManifest(input: {
     return normalizeUniverseManifestForResearch(input.universeManifest);
   }
 
-  return {
-    source: "snapshot_derived",
-    snapshotDate: null,
-    symbols: summarizeReplayUniverse(input.snapshots)
-  };
+  return summarizeReplayUniverse(input.snapshots);
 }
 
 function normalizeUniverseManifestForResearch(
