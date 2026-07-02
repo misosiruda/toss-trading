@@ -32,6 +32,8 @@ import {
   type HistoricalReplayBenchmarkReport
 } from "./historicalReplayBenchmark.js";
 
+const REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG = 5;
+
 export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
   generatedAt: Date;
@@ -202,6 +204,7 @@ export function buildHistoricalReplayReport(
         timeline: result.portfolioTimeline,
         initialNetWorthKrw
       }),
+      autocorrelationMaxLag: REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG,
       selectionContext: {
         candidateCount: 1,
         trialCount: 1,

@@ -15,6 +15,7 @@
 - batch aggregate report는 group별 return sample로 `advancedPerformance`를 계산하고, selection trial이 있을 때 sampled CPCV/PBO-like warning을 별도 section에 남긴다.
 - `src/analytics/sharpeValidation.ts`는 standalone `calculateSharpeValidationReport()`를 제공한다. 이 helper는 finite return sample에서 sample Sharpe, mean, volatility, skewness, excess kurtosis, autocorrelation diagnostic을 계산한다.
 - `HistoricalReplayReport`는 single replay return sample을 기준으로 `sharpeValidation` field를 기록하고 Markdown render에 read-only section을 표시한다.
+- single `HistoricalReplayReport.sharpeValidation`은 lag 5까지의 autocorrelation diagnostic을 요청한다.
 
 ## Contract 목표
 

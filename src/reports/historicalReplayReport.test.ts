@@ -8,6 +8,7 @@ import type {
 import {
   FirstPricedHistoricalDecisionProvider,
   runHistoricalReplay,
+  type HistoricalPortfolioTimelineItem,
   type HistoricalReplayResult
 } from "../replay/historicalReplayRunner.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
@@ -275,6 +276,30 @@ test("historical replay report uses initial portfolio net worth as performance b
   assert.equal(report.advancedPerformance.maxDrawdownRatio, -0.01);
 });
 
+test("historical replay report passes autocorrelation diagnostic to Sharpe validation", () => {
+  const result = replayResult();
+  result.portfolioTimeline = timelineFromReturnSamples([
+    0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
+    0.01, 0.01, 0.01, 0.01, 0.01, -0.01, -0.01, -0.01, -0.01, -0.01,
+    -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01, -0.01
+  ]);
+  result.finalPortfolio = {
+    ...result.finalPortfolio,
+    cashKrw: result.portfolioTimeline.at(-1)!.virtualNetWorthKrw,
+    positions: []
+  };
+
+  const report = buildHistoricalReplayReport({ result, generatedAt });
+
+  assert.equal(report.sharpeValidation.status, "available");
+  assert.equal(report.sharpeValidation.distribution.autocorrelation.maxLag, 5);
+  assert.equal(report.sharpeValidation.distribution.autocorrelation.lagCount, 5);
+  assert.match(
+    report.sharpeValidation.warnings.map((warning) => warning.code).join("\n"),
+    /NON_IID_RETURN_SAMPLE/
+  );
+});
+
 test("historical replay report exposes dynamic reserve and hedge policy summaries", () => {
   const result = replayResult();
   result.riskDecisions.push(
@@ -388,6 +413,35 @@ function portfolio(): VirtualPortfolio {
     cashKrw: 1_000_000,
     positions: [],
     updatedAt: "2025-01-02T09:00:00+09:00"
+  };
+}
+
+function timelineFromReturnSamples(
+  returns: number[]
+): HistoricalPortfolioTimelineItem[] {
+  let netWorthKrw = 1_000_000;
+  const timeline: HistoricalPortfolioTimelineItem[] = [
+    timelineItem(0, netWorthKrw)
+  ];
+  returns.forEach((returnRatio, index) => {
+    netWorthKrw = Math.round(netWorthKrw * (1 + returnRatio));
+    timeline.push(timelineItem(index + 1, netWorthKrw));
+  });
+  return timeline;
+}
+
+function timelineItem(
+  minuteOffset: number,
+  virtualNetWorthKrw: number
+): HistoricalPortfolioTimelineItem {
+  return {
+    simulatedAt: new Date(
+      Date.parse("2025-01-02T09:00:00+09:00") + minuteOffset * 60_000
+    ).toISOString(),
+    cashKrw: virtualNetWorthKrw,
+    positionCount: 0,
+    positionMarketValueKrw: 0,
+    virtualNetWorthKrw
   };
 }
 

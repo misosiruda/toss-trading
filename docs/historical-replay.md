@@ -190,7 +190,7 @@ Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_v
 - `schemaVersion`: `sharpe_validation.v1`
 - `status`: sample Sharpe 계산 가능 여부
 - `sample`: return sample count, minimum sample count, annualization 상태
-- `distribution`: mean, volatility, skewness, excess kurtosis, autocorrelation diagnostic
+- `distribution`: mean, volatility, skewness, excess kurtosis, lag 5까지의 autocorrelation diagnostic
 - `metrics.sampleSharpe`: standalone sample Sharpe 결과
 - `metrics.loAdjustedSharpe`, `metrics.probabilisticSharpeRatio`, `metrics.deflatedSharpeRatio`: 후속 계산 전까지 `not_implemented`
 - `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `multipleTestingAdjustment=none`으로 기록
