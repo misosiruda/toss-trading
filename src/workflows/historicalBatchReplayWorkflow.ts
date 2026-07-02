@@ -21,6 +21,7 @@ import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import {
   createStoragePaths,
+  FileAuditLog,
   FileHistoricalMarketSnapshotStore
 } from "../storage/repositories.js";
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
@@ -461,6 +462,7 @@ export async function runHistoricalBatchReplay(
         })
       });
       records.push(skipped);
+      await appendDataAvailabilityAuditEvent(skipped);
       await appendRunRecord(paths.runsPath, skipped);
       await appendSelectionTrialRecord(
         paths.selectionTrialsPath,
@@ -1198,6 +1200,24 @@ async function readRunResearchManifestReference(
       manifestPath
     };
   }
+}
+
+async function appendDataAvailabilityAuditEvent(
+  record: BatchReplayRunRecord
+): Promise<void> {
+  const paths = createStoragePaths(record.storageBaseDir);
+  await new FileAuditLog(paths.auditLogPath).append({
+    eventId: `audit_batch_${record.runId}_data_availability_rejected`,
+    eventType: "HISTORICAL_DATA_AVAILABILITY_REJECTED",
+    actor: "system",
+    summary: [
+      "Batch replay skipped before execution",
+      `skipReason=${record.skipReason ?? "unknown"}`,
+      `issues=${record.dataAvailability.issues.join(",") || "none"}`
+    ].join("; "),
+    maskedRefs: [],
+    createdAt: record.skippedAt ?? record.startedAt
+  });
 }
 
 function summarizeRun(

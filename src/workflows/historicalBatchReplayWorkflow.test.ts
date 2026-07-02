@@ -18,6 +18,7 @@ import { parseMarketCalendarFixture } from "../replay/marketCalendar.js";
 import { parseFxRateSnapshotFixture } from "../replay/fxSnapshotFreshness.js";
 import {
   createStoragePaths,
+  FileAuditLog,
   FileHistoricalMarketSnapshotStore
 } from "../storage/repositories.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
@@ -458,12 +459,20 @@ test("historical batch replay runner skips windows rejected by FX validation", a
   });
   const runRecords = await readJsonl(result.runsPath);
   const firstRecord = runRecords[0]!;
+  const audit = await new FileAuditLog(
+    createStoragePaths(String(firstRecord["storageBaseDir"])).auditLogPath
+  ).readAll();
 
   assert.equal(result.status, "completed");
   assert.equal(result.completedCount, 0);
   assert.equal(result.skippedCount, 1);
   assert.equal(firstRecord["status"], "skipped");
   assert.equal(firstRecord["skipReason"], "DATA_INSUFFICIENT");
+  assert.equal(
+    audit.records[0]?.eventType,
+    "HISTORICAL_DATA_AVAILABILITY_REJECTED"
+  );
+  assert.match(audit.records[0]?.summary ?? "", /VIRTUAL_FX_STALE/);
   assert.deepEqual(
     (firstRecord["dataAvailability"] as Record<string, unknown>)["issues"],
     ["VIRTUAL_FX_STALE"]
