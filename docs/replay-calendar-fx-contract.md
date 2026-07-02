@@ -28,10 +28,11 @@
 - `historicalBatchReplay` CLI는 optional `--fx-fixtures-path`, `--fx-required-market` 입력을 `runHistoricalBatchReplay()`의 run별 availability preflight에 전달한다.
 - Batch aggregate report는 run-level `dataAvailability.issues`를 code별 count와 run id 목록으로 집계해 calendar/FX reject issue가 report artifact에 남도록 한다.
 - Batch replay preflight에서 calendar/FX issue로 skip된 run은 run storage의 `audit-events.jsonl`에 `HISTORICAL_DATA_AVAILABILITY_REJECTED` audit event를 남긴다.
+- Next.js Validation Lab은 stored batch aggregate의 `summary.dataAvailabilityIssues`를 read-only calendar/FX availability warning으로 표시한다.
 
-현재 구현이 아직 가지지 않는 RH2 contract는 후속 구현 PR에서 별도 구현한다.
+현재 RH2 calendar/FX contract의 남은 gap은 다음과 같다.
 
-- calendar/FX warning의 dashboard 연결
+- 해당 없음. RH2 calendar/FX contract의 dashboard 연결은 Validation Lab warning으로 우선 노출한다.
 
 ## Contract 목표
 

@@ -63,7 +63,14 @@ const aggregate = {
     returnSampleCount: 4,
     regimeCounts: { bull: 2, bear: 2 },
     regimeCountsByMarket: { US: { bull: 2, bear: 2 } },
-    validationSplitRoleCounts: { train: 2, validation: 1, test: 1 }
+    validationSplitRoleCounts: { train: 2, validation: 1, test: 1 },
+    dataAvailabilityIssues: [
+      {
+        code: "VIRTUAL_FX_STALE",
+        count: 1,
+        runIds: ["run_fx_stale"]
+      }
+    ]
   },
   trialSummary: {
     trialCount: 2,

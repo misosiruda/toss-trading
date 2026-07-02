@@ -2488,6 +2488,7 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const candidateComparisonRows = candidateComparison["rows"] as Array<
       Record<string, unknown>
     >;
+    const validationWarnings = validationLab.payload["warnings"] as string[];
     const auditViewEvents = auditView.payload["events"] as Array<
       Record<string, unknown>
     >;
@@ -2628,6 +2629,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "run_1",
       "run_2"
     ]);
+    assert.match(validationWarnings.join("\n"), /VIRTUAL_FX_STALE/);
+    assert.match(validationWarnings.join("\n"), /runs=run_3/);
 
     assert.equal(auditView.response.status, 200);
     assert.equal(auditView.payload["viewModel"], "audit");
@@ -4681,7 +4684,14 @@ function batchReplayAggregateReport(
         train: 2,
         validation: 1,
         test: 1
-      }
+      },
+      dataAvailabilityIssues: [
+        {
+          code: "VIRTUAL_FX_STALE",
+          count: 1,
+          runIds: ["run_3"]
+        }
+      ]
     },
     trialSummary: {
       trialCount: 4,

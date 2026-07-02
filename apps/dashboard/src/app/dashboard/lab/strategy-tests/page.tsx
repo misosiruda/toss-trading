@@ -217,7 +217,10 @@ function ResultsPanel({
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow="recent results" title="Bucket Result Matrix" />
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+        <table
+          aria-label="Bucket result matrix table"
+          className="min-w-full text-left text-sm"
+        >
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Bucket</th>

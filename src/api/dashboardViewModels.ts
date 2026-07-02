@@ -946,7 +946,7 @@ export async function readDashboardValidationLabViewModel(
       providerFailureSummary: report.providerFailureSummary,
       riskRejectSummary: report.riskRejectSummary,
       exposureBreakdown: report.exposureBreakdown,
-      warnings: report.warnings,
+      warnings: validationLabWarnings(aggregate.value, report.warnings),
       executionAssumptions: {
         paperOnly: true,
         liveTradingEnabled: false,
@@ -1421,6 +1421,46 @@ function validationCandidateComparison(
     rows,
     warnings: diagnostics.warnings
   };
+}
+
+function validationLabWarnings(
+  aggregate: BatchReplayAggregateReport,
+  reportWarnings: string[]
+): string[] {
+  return [
+    ...reportWarnings,
+    ...dataAvailabilityIssueWarnings(aggregate.summary.dataAvailabilityIssues)
+  ];
+}
+
+function dataAvailabilityIssueWarnings(
+  issues: unknown
+): string[] {
+  if (!Array.isArray(issues) || issues.length === 0) {
+    return [];
+  }
+  return issues
+    .filter((issue): issue is Record<string, unknown> => isRecord(issue))
+    .filter((issue) => {
+      const code = readStringField(issue, "code");
+      const count = readNumberField(issue, "count");
+      return code !== null && count !== null && count > 0;
+    })
+    .map((issue) => {
+      const code = readStringField(issue, "code") ?? "unknown";
+      const count = readNumberField(issue, "count") ?? 0;
+      const runIds = uniqueStrings(stringArray(issue["runIds"]));
+      const runRef =
+        runIds.length === 0
+          ? "run refs unavailable"
+          : `runs=${runIds.slice(0, 5).join(",")}${
+              runIds.length > 5 ? `,+${runIds.length - 5} more` : ""
+            }`;
+      return [
+        `calendar/FX data availability issue ${code}`,
+        `rejected ${count} run(s): ${runRef}`
+      ].join(" ");
+    });
 }
 
 function compareValidationCandidateRows(
