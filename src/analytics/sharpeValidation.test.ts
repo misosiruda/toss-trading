@@ -17,6 +17,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
 
   const report = calculateSharpeValidationReport({
     returns,
+    benchmarkSharpeRatio: 0,
     autocorrelationMaxLag: 2,
     selectionContext: {
       candidateCount: 3,
@@ -28,6 +29,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
 
   assert.deepEqual(report, calculateSharpeValidationReport({
     returns,
+    benchmarkSharpeRatio: 0,
     autocorrelationMaxLag: 2,
     selectionContext: {
       candidateCount: 3,
@@ -51,6 +53,12 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.equal(report.metrics.loAdjustedSharpe.status, "computed");
   assert.equal(report.metrics.loAdjustedSharpe.value, 0.461839);
   assert.equal(report.metrics.loAdjustedSharpe.confidenceInterval95, null);
+  assert.equal(report.metrics.probabilisticSharpeRatio.status, "computed");
+  assert.equal(report.metrics.probabilisticSharpeRatio.probability, 0.971252);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.benchmarkSharpeRatio,
+    0
+  );
   assert.equal(
     report.distribution.autocorrelation.adjustmentStatus,
     "computed"
@@ -115,6 +123,11 @@ test("Sharpe validation calculator keeps Lo adjustment unavailable without autoc
   assert.equal(report.metrics.sampleSharpe.status, "computed");
   assert.equal(report.metrics.loAdjustedSharpe.status, "not_applicable");
   assert.equal(report.metrics.loAdjustedSharpe.value, null);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.status,
+    "not_applicable"
+  );
+  assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
   assert.equal(
     report.distribution.autocorrelation.adjustmentStatus,
     "not_required"
@@ -210,6 +223,10 @@ test("unavailable Sharpe validation report exposes deterministic schema defaults
   assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
   assert.equal(report.metrics.loAdjustedSharpe.status, "insufficient_sample");
   assert.equal(report.metrics.loAdjustedSharpe.value, null);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.status,
+    "insufficient_sample"
+  );
   assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
   assert.equal(report.metrics.deflatedSharpeRatio.status, "not_implemented");
   assert.equal(report.selectionContext.multipleTestingAdjustment, "unknown");

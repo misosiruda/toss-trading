@@ -194,6 +194,16 @@ export function calculateSharpeValidationReport(
     riskFreeRateRatio,
     autocorrelation
   });
+  const probabilisticSharpeRatio = calculateProbabilisticSharpeRatio({
+    sampleSharpe,
+    sampleCount: excessReturns.length,
+    minimumSampleCount,
+    skewness,
+    excessKurtosis,
+    benchmarkSharpeRatio,
+    riskFreeRateRatio,
+    annualizationFactor
+  });
   const adjustedAutocorrelation = autocorrelationWithAdjustmentStatus(
     autocorrelation,
     loAdjustedSharpe.status === "computed"
@@ -231,15 +241,7 @@ export function calculateSharpeValidationReport(
     metrics: {
       sampleSharpe,
       loAdjustedSharpe,
-      probabilisticSharpeRatio: {
-        metric: "probabilistic_sharpe_ratio",
-        status: "not_implemented",
-        probability: null,
-        benchmarkSharpeRatio,
-        methodNotes: [
-          "Probabilistic Sharpe Ratio calculation is reserved for a follow-up PR"
-        ]
-      },
+      probabilisticSharpeRatio,
       deflatedSharpeRatio: unavailableEstimate(
         "deflated_sharpe_ratio",
         "Deflated Sharpe Ratio requires candidate selection context and is reserved for a follow-up PR"
@@ -292,12 +294,10 @@ export function createUnavailableSharpeValidationReport(input: {
       ),
       probabilisticSharpeRatio: {
         metric: "probabilistic_sharpe_ratio",
-        status: "not_implemented",
+        status: unavailableMetricStatusForReason(input.reasonCode),
         probability: null,
         benchmarkSharpeRatio: null,
-        methodNotes: [
-          "Probabilistic Sharpe Ratio calculation is reserved for the metric calculator PR"
-        ]
+        methodNotes: [input.reason]
       },
       deflatedSharpeRatio: unavailableEstimate(
         "deflated_sharpe_ratio",
@@ -320,7 +320,7 @@ export function createUnavailableSharpeValidationReport(input: {
         code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
         severity: "info",
         message:
-          "PSR and DSR are intentionally left for follow-up PRs"
+          "DSR is intentionally left for a follow-up PR"
       }
     ]
   };
@@ -444,6 +444,117 @@ function calculateLoAdjustedSharpe(input: {
     benchmarkSharpeRatio: input.benchmarkSharpeRatio,
     methodNotes
   });
+}
+
+function calculateProbabilisticSharpeRatio(input: {
+  sampleSharpe: SharpeValidationEstimate;
+  sampleCount: number;
+  minimumSampleCount: number;
+  skewness: number | null;
+  excessKurtosis: number | null;
+  benchmarkSharpeRatio: number | null;
+  riskFreeRateRatio: number | null;
+  annualizationFactor: number | null;
+}): SharpeValidationProbability {
+  const methodNotes = [
+    input.riskFreeRateRatio === null
+      ? "probabilistic_sharpe_ratio uses raw return samples because riskFreeRateRatio is not provided"
+      : "probabilistic_sharpe_ratio uses excess return samples after subtracting riskFreeRateRatio",
+    input.annualizationFactor === null
+      ? "probabilistic_sharpe_ratio keeps the sample Sharpe periodicity"
+      : "probabilistic_sharpe_ratio uses the annualized sample Sharpe",
+    "probabilistic_sharpe_ratio uses a normal CDF approximation with sample skewness and total kurtosis derived from excess kurtosis"
+  ];
+  if (input.sampleCount < input.minimumSampleCount) {
+    return probabilityShell({
+      status: "insufficient_sample",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  if (
+    input.sampleSharpe.status !== "computed" ||
+    input.sampleSharpe.value === null
+  ) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  if (input.benchmarkSharpeRatio === null) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: null,
+      methodNotes: [
+        ...methodNotes,
+        "probabilistic_sharpe_ratio requires an explicit benchmarkSharpeRatio"
+      ]
+    });
+  }
+  if (input.skewness === null || input.excessKurtosis === null) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes: [
+        ...methodNotes,
+        "probabilistic_sharpe_ratio requires skewness and excess kurtosis"
+      ]
+    });
+  }
+  const denominatorTerm =
+    1 -
+    input.skewness * input.sampleSharpe.value +
+    ((input.excessKurtosis + 2) / 4) * input.sampleSharpe.value ** 2;
+  if (!Number.isFinite(denominatorTerm) || denominatorTerm <= 0) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes: [
+        ...methodNotes,
+        "probabilistic_sharpe_ratio denominator is not positive"
+      ]
+    });
+  }
+  const zScore =
+    ((input.sampleSharpe.value - input.benchmarkSharpeRatio) *
+      Math.sqrt(input.sampleCount - 1)) /
+    Math.sqrt(denominatorTerm);
+  const probability = normalCdf(zScore);
+  if (!Number.isFinite(probability)) {
+    return probabilityShell({
+      status: "not_applicable",
+      probability: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  return probabilityShell({
+    status: "computed",
+    probability: roundRatio(probability),
+    benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+    methodNotes
+  });
+}
+
+function probabilityShell(input: {
+  status: SharpeValidationMetricStatus;
+  probability: number | null;
+  benchmarkSharpeRatio: number | null;
+  methodNotes: string[];
+}): SharpeValidationProbability {
+  return {
+    metric: "probabilistic_sharpe_ratio",
+    status: input.status,
+    probability: input.probability,
+    benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+    methodNotes: input.methodNotes
+  };
 }
 
 function estimateShell(input: {
@@ -570,7 +681,7 @@ function sharpeValidationWarnings(input: {
     code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
     severity: "info",
     message:
-      "PSR and DSR are intentionally left for follow-up PRs"
+      "DSR is intentionally left for a follow-up PR"
   });
   return warnings;
 }
@@ -767,6 +878,25 @@ function sampleStandardDeviation(values: number[]): number {
 
 function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function normalCdf(value: number): number {
+  return Math.min(1, Math.max(0, 0.5 * (1 + erf(value / Math.SQRT2))));
+}
+
+function erf(value: number): number {
+  const sign = value < 0 ? -1 : 1;
+  const x = Math.abs(value);
+  const t = 1 / (1 + 0.3275911 * x);
+  const approximation =
+    1 -
+    (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t -
+      0.284496736) *
+      t +
+      0.254829592) *
+      t *
+      Math.exp(-x * x));
+  return sign * approximation;
 }
 
 function roundRatio(value: number): number {
