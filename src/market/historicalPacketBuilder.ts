@@ -367,6 +367,13 @@ function lifecycleMetadataForSnapshot(input: {
 
   const key = snapshotSymbolKey(input.snapshot);
   const member = input.universeLifecycleBySymbol.get(key);
+  if (member !== undefined && member.lifecycleStatusSource !== "explicit") {
+    return {
+      reasonCodes: [],
+      warnings: []
+    };
+  }
+
   const status = member?.lifecycleStatus ?? "unknown";
   const reasonCode = `HISTORICAL_LIFECYCLE_${status.toUpperCase()}`;
   const warnings =

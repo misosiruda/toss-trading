@@ -249,8 +249,11 @@ test("historical universe manifest parser captures lifecycle snapshot metadata",
 
   assert.equal(manifest.snapshotDate, "2025-03-31");
   assert.equal(manifest.symbols[0]?.lifecycleStatus, "active");
+  assert.equal(manifest.symbols[0]?.lifecycleStatusSource, "explicit");
   assert.equal(manifest.symbols[1]?.lifecycleStatus, "unknown");
+  assert.equal(manifest.symbols[1]?.lifecycleStatusSource, "defaulted");
   assert.equal(manifest.symbols[2]?.lifecycleStatus, "delisted");
+  assert.equal(manifest.symbols[2]?.lifecycleStatusSource, "explicit");
 });
 
 test("historical universe lifecycle sample fixture validates every status", () => {

@@ -34,13 +34,17 @@ export const historicalUniverseMemberSchema = z
     riskTags: z.array(assetRiskTagSchema).optional(),
     sector: z.string().trim().min(1).optional(),
     segment: z.string().trim().min(1).optional(),
-    lifecycleStatus: historicalInstrumentLifecycleStatusSchema.default(
-      "unknown"
-    ),
+    lifecycleStatus: historicalInstrumentLifecycleStatusSchema.optional(),
     required: z.boolean().default(true),
     tags: z.array(z.string().trim().min(1)).optional()
   })
-  .strict();
+  .strict()
+  .transform((member) => ({
+    ...member,
+    lifecycleStatus: member.lifecycleStatus ?? "unknown",
+    lifecycleStatusSource:
+      member.lifecycleStatus === undefined ? "defaulted" : "explicit"
+  }));
 
 export const historicalUniverseManifestSchema = z
   .object({

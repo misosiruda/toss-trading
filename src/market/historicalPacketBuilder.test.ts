@@ -287,6 +287,46 @@ test("historical packet builder treats missing lifecycle metadata as unknown", (
   );
 });
 
+test("historical packet builder preserves legacy universe members without lifecycle gates", () => {
+  const result = builder({
+    universeManifest: universeManifest({
+      symbol: "005930"
+    })
+  }).build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_legacy_lifecycle",
+        symbol: "005930",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidate = result.status === "ok" ? result.packet.candidates[0] : null;
+  assert.equal(candidate?.lifecycleStatus, undefined);
+  assert.equal(candidate?.buyEligible, true);
+  assert.equal(
+    candidate?.blockedReasonCodes?.some((reasonCode) =>
+      reasonCode.startsWith("LIFECYCLE_")
+    ),
+    false
+  );
+  assert.equal(
+    candidate?.reasonCodes.some((reasonCode) =>
+      reasonCode.startsWith("HISTORICAL_LIFECYCLE_")
+    ),
+    false
+  );
+  assert.equal(
+    result.warnings.some((warning) =>
+      warning.includes("historical universe lifecycle")
+    ),
+    false
+  );
+});
+
 test("historical packet builder does not derive features from future snapshots", () => {
   const result = builder().build({
     portfolio: portfolio(),
@@ -594,7 +634,7 @@ function builder(
 
 function universeManifest(input: {
   symbol: string;
-  lifecycleStatus: "active" | "suspended" | "delisted" | "unknown";
+  lifecycleStatus?: "active" | "suspended" | "delisted" | "unknown";
 }): HistoricalUniverseManifest {
   return parseHistoricalUniverseManifest({
     mode: "paper_only_historical_universe",
@@ -604,7 +644,9 @@ function universeManifest(input: {
       {
         market: "KR",
         symbol: input.symbol,
-        lifecycleStatus: input.lifecycleStatus,
+        ...(input.lifecycleStatus === undefined
+          ? {}
+          : { lifecycleStatus: input.lifecycleStatus }),
         required: true
       }
     ],
