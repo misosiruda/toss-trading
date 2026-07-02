@@ -410,6 +410,11 @@ test("renders validation lab detail without strategy recommendation controls", a
       "Candidate comparison is paper-only validation evidence. It is not a strategy recommendation or performance guarantee."
     )
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      "calendar/FX data availability issue VIRTUAL_FX_STALE rejected 1 run(s): runs=run_fx_stale"
+    )
+  ).toBeVisible();
 
   await expect(
     page.getByRole("button", { name: /order|trade|buy|sell/i })
@@ -542,10 +547,12 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(
     page.getByRole("heading", { name: "Bucket Result Matrix" })
   ).toBeVisible();
-  const resultMatrix = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "Bucket Result Matrix" }),
+  const resultMatrix = page.getByRole("table", {
+    name: "Bucket result matrix table",
   });
-  await expect(resultMatrix.getByRole("cell", { name: "Swing" })).toBeVisible();
+  await expect(
+    resultMatrix.getByRole("cell", { name: "Swing", exact: true })
+  ).toBeVisible();
   await expect(
     resultMatrix.getByRole("cell", { name: "completed" })
   ).toBeVisible();
