@@ -186,7 +186,7 @@ Historical replay report의 `Advanced Performance Metrics` section은 `performan
 Q3-2 기준:
 
 - `paper_cost_model.v3` / `execution_simulator.v3`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.
-- 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며 `impactCostKrw=0`입니다. 이 값을 0보다 크게 설정한 paper-only fixture에서는 filled notional과 participation rate를 기준으로 `linear_participation_bps` impact cost를 계산하고 `costModelHash`에 해당 policy를 포함합니다.
+- 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며 `impactCostKrw=0`입니다. 이 값을 0보다 크게 설정한 paper-only fixture에서는 filled notional과 filled participation rate를 기준으로 `linear_participation_bps` impact cost를 계산하고 `costModelHash`에 해당 policy를 포함합니다.
 - `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달되고, 현재 tick 이전 snapshot window에서 계산한 `averageVolume`은 `MarketCandidate.averageVolume`으로 전달됩니다.
 - `HistoricalMarketSnapshot.sector`가 있으면 `MarketCandidate.sector`로 전달되어 sector exposure cap과 evidence `featureRefs`에서 사용할 수 있습니다. sector가 없는 과거 dataset은 unknown metadata로 보수 처리됩니다.
 - `VirtualTrade`에는 `requestedNotionalKrw`, `filledNotionalKrw`, `fillStatus`, `liquidityStatus`, `participationRate`, `maxParticipationRate`, `volume`, `averageVolume`이 추가로 기록될 수 있습니다.

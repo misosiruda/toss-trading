@@ -151,9 +151,14 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
     Math.abs(fillPriceKrw - sourcePriceKrw) * quantity
   );
   const spreadCostKrw = 0;
+  const filledParticipationRate = calculateFilledParticipationRate({
+    quantity,
+    volume: input.volume,
+    averageVolume: input.averageVolume
+  });
   const impactCostKrw = calculateMarketImpactCost({
     grossAmountKrw,
-    participationRate: liquidityDecision.participationRate,
+    participationRate: filledParticipationRate,
     policy
   });
   const explicitExecutionCostKrw =
@@ -189,9 +194,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
     filledNotionalKrw: grossAmountKrw,
     fillStatus: liquidityDecision.fillStatus,
     liquidityStatus: liquidityDecision.liquidityStatus,
-    ...(liquidityDecision.participationRate === undefined
+    ...(filledParticipationRate === undefined
       ? {}
-      : { participationRate: liquidityDecision.participationRate }),
+      : { participationRate: filledParticipationRate }),
     maxParticipationRate: liquidityDecision.maxParticipationRate,
     ...(liquidityDecision.volume === undefined
       ? {}
@@ -273,6 +278,32 @@ function calculateMarketImpactCost(input: {
   return Math.round((input.grossAmountKrw * impactBps) / 10_000);
 }
 
+function calculateFilledParticipationRate(input: {
+  quantity: number;
+  volume: number | undefined;
+  averageVolume: number | undefined;
+}): number | undefined {
+  const effectiveVolume = effectiveVolumeForParticipation(input);
+  if (effectiveVolume === undefined || input.quantity <= 0) {
+    return undefined;
+  }
+  return roundRatio(input.quantity / effectiveVolume);
+}
+
+function effectiveVolumeForParticipation(input: {
+  volume: number | undefined;
+  averageVolume: number | undefined;
+}): number | undefined {
+  const volumes = [input.volume, input.averageVolume].filter(
+    (value): value is number =>
+      value !== undefined && Number.isFinite(value) && value > 0
+  );
+  if (volumes.length === 0) {
+    return undefined;
+  }
+  return Math.min(...volumes);
+}
+
 function normalizeNonnegativeNumber(
   value: number | undefined,
   fallback: number
@@ -281,4 +312,8 @@ function normalizeNonnegativeNumber(
     return fallback;
   }
   return Math.max(0, value);
+}
+
+function roundRatio(value: number): number {
+  return Number(value.toFixed(6));
 }

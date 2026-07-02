@@ -61,7 +61,7 @@ export function createPaperCostModel(
       "no live broker order",
       "spread is an explicit zero placeholder",
       marketImpactModeled
-        ? "market impact cost uses filled notional and volume participation rate"
+        ? "market impact cost uses filled notional and filled volume participation rate"
         : "market impact is an explicit zero placeholder",
       "volume participation cap applies only when candidate volume is available",
       "missing volume preserves legacy fill behavior and is reported as not_modeled"

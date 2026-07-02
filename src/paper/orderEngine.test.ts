@@ -716,6 +716,37 @@ test("PaperOrderEngine records participation-based market impact costs", () => {
   assert.equal(result.portfolio.positions[0]?.unrealizedPnlKrw, -350);
 });
 
+test("PaperOrderEngine bases market impact on rounded whole-share fills", () => {
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 100,
+          averageVolume: 100
+        }
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 100_000 }),
+    riskPolicy: { now },
+    executionPolicy: {
+      allowFractionalShares: false,
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, true);
+  assert.equal(result.trade?.quantity, 1);
+  assert.equal(result.trade?.requestedNotionalKrw, 100_000);
+  assert.equal(result.trade?.filledNotionalKrw, 70_000);
+  assert.equal(result.trade?.participationRate, 0.01);
+  assert.equal(result.trade?.impactCostKrw, 35);
+  assert.equal(result.trade?.totalCostKrw, 35);
+  assert.equal(result.trade?.netAmountKrw, 70_035);
+  assert.equal(result.portfolio.cashKrw, 929_965);
+});
+
 test("PaperOrderEngine rejects no-fill liquidity without creating a trade", () => {
   const startingPortfolio = portfolio();
   const result = new PaperOrderEngine().execute({

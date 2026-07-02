@@ -50,7 +50,7 @@ test("paper cost model records opt-in market impact assumptions", () => {
   assert.equal(model.executionPolicy.marketImpactBpsPerParticipationRate, 500);
   assert.match(
     model.assumptions.join("\n"),
-    /market impact cost uses filled notional and volume participation rate/
+    /market impact cost uses filled notional and filled volume participation rate/
   );
 });
 
