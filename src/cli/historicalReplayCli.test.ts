@@ -1072,6 +1072,98 @@ test("historical batch report CLI rejects missing selection trial path value", (
   assert.match(result.stderr, /--selection-trials-path requires a value/);
 });
 
+test("historical batch report CLI reads explicit universe coverage report", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const coveragePath = join(batchDir, "coverage", "historical-universe-coverage.json");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  mkdirSync(join(batchDir, "coverage"), { recursive: true });
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-coverage",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    coveragePath,
+    `${JSON.stringify(universeCoverageReport())}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--universe-coverage-path",
+      coveragePath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /## Universe Coverage/);
+  assert.match(result.stdout, /universe selection bias warning/);
+  const report = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const coverage = report["universeCoverage"] as Record<string, unknown>;
+  assert.equal(report["sourceUniverseCoveragePath"], coveragePath);
+  assert.equal(coverage["status"], "insufficient");
+  assert.match(
+    JSON.stringify(coverage["warnings"]),
+    /REQUIRED_UNIVERSE_SYMBOL_MISSING/
+  );
+});
+
+test("historical batch report CLI rejects missing universe coverage path value", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-missing-coverage-path",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--universe-coverage-path",
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--universe-coverage-path requires a value/);
+});
+
 test("historical batch report CLI rejects invalid sampled CPCV split count", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
@@ -1474,6 +1566,53 @@ function snapshot(
     volume: 100_000,
     sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
     createdAt: observedAt
+  };
+}
+
+function universeCoverageReport(): Record<string, unknown> {
+  return {
+    mode: "paper_only",
+    universeId: "cli-test-universe",
+    status: "insufficient",
+    rangeStart: "2025-01-01T00:00:00.000Z",
+    rangeEnd: "2025-01-31T14:59:59.999Z",
+    timezoneOffsetMinutes: 540,
+    expectedMonths: ["2025-01"],
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 2,
+    minAvailableMarketSymbolCounts: { KR: 2 },
+    minAvailableAssetTypeSymbolCounts: { STOCK: 2 },
+    requireOptionalSymbols: false,
+    requiredMarkets: ["KR"],
+    requiredAssetTypes: ["STOCK"],
+    availableMarkets: ["KR"],
+    availableAssetTypes: ["STOCK"],
+    availableSymbolCount: 1,
+    availableMarketSymbolCounts: { KR: 1 },
+    availableAssetTypeSymbolCounts: { STOCK: 1 },
+    missingRequiredMarkets: [],
+    missingRequiredAssetTypes: [],
+    insufficientAvailableMarketSymbolCounts: [
+      { market: "KR", minimum: 2, available: 1 }
+    ],
+    insufficientAvailableAssetTypeSymbolCounts: [
+      { assetType: "STOCK", minimum: 2, available: 1 }
+    ],
+    corruptLineCount: 0,
+    universeSymbolCount: 2,
+    requiredSymbolCount: 2,
+    optionalSymbolCount: 0,
+    availableRequiredSymbolCount: 1,
+    availableOptionalSymbolCount: 0,
+    missingRequiredSymbols: [{ market: "KR", symbol: "MISSING_REQUIRED" }],
+    missingOptionalSymbols: [],
+    insufficientRequiredSymbols: [],
+    insufficientOptionalSymbols: [],
+    symbolSummaries: [],
+    issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
+    disclaimer:
+      "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal."
   };
 }
 

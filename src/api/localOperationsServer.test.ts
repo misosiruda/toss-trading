@@ -786,6 +786,9 @@ test("research report renderer includes nested validation warnings in count and 
             42
           ]
         },
+        dataUniverseCoverage: {
+          warnings: ["coverage warning", "validation warning"]
+        },
         overfittingWarning: {
           pboLikeScore: 0.5,
           warnings: ["pbo warning", "validation warning"]
@@ -809,17 +812,22 @@ test("research report renderer includes nested validation warnings in count and 
 
     assert.equal(
       fakeDocument.requiredElement("research-warning-count").textContent,
-      "3개"
+      "4개"
     );
     assert.equal(
       fakeDocument.requiredElement("research-warning-list-count").textContent,
-      "3개"
+      "4개"
     );
     assert.deepEqual(
       fakeDocument
         .requiredElement("research-warning-list")
         .children.map((child) => child.textContent),
-      ["top level warning", "validation warning", "pbo warning"]
+      [
+        "top level warning",
+        "validation warning",
+        "coverage warning",
+        "pbo warning"
+      ]
     );
   } finally {
     if (previousDocument === undefined) {
@@ -2479,6 +2487,9 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const validationProtocol = validationLab.payload[
       "validationProtocol"
     ] as Record<string, unknown>;
+    const dataUniverseCoverage = validationLab.payload[
+      "dataUniverseCoverage"
+    ] as Record<string, unknown>;
     const overfittingWarning = validationLab.payload[
       "overfittingWarning"
     ] as Record<string, unknown>;
@@ -2613,6 +2624,8 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(validationLab.payload["viewModel"], "validation-lab");
     assert.equal(validationLab.payload["status"], "ok");
     assert.equal(validationProtocol["pboLikeScore"], 0.25);
+    assert.equal(dataUniverseCoverage["coverageReportStatus"], "insufficient");
+    assert.equal(dataUniverseCoverage["availableRequiredSymbolCount"], 1);
     assert.equal(overfittingWarning["status"], "available");
     assert.equal(candidateComparison["status"], "available");
     assert.equal(candidateComparison["candidateCount"], 2);
@@ -2630,6 +2643,10 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "run_2"
     ]);
     assert.match(validationWarnings.join("\n"), /VIRTUAL_FX_STALE/);
+    assert.match(
+      validationWarnings.join("\n"),
+      /universe selection bias warning/
+    );
     assert.match(validationWarnings.join("\n"), /runs=run_3/);
 
     assert.equal(auditView.response.status, 200);
@@ -4668,6 +4685,8 @@ function batchReplayAggregateReport(
     sourceRunsPath,
     sourceSelectionTrialsPath:
       "data/batch-replay/batch-smoke/batch-replay-selection-trials.jsonl",
+    sourceUniverseCoveragePath:
+      "data/replay-source/historical-universe-coverage.json",
     targetReturnThresholds: [0.15, 0.3],
     summary: {
       runCount: 4,
@@ -4841,6 +4860,34 @@ function batchReplayAggregateReport(
         }
       ],
       warnings: ["selection bias warning"]
+    },
+    universeCoverage: {
+      sourcePath: "data/replay-source/historical-universe-coverage.json",
+      universeId: "api-test-universe",
+      status: "insufficient",
+      rangeStart: "2025-01-01T00:00:00.000Z",
+      rangeEnd: "2025-01-31T14:59:59.999Z",
+      universeSymbolCount: 2,
+      requiredSymbolCount: 2,
+      optionalSymbolCount: 0,
+      availableSymbolCount: 1,
+      availableRequiredSymbolCount: 1,
+      availableOptionalSymbolCount: 0,
+      missingRequiredSymbolCount: 1,
+      missingOptionalSymbolCount: 0,
+      insufficientRequiredSymbolCount: 0,
+      insufficientOptionalSymbolCount: 0,
+      missingRequiredMarketCount: 0,
+      missingRequiredAssetTypeCount: 0,
+      insufficientAvailableMarketSymbolCount: 1,
+      insufficientAvailableAssetTypeSymbolCount: 1,
+      corruptLineCount: 0,
+      availableMarketSymbolCounts: { KR: 1 },
+      availableAssetTypeSymbolCounts: { STOCK: 1 },
+      issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
+      warnings: [
+        "universe selection bias warning: coverage status is insufficient for api-test-universe; available_required_symbols=1/2; available_symbols=1/2"
+      ]
     },
     overall: {
       key: "overall",

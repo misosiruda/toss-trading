@@ -27,6 +27,12 @@ test("replay research report summarizes stored batch aggregate sections", () => 
     train: 1,
     validation: 1
   });
+  assert.equal(report.dataUniverseCoverage.coverageReportStatus, "insufficient");
+  assert.equal(report.dataUniverseCoverage.availableRequiredSymbolCount, 1);
+  assert.match(
+    report.warnings.join("\n"),
+    /universe selection bias warning/
+  );
   assert.equal(report.promptTrialDistribution.trialCount, 3);
   assert.equal(report.riskAllocationPolicy.riskProfiles[0]?.key, "balanced");
   assert.equal(report.executionAssumptions.paperOnly, true);
@@ -77,6 +83,7 @@ function aggregateReport(
     trialSummary?: BatchReplayAggregateReport["trialSummary"];
     overfittingDiagnostics?: BatchReplayAggregateReport["overfittingDiagnostics"];
     validationSplitRoleCounts?: BatchReplayAggregateReport["summary"]["validationSplitRoleCounts"];
+    universeCoverage?: BatchReplayAggregateReport["universeCoverage"];
   } = {}
 ): BatchReplayAggregateReport {
   const bullGroup = groupSummary("bull", {
@@ -99,6 +106,8 @@ function aggregateReport(
     sourceRunsPath: "data/batch-replay/research/batch-replay-runs.jsonl",
     sourceSelectionTrialsPath:
       "data/batch-replay/research/batch-replay-selection-trials.jsonl",
+    sourceUniverseCoveragePath:
+      "data/replay-source/historical-universe-coverage.json",
     targetReturnThresholds: [0.15, 0.3],
     summary: {
       runCount: 3,
@@ -179,6 +188,37 @@ function aggregateReport(
             warnings: ["selected candidate degraded in validation holdout"]
           }
         : overrides.overfittingDiagnostics,
+    universeCoverage:
+      overrides.universeCoverage === undefined
+        ? {
+            sourcePath: "data/replay-source/historical-universe-coverage.json",
+            universeId: "test-universe",
+            status: "insufficient",
+            rangeStart: "2025-01-01T00:00:00.000Z",
+            rangeEnd: "2025-01-31T14:59:59.999Z",
+            universeSymbolCount: 3,
+            requiredSymbolCount: 2,
+            optionalSymbolCount: 1,
+            availableSymbolCount: 1,
+            availableRequiredSymbolCount: 1,
+            availableOptionalSymbolCount: 0,
+            missingRequiredSymbolCount: 1,
+            missingOptionalSymbolCount: 1,
+            insufficientRequiredSymbolCount: 0,
+            insufficientOptionalSymbolCount: 0,
+            missingRequiredMarketCount: 0,
+            missingRequiredAssetTypeCount: 0,
+            insufficientAvailableMarketSymbolCount: 1,
+            insufficientAvailableAssetTypeSymbolCount: 1,
+            corruptLineCount: 0,
+            availableMarketSymbolCounts: { KR: 1 },
+            availableAssetTypeSymbolCounts: { STOCK: 1 },
+            issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
+            warnings: [
+              "universe selection bias warning: coverage status is insufficient for test-universe; available_required_symbols=1/2; available_symbols=1/3"
+            ]
+          }
+        : overrides.universeCoverage,
     overall: groupSummary("overall", {
       runCount: 3,
       completedCount: 2,

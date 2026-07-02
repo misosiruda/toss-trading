@@ -336,6 +336,7 @@ function researchReportWarnings(report) {
   const warnings = [];
   appendUniqueWarnings(warnings, report?.warnings);
   appendUniqueWarnings(warnings, report?.validationProtocol?.warnings);
+  appendUniqueWarnings(warnings, report?.dataUniverseCoverage?.warnings);
   appendUniqueWarnings(warnings, report?.overfittingWarning?.warnings);
   return warnings;
 }

@@ -90,6 +90,11 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   await expect(
     page.getByRole("heading", { name: "Policy Candidate Comparison" })
   ).toBeVisible();
+  await expect(page.getByText("Data universe coverage")).toBeVisible();
+  await expect(page.getByText("dashboard-e2e-universe").first()).toBeVisible();
+  await expect(
+    page.getByText("universe selection bias warning").first()
+  ).toBeVisible();
   await expect(
     page.getByText("prompt sha256:prompt-alpha-differentiator")
   ).toBeVisible();

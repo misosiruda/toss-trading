@@ -86,6 +86,10 @@ export function ValidationLabPanel({
           value={data.overfittingWarning}
         />
         <ObjectSummary
+          title="Data universe coverage"
+          value={data.dataUniverseCoverage}
+        />
+        <ObjectSummary
           title="Provider failure"
           value={data.providerFailureSummary}
         />

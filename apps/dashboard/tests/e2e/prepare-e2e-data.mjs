@@ -54,6 +54,8 @@ const aggregate = {
   sourceRunsPath: "apps/dashboard/.e2e-data/paper/batch-replay-runs.jsonl",
   sourceSelectionTrialsPath:
     "apps/dashboard/.e2e-data/paper/batch-replay-selection-trials.jsonl",
+  sourceUniverseCoveragePath:
+    "apps/dashboard/.e2e-data/paper/source-data/historical-universe-coverage.json",
   targetReturnThresholds: [0],
   summary: {
     runCount: 4,
@@ -215,6 +217,35 @@ const aggregate = {
       }
     ],
     warnings: ["selection bias warning"]
+  },
+  universeCoverage: {
+    sourcePath:
+      "apps/dashboard/.e2e-data/paper/source-data/historical-universe-coverage.json",
+    universeId: "dashboard-e2e-universe",
+    status: "insufficient",
+    rangeStart: "2026-06-01T00:00:00.000Z",
+    rangeEnd: "2026-06-30T14:59:59.999Z",
+    universeSymbolCount: 2,
+    requiredSymbolCount: 2,
+    optionalSymbolCount: 0,
+    availableSymbolCount: 1,
+    availableRequiredSymbolCount: 1,
+    availableOptionalSymbolCount: 0,
+    missingRequiredSymbolCount: 1,
+    missingOptionalSymbolCount: 0,
+    insufficientRequiredSymbolCount: 0,
+    insufficientOptionalSymbolCount: 0,
+    missingRequiredMarketCount: 0,
+    missingRequiredAssetTypeCount: 0,
+    insufficientAvailableMarketSymbolCount: 1,
+    insufficientAvailableAssetTypeSymbolCount: 1,
+    corruptLineCount: 0,
+    availableMarketSymbolCounts: { KR: 1 },
+    availableAssetTypeSymbolCounts: { STOCK: 1 },
+    issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
+    warnings: [
+      "universe selection bias warning: coverage status is insufficient for dashboard-e2e-universe; available_required_symbols=1/2; available_symbols=1/2"
+    ]
   },
   overall: {
     key: "overall",
