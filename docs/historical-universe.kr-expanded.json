@@ -1,6 +1,7 @@
 {
   "mode": "paper_only_historical_universe",
   "universeId": "kr-paper-expanded-v1",
+  "snapshotDate": "2026-06-17",
   "description": "Paper-only KR historical replay universe. Core symbols match the current local dataset; optional symbols define the expansion target for broader replay experiments.",
   "symbols": [
     {

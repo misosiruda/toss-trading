@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
@@ -66,6 +67,7 @@ test("historical universe coverage can require market and asset type availabilit
     universe: parseHistoricalUniverseManifest({
       mode: "paper_only_historical_universe",
       universeId: "global-fixture",
+      snapshotDate: "2025-01-01",
       symbols: [
         {
           market: "KR",
@@ -108,6 +110,7 @@ test("historical universe coverage can require broad available symbol counts", (
     universe: parseHistoricalUniverseManifest({
       mode: "paper_only_historical_universe",
       universeId: "broad-fixture",
+      snapshotDate: "2025-01-01",
       symbols: [
         {
           market: "KR",
@@ -217,6 +220,91 @@ test("historical universe manifest parser rejects duplicate symbols", () => {
   );
 });
 
+test("historical universe manifest parser captures lifecycle snapshot metadata", () => {
+  const manifest = parseHistoricalUniverseManifest({
+    mode: "paper_only_historical_universe",
+    universeId: "lifecycle-fixture",
+    snapshotDate: "2025-03-31",
+    symbols: [
+      {
+        market: "KR",
+        symbol: "ACTIVE001",
+        lifecycleStatus: "active",
+        required: true
+      },
+      {
+        market: "KR",
+        symbol: "UNKNOWN001",
+        required: false
+      },
+      {
+        market: "US",
+        symbol: "DELISTED1",
+        lifecycleStatus: "delisted",
+        required: false
+      }
+    ],
+    disclaimer: "Paper-only fixture."
+  });
+
+  assert.equal(manifest.snapshotDate, "2025-03-31");
+  assert.equal(manifest.symbols[0]?.lifecycleStatus, "active");
+  assert.equal(manifest.symbols[1]?.lifecycleStatus, "unknown");
+  assert.equal(manifest.symbols[2]?.lifecycleStatus, "delisted");
+});
+
+test("historical universe lifecycle sample fixture validates every status", () => {
+  const manifest = parseHistoricalUniverseManifest(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          "../../docs/historical-universe.lifecycle-sample.json",
+          import.meta.url
+        ),
+        "utf8"
+      )
+    )
+  );
+
+  assert.equal(manifest.snapshotDate, "2025-03-31");
+  assert.deepEqual(
+    manifest.symbols.map((symbol) => symbol.lifecycleStatus).sort(),
+    ["active", "delisted", "suspended", "unknown"]
+  );
+});
+
+test("historical universe manifest parser rejects malformed lifecycle snapshot metadata", () => {
+  assert.throws(
+    () =>
+      parseHistoricalUniverseManifest({
+        mode: "paper_only_historical_universe",
+        universeId: "invalid-date-fixture",
+        snapshotDate: "2025-02-30",
+        symbols: [{ market: "KR", symbol: "005930" }],
+        disclaimer: "Paper-only fixture."
+      }),
+    /valid calendar date/
+  );
+
+  assert.throws(
+    () =>
+      parseHistoricalUniverseManifest({
+        mode: "paper_only_historical_universe",
+        universeId: "invalid-status-fixture",
+        snapshotDate: "2025-03-31",
+        symbols: [
+          {
+            market: "KR",
+            symbol: "005930",
+            lifecycleStatus: "halted"
+          }
+        ],
+        disclaimer: "Paper-only fixture."
+      }),
+    /Invalid option/
+  );
+});
+
 test("requiredSymbolsFromHistoricalUniverse can include optional symbols", () => {
   const manifest = universe();
 
@@ -238,6 +326,7 @@ function universe(): HistoricalUniverseManifest {
   return parseHistoricalUniverseManifest({
     mode: "paper_only_historical_universe",
     universeId: "fixture-universe",
+    snapshotDate: "2025-01-01",
     symbols: [
       { market: "KR", symbol: "005930", required: true },
       {
