@@ -49,6 +49,33 @@ test("historical replay benchmarks include strategy comparison deltas", () => {
   );
 });
 
+test("benchmark cost drag includes spread and market impact costs", () => {
+  const benchmarks = buildHistoricalReplayBenchmarks(
+    replayResult({
+      portfolioTimelineValues: [1_000, 1_100],
+      packets: [packet("packet_0", [{ symbol: "AAA", lastPriceKrw: 100 }])],
+      trades: [
+        trade({
+          amountKrw: 500,
+          feeKrw: 10,
+          taxKrw: 2,
+          slippageKrw: 3,
+          spreadCostKrw: 4,
+          impactCostKrw: 5,
+          totalCostKrw: 999
+        }),
+        trade({
+          amountKrw: 300,
+          totalCostKrw: 7
+        })
+      ]
+    })
+  );
+
+  assert.equal(benchmarks.strategy.feeDragKrw, 31);
+  assert.equal(benchmarks.comparisons.strategyVsCashOnly.feeDragDeltaKrw, 31);
+});
+
 test("equal-weight benchmark enters only after the first priced replay packet", () => {
   const benchmarks = buildHistoricalReplayBenchmarks(
     replayResult({
@@ -244,7 +271,15 @@ function portfolioNetWorth(portfolio: VirtualPortfolio): number {
   );
 }
 
-function trade(input: { amountKrw: number; feeKrw: number }): VirtualTrade {
+function trade(input: {
+  amountKrw: number;
+  feeKrw?: number;
+  taxKrw?: number;
+  slippageKrw?: number;
+  spreadCostKrw?: number;
+  impactCostKrw?: number;
+  totalCostKrw?: number;
+}): VirtualTrade {
   return {
     tradeId: "trade_fixture",
     packetId: "packet_0",
@@ -256,9 +291,20 @@ function trade(input: { amountKrw: number; feeKrw: number }): VirtualTrade {
     priceKrw: 100,
     amountKrw: input.amountKrw,
     grossAmountKrw: input.amountKrw,
-    feeKrw: input.feeKrw,
-    taxKrw: 0,
-    slippageKrw: 0,
+    ...(input.feeKrw === undefined ? {} : { feeKrw: input.feeKrw }),
+    ...(input.taxKrw === undefined ? {} : { taxKrw: input.taxKrw }),
+    ...(input.slippageKrw === undefined
+      ? {}
+      : { slippageKrw: input.slippageKrw }),
+    ...(input.spreadCostKrw === undefined
+      ? {}
+      : { spreadCostKrw: input.spreadCostKrw }),
+    ...(input.impactCostKrw === undefined
+      ? {}
+      : { impactCostKrw: input.impactCostKrw }),
+    ...(input.totalCostKrw === undefined
+      ? {}
+      : { totalCostKrw: input.totalCostKrw }),
     status: "VIRTUAL_FILLED",
     executedAt: "2025-01-01T00:00:00.000Z"
   };
