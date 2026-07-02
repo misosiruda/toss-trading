@@ -38,6 +38,7 @@ const decisionFrequency = readDecisionFrequencyArg();
 const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
 const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
+const universeManifest = readUniverseManifestArg();
 const requiredSymbols = readRequiredSymbols();
 const calendarValidation = readCalendarValidationOptionsFromArgs(args);
 const fxValidation = readFxValidationOptionsFromArgs(args);
@@ -133,6 +134,7 @@ const result = await runHistoricalBatchReplay({
   minWindowSnapshots: readNumberArg("--min-window-snapshots", 1),
   minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
+  ...(universeManifest === undefined ? {} : { universeManifest }),
   ...(calendarValidation === undefined ? {} : { calendarValidation }),
   ...(fxValidation === undefined ? {} : { fxValidation }),
   windowSamplingMode,
@@ -398,13 +400,9 @@ function readRequiredSymbols():
   | Array<{ market: Market; symbol: string }>
   | undefined {
   const values: Array<{ market: Market; symbol: string }> = [];
-  const universePath = readArgValue("--universe-path");
-  if (universePath !== undefined) {
-    const universe = parseHistoricalUniverseManifest(
-      JSON.parse(readFileSync(universePath, "utf8"))
-    );
+  if (universeManifest !== undefined) {
     values.push(
-      ...requiredSymbolsFromHistoricalUniverse(universe, {
+      ...requiredSymbolsFromHistoricalUniverse(universeManifest, {
         includeOptional: args.includes("--require-optional-universe-symbols")
       })
     );
@@ -426,6 +424,16 @@ function readRequiredSymbols():
   }
 
   return values.length === 0 ? undefined : dedupeSymbols(values);
+}
+
+function readUniverseManifestArg() {
+  const universePath = readArgValue("--universe-path");
+  if (universePath === undefined) {
+    return undefined;
+  }
+  return parseHistoricalUniverseManifest(
+    JSON.parse(readFileSync(universePath, "utf8"))
+  );
 }
 
 function readValidationSplitAssignmentsArg():

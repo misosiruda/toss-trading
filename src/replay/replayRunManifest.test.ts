@@ -140,6 +140,7 @@ test("creates paper-only replay research manifest with reproducibility hashes", 
   assert.match(manifest.configHash, /^sha256:[a-f0-9]{64}$/);
   assert.match(manifest.dataSnapshotHash, /^sha256:[a-f0-9]{64}$/);
   assert.match(manifest.universeHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(manifest.universeSnapshotDate, "2025-03-31");
   assert.match(manifest.coverageHash, /^sha256:[a-f0-9]{64}$/);
   assert.match(manifest.promptHash, /^sha256:[a-f0-9]{64}$/);
   assert.match(manifest.schemaHash, /^sha256:[a-f0-9]{64}$/);
@@ -181,6 +182,15 @@ test("manifest supports single replay runs without a batch id", () => {
   ]);
 });
 
+test("manifest keeps missing universe snapshot date nullable for legacy callers", () => {
+  const input = manifestInput();
+  delete input.universeSnapshotDate;
+
+  const manifest = createReplayResearchManifest(input);
+
+  assert.equal(manifest.universeSnapshotDate, null);
+});
+
 function manifestInput(): CreateReplayResearchManifestInput {
   return {
     runId: "batch_001_run_000001",
@@ -199,6 +209,7 @@ function manifestInput(): CreateReplayResearchManifestInput {
       universeId: "global-broad",
       symbols: ["KR:005930", "US:AAPL"]
     },
+    universeSnapshotDate: "2025-03-31",
     coverage: {
       status: "available",
       totalSnapshotCount: 128,

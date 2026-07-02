@@ -34,6 +34,7 @@ import {
 } from "../replay/codexHistoricalReplayRunner.js";
 import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
+import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 import {
   createHistoricalReplayWorkflowPlan,
   type HistoricalReplayWorkflowPlan,
@@ -82,6 +83,7 @@ export async function runHistoricalReplayWorkflow(
     corruptLineCount: snapshots.corruptLineCount,
     hasExplicitDecisionProvider: options.decisionProvider !== undefined,
     decisionProviderMetadata: options.decisionProviderMetadata,
+    universeManifest: options.universeManifest,
     createdAt: replayStartedAt
   });
   const researchManifestRef = replayResearchManifestReference({
@@ -167,6 +169,7 @@ function createWorkflowResearchManifest(input: {
   corruptLineCount: number;
   hasExplicitDecisionProvider: boolean;
   decisionProviderMetadata: unknown;
+  universeManifest?: HistoricalUniverseManifest | undefined;
   createdAt: Date;
 }) {
   const metadata = input.plan.metadataContext;
@@ -190,7 +193,11 @@ function createWorkflowResearchManifest(input: {
         .map(normalizeSnapshotForManifest)
         .sort(compareSnapshotManifestEntry)
     },
-    universe: summarizeReplayUniverse(input.snapshots),
+    universe: replayUniverseForManifest({
+      universeManifest: input.universeManifest,
+      snapshots: input.snapshots
+    }),
+    universeSnapshotDate: input.universeManifest?.snapshotDate ?? null,
     coverage: {
       tickCount: input.plan.tickCount,
       window: metadata.window,
@@ -217,6 +224,51 @@ function createWorkflowResearchManifest(input: {
       ? ["DECISION_PROVIDER_METADATA_MISSING"]
       : []
   });
+}
+
+function replayUniverseForManifest(input: {
+  universeManifest?: HistoricalUniverseManifest | undefined;
+  snapshots: HistoricalMarketSnapshot[];
+}) {
+  if (input.universeManifest !== undefined) {
+    return normalizeUniverseManifestForResearch(input.universeManifest);
+  }
+
+  return {
+    source: "snapshot_derived",
+    snapshotDate: null,
+    symbols: summarizeReplayUniverse(input.snapshots)
+  };
+}
+
+function normalizeUniverseManifestForResearch(
+  universe: HistoricalUniverseManifest
+) {
+  return {
+    source: "historical_universe_manifest",
+    mode: universe.mode,
+    universeId: universe.universeId,
+    snapshotDate: universe.snapshotDate,
+    description: universe.description ?? null,
+    symbols: universe.symbols
+      .map((symbol) => ({
+        market: symbol.market,
+        symbol: symbol.symbol,
+        sourceSymbol: symbol.sourceSymbol ?? null,
+        name: symbol.name ?? null,
+        assetType: symbol.assetType ?? null,
+        assetClass: symbol.assetClass ?? null,
+        region: symbol.region ?? null,
+        riskTags: symbol.riskTags ?? [],
+        sector: symbol.sector ?? null,
+        segment: symbol.segment ?? null,
+        lifecycleStatus: symbol.lifecycleStatus,
+        required: symbol.required,
+        tags: symbol.tags ?? []
+      }))
+      .sort(compareUniverseManifestMembers),
+    disclaimer: universe.disclaimer
+  };
 }
 
 function resolveDecisionProviderManifestMetadata(input: {
@@ -350,6 +402,16 @@ function compareSnapshotManifestEntry(
     compareText(left.symbol, right.symbol) ||
     compareText(left.observedAt, right.observedAt) ||
     compareText(left.snapshotId, right.snapshotId)
+  );
+}
+
+function compareUniverseManifestMembers(
+  left: { market: string; symbol: string },
+  right: { market: string; symbol: string }
+): number {
+  return (
+    compareText(left.market, right.market) ||
+    compareText(left.symbol, right.symbol)
   );
 }
 

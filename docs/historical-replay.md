@@ -67,6 +67,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 - `configHash`
 - `dataSnapshotHash`
 - `universeHash`
+- `universeSnapshotDate`: `--universe-path`가 있으면 universe manifest의 `snapshotDate`, 없으면 `null`
 - `coverageHash`
 - `promptHash`
 - `schemaHash`
@@ -80,6 +81,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 - 민감 정보 원문을 hash source, manifest, report에 저장하지 않는다.
 - `configHash`에는 요청 configuration뿐 아니라 replay가 실제로 사용하는 초기 `VirtualPortfolio` cash/position state를 포함한다.
 - `dataSnapshotHash`에는 replay packet 생성, 후보 feature, audit reference에 영향을 주는 normalized historical snapshot field를 포함한다.
+- `universeHash`는 `--universe-path`가 있으면 `HistoricalUniverseManifest`의 `snapshotDate`, lifecycle metadata, required/optional symbol metadata를 포함한 normalized manifest를 hash한다. `--universe-path`가 없으면 기존처럼 replay snapshot에서 관측된 symbol 요약을 hash하고 `universeSnapshotDate`는 `null`로 둔다.
 - hash가 없는 legacy run은 실행 실패가 아니라 report의 `reproducibility.status: "partial"`과 warning으로 표시한다.
 - 이 manifest는 paper-only 검증 artifact이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않는다.
 - Q3-2 기준 `costModelHash`는 `paper_cost_model.v2` object를 hash한 값이다. 이 object에는 `executionModelVersion`, fill/fee/tax/slippage model name, spread/impact placeholder, liquidity model name, normalized `executionPolicy`가 포함된다.

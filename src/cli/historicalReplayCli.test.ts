@@ -274,12 +274,17 @@ test("historical replay availability CLI rejects FX required markets without fix
 
 test("historical replay CLI writes batch run metadata", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-batch-metadata-cli-"));
+  const universePath = join(dataDir, "universe.json");
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(
     join(dataDir, "historical-market-snapshots.jsonl"),
-    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    [
+      JSON.stringify(snapshot("hist_005930_001", "005930")),
+      JSON.stringify(snapshot("hist_000660_001", "000660"))
+    ].join("\n") + "\n",
     "utf8"
   );
+  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
 
   const result = spawnSync(
     process.execPath,
@@ -301,7 +306,9 @@ test("historical replay CLI writes batch run metadata", () => {
       "--batch-run-index",
       "2",
       "--run-id",
-      "batch-smoke-run-002"
+      "batch-smoke-run-002",
+      "--universe-path",
+      universePath
     ],
     { cwd: process.cwd(), encoding: "utf8" }
   );
@@ -309,6 +316,12 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(result.status, 0, result.stderr);
   const metadata = JSON.parse(
     readFileSync(join(dataDir, "historical-replay-run-metadata.json"), "utf8")
+  ) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    readFileSync(
+      join(dataDir, "historical-replay-research-manifest.json"),
+      "utf8"
+    )
   ) as Record<string, unknown>;
   const identity = metadata["identity"] as Record<string, unknown>;
   const window = metadata["window"] as Record<string, unknown>;
@@ -324,6 +337,7 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(window["source"], "explicit");
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
+  assert.equal(manifest["universeSnapshotDate"], "2025-01-01");
 });
 
 test("historical replay CLI records Codex provider metadata in research manifest", () => {
@@ -439,12 +453,17 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   const outputBaseDir = mkdtempSync(
     join(tmpdir(), "historical-batch-cli-output-")
   );
+  const universePath = join(sourceDataDir, "universe.json");
   mkdirSync(sourceDataDir, { recursive: true });
   writeFileSync(
     join(sourceDataDir, "historical-market-snapshots.jsonl"),
-    `${JSON.stringify(snapshot("hist_005930_001", "005930"))}\n`,
+    [
+      JSON.stringify(snapshot("hist_005930_001", "005930")),
+      JSON.stringify(snapshot("hist_000660_001", "000660"))
+    ].join("\n") + "\n",
     "utf8"
   );
+  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
 
   const result = spawnSync(
     process.execPath,
@@ -479,6 +498,8 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "0.08",
       "--paper-rebalance-max-position-weight-ratio",
       "0.55",
+      "--universe-path",
+      universePath,
       "--window-sampling",
       "balanced_regime",
       "--target-regimes",
@@ -546,6 +567,15 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "utf8"
     )
   ) as Record<string, unknown>;
+  const runResearchManifest = JSON.parse(
+    readFileSync(
+      join(
+        String(runRecords[0]?.["storageBaseDir"]),
+        "historical-replay-research-manifest.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
   const runConfiguration = runMetadata["configuration"] as Record<
     string,
     unknown
@@ -559,6 +589,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     unknown
   >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
+  assert.equal(runResearchManifest["universeSnapshotDate"], "2025-01-01");
   assert.deepEqual(runConfiguration["paperExitPolicy"], {
     takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,
