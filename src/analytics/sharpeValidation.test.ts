@@ -75,13 +75,54 @@ test("Sharpe validation calculator keeps full precision before report rounding",
   });
 
   assert.equal(report.status, "available");
-  assert.equal(report.distribution.volatilityRatio, 0);
+  assert.ok(report.distribution.volatilityRatio !== null);
+  assert.ok(report.distribution.volatilityRatio > 0);
+  assert.ok(report.distribution.volatilityRatio < 0.000001);
   assert.equal(report.metrics.sampleSharpe.status, "computed");
   assert.equal(
     report.warnings.some((warning) => warning.code === "ZERO_RETURN_VOLATILITY"),
     false
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
+test("Sharpe validation calculator annualizes only with explicit frequency", () => {
+  const returns = [
+    -0.018, -0.01, -0.004, 0.002, 0.009, 0.015, -0.012, 0.006, 0.011, -0.007,
+    0.014, 0.018, -0.016, 0.004, 0.012, 0.021, -0.009, 0.003, 0.017, 0.024,
+    -0.014, 0.005, 0.01, 0.019, -0.006, 0.007, 0.013, 0.022, -0.011, 0.016
+  ];
+
+  const withoutFrequency = calculateSharpeValidationReport({
+    returns,
+    annualizationFactor: 252,
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 10
+    }
+  });
+  const withDailyFrequency = calculateSharpeValidationReport({
+    returns,
+    returnFrequency: "daily",
+    annualizationFactor: 252,
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 10
+    }
+  });
+
+  assert.equal(withoutFrequency.sample.returnFrequency, "per_sample");
+  assert.equal(withoutFrequency.sample.annualizationStatus, "not_annualized");
+  assert.equal(withoutFrequency.sample.annualizationFactor, null);
+  assert.equal(withoutFrequency.metrics.sampleSharpe.value, 0.374554);
+  assert.equal(withDailyFrequency.sample.returnFrequency, "daily");
+  assert.equal(withDailyFrequency.sample.annualizationStatus, "annualized");
+  assert.equal(withDailyFrequency.sample.annualizationFactor, 252);
+  assert.ok(withDailyFrequency.metrics.sampleSharpe.value !== null);
+  assert.ok(
+    withDailyFrequency.metrics.sampleSharpe.value >
+      withoutFrequency.metrics.sampleSharpe.value!
+  );
 });
 
 test("unavailable Sharpe validation report exposes deterministic schema defaults", () => {

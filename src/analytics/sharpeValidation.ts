@@ -138,10 +138,13 @@ export function calculateSharpeValidationReport(
     input.minimumSampleCount
   );
   const returnFrequency = input.returnFrequency ?? "per_sample";
-  const annualizationFactor = normalizeOptionalPositiveNumber(
+  const requestedAnnualizationFactor = normalizeOptionalPositiveNumber(
     input.annualizationFactor,
     "annualizationFactor"
   );
+  const annualizationFactor = isAnnualizableReturnFrequency(returnFrequency)
+    ? requestedAnnualizationFactor
+    : null;
   const riskFreeRateRatio = normalizeOptionalFiniteNumber(
     input.riskFreeRateRatio,
     "riskFreeRateRatio"
@@ -166,7 +169,7 @@ export function calculateSharpeValidationReport(
   const meanReturnRatio =
     meanReturnRatioRaw === null ? null : roundRatio(meanReturnRatioRaw);
   const volatilityRatio =
-    volatilityRatioRaw === null ? null : roundRatio(volatilityRatioRaw);
+    volatilityRatioRaw === null ? null : roundVolatilityRatio(volatilityRatioRaw);
   const autocorrelation = summarizeAutocorrelation(
     excessReturns,
     autocorrelationMaxLag
@@ -576,6 +579,12 @@ function normalizeSelectionContext(
   };
 }
 
+function isAnnualizableReturnFrequency(
+  value: SharpeValidationSampleSummary["returnFrequency"]
+): boolean {
+  return value === "daily" || value === "weekly" || value === "monthly";
+}
+
 function isValidSelectionCount(value: number | null | undefined): boolean {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
@@ -642,4 +651,12 @@ function average(values: number[]): number {
 
 function roundRatio(value: number): number {
   return Number(value.toFixed(6));
+}
+
+function roundVolatilityRatio(value: number): number {
+  const rounded = roundRatio(value);
+  if (rounded === 0 && value !== 0) {
+    return Number(value.toPrecision(6));
+  }
+  return rounded;
 }
