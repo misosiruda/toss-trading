@@ -183,6 +183,8 @@ Historical replay report의 `Advanced Performance Metrics` section은 `performan
 
 이 metric은 paper-only 사후 분석용입니다. 짧은 replay, return sample 부족, zero drawdown, zero volatility에서는 숫자를 억지로 만들지 않고 `null`과 warning을 기록합니다. Sharpe는 per-sample 값이며 Lo 방식의 serial-correlation adjustment나 Deflated Sharpe Ratio가 아닙니다.
 
+RH5 후속 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
+
 Q3-2 기준:
 
 - `paper_cost_model.v3` / `execution_simulator.v3`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.

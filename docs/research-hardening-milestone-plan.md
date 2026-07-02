@@ -202,6 +202,15 @@
 - Sharpe ratio를 단일 숫자로 비교하지 않고 sample size, serial correlation, non-IID return 문제를 함께 기록한다.
 - 여러 strategy/prompt/policy 후보를 비교할 때 우연히 높은 Sharpe를 고른 위험을 표시한다.
 
+정책 기준:
+
+- Sharpe validation design과 metric schema는 [sharpe-statistical-validation-contract.md](sharpe-statistical-validation-contract.md)를 기준으로 한다.
+
+현재 결정:
+
+- 첫 PR 범위는 `sharpe_validation.v1` contract와 schema 정의로 제한한다.
+- Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 계산기와 report/dashboard 연결은 후속 PR에서 다룬다.
+
 작업 범위:
 
 - Sharpe confidence interval 후보
