@@ -747,6 +747,69 @@ test("PaperOrderEngine bases market impact on rounded whole-share fills", () => 
   assert.equal(result.portfolio.cashKrw, 929_965);
 });
 
+test("PaperOrderEngine rejects buy fills when modeled impact exceeds cash", () => {
+  const startingPortfolio = portfolio({ cashKrw: 70_000 });
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 10,
+          averageVolume: 10
+        }
+      ]
+    }),
+    portfolio: startingPortfolio,
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: {
+      now,
+      minCashReserveRatio: 0,
+      maxPositionWeightRatio: 1
+    },
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, false);
+  assert.ok(result.riskDecision.rejectCodes.includes("VIRTUAL_CASH_EXCEEDED"));
+  assert.equal(result.trade, null);
+  assert.deepEqual(result.portfolio, startingPortfolio);
+});
+
+test("PaperOrderEngine rejects buy fills when modeled impact breaches cash reserve", () => {
+  const startingPortfolio = portfolio({ cashKrw: 80_000 });
+  const result = new PaperOrderEngine().execute({
+    packet: packet({
+      candidates: [
+        {
+          ...packet().candidates[0]!,
+          volume: 10,
+          averageVolume: 10
+        }
+      ]
+    }),
+    portfolio: startingPortfolio,
+    decision: decision({ budgetKrw: 70_000 }),
+    riskPolicy: {
+      now,
+      minCashReserveRatio: 0,
+      minCashReserveKrw: 10_000,
+      maxPositionWeightRatio: 1
+    },
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    }
+  });
+
+  assert.equal(result.riskDecision.approved, false);
+  assert.ok(
+    result.riskDecision.rejectCodes.includes("VIRTUAL_CASH_RESERVE_BREACHED")
+  );
+  assert.equal(result.trade, null);
+  assert.deepEqual(result.portfolio, startingPortfolio);
+});
+
 test("PaperOrderEngine rejects no-fill liquidity without creating a trade", () => {
   const startingPortfolio = portfolio();
   const result = new PaperOrderEngine().execute({
