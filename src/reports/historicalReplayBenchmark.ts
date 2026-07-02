@@ -269,14 +269,15 @@ function sumTradeAmounts(trades: VirtualTrade[]): number {
 }
 
 function sumTradeCosts(trades: VirtualTrade[]): number {
-  return trades.reduce(
-    (sum, trade) =>
-      sum +
+  return trades.reduce((sum, trade) => {
+    const componentTotal =
       (trade.feeKrw ?? 0) +
       (trade.taxKrw ?? 0) +
-      (trade.slippageKrw ?? 0),
-    0
-  );
+      (trade.slippageKrw ?? 0) +
+      (trade.spreadCostKrw ?? 0) +
+      (trade.impactCostKrw ?? 0);
+    return sum + (componentTotal > 0 ? componentTotal : trade.totalCostKrw ?? 0);
+  }, 0);
 }
 
 function compareMetricSummary(
