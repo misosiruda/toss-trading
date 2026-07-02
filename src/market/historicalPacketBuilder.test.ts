@@ -5,6 +5,10 @@ import type {
   HistoricalMarketSnapshot,
   VirtualPortfolio
 } from "../domain/schemas.js";
+import {
+  parseHistoricalUniverseManifest,
+  type HistoricalUniverseManifest
+} from "../replay/historicalUniverseCoverage.js";
 import { HistoricalMarketPacketBuilder } from "./historicalPacketBuilder.js";
 
 test("historical packet builder excludes future snapshots from candidates", () => {
@@ -195,6 +199,89 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
       (featureScore) =>
         featureScore.featureRef === "candidate.US.SPY.sector" &&
         featureScore.reasonCode === "SECTOR_AVAILABLE"
+    ),
+    true
+  );
+});
+
+test("historical packet builder applies universe lifecycle eligibility", () => {
+  const result = builder({
+    universeManifest: universeManifest({
+      symbol: "005930",
+      lifecycleStatus: "delisted"
+    })
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "005930",
+          quantity: 1,
+          averagePriceKrw: 70_000,
+          marketValueKrw: 70_000,
+          updatedAt: "2025-01-02T09:00:00+09:00"
+        }
+      ]
+    },
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_delisted",
+        symbol: "005930",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidate = result.status === "ok" ? result.packet.candidates[0] : null;
+  assert.equal(candidate?.lifecycleStatus, "delisted");
+  assert.equal(candidate?.buyEligible, false);
+  assert.equal(candidate?.sellEligible, false);
+  assert.equal(
+    candidate?.blockedReasonCodes?.includes("LIFECYCLE_DELISTED"),
+    true
+  );
+  assert.equal(
+    candidate?.reasonCodes.includes("HISTORICAL_LIFECYCLE_DELISTED"),
+    true
+  );
+  assert.equal(
+    result.warnings.some((warning) =>
+      warning.includes("status=delisted")
+    ),
+    true
+  );
+});
+
+test("historical packet builder treats missing lifecycle metadata as unknown", () => {
+  const result = builder({
+    universeManifest: universeManifest({
+      symbol: "000660",
+      lifecycleStatus: "active"
+    })
+  }).build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_unknown",
+        symbol: "005930",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidate = result.status === "ok" ? result.packet.candidates[0] : null;
+  assert.equal(candidate?.lifecycleStatus, "unknown");
+  assert.equal(candidate?.buyEligible, false);
+  assert.equal(
+    candidate?.blockedReasonCodes?.includes("LIFECYCLE_UNKNOWN"),
+    true
+  );
+  assert.equal(
+    result.warnings.some((warning) =>
+      warning.includes("missing; candidate trading blocked as unknown")
     ),
     true
   );
@@ -485,6 +572,7 @@ function builder(
   overrides: Partial<{
     maxCandidates: number;
     maxSnapshotAgeSeconds: number;
+    universeManifest: HistoricalUniverseManifest;
   }> = {}
 ): HistoricalMarketPacketBuilder {
   return new HistoricalMarketPacketBuilder({
@@ -497,7 +585,30 @@ function builder(
       maxNewPositions: 3,
       maxBudgetPerSymbolKrw: 100_000,
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
-    }
+    },
+    ...(overrides.universeManifest === undefined
+      ? {}
+      : { universeManifest: overrides.universeManifest })
+  });
+}
+
+function universeManifest(input: {
+  symbol: string;
+  lifecycleStatus: "active" | "suspended" | "delisted" | "unknown";
+}): HistoricalUniverseManifest {
+  return parseHistoricalUniverseManifest({
+    mode: "paper_only_historical_universe",
+    universeId: "fixture-lifecycle",
+    snapshotDate: "2025-01-02",
+    symbols: [
+      {
+        market: "KR",
+        symbol: input.symbol,
+        lifecycleStatus: input.lifecycleStatus,
+        required: true
+      }
+    ],
+    disclaimer: "Paper-only fixture."
   });
 }
 

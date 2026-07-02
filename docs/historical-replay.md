@@ -501,8 +501,10 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `snapshotDate`: `YYYY-MM-DD` 형식의 필수 날짜입니다. 이 값은 universe 구성과 lifecycle metadata가 어느 날짜 기준인지 고정합니다.
 - `lifecycleStatus`: symbol 단위 status이며 `active`, `suspended`, `delisted`, `unknown` 중 하나입니다.
 - 기존 fixture처럼 status 근거가 없는 symbol은 parser에서 `unknown`으로 보수 처리됩니다.
+- historical replay에서 `--universe-path`가 있으면 candidate에는 `lifecycleStatus`와 `HISTORICAL_LIFECYCLE_<STATUS>` reason code가 기록됩니다.
+- `active`가 아닌 `suspended`, `delisted`, `unknown` status는 buy/sell eligibility를 차단하고 `VirtualRiskEngine`의 `VIRTUAL_LIFECYCLE_NOT_ELIGIBLE` reject code로 fail-closed 처리됩니다.
 - schema sample은 `docs/historical-universe.lifecycle-sample.json`에 둡니다.
-- replay manifest hash 연결, candidate eligibility, risk warning, coverage/dashboard 표시는 RH3 후속 PR에서 별도로 연결합니다.
+- coverage/dashboard 표시는 RH3 후속 PR에서 별도로 연결합니다.
 
 coverage report 생성:
 

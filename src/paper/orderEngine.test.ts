@@ -79,6 +79,36 @@ test("VirtualRiskEngine rejects buy decisions that exceed virtual cash", () => {
   assert.ok(risk.rejectCodes.includes("VIRTUAL_CASH_EXCEEDED"));
 });
 
+test("VirtualRiskEngine rejects lifecycle-blocked candidate actions", () => {
+  const risk = new VirtualRiskEngine().evaluate({
+    packet: packet({
+      candidates: [
+        {
+          market: "KR",
+          symbol: "005930",
+          name: "Sample Corp",
+          lifecycleStatus: "delisted",
+          lastPriceKrw: 70_000,
+          ranking: 1,
+          buyEligible: false,
+          sellEligible: false,
+          blockedReasonCodes: ["LIFECYCLE_DELISTED"],
+          reasonCodes: ["HISTORICAL_REPLAY"],
+          sourceRefs: ["external_snapshot_001"],
+          collectedAt: "2026-06-11T08:59:00+09:00",
+          staleAfter: "2026-06-11T09:05:00+09:00"
+        }
+      ]
+    }),
+    portfolio: portfolio(),
+    decision: decision({ budgetKrw: 70_000 }),
+    policy: { now }
+  });
+
+  assert.equal(risk.approved, false);
+  assert.ok(risk.rejectCodes.includes("VIRTUAL_LIFECYCLE_NOT_ELIGIBLE"));
+});
+
 test("VirtualRiskEngine rejects max symbol exposure breaches", () => {
   const risk = new VirtualRiskEngine().evaluate({
     packet: packet(),

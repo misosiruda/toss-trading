@@ -47,6 +47,7 @@ import {
   recordHistoricalReplayDecision,
   suppressDecisionItemsForSymbols
 } from "./historicalReplayDecisionBoundary.js";
+import type { HistoricalUniverseManifest } from "./historicalUniverseCoverage.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 
 export interface HistoricalReplayDecisionContext {
@@ -74,6 +75,7 @@ export interface HistoricalReplayRunnerOptions {
   allocationPolicy?: PaperAllocationPolicy;
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
+  universeManifest?: HistoricalUniverseManifest;
 }
 
 export interface HistoricalReplayInput {
@@ -415,7 +417,10 @@ export function runHistoricalReplay(
       constraints: options.constraints,
       ...(allocationPolicy === undefined
         ? {}
-        : { allocationPolicy })
+        : { allocationPolicy }),
+      ...(options.universeManifest === undefined
+        ? {}
+        : { universeManifest: options.universeManifest })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex

@@ -7,6 +7,7 @@ import {
   assetTypeSchema,
   type AssetType,
   type HistoricalMarketSnapshot,
+  instrumentLifecycleStatusSchema,
   type Market,
   marketSchema,
   parseWithSchema
@@ -18,12 +19,8 @@ const isoCalendarDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD calendar date")
   .refine(isValidCalendarDate, "Expected a valid calendar date");
 
-export const historicalInstrumentLifecycleStatusSchema = z.enum([
-  "active",
-  "suspended",
-  "delisted",
-  "unknown"
-]);
+export const historicalInstrumentLifecycleStatusSchema =
+  instrumentLifecycleStatusSchema;
 
 export const historicalUniverseMemberSchema = z
   .object({

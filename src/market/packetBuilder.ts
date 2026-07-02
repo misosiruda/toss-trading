@@ -1,6 +1,7 @@
 import {
   marketPacketSchema,
   parseWithSchema,
+  type InstrumentLifecycleStatus,
   type Market,
   type MarketCandidate,
   type MarketCandidateFeatureScore,
@@ -32,6 +33,7 @@ export interface MarketCandidateDraft {
   strategyBucket?: StrategyBucket;
   sector?: string;
   industry?: string;
+  lifecycleStatus?: InstrumentLifecycleStatus;
   lastPriceKrw?: number;
   volume?: number;
   averageVolume?: number;
@@ -243,6 +245,9 @@ function normalizeCandidate(
   if (candidate.industry !== undefined) {
     normalized.industry = candidate.industry;
   }
+  if (candidate.lifecycleStatus !== undefined) {
+    normalized.lifecycleStatus = candidate.lifecycleStatus;
+  }
   if (candidate.lastPriceKrw !== undefined) {
     normalized.lastPriceKrw = candidate.lastPriceKrw;
   }
@@ -298,6 +303,9 @@ function buildCandidateFeatureRefs(candidate: MarketCandidateDraft): string[] {
   }
   if (candidate.sector !== undefined) {
     refs.push(`${prefix}.sector`);
+  }
+  if (candidate.lifecycleStatus !== undefined) {
+    refs.push(`${prefix}.lifecycleStatus`);
   }
   if (candidate.ranking !== undefined) {
     refs.push(`${prefix}.ranking`);
@@ -381,6 +389,14 @@ function buildCandidateFeatureScores(input: {
   }
   if (input.candidate.sector !== undefined) {
     addScore("sector", 100, "AVAILABILITY", "SECTOR_AVAILABLE");
+  }
+  if (input.candidate.lifecycleStatus !== undefined) {
+    addScore(
+      "lifecycleStatus",
+      lifecycleFeatureScore(input.candidate.lifecycleStatus),
+      "POLICY",
+      lifecycleReasonCode(input.candidate.lifecycleStatus)
+    );
   }
   if (input.candidate.ranking !== undefined) {
     addScore(
@@ -492,6 +508,23 @@ function budgetTierFeatureScore(tier: VirtualBudgetTier): number {
   }
 }
 
+function lifecycleFeatureScore(status: InstrumentLifecycleStatus): number {
+  return status === "active" ? 100 : 0;
+}
+
+function lifecycleReasonCode(status: InstrumentLifecycleStatus): string {
+  return `LIFECYCLE_${status.toUpperCase()}`;
+}
+
+function lifecycleBlockedReason(
+  status: InstrumentLifecycleStatus | undefined
+): string | undefined {
+  if (status === undefined || status === "active") {
+    return undefined;
+  }
+  return lifecycleReasonCode(status);
+}
+
 function deriveCandidateEligibility(input: {
   portfolio: VirtualPortfolio;
   candidate: MarketCandidateDraft;
@@ -563,6 +596,12 @@ function deriveCandidateEligibility(input: {
   if (cooldownActive) {
     buyBlockedReasonCodes.push("COOLDOWN_ACTIVE");
   }
+  const lifecycleBlockedReasonCode = lifecycleBlockedReason(
+    input.candidate.lifecycleStatus
+  );
+  if (lifecycleBlockedReasonCode !== undefined) {
+    buyBlockedReasonCodes.push(lifecycleBlockedReasonCode);
+  }
 
   if (!input.constraints.allowedActions.includes("VIRTUAL_SELL")) {
     sellBlockedReasonCodes.push("SELL_ACTION_NOT_ALLOWED");
@@ -572,6 +611,9 @@ function deriveCandidateEligibility(input: {
   }
   if (!priceAvailable) {
     sellBlockedReasonCodes.push("PRICE_MISSING");
+  }
+  if (lifecycleBlockedReasonCode !== undefined) {
+    sellBlockedReasonCodes.push(lifecycleBlockedReasonCode);
   }
 
   const buyEligible = buyBlockedReasonCodes.length === 0;

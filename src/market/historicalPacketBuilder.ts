@@ -1,5 +1,6 @@
 import type {
   HistoricalMarketSnapshot,
+  InstrumentLifecycleStatus,
   MarketPacket,
   VirtualPortfolio
 } from "../domain/schemas.js";
@@ -9,6 +10,10 @@ import {
   type MarketCandidateDraft
 } from "./packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
+import type {
+  HistoricalUniverseManifest,
+  HistoricalUniverseMember
+} from "../replay/historicalUniverseCoverage.js";
 
 export interface HistoricalMarketPacketBuilderOptions {
   packetId: string;
@@ -18,6 +23,7 @@ export interface HistoricalMarketPacketBuilderOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   allocationPolicy?: PaperAllocationPolicy;
+  universeManifest?: HistoricalUniverseManifest;
 }
 
 export interface HistoricalMarketPacketBuildInput {
@@ -50,6 +56,12 @@ interface HistoricalCandidateFeatures {
   score: number;
   reasonCodes: string[];
   averageVolume?: number | undefined;
+}
+
+interface HistoricalCandidateLifecycleMetadata {
+  status?: InstrumentLifecycleStatus | undefined;
+  reasonCodes: string[];
+  warnings: string[];
 }
 
 interface ScreenedHistoricalCandidate {
@@ -154,6 +166,9 @@ export class HistoricalMarketSnapshotIndex {
     });
     const protectedSymbolKeys = portfolioPositionKeys(portfolio);
     const freshSnapshotKeys = new Set(selectedSnapshots.map(snapshotSymbolKey));
+    const universeLifecycleBySymbol = lifecycleBySymbolFromUniverse(
+      options.universeManifest
+    );
     for (const symbolKey of protectedSymbolKeys) {
       if (!freshSnapshotKeys.has(symbolKey)) {
         warnings.push(
@@ -197,15 +212,26 @@ export class HistoricalMarketSnapshotIndex {
       protectedSymbolKeys
     });
 
-    const candidates = screenedCandidates.map((candidate, index) =>
-      toCandidateDraft(candidate.snapshot, index + 1, options, {
-        ...candidate.features,
-        reasonCodes: [
-          ...candidate.features.reasonCodes,
-          ...candidate.reasonCodes
-        ]
-      })
-    );
+    const candidates = screenedCandidates.map((candidate, index) => {
+      const lifecycle = lifecycleMetadataForSnapshot({
+        snapshot: candidate.snapshot,
+        universeLifecycleBySymbol
+      });
+      warnings.push(...lifecycle.warnings);
+      return toCandidateDraft(
+        candidate.snapshot,
+        index + 1,
+        options,
+        {
+          ...candidate.features,
+          reasonCodes: [
+            ...candidate.features.reasonCodes,
+            ...candidate.reasonCodes
+          ]
+        },
+        lifecycle
+      );
+    });
 
     if (candidates.length === 0) {
       return {
@@ -267,7 +293,11 @@ function toCandidateDraft(
   snapshot: HistoricalMarketSnapshot,
   ranking: number,
   options: HistoricalMarketPacketBuilderOptions,
-  features: HistoricalCandidateFeatures
+  features: HistoricalCandidateFeatures,
+  lifecycle: HistoricalCandidateLifecycleMetadata = {
+    reasonCodes: [],
+    warnings: []
+  }
 ): MarketCandidateDraft {
   return {
     market: snapshot.market,
@@ -283,6 +313,9 @@ function toCandidateDraft(
       ? {}
       : { strategyBucket: snapshot.strategyBucket }),
     ...(snapshot.sector === undefined ? {} : { sector: snapshot.sector }),
+    ...(lifecycle.status === undefined
+      ? {}
+      : { lifecycleStatus: lifecycle.status }),
     lastPriceKrw: snapshot.lastPriceKrw,
     ...(snapshot.volume === undefined ? {} : { volume: snapshot.volume }),
     ...(features.averageVolume === undefined
@@ -293,7 +326,8 @@ function toCandidateDraft(
     reasonCodes: [
       `HISTORICAL_${snapshot.interval}`,
       "HISTORICAL_REPLAY",
-      ...features.reasonCodes
+      ...features.reasonCodes,
+      ...lifecycle.reasonCodes
     ],
     sourceRefs: [
       `historical_snapshot:${snapshot.snapshotId}`,
@@ -303,6 +337,51 @@ function toCandidateDraft(
     staleAfter: new Date(
       Date.parse(snapshot.observedAt) + options.maxSnapshotAgeSeconds * 1000
     ).toISOString()
+  };
+}
+
+function lifecycleBySymbolFromUniverse(
+  universe: HistoricalUniverseManifest | undefined
+): Map<string, HistoricalUniverseMember> | undefined {
+  if (universe === undefined) {
+    return undefined;
+  }
+
+  return new Map(
+    universe.symbols.map((member) => [`${member.market}:${member.symbol}`, member])
+  );
+}
+
+function lifecycleMetadataForSnapshot(input: {
+  snapshot: HistoricalMarketSnapshot;
+  universeLifecycleBySymbol:
+    | Map<string, HistoricalUniverseMember>
+    | undefined;
+}): HistoricalCandidateLifecycleMetadata {
+  if (input.universeLifecycleBySymbol === undefined) {
+    return {
+      reasonCodes: [],
+      warnings: []
+    };
+  }
+
+  const key = snapshotSymbolKey(input.snapshot);
+  const member = input.universeLifecycleBySymbol.get(key);
+  const status = member?.lifecycleStatus ?? "unknown";
+  const reasonCode = `HISTORICAL_LIFECYCLE_${status.toUpperCase()}`;
+  const warnings =
+    status === "active"
+      ? []
+      : [
+          member === undefined
+            ? `historical universe lifecycle ${key} missing; candidate trading blocked as unknown`
+            : `historical universe lifecycle ${key} status=${status}; candidate trading blocked`
+        ];
+
+  return {
+    status,
+    reasonCodes: [reasonCode],
+    warnings
   };
 }
 

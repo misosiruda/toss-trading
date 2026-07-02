@@ -248,6 +248,66 @@ test("historical replay workflow writes a stored paper report", async () => {
   );
 });
 
+test("historical replay workflow applies universe lifecycle risk gate", async () => {
+  const storageBaseDir = await mkdtemp(
+    join(tmpdir(), "toss-replay-lifecycle-")
+  );
+  const paths = createStoragePaths(storageBaseDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    paths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot({
+      snapshotId: "hist_005930_lifecycle",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000
+    })
+  );
+
+  const result = await runHistoricalReplayWorkflow({
+    storageBaseDir,
+    clock: new SimulatedClock({
+      startAt: new Date("2025-01-02T09:00:00+09:00"),
+      endAt: new Date("2025-01-02T09:00:00+09:00"),
+      stepSeconds: 60
+    }),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    packetIdPrefix: "packet_historical_lifecycle",
+    packetExpiresInSeconds: 60,
+    maxCandidates: 10,
+    maxSnapshotAgeSeconds: 300,
+    universeManifest: universeManifest({ lifecycleStatus: "delisted" }),
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  });
+
+  const candidate = result.replayResult.packets[0]?.candidates[0];
+  assert.equal(candidate?.lifecycleStatus, "delisted");
+  assert.equal(candidate?.buyEligible, false);
+  assert.equal(
+    candidate?.blockedReasonCodes?.includes("LIFECYCLE_DELISTED"),
+    true
+  );
+  assert.equal(result.replayResult.tradeCount, 0);
+  assert.equal(result.replayResult.rejectedCount, 1);
+  assert.equal(
+    result.replayResult.riskDecisions[0]?.rejectCodes.includes(
+      "VIRTUAL_LIFECYCLE_NOT_ELIGIBLE"
+    ),
+    true
+  );
+  assert.equal(
+    result.replayResult.warnings.some((warning) =>
+      warning.includes("status=delisted")
+    ),
+    true
+  );
+});
+
 test("historical replay research manifest hashes initial portfolio and replay snapshot fields", async () => {
   const baseline = await runWorkflowAndReadResearchManifest({});
   const withStoredPortfolio = await runWorkflowAndReadResearchManifest({

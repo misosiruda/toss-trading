@@ -25,6 +25,12 @@ export const strategyBucketSchema = z.enum([
   "intraday",
   "hedge"
 ]);
+export const instrumentLifecycleStatusSchema = z.enum([
+  "active",
+  "suspended",
+  "delisted",
+  "unknown"
+]);
 export const virtualActionSchema = z.enum([
   "VIRTUAL_BUY",
   "VIRTUAL_SELL",
@@ -132,6 +138,7 @@ export const marketCandidateSchema = z
     strategyBucket: strategyBucketSchema.optional(),
     sector: nonEmptyStringSchema.optional(),
     industry: nonEmptyStringSchema.optional(),
+    lifecycleStatus: instrumentLifecycleStatusSchema.optional(),
     lastPriceKrw: moneyKrwSchema.optional(),
     volume: z.number().nonnegative().optional(),
     averageVolume: z.number().nonnegative().optional(),
@@ -504,6 +511,9 @@ export type AssetClass = z.infer<typeof assetClassSchema>;
 export type AssetRegion = z.infer<typeof assetRegionSchema>;
 export type AssetRiskTag = z.infer<typeof assetRiskTagSchema>;
 export type StrategyBucket = z.infer<typeof strategyBucketSchema>;
+export type InstrumentLifecycleStatus = z.infer<
+  typeof instrumentLifecycleStatusSchema
+>;
 export type VirtualAction = z.infer<typeof virtualActionSchema>;
 export type VirtualHoldReasonCode = z.infer<typeof virtualHoldReasonCodeSchema>;
 export type VirtualBudgetTier = z.infer<typeof virtualBudgetTierSchema>;
