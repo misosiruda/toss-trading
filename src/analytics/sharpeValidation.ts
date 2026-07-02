@@ -157,12 +157,16 @@ export function calculateSharpeValidationReport(
   const excessReturns = returns.map(
     (value) => value - (riskFreeRateRatio ?? 0)
   );
-  const meanReturnRatio =
-    excessReturns.length === 0 ? null : roundRatio(average(excessReturns));
-  const volatilityRatio =
+  const meanReturnRatioRaw =
+    excessReturns.length === 0 ? null : average(excessReturns);
+  const volatilityRatioRaw =
     excessReturns.length < 2
       ? null
-      : roundRatio(sampleStandardDeviation(excessReturns));
+      : sampleStandardDeviation(excessReturns);
+  const meanReturnRatio =
+    meanReturnRatioRaw === null ? null : roundRatio(meanReturnRatioRaw);
+  const volatilityRatio =
+    volatilityRatioRaw === null ? null : roundRatio(volatilityRatioRaw);
   const autocorrelation = summarizeAutocorrelation(
     excessReturns,
     autocorrelationMaxLag
@@ -172,7 +176,7 @@ export function calculateSharpeValidationReport(
   const warnings = sharpeValidationWarnings({
     sampleCount: excessReturns.length,
     minimumSampleCount,
-    volatilityRatio,
+    volatilityRatio: volatilityRatioRaw,
     autocorrelation,
     skewness,
     excessKurtosis,
@@ -181,8 +185,8 @@ export function calculateSharpeValidationReport(
   const sampleSharpe = calculateSampleSharpe({
     sampleCount: excessReturns.length,
     minimumSampleCount,
-    meanReturnRatio,
-    volatilityRatio,
+    meanReturnRatio: meanReturnRatioRaw,
+    volatilityRatio: volatilityRatioRaw,
     annualizationFactor,
     benchmarkSharpeRatio,
     riskFreeRateRatio
@@ -464,8 +468,8 @@ function sharpeValidationWarnings(input: {
     });
   }
   if (
-    input.selectionContext?.candidateCount === undefined ||
-    input.selectionContext?.trialCount === undefined
+    !isValidSelectionCount(input.selectionContext?.candidateCount) ||
+    !isValidSelectionCount(input.selectionContext?.trialCount)
   ) {
     warnings.push({
       code: "MULTIPLE_TESTING_CONTEXT_MISSING",
@@ -572,6 +576,10 @@ function normalizeSelectionContext(
   };
 }
 
+function isValidSelectionCount(value: number | null | undefined): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
 function normalizeMinimumSampleCount(value: number | undefined): number {
   if (value === undefined) {
     return DEFAULT_SHARPE_VALIDATION_MIN_SAMPLE_COUNT;
@@ -618,6 +626,9 @@ function finiteValues(values: number[]): number[] {
 }
 
 function sampleStandardDeviation(values: number[]): number {
+  if (values.every((value) => value === values[0])) {
+    return 0;
+  }
   const mean = average(values);
   const variance =
     values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /

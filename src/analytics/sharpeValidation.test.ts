@@ -46,7 +46,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.equal(report.distribution.meanReturnRatio, 0.0047);
   assert.equal(report.distribution.volatilityRatio, 0.012548);
   assert.equal(report.metrics.sampleSharpe.status, "computed");
-  assert.equal(report.metrics.sampleSharpe.value, 0.374562);
+  assert.equal(report.metrics.sampleSharpe.value, 0.374554);
   assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
   assert.equal(report.distribution.autocorrelation.lagCount, 2);
   assert.deepEqual(
@@ -56,6 +56,30 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
       "NON_IID_RETURN_SAMPLE",
       "SHARPE_VALIDATION_NOT_IMPLEMENTED"
     ]
+  );
+  assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
+test("Sharpe validation calculator keeps full precision before report rounding", () => {
+  const returns = Array.from(
+    { length: 30 },
+    (_, index) => 0.01 + (index % 2 === 0 ? 0.0000001 : -0.0000001)
+  );
+
+  const report = calculateSharpeValidationReport({
+    returns,
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 10
+    }
+  });
+
+  assert.equal(report.status, "available");
+  assert.equal(report.distribution.volatilityRatio, 0);
+  assert.equal(report.metrics.sampleSharpe.status, "computed");
+  assert.equal(
+    report.warnings.some((warning) => warning.code === "ZERO_RETURN_VOLATILITY"),
+    false
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
 });
@@ -85,6 +109,25 @@ test("unavailable Sharpe validation report exposes deterministic schema defaults
     ["INSUFFICIENT_RETURN_SAMPLES", "SHARPE_VALIDATION_NOT_IMPLEMENTED"]
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
+test("Sharpe validation calculator treats null selection counts as missing context", () => {
+  const report = calculateSharpeValidationReport({
+    returns: Array.from({ length: 30 }, (_, index) =>
+      index % 2 === 0 ? 0.01 : 0.02
+    ),
+    selectionContext: {
+      candidateCount: null,
+      trialCount: null
+    }
+  });
+
+  assert.equal(
+    report.warnings.some(
+      (warning) => warning.code === "MULTIPLE_TESTING_CONTEXT_MISSING"
+    ),
+    true
+  );
 });
 
 test("Sharpe validation calculator fails closed for insufficient samples", () => {
