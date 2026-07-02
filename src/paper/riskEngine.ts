@@ -57,7 +57,7 @@ export class VirtualRiskEngine {
 
     if (
       input.decision.action !== "VIRTUAL_HOLD" &&
-      hasLifecycleBlockedReason(candidate)
+      hasIneligibleLifecycle(candidate)
     ) {
       appendVirtualRiskRejectCode(
         rejectCodes,
@@ -116,9 +116,16 @@ function isFresh(expiresAt: string, now: Date): boolean {
   }
 }
 
-function hasLifecycleBlockedReason(
+function hasIneligibleLifecycle(
   candidate: MarketCandidate | undefined
 ): boolean {
+  if (
+    candidate?.lifecycleStatus !== undefined &&
+    candidate.lifecycleStatus !== "active"
+  ) {
+    return true;
+  }
+
   return (candidate?.blockedReasonCodes ?? []).some((reasonCode) =>
     reasonCode.startsWith("LIFECYCLE_")
   );
