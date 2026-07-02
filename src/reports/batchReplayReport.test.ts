@@ -162,6 +162,23 @@ test("batch replay aggregate report summarizes execution cost components", () =>
       ),
       withoutCostSummary(
         record("run_legacy", 2, "completed", "bear", 0.01, 1_010_000)
+      ),
+      nonCompletedRecordWithSummary(
+        record("run_skipped_with_summary", 3, "completed", "bear", 0.03, 1_030_000),
+        "skipped",
+        {
+          feeKrw: 100,
+          taxKrw: 100,
+          slippageKrw: 100,
+          spreadCostKrw: 100,
+          impactCostKrw: 100,
+          totalCostKrw: 500,
+          filledCount: 5,
+          partialFillCount: 5,
+          notModeledLiquidityCount: 5,
+          averageParticipationRate: 0.9,
+          maxParticipationRate: 0.9
+        }
       )
     ]
   });
@@ -187,6 +204,7 @@ test("batch replay aggregate report summarizes execution cost components", () =>
     "run_cost_0",
     "run_cost_1"
   ]);
+  assert.equal(report.overall.totalTradeCount, 3);
   assert.equal(report.byRegime.bull?.costSummary.totalCostKrw, 30);
   assert.equal(report.byRegime.bear?.costSummary.sampleCount, 0);
 });
@@ -1806,6 +1824,32 @@ function withoutCostSummary(value: BatchReplayRunRecord): BatchReplayRunRecord {
   return {
     ...value,
     summary
+  };
+}
+
+function nonCompletedRecordWithSummary(
+  value: BatchReplayRunRecord,
+  status: "skipped" | "failed",
+  costOverrides: Partial<
+    NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+  >
+): BatchReplayRunRecord {
+  if (value.summary === null) {
+    return value;
+  }
+  return {
+    ...value,
+    status,
+    completedAt: null,
+    skippedAt: status === "skipped" ? "2026-06-12T01:00:01.000Z" : null,
+    failedAt: status === "failed" ? "2026-06-12T01:00:01.000Z" : null,
+    reportPath: null,
+    error: status === "failed" ? "fixture failure" : null,
+    skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null,
+    summary: {
+      ...value.summary,
+      costSummary: costSummary(costOverrides)
+    }
   };
 }
 

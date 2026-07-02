@@ -1081,7 +1081,7 @@ function summarizeCostBreakdown(
           NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
         >;
       };
-    } => record.summary?.costSummary !== undefined
+    } => isCompletedRunRecord(record) && record.summary?.costSummary !== undefined
   );
   const costSummaries = costRecords.map((record) => record.summary.costSummary);
   const totalCostKrw = sumCostField(costSummaries, "totalCostKrw");
