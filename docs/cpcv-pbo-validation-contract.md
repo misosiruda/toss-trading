@@ -12,7 +12,7 @@
 - `src/replay/walkForwardSplit.ts`는 월 단위 rolling train/validation/test window를 만든다.
 - `src/replay/purgedSplit.ts`는 `purged_k_fold` plan과 split schema를 제공한다. label interval overlap과 embargo window로 train sample을 제외한다.
 - `BatchReplayAggregateReport.overfittingDiagnostics`는 `sampled_cpcv_pbo_like` diagnostic을 기록한다. selection trial과 validation split metadata를 join해 train 선택 후보, holdout degradation, split metric matrix, `pboLikeScore`를 계산한다.
-- 현재 diagnostic은 sampled CPCV/PBO-like warning이다. 모든 fold 조합을 생성하는 full CPCV generator, PBO artifact schema, compute budget guard는 아직 별도 contract로 고정되지 않았다.
+- `src/replay/combinatorialPurgedCv.ts`는 `combinatorial_purged_cv` standalone split plan을 생성한다. full CPCV/PBO artifact schema, PBO calculator, batch report/dashboard 연결은 아직 후속 범위다.
 
 ## Contract 목표
 
@@ -192,11 +192,10 @@ interface CpcvPboWarning {
 
 후속 PR은 다음 순서로 연결한다.
 
-1. `cpcv_pbo_validation.v1` schema와 config parser를 코드에 추가한다.
-2. `purged_k_fold` sample/fold primitive를 재사용해 combinatorial split generator를 만든다.
-3. `BatchReplayAggregateReport.overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
-4. PBO calculator가 train/test matrix에서 `CpcvPboEstimate`를 계산한다.
-5. replay research report와 dashboard validation lab은 read-only warning으로만 표시한다.
+1. `combinatorial_purged_cv` standalone split generator를 기준으로 `cpcv_pbo_validation.v1` schema와 config parser를 코드에 추가한다.
+2. `BatchReplayAggregateReport.overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
+3. PBO calculator가 train/test matrix에서 `CpcvPboEstimate`를 계산한다.
+4. replay research report와 dashboard validation lab은 read-only warning으로만 표시한다.
 
 ## Safety Boundary
 
