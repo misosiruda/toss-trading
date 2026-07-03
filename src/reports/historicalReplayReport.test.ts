@@ -126,7 +126,7 @@ test("rendered historical replay report masks sensitive values and avoids advice
   assert.match(rendered, /Sharpe Statistical Validation/);
   assert.match(rendered, /schema_version: sharpe_validation\.v1/);
   assert.match(rendered, /sample_sharpe_status: insufficient_sample/);
-  assert.match(rendered, /deflated_sharpe_ratio_status: not_implemented/);
+  assert.match(rendered, /deflated_sharpe_ratio_status: insufficient_sample/);
   assert.match(rendered, /selection_context/);
   assert.match(rendered, /dust_reject_count/);
   assert.match(rendered, /lookahead_guard_status/);

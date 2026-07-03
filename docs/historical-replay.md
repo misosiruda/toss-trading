@@ -194,9 +194,9 @@ Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_v
 - `metrics.sampleSharpe`: standalone sample Sharpe 결과, standard error, 95% confidence interval
 - `metrics.loAdjustedSharpe`: `autocorrelationMaxLag`가 지정된 경우 Lo-style serial correlation adjusted Sharpe 계산
 - `metrics.probabilisticSharpeRatio`: standalone calculator는 명시적 `benchmarkSharpeRatio`가 있을 때 계산할 수 있다. 현재 single replay report 호출은 benchmark를 주입하지 않으므로 `not_applicable` 상태를 기록한다.
-- `metrics.deflatedSharpeRatio`: 후속 계산 전까지 `not_implemented`
-- `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `multipleTestingAdjustment=none`으로 기록
-- `warnings`: insufficient sample, zero volatility, serial correlation 미보정, 미구현 metric 경고
+- `metrics.deflatedSharpeRatio`: standalone calculator는 independent trial count와 `trialSharpeRatioStandardDeviation`이 충분할 때 계산할 수 있다. 현재 single replay report 호출은 다중 trial dispersion을 주입하지 않으므로 insufficient sample 또는 `missing_selection_context` 상태를 기록한다.
+- `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `trialSharpeRatioStandardDeviation=null`, `multipleTestingAdjustment=none`으로 기록
+- `warnings`: insufficient sample, zero volatility, serial correlation 미보정, multiple testing context 부족 경고
 
 RH5 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 sample Sharpe confidence interval, benchmark-gated Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
 

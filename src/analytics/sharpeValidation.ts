@@ -1,6 +1,7 @@
 export const SHARPE_VALIDATION_SCHEMA_VERSION = "sharpe_validation.v1";
 export const DEFAULT_SHARPE_VALIDATION_MIN_SAMPLE_COUNT = 30;
 const SHARPE_CONFIDENCE_INTERVAL_95_Z_SCORE = 1.96;
+const EULER_MASCHERONI_CONSTANT = 0.5772156649015329;
 
 export type SharpeValidationStatus = "available" | "unavailable";
 
@@ -110,6 +111,7 @@ export interface SharpeConfidenceInterval {
 export interface SharpeValidationSelectionContext {
   candidateCount: number | null;
   trialCount: number | null;
+  trialSharpeRatioStandardDeviation: number | null;
   selectedByMetric: string | null;
   multipleTestingAdjustment: "none" | "candidate_count" | "trial_log" | "unknown";
 }
@@ -209,6 +211,19 @@ export function calculateSharpeValidationReport(
     riskFreeRateRatio,
     annualizationFactor
   });
+  const selectionContext = normalizeSelectionContext(input.selectionContext);
+  const deflatedSharpeRatio = calculateDeflatedSharpeRatio({
+    sampleSharpe,
+    sampleCount: excessReturns.length,
+    minimumSampleCount,
+    meanReturnRatio: meanReturnRatioRaw,
+    volatilityRatio: volatilityRatioRaw,
+    skewness,
+    excessKurtosis,
+    annualizationFactor,
+    benchmarkSharpeRatio,
+    selectionContext
+  });
   const adjustedAutocorrelation = autocorrelationWithAdjustmentStatus(
     autocorrelation,
     loAdjustedSharpe.status === "computed"
@@ -221,7 +236,7 @@ export function calculateSharpeValidationReport(
     loAdjustedSharpeStatus: loAdjustedSharpe.status,
     skewness,
     excessKurtosis,
-    selectionContext: input.selectionContext
+    selectionContext
   });
 
   return {
@@ -247,12 +262,9 @@ export function calculateSharpeValidationReport(
       sampleSharpe,
       loAdjustedSharpe,
       probabilisticSharpeRatio,
-      deflatedSharpeRatio: unavailableEstimate(
-        "deflated_sharpe_ratio",
-        "Deflated Sharpe Ratio requires candidate selection context and is reserved for a follow-up PR"
-      )
+      deflatedSharpeRatio
     },
-    selectionContext: normalizeSelectionContext(input.selectionContext),
+    selectionContext,
     warnings
   };
 }
@@ -306,12 +318,14 @@ export function createUnavailableSharpeValidationReport(input: {
       },
       deflatedSharpeRatio: unavailableEstimate(
         "deflated_sharpe_ratio",
-        "Deflated Sharpe Ratio requires candidate selection context and is reserved for a follow-up PR"
+        input.reason,
+        unavailableMetricStatusForReason(input.reasonCode)
       )
     },
     selectionContext: {
       candidateCount: null,
       trialCount: null,
+      trialSharpeRatioStandardDeviation: null,
       selectedByMetric: null,
       multipleTestingAdjustment: "unknown"
     },
@@ -320,12 +334,6 @@ export function createUnavailableSharpeValidationReport(input: {
         code: input.reasonCode,
         severity: "warning",
         message: input.reason
-      },
-      {
-        code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
-        severity: "info",
-        message:
-          "DSR is intentionally left for a follow-up PR"
       }
     ]
   };
@@ -590,6 +598,168 @@ function calculateProbabilisticSharpeRatio(input: {
   });
 }
 
+function calculateDeflatedSharpeRatio(input: {
+  sampleSharpe: SharpeValidationEstimate;
+  sampleCount: number;
+  minimumSampleCount: number;
+  meanReturnRatio: number | null;
+  volatilityRatio: number | null;
+  skewness: number | null;
+  excessKurtosis: number | null;
+  annualizationFactor: number | null;
+  benchmarkSharpeRatio: number | null;
+  selectionContext: SharpeValidationSelectionContext;
+}): SharpeValidationEstimate {
+  const methodNotes = [
+    "deflated_sharpe_ratio applies the Bailey-Lopez de Prado expected max Sharpe threshold before the PSR-style z-score",
+    input.annualizationFactor === null
+      ? "deflated_sharpe_ratio keeps Sharpe inputs in sample frequency"
+      : "deflated_sharpe_ratio converts Sharpe inputs back to sample frequency before the z-score",
+    "deflated_sharpe_ratio value is a probability; benchmarkSharpeRatio stores the deflated threshold in the reported Sharpe scale"
+  ];
+  if (input.sampleCount < input.minimumSampleCount) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "insufficient_sample",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  if (
+    input.sampleSharpe.status !== "computed" ||
+    input.sampleSharpe.value === null
+  ) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  const independentTrialCount = resolveIndependentTrialCount(
+    input.selectionContext
+  );
+  if (
+    independentTrialCount === null ||
+    input.selectionContext.trialSharpeRatioStandardDeviation === null
+  ) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "missing_selection_context",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes: [
+        ...methodNotes,
+        "deflated_sharpe_ratio requires an independent trial count greater than one and trialSharpeRatioStandardDeviation"
+      ]
+    });
+  }
+  if (input.skewness === null || input.excessKurtosis === null) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes: [
+        ...methodNotes,
+        "deflated_sharpe_ratio requires skewness and excess kurtosis"
+      ]
+    });
+  }
+  if (
+    input.meanReturnRatio === null ||
+    input.volatilityRatio === null ||
+    input.volatilityRatio === 0
+  ) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+
+  const sampleFrequencySharpe =
+    input.meanReturnRatio / input.volatilityRatio;
+  const sampleFrequencyBenchmarkSharpe =
+    input.benchmarkSharpeRatio === null
+      ? 0
+      : unscaleSharpeByAnnualization(
+          input.benchmarkSharpeRatio,
+          input.annualizationFactor
+        );
+  const sampleFrequencyTrialSharpeStandardDeviation =
+    unscaleSharpeByAnnualization(
+      input.selectionContext.trialSharpeRatioStandardDeviation,
+      input.annualizationFactor
+    );
+  const sampleFrequencyDeflatedBenchmarkSharpe =
+    expectedMaximumSharpeThreshold({
+      benchmarkSharpeRatio: sampleFrequencyBenchmarkSharpe,
+      trialSharpeRatioStandardDeviation:
+        sampleFrequencyTrialSharpeStandardDeviation,
+      independentTrialCount
+    });
+  if (!Number.isFinite(sampleFrequencyDeflatedBenchmarkSharpe)) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: input.benchmarkSharpeRatio,
+      methodNotes
+    });
+  }
+  const deflatedBenchmarkSharpe = roundRatio(
+    scaleSharpeByAnnualization(
+      sampleFrequencyDeflatedBenchmarkSharpe,
+      input.annualizationFactor
+    )
+  );
+
+  const denominatorTerm = sharpeAsymptoticDenominatorTerm({
+    sampleFrequencySharpe,
+    skewness: input.skewness,
+    excessKurtosis: input.excessKurtosis
+  });
+  if (!Number.isFinite(denominatorTerm) || denominatorTerm <= 0) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: deflatedBenchmarkSharpe,
+      methodNotes: [
+        ...methodNotes,
+        "deflated_sharpe_ratio denominator is not positive"
+      ]
+    });
+  }
+
+  const zScore =
+    ((sampleFrequencySharpe - sampleFrequencyDeflatedBenchmarkSharpe) *
+      Math.sqrt(input.sampleCount - 1)) /
+    Math.sqrt(denominatorTerm);
+  const probability = normalCdf(zScore);
+  if (!Number.isFinite(probability)) {
+    return estimateShell({
+      metric: "deflated_sharpe_ratio",
+      status: "not_applicable",
+      value: null,
+      benchmarkSharpeRatio: deflatedBenchmarkSharpe,
+      methodNotes
+    });
+  }
+  return estimateShell({
+    metric: "deflated_sharpe_ratio",
+    status: "computed",
+    value: roundRatio(probability),
+    benchmarkSharpeRatio: deflatedBenchmarkSharpe,
+    methodNotes
+  });
+}
+
 function probabilityShell(input: {
   status: SharpeValidationMetricStatus;
   probability: number | null;
@@ -659,6 +829,13 @@ function scaleSharpeByAnnualization(
   annualizationFactor: number | null
 ): number {
   return annualizationFactor === null ? value : value * Math.sqrt(annualizationFactor);
+}
+
+function unscaleSharpeByAnnualization(
+  value: number,
+  annualizationFactor: number | null
+): number {
+  return annualizationFactor === null ? value : value / Math.sqrt(annualizationFactor);
 }
 
 function estimateShell(input: {
@@ -773,22 +950,18 @@ function sharpeValidationWarnings(input: {
     });
   }
   if (
-    !isValidSelectionCount(input.selectionContext?.candidateCount) ||
-    !isValidSelectionCount(input.selectionContext?.trialCount)
+    resolveIndependentTrialCount(input.selectionContext) === null ||
+    !isValidTrialSharpeRatioStandardDeviation(
+      input.selectionContext?.trialSharpeRatioStandardDeviation
+    )
   ) {
     warnings.push({
       code: "MULTIPLE_TESTING_CONTEXT_MISSING",
       severity: "warning",
       message:
-        "candidate and trial counts are required before Deflated Sharpe Ratio can be evaluated"
+        "independent trial count and trial Sharpe dispersion are required before Deflated Sharpe Ratio can be evaluated"
     });
   }
-  warnings.push({
-    code: "SHARPE_VALIDATION_NOT_IMPLEMENTED",
-    severity: "info",
-    message:
-      "DSR is intentionally left for a follow-up PR"
-  });
   return warnings;
 }
 
@@ -911,6 +1084,10 @@ function normalizeSelectionContext(
   return {
     candidateCount: value?.candidateCount ?? null,
     trialCount: value?.trialCount ?? null,
+    trialSharpeRatioStandardDeviation: normalizeOptionalPositiveNumber(
+      value?.trialSharpeRatioStandardDeviation,
+      "selectionContext.trialSharpeRatioStandardDeviation"
+    ),
     selectedByMetric: value?.selectedByMetric ?? null,
     multipleTestingAdjustment: value?.multipleTestingAdjustment ?? "unknown"
   };
@@ -922,8 +1099,53 @@ function isAnnualizableReturnFrequency(
   return value === "daily" || value === "weekly" || value === "monthly";
 }
 
-function isValidSelectionCount(value: number | null | undefined): boolean {
+function isValidSelectionCount(
+  value: number | null | undefined
+): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isValidTrialSharpeRatioStandardDeviation(
+  value: number | null | undefined
+): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function resolveIndependentTrialCount(
+  selectionContext: Partial<SharpeValidationSelectionContext> | undefined
+): number | null {
+  const candidateCount = selectionContext?.candidateCount;
+  const trialCount = selectionContext?.trialCount;
+  if (
+    selectionContext?.multipleTestingAdjustment === "candidate_count" &&
+    isValidSelectionCount(candidateCount) &&
+    candidateCount > 1
+  ) {
+    return candidateCount;
+  }
+  if (isValidSelectionCount(trialCount) && trialCount > 1) {
+    return trialCount;
+  }
+  if (isValidSelectionCount(candidateCount) && candidateCount > 1) {
+    return candidateCount;
+  }
+  return null;
+}
+
+function expectedMaximumSharpeThreshold(input: {
+  benchmarkSharpeRatio: number;
+  trialSharpeRatioStandardDeviation: number;
+  independentTrialCount: number;
+}): number {
+  const expectedMaxMultiplier =
+    (1 - EULER_MASCHERONI_CONSTANT) *
+      inverseNormalCdf(1 - 1 / input.independentTrialCount) +
+    EULER_MASCHERONI_CONSTANT *
+      inverseNormalCdf(1 - 1 / (input.independentTrialCount * Math.E));
+  return (
+    input.benchmarkSharpeRatio +
+    input.trialSharpeRatioStandardDeviation * expectedMaxMultiplier
+  );
 }
 
 function normalizeMinimumSampleCount(value: number | undefined): number {
@@ -988,6 +1210,76 @@ function average(values: number[]): number {
 
 function normalCdf(value: number): number {
   return Math.min(1, Math.max(0, 0.5 * (1 + erf(value / Math.SQRT2))));
+}
+
+function inverseNormalCdf(probability: number): number {
+  if (probability <= 0 || probability >= 1 || !Number.isFinite(probability)) {
+    throw new Error("probability must be finite and between 0 and 1");
+  }
+
+  const coefficientA = [
+    -3.969683028665376e1,
+    2.209460984245205e2,
+    -2.759285104469687e2,
+    1.38357751867269e2,
+    -3.066479806614716e1,
+    2.506628277459239
+  ];
+  const coefficientB = [
+    -5.447609879822406e1,
+    1.615858368580409e2,
+    -1.556989798598866e2,
+    6.680131188771972e1,
+    -1.328068155288572e1
+  ];
+  const coefficientC = [
+    -7.784894002430293e-3,
+    -3.223964580411365e-1,
+    -2.400758277161838,
+    -2.549732539343734,
+    4.374664141464968,
+    2.938163982698783
+  ];
+  const coefficientD = [
+    7.784695709041462e-3,
+    3.224671290700398e-1,
+    2.445134137142996,
+    3.754408661907416
+  ];
+  const lowerBreakPoint = 0.02425;
+  const upperBreakPoint = 1 - lowerBreakPoint;
+
+  if (probability < lowerBreakPoint) {
+    const q = Math.sqrt(-2 * Math.log(probability));
+    return (
+      evaluatePolynomial(coefficientC, q) /
+      evaluatePolynomial([...coefficientD, 1], q)
+    );
+  }
+
+  if (probability > upperBreakPoint) {
+    const q = Math.sqrt(-2 * Math.log(1 - probability));
+    return -(
+      evaluatePolynomial(coefficientC, q) /
+      evaluatePolynomial([...coefficientD, 1], q)
+    );
+  }
+
+  const q = probability - 0.5;
+  const r = q * q;
+  return (
+    (evaluatePolynomial(coefficientA, r) * q) /
+    evaluatePolynomial([...coefficientB, 1], r)
+  );
+}
+
+function evaluatePolynomial(
+  coefficients: readonly number[],
+  value: number
+): number {
+  return coefficients.reduce(
+    (result, coefficient) => result * value + coefficient
+  );
 }
 
 function erf(value: number): number {

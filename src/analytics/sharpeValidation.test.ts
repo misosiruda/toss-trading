@@ -22,6 +22,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
     selectionContext: {
       candidateCount: 3,
       trialCount: 30,
+      trialSharpeRatioStandardDeviation: 0.08,
       selectedByMetric: "total_return_ratio",
       multipleTestingAdjustment: "candidate_count"
     }
@@ -34,6 +35,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
     selectionContext: {
       candidateCount: 3,
       trialCount: 30,
+      trialSharpeRatioStandardDeviation: 0.08,
       selectedByMetric: "total_return_ratio",
       multipleTestingAdjustment: "candidate_count"
     }
@@ -63,6 +65,16 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
     report.metrics.probabilisticSharpeRatio.benchmarkSharpeRatio,
     0
   );
+  assert.equal(report.metrics.deflatedSharpeRatio.status, "computed");
+  assert.equal(report.metrics.deflatedSharpeRatio.value, 0.939851);
+  assert.equal(
+    report.metrics.deflatedSharpeRatio.benchmarkSharpeRatio,
+    0.068224
+  );
+  assert.equal(
+    report.selectionContext.trialSharpeRatioStandardDeviation,
+    0.08
+  );
   assert.equal(
     report.distribution.autocorrelation.adjustmentStatus,
     "computed"
@@ -71,8 +83,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.deepEqual(
     report.warnings.map((warning) => warning.code),
     [
-      "NON_IID_RETURN_SAMPLE",
-      "SHARPE_VALIDATION_NOT_IMPLEMENTED"
+      "NON_IID_RETURN_SAMPLE"
     ]
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
@@ -228,7 +239,8 @@ test("Sharpe validation calculator keeps PSR inputs in sample frequency", () => 
     benchmarkSharpeRatio: 0.5,
     selectionContext: {
       candidateCount: 2,
-      trialCount: 10
+      trialCount: 10,
+      trialSharpeRatioStandardDeviation: 1.2
     }
   });
 
@@ -240,6 +252,16 @@ test("Sharpe validation calculator keeps PSR inputs in sample frequency", () => 
   assert.match(
     report.metrics.probabilisticSharpeRatio.methodNotes.join("\n"),
     /converts annualized Sharpe inputs back to sample frequency/
+  );
+  assert.equal(report.metrics.deflatedSharpeRatio.status, "computed");
+  assert.equal(report.metrics.deflatedSharpeRatio.value, 0.872051);
+  assert.equal(
+    report.metrics.deflatedSharpeRatio.benchmarkSharpeRatio,
+    2.389518
+  );
+  assert.match(
+    report.metrics.deflatedSharpeRatio.methodNotes.join("\n"),
+    /converts Sharpe inputs back to sample frequency/
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
 });
@@ -267,11 +289,12 @@ test("unavailable Sharpe validation report exposes deterministic schema defaults
     "insufficient_sample"
   );
   assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
-  assert.equal(report.metrics.deflatedSharpeRatio.status, "not_implemented");
+  assert.equal(report.metrics.deflatedSharpeRatio.status, "insufficient_sample");
   assert.equal(report.selectionContext.multipleTestingAdjustment, "unknown");
+  assert.equal(report.selectionContext.trialSharpeRatioStandardDeviation, null);
   assert.deepEqual(
     report.warnings.map((warning) => warning.code),
-    ["INSUFFICIENT_RETURN_SAMPLES", "SHARPE_VALIDATION_NOT_IMPLEMENTED"]
+    ["INSUFFICIENT_RETURN_SAMPLES"]
   );
   assert.equal(JSON.stringify(report).includes("NaN"), false);
 });
@@ -293,6 +316,10 @@ test("Sharpe validation calculator treats null selection counts as missing conte
     ),
     true
   );
+  assert.equal(
+    report.metrics.deflatedSharpeRatio.status,
+    "missing_selection_context"
+  );
 });
 
 test("Sharpe validation calculator fails closed for insufficient samples", () => {
@@ -310,8 +337,7 @@ test("Sharpe validation calculator fails closed for insufficient samples", () =>
     [
       "INSUFFICIENT_RETURN_SAMPLES",
       "SKEW_OR_KURTOSIS_UNAVAILABLE",
-      "MULTIPLE_TESTING_CONTEXT_MISSING",
-      "SHARPE_VALIDATION_NOT_IMPLEMENTED"
+      "MULTIPLE_TESTING_CONTEXT_MISSING"
     ]
   );
 });
