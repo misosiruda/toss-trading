@@ -1130,12 +1130,6 @@ function resolveIndependentTrialCount(
     case "none":
       return null;
     case "unknown":
-      if (isValidSelectionCount(trialCount) && trialCount > 1) {
-        return trialCount;
-      }
-      if (isValidSelectionCount(candidateCount) && candidateCount > 1) {
-        return candidateCount;
-      }
       return null;
   }
 }

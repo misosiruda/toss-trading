@@ -103,7 +103,8 @@ interface SharpeValidationSelectionContext {
 - sample Sharpe confidence interval은 skewness와 excess kurtosis 기반 asymptotic standard error를 사용하며, annualized sample Sharpe에는 같은 scale로 변환한 standard error를 기록한다.
 - PSR 후보는 skewness, kurtosis, benchmark Sharpe가 충분할 때만 계산한다.
 - PSR z-score 계산은 sample frequency Sharpe 기준으로 수행한다. `returnFrequency`와 `annualizationFactor`가 있어 `sampleSharpe.value`가 annualized 상태여도 observed Sharpe와 benchmark Sharpe를 sample frequency로 환산한 뒤 계산한다.
-- DSR 후보는 independent trial count가 2 이상이고 `trialSharpeRatioStandardDeviation`이 양수일 때만 계산한다.
+- DSR 후보는 `multipleTestingAdjustment`가 `candidate_count` 또는 `trial_log`로 명시되어 independent trial count를 확정할 수 있고, 해당 count가 2 이상이며 `trialSharpeRatioStandardDeviation`이 양수일 때만 계산한다.
+- `multipleTestingAdjustment`가 `unknown`이면 `candidateCount` 또는 `trialCount`가 있더라도 calculator가 count source를 추론하지 않고 `missing_selection_context`로 닫는다.
 - DSR 계산은 Bailey-Lopez de Prado 방식의 expected max Sharpe threshold를 사용해 benchmark Sharpe를 deflate한 뒤 PSR-style z-score를 계산한다.
 - DSR의 `value`는 probability이며, `benchmarkSharpeRatio`에는 deflated threshold를 report Sharpe scale로 기록한다.
 - DSR에서 `benchmarkSharpeRatio`가 없으면 base benchmark를 0으로 둔다.
