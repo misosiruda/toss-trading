@@ -361,12 +361,21 @@ function researchSharpeValidationSummary(summary) {
   }
   return [
     `status=${summary.status ?? "missing"}`,
-    `sample=${summary.sampleSharpeStatus ?? "missing"}:${formatRatio(summary.sampleSharpeValue)}`,
+    `sample=${summary.sampleSharpeStatus ?? "missing"}:${formatSharpeEstimate(summary.sampleSharpeValue)}`,
     `lo=${summary.loAdjustedSharpeStatus ?? "missing"}`,
     `psr=${summary.probabilisticSharpeRatioStatus ?? "missing"}:${formatRatio(summary.probabilisticSharpeRatioProbability)}`,
     `dsr=${summary.deflatedSharpeRatioStatus ?? "missing"}:${formatRatio(summary.deflatedSharpeRatioProbability)}`,
     `samples=${summary.returnSampleCount ?? 0}/${summary.minimumSampleCount ?? "?"}`
   ].join(" / ");
+}
+
+function formatSharpeEstimate(value) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 4
+  }).format(Number(value));
 }
 
 function researchCpcvPboSummary(summary) {

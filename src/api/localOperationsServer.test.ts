@@ -865,6 +865,14 @@ test("research report renderer includes nested validation warnings in count and 
     assert.notEqual(sharpeLabelIndex, -1);
     assert.match(
       detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
+      /sample=computed:0\.42/
+    );
+    assert.doesNotMatch(
+      detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
+      /sample=computed:42\.00%/
+    );
+    assert.match(
+      detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
       /dsr=computed/
     );
   } finally {
