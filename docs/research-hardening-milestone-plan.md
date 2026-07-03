@@ -216,7 +216,8 @@
 - 여섯 번째 PR 범위는 명시적 benchmark가 있는 standalone Probabilistic Sharpe Ratio calculator와 unit test로 제한한다.
 - 일곱 번째 PR 범위는 sample Sharpe standard error와 95% confidence interval calculator, unit test로 제한한다.
 - 여덟 번째 PR 범위는 standalone Deflated Sharpe Ratio calculator와 unit/report regression test로 제한한다.
-- Deflated Sharpe Ratio의 replay research/dashboard 연결은 후속 PR에서 다룬다.
+- 아홉 번째 PR 범위는 `ReplayResearchReport`와 static dashboard renderer의 read-only Sharpe validation 요약 표시로 제한한다.
+- Next.js Validation Lab 연결은 후속 PR에서 다룬다.
 
 작업 범위:
 
@@ -246,7 +247,8 @@
 1. Sharpe validation design과 metric schema
 2. metric calculator와 unit test
 3. aggregate report 연결
-4. dashboard validation lab 표시
+4. replay research report read-only 표시
+5. dashboard validation lab 표시
 
 ## RH6. Full CPCV And PBO
 

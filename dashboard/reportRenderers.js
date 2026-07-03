@@ -229,6 +229,7 @@ export function renderReplayResearchReport(researchPayload) {
   const runIdentity = report?.runIdentity ?? {};
   const validationProtocol = report?.validationProtocol ?? {};
   const overfittingWarning = report?.overfittingWarning ?? {};
+  const sharpeValidation = report?.sharpeValidation ?? null;
   const cpcvPboWarning = report?.cpcvPboWarning ?? null;
   const providerFailure = report?.providerFailureSummary ?? {};
   const riskReject = report?.riskRejectSummary ?? {};
@@ -303,6 +304,11 @@ export function renderReplayResearchReport(researchPayload) {
   );
   appendDefinition(
     detail,
+    "Sharpe validation",
+    researchSharpeValidationSummary(sharpeValidation)
+  );
+  appendDefinition(
+    detail,
     "CPCV/PBO",
     researchCpcvPboSummary(cpcvPboWarning)
   );
@@ -344,8 +350,32 @@ function researchReportWarnings(report) {
   appendUniqueWarnings(warnings, report?.validationProtocol?.warnings);
   appendUniqueWarnings(warnings, report?.dataUniverseCoverage?.warnings);
   appendUniqueWarnings(warnings, report?.overfittingWarning?.warnings);
+  appendUniqueWarnings(warnings, report?.sharpeValidation?.warnings);
   appendUniqueWarnings(warnings, report?.cpcvPboWarning?.warnings);
   return warnings;
+}
+
+function researchSharpeValidationSummary(summary) {
+  if (!summary || !summary.status || summary.status === "missing") {
+    return "missing";
+  }
+  return [
+    `status=${summary.status ?? "missing"}`,
+    `sample=${summary.sampleSharpeStatus ?? "missing"}:${formatSharpeEstimate(summary.sampleSharpeValue)}`,
+    `lo=${summary.loAdjustedSharpeStatus ?? "missing"}`,
+    `psr=${summary.probabilisticSharpeRatioStatus ?? "missing"}:${formatRatio(summary.probabilisticSharpeRatioProbability)}`,
+    `dsr=${summary.deflatedSharpeRatioStatus ?? "missing"}:${formatRatio(summary.deflatedSharpeRatioProbability)}`,
+    `samples=${summary.returnSampleCount ?? 0}/${summary.minimumSampleCount ?? "?"}`
+  ].join(" / ");
+}
+
+function formatSharpeEstimate(value) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 4
+  }).format(Number(value));
 }
 
 function researchCpcvPboSummary(summary) {

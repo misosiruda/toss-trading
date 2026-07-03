@@ -685,6 +685,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /researchReportWarnings/);
     assert.match(dashboardScriptText, /validationProtocol\?\.warnings/);
     assert.match(dashboardScriptText, /overfittingWarning\?\.warnings/);
+    assert.match(dashboardScriptText, /sharpeValidation\?\.warnings/);
+    assert.match(dashboardScriptText, /researchSharpeValidationSummary/);
     assert.match(dashboardScriptText, /cpcvPboWarning\?\.warnings/);
     assert.match(dashboardScriptText, /researchCpcvPboSummary/);
     assert.match(dashboardScriptText, /renderResearchRegimeList/);
@@ -795,6 +797,19 @@ test("research report renderer includes nested validation warnings in count and 
           pboLikeScore: 0.5,
           warnings: ["pbo warning", "validation warning"]
         },
+        sharpeValidation: {
+          status: "available",
+          sampleSharpeStatus: "computed",
+          sampleSharpeValue: 0.42,
+          loAdjustedSharpeStatus: "computed",
+          probabilisticSharpeRatioStatus: "computed",
+          probabilisticSharpeRatioProbability: 0.7,
+          deflatedSharpeRatioStatus: "computed",
+          deflatedSharpeRatioProbability: 0.6,
+          returnSampleCount: 30,
+          minimumSampleCount: 30,
+          warnings: ["sharpe warning", "pbo warning"]
+        },
         cpcvPboWarning: {
           status: "sampled",
           pboStatus: "computed",
@@ -822,11 +837,11 @@ test("research report renderer includes nested validation warnings in count and 
 
     assert.equal(
       fakeDocument.requiredElement("research-warning-count").textContent,
-      "5개"
+      "6개"
     );
     assert.equal(
       fakeDocument.requiredElement("research-warning-list-count").textContent,
-      "5개"
+      "6개"
     );
     assert.deepEqual(
       fakeDocument
@@ -837,8 +852,28 @@ test("research report renderer includes nested validation warnings in count and 
         "validation warning",
         "coverage warning",
         "pbo warning",
+        "sharpe warning",
         "cpcv pbo warning"
       ]
+    );
+
+    const detailChildren =
+      fakeDocument.requiredElement("research-report-detail").children;
+    const sharpeLabelIndex = detailChildren.findIndex(
+      (child) => child.textContent === "Sharpe validation"
+    );
+    assert.notEqual(sharpeLabelIndex, -1);
+    assert.match(
+      detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
+      /sample=computed:0\.42/
+    );
+    assert.doesNotMatch(
+      detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
+      /sample=computed:42\.00%/
+    );
+    assert.match(
+      detailChildren[sharpeLabelIndex + 1]?.textContent ?? "",
+      /dsr=computed/
     );
   } finally {
     if (previousDocument === undefined) {
@@ -911,6 +946,12 @@ test("research report renderer treats absent CPCV PBO summary as missing", async
 
     const detailChildren =
       fakeDocument.requiredElement("research-report-detail").children;
+    const sharpeLabelIndex = detailChildren.findIndex(
+      (child) => child.textContent === "Sharpe validation"
+    );
+    assert.notEqual(sharpeLabelIndex, -1);
+    assert.equal(detailChildren[sharpeLabelIndex + 1]?.textContent, "missing");
+
     const cpcvLabelIndex = detailChildren.findIndex(
       (child) => child.textContent === "CPCV/PBO"
     );
