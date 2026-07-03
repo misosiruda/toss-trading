@@ -35,6 +35,7 @@ export interface ReplayResearchReport {
   bucketBreakdown: ReplayResearchBucketBreakdown;
   benchmarkComparison: ReplayResearchAvailabilitySection;
   overfittingWarning: ReplayResearchOverfittingWarning;
+  sharpeValidation: ReplayResearchSharpeValidationSummary;
   cpcvPboWarning: ReplayResearchCpcvPboWarning;
   providerFailureSummary: ReplayResearchProviderFailureSummary;
   riskRejectSummary: ReplayResearchRiskRejectSummary;
@@ -198,6 +199,29 @@ export interface ReplayResearchCpcvPboWarning {
   readOnlyNotice: string;
 }
 
+export interface ReplayResearchSharpeValidationSummary {
+  status: "missing" | "available" | "unavailable";
+  schemaVersion: string | null;
+  returnSampleCount: number;
+  minimumSampleCount: number | null;
+  sampleSharpeStatus: string | null;
+  sampleSharpeValue: number | null;
+  loAdjustedSharpeStatus: string | null;
+  probabilisticSharpeRatioStatus: string | null;
+  probabilisticSharpeRatioProbability: number | null;
+  deflatedSharpeRatioStatus: string | null;
+  deflatedSharpeRatioProbability: number | null;
+  selectionContext: {
+    candidateCount: number | null;
+    trialCount: number | null;
+    trialSharpeRatioStandardDeviation: number | null;
+    selectedByMetric: string | null;
+    multipleTestingAdjustment: string | null;
+  };
+  warnings: string[];
+  readOnlyNotice: string;
+}
+
 export interface ReplayResearchProviderFailureSummary {
   totalAiDecisionFailureCount: number;
   aiDecisionFailureTrialCount: number | null;
@@ -347,6 +371,7 @@ export function buildReplayResearchReport(
       holdoutDegradationCount: diagnostics?.holdoutDegradation.length ?? 0,
       warnings: diagnostics?.warnings ?? []
     },
+    sharpeValidation: researchSharpeValidation(overall.sharpeValidation),
     cpcvPboWarning: researchCpcvPboWarning(aggregate.cpcvPboValidation),
     providerFailureSummary: {
       totalAiDecisionFailureCount: readInteger(
@@ -376,6 +401,71 @@ export function buildReplayResearchReport(
     warnings,
     disclaimer: replayResearchDisclaimer()
   };
+}
+
+function researchSharpeValidation(
+  report: BatchReplayGroupSummary["sharpeValidation"] | null | undefined
+): ReplayResearchSharpeValidationSummary {
+  if (report === null || report === undefined) {
+    return {
+      status: "missing",
+      schemaVersion: null,
+      returnSampleCount: 0,
+      minimumSampleCount: null,
+      sampleSharpeStatus: null,
+      sampleSharpeValue: null,
+      loAdjustedSharpeStatus: null,
+      probabilisticSharpeRatioStatus: null,
+      probabilisticSharpeRatioProbability: null,
+      deflatedSharpeRatioStatus: null,
+      deflatedSharpeRatioProbability: null,
+      selectionContext: {
+        candidateCount: null,
+        trialCount: null,
+        trialSharpeRatioStandardDeviation: null,
+        selectedByMetric: null,
+        multipleTestingAdjustment: null
+      },
+      warnings: ["sharpe_validation.v1 artifact is missing"],
+      readOnlyNotice: sharpeValidationReadOnlyNotice()
+    };
+  }
+
+  return {
+    status: report.status,
+    schemaVersion: report.schemaVersion,
+    returnSampleCount: report.sample.returnSampleCount,
+    minimumSampleCount: report.sample.minimumSampleCount,
+    sampleSharpeStatus: report.metrics.sampleSharpe.status,
+    sampleSharpeValue: report.metrics.sampleSharpe.value,
+    loAdjustedSharpeStatus: report.metrics.loAdjustedSharpe.status,
+    probabilisticSharpeRatioStatus:
+      report.metrics.probabilisticSharpeRatio.status,
+    probabilisticSharpeRatioProbability:
+      report.metrics.probabilisticSharpeRatio.probability,
+    deflatedSharpeRatioStatus: report.metrics.deflatedSharpeRatio.status,
+    deflatedSharpeRatioProbability: report.metrics.deflatedSharpeRatio.value,
+    selectionContext: {
+      candidateCount: report.selectionContext.candidateCount,
+      trialCount: report.selectionContext.trialCount,
+      trialSharpeRatioStandardDeviation:
+        report.selectionContext.trialSharpeRatioStandardDeviation,
+      selectedByMetric: report.selectionContext.selectedByMetric,
+      multipleTestingAdjustment:
+        report.selectionContext.multipleTestingAdjustment
+    },
+    warnings: report.warnings.map((warning) =>
+      `${warning.code} (${warning.severity}): ${warning.message}`
+    ),
+    readOnlyNotice: sharpeValidationReadOnlyNotice()
+  };
+}
+
+function sharpeValidationReadOnlyNotice(): string {
+  return [
+    "Sharpe validation is paper-only research evidence.",
+    "It is not a strategy recommendation or performance guarantee."
+  ].join(" ");
 }
 
 function researchCpcvPboWarning(

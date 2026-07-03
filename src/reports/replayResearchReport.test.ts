@@ -53,6 +53,23 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.equal(report.providerFailureSummary.totalAiDecisionFailureCount, 2);
   assert.equal(report.riskRejectSummary.totalRejectedCount, 3);
   assert.equal(report.overfittingWarning.holdoutDegradationCount, 1);
+  assert.equal(report.sharpeValidation.status, "unavailable");
+  assert.equal(report.sharpeValidation.schemaVersion, "sharpe_validation.v1");
+  assert.equal(report.sharpeValidation.returnSampleCount, 2);
+  assert.equal(report.sharpeValidation.minimumSampleCount, 30);
+  assert.equal(
+    report.sharpeValidation.deflatedSharpeRatioStatus,
+    "insufficient_sample"
+  );
+  assert.equal(report.sharpeValidation.selectionContext.trialCount, 2);
+  assert.match(
+    report.sharpeValidation.warnings.join("\n"),
+    /INSUFFICIENT_RETURN_SAMPLES/
+  );
+  assert.match(
+    report.sharpeValidation.readOnlyNotice,
+    /not a strategy recommendation or performance guarantee/
+  );
   assert.equal(report.cpcvPboWarning.status, "sampled");
   assert.equal(report.cpcvPboWarning.pboStatus, "computed");
   assert.equal(report.cpcvPboWarning.pboProbability, 1);
@@ -101,6 +118,30 @@ test("replay research report records unavailable sections when trials are absent
   assert.match(
     report.warnings.join("\n"),
     /validation split role counts unavailable/
+  );
+});
+
+test("replay research report treats missing Sharpe validation as unavailable legacy evidence", () => {
+  const aggregate = aggregateReport();
+  delete (
+    aggregate.overall as unknown as {
+      sharpeValidation?: BatchReplayGroupSummary["sharpeValidation"];
+    }
+  ).sharpeValidation;
+
+  const report = buildReplayResearchReport({
+    aggregateReport: aggregate,
+    generatedAt: new Date("2026-06-24T09:00:00+09:00")
+  });
+
+  assert.equal(report.sharpeValidation.status, "missing");
+  assert.equal(report.sharpeValidation.schemaVersion, null);
+  assert.equal(report.sharpeValidation.returnSampleCount, 0);
+  assert.equal(report.sharpeValidation.sampleSharpeStatus, null);
+  assert.equal(report.sharpeValidation.deflatedSharpeRatioStatus, null);
+  assert.match(
+    report.sharpeValidation.warnings.join("\n"),
+    /sharpe_validation\.v1 artifact is missing/
   );
 });
 
