@@ -339,6 +339,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  cpcvPboValidation: CpcvPboValidationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -349,6 +350,27 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface CpcvPboValidationView {
+  status: "missing" | "available" | "sampled" | "unavailable";
+  schemaVersion: string | null;
+  generatedAt: string | null;
+  pboStatus: string | null;
+  pboProbability: number | null;
+  evaluatedCombinationCount: number;
+  selectedBelowMedianCount: number;
+  combinationMode: string | null;
+  splitPlanAvailable: boolean;
+  warningCount: number;
+  warnings: CpcvPboWarningView[];
+  readOnlyNotice: string;
+}
+
+export interface CpcvPboWarningView {
+  code: string;
+  severity: "info" | "warning";
+  message: string;
 }
 
 export interface ValidationCandidateComparisonView {
@@ -1238,6 +1260,7 @@ function isValidationLabViewModel(
     isValidationStatus(value.aggregateReportStatus) &&
     isNullableString(value.sourceGeneratedAt) &&
     isStringArray(value.warnings) &&
+    isCpcvPboValidationView(value.cpcvPboValidation) &&
     isValidationCandidateComparison(value.candidateComparison) &&
     isRecord(value.executionAssumptions) &&
     value.executionAssumptions["paperOnly"] === true &&
@@ -1639,14 +1662,94 @@ function isStrategyBucketPortfolioDeltaRow(
 export function withValidationLabCandidateComparisonFallback(
   value: unknown
 ): unknown {
-  if (!isRecord(value) || value["candidateComparison"] !== undefined) {
+  if (!isRecord(value)) {
     return value;
   }
+
+  let normalized = value;
+  if (normalized["candidateComparison"] === undefined) {
+    normalized = {
+      ...normalized,
+      candidateComparison: missingValidationCandidateComparison([
+        "candidate comparison unavailable: Local Operations API response does not include candidateComparison"
+      ])
+    };
+  }
+
+  if (normalized["cpcvPboValidation"] === undefined) {
+    normalized = {
+      ...normalized,
+      cpcvPboValidation: missingCpcvPboValidation([
+        "cpcv_pbo_validation unavailable: Local Operations API response does not include cpcvPboValidation"
+      ])
+    };
+  }
+
+  return normalized;
+}
+
+function isCpcvPboValidationView(
+  value: unknown
+): value is CpcvPboValidationView {
+  return (
+    isRecord(value) &&
+    isCpcvPboValidationStatus(value["status"]) &&
+    isNullableString(value["schemaVersion"]) &&
+    isNullableString(value["generatedAt"]) &&
+    isNullableString(value["pboStatus"]) &&
+    isNullableNumber(value["pboProbability"]) &&
+    isNumber(value["evaluatedCombinationCount"]) &&
+    isNumber(value["selectedBelowMedianCount"]) &&
+    isNullableString(value["combinationMode"]) &&
+    typeof value["splitPlanAvailable"] === "boolean" &&
+    isNumber(value["warningCount"]) &&
+    Array.isArray(value["warnings"]) &&
+    value["warnings"].every(isCpcvPboWarningView) &&
+    typeof value["readOnlyNotice"] === "string"
+  );
+}
+
+function isCpcvPboWarningView(value: unknown): value is CpcvPboWarningView {
+  return (
+    isRecord(value) &&
+    typeof value["code"] === "string" &&
+    (value["severity"] === "info" || value["severity"] === "warning") &&
+    typeof value["message"] === "string"
+  );
+}
+
+function isCpcvPboValidationStatus(
+  value: unknown
+): value is CpcvPboValidationView["status"] {
+  return (
+    value === "missing" ||
+    value === "available" ||
+    value === "sampled" ||
+    value === "unavailable"
+  );
+}
+
+function missingCpcvPboValidation(
+  warnings: string[] = []
+): CpcvPboValidationView {
   return {
-    ...value,
-    candidateComparison: missingValidationCandidateComparison([
-      "candidate comparison unavailable: Local Operations API response does not include candidateComparison"
-    ])
+    status: "missing",
+    schemaVersion: null,
+    generatedAt: null,
+    pboStatus: null,
+    pboProbability: null,
+    evaluatedCombinationCount: 0,
+    selectedBelowMedianCount: 0,
+    combinationMode: null,
+    splitPlanAvailable: false,
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "CPCV_PBO_VALIDATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
   };
 }
 

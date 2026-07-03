@@ -1,4 +1,5 @@
 import type {
+  CpcvPboValidationView,
   ValidationCandidateComparisonView,
   ValidationLabViewModel,
   ViewModelResult
@@ -95,11 +96,89 @@ export function ValidationLabPanel({
         />
         <ObjectSummary title="Risk rejects" value={data.riskRejectSummary} />
       </div>
+      <CpcvPboValidationWarning
+        validation={data.cpcvPboValidation}
+        variant={variant}
+      />
       <ValidationCandidateComparison
         comparison={data.candidateComparison}
         variant={variant}
       />
       <Warnings warnings={data.warnings} />
+    </section>
+  );
+}
+
+function CpcvPboValidationWarning({
+  validation,
+  variant
+}: {
+  validation: CpcvPboValidationView;
+  variant: ValidationPanelVariant;
+}) {
+  return (
+    <section aria-label="CPCV PBO validation warning" className="mt-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">
+            CPCV/PBO Validation Warning
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Read-only cpcv_pbo_validation.v1 summary from stored batch
+            aggregate artifacts.
+          </p>
+        </div>
+        <Badge
+          tone={cpcvPboStatusTone(validation.status)}
+          value={validation.status}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-4">
+        <Metric
+          label="PBO probability"
+          value={formatNullableRatio(validation.pboProbability)}
+        />
+        <Metric label="PBO status" value={validation.pboStatus ?? "missing"} />
+        <Metric
+          label="Evaluated"
+          value={String(validation.evaluatedCombinationCount)}
+        />
+        <Metric label="Warnings" value={String(validation.warningCount)} />
+      </div>
+
+      {variant === "detail" ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <Metric
+            label="Schema"
+            value={validation.schemaVersion ?? "missing"}
+          />
+          <Metric
+            label="Combination mode"
+            value={validation.combinationMode ?? "missing"}
+          />
+          <Metric
+            label="Split plan"
+            value={validation.splitPlanAvailable ? "available" : "missing"}
+          />
+        </div>
+      ) : null}
+
+      <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+        {validation.readOnlyNotice}
+      </p>
+
+      {validation.warnings.length === 0 ? null : (
+        <ul className="mt-3 space-y-2 text-sm leading-5 text-[var(--muted)]">
+          {validation.warnings.map((warning) => (
+            <li key={`${warning.code}:${warning.message}`}>
+              <span className="font-mono">{warning.code}</span>
+              <span aria-hidden="true"> · </span>
+              <span>{warning.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -329,6 +408,18 @@ function Badge({
       {value}
     </span>
   );
+}
+
+function cpcvPboStatusTone(
+  status: CpcvPboValidationView["status"]
+): "ok" | "watch" | "blocked" {
+  if (status === "available") {
+    return "ok";
+  }
+  if (status === "sampled") {
+    return "watch";
+  }
+  return "blocked";
 }
 
 function statusTone(status: string): "ok" | "watch" | "blocked" {

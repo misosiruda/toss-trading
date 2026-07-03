@@ -288,7 +288,7 @@
 - 두 번째 PR 범위는 `combinatorial_purged_cv` standalone split generator, fail-closed config guard, unit test, 문서 연결로 제한한다.
 - 세 번째 PR 범위는 standalone `cpcv_pbo_validation.v1` artifact schema, PBO calculator, unit test, 문서 연결로 제한한다.
 - 네 번째 PR 범위는 `BatchReplayAggregateReport.cpcvPboValidation` sampled artifact 연결로 제한한다.
-- dashboard read-only warning 연결은 후속 PR에서 다룬다.
+- 다섯 번째 PR 범위는 dashboard validation lab의 `cpcvPboValidation` read-only warning 표시로 제한한다.
 
 권장 PR 분해:
 

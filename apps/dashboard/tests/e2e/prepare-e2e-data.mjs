@@ -218,6 +218,114 @@ const aggregate = {
     ],
     warnings: ["selection bias warning"]
   },
+  cpcvPboValidation: {
+    schemaVersion: "cpcv_pbo_validation.v1",
+    status: "sampled",
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    config: {
+      validationProtocol: "combinatorial_purged_cv",
+      foldCount: 4,
+      testFoldCount: 1,
+      purgeDurationDays: 0,
+      embargoDurationDays: 0,
+      selectionMetric: "total_return_ratio",
+      tieBreaker: "candidate_key_asc",
+      maxCombinationCount: 2,
+      combinationMode: "sampled",
+      randomSeed: "dashboard_e2e_sampled_matrix"
+    },
+    splitPlan: null,
+    performanceMatrix: [
+      {
+        candidateKey: `${candidatePrefix}promptHash=sha256:prompt-alpha-differentiator|riskProfile=balanced|allocation=alpha`,
+        promptHash: "sha256:prompt-alpha-differentiator",
+        configHash: "sha256:config-alpha",
+        riskPolicyHash: "sha256:risk",
+        exitPolicyHash: "sha256:exit",
+        splitMetrics: [
+          {
+            combinationId: "dashboard-e2e-validation",
+            trainMetric: 0.02,
+            testMetric: 0.01,
+            trainReturnSampleCount: 1,
+            testReturnSampleCount: 1
+          },
+          {
+            combinationId: "dashboard-e2e-test",
+            trainMetric: 0.02,
+            testMetric: 0.005,
+            trainReturnSampleCount: 1,
+            testReturnSampleCount: 1
+          }
+        ]
+      },
+      {
+        candidateKey: `${candidatePrefix}promptHash=sha256:prompt-beta-differentiator|riskProfile=balanced|allocation=beta`,
+        promptHash: "sha256:prompt-beta-differentiator",
+        configHash: "sha256:config-beta",
+        riskPolicyHash: "sha256:risk",
+        exitPolicyHash: "sha256:exit",
+        splitMetrics: [
+          {
+            combinationId: "dashboard-e2e-validation",
+            trainMetric: 0.01,
+            testMetric: 0.02,
+            trainReturnSampleCount: 1,
+            testReturnSampleCount: 1
+          },
+          {
+            combinationId: "dashboard-e2e-test",
+            trainMetric: 0.01,
+            testMetric: 0.015,
+            trainReturnSampleCount: 1,
+            testReturnSampleCount: 1
+          }
+        ]
+      }
+    ],
+    selectionLog: [
+      {
+        combinationId: "dashboard-e2e-validation",
+        selectedCandidateKey: `${candidatePrefix}promptHash=sha256:prompt-alpha-differentiator|riskProfile=balanced|allocation=alpha`,
+        selectedTrainMetric: 0.02,
+        selectedTestMetric: 0.01,
+        testRankPercentile: 0.25,
+        tieBreakApplied: false
+      },
+      {
+        combinationId: "dashboard-e2e-test",
+        selectedCandidateKey: `${candidatePrefix}promptHash=sha256:prompt-alpha-differentiator|riskProfile=balanced|allocation=alpha`,
+        selectedTrainMetric: 0.02,
+        selectedTestMetric: 0.005,
+        testRankPercentile: 0.25,
+        tieBreakApplied: false
+      }
+    ],
+    pbo: {
+      status: "computed",
+      probability: 1,
+      evaluatedCombinationCount: 2,
+      selectedBelowMedianCount: 2,
+      lambdaLogitValues: [-1.0986122886681098, -1.0986122886681098],
+      methodNotes: [
+        "PBO is computed from sampled batch aggregate split matrix."
+      ]
+    },
+    warnings: [
+      {
+        code: "CPCV_SAMPLED_MODE_USED",
+        severity: "warning",
+        message:
+          "Dashboard shows sampled CPCV/PBO validation; use as read-only validation warning only."
+      },
+      {
+        code: "CPCV_SPLIT_PLAN_UNAVAILABLE",
+        severity: "warning",
+        message:
+          "Stored batch aggregate does not include a standalone CPCV split plan."
+      }
+    ]
+  },
   universeCoverage: {
     sourcePath:
       "apps/dashboard/.e2e-data/paper/source-data/historical-universe-coverage.json",
