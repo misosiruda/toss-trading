@@ -165,6 +165,25 @@ test("CPCV sampled mode requires seed and emits deterministic subset", () => {
   );
 });
 
+test("CPCV plan counts large safe nCk values exactly", () => {
+  const plan = buildCombinatorialPurgedCvPlan({
+    planId: "cpcv_large_safe_nck",
+    foldCount: 56,
+    testFoldCount: 23,
+    maxCombinationCount: 1,
+    combinationMode: "sampled",
+    randomSeed: "large-safe-nck",
+    samples: sequentialSamples(56)
+  });
+
+  assert.equal(plan.requestedCombinationCount, 3_167_295_784_216_200);
+  assert.equal(Number.isSafeInteger(plan.requestedCombinationCount), true);
+  assert.equal(plan.emittedCombinationCount, 1);
+  assert.equal(plan.skippedCombinationCount, 3_167_295_784_216_199);
+  assert.equal(plan.combinations[0]!.testFoldIds.length, 23);
+  assert.equal(plan.combinations[0]!.trainFoldIds.length, 33);
+});
+
 test("CPCV plan fails closed for invalid config and exhaustive budget excess", () => {
   assert.throws(
     () =>
@@ -202,11 +221,17 @@ test("CPCV plan fails closed for invalid config and exhaustive budget excess", (
 
 function sequentialSamples(count: number): PurgedKFoldSample[] {
   return Array.from({ length: count }, (_, index) => {
-    const day = String(index + 1).padStart(2, "0");
+    const labelStart = new Date(
+      Date.UTC(2025, 0, index + 1, 0, 0, 0, 0)
+    ).toISOString();
+    const labelEnd = new Date(
+      Date.UTC(2025, 0, index + 1, 23, 59, 59, 999)
+    ).toISOString();
+
     return sample(
       `s${index + 1}`,
-      `2025-01-${day}T00:00:00.000Z`,
-      `2025-01-${day}T23:59:59.999Z`
+      labelStart,
+      labelEnd
     );
   });
 }

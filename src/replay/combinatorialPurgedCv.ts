@@ -147,7 +147,7 @@ const DEFAULT_PLAN_ID = "cpcv";
 const DEFAULT_PURGE_DURATION_DAYS = 0;
 const DEFAULT_EMBARGO_DURATION_DAYS = 0;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_SAFE_COMBINATION_COUNT = Number.MAX_SAFE_INTEGER;
+const MAX_SAFE_COMBINATION_COUNT = BigInt(Number.MAX_SAFE_INTEGER);
 
 export function buildCombinatorialPurgedCvPlan(
   options: BuildCombinatorialPurgedCvPlanOptions
@@ -473,16 +473,18 @@ function combinationCount(itemCount: number, selectionCount: number): number {
     selectionCount,
     itemCount - selectionCount
   );
-  let result = 1;
+  let result = 1n;
 
   for (let index = 1; index <= optimizedSelectionCount; index += 1) {
-    result = (result * (itemCount - optimizedSelectionCount + index)) / index;
+    result =
+      (result * BigInt(itemCount - optimizedSelectionCount + index)) /
+      BigInt(index);
     if (result > MAX_SAFE_COMBINATION_COUNT) {
       throw new Error("requestedCombinationCount exceeds safe integer range");
     }
   }
 
-  return Math.round(result);
+  return Number(result);
 }
 
 function buildPurgeWindow(
