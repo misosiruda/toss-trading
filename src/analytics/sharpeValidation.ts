@@ -643,7 +643,9 @@ function calculateDeflatedSharpeRatio(input: {
   );
   if (
     independentTrialCount === null ||
-    input.selectionContext.trialSharpeRatioStandardDeviation === null
+    !isValidTrialSharpeRatioStandardDeviation(
+      input.selectionContext.trialSharpeRatioStandardDeviation
+    )
   ) {
     return estimateShell({
       metric: "deflated_sharpe_ratio",
@@ -1084,7 +1086,7 @@ function normalizeSelectionContext(
   return {
     candidateCount: value?.candidateCount ?? null,
     trialCount: value?.trialCount ?? null,
-    trialSharpeRatioStandardDeviation: normalizeOptionalPositiveNumber(
+    trialSharpeRatioStandardDeviation: normalizeOptionalFiniteNumber(
       value?.trialSharpeRatioStandardDeviation,
       "selectionContext.trialSharpeRatioStandardDeviation"
     ),
