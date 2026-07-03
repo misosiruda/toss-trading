@@ -1116,20 +1116,26 @@ function resolveIndependentTrialCount(
 ): number | null {
   const candidateCount = selectionContext?.candidateCount;
   const trialCount = selectionContext?.trialCount;
-  if (
-    selectionContext?.multipleTestingAdjustment === "candidate_count" &&
-    isValidSelectionCount(candidateCount) &&
-    candidateCount > 1
-  ) {
-    return candidateCount;
+  switch (selectionContext?.multipleTestingAdjustment ?? "unknown") {
+    case "candidate_count":
+      return isValidSelectionCount(candidateCount) && candidateCount > 1
+        ? candidateCount
+        : null;
+    case "trial_log":
+      return isValidSelectionCount(trialCount) && trialCount > 1
+        ? trialCount
+        : null;
+    case "none":
+      return null;
+    case "unknown":
+      if (isValidSelectionCount(trialCount) && trialCount > 1) {
+        return trialCount;
+      }
+      if (isValidSelectionCount(candidateCount) && candidateCount > 1) {
+        return candidateCount;
+      }
+      return null;
   }
-  if (isValidSelectionCount(trialCount) && trialCount > 1) {
-    return trialCount;
-  }
-  if (isValidSelectionCount(candidateCount) && candidateCount > 1) {
-    return candidateCount;
-  }
-  return null;
 }
 
 function expectedMaximumSharpeThreshold(input: {

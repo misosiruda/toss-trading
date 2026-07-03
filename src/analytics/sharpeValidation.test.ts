@@ -322,6 +322,63 @@ test("Sharpe validation calculator treats null selection counts as missing conte
   );
 });
 
+test("Sharpe validation calculator honors explicit DSR adjustment modes", () => {
+  const returns = [
+    -0.018, -0.01, -0.004, 0.002, 0.009, 0.015, -0.012, 0.006, 0.011, -0.007,
+    0.014, 0.018, -0.016, 0.004, 0.012, 0.021, -0.009, 0.003, 0.017, 0.024,
+    -0.014, 0.005, 0.01, 0.019, -0.006, 0.007, 0.013, 0.022, -0.011, 0.016
+  ];
+  const cases = [
+    {
+      name: "none",
+      selectionContext: {
+        candidateCount: 12,
+        trialCount: 12,
+        trialSharpeRatioStandardDeviation: 0.1,
+        multipleTestingAdjustment: "none" as const
+      }
+    },
+    {
+      name: "trial_log_without_trial_count",
+      selectionContext: {
+        candidateCount: 12,
+        trialCount: null,
+        trialSharpeRatioStandardDeviation: 0.1,
+        multipleTestingAdjustment: "trial_log" as const
+      }
+    },
+    {
+      name: "candidate_count_without_candidate_count",
+      selectionContext: {
+        candidateCount: null,
+        trialCount: 12,
+        trialSharpeRatioStandardDeviation: 0.1,
+        multipleTestingAdjustment: "candidate_count" as const
+      }
+    }
+  ];
+
+  for (const testCase of cases) {
+    const report = calculateSharpeValidationReport({
+      returns,
+      selectionContext: testCase.selectionContext
+    });
+
+    assert.equal(
+      report.metrics.deflatedSharpeRatio.status,
+      "missing_selection_context",
+      testCase.name
+    );
+    assert.equal(
+      report.warnings.some(
+        (warning) => warning.code === "MULTIPLE_TESTING_CONTEXT_MISSING"
+      ),
+      true,
+      testCase.name
+    );
+  }
+});
+
 test("Sharpe validation calculator fails closed for insufficient samples", () => {
   const report = calculateSharpeValidationReport({
     returns: [0.01, 0.02, Number.NaN, Number.POSITIVE_INFINITY],
