@@ -148,6 +148,8 @@ const DEFAULT_PURGE_DURATION_DAYS = 0;
 const DEFAULT_EMBARGO_DURATION_DAYS = 0;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_SAFE_COMBINATION_COUNT = BigInt(Number.MAX_SAFE_INTEGER);
+const SAFE_INTEGER_RANDOM_SPACE = 1n << 53n;
+const SAFE_INTEGER_HIGH_BITS_MASK = 0x1fffff;
 
 export function buildCombinatorialPurgedCvPlan(
   options: BuildCombinatorialPurgedCvPlanOptions
@@ -416,15 +418,34 @@ function selectCombinationIndexes(input: {
     );
   }
 
-  const random = seededRandom(input.randomSeed ?? "");
+  const nextUint32 = seededUint32(input.randomSeed ?? "");
   const selectedIndexes = new Set<number>();
   while (selectedIndexes.size < input.maxCombinationCount) {
     selectedIndexes.add(
-      Math.floor(random() * input.requestedCombinationCount)
+      sampleCombinationRank(nextUint32, input.requestedCombinationCount)
     );
   }
 
   return Array.from(selectedIndexes).sort((left, right) => left - right);
+}
+
+function sampleCombinationRank(
+  nextUint32: () => number,
+  exclusiveUpperBound: number
+): number {
+  const upperBound = BigInt(exclusiveUpperBound);
+  // Draw 53 deterministic bits so every safe integer rank is reachable.
+  const rejectionLimit =
+    SAFE_INTEGER_RANDOM_SPACE - (SAFE_INTEGER_RANDOM_SPACE % upperBound);
+
+  while (true) {
+    const candidate =
+      (BigInt(nextUint32() & SAFE_INTEGER_HIGH_BITS_MASK) << 32n) +
+      BigInt(nextUint32());
+    if (candidate < rejectionLimit) {
+      return Number(candidate % upperBound);
+    }
+  }
 }
 
 function unrankCombination(
@@ -602,7 +623,7 @@ function validatePlanCombinationCoverage(
   }
 }
 
-function seededRandom(seed: string): () => number {
+function seededUint32(seed: string): () => number {
   let state = 2166136261;
   for (let index = 0; index < seed.length; index += 1) {
     state = Math.imul(state ^ seed.charCodeAt(index), 16777619);
@@ -613,6 +634,6 @@ function seededRandom(seed: string): () => number {
     let value = state;
     value = Math.imul(value ^ (value >>> 15), value | 1);
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    return (value ^ (value >>> 14)) >>> 0;
   };
 }

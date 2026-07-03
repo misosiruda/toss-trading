@@ -165,7 +165,7 @@ test("CPCV sampled mode requires seed and emits deterministic subset", () => {
   );
 });
 
-test("CPCV plan counts large safe nCk values exactly", () => {
+test("CPCV plan counts and samples large safe nCk values exactly", () => {
   const plan = buildCombinatorialPurgedCvPlan({
     planId: "cpcv_large_safe_nck",
     foldCount: 56,
@@ -180,6 +180,7 @@ test("CPCV plan counts large safe nCk values exactly", () => {
   assert.equal(Number.isSafeInteger(plan.requestedCombinationCount), true);
   assert.equal(plan.emittedCombinationCount, 1);
   assert.equal(plan.skippedCombinationCount, 3_167_295_784_216_199);
+  assert.equal(plan.combinations[0]!.combinationIndex, 1_486_664_155_745_193);
   assert.equal(plan.combinations[0]!.testFoldIds.length, 23);
   assert.equal(plan.combinations[0]!.trainFoldIds.length, 33);
 });
