@@ -629,6 +629,43 @@ test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", 
   assert.deepEqual(diagnostics.warnings, []);
   assert.match(renderBatchReplayAggregateReport(report), /pbo_like_score: 1/);
   assert.match(renderBatchReplayAggregateReport(report), /split_metric_matrix/);
+
+  const cpcvPboValidation = report.cpcvPboValidation!;
+  assert.equal(
+    cpcvPboValidation.schemaVersion,
+    "cpcv_pbo_validation.v1"
+  );
+  assert.equal(cpcvPboValidation.status, "sampled");
+  assert.equal(cpcvPboValidation.splitPlan, null);
+  assert.equal(cpcvPboValidation.config.combinationMode, "sampled");
+  assert.equal(cpcvPboValidation.config.selectionMetric, "total_return_ratio");
+  assert.equal(cpcvPboValidation.performanceMatrix.length, 2);
+  assert.deepEqual(
+    cpcvPboValidation.selectionLog.map((entry) => [
+      entry.combinationId,
+      entry.selectedCandidateKey,
+      entry.testRankPercentile
+    ]),
+    [
+      ["wf_report:validation", selectedRow.candidateKey, 0.25],
+      ["wf_report:test", selectedRow.candidateKey, 0.25]
+    ]
+  );
+  assert.equal(cpcvPboValidation.pbo.status, "computed");
+  assert.equal(cpcvPboValidation.pbo.probability, 1);
+  assert.equal(cpcvPboValidation.pbo.evaluatedCombinationCount, 2);
+  assert.deepEqual(
+    cpcvPboValidation.warnings.map((warning) => warning.code),
+    ["CPCV_SAMPLED_MODE_USED", "CPCV_SPLIT_PLAN_UNAVAILABLE"]
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /cpcv_pbo_status: sampled/
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /cpcv_pbo_probability: 1/
+  );
 });
 
 test("batch replay aggregate report separates provider metadata candidates", () => {
@@ -788,6 +825,17 @@ test("batch replay aggregate report warns when PBO-like samples are insufficient
   assert.equal(diagnostics.sampledCpcvSplitCount, 1);
   assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
   assert.equal(diagnostics.pboLikeScore, null);
+  assert.equal(report.cpcvPboValidation?.status, "unavailable");
+  assert.equal(report.cpcvPboValidation?.pbo.status, "insufficient_matrix");
+  assert.deepEqual(
+    report.cpcvPboValidation?.warnings.map((warning) => warning.code),
+    [
+      "CPCV_SAMPLED_MODE_USED",
+      "CPCV_SPLIT_PLAN_UNAVAILABLE",
+      "PBO_CANDIDATE_COUNT_INSUFFICIENT",
+      "PBO_HOLDOUT_MATRIX_INSUFFICIENT"
+    ]
+  );
   assert.match(
     diagnostics.warnings.join("\n"),
     /at least two strategy candidates/

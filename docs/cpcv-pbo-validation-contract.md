@@ -13,7 +13,9 @@
 - `src/replay/purgedSplit.ts`는 `purged_k_fold` plan과 split schema를 제공한다. label interval overlap과 embargo window로 train sample을 제외한다.
 - `BatchReplayAggregateReport.overfittingDiagnostics`는 `sampled_cpcv_pbo_like` diagnostic을 기록한다. selection trial과 validation split metadata를 join해 train 선택 후보, holdout degradation, split metric matrix, `pboLikeScore`를 계산한다.
 - `src/replay/combinatorialPurgedCv.ts`는 `combinatorial_purged_cv` standalone split plan을 생성한다.
-- `src/replay/cpcvPboValidation.ts`는 `cpcv_pbo_validation.v1` artifact schema와 standalone PBO calculator를 제공한다. batch report/dashboard 연결은 아직 후속 범위다.
+- `src/replay/cpcvPboValidation.ts`는 `cpcv_pbo_validation.v1` artifact schema와 standalone PBO calculator를 제공한다.
+- `BatchReplayAggregateReport.cpcvPboValidation`은 기존 sampled PBO-like split metric matrix를 `cpcv_pbo_validation.v1` artifact로 승격한다. 기존 aggregate는 full CPCV fold/sample id를 보존하지 않으므로 이 연결 artifact는 `status: "sampled"`, `splitPlan: null`, `CPCV_SPLIT_PLAN_UNAVAILABLE` warning을 사용한다.
+- replay research report와 dashboard validation lab의 read-only warning 표시는 후속 범위다.
 
 ## Contract 목표
 
@@ -186,6 +188,7 @@ standalone calculator는 다음 정책을 따른다.
 | `CPCV_CONFIG_INVALID` | fold/test fold/purge/embargo config가 유효하지 않음 | warning |
 | `CPCV_COMBINATION_BUDGET_EXCEEDED` | exhaustive mode에서 조합 수가 budget을 초과함 | warning |
 | `CPCV_SAMPLED_MODE_USED` | full 조합 대신 sampled mode로 degrade됨 | info |
+| `CPCV_SPLIT_PLAN_UNAVAILABLE` | aggregate source가 full CPCV fold/sample id를 보존하지 않아 `splitPlan`을 기록할 수 없음 | warning |
 | `CPCV_PURGE_OR_EMBARGO_REMOVED_ALL_TRAIN` | purge/embargo 이후 train sample이 남지 않음 | warning |
 | `PBO_CANDIDATE_COUNT_INSUFFICIENT` | 후보가 2개 미만이라 PBO를 계산할 수 없음 | warning |
 | `PBO_HOLDOUT_MATRIX_INSUFFICIENT` | 일부 또는 전체 combination의 comparable test metric matrix가 부족함 | warning |
@@ -197,7 +200,7 @@ standalone calculator는 다음 정책을 따른다.
 
 1. 완료: `combinatorial_purged_cv` standalone split generator를 기준으로 `cpcv_pbo_validation.v1` schema와 config parser를 코드에 추가한다.
 2. 완료: PBO calculator가 train/test matrix에서 `CpcvPboEstimate`를 계산한다.
-3. 후속: `BatchReplayAggregateReport.overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
+3. 완료: `BatchReplayAggregateReport.cpcvPboValidation`이 `overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
 4. 후속: replay research report와 dashboard validation lab은 read-only warning으로만 표시한다.
 
 ## Safety Boundary
