@@ -278,6 +278,15 @@
 - combination 수가 과도하면 fail-closed 또는 sampled mode로 명시적으로 degrade된다.
 - dashboard/report가 PBO warning을 투자 조언이 아닌 검증 경고로 표시한다.
 
+정책 기준:
+
+- CPCV/PBO validation design과 config/report schema 후보는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 한다.
+
+현재 결정:
+
+- 첫 PR 범위는 `cpcv_pbo_validation.v1` contract와 config/report schema 후보 문서화로 제한한다.
+- combinatorial split generator, PBO calculator, batch report/dashboard 연결은 후속 PR에서 다룬다.
+
 권장 PR 분해:
 
 1. CPCV/PBO math design과 config schema
