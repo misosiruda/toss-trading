@@ -201,7 +201,8 @@ standalone calculator는 다음 정책을 따른다.
 1. 완료: `combinatorial_purged_cv` standalone split generator를 기준으로 `cpcv_pbo_validation.v1` schema와 config parser를 코드에 추가한다.
 2. 완료: PBO calculator가 train/test matrix에서 `CpcvPboEstimate`를 계산한다.
 3. 완료: `BatchReplayAggregateReport.cpcvPboValidation`이 `overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
-4. 후속: replay research report와 dashboard validation lab은 read-only warning으로만 표시한다.
+4. 완료: dashboard validation lab은 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
+5. 현재 범위: replay research report는 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
 
 ## Safety Boundary
 

@@ -289,6 +289,7 @@
 - 세 번째 PR 범위는 standalone `cpcv_pbo_validation.v1` artifact schema, PBO calculator, unit test, 문서 연결로 제한한다.
 - 네 번째 PR 범위는 `BatchReplayAggregateReport.cpcvPboValidation` sampled artifact 연결로 제한한다.
 - 다섯 번째 PR 범위는 dashboard validation lab의 `cpcvPboValidation` read-only warning 표시로 제한한다.
+- 여섯 번째 PR 범위는 replay research report의 `cpcvPboValidation` read-only warning 표시로 제한한다.
 
 권장 PR 분해:
 
@@ -297,6 +298,7 @@
 3. PBO calculator와 artifact schema
 4. batch aggregate report sampled artifact 연결
 5. dashboard read-only warning 연결
+6. replay research report read-only warning 연결
 
 ## RH7. Triple Barrier And Meta-Labeling
 

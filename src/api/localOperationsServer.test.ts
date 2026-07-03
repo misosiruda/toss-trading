@@ -685,6 +685,8 @@ test("local operations API serves read-only dashboard assets", async () => {
     assert.match(dashboardScriptText, /researchReportWarnings/);
     assert.match(dashboardScriptText, /validationProtocol\?\.warnings/);
     assert.match(dashboardScriptText, /overfittingWarning\?\.warnings/);
+    assert.match(dashboardScriptText, /cpcvPboWarning\?\.warnings/);
+    assert.match(dashboardScriptText, /researchCpcvPboSummary/);
     assert.match(dashboardScriptText, /renderResearchRegimeList/);
     assert.match(script.text, /bindDecisionFilterControls/);
     assert.match(dashboardScriptText, /export function bindDecisionFilterControls/);
@@ -793,6 +795,14 @@ test("research report renderer includes nested validation warnings in count and 
           pboLikeScore: 0.5,
           warnings: ["pbo warning", "validation warning"]
         },
+        cpcvPboWarning: {
+          status: "sampled",
+          pboStatus: "computed",
+          pboProbability: 1,
+          evaluatedCombinationCount: 2,
+          splitPlanAvailable: false,
+          warnings: ["cpcv pbo warning", "pbo warning"]
+        },
         runIdentity: {
           runCount: 2,
           completedCount: 2,
@@ -812,11 +822,11 @@ test("research report renderer includes nested validation warnings in count and 
 
     assert.equal(
       fakeDocument.requiredElement("research-warning-count").textContent,
-      "4개"
+      "5개"
     );
     assert.equal(
       fakeDocument.requiredElement("research-warning-list-count").textContent,
-      "4개"
+      "5개"
     );
     assert.deepEqual(
       fakeDocument
@@ -826,7 +836,8 @@ test("research report renderer includes nested validation warnings in count and 
         "top level warning",
         "validation warning",
         "coverage warning",
-        "pbo warning"
+        "pbo warning",
+        "cpcv pbo warning"
       ]
     );
   } finally {
