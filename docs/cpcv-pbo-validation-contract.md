@@ -50,7 +50,11 @@ interface CpcvPboValidationReport {
 `config`는 generator와 calculator가 같은 해석을 쓰도록 고정한다.
 
 ```typescript
-interface CpcvPboValidationConfig {
+type CpcvPboValidationConfig =
+  | CpcvPboExhaustiveValidationConfig
+  | CpcvPboSampledValidationConfig;
+
+interface CpcvPboValidationConfigBase {
   validationProtocol: "combinatorial_purged_cv";
   foldCount: number;
   testFoldCount: number;
@@ -59,8 +63,18 @@ interface CpcvPboValidationConfig {
   selectionMetric: "total_return_ratio";
   tieBreaker: "candidate_key_asc";
   maxCombinationCount: number;
-  combinationMode: "exhaustive" | "sampled";
-  randomSeed: string | null;
+}
+
+interface CpcvPboExhaustiveValidationConfig
+  extends CpcvPboValidationConfigBase {
+  combinationMode: "exhaustive";
+  randomSeed: null;
+}
+
+interface CpcvPboSampledValidationConfig
+  extends CpcvPboValidationConfigBase {
+  combinationMode: "sampled";
+  randomSeed: string;
 }
 ```
 
@@ -152,6 +166,7 @@ interface CpcvPboWarning {
 - `testFoldCount`는 1 이상이고 `foldCount`보다 작아야 한다.
 - 전체 조합 수는 `nCk(foldCount, testFoldCount)`로 계산한다.
 - `combinationMode="exhaustive"`에서 조합 수가 `maxCombinationCount`를 초과하면 report를 `unavailable`로 닫는다.
+- `combinationMode="sampled"`는 non-empty `randomSeed`를 필수로 요구한다.
 - `combinationMode="sampled"`에서 조합 수가 `maxCombinationCount`를 초과하면 deterministic `randomSeed`로 조합을 sampling하고 report status를 `sampled`로 기록한다.
 - purge는 label interval overlap을 train sample에서 제거한다.
 - embargo는 test window 이후 설정된 기간의 train sample을 제거한다.
