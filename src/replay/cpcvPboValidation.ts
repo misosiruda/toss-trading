@@ -343,7 +343,7 @@ function selectCombinationCandidate(
     )
     .sort(compareTrainCandidates);
 
-  if (trainCandidates.length === 0) {
+  if (trainCandidates.length < 2) {
     return {
       combinationId,
       selectedCandidateKey: null,
@@ -362,10 +362,10 @@ function selectCombinationCandidate(
   const selectedTestIndex = testCandidates.findIndex(
     (candidate) => candidate.candidateKey === selected.row.candidateKey
   );
-  const testRankPercentile =
-    selectedTestIndex === -1 || testCandidates.length < 2
-      ? null
-      : rankPercentile(selectedTestIndex, testCandidates.length);
+  const testRankPercentile = testRankPercentileForCandidate(
+    testCandidates,
+    selected.row.candidateKey
+  );
   const selectedTestMetric =
     selectedTestIndex === -1
       ? null
@@ -454,8 +454,32 @@ function rankedTestCandidates(
     });
 }
 
-function rankPercentile(rankIndex: number, candidateCount: number): number {
-  return roundRatio((candidateCount - rankIndex - 0.5) / candidateCount);
+function testRankPercentileForCandidate(
+  candidates: readonly RankedTestCandidate[],
+  candidateKey: string
+): number | null {
+  const selectedCandidate = candidates.find(
+    (candidate) => candidate.candidateKey === candidateKey
+  );
+  if (selectedCandidate === undefined || candidates.length < 2) {
+    return null;
+  }
+
+  const tieStartIndex = candidates.findIndex(
+    (candidate) => candidate.testMetric === selectedCandidate.testMetric
+  );
+  let tieEndIndex = tieStartIndex;
+  while (
+    tieEndIndex + 1 < candidates.length &&
+    candidates[tieEndIndex + 1]!.testMetric === selectedCandidate.testMetric
+  ) {
+    tieEndIndex += 1;
+  }
+
+  const midRankIndex = (tieStartIndex + tieEndIndex) / 2;
+  return roundRatio(
+    (candidates.length - midRankIndex - 0.5) / candidates.length
+  );
 }
 
 function calculatePboEstimate(
@@ -465,8 +489,10 @@ function calculatePboEstimate(
   const scoredSelections = selectionLog.filter(
     (entry) => entry.testRankPercentile !== null
   );
-  const candidateCount = performanceMatrix.length;
-  if (candidateCount < 2 || scoredSelections.length === 0) {
+  const trainSampledCandidateCount = countTrainSampledCandidates(
+    performanceMatrix
+  );
+  if (trainSampledCandidateCount < 2 || scoredSelections.length === 0) {
     return {
       status: "insufficient_matrix",
       probability: null,
@@ -529,7 +555,7 @@ function cpcvPboWarnings(input: {
         "At least one CPCV combination has no train samples after purge or embargo"
     });
   }
-  if (input.performanceMatrix.length < 2) {
+  if (countTrainSampledCandidates(input.performanceMatrix) < 2) {
     warnings.push({
       code: "PBO_CANDIDATE_COUNT_INSUFFICIENT",
       severity: "warning",
@@ -553,6 +579,14 @@ function cpcvPboWarnings(input: {
     });
   }
   return warnings;
+}
+
+function countTrainSampledCandidates(
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[]
+): number {
+  return performanceMatrix.filter((row) =>
+    row.splitMetrics.some(hasTrainMetric)
+  ).length;
 }
 
 function reportStatusFor(

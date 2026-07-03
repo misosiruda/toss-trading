@@ -119,7 +119,50 @@ test("CPCV PBO calculator records sampled split plans as sampled reports", () =>
   );
 });
 
-test("CPCV PBO calculator fails closed for insufficient candidate matrix", () => {
+test("CPCV PBO calculator uses mid-ranks for tied test metrics", () => {
+  const plan = buildCombinatorialPurgedCvPlan({
+    planId: "pbo_tied_test",
+    foldCount: 2,
+    testFoldCount: 1,
+    maxCombinationCount: 2,
+    samples: sequentialSamples(4)
+  });
+  const [c1, c2] = plan.combinations.map(
+    (combination) => combination.combinationId
+  );
+  const report = calculateCpcvPboValidationReport({
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    config: configFromPlan(plan),
+    splitPlan: plan,
+    performanceMatrix: [
+      row("candidate-a", [
+        metric(c1!, 0.2, 0.1),
+        metric(c2!, 0.1, 0.1)
+      ]),
+      row("candidate-b", [
+        metric(c1!, 0.1, 0.1),
+        metric(c2!, 0.2, 0.1)
+      ])
+    ]
+  });
+
+  assert.deepEqual(
+    report.selectionLog.map((entry) => [
+      entry.selectedCandidateKey,
+      entry.selectedTestMetric,
+      entry.testRankPercentile
+    ]),
+    [
+      ["candidate-a", 0.1, 0.5],
+      ["candidate-b", 0.1, 0.5]
+    ]
+  );
+  assert.equal(report.pbo.status, "computed");
+  assert.equal(report.pbo.probability, 1);
+  assert.deepEqual(report.pbo.lambdaLogitValues, [0, 0]);
+});
+
+test("CPCV PBO calculator fails closed without train-side competition", () => {
   const plan = buildCombinatorialPurgedCvPlan({
     planId: "pbo_insufficient",
     foldCount: 3,
@@ -137,6 +180,12 @@ test("CPCV PBO calculator fails closed for insufficient candidate matrix", () =>
         plan.combinations.map((combination) =>
           metric(combination.combinationId, 0.2, 0.1)
         )
+      ),
+      row(
+        "candidate-b",
+        plan.combinations.map((combination) =>
+          metric(combination.combinationId, null, 0.2)
+        )
       )
     ]
   });
@@ -145,6 +194,10 @@ test("CPCV PBO calculator fails closed for insufficient candidate matrix", () =>
   assert.equal(report.pbo.status, "insufficient_matrix");
   assert.equal(report.pbo.probability, null);
   assert.equal(report.pbo.evaluatedCombinationCount, 0);
+  assert.equal(
+    report.selectionLog.every((entry) => entry.selectedCandidateKey === null),
+    true
+  );
   assert.deepEqual(
     report.warnings.map((warning) => warning.code),
     [
