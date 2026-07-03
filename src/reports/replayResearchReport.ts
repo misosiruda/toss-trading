@@ -35,6 +35,7 @@ export interface ReplayResearchReport {
   bucketBreakdown: ReplayResearchBucketBreakdown;
   benchmarkComparison: ReplayResearchAvailabilitySection;
   overfittingWarning: ReplayResearchOverfittingWarning;
+  cpcvPboWarning: ReplayResearchCpcvPboWarning;
   providerFailureSummary: ReplayResearchProviderFailureSummary;
   riskRejectSummary: ReplayResearchRiskRejectSummary;
   warnings: string[];
@@ -182,6 +183,19 @@ export interface ReplayResearchOverfittingWarning {
   selectedTrainAverageTotalReturnRatio: number | null;
   holdoutDegradationCount: number;
   warnings: string[];
+}
+
+export interface ReplayResearchCpcvPboWarning {
+  status: "missing" | "available" | "sampled" | "unavailable";
+  schemaVersion: string | null;
+  pboStatus: string | null;
+  pboProbability: number | null;
+  evaluatedCombinationCount: number;
+  selectedBelowMedianCount: number;
+  combinationMode: string | null;
+  splitPlanAvailable: boolean;
+  warnings: string[];
+  readOnlyNotice: string;
 }
 
 export interface ReplayResearchProviderFailureSummary {
@@ -333,6 +347,7 @@ export function buildReplayResearchReport(
       holdoutDegradationCount: diagnostics?.holdoutDegradation.length ?? 0,
       warnings: diagnostics?.warnings ?? []
     },
+    cpcvPboWarning: researchCpcvPboWarning(aggregate.cpcvPboValidation),
     providerFailureSummary: {
       totalAiDecisionFailureCount: readInteger(
         overall.totalAiDecisionFailureCount
@@ -361,6 +376,47 @@ export function buildReplayResearchReport(
     warnings,
     disclaimer: replayResearchDisclaimer()
   };
+}
+
+function researchCpcvPboWarning(
+  report: BatchReplayAggregateReport["cpcvPboValidation"]
+): ReplayResearchCpcvPboWarning {
+  if (report === null || report === undefined) {
+    return {
+      status: "missing",
+      schemaVersion: null,
+      pboStatus: null,
+      pboProbability: null,
+      evaluatedCombinationCount: 0,
+      selectedBelowMedianCount: 0,
+      combinationMode: null,
+      splitPlanAvailable: false,
+      warnings: ["cpcv_pbo_validation.v1 artifact is missing"],
+      readOnlyNotice: cpcvPboReadOnlyNotice()
+    };
+  }
+
+  return {
+    status: report.status,
+    schemaVersion: report.schemaVersion,
+    pboStatus: report.pbo.status,
+    pboProbability: report.pbo.probability,
+    evaluatedCombinationCount: report.pbo.evaluatedCombinationCount,
+    selectedBelowMedianCount: report.pbo.selectedBelowMedianCount,
+    combinationMode: report.config.combinationMode,
+    splitPlanAvailable: report.splitPlan !== null,
+    warnings: report.warnings.map((warning) =>
+      `${warning.code} (${warning.severity}): ${warning.message}`
+    ),
+    readOnlyNotice: cpcvPboReadOnlyNotice()
+  };
+}
+
+function cpcvPboReadOnlyNotice(): string {
+  return [
+    "CPCV/PBO validation is paper-only research evidence.",
+    "It is not a strategy recommendation or performance guarantee."
+  ].join(" ");
 }
 
 function groupBreakdown(

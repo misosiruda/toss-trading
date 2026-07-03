@@ -13,7 +13,9 @@ import {
 
 test("replay research report summarizes stored batch aggregate sections", () => {
   const report = buildReplayResearchReport({
-    aggregateReport: aggregateReport(),
+    aggregateReport: aggregateReport({
+      cpcvPboValidation: cpcvPboValidation()
+    }),
     generatedAt: new Date("2026-06-24T09:00:00+09:00")
   });
 
@@ -51,6 +53,19 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.equal(report.providerFailureSummary.totalAiDecisionFailureCount, 2);
   assert.equal(report.riskRejectSummary.totalRejectedCount, 3);
   assert.equal(report.overfittingWarning.holdoutDegradationCount, 1);
+  assert.equal(report.cpcvPboWarning.status, "sampled");
+  assert.equal(report.cpcvPboWarning.pboStatus, "computed");
+  assert.equal(report.cpcvPboWarning.pboProbability, 1);
+  assert.equal(report.cpcvPboWarning.evaluatedCombinationCount, 2);
+  assert.equal(report.cpcvPboWarning.splitPlanAvailable, false);
+  assert.match(
+    report.cpcvPboWarning.warnings.join("\n"),
+    /CPCV_SPLIT_PLAN_UNAVAILABLE/
+  );
+  assert.match(
+    report.cpcvPboWarning.readOnlyNotice,
+    /not a strategy recommendation or performance guarantee/
+  );
   assert.match(report.disclaimer, /Paper-only/);
   assert.match(report.disclaimer, /not investment advice/);
   assert.match(report.disclaimer, /cannot place live orders/);
@@ -70,6 +85,11 @@ test("replay research report records unavailable sections when trials are absent
   assert.equal(report.promptTrialDistribution.trialCount, null);
   assert.equal(report.validationProtocol.overfittingDiagnosticStatus, "unavailable");
   assert.equal(report.overfittingWarning.status, "unavailable");
+  assert.equal(report.cpcvPboWarning.status, "missing");
+  assert.match(
+    report.cpcvPboWarning.warnings.join("\n"),
+    /cpcv_pbo_validation\.v1 artifact is missing/
+  );
   assert.match(
     report.warnings.join("\n"),
     /trial distribution unavailable/
@@ -274,6 +294,51 @@ function aggregateReport(
     },
     disclaimer:
       "Batch replay aggregate reports are paper-only. They are not investment advice, guaranteed performance, or live trading signals."
+  };
+}
+
+function cpcvPboValidation(): NonNullable<
+  BatchReplayAggregateReport["cpcvPboValidation"]
+> {
+  return {
+    schemaVersion: "cpcv_pbo_validation.v1",
+    status: "sampled",
+    generatedAt: "2026-06-24T00:00:00.000Z",
+    config: {
+      validationProtocol: "combinatorial_purged_cv",
+      foldCount: 2,
+      testFoldCount: 1,
+      purgeDurationDays: 0,
+      embargoDurationDays: 0,
+      selectionMetric: "total_return_ratio",
+      tieBreaker: "candidate_key_asc",
+      maxCombinationCount: 2,
+      combinationMode: "sampled",
+      randomSeed: "replay_research_test_sampled_matrix"
+    },
+    splitPlan: null,
+    performanceMatrix: [],
+    selectionLog: [],
+    pbo: {
+      status: "computed",
+      probability: 1,
+      evaluatedCombinationCount: 2,
+      selectedBelowMedianCount: 2,
+      lambdaLogitValues: [-1.0986122886681098],
+      methodNotes: ["sampled CPCV/PBO report is shown as warning evidence"]
+    },
+    warnings: [
+      {
+        code: "CPCV_SAMPLED_MODE_USED",
+        severity: "warning",
+        message: "sampled CPCV/PBO validation is not a full CPCV split plan"
+      },
+      {
+        code: "CPCV_SPLIT_PLAN_UNAVAILABLE",
+        severity: "warning",
+        message: "stored aggregate does not include standalone CPCV split plan"
+      }
+    ]
   };
 }
 

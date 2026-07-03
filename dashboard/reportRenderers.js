@@ -229,6 +229,7 @@ export function renderReplayResearchReport(researchPayload) {
   const runIdentity = report?.runIdentity ?? {};
   const validationProtocol = report?.validationProtocol ?? {};
   const overfittingWarning = report?.overfittingWarning ?? {};
+  const cpcvPboWarning = report?.cpcvPboWarning ?? null;
   const providerFailure = report?.providerFailureSummary ?? {};
   const riskReject = report?.riskRejectSummary ?? {};
   const warnings = researchReportWarnings(report);
@@ -300,6 +301,11 @@ export function renderReplayResearchReport(researchPayload) {
     "Cost/Benchmark",
     `${report?.costBreakdown?.status ?? "unavailable"} / ${report?.benchmarkComparison?.status ?? "unavailable"}`
   );
+  appendDefinition(
+    detail,
+    "CPCV/PBO",
+    researchCpcvPboSummary(cpcvPboWarning)
+  );
 
   renderResearchWarningList(warnings, status);
   renderResearchRegimeList(report?.regimeBreakdown ?? []);
@@ -338,7 +344,21 @@ function researchReportWarnings(report) {
   appendUniqueWarnings(warnings, report?.validationProtocol?.warnings);
   appendUniqueWarnings(warnings, report?.dataUniverseCoverage?.warnings);
   appendUniqueWarnings(warnings, report?.overfittingWarning?.warnings);
+  appendUniqueWarnings(warnings, report?.cpcvPboWarning?.warnings);
   return warnings;
+}
+
+function researchCpcvPboSummary(summary) {
+  if (!summary || !summary.status || summary.status === "missing") {
+    return "missing";
+  }
+  return [
+    `status=${summary.status ?? "missing"}`,
+    `pbo=${summary.pboStatus ?? "missing"}`,
+    `probability=${formatRatio(summary.pboProbability)}`,
+    `evaluated=${summary.evaluatedCombinationCount ?? 0}`,
+    `split_plan=${summary.splitPlanAvailable ? "available" : "missing"}`
+  ].join(" / ");
 }
 
 function appendUniqueWarnings(target, values) {
