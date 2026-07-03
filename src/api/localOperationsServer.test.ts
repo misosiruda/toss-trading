@@ -849,6 +849,82 @@ test("research report renderer includes nested validation warnings in count and 
   }
 });
 
+test("research report renderer treats absent CPCV PBO summary as missing", async () => {
+  const fakeDocument = new FakeDashboardDocument([
+    "research-report-status",
+    "research-run-count",
+    "research-validation-protocol",
+    "research-pbo-score",
+    "research-provider-failures",
+    "research-risk-rejects",
+    "research-warning-count",
+    "research-report-disclaimer",
+    "research-report-detail",
+    "research-warning-list-count",
+    "research-warning-list",
+    "research-regime-count",
+    "research-regime-list"
+  ]);
+  const globals = globalThis as typeof globalThis & {
+    document?: Document;
+  };
+  const previousDocument = globals.document;
+  globals.document = fakeDocument as unknown as Document;
+
+  try {
+    const moduleUrl = pathToFileURL(
+      join(process.cwd(), "dashboard", "reportRenderers.js")
+    ).href;
+    const { renderReplayResearchReport } = await import(moduleUrl);
+
+    renderReplayResearchReport({
+      status: "ok",
+      report: {
+        warnings: [],
+        validationProtocol: {
+          validationProtocol: "sampled_cpcv_pbo_like",
+          warnings: []
+        },
+        dataUniverseCoverage: {
+          warnings: []
+        },
+        overfittingWarning: {
+          pboLikeScore: null,
+          warnings: []
+        },
+        runIdentity: {
+          runCount: 1,
+          completedCount: 1,
+          skippedCount: 0,
+          failedCount: 0,
+          returnSampleCount: 1
+        },
+        providerFailureSummary: {
+          totalAiDecisionFailureCount: 0
+        },
+        riskRejectSummary: {
+          totalRejectedCount: 0
+        },
+        regimeBreakdown: []
+      }
+    });
+
+    const detailChildren =
+      fakeDocument.requiredElement("research-report-detail").children;
+    const cpcvLabelIndex = detailChildren.findIndex(
+      (child) => child.textContent === "CPCV/PBO"
+    );
+    assert.notEqual(cpcvLabelIndex, -1);
+    assert.equal(detailChildren[cpcvLabelIndex + 1]?.textContent, "missing");
+  } finally {
+    if (previousDocument === undefined) {
+      delete globals.document;
+    } else {
+      globals.document = previousDocument;
+    }
+  }
+});
+
 test("paper policy validation checks drafts without starting a runner", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   let runnerCallCount = 0;
