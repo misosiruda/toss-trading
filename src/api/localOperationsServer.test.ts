@@ -2621,6 +2621,12 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const overfittingWarning = validationLab.payload[
       "overfittingWarning"
     ] as Record<string, unknown>;
+    const sharpeValidation = validationLab.payload[
+      "sharpeValidation"
+    ] as Record<string, unknown>;
+    const sharpeValidationWarnings = sharpeValidation["warnings"] as Array<
+      Record<string, unknown>
+    >;
     const candidateComparison = validationLab.payload[
       "candidateComparison"
     ] as Record<string, unknown>;
@@ -2755,6 +2761,22 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(dataUniverseCoverage["coverageReportStatus"], "insufficient");
     assert.equal(dataUniverseCoverage["availableRequiredSymbolCount"], 1);
     assert.equal(overfittingWarning["status"], "available");
+    assert.equal(sharpeValidation["status"], "unavailable");
+    assert.equal(sharpeValidation["schemaVersion"], "sharpe_validation.v1");
+    assert.equal(sharpeValidation["returnSampleCount"], 3);
+    assert.equal(
+      sharpeValidation["sampleSharpeStatus"],
+      "insufficient_sample"
+    );
+    assert.equal(
+      sharpeValidation["deflatedSharpeRatioStatus"],
+      "insufficient_sample"
+    );
+    assert.equal(sharpeValidation["warningCount"], 1);
+    assert.equal(
+      sharpeValidationWarnings[0]?.["code"],
+      "INSUFFICIENT_RETURN_SAMPLES"
+    );
     assert.equal(candidateComparison["status"], "available");
     assert.equal(candidateComparison["candidateCount"], 2);
     assert.equal(candidateComparison["selectionMetric"], "total_return_ratio");
@@ -5040,6 +5062,89 @@ function batchReplayAggregateReport(
       averageFinalTargetExposureGapRatio: 0.05,
       totalTradeCount: 8,
       averageTradeCount: 2.666667,
+      sharpeValidation: {
+        schemaVersion: "sharpe_validation.v1",
+        status: "unavailable",
+        sample: {
+          returnSampleCount: 3,
+          minimumSampleCount: 30,
+          returnFrequency: "per_sample",
+          annualizationStatus: "not_annualized",
+          annualizationFactor: null,
+          riskFreeRateRatio: null
+        },
+        distribution: {
+          meanReturnRatio: 0.015,
+          volatilityRatio: 0.027839,
+          skewness: 0.339372,
+          excessKurtosis: null,
+          autocorrelation: {
+            maxLag: 0,
+            lagCount: 0,
+            coefficients: [],
+            adjustmentStatus: "not_required"
+          }
+        },
+        metrics: {
+          sampleSharpe: {
+            metric: "sample_sharpe",
+            status: "insufficient_sample",
+            value: null,
+            standardError: null,
+            confidenceInterval95: null,
+            benchmarkSharpeRatio: null,
+            methodNotes: [
+              "sample_sharpe requires at least 30 return samples"
+            ]
+          },
+          loAdjustedSharpe: {
+            metric: "lo_adjusted_sharpe",
+            status: "insufficient_sample",
+            value: null,
+            standardError: null,
+            confidenceInterval95: null,
+            benchmarkSharpeRatio: null,
+            methodNotes: [
+              "lo_adjusted_sharpe requires sample_sharpe first"
+            ]
+          },
+          probabilisticSharpeRatio: {
+            metric: "probabilistic_sharpe_ratio",
+            status: "insufficient_sample",
+            probability: null,
+            benchmarkSharpeRatio: null,
+            methodNotes: [
+              "probabilistic_sharpe_ratio requires at least 30 return samples"
+            ]
+          },
+          deflatedSharpeRatio: {
+            metric: "deflated_sharpe_ratio",
+            status: "insufficient_sample",
+            value: null,
+            standardError: null,
+            confidenceInterval95: null,
+            benchmarkSharpeRatio: null,
+            methodNotes: [
+              "deflated_sharpe_ratio requires at least 30 return samples"
+            ]
+          }
+        },
+        selectionContext: {
+          candidateCount: 2,
+          trialCount: 4,
+          trialSharpeRatioStandardDeviation: null,
+          selectedByMetric: "total_return_ratio",
+          multipleTestingAdjustment: "trial_log"
+        },
+        warnings: [
+          {
+            code: "INSUFFICIENT_RETURN_SAMPLES",
+            severity: "warning",
+            message:
+              "Sharpe validation unavailable: at least 30 return samples are required"
+          }
+        ]
+      },
       totalAiDecisionFailureCount: 0,
       totalRejectedCount: 1,
       totalMeaningfulRejectCount: 1,

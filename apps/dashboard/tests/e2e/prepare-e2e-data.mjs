@@ -383,6 +383,85 @@ const aggregate = {
     totalDustRejectCount: 0,
     totalTradeCount: 4,
     averageTradeCount: 1,
+    sharpeValidation: {
+      schemaVersion: "sharpe_validation.v1",
+      status: "unavailable",
+      sample: {
+        returnSampleCount: 4,
+        minimumSampleCount: 30,
+        returnFrequency: "per_sample",
+        annualizationStatus: "not_annualized",
+        annualizationFactor: null,
+        riskFreeRateRatio: null
+      },
+      distribution: {
+        meanReturnRatio: 0.015,
+        volatilityRatio: 0.007071,
+        skewness: 0,
+        excessKurtosis: null,
+        autocorrelation: {
+          maxLag: 0,
+          lagCount: 0,
+          coefficients: [],
+          adjustmentStatus: "not_required"
+        }
+      },
+      metrics: {
+        sampleSharpe: {
+          metric: "sample_sharpe",
+          status: "insufficient_sample",
+          value: null,
+          standardError: null,
+          confidenceInterval95: null,
+          benchmarkSharpeRatio: null,
+          methodNotes: ["sample_sharpe requires at least 30 return samples"]
+        },
+        loAdjustedSharpe: {
+          metric: "lo_adjusted_sharpe",
+          status: "insufficient_sample",
+          value: null,
+          standardError: null,
+          confidenceInterval95: null,
+          benchmarkSharpeRatio: null,
+          methodNotes: ["lo_adjusted_sharpe requires sample_sharpe first"]
+        },
+        probabilisticSharpeRatio: {
+          metric: "probabilistic_sharpe_ratio",
+          status: "insufficient_sample",
+          probability: null,
+          benchmarkSharpeRatio: null,
+          methodNotes: [
+            "probabilistic_sharpe_ratio requires at least 30 return samples"
+          ]
+        },
+        deflatedSharpeRatio: {
+          metric: "deflated_sharpe_ratio",
+          status: "insufficient_sample",
+          value: null,
+          standardError: null,
+          confidenceInterval95: null,
+          benchmarkSharpeRatio: null,
+          methodNotes: [
+            "deflated_sharpe_ratio requires at least 30 return samples"
+          ]
+        }
+      },
+      selectionContext: {
+        candidateCount: 2,
+        trialCount: 4,
+        trialSharpeRatioStandardDeviation: null,
+        selectedByMetric: "total_return_ratio",
+        multipleTestingAdjustment: "trial_log"
+      },
+      warnings: [
+        {
+          code: "INSUFFICIENT_RETURN_SAMPLES",
+          severity: "warning",
+          message:
+            "Sharpe validation unavailable: at least 30 return samples are required"
+        }
+      ]
+    },
     runIds: ["run_0", "run_1", "run_2", "run_3"]
   },
   byRegime: {},

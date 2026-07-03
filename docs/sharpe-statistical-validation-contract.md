@@ -74,7 +74,7 @@ interface SharpeValidationSelectionContext {
 }
 ```
 
-현재 구현은 schema, unavailable helper, standalone sample Sharpe와 95% confidence interval, Lo-style adjusted Sharpe, 명시적 benchmark가 있는 Probabilistic Sharpe Ratio calculator, selection context가 충분한 Deflated Sharpe Ratio calculator, single `HistoricalReplayReport.sharpeValidation` 연결, `BatchReplayAggregateReport` group summary 연결, `ReplayResearchReport.sharpeValidation` read-only 요약, static dashboard renderer 표시를 제공한다. Next.js dashboard ViewModel 연결은 후속 PR 범위다.
+현재 구현은 schema, unavailable helper, standalone sample Sharpe와 95% confidence interval, Lo-style adjusted Sharpe, 명시적 benchmark가 있는 Probabilistic Sharpe Ratio calculator, selection context가 충분한 Deflated Sharpe Ratio calculator, single `HistoricalReplayReport.sharpeValidation` 연결, `BatchReplayAggregateReport` group summary 연결, `ReplayResearchReport.sharpeValidation` read-only 요약, static dashboard renderer 표시, Next.js Validation Lab ViewModel과 UI 표시를 제공한다.
 
 ## Warning Code
 
@@ -122,7 +122,7 @@ interface SharpeValidationSelectionContext {
 5. 완료: sample Sharpe standard error와 95% confidence interval을 standalone calculator에 연결한다.
 6. 완료: Deflated Sharpe Ratio 계산을 selection context와 함께 standalone calculator에 확장한다.
 7. 완료: `ReplayResearchReport`와 static dashboard renderer에서 Sharpe validation unavailable/available 상태와 warning을 read-only로 표시한다.
-8. Next.js Validation Lab에서 Sharpe validation unavailable/available 상태와 warning을 read-only로 표시한다.
+8. 완료: Next.js Validation Lab에서 Sharpe validation unavailable/available 상태와 warning을 read-only로 표시한다.
 
 ## Safety Boundary
 

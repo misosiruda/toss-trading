@@ -427,6 +427,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
@@ -438,6 +439,34 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface SharpeValidationView {
+  status: "missing" | "available" | "unavailable";
+  schemaVersion: string | null;
+  returnSampleCount: number;
+  minimumSampleCount: number | null;
+  sampleSharpeStatus: string | null;
+  sampleSharpeValue: number | null;
+  loAdjustedSharpeStatus: string | null;
+  probabilisticSharpeRatioStatus: string | null;
+  probabilisticSharpeRatioProbability: number | null;
+  deflatedSharpeRatioStatus: string | null;
+  deflatedSharpeRatioProbability: number | null;
+  selectionContext: {
+    candidateCount: number | null;
+    trialCount: number | null;
+    trialSharpeRatioStandardDeviation: number | null;
+    selectedByMetric: string | null;
+    multipleTestingAdjustment: string | null;
+  };
+  warningCount: number;
+  warnings: Array<{
+    code: string;
+    severity: "info" | "warning";
+    message: string;
+  }>;
+  readOnlyNotice: string;
 }
 
 export interface CpcvPboValidationView {
@@ -964,6 +993,7 @@ export async function readDashboardValidationLabViewModel(
       dataUniverseCoverage: report.dataUniverseCoverage,
       promptTrialDistribution: report.promptTrialDistribution,
       overfittingWarning: report.overfittingWarning,
+      sharpeValidation: sharpeValidationView(report.sharpeValidation),
       cpcvPboValidation: cpcvPboValidationView(aggregate.value),
       candidateComparison: validationCandidateComparison(aggregate.value),
       providerFailureSummary: report.providerFailureSummary,
@@ -1446,6 +1476,50 @@ function validationCandidateComparison(
   };
 }
 
+function sharpeValidationView(
+  report: ReturnType<typeof buildReplayResearchReport>["sharpeValidation"]
+): SharpeValidationView {
+  return {
+    status: report.status,
+    schemaVersion: report.schemaVersion,
+    returnSampleCount: report.returnSampleCount,
+    minimumSampleCount: report.minimumSampleCount,
+    sampleSharpeStatus: report.sampleSharpeStatus,
+    sampleSharpeValue: report.sampleSharpeValue,
+    loAdjustedSharpeStatus: report.loAdjustedSharpeStatus,
+    probabilisticSharpeRatioStatus: report.probabilisticSharpeRatioStatus,
+    probabilisticSharpeRatioProbability:
+      report.probabilisticSharpeRatioProbability,
+    deflatedSharpeRatioStatus: report.deflatedSharpeRatioStatus,
+    deflatedSharpeRatioProbability: report.deflatedSharpeRatioProbability,
+    selectionContext: report.selectionContext,
+    warningCount: report.warnings.length,
+    warnings: report.warnings.map((warning) =>
+      validationWarningView(warning, "SHARPE_VALIDATION_WARNING")
+    ),
+    readOnlyNotice: report.readOnlyNotice
+  };
+}
+
+function validationWarningView(
+  warning: string,
+  fallbackCode: string
+): { code: string; severity: "info" | "warning"; message: string } {
+  const match = /^([A-Z0-9_]+) \((info|warning)\): (.+)$/.exec(warning);
+  if (match !== null) {
+    return {
+      code: match[1]!,
+      severity: match[2] as "info" | "warning",
+      message: match[3]!
+    };
+  }
+  return {
+    code: fallbackCode,
+    severity: "warning",
+    message: warning
+  };
+}
+
 function cpcvPboValidationView(
   aggregate: BatchReplayAggregateReport
 ): CpcvPboValidationView {
@@ -1602,6 +1676,11 @@ function validationLabUnavailable(
     dataUniverseCoverage: null,
     promptTrialDistribution: null,
     overfittingWarning: null,
+    sharpeValidation: missingSharpeValidationView([
+      status === "missing"
+        ? "batch replay aggregate report is missing"
+        : "batch replay aggregate report is not usable"
+    ]),
     cpcvPboValidation: missingCpcvPboValidationView([
       status === "missing"
         ? "batch replay aggregate report is missing"
@@ -1631,6 +1710,39 @@ function validationLabUnavailable(
       liveTradingEnabled: false,
       orderPlacementEnabled: false
     }
+  };
+}
+
+function missingSharpeValidationView(
+  warnings: string[] = []
+): SharpeValidationView {
+  return {
+    status: "missing",
+    schemaVersion: null,
+    returnSampleCount: 0,
+    minimumSampleCount: null,
+    sampleSharpeStatus: null,
+    sampleSharpeValue: null,
+    loAdjustedSharpeStatus: null,
+    probabilisticSharpeRatioStatus: null,
+    probabilisticSharpeRatioProbability: null,
+    deflatedSharpeRatioStatus: null,
+    deflatedSharpeRatioProbability: null,
+    selectionContext: {
+      candidateCount: null,
+      trialCount: null,
+      trialSharpeRatioStandardDeviation: null,
+      selectedByMetric: null,
+      multipleTestingAdjustment: null
+    },
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "SHARPE_VALIDATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "Sharpe validation is paper-only research evidence. It is not a strategy recommendation or performance guarantee."
   };
 }
 

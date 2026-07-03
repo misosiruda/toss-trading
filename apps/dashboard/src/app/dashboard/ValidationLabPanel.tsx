@@ -1,5 +1,6 @@
 import type {
   CpcvPboValidationView,
+  SharpeValidationView,
   ValidationCandidateComparisonView,
   ValidationLabViewModel,
   ViewModelResult
@@ -96,6 +97,10 @@ export function ValidationLabPanel({
         />
         <ObjectSummary title="Risk rejects" value={data.riskRejectSummary} />
       </div>
+      <SharpeValidationWarning
+        validation={data.sharpeValidation}
+        variant={variant}
+      />
       <CpcvPboValidationWarning
         validation={data.cpcvPboValidation}
         variant={variant}
@@ -105,6 +110,115 @@ export function ValidationLabPanel({
         variant={variant}
       />
       <Warnings warnings={data.warnings} />
+    </section>
+  );
+}
+
+function SharpeValidationWarning({
+  validation,
+  variant
+}: {
+  validation: SharpeValidationView;
+  variant: ValidationPanelVariant;
+}) {
+  return (
+    <section aria-label="Sharpe validation warning" className="mt-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Sharpe Validation Warning</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Read-only sharpe_validation.v1 summary from stored batch aggregate
+            artifacts.
+          </p>
+        </div>
+        <Badge
+          tone={validationStatusTone(validation.status)}
+          value={validation.status}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-4">
+        <Metric
+          label="Sample Sharpe"
+          value={[
+            validation.sampleSharpeStatus ?? "missing",
+            formatNullableSharpeEstimate(validation.sampleSharpeValue)
+          ].join(" / ")}
+        />
+        <Metric
+          label="Lo-adjusted"
+          value={validation.loAdjustedSharpeStatus ?? "missing"}
+        />
+        <Metric
+          label="PSR"
+          value={[
+            validation.probabilisticSharpeRatioStatus ?? "missing",
+            formatNullableRatio(validation.probabilisticSharpeRatioProbability)
+          ].join(" / ")}
+        />
+        <Metric
+          label="DSR"
+          value={[
+            validation.deflatedSharpeRatioStatus ?? "missing",
+            formatNullableRatio(validation.deflatedSharpeRatioProbability)
+          ].join(" / ")}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-4">
+        <Metric
+          label="Samples"
+          value={`${validation.returnSampleCount}/${validation.minimumSampleCount ?? "missing"}`}
+        />
+        <Metric
+          label="Trials"
+          value={formatNullableInteger(validation.selectionContext.trialCount)}
+        />
+        <Metric
+          label="Adjustment"
+          value={
+            validation.selectionContext.multipleTestingAdjustment ?? "missing"
+          }
+        />
+        <Metric label="Warnings" value={String(validation.warningCount)} />
+      </div>
+
+      {variant === "detail" ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <Metric
+            label="Schema"
+            value={validation.schemaVersion ?? "missing"}
+          />
+          <Metric
+            label="Candidates"
+            value={formatNullableInteger(
+              validation.selectionContext.candidateCount
+            )}
+          />
+          <Metric
+            label="Trial Sharpe dispersion"
+            value={formatNullableSharpeEstimate(
+              validation.selectionContext.trialSharpeRatioStandardDeviation
+            )}
+          />
+        </div>
+      ) : null}
+
+      <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+        {validation.readOnlyNotice}
+      </p>
+
+      {validation.warnings.length === 0 ? null : (
+        <ul className="mt-3 space-y-2 text-sm leading-5 text-[var(--muted)]">
+          {validation.warnings.map((warning) => (
+            <li key={`${warning.code}:${warning.message}`}>
+              <span className="font-mono">{warning.code}</span>
+              <span aria-hidden="true"> · </span>
+              <span>{warning.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -422,6 +536,18 @@ function cpcvPboStatusTone(
   return "blocked";
 }
 
+function validationStatusTone(
+  status: "missing" | "available" | "sampled" | "unavailable"
+): "ok" | "watch" | "blocked" {
+  if (status === "available") {
+    return "ok";
+  }
+  if (status === "sampled") {
+    return "watch";
+  }
+  return "blocked";
+}
+
 function statusTone(status: string): "ok" | "watch" | "blocked" {
   if (
     status === "ok" ||
@@ -465,6 +591,20 @@ function formatRatio(value: number): string {
 
 function formatNullableRatio(value: number | null): string {
   return value === null ? "missing" : formatRatio(value);
+}
+
+function formatSharpeEstimate(value: number): string {
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 4
+  }).format(value);
+}
+
+function formatNullableSharpeEstimate(value: number | null): string {
+  return value === null ? "missing" : formatSharpeEstimate(value);
+}
+
+function formatNullableInteger(value: number | null): string {
+  return value === null ? "missing" : String(value);
 }
 
 function formatObject(value: unknown): string {
