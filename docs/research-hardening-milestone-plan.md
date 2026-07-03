@@ -286,7 +286,8 @@
 
 - 첫 PR 범위는 `cpcv_pbo_validation.v1` contract와 config/report schema 후보 문서화로 제한한다.
 - 두 번째 PR 범위는 `combinatorial_purged_cv` standalone split generator, fail-closed config guard, unit test, 문서 연결로 제한한다.
-- PBO calculator, batch report/dashboard 연결은 후속 PR에서 다룬다.
+- 세 번째 PR 범위는 standalone `cpcv_pbo_validation.v1` artifact schema, PBO calculator, unit test, 문서 연결로 제한한다.
+- batch report/dashboard 연결은 후속 PR에서 다룬다.
 
 권장 PR 분해:
 

@@ -761,7 +761,25 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - train 후보 sample이 test label window와 겹치면 `purgedSampleIds`로 제외하고, `purgeDurationDays > 0`이면 test label window를 전후로 확장해 더 보수적으로 제외합니다.
 - 비인접 test fold 조합에서도 각 held-out fold 이후 embargo 구간에 들어오는 train 후보 sample은 `embargoedSampleIds`로 제외합니다.
 
-이 generator는 paper-only historical replay 결과를 사후 검증하기 위한 split artifact입니다. batch replay manifest/report 연결, PBO calculator, dashboard 표시, strategy 자동 선택, live signal 생성은 이번 범위에 포함하지 않습니다.
+이 generator는 paper-only historical replay 결과를 사후 검증하기 위한 split artifact입니다. batch replay manifest/report 연결, dashboard 표시, strategy 자동 선택, live signal 생성은 이번 범위에 포함하지 않습니다.
+
+### CPCV/PBO Validation Artifact
+
+`src/replay/cpcvPboValidation.ts`는 RH6 full CPCV/PBO의 standalone validation artifact schema와 PBO calculator입니다.
+
+현재 범위:
+
+- `schemaVersion: "cpcv_pbo_validation.v1"` report schema를 제공합니다.
+- `config`, `splitPlan`, `performanceMatrix`, `selectionLog`, `pbo`, `warnings`를 하나의 artifact로 검증합니다.
+- `config`는 `combinatorial_purged_cv` split plan의 fold, purge/embargo, combination mode, seed, budget과 일치해야 하며 mismatch는 fail-closed로 거부합니다.
+- 각 combination에서 `trainMetric` 후보가 2개 이상일 때 가장 높은 candidate를 선택하고, 동률이면 locale-independent `candidate_key_asc` tie breaker를 적용합니다.
+- train에서 경쟁한 모든 candidate가 같은 combination의 comparable `testMetric`을 가진 경우에만 selected candidate의 rank를 descending mid-rank percentile로 계산하며, tied test metric 후보는 같은 percentile을 공유합니다.
+- 모든 combination이 같은 train candidate 집합 기준으로 scored 된 경우에만 percentile이 `0.5` 이하인 combination 비율을 `pbo.probability`로 기록합니다.
+- combination별 train candidate key 집합이 다르면 서로 다른 competitor universe를 섞지 않고 `insufficient_matrix`로 fail-closed 처리합니다.
+- train-side candidate competition이 없거나 일부 또는 전체 combination의 comparable test metric matrix가 없으면 `pbo.status="insufficient_matrix"`, `probability=null`, warning을 기록합니다.
+- sampled CPCV split plan을 입력으로 받으면 report `status`는 `sampled`이고 `CPCV_SAMPLED_MODE_USED` warning을 남깁니다.
+
+이 artifact는 여러 candidate의 selection bias를 사후 설명하기 위한 paper-only 검증 지표입니다. batch replay aggregate report 연결, dashboard 표시, strategy 자동 선택, live signal 생성은 후속 범위입니다.
 
 ### Batch Aggregate Report
 
