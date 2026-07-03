@@ -759,7 +759,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - exhaustive mode에서 전체 조합 수가 `maxCombinationCount`를 초과하면 plan 생성을 거부합니다.
 - sampled mode는 non-empty `randomSeed`를 요구하며, 전체 조합 수가 budget을 초과하면 deterministic seed로 일부 combination index만 emit합니다.
 - train 후보 sample이 test label window와 겹치면 `purgedSampleIds`로 제외하고, `purgeDurationDays > 0`이면 test label window를 전후로 확장해 더 보수적으로 제외합니다.
-- test window 이후 embargo 구간에 들어오는 train 후보 sample은 `embargoedSampleIds`로 제외합니다.
+- 비인접 test fold 조합에서도 각 held-out fold 이후 embargo 구간에 들어오는 train 후보 sample은 `embargoedSampleIds`로 제외합니다.
 
 이 generator는 paper-only historical replay 결과를 사후 검증하기 위한 split artifact입니다. batch replay manifest/report 연결, PBO calculator, dashboard 표시, strategy 자동 선택, live signal 생성은 이번 범위에 포함하지 않습니다.
 

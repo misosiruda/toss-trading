@@ -81,6 +81,38 @@ test("CPCV plan applies purge and embargo to each fold combination", () => {
   assert.deepEqual(firstCombination.trainSampleIds, []);
 });
 
+test("CPCV plan applies embargo after each non-adjacent test fold", () => {
+  const plan = buildCombinatorialPurgedCvPlan({
+    planId: "cpcv_non_adjacent_embargo",
+    foldCount: 3,
+    testFoldCount: 2,
+    maxCombinationCount: 3,
+    embargoDurationDays: 2,
+    samples: [
+      sample("s1", "2025-01-01T00:00:00.000Z", "2025-01-01T23:59:59.999Z"),
+      sample("s2", "2025-01-02T00:00:00.000Z", "2025-01-02T23:59:59.999Z"),
+      sample("s3", "2025-01-03T00:00:00.000Z", "2025-01-03T23:59:59.999Z"),
+      sample("s4", "2025-01-04T00:00:00.000Z", "2025-01-04T23:59:59.999Z"),
+      sample("s5", "2025-01-10T00:00:00.000Z", "2025-01-10T23:59:59.999Z"),
+      sample("s6", "2025-01-11T00:00:00.000Z", "2025-01-11T23:59:59.999Z")
+    ]
+  });
+  const nonAdjacentCombination = plan.combinations[1]!;
+
+  assert.deepEqual(nonAdjacentCombination.testFoldIds, [
+    "fold_001",
+    "fold_003"
+  ]);
+  assert.deepEqual(nonAdjacentCombination.testSampleIds, [
+    "s1",
+    "s2",
+    "s5",
+    "s6"
+  ]);
+  assert.deepEqual(nonAdjacentCombination.embargoedSampleIds, ["s3", "s4"]);
+  assert.deepEqual(nonAdjacentCombination.trainSampleIds, []);
+});
+
 test("CPCV plan expands purge windows by purge duration", () => {
   const plan = buildCombinatorialPurgedCvPlan({
     planId: "cpcv_purge_duration",

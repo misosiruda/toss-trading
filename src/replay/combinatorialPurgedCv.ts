@@ -237,11 +237,18 @@ function buildCombination(input: {
   const trainCandidateSamples = trainCandidateFolds.flatMap(
     (fold) => fold.samples
   );
-  const testEndMs = Math.max(...testSamples.map((sample) => sample.labelEndMs));
-  const embargoWindow = buildEmbargoWindow({
-    testEndMs,
-    embargoDurationDays: input.embargoDurationDays
-  });
+  const embargoWindows = testFolds
+    .map((fold) =>
+      buildEmbargoWindow({
+        testEndMs: Math.max(
+          ...fold.samples.map((sample) => sample.labelEndMs)
+        ),
+        embargoDurationDays: input.embargoDurationDays
+      })
+    )
+    .filter(
+      (window): window is { startMs: number; endMs: number } => window !== null
+    );
   const purgeWindows = testSamples.map((sample) =>
     buildPurgeWindow(sample, input.purgeDurationDays)
   );
@@ -254,7 +261,9 @@ function buildCombination(input: {
       purgedSampleIds.push(sample.sampleId);
       continue;
     }
-    if (embargoWindow !== null && isInsideEmbargoWindow(sample, embargoWindow)) {
+    if (
+      embargoWindows.some((window) => isInsideEmbargoWindow(sample, window))
+    ) {
       embargoedSampleIds.push(sample.sampleId);
       continue;
     }
