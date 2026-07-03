@@ -1091,8 +1091,24 @@ function normalizeSelectionContext(
       "selectionContext.trialSharpeRatioStandardDeviation"
     ),
     selectedByMetric: value?.selectedByMetric ?? null,
-    multipleTestingAdjustment: value?.multipleTestingAdjustment ?? "unknown"
+    multipleTestingAdjustment: normalizeMultipleTestingAdjustment(
+      value?.multipleTestingAdjustment
+    )
   };
+}
+
+function normalizeMultipleTestingAdjustment(
+  value: unknown
+): SharpeValidationSelectionContext["multipleTestingAdjustment"] {
+  if (
+    value === "none" ||
+    value === "candidate_count" ||
+    value === "trial_log" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+  return "unknown";
 }
 
 function isAnnualizableReturnFrequency(
@@ -1130,6 +1146,8 @@ function resolveIndependentTrialCount(
     case "none":
       return null;
     case "unknown":
+      return null;
+    default:
       return null;
   }
 }

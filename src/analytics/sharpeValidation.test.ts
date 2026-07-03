@@ -409,6 +409,36 @@ test("Sharpe validation calculator fails closed for unknown DSR adjustment mode"
   );
 });
 
+test("Sharpe validation calculator normalizes unrecognized DSR adjustment mode", () => {
+  const returns = [
+    -0.018, -0.01, -0.004, 0.002, 0.009, 0.015, -0.012, 0.006, 0.011, -0.007,
+    0.014, 0.018, -0.016, 0.004, 0.012, 0.021, -0.009, 0.003, 0.017, 0.024,
+    -0.014, 0.005, 0.01, 0.019, -0.006, 0.007, 0.013, 0.022, -0.011, 0.016
+  ];
+
+  const report = calculateSharpeValidationReport({
+    returns,
+    selectionContext: {
+      candidateCount: 3,
+      trialCount: 30,
+      trialSharpeRatioStandardDeviation: 0.08,
+      multipleTestingAdjustment: "trial_count" as never
+    }
+  });
+
+  assert.equal(report.selectionContext.multipleTestingAdjustment, "unknown");
+  assert.equal(
+    report.metrics.deflatedSharpeRatio.status,
+    "missing_selection_context"
+  );
+  assert.equal(
+    report.warnings.some(
+      (warning) => warning.code === "MULTIPLE_TESTING_CONTEXT_MISSING"
+    ),
+    true
+  );
+});
+
 test("Sharpe validation calculator fails closed for zero DSR trial dispersion", () => {
   const returns = [
     -0.018, -0.01, -0.004, 0.002, 0.009, 0.015, -0.012, 0.006, 0.011, -0.007,
