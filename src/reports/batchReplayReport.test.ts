@@ -158,6 +158,15 @@ test("batch replay aggregate report connects Sharpe validation diagnostics", () 
   assert.equal(report.overall.sharpeValidation.selectionContext.candidateCount, null);
   assert.equal(report.overall.sharpeValidation.selectionContext.trialCount, 30);
   assert.equal(
+    report.overall.sharpeValidation.selectionContext
+      .trialSharpeRatioStandardDeviation,
+    null
+  );
+  assert.equal(
+    report.overall.sharpeValidation.metrics.deflatedSharpeRatio.status,
+    "missing_selection_context"
+  );
+  assert.equal(
     report.overall.sharpeValidation.distribution.autocorrelation.maxLag,
     5
   );
