@@ -746,6 +746,23 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 이 metadata는 leakage 방지를 위한 research validation artifact입니다. replay 실행, AI/provider 판단, risk approval, paper order, live trading signal로 직접 연결하지 않습니다.
 
+### Combinatorial Purged CV Split
+
+`src/replay/combinatorialPurgedCv.ts`는 RH6 full CPCV/PBO의 standalone split generator입니다.
+
+현재 범위:
+
+- `validationProtocol: "combinatorial_purged_cv"` plan과 combination schema를 제공합니다.
+- 입력 sample은 기존 `PurgedKFoldSample` schema를 재사용하며, `sampleId`, `labelStart`, `labelEnd`가 유효하지 않으면 fail-closed 됩니다.
+- sample은 `labelStart`, `labelEnd`, `sampleId` 순서로 정렬한 뒤 contiguous fold로 나눕니다.
+- `testFoldCount`개 test fold 조합을 lexicographic order로 생성하고, 각 combination에 `trainFoldIds`, `testFoldIds`, `trainSampleIds`, `testSampleIds`, `purgedSampleIds`, `embargoedSampleIds`를 기록합니다.
+- exhaustive mode에서 전체 조합 수가 `maxCombinationCount`를 초과하면 plan 생성을 거부합니다.
+- sampled mode는 non-empty `randomSeed`를 요구하며, 전체 조합 수가 budget을 초과하면 deterministic seed로 일부 combination index만 emit합니다.
+- train 후보 sample이 test label window와 겹치면 `purgedSampleIds`로 제외하고, `purgeDurationDays > 0`이면 test label window를 전후로 확장해 더 보수적으로 제외합니다.
+- test window 이후 embargo 구간에 들어오는 train 후보 sample은 `embargoedSampleIds`로 제외합니다.
+
+이 generator는 paper-only historical replay 결과를 사후 검증하기 위한 split artifact입니다. batch replay manifest/report 연결, PBO calculator, dashboard 표시, strategy 자동 선택, live signal 생성은 이번 범위에 포함하지 않습니다.
+
 ### Batch Aggregate Report
 
 batch replay가 생성한 `batch-replay-runs.jsonl`을 읽어 전체 및 market regime별 결과를 집계할 수 있습니다.
