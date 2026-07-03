@@ -214,7 +214,8 @@
 - 네 번째 PR 범위는 `BatchReplayAggregateReport` group summary의 `sharpeValidation` 연결과 aggregate report test로 제한한다.
 - 다섯 번째 PR 범위는 Lo-style serial correlation adjusted Sharpe calculator와 unit test로 제한한다.
 - 여섯 번째 PR 범위는 명시적 benchmark가 있는 standalone Probabilistic Sharpe Ratio calculator와 unit test로 제한한다.
-- Sharpe confidence interval, Deflated Sharpe Ratio 계산과 replay research/dashboard 연결은 후속 PR에서 다룬다.
+- 일곱 번째 PR 범위는 sample Sharpe standard error와 95% confidence interval calculator, unit test로 제한한다.
+- Deflated Sharpe Ratio 계산과 replay research/dashboard 연결은 후속 PR에서 다룬다.
 
 작업 범위:
 

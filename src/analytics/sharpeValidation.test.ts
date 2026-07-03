@@ -49,7 +49,11 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.equal(report.distribution.volatilityRatio, 0.012548);
   assert.equal(report.metrics.sampleSharpe.status, "computed");
   assert.equal(report.metrics.sampleSharpe.value, 0.374554);
-  assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
+  assert.equal(report.metrics.sampleSharpe.standardError, 0.197184);
+  assert.deepEqual(report.metrics.sampleSharpe.confidenceInterval95, {
+    lower: -0.011926,
+    upper: 0.761035
+  });
   assert.equal(report.metrics.loAdjustedSharpe.status, "computed");
   assert.equal(report.metrics.loAdjustedSharpe.value, 0.461839);
   assert.equal(report.metrics.loAdjustedSharpe.confidenceInterval95, null);
@@ -199,6 +203,11 @@ test("Sharpe validation calculator annualizes only with explicit frequency", () 
   assert.equal(withDailyFrequency.sample.annualizationStatus, "annualized");
   assert.equal(withDailyFrequency.sample.annualizationFactor, 252);
   assert.ok(withDailyFrequency.metrics.sampleSharpe.value !== null);
+  assert.equal(withDailyFrequency.metrics.sampleSharpe.standardError, 3.130198);
+  assert.deepEqual(withDailyFrequency.metrics.sampleSharpe.confidenceInterval95, {
+    lower: -0.189325,
+    upper: 12.081051
+  });
   assert.ok(
     withDailyFrequency.metrics.sampleSharpe.value >
       withoutFrequency.metrics.sampleSharpe.value!
