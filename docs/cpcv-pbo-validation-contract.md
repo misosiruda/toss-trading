@@ -174,7 +174,7 @@ standalone calculator는 다음 정책을 따른다.
 - train metric이 같은 후보는 `candidate_key_asc` tie breaker로 deterministic하게 선택한다.
 - 각 combination에서 train metric 후보가 2개 이상일 때 train metric 기준으로 selected candidate를 고른 뒤 test metric rank percentile을 계산한다.
 - test rank percentile은 descending rank의 mid-rank percentile이며, tied test metric 후보는 같은 percentile을 공유한다. PBO 후보는 selected candidate의 test rank percentile이 `0.5` 이하인 combination 비율과 logit rank 값을 함께 기록한다.
-- train metric 후보가 2개 미만이거나 scored combination이 없으면 `pbo.status="insufficient_matrix"` 또는 `pbo.status="not_applicable"`, `probability=null`, warning을 함께 기록한다.
+- train metric 후보가 2개 미만이거나 모든 combination이 scored 되지 않으면 `pbo.status="insufficient_matrix"` 또는 `pbo.status="not_applicable"`, `probability=null`, warning을 함께 기록한다.
 - 모든 값은 paper-only 사후 검증 지표이며 strategy 자동 선택이나 sizing으로 연결하지 않는다.
 
 ## Warning Code 후보
@@ -186,7 +186,7 @@ standalone calculator는 다음 정책을 따른다.
 | `CPCV_SAMPLED_MODE_USED` | full 조합 대신 sampled mode로 degrade됨 | info |
 | `CPCV_PURGE_OR_EMBARGO_REMOVED_ALL_TRAIN` | purge/embargo 이후 train sample이 남지 않음 | warning |
 | `PBO_CANDIDATE_COUNT_INSUFFICIENT` | 후보가 2개 미만이라 PBO를 계산할 수 없음 | warning |
-| `PBO_HOLDOUT_MATRIX_INSUFFICIENT` | test metric matrix가 부족함 | warning |
+| `PBO_HOLDOUT_MATRIX_INSUFFICIENT` | 일부 또는 전체 combination의 comparable test metric matrix가 부족함 | warning |
 | `PBO_SELECTION_TIE_BREAK_APPLIED` | train metric 동률에서 deterministic tie breaker가 적용됨 | info |
 
 ## 기존 구현과의 연결 계획

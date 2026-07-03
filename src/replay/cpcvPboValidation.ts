@@ -492,7 +492,11 @@ function calculatePboEstimate(
   const trainSampledCandidateCount = countTrainSampledCandidates(
     performanceMatrix
   );
-  if (trainSampledCandidateCount < 2 || scoredSelections.length === 0) {
+  if (
+    trainSampledCandidateCount < 2 ||
+    scoredSelections.length === 0 ||
+    scoredSelections.length < selectionLog.length
+  ) {
     return {
       status: "insufficient_matrix",
       probability: null,
@@ -562,7 +566,7 @@ function cpcvPboWarnings(input: {
       message: "PBO requires at least two candidate rows"
     });
   }
-  if (input.pbo.evaluatedCombinationCount === 0) {
+  if (input.pbo.evaluatedCombinationCount < input.selectionLog.length) {
     warnings.push({
       code: "PBO_HOLDOUT_MATRIX_INSUFFICIENT",
       severity: "warning",
