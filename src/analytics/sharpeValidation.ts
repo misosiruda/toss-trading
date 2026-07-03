@@ -1,5 +1,6 @@
 export const SHARPE_VALIDATION_SCHEMA_VERSION = "sharpe_validation.v1";
 export const DEFAULT_SHARPE_VALIDATION_MIN_SAMPLE_COUNT = 30;
+const SHARPE_CONFIDENCE_INTERVAL_95_Z_SCORE = 1.96;
 
 export type SharpeValidationStatus = "available" | "unavailable";
 
@@ -181,6 +182,8 @@ export function calculateSharpeValidationReport(
     minimumSampleCount,
     meanReturnRatio: meanReturnRatioRaw,
     volatilityRatio: volatilityRatioRaw,
+    skewness,
+    excessKurtosis,
     annualizationFactor,
     benchmarkSharpeRatio,
     riskFreeRateRatio
@@ -333,6 +336,8 @@ function calculateSampleSharpe(input: {
   minimumSampleCount: number;
   meanReturnRatio: number | null;
   volatilityRatio: number | null;
+  skewness: number | null;
+  excessKurtosis: number | null;
   annualizationFactor: number | null;
   benchmarkSharpeRatio: number | null;
   riskFreeRateRatio: number | null;
@@ -372,10 +377,30 @@ function calculateSampleSharpe(input: {
     input.annualizationFactor === null
       ? rawSharpe
       : rawSharpe * Math.sqrt(input.annualizationFactor);
+  const sampleFrequencyStandardError = calculateSharpeStandardError({
+    sampleCount: input.sampleCount,
+    sampleFrequencySharpe: rawSharpe,
+    skewness: input.skewness,
+    excessKurtosis: input.excessKurtosis
+  });
+  const standardError =
+    sampleFrequencyStandardError === null
+      ? null
+      : roundRatio(
+          scaleSharpeByAnnualization(
+            sampleFrequencyStandardError,
+            input.annualizationFactor
+          )
+        );
   return estimateShell({
     metric: "sample_sharpe",
     status: "computed",
     value: roundRatio(sharpe),
+    standardError,
+    confidenceInterval95:
+      standardError === null
+        ? null
+        : confidenceInterval95ForEstimate(sharpe, standardError),
     benchmarkSharpeRatio: input.benchmarkSharpeRatio,
     methodNotes
   });
@@ -528,10 +553,11 @@ function calculateProbabilisticSharpeRatio(input: {
     input.annualizationFactor === null
       ? input.benchmarkSharpeRatio
       : input.benchmarkSharpeRatio / Math.sqrt(input.annualizationFactor);
-  const denominatorTerm =
-    1 -
-    input.skewness * sampleFrequencySharpe +
-    ((input.excessKurtosis + 2) / 4) * sampleFrequencySharpe ** 2;
+  const denominatorTerm = sharpeAsymptoticDenominatorTerm({
+    sampleFrequencySharpe,
+    skewness: input.skewness,
+    excessKurtosis: input.excessKurtosis
+  });
   if (!Number.isFinite(denominatorTerm) || denominatorTerm <= 0) {
     return probabilityShell({
       status: "not_applicable",
@@ -579,10 +605,68 @@ function probabilityShell(input: {
   };
 }
 
+function calculateSharpeStandardError(input: {
+  sampleCount: number;
+  sampleFrequencySharpe: number;
+  skewness: number | null;
+  excessKurtosis: number | null;
+}): number | null {
+  if (input.sampleCount < 2) {
+    return null;
+  }
+  if (input.skewness === null || input.excessKurtosis === null) {
+    return null;
+  }
+  const denominatorTerm = sharpeAsymptoticDenominatorTerm({
+    sampleFrequencySharpe: input.sampleFrequencySharpe,
+    skewness: input.skewness,
+    excessKurtosis: input.excessKurtosis
+  });
+  if (!Number.isFinite(denominatorTerm) || denominatorTerm <= 0) {
+    return null;
+  }
+  return Math.sqrt(denominatorTerm / (input.sampleCount - 1));
+}
+
+function sharpeAsymptoticDenominatorTerm(input: {
+  sampleFrequencySharpe: number;
+  skewness: number;
+  excessKurtosis: number;
+}): number {
+  return (
+    1 -
+    input.skewness * input.sampleFrequencySharpe +
+    ((input.excessKurtosis + 2) / 4) * input.sampleFrequencySharpe ** 2
+  );
+}
+
+function confidenceInterval95ForEstimate(
+  value: number,
+  standardError: number
+): SharpeConfidenceInterval {
+  return {
+    lower: roundRatio(
+      value - SHARPE_CONFIDENCE_INTERVAL_95_Z_SCORE * standardError
+    ),
+    upper: roundRatio(
+      value + SHARPE_CONFIDENCE_INTERVAL_95_Z_SCORE * standardError
+    )
+  };
+}
+
+function scaleSharpeByAnnualization(
+  value: number,
+  annualizationFactor: number | null
+): number {
+  return annualizationFactor === null ? value : value * Math.sqrt(annualizationFactor);
+}
+
 function estimateShell(input: {
   metric: SharpeValidationEstimateMetricName;
   status: SharpeValidationMetricStatus;
   value: number | null;
+  standardError?: number | null;
+  confidenceInterval95?: SharpeConfidenceInterval | null;
   benchmarkSharpeRatio: number | null;
   methodNotes: string[];
 }): SharpeValidationEstimate {
@@ -590,8 +674,8 @@ function estimateShell(input: {
     metric: input.metric,
     status: input.status,
     value: input.value,
-    standardError: null,
-    confidenceInterval95: null,
+    standardError: input.standardError ?? null,
+    confidenceInterval95: input.confidenceInterval95 ?? null,
     benchmarkSharpeRatio: input.benchmarkSharpeRatio,
     methodNotes: input.methodNotes
   };
