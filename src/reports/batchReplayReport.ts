@@ -1029,11 +1029,32 @@ function sampledCpcvPboConfigForDiagnostics(
 function sampledCpcvHoldoutCombinations(
   diagnostics: BatchReplayOverfittingDiagnostics
 ): SampledCpcvHoldoutCombination[] {
-  return splitHoldoutKeys(diagnostics.splitMetricMatrix).map((holdout) => ({
-    combinationId: sampledCpcvCombinationId(holdout.splitId, holdout.splitRole),
-    splitId: holdout.splitId,
-    splitRole: holdout.splitRole
-  }));
+  const combinations = new Map<string, SampledCpcvHoldoutCombination>();
+
+  for (const row of diagnostics.splitMetricMatrix) {
+    for (const splitMetric of row.splitMetrics) {
+      if (splitMetric.splitRole === "train") {
+        continue;
+      }
+      const key = splitMetricKey(splitMetric.splitId, splitMetric.splitRole);
+      combinations.set(key, {
+        combinationId: sampledCpcvCombinationId(
+          splitMetric.splitId,
+          splitMetric.splitRole
+        ),
+        splitId: splitMetric.splitId,
+        splitRole: splitMetric.splitRole
+      });
+    }
+  }
+
+  return Array.from(combinations.values()).sort((left, right) => {
+    const splitDelta = left.splitId.localeCompare(right.splitId);
+    return splitDelta !== 0
+      ? splitDelta
+      : validationSplitRoleOrder(left.splitRole) -
+          validationSplitRoleOrder(right.splitRole);
+  });
 }
 
 function sampledCpcvCombinationId(
