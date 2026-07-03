@@ -629,6 +629,43 @@ test("batch replay aggregate report records sampled CPCV PBO-like diagnostics", 
   assert.deepEqual(diagnostics.warnings, []);
   assert.match(renderBatchReplayAggregateReport(report), /pbo_like_score: 1/);
   assert.match(renderBatchReplayAggregateReport(report), /split_metric_matrix/);
+
+  const cpcvPboValidation = report.cpcvPboValidation!;
+  assert.equal(
+    cpcvPboValidation.schemaVersion,
+    "cpcv_pbo_validation.v1"
+  );
+  assert.equal(cpcvPboValidation.status, "sampled");
+  assert.equal(cpcvPboValidation.splitPlan, null);
+  assert.equal(cpcvPboValidation.config.combinationMode, "sampled");
+  assert.equal(cpcvPboValidation.config.selectionMetric, "total_return_ratio");
+  assert.equal(cpcvPboValidation.performanceMatrix.length, 2);
+  assert.deepEqual(
+    cpcvPboValidation.selectionLog.map((entry) => [
+      entry.combinationId,
+      entry.selectedCandidateKey,
+      entry.testRankPercentile
+    ]),
+    [
+      ["wf_report:validation", selectedRow.candidateKey, 0.25],
+      ["wf_report:test", selectedRow.candidateKey, 0.25]
+    ]
+  );
+  assert.equal(cpcvPboValidation.pbo.status, "computed");
+  assert.equal(cpcvPboValidation.pbo.probability, 1);
+  assert.equal(cpcvPboValidation.pbo.evaluatedCombinationCount, 2);
+  assert.deepEqual(
+    cpcvPboValidation.warnings.map((warning) => warning.code),
+    ["CPCV_SAMPLED_MODE_USED", "CPCV_SPLIT_PLAN_UNAVAILABLE"]
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /cpcv_pbo_status: sampled/
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /cpcv_pbo_probability: 1/
+  );
 });
 
 test("batch replay aggregate report separates provider metadata candidates", () => {
@@ -788,6 +825,17 @@ test("batch replay aggregate report warns when PBO-like samples are insufficient
   assert.equal(diagnostics.sampledCpcvSplitCount, 1);
   assert.equal(diagnostics.sampledCpcvSplitCountMatchesExpected, false);
   assert.equal(diagnostics.pboLikeScore, null);
+  assert.equal(report.cpcvPboValidation?.status, "unavailable");
+  assert.equal(report.cpcvPboValidation?.pbo.status, "insufficient_matrix");
+  assert.deepEqual(
+    report.cpcvPboValidation?.warnings.map((warning) => warning.code),
+    [
+      "CPCV_SAMPLED_MODE_USED",
+      "CPCV_SPLIT_PLAN_UNAVAILABLE",
+      "PBO_CANDIDATE_COUNT_INSUFFICIENT",
+      "PBO_HOLDOUT_MATRIX_INSUFFICIENT"
+    ]
+  );
   assert.match(
     diagnostics.warnings.join("\n"),
     /at least two strategy candidates/
@@ -1188,6 +1236,342 @@ test("batch replay aggregate report warns when any holdout split is unscored", (
   assert.match(
     diagnostics.warnings.join("\n"),
     /unscored holdouts were excluded/
+  );
+});
+
+test("batch replay aggregate CPCV PBO artifact preserves all-null holdout splits", () => {
+  const promptHash = hash("z");
+  const candidateAAllocationPolicyHash = hash("candidate_a_all_null_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_all_null_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 4,
+    records: [
+      record("candidate_a_all_null_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_all_null_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record("candidate_a_all_null_split_2_train", 2, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_2"),
+      record("candidate_b_all_null_split_2_train", 3, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_2"),
+      record(
+        "candidate_a_all_null_split_1_validation",
+        4,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_all_null_split_1_validation",
+        5,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_all_null_split_2_validation",
+        6,
+        "skipped",
+        "bull",
+        null,
+        null,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_all_null_split_2_validation",
+        7,
+        "skipped",
+        "bull",
+        null,
+        null,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_all_null_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_all_null_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_all_null_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_all_null_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_all_null_split_2_train",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_all_null_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_all_null_split_2_train",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_all_null_split_2_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_all_null_split_1_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_all_null_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_all_null_split_1_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_all_null_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_all_null_split_2_validation",
+        6,
+        "skipped",
+        promptHash,
+        hash("candidate_a_all_null_split_2_validation_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_all_null_split_2_validation",
+        7,
+        "skipped",
+        promptHash,
+        hash("candidate_b_all_null_split_2_validation_config"),
+        0,
+        0,
+        0,
+        null,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const artifact = report.cpcvPboValidation!;
+
+  assert.equal(report.overfittingDiagnostics?.pboLikeScore, 1);
+  assert.deepEqual(
+    artifact.selectionLog.map((entry) => [
+      entry.combinationId,
+      entry.testRankPercentile
+    ]),
+    [
+      ["split_1:validation", 0.25],
+      ["split_2:validation", null]
+    ]
+  );
+  assert.equal(artifact.status, "unavailable");
+  assert.equal(artifact.pbo.status, "insufficient_matrix");
+  assert.equal(artifact.pbo.evaluatedCombinationCount, 1);
+  assert.match(
+    artifact.warnings.map((warning) => warning.code).join("\n"),
+    /PBO_HOLDOUT_MATRIX_INSUFFICIENT/
+  );
+});
+
+test("batch replay aggregate CPCV PBO artifact requires split-matched train metrics", () => {
+  const promptHash = hash("m");
+  const candidateAAllocationPolicyHash = hash("candidate_a_missing_train_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_missing_train_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("candidate_a_missing_train_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_missing_train_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record(
+        "candidate_a_missing_train_split_1_validation",
+        2,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_missing_train_split_1_validation",
+        3,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_missing_train_split_2_validation",
+        4,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_missing_train_split_2_validation",
+        5,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_missing_train_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_missing_train_split_1_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_1_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_missing_train_split_2_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.03,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_2_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.04,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const artifact = report.cpcvPboValidation!;
+
+  assert.deepEqual(
+    artifact.selectionLog.map((entry) => [
+      entry.combinationId,
+      entry.selectedCandidateKey,
+      entry.testRankPercentile
+    ]),
+    [
+      [
+        "split_1:validation",
+        report.overfittingDiagnostics?.selectedCandidateKey,
+        0.25
+      ],
+      ["split_2:validation", null, null]
+    ]
+  );
+  assert.equal(artifact.status, "unavailable");
+  assert.equal(artifact.pbo.status, "insufficient_matrix");
+  assert.equal(artifact.pbo.evaluatedCombinationCount, 1);
+  assert.match(
+    artifact.warnings.map((warning) => warning.code).join("\n"),
+    /PBO_HOLDOUT_MATRIX_INSUFFICIENT/
   );
 });
 

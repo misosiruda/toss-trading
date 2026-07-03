@@ -8,6 +8,19 @@ import {
   type SharpeValidationReport
 } from "../analytics/sharpeValidation.js";
 import type { AssetType, Market } from "../domain/schemas.js";
+import {
+  CPCV_PBO_VALIDATION_SCHEMA_VERSION,
+  calculateCpcvPboEstimateFromSelectionLog,
+  calculateCpcvPboSelectionLog,
+  cpcvPboValidationReportSchema,
+  type CpcvCandidatePerformanceRow,
+  type CpcvCandidateSplitMetric,
+  type CpcvPboEstimate,
+  type CpcvPboValidationConfig,
+  type CpcvPboValidationReport,
+  type CpcvPboWarning,
+  type CpcvSelectionLogEntry
+} from "../replay/cpcvPboValidation.js";
 import type {
   SelectionTrialRecord,
   SelectionTrialRunStatus
@@ -40,6 +53,7 @@ export interface BatchReplayAggregateReport {
   summary: BatchReplayAggregateSummary;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
+  cpcvPboValidation: CpcvPboValidationReport | null;
   universeCoverage?: BatchReplayUniverseCoverageSummary | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
@@ -281,6 +295,21 @@ export function buildBatchReplayAggregateReport(
       targetReturnThresholds
     );
   }
+  const overfittingDiagnostics =
+    selectionTrials === null && expectedSampledCpcvSplitCount === null
+      ? null
+      : summarizeOverfittingDiagnostics({
+          records,
+          trials: selectionTrials ?? [],
+          expectedSampledCpcvSplitCount
+        });
+  const cpcvPboValidation =
+    overfittingDiagnostics === null
+      ? null
+      : buildSampledCpcvPboValidationReport(
+          overfittingDiagnostics,
+          options.generatedAt
+        );
 
   return {
     title: options.title ?? "Batch Replay Paper Aggregate Report",
@@ -305,14 +334,8 @@ export function buildBatchReplayAggregateReport(
     },
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
-    overfittingDiagnostics:
-      selectionTrials === null && expectedSampledCpcvSplitCount === null
-        ? null
-        : summarizeOverfittingDiagnostics({
-            records,
-            trials: selectionTrials ?? [],
-            expectedSampledCpcvSplitCount
-          }),
+    overfittingDiagnostics,
+    cpcvPboValidation,
     universeCoverage,
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
@@ -354,6 +377,9 @@ export function renderBatchReplayAggregateReport(
     "",
     "## Overfitting Diagnostics",
     renderOverfittingDiagnostics(report.overfittingDiagnostics),
+    "",
+    "## CPCV/PBO Validation",
+    renderCpcvPboValidation(report.cpcvPboValidation),
     "",
     "## Universe Coverage",
     renderUniverseCoverage(report.universeCoverage ?? null),
@@ -937,6 +963,209 @@ function overfittingDiagnosticWarnings(input: {
   return warnings;
 }
 
+interface SampledCpcvHoldoutCombination {
+  combinationId: string;
+  splitId: string;
+  splitRole: Exclude<ValidationSplitRole, "train">;
+}
+
+function buildSampledCpcvPboValidationReport(
+  diagnostics: BatchReplayOverfittingDiagnostics,
+  generatedAt: Date
+): CpcvPboValidationReport {
+  const combinations = sampledCpcvHoldoutCombinations(diagnostics);
+  const performanceMatrix = buildSampledCpcvPerformanceMatrix(
+    diagnostics.splitMetricMatrix,
+    combinations
+  );
+  const selectionLog = calculateCpcvPboSelectionLog({
+    combinationIds: combinations.map((combination) => combination.combinationId),
+    performanceMatrix
+  });
+  const pbo = calculateCpcvPboEstimateFromSelectionLog({
+    performanceMatrix,
+    selectionLog
+  });
+  const warnings = sampledCpcvPboWarnings({
+    performanceMatrix,
+    selectionLog,
+    pbo
+  });
+
+  return cpcvPboValidationReportSchema.parse({
+    schemaVersion: CPCV_PBO_VALIDATION_SCHEMA_VERSION,
+    status: pbo.status === "computed" ? "sampled" : "unavailable",
+    generatedAt: generatedAt.toISOString(),
+    config: sampledCpcvPboConfigForDiagnostics(
+      diagnostics,
+      combinations.length
+    ),
+    splitPlan: null,
+    performanceMatrix,
+    selectionLog,
+    pbo,
+    warnings
+  });
+}
+
+function sampledCpcvPboConfigForDiagnostics(
+  diagnostics: BatchReplayOverfittingDiagnostics,
+  combinationCount: number
+): CpcvPboValidationConfig {
+  return {
+    validationProtocol: "combinatorial_purged_cv",
+    foldCount: Math.max(2, diagnostics.sampledCpcvSplitCount),
+    testFoldCount: 1,
+    purgeDurationDays: 0,
+    embargoDurationDays: 0,
+    selectionMetric: "total_return_ratio",
+    tieBreaker: "candidate_key_asc",
+    maxCombinationCount: Math.max(1, combinationCount),
+    combinationMode: "sampled",
+    randomSeed: "batch_replay_aggregate_sampled_matrix"
+  };
+}
+
+function sampledCpcvHoldoutCombinations(
+  diagnostics: BatchReplayOverfittingDiagnostics
+): SampledCpcvHoldoutCombination[] {
+  const combinations = new Map<string, SampledCpcvHoldoutCombination>();
+
+  for (const row of diagnostics.splitMetricMatrix) {
+    for (const splitMetric of row.splitMetrics) {
+      if (splitMetric.splitRole === "train") {
+        continue;
+      }
+      const key = splitMetricKey(splitMetric.splitId, splitMetric.splitRole);
+      combinations.set(key, {
+        combinationId: sampledCpcvCombinationId(
+          splitMetric.splitId,
+          splitMetric.splitRole
+        ),
+        splitId: splitMetric.splitId,
+        splitRole: splitMetric.splitRole
+      });
+    }
+  }
+
+  return Array.from(combinations.values()).sort((left, right) => {
+    const splitDelta = left.splitId.localeCompare(right.splitId);
+    return splitDelta !== 0
+      ? splitDelta
+      : validationSplitRoleOrder(left.splitRole) -
+          validationSplitRoleOrder(right.splitRole);
+  });
+}
+
+function sampledCpcvCombinationId(
+  splitId: string,
+  splitRole: Exclude<ValidationSplitRole, "train">
+): string {
+  return `${splitId}:${splitRole}`;
+}
+
+function buildSampledCpcvPerformanceMatrix(
+  matrix: readonly BatchReplaySplitMetricRow[],
+  combinations: readonly SampledCpcvHoldoutCombination[]
+): CpcvCandidatePerformanceRow[] {
+  return matrix.map((row) => ({
+    candidateKey: row.candidateKey,
+    promptHash: row.promptHash,
+    configHash: singleConfigHash(row.configHashes),
+    riskPolicyHash: row.riskPolicyHash,
+    exitPolicyHash: row.exitPolicyHash,
+    splitMetrics: combinations.map((combination) =>
+      sampledCpcvCandidateSplitMetric(row, combination)
+    )
+  }));
+}
+
+function sampledCpcvCandidateSplitMetric(
+  row: BatchReplaySplitMetricRow,
+  combination: SampledCpcvHoldoutCombination
+): CpcvCandidateSplitMetric {
+  const trainMetric =
+    splitMetricForCandidate(row, combination.splitId, "train")?.metric ?? null;
+  const testMetric =
+    splitMetricForCandidate(
+      row,
+      combination.splitId,
+      combination.splitRole
+    )?.metric ?? null;
+
+  return {
+    combinationId: combination.combinationId,
+    trainMetric: trainMetric?.averageTotalReturnRatio ?? null,
+    testMetric: testMetric?.averageTotalReturnRatio ?? null,
+    trainReturnSampleCount: trainMetric?.returnSampleCount ?? 0,
+    testReturnSampleCount: testMetric?.returnSampleCount ?? 0
+  };
+}
+
+function singleConfigHash(values: Array<string | null>): string | null {
+  return values.length === 1 ? values[0] ?? null : null;
+}
+
+function sampledCpcvPboWarnings(input: {
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[];
+  selectionLog: readonly CpcvSelectionLogEntry[];
+  pbo: CpcvPboEstimate;
+}): CpcvPboWarning[] {
+  const warnings: CpcvPboWarning[] = [
+    {
+      code: "CPCV_SAMPLED_MODE_USED",
+      severity: "info",
+      message:
+        "Batch aggregate report promoted sampled PBO-like split metrics into cpcv_pbo_validation.v1"
+    },
+    {
+      code: "CPCV_SPLIT_PLAN_UNAVAILABLE",
+      severity: "warning",
+      message:
+        "Batch aggregate sampled diagnostics do not preserve full CPCV fold/sample ids; splitPlan is null"
+    }
+  ];
+
+  if (countSampledCpcvTrainCandidates(input.performanceMatrix) < 2) {
+    warnings.push({
+      code: "PBO_CANDIDATE_COUNT_INSUFFICIENT",
+      severity: "warning",
+      message: "PBO requires at least two candidate rows"
+    });
+  }
+  if (
+    input.pbo.status !== "computed" ||
+    input.pbo.evaluatedCombinationCount < input.selectionLog.length
+  ) {
+    warnings.push({
+      code: "PBO_HOLDOUT_MATRIX_INSUFFICIENT",
+      severity: "warning",
+      message:
+        "PBO requires every scored sampled combination to include comparable holdout metrics for the same train candidates"
+    });
+  }
+  if (input.selectionLog.some((entry) => entry.tieBreakApplied)) {
+    warnings.push({
+      code: "PBO_SELECTION_TIE_BREAK_APPLIED",
+      severity: "info",
+      message:
+        "At least one sampled combination used candidate_key_asc tie breaker"
+    });
+  }
+  return warnings;
+}
+
+function countSampledCpcvTrainCandidates(
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[]
+): number {
+  return performanceMatrix.filter((row) =>
+    row.splitMetrics.some(
+      (metric) =>
+        metric.trainMetric !== null && metric.trainReturnSampleCount > 0
+    )
+  ).length;
+}
+
 function trainSampledCandidates(
   matrix: BatchReplaySplitMetricRow[]
 ): BatchReplaySplitMetricRow[] {
@@ -1434,6 +1663,30 @@ function renderOverfittingDiagnostics(
     `holdout_degradation: ${JSON.stringify(diagnostics.holdoutDegradation)}`,
     `warnings: ${JSON.stringify(diagnostics.warnings)}`,
     `split_metric_matrix: ${JSON.stringify(diagnostics.splitMetricMatrix)}`
+  ].join("\n");
+}
+
+function renderCpcvPboValidation(
+  report: CpcvPboValidationReport | null
+): string {
+  if (report === null) {
+    return "cpcv_pbo_validation: null";
+  }
+
+  return [
+    `schema_version: ${report.schemaVersion}`,
+    `cpcv_pbo_status: ${report.status}`,
+    `config: ${JSON.stringify(report.config)}`,
+    `split_plan: ${JSON.stringify(report.splitPlan)}`,
+    `pbo_status: ${report.pbo.status}`,
+    `cpcv_pbo_probability: ${formatNullable(report.pbo.probability)}`,
+    `evaluated_combination_count: ${report.pbo.evaluatedCombinationCount}`,
+    `selected_below_median_count: ${report.pbo.selectedBelowMedianCount}`,
+    `lambda_logit_values: ${JSON.stringify(report.pbo.lambdaLogitValues)}`,
+    `method_notes: ${JSON.stringify(report.pbo.methodNotes)}`,
+    `warnings: ${JSON.stringify(report.warnings)}`,
+    `selection_log: ${JSON.stringify(report.selectionLog)}`,
+    `performance_matrix: ${JSON.stringify(report.performanceMatrix)}`
   ].join("\n");
 }
 

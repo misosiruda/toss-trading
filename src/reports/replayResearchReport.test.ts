@@ -110,6 +110,7 @@ function aggregateReport(
   overrides: {
     trialSummary?: BatchReplayAggregateReport["trialSummary"];
     overfittingDiagnostics?: BatchReplayAggregateReport["overfittingDiagnostics"];
+    cpcvPboValidation?: BatchReplayAggregateReport["cpcvPboValidation"];
     validationSplitRoleCounts?: BatchReplayAggregateReport["summary"]["validationSplitRoleCounts"];
     universeCoverage?: BatchReplayAggregateReport["universeCoverage"];
   } = {}
@@ -216,6 +217,7 @@ function aggregateReport(
             warnings: ["selected candidate degraded in validation holdout"]
           }
         : overrides.overfittingDiagnostics,
+    cpcvPboValidation: overrides.cpcvPboValidation ?? null,
     universeCoverage:
       overrides.universeCoverage === undefined
         ? {

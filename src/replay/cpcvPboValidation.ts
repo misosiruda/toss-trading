@@ -28,6 +28,7 @@ export const cpcvPboWarningCodeSchema = z.enum([
   "CPCV_CONFIG_INVALID",
   "CPCV_COMBINATION_BUDGET_EXCEEDED",
   "CPCV_SAMPLED_MODE_USED",
+  "CPCV_SPLIT_PLAN_UNAVAILABLE",
   "CPCV_PURGE_OR_EMBARGO_REMOVED_ALL_TRAIN",
   "PBO_CANDIDATE_COUNT_INSUFFICIENT",
   "PBO_HOLDOUT_MATRIX_INSUFFICIENT",
@@ -219,6 +220,16 @@ export interface CalculateCpcvPboValidationReportOptions {
   performanceMatrix: readonly CpcvCandidatePerformanceRow[];
 }
 
+export interface CalculateCpcvPboSelectionLogOptions {
+  combinationIds: readonly string[];
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[];
+}
+
+export interface CalculateCpcvPboEstimateFromSelectionLogOptions {
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[];
+  selectionLog: readonly CpcvSelectionLogEntry[];
+}
+
 interface RankedTestCandidate {
   candidateKey: string;
   testMetric: number;
@@ -242,10 +253,16 @@ export function calculateCpcvPboValidationReport(
   assertConfigMatchesSplitPlan(config, splitPlan);
   assertCandidateKeysUnique(performanceMatrix);
 
-  const selectionLog = splitPlan.combinations.map((combination) =>
-    selectCombinationCandidate(combination.combinationId, performanceMatrix)
-  );
-  const pbo = calculatePboEstimate(performanceMatrix, selectionLog);
+  const selectionLog = calculateCpcvPboSelectionLog({
+    combinationIds: splitPlan.combinations.map(
+      (combination) => combination.combinationId
+    ),
+    performanceMatrix
+  });
+  const pbo = calculateCpcvPboEstimateFromSelectionLog({
+    performanceMatrix,
+    selectionLog
+  });
   const warnings = cpcvPboWarnings({
     splitPlan,
     performanceMatrix,
@@ -265,6 +282,34 @@ export function calculateCpcvPboValidationReport(
     pbo,
     warnings
   });
+}
+
+export function calculateCpcvPboSelectionLog(
+  options: CalculateCpcvPboSelectionLogOptions
+): CpcvSelectionLogEntry[] {
+  const combinationIds = z
+    .array(z.string().trim().min(1))
+    .parse(options.combinationIds);
+  const performanceMatrix = z
+    .array(cpcvCandidatePerformanceRowSchema)
+    .parse(options.performanceMatrix);
+
+  return combinationIds.map((combinationId) =>
+    selectCombinationCandidate(combinationId, performanceMatrix)
+  );
+}
+
+export function calculateCpcvPboEstimateFromSelectionLog(
+  options: CalculateCpcvPboEstimateFromSelectionLogOptions
+): CpcvPboEstimate {
+  const performanceMatrix = z
+    .array(cpcvCandidatePerformanceRowSchema)
+    .parse(options.performanceMatrix);
+  const selectionLog = z
+    .array(cpcvSelectionLogEntrySchema)
+    .parse(options.selectionLog);
+
+  return calculatePboEstimate(performanceMatrix, selectionLog);
 }
 
 function normalizeGeneratedAt(generatedAt: Date | string | undefined): string {
