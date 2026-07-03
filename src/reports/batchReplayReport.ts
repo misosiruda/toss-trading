@@ -1084,9 +1084,8 @@ function sampledCpcvCandidateSplitMetric(
   row: BatchReplaySplitMetricRow,
   combination: SampledCpcvHoldoutCombination
 ): CpcvCandidateSplitMetric {
-  const splitTrainMetric =
+  const trainMetric =
     splitMetricForCandidate(row, combination.splitId, "train")?.metric ?? null;
-  const trainMetric = splitTrainMetric ?? row.roleMetrics.train ?? null;
   const testMetric =
     splitMetricForCandidate(
       row,

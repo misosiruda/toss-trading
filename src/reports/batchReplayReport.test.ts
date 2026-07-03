@@ -1418,6 +1418,163 @@ test("batch replay aggregate CPCV PBO artifact preserves all-null holdout splits
   );
 });
 
+test("batch replay aggregate CPCV PBO artifact requires split-matched train metrics", () => {
+  const promptHash = hash("m");
+  const candidateAAllocationPolicyHash = hash("candidate_a_missing_train_policy");
+  const candidateBAllocationPolicyHash = hash("candidate_b_missing_train_policy");
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    expectedSampledCpcvSplitCount: 3,
+    records: [
+      record("candidate_a_missing_train_split_1_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train", "split_1"),
+      record("candidate_b_missing_train_split_1_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train", "split_1"),
+      record(
+        "candidate_a_missing_train_split_1_validation",
+        2,
+        "completed",
+        "bull",
+        -0.1,
+        900_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_b_missing_train_split_1_validation",
+        3,
+        "completed",
+        "bull",
+        0.05,
+        1_050_000,
+        0,
+        "validation",
+        "split_1"
+      ),
+      record(
+        "candidate_a_missing_train_split_2_validation",
+        4,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "validation",
+        "split_2"
+      ),
+      record(
+        "candidate_b_missing_train_split_2_validation",
+        5,
+        "completed",
+        "bull",
+        0.04,
+        1_040_000,
+        0,
+        "validation",
+        "split_2"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "candidate_a_missing_train_split_1_train",
+        0,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.2,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_1_train",
+        1,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_1_train_config"),
+        1,
+        0,
+        0,
+        0.1,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_missing_train_split_1_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_1_validation_config"),
+        1,
+        0,
+        0,
+        -0.1,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_1_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_1_validation_config"),
+        1,
+        0,
+        0,
+        0.05,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_a_missing_train_split_2_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("candidate_a_missing_train_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.03,
+        { allocationPolicyHash: candidateAAllocationPolicyHash }
+      ),
+      trial(
+        "candidate_b_missing_train_split_2_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("candidate_b_missing_train_split_2_validation_config"),
+        1,
+        0,
+        0,
+        0.04,
+        { allocationPolicyHash: candidateBAllocationPolicyHash }
+      )
+    ]
+  });
+
+  const artifact = report.cpcvPboValidation!;
+
+  assert.deepEqual(
+    artifact.selectionLog.map((entry) => [
+      entry.combinationId,
+      entry.selectedCandidateKey,
+      entry.testRankPercentile
+    ]),
+    [
+      [
+        "split_1:validation",
+        report.overfittingDiagnostics?.selectedCandidateKey,
+        0.25
+      ],
+      ["split_2:validation", null, null]
+    ]
+  );
+  assert.equal(artifact.status, "unavailable");
+  assert.equal(artifact.pbo.status, "insufficient_matrix");
+  assert.equal(artifact.pbo.evaluatedCombinationCount, 1);
+  assert.match(
+    artifact.warnings.map((warning) => warning.code).join("\n"),
+    /PBO_HOLDOUT_MATRIX_INSUFFICIENT/
+  );
+});
+
 test("batch replay aggregate report scores PBO-like degradation per holdout split", () => {
   const promptHash = hash("a");
   const candidateAAllocationPolicyHash = hash("candidate_a_allocation_policy");
