@@ -397,6 +397,25 @@ test("renders validation lab detail without strategy recommendation controls", a
   await expect(page.getByText("train evidence only")).toBeVisible();
   await expect(page.getByText("Candidate rows")).toBeVisible();
   await expect(page.getByText("Policy Candidate Comparison")).toBeVisible();
+  const pboWarning = page.getByLabel("CPCV PBO validation warning");
+  await expect(
+    pboWarning.getByRole("heading", {
+      name: "CPCV/PBO Validation Warning",
+    })
+  ).toBeVisible();
+  await expect(pboWarning.getByText("sampled", { exact: true })).toHaveCount(2);
+  await expect(pboWarning.getByText("100%", { exact: true })).toBeVisible();
+  await expect(
+    pboWarning.getByText("CPCV_SAMPLED_MODE_USED")
+  ).toBeVisible();
+  await expect(
+    pboWarning.getByText("read-only validation warning only")
+  ).toBeVisible();
+  await expect(
+    pboWarning.getByText(
+      "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
+    )
+  ).toBeVisible();
 
   const comparisonTable = page.getByRole("table", {
     name: "Policy candidate comparison table",

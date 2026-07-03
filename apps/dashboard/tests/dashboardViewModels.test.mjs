@@ -40,9 +40,16 @@ test("validation lab fallback fills missing candidate comparison", async () => {
     normalized.candidateComparison.warnings.join("\n"),
     /does not include candidateComparison/
   );
+  assert.equal(normalized.cpcvPboValidation.status, "missing");
+  assert.match(
+    normalized.cpcvPboValidation.warnings
+      .map((warning) => warning.message)
+      .join("\n"),
+    /does not include cpcvPboValidation/
+  );
 });
 
-test("validation lab fallback preserves existing candidate comparison", async () => {
+test("validation lab fallback preserves existing validation lab extensions", async () => {
   const { withValidationLabCandidateComparisonFallback } =
     await loadDashboardViewModelsModule();
   const payload = {
@@ -54,6 +61,27 @@ test("validation lab fallback preserves existing candidate comparison", async ()
       returnSampleCount: 1,
       rows: [],
       warnings: []
+    },
+    cpcvPboValidation: {
+      status: "sampled",
+      schemaVersion: "cpcv_pbo_validation.v1",
+      generatedAt: "2026-07-03T00:00:00.000Z",
+      pboStatus: "computed",
+      pboProbability: 1,
+      evaluatedCombinationCount: 2,
+      selectedBelowMedianCount: 2,
+      combinationMode: "sampled",
+      splitPlanAvailable: false,
+      warningCount: 1,
+      warnings: [
+        {
+          code: "CPCV_SPLIT_PLAN_UNAVAILABLE",
+          severity: "warning",
+          message: "sampled aggregate has no standalone CPCV split plan"
+        }
+      ],
+      readOnlyNotice:
+        "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
     }
   };
 

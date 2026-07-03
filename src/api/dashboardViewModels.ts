@@ -427,6 +427,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  cpcvPboValidation: CpcvPboValidationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -437,6 +438,27 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface CpcvPboValidationView {
+  status: "missing" | "available" | "sampled" | "unavailable";
+  schemaVersion: string | null;
+  generatedAt: string | null;
+  pboStatus: string | null;
+  pboProbability: number | null;
+  evaluatedCombinationCount: number;
+  selectedBelowMedianCount: number;
+  combinationMode: string | null;
+  splitPlanAvailable: boolean;
+  warningCount: number;
+  warnings: CpcvPboWarningView[];
+  readOnlyNotice: string;
+}
+
+export interface CpcvPboWarningView {
+  code: string;
+  severity: "info" | "warning";
+  message: string;
 }
 
 interface ValidationCandidateComparisonView {
@@ -942,6 +964,7 @@ export async function readDashboardValidationLabViewModel(
       dataUniverseCoverage: report.dataUniverseCoverage,
       promptTrialDistribution: report.promptTrialDistribution,
       overfittingWarning: report.overfittingWarning,
+      cpcvPboValidation: cpcvPboValidationView(aggregate.value),
       candidateComparison: validationCandidateComparison(aggregate.value),
       providerFailureSummary: report.providerFailureSummary,
       riskRejectSummary: report.riskRejectSummary,
@@ -1423,6 +1446,61 @@ function validationCandidateComparison(
   };
 }
 
+function cpcvPboValidationView(
+  aggregate: BatchReplayAggregateReport
+): CpcvPboValidationView {
+  const report = aggregate.cpcvPboValidation;
+  if (report === null || report === undefined) {
+    return missingCpcvPboValidationView([
+      "cpcv_pbo_validation.v1 artifact is missing"
+    ]);
+  }
+
+  return {
+    status: report.status,
+    schemaVersion: report.schemaVersion,
+    generatedAt: report.generatedAt,
+    pboStatus: report.pbo.status,
+    pboProbability: report.pbo.probability,
+    evaluatedCombinationCount: report.pbo.evaluatedCombinationCount,
+    selectedBelowMedianCount: report.pbo.selectedBelowMedianCount,
+    combinationMode: report.config.combinationMode,
+    splitPlanAvailable: report.splitPlan !== null,
+    warningCount: report.warnings.length,
+    warnings: report.warnings.map((warning) => ({
+      code: warning.code,
+      severity: warning.severity,
+      message: warning.message
+    })),
+    readOnlyNotice:
+      "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
+  };
+}
+
+function missingCpcvPboValidationView(
+  warnings: string[] = []
+): CpcvPboValidationView {
+  return {
+    status: "missing",
+    schemaVersion: null,
+    generatedAt: null,
+    pboStatus: null,
+    pboProbability: null,
+    evaluatedCombinationCount: 0,
+    selectedBelowMedianCount: 0,
+    combinationMode: null,
+    splitPlanAvailable: false,
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "CPCV_PBO_VALIDATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
+  };
+}
+
 function validationLabWarnings(
   aggregate: BatchReplayAggregateReport,
   reportWarnings: string[]
@@ -1524,6 +1602,11 @@ function validationLabUnavailable(
     dataUniverseCoverage: null,
     promptTrialDistribution: null,
     overfittingWarning: null,
+    cpcvPboValidation: missingCpcvPboValidationView([
+      status === "missing"
+        ? "batch replay aggregate report is missing"
+        : "batch replay aggregate report is not usable"
+    ]),
     candidateComparison: {
       status: "missing",
       selectionMetric: null,
