@@ -162,6 +162,50 @@ test("CPCV PBO calculator uses mid-ranks for tied test metrics", () => {
   assert.deepEqual(report.pbo.lambdaLogitValues, [0, 0]);
 });
 
+test("CPCV PBO calculator uses locale-independent candidate key ordering", () => {
+  const plan = buildCombinatorialPurgedCvPlan({
+    planId: "pbo_candidate_key_ordering",
+    foldCount: 2,
+    testFoldCount: 1,
+    maxCombinationCount: 2,
+    samples: sequentialSamples(4)
+  });
+  const [c1, c2] = plan.combinations.map(
+    (combination) => combination.combinationId
+  );
+  const report = calculateCpcvPboValidationReport({
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    config: configFromPlan(plan),
+    splitPlan: plan,
+    performanceMatrix: [
+      row("z-candidate", [
+        metric(c1!, 0.2, 0.2),
+        metric(c2!, 0.2, 0.2)
+      ]),
+      row("\u00e4-candidate", [
+        metric(c1!, 0.2, 0.1),
+        metric(c2!, 0.2, 0.1)
+      ])
+    ]
+  });
+
+  assert.deepEqual(
+    report.selectionLog.map((entry) => [
+      entry.selectedCandidateKey,
+      entry.tieBreakApplied
+    ]),
+    [
+      ["z-candidate", true],
+      ["z-candidate", true]
+    ]
+  );
+  assert.equal(report.pbo.status, "computed");
+  assert.deepEqual(
+    report.warnings.map((warning) => warning.code),
+    ["PBO_SELECTION_TIE_BREAK_APPLIED"]
+  );
+});
+
 test("CPCV PBO calculator fails closed for partially scored holdout matrix", () => {
   const plan = buildCombinatorialPurgedCvPlan({
     planId: "pbo_partial_holdout",
@@ -206,6 +250,58 @@ test("CPCV PBO calculator fails closed for partially scored holdout matrix", () 
       ["candidate-a", 0.1, 0.25],
       ["candidate-a", 0.2, 0.75],
       ["candidate-a", null, null]
+    ]
+  );
+  assert.deepEqual(report.pbo.lambdaLogitValues, []);
+  assert.deepEqual(
+    report.warnings.map((warning) => warning.code),
+    ["PBO_HOLDOUT_MATRIX_INSUFFICIENT"]
+  );
+});
+
+test("CPCV PBO calculator fails closed for unstable train candidate universe", () => {
+  const plan = buildCombinatorialPurgedCvPlan({
+    planId: "pbo_unstable_train_universe",
+    foldCount: 2,
+    testFoldCount: 1,
+    maxCombinationCount: 2,
+    samples: sequentialSamples(4)
+  });
+  const [c1, c2] = plan.combinations.map(
+    (combination) => combination.combinationId
+  );
+  const report = calculateCpcvPboValidationReport({
+    generatedAt: "2026-07-03T00:00:00.000Z",
+    config: configFromPlan(plan),
+    splitPlan: plan,
+    performanceMatrix: [
+      row("candidate-a", [
+        metric(c1!, 0.3, 0.1),
+        metric(c2!, 0.3, 0.2)
+      ]),
+      row("candidate-b", [
+        metric(c1!, 0.2, 0.2),
+        metric(c2!, null, null)
+      ]),
+      row("candidate-c", [
+        metric(c1!, null, null),
+        metric(c2!, 0.2, 0.1)
+      ])
+    ]
+  });
+
+  assert.equal(report.status, "unavailable");
+  assert.equal(report.pbo.status, "insufficient_matrix");
+  assert.equal(report.pbo.probability, null);
+  assert.equal(report.pbo.evaluatedCombinationCount, 2);
+  assert.deepEqual(
+    report.selectionLog.map((entry) => [
+      entry.selectedCandidateKey,
+      entry.testRankPercentile
+    ]),
+    [
+      ["candidate-a", 0.25],
+      ["candidate-a", 0.75]
     ]
   );
   assert.deepEqual(report.pbo.lambdaLogitValues, []);

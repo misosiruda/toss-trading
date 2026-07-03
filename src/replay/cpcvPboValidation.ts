@@ -418,7 +418,7 @@ function compareTrainCandidates(
   const metricDelta = right.metric.trainMetric! - left.metric.trainMetric!;
   return metricDelta !== 0
     ? metricDelta
-    : left.row.candidateKey.localeCompare(right.row.candidateKey);
+    : compareCandidateKeys(left.row.candidateKey, right.row.candidateKey);
 }
 
 function rankedComparableTestCandidates(
@@ -440,8 +440,18 @@ function rankedComparableTestCandidates(
     const metricDelta = right.testMetric - left.testMetric;
     return metricDelta !== 0
       ? metricDelta
-      : left.candidateKey.localeCompare(right.candidateKey);
+      : compareCandidateKeys(left.candidateKey, right.candidateKey);
   });
+}
+
+function compareCandidateKeys(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
 }
 
 function testRankPercentileForCandidate(
@@ -484,6 +494,7 @@ function calculatePboEstimate(
   );
   if (
     trainSampledCandidateCount < 2 ||
+    !hasStableTrainCandidateUniverse(performanceMatrix, selectionLog) ||
     scoredSelections.length === 0 ||
     scoredSelections.length < selectionLog.length
   ) {
@@ -556,7 +567,13 @@ function cpcvPboWarnings(input: {
       message: "PBO requires at least two candidate rows"
     });
   }
-  if (input.pbo.evaluatedCombinationCount < input.selectionLog.length) {
+  if (
+    input.pbo.evaluatedCombinationCount < input.selectionLog.length ||
+    !hasStableTrainCandidateUniverse(
+      input.performanceMatrix,
+      input.selectionLog
+    )
+  ) {
     warnings.push({
       code: "PBO_HOLDOUT_MATRIX_INSUFFICIENT",
       severity: "warning",
@@ -581,6 +598,43 @@ function countTrainSampledCandidates(
   return performanceMatrix.filter((row) =>
     row.splitMetrics.some(hasTrainMetric)
   ).length;
+}
+
+function hasStableTrainCandidateUniverse(
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[],
+  selectionLog: readonly CpcvSelectionLogEntry[]
+): boolean {
+  const [firstCombination, ...remainingCombinations] = selectionLog.map(
+    (entry) =>
+      trainCandidateKeysForCombination(performanceMatrix, entry.combinationId)
+  );
+  if (firstCombination === undefined || firstCombination.length < 2) {
+    return false;
+  }
+
+  return remainingCombinations.every((candidateKeys) =>
+    sameCandidateKeySet(firstCombination, candidateKeys)
+  );
+}
+
+function trainCandidateKeysForCombination(
+  performanceMatrix: readonly CpcvCandidatePerformanceRow[],
+  combinationId: string
+): string[] {
+  return performanceMatrix
+    .filter((row) => hasTrainMetric(splitMetricFor(row, combinationId)))
+    .map((row) => row.candidateKey)
+    .sort(compareCandidateKeys);
+}
+
+function sameCandidateKeySet(
+  left: readonly string[],
+  right: readonly string[]
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((candidateKey, index) => candidateKey === right[index])
+  );
 }
 
 function reportStatusFor(
