@@ -224,6 +224,11 @@ interface RankedTestCandidate {
   testMetric: number;
 }
 
+interface TrainCandidate {
+  row: CpcvCandidatePerformanceRow;
+  metric: CpcvCandidateSplitMetric;
+}
+
 export function calculateCpcvPboValidationReport(
   options: CalculateCpcvPboValidationReportOptions
 ): CpcvPboValidationReport {
@@ -335,12 +340,7 @@ function selectCombinationCandidate(
       row,
       metric: splitMetricFor(row, combinationId)
     }))
-    .filter(
-      (entry): entry is {
-        row: CpcvCandidatePerformanceRow;
-        metric: CpcvCandidateSplitMetric;
-      } => hasTrainMetric(entry.metric)
-    )
+    .filter((entry): entry is TrainCandidate => hasTrainMetric(entry.metric))
     .sort(compareTrainCandidates);
 
   if (trainCandidates.length < 2) {
@@ -358,24 +358,24 @@ function selectCombinationCandidate(
   const tieBreakApplied =
     trainCandidates.length > 1 &&
     selected.metric.trainMetric === trainCandidates[1]!.metric.trainMetric;
-  const testCandidates = rankedTestCandidates(performanceMatrix, combinationId);
-  const selectedTestIndex = testCandidates.findIndex(
-    (candidate) => candidate.candidateKey === selected.row.candidateKey
+  const selectedTestMetric = splitMetricFor(selected.row, combinationId);
+  const selectedTestMetricValue = hasTestMetric(selectedTestMetric)
+    ? selectedTestMetric.testMetric
+    : null;
+  const testCandidates = rankedComparableTestCandidates(
+    trainCandidates,
+    combinationId
   );
   const testRankPercentile = testRankPercentileForCandidate(
     testCandidates,
     selected.row.candidateKey
   );
-  const selectedTestMetric =
-    selectedTestIndex === -1
-      ? null
-      : testCandidates[selectedTestIndex]!.testMetric;
 
   return {
     combinationId,
     selectedCandidateKey: selected.row.candidateKey,
     selectedTrainMetric: selected.metric.trainMetric,
-    selectedTestMetric,
+    selectedTestMetric: selectedTestMetricValue,
     testRankPercentile,
     tieBreakApplied
   };
@@ -412,14 +412,8 @@ function hasTestMetric(
 }
 
 function compareTrainCandidates(
-  left: {
-    row: CpcvCandidatePerformanceRow;
-    metric: CpcvCandidateSplitMetric;
-  },
-  right: {
-    row: CpcvCandidatePerformanceRow;
-    metric: CpcvCandidateSplitMetric;
-  }
+  left: TrainCandidate,
+  right: TrainCandidate
 ): number {
   const metricDelta = right.metric.trainMetric! - left.metric.trainMetric!;
   return metricDelta !== 0
@@ -427,31 +421,27 @@ function compareTrainCandidates(
     : left.row.candidateKey.localeCompare(right.row.candidateKey);
 }
 
-function rankedTestCandidates(
-  performanceMatrix: readonly CpcvCandidatePerformanceRow[],
+function rankedComparableTestCandidates(
+  trainCandidates: readonly TrainCandidate[],
   combinationId: string
 ): RankedTestCandidate[] {
-  return performanceMatrix
-    .map((row) => ({
-      candidateKey: row.candidateKey,
-      metric: splitMetricFor(row, combinationId)
-    }))
-    .filter(
-      (entry): entry is {
-        candidateKey: string;
-        metric: CpcvCandidateSplitMetric;
-      } => hasTestMetric(entry.metric)
-    )
-    .map((entry) => ({
-      candidateKey: entry.candidateKey,
-      testMetric: entry.metric.testMetric!
-    }))
-    .sort((left, right) => {
-      const metricDelta = right.testMetric - left.testMetric;
-      return metricDelta !== 0
-        ? metricDelta
-        : left.candidateKey.localeCompare(right.candidateKey);
+  const rankedCandidates: RankedTestCandidate[] = [];
+  for (const candidate of trainCandidates) {
+    const metric = splitMetricFor(candidate.row, combinationId);
+    if (!hasTestMetric(metric)) {
+      return [];
+    }
+    rankedCandidates.push({
+      candidateKey: candidate.row.candidateKey,
+      testMetric: metric.testMetric!
     });
+  }
+  return rankedCandidates.sort((left, right) => {
+    const metricDelta = right.testMetric - left.testMetric;
+    return metricDelta !== 0
+      ? metricDelta
+      : left.candidateKey.localeCompare(right.candidateKey);
+  });
 }
 
 function testRankPercentileForCandidate(
@@ -571,7 +561,7 @@ function cpcvPboWarnings(input: {
       code: "PBO_HOLDOUT_MATRIX_INSUFFICIENT",
       severity: "warning",
       message:
-        "PBO requires at least one combination with selected train and comparable test metrics"
+        "PBO requires every scored combination to include comparable test metrics for the same train candidates"
     });
   }
   if (input.selectionLog.some((entry) => entry.tieBreakApplied)) {

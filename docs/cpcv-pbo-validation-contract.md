@@ -172,9 +172,10 @@ standalone calculator는 다음 정책을 따른다.
 - purge는 label interval overlap을 train sample에서 제거한다.
 - embargo는 test window 이후 설정된 기간의 train sample을 제거한다.
 - train metric이 같은 후보는 `candidate_key_asc` tie breaker로 deterministic하게 선택한다.
-- 각 combination에서 train metric 후보가 2개 이상일 때 train metric 기준으로 selected candidate를 고른 뒤 test metric rank percentile을 계산한다.
+- 각 combination에서 train metric 후보가 2개 이상일 때 train metric 기준으로 selected candidate를 고른다.
+- train에서 경쟁한 모든 candidate가 같은 combination의 comparable test metric을 가진 경우에만 test rank percentile을 계산한다.
 - test rank percentile은 descending rank의 mid-rank percentile이며, tied test metric 후보는 같은 percentile을 공유한다. PBO 후보는 selected candidate의 test rank percentile이 `0.5` 이하인 combination 비율과 logit rank 값을 함께 기록한다.
-- train metric 후보가 2개 미만이거나 모든 combination이 scored 되지 않으면 `pbo.status="insufficient_matrix"` 또는 `pbo.status="not_applicable"`, `probability=null`, warning을 함께 기록한다.
+- train metric 후보가 2개 미만이거나 모든 combination이 같은 train candidate 집합 기준으로 scored 되지 않으면 `pbo.status="insufficient_matrix"` 또는 `pbo.status="not_applicable"`, `probability=null`, warning을 함께 기록한다.
 - 모든 값은 paper-only 사후 검증 지표이며 strategy 자동 선택이나 sizing으로 연결하지 않는다.
 
 ## Warning Code 후보

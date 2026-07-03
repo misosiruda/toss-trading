@@ -773,7 +773,8 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `config`, `splitPlan`, `performanceMatrix`, `selectionLog`, `pbo`, `warnings`를 하나의 artifact로 검증합니다.
 - `config`는 `combinatorial_purged_cv` split plan의 fold, purge/embargo, combination mode, seed, budget과 일치해야 하며 mismatch는 fail-closed로 거부합니다.
 - 각 combination에서 `trainMetric` 후보가 2개 이상일 때 가장 높은 candidate를 선택하고, 동률이면 `candidate_key_asc` tie breaker를 적용합니다.
-- selected candidate의 `testMetric` rank를 descending mid-rank percentile로 계산하며, tied test metric 후보는 같은 percentile을 공유합니다. 모든 combination이 scored 된 경우에만 percentile이 `0.5` 이하인 combination 비율을 `pbo.probability`로 기록합니다.
+- train에서 경쟁한 모든 candidate가 같은 combination의 comparable `testMetric`을 가진 경우에만 selected candidate의 rank를 descending mid-rank percentile로 계산하며, tied test metric 후보는 같은 percentile을 공유합니다.
+- 모든 combination이 같은 train candidate 집합 기준으로 scored 된 경우에만 percentile이 `0.5` 이하인 combination 비율을 `pbo.probability`로 기록합니다.
 - train-side candidate competition이 없거나 일부 또는 전체 combination의 comparable test metric matrix가 없으면 `pbo.status="insufficient_matrix"`, `probability=null`, warning을 기록합니다.
 - sampled CPCV split plan을 입력으로 받으면 report `status`는 `sampled`이고 `CPCV_SAMPLED_MODE_USED` warning을 남깁니다.
 
