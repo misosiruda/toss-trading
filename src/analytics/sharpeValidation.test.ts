@@ -17,6 +17,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
 
   const report = calculateSharpeValidationReport({
     returns,
+    benchmarkSharpeRatio: 0,
     autocorrelationMaxLag: 2,
     selectionContext: {
       candidateCount: 3,
@@ -28,6 +29,7 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
 
   assert.deepEqual(report, calculateSharpeValidationReport({
     returns,
+    benchmarkSharpeRatio: 0,
     autocorrelationMaxLag: 2,
     selectionContext: {
       candidateCount: 3,
@@ -51,6 +53,12 @@ test("Sharpe validation calculator computes sample metrics deterministically", (
   assert.equal(report.metrics.loAdjustedSharpe.status, "computed");
   assert.equal(report.metrics.loAdjustedSharpe.value, 0.461839);
   assert.equal(report.metrics.loAdjustedSharpe.confidenceInterval95, null);
+  assert.equal(report.metrics.probabilisticSharpeRatio.status, "computed");
+  assert.equal(report.metrics.probabilisticSharpeRatio.probability, 0.971252);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.benchmarkSharpeRatio,
+    0
+  );
   assert.equal(
     report.distribution.autocorrelation.adjustmentStatus,
     "computed"
@@ -115,6 +123,11 @@ test("Sharpe validation calculator keeps Lo adjustment unavailable without autoc
   assert.equal(report.metrics.sampleSharpe.status, "computed");
   assert.equal(report.metrics.loAdjustedSharpe.status, "not_applicable");
   assert.equal(report.metrics.loAdjustedSharpe.value, null);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.status,
+    "not_applicable"
+  );
+  assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
   assert.equal(
     report.distribution.autocorrelation.adjustmentStatus,
     "not_required"
@@ -192,6 +205,36 @@ test("Sharpe validation calculator annualizes only with explicit frequency", () 
   );
 });
 
+test("Sharpe validation calculator keeps PSR inputs in sample frequency", () => {
+  const returns = [
+    -0.018, -0.01, -0.004, 0.002, 0.009, 0.015, -0.012, 0.006, 0.011, -0.007,
+    0.014, 0.018, -0.016, 0.004, 0.012, 0.021, -0.009, 0.003, 0.017, 0.024,
+    -0.014, 0.005, 0.01, 0.019, -0.006, 0.007, 0.013, 0.022, -0.011, 0.016
+  ];
+
+  const report = calculateSharpeValidationReport({
+    returns,
+    returnFrequency: "daily",
+    annualizationFactor: 252,
+    benchmarkSharpeRatio: 0.5,
+    selectionContext: {
+      candidateCount: 2,
+      trialCount: 10
+    }
+  });
+
+  assert.equal(report.metrics.sampleSharpe.status, "computed");
+  assert.equal(report.metrics.sampleSharpe.value, 5.945863);
+  assert.equal(report.metrics.probabilisticSharpeRatio.status, "computed");
+  assert.equal(report.metrics.probabilisticSharpeRatio.probability, 0.959051);
+  assert.ok(report.metrics.probabilisticSharpeRatio.probability < 0.99);
+  assert.match(
+    report.metrics.probabilisticSharpeRatio.methodNotes.join("\n"),
+    /converts annualized Sharpe inputs back to sample frequency/
+  );
+  assert.equal(JSON.stringify(report).includes("NaN"), false);
+});
+
 test("unavailable Sharpe validation report exposes deterministic schema defaults", () => {
   const report = createUnavailableSharpeValidationReport({
     returnSampleCount: 2,
@@ -210,6 +253,10 @@ test("unavailable Sharpe validation report exposes deterministic schema defaults
   assert.equal(report.metrics.sampleSharpe.confidenceInterval95, null);
   assert.equal(report.metrics.loAdjustedSharpe.status, "insufficient_sample");
   assert.equal(report.metrics.loAdjustedSharpe.value, null);
+  assert.equal(
+    report.metrics.probabilisticSharpeRatio.status,
+    "insufficient_sample"
+  );
   assert.equal(report.metrics.probabilisticSharpeRatio.probability, null);
   assert.equal(report.metrics.deflatedSharpeRatio.status, "not_implemented");
   assert.equal(report.selectionContext.multipleTestingAdjustment, "unknown");
