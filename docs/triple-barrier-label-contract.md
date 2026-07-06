@@ -115,6 +115,27 @@ interface TripleBarrierLabelSummary {
 }
 ```
 
+warning은 artifact-level과 per-label 모두 같은 shape를 사용한다. 특정 label에 묶이지 않는 config/source warning은 `labelId`와 `sampleId`를 `null`로 둔다.
+
+```typescript
+type TripleBarrierLabelWarningCode =
+  | "TRIPLE_BARRIER_CONFIG_INVALID"
+  | "TRIPLE_BARRIER_ENTRY_PRICE_MISSING"
+  | "TRIPLE_BARRIER_PRICE_PATH_MISSING"
+  | "TRIPLE_BARRIER_AMBIGUOUS_TOUCH"
+  | "TRIPLE_BARRIER_TIME_BARRIER_ONLY"
+  | "TRIPLE_BARRIER_PURGED_SAMPLE_MISSING"
+  | "META_LABEL_SIZING_DIRECTIVE_REJECTED";
+
+interface TripleBarrierLabelWarning {
+  code: TripleBarrierLabelWarningCode;
+  severity: "info" | "warning";
+  message: string;
+  labelId: string | null;
+  sampleId: string | null;
+}
+```
+
 meta-label은 sizing 명령이 아니라 evaluation signal로만 남긴다. 첫 구현에서는 생성하지 않고, 후속 report contract에서 다음 후보를 검토한다.
 
 ```typescript
