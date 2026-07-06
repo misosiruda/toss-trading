@@ -233,6 +233,8 @@ interface NormalizedTripleBarrierLabelEvent extends TripleBarrierLabelEvent {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_PRICE_COMPARISON_EPSILON = 1e-9;
+const PRICE_COMPARISON_EPSILON_MULTIPLIER = 16;
 
 export function buildTripleBarrierLabelArtifact(
   options: BuildTripleBarrierLabelArtifactOptions
@@ -551,8 +553,14 @@ function firstBarrierTouch(input: {
       continue;
     }
 
-    const upperTouched = touchRange.highPrice >= input.upperBarrierPrice;
-    const lowerTouched = touchRange.lowPrice <= input.lowerBarrierPrice;
+    const upperTouched = priceGreaterThanOrEqual(
+      touchRange.highPrice,
+      input.upperBarrierPrice
+    );
+    const lowerTouched = priceLessThanOrEqual(
+      touchRange.lowPrice,
+      input.lowerBarrierPrice
+    );
     if (!upperTouched && !lowerTouched) {
       continue;
     }
@@ -682,4 +690,21 @@ function directionLabelFor(
 
 function roundRatio(value: number): number {
   return Math.round(value * 1_000_000_000_000) / 1_000_000_000_000;
+}
+
+function priceComparisonEpsilon(left: number, right: number): number {
+  return Math.max(
+    MIN_PRICE_COMPARISON_EPSILON,
+    Math.max(Math.abs(left), Math.abs(right)) *
+      Number.EPSILON *
+      PRICE_COMPARISON_EPSILON_MULTIPLIER
+  );
+}
+
+function priceGreaterThanOrEqual(left: number, right: number): boolean {
+  return left + priceComparisonEpsilon(left, right) >= right;
+}
+
+function priceLessThanOrEqual(left: number, right: number): boolean {
+  return left - priceComparisonEpsilon(left, right) <= right;
 }

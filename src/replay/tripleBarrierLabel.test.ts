@@ -177,6 +177,55 @@ test("triple barrier label ignores entry candle range for barrier touch", () => 
   );
 });
 
+test("triple barrier label treats exact profit barrier touch as hit", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_exact_profit", "KKK", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("KKK", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("KKK", "2026-01-02T00:00:00.000Z", 109, {
+        highPriceKrw: 110,
+        lowPriceKrw: 109
+      })
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "available");
+  assert.equal(label.touchedBarrier, "profit_taking");
+  assert.equal(label.directionLabel, "positive");
+  assert.equal(label.realizedReturnRatio, 0.1);
+  assert.equal(label.labelEnd, "2026-01-02T00:00:00.000Z");
+});
+
+test("triple barrier label treats exact stop barrier touch as hit", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: {
+      ...config(),
+      stopLossReturnRatio: 0.8
+    },
+    events: [event("sample_exact_stop", "LLL", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("LLL", "2026-01-01T00:00:00.000Z", 5),
+      snapshot("LLL", "2026-01-02T00:00:00.000Z", 4, {
+        highPriceKrw: 4,
+        lowPriceKrw: 1
+      })
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "available");
+  assert.equal(label.touchedBarrier, "stop_loss");
+  assert.equal(label.directionLabel, "negative");
+  assert.equal(label.realizedReturnRatio, -0.8);
+  assert.equal(label.labelEnd, "2026-01-02T00:00:00.000Z");
+});
+
 test("triple barrier label fails closed when entry price is missing", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
