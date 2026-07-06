@@ -1613,6 +1613,12 @@ function metaLabelEvaluationView(aggregate: unknown): MetaLabelEvaluationView {
   }
 
   const metaLabelEvaluation = aggregate["metaLabelEvaluation"];
+  if (metaLabelEvaluation === null) {
+    return missingMetaLabelEvaluationView([
+      "meta_label_evaluation.v1 artifact is missing"
+    ]);
+  }
+
   const parsed =
     metaLabelEvaluationReportSchema.safeParse(metaLabelEvaluation);
   if (!parsed.success) {

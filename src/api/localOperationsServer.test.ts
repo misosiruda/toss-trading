@@ -3026,6 +3026,39 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
   }
 });
 
+test("dashboard validation lab treats null meta label evaluation as missing", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const aggregate = batchReplayAggregateReport();
+  aggregate["metaLabelEvaluation"] = null;
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(aggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const metaLabelEvaluation = result.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(metaLabelEvaluation["status"], "missing");
+    assert.equal(metaLabelEvaluation["warningCount"], 1);
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /meta_label_evaluation.v1 artifact is missing/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard validation lab treats malformed meta label evaluation as invalid", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);
