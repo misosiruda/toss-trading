@@ -3026,6 +3026,43 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
   }
 });
 
+test("dashboard validation lab treats malformed meta label evaluation as invalid", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const malformedAggregate = batchReplayAggregateReport();
+  malformedAggregate["metaLabelEvaluation"] = "malformed-artifact";
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(malformedAggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const metaLabelEvaluation = result.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(metaLabelEvaluation["status"], "invalid");
+    assert.equal(metaLabelEvaluation["warningCount"], 1);
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /META_LABEL_EVALUATION_INVALID/
+    );
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /failed schema validation/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
 test("dashboard audit ViewModel masks sensitive count keys", async () => {
   const storageBaseDir = await createTempStorageBaseDir();
   const paths = createStoragePaths(storageBaseDir);

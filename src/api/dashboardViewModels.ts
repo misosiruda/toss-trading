@@ -1603,13 +1603,16 @@ function missingCpcvPboValidationView(
 }
 
 function metaLabelEvaluationView(aggregate: unknown): MetaLabelEvaluationView {
-  const metaLabelEvaluation = readRecordField(aggregate, "metaLabelEvaluation");
-  if (metaLabelEvaluation === null) {
+  if (
+    !isRecord(aggregate) ||
+    !Object.prototype.hasOwnProperty.call(aggregate, "metaLabelEvaluation")
+  ) {
     return missingMetaLabelEvaluationView([
       "meta_label_evaluation.v1 artifact is missing"
     ]);
   }
 
+  const metaLabelEvaluation = aggregate["metaLabelEvaluation"];
   const parsed =
     metaLabelEvaluationReportSchema.safeParse(metaLabelEvaluation);
   if (!parsed.success) {
