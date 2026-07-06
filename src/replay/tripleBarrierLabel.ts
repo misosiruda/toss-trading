@@ -370,7 +370,9 @@ function buildTripleBarrierLabel(input: {
   }
 
   const terminalSnapshot = latestSnapshotWithReferencePrice(
-    path,
+    path.filter(
+      (snapshot) => Date.parse(snapshot.observedAt) > input.event.labelStartMs
+    ),
     input.config.referencePriceField
   );
   if (terminalSnapshot === null) {
