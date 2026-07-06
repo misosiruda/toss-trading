@@ -208,6 +208,30 @@ test("triple barrier label fails closed when entry price is missing", () => {
   );
 });
 
+test("triple barrier label fails closed when entry price is zero", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_zero_entry", "JJJ", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("JJJ", "2026-01-01T00:00:00.000Z", 0),
+      snapshot("JJJ", "2026-01-02T00:00:00.000Z", 100)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "unavailable");
+  assert.equal(label.touchedBarrier, "unavailable");
+  assert.equal(label.entryPrice, null);
+  assert.equal(label.upperBarrierPrice, null);
+  assert.equal(label.lowerBarrierPrice, null);
+  assert.equal(label.realizedReturnRatio, null);
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_ENTRY_PRICE_MISSING"]
+  );
+});
+
 test("triple barrier label fails closed without post-entry price path", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",

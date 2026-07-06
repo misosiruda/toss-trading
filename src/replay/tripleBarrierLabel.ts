@@ -298,13 +298,13 @@ function buildTripleBarrierLabel(input: {
       ? null
       : referencePrice(entrySnapshot, input.config.referencePriceField);
 
-  if (entrySnapshot === undefined || entryPrice === null) {
+  if (entrySnapshot === undefined || entryPrice === null || entryPrice <= 0) {
     const warnings = [
       warning({
         code: "TRIPLE_BARRIER_ENTRY_PRICE_MISSING",
         severity: "warning",
         message:
-          "Triple barrier label could not find an entry price at labelStart",
+          "Triple barrier label could not find a positive entry price at labelStart",
         labelId: input.event.labelId,
         sampleId: input.event.sampleId
       })
