@@ -402,11 +402,10 @@ function buildTripleBarrierLabel(input: {
     );
   }
 
-  const terminalSnapshot = latestSnapshotWithReferencePrice(
+  const terminalSnapshot = latestSnapshot(
     path.filter(
       (snapshot) => Date.parse(snapshot.observedAt) > input.event.labelStartMs
-    ),
-    input.config.referencePriceField
+    )
   );
   const terminalPathCoverageIssue =
     terminalSnapshot === null
@@ -416,7 +415,15 @@ function buildTripleBarrierLabel(input: {
           input.event.timeBarrierDeadlineMs,
           input.config.referencePriceField
         );
-  if (terminalSnapshot === null || terminalPathCoverageIssue !== null) {
+  const terminalPrice =
+    terminalSnapshot === null
+      ? null
+      : referencePrice(terminalSnapshot, input.config.referencePriceField);
+  if (
+    terminalSnapshot === null ||
+    terminalPathCoverageIssue !== null ||
+    terminalPrice === null
+  ) {
     return unavailablePricePathLabel({
       labelBase,
       timeBarrierDeadline,
@@ -429,10 +436,6 @@ function buildTripleBarrierLabel(input: {
     });
   }
 
-  const terminalPrice = referencePrice(
-    terminalSnapshot,
-    input.config.referencePriceField
-  )!;
   const realizedReturnRatio = roundRatio((terminalPrice - entryPrice) / entryPrice);
   const warnings = [
     warning({
@@ -684,17 +687,10 @@ function touchRangeForSnapshot(
   };
 }
 
-function latestSnapshotWithReferencePrice(
-  path: readonly HistoricalMarketSnapshot[],
-  referencePriceField: TripleBarrierLabelConfig["referencePriceField"]
+function latestSnapshot(
+  path: readonly HistoricalMarketSnapshot[]
 ): HistoricalMarketSnapshot | null {
-  for (let index = path.length - 1; index >= 0; index -= 1) {
-    const snapshot = path[index]!;
-    if (referencePrice(snapshot, referencePriceField) !== null) {
-      return snapshot;
-    }
-  }
-  return null;
+  return path[path.length - 1] ?? null;
 }
 
 function firstPricePathCoverageIssue(
