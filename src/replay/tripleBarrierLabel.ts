@@ -335,7 +335,7 @@ function buildTripleBarrierLabel(input: {
     entryPrice * (1 - input.config.stopLossReturnRatio);
   const touch = firstBarrierTouch({
     path: path.filter(
-      (snapshot) => Date.parse(snapshot.observedAt) >= input.event.labelStartMs
+      (snapshot) => Date.parse(snapshot.observedAt) > input.event.labelStartMs
     ),
     config: input.config,
     upperBarrierPrice,

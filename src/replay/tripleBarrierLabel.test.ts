@@ -151,6 +151,32 @@ test("triple barrier label uses stop-loss policy for ambiguous same-bar touch", 
   );
 });
 
+test("triple barrier label ignores entry candle range for barrier touch", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_entry_range", "III", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("III", "2026-01-01T00:00:00.000Z", 100, {
+        highPriceKrw: 120,
+        lowPriceKrw: 90
+      }),
+      snapshot("III", "2026-01-02T00:00:00.000Z", 102)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "available");
+  assert.equal(label.touchedBarrier, "time");
+  assert.equal(label.directionLabel, "positive");
+  assert.equal(label.realizedReturnRatio, 0.02);
+  assert.equal(label.labelEnd, "2026-01-04T00:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_TIME_BARRIER_ONLY"]
+  );
+});
+
 test("triple barrier label fails closed when entry price is missing", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
