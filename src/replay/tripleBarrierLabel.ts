@@ -233,6 +233,16 @@ interface NormalizedTripleBarrierLabelEvent extends TripleBarrierLabelEvent {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SNAPSHOT_INTERVAL_DURATION_MS: Record<
+  HistoricalMarketSnapshot["interval"],
+  number
+> = {
+  "1m": 60 * 1000,
+  "5m": 5 * 60 * 1000,
+  "15m": 15 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "1d": DAY_MS
+};
 const MIN_PRICE_COMPARISON_EPSILON = 1e-9;
 const PRICE_COMPARISON_EPSILON_MULTIPLIER = 16;
 
@@ -379,7 +389,10 @@ function buildTripleBarrierLabel(input: {
   );
   if (
     terminalSnapshot === null ||
-    Date.parse(terminalSnapshot.observedAt) < input.event.timeBarrierDeadlineMs
+    !terminalSnapshotCoversDeadline(
+      terminalSnapshot,
+      input.event.timeBarrierDeadlineMs
+    )
   ) {
     const warnings = [
       warning({
@@ -630,6 +643,17 @@ function latestSnapshotWithReferencePrice(
     }
   }
   return null;
+}
+
+function terminalSnapshotCoversDeadline(
+  snapshot: HistoricalMarketSnapshot,
+  deadlineMs: number
+): boolean {
+  const observedAtMs = Date.parse(snapshot.observedAt);
+  return (
+    observedAtMs <= deadlineMs &&
+    deadlineMs - observedAtMs <= SNAPSHOT_INTERVAL_DURATION_MS[snapshot.interval]
+  );
 }
 
 function referencePrice(

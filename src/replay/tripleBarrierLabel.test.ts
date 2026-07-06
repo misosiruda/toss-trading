@@ -148,6 +148,35 @@ test("triple barrier label fails closed when horizon coverage ends early", () =>
   );
 });
 
+test("triple barrier label accepts terminal price within snapshot interval", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event(
+        "sample_interval_terminal",
+        "NNN",
+        "2026-01-01T12:00:00.000Z"
+      )
+    ],
+    priceSnapshots: [
+      snapshot("NNN", "2026-01-01T12:00:00.000Z", 100),
+      snapshot("NNN", "2026-01-04T00:00:00.000Z", 102)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "available");
+  assert.equal(label.touchedBarrier, "time");
+  assert.equal(label.directionLabel, "positive");
+  assert.equal(label.realizedReturnRatio, 0.02);
+  assert.equal(label.labelEnd, "2026-01-04T12:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_TIME_BARRIER_ONLY"]
+  );
+});
+
 test("triple barrier label uses stop-loss policy for ambiguous same-bar touch", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
