@@ -340,6 +340,8 @@
 현재 결정:
 
 - 첫 PR 범위는 `triple_barrier_label.v1` design과 label schema 후보 문서화로 제한한다.
+- 두 번째 PR 범위는 standalone `triple_barrier_label.v1` label generator, config hash, fixture test로 제한한다.
+- 아직 generated label horizon의 purged validation 연결, meta-label report, dashboard 표시는 포함하지 않는다.
 
 권장 PR 분해:
 
