@@ -343,7 +343,8 @@
 - 두 번째 PR 범위는 standalone `triple_barrier_label.v1` label generator, config hash, fixture test로 제한한다.
 - 세 번째 PR 범위는 generated label horizon을 `PurgedKFoldSample` 호환 입력으로 연결하는 helper와 unit test로 제한한다.
 - 네 번째 PR 범위는 `meta_label_candidate.v1` schema, side decision outcome helper, sizing directive reject unit test로 제한한다.
-- 아직 meta-label report와 dashboard 표시는 포함하지 않는다.
+- 다섯 번째 PR 범위는 standalone `meta_label_evaluation.v1` report schema, summary helper, unit test로 제한한다.
+- 아직 dashboard 표시는 포함하지 않는다.
 
 권장 PR 분해:
 

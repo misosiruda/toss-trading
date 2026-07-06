@@ -5,9 +5,11 @@ import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import { buildPurgedKFoldPlan } from "./purgedSplit.js";
 import {
   buildMetaLabelCandidate,
+  buildMetaLabelEvaluationReport,
   buildTripleBarrierLabelArtifact,
   buildTripleBarrierPurgedKFoldSamples,
   metaLabelCandidateSchema,
+  metaLabelEvaluationReportSchema,
   tripleBarrierLabelArtifactSchema,
   type TripleBarrierLabelEvent
 } from "./tripleBarrierLabel.js";
@@ -583,6 +585,146 @@ test("meta label candidate rejects sizing directives", () => {
     }).success,
     false
   );
+});
+
+test("meta label evaluation report summarizes candidate outcomes", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_eval_profit", "EVA", "2026-01-01T00:00:00.000Z"),
+      event("sample_eval_stop", "EVB", "2026-01-01T00:00:00.000Z"),
+      event("sample_eval_missing", "EVC", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("EVA", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EVA", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      }),
+      snapshot("EVB", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EVB", "2026-01-02T00:00:00.000Z", 97, {
+        highPriceKrw: 98,
+        lowPriceKrw: 94
+      })
+    ]
+  });
+  const positiveLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_eval_profit"
+  )!;
+  const negativeLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_eval_stop"
+  )!;
+  const unavailableLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_eval_missing"
+  )!;
+  const report = buildMetaLabelEvaluationReport({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    candidates: [
+      buildMetaLabelCandidate({
+        sourceLabel: negativeLabel,
+        sideDecision: "short"
+      }),
+      buildMetaLabelCandidate({
+        sourceLabel: positiveLabel,
+        sideDecision: "long"
+      }),
+      buildMetaLabelCandidate({
+        sourceLabel: unavailableLabel,
+        sideDecision: "long"
+      })
+    ]
+  });
+
+  assert.equal(metaLabelEvaluationReportSchema.safeParse(report).success, true);
+  assert.equal(report.schemaVersion, "meta_label_evaluation.v1");
+  assert.deepEqual(report.summary, {
+    totalCandidateCount: 3,
+    actionableCandidateCount: 2,
+    correctSideCount: 2,
+    wrongSideCount: 0,
+    notActionableCount: 1,
+    accuracyRatio: 1
+  });
+  assert.deepEqual(
+    report.candidates.map((candidate) => candidate.sourceLabelId),
+    [
+      "triple_barrier_sample_eval_missing",
+      "triple_barrier_sample_eval_profit",
+      "triple_barrier_sample_eval_stop"
+    ]
+  );
+});
+
+test("meta label evaluation report rejects duplicate source labels", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_eval_duplicate", "EVD", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("EVD", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EVD", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const candidate = buildMetaLabelCandidate({
+    sourceLabel: artifact.labels[0]!,
+    sideDecision: "long"
+  });
+
+  assert.throws(
+    () =>
+      buildMetaLabelEvaluationReport({
+        candidates: [candidate, candidate]
+      }),
+    /duplicate meta-label sourceLabelId/
+  );
+});
+
+test("meta label evaluation report schema rejects summary drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_eval_drift", "EVE", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("EVE", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EVE", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const report = buildMetaLabelEvaluationReport({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    candidates: [
+      buildMetaLabelCandidate({
+        sourceLabel: artifact.labels[0]!,
+        sideDecision: "long"
+      })
+    ]
+  });
+
+  const parseResult = metaLabelEvaluationReportSchema.safeParse({
+    ...report,
+    summary: {
+      totalCandidateCount: 0,
+      actionableCandidateCount: 0,
+      correctSideCount: 0,
+      wrongSideCount: 0,
+      notActionableCount: 0,
+      accuracyRatio: null
+    }
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /summary must match candidates/
+    );
+  }
 });
 
 test("triple barrier label ignores entry candle range for barrier touch", () => {
