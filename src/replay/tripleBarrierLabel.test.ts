@@ -238,6 +238,42 @@ test("triple barrier label fails closed when barrier touch range is missing", ()
   );
 });
 
+test("triple barrier label fails closed when full horizon touch range is missing", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: {
+      ...config(),
+      referencePriceField: "close" as const
+    },
+    events: [
+      event("sample_later_missing_range", "RRR", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("RRR", "2026-01-01T00:00:00.000Z", 100, {
+        closePriceKrw: 100
+      }),
+      snapshot("RRR", "2026-01-02T00:00:00.000Z", 101, {
+        closePriceKrw: 101
+      }),
+      snapshot("RRR", "2026-01-03T12:00:00.000Z", 102, {
+        closePriceKrw: 102
+      }),
+      snapshot("RRR", "2026-01-03T18:00:00.000Z", 102)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "unavailable");
+  assert.equal(label.touchedBarrier, "unavailable");
+  assert.equal(label.entryPrice, 100);
+  assert.equal(label.realizedReturnRatio, null);
+  assert.equal(label.purgedSample.labelEnd, "2026-01-04T00:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_PRICE_PATH_MISSING"]
+  );
+});
+
 test("triple barrier label accepts terminal price within snapshot interval", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",

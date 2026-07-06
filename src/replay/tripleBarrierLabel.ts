@@ -412,11 +412,7 @@ function buildTripleBarrierLabel(input: {
     terminalSnapshot === null
       ? null
       : firstPricePathCoverageIssue(
-          path.filter(
-            (snapshot) =>
-              Date.parse(snapshot.observedAt) <=
-              Date.parse(terminalSnapshot.observedAt)
-          ),
+          path,
           input.event.timeBarrierDeadlineMs,
           input.config.referencePriceField
         );
