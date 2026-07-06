@@ -362,7 +362,8 @@ function buildTripleBarrierLabel(input: {
         (snapshot) =>
           Date.parse(snapshot.observedAt) <= Date.parse(touch.touchedAt)
       ),
-      Date.parse(touch.touchedAt)
+      Date.parse(touch.touchedAt),
+      input.config.referencePriceField
     );
     if (touchPathCoverageIssue !== null) {
       return unavailablePricePathLabel({
@@ -416,7 +417,8 @@ function buildTripleBarrierLabel(input: {
               Date.parse(snapshot.observedAt) <=
               Date.parse(terminalSnapshot.observedAt)
           ),
-          input.event.timeBarrierDeadlineMs
+          input.event.timeBarrierDeadlineMs,
+          input.config.referencePriceField
         );
   if (terminalSnapshot === null || terminalPathCoverageIssue !== null) {
     return unavailablePricePathLabel({
@@ -701,7 +703,8 @@ function latestSnapshotWithReferencePrice(
 
 function firstPricePathCoverageIssue(
   path: readonly HistoricalMarketSnapshot[],
-  deadlineMs: number
+  deadlineMs: number,
+  referencePriceField: TripleBarrierLabelConfig["referencePriceField"]
 ): { issueStartAt: string; issueEndAt: string } | null {
   if (path.length === 0) {
     return {
@@ -712,7 +715,7 @@ function firstPricePathCoverageIssue(
 
   for (let index = 1; index < path.length; index += 1) {
     const snapshot = path[index]!;
-    if (hasPartialTouchRange(snapshot)) {
+    if (hasTouchRangeCoverageIssue(snapshot, referencePriceField)) {
       return {
         issueStartAt: snapshot.observedAt,
         issueEndAt: snapshot.observedAt
@@ -746,6 +749,16 @@ function hasPartialTouchRange(snapshot: HistoricalMarketSnapshot): boolean {
   return (
     (snapshot.highPriceKrw === undefined) !==
     (snapshot.lowPriceKrw === undefined)
+  );
+}
+
+function hasTouchRangeCoverageIssue(
+  snapshot: HistoricalMarketSnapshot,
+  referencePriceField: TripleBarrierLabelConfig["referencePriceField"]
+): boolean {
+  return (
+    hasPartialTouchRange(snapshot) ||
+    touchRangeForSnapshot(snapshot, referencePriceField) === null
   );
 }
 

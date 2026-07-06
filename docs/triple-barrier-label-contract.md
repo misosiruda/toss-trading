@@ -158,6 +158,7 @@ interface MetaLabelCandidate {
 - entry price는 `labelStart`와 같은 timestamp의 observation에서 선택한 `referencePriceField`로 읽는다. 없으면 `status: "unavailable"`과 `TRIPLE_BARRIER_ENTRY_PRICE_MISSING` warning을 남긴다.
 - price barrier touch는 `highPriceKrw`/`lowPriceKrw`가 있으면 해당 range를 사용하고, 없으면 선택한 `referencePriceField` 가격을 사용한다.
 - entry 이후 snapshot에 `highPriceKrw` 또는 `lowPriceKrw` 한쪽만 있으면 상하단 동시 touch 여부를 판정할 수 없으므로 가격 path 부족으로 처리한다.
+- entry 이후 snapshot에 range와 선택한 reference price가 모두 없으면 price barrier touch 여부를 판정할 수 없으므로 가격 path 부족으로 처리한다.
 - price barrier touch 없이 time barrier로 종료되면 realized return은 time barrier deadline 이하에서 가장 늦은 관측 가격으로 평가하고, deadline 이후 가격은 사용하지 않는다.
 - label horizon 내부의 인접 observation gap은 이전 snapshot `interval` 한 칸 이내여야 하며, terminal observation이 deadline보다 이전인 경우도 같은 기준으로 coverage를 판단한다.
 - `labelEnd`는 첫 price barrier touch timestamp 또는 price barrier touch가 없을 때 time barrier deadline으로 고정한다.
