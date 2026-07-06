@@ -34,6 +34,8 @@ export const BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME =
   "batch-replay-selection-trials.jsonl";
 export const BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME =
   "batch-replay-aggregate-report.json";
+export const META_LABEL_EVALUATION_REPORT_FILE_NAME =
+  "meta-label-evaluation-report.json";
 export const STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME =
   "strategy-bucket-test-records.jsonl";
 export const PORTFOLIO_POLICY_RECORDS_FILE_NAME =
@@ -341,6 +343,20 @@ export const DYNAMIC_STORAGE_ARTIFACT_CONTRACTS: readonly DynamicStorageArtifact
         "per-run prompt/config/risk/exit hashes and selection status",
       corruptJsonlPolicy: "skip_line_and_count",
       pathResolver: "createBatchReplayArtifactPaths"
+    },
+    {
+      artifactName: "metaLabelEvaluationReport",
+      fileName: META_LABEL_EVALUATION_REPORT_FILE_NAME,
+      relativePathPattern:
+        "batch-replay/<batchId>/meta-label-evaluation-report.json",
+      format: "json",
+      role: "report",
+      domainContract: "MetaLabelEvaluationReport",
+      writer: "standalone meta-label evaluation generator",
+      localOperationsReader: null,
+      failureTrace: "meta-label candidate outcome distribution",
+      corruptJsonlPolicy: null,
+      pathResolver: "createBatchReplayArtifactPaths"
     }
   ];
 
@@ -350,6 +366,7 @@ export interface BatchReplayArtifactPaths {
   manifestPath: string;
   runsPath: string;
   selectionTrialsPath: string;
+  metaLabelEvaluationReportPath: string;
 }
 
 export interface ResolveBatchReplayRunsArtifactPathOptions {
@@ -370,6 +387,10 @@ export function createBatchReplayArtifactPaths(
     selectionTrialsPath: join(
       outputDir,
       BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME
+    ),
+    metaLabelEvaluationReportPath: join(
+      outputDir,
+      META_LABEL_EVALUATION_REPORT_FILE_NAME
     )
   };
 }

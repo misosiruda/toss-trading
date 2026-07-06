@@ -611,6 +611,16 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     "batch-cli",
     "batch-replay-aggregate-report.json"
   );
+  const metaLabelEvaluationPath = join(
+    outputBaseDir,
+    "batch-cli",
+    "meta-label-evaluation-report.json"
+  );
+  writeFileSync(
+    metaLabelEvaluationPath,
+    `${JSON.stringify(metaLabelEvaluationReport())}\n`,
+    "utf8"
+  );
   const reportResult = spawnSync(
     process.execPath,
     [
@@ -638,6 +648,18 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(
     aggregateReport["sourceSelectionTrialsPath"],
     output["selectionTrialsPath"]
+  );
+  assert.equal(
+    aggregateReport["sourceMetaLabelEvaluationPath"],
+    metaLabelEvaluationPath
+  );
+  assert.equal(
+    (
+      (aggregateReport["metaLabelEvaluation"] as Record<string, unknown>)[
+        "summary"
+      ] as Record<string, unknown>
+    )["accuracyRatio"],
+    0.5
   );
   const trialSummary = aggregateReport["trialSummary"] as Record<string, unknown>;
   assert.equal(trialSummary["trialCount"], 1);
@@ -1613,6 +1635,44 @@ function universeCoverageReport(): Record<string, unknown> {
     issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
     disclaimer:
       "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal."
+  };
+}
+
+function metaLabelEvaluationReport(): Record<string, unknown> {
+  return {
+    schemaVersion: "meta_label_evaluation.v1",
+    generatedAt: "2026-07-06T00:00:00.000Z",
+    candidates: [
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_cli_positive",
+        sideDecision: "long",
+        outcome: "correct_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_cli_negative",
+        sideDecision: "long",
+        outcome: "wrong_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_cli_unavailable",
+        sideDecision: "unknown",
+        outcome: "not_actionable",
+        sizingDirective: null
+      }
+    ],
+    summary: {
+      totalCandidateCount: 3,
+      actionableCandidateCount: 2,
+      correctSideCount: 1,
+      wrongSideCount: 1,
+      notActionableCount: 1,
+      accuracyRatio: 0.5
+    }
   };
 }
 

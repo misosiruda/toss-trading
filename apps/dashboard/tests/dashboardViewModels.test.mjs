@@ -54,6 +54,13 @@ test("validation lab fallback fills missing candidate comparison", async () => {
       .join("\n"),
     /does not include cpcvPboValidation/
   );
+  assert.equal(normalized.metaLabelEvaluation.status, "missing");
+  assert.match(
+    normalized.metaLabelEvaluation.warnings
+      .map((warning) => warning.message)
+      .join("\n"),
+    /does not include metaLabelEvaluation/
+  );
 });
 
 test("validation lab fallback preserves existing validation lab extensions", async () => {
@@ -119,6 +126,21 @@ test("validation lab fallback preserves existing validation lab extensions", asy
       ],
       readOnlyNotice:
         "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
+    },
+    metaLabelEvaluation: {
+      status: "available",
+      schemaVersion: "meta_label_evaluation.v1",
+      generatedAt: "2026-07-06T00:00:00.000Z",
+      totalCandidateCount: 3,
+      actionableCandidateCount: 2,
+      correctSideCount: 1,
+      wrongSideCount: 1,
+      notActionableCount: 1,
+      accuracyRatio: 0.5,
+      warningCount: 0,
+      warnings: [],
+      readOnlyNotice:
+        "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
     }
   };
 

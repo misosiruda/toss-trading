@@ -2627,6 +2627,9 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const sharpeValidationWarnings = sharpeValidation["warnings"] as Array<
       Record<string, unknown>
     >;
+    const metaLabelEvaluation = validationLab.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
     const candidateComparison = validationLab.payload[
       "candidateComparison"
     ] as Record<string, unknown>;
@@ -2776,6 +2779,22 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(
       sharpeValidationWarnings[0]?.["code"],
       "INSUFFICIENT_RETURN_SAMPLES"
+    );
+    assert.equal(metaLabelEvaluation["status"], "available");
+    assert.equal(
+      metaLabelEvaluation["schemaVersion"],
+      "meta_label_evaluation.v1"
+    );
+    assert.equal(metaLabelEvaluation["totalCandidateCount"], 3);
+    assert.equal(metaLabelEvaluation["actionableCandidateCount"], 2);
+    assert.equal(metaLabelEvaluation["correctSideCount"], 1);
+    assert.equal(metaLabelEvaluation["wrongSideCount"], 1);
+    assert.equal(metaLabelEvaluation["notActionableCount"], 1);
+    assert.equal(metaLabelEvaluation["accuracyRatio"], 0.5);
+    assert.equal(metaLabelEvaluation["warningCount"], 0);
+    assert.equal(
+      metaLabelEvaluation["readOnlyNotice"],
+      "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
     );
     assert.equal(candidateComparison["status"], "available");
     assert.equal(candidateComparison["candidateCount"], 2);
@@ -2966,6 +2985,7 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
   const paths = createStoragePaths(storageBaseDir);
   const legacyAggregate = batchReplayAggregateReport();
   delete legacyAggregate["overfittingDiagnostics"];
+  delete legacyAggregate["metaLabelEvaluation"];
   await writeFile(
     paths.batchReplayAggregateReportPath,
     `${JSON.stringify(legacyAggregate)}\n`,
@@ -2981,6 +3001,9 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
     const candidateComparison = result.payload[
       "candidateComparison"
     ] as Record<string, unknown>;
+    const metaLabelEvaluation = result.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
 
     assert.equal(result.response.status, 200);
     assert.equal(result.payload["viewModel"], "validation-lab");
@@ -2991,6 +3014,82 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
     assert.match(
       JSON.stringify(candidateComparison["warnings"]),
       /candidate split metric matrix is unavailable/
+    );
+    assert.equal(metaLabelEvaluation["status"], "missing");
+    assert.equal(metaLabelEvaluation["warningCount"], 1);
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /meta_label_evaluation.v1 artifact is missing/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard validation lab treats null meta label evaluation as missing", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const aggregate = batchReplayAggregateReport();
+  aggregate["metaLabelEvaluation"] = null;
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(aggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const metaLabelEvaluation = result.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(metaLabelEvaluation["status"], "missing");
+    assert.equal(metaLabelEvaluation["warningCount"], 1);
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /meta_label_evaluation.v1 artifact is missing/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard validation lab treats malformed meta label evaluation as invalid", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const malformedAggregate = batchReplayAggregateReport();
+  malformedAggregate["metaLabelEvaluation"] = "malformed-artifact";
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(malformedAggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const metaLabelEvaluation = result.payload[
+      "metaLabelEvaluation"
+    ] as Record<string, unknown>;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(metaLabelEvaluation["status"], "invalid");
+    assert.equal(metaLabelEvaluation["warningCount"], 1);
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /META_LABEL_EVALUATION_INVALID/
+    );
+    assert.match(
+      JSON.stringify(metaLabelEvaluation["warnings"]),
+      /failed schema validation/
     );
   } finally {
     await stopTestServer(server);
@@ -5010,6 +5109,41 @@ function batchReplayAggregateReport(
         }
       ],
       warnings: ["selection bias warning"]
+    },
+    metaLabelEvaluation: {
+      schemaVersion: "meta_label_evaluation.v1",
+      generatedAt: "2026-07-06T00:00:00.000Z",
+      candidates: [
+        {
+          schemaVersion: "meta_label_candidate.v1",
+          sourceLabelId: "triple_barrier_api_positive",
+          sideDecision: "long",
+          outcome: "correct_side",
+          sizingDirective: null
+        },
+        {
+          schemaVersion: "meta_label_candidate.v1",
+          sourceLabelId: "triple_barrier_api_negative",
+          sideDecision: "long",
+          outcome: "wrong_side",
+          sizingDirective: null
+        },
+        {
+          schemaVersion: "meta_label_candidate.v1",
+          sourceLabelId: "triple_barrier_api_unavailable",
+          sideDecision: "unknown",
+          outcome: "not_actionable",
+          sizingDirective: null
+        }
+      ],
+      summary: {
+        totalCandidateCount: 3,
+        actionableCandidateCount: 2,
+        correctSideCount: 1,
+        wrongSideCount: 1,
+        notActionableCount: 1,
+        accuracyRatio: 0.5
+      }
     },
     universeCoverage: {
       sourcePath: "data/replay-source/historical-universe-coverage.json",

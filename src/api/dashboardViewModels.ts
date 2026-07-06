@@ -23,6 +23,10 @@ import type {
 import { summarizePortfolioDownsideExposure } from "../paper/hedgePolicy.js";
 import { DEFAULT_MIN_CASH_RESERVE_RATIO } from "../paper/riskPolicy.js";
 import {
+  metaLabelEvaluationReportSchema,
+  type MetaLabelEvaluationReport
+} from "../replay/tripleBarrierLabel.js";
+import {
   readTossOpenApiAuthConfig,
   summarizeTossOpenApiAuthConfig,
   type TossOpenApiAuthConfigStatus
@@ -36,6 +40,8 @@ const STRATEGY_BUCKETS = [
   "intraday",
   "hedge"
 ] as const satisfies readonly StrategyBucket[];
+const META_LABEL_EVALUATION_READ_ONLY_NOTICE =
+  "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee.";
 
 type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
 type JsonFileStatus = "missing" | "ok" | "corrupt";
@@ -429,6 +435,7 @@ export interface ValidationLabViewModel {
   overfittingWarning: unknown | null;
   sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
+  metaLabelEvaluation: MetaLabelEvaluationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -488,6 +495,25 @@ export interface CpcvPboWarningView {
   code: string;
   severity: "info" | "warning";
   message: string;
+}
+
+export interface MetaLabelEvaluationView {
+  status: "missing" | "available" | "invalid";
+  schemaVersion: string | null;
+  generatedAt: string | null;
+  totalCandidateCount: number;
+  actionableCandidateCount: number;
+  correctSideCount: number;
+  wrongSideCount: number;
+  notActionableCount: number;
+  accuracyRatio: number | null;
+  warningCount: number;
+  warnings: Array<{
+    code: string;
+    severity: "info" | "warning";
+    message: string;
+  }>;
+  readOnlyNotice: string;
 }
 
 interface ValidationCandidateComparisonView {
@@ -995,6 +1021,7 @@ export async function readDashboardValidationLabViewModel(
       overfittingWarning: report.overfittingWarning,
       sharpeValidation: sharpeValidationView(report.sharpeValidation),
       cpcvPboValidation: cpcvPboValidationView(aggregate.value),
+      metaLabelEvaluation: metaLabelEvaluationView(aggregate.value),
       candidateComparison: validationCandidateComparison(aggregate.value),
       providerFailureSummary: report.providerFailureSummary,
       riskRejectSummary: report.riskRejectSummary,
@@ -1575,6 +1602,90 @@ function missingCpcvPboValidationView(
   };
 }
 
+function metaLabelEvaluationView(aggregate: unknown): MetaLabelEvaluationView {
+  if (
+    !isRecord(aggregate) ||
+    !Object.prototype.hasOwnProperty.call(aggregate, "metaLabelEvaluation")
+  ) {
+    return missingMetaLabelEvaluationView([
+      "meta_label_evaluation.v1 artifact is missing"
+    ]);
+  }
+
+  const metaLabelEvaluation = aggregate["metaLabelEvaluation"];
+  if (metaLabelEvaluation === null) {
+    return missingMetaLabelEvaluationView([
+      "meta_label_evaluation.v1 artifact is missing"
+    ]);
+  }
+
+  const parsed =
+    metaLabelEvaluationReportSchema.safeParse(metaLabelEvaluation);
+  if (!parsed.success) {
+    return invalidMetaLabelEvaluationView([
+      "meta_label_evaluation.v1 artifact failed schema validation"
+    ]);
+  }
+
+  return availableMetaLabelEvaluationView(parsed.data);
+}
+
+function availableMetaLabelEvaluationView(
+  report: MetaLabelEvaluationReport
+): MetaLabelEvaluationView {
+  return {
+    status: "available",
+    schemaVersion: report.schemaVersion,
+    generatedAt: report.generatedAt,
+    totalCandidateCount: report.summary.totalCandidateCount,
+    actionableCandidateCount: report.summary.actionableCandidateCount,
+    correctSideCount: report.summary.correctSideCount,
+    wrongSideCount: report.summary.wrongSideCount,
+    notActionableCount: report.summary.notActionableCount,
+    accuracyRatio: report.summary.accuracyRatio,
+    warningCount: 0,
+    warnings: [],
+    readOnlyNotice: META_LABEL_EVALUATION_READ_ONLY_NOTICE
+  };
+}
+
+function missingMetaLabelEvaluationView(
+  warnings: string[] = []
+): MetaLabelEvaluationView {
+  return {
+    status: "missing",
+    schemaVersion: null,
+    generatedAt: null,
+    totalCandidateCount: 0,
+    actionableCandidateCount: 0,
+    correctSideCount: 0,
+    wrongSideCount: 0,
+    notActionableCount: 0,
+    accuracyRatio: null,
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "META_LABEL_EVALUATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice: META_LABEL_EVALUATION_READ_ONLY_NOTICE
+  };
+}
+
+function invalidMetaLabelEvaluationView(
+  warnings: string[] = []
+): MetaLabelEvaluationView {
+  return {
+    ...missingMetaLabelEvaluationView(warnings),
+    status: "invalid",
+    warnings: warnings.map((message) => ({
+      code: "META_LABEL_EVALUATION_INVALID",
+      severity: "warning",
+      message
+    }))
+  };
+}
+
 function validationLabWarnings(
   aggregate: BatchReplayAggregateReport,
   reportWarnings: string[]
@@ -1682,6 +1793,11 @@ function validationLabUnavailable(
         : "batch replay aggregate report is not usable"
     ]),
     cpcvPboValidation: missingCpcvPboValidationView([
+      status === "missing"
+        ? "batch replay aggregate report is missing"
+        : "batch replay aggregate report is not usable"
+    ]),
+    metaLabelEvaluation: missingMetaLabelEvaluationView([
       status === "missing"
         ? "batch replay aggregate report is missing"
         : "batch replay aggregate report is not usable"
