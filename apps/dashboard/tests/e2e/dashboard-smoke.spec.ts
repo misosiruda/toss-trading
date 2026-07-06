@@ -438,6 +438,25 @@ test("renders validation lab detail without strategy recommendation controls", a
     )
   ).toBeVisible();
 
+  const metaLabelEvaluation = page.getByLabel("Meta-label evaluation summary");
+  await expect(
+    metaLabelEvaluation.getByRole("heading", {
+      name: "Meta-label Evaluation",
+    })
+  ).toBeVisible();
+  await expect(
+    metaLabelEvaluation.getByText("available", { exact: true })
+  ).toBeVisible();
+  await expect(metaLabelEvaluation.getByText("50%", { exact: true })).toBeVisible();
+  await expect(
+    metaLabelEvaluation.getByText("meta_label_evaluation.v1", { exact: true })
+  ).toBeVisible();
+  await expect(
+    metaLabelEvaluation.getByText(
+      "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
+    )
+  ).toBeVisible();
+
   const comparisonTable = page.getByRole("table", {
     name: "Policy candidate comparison table",
   });

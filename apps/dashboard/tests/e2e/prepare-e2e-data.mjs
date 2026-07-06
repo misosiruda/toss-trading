@@ -326,6 +326,41 @@ const aggregate = {
       }
     ]
   },
+  metaLabelEvaluation: {
+    schemaVersion: "meta_label_evaluation.v1",
+    generatedAt: "2026-07-06T00:00:00.000Z",
+    candidates: [
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_dashboard_positive",
+        sideDecision: "long",
+        outcome: "correct_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_dashboard_negative",
+        sideDecision: "long",
+        outcome: "wrong_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_dashboard_unavailable",
+        sideDecision: "hold",
+        outcome: "not_actionable",
+        sizingDirective: null
+      }
+    ],
+    summary: {
+      totalCandidateCount: 3,
+      actionableCandidateCount: 2,
+      correctSideCount: 1,
+      wrongSideCount: 1,
+      notActionableCount: 1,
+      accuracyRatio: 0.5
+    }
+  },
   universeCoverage: {
     sourcePath:
       "apps/dashboard/.e2e-data/paper/source-data/historical-universe-coverage.json",

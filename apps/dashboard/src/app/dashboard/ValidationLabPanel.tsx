@@ -1,5 +1,6 @@
 import type {
   CpcvPboValidationView,
+  MetaLabelEvaluationView,
   SharpeValidationView,
   ValidationCandidateComparisonView,
   ValidationLabViewModel,
@@ -103,6 +104,10 @@ export function ValidationLabPanel({
       />
       <CpcvPboValidationWarning
         validation={data.cpcvPboValidation}
+        variant={variant}
+      />
+      <MetaLabelEvaluationSummary
+        validation={data.metaLabelEvaluation}
         variant={variant}
       />
       <ValidationCandidateComparison
@@ -274,6 +279,88 @@ function CpcvPboValidationWarning({
           <Metric
             label="Split plan"
             value={validation.splitPlanAvailable ? "available" : "missing"}
+          />
+        </div>
+      ) : null}
+
+      <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+        {validation.readOnlyNotice}
+      </p>
+
+      {validation.warnings.length === 0 ? null : (
+        <ul className="mt-3 space-y-2 text-sm leading-5 text-[var(--muted)]">
+          {validation.warnings.map((warning) => (
+            <li key={`${warning.code}:${warning.message}`}>
+              <span className="font-mono">{warning.code}</span>
+              <span aria-hidden="true"> · </span>
+              <span>{warning.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function MetaLabelEvaluationSummary({
+  validation,
+  variant
+}: {
+  validation: MetaLabelEvaluationView;
+  variant: ValidationPanelVariant;
+}) {
+  return (
+    <section aria-label="Meta-label evaluation summary" className="mt-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Meta-label Evaluation</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            Read-only meta_label_evaluation.v1 summary from stored research
+            artifacts.
+          </p>
+        </div>
+        <Badge
+          tone={metaLabelEvaluationStatusTone(validation.status)}
+          value={validation.status}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-4">
+        <Metric
+          label="Candidates"
+          value={String(validation.totalCandidateCount)}
+        />
+        <Metric
+          label="Actionable"
+          value={String(validation.actionableCandidateCount)}
+        />
+        <Metric
+          label="Accuracy"
+          value={formatNullableRatio(validation.accuracyRatio)}
+        />
+        <Metric
+          label="Warnings"
+          value={String(validation.warningCount)}
+        />
+      </div>
+
+      {variant === "detail" ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <Metric
+            label="Schema"
+            value={validation.schemaVersion ?? "missing"}
+          />
+          <Metric
+            label="Correct side"
+            value={String(validation.correctSideCount)}
+          />
+          <Metric
+            label="Wrong side"
+            value={String(validation.wrongSideCount)}
+          />
+          <Metric
+            label="Not actionable"
+            value={String(validation.notActionableCount)}
           />
         </div>
       ) : null}
@@ -531,6 +618,18 @@ function cpcvPboStatusTone(
     return "ok";
   }
   if (status === "sampled") {
+    return "watch";
+  }
+  return "blocked";
+}
+
+function metaLabelEvaluationStatusTone(
+  status: MetaLabelEvaluationView["status"]
+): "ok" | "watch" | "blocked" {
+  if (status === "available") {
+    return "ok";
+  }
+  if (status === "missing") {
     return "watch";
   }
   return "blocked";

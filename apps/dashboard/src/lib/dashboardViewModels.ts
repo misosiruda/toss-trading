@@ -341,6 +341,7 @@ export interface ValidationLabViewModel {
   overfittingWarning: unknown | null;
   sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
+  metaLabelEvaluation: MetaLabelEvaluationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -399,6 +400,27 @@ export interface CpcvPboValidationView {
 }
 
 export interface CpcvPboWarningView {
+  code: string;
+  severity: "info" | "warning";
+  message: string;
+}
+
+export interface MetaLabelEvaluationView {
+  status: "missing" | "available" | "invalid";
+  schemaVersion: string | null;
+  generatedAt: string | null;
+  totalCandidateCount: number;
+  actionableCandidateCount: number;
+  correctSideCount: number;
+  wrongSideCount: number;
+  notActionableCount: number;
+  accuracyRatio: number | null;
+  warningCount: number;
+  warnings: MetaLabelEvaluationWarningView[];
+  readOnlyNotice: string;
+}
+
+export interface MetaLabelEvaluationWarningView {
   code: string;
   severity: "info" | "warning";
   message: string;
@@ -1293,6 +1315,7 @@ function isValidationLabViewModel(
     isStringArray(value.warnings) &&
     isSharpeValidationView(value.sharpeValidation) &&
     isCpcvPboValidationView(value.cpcvPboValidation) &&
+    isMetaLabelEvaluationView(value.metaLabelEvaluation) &&
     isValidationCandidateComparison(value.candidateComparison) &&
     isRecord(value.executionAssumptions) &&
     value.executionAssumptions["paperOnly"] === true &&
@@ -1726,6 +1749,15 @@ export function withValidationLabCandidateComparisonFallback(
     };
   }
 
+  if (normalized["metaLabelEvaluation"] === undefined) {
+    normalized = {
+      ...normalized,
+      metaLabelEvaluation: missingMetaLabelEvaluation([
+        "meta_label_evaluation unavailable: Local Operations API response does not include metaLabelEvaluation"
+      ])
+    };
+  }
+
   return normalized;
 }
 
@@ -1878,6 +1910,68 @@ function missingCpcvPboValidation(
     })),
     readOnlyNotice:
       "CPCV/PBO validation is paper-only research evidence, not a strategy recommendation or performance guarantee."
+  };
+}
+
+function isMetaLabelEvaluationView(
+  value: unknown
+): value is MetaLabelEvaluationView {
+  return (
+    isRecord(value) &&
+    isMetaLabelEvaluationStatus(value["status"]) &&
+    isNullableString(value["schemaVersion"]) &&
+    isNullableString(value["generatedAt"]) &&
+    isNumber(value["totalCandidateCount"]) &&
+    isNumber(value["actionableCandidateCount"]) &&
+    isNumber(value["correctSideCount"]) &&
+    isNumber(value["wrongSideCount"]) &&
+    isNumber(value["notActionableCount"]) &&
+    isNullableNumber(value["accuracyRatio"]) &&
+    isNumber(value["warningCount"]) &&
+    Array.isArray(value["warnings"]) &&
+    value["warnings"].every(isMetaLabelEvaluationWarningView) &&
+    typeof value["readOnlyNotice"] === "string"
+  );
+}
+
+function isMetaLabelEvaluationWarningView(
+  value: unknown
+): value is MetaLabelEvaluationWarningView {
+  return (
+    isRecord(value) &&
+    typeof value["code"] === "string" &&
+    (value["severity"] === "info" || value["severity"] === "warning") &&
+    typeof value["message"] === "string"
+  );
+}
+
+function isMetaLabelEvaluationStatus(
+  value: unknown
+): value is MetaLabelEvaluationView["status"] {
+  return value === "missing" || value === "available" || value === "invalid";
+}
+
+function missingMetaLabelEvaluation(
+  warnings: string[] = []
+): MetaLabelEvaluationView {
+  return {
+    status: "missing",
+    schemaVersion: null,
+    generatedAt: null,
+    totalCandidateCount: 0,
+    actionableCandidateCount: 0,
+    correctSideCount: 0,
+    wrongSideCount: 0,
+    notActionableCount: 0,
+    accuracyRatio: null,
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "META_LABEL_EVALUATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
   };
 }
 
