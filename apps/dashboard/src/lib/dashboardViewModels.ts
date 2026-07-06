@@ -339,6 +339,7 @@ export interface ValidationLabViewModel {
   dataUniverseCoverage: unknown | null;
   promptTrialDistribution: unknown | null;
   overfittingWarning: unknown | null;
+  sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
@@ -350,6 +351,36 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface SharpeValidationView {
+  status: "missing" | "available" | "unavailable";
+  schemaVersion: string | null;
+  returnSampleCount: number;
+  minimumSampleCount: number | null;
+  sampleSharpeStatus: string | null;
+  sampleSharpeValue: number | null;
+  loAdjustedSharpeStatus: string | null;
+  probabilisticSharpeRatioStatus: string | null;
+  probabilisticSharpeRatioProbability: number | null;
+  deflatedSharpeRatioStatus: string | null;
+  deflatedSharpeRatioProbability: number | null;
+  selectionContext: {
+    candidateCount: number | null;
+    trialCount: number | null;
+    trialSharpeRatioStandardDeviation: number | null;
+    selectedByMetric: string | null;
+    multipleTestingAdjustment: string | null;
+  };
+  warningCount: number;
+  warnings: SharpeValidationWarningView[];
+  readOnlyNotice: string;
+}
+
+export interface SharpeValidationWarningView {
+  code: string;
+  severity: "info" | "warning";
+  message: string;
 }
 
 export interface CpcvPboValidationView {
@@ -1260,6 +1291,7 @@ function isValidationLabViewModel(
     isValidationStatus(value.aggregateReportStatus) &&
     isNullableString(value.sourceGeneratedAt) &&
     isStringArray(value.warnings) &&
+    isSharpeValidationView(value.sharpeValidation) &&
     isCpcvPboValidationView(value.cpcvPboValidation) &&
     isValidationCandidateComparison(value.candidateComparison) &&
     isRecord(value.executionAssumptions) &&
@@ -1676,6 +1708,15 @@ export function withValidationLabCandidateComparisonFallback(
     };
   }
 
+  if (normalized["sharpeValidation"] === undefined) {
+    normalized = {
+      ...normalized,
+      sharpeValidation: missingSharpeValidation([
+        "sharpe_validation unavailable: Local Operations API response does not include sharpeValidation"
+      ])
+    };
+  }
+
   if (normalized["cpcvPboValidation"] === undefined) {
     normalized = {
       ...normalized,
@@ -1686,6 +1727,93 @@ export function withValidationLabCandidateComparisonFallback(
   }
 
   return normalized;
+}
+
+function isSharpeValidationView(
+  value: unknown
+): value is SharpeValidationView {
+  return (
+    isRecord(value) &&
+    isSharpeValidationStatus(value["status"]) &&
+    isNullableString(value["schemaVersion"]) &&
+    isNumber(value["returnSampleCount"]) &&
+    isNullableNumber(value["minimumSampleCount"]) &&
+    isNullableString(value["sampleSharpeStatus"]) &&
+    isNullableNumber(value["sampleSharpeValue"]) &&
+    isNullableString(value["loAdjustedSharpeStatus"]) &&
+    isNullableString(value["probabilisticSharpeRatioStatus"]) &&
+    isNullableNumber(value["probabilisticSharpeRatioProbability"]) &&
+    isNullableString(value["deflatedSharpeRatioStatus"]) &&
+    isNullableNumber(value["deflatedSharpeRatioProbability"]) &&
+    isSharpeSelectionContext(value["selectionContext"]) &&
+    isNumber(value["warningCount"]) &&
+    Array.isArray(value["warnings"]) &&
+    value["warnings"].every(isSharpeValidationWarningView) &&
+    typeof value["readOnlyNotice"] === "string"
+  );
+}
+
+function isSharpeSelectionContext(
+  value: unknown
+): value is SharpeValidationView["selectionContext"] {
+  return (
+    isRecord(value) &&
+    isNullableNumber(value["candidateCount"]) &&
+    isNullableNumber(value["trialCount"]) &&
+    isNullableNumber(value["trialSharpeRatioStandardDeviation"]) &&
+    isNullableString(value["selectedByMetric"]) &&
+    isNullableString(value["multipleTestingAdjustment"])
+  );
+}
+
+function isSharpeValidationWarningView(
+  value: unknown
+): value is SharpeValidationWarningView {
+  return (
+    isRecord(value) &&
+    typeof value["code"] === "string" &&
+    (value["severity"] === "info" || value["severity"] === "warning") &&
+    typeof value["message"] === "string"
+  );
+}
+
+function isSharpeValidationStatus(
+  value: unknown
+): value is SharpeValidationView["status"] {
+  return value === "missing" || value === "available" || value === "unavailable";
+}
+
+function missingSharpeValidation(
+  warnings: string[] = []
+): SharpeValidationView {
+  return {
+    status: "missing",
+    schemaVersion: null,
+    returnSampleCount: 0,
+    minimumSampleCount: null,
+    sampleSharpeStatus: null,
+    sampleSharpeValue: null,
+    loAdjustedSharpeStatus: null,
+    probabilisticSharpeRatioStatus: null,
+    probabilisticSharpeRatioProbability: null,
+    deflatedSharpeRatioStatus: null,
+    deflatedSharpeRatioProbability: null,
+    selectionContext: {
+      candidateCount: null,
+      trialCount: null,
+      trialSharpeRatioStandardDeviation: null,
+      selectedByMetric: null,
+      multipleTestingAdjustment: null
+    },
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "SHARPE_VALIDATION_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "Sharpe validation is paper-only research evidence. It is not a strategy recommendation or performance guarantee."
+  };
 }
 
 function isCpcvPboValidationView(

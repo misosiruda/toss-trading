@@ -40,6 +40,13 @@ test("validation lab fallback fills missing candidate comparison", async () => {
     normalized.candidateComparison.warnings.join("\n"),
     /does not include candidateComparison/
   );
+  assert.equal(normalized.sharpeValidation.status, "missing");
+  assert.match(
+    normalized.sharpeValidation.warnings
+      .map((warning) => warning.message)
+      .join("\n"),
+    /does not include sharpeValidation/
+  );
   assert.equal(normalized.cpcvPboValidation.status, "missing");
   assert.match(
     normalized.cpcvPboValidation.warnings
@@ -61,6 +68,36 @@ test("validation lab fallback preserves existing validation lab extensions", asy
       returnSampleCount: 1,
       rows: [],
       warnings: []
+    },
+    sharpeValidation: {
+      status: "available",
+      schemaVersion: "sharpe_validation.v1",
+      returnSampleCount: 32,
+      minimumSampleCount: 30,
+      sampleSharpeStatus: "computed",
+      sampleSharpeValue: 1.2,
+      loAdjustedSharpeStatus: "computed",
+      probabilisticSharpeRatioStatus: "computed",
+      probabilisticSharpeRatioProbability: 0.71,
+      deflatedSharpeRatioStatus: "computed",
+      deflatedSharpeRatioProbability: 0.62,
+      selectionContext: {
+        candidateCount: 2,
+        trialCount: 4,
+        trialSharpeRatioStandardDeviation: 0.2,
+        selectedByMetric: "total_return_ratio",
+        multipleTestingAdjustment: "trial_log"
+      },
+      warningCount: 1,
+      warnings: [
+        {
+          code: "NON_IID_RETURN_SAMPLE",
+          severity: "warning",
+          message: "autocorrelation diagnostic flagged non-IID returns"
+        }
+      ],
+      readOnlyNotice:
+        "Sharpe validation is paper-only research evidence. It is not a strategy recommendation or performance guarantee."
     },
     cpcvPboValidation: {
       status: "sampled",

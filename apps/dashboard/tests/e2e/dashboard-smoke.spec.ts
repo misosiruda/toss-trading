@@ -417,6 +417,27 @@ test("renders validation lab detail without strategy recommendation controls", a
     )
   ).toBeVisible();
 
+  const sharpeWarning = page.getByLabel("Sharpe validation warning");
+  await expect(
+    sharpeWarning.getByRole("heading", {
+      name: "Sharpe Validation Warning",
+    })
+  ).toBeVisible();
+  await expect(
+    sharpeWarning.getByText("unavailable", { exact: true })
+  ).toBeVisible();
+  await expect(
+    sharpeWarning.getByText("insufficient_sample / missing")
+  ).toHaveCount(3);
+  await expect(
+    sharpeWarning.getByText("INSUFFICIENT_RETURN_SAMPLES")
+  ).toBeVisible();
+  await expect(
+    sharpeWarning.getByText(
+      "Sharpe validation is paper-only research evidence. It is not a strategy recommendation or performance guarantee."
+    )
+  ).toBeVisible();
+
   const comparisonTable = page.getByRole("table", {
     name: "Policy candidate comparison table",
   });
