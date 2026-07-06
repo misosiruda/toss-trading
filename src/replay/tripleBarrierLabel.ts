@@ -377,13 +377,16 @@ function buildTripleBarrierLabel(input: {
     ),
     input.config.referencePriceField
   );
-  if (terminalSnapshot === null) {
+  if (
+    terminalSnapshot === null ||
+    Date.parse(terminalSnapshot.observedAt) < input.event.timeBarrierDeadlineMs
+  ) {
     const warnings = [
       warning({
         code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
         severity: "warning",
         message:
-          "Triple barrier label could not find a terminal price inside the time barrier",
+          "Triple barrier label could not find terminal price coverage through the time barrier",
         labelId: input.event.labelId,
         sampleId: input.event.sampleId
       })

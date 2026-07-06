@@ -30,7 +30,7 @@ test("triple barrier label artifact emits deterministic profit stop and time lab
         lowPriceKrw: 94
       }),
       snapshot("CCC", "2026-01-01T00:00:00.000Z", 100),
-      snapshot("CCC", "2026-01-03T00:00:00.000Z", 102),
+      snapshot("CCC", "2026-01-04T00:00:00.000Z", 102),
       snapshot("CCC", "2026-01-05T00:00:00.000Z", 130)
     ]
   });
@@ -123,6 +123,31 @@ test("triple barrier label artifact emits deterministic profit stop and time lab
   );
 });
 
+test("triple barrier label fails closed when horizon coverage ends early", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_stale_terminal", "MMM", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("MMM", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("MMM", "2026-01-02T00:00:00.000Z", 102)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "unavailable");
+  assert.equal(label.touchedBarrier, "unavailable");
+  assert.equal(label.entryPrice, 100);
+  assert.equal(label.realizedReturnRatio, null);
+  assert.equal(label.purgedSample.labelEnd, "2026-01-04T00:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_PRICE_PATH_MISSING"]
+  );
+});
+
 test("triple barrier label uses stop-loss policy for ambiguous same-bar touch", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
@@ -161,7 +186,8 @@ test("triple barrier label ignores entry candle range for barrier touch", () => 
         highPriceKrw: 120,
         lowPriceKrw: 90
       }),
-      snapshot("III", "2026-01-02T00:00:00.000Z", 102)
+      snapshot("III", "2026-01-02T00:00:00.000Z", 101),
+      snapshot("III", "2026-01-04T00:00:00.000Z", 102)
     ]
   });
   const label = artifact.labels[0]!;
