@@ -369,6 +369,44 @@ test("triple barrier label uses stop-loss policy for ambiguous same-bar touch", 
   );
 });
 
+test("triple barrier label applies stop-loss policy across duplicate timestamps", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event(
+        "sample_duplicate_timestamp_touch",
+        "TTT",
+        "2026-01-01T00:00:00.000Z"
+      )
+    ],
+    priceSnapshots: [
+      snapshot("TTT", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("TTT", "2026-01-02T00:00:00.000Z", 100, {
+        snapshotId: "snapshot_TTT_2026-01-02T00:00:00.000Z_profit",
+        highPriceKrw: 111,
+        lowPriceKrw: 100
+      }),
+      snapshot("TTT", "2026-01-02T00:00:00.000Z", 100, {
+        snapshotId: "snapshot_TTT_2026-01-02T00:00:00.000Z_stop",
+        highPriceKrw: 100,
+        lowPriceKrw: 94
+      })
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "available");
+  assert.equal(label.touchedBarrier, "stop_loss");
+  assert.equal(label.directionLabel, "negative");
+  assert.equal(label.realizedReturnRatio, -0.05);
+  assert.equal(label.labelEnd, "2026-01-02T00:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_AMBIGUOUS_TOUCH"]
+  );
+});
+
 test("triple barrier label ignores entry candle range for barrier touch", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
@@ -592,13 +630,14 @@ function snapshot(
   observedAt: string,
   lastPriceKrw: number,
   options: {
+    snapshotId?: string;
     highPriceKrw?: number;
     lowPriceKrw?: number;
     closePriceKrw?: number;
   } = {}
 ): HistoricalMarketSnapshot {
   return {
-    snapshotId: `snapshot_${symbol}_${observedAt}`,
+    snapshotId: options.snapshotId ?? `snapshot_${symbol}_${observedAt}`,
     market: "KR",
     symbol,
     observedAt,

@@ -615,30 +615,40 @@ function firstBarrierTouch(input: {
   realizedReturnRatio: number;
   warnings: TripleBarrierLabelWarning[];
 } | null {
-  for (const snapshot of input.path) {
-    const touchRange = touchRangeForSnapshot(
-      snapshot,
-      input.config.referencePriceField
-    );
-    if (touchRange === null) {
-      continue;
+  for (let index = 0; index < input.path.length; ) {
+    const touchedAt = input.path[index]!.observedAt;
+    let upperTouched = false;
+    let lowerTouched = false;
+
+    while (
+      index < input.path.length &&
+      input.path[index]!.observedAt === touchedAt
+    ) {
+      const snapshot = input.path[index]!;
+      const touchRange = touchRangeForSnapshot(
+        snapshot,
+        input.config.referencePriceField
+      );
+      index += 1;
+      if (touchRange === null) {
+        continue;
+      }
+
+      upperTouched =
+        upperTouched ||
+        priceGreaterThanOrEqual(touchRange.highPrice, input.upperBarrierPrice);
+      lowerTouched =
+        lowerTouched ||
+        priceLessThanOrEqual(touchRange.lowPrice, input.lowerBarrierPrice);
     }
 
-    const upperTouched = priceGreaterThanOrEqual(
-      touchRange.highPrice,
-      input.upperBarrierPrice
-    );
-    const lowerTouched = priceLessThanOrEqual(
-      touchRange.lowPrice,
-      input.lowerBarrierPrice
-    );
     if (!upperTouched && !lowerTouched) {
       continue;
     }
     if (upperTouched && lowerTouched) {
       return {
         touchedBarrier: "stop_loss",
-        touchedAt: snapshot.observedAt,
+        touchedAt,
         realizedReturnRatio: roundRatio(-input.config.stopLossReturnRatio),
         warnings: [
           warning({
@@ -655,14 +665,14 @@ function firstBarrierTouch(input: {
     if (lowerTouched) {
       return {
         touchedBarrier: "stop_loss",
-        touchedAt: snapshot.observedAt,
+        touchedAt,
         realizedReturnRatio: roundRatio(-input.config.stopLossReturnRatio),
         warnings: []
       };
     }
     return {
       touchedBarrier: "profit_taking",
-      touchedAt: snapshot.observedAt,
+      touchedAt,
       realizedReturnRatio: roundRatio(input.config.profitTakingReturnRatio),
       warnings: []
     };
