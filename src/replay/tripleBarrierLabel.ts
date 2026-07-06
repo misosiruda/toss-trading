@@ -272,7 +272,28 @@ export const metaLabelEvaluationReportSchema = z
     candidates: z.array(metaLabelCandidateSchema),
     summary: metaLabelEvaluationSummarySchema
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const duplicateSourceLabelId = findDuplicateMetaLabelSourceLabelId(
+      value.candidates
+    );
+    if (duplicateSourceLabelId !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["candidates"],
+        message: `duplicate meta-label sourceLabelId: ${duplicateSourceLabelId}`
+      });
+    }
+
+    const expectedSummary = summarizeMetaLabelCandidates(value.candidates);
+    if (!metaLabelEvaluationSummariesEqual(value.summary, expectedSummary)) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message: "meta-label evaluation summary must match candidates"
+      });
+    }
+  });
 
 export type TripleBarrierMarket = z.infer<typeof tripleBarrierMarketSchema>;
 export type TripleBarrierTouchedBarrier = z.infer<
@@ -1088,15 +1109,39 @@ function summarizeMetaLabelCandidates(
 function assertUniqueMetaLabelSourceLabels(
   candidates: readonly MetaLabelCandidate[]
 ): void {
+  const duplicateSourceLabelId = findDuplicateMetaLabelSourceLabelId(candidates);
+  if (duplicateSourceLabelId !== null) {
+    throw new Error(
+      `duplicate meta-label sourceLabelId: ${duplicateSourceLabelId}`
+    );
+  }
+}
+
+function findDuplicateMetaLabelSourceLabelId(
+  candidates: readonly MetaLabelCandidate[]
+): string | null {
   const sourceLabelIds = new Set<string>();
   for (const candidate of candidates) {
     if (sourceLabelIds.has(candidate.sourceLabelId)) {
-      throw new Error(
-        `duplicate meta-label sourceLabelId: ${candidate.sourceLabelId}`
-      );
+      return candidate.sourceLabelId;
     }
     sourceLabelIds.add(candidate.sourceLabelId);
   }
+  return null;
+}
+
+function metaLabelEvaluationSummariesEqual(
+  actual: MetaLabelEvaluationSummary,
+  expected: MetaLabelEvaluationSummary
+): boolean {
+  return (
+    actual.totalCandidateCount === expected.totalCandidateCount &&
+    actual.actionableCandidateCount === expected.actionableCandidateCount &&
+    actual.correctSideCount === expected.correctSideCount &&
+    actual.wrongSideCount === expected.wrongSideCount &&
+    actual.notActionableCount === expected.notActionableCount &&
+    actual.accuracyRatio === expected.accuracyRatio
+  );
 }
 
 function roundRatio(value: number): number {

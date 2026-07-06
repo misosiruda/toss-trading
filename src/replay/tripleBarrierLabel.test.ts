@@ -683,6 +683,50 @@ test("meta label evaluation report rejects duplicate source labels", () => {
   );
 });
 
+test("meta label evaluation report schema rejects summary drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_eval_drift", "EVE", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("EVE", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EVE", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const report = buildMetaLabelEvaluationReport({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    candidates: [
+      buildMetaLabelCandidate({
+        sourceLabel: artifact.labels[0]!,
+        sideDecision: "long"
+      })
+    ]
+  });
+
+  const parseResult = metaLabelEvaluationReportSchema.safeParse({
+    ...report,
+    summary: {
+      totalCandidateCount: 0,
+      actionableCandidateCount: 0,
+      correctSideCount: 0,
+      wrongSideCount: 0,
+      notActionableCount: 0,
+      accuracyRatio: null
+    }
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /summary must match candidates/
+    );
+  }
+});
+
 test("triple barrier label ignores entry candle range for barrier touch", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
