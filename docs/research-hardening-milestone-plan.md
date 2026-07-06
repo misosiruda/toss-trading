@@ -333,6 +333,14 @@
 - meta-label은 sizing 명령이 아니라 evaluation signal로만 취급된다.
 - dashboard/report는 label quality와 distribution을 설명하되 매수/매도 조언으로 표현하지 않는다.
 
+정책 기준:
+
+- Triple barrier label design과 schema 후보는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 한다.
+
+현재 결정:
+
+- 첫 PR 범위는 `triple_barrier_label.v1` design과 label schema 후보 문서화로 제한한다.
+
 권장 PR 분해:
 
 1. triple barrier design과 label schema
