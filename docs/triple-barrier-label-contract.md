@@ -152,7 +152,10 @@ interface MetaLabelCandidate {
 
 - profit-taking barrier는 `entryPrice * (1 + profitTakingReturnRatio)`로 계산한다.
 - stop-loss barrier는 `entryPrice * (1 - stopLossReturnRatio)`로 계산한다.
-- time barrier는 `labelStart + timeBarrierDurationDays` 이후의 마지막 관측 가능 가격으로 평가한다.
+- time barrier deadline은 `labelStart + timeBarrierDurationDays`로 고정한다.
+- label 평가 price path는 `labelStart <= observedAt <= timeBarrierDeadline` 범위의 관측값만 사용할 수 있다.
+- price barrier touch 없이 time barrier로 종료되면 realized return은 time barrier deadline 이하에서 가장 늦은 관측 가격으로 평가하고, deadline 이후 가격은 사용하지 않는다.
+- `labelEnd`는 첫 price barrier touch timestamp 또는 price barrier touch가 없을 때 time barrier deadline으로 고정한다.
 - 같은 timestamp에서 upper/lower barrier가 동시에 touch된 것으로 보이면 `ambiguousTouchPolicy`에 따라 stop-loss를 우선 기록하고 warning을 남긴다.
 - price source가 horizon 전체를 덮지 못하면 `status: "unavailable"`과 warning을 남긴다.
 - 모든 계산은 replay observation time 이후 데이터만 label 평가 구간에 사용한다. feature packet 또는 decision packet에는 future label 값을 넣지 않는다.
