@@ -5,12 +5,19 @@ import {
   buildBatchReplayAggregateReport,
   renderBatchReplayAggregateReport
 } from "../reports/batchReplayReport.js";
-import { BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME } from "../storage/artifactPaths.js";
+import {
+  BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME,
+  META_LABEL_EVALUATION_REPORT_FILE_NAME
+} from "../storage/artifactPaths.js";
 import {
   SELECTION_TRIAL_SCHEMA_VERSION,
   type SelectionTrialRecord,
   type SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
+import {
+  metaLabelEvaluationReportSchema,
+  type MetaLabelEvaluationReport
+} from "../replay/tripleBarrierLabel.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import type {
   BatchReplayRunRecord,
@@ -23,12 +30,18 @@ const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
 const selectionTrialsPathArg = readOptionalArgValue("--selection-trials-path");
 const universeCoveragePathArg = readOptionalArgValue("--universe-coverage-path");
+const metaLabelEvaluationPathArg = readOptionalArgValue(
+  "--meta-label-evaluation-path"
+);
 const selectionTrialsPath =
   selectionTrialsPathArg ??
   join(dirname(runsPath), BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME);
 const universeCoveragePath =
   universeCoveragePathArg ??
   join(dirname(runsPath), HISTORICAL_UNIVERSE_COVERAGE_FILE_NAME);
+const metaLabelEvaluationPath =
+  metaLabelEvaluationPathArg ??
+  join(dirname(runsPath), META_LABEL_EVALUATION_REPORT_FILE_NAME);
 const targetReturnThresholds = readOptionalNumberListArg(
   "--target-return-thresholds"
 );
@@ -44,6 +57,10 @@ const universeCoverageReport = await readOptionalUniverseCoverageReport({
   filePath: universeCoveragePath,
   required: universeCoveragePathArg !== undefined
 });
+const metaLabelEvaluation = await readOptionalMetaLabelEvaluationReport({
+  filePath: metaLabelEvaluationPath,
+  required: metaLabelEvaluationPathArg !== undefined
+});
 const report = buildBatchReplayAggregateReport({
   records,
   generatedAt: new Date(),
@@ -56,6 +73,12 @@ const report = buildBatchReplayAggregateReport({
     : {
         universeCoverageReport,
         sourceUniverseCoveragePath: universeCoveragePath
+      }),
+  ...(metaLabelEvaluation === null
+    ? {}
+    : {
+        metaLabelEvaluation,
+        sourceMetaLabelEvaluationPath: metaLabelEvaluationPath
       }),
   ...(targetReturnThresholds === undefined ? {} : { targetReturnThresholds }),
   ...(expectedSampledCpcvSplitCount === undefined
@@ -134,6 +157,20 @@ async function readOptionalUniverseCoverageReport(options: {
   }
 }
 
+async function readOptionalMetaLabelEvaluationReport(options: {
+  filePath: string;
+  required: boolean;
+}): Promise<MetaLabelEvaluationReport | null> {
+  try {
+    return await readMetaLabelEvaluationReport(options.filePath);
+  } catch (error) {
+    if (!options.required && isFileNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function readUniverseCoverageReport(
   filePath: string
 ): Promise<HistoricalUniverseCoverageReport> {
@@ -153,6 +190,28 @@ async function readUniverseCoverageReport(
     throw new Error("invalid universe coverage report");
   }
   return parsed;
+}
+
+async function readMetaLabelEvaluationReport(
+  filePath: string
+): Promise<MetaLabelEvaluationReport> {
+  const raw = await readFile(filePath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `invalid meta-label evaluation JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  const result = metaLabelEvaluationReportSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("invalid meta-label evaluation report");
+  }
+  return result.data;
 }
 
 async function readSelectionTrialRecords(

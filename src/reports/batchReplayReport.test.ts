@@ -8,6 +8,7 @@ import type {
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
+import type { MetaLabelEvaluationReport } from "../replay/tripleBarrierLabel.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
   buildBatchReplayAggregateReport,
@@ -772,6 +773,34 @@ test("batch replay aggregate report separates provider metadata candidates", () 
     diagnostics.selectedCandidateKey ?? "",
     new RegExp(`providerMetadata=${providerAMetadataHash}`)
   );
+});
+
+test("batch replay aggregate report includes stored meta-label evaluation artifact", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceMetaLabelEvaluationPath:
+      "data/batch-replay/batch-meta/meta-label-evaluation-report.json",
+    records: [
+      record("meta_eval_run", 0, "completed", "bull", 0.05, 1_050_000)
+    ],
+    metaLabelEvaluation: metaLabelEvaluationReport()
+  });
+  const rendered = renderBatchReplayAggregateReport(report);
+
+  assert.equal(
+    report.sourceMetaLabelEvaluationPath,
+    "data/batch-replay/batch-meta/meta-label-evaluation-report.json"
+  );
+  assert.equal(report.metaLabelEvaluation?.schemaVersion, "meta_label_evaluation.v1");
+  assert.equal(report.metaLabelEvaluation?.summary.totalCandidateCount, 3);
+  assert.equal(report.metaLabelEvaluation?.summary.accuracyRatio, 0.5);
+  assert.match(
+    rendered,
+    /source_meta_label_evaluation_path: data\/batch-replay\/batch-meta\/meta-label-evaluation-report\.json/
+  );
+  assert.match(rendered, /## Meta-Label Evaluation/);
+  assert.match(rendered, /schema_version: meta_label_evaluation\.v1/);
+  assert.match(rendered, /accuracy_ratio: 0\.5/);
 });
 
 test("batch replay aggregate report warns when expected split count lacks trials", () => {
@@ -2362,6 +2391,44 @@ function universeCoverageReport(
     disclaimer:
       "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal.",
     ...overrides
+  };
+}
+
+function metaLabelEvaluationReport(): MetaLabelEvaluationReport {
+  return {
+    schemaVersion: "meta_label_evaluation.v1",
+    generatedAt: "2026-06-12T01:00:00.000Z",
+    candidates: [
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_meta_positive",
+        sideDecision: "long",
+        outcome: "correct_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_meta_negative",
+        sideDecision: "long",
+        outcome: "wrong_side",
+        sizingDirective: null
+      },
+      {
+        schemaVersion: "meta_label_candidate.v1",
+        sourceLabelId: "triple_barrier_meta_unavailable",
+        sideDecision: "unknown",
+        outcome: "not_actionable",
+        sizingDirective: null
+      }
+    ],
+    summary: {
+      totalCandidateCount: 3,
+      actionableCandidateCount: 2,
+      correctSideCount: 1,
+      wrongSideCount: 1,
+      notActionableCount: 1,
+      accuracyRatio: 0.5
+    }
   };
 }
 

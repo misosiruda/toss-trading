@@ -8,6 +8,7 @@ import {
   BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME,
   DYNAMIC_STORAGE_ARTIFACT_CONTRACTS,
   HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
+  META_LABEL_EVALUATION_REPORT_FILE_NAME,
   STORAGE_ARTIFACT_CONTRACTS,
   STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
   createBatchReplayArtifactPaths,
@@ -38,6 +39,10 @@ test("batch replay artifact paths keep manifest and runs path in one catalog", (
   assert.equal(
     paths.selectionTrialsPath,
     join(paths.outputDir, BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME)
+  );
+  assert.equal(
+    paths.metaLabelEvaluationReportPath,
+    join(paths.outputDir, META_LABEL_EVALUATION_REPORT_FILE_NAME)
   );
 });
 
@@ -156,6 +161,9 @@ test("dynamic batch replay contracts document reader resolution", () => {
   const selectionTrialContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
     (contract) => contract.artifactName === "batchReplaySelectionTrials"
   );
+  const metaLabelEvaluationContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
+    (contract) => contract.artifactName === "metaLabelEvaluationReport"
+  );
 
   assert.notEqual(batchRunContract, undefined);
   assert.equal(batchRunContract?.fileName, BATCH_REPLAY_RUNS_FILE_NAME);
@@ -182,6 +190,18 @@ test("dynamic batch replay contracts document reader resolution", () => {
     selectionTrialContract?.corruptJsonlPolicy,
     "skip_line_and_count"
   );
+  assert.notEqual(metaLabelEvaluationContract, undefined);
+  assert.equal(
+    metaLabelEvaluationContract?.fileName,
+    META_LABEL_EVALUATION_REPORT_FILE_NAME
+  );
+  assert.equal(metaLabelEvaluationContract?.format, "json");
+  assert.equal(
+    metaLabelEvaluationContract?.domainContract,
+    "MetaLabelEvaluationReport"
+  );
+  assert.equal(metaLabelEvaluationContract?.localOperationsReader, null);
+  assert.equal(metaLabelEvaluationContract?.corruptJsonlPolicy, null);
 });
 
 test("storage base dir maps to sibling batch replay artifact root", () => {

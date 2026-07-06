@@ -15,7 +15,7 @@
 - `buildTripleBarrierPurgedKFoldSamples`는 generated label horizon을 기존 `PurgedKFoldSample` 호환 입력으로 변환한다.
 - `meta_label_candidate.v1` schema와 `buildMetaLabelCandidate`는 side decision을 사후 label outcome과 비교하되 `sizingDirective`는 `null`만 허용한다.
 - `meta_label_evaluation.v1` schema와 `buildMetaLabelEvaluationReport`는 meta-label candidate outcome 분포와 actionable accuracy를 집계한다.
-- Next.js Validation Lab은 `meta_label_evaluation.v1` summary를 read-only paper-only research evidence로 표시한다.
+- `historicalBatchReport`는 batch directory의 standard `meta-label-evaluation-report.json` artifact가 있으면 aggregate report에 포함하고, Next.js Validation Lab은 그 summary를 read-only paper-only research evidence로 표시한다.
 
 ## Contract 목표
 
@@ -232,7 +232,7 @@ triple barrier label은 기존 purged split layer가 이해하는 `sampleId`, `l
 3. 완료: generated label horizon을 purged validation input으로 연결한다.
 4. 완료: `meta_label_candidate.v1` schema와 sizing directive reject helper를 추가한다.
 5. 완료: standalone `meta_label_evaluation.v1` report schema와 summary helper를 추가한다.
-6. 완료: Next.js Validation Lab에 read-only meta-label evaluation summary를 표시한다.
+6. 완료: `historicalBatchReport` aggregate 연결과 Next.js Validation Lab read-only meta-label evaluation summary 표시를 추가한다.
 
 ## Safety Boundary
 

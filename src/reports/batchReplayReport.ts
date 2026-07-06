@@ -26,6 +26,10 @@ import type {
   SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
+import {
+  metaLabelEvaluationReportSchema,
+  type MetaLabelEvaluationReport
+} from "../replay/tripleBarrierLabel.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
@@ -36,7 +40,9 @@ export interface BatchReplayAggregateReportOptions {
   sourceRunsPath?: string;
   sourceSelectionTrialsPath?: string;
   sourceUniverseCoveragePath?: string;
+  sourceMetaLabelEvaluationPath?: string;
   universeCoverageReport?: HistoricalUniverseCoverageReport | null;
+  metaLabelEvaluation?: MetaLabelEvaluationReport | null;
   title?: string;
   targetReturnThresholds?: number[];
   expectedSampledCpcvSplitCount?: number;
@@ -49,11 +55,13 @@ export interface BatchReplayAggregateReport {
   sourceRunsPath: string | null;
   sourceSelectionTrialsPath: string | null;
   sourceUniverseCoveragePath?: string | null;
+  sourceMetaLabelEvaluationPath?: string | null;
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
   cpcvPboValidation: CpcvPboValidationReport | null;
+  metaLabelEvaluation?: MetaLabelEvaluationReport | null;
   universeCoverage?: BatchReplayUniverseCoverageSummary | null;
   overall: BatchReplayGroupSummary;
   byRegime: Partial<Record<MarketRegimeLabel, BatchReplayGroupSummary>>;
@@ -310,6 +318,11 @@ export function buildBatchReplayAggregateReport(
           overfittingDiagnostics,
           options.generatedAt
         );
+  const metaLabelEvaluation =
+    options.metaLabelEvaluation === undefined ||
+    options.metaLabelEvaluation === null
+      ? null
+      : metaLabelEvaluationReportSchema.parse(options.metaLabelEvaluation);
 
   return {
     title: options.title ?? "Batch Replay Paper Aggregate Report",
@@ -319,6 +332,10 @@ export function buildBatchReplayAggregateReport(
     sourceSelectionTrialsPath:
       selectionTrials === null ? null : options.sourceSelectionTrialsPath ?? null,
     sourceUniverseCoveragePath: universeCoverage?.sourcePath ?? null,
+    sourceMetaLabelEvaluationPath:
+      metaLabelEvaluation === null
+        ? null
+        : options.sourceMetaLabelEvaluationPath ?? null,
     targetReturnThresholds,
     summary: {
       runCount: records.length,
@@ -336,6 +353,7 @@ export function buildBatchReplayAggregateReport(
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overfittingDiagnostics,
     cpcvPboValidation,
+    metaLabelEvaluation,
     universeCoverage,
     overall: summarizeGroup("overall", records, targetReturnThresholds),
     byRegime,
@@ -359,6 +377,9 @@ export function renderBatchReplayAggregateReport(
     `source_universe_coverage_path: ${
       report.sourceUniverseCoveragePath ?? "null"
     }`,
+    `source_meta_label_evaluation_path: ${
+      report.sourceMetaLabelEvaluationPath ?? "null"
+    }`,
     `target_return_thresholds: ${JSON.stringify(report.targetReturnThresholds)}`,
     "",
     "## Summary",
@@ -380,6 +401,9 @@ export function renderBatchReplayAggregateReport(
     "",
     "## CPCV/PBO Validation",
     renderCpcvPboValidation(report.cpcvPboValidation),
+    "",
+    "## Meta-Label Evaluation",
+    renderMetaLabelEvaluation(report.metaLabelEvaluation ?? null),
     "",
     "## Universe Coverage",
     renderUniverseCoverage(report.universeCoverage ?? null),
@@ -1687,6 +1711,25 @@ function renderCpcvPboValidation(
     `warnings: ${JSON.stringify(report.warnings)}`,
     `selection_log: ${JSON.stringify(report.selectionLog)}`,
     `performance_matrix: ${JSON.stringify(report.performanceMatrix)}`
+  ].join("\n");
+}
+
+function renderMetaLabelEvaluation(
+  report: MetaLabelEvaluationReport | null
+): string {
+  if (report === null) {
+    return "meta_label_evaluation: null";
+  }
+
+  return [
+    `schema_version: ${report.schemaVersion}`,
+    `generated_at: ${report.generatedAt}`,
+    `total_candidate_count: ${report.summary.totalCandidateCount}`,
+    `actionable_candidate_count: ${report.summary.actionableCandidateCount}`,
+    `correct_side_count: ${report.summary.correctSideCount}`,
+    `wrong_side_count: ${report.summary.wrongSideCount}`,
+    `not_actionable_count: ${report.summary.notActionableCount}`,
+    `accuracy_ratio: ${formatNullable(report.summary.accuracyRatio)}`
   ].join("\n");
 }
 
