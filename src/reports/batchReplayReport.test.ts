@@ -8,7 +8,10 @@ import type {
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
-import type { MetaLabelEvaluationReport } from "../replay/tripleBarrierLabel.js";
+import type {
+  MetaLabelEvaluationReport,
+  TripleBarrierLabelArtifact
+} from "../replay/tripleBarrierLabel.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
   buildBatchReplayAggregateReport,
@@ -801,6 +804,36 @@ test("batch replay aggregate report includes stored meta-label evaluation artifa
   assert.match(rendered, /## Meta-Label Evaluation/);
   assert.match(rendered, /schema_version: meta_label_evaluation\.v1/);
   assert.match(rendered, /accuracy_ratio: 0\.5/);
+});
+
+test("batch replay aggregate report includes stored triple-barrier label distribution", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceTripleBarrierLabelPath:
+      "data/batch-replay/batch-label/triple-barrier-label-report.json",
+    records: [
+      record("triple_label_run", 0, "completed", "bull", 0.05, 1_050_000)
+    ],
+    tripleBarrierLabel: tripleBarrierLabelArtifact()
+  });
+  const rendered = renderBatchReplayAggregateReport(report);
+
+  assert.equal(
+    report.sourceTripleBarrierLabelPath,
+    "data/batch-replay/batch-label/triple-barrier-label-report.json"
+  );
+  assert.equal(report.tripleBarrierLabel?.schemaVersion, "triple_barrier_label.v1");
+  assert.equal(report.tripleBarrierLabel?.summary.totalLabelCount, 3);
+  assert.equal(report.tripleBarrierLabel?.summary.unavailableLabelCount, 1);
+  assert.match(
+    rendered,
+    /source_triple_barrier_label_path: data\/batch-replay\/batch-label\/triple-barrier-label-report\.json/
+  );
+  assert.match(rendered, /## Triple Barrier Label Distribution/);
+  assert.match(rendered, /schema_version: triple_barrier_label\.v1/);
+  assert.match(rendered, /config_hash: sha256:aaaaaaaa/);
+  assert.match(rendered, /positive_count: 1/);
+  assert.match(rendered, /warning_count: 1/);
 });
 
 test("batch replay aggregate report warns when expected split count lacks trials", () => {
@@ -2429,6 +2462,47 @@ function metaLabelEvaluationReport(): MetaLabelEvaluationReport {
       notActionableCount: 1,
       accuracyRatio: 0.5
     }
+  };
+}
+
+function tripleBarrierLabelArtifact(): TripleBarrierLabelArtifact {
+  return {
+    schemaVersion: "triple_barrier_label.v1",
+    generatedAt: "2026-06-12T01:00:00.000Z",
+    config: {
+      labelProtocol: "triple_barrier",
+      priceSource: "historical_market_snapshot",
+      referencePriceField: "close",
+      profitTakingReturnRatio: 0.05,
+      stopLossReturnRatio: 0.03,
+      timeBarrierDurationDays: 5,
+      barrierTouchPolicy: "first_touch",
+      ambiguousTouchPolicy: "earliest_timestamp_then_stop_loss",
+      configHash:
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    labels: [],
+    summary: {
+      totalLabelCount: 3,
+      availableLabelCount: 2,
+      unavailableLabelCount: 1,
+      positiveCount: 1,
+      negativeCount: 1,
+      neutralCount: 0,
+      profitTakingCount: 1,
+      stopLossCount: 1,
+      timeBarrierCount: 0,
+      warningCount: 1
+    },
+    warnings: [
+      {
+        code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
+        severity: "warning",
+        message: "label horizon price path is missing",
+        labelId: null,
+        sampleId: "triple_barrier_missing_path"
+      }
+    ]
   };
 }
 

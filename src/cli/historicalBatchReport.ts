@@ -7,7 +7,8 @@ import {
 } from "../reports/batchReplayReport.js";
 import {
   BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME,
-  META_LABEL_EVALUATION_REPORT_FILE_NAME
+  META_LABEL_EVALUATION_REPORT_FILE_NAME,
+  TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME
 } from "../storage/artifactPaths.js";
 import {
   SELECTION_TRIAL_SCHEMA_VERSION,
@@ -16,7 +17,9 @@ import {
 } from "../replay/selectionTrialLog.js";
 import {
   metaLabelEvaluationReportSchema,
-  type MetaLabelEvaluationReport
+  tripleBarrierLabelArtifactSchema,
+  type MetaLabelEvaluationReport,
+  type TripleBarrierLabelArtifact
 } from "../replay/tripleBarrierLabel.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import type {
@@ -30,6 +33,9 @@ const runsPath = readRequiredArgValue("--runs-path");
 const outputPath = readArgValue("--output-path");
 const selectionTrialsPathArg = readOptionalArgValue("--selection-trials-path");
 const universeCoveragePathArg = readOptionalArgValue("--universe-coverage-path");
+const tripleBarrierLabelPathArg = readOptionalArgValue(
+  "--triple-barrier-label-path"
+);
 const metaLabelEvaluationPathArg = readOptionalArgValue(
   "--meta-label-evaluation-path"
 );
@@ -39,6 +45,9 @@ const selectionTrialsPath =
 const universeCoveragePath =
   universeCoveragePathArg ??
   join(dirname(runsPath), HISTORICAL_UNIVERSE_COVERAGE_FILE_NAME);
+const tripleBarrierLabelPath =
+  tripleBarrierLabelPathArg ??
+  join(dirname(runsPath), TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME);
 const metaLabelEvaluationPath =
   metaLabelEvaluationPathArg ??
   join(dirname(runsPath), META_LABEL_EVALUATION_REPORT_FILE_NAME);
@@ -57,6 +66,10 @@ const universeCoverageReport = await readOptionalUniverseCoverageReport({
   filePath: universeCoveragePath,
   required: universeCoveragePathArg !== undefined
 });
+const tripleBarrierLabel = await readOptionalTripleBarrierLabelArtifact({
+  filePath: tripleBarrierLabelPath,
+  required: tripleBarrierLabelPathArg !== undefined
+});
 const metaLabelEvaluation = await readOptionalMetaLabelEvaluationReport({
   filePath: metaLabelEvaluationPath,
   required: metaLabelEvaluationPathArg !== undefined
@@ -73,6 +86,12 @@ const report = buildBatchReplayAggregateReport({
     : {
         universeCoverageReport,
         sourceUniverseCoveragePath: universeCoveragePath
+      }),
+  ...(tripleBarrierLabel === null
+    ? {}
+    : {
+        tripleBarrierLabel,
+        sourceTripleBarrierLabelPath: tripleBarrierLabelPath
       }),
   ...(metaLabelEvaluation === null
     ? {}
@@ -171,6 +190,20 @@ async function readOptionalMetaLabelEvaluationReport(options: {
   }
 }
 
+async function readOptionalTripleBarrierLabelArtifact(options: {
+  filePath: string;
+  required: boolean;
+}): Promise<TripleBarrierLabelArtifact | null> {
+  try {
+    return await readTripleBarrierLabelArtifact(options.filePath);
+  } catch (error) {
+    if (!options.required && isFileNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function readUniverseCoverageReport(
   filePath: string
 ): Promise<HistoricalUniverseCoverageReport> {
@@ -190,6 +223,28 @@ async function readUniverseCoverageReport(
     throw new Error("invalid universe coverage report");
   }
   return parsed;
+}
+
+async function readTripleBarrierLabelArtifact(
+  filePath: string
+): Promise<TripleBarrierLabelArtifact> {
+  const raw = await readFile(filePath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `invalid triple-barrier label JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  const result = tripleBarrierLabelArtifactSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("invalid triple-barrier label artifact");
+  }
+  return result.data;
 }
 
 async function readMetaLabelEvaluationReport(

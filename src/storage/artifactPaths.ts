@@ -34,6 +34,8 @@ export const BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME =
   "batch-replay-selection-trials.jsonl";
 export const BATCH_REPLAY_AGGREGATE_REPORT_FILE_NAME =
   "batch-replay-aggregate-report.json";
+export const TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME =
+  "triple-barrier-label-report.json";
 export const META_LABEL_EVALUATION_REPORT_FILE_NAME =
   "meta-label-evaluation-report.json";
 export const STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME =
@@ -345,6 +347,20 @@ export const DYNAMIC_STORAGE_ARTIFACT_CONTRACTS: readonly DynamicStorageArtifact
       pathResolver: "createBatchReplayArtifactPaths"
     },
     {
+      artifactName: "tripleBarrierLabelReport",
+      fileName: TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME,
+      relativePathPattern:
+        "batch-replay/<batchId>/triple-barrier-label-report.json",
+      format: "json",
+      role: "report",
+      domainContract: "TripleBarrierLabelArtifact",
+      writer: "standalone triple-barrier label generator",
+      localOperationsReader: null,
+      failureTrace: "label distribution, unavailable labels, warning count",
+      corruptJsonlPolicy: null,
+      pathResolver: "createBatchReplayArtifactPaths"
+    },
+    {
       artifactName: "metaLabelEvaluationReport",
       fileName: META_LABEL_EVALUATION_REPORT_FILE_NAME,
       relativePathPattern:
@@ -366,6 +382,7 @@ export interface BatchReplayArtifactPaths {
   manifestPath: string;
   runsPath: string;
   selectionTrialsPath: string;
+  tripleBarrierLabelReportPath: string;
   metaLabelEvaluationReportPath: string;
 }
 
@@ -387,6 +404,10 @@ export function createBatchReplayArtifactPaths(
     selectionTrialsPath: join(
       outputDir,
       BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME
+    ),
+    tripleBarrierLabelReportPath: join(
+      outputDir,
+      TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME
     ),
     metaLabelEvaluationReportPath: join(
       outputDir,

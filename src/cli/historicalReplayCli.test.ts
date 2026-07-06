@@ -611,10 +611,20 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     "batch-cli",
     "batch-replay-aggregate-report.json"
   );
+  const tripleBarrierLabelPath = join(
+    outputBaseDir,
+    "batch-cli",
+    "triple-barrier-label-report.json"
+  );
   const metaLabelEvaluationPath = join(
     outputBaseDir,
     "batch-cli",
     "meta-label-evaluation-report.json"
+  );
+  writeFileSync(
+    tripleBarrierLabelPath,
+    `${JSON.stringify(tripleBarrierLabelArtifact())}\n`,
+    "utf8"
   );
   writeFileSync(
     metaLabelEvaluationPath,
@@ -650,8 +660,20 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     output["selectionTrialsPath"]
   );
   assert.equal(
+    aggregateReport["sourceTripleBarrierLabelPath"],
+    tripleBarrierLabelPath
+  );
+  assert.equal(
     aggregateReport["sourceMetaLabelEvaluationPath"],
     metaLabelEvaluationPath
+  );
+  assert.equal(
+    (
+      (aggregateReport["tripleBarrierLabel"] as Record<string, unknown>)[
+        "summary"
+      ] as Record<string, unknown>
+    )["unavailableLabelCount"],
+    1
   );
   assert.equal(
     (
@@ -1673,6 +1695,47 @@ function metaLabelEvaluationReport(): Record<string, unknown> {
       notActionableCount: 1,
       accuracyRatio: 0.5
     }
+  };
+}
+
+function tripleBarrierLabelArtifact(): Record<string, unknown> {
+  return {
+    schemaVersion: "triple_barrier_label.v1",
+    generatedAt: "2026-07-06T00:00:00.000Z",
+    config: {
+      labelProtocol: "triple_barrier",
+      priceSource: "historical_market_snapshot",
+      referencePriceField: "close",
+      profitTakingReturnRatio: 0.05,
+      stopLossReturnRatio: 0.03,
+      timeBarrierDurationDays: 5,
+      barrierTouchPolicy: "first_touch",
+      ambiguousTouchPolicy: "earliest_timestamp_then_stop_loss",
+      configHash:
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    labels: [],
+    summary: {
+      totalLabelCount: 3,
+      availableLabelCount: 2,
+      unavailableLabelCount: 1,
+      positiveCount: 1,
+      negativeCount: 1,
+      neutralCount: 0,
+      profitTakingCount: 1,
+      stopLossCount: 1,
+      timeBarrierCount: 0,
+      warningCount: 1
+    },
+    warnings: [
+      {
+        code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
+        severity: "warning",
+        message: "label horizon price path is missing",
+        labelId: null,
+        sampleId: "triple_barrier_cli_missing_path"
+      }
+    ]
   };
 }
 
