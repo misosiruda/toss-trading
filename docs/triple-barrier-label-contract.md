@@ -12,7 +12,8 @@
 - `BatchReplayAggregateReport.overfittingDiagnostics`와 `cpcv_pbo_validation.v1`은 candidate selection bias를 사후 경고로 표시한다.
 - historical replay report와 dashboard는 PBO/Sharpe 계열 검증을 투자 조언이 아닌 read-only warning evidence로 표시한다.
 - `src/replay/tripleBarrierLabel.ts`는 historical market snapshot fixture와 event 목록에서 `triple_barrier_label.v1` artifact를 생성한다.
-- 아직 generated label horizon의 purged validation 연결, meta-label report, dashboard 표시는 없다.
+- `buildTripleBarrierPurgedKFoldSamples`는 generated label horizon을 기존 `PurgedKFoldSample` 호환 입력으로 변환한다.
+- 아직 meta-label report와 dashboard 표시는 없다.
 
 ## Contract 목표
 
@@ -173,7 +174,7 @@ triple barrier label은 기존 purged split layer가 이해하는 `sampleId`, `l
 후속 연결 원칙은 다음과 같다.
 
 1. label generator가 `TripleBarrierPurgedSample` 목록을 만든다.
-2. purged/embargo validation은 이 목록을 `PurgedKFoldSample` 호환 입력으로 사용한다.
+2. `buildTripleBarrierPurgedKFoldSamples`가 이 목록을 `PurgedKFoldSample` 호환 입력으로 변환한다.
 3. `labelEnd`가 test label horizon과 겹치는 train sample은 기존 purge rule로 제외된다.
 4. embargo는 test label window 이후 configured duration만큼 train 후보에서 제외한다.
 
@@ -202,8 +203,8 @@ triple barrier label은 기존 purged split layer가 이해하는 `sampleId`, `l
 
 1. 완료: `triple_barrier_label.v1` design과 label schema 후보를 문서화한다.
 2. 완료: standalone label generator와 fixture test를 추가한다.
-3. 다음 범위: generated label horizon을 purged validation input으로 연결한다.
-4. 후속 범위: meta-label evaluation report와 dashboard 표시를 추가한다.
+3. 완료: generated label horizon을 purged validation input으로 연결한다.
+4. 다음 범위: meta-label evaluation report와 dashboard 표시를 추가한다.
 
 ## Safety Boundary
 

@@ -7,6 +7,10 @@ import {
   sha256HashSchema,
   type HistoricalMarketSnapshot
 } from "../domain/schemas.js";
+import {
+  purgedKFoldSampleSchema,
+  type PurgedKFoldSample
+} from "./purgedSplit.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 
 export const TRIPLE_BARRIER_LABEL_SCHEMA_VERSION =
@@ -155,6 +159,24 @@ export const tripleBarrierLabelSchema = z
         message: "labelStart must be before or equal to labelEnd"
       });
     }
+    if (value.purgedSample.sampleId !== value.sampleId) {
+      context.addIssue({
+        code: "custom",
+        message: "purgedSample.sampleId must match sampleId"
+      });
+    }
+    if (value.purgedSample.labelStart !== value.labelStart) {
+      context.addIssue({
+        code: "custom",
+        message: "purgedSample.labelStart must match labelStart"
+      });
+    }
+    if (value.purgedSample.labelEnd !== value.labelEnd) {
+      context.addIssue({
+        code: "custom",
+        message: "purgedSample.labelEnd must match labelEnd"
+      });
+    }
   });
 
 export const tripleBarrierLabelSummarySchema = z
@@ -274,6 +296,40 @@ export function buildTripleBarrierLabelArtifact(
     },
     "tripleBarrierLabelArtifact"
   );
+}
+
+export function buildTripleBarrierPurgedKFoldSamples(
+  artifact: TripleBarrierLabelArtifact
+): PurgedKFoldSample[] {
+  const parsedArtifact = parseWithSchema(
+    tripleBarrierLabelArtifactSchema,
+    artifact,
+    "tripleBarrierLabelArtifact"
+  );
+  const sampleIds = new Set<string>();
+  const samples = parsedArtifact.labels.map((label) => {
+    const sample = parseWithSchema(
+      purgedKFoldSampleSchema,
+      label.purgedSample,
+      "tripleBarrierPurgedSample"
+    );
+    if (sampleIds.has(sample.sampleId)) {
+      throw new Error(`duplicate purged sampleId: ${sample.sampleId}`);
+    }
+    sampleIds.add(sample.sampleId);
+    return sample;
+  });
+
+  return samples.sort((left, right) => {
+    const startDelta = Date.parse(left.labelStart) - Date.parse(right.labelStart);
+    if (startDelta !== 0) {
+      return startDelta;
+    }
+    const endDelta = Date.parse(left.labelEnd) - Date.parse(right.labelEnd);
+    return endDelta !== 0
+      ? endDelta
+      : left.sampleId.localeCompare(right.sampleId);
+  });
 }
 
 function buildTripleBarrierLabel(input: {
