@@ -357,6 +357,26 @@ function buildTripleBarrierLabel(input: {
   });
 
   if (touch !== null) {
+    const touchPathCoverageGap = firstPricePathCoverageGap(
+      path.filter(
+        (snapshot) =>
+          Date.parse(snapshot.observedAt) <= Date.parse(touch.touchedAt)
+      ),
+      Date.parse(touch.touchedAt)
+    );
+    if (touchPathCoverageGap !== null) {
+      return unavailablePricePathLabel({
+        labelBase,
+        timeBarrierDeadline,
+        entryPrice,
+        upperBarrierPrice,
+        lowerBarrierPrice,
+        purgedSample,
+        labelId: input.event.labelId,
+        sampleId: input.event.sampleId
+      });
+    }
+
     return parseWithSchema(
       tripleBarrierLabelSchema,
       {
@@ -387,41 +407,28 @@ function buildTripleBarrierLabel(input: {
     ),
     input.config.referencePriceField
   );
-  if (
-    terminalSnapshot === null ||
-    !terminalSnapshotCoversDeadline(
-      terminalSnapshot,
-      input.event.timeBarrierDeadlineMs
-    )
-  ) {
-    const warnings = [
-      warning({
-        code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
-        severity: "warning",
-        message:
-          "Triple barrier label could not find terminal price coverage through the time barrier",
-        labelId: input.event.labelId,
-        sampleId: input.event.sampleId
-      })
-    ];
-    return parseWithSchema(
-      tripleBarrierLabelSchema,
-      {
-        ...labelBase,
-        labelEnd: timeBarrierDeadline,
-        entryPrice,
-        upperBarrierPrice,
-        lowerBarrierPrice,
-        touchedBarrier: "unavailable",
-        touchedAt: null,
-        realizedReturnRatio: null,
-        directionLabel: "unavailable",
-        status: "unavailable",
-        purgedSample,
-        warnings
-      },
-      "tripleBarrierLabel"
-    );
+  const terminalPathCoverageGap =
+    terminalSnapshot === null
+      ? null
+      : firstPricePathCoverageGap(
+          path.filter(
+            (snapshot) =>
+              Date.parse(snapshot.observedAt) <=
+              Date.parse(terminalSnapshot.observedAt)
+          ),
+          input.event.timeBarrierDeadlineMs
+        );
+  if (terminalSnapshot === null || terminalPathCoverageGap !== null) {
+    return unavailablePricePathLabel({
+      labelBase,
+      timeBarrierDeadline,
+      entryPrice,
+      upperBarrierPrice,
+      lowerBarrierPrice,
+      purgedSample,
+      labelId: input.event.labelId,
+      sampleId: input.event.sampleId
+    });
   }
 
   const terminalPrice = referencePrice(
@@ -453,6 +460,53 @@ function buildTripleBarrierLabel(input: {
       directionLabel: directionLabelFor(realizedReturnRatio),
       status: "available",
       purgedSample,
+      warnings
+    },
+    "tripleBarrierLabel"
+  );
+}
+
+function unavailablePricePathLabel(input: {
+  labelBase: {
+    labelId: string;
+    sampleId: string;
+    symbol: string;
+    market: TripleBarrierMarket;
+    observationAt: string;
+    labelStart: string;
+  };
+  timeBarrierDeadline: string;
+  entryPrice: number;
+  upperBarrierPrice: number;
+  lowerBarrierPrice: number;
+  purgedSample: TripleBarrierPurgedSample;
+  labelId: string;
+  sampleId: string;
+}): TripleBarrierLabel {
+  const warnings = [
+    warning({
+      code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
+      severity: "warning",
+      message:
+        "Triple barrier label could not find complete price path coverage through the label horizon",
+      labelId: input.labelId,
+      sampleId: input.sampleId
+    })
+  ];
+  return parseWithSchema(
+    tripleBarrierLabelSchema,
+    {
+      ...input.labelBase,
+      labelEnd: input.timeBarrierDeadline,
+      entryPrice: input.entryPrice,
+      upperBarrierPrice: input.upperBarrierPrice,
+      lowerBarrierPrice: input.lowerBarrierPrice,
+      touchedBarrier: "unavailable",
+      touchedAt: null,
+      realizedReturnRatio: null,
+      directionLabel: "unavailable",
+      status: "unavailable",
+      purgedSample: input.purgedSample,
       warnings
     },
     "tripleBarrierLabel"
@@ -645,14 +699,47 @@ function latestSnapshotWithReferencePrice(
   return null;
 }
 
-function terminalSnapshotCoversDeadline(
-  snapshot: HistoricalMarketSnapshot,
+function firstPricePathCoverageGap(
+  path: readonly HistoricalMarketSnapshot[],
   deadlineMs: number
+): { gapStartAt: string; gapEndAt: string } | null {
+  if (path.length === 0) {
+    return {
+      gapStartAt: new Date(deadlineMs).toISOString(),
+      gapEndAt: new Date(deadlineMs).toISOString()
+    };
+  }
+
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const current = path[index]!;
+    const next = path[index + 1]!;
+    if (!snapshotCoversTimestamp(current, Date.parse(next.observedAt))) {
+      return {
+        gapStartAt: current.observedAt,
+        gapEndAt: next.observedAt
+      };
+    }
+  }
+
+  const terminal = path[path.length - 1]!;
+  if (!snapshotCoversTimestamp(terminal, deadlineMs)) {
+    return {
+      gapStartAt: terminal.observedAt,
+      gapEndAt: new Date(deadlineMs).toISOString()
+    };
+  }
+
+  return null;
+}
+
+function snapshotCoversTimestamp(
+  snapshot: HistoricalMarketSnapshot,
+  targetMs: number
 ): boolean {
   const observedAtMs = Date.parse(snapshot.observedAt);
   return (
-    observedAtMs <= deadlineMs &&
-    deadlineMs - observedAtMs <= SNAPSHOT_INTERVAL_DURATION_MS[snapshot.interval]
+    observedAtMs <= targetMs &&
+    targetMs - observedAtMs <= SNAPSHOT_INTERVAL_DURATION_MS[snapshot.interval]
   );
 }
 
