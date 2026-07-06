@@ -16,6 +16,8 @@ import { createReplayResearchHash } from "./replayRunManifest.js";
 export const TRIPLE_BARRIER_LABEL_SCHEMA_VERSION =
   "triple_barrier_label.v1";
 export const META_LABEL_CANDIDATE_SCHEMA_VERSION = "meta_label_candidate.v1";
+export const META_LABEL_EVALUATION_SCHEMA_VERSION =
+  "meta_label_evaluation.v1";
 
 export const tripleBarrierMarketSchema = z.enum(["KR", "US", "UNKNOWN"]);
 export const tripleBarrierTouchedBarrierSchema = z.enum([
@@ -225,6 +227,52 @@ export const metaLabelCandidateSchema = z
     sizingDirective: z.null()
   })
   .strict();
+export const metaLabelEvaluationSummarySchema = z
+  .object({
+    totalCandidateCount: z.number().int().nonnegative(),
+    actionableCandidateCount: z.number().int().nonnegative(),
+    correctSideCount: z.number().int().nonnegative(),
+    wrongSideCount: z.number().int().nonnegative(),
+    notActionableCount: z.number().int().nonnegative(),
+    accuracyRatio: z.number().min(0).max(1).nullable()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.correctSideCount + value.wrongSideCount !==
+      value.actionableCandidateCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "correctSideCount plus wrongSideCount must equal actionableCandidateCount"
+      });
+    }
+    if (
+      value.actionableCandidateCount + value.notActionableCount !==
+      value.totalCandidateCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "actionableCandidateCount plus notActionableCount must equal totalCandidateCount"
+      });
+    }
+    if (value.actionableCandidateCount === 0 && value.accuracyRatio !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "accuracyRatio must be null without actionable candidates"
+      });
+    }
+  });
+export const metaLabelEvaluationReportSchema = z
+  .object({
+    schemaVersion: z.literal(META_LABEL_EVALUATION_SCHEMA_VERSION),
+    generatedAt: isoDateTimeSchema,
+    candidates: z.array(metaLabelCandidateSchema),
+    summary: metaLabelEvaluationSummarySchema
+  })
+  .strict();
 
 export type TripleBarrierMarket = z.infer<typeof tripleBarrierMarketSchema>;
 export type TripleBarrierTouchedBarrier = z.infer<
@@ -264,6 +312,12 @@ export type TripleBarrierLabelArtifact = z.infer<
 export type MetaLabelSideDecision = z.infer<typeof metaLabelSideDecisionSchema>;
 export type MetaLabelOutcome = z.infer<typeof metaLabelOutcomeSchema>;
 export type MetaLabelCandidate = z.infer<typeof metaLabelCandidateSchema>;
+export type MetaLabelEvaluationSummary = z.infer<
+  typeof metaLabelEvaluationSummarySchema
+>;
+export type MetaLabelEvaluationReport = z.infer<
+  typeof metaLabelEvaluationReportSchema
+>;
 
 export interface BuildTripleBarrierLabelArtifactOptions {
   generatedAt?: Date | string;
@@ -276,6 +330,11 @@ export interface BuildMetaLabelCandidateOptions {
   sourceLabel: TripleBarrierLabel;
   sideDecision: MetaLabelSideDecision;
   sizingDirective?: unknown;
+}
+
+export interface BuildMetaLabelEvaluationReportOptions {
+  generatedAt?: Date | string;
+  candidates: readonly MetaLabelCandidate[];
 }
 
 interface NormalizedTripleBarrierLabelEvent extends TripleBarrierLabelEvent {
@@ -395,6 +454,28 @@ export function buildMetaLabelCandidate(
       sizingDirective: null
     },
     "metaLabelCandidate"
+  );
+}
+
+export function buildMetaLabelEvaluationReport(
+  options: BuildMetaLabelEvaluationReportOptions
+): MetaLabelEvaluationReport {
+  const generatedAt = normalizeGeneratedAt(options.generatedAt);
+  const candidates = z.array(metaLabelCandidateSchema).parse(options.candidates);
+  assertUniqueMetaLabelSourceLabels(candidates);
+  const sortedCandidates = [...candidates].sort((left, right) =>
+    left.sourceLabelId.localeCompare(right.sourceLabelId)
+  );
+
+  return parseWithSchema(
+    metaLabelEvaluationReportSchema,
+    {
+      schemaVersion: META_LABEL_EVALUATION_SCHEMA_VERSION,
+      generatedAt,
+      candidates: sortedCandidates,
+      summary: summarizeMetaLabelCandidates(sortedCandidates)
+    },
+    "metaLabelEvaluationReport"
   );
 }
 
@@ -975,6 +1056,47 @@ function metaLabelOutcomeFor(
   }
 
   return label.directionLabel === "negative" ? "correct_side" : "wrong_side";
+}
+
+function summarizeMetaLabelCandidates(
+  candidates: readonly MetaLabelCandidate[]
+): MetaLabelEvaluationSummary {
+  const correctSideCount = candidates.filter(
+    (candidate) => candidate.outcome === "correct_side"
+  ).length;
+  const wrongSideCount = candidates.filter(
+    (candidate) => candidate.outcome === "wrong_side"
+  ).length;
+  const notActionableCount = candidates.filter(
+    (candidate) => candidate.outcome === "not_actionable"
+  ).length;
+  const actionableCandidateCount = correctSideCount + wrongSideCount;
+
+  return metaLabelEvaluationSummarySchema.parse({
+    totalCandidateCount: candidates.length,
+    actionableCandidateCount,
+    correctSideCount,
+    wrongSideCount,
+    notActionableCount,
+    accuracyRatio:
+      actionableCandidateCount === 0
+        ? null
+        : roundRatio(correctSideCount / actionableCandidateCount)
+  });
+}
+
+function assertUniqueMetaLabelSourceLabels(
+  candidates: readonly MetaLabelCandidate[]
+): void {
+  const sourceLabelIds = new Set<string>();
+  for (const candidate of candidates) {
+    if (sourceLabelIds.has(candidate.sourceLabelId)) {
+      throw new Error(
+        `duplicate meta-label sourceLabelId: ${candidate.sourceLabelId}`
+      );
+    }
+    sourceLabelIds.add(candidate.sourceLabelId);
+  }
 }
 
 function roundRatio(value: number): number {

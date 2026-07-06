@@ -14,7 +14,8 @@
 - `src/replay/tripleBarrierLabel.ts`는 historical market snapshot fixture와 event 목록에서 `triple_barrier_label.v1` artifact를 생성한다.
 - `buildTripleBarrierPurgedKFoldSamples`는 generated label horizon을 기존 `PurgedKFoldSample` 호환 입력으로 변환한다.
 - `meta_label_candidate.v1` schema와 `buildMetaLabelCandidate`는 side decision을 사후 label outcome과 비교하되 `sizingDirective`는 `null`만 허용한다.
-- 아직 meta-label report와 dashboard 표시는 없다.
+- `meta_label_evaluation.v1` schema와 `buildMetaLabelEvaluationReport`는 meta-label candidate outcome 분포와 actionable accuracy를 집계한다.
+- 아직 dashboard 표시는 없다.
 
 ## Contract 목표
 
@@ -153,6 +154,28 @@ interface MetaLabelCandidate {
 
 `buildMetaLabelCandidate`는 available positive/negative label에 대해 side decision의 방향 적중 여부만 계산한다. `hold`, `unknown`, neutral, unavailable label은 `not_actionable`로 남긴다. `sizingDirective`에 non-null 값이 들어오면 `META_LABEL_SIZING_DIRECTIVE_REJECTED`로 fail-closed 처리한다.
 
+meta-label evaluation report는 candidate outcome 분포만 설명한다.
+
+```typescript
+interface MetaLabelEvaluationReport {
+  schemaVersion: "meta_label_evaluation.v1";
+  generatedAt: string;
+  candidates: MetaLabelCandidate[];
+  summary: MetaLabelEvaluationSummary;
+}
+
+interface MetaLabelEvaluationSummary {
+  totalCandidateCount: number;
+  actionableCandidateCount: number;
+  correctSideCount: number;
+  wrongSideCount: number;
+  notActionableCount: number;
+  accuracyRatio: number | null;
+}
+```
+
+`accuracyRatio`는 `correctSideCount / actionableCandidateCount`이며 actionable candidate가 없으면 `null`로 둔다. 같은 `sourceLabelId`가 중복되면 같은 label을 중복 집계할 수 있으므로 fail-closed 처리한다.
+
 ## Barrier Policy
 
 - profit-taking barrier는 `entryPrice * (1 + profitTakingReturnRatio)`로 계산한다.
@@ -208,7 +231,8 @@ triple barrier label은 기존 purged split layer가 이해하는 `sampleId`, `l
 2. 완료: standalone label generator와 fixture test를 추가한다.
 3. 완료: generated label horizon을 purged validation input으로 연결한다.
 4. 완료: `meta_label_candidate.v1` schema와 sizing directive reject helper를 추가한다.
-5. 다음 범위: meta-label evaluation report와 dashboard 표시를 추가한다.
+5. 완료: standalone `meta_label_evaluation.v1` report schema와 summary helper를 추가한다.
+6. 다음 범위: dashboard 표시를 추가한다.
 
 ## Safety Boundary
 
