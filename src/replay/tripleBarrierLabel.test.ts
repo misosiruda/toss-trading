@@ -173,6 +173,35 @@ test("triple barrier label fails closed when horizon coverage has interior gaps"
   );
 });
 
+test("triple barrier label fails closed when barrier range is partial", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_partial_range", "PPP", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("PPP", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("PPP", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111
+      }),
+      snapshot("PPP", "2026-01-03T00:00:00.000Z", 105),
+      snapshot("PPP", "2026-01-04T00:00:00.000Z", 105)
+    ]
+  });
+  const label = artifact.labels[0]!;
+
+  assert.equal(label.status, "unavailable");
+  assert.equal(label.touchedBarrier, "unavailable");
+  assert.equal(label.entryPrice, 100);
+  assert.equal(label.realizedReturnRatio, null);
+  assert.equal(label.purgedSample.labelEnd, "2026-01-04T00:00:00.000Z");
+  assert.deepEqual(
+    label.warnings.map((warning) => warning.code),
+    ["TRIPLE_BARRIER_PRICE_PATH_MISSING"]
+  );
+});
+
 test("triple barrier label accepts terminal price within snapshot interval", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",

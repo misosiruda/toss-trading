@@ -357,14 +357,14 @@ function buildTripleBarrierLabel(input: {
   });
 
   if (touch !== null) {
-    const touchPathCoverageGap = firstPricePathCoverageGap(
+    const touchPathCoverageIssue = firstPricePathCoverageIssue(
       path.filter(
         (snapshot) =>
           Date.parse(snapshot.observedAt) <= Date.parse(touch.touchedAt)
       ),
       Date.parse(touch.touchedAt)
     );
-    if (touchPathCoverageGap !== null) {
+    if (touchPathCoverageIssue !== null) {
       return unavailablePricePathLabel({
         labelBase,
         timeBarrierDeadline,
@@ -407,10 +407,10 @@ function buildTripleBarrierLabel(input: {
     ),
     input.config.referencePriceField
   );
-  const terminalPathCoverageGap =
+  const terminalPathCoverageIssue =
     terminalSnapshot === null
       ? null
-      : firstPricePathCoverageGap(
+      : firstPricePathCoverageIssue(
           path.filter(
             (snapshot) =>
               Date.parse(snapshot.observedAt) <=
@@ -418,7 +418,7 @@ function buildTripleBarrierLabel(input: {
           ),
           input.event.timeBarrierDeadlineMs
         );
-  if (terminalSnapshot === null || terminalPathCoverageGap !== null) {
+  if (terminalSnapshot === null || terminalPathCoverageIssue !== null) {
     return unavailablePricePathLabel({
       labelBase,
       timeBarrierDeadline,
@@ -699,15 +699,25 @@ function latestSnapshotWithReferencePrice(
   return null;
 }
 
-function firstPricePathCoverageGap(
+function firstPricePathCoverageIssue(
   path: readonly HistoricalMarketSnapshot[],
   deadlineMs: number
-): { gapStartAt: string; gapEndAt: string } | null {
+): { issueStartAt: string; issueEndAt: string } | null {
   if (path.length === 0) {
     return {
-      gapStartAt: new Date(deadlineMs).toISOString(),
-      gapEndAt: new Date(deadlineMs).toISOString()
+      issueStartAt: new Date(deadlineMs).toISOString(),
+      issueEndAt: new Date(deadlineMs).toISOString()
     };
+  }
+
+  for (let index = 1; index < path.length; index += 1) {
+    const snapshot = path[index]!;
+    if (hasPartialTouchRange(snapshot)) {
+      return {
+        issueStartAt: snapshot.observedAt,
+        issueEndAt: snapshot.observedAt
+      };
+    }
   }
 
   for (let index = 0; index < path.length - 1; index += 1) {
@@ -715,8 +725,8 @@ function firstPricePathCoverageGap(
     const next = path[index + 1]!;
     if (!snapshotCoversTimestamp(current, Date.parse(next.observedAt))) {
       return {
-        gapStartAt: current.observedAt,
-        gapEndAt: next.observedAt
+        issueStartAt: current.observedAt,
+        issueEndAt: next.observedAt
       };
     }
   }
@@ -724,12 +734,19 @@ function firstPricePathCoverageGap(
   const terminal = path[path.length - 1]!;
   if (!snapshotCoversTimestamp(terminal, deadlineMs)) {
     return {
-      gapStartAt: terminal.observedAt,
-      gapEndAt: new Date(deadlineMs).toISOString()
+      issueStartAt: terminal.observedAt,
+      issueEndAt: new Date(deadlineMs).toISOString()
     };
   }
 
   return null;
+}
+
+function hasPartialTouchRange(snapshot: HistoricalMarketSnapshot): boolean {
+  return (
+    (snapshot.highPriceKrw === undefined) !==
+    (snapshot.lowPriceKrw === undefined)
+  );
 }
 
 function snapshotCoversTimestamp(
