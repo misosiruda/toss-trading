@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { buildPurgedKFoldPlan } from "./purgedSplit.js";
 import {
   buildTripleBarrierLabelArtifact,
+  buildTripleBarrierPurgedKFoldSamples,
   tripleBarrierLabelArtifactSchema,
   type TripleBarrierLabelEvent
 } from "./tripleBarrierLabel.js";
@@ -407,6 +409,66 @@ test("triple barrier label applies stop-loss policy across duplicate timestamps"
   );
 });
 
+test("triple barrier purged samples feed generated horizons into purged k-fold", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: {
+      ...config(),
+      timeBarrierDurationDays: 2
+    },
+    events: [
+      event("sample_pkf_1", "PKF", "2026-01-01T00:00:00.000Z"),
+      event("sample_pkf_2", "PKF", "2026-01-02T00:00:00.000Z"),
+      event("sample_pkf_3", "PKF", "2026-01-03T00:00:00.000Z"),
+      event("sample_pkf_4", "PKF", "2026-01-06T00:00:00.000Z")
+    ],
+    priceSnapshots: Array.from({ length: 8 }, (_, index) =>
+      snapshot(
+        "PKF",
+        `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+        100
+      )
+    )
+  });
+  const samples = buildTripleBarrierPurgedKFoldSamples(artifact);
+  const plan = buildPurgedKFoldPlan({
+    planId: "triple_barrier_pkf",
+    foldCount: 2,
+    samples
+  });
+  const firstSplit = plan.splits[0]!;
+
+  assert.deepEqual(samples, [
+    {
+      sampleId: "sample_pkf_1",
+      labelStart: "2026-01-01T00:00:00.000Z",
+      labelEnd: "2026-01-03T00:00:00.000Z"
+    },
+    {
+      sampleId: "sample_pkf_2",
+      labelStart: "2026-01-02T00:00:00.000Z",
+      labelEnd: "2026-01-04T00:00:00.000Z"
+    },
+    {
+      sampleId: "sample_pkf_3",
+      labelStart: "2026-01-03T00:00:00.000Z",
+      labelEnd: "2026-01-05T00:00:00.000Z"
+    },
+    {
+      sampleId: "sample_pkf_4",
+      labelStart: "2026-01-06T00:00:00.000Z",
+      labelEnd: "2026-01-08T00:00:00.000Z"
+    }
+  ]);
+  assert.deepEqual(firstSplit.testSampleIds, [
+    "sample_pkf_1",
+    "sample_pkf_2"
+  ]);
+  assert.deepEqual(firstSplit.purgedSampleIds, ["sample_pkf_3"]);
+  assert.deepEqual(firstSplit.trainSampleIds, ["sample_pkf_4"]);
+  assert.equal(firstSplit.purgeExcludedSampleCount, 1);
+});
+
 test("triple barrier label ignores entry candle range for barrier touch", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
@@ -599,6 +661,33 @@ test("triple barrier label generator rejects invalid config or event input", () 
         priceSnapshots: []
       }),
     /duplicate sampleId/
+  );
+
+  const validArtifact = buildTripleBarrierLabelArtifact({
+    config: config(),
+    events: [event("sample_mismatch", "ZZZ", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("ZZZ", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("ZZZ", "2026-01-02T00:00:00.000Z", 101),
+      snapshot("ZZZ", "2026-01-03T00:00:00.000Z", 101),
+      snapshot("ZZZ", "2026-01-04T00:00:00.000Z", 102)
+    ]
+  });
+
+  assert.equal(
+    tripleBarrierLabelArtifactSchema.safeParse({
+      ...validArtifact,
+      labels: [
+        {
+          ...validArtifact.labels[0]!,
+          purgedSample: {
+            ...validArtifact.labels[0]!.purgedSample,
+            labelEnd: "2026-01-05T00:00:00.000Z"
+          }
+        }
+      ]
+    }).success,
+    false
   );
 });
 
