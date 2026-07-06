@@ -15,6 +15,7 @@ import { createReplayResearchHash } from "./replayRunManifest.js";
 
 export const TRIPLE_BARRIER_LABEL_SCHEMA_VERSION =
   "triple_barrier_label.v1";
+export const META_LABEL_CANDIDATE_SCHEMA_VERSION = "meta_label_candidate.v1";
 
 export const tripleBarrierMarketSchema = z.enum(["KR", "US", "UNKNOWN"]);
 export const tripleBarrierTouchedBarrierSchema = z.enum([
@@ -45,6 +46,17 @@ export const tripleBarrierLabelWarningCodeSchema = z.enum([
 export const tripleBarrierLabelWarningSeveritySchema = z.enum([
   "info",
   "warning"
+]);
+export const metaLabelSideDecisionSchema = z.enum([
+  "long",
+  "short",
+  "hold",
+  "unknown"
+]);
+export const metaLabelOutcomeSchema = z.enum([
+  "correct_side",
+  "wrong_side",
+  "not_actionable"
 ]);
 
 export const tripleBarrierLabelConfigInputSchema = z
@@ -204,6 +216,15 @@ export const tripleBarrierLabelArtifactSchema = z
     warnings: z.array(tripleBarrierLabelWarningSchema)
   })
   .strict();
+export const metaLabelCandidateSchema = z
+  .object({
+    schemaVersion: z.literal(META_LABEL_CANDIDATE_SCHEMA_VERSION),
+    sourceLabelId: z.string().trim().min(1),
+    sideDecision: metaLabelSideDecisionSchema,
+    outcome: metaLabelOutcomeSchema,
+    sizingDirective: z.null()
+  })
+  .strict();
 
 export type TripleBarrierMarket = z.infer<typeof tripleBarrierMarketSchema>;
 export type TripleBarrierTouchedBarrier = z.infer<
@@ -240,12 +261,21 @@ export type TripleBarrierLabelSummary = z.infer<
 export type TripleBarrierLabelArtifact = z.infer<
   typeof tripleBarrierLabelArtifactSchema
 >;
+export type MetaLabelSideDecision = z.infer<typeof metaLabelSideDecisionSchema>;
+export type MetaLabelOutcome = z.infer<typeof metaLabelOutcomeSchema>;
+export type MetaLabelCandidate = z.infer<typeof metaLabelCandidateSchema>;
 
 export interface BuildTripleBarrierLabelArtifactOptions {
   generatedAt?: Date | string;
   config: TripleBarrierLabelConfigInput;
   events: readonly TripleBarrierLabelEvent[];
   priceSnapshots: readonly HistoricalMarketSnapshot[];
+}
+
+export interface BuildMetaLabelCandidateOptions {
+  sourceLabel: TripleBarrierLabel;
+  sideDecision: MetaLabelSideDecision;
+  sizingDirective?: unknown;
 }
 
 interface NormalizedTripleBarrierLabelEvent extends TripleBarrierLabelEvent {
@@ -330,6 +360,42 @@ export function buildTripleBarrierPurgedKFoldSamples(
       ? endDelta
       : left.sampleId.localeCompare(right.sampleId);
   });
+}
+
+export function buildMetaLabelCandidate(
+  options: BuildMetaLabelCandidateOptions
+): MetaLabelCandidate {
+  const sourceLabel = parseWithSchema(
+    tripleBarrierLabelSchema,
+    options.sourceLabel,
+    "tripleBarrierLabel"
+  );
+  const sideDecision = parseWithSchema(
+    metaLabelSideDecisionSchema,
+    options.sideDecision,
+    "metaLabelSideDecision"
+  );
+
+  if (
+    options.sizingDirective !== undefined &&
+    options.sizingDirective !== null
+  ) {
+    throw new Error(
+      "META_LABEL_SIZING_DIRECTIVE_REJECTED: meta-label candidates must not carry sizing directives"
+    );
+  }
+
+  return parseWithSchema(
+    metaLabelCandidateSchema,
+    {
+      schemaVersion: META_LABEL_CANDIDATE_SCHEMA_VERSION,
+      sourceLabelId: sourceLabel.labelId,
+      sideDecision,
+      outcome: metaLabelOutcomeFor(sourceLabel, sideDecision),
+      sizingDirective: null
+    },
+    "metaLabelCandidate"
+  );
 }
 
 function buildTripleBarrierLabel(input: {
@@ -888,6 +954,27 @@ function directionLabelFor(
     return "negative";
   }
   return "neutral";
+}
+
+function metaLabelOutcomeFor(
+  label: TripleBarrierLabel,
+  sideDecision: MetaLabelSideDecision
+): MetaLabelOutcome {
+  if (
+    sideDecision === "hold" ||
+    sideDecision === "unknown" ||
+    label.status !== "available" ||
+    label.directionLabel === "neutral" ||
+    label.directionLabel === "unavailable"
+  ) {
+    return "not_actionable";
+  }
+
+  if (sideDecision === "long") {
+    return label.directionLabel === "positive" ? "correct_side" : "wrong_side";
+  }
+
+  return label.directionLabel === "negative" ? "correct_side" : "wrong_side";
 }
 
 function roundRatio(value: number): number {

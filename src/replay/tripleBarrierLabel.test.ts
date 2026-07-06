@@ -4,8 +4,10 @@ import test from "node:test";
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import { buildPurgedKFoldPlan } from "./purgedSplit.js";
 import {
+  buildMetaLabelCandidate,
   buildTripleBarrierLabelArtifact,
   buildTripleBarrierPurgedKFoldSamples,
+  metaLabelCandidateSchema,
   tripleBarrierLabelArtifactSchema,
   type TripleBarrierLabelEvent
 } from "./tripleBarrierLabel.js";
@@ -467,6 +469,120 @@ test("triple barrier purged samples feed generated horizons into purged k-fold",
   assert.deepEqual(firstSplit.purgedSampleIds, ["sample_pkf_3"]);
   assert.deepEqual(firstSplit.trainSampleIds, ["sample_pkf_4"]);
   assert.equal(firstSplit.purgeExcludedSampleCount, 1);
+});
+
+test("meta label candidate evaluates side decisions without sizing directives", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_meta_profit", "META", "2026-01-01T00:00:00.000Z"),
+      event("sample_meta_stop", "LOSS", "2026-01-01T00:00:00.000Z"),
+      event("sample_meta_missing", "MISS", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("META", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("META", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      }),
+      snapshot("LOSS", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("LOSS", "2026-01-02T00:00:00.000Z", 97, {
+        highPriceKrw: 98,
+        lowPriceKrw: 94
+      })
+    ]
+  });
+  const positiveLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_meta_profit"
+  )!;
+  const negativeLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_meta_stop"
+  )!;
+  const unavailableLabel = artifact.labels.find(
+    (label) => label.sampleId === "sample_meta_missing"
+  )!;
+
+  const longPositive = buildMetaLabelCandidate({
+    sourceLabel: positiveLabel,
+    sideDecision: "long"
+  });
+  const longNegative = buildMetaLabelCandidate({
+    sourceLabel: negativeLabel,
+    sideDecision: "long"
+  });
+  const shortNegative = buildMetaLabelCandidate({
+    sourceLabel: negativeLabel,
+    sideDecision: "short"
+  });
+  const holdPositive = buildMetaLabelCandidate({
+    sourceLabel: positiveLabel,
+    sideDecision: "hold"
+  });
+  const longUnavailable = buildMetaLabelCandidate({
+    sourceLabel: unavailableLabel,
+    sideDecision: "long"
+  });
+
+  assert.equal(metaLabelCandidateSchema.safeParse(longPositive).success, true);
+  assert.deepEqual(
+    [
+      longPositive.outcome,
+      longNegative.outcome,
+      shortNegative.outcome,
+      holdPositive.outcome,
+      longUnavailable.outcome
+    ],
+    [
+      "correct_side",
+      "wrong_side",
+      "correct_side",
+      "not_actionable",
+      "not_actionable"
+    ]
+  );
+  assert.equal(longPositive.schemaVersion, "meta_label_candidate.v1");
+  assert.equal(longPositive.sourceLabelId, positiveLabel.labelId);
+  assert.equal(longPositive.sizingDirective, null);
+});
+
+test("meta label candidate rejects sizing directives", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_meta_sizing", "MSZ", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("MSZ", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("MSZ", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+
+  assert.throws(
+    () =>
+      buildMetaLabelCandidate({
+        sourceLabel: artifact.labels[0]!,
+        sideDecision: "long",
+        sizingDirective: {
+          targetWeight: 0.1
+        }
+      }),
+    /META_LABEL_SIZING_DIRECTIVE_REJECTED/
+  );
+  assert.equal(
+    metaLabelCandidateSchema.safeParse({
+      schemaVersion: "meta_label_candidate.v1",
+      sourceLabelId: artifact.labels[0]!.labelId,
+      sideDecision: "long",
+      outcome: "correct_side",
+      sizingDirective: {
+        targetWeight: 0.1
+      }
+    }).success,
+    false
+  );
 });
 
 test("triple barrier label ignores entry candle range for barrier touch", () => {
