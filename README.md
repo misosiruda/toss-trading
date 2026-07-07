@@ -204,6 +204,7 @@ CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-va
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
 코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.
+Repository access와 public review 보안 절차는 [docs/repository-access-security-policy.md](docs/repository-access-security-policy.md)를 참고합니다.
 대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
 AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investment-process-refactoring-plan.md](docs/ai-investment-process-refactoring-plan.md)를 참고합니다.
 Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
