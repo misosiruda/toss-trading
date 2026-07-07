@@ -458,7 +458,7 @@ Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을
 - `--market-regime-allocation`
 - `--dynamic-cash-reserve`
 
-`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy` 기본값을 추가합니다. universe manifest에 `strategyBucket`이 있으면 historical ingestion과 replay research manifest가 이 metadata를 보존하지만, 기존 historical ingestion data에는 `strategyBucket` metadata가 없을 수 있으므로 preset 단계에서 bucket exposure limit은 켜지 않습니다. `hedgePolicy`는 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
+`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy` 기본값을 추가합니다. `docs/historical-universe.global-expanded.json`과 `docs/historical-universe.global-broad.json`의 required core는 `strategyBucket` metadata로 다섯 strategy bucket을 모두 덮습니다. 이 metadata는 paper-only 실험 분리용 입력이며 특정 종목 추천이나 성과 보장이 아닙니다. universe manifest에 `strategyBucket`이 있으면 historical ingestion과 replay research manifest가 이 metadata를 보존하지만, 이미 생성된 historical ingestion data에는 `strategyBucket` metadata가 없을 수 있으므로 data를 재생성하기 전까지는 preset 단계에서 bucket exposure limit을 켜지 않습니다. `hedgePolicy`는 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
 
 Preset 이름은 `batch-replay-manifest.json`, run metadata의 `configuration.strategyPreset`, selection trial config에 기록됩니다. selection trial config에는 `stepSeconds`, `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`, `timezoneOffsetMinutes`로 구성된 `replayCadence`도 함께 기록됩니다. aggregate report의 validation-split 후보 key는 preset과 replay cadence를 포함하므로 같은 preset이라도 명시 cadence override가 들어간 run은 별도 후보로 취급합니다.
 
