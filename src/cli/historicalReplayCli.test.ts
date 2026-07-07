@@ -1569,9 +1569,7 @@ test("historical batch replay CLI applies hedge strategy preset risk policy", ()
   assert.equal(output["riskProfile"], "balanced");
   assert.equal(manifest["strategyPreset"], "hedge");
   assert.equal(configuration["strategyPreset"], "hedge");
-  assert.deepEqual(riskPolicy["maxStrategyBucketExposureRatio"], {
-    hedge: 0.25
-  });
+  assert.equal(riskPolicy["maxStrategyBucketExposureRatio"], undefined);
   assert.deepEqual(riskPolicy["hedgePolicy"], {
     requireHedgeBucket: true,
     maxGrossExposureRatio: 0.65

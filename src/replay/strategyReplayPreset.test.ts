@@ -32,9 +32,10 @@ test("strategy replay presets cover strategy buckets with conservative policies"
   assert.equal(intradayPreset.stepSeconds, 60 * 60);
   assert.equal(intradayPreset.paperExitPolicy?.takeProfitMode, "full_exit");
 
-  assert.deepEqual(hedgePreset.riskPolicy?.maxStrategyBucketExposureRatio, {
-    hedge: 0.25
-  });
+  assert.equal(
+    hedgePreset.riskPolicy?.maxStrategyBucketExposureRatio,
+    undefined
+  );
   assert.deepEqual(hedgePreset.riskPolicy?.hedgePolicy, {
     requireHedgeBucket: true,
     maxGrossExposureRatio: 0.65

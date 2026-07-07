@@ -440,7 +440,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 | `swing` | 없음 | `aggressive_paper` | 2 | 86400 | `once_per_day` | 12 | 12 | swing용 take-profit/stop-loss, partial trailing |
 | `short_term` | `short-term` | `aggressive_paper` | 1 | 86400 | `once_per_day` | 22 | 22 | 더 짧은 take-profit/stop-loss, position weight cap |
 | `intraday` | `intra-day`, `ultra-short` | `aggressive_paper` | 1 | 3600 | `every_tick` | 30 | 30 | 초단기 replay cadence, 더 좁은 take-profit/stop-loss |
-| `hedge` | 없음 | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | hedge bucket exposure cap, `hedgePolicy.requireHedgeBucket=true` |
+| `hedge` | 없음 | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | `hedgePolicy.requireHedgeBucket=true`, hedge gross exposure cap |
 | `regime_cash` | `regime-cash` | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | market regime allocation, dynamic cash reserve |
 
 Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을 명시하면 명시 옵션이 우선합니다.
@@ -458,7 +458,7 @@ Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을
 - `--market-regime-allocation`
 - `--dynamic-cash-reserve`
 
-`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy`와 `maxStrategyBucketExposureRatio.hedge` 기본값을 추가합니다. 이 값은 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
+`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy` 기본값을 추가합니다. 기본 historical ingestion data는 `strategyBucket` metadata가 없을 수 있으므로 preset 단계에서 bucket exposure limit은 켜지 않습니다. `hedgePolicy`는 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
 
 Preset 이름은 `batch-replay-manifest.json`, run metadata의 `configuration.strategyPreset`, selection trial config에 기록됩니다. selection trial config에는 `stepSeconds`, `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`, `timezoneOffsetMinutes`로 구성된 `replayCadence`도 함께 기록됩니다. aggregate report의 validation-split 후보 key는 preset과 replay cadence를 포함하므로 같은 preset이라도 명시 cadence override가 들어간 run은 별도 후보로 취급합니다.
 

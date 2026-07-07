@@ -131,7 +131,6 @@ const STRATEGY_REPLAY_PRESETS: Record<
     minWindowSnapshots: 4,
     minSnapshotsPerRequiredSymbol: 2,
     riskPolicy: {
-      maxStrategyBucketExposureRatio: { hedge: 0.25 },
       hedgePolicy: {
         requireHedgeBucket: true,
         maxGrossExposureRatio: 0.65
