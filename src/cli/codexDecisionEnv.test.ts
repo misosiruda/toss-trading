@@ -31,7 +31,9 @@ test("Codex decision provider env prefers AI decision aliases", () => {
     AI_DECISION_MAX_RUNS_PER_DAY: "40",
     CODEX_DECISION_MAX_RUNS_PER_DAY: "3",
     CODEX_ALLOW_WEB_SEARCH: "true",
-    CODEX_DECISION_ALLOW_WEB_SEARCH: "false"
+    CODEX_DECISION_ALLOW_WEB_SEARCH: "false",
+    AI_DECISION_IGNORE_USER_CONFIG: "true",
+    CODEX_IGNORE_USER_CONFIG: "false"
   });
 
   assert.deepEqual(config, {
@@ -42,7 +44,40 @@ test("Codex decision provider env prefers AI decision aliases", () => {
     maxRunsPerDay: 40,
     allowWebSearch: true,
     modelId: "gpt-5.3-codex-spark",
-    outputSchemaPath: "schemas/ai-schema.json"
+    outputSchemaPath: "schemas/ai-schema.json",
+    ignoreUserConfig: true
+  });
+});
+
+test("Codex decision provider env supports user config isolation fallback aliases", () => {
+  const config = readCodexDecisionProviderConfig({
+    CODEX_IGNORE_USER_CONFIG: "true"
+  });
+
+  assert.deepEqual(config, {
+    enabled: false,
+    codexPath: "codex",
+    sandbox: "read-only",
+    timeoutMs: 300_000,
+    maxRunsPerDay: 3,
+    allowWebSearch: false,
+    ignoreUserConfig: true
+  });
+});
+
+test("Codex decision provider env lets AI alias disable user config isolation fallback", () => {
+  const config = readCodexDecisionProviderConfig({
+    AI_DECISION_IGNORE_USER_CONFIG: "false",
+    CODEX_IGNORE_USER_CONFIG: "true"
+  });
+
+  assert.deepEqual(config, {
+    enabled: false,
+    codexPath: "codex",
+    sandbox: "read-only",
+    timeoutMs: 300_000,
+    maxRunsPerDay: 3,
+    allowWebSearch: false
   });
 });
 
@@ -91,13 +126,16 @@ test("historical Codex decision env prefers AI_DECISION_* values", () => {
     AI_DECISION_MAX_RUNS_PER_DAY: "40",
     CODEX_DECISION_MAX_RUNS_PER_DAY: "3",
     CODEX_ALLOW_WEB_SEARCH: "false",
-    CODEX_DECISION_ALLOW_WEB_SEARCH: "true"
+    CODEX_DECISION_ALLOW_WEB_SEARCH: "true",
+    AI_DECISION_IGNORE_USER_CONFIG: "true",
+    CODEX_IGNORE_USER_CONFIG: "false"
   });
 
   assert.deepEqual(config, {
     outputSchemaPath: "schemas/ai-schema.json",
     maxRunsPerDay: 40,
-    allowWebSearch: false
+    allowWebSearch: false,
+    ignoreUserConfig: true
   });
 });
 

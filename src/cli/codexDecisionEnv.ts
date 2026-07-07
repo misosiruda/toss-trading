@@ -4,6 +4,7 @@ export interface HistoricalCodexDecisionEnv {
   maxRunsPerDay: number;
   allowWebSearch: boolean;
   outputSchemaPath?: string;
+  ignoreUserConfig?: boolean;
 }
 
 export interface CodexDecisionProviderEnvOptions {
@@ -26,6 +27,12 @@ export function readCodexDecisionProviderConfig(
     "CODEX_DECISION_MODEL_ID",
     "CODEX_MODEL"
   ]);
+  const ignoreUserConfig =
+    readFirstEnvValue(env, [
+      "AI_DECISION_IGNORE_USER_CONFIG",
+      "CODEX_IGNORE_USER_CONFIG",
+      "CODEX_DECISION_IGNORE_USER_CONFIG"
+    ]) === "true";
   return {
     enabled: options.enabled ?? env.AI_DECISION_ENABLED === "true",
     codexPath: readFirstEnvValue(env, ["CODEX_EXEC_PATH"]) ?? "codex",
@@ -50,6 +57,7 @@ export function readCodexDecisionProviderConfig(
       ]) === "true",
     ...(modelId === undefined ? {} : { modelId }),
     ...(outputSchemaPath === undefined ? {} : { outputSchemaPath }),
+    ...(ignoreUserConfig ? { ignoreUserConfig } : {}),
     ...(options.ephemeral === true ? { ephemeral: true } : {})
   };
 }
@@ -60,11 +68,17 @@ export function readHistoricalCodexDecisionEnv(
   const config = readCodexDecisionProviderConfig(env, {
     defaultMaxRunsPerDay: 5
   });
-  const { maxRunsPerDay, allowWebSearch, outputSchemaPath } = config;
+  const {
+    maxRunsPerDay,
+    allowWebSearch,
+    outputSchemaPath,
+    ignoreUserConfig
+  } = config;
   return {
     maxRunsPerDay,
     allowWebSearch,
-    ...(outputSchemaPath === undefined ? {} : { outputSchemaPath })
+    ...(outputSchemaPath === undefined ? {} : { outputSchemaPath }),
+    ...(ignoreUserConfig === undefined ? {} : { ignoreUserConfig })
   };
 }
 
