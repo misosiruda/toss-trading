@@ -14,7 +14,8 @@
       "tags": ["semiconductor", "large_cap"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "swing"
     },
     {
       "market": "KR",
@@ -26,7 +27,8 @@
       "tags": ["semiconductor", "large_cap"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "long_term"
     },
     {
       "market": "KR",
@@ -38,7 +40,8 @@
       "tags": ["bio", "growth"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "short_term"
     },
     {
       "market": "KR",
@@ -50,7 +53,8 @@
       "tags": ["internet", "large_cap"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "swing"
     },
     {
       "market": "KR",
@@ -62,7 +66,8 @@
       "tags": ["entertainment", "growth"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "short_term"
     },
     {
       "market": "KR",
@@ -74,7 +79,8 @@
       "tags": ["shipbuilding", "cyclical"],
       "assetType": "STOCK",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "swing"
     },
     {
       "market": "KR",
@@ -86,7 +92,8 @@
       "tags": ["index", "large_cap"],
       "assetType": "ETF",
       "assetClass": "equity",
-      "region": "KR"
+      "region": "KR",
+      "strategyBucket": "long_term"
     },
     {
       "market": "KR",
@@ -99,7 +106,8 @@
       "assetType": "ETF",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "long_term"
     },
     {
       "market": "KR",
@@ -112,7 +120,8 @@
       "assetType": "ETF",
       "assetClass": "inverse",
       "region": "KR",
-      "riskTags": ["inverse"]
+      "riskTags": ["inverse"],
+      "strategyBucket": "hedge"
     },
     {
       "market": "KR",
@@ -125,7 +134,8 @@
       "assetType": "ETF",
       "assetClass": "leveraged",
       "region": "KR",
-      "riskTags": ["leveraged"]
+      "riskTags": ["leveraged"],
+      "strategyBucket": "intraday"
     },
     {
       "market": "US",
@@ -138,7 +148,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "long_term"
     },
     {
       "market": "US",
@@ -151,7 +162,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "long_term"
     },
     {
       "market": "US",
@@ -164,7 +176,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed", "sector_concentrated"]
+      "riskTags": ["currency_exposed", "sector_concentrated"],
+      "strategyBucket": "swing"
     },
     {
       "market": "US",
@@ -177,7 +190,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "swing"
     },
     {
       "market": "US",
@@ -190,7 +204,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "swing"
     },
     {
       "market": "US",
@@ -203,7 +218,8 @@
       "assetType": "STOCK",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed", "sector_concentrated"]
+      "riskTags": ["currency_exposed", "sector_concentrated"],
+      "strategyBucket": "short_term"
     },
     {
       "market": "US",
@@ -216,7 +232,8 @@
       "assetType": "ETF",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "long_term"
     },
     {
       "market": "US",
@@ -229,7 +246,8 @@
       "assetType": "ETF",
       "assetClass": "equity",
       "region": "US",
-      "riskTags": ["currency_exposed", "sector_concentrated"]
+      "riskTags": ["currency_exposed", "sector_concentrated"],
+      "strategyBucket": "long_term"
     },
     {
       "market": "US",
@@ -242,7 +260,8 @@
       "assetType": "ETF",
       "assetClass": "bond",
       "region": "US",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "hedge"
     },
     {
       "market": "US",
@@ -255,7 +274,8 @@
       "assetType": "ETF",
       "assetClass": "commodity",
       "region": "GLOBAL",
-      "riskTags": ["currency_exposed"]
+      "riskTags": ["currency_exposed"],
+      "strategyBucket": "hedge"
     }
   ],
   "disclaimer": "Paper-only replay universe. Symbols are experiment inputs, not investment advice, not a performance guarantee, and not live trading recommendations."

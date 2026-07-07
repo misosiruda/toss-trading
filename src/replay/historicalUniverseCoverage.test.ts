@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { STRATEGY_BUCKETS } from "../paper/strategyBucketPolicy.js";
 import {
   assessHistoricalUniverseCoverage,
   parseHistoricalUniverseManifest,
@@ -275,6 +276,32 @@ test("historical universe lifecycle sample fixture validates every status", () =
     manifest.symbols.map((symbol) => symbol.lifecycleStatus).sort(),
     ["active", "delisted", "suspended", "unknown"]
   );
+});
+
+test("historical universe fixtures cover strategy bucket metadata for required core", () => {
+  for (const fixturePath of [
+    "../../docs/historical-universe.global-expanded.json",
+    "../../docs/historical-universe.global-broad.json"
+  ]) {
+    const manifest = parseHistoricalUniverseManifest(
+      JSON.parse(readFileSync(new URL(fixturePath, import.meta.url), "utf8"))
+    );
+    const requiredSymbols = manifest.symbols.filter((symbol) => symbol.required);
+    const requiredBuckets = new Set(
+      requiredSymbols.map((symbol) => symbol.strategyBucket)
+    );
+
+    assert.equal(
+      requiredSymbols.every((symbol) => symbol.strategyBucket !== undefined),
+      true,
+      `${fixturePath} required symbols must include paper-only strategyBucket metadata`
+    );
+    assert.deepEqual(
+      STRATEGY_BUCKETS.filter((bucket) => !requiredBuckets.has(bucket)),
+      [],
+      `${fixturePath} required core must cover every paper-only strategy bucket`
+    );
+  }
 });
 
 test("historical universe manifest parser rejects malformed lifecycle snapshot metadata", () => {
