@@ -426,7 +426,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 Batch historical replay는 paper-only 전략 후보를 반복 실험하기 위한 `--strategy-preset`을 제공합니다.
 
-이 preset은 실거래 전략 추천, 종목 추천, 수익률 보장, live `TradingSignal` 또는 `OrderIntent` 생성이 아닙니다. 목적은 장기/스윙/단기/regime cash 후보가 각자 다른 window, sampling cadence, decision call budget, risk profile, exit policy로 재현 가능하게 replay되도록 하는 것입니다.
+이 preset은 실거래 전략 추천, 종목 추천, 수익률 보장, live `TradingSignal` 또는 `OrderIntent` 생성이 아닙니다. 목적은 장기/스윙/단기/초단기/hedge/regime cash 후보가 각자 다른 window, sampling cadence, decision call budget, risk profile, exit policy로 재현 가능하게 replay되도록 하는 것입니다. preset은 snapshot의 `strategyBucket`을 임의로 바꾸거나 특정 종목을 추천하지 않으며, 후보 metadata와 risk gate 판단은 deterministic backend가 처리합니다.
 
 ```powershell
 npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-short-term-preset-smoke --seed batch-short-term-preset-smoke --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset short-term --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed
@@ -439,6 +439,8 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 | `long_term` | `long-term` | `balanced` | 6 | 604800 | `once_per_week` | 26 | 26 | 넓은 take-profit/stop-loss, partial trailing |
 | `swing` | 없음 | `aggressive_paper` | 2 | 86400 | `once_per_day` | 12 | 12 | swing용 take-profit/stop-loss, partial trailing |
 | `short_term` | `short-term` | `aggressive_paper` | 1 | 86400 | `once_per_day` | 22 | 22 | 더 짧은 take-profit/stop-loss, position weight cap |
+| `intraday` | `intra-day`, `ultra-short` | `aggressive_paper` | 1 | 3600 | `every_tick` | 30 | 30 | 초단기 replay cadence, 더 좁은 take-profit/stop-loss |
+| `hedge` | 없음 | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | hedge bucket exposure cap, `hedgePolicy.requireHedgeBucket=true` |
 | `regime_cash` | `regime-cash` | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | market regime allocation, dynamic cash reserve |
 
 Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을 명시하면 명시 옵션이 우선합니다.
@@ -455,6 +457,8 @@ Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을
 - `--paper-*` exit policy 옵션
 - `--market-regime-allocation`
 - `--dynamic-cash-reserve`
+
+`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy`와 `maxStrategyBucketExposureRatio.hedge` 기본값을 추가합니다. 이 값은 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
 
 Preset 이름은 `batch-replay-manifest.json`, run metadata의 `configuration.strategyPreset`, selection trial config에 기록됩니다. selection trial config에는 `stepSeconds`, `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`, `timezoneOffsetMinutes`로 구성된 `replayCadence`도 함께 기록됩니다. aggregate report의 validation-split 후보 key는 preset과 replay cadence를 포함하므로 같은 preset이라도 명시 cadence override가 들어간 run은 별도 후보로 취급합니다.
 

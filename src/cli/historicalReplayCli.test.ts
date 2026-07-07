@@ -1477,6 +1477,114 @@ test("historical batch replay CLI rejects missing strategy preset value", () => 
   assert.match(result.stderr, /--strategy-preset requires a value/);
 });
 
+test("historical batch replay CLI applies hedge strategy preset risk policy", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-hedge-preset-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-hedge-preset-output-")
+  );
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    [
+      JSON.stringify(
+        snapshot("hist_005930_hedge_preset_001", "005930", {
+          observedAt: "2025-01-15T09:00:00+09:00"
+        })
+      ),
+      JSON.stringify(
+        snapshot("hist_005930_hedge_preset_002", "005930", {
+          observedAt: "2025-02-15T09:00:00+09:00"
+        })
+      ),
+      JSON.stringify(
+        snapshot("hist_005930_hedge_preset_003", "005930", {
+          observedAt: "2025-03-15T09:00:00+09:00"
+        })
+      )
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-hedge-preset",
+      "--seed",
+      "seed-hedge-preset",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-01-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-04-30T23:59:59.999+09:00",
+      "--strategy-preset",
+      "hedge",
+      "--min-window-snapshots",
+      "1",
+      "--min-snapshots-per-symbol",
+      "1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    readFileSync(String(output["manifestPath"]), "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const trialRecords = readFileSync(String(output["selectionTrialsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const metadata = JSON.parse(
+    readFileSync(
+      join(
+        String(runRecords[0]?.["storageBaseDir"]),
+        "historical-replay-run-metadata.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+  const configuration = metadata["configuration"] as Record<string, unknown>;
+  const riskPolicy = configuration["riskPolicy"] as Record<string, unknown>;
+  const paperExitPolicy = configuration["paperExitPolicy"] as Record<
+    string,
+    unknown
+  >;
+  const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
+
+  assert.equal(output["strategyPreset"], "hedge");
+  assert.equal(output["riskProfile"], "balanced");
+  assert.equal(manifest["strategyPreset"], "hedge");
+  assert.equal(configuration["strategyPreset"], "hedge");
+  assert.deepEqual(riskPolicy["maxStrategyBucketExposureRatio"], {
+    hedge: 0.25
+  });
+  assert.deepEqual(riskPolicy["hedgePolicy"], {
+    requireHedgeBucket: true,
+    maxGrossExposureRatio: 0.65
+  });
+  assert.equal(paperExitPolicy["takeProfitRatio"], 0.1);
+  assert.equal(paperExitPolicy["stopLossRatio"], 0.06);
+  assert.equal(trialConfig["strategyPreset"], "hedge");
+  assert.equal(
+    trialConfig["riskPolicyHash"],
+    createReplayResearchHash(riskPolicy)
+  );
+});
+
 test("historical batch replay CLI defaults Codex budget to effective decision budget", () => {
   const sourceDataDir = mkdtempSync(
     join(tmpdir(), "historical-batch-preset-codex-source-")
