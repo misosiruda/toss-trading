@@ -101,7 +101,9 @@ assertDeepEqual(
     AI_DECISION_MAX_RUNS_PER_DAY: "40",
     CODEX_DECISION_MAX_RUNS_PER_DAY: "3",
     CODEX_ALLOW_WEB_SEARCH: "false",
-    CODEX_DECISION_ALLOW_WEB_SEARCH: "true"
+    CODEX_DECISION_ALLOW_WEB_SEARCH: "true",
+    AI_DECISION_IGNORE_USER_CONFIG: "true",
+    CODEX_IGNORE_USER_CONFIG: "false"
   }),
   {
     enabled: false,
@@ -110,7 +112,8 @@ assertDeepEqual(
     timeoutMs: 300_000,
     maxRunsPerDay: 40,
     allowWebSearch: false,
-    outputSchemaPath: "schemas/ai-schema.json"
+    outputSchemaPath: "schemas/ai-schema.json",
+    ignoreUserConfig: true
   },
   "Codex decision provider AI_* alias precedence"
 );

@@ -49,6 +49,7 @@ AI_DECISION_ENABLED=true
 CODEX_EXEC_PATH=codex
 CODEX_EXEC_TIMEOUT_SECONDS=300
 AI_DECISION_OUTPUT_SCHEMA_PATH=schemas/virtual-decision.schema.json
+AI_DECISION_IGNORE_USER_CONFIG=true
 AI_DECISION_MAX_RUNS_PER_DAY=5
 CODEX_ALLOW_WEB_SEARCH=false
 ```
@@ -60,6 +61,7 @@ CODEX_ALLOW_WEB_SEARCH=false
 - `AI_DECISION_ENABLED=true`는 Codex provider 실행을 의도한 경우에만 사용한다.
 - `CODEX_EXEC_PATH`는 실제 Codex CLI binary 또는 `codex` alias를 가리킨다.
 - output schema path는 `schemas/virtual-decision.schema.json` 또는 동일 contract의 명시 경로다.
+- `AI_DECISION_IGNORE_USER_CONFIG=true`는 Codex CLI에 `--ignore-user-config`를 전달해 개인 config/plugin 영향 없이 replay provider를 실행한다.
 - `CODEX_ALLOW_WEB_SEARCH=false`를 기본으로 둔다.
 
 Windows Store alias가 `Access is denied`를 반환하면 `CODEX_EXEC_PATH`에 실제 `codex.exe` 경로를 지정한다.
@@ -271,6 +273,7 @@ Dashboard의 `/dashboard/virtual/validation` 화면은 같은 payload를 연구 
 | --- | --- | --- |
 | `AI_DECISION_ENABLED=false` | `audit-events.jsonl`, batch manifest preflight failure | 설정 의도 확인 후 필요할 때만 true로 재실행 |
 | Codex executable 없음 | audit/progress failure summary | `CODEX_EXEC_PATH` 수정 후 재실행 |
+| Codex user config 로딩 실패 | preflight 또는 첫 provider call failure | `AI_DECISION_IGNORE_USER_CONFIG=true` 설정 후 재실행 |
 | Codex auth/usage limit | audit/progress failure summary | 인증 또는 usage limit 확인 후 재실행 |
 | timeout | `AI_DECISION_FAILED`, `HISTORICAL_AI_DECISION_FAILED` | timeout 증가 또는 decision call cap 축소 후 재실행 |
 | invalid JSON/schema | audit/progress, decision artifact 부재 | prompt/schema drift 확인 후 재실행 |
