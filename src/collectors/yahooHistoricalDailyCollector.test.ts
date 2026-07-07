@@ -29,6 +29,7 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
           assetClass: "equity",
           region: "US",
           riskTags: ["currency_exposed"],
+          strategyBucket: "long_term",
           sector: "Broad Market",
           required: true
         }
@@ -54,6 +55,7 @@ test("Yahoo historical collector converts USD prices to KRW and keeps asset meta
   assert.equal(spy?.assetClass, "equity");
   assert.equal(spy?.sector, "Broad Market");
   assert.deepEqual(spy?.riskTags, ["currency_exposed"]);
+  assert.equal(spy?.strategyBucket, "long_term");
   assert.deepEqual(spy?.sourceRefs, [
     "yahoo_chart:SPY:2025-01-01",
     "yahoo_fx:KRW=X:2025-01-01"

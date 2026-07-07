@@ -313,9 +313,26 @@ test("historical replay research manifest hashes initial portfolio and replay sn
   const withStoredPortfolio = await runWorkflowAndReadResearchManifest({
     storedPortfolio: portfolioWithPosition()
   });
+  const withDifferentStoredPortfolioStrategyBucket =
+    await runWorkflowAndReadResearchManifest({
+      storedPortfolio: portfolioWithPosition({ strategyBucket: "swing" })
+    });
+  const withStrategyBucketSnapshot = await runWorkflowAndReadResearchManifest({
+    snapshotInput: {
+      snapshotId: "hist_005930_0900",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000,
+      strategyBucket: "swing"
+    }
+  });
   const withUniverseManifest = await runWorkflowAndReadResearchManifest({
     universeManifest: universeManifest()
   });
+  const withStrategyBucketUniverseManifest =
+    await runWorkflowAndReadResearchManifest({
+      universeManifest: universeManifest({ strategyBucket: "long_term" })
+    });
   const withChangedUniverseManifest = await runWorkflowAndReadResearchManifest({
     universeManifest: universeManifest({
       snapshotDate: "2025-04-30",
@@ -344,9 +361,19 @@ test("historical replay research manifest hashes initial portfolio and replay sn
     "initial portfolio must affect configHash"
   );
   assert.notEqual(
+    withStoredPortfolio["configHash"],
+    withDifferentStoredPortfolioStrategyBucket["configHash"],
+    "initial portfolio strategyBucket must affect configHash"
+  );
+  assert.notEqual(
     baseline["dataSnapshotHash"],
     withDifferentSnapshotInputs["dataSnapshotHash"],
     "replay-relevant snapshot fields must affect dataSnapshotHash"
+  );
+  assert.notEqual(
+    baseline["dataSnapshotHash"],
+    withStrategyBucketSnapshot["dataSnapshotHash"],
+    "snapshot strategyBucket must affect dataSnapshotHash"
   );
   assert.equal(
     baseline["universeHash"],
@@ -358,6 +385,11 @@ test("historical replay research manifest hashes initial portfolio and replay sn
     baseline["universeHash"],
     withUniverseManifest["universeHash"],
     "explicit universe manifest must replace snapshot-derived universe hash source"
+  );
+  assert.notEqual(
+    withUniverseManifest["universeHash"],
+    withStrategyBucketUniverseManifest["universeHash"],
+    "universe strategyBucket metadata must affect universeHash"
   );
   assert.notEqual(
     withUniverseManifest["universeHash"],
@@ -374,6 +406,7 @@ function snapshot(input: {
   name?: string;
   assetType?: AssetType;
   riskTags?: AssetRiskTag[];
+  strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
   sector?: string;
   openPriceKrw?: number;
   closePriceKrw?: number;
@@ -386,6 +419,9 @@ function snapshot(input: {
     ...(input.name === undefined ? {} : { name: input.name }),
     ...(input.assetType === undefined ? {} : { assetType: input.assetType }),
     ...(input.riskTags === undefined ? {} : { riskTags: input.riskTags }),
+    ...(input.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: input.strategyBucket }),
     ...(input.sector === undefined ? {} : { sector: input.sector }),
     observedAt: input.observedAt,
     interval: "1m",
@@ -460,6 +496,7 @@ function universeManifest(
   overrides: {
     snapshotDate?: string;
     lifecycleStatus?: "active" | "suspended" | "delisted" | "unknown";
+    strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
   } = {}
 ): HistoricalUniverseManifest {
   return parseHistoricalUniverseManifest({
@@ -471,6 +508,9 @@ function universeManifest(
         market: "KR",
         symbol: "005930",
         lifecycleStatus: overrides.lifecycleStatus ?? "active",
+        ...(overrides.strategyBucket === undefined
+          ? {}
+          : { strategyBucket: overrides.strategyBucket }),
         required: true
       }
     ],
@@ -478,7 +518,11 @@ function universeManifest(
   });
 }
 
-function portfolioWithPosition(): VirtualPortfolio {
+function portfolioWithPosition(
+  input: {
+    strategyBucket?: VirtualPortfolio["positions"][number]["strategyBucket"];
+  } = {}
+): VirtualPortfolio {
   return {
     portfolioId: "portfolio_fixture_existing_position",
     cashKrw: 850_000,
@@ -493,6 +537,9 @@ function portfolioWithPosition(): VirtualPortfolio {
         marketValueKrw: 70_000,
         priceUpdatedAt: "2025-01-02T09:00:00+09:00",
         priceSourceRefs: ["fixture:initial_position"],
+        ...(input.strategyBucket === undefined
+          ? {}
+          : { strategyBucket: input.strategyBucket }),
         updatedAt: "2025-01-02T09:00:00+09:00"
       }
     ],

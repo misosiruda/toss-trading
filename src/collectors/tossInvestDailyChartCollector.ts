@@ -309,6 +309,9 @@ function convertDailyCandlesToSnapshots(input: {
         ...(input.symbol.riskTags === undefined
           ? {}
           : { riskTags: input.symbol.riskTags }),
+        ...(input.symbol.strategyBucket === undefined
+          ? {}
+          : { strategyBucket: input.symbol.strategyBucket }),
         ...(input.symbol.sector === undefined
           ? {}
           : { sector: input.symbol.sector }),

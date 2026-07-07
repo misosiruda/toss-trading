@@ -74,6 +74,7 @@ test("TossInvest chart collector converts quote.chart candles to historical snap
         assetType: "STOCK",
         assetClass: "equity",
         region: "KR",
+        strategyBucket: "swing",
         sector: "Technology"
       }
     ],
@@ -107,6 +108,7 @@ test("TossInvest chart collector converts quote.chart candles to historical snap
   assert.equal(result.snapshots[0]?.assetType, "STOCK");
   assert.equal(result.snapshots[0]?.assetClass, "equity");
   assert.equal(result.snapshots[0]?.region, "KR");
+  assert.equal(result.snapshots[0]?.strategyBucket, "swing");
   assert.equal(result.snapshots[0]?.sector, "Technology");
   assert.deepEqual(result.snapshots[0]?.sourceRefs, [
     "tossinvest_cli:quote.chart:005930:2026-06-18T05:00:00.000Z:0"

@@ -10,7 +10,9 @@ import {
   instrumentLifecycleStatusSchema,
   type Market,
   marketSchema,
-  parseWithSchema
+  parseWithSchema,
+  type StrategyBucket,
+  strategyBucketSchema
 } from "../domain/schemas.js";
 import type { HistoricalDataAvailabilitySymbolRequirement } from "./historicalDataAvailability.js";
 
@@ -32,6 +34,7 @@ export const historicalUniverseMemberSchema = z
     assetClass: assetClassSchema.optional(),
     region: assetRegionSchema.optional(),
     riskTags: z.array(assetRiskTagSchema).optional(),
+    strategyBucket: strategyBucketSchema.optional(),
     sector: z.string().trim().min(1).optional(),
     segment: z.string().trim().min(1).optional(),
     lifecycleStatus: historicalInstrumentLifecycleStatusSchema.optional(),
@@ -104,6 +107,7 @@ export interface HistoricalUniverseCoverageSymbolSummary {
   assetClass: string | null;
   region: string | null;
   riskTags: string[];
+  strategyBucket: StrategyBucket | null;
   sector: string | null;
   segment: string | null;
   required: boolean;
@@ -396,6 +400,7 @@ function summarizeUniverseMember(input: {
     assetClass: input.member.assetClass ?? null,
     region: input.member.region ?? null,
     riskTags: input.member.riskTags ?? [],
+    strategyBucket: input.member.strategyBucket ?? null,
     sector: input.member.sector ?? null,
     segment: input.member.segment ?? null,
     required: input.member.required,

@@ -6,7 +6,8 @@ import {
   type AssetRiskTag,
   type AssetType,
   type HistoricalMarketSnapshot,
-  type Market
+  type Market,
+  type StrategyBucket
 } from "../domain/schemas.js";
 import type { ProcessRunner } from "../ai/processRunner.js";
 import {
@@ -23,6 +24,7 @@ export interface TossInvestHistoricalChartSymbol {
   assetClass?: AssetClass;
   region?: AssetRegion;
   riskTags?: AssetRiskTag[];
+  strategyBucket?: StrategyBucket;
   sector?: string;
 }
 
@@ -214,6 +216,9 @@ function convertChartToSnapshots(input: {
         ...(input.symbol.riskTags === undefined
           ? {}
           : { riskTags: input.symbol.riskTags }),
+        ...(input.symbol.strategyBucket === undefined
+          ? {}
+          : { strategyBucket: input.symbol.strategyBucket }),
         ...(input.symbol.sector === undefined
           ? {}
           : { sector: input.symbol.sector }),
