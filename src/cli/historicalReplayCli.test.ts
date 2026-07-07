@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { buildTripleBarrierLabelArtifact } from "../replay/tripleBarrierLabel.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import {
   historicalReplayCodexProviderMetadata,
@@ -611,10 +612,20 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     "batch-cli",
     "batch-replay-aggregate-report.json"
   );
+  const tripleBarrierLabelPath = join(
+    outputBaseDir,
+    "batch-cli",
+    "triple-barrier-label-report.json"
+  );
   const metaLabelEvaluationPath = join(
     outputBaseDir,
     "batch-cli",
     "meta-label-evaluation-report.json"
+  );
+  writeFileSync(
+    tripleBarrierLabelPath,
+    `${JSON.stringify(tripleBarrierLabelArtifact())}\n`,
+    "utf8"
   );
   writeFileSync(
     metaLabelEvaluationPath,
@@ -650,8 +661,20 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     output["selectionTrialsPath"]
   );
   assert.equal(
+    aggregateReport["sourceTripleBarrierLabelPath"],
+    tripleBarrierLabelPath
+  );
+  assert.equal(
     aggregateReport["sourceMetaLabelEvaluationPath"],
     metaLabelEvaluationPath
+  );
+  assert.equal(
+    (
+      (aggregateReport["tripleBarrierLabel"] as Record<string, unknown>)[
+        "summary"
+      ] as Record<string, unknown>
+    )["unavailableLabelCount"],
+    1
   );
   assert.equal(
     (
@@ -1673,6 +1696,57 @@ function metaLabelEvaluationReport(): Record<string, unknown> {
       notActionableCount: 1,
       accuracyRatio: 0.5
     }
+  };
+}
+
+function tripleBarrierLabelArtifact(): Record<string, unknown> {
+  return buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-07-06T00:00:00.000Z",
+    config: {
+      referencePriceField: "last",
+      profitTakingReturnRatio: 0.05,
+      stopLossReturnRatio: 0.03,
+      timeBarrierDurationDays: 5
+    },
+    events: [
+      tripleBarrierLabelEvent("cli_label_profit", "CLP"),
+      tripleBarrierLabelEvent("cli_label_stop", "CLS"),
+      tripleBarrierLabelEvent("cli_label_unavailable", "CLU")
+    ],
+    priceSnapshots: [
+      tripleBarrierSnapshot("CLP", "2026-07-06T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("CLP", "2026-07-07T00:00:00.000Z", 106),
+      tripleBarrierSnapshot("CLS", "2026-07-06T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("CLS", "2026-07-07T00:00:00.000Z", 96)
+    ]
+  });
+}
+
+function tripleBarrierLabelEvent(sampleId: string, symbol: string) {
+  return {
+    sampleId,
+    symbol,
+    market: "KR" as const,
+    observationAt: "2026-07-06T00:00:00.000Z",
+    labelStart: "2026-07-06T00:00:00.000Z"
+  };
+}
+
+function tripleBarrierSnapshot(
+  symbol: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId: `snapshot_${symbol}_${observedAt}`,
+    market: "KR",
+    symbol,
+    observedAt,
+    interval: "1d",
+    lastPriceKrw,
+    volume: 1_000,
+    sourceRefs: [`fixture:${symbol}:${observedAt}`],
+    createdAt: observedAt
   };
 }
 

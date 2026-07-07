@@ -11,6 +11,7 @@ import {
   META_LABEL_EVALUATION_REPORT_FILE_NAME,
   STORAGE_ARTIFACT_CONTRACTS,
   STRATEGY_BUCKET_TEST_RECORDS_FILE_NAME,
+  TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME,
   createBatchReplayArtifactPaths,
   createBatchReplayManifestPath,
   createBatchReplayRootDirForStorage,
@@ -39,6 +40,10 @@ test("batch replay artifact paths keep manifest and runs path in one catalog", (
   assert.equal(
     paths.selectionTrialsPath,
     join(paths.outputDir, BATCH_REPLAY_SELECTION_TRIALS_FILE_NAME)
+  );
+  assert.equal(
+    paths.tripleBarrierLabelReportPath,
+    join(paths.outputDir, TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME)
   );
   assert.equal(
     paths.metaLabelEvaluationReportPath,
@@ -161,6 +166,9 @@ test("dynamic batch replay contracts document reader resolution", () => {
   const selectionTrialContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
     (contract) => contract.artifactName === "batchReplaySelectionTrials"
   );
+  const tripleBarrierLabelContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
+    (contract) => contract.artifactName === "tripleBarrierLabelReport"
+  );
   const metaLabelEvaluationContract = DYNAMIC_STORAGE_ARTIFACT_CONTRACTS.find(
     (contract) => contract.artifactName === "metaLabelEvaluationReport"
   );
@@ -190,6 +198,18 @@ test("dynamic batch replay contracts document reader resolution", () => {
     selectionTrialContract?.corruptJsonlPolicy,
     "skip_line_and_count"
   );
+  assert.notEqual(tripleBarrierLabelContract, undefined);
+  assert.equal(
+    tripleBarrierLabelContract?.fileName,
+    TRIPLE_BARRIER_LABEL_REPORT_FILE_NAME
+  );
+  assert.equal(tripleBarrierLabelContract?.format, "json");
+  assert.equal(
+    tripleBarrierLabelContract?.domainContract,
+    "TripleBarrierLabelArtifact"
+  );
+  assert.equal(tripleBarrierLabelContract?.localOperationsReader, null);
+  assert.equal(tripleBarrierLabelContract?.corruptJsonlPolicy, null);
   assert.notEqual(metaLabelEvaluationContract, undefined);
   assert.equal(
     metaLabelEvaluationContract?.fileName,

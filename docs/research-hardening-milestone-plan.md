@@ -345,6 +345,7 @@
 - 네 번째 PR 범위는 `meta_label_candidate.v1` schema, side decision outcome helper, sizing directive reject unit test로 제한한다.
 - 다섯 번째 PR 범위는 standalone `meta_label_evaluation.v1` report schema, summary helper, unit test로 제한한다.
 - 여섯 번째 PR 범위는 `historicalBatchReport` aggregate 연결, Next.js Validation Lab의 read-only `meta_label_evaluation.v1` summary 표시, missing/invalid fallback으로 제한한다.
+- 일곱 번째 PR 범위는 `triple_barrier_label.v1` standard artifact path, `historicalBatchReport` aggregate 연결, batch aggregate report의 read-only label distribution 표시로 제한한다.
 
 권장 PR 분해:
 

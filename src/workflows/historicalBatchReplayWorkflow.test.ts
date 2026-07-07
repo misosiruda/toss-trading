@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,6 +23,53 @@ import {
 } from "../storage/repositories.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { runHistoricalBatchReplay } from "./historicalBatchReplayWorkflow.js";
+
+test("historical batch replay runner clears stale derived artifacts", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot("hist_005930_stale", "005930", "2025-02-03T09:00:00+09:00", 70_000)
+  );
+
+  const outputDir = join(outputBaseDir, "batch-stale-artifacts");
+  const tripleBarrierLabelPath = join(
+    outputDir,
+    "triple-barrier-label-report.json"
+  );
+  const metaLabelEvaluationPath = join(
+    outputDir,
+    "meta-label-evaluation-report.json"
+  );
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(tripleBarrierLabelPath, "{}\n", "utf8");
+  await writeFile(metaLabelEvaluationPath, "{}\n", "utf8");
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-stale-artifacts",
+    seed: "seed-stale",
+    runCount: 1,
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    minWindowSnapshots: 1
+  });
+
+  assert.equal(result.status, "completed");
+  await assert.rejects(
+    () => readFile(tripleBarrierLabelPath, "utf8"),
+    isFileNotFoundError
+  );
+  await assert.rejects(
+    () => readFile(metaLabelEvaluationPath, "utf8"),
+    isFileNotFoundError
+  );
+});
 
 test("historical batch replay runner writes manifest and per-run records", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-source-"));
@@ -1247,4 +1294,12 @@ async function readJsonl(filePath: string): Promise<Array<Record<string, unknown
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }

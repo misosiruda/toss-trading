@@ -5,10 +5,15 @@ import type {
   MarketRegimeClassification,
   MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
+import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
-import type { MetaLabelEvaluationReport } from "../replay/tripleBarrierLabel.js";
+import {
+  buildTripleBarrierLabelArtifact,
+  type MetaLabelEvaluationReport,
+  type TripleBarrierLabelArtifact
+} from "../replay/tripleBarrierLabel.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
   buildBatchReplayAggregateReport,
@@ -801,6 +806,39 @@ test("batch replay aggregate report includes stored meta-label evaluation artifa
   assert.match(rendered, /## Meta-Label Evaluation/);
   assert.match(rendered, /schema_version: meta_label_evaluation\.v1/);
   assert.match(rendered, /accuracy_ratio: 0\.5/);
+});
+
+test("batch replay aggregate report includes stored triple-barrier label distribution", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    sourceTripleBarrierLabelPath:
+      "data/batch-replay/batch-label/triple-barrier-label-report.json",
+    records: [
+      record("triple_label_run", 0, "completed", "bull", 0.05, 1_050_000)
+    ],
+    tripleBarrierLabel: tripleBarrierLabelArtifact()
+  });
+  const rendered = renderBatchReplayAggregateReport(report);
+
+  assert.equal(
+    report.sourceTripleBarrierLabelPath,
+    "data/batch-replay/batch-label/triple-barrier-label-report.json"
+  );
+  assert.equal(
+    report.tripleBarrierLabel?.schemaVersion,
+    "triple_barrier_label.v1"
+  );
+  assert.equal(report.tripleBarrierLabel?.summary.totalLabelCount, 3);
+  assert.equal(report.tripleBarrierLabel?.summary.unavailableLabelCount, 1);
+  assert.match(
+    rendered,
+    /source_triple_barrier_label_path: data\/batch-replay\/batch-label\/triple-barrier-label-report\.json/
+  );
+  assert.match(rendered, /## Triple Barrier Label Distribution/);
+  assert.match(rendered, /schema_version: triple_barrier_label\.v1/);
+  assert.match(rendered, /config_hash: sha256:[a-f0-9]{64}/);
+  assert.match(rendered, /positive_count: 1/);
+  assert.match(rendered, /warning_count: 1/);
 });
 
 test("batch replay aggregate report warns when expected split count lacks trials", () => {
@@ -2429,6 +2467,57 @@ function metaLabelEvaluationReport(): MetaLabelEvaluationReport {
       notActionableCount: 1,
       accuracyRatio: 0.5
     }
+  };
+}
+
+function tripleBarrierLabelArtifact(): TripleBarrierLabelArtifact {
+  return buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-06-12T01:00:00.000Z",
+    config: {
+      referencePriceField: "last",
+      profitTakingReturnRatio: 0.05,
+      stopLossReturnRatio: 0.03,
+      timeBarrierDurationDays: 5
+    },
+    events: [
+      tripleBarrierLabelEvent("label_profit", "TBP"),
+      tripleBarrierLabelEvent("label_stop", "TBS"),
+      tripleBarrierLabelEvent("label_unavailable", "TBU")
+    ],
+    priceSnapshots: [
+      tripleBarrierSnapshot("TBP", "2026-06-12T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("TBP", "2026-06-13T00:00:00.000Z", 106),
+      tripleBarrierSnapshot("TBS", "2026-06-12T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("TBS", "2026-06-13T00:00:00.000Z", 96)
+    ]
+  });
+}
+
+function tripleBarrierLabelEvent(sampleId: string, symbol: string) {
+  return {
+    sampleId,
+    symbol,
+    market: "KR" as const,
+    observationAt: "2026-06-12T00:00:00.000Z",
+    labelStart: "2026-06-12T00:00:00.000Z"
+  };
+}
+
+function tripleBarrierSnapshot(
+  symbol: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId: `snapshot_${symbol}_${observedAt}`,
+    market: "KR",
+    symbol,
+    observedAt,
+    interval: "1d",
+    lastPriceKrw,
+    volume: 1_000,
+    sourceRefs: [`fixture:${symbol}:${observedAt}`],
+    createdAt: observedAt
   };
 }
 

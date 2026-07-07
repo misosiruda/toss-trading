@@ -217,7 +217,26 @@ export const tripleBarrierLabelArtifactSchema = z
     summary: tripleBarrierLabelSummarySchema,
     warnings: z.array(tripleBarrierLabelWarningSchema)
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const labelWarnings = value.labels.flatMap((label) => label.warnings);
+    if (!tripleBarrierLabelWarningsCoverLabels(value.warnings, labelWarnings)) {
+      context.addIssue({
+        code: "custom",
+        path: ["warnings"],
+        message:
+          "triple-barrier label warnings must include label warnings and only artifact-level extras"
+      });
+    }
+    const expectedSummary = summarizeLabels(value.labels, value.warnings);
+    if (!tripleBarrierLabelSummariesEqual(value.summary, expectedSummary)) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message: "triple-barrier label summary must match labels and warnings"
+      });
+    }
+  });
 export const metaLabelCandidateSchema = z
   .object({
     schemaVersion: z.literal(META_LABEL_CANDIDATE_SCHEMA_VERSION),
@@ -1142,6 +1161,72 @@ function metaLabelEvaluationSummariesEqual(
     actual.notActionableCount === expected.notActionableCount &&
     actual.accuracyRatio === expected.accuracyRatio
   );
+}
+
+function tripleBarrierLabelSummariesEqual(
+  actual: TripleBarrierLabelSummary,
+  expected: TripleBarrierLabelSummary
+): boolean {
+  return (
+    actual.totalLabelCount === expected.totalLabelCount &&
+    actual.availableLabelCount === expected.availableLabelCount &&
+    actual.unavailableLabelCount === expected.unavailableLabelCount &&
+    actual.positiveCount === expected.positiveCount &&
+    actual.negativeCount === expected.negativeCount &&
+    actual.neutralCount === expected.neutralCount &&
+    actual.profitTakingCount === expected.profitTakingCount &&
+    actual.stopLossCount === expected.stopLossCount &&
+    actual.timeBarrierCount === expected.timeBarrierCount &&
+    actual.warningCount === expected.warningCount
+  );
+}
+
+function tripleBarrierLabelWarningsCoverLabels(
+  actual: readonly TripleBarrierLabelWarning[],
+  expectedLabelWarnings: readonly TripleBarrierLabelWarning[]
+): boolean {
+  const expectedCounts = new Map<string, number>();
+  for (const expectedWarning of expectedLabelWarnings) {
+    const key = tripleBarrierLabelWarningKey(expectedWarning);
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1);
+  }
+
+  for (const warning of actual) {
+    const key = tripleBarrierLabelWarningKey(warning);
+    const remainingExpectedCount = expectedCounts.get(key) ?? 0;
+    if (remainingExpectedCount > 0) {
+      if (remainingExpectedCount === 1) {
+        expectedCounts.delete(key);
+      } else {
+        expectedCounts.set(key, remainingExpectedCount - 1);
+      }
+      continue;
+    }
+
+    if (!isArtifactLevelTripleBarrierLabelWarning(warning)) {
+      return false;
+    }
+  }
+
+  return expectedCounts.size === 0;
+}
+
+function tripleBarrierLabelWarningKey(
+  warning: TripleBarrierLabelWarning
+): string {
+  return JSON.stringify([
+    warning.code,
+    warning.severity,
+    warning.message,
+    warning.labelId,
+    warning.sampleId
+  ]);
+}
+
+function isArtifactLevelTripleBarrierLabelWarning(
+  warning: TripleBarrierLabelWarning
+): boolean {
+  return warning.labelId === null && warning.sampleId === null;
 }
 
 function roundRatio(value: number): number {

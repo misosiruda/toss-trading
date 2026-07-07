@@ -28,7 +28,9 @@ import type {
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
 import {
   metaLabelEvaluationReportSchema,
-  type MetaLabelEvaluationReport
+  tripleBarrierLabelArtifactSchema,
+  type MetaLabelEvaluationReport,
+  type TripleBarrierLabelArtifact
 } from "../replay/tripleBarrierLabel.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
@@ -40,8 +42,10 @@ export interface BatchReplayAggregateReportOptions {
   sourceRunsPath?: string;
   sourceSelectionTrialsPath?: string;
   sourceUniverseCoveragePath?: string;
+  sourceTripleBarrierLabelPath?: string;
   sourceMetaLabelEvaluationPath?: string;
   universeCoverageReport?: HistoricalUniverseCoverageReport | null;
+  tripleBarrierLabel?: TripleBarrierLabelArtifact | null;
   metaLabelEvaluation?: MetaLabelEvaluationReport | null;
   title?: string;
   targetReturnThresholds?: number[];
@@ -55,12 +59,14 @@ export interface BatchReplayAggregateReport {
   sourceRunsPath: string | null;
   sourceSelectionTrialsPath: string | null;
   sourceUniverseCoveragePath?: string | null;
+  sourceTripleBarrierLabelPath?: string | null;
   sourceMetaLabelEvaluationPath?: string | null;
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
   cpcvPboValidation: CpcvPboValidationReport | null;
+  tripleBarrierLabel?: TripleBarrierLabelArtifact | null;
   metaLabelEvaluation?: MetaLabelEvaluationReport | null;
   universeCoverage?: BatchReplayUniverseCoverageSummary | null;
   overall: BatchReplayGroupSummary;
@@ -318,6 +324,11 @@ export function buildBatchReplayAggregateReport(
           overfittingDiagnostics,
           options.generatedAt
         );
+  const tripleBarrierLabel =
+    options.tripleBarrierLabel === undefined ||
+    options.tripleBarrierLabel === null
+      ? null
+      : tripleBarrierLabelArtifactSchema.parse(options.tripleBarrierLabel);
   const metaLabelEvaluation =
     options.metaLabelEvaluation === undefined ||
     options.metaLabelEvaluation === null
@@ -332,6 +343,10 @@ export function buildBatchReplayAggregateReport(
     sourceSelectionTrialsPath:
       selectionTrials === null ? null : options.sourceSelectionTrialsPath ?? null,
     sourceUniverseCoveragePath: universeCoverage?.sourcePath ?? null,
+    sourceTripleBarrierLabelPath:
+      tripleBarrierLabel === null
+        ? null
+        : options.sourceTripleBarrierLabelPath ?? null,
     sourceMetaLabelEvaluationPath:
       metaLabelEvaluation === null
         ? null
@@ -353,6 +368,7 @@ export function buildBatchReplayAggregateReport(
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overfittingDiagnostics,
     cpcvPboValidation,
+    tripleBarrierLabel,
     metaLabelEvaluation,
     universeCoverage,
     overall: summarizeGroup("overall", records, targetReturnThresholds),
@@ -376,6 +392,9 @@ export function renderBatchReplayAggregateReport(
     }`,
     `source_universe_coverage_path: ${
       report.sourceUniverseCoveragePath ?? "null"
+    }`,
+    `source_triple_barrier_label_path: ${
+      report.sourceTripleBarrierLabelPath ?? "null"
     }`,
     `source_meta_label_evaluation_path: ${
       report.sourceMetaLabelEvaluationPath ?? "null"
@@ -401,6 +420,9 @@ export function renderBatchReplayAggregateReport(
     "",
     "## CPCV/PBO Validation",
     renderCpcvPboValidation(report.cpcvPboValidation),
+    "",
+    "## Triple Barrier Label Distribution",
+    renderTripleBarrierLabelDistribution(report.tripleBarrierLabel ?? null),
     "",
     "## Meta-Label Evaluation",
     renderMetaLabelEvaluation(report.metaLabelEvaluation ?? null),
@@ -1711,6 +1733,31 @@ function renderCpcvPboValidation(
     `warnings: ${JSON.stringify(report.warnings)}`,
     `selection_log: ${JSON.stringify(report.selectionLog)}`,
     `performance_matrix: ${JSON.stringify(report.performanceMatrix)}`
+  ].join("\n");
+}
+
+function renderTripleBarrierLabelDistribution(
+  report: TripleBarrierLabelArtifact | null
+): string {
+  if (report === null) {
+    return "triple_barrier_label: null";
+  }
+
+  return [
+    `schema_version: ${report.schemaVersion}`,
+    `generated_at: ${report.generatedAt}`,
+    `config_hash: ${report.config.configHash}`,
+    `total_label_count: ${report.summary.totalLabelCount}`,
+    `available_label_count: ${report.summary.availableLabelCount}`,
+    `unavailable_label_count: ${report.summary.unavailableLabelCount}`,
+    `positive_count: ${report.summary.positiveCount}`,
+    `negative_count: ${report.summary.negativeCount}`,
+    `neutral_count: ${report.summary.neutralCount}`,
+    `profit_taking_count: ${report.summary.profitTakingCount}`,
+    `stop_loss_count: ${report.summary.stopLossCount}`,
+    `time_barrier_count: ${report.summary.timeBarrierCount}`,
+    `warning_count: ${report.summary.warningCount}`,
+    `warnings: ${JSON.stringify(report.warnings)}`
   ].join("\n");
 }
 

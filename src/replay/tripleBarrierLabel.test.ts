@@ -131,6 +131,145 @@ test("triple barrier label artifact emits deterministic profit stop and time lab
   );
 });
 
+test("triple barrier label artifact schema rejects summary drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_summary_drift", "DRF", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("DRF", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("DRF", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      totalLabelCount: 0
+    }
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /summary must match labels and warnings/
+    );
+  }
+});
+
+test("triple barrier label artifact schema rejects top-level warning drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_warning_drift", "WRN", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("WRN", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("WRN", "2026-01-02T00:00:00.000Z", 102)
+    ]
+  });
+
+  assert.equal(artifact.labels[0]?.warnings.length, 1);
+  assert.equal(artifact.warnings.length, 1);
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      warningCount: 0
+    },
+    warnings: []
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /warnings must include label warnings/
+    );
+  }
+});
+
+test("triple barrier label artifact schema accepts artifact-level warnings", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_artifact_warning", "AFW", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("AFW", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("AFW", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const artifactWarning = {
+    code: "TRIPLE_BARRIER_CONFIG_INVALID" as const,
+    severity: "warning" as const,
+    message: "fixture artifact-level warning",
+    labelId: null,
+    sampleId: null
+  };
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      warningCount: artifact.summary.warningCount + 1
+    },
+    warnings: [...artifact.warnings, artifactWarning]
+  });
+
+  assert.equal(parseResult.success, true);
+});
+
+test("triple barrier label artifact schema rejects non-artifact warning extras", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_extra_warning", "EXW", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("EXW", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("EXW", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const nonArtifactExtraWarning = {
+    code: "TRIPLE_BARRIER_CONFIG_INVALID" as const,
+    severity: "warning" as const,
+    message: "fixture non-artifact warning",
+    labelId: "unknown_label",
+    sampleId: null
+  };
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      warningCount: artifact.summary.warningCount + 1
+    },
+    warnings: [...artifact.warnings, nonArtifactExtraWarning]
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /warnings must include label warnings/
+    );
+  }
+});
+
 test("triple barrier label fails closed when horizon coverage ends early", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",
