@@ -131,6 +131,37 @@ test("triple barrier label artifact emits deterministic profit stop and time lab
   );
 });
 
+test("triple barrier label artifact schema rejects summary drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_summary_drift", "DRF", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("DRF", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("DRF", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      totalLabelCount: 0
+    }
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /summary must match labels and warnings/
+    );
+  }
+});
+
 test("triple barrier label fails closed when horizon coverage ends early", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",

@@ -217,7 +217,17 @@ export const tripleBarrierLabelArtifactSchema = z
     summary: tripleBarrierLabelSummarySchema,
     warnings: z.array(tripleBarrierLabelWarningSchema)
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const expectedSummary = summarizeLabels(value.labels, value.warnings);
+    if (!tripleBarrierLabelSummariesEqual(value.summary, expectedSummary)) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message: "triple-barrier label summary must match labels and warnings"
+      });
+    }
+  });
 export const metaLabelCandidateSchema = z
   .object({
     schemaVersion: z.literal(META_LABEL_CANDIDATE_SCHEMA_VERSION),
@@ -1141,6 +1151,24 @@ function metaLabelEvaluationSummariesEqual(
     actual.wrongSideCount === expected.wrongSideCount &&
     actual.notActionableCount === expected.notActionableCount &&
     actual.accuracyRatio === expected.accuracyRatio
+  );
+}
+
+function tripleBarrierLabelSummariesEqual(
+  actual: TripleBarrierLabelSummary,
+  expected: TripleBarrierLabelSummary
+): boolean {
+  return (
+    actual.totalLabelCount === expected.totalLabelCount &&
+    actual.availableLabelCount === expected.availableLabelCount &&
+    actual.unavailableLabelCount === expected.unavailableLabelCount &&
+    actual.positiveCount === expected.positiveCount &&
+    actual.negativeCount === expected.negativeCount &&
+    actual.neutralCount === expected.neutralCount &&
+    actual.profitTakingCount === expected.profitTakingCount &&
+    actual.stopLossCount === expected.stopLossCount &&
+    actual.timeBarrierCount === expected.timeBarrierCount &&
+    actual.warningCount === expected.warningCount
   );
 }
 

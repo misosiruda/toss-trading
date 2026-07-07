@@ -5,12 +5,14 @@ import type {
   MarketRegimeClassification,
   MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
+import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
 import type { SelectionTrialRecord } from "../replay/selectionTrialLog.js";
 import type { HistoricalUniverseCoverageReport } from "../replay/historicalUniverseCoverage.js";
-import type {
-  MetaLabelEvaluationReport,
-  TripleBarrierLabelArtifact
+import {
+  buildTripleBarrierLabelArtifact,
+  type MetaLabelEvaluationReport,
+  type TripleBarrierLabelArtifact
 } from "../replay/tripleBarrierLabel.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 import {
@@ -822,7 +824,10 @@ test("batch replay aggregate report includes stored triple-barrier label distrib
     report.sourceTripleBarrierLabelPath,
     "data/batch-replay/batch-label/triple-barrier-label-report.json"
   );
-  assert.equal(report.tripleBarrierLabel?.schemaVersion, "triple_barrier_label.v1");
+  assert.equal(
+    report.tripleBarrierLabel?.schemaVersion,
+    "triple_barrier_label.v1"
+  );
   assert.equal(report.tripleBarrierLabel?.summary.totalLabelCount, 3);
   assert.equal(report.tripleBarrierLabel?.summary.unavailableLabelCount, 1);
   assert.match(
@@ -831,7 +836,7 @@ test("batch replay aggregate report includes stored triple-barrier label distrib
   );
   assert.match(rendered, /## Triple Barrier Label Distribution/);
   assert.match(rendered, /schema_version: triple_barrier_label\.v1/);
-  assert.match(rendered, /config_hash: sha256:aaaaaaaa/);
+  assert.match(rendered, /config_hash: sha256:[a-f0-9]{64}/);
   assert.match(rendered, /positive_count: 1/);
   assert.match(rendered, /warning_count: 1/);
 });
@@ -2466,43 +2471,53 @@ function metaLabelEvaluationReport(): MetaLabelEvaluationReport {
 }
 
 function tripleBarrierLabelArtifact(): TripleBarrierLabelArtifact {
-  return {
-    schemaVersion: "triple_barrier_label.v1",
+  return buildTripleBarrierLabelArtifact({
     generatedAt: "2026-06-12T01:00:00.000Z",
     config: {
-      labelProtocol: "triple_barrier",
-      priceSource: "historical_market_snapshot",
-      referencePriceField: "close",
+      referencePriceField: "last",
       profitTakingReturnRatio: 0.05,
       stopLossReturnRatio: 0.03,
-      timeBarrierDurationDays: 5,
-      barrierTouchPolicy: "first_touch",
-      ambiguousTouchPolicy: "earliest_timestamp_then_stop_loss",
-      configHash:
-        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      timeBarrierDurationDays: 5
     },
-    labels: [],
-    summary: {
-      totalLabelCount: 3,
-      availableLabelCount: 2,
-      unavailableLabelCount: 1,
-      positiveCount: 1,
-      negativeCount: 1,
-      neutralCount: 0,
-      profitTakingCount: 1,
-      stopLossCount: 1,
-      timeBarrierCount: 0,
-      warningCount: 1
-    },
-    warnings: [
-      {
-        code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
-        severity: "warning",
-        message: "label horizon price path is missing",
-        labelId: null,
-        sampleId: "triple_barrier_missing_path"
-      }
+    events: [
+      tripleBarrierLabelEvent("label_profit", "TBP"),
+      tripleBarrierLabelEvent("label_stop", "TBS"),
+      tripleBarrierLabelEvent("label_unavailable", "TBU")
+    ],
+    priceSnapshots: [
+      tripleBarrierSnapshot("TBP", "2026-06-12T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("TBP", "2026-06-13T00:00:00.000Z", 106),
+      tripleBarrierSnapshot("TBS", "2026-06-12T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("TBS", "2026-06-13T00:00:00.000Z", 96)
     ]
+  });
+}
+
+function tripleBarrierLabelEvent(sampleId: string, symbol: string) {
+  return {
+    sampleId,
+    symbol,
+    market: "KR" as const,
+    observationAt: "2026-06-12T00:00:00.000Z",
+    labelStart: "2026-06-12T00:00:00.000Z"
+  };
+}
+
+function tripleBarrierSnapshot(
+  symbol: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId: `snapshot_${symbol}_${observedAt}`,
+    market: "KR",
+    symbol,
+    observedAt,
+    interval: "1d",
+    lastPriceKrw,
+    volume: 1_000,
+    sourceRefs: [`fixture:${symbol}:${observedAt}`],
+    createdAt: observedAt
   };
 }
 

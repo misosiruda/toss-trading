@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { buildTripleBarrierLabelArtifact } from "../replay/tripleBarrierLabel.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import {
   historicalReplayCodexProviderMetadata,
@@ -1699,43 +1700,53 @@ function metaLabelEvaluationReport(): Record<string, unknown> {
 }
 
 function tripleBarrierLabelArtifact(): Record<string, unknown> {
-  return {
-    schemaVersion: "triple_barrier_label.v1",
+  return buildTripleBarrierLabelArtifact({
     generatedAt: "2026-07-06T00:00:00.000Z",
     config: {
-      labelProtocol: "triple_barrier",
-      priceSource: "historical_market_snapshot",
-      referencePriceField: "close",
+      referencePriceField: "last",
       profitTakingReturnRatio: 0.05,
       stopLossReturnRatio: 0.03,
-      timeBarrierDurationDays: 5,
-      barrierTouchPolicy: "first_touch",
-      ambiguousTouchPolicy: "earliest_timestamp_then_stop_loss",
-      configHash:
-        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      timeBarrierDurationDays: 5
     },
-    labels: [],
-    summary: {
-      totalLabelCount: 3,
-      availableLabelCount: 2,
-      unavailableLabelCount: 1,
-      positiveCount: 1,
-      negativeCount: 1,
-      neutralCount: 0,
-      profitTakingCount: 1,
-      stopLossCount: 1,
-      timeBarrierCount: 0,
-      warningCount: 1
-    },
-    warnings: [
-      {
-        code: "TRIPLE_BARRIER_PRICE_PATH_MISSING",
-        severity: "warning",
-        message: "label horizon price path is missing",
-        labelId: null,
-        sampleId: "triple_barrier_cli_missing_path"
-      }
+    events: [
+      tripleBarrierLabelEvent("cli_label_profit", "CLP"),
+      tripleBarrierLabelEvent("cli_label_stop", "CLS"),
+      tripleBarrierLabelEvent("cli_label_unavailable", "CLU")
+    ],
+    priceSnapshots: [
+      tripleBarrierSnapshot("CLP", "2026-07-06T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("CLP", "2026-07-07T00:00:00.000Z", 106),
+      tripleBarrierSnapshot("CLS", "2026-07-06T00:00:00.000Z", 100),
+      tripleBarrierSnapshot("CLS", "2026-07-07T00:00:00.000Z", 96)
     ]
+  });
+}
+
+function tripleBarrierLabelEvent(sampleId: string, symbol: string) {
+  return {
+    sampleId,
+    symbol,
+    market: "KR" as const,
+    observationAt: "2026-07-06T00:00:00.000Z",
+    labelStart: "2026-07-06T00:00:00.000Z"
+  };
+}
+
+function tripleBarrierSnapshot(
+  symbol: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId: `snapshot_${symbol}_${observedAt}`,
+    market: "KR",
+    symbol,
+    observedAt,
+    interval: "1d",
+    lastPriceKrw,
+    volume: 1_000,
+    sourceRefs: [`fixture:${symbol}:${observedAt}`],
+    createdAt: observedAt
   };
 }
 
