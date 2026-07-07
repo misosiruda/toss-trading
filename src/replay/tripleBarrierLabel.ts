@@ -1185,37 +1185,42 @@ function tripleBarrierLabelWarningsCoverLabels(
   actual: readonly TripleBarrierLabelWarning[],
   expectedLabelWarnings: readonly TripleBarrierLabelWarning[]
 ): boolean {
-  const usedActualIndexes = new Set<number>();
+  const expectedCounts = new Map<string, number>();
   for (const expectedWarning of expectedLabelWarnings) {
-    const matchedIndex = actual.findIndex(
-      (actualWarning, index) =>
-        !usedActualIndexes.has(index) &&
-        tripleBarrierLabelWarningEqual(actualWarning, expectedWarning)
-    );
-    if (matchedIndex === -1) {
-      return false;
-    }
-    usedActualIndexes.add(matchedIndex);
+    const key = tripleBarrierLabelWarningKey(expectedWarning);
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1);
   }
 
-  return actual.every(
-    (warning, index) =>
-      usedActualIndexes.has(index) ||
-      isArtifactLevelTripleBarrierLabelWarning(warning)
-  );
+  for (const warning of actual) {
+    const key = tripleBarrierLabelWarningKey(warning);
+    const remainingExpectedCount = expectedCounts.get(key) ?? 0;
+    if (remainingExpectedCount > 0) {
+      if (remainingExpectedCount === 1) {
+        expectedCounts.delete(key);
+      } else {
+        expectedCounts.set(key, remainingExpectedCount - 1);
+      }
+      continue;
+    }
+
+    if (!isArtifactLevelTripleBarrierLabelWarning(warning)) {
+      return false;
+    }
+  }
+
+  return expectedCounts.size === 0;
 }
 
-function tripleBarrierLabelWarningEqual(
-  actual: TripleBarrierLabelWarning,
-  expected: TripleBarrierLabelWarning
-): boolean {
-  return (
-    actual.code === expected.code &&
-    actual.severity === expected.severity &&
-    actual.message === expected.message &&
-    actual.labelId === expected.labelId &&
-    actual.sampleId === expected.sampleId
-  );
+function tripleBarrierLabelWarningKey(
+  warning: TripleBarrierLabelWarning
+): string {
+  return JSON.stringify([
+    warning.code,
+    warning.severity,
+    warning.message,
+    warning.labelId,
+    warning.sampleId
+  ]);
 }
 
 function isArtifactLevelTripleBarrierLabelWarning(
