@@ -94,13 +94,11 @@ const marketRegimeAllocationPolicy =
 const dynamicCashReservePolicy =
   readDynamicCashReservePolicyArg() ??
   strategyPreset?.dynamicCashReservePolicy;
-const riskPolicy =
-  dynamicCashReservePolicy === undefined
-    ? riskProfile.riskPolicy
-    : {
-        ...riskProfile.riskPolicy,
-        dynamicCashReservePolicy
-      };
+const riskPolicy = {
+  ...riskProfile.riskPolicy,
+  ...(strategyPreset?.riskPolicy ?? {}),
+  ...(dynamicCashReservePolicy === undefined ? {} : { dynamicCashReservePolicy })
+};
 const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
   riskProfile: riskProfile.name
 });

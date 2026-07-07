@@ -1,6 +1,7 @@
 import type { DynamicCashReservePolicy } from "../paper/dynamicCashReservePolicy.js";
 import type { PaperExitPolicy } from "../paper/exitPolicy.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
+import type { VirtualRiskPolicy } from "../paper/riskPolicy.js";
 import type { PaperRiskProfileName } from "../paper/riskProfile.js";
 import type { ReplayDecisionFrequency } from "./replaySamplingPolicy.js";
 
@@ -8,6 +9,8 @@ export const STRATEGY_REPLAY_PRESET_NAMES = [
   "long_term",
   "swing",
   "short_term",
+  "intraday",
+  "hedge",
   "regime_cash"
 ] as const;
 
@@ -25,12 +28,14 @@ export interface StrategyReplayPreset {
   maxSnapshotAgeSeconds: number;
   minWindowSnapshots: number;
   minSnapshotsPerRequiredSymbol: number;
+  riskPolicy?: Partial<VirtualRiskPolicy> | undefined;
   paperExitPolicy?: PaperExitPolicy | undefined;
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy | undefined;
   dynamicCashReservePolicy?: DynamicCashReservePolicy | undefined;
 }
 
 const DAY_SECONDS = 24 * 60 * 60;
+const HOUR_SECONDS = 60 * 60;
 const WEEK_SECONDS = 7 * DAY_SECONDS;
 const TWO_WEEKS_SECONDS = 14 * DAY_SECONDS;
 
@@ -96,6 +101,48 @@ const STRATEGY_REPLAY_PRESETS: Record<
       rebalanceMaxPositionWeightRatio: 0.35
     }
   },
+  intraday: {
+    name: "intraday",
+    riskProfile: "aggressive_paper",
+    windowMonths: 1,
+    stepSeconds: HOUR_SECONDS,
+    decisionFrequency: "every_tick",
+    maxDecisionCalls: 30,
+    maxCodexCallsPerRun: 30,
+    maxSnapshotAgeSeconds: DAY_SECONDS,
+    minWindowSnapshots: 8,
+    minSnapshotsPerRequiredSymbol: 4,
+    paperExitPolicy: {
+      takeProfitMode: "full_exit",
+      takeProfitRatio: 0.035,
+      stopLossRatio: 0.02,
+      rebalanceMaxPositionWeightRatio: 0.25
+    }
+  },
+  hedge: {
+    name: "hedge",
+    riskProfile: "balanced",
+    windowMonths: 3,
+    stepSeconds: DAY_SECONDS,
+    decisionFrequency: "once_per_week",
+    maxDecisionCalls: 13,
+    maxCodexCallsPerRun: 13,
+    maxSnapshotAgeSeconds: TWO_WEEKS_SECONDS,
+    minWindowSnapshots: 4,
+    minSnapshotsPerRequiredSymbol: 2,
+    riskPolicy: {
+      hedgePolicy: {
+        requireHedgeBucket: true,
+        maxGrossExposureRatio: 0.65
+      }
+    },
+    paperExitPolicy: {
+      takeProfitMode: "full_exit",
+      takeProfitRatio: 0.1,
+      stopLossRatio: 0.06,
+      rebalanceMaxPositionWeightRatio: 0.3
+    }
+  },
   regime_cash: {
     name: "regime_cash",
     riskProfile: "balanced",
@@ -130,6 +177,17 @@ const STRATEGY_REPLAY_PRESETS: Record<
   }
 };
 
+const STRATEGY_REPLAY_PRESET_ALIASES = new Map<
+  string,
+  StrategyReplayPresetName
+>([
+  ["long-term", "long_term"],
+  ["short-term", "short_term"],
+  ["intra-day", "intraday"],
+  ["ultra-short", "intraday"],
+  ["regime-cash", "regime_cash"]
+]);
+
 export function parseStrategyReplayPresetName(
   value: string | undefined
 ): StrategyReplayPresetName | undefined {
@@ -137,7 +195,13 @@ export function parseStrategyReplayPresetName(
     return undefined;
   }
 
-  const normalized = value.trim().replaceAll("-", "_");
+  const trimmed = value.trim();
+  const alias = STRATEGY_REPLAY_PRESET_ALIASES.get(trimmed);
+  if (alias !== undefined) {
+    return alias;
+  }
+
+  const normalized = trimmed.replaceAll("-", "_");
   if (isStrategyReplayPresetName(normalized)) {
     return normalized;
   }
