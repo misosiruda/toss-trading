@@ -21,6 +21,7 @@ import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import type { ReplayWindowSelection } from "../replay/replayWindowSampler.js";
 import type { SimulatedClock } from "../replay/simulatedClock.js";
 import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
+import type { StrategyReplayPresetName } from "../replay/strategyReplayPreset.js";
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
@@ -43,6 +44,7 @@ export interface HistoricalReplayWorkflowOptions {
   tickDelayMs?: number;
   decisionProviderMetadata?: unknown;
   universeManifest?: HistoricalUniverseManifest;
+  strategyPreset?: StrategyReplayPresetName;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;
@@ -179,6 +181,7 @@ function buildHistoricalReplayRunMetadataContext(
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
       constraints: options.constraints,
+      strategyPreset: options.strategyPreset ?? null,
       riskProfile: options.riskProfile ?? null,
       riskPolicy: serializeRiskPolicy(options.riskPolicy),
       allocationPolicy: options.allocationPolicy ?? null,

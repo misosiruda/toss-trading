@@ -159,6 +159,17 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(firstRecord["status"], "completed");
   assert.equal(trialRecords[0]?.["status"], "completed");
   assert.equal(trialRecords[0]?.["trialSchemaVersion"], "selection_trial.v1");
+  assert.deepEqual(
+    (trialRecords[0]?.["config"] as Record<string, unknown>)["replayCadence"],
+    {
+      stepSeconds: 604_800,
+      everyNSteps: null,
+      candidateChangedOnly: false,
+      decisionFrequency: "every_tick",
+      maxDecisionCalls: null,
+      timezoneOffsetMinutes: 540
+    }
+  );
   assert.equal(
     (firstRecord["windowSampling"] as Record<string, unknown>)["mode"],
     "random"

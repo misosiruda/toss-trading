@@ -780,6 +780,210 @@ test("batch replay aggregate report separates provider metadata candidates", () 
   );
 });
 
+test("batch replay aggregate report separates strategy preset cadence candidates", () => {
+  const promptHash = hash("a");
+  const sharedPolicyHashes = {
+    riskPolicyHash: hash("1"),
+    allocationPolicyHash: hash("2"),
+    marketRegimeAllocationPolicyHash: hash("3"),
+    exitPolicyHash: hash("4")
+  };
+  const dailyCadence = {
+    stepSeconds: 86_400,
+    everyNSteps: null,
+    candidateChangedOnly: false,
+    decisionFrequency: "once_per_day" as const,
+    maxDecisionCalls: 12,
+    timezoneOffsetMinutes: 540
+  };
+  const dailyOverrideCadence = {
+    ...dailyCadence,
+    maxDecisionCalls: 3
+  };
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [
+      record("long_train", 0, "completed", "bull", 0.2, 1_200_000, 0, "train"),
+      record("short_train", 1, "completed", "bull", 0.1, 1_100_000, 0, "train"),
+      record(
+        "short_override_train",
+        2,
+        "completed",
+        "bull",
+        0.15,
+        1_150_000,
+        0,
+        "train"
+      ),
+      record(
+        "long_validation",
+        3,
+        "completed",
+        "bull",
+        0.01,
+        1_010_000,
+        0,
+        "validation"
+      ),
+      record(
+        "short_validation",
+        4,
+        "completed",
+        "bull",
+        0.02,
+        1_020_000,
+        0,
+        "validation"
+      ),
+      record(
+        "short_override_validation",
+        5,
+        "completed",
+        "bull",
+        0.03,
+        1_030_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "long_train",
+        0,
+        "completed",
+        promptHash,
+        hash("5"),
+        1,
+        0,
+        0,
+        0.2,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "long_term",
+          replayCadence: dailyCadence
+        }
+      ),
+      trial(
+        "short_train",
+        1,
+        "completed",
+        promptHash,
+        hash("6"),
+        1,
+        0,
+        0,
+        0.1,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "short_term",
+          replayCadence: dailyCadence
+        }
+      ),
+      trial(
+        "short_override_train",
+        2,
+        "completed",
+        promptHash,
+        hash("7"),
+        1,
+        0,
+        0,
+        0.15,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "short_term",
+          replayCadence: dailyOverrideCadence
+        }
+      ),
+      trial(
+        "long_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("8"),
+        1,
+        0,
+        0,
+        0.01,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "long_term",
+          replayCadence: dailyCadence
+        }
+      ),
+      trial(
+        "short_validation",
+        4,
+        "completed",
+        promptHash,
+        hash("9"),
+        1,
+        0,
+        0,
+        0.02,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "short_term",
+          replayCadence: dailyCadence
+        }
+      ),
+      trial(
+        "short_override_validation",
+        5,
+        "completed",
+        promptHash,
+        hash("a"),
+        1,
+        0,
+        0,
+        0.03,
+        {
+          ...sharedPolicyHashes,
+          strategyPreset: "short_term",
+          replayCadence: dailyOverrideCadence
+        }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  const candidateKeys = diagnostics.splitMetricMatrix.map(
+    (row) => row.candidateKey
+  );
+
+  assert.equal(diagnostics.candidateCount, 3);
+  assert.deepEqual(
+    new Set(
+      diagnostics.splitMetricMatrix.map(
+        (row) => `${row.strategyPreset}:${row.replayCadence?.maxDecisionCalls}`
+      )
+    ),
+    new Set(["long_term:12", "short_term:12", "short_term:3"])
+  );
+  assert.ok(
+    candidateKeys.some(
+      (key) =>
+        key.includes("preset=long_term") &&
+        key.includes("maxDecisionCalls=12")
+    )
+  );
+  assert.ok(
+    candidateKeys.some(
+      (key) =>
+        key.includes("preset=short_term") &&
+        key.includes("maxDecisionCalls=12")
+    )
+  );
+  assert.ok(
+    candidateKeys.some(
+      (key) =>
+        key.includes("preset=short_term") &&
+        key.includes("maxDecisionCalls=3")
+    )
+  );
+  assert.match(diagnostics.selectedCandidateKey ?? "", /preset=long_term/);
+});
+
 test("batch replay aggregate report includes stored meta-label evaluation artifact", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -2582,6 +2786,8 @@ function trial(
       marketRegimeAllocationPolicyHash:
         configOverrides.marketRegimeAllocationPolicyHash ?? hash("3"),
       exitPolicyHash: configOverrides.exitPolicyHash ?? hash("4"),
+      strategyPreset: configOverrides.strategyPreset ?? null,
+      replayCadence: configOverrides.replayCadence ?? null,
       riskProfile: configOverrides.riskProfile ?? "balanced",
       selectionMetric: "total_return_ratio"
     },

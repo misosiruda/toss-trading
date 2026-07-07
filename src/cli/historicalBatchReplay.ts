@@ -12,9 +12,16 @@ import {
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
 import type { DynamicCashReservePolicy } from "../paper/dynamicCashReservePolicy.js";
-import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
+import {
+  normalizePaperExitPolicy,
+  type PaperExitPolicy
+} from "../paper/exitPolicy.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import type { Market, MarketPacket } from "../domain/schemas.js";
+import {
+  parseStrategyReplayPresetName,
+  resolveStrategyReplayPreset
+} from "../replay/strategyReplayPreset.js";
 import {
   parseHistoricalUniverseManifest,
   requiredSymbolsFromHistoricalUniverse
@@ -33,11 +40,24 @@ import {
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
+const strategyPresetName = parseStrategyReplayPresetName(
+  readOptionalArgValue("--strategy-preset")
+);
+const strategyPreset =
+  strategyPresetName === undefined
+    ? undefined
+    : resolveStrategyReplayPreset(strategyPresetName);
 const everyNSteps = readOptionalNumberArg("--every-n-steps");
-const decisionFrequency = readDecisionFrequencyArg();
-const maxDecisionCalls = readOptionalNumberArg("--max-decision-calls");
+const decisionFrequency =
+  readDecisionFrequencyArg() ?? strategyPreset?.decisionFrequency;
+const maxDecisionCalls =
+  readOptionalNumberArg("--max-decision-calls") ??
+  strategyPreset?.maxDecisionCalls;
 const useCodexAi = args.includes("--use-codex-ai");
-const maxCodexCallsPerRun = readNumberArg("--max-codex-calls-per-run", 5);
+const maxCodexCallsPerRun = readNumberArg(
+  "--max-codex-calls-per-run",
+  maxDecisionCalls ?? 5
+);
 const universeManifest = readUniverseManifestArg();
 const requiredSymbols = readRequiredSymbols();
 const calendarValidation = readCalendarValidationOptionsFromArgs(args);
@@ -54,7 +74,9 @@ const maxBudgetPerSymbolOverride = readOptionalNumberArg(
   "--max-budget-per-symbol-krw"
 );
 const riskProfile = resolvePaperRiskProfile({
-  name: parsePaperRiskProfileName(readArgValue("--risk-profile")),
+  name: parsePaperRiskProfileName(
+    readArgValue("--risk-profile") ?? strategyPreset?.riskProfile
+  ),
   initialCashKrw,
   ...(maxNewPositionsOverride === undefined
     ? {}
@@ -63,9 +85,15 @@ const riskProfile = resolvePaperRiskProfile({
     ? {}
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
-const paperExitPolicy = readPaperExitPolicyArg();
-const marketRegimeAllocationPolicy = readMarketRegimeAllocationPolicyArg();
-const dynamicCashReservePolicy = readDynamicCashReservePolicyArg();
+const paperExitPolicy = readPaperExitPolicyArg(
+  strategyPreset?.paperExitPolicy
+);
+const marketRegimeAllocationPolicy =
+  readMarketRegimeAllocationPolicyArg() ??
+  strategyPreset?.marketRegimeAllocationPolicy;
+const dynamicCashReservePolicy =
+  readDynamicCashReservePolicyArg() ??
+  strategyPreset?.dynamicCashReservePolicy;
 const riskPolicy =
   dynamicCashReservePolicy === undefined
     ? riskProfile.riskPolicy
@@ -114,13 +142,22 @@ const result = await runHistoricalBatchReplay({
     readArgValue("--source-data-dir") ?? readArgValue("--data-dir") ?? "data/paper",
   outputBaseDir: readArgValue("--output-dir") ?? "data/batch-replay",
   batchId: readRequiredArgValue("--batch-id"),
+  ...(strategyPresetName === undefined
+    ? {}
+    : { strategyPreset: strategyPresetName }),
   seed: readRequiredArgValue("--seed"),
   runCount: readNumberArg("--runs", 1),
   rangeStart: readDateArg("--random-window-from"),
   rangeEnd: readDateArg("--random-window-to"),
-  windowMonths: readNumberArg("--window-months", 1),
+  windowMonths: readNumberArg(
+    "--window-months",
+    strategyPreset?.windowMonths ?? 1
+  ),
   timezoneOffsetMinutes: readNumberArg("--timezone-offset-minutes", 540),
-  stepSeconds: readNumberArg("--step-seconds", 60),
+  stepSeconds: readNumberArg(
+    "--step-seconds",
+    strategyPreset?.stepSeconds ?? 60
+  ),
   speedMultiplier: readNumberArg("--speed-multiplier", 1),
   ...(everyNSteps === undefined ? {} : { everyNSteps }),
   candidateChangedOnly: args.includes("--candidate-changed-only"),
@@ -130,9 +167,18 @@ const result = await runHistoricalBatchReplay({
   packetIdPrefix: readArgValue("--packet-id-prefix") ?? "packet_batch_replay",
   packetExpiresInSeconds: readNumberArg("--packet-expires-in-seconds", 60),
   maxCandidates: readNumberArg("--max-candidates", 10),
-  maxSnapshotAgeSeconds: readNumberArg("--max-snapshot-age-seconds", 300),
-  minWindowSnapshots: readNumberArg("--min-window-snapshots", 1),
-  minSnapshotsPerRequiredSymbol: readNumberArg("--min-snapshots-per-symbol", 1),
+  maxSnapshotAgeSeconds: readNumberArg(
+    "--max-snapshot-age-seconds",
+    strategyPreset?.maxSnapshotAgeSeconds ?? 300
+  ),
+  minWindowSnapshots: readNumberArg(
+    "--min-window-snapshots",
+    strategyPreset?.minWindowSnapshots ?? 1
+  ),
+  minSnapshotsPerRequiredSymbol: readNumberArg(
+    "--min-snapshots-per-symbol",
+    strategyPreset?.minSnapshotsPerRequiredSymbol ?? 1
+  ),
   ...(requiredSymbols === undefined ? {} : { requiredSymbols }),
   ...(universeManifest === undefined ? {} : { universeManifest }),
   ...(calendarValidation === undefined ? {} : { calendarValidation }),
@@ -182,6 +228,7 @@ console.log(
       completedCount: result.completedCount,
       skippedCount: result.skippedCount,
       failedCount: result.failedCount,
+      strategyPreset: strategyPresetName ?? null,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
       dynamicCashReservePolicy: dynamicCashReservePolicy ?? null,
@@ -285,6 +332,17 @@ function readArgValue(name: string): string | undefined {
   return value;
 }
 
+function readOptionalArgValue(name: string): string | undefined {
+  const value = readArgValue(name);
+  if (value === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
+  }
+  if (value !== undefined && value.trim().length === 0) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
+}
+
 function readRequiredArgValue(name: string): string {
   const value = readArgValue(name);
   if (value === undefined || value.trim().length === 0) {
@@ -293,7 +351,7 @@ function readRequiredArgValue(name: string): string {
   return value;
 }
 
-function readPaperExitPolicyArg() {
+function readPaperExitPolicyArg(fallback?: PaperExitPolicy | undefined) {
   const takeProfitRatio = readOptionalNumberArg("--paper-take-profit-ratio");
   const stopLossRatio = readOptionalNumberArg("--paper-stop-loss-ratio");
   const rebalanceMaxPositionWeightRatio = readOptionalNumberArg(
@@ -307,6 +365,7 @@ function readPaperExitPolicyArg() {
     "--paper-trailing-stop-from-peak-ratio"
   );
   const normalized = normalizePaperExitPolicy({
+    ...(fallback ?? {}),
     ...(takeProfitRatio === undefined ? {} : { takeProfitRatio }),
     ...(stopLossRatio === undefined ? {} : { stopLossRatio }),
     ...(rebalanceMaxPositionWeightRatio === undefined

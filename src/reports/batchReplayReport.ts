@@ -231,6 +231,8 @@ export interface BatchReplaySplitMetricRow {
   allocationPolicyHash: string;
   marketRegimeAllocationPolicyHash: string;
   exitPolicyHash: string;
+  strategyPreset: string | null;
+  replayCadence: NonNullable<SelectionTrialRecord["config"]["replayCadence"]> | null;
   riskProfile: string | null;
   roleMetrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>>;
   splitMetrics: BatchReplaySplitMetric[];
@@ -660,6 +662,8 @@ function buildSplitMetricMatrix(
         marketRegimeAllocationPolicyHash:
           firstTrial.config.marketRegimeAllocationPolicyHash,
         exitPolicyHash: firstTrial.config.exitPolicyHash,
+        strategyPreset: firstTrial.config.strategyPreset ?? null,
+        replayCadence: firstTrial.config.replayCadence ?? null,
         riskProfile: firstTrial.config.riskProfile,
         roleMetrics: summarizeRoleMetrics(bucket),
         splitMetrics: summarizeSplitMetrics(bucket)
@@ -734,9 +738,27 @@ function candidateKeyForTrial(trial: SelectionTrialRecord): string {
     `allocation=${trial.config.allocationPolicyHash}`,
     `regimeAllocation=${trial.config.marketRegimeAllocationPolicyHash}`,
     `exit=${trial.config.exitPolicyHash}`,
+    `preset=${trial.config.strategyPreset ?? "null"}`,
+    `cadence=${replayCadenceKey(trial.config.replayCadence ?? null)}`,
     `profile=${trial.config.riskProfile ?? "null"}`,
     `metric=${trial.config.selectionMetric}`
   ].join("|");
+}
+
+function replayCadenceKey(
+  replayCadence: SelectionTrialRecord["config"]["replayCadence"] | null
+): string {
+  if (replayCadence === null || replayCadence === undefined) {
+    return "null";
+  }
+  return [
+    `stepSeconds=${replayCadence.stepSeconds}`,
+    `everyNSteps=${replayCadence.everyNSteps ?? "null"}`,
+    `candidateChangedOnly=${replayCadence.candidateChangedOnly}`,
+    `decisionFrequency=${replayCadence.decisionFrequency}`,
+    `maxDecisionCalls=${replayCadence.maxDecisionCalls ?? "null"}`,
+    `timezoneOffsetMinutes=${replayCadence.timezoneOffsetMinutes}`
+  ].join(",");
 }
 
 function uniqueNullableStrings(values: Array<string | null>): Array<string | null> {
