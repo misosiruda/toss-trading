@@ -189,9 +189,44 @@ test("triple barrier label artifact schema rejects top-level warning drift", () 
   if (!parseResult.success) {
     assert.match(
       JSON.stringify(parseResult.error.issues),
-      /warnings must match label warnings/
+      /warnings must include label warnings/
     );
   }
+});
+
+test("triple barrier label artifact schema accepts artifact-level warnings", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [
+      event("sample_artifact_warning", "AFW", "2026-01-01T00:00:00.000Z")
+    ],
+    priceSnapshots: [
+      snapshot("AFW", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("AFW", "2026-01-02T00:00:00.000Z", 105, {
+        highPriceKrw: 111,
+        lowPriceKrw: 104
+      })
+    ]
+  });
+  const artifactWarning = {
+    code: "TRIPLE_BARRIER_CONFIG_INVALID" as const,
+    severity: "warning" as const,
+    message: "fixture artifact-level warning",
+    labelId: null,
+    sampleId: null
+  };
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      warningCount: artifact.summary.warningCount + 1
+    },
+    warnings: [...artifact.warnings, artifactWarning]
+  });
+
+  assert.equal(parseResult.success, true);
 });
 
 test("triple barrier label fails closed when horizon coverage ends early", () => {

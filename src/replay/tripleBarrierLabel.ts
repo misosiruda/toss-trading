@@ -219,15 +219,16 @@ export const tripleBarrierLabelArtifactSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    const expectedWarnings = value.labels.flatMap((label) => label.warnings);
-    if (!tripleBarrierLabelWarningsEqual(value.warnings, expectedWarnings)) {
+    const labelWarnings = value.labels.flatMap((label) => label.warnings);
+    if (!tripleBarrierLabelWarningsCoverLabels(value.warnings, labelWarnings)) {
       context.addIssue({
         code: "custom",
         path: ["warnings"],
-        message: "triple-barrier label warnings must match label warnings"
+        message:
+          "triple-barrier label warnings must include label warnings and only artifact-level extras"
       });
     }
-    const expectedSummary = summarizeLabels(value.labels, expectedWarnings);
+    const expectedSummary = summarizeLabels(value.labels, value.warnings);
     if (!tripleBarrierLabelSummariesEqual(value.summary, expectedSummary)) {
       context.addIssue({
         code: "custom",
@@ -1180,15 +1181,27 @@ function tripleBarrierLabelSummariesEqual(
   );
 }
 
-function tripleBarrierLabelWarningsEqual(
+function tripleBarrierLabelWarningsCoverLabels(
   actual: readonly TripleBarrierLabelWarning[],
-  expected: readonly TripleBarrierLabelWarning[]
+  expectedLabelWarnings: readonly TripleBarrierLabelWarning[]
 ): boolean {
-  return (
-    actual.length === expected.length &&
-    actual.every((warning, index) =>
-      tripleBarrierLabelWarningEqual(warning, expected[index]!)
-    )
+  const usedActualIndexes = new Set<number>();
+  for (const expectedWarning of expectedLabelWarnings) {
+    const matchedIndex = actual.findIndex(
+      (actualWarning, index) =>
+        !usedActualIndexes.has(index) &&
+        tripleBarrierLabelWarningEqual(actualWarning, expectedWarning)
+    );
+    if (matchedIndex === -1) {
+      return false;
+    }
+    usedActualIndexes.add(matchedIndex);
+  }
+
+  return actual.every(
+    (warning, index) =>
+      usedActualIndexes.has(index) ||
+      isArtifactLevelTripleBarrierLabelWarning(warning)
   );
 }
 
@@ -1203,6 +1216,12 @@ function tripleBarrierLabelWarningEqual(
     actual.labelId === expected.labelId &&
     actual.sampleId === expected.sampleId
   );
+}
+
+function isArtifactLevelTripleBarrierLabelWarning(
+  warning: TripleBarrierLabelWarning
+): boolean {
+  return warning.labelId === null && warning.sampleId === null;
 }
 
 function roundRatio(value: number): number {
