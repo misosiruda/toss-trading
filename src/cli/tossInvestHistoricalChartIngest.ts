@@ -5,13 +5,13 @@ import { dirname, join } from "node:path";
 
 import {
   collectTossInvestHistoricalChartSnapshots,
-  type TossInvestChartInterval,
-  type TossInvestHistoricalChartSymbol
+  type TossInvestChartInterval
 } from "../collectors/tossInvestHistoricalChartCollector.js";
 import { collectTossInvestDailyChartSnapshots } from "../collectors/tossInvestDailyChartCollector.js";
 import type { Market } from "../domain/schemas.js";
 import { parseHistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 import { createStoragePaths } from "../storage/repositories.js";
+import { createTossInvestHistoricalChartSymbols } from "./tossInvestHistoricalChartIngestSymbols.js";
 
 const args = process.argv.slice(2);
 const interval = parseInterval(readArgValue("--interval") ?? "1d");
@@ -53,30 +53,11 @@ const universe =
     : parseHistoricalUniverseManifest(
         JSON.parse(await readFile(universePath, "utf8"))
       );
-const collectorSymbols =
-  universe === null
-    ? symbols.map((symbol) => ({
-        market,
-        symbol,
-        assetType: "STOCK" as const,
-        assetClass: "equity" as const,
-        region: market
-      }))
-    : universe.symbols.map((symbol): TossInvestHistoricalChartSymbol => ({
-        market: symbol.market,
-        symbol: symbol.symbol,
-        ...(symbol.sourceSymbol === undefined
-          ? {}
-          : { sourceSymbol: symbol.sourceSymbol }),
-        ...(symbol.name === undefined ? {} : { name: symbol.name }),
-        ...(symbol.assetType === undefined ? {} : { assetType: symbol.assetType }),
-        ...(symbol.assetClass === undefined
-          ? {}
-          : { assetClass: symbol.assetClass }),
-        ...(symbol.region === undefined ? {} : { region: symbol.region }),
-        ...(symbol.riskTags === undefined ? {} : { riskTags: symbol.riskTags }),
-        ...(symbol.sector === undefined ? {} : { sector: symbol.sector })
-      }));
+const collectorSymbols = createTossInvestHistoricalChartSymbols({
+  universe,
+  symbols,
+  market
+});
 const result =
   interval === "1d"
     ? await collectTossInvestDailyChartSnapshots({
