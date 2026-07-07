@@ -1451,6 +1451,14 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.06);
   assert.equal(paperExitPolicy["stopLossRatio"], 0.04);
   assert.equal(trialConfig["strategyPreset"], "short_term");
+  assert.deepEqual(trialConfig["replayCadence"], {
+    stepSeconds: 86_400,
+    everyNSteps: null,
+    candidateChangedOnly: false,
+    decisionFrequency: "once_per_day",
+    maxDecisionCalls: 3,
+    timezoneOffsetMinutes: 540
+  });
 });
 
 test("historical universe coverage CLI writes a JSON coverage report", () => {

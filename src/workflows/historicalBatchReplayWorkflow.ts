@@ -1357,6 +1357,15 @@ function selectionTrialRecord(input: {
     marketRegime: input.record.marketRegime,
     decisionProviderMetadata: input.decisionProviderMetadata,
     strategyPreset: input.options.strategyPreset ?? null,
+    replayCadence: {
+      stepSeconds: input.options.stepSeconds ?? DEFAULT_STEP_SECONDS,
+      everyNSteps: input.options.everyNSteps ?? null,
+      candidateChangedOnly: input.options.candidateChangedOnly ?? false,
+      decisionFrequency: input.options.decisionFrequency ?? "every_tick",
+      maxDecisionCalls: input.options.maxDecisionCalls ?? null,
+      timezoneOffsetMinutes:
+        input.options.timezoneOffsetMinutes ?? DEFAULT_TIMEZONE_OFFSET_MINUTES
+    },
     riskProfile: input.options.riskProfile ?? null,
     riskPolicy: input.options.riskPolicy,
     allocationPolicy: input.options.allocationPolicy ?? null,

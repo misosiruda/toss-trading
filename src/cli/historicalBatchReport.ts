@@ -421,8 +421,33 @@ function isSelectionTrialConfig(value: unknown): boolean {
     isSha256Hash(value["exitPolicyHash"]) &&
     (value["strategyPreset"] === undefined ||
       isNullableString(value["strategyPreset"])) &&
+    (value["replayCadence"] === undefined ||
+      isNullableSelectionTrialReplayCadence(value["replayCadence"])) &&
     isNullableString(value["riskProfile"]) &&
     value["selectionMetric"] === "total_return_ratio"
+  );
+}
+
+function isNullableSelectionTrialReplayCadence(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      isPositiveInteger(value["stepSeconds"]) &&
+      (value["everyNSteps"] === null ||
+        isPositiveInteger(value["everyNSteps"])) &&
+      typeof value["candidateChangedOnly"] === "boolean" &&
+      isReplayDecisionFrequency(value["decisionFrequency"]) &&
+      (value["maxDecisionCalls"] === null ||
+        isPositiveInteger(value["maxDecisionCalls"])) &&
+      Number.isInteger(value["timezoneOffsetMinutes"]))
+  );
+}
+
+function isReplayDecisionFrequency(value: unknown): boolean {
+  return (
+    value === "every_tick" ||
+    value === "once_per_day" ||
+    value === "once_per_week"
   );
 }
 
@@ -477,6 +502,10 @@ function isNonNegativeInteger(value: unknown): value is number {
   return (
     typeof value === "number" && Number.isInteger(value) && value >= 0
   );
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function isNullableSha256Hash(
