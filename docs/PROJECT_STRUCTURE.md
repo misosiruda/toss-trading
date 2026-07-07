@@ -14,6 +14,7 @@ toss-trading/
 ├── README.md                  # 프로젝트 개요와 실행 예시
 ├── package.json               # Node.js scripts와 의존성
 ├── tsconfig.json              # TypeScript strict compiler 설정
+├── .github/                   # CODEOWNERS와 PR template
 ├── .codex/                    # Codex MCP 설정 예시
 ├── apps/                      # Next.js dashboard app 등 frontend package
 ├── dashboard/                 # read-only local dashboard ES module 정적 파일
