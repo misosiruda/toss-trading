@@ -1461,6 +1461,96 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   });
 });
 
+test("historical batch replay CLI defaults Codex budget to effective decision budget", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-preset-codex-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-preset-codex-output-")
+  );
+  const fakeCodexDir = mkdtempSync(join(tmpdir(), "fake-codex-cli-"));
+  const fakeCodexLogPath = join(fakeCodexDir, "calls.jsonl");
+  createFakeCodexExecScript(fakeCodexDir);
+  const cliPath = join(
+    process.cwd(),
+    "dist",
+    "cli",
+    "historicalBatchReplay.js"
+  );
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    [
+      JSON.stringify(snapshot("hist_005930_preset_codex_001", "005930")),
+      JSON.stringify(
+        snapshot("hist_005930_preset_codex_002", "005930", {
+          observedAt: "2025-02-10T09:00:00+09:00"
+        })
+      )
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-short-term-preset-codex",
+      "--seed",
+      "seed-preset-codex",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--strategy-preset",
+      "short-term",
+      "--min-window-snapshots",
+      "1",
+      "--min-snapshots-per-symbol",
+      "1",
+      "--max-decision-calls",
+      "30",
+      "--use-codex-ai",
+      "--skip-codex-preflight"
+    ],
+    {
+      cwd: fakeCodexDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_DECISION_MODE: "paper_only",
+        AI_DECISION_ENABLED: "true",
+        CODEX_EXEC_PATH: process.execPath,
+        CODEX_EXEC_TIMEOUT_SECONDS: "5",
+        FAKE_CODEX_LOG_PATH: fakeCodexLogPath
+      }
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const trialRecords = readFileSync(String(output["selectionTrialsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
+  const replayCadence = trialConfig["replayCadence"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(output["decisionProvider"], "codex_cli");
+  assert.equal(output["maxCodexCallsPerRun"], 30);
+  assert.equal(replayCadence["maxDecisionCalls"], 30);
+});
+
 test("historical universe coverage CLI writes a JSON coverage report", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-universe-source-"));
   const outputPath = join(dataDir, "historical-universe-coverage.json");

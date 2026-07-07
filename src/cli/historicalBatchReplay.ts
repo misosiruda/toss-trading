@@ -56,7 +56,7 @@ const maxDecisionCalls =
 const useCodexAi = args.includes("--use-codex-ai");
 const maxCodexCallsPerRun = readNumberArg(
   "--max-codex-calls-per-run",
-  strategyPreset?.maxCodexCallsPerRun ?? 5
+  maxDecisionCalls ?? 5
 );
 const universeManifest = readUniverseManifestArg();
 const requiredSymbols = readRequiredSymbols();
