@@ -41,7 +41,7 @@ import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWork
 
 const args = process.argv.slice(2);
 const strategyPresetName = parseStrategyReplayPresetName(
-  readArgValue("--strategy-preset")
+  readOptionalArgValue("--strategy-preset")
 );
 const strategyPreset =
   strategyPresetName === undefined
@@ -329,6 +329,17 @@ function readArgValue(name: string): string | undefined {
     return undefined;
   }
 
+  return value;
+}
+
+function readOptionalArgValue(name: string): string | undefined {
+  const value = readArgValue(name);
+  if (value === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
+  }
+  if (value !== undefined && value.trim().length === 0) {
+    throw new Error(`${name} requires a value`);
+  }
   return value;
 }
 

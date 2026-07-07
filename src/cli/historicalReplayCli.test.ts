@@ -1461,6 +1461,22 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   });
 });
 
+test("historical batch replay CLI rejects missing strategy preset value", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--strategy-preset",
+      "--runs",
+      "1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--strategy-preset requires a value/);
+});
+
 test("historical batch replay CLI defaults Codex budget to effective decision budget", () => {
   const sourceDataDir = mkdtempSync(
     join(tmpdir(), "historical-batch-preset-codex-source-")
