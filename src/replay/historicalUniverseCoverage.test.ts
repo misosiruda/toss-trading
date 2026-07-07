@@ -185,6 +185,81 @@ test("historical universe coverage can require broad available symbol counts", (
   );
 });
 
+test("historical universe coverage can require strategy bucket availability", () => {
+  const report = assessHistoricalUniverseCoverage({
+    universe: parseHistoricalUniverseManifest({
+      mode: "paper_only_historical_universe",
+      universeId: "strategy-bucket-fixture",
+      snapshotDate: "2025-01-01",
+      symbols: [
+        {
+          market: "KR",
+          symbol: "005930",
+          strategyBucket: "long_term",
+          required: true
+        },
+        {
+          market: "KR",
+          symbol: "000660",
+          strategyBucket: "swing",
+          required: true
+        },
+        {
+          market: "KR",
+          symbol: "069500",
+          strategyBucket: "hedge",
+          required: true
+        },
+        {
+          market: "KR",
+          symbol: "122630",
+          strategyBucket: "intraday",
+          required: false
+        },
+        {
+          market: "KR",
+          symbol: "028300",
+          strategyBucket: "short_term",
+          required: false
+        }
+      ],
+      disclaimer: "Paper-only fixture."
+    }),
+    snapshots: [
+      snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00"),
+      snapshot("hist_000660_202501", "000660", "2025-01-02T15:30:00+09:00")
+    ],
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
+    requiredStrategyBuckets: ["long_term", "swing", "hedge"],
+    minAvailableStrategyBucketSymbolCounts: {
+      long_term: 1,
+      swing: 2,
+      short_term: 1,
+      hedge: 1
+    }
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.deepEqual(report.availableStrategyBuckets, ["long_term", "swing"]);
+  assert.deepEqual(report.availableStrategyBucketSymbolCounts, {
+    long_term: 1,
+    swing: 1
+  });
+  assert.deepEqual(report.missingRequiredStrategyBuckets, ["hedge"]);
+  assert.deepEqual(report.insufficientAvailableStrategyBucketSymbolCounts, [
+    { strategyBucket: "hedge", minimum: 1, available: 0 },
+    { strategyBucket: "short_term", minimum: 1, available: 0 },
+    { strategyBucket: "swing", minimum: 2, available: 1 }
+  ]);
+  assert.ok(report.issues.includes("REQUIRED_STRATEGY_BUCKET_MISSING"));
+  assert.ok(
+    report.issues.includes(
+      "AVAILABLE_STRATEGY_BUCKET_SYMBOL_COUNT_BELOW_MINIMUM"
+    )
+  );
+});
+
 test("historical universe coverage reports partial monthly gaps", () => {
   const report = assessHistoricalUniverseCoverage({
     universe: universe(),

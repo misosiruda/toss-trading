@@ -2301,6 +2301,10 @@ test("batch replay aggregate report surfaces universe coverage warnings", () => 
   assert.equal(report.universeCoverage?.status, "insufficient");
   assert.equal(report.universeCoverage?.availableRequiredSymbolCount, 1);
   assert.equal(report.universeCoverage?.missingRequiredSymbolCount, 1);
+  assert.equal(report.universeCoverage?.missingRequiredStrategyBucketCount, 0);
+  assert.deepEqual(report.universeCoverage?.availableStrategyBucketSymbolCounts, {
+    long_term: 1
+  });
   assert.match(
     report.universeCoverage?.warnings.join("\n") ?? "",
     /universe selection bias warning/
@@ -2311,6 +2315,7 @@ test("batch replay aggregate report surfaces universe coverage warnings", () => 
   );
   assert.match(rendered, /## Universe Coverage/);
   assert.match(rendered, /source_universe_coverage_path/);
+  assert.match(rendered, /available_strategy_bucket_symbol_counts/);
 });
 
 test("batch replay aggregate report renders paper-only disclaimer", () => {
@@ -2599,22 +2604,28 @@ function universeCoverageReport(
     minAvailableSymbolCount: 2,
     minAvailableMarketSymbolCounts: { KR: 2 },
     minAvailableAssetTypeSymbolCounts: { STOCK: 2 },
+    minAvailableStrategyBucketSymbolCounts: { long_term: 1 },
     requireOptionalSymbols: false,
     requiredMarkets: ["KR"],
     requiredAssetTypes: ["STOCK"],
+    requiredStrategyBuckets: ["long_term"],
     availableMarkets: ["KR"],
     availableAssetTypes: ["STOCK"],
+    availableStrategyBuckets: ["long_term"],
     availableSymbolCount: 1,
     availableMarketSymbolCounts: { KR: 1 },
     availableAssetTypeSymbolCounts: { STOCK: 1 },
+    availableStrategyBucketSymbolCounts: { long_term: 1 },
     missingRequiredMarkets: [],
     missingRequiredAssetTypes: [],
+    missingRequiredStrategyBuckets: [],
     insufficientAvailableMarketSymbolCounts: [
       { market: "KR", minimum: 2, available: 1 }
     ],
     insufficientAvailableAssetTypeSymbolCounts: [
       { assetType: "STOCK", minimum: 2, available: 1 }
     ],
+    insufficientAvailableStrategyBucketSymbolCounts: [],
     corruptLineCount: 0,
     universeSymbolCount: 3,
     requiredSymbolCount: 2,

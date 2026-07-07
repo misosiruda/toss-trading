@@ -1686,7 +1686,11 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
     ].join("\n") + "\n",
     "utf8"
   );
-  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
+  writeFileSync(
+    universePath,
+    JSON.stringify(strategyBucketCoverageUniverse()),
+    "utf8"
+  );
 
   const result = spawnSync(
     process.execPath,
@@ -1702,6 +1706,10 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
       "2025-02-28T23:59:59.999+09:00",
       "--min-monthly-coverage-ratio",
       "1",
+      "--require-strategy-buckets",
+      "long_term,swing",
+      "--min-available-strategy-bucket-symbols",
+      "long_term:1,swing:1",
       "--output-path",
       outputPath,
       "--json"
@@ -1718,6 +1726,18 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
 
   assert.equal(stdoutReport["status"], "available");
   assert.equal(storedReport["universeId"], "fixture-expanded");
+  assert.deepEqual(storedReport["requiredStrategyBuckets"], [
+    "long_term",
+    "swing"
+  ]);
+  assert.deepEqual(storedReport["availableStrategyBuckets"], [
+    "long_term",
+    "swing"
+  ]);
+  assert.deepEqual(storedReport["availableStrategyBucketSymbolCounts"], {
+    long_term: 1,
+    swing: 1
+  });
   assert.deepEqual(storedReport["missingOptionalSymbols"], [
     { market: "KR", symbol: "035420" }
   ]);
@@ -1950,22 +1970,28 @@ function universeCoverageReport(): Record<string, unknown> {
     minAvailableSymbolCount: 2,
     minAvailableMarketSymbolCounts: { KR: 2 },
     minAvailableAssetTypeSymbolCounts: { STOCK: 2 },
+    minAvailableStrategyBucketSymbolCounts: { long_term: 1 },
     requireOptionalSymbols: false,
     requiredMarkets: ["KR"],
     requiredAssetTypes: ["STOCK"],
+    requiredStrategyBuckets: ["long_term"],
     availableMarkets: ["KR"],
     availableAssetTypes: ["STOCK"],
+    availableStrategyBuckets: ["long_term"],
     availableSymbolCount: 1,
     availableMarketSymbolCounts: { KR: 1 },
     availableAssetTypeSymbolCounts: { STOCK: 1 },
+    availableStrategyBucketSymbolCounts: { long_term: 1 },
     missingRequiredMarkets: [],
     missingRequiredAssetTypes: [],
+    missingRequiredStrategyBuckets: [],
     insufficientAvailableMarketSymbolCounts: [
       { market: "KR", minimum: 2, available: 1 }
     ],
     insufficientAvailableAssetTypeSymbolCounts: [
       { assetType: "STOCK", minimum: 2, available: 1 }
     ],
+    insufficientAvailableStrategyBucketSymbolCounts: [],
     corruptLineCount: 0,
     universeSymbolCount: 2,
     requiredSymbolCount: 2,
@@ -2159,6 +2185,35 @@ function universe() {
       { market: "KR", symbol: "005930", required: true },
       { market: "KR", symbol: "000660", required: true },
       { market: "KR", symbol: "035420", required: false }
+    ],
+    disclaimer: "Paper-only fixture."
+  };
+}
+
+function strategyBucketCoverageUniverse() {
+  return {
+    mode: "paper_only_historical_universe",
+    universeId: "fixture-expanded",
+    snapshotDate: "2025-01-01",
+    symbols: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        required: true
+      },
+      {
+        market: "KR",
+        symbol: "000660",
+        strategyBucket: "swing",
+        required: true
+      },
+      {
+        market: "KR",
+        symbol: "035420",
+        strategyBucket: "short_term",
+        required: false
+      }
     ],
     disclaimer: "Paper-only fixture."
   };

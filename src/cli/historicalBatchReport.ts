@@ -322,16 +322,24 @@ function isUniverseCoverageReport(
     isNonNegativeInteger(value["availableRequiredSymbolCount"]) &&
     isNonNegativeInteger(value["availableOptionalSymbolCount"]) &&
     isNonNegativeInteger(value["corruptLineCount"]) &&
+    isRecord(value["minAvailableStrategyBucketSymbolCounts"]) &&
+    Array.isArray(value["requiredStrategyBuckets"]) &&
+    Array.isArray(value["availableStrategyBuckets"]) &&
     Array.isArray(value["missingRequiredSymbols"]) &&
     Array.isArray(value["missingOptionalSymbols"]) &&
     Array.isArray(value["insufficientRequiredSymbols"]) &&
     Array.isArray(value["insufficientOptionalSymbols"]) &&
     Array.isArray(value["missingRequiredMarkets"]) &&
     Array.isArray(value["missingRequiredAssetTypes"]) &&
+    Array.isArray(value["missingRequiredStrategyBuckets"]) &&
     Array.isArray(value["insufficientAvailableMarketSymbolCounts"]) &&
     Array.isArray(value["insufficientAvailableAssetTypeSymbolCounts"]) &&
+    Array.isArray(
+      value["insufficientAvailableStrategyBucketSymbolCounts"]
+    ) &&
     isRecord(value["availableMarketSymbolCounts"]) &&
     isRecord(value["availableAssetTypeSymbolCounts"]) &&
+    isRecord(value["availableStrategyBucketSymbolCounts"]) &&
     Array.isArray(value["issues"]) &&
     value["issues"].every((issue) => typeof issue === "string")
   );

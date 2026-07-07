@@ -586,7 +586,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 국장, 미장, ETF를 함께 쓰는 replay dataset은 `docs/historical-universe.global-broad.json`과 Yahoo daily chart ingest CLI로 생성합니다.
 
-`global-broad` universe는 20개 core symbol을 `required=true`로 유지하고, 나머지 확장 symbol은 `required=false`로 둡니다. 대형 universe에서는 개별 optional symbol 실패보다 전체 실험 폭이 중요하므로 coverage 단계에서 전체/시장별/자산유형별 최소 확보 수를 함께 검사합니다.
+`global-broad` universe는 20개 core symbol을 `required=true`로 유지하고, 나머지 확장 symbol은 `required=false`로 둡니다. 대형 universe에서는 개별 optional symbol 실패보다 전체 실험 폭이 중요하므로 coverage 단계에서 전체/시장별/자산유형별/strategy bucket별 최소 확보 수를 함께 검사합니다.
 
 ```powershell
 npm run historical:yahoo:ingest -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --allow-partial --json
@@ -599,10 +599,10 @@ npm run historical:yahoo:ingest -- -- --data-dir data/replay-2023-01-2026-05-glo
 - snapshot에는 universe의 `assetType`, `assetClass`, `region`, `riskTags`, `strategyBucket`을 보존합니다.
 - 이 CLI는 historical replay input만 생성하며 replay 실행, Codex CLI 호출, broker API 호출, 주문 생성을 수행하지 않습니다.
 
-생성 후 coverage는 시장과 자산유형 존재 여부, 그리고 broad universe 최소 확보량을 함께 강제합니다.
+생성 후 coverage는 시장, 자산유형, strategy bucket 존재 여부와 broad universe 최소 확보량을 함께 강제합니다. 지정한 strategy bucket이 snapshot coverage에 없거나 bucket별 최소 확보 수를 만족하지 못하면 report는 `insufficient`로 fail-closed 됩니다.
 
 ```powershell
-npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --output-path data/replay-2023-01-2026-05-global-yahoo-daily/historical-universe-coverage.json
+npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --require-strategy-buckets 'long_term,swing,short_term,intraday,hedge' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --min-available-strategy-bucket-symbols 'long_term:1,swing:1,short_term:1,intraday:1,hedge:1' --output-path data/replay-2023-01-2026-05-global-yahoo-daily/historical-universe-coverage.json
 ```
 
 global dataset으로 batch replay를 실행할 때는 source data dir과 universe path를 함께 바꿉니다.
@@ -623,10 +623,10 @@ Yahoo snapshot을 제외하고 TossInvest read-only chart만으로 global broad 
 npm run historical:tossctl:ingest -- --enable --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --interval 1d --start-date 2024-01-01 --end-date 2026-06-17 --count 450 --allow-partial --json
 ```
 
-생성 후에는 같은 universe coverage CLI로 국장/미장/ETF 확보량을 검증합니다.
+생성 후에는 같은 universe coverage CLI로 국장/미장/ETF와 strategy bucket 확보량을 검증합니다.
 
 ```powershell
-npm run historical:universe:coverage -- -- --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --range-start 2024-01-01T00:00:00+09:00 --range-end 2026-06-17T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --output-path data/tossinvest-daily-global-broad-2024-01-01-2026-06-17/historical-universe-coverage.json
+npm run historical:universe:coverage -- -- --data-dir data/tossinvest-daily-global-broad-2024-01-01-2026-06-17 --universe-path docs/historical-universe.global-broad.json --range-start 2024-01-01T00:00:00+09:00 --range-end 2026-06-17T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --require-strategy-buckets 'long_term,swing,short_term,intraday,hedge' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --min-available-strategy-bucket-symbols 'long_term:1,swing:1,short_term:1,intraday:1,hedge:1' --output-path data/tossinvest-daily-global-broad-2024-01-01-2026-06-17/historical-universe-coverage.json
 ```
 
 #### Batch Replay에서 Codex CLI AI 사용
