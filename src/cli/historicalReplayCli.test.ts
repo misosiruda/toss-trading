@@ -1351,6 +1351,108 @@ test("historical batch report CLI rejects malformed selection trial nested field
   assert.match(result.stderr, /invalid selection trial record at line 1/);
 });
 
+test("historical batch replay CLI applies paper strategy preset defaults and overrides", () => {
+  const sourceDataDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-preset-source-")
+  );
+  const outputBaseDir = mkdtempSync(
+    join(tmpdir(), "historical-batch-preset-output-")
+  );
+  mkdirSync(sourceDataDir, { recursive: true });
+  writeFileSync(
+    join(sourceDataDir, "historical-market-snapshots.jsonl"),
+    [
+      JSON.stringify(snapshot("hist_005930_preset_001", "005930")),
+      JSON.stringify(
+        snapshot("hist_005930_preset_002", "005930", {
+          observedAt: "2025-02-10T09:00:00+09:00"
+        })
+      )
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--source-data-dir",
+      sourceDataDir,
+      "--output-dir",
+      outputBaseDir,
+      "--batch-id",
+      "batch-short-term-preset",
+      "--seed",
+      "seed-preset",
+      "--runs",
+      "1",
+      "--random-window-from",
+      "2025-02-01T00:00:00+09:00",
+      "--random-window-to",
+      "2025-02-28T23:59:59.999+09:00",
+      "--strategy-preset",
+      "short-term",
+      "--min-window-snapshots",
+      "1",
+      "--min-snapshots-per-symbol",
+      "1",
+      "--max-decision-calls",
+      "3",
+      "--paper-stop-loss-ratio",
+      "0.04"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    readFileSync(String(output["manifestPath"]), "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = readFileSync(String(output["runsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const trialRecords = readFileSync(String(output["selectionTrialsPath"]), "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const metadata = JSON.parse(
+    readFileSync(
+      join(
+        String(runRecords[0]?.["storageBaseDir"]),
+        "historical-replay-run-metadata.json"
+      ),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+  const configuration = metadata["configuration"] as Record<string, unknown>;
+  const clock = configuration["clock"] as Record<string, unknown>;
+  const samplingPolicy = configuration["samplingPolicy"] as Record<
+    string,
+    unknown
+  >;
+  const paperExitPolicy = configuration["paperExitPolicy"] as Record<
+    string,
+    unknown
+  >;
+  const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
+
+  assert.equal(output["strategyPreset"], "short_term");
+  assert.equal(output["riskProfile"], "aggressive_paper");
+  assert.equal(manifest["strategyPreset"], "short_term");
+  assert.equal(manifest["riskProfile"], "aggressive_paper");
+  assert.equal(configuration["strategyPreset"], "short_term");
+  assert.equal(configuration["riskProfile"], "aggressive_paper");
+  assert.equal(clock["stepSeconds"], 86_400);
+  assert.equal(samplingPolicy["decisionFrequency"], "once_per_day");
+  assert.equal(samplingPolicy["maxDecisionCalls"], 3);
+  assert.equal(paperExitPolicy["takeProfitMode"], "full_exit");
+  assert.equal(paperExitPolicy["takeProfitRatio"], 0.06);
+  assert.equal(paperExitPolicy["stopLossRatio"], 0.04);
+  assert.equal(trialConfig["strategyPreset"], "short_term");
+});
+
 test("historical universe coverage CLI writes a JSON coverage report", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "historical-universe-source-"));
   const outputPath = join(dataDir, "historical-universe-coverage.json");

@@ -140,6 +140,7 @@ export const historicalReplayRunConfigurationSchema = z
         allowedActions: z.array(virtualActionSchema).min(1)
       })
       .strict(),
+    strategyPreset: z.string().trim().min(1).nullable(),
     riskProfile: z.enum(PAPER_RISK_PROFILE_NAMES).nullable(),
     riskPolicy: z
       .object({

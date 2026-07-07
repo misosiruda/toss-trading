@@ -419,6 +419,8 @@ function isSelectionTrialConfig(value: unknown): boolean {
     isSha256Hash(value["allocationPolicyHash"]) &&
     isSha256Hash(value["marketRegimeAllocationPolicyHash"]) &&
     isSha256Hash(value["exitPolicyHash"]) &&
+    (value["strategyPreset"] === undefined ||
+      isNullableString(value["strategyPreset"])) &&
     isNullableString(value["riskProfile"]) &&
     value["selectionMetric"] === "total_return_ratio"
   );

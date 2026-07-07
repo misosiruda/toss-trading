@@ -422,6 +422,42 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 
 이 sampling은 분석용 window selection metadata입니다. trading signal, risk approval, order intent, strategy 자동 조정으로 사용하지 않습니다.
 
+#### Strategy Replay Preset
+
+Batch historical replay는 paper-only 전략 후보를 반복 실험하기 위한 `--strategy-preset`을 제공합니다.
+
+이 preset은 실거래 전략 추천, 종목 추천, 수익률 보장, live `TradingSignal` 또는 `OrderIntent` 생성이 아닙니다. 목적은 장기/스윙/단기/regime cash 후보가 각자 다른 window, sampling cadence, decision call budget, risk profile, exit policy로 재현 가능하게 replay되도록 하는 것입니다.
+
+```powershell
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-short-term-preset-smoke --seed batch-short-term-preset-smoke --runs 4 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset short-term --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed
+```
+
+지원 preset:
+
+| Preset | Alias | `riskProfile` | `windowMonths` | `stepSeconds` | `decisionFrequency` | `maxDecisionCalls` | `maxCodexCallsPerRun` | 주요 추가 정책 |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: | --- |
+| `long_term` | `long-term` | `balanced` | 6 | 604800 | `once_per_week` | 26 | 26 | 넓은 take-profit/stop-loss, partial trailing |
+| `swing` | 없음 | `aggressive_paper` | 2 | 86400 | `once_per_day` | 12 | 12 | swing용 take-profit/stop-loss, partial trailing |
+| `short_term` | `short-term` | `aggressive_paper` | 1 | 86400 | `once_per_day` | 22 | 22 | 더 짧은 take-profit/stop-loss, position weight cap |
+| `regime_cash` | `regime-cash` | `balanced` | 3 | 86400 | `once_per_week` | 13 | 13 | market regime allocation, dynamic cash reserve |
+
+Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을 명시하면 명시 옵션이 우선합니다.
+
+- `--risk-profile`
+- `--window-months`
+- `--step-seconds`
+- `--decision-frequency`
+- `--max-decision-calls`
+- `--max-codex-calls-per-run`
+- `--max-snapshot-age-seconds`
+- `--min-window-snapshots`
+- `--min-snapshots-per-symbol`
+- `--paper-*` exit policy 옵션
+- `--market-regime-allocation`
+- `--dynamic-cash-reserve`
+
+Preset 이름은 `batch-replay-manifest.json`, run metadata의 `configuration.strategyPreset`, selection trial config에 기록됩니다. 비교 시에는 같은 preset이라도 명시 override가 들어간 run을 별도 후보로 취급해야 합니다.
+
 #### Paper Risk Profile
 
 Historical replay와 batch replay는 paper-only 실험용 risk profile을 선택할 수 있습니다.
