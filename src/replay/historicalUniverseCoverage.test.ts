@@ -39,6 +39,7 @@ test("historical universe coverage passes required core while reporting optional
   assert.equal(skHynix?.assetClass, "equity");
   assert.equal(skHynix?.region, "KR");
   assert.deepEqual(skHynix?.riskTags, ["sector_concentrated"]);
+  assert.equal(skHynix?.strategyBucket, "swing");
   assert.equal(skHynix?.sector, "Semiconductors");
   assert.deepEqual(report.issues, []);
   assert.deepEqual(report.expectedMonths, ["2025-01", "2025-02"]);
@@ -306,6 +307,24 @@ test("historical universe manifest parser rejects malformed lifecycle snapshot m
       }),
     /Invalid option/
   );
+
+  assert.throws(
+    () =>
+      parseHistoricalUniverseManifest({
+        mode: "paper_only_historical_universe",
+        universeId: "invalid-strategy-bucket-fixture",
+        snapshotDate: "2025-03-31",
+        symbols: [
+          {
+            market: "KR",
+            symbol: "005930",
+            strategyBucket: "day_trade"
+          }
+        ],
+        disclaimer: "Paper-only fixture."
+      }),
+    /Invalid option/
+  );
 });
 
 test("requiredSymbolsFromHistoricalUniverse can include optional symbols", () => {
@@ -339,6 +358,7 @@ function universe(): HistoricalUniverseManifest {
         assetClass: "equity",
         region: "KR",
         riskTags: ["sector_concentrated"],
+        strategyBucket: "swing",
         sector: "Semiconductors",
         required: true
       },

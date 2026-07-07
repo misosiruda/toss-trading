@@ -458,7 +458,7 @@ Preset이 채우는 값은 CLI 기본값입니다. 사용자가 같은 항목을
 - `--market-regime-allocation`
 - `--dynamic-cash-reserve`
 
-`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy` 기본값을 추가합니다. 기본 historical ingestion data는 `strategyBucket` metadata가 없을 수 있으므로 preset 단계에서 bucket exposure limit은 켜지 않습니다. `hedgePolicy`는 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
+`hedge` preset은 selected risk profile 위에 paper-only `riskPolicy.hedgePolicy` 기본값을 추가합니다. universe manifest에 `strategyBucket`이 있으면 historical ingestion과 replay research manifest가 이 metadata를 보존하지만, 기존 historical ingestion data에는 `strategyBucket` metadata가 없을 수 있으므로 preset 단계에서 bucket exposure limit은 켜지 않습니다. `hedgePolicy`는 hedge-like candidate가 risk를 낮추는지 확인하는 fail-closed gate 입력이며 live order, broker mutation, 자동 hedge 주문을 만들지 않습니다.
 
 Preset 이름은 `batch-replay-manifest.json`, run metadata의 `configuration.strategyPreset`, selection trial config에 기록됩니다. selection trial config에는 `stepSeconds`, `everyNSteps`, `candidateChangedOnly`, `decisionFrequency`, `maxDecisionCalls`, `timezoneOffsetMinutes`로 구성된 `replayCadence`도 함께 기록됩니다. aggregate report의 validation-split 후보 key는 preset과 replay cadence를 포함하므로 같은 preset이라도 명시 cadence override가 들어간 run은 별도 후보로 취급합니다.
 
@@ -596,7 +596,7 @@ npm run historical:yahoo:ingest -- -- --data-dir data/replay-2023-01-2026-05-glo
 
 - Yahoo chart daily OHLCV를 `historical-market-snapshots.jsonl`로 저장합니다.
 - `market=US` 또는 Yahoo currency가 `USD`인 가격은 같은 날짜 이전의 `KRW=X` daily close로 KRW 환산합니다.
-- snapshot에는 universe의 `assetType`, `assetClass`, `region`, `riskTags`를 보존합니다.
+- snapshot에는 universe의 `assetType`, `assetClass`, `region`, `riskTags`, `strategyBucket`을 보존합니다.
 - 이 CLI는 historical replay input만 생성하며 replay 실행, Codex CLI 호출, broker API 호출, 주문 생성을 수행하지 않습니다.
 
 생성 후 coverage는 시장과 자산유형 존재 여부, 그리고 broad universe 최소 확보량을 함께 강제합니다.

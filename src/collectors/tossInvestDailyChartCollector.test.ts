@@ -15,6 +15,7 @@ test("TossInvest daily chart collector paginates day:1 candles by from cursor", 
         assetType: "STOCK",
         assetClass: "equity",
         region: "KR",
+        strategyBucket: "swing",
         sector: "Technology"
       }
     ],
@@ -70,6 +71,7 @@ test("TossInvest daily chart collector paginates day:1 candles by from cursor", 
   assert.equal(result.snapshots[0]?.observedAt, "2024-01-01T15:00:00.000Z");
   assert.equal(result.snapshots[0]?.interval, "1d");
   assert.equal(result.snapshots[0]?.lastPriceKrw, 70_000);
+  assert.equal(result.snapshots[0]?.strategyBucket, "swing");
   assert.equal(result.snapshots[0]?.sector, "Technology");
   assert.equal(result.snapshots[1]?.observedAt, "2026-06-16T15:00:00.000Z");
   assert.equal(result.snapshots[1]?.lastPriceKrw, 79_000);
