@@ -17,6 +17,7 @@
 - `meta_label_evaluation.v1` schema와 `buildMetaLabelEvaluationReport`는 meta-label candidate outcome 분포와 actionable accuracy를 집계한다.
 - `historicalBatchReport`는 batch directory의 standard `triple-barrier-label-report.json` artifact가 있으면 aggregate report에 label distribution summary를 포함한다.
 - `historicalBatchReport`는 batch directory의 standard `meta-label-evaluation-report.json` artifact가 있으면 aggregate report에 포함하고, Next.js Validation Lab은 그 summary를 read-only paper-only research evidence로 표시한다.
+- `runHistoricalBatchReplay`는 같은 `batchId`로 rerun할 때 standard label/evaluation artifact를 먼저 제거해 `historicalBatchReport`의 sibling auto-load가 이전 batch의 derived evidence를 붙이지 않게 한다.
 
 ## Contract 목표
 

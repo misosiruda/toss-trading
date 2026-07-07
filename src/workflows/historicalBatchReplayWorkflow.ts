@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -78,7 +78,8 @@ import {
 } from "../replay/validationProtocol.js";
 import {
   createBatchReplayArtifactPaths,
-  safeArtifactPathPart
+  safeArtifactPathPart,
+  type BatchReplayArtifactPaths
 } from "../storage/artifactPaths.js";
 
 export type BatchReplayRunStatus =
@@ -365,6 +366,7 @@ export async function runHistoricalBatchReplay(
   const records: BatchReplayRunRecord[] = [];
 
   await mkdir(paths.runsDir, { recursive: true });
+  await removeStaleBatchReplayDerivedArtifacts(paths);
   await writeFile(paths.runsPath, "", "utf8");
   await writeFile(paths.selectionTrialsPath, "", "utf8");
   await writeManifest(paths.manifestPath, {
@@ -733,6 +735,17 @@ export async function runHistoricalBatchReplay(
     failedCount,
     records
   };
+}
+
+async function removeStaleBatchReplayDerivedArtifacts(
+  paths: BatchReplayArtifactPaths
+): Promise<void> {
+  // These reports are keyed only by batch directory, so reruns must clear them
+  // before report CLI sibling auto-load can attach previous-run evidence.
+  await Promise.all([
+    rm(paths.tripleBarrierLabelReportPath, { force: true }),
+    rm(paths.metaLabelEvaluationReportPath, { force: true })
+  ]);
 }
 
 interface SelectedBatchReplayWindow {
