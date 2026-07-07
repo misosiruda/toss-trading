@@ -162,6 +162,38 @@ test("triple barrier label artifact schema rejects summary drift", () => {
   }
 });
 
+test("triple barrier label artifact schema rejects top-level warning drift", () => {
+  const artifact = buildTripleBarrierLabelArtifact({
+    generatedAt: "2026-01-10T00:00:00.000Z",
+    config: config(),
+    events: [event("sample_warning_drift", "WRN", "2026-01-01T00:00:00.000Z")],
+    priceSnapshots: [
+      snapshot("WRN", "2026-01-01T00:00:00.000Z", 100),
+      snapshot("WRN", "2026-01-02T00:00:00.000Z", 102)
+    ]
+  });
+
+  assert.equal(artifact.labels[0]?.warnings.length, 1);
+  assert.equal(artifact.warnings.length, 1);
+
+  const parseResult = tripleBarrierLabelArtifactSchema.safeParse({
+    ...artifact,
+    summary: {
+      ...artifact.summary,
+      warningCount: 0
+    },
+    warnings: []
+  });
+
+  assert.equal(parseResult.success, false);
+  if (!parseResult.success) {
+    assert.match(
+      JSON.stringify(parseResult.error.issues),
+      /warnings must match label warnings/
+    );
+  }
+});
+
 test("triple barrier label fails closed when horizon coverage ends early", () => {
   const artifact = buildTripleBarrierLabelArtifact({
     generatedAt: "2026-01-10T00:00:00.000Z",

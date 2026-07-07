@@ -219,7 +219,15 @@ export const tripleBarrierLabelArtifactSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    const expectedSummary = summarizeLabels(value.labels, value.warnings);
+    const expectedWarnings = value.labels.flatMap((label) => label.warnings);
+    if (!tripleBarrierLabelWarningsEqual(value.warnings, expectedWarnings)) {
+      context.addIssue({
+        code: "custom",
+        path: ["warnings"],
+        message: "triple-barrier label warnings must match label warnings"
+      });
+    }
+    const expectedSummary = summarizeLabels(value.labels, expectedWarnings);
     if (!tripleBarrierLabelSummariesEqual(value.summary, expectedSummary)) {
       context.addIssue({
         code: "custom",
@@ -1169,6 +1177,31 @@ function tripleBarrierLabelSummariesEqual(
     actual.stopLossCount === expected.stopLossCount &&
     actual.timeBarrierCount === expected.timeBarrierCount &&
     actual.warningCount === expected.warningCount
+  );
+}
+
+function tripleBarrierLabelWarningsEqual(
+  actual: readonly TripleBarrierLabelWarning[],
+  expected: readonly TripleBarrierLabelWarning[]
+): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((warning, index) =>
+      tripleBarrierLabelWarningEqual(warning, expected[index]!)
+    )
+  );
+}
+
+function tripleBarrierLabelWarningEqual(
+  actual: TripleBarrierLabelWarning,
+  expected: TripleBarrierLabelWarning
+): boolean {
+  return (
+    actual.code === expected.code &&
+    actual.severity === expected.severity &&
+    actual.message === expected.message &&
+    actual.labelId === expected.labelId &&
+    actual.sampleId === expected.sampleId
   );
 }
 
