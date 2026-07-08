@@ -11,7 +11,12 @@ import {
   calculateSharpeValidationReport,
   type SharpeValidationReport
 } from "../analytics/sharpeValidation.js";
-import type { VirtualDecision, VirtualPortfolio, VirtualTrade } from "../domain/schemas.js";
+import type {
+  StrategyBucket,
+  VirtualDecision,
+  VirtualPortfolio,
+  VirtualTrade
+} from "../domain/schemas.js";
 import type {
   HistoricalPortfolioTimelineItem,
   HistoricalReplayResult
@@ -130,6 +135,25 @@ export interface HistoricalReplayCostSummary {
   notModeledLiquidityCount: number;
   averageParticipationRate: number | null;
   maxParticipationRate: number | null;
+  byStrategyBucket: HistoricalReplayStrategyBucketCostSummary[];
+}
+
+export interface HistoricalReplayStrategyBucketCostSummary {
+  strategyBucket: StrategyBucket | "UNKNOWN";
+  tradeCount: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  averageCostPerTradeKrw: number | null;
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageParticipationRate: number | null;
+  maxParticipationRate: number | null;
+  costModelVersions: string[];
 }
 
 export interface HistoricalReplayRiskSummary {
@@ -487,15 +511,7 @@ function summarizeCosts(trades: VirtualTrade[]): HistoricalReplayCostSummary {
   const participationRates = trades
     .map((trade) => trade.participationRate)
     .filter((value): value is number => typeof value === "number");
-  const totalCostKrw = trades.reduce((sum, trade) => {
-    const componentTotal =
-      (trade.feeKrw ?? 0) +
-      (trade.taxKrw ?? 0) +
-      (trade.slippageKrw ?? 0) +
-      (trade.spreadCostKrw ?? 0) +
-      (trade.impactCostKrw ?? 0);
-    return sum + (componentTotal > 0 ? componentTotal : trade.totalCostKrw ?? 0);
-  }, 0);
+  const totalCostKrw = sumTotalTradeCost(trades);
 
   return {
     feeKrw,
@@ -527,8 +543,95 @@ function summarizeCosts(trades: VirtualTrade[]): HistoricalReplayCostSummary {
           .map((trade) => trade.costModelVersion)
           .filter((value): value is string => typeof value === "string")
       )
-    ).sort()
+    ).sort(),
+    byStrategyBucket: summarizeCostsByStrategyBucket(trades)
   };
+}
+
+function summarizeCostsByStrategyBucket(
+  trades: VirtualTrade[]
+): HistoricalReplayStrategyBucketCostSummary[] {
+  const groups = new Map<StrategyBucket | "UNKNOWN", VirtualTrade[]>();
+  for (const trade of trades) {
+    const key = trade.strategyBucket ?? "UNKNOWN";
+    const bucket = groups.get(key) ?? [];
+    bucket.push(trade);
+    groups.set(key, bucket);
+  }
+
+  return Array.from(groups.entries())
+    .map(([strategyBucket, bucketTrades]) => {
+      const totalCostKrw = sumTotalTradeCost(bucketTrades);
+      const participationRates = bucketTrades
+        .map((trade) => trade.participationRate)
+        .filter((value): value is number => typeof value === "number");
+      return {
+        strategyBucket,
+        tradeCount: bucketTrades.length,
+        feeKrw: sumTradeField(bucketTrades, "feeKrw"),
+        taxKrw: sumTradeField(bucketTrades, "taxKrw"),
+        slippageKrw: sumTradeField(bucketTrades, "slippageKrw"),
+        spreadCostKrw: sumTradeField(bucketTrades, "spreadCostKrw"),
+        impactCostKrw: sumTradeField(bucketTrades, "impactCostKrw"),
+        totalCostKrw,
+        averageCostPerTradeKrw:
+          bucketTrades.length === 0
+            ? null
+            : Math.round(totalCostKrw / bucketTrades.length),
+        filledCount: bucketTrades.filter((trade) => trade.fillStatus === "filled")
+          .length,
+        partialFillCount: bucketTrades.filter(
+          (trade) => trade.fillStatus === "partial"
+        ).length,
+        notModeledLiquidityCount: bucketTrades.filter(
+          (trade) => trade.liquidityStatus === "not_modeled"
+        ).length,
+        averageParticipationRate:
+          participationRates.length === 0
+            ? null
+            : Number(
+                (
+                  participationRates.reduce((sum, value) => sum + value, 0) /
+                  participationRates.length
+                ).toFixed(6)
+              ),
+        maxParticipationRate:
+          participationRates.length === 0 ? null : Math.max(...participationRates),
+        costModelVersions: Array.from(
+          new Set(
+            bucketTrades
+              .map((trade) => trade.costModelVersion)
+              .filter((value): value is string => typeof value === "string")
+          )
+        ).sort()
+      };
+    })
+    .sort(compareStrategyBucketCostSummary);
+}
+
+function compareStrategyBucketCostSummary(
+  left: HistoricalReplayStrategyBucketCostSummary,
+  right: HistoricalReplayStrategyBucketCostSummary
+): number {
+  return strategyBucketSortKey(left.strategyBucket).localeCompare(
+    strategyBucketSortKey(right.strategyBucket)
+  );
+}
+
+function strategyBucketSortKey(value: StrategyBucket | "UNKNOWN"): string {
+  return value === "UNKNOWN" ? "\uffff" : value;
+}
+
+function sumTotalTradeCost(trades: VirtualTrade[]): number {
+  return trades.reduce((sum, trade) => {
+    const componentTotal =
+      (trade.feeKrw ?? 0) +
+      (trade.taxKrw ?? 0) +
+      (trade.slippageKrw ?? 0) +
+      (trade.spreadCostKrw ?? 0) +
+      (trade.impactCostKrw ?? 0);
+    return sum + (componentTotal > 0 ? componentTotal : trade.totalCostKrw ?? 0);
+  }, 0);
 }
 
 function sumTradeField(

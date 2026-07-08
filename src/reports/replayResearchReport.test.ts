@@ -59,6 +59,32 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.deepEqual(report.costBreakdown.costModelVersions, [
     "paper_cost_model.v4"
   ]);
+  assert.deepEqual(report.costBreakdown.byStrategyBucket, [
+    {
+      strategyBucket: "short_term",
+      sampleCount: 2,
+      tradeCount: 3,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      totalCostKrw: 30,
+      averageCostPerRunKrw: 15,
+      averageCostPerTradeKrw: 10,
+      filledCount: 2,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.15,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_0", "run_1"]
+    }
+  ]);
+  assert.equal(report.costBreakdown.missingStrategyBucketBreakdownCount, 1);
+  assert.deepEqual(report.costBreakdown.missingStrategyBucketBreakdownRunIds, [
+    "run_legacy_bucketless"
+  ]);
   assert.equal(report.exposureBreakdown.averageExposureRatio, 0.42);
   assert.equal(report.regimeBreakdown.length, 2);
   assert.equal(report.bucketBreakdown.validationSplitRoles.length, 2);
@@ -177,6 +203,51 @@ test("replay research report keeps legacy aggregate cost breakdown unavailable",
     report.warnings.join("\n"),
     /cost breakdown unavailable/
   );
+});
+
+test("replay research report defaults legacy missing bucket metadata", () => {
+  const aggregate = aggregateReport();
+  delete (
+    aggregate.overall.costSummary as unknown as {
+      missingStrategyBucketBreakdownCount?: number;
+    }
+  ).missingStrategyBucketBreakdownCount;
+  delete (
+    aggregate.overall.costSummary as unknown as {
+      missingStrategyBucketBreakdownRunIds?: string[];
+    }
+  ).missingStrategyBucketBreakdownRunIds;
+
+  const report = buildReplayResearchReport({
+    aggregateReport: aggregate,
+    generatedAt: new Date("2026-06-24T09:00:00+09:00")
+  });
+
+  assert.equal(report.costBreakdown.status, "available");
+  assert.deepEqual(report.costBreakdown.byStrategyBucket, [
+    {
+      strategyBucket: "short_term",
+      sampleCount: 2,
+      tradeCount: 3,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      totalCostKrw: 30,
+      averageCostPerRunKrw: 15,
+      averageCostPerTradeKrw: 10,
+      filledCount: 2,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.15,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_0", "run_1"]
+    }
+  ]);
+  assert.equal(report.costBreakdown.missingStrategyBucketBreakdownCount, 0);
+  assert.deepEqual(report.costBreakdown.missingStrategyBucketBreakdownRunIds, []);
 });
 
 test("replay research report keeps legacy universe bucket counts nullable", () => {
@@ -511,6 +582,30 @@ function costSummary(): BatchReplayGroupSummary["costSummary"] {
     averageRunParticipationRate: 0.15,
     maxParticipationRate: 0.25,
     costModelVersions: ["paper_cost_model.v4"],
+    byStrategyBucket: [
+      {
+        strategyBucket: "short_term",
+        sampleCount: 2,
+        tradeCount: 3,
+        feeKrw: 11,
+        taxKrw: 2,
+        slippageKrw: 4,
+        spreadCostKrw: 6,
+        impactCostKrw: 7,
+        totalCostKrw: 30,
+        averageCostPerRunKrw: 15,
+        averageCostPerTradeKrw: 10,
+        filledCount: 2,
+        partialFillCount: 1,
+        notModeledLiquidityCount: 0,
+        averageRunParticipationRate: 0.15,
+        maxParticipationRate: 0.25,
+        costModelVersions: ["paper_cost_model.v4"],
+        runIds: ["run_0", "run_1"]
+      }
+    ],
+    missingStrategyBucketBreakdownCount: 1,
+    missingStrategyBucketBreakdownRunIds: ["run_legacy_bucketless"],
     runIds: ["run_0", "run_1"]
   };
 }
@@ -533,6 +628,9 @@ function emptyCostSummary(): BatchReplayGroupSummary["costSummary"] {
     averageRunParticipationRate: null,
     maxParticipationRate: null,
     costModelVersions: [],
+    byStrategyBucket: [],
+    missingStrategyBucketBreakdownCount: 0,
+    missingStrategyBucketBreakdownRunIds: [],
     runIds: []
   };
 }
