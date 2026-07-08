@@ -59,6 +59,28 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.deepEqual(report.costBreakdown.costModelVersions, [
     "paper_cost_model.v4"
   ]);
+  assert.deepEqual(report.costBreakdown.byStrategyBucket, [
+    {
+      strategyBucket: "short_term",
+      sampleCount: 2,
+      tradeCount: 3,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      totalCostKrw: 30,
+      averageCostPerRunKrw: 15,
+      averageCostPerTradeKrw: 10,
+      filledCount: 2,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.15,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_0", "run_1"]
+    }
+  ]);
   assert.equal(report.exposureBreakdown.averageExposureRatio, 0.42);
   assert.equal(report.regimeBreakdown.length, 2);
   assert.equal(report.bucketBreakdown.validationSplitRoles.length, 2);
@@ -511,6 +533,28 @@ function costSummary(): BatchReplayGroupSummary["costSummary"] {
     averageRunParticipationRate: 0.15,
     maxParticipationRate: 0.25,
     costModelVersions: ["paper_cost_model.v4"],
+    byStrategyBucket: [
+      {
+        strategyBucket: "short_term",
+        sampleCount: 2,
+        tradeCount: 3,
+        feeKrw: 11,
+        taxKrw: 2,
+        slippageKrw: 4,
+        spreadCostKrw: 6,
+        impactCostKrw: 7,
+        totalCostKrw: 30,
+        averageCostPerRunKrw: 15,
+        averageCostPerTradeKrw: 10,
+        filledCount: 2,
+        partialFillCount: 1,
+        notModeledLiquidityCount: 0,
+        averageRunParticipationRate: 0.15,
+        maxParticipationRate: 0.25,
+        costModelVersions: ["paper_cost_model.v4"],
+        runIds: ["run_0", "run_1"]
+      }
+    ],
     runIds: ["run_0", "run_1"]
   };
 }
@@ -533,6 +577,7 @@ function emptyCostSummary(): BatchReplayGroupSummary["costSummary"] {
     averageRunParticipationRate: null,
     maxParticipationRate: null,
     costModelVersions: [],
+    byStrategyBucket: [],
     runIds: []
   };
 }

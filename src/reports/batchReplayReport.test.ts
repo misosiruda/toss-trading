@@ -207,7 +207,26 @@ test("batch replay aggregate report summarizes execution cost components", () =>
           notModeledLiquidityCount: 0,
           averageParticipationRate: 0.1,
           maxParticipationRate: 0.1,
-          costModelVersions: ["paper_cost_model.v4"]
+          costModelVersions: ["paper_cost_model.v4"],
+          byStrategyBucket: [
+            {
+              strategyBucket: "short_term",
+              tradeCount: 1,
+              feeKrw: 10,
+              taxKrw: 2,
+              slippageKrw: 3,
+              spreadCostKrw: 4,
+              impactCostKrw: 5,
+              totalCostKrw: 24,
+              averageCostPerTradeKrw: 24,
+              filledCount: 1,
+              partialFillCount: 0,
+              notModeledLiquidityCount: 0,
+              averageParticipationRate: 0.1,
+              maxParticipationRate: 0.1,
+              costModelVersions: ["paper_cost_model.v4"]
+            }
+          ]
         }
       ),
       withCostSummary(
@@ -224,7 +243,26 @@ test("batch replay aggregate report summarizes execution cost components", () =>
           notModeledLiquidityCount: 0,
           averageParticipationRate: 0.2,
           maxParticipationRate: 0.25,
-          costModelVersions: ["paper_cost_model.v4"]
+          costModelVersions: ["paper_cost_model.v4"],
+          byStrategyBucket: [
+            {
+              strategyBucket: "intraday",
+              tradeCount: 1,
+              feeKrw: 1,
+              taxKrw: 0,
+              slippageKrw: 1,
+              spreadCostKrw: 2,
+              impactCostKrw: 2,
+              totalCostKrw: 6,
+              averageCostPerTradeKrw: 6,
+              filledCount: 1,
+              partialFillCount: 1,
+              notModeledLiquidityCount: 0,
+              averageParticipationRate: 0.2,
+              maxParticipationRate: 0.25,
+              costModelVersions: ["paper_cost_model.v4"]
+            }
+          ]
         }
       ),
       withoutCostSummary(
@@ -270,6 +308,48 @@ test("batch replay aggregate report summarizes execution cost components", () =>
   assert.deepEqual(report.overall.costSummary.runIds, [
     "run_cost_0",
     "run_cost_1"
+  ]);
+  assert.deepEqual(report.overall.costSummary.byStrategyBucket, [
+    {
+      strategyBucket: "short_term",
+      sampleCount: 1,
+      tradeCount: 1,
+      feeKrw: 10,
+      taxKrw: 2,
+      slippageKrw: 3,
+      spreadCostKrw: 4,
+      impactCostKrw: 5,
+      totalCostKrw: 24,
+      averageCostPerRunKrw: 24,
+      averageCostPerTradeKrw: 24,
+      filledCount: 1,
+      partialFillCount: 0,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.1,
+      maxParticipationRate: 0.1,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_cost_0"]
+    },
+    {
+      strategyBucket: "intraday",
+      sampleCount: 1,
+      tradeCount: 1,
+      feeKrw: 1,
+      taxKrw: 0,
+      slippageKrw: 1,
+      spreadCostKrw: 2,
+      impactCostKrw: 2,
+      totalCostKrw: 6,
+      averageCostPerRunKrw: 6,
+      averageCostPerTradeKrw: 6,
+      filledCount: 1,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.2,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_cost_1"]
+    }
   ]);
   assert.equal(report.overall.totalTradeCount, 3);
   assert.equal(report.byRegime.bull?.costSummary.totalCostKrw, 30);
@@ -2514,6 +2594,7 @@ function costSummary(
     notModeledLiquidityCount: 0,
     averageParticipationRate: null,
     maxParticipationRate: null,
+    byStrategyBucket: [],
     ...overrides
   };
 }

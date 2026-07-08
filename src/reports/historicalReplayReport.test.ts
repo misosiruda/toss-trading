@@ -202,13 +202,16 @@ test("historical replay report summarizes execution cost components", () => {
     costModelVersion: "paper_cost_model.v4",
     fillStatus: "partial",
     liquidityStatus: "partial",
-    participationRate: 0.1
+    participationRate: 0.1,
+    strategyBucket: "short_term"
   };
   result.trades[1] = {
     ...result.trades[1]!,
     totalCostKrw: 7,
+    costModelVersion: "paper_cost_model.v4",
     fillStatus: "filled",
-    liquidityStatus: "not_modeled"
+    liquidityStatus: "not_modeled",
+    strategyBucket: "intraday"
   };
   delete result.trades[1]!.participationRate;
 
@@ -227,6 +230,42 @@ test("historical replay report summarizes execution cost components", () => {
   assert.equal(report.costSummary.maxParticipationRate, 0.1);
   assert.deepEqual(report.costSummary.costModelVersions, [
     "paper_cost_model.v4"
+  ]);
+  assert.deepEqual(report.costSummary.byStrategyBucket, [
+    {
+      strategyBucket: "intraday",
+      tradeCount: 1,
+      feeKrw: 0,
+      taxKrw: 0,
+      slippageKrw: 0,
+      spreadCostKrw: 0,
+      impactCostKrw: 0,
+      totalCostKrw: 7,
+      averageCostPerTradeKrw: 7,
+      filledCount: 1,
+      partialFillCount: 0,
+      notModeledLiquidityCount: 1,
+      averageParticipationRate: null,
+      maxParticipationRate: null,
+      costModelVersions: ["paper_cost_model.v4"]
+    },
+    {
+      strategyBucket: "short_term",
+      tradeCount: 1,
+      feeKrw: 10,
+      taxKrw: 2,
+      slippageKrw: 3,
+      spreadCostKrw: 4,
+      impactCostKrw: 5,
+      totalCostKrw: 24,
+      averageCostPerTradeKrw: 24,
+      filledCount: 0,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageParticipationRate: 0.1,
+      maxParticipationRate: 0.1,
+      costModelVersions: ["paper_cost_model.v4"]
+    }
   ]);
   assert.equal(report.advancedPerformance.costDragRatio! > 0, true);
   assert.equal(

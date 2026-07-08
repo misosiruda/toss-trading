@@ -150,6 +150,28 @@ export interface BatchReplayCostBreakdownSummary {
   averageRunParticipationRate: number | null;
   maxParticipationRate: number | null;
   costModelVersions: string[];
+  byStrategyBucket: BatchReplayStrategyBucketCostBreakdownSummary[];
+  runIds: string[];
+}
+
+export interface BatchReplayStrategyBucketCostBreakdownSummary {
+  strategyBucket: StrategyBucket | "UNKNOWN";
+  sampleCount: number;
+  tradeCount: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  averageCostPerRunKrw: number | null;
+  averageCostPerTradeKrw: number | null;
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageRunParticipationRate: number | null;
+  maxParticipationRate: number | null;
+  costModelVersions: string[];
   runIds: string[];
 }
 
@@ -175,6 +197,19 @@ export interface BatchReplaySelectionTrialBucket {
   count: number;
   runIds: string[];
 }
+
+type BatchReplayRunCostSummary = NonNullable<
+  NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+>;
+
+type BatchReplayRunStrategyBucketCostSummary =
+  BatchReplayRunCostSummary["byStrategyBucket"][number];
+
+type BatchReplayRunCostRecord = BatchReplayRunRecord & {
+  summary: NonNullable<BatchReplayRunRecord["summary"]> & {
+    costSummary: BatchReplayRunCostSummary;
+  };
+};
 
 export interface BatchReplayOverfittingDiagnostics {
   validationProtocol: "sampled_cpcv_pbo_like";
@@ -1390,15 +1425,8 @@ function summarizeCostBreakdown(
   records: BatchReplayRunRecord[]
 ): BatchReplayCostBreakdownSummary {
   const costRecords = records.filter(
-    (
-      record
-    ): record is BatchReplayRunRecord & {
-      summary: NonNullable<BatchReplayRunRecord["summary"]> & {
-        costSummary: NonNullable<
-          NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
-        >;
-      };
-    } => isCompletedRunRecord(record) && record.summary?.costSummary !== undefined
+    (record): record is BatchReplayRunCostRecord =>
+      isCompletedRunRecord(record) && record.summary?.costSummary !== undefined
   );
   const costSummaries = costRecords.map((record) => record.summary.costSummary);
   const totalCostKrw = sumCostField(costSummaries, "totalCostKrw");
@@ -1445,8 +1473,111 @@ function summarizeCostBreakdown(
     costModelVersions: Array.from(
       new Set(costSummaries.flatMap((summary) => summary.costModelVersions))
     ).sort(),
+    byStrategyBucket: summarizeStrategyBucketCostBreakdowns(costRecords),
     runIds: costRecords.map((record) => record.runId)
   };
+}
+
+function summarizeStrategyBucketCostBreakdowns(
+  costRecords: BatchReplayRunCostRecord[]
+): BatchReplayStrategyBucketCostBreakdownSummary[] {
+  const buckets = new Map<
+    StrategyBucket | "UNKNOWN",
+    Array<{
+      runId: string;
+      summary: BatchReplayRunStrategyBucketCostSummary;
+    }>
+  >();
+
+  for (const record of costRecords) {
+    for (const summary of record.summary.costSummary.byStrategyBucket ?? []) {
+      const current = buckets.get(summary.strategyBucket) ?? [];
+      current.push({ runId: record.runId, summary });
+      buckets.set(summary.strategyBucket, current);
+    }
+  }
+
+  return Array.from(buckets.entries())
+    .map(([strategyBucket, entries]) => {
+      const summaries = entries.map((entry) => entry.summary);
+      const totalCostKrw = sumStrategyBucketCostField(
+        summaries,
+        "totalCostKrw"
+      );
+      const tradeCount = sumStrategyBucketCostField(summaries, "tradeCount");
+      const averageParticipationRates = summaries
+        .map((summary) => summary.averageParticipationRate)
+        .filter((value): value is number => typeof value === "number");
+      const maxParticipationRates = summaries
+        .map((summary) => summary.maxParticipationRate)
+        .filter((value): value is number => typeof value === "number");
+      return {
+        strategyBucket,
+        sampleCount: entries.length,
+        tradeCount,
+        feeKrw: sumStrategyBucketCostField(summaries, "feeKrw"),
+        taxKrw: sumStrategyBucketCostField(summaries, "taxKrw"),
+        slippageKrw: sumStrategyBucketCostField(summaries, "slippageKrw"),
+        spreadCostKrw: sumStrategyBucketCostField(summaries, "spreadCostKrw"),
+        impactCostKrw: sumStrategyBucketCostField(summaries, "impactCostKrw"),
+        totalCostKrw,
+        averageCostPerRunKrw:
+          entries.length === 0 ? null : Math.round(totalCostKrw / entries.length),
+        averageCostPerTradeKrw:
+          tradeCount === 0 ? null : Math.round(totalCostKrw / tradeCount),
+        filledCount: sumStrategyBucketCostField(summaries, "filledCount"),
+        partialFillCount: sumStrategyBucketCostField(
+          summaries,
+          "partialFillCount"
+        ),
+        notModeledLiquidityCount: sumStrategyBucketCostField(
+          summaries,
+          "notModeledLiquidityCount"
+        ),
+        averageRunParticipationRate:
+          averageParticipationRates.length === 0
+            ? null
+            : roundRatio(average(averageParticipationRates)),
+        maxParticipationRate:
+          maxParticipationRates.length === 0
+            ? null
+            : Math.max(...maxParticipationRates),
+        costModelVersions: Array.from(
+          new Set(summaries.flatMap((summary) => summary.costModelVersions))
+        ).sort(),
+        runIds: entries.map((entry) => entry.runId)
+      };
+    })
+    .sort(compareStrategyBucketCostBreakdowns);
+}
+
+function sumStrategyBucketCostField(
+  summaries: BatchReplayRunStrategyBucketCostSummary[],
+  field:
+    | "tradeCount"
+    | "feeKrw"
+    | "taxKrw"
+    | "slippageKrw"
+    | "spreadCostKrw"
+    | "impactCostKrw"
+    | "totalCostKrw"
+    | "filledCount"
+    | "partialFillCount"
+    | "notModeledLiquidityCount"
+): number {
+  return summaries.reduce((sum, summary) => sum + summary[field], 0);
+}
+
+function compareStrategyBucketCostBreakdowns(
+  left: BatchReplayStrategyBucketCostBreakdownSummary,
+  right: BatchReplayStrategyBucketCostBreakdownSummary
+): number {
+  if (left.totalCostKrw !== right.totalCostKrw) {
+    return right.totalCostKrw - left.totalCostKrw;
+  }
+  return bucketSortKey(left.strategyBucket).localeCompare(
+    bucketSortKey(right.strategyBucket)
+  );
 }
 
 function sumCostField(

@@ -1,6 +1,7 @@
 import type {
   BatchReplayAggregateReport,
   BatchReplayCostBreakdownSummary,
+  BatchReplayStrategyBucketCostBreakdownSummary,
   BatchReplayGroupSummary,
   BatchReplaySelectionTrialBucket,
   BatchReplayUniverseCoverageSummary
@@ -131,6 +132,28 @@ export interface ReplayResearchAvailabilitySection {
 
 export interface ReplayResearchCostBreakdown
   extends ReplayResearchAvailabilitySection {
+  sampleCount: number;
+  tradeCount: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  totalCostKrw: number;
+  averageCostPerRunKrw: number | null;
+  averageCostPerTradeKrw: number | null;
+  filledCount: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageRunParticipationRate: number | null;
+  maxParticipationRate: number | null;
+  costModelVersions: string[];
+  byStrategyBucket: ReplayResearchStrategyBucketCostBreakdown[];
+  runIds: string[];
+}
+
+export interface ReplayResearchStrategyBucketCostBreakdown {
+  strategyBucket: BatchReplayStrategyBucketCostBreakdownSummary["strategyBucket"];
   sampleCount: number;
   tradeCount: number;
   feeKrw: number;
@@ -628,6 +651,26 @@ function researchCostBreakdown(
     averageRunParticipationRate: summary.averageRunParticipationRate,
     maxParticipationRate: summary.maxParticipationRate,
     costModelVersions: [...summary.costModelVersions],
+    byStrategyBucket: (summary.byStrategyBucket ?? []).map((bucket) => ({
+      strategyBucket: bucket.strategyBucket,
+      sampleCount: bucket.sampleCount,
+      tradeCount: bucket.tradeCount,
+      feeKrw: bucket.feeKrw,
+      taxKrw: bucket.taxKrw,
+      slippageKrw: bucket.slippageKrw,
+      spreadCostKrw: bucket.spreadCostKrw,
+      impactCostKrw: bucket.impactCostKrw,
+      totalCostKrw: bucket.totalCostKrw,
+      averageCostPerRunKrw: bucket.averageCostPerRunKrw,
+      averageCostPerTradeKrw: bucket.averageCostPerTradeKrw,
+      filledCount: bucket.filledCount,
+      partialFillCount: bucket.partialFillCount,
+      notModeledLiquidityCount: bucket.notModeledLiquidityCount,
+      averageRunParticipationRate: bucket.averageRunParticipationRate,
+      maxParticipationRate: bucket.maxParticipationRate,
+      costModelVersions: [...bucket.costModelVersions],
+      runIds: [...bucket.runIds]
+    })),
     runIds: [...summary.runIds]
   };
 }
@@ -650,6 +693,7 @@ function emptyCostBreakdownSummary(): BatchReplayCostBreakdownSummary {
     averageRunParticipationRate: null,
     maxParticipationRate: null,
     costModelVersions: [],
+    byStrategyBucket: [],
     runIds: []
   };
 }
