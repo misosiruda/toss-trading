@@ -112,6 +112,11 @@ export interface HistoricalUniverseCoverageSymbolSummary {
   region: string | null;
   riskTags: string[];
   strategyBucket: StrategyBucket | null;
+  strategyBucketSnapshotStatus:
+    | "not_applicable"
+    | "matched"
+    | "missing"
+    | "mismatched";
   sector: string | null;
   segment: string | null;
   required: boolean;
@@ -293,6 +298,10 @@ export function assessHistoricalUniverseCoverage(
   const requiredStrategyBuckets = uniqueSorted(
     options.requiredStrategyBuckets ?? []
   );
+  const strategyBucketGateBuckets = uniqueSorted<StrategyBucket>([
+    ...requiredStrategyBuckets,
+    ...(Object.keys(minAvailableStrategyBucketSymbolCounts) as StrategyBucket[])
+  ]);
   const availableSymbolCount = symbolSummaries.filter(
     (summary) => summary.available
   ).length;
@@ -308,7 +317,9 @@ export function assessHistoricalUniverseCoverage(
   );
   const availableStrategyBuckets = uniqueSorted(
     symbolSummaries.flatMap((summary) =>
-      summary.available && summary.strategyBucket !== null
+      summary.available &&
+      summary.strategyBucket !== null &&
+      summary.strategyBucketSnapshotStatus === "matched"
         ? [summary.strategyBucket]
         : []
     )
@@ -342,6 +353,16 @@ export function assessHistoricalUniverseCoverage(
       minimumCounts: minAvailableStrategyBucketSymbolCounts,
       availableCounts: availableStrategyBucketSymbolCounts
     });
+  const strategyBucketSnapshotIssueCount =
+    strategyBucketGateBuckets.length === 0
+      ? 0
+      : symbolSummaries.filter(
+          (summary) =>
+            summary.available &&
+            summary.strategyBucket !== null &&
+            strategyBucketGateBuckets.includes(summary.strategyBucket) &&
+            summary.strategyBucketSnapshotStatus !== "matched"
+        ).length;
   const issues = coverageIssues({
     corruptLineCount,
     missingRequiredSymbols,
@@ -356,7 +377,8 @@ export function assessHistoricalUniverseCoverage(
     minAvailableSymbolCount,
     insufficientAvailableMarketSymbolCounts,
     insufficientAvailableAssetTypeSymbolCounts,
-    insufficientAvailableStrategyBucketSymbolCounts
+    insufficientAvailableStrategyBucketSymbolCounts,
+    strategyBucketSnapshotIssueCount
   });
 
   return {
@@ -435,6 +457,11 @@ function summarizeUniverseMember(input: {
       ? 0
       : roundRatio(coveredMonthCount / input.expectedMonths.length);
   const sortedSnapshots = [...input.snapshots].sort(compareSnapshots);
+  const strategyBucket = input.member.strategyBucket ?? null;
+  const strategyBucketSnapshotStatus = summarizeStrategyBucketSnapshotStatus({
+    expectedStrategyBucket: strategyBucket,
+    snapshots: sortedSnapshots
+  });
   const available =
     sortedSnapshots.length >= input.minSnapshotsPerSymbol &&
     monthlyCoverageRatio >= input.minMonthlyCoverageRatio;
@@ -448,7 +475,8 @@ function summarizeUniverseMember(input: {
     assetClass: input.member.assetClass ?? null,
     region: input.member.region ?? null,
     riskTags: input.member.riskTags ?? [],
-    strategyBucket: input.member.strategyBucket ?? null,
+    strategyBucket,
+    strategyBucketSnapshotStatus,
     sector: input.member.sector ?? null,
     segment: input.member.segment ?? null,
     required: input.member.required,
@@ -461,6 +489,30 @@ function summarizeUniverseMember(input: {
     missingMonths,
     available
   };
+}
+
+function summarizeStrategyBucketSnapshotStatus(input: {
+  expectedStrategyBucket: StrategyBucket | null;
+  snapshots: HistoricalMarketSnapshot[];
+}):
+  | "not_applicable"
+  | "matched"
+  | "missing"
+  | "mismatched" {
+  if (input.expectedStrategyBucket === null) {
+    return "not_applicable";
+  }
+  if (
+    input.snapshots.length === 0 ||
+    input.snapshots.some((snapshot) => snapshot.strategyBucket === undefined)
+  ) {
+    return "missing";
+  }
+  return input.snapshots.every(
+    (snapshot) => snapshot.strategyBucket === input.expectedStrategyBucket
+  )
+    ? "matched"
+    : "mismatched";
 }
 
 function snapshotsInRangeBySymbol(input: {
@@ -536,6 +588,7 @@ function coverageIssues(input: {
     minimum: number;
     available: number;
   }>;
+  strategyBucketSnapshotIssueCount: number;
 }): string[] {
   const issues: string[] = [];
   if (input.corruptLineCount > 0) {
@@ -576,6 +629,9 @@ function coverageIssues(input: {
   }
   if (input.insufficientAvailableStrategyBucketSymbolCounts.length > 0) {
     issues.push("AVAILABLE_STRATEGY_BUCKET_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
+  if (input.strategyBucketSnapshotIssueCount > 0) {
+    issues.push("STRATEGY_BUCKET_SNAPSHOT_METADATA_INVALID");
   }
   return issues;
 }
@@ -626,7 +682,11 @@ function countAvailableStrategyBuckets(
 ): Partial<Record<StrategyBucket, number>> {
   const counts: Partial<Record<StrategyBucket, number>> = {};
   for (const summary of summaries) {
-    if (!summary.available || summary.strategyBucket === null) {
+    if (
+      !summary.available ||
+      summary.strategyBucket === null ||
+      summary.strategyBucketSnapshotStatus !== "matched"
+    ) {
       continue;
     }
     counts[summary.strategyBucket] = (counts[summary.strategyBucket] ?? 0) + 1;

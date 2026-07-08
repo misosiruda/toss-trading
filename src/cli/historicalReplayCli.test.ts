@@ -1681,8 +1681,16 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
   writeFileSync(
     join(dataDir, "historical-market-snapshots.jsonl"),
     [
-      JSON.stringify(snapshot("hist_005930_202501", "005930")),
-      JSON.stringify(snapshot("hist_000660_202501", "000660"))
+      JSON.stringify(
+        snapshot("hist_005930_202501", "005930", {
+          strategyBucket: "long_term"
+        })
+      ),
+      JSON.stringify(
+        snapshot("hist_000660_202501", "000660", {
+          strategyBucket: "swing"
+        })
+      )
     ].join("\n") + "\n",
     "utf8"
   );
@@ -1940,6 +1948,7 @@ function snapshot(
     market?: HistoricalMarketSnapshot["market"];
     observedAt?: string;
     sourceRefs?: string[];
+    strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
   } = {}
 ): HistoricalMarketSnapshot {
   const observedAt = options.observedAt ?? "2025-02-03T09:00:00+09:00";
@@ -1949,6 +1958,9 @@ function snapshot(
     symbol,
     observedAt,
     interval: "1m",
+    ...(options.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: options.strategyBucket }),
     lastPriceKrw: 70_000,
     volume: 100_000,
     sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],

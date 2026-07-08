@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type {
+  HistoricalMarketSnapshot,
+  StrategyBucket
+} from "../domain/schemas.js";
 import { STRATEGY_BUCKETS } from "../paper/strategyBucketPolicy.js";
 import {
   assessHistoricalUniverseCoverage,
@@ -226,8 +229,12 @@ test("historical universe coverage can require strategy bucket availability", ()
       disclaimer: "Paper-only fixture."
     }),
     snapshots: [
-      snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00"),
-      snapshot("hist_000660_202501", "000660", "2025-01-02T15:30:00+09:00")
+      snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00", {
+        strategyBucket: "long_term"
+      }),
+      snapshot("hist_000660_202501", "000660", "2025-01-02T15:30:00+09:00", {
+        strategyBucket: "swing"
+      })
     ],
     rangeStart: new Date("2025-01-01T00:00:00+09:00"),
     rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
@@ -257,6 +264,47 @@ test("historical universe coverage can require strategy bucket availability", ()
     report.issues.includes(
       "AVAILABLE_STRATEGY_BUCKET_SYMBOL_COUNT_BELOW_MINIMUM"
     )
+  );
+});
+
+test("historical universe coverage requires strategy bucket metadata on snapshots", () => {
+  const report = assessHistoricalUniverseCoverage({
+    universe: parseHistoricalUniverseManifest({
+      mode: "paper_only_historical_universe",
+      universeId: "strategy-bucket-snapshot-fixture",
+      snapshotDate: "2025-01-01",
+      symbols: [
+        {
+          market: "KR",
+          symbol: "005930",
+          strategyBucket: "long_term",
+          required: true
+        }
+      ],
+      disclaimer: "Paper-only fixture."
+    }),
+    snapshots: [
+      snapshot("hist_005930_202501", "005930", "2025-01-02T15:30:00+09:00")
+    ],
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-01-31T23:59:59.999+09:00"),
+    requiredStrategyBuckets: ["long_term"],
+    minAvailableStrategyBucketSymbolCounts: { long_term: 1 }
+  });
+
+  assert.equal(report.status, "insufficient");
+  assert.deepEqual(report.availableStrategyBuckets, []);
+  assert.deepEqual(report.availableStrategyBucketSymbolCounts, {});
+  assert.deepEqual(report.missingRequiredStrategyBuckets, ["long_term"]);
+  assert.deepEqual(report.insufficientAvailableStrategyBucketSymbolCounts, [
+    { strategyBucket: "long_term", minimum: 1, available: 0 }
+  ]);
+  assert.equal(
+    report.symbolSummaries[0]?.strategyBucketSnapshotStatus,
+    "missing"
+  );
+  assert.ok(
+    report.issues.includes("STRATEGY_BUCKET_SNAPSHOT_METADATA_INVALID")
   );
 });
 
@@ -473,7 +521,8 @@ function universe(): HistoricalUniverseManifest {
 function snapshot(
   snapshotId: string,
   symbol: string,
-  observedAt: string
+  observedAt: string,
+  options: { strategyBucket?: StrategyBucket } = {}
 ): HistoricalMarketSnapshot {
   return {
     snapshotId,
@@ -481,6 +530,9 @@ function snapshot(
     symbol,
     observedAt,
     interval: "1d",
+    ...(options.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: options.strategyBucket }),
     lastPriceKrw: 70_000,
     volume: 100_000,
     sourceRefs: [`fixture:${snapshotId}`],

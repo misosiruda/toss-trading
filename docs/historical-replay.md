@@ -599,7 +599,7 @@ npm run historical:yahoo:ingest -- -- --data-dir data/replay-2023-01-2026-05-glo
 - snapshot에는 universe의 `assetType`, `assetClass`, `region`, `riskTags`, `strategyBucket`을 보존합니다.
 - 이 CLI는 historical replay input만 생성하며 replay 실행, Codex CLI 호출, broker API 호출, 주문 생성을 수행하지 않습니다.
 
-생성 후 coverage는 시장, 자산유형, strategy bucket 존재 여부와 broad universe 최소 확보량을 함께 강제합니다. 지정한 strategy bucket이 snapshot coverage에 없거나 bucket별 최소 확보 수를 만족하지 못하면 report는 `insufficient`로 fail-closed 됩니다.
+생성 후 coverage는 시장, 자산유형, strategy bucket 존재 여부와 broad universe 최소 확보량을 함께 강제합니다. 지정한 strategy bucket이 snapshot coverage에 없거나 bucket별 최소 확보 수를 만족하지 못하면 report는 `insufficient`로 fail-closed 됩니다. strategy bucket 확보량은 universe manifest 값만으로 계산하지 않고, in-range snapshot의 `strategyBucket` metadata가 manifest의 expected bucket과 일치하는 경우에만 available count로 인정합니다.
 
 ```powershell
 npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-05-global-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --require-strategy-buckets 'long_term,swing,short_term,intraday,hedge' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --min-available-strategy-bucket-symbols 'long_term:1,swing:1,short_term:1,intraday:1,hedge:1' --output-path data/replay-2023-01-2026-05-global-yahoo-daily/historical-universe-coverage.json
