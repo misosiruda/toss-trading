@@ -61,6 +61,13 @@ test("validation lab fallback fills missing candidate comparison", async () => {
       .join("\n"),
     /does not include metaLabelEvaluation/
   );
+  assert.equal(normalized.costRiskWarning.status, "missing");
+  assert.match(
+    normalized.costRiskWarning.warnings
+      .map((warning) => warning.message)
+      .join("\n"),
+    /does not include costRiskWarning/
+  );
 });
 
 test("validation lab fallback preserves existing validation lab extensions", async () => {
@@ -141,6 +148,44 @@ test("validation lab fallback preserves existing validation lab extensions", asy
       warnings: [],
       readOnlyNotice:
         "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
+    },
+    costRiskWarning: {
+      status: "warning",
+      sampleCount: 2,
+      tradeCount: 3,
+      totalCostKrw: 30,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageCostPerTradeKrw: 10,
+      maxParticipationRate: 0.25,
+      highestCostBucket: {
+        strategyBucket: "short_term",
+        tradeCount: 3,
+        totalCostKrw: 30,
+        slippageKrw: 4,
+        spreadCostKrw: 6,
+        impactCostKrw: 7,
+        averageCostPerTradeKrw: 10,
+        maxParticipationRate: 0.25,
+        runIds: ["run_0", "run_1"]
+      },
+      missingStrategyBucketBreakdownCount: 1,
+      missingStrategyBucketBreakdownRunIds: ["run_legacy_bucketless"],
+      warningCount: 1,
+      warnings: [
+        {
+          code: "STRATEGY_BUCKET_COST_COVERAGE_PARTIAL",
+          severity: "warning",
+          message: "strategy bucket cost coverage is partial"
+        }
+      ],
+      readOnlyNotice:
+        "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
     }
   };
 

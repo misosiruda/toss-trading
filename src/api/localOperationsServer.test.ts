@@ -2630,6 +2630,15 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const metaLabelEvaluation = validationLab.payload[
       "metaLabelEvaluation"
     ] as Record<string, unknown>;
+    const costRiskWarning = validationLab.payload[
+      "costRiskWarning"
+    ] as Record<string, unknown>;
+    const costRiskWarningMessages = costRiskWarning["warnings"] as Array<
+      Record<string, unknown>
+    >;
+    const highestCostBucket = costRiskWarning[
+      "highestCostBucket"
+    ] as Record<string, unknown>;
     const candidateComparison = validationLab.payload[
       "candidateComparison"
     ] as Record<string, unknown>;
@@ -2795,6 +2804,49 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(
       metaLabelEvaluation["readOnlyNotice"],
       "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
+    );
+    assert.equal(costRiskWarning["status"], "warning");
+    assert.equal(costRiskWarning["sampleCount"], 2);
+    assert.equal(costRiskWarning["tradeCount"], 3);
+    assert.equal(costRiskWarning["totalCostKrw"], 30);
+    assert.equal(costRiskWarning["impactCostKrw"], 7);
+    assert.equal(costRiskWarning["partialFillCount"], 1);
+    assert.equal(costRiskWarning["maxParticipationRate"], 0.25);
+    assert.equal(
+      costRiskWarning["missingStrategyBucketBreakdownCount"],
+      7
+    );
+    assert.deepEqual(
+      costRiskWarning["missingStrategyBucketBreakdownRunIds"],
+      [
+        "run_legacy_bucketless_0",
+        "run_legacy_bucketless_1",
+        "run_legacy_bucketless_2",
+        "run_legacy_bucketless_3",
+        "run_legacy_bucketless_4"
+      ]
+    );
+    assert.equal(highestCostBucket["strategyBucket"], "short_term");
+    assert.equal(highestCostBucket["totalCostKrw"], 30);
+    assert.deepEqual(highestCostBucket["runIds"], [
+      "run_0",
+      "run_1",
+      "run_2",
+      "run_3",
+      "run_4"
+    ]);
+    assert.deepEqual(
+      costRiskWarningMessages.map((warning) => warning["code"]),
+      [
+        "COST_COMPONENTS_PRESENT",
+        "MARKET_IMPACT_COST_PRESENT",
+        "PARTIAL_FILL_PRESENT",
+        "STRATEGY_BUCKET_COST_COVERAGE_PARTIAL"
+      ]
+    );
+    assert.equal(
+      costRiskWarning["readOnlyNotice"],
+      "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
     );
     assert.equal(candidateComparison["status"], "available");
     assert.equal(candidateComparison["candidateCount"], 2);
@@ -3020,6 +3072,46 @@ test("dashboard validation lab treats omitted overfitting diagnostics as missing
     assert.match(
       JSON.stringify(metaLabelEvaluation["warnings"]),
       /meta_label_evaluation.v1 artifact is missing/
+    );
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("dashboard validation lab treats omitted cost summary as missing cost warning", async () => {
+  const storageBaseDir = await createTempStorageBaseDir();
+  const paths = createStoragePaths(storageBaseDir);
+  const legacyAggregate = batchReplayAggregateReport();
+  delete (legacyAggregate["overall"] as Record<string, unknown>)["costSummary"];
+  await writeFile(
+    paths.batchReplayAggregateReportPath,
+    `${JSON.stringify(legacyAggregate)}\n`,
+    "utf8"
+  );
+  const { server, baseUrl } = await startTestServer(storageBaseDir);
+
+  try {
+    const result = await fetchJson(
+      baseUrl,
+      "/dashboard/view-model/validation-lab"
+    );
+    const costRiskWarning = result.payload[
+      "costRiskWarning"
+    ] as Record<string, unknown>;
+    const warnings = costRiskWarning["warnings"] as Array<
+      Record<string, unknown>
+    >;
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload["viewModel"], "validation-lab");
+    assert.equal(result.payload["status"], "ok");
+    assert.equal(costRiskWarning["status"], "missing");
+    assert.equal(costRiskWarning["sampleCount"], 0);
+    assert.equal(costRiskWarning["warningCount"], 1);
+    assert.equal(warnings[0]?.["code"], "COST_RISK_WARNING_MISSING");
+    assert.match(
+      String(warnings[0]?.["message"]),
+      /does not contain per-run execution cost components/
     );
   } finally {
     await stopTestServer(server);
@@ -5279,6 +5371,7 @@ function batchReplayAggregateReport(
           }
         ]
       },
+      costSummary: aggregateCostSummary(),
       totalAiDecisionFailureCount: 0,
       totalRejectedCount: 1,
       totalMeaningfulRejectCount: 1,
@@ -5399,6 +5492,60 @@ function batchReplayAggregateReport(
     },
     disclaimer:
       "Batch replay aggregate reports are paper-only. They are not investment advice, guaranteed performance, or live trading signals."
+  };
+}
+
+function aggregateCostSummary(): Record<string, unknown> {
+  return {
+    sampleCount: 2,
+    tradeCount: 3,
+    feeKrw: 11,
+    taxKrw: 2,
+    slippageKrw: 4,
+    spreadCostKrw: 6,
+    impactCostKrw: 7,
+    totalCostKrw: 30,
+    averageCostPerRunKrw: 15,
+    averageCostPerTradeKrw: 10,
+    filledCount: 2,
+    partialFillCount: 1,
+    notModeledLiquidityCount: 0,
+    averageRunParticipationRate: 0.15,
+    maxParticipationRate: 0.25,
+    costModelVersions: ["paper_cost_model.v4"],
+    byStrategyBucket: [
+      {
+        strategyBucket: "short_term",
+        sampleCount: 2,
+        tradeCount: 3,
+        feeKrw: 11,
+        taxKrw: 2,
+        slippageKrw: 4,
+        spreadCostKrw: 6,
+        impactCostKrw: 7,
+        totalCostKrw: 30,
+        averageCostPerRunKrw: 15,
+        averageCostPerTradeKrw: 10,
+        filledCount: 2,
+        partialFillCount: 1,
+        notModeledLiquidityCount: 0,
+        averageRunParticipationRate: 0.15,
+        maxParticipationRate: 0.25,
+        costModelVersions: ["paper_cost_model.v4"],
+        runIds: ["run_0", "run_1", "run_2", "run_3", "run_4", "run_5", "run_6"]
+      }
+    ],
+    missingStrategyBucketBreakdownCount: 7,
+    missingStrategyBucketBreakdownRunIds: [
+      "run_legacy_bucketless_0",
+      "run_legacy_bucketless_1",
+      "run_legacy_bucketless_2",
+      "run_legacy_bucketless_3",
+      "run_legacy_bucketless_4",
+      "run_legacy_bucketless_5",
+      "run_legacy_bucketless_6"
+    ],
+    runIds: ["run_0", "run_1"]
   };
 }
 
