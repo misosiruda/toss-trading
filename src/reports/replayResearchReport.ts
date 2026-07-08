@@ -631,6 +631,16 @@ function researchCostBreakdown(
 ): ReplayResearchCostBreakdown {
   const summary = costSummary ?? emptyCostBreakdownSummary();
   const status = summary.sampleCount === 0 ? "unavailable" : "available";
+  const missingStrategyBucketBreakdownRunIds = Array.isArray(
+    summary.missingStrategyBucketBreakdownRunIds
+  )
+    ? summary.missingStrategyBucketBreakdownRunIds
+    : [];
+  const missingStrategyBucketBreakdownCount =
+    typeof summary.missingStrategyBucketBreakdownCount === "number"
+      ? summary.missingStrategyBucketBreakdownCount
+      : missingStrategyBucketBreakdownRunIds.length;
+
   return {
     status,
     reason:
@@ -674,9 +684,9 @@ function researchCostBreakdown(
       runIds: [...bucket.runIds]
     })),
     missingStrategyBucketBreakdownCount:
-      summary.missingStrategyBucketBreakdownCount,
+      missingStrategyBucketBreakdownCount,
     missingStrategyBucketBreakdownRunIds: [
-      ...summary.missingStrategyBucketBreakdownRunIds
+      ...missingStrategyBucketBreakdownRunIds
     ],
     runIds: [...summary.runIds]
   };

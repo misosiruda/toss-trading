@@ -205,6 +205,51 @@ test("replay research report keeps legacy aggregate cost breakdown unavailable",
   );
 });
 
+test("replay research report defaults legacy missing bucket metadata", () => {
+  const aggregate = aggregateReport();
+  delete (
+    aggregate.overall.costSummary as unknown as {
+      missingStrategyBucketBreakdownCount?: number;
+    }
+  ).missingStrategyBucketBreakdownCount;
+  delete (
+    aggregate.overall.costSummary as unknown as {
+      missingStrategyBucketBreakdownRunIds?: string[];
+    }
+  ).missingStrategyBucketBreakdownRunIds;
+
+  const report = buildReplayResearchReport({
+    aggregateReport: aggregate,
+    generatedAt: new Date("2026-06-24T09:00:00+09:00")
+  });
+
+  assert.equal(report.costBreakdown.status, "available");
+  assert.deepEqual(report.costBreakdown.byStrategyBucket, [
+    {
+      strategyBucket: "short_term",
+      sampleCount: 2,
+      tradeCount: 3,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      totalCostKrw: 30,
+      averageCostPerRunKrw: 15,
+      averageCostPerTradeKrw: 10,
+      filledCount: 2,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.15,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      runIds: ["run_0", "run_1"]
+    }
+  ]);
+  assert.equal(report.costBreakdown.missingStrategyBucketBreakdownCount, 0);
+  assert.deepEqual(report.costBreakdown.missingStrategyBucketBreakdownRunIds, []);
+});
+
 test("replay research report keeps legacy universe bucket counts nullable", () => {
   const aggregate = aggregateReport();
   delete (
