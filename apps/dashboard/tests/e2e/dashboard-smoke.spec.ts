@@ -92,6 +92,15 @@ test("renders paper-only dashboard readiness without live mutation controls", as
   ).toBeVisible();
   await expect(page.getByText("Data universe coverage")).toBeVisible();
   await expect(page.getByText("dashboard-e2e-universe").first()).toBeVisible();
+  const coverageMetrics = page.getByLabel(
+    "Data universe coverage strategy bucket metrics"
+  );
+  await expect(coverageMetrics).toContainText("Available buckets");
+  await expect(coverageMetrics).toContainText("long_term: 1");
+  await expect(coverageMetrics).toContainText("Bucket gaps");
+  await expect(coverageMetrics).toContainText(
+    "missing required: 0, insufficient: 0"
+  );
   await expect(
     page.getByText("universe selection bias warning").first()
   ).toBeVisible();
