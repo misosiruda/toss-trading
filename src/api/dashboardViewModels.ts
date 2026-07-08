@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 
 import type { BatchReplayAggregateReport } from "../reports/batchReplayReport.js";
-import { buildReplayResearchReport } from "../reports/replayResearchReport.js";
+import {
+  buildReplayResearchReport,
+  type ReplayResearchCostBreakdown,
+  type ReplayResearchStrategyBucketCostBreakdown
+} from "../reports/replayResearchReport.js";
 import {
   createStoragePaths,
   FileAuditLog,
@@ -42,6 +46,8 @@ const STRATEGY_BUCKETS = [
 ] as const satisfies readonly StrategyBucket[];
 const META_LABEL_EVALUATION_READ_ONLY_NOTICE =
   "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee.";
+const COST_RISK_WARNING_READ_ONLY_NOTICE =
+  "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee.";
 
 type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
 type JsonFileStatus = "missing" | "ok" | "corrupt";
@@ -436,6 +442,7 @@ export interface ValidationLabViewModel {
   sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
   metaLabelEvaluation: MetaLabelEvaluationView;
+  costRiskWarning: CostRiskWarningView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -446,6 +453,46 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface CostRiskWarningView {
+  status: "missing" | "available" | "warning";
+  sampleCount: number;
+  tradeCount: number;
+  totalCostKrw: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageCostPerTradeKrw: number | null;
+  maxParticipationRate: number | null;
+  highestCostBucket: CostRiskBucketWarningView | null;
+  missingStrategyBucketBreakdownCount: number;
+  missingStrategyBucketBreakdownRunIds: string[];
+  warningCount: number;
+  warnings: CostRiskWarningMessageView[];
+  readOnlyNotice: string;
+}
+
+export interface CostRiskBucketWarningView {
+  strategyBucket: StrategyBucket | "UNKNOWN";
+  tradeCount: number;
+  totalCostKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  averageCostPerTradeKrw: number | null;
+  maxParticipationRate: number | null;
+  runIds: string[];
+}
+
+export interface CostRiskWarningMessageView {
+  code: string;
+  severity: "warning";
+  message: string;
 }
 
 export interface SharpeValidationView {
@@ -1022,6 +1069,7 @@ export async function readDashboardValidationLabViewModel(
       sharpeValidation: sharpeValidationView(report.sharpeValidation),
       cpcvPboValidation: cpcvPboValidationView(aggregate.value),
       metaLabelEvaluation: metaLabelEvaluationView(aggregate.value),
+      costRiskWarning: costRiskWarningView(report.costBreakdown),
       candidateComparison: validationCandidateComparison(aggregate.value),
       providerFailureSummary: report.providerFailureSummary,
       riskRejectSummary: report.riskRejectSummary,
@@ -1686,6 +1734,144 @@ function invalidMetaLabelEvaluationView(
   };
 }
 
+function costRiskWarningView(
+  costBreakdown: ReplayResearchCostBreakdown
+): CostRiskWarningView {
+  if (costBreakdown.status !== "available" || costBreakdown.sampleCount === 0) {
+    return missingCostRiskWarningView([
+      costBreakdown.reason ??
+        "aggregate report does not contain execution cost samples"
+    ]);
+  }
+
+  const warnings: CostRiskWarningMessageView[] = [];
+  if (costBreakdown.totalCostKrw > 0) {
+    warnings.push({
+      code: "COST_COMPONENTS_PRESENT",
+      severity: "warning",
+      message:
+        "aggregate replay includes execution cost components; compare gross and cost-adjusted results separately"
+    });
+  }
+  if (costBreakdown.impactCostKrw > 0) {
+    warnings.push({
+      code: "MARKET_IMPACT_COST_PRESENT",
+      severity: "warning",
+      message:
+        "market impact cost is present in the paper execution cost summary"
+    });
+  }
+  if (costBreakdown.partialFillCount > 0) {
+    warnings.push({
+      code: "PARTIAL_FILL_PRESENT",
+      severity: "warning",
+      message: "partial fills are present in the paper execution summary"
+    });
+  }
+  if (costBreakdown.notModeledLiquidityCount > 0) {
+    warnings.push({
+      code: "LIQUIDITY_NOT_MODELED",
+      severity: "warning",
+      message:
+        "some replay samples mark liquidity as not_modeled; cost evidence is incomplete"
+    });
+  }
+  if (costBreakdown.missingStrategyBucketBreakdownCount > 0) {
+    warnings.push({
+      code: "STRATEGY_BUCKET_COST_COVERAGE_PARTIAL",
+      severity: "warning",
+      message: `strategy bucket cost coverage is partial; missing_run_count=${costBreakdown.missingStrategyBucketBreakdownCount}`
+    });
+  }
+
+  return {
+    status: warnings.length > 0 ? "warning" : "available",
+    sampleCount: costBreakdown.sampleCount,
+    tradeCount: costBreakdown.tradeCount,
+    totalCostKrw: costBreakdown.totalCostKrw,
+    feeKrw: costBreakdown.feeKrw,
+    taxKrw: costBreakdown.taxKrw,
+    slippageKrw: costBreakdown.slippageKrw,
+    spreadCostKrw: costBreakdown.spreadCostKrw,
+    impactCostKrw: costBreakdown.impactCostKrw,
+    partialFillCount: costBreakdown.partialFillCount,
+    notModeledLiquidityCount: costBreakdown.notModeledLiquidityCount,
+    averageCostPerTradeKrw: costBreakdown.averageCostPerTradeKrw,
+    maxParticipationRate: costBreakdown.maxParticipationRate,
+    highestCostBucket: highestCostBucketWarningView(
+      costBreakdown.byStrategyBucket
+    ),
+    missingStrategyBucketBreakdownCount:
+      costBreakdown.missingStrategyBucketBreakdownCount,
+    missingStrategyBucketBreakdownRunIds: [
+      ...costBreakdown.missingStrategyBucketBreakdownRunIds
+    ],
+    warningCount: warnings.length,
+    warnings,
+    readOnlyNotice: COST_RISK_WARNING_READ_ONLY_NOTICE
+  };
+}
+
+function highestCostBucketWarningView(
+  buckets: ReplayResearchStrategyBucketCostBreakdown[]
+): CostRiskBucketWarningView | null {
+  const highestCostBucket = [...buckets].sort(
+    (left, right) =>
+      right.totalCostKrw - left.totalCostKrw ||
+      right.tradeCount - left.tradeCount ||
+      String(left.strategyBucket).localeCompare(String(right.strategyBucket))
+  )[0];
+  return highestCostBucket
+    ? costRiskBucketWarningView(highestCostBucket)
+    : null;
+}
+
+function costRiskBucketWarningView(
+  bucket: ReplayResearchStrategyBucketCostBreakdown
+): CostRiskBucketWarningView {
+  return {
+    strategyBucket: bucket.strategyBucket,
+    tradeCount: bucket.tradeCount,
+    totalCostKrw: bucket.totalCostKrw,
+    slippageKrw: bucket.slippageKrw,
+    spreadCostKrw: bucket.spreadCostKrw,
+    impactCostKrw: bucket.impactCostKrw,
+    averageCostPerTradeKrw: bucket.averageCostPerTradeKrw,
+    maxParticipationRate: bucket.maxParticipationRate,
+    runIds: [...bucket.runIds]
+  };
+}
+
+function missingCostRiskWarningView(
+  warnings: string[] = []
+): CostRiskWarningView {
+  return {
+    status: "missing",
+    sampleCount: 0,
+    tradeCount: 0,
+    totalCostKrw: 0,
+    feeKrw: 0,
+    taxKrw: 0,
+    slippageKrw: 0,
+    spreadCostKrw: 0,
+    impactCostKrw: 0,
+    partialFillCount: 0,
+    notModeledLiquidityCount: 0,
+    averageCostPerTradeKrw: null,
+    maxParticipationRate: null,
+    highestCostBucket: null,
+    missingStrategyBucketBreakdownCount: 0,
+    missingStrategyBucketBreakdownRunIds: [],
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "COST_RISK_WARNING_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice: COST_RISK_WARNING_READ_ONLY_NOTICE
+  };
+}
+
 function validationLabWarnings(
   aggregate: BatchReplayAggregateReport,
   reportWarnings: string[]
@@ -1798,6 +1984,11 @@ function validationLabUnavailable(
         : "batch replay aggregate report is not usable"
     ]),
     metaLabelEvaluation: missingMetaLabelEvaluationView([
+      status === "missing"
+        ? "batch replay aggregate report is missing"
+        : "batch replay aggregate report is not usable"
+    ]),
+    costRiskWarning: missingCostRiskWarningView([
       status === "missing"
         ? "batch replay aggregate report is missing"
         : "batch replay aggregate report is not usable"

@@ -342,6 +342,7 @@ export interface ValidationLabViewModel {
   sharpeValidation: SharpeValidationView;
   cpcvPboValidation: CpcvPboValidationView;
   metaLabelEvaluation: MetaLabelEvaluationView;
+  costRiskWarning: CostRiskWarningView;
   candidateComparison: ValidationCandidateComparisonView;
   providerFailureSummary: unknown | null;
   riskRejectSummary: unknown | null;
@@ -352,6 +353,46 @@ export interface ValidationLabViewModel {
     liveTradingEnabled: false;
     orderPlacementEnabled: false;
   };
+}
+
+export interface CostRiskWarningView {
+  status: "missing" | "available" | "warning";
+  sampleCount: number;
+  tradeCount: number;
+  totalCostKrw: number;
+  feeKrw: number;
+  taxKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  partialFillCount: number;
+  notModeledLiquidityCount: number;
+  averageCostPerTradeKrw: number | null;
+  maxParticipationRate: number | null;
+  highestCostBucket: CostRiskBucketWarningView | null;
+  missingStrategyBucketBreakdownCount: number;
+  missingStrategyBucketBreakdownRunIds: string[];
+  warningCount: number;
+  warnings: CostRiskWarningMessageView[];
+  readOnlyNotice: string;
+}
+
+export interface CostRiskBucketWarningView {
+  strategyBucket: StrategyBucket | "UNKNOWN";
+  tradeCount: number;
+  totalCostKrw: number;
+  slippageKrw: number;
+  spreadCostKrw: number;
+  impactCostKrw: number;
+  averageCostPerTradeKrw: number | null;
+  maxParticipationRate: number | null;
+  runIds: string[];
+}
+
+export interface CostRiskWarningMessageView {
+  code: string;
+  severity: "warning";
+  message: string;
 }
 
 export interface SharpeValidationView {
@@ -1316,6 +1357,7 @@ function isValidationLabViewModel(
     isSharpeValidationView(value.sharpeValidation) &&
     isCpcvPboValidationView(value.cpcvPboValidation) &&
     isMetaLabelEvaluationView(value.metaLabelEvaluation) &&
+    isCostRiskWarningView(value.costRiskWarning) &&
     isValidationCandidateComparison(value.candidateComparison) &&
     isRecord(value.executionAssumptions) &&
     value.executionAssumptions["paperOnly"] === true &&
@@ -1758,6 +1800,15 @@ export function withValidationLabCandidateComparisonFallback(
     };
   }
 
+  if (normalized["costRiskWarning"] === undefined) {
+    normalized = {
+      ...normalized,
+      costRiskWarning: missingCostRiskWarning([
+        "cost risk warning unavailable: Local Operations API response does not include costRiskWarning"
+      ])
+    };
+  }
+
   return normalized;
 }
 
@@ -1972,6 +2023,101 @@ function missingMetaLabelEvaluation(
     })),
     readOnlyNotice:
       "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
+  };
+}
+
+function isCostRiskWarningView(
+  value: unknown
+): value is CostRiskWarningView {
+  return (
+    isRecord(value) &&
+    isCostRiskWarningStatus(value["status"]) &&
+    isNumber(value["sampleCount"]) &&
+    isNumber(value["tradeCount"]) &&
+    isNumber(value["totalCostKrw"]) &&
+    isNumber(value["feeKrw"]) &&
+    isNumber(value["taxKrw"]) &&
+    isNumber(value["slippageKrw"]) &&
+    isNumber(value["spreadCostKrw"]) &&
+    isNumber(value["impactCostKrw"]) &&
+    isNumber(value["partialFillCount"]) &&
+    isNumber(value["notModeledLiquidityCount"]) &&
+    isNullableNumber(value["averageCostPerTradeKrw"]) &&
+    isNullableNumber(value["maxParticipationRate"]) &&
+    (value["highestCostBucket"] === null ||
+      isCostRiskBucketWarningView(value["highestCostBucket"])) &&
+    isNumber(value["missingStrategyBucketBreakdownCount"]) &&
+    isStringArray(value["missingStrategyBucketBreakdownRunIds"]) &&
+    isNumber(value["warningCount"]) &&
+    Array.isArray(value["warnings"]) &&
+    value["warnings"].every(isCostRiskWarningMessageView) &&
+    typeof value["readOnlyNotice"] === "string"
+  );
+}
+
+function isCostRiskBucketWarningView(
+  value: unknown
+): value is CostRiskBucketWarningView {
+  return (
+    isRecord(value) &&
+    (isStrategyBucket(value["strategyBucket"]) ||
+      value["strategyBucket"] === "UNKNOWN") &&
+    isNumber(value["tradeCount"]) &&
+    isNumber(value["totalCostKrw"]) &&
+    isNumber(value["slippageKrw"]) &&
+    isNumber(value["spreadCostKrw"]) &&
+    isNumber(value["impactCostKrw"]) &&
+    isNullableNumber(value["averageCostPerTradeKrw"]) &&
+    isNullableNumber(value["maxParticipationRate"]) &&
+    isStringArray(value["runIds"])
+  );
+}
+
+function isCostRiskWarningMessageView(
+  value: unknown
+): value is CostRiskWarningMessageView {
+  return (
+    isRecord(value) &&
+    typeof value["code"] === "string" &&
+    value["severity"] === "warning" &&
+    typeof value["message"] === "string"
+  );
+}
+
+function isCostRiskWarningStatus(
+  value: unknown
+): value is CostRiskWarningView["status"] {
+  return value === "missing" || value === "available" || value === "warning";
+}
+
+function missingCostRiskWarning(
+  warnings: string[] = []
+): CostRiskWarningView {
+  return {
+    status: "missing",
+    sampleCount: 0,
+    tradeCount: 0,
+    totalCostKrw: 0,
+    feeKrw: 0,
+    taxKrw: 0,
+    slippageKrw: 0,
+    spreadCostKrw: 0,
+    impactCostKrw: 0,
+    partialFillCount: 0,
+    notModeledLiquidityCount: 0,
+    averageCostPerTradeKrw: null,
+    maxParticipationRate: null,
+    highestCostBucket: null,
+    missingStrategyBucketBreakdownCount: 0,
+    missingStrategyBucketBreakdownRunIds: [],
+    warningCount: warnings.length,
+    warnings: warnings.map((message) => ({
+      code: "COST_RISK_WARNING_MISSING",
+      severity: "warning",
+      message
+    })),
+    readOnlyNotice:
+      "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
   };
 }
 

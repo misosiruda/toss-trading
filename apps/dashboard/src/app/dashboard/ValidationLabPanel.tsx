@@ -1,4 +1,5 @@
 import type {
+  CostRiskWarningView,
   CpcvPboValidationView,
   MetaLabelEvaluationView,
   SharpeValidationView,
@@ -95,6 +96,7 @@ export function ValidationLabPanel({
         />
         <ObjectSummary title="Risk rejects" value={data.riskRejectSummary} />
       </div>
+      <CostRiskWarning warning={data.costRiskWarning} variant={variant} />
       <SharpeValidationWarning
         validation={data.sharpeValidation}
         variant={variant}
@@ -112,6 +114,90 @@ export function ValidationLabPanel({
         variant={variant}
       />
       <Warnings warnings={data.warnings} />
+    </section>
+  );
+}
+
+function CostRiskWarning({
+  warning,
+  variant
+}: {
+  warning: CostRiskWarningView;
+  variant: ValidationPanelVariant;
+}) {
+  const bucket = warning.highestCostBucket;
+  return (
+    <section aria-label="Cost risk warning" className="mt-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-[var(--accent)]">
+            RH4 cost warning
+          </p>
+          <h3 className="mt-1 text-base font-semibold">
+            Execution cost risk
+          </h3>
+        </div>
+        <Badge
+          tone={costRiskWarningStatusTone(warning.status)}
+          value={warning.status}
+        />
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label="Samples" value={String(warning.sampleCount)} />
+        <Metric label="Trades" value={String(warning.tradeCount)} />
+        <Metric label="Total cost" value={formatKrw(warning.totalCostKrw)} />
+        <Metric label="Impact cost" value={formatKrw(warning.impactCostKrw)} />
+        <Metric
+          label="Spread/slippage"
+          value={`${formatKrw(warning.spreadCostKrw)} / ${formatKrw(warning.slippageKrw)}`}
+        />
+        <Metric
+          label="Max participation"
+          value={formatNullableRatio(warning.maxParticipationRate)}
+        />
+        <Metric
+          label="Partial fills"
+          value={String(warning.partialFillCount)}
+        />
+        <Metric label="Warnings" value={String(warning.warningCount)} />
+      </div>
+
+      {bucket === null ? null : (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label="Highest cost bucket" value={bucket.strategyBucket} />
+          <Metric label="Bucket trades" value={String(bucket.tradeCount)} />
+          <Metric label="Bucket cost" value={formatKrw(bucket.totalCostKrw)} />
+          <Metric
+            label="Bucket max participation"
+            value={formatNullableRatio(bucket.maxParticipationRate)}
+          />
+        </div>
+      )}
+
+      {variant === "detail" &&
+      warning.missingStrategyBucketBreakdownCount > 0 ? (
+        <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+          Missing strategy bucket cost breakdown runs:{" "}
+          {warning.missingStrategyBucketBreakdownRunIds.join(", ")}
+        </p>
+      ) : null}
+
+      <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+        {warning.readOnlyNotice}
+      </p>
+
+      {warning.warnings.length === 0 ? null : (
+        <ul className="mt-3 space-y-2 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
+          {warning.warnings.map((item) => (
+            <li key={`${item.code}:${item.message}`}>
+              <span className="font-mono">{item.code}</span>
+              <span aria-hidden="true">: </span>
+              <span>{item.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -673,6 +759,18 @@ function metaLabelEvaluationStatusTone(
   return "blocked";
 }
 
+function costRiskWarningStatusTone(
+  status: CostRiskWarningView["status"]
+): "ok" | "watch" | "blocked" {
+  if (status === "available") {
+    return "ok";
+  }
+  if (status === "warning") {
+    return "watch";
+  }
+  return "blocked";
+}
+
 function validationStatusTone(
   status: "missing" | "available" | "sampled" | "unavailable"
 ): "ok" | "watch" | "blocked" {
@@ -728,6 +826,14 @@ function formatRatio(value: number): string {
 
 function formatNullableRatio(value: number | null): string {
   return value === null ? "missing" : formatRatio(value);
+}
+
+function formatKrw(value: number): string {
+  return new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 0,
+    style: "currency",
+    currency: "KRW"
+  }).format(value);
 }
 
 function formatSharpeEstimate(value: number): string {

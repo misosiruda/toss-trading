@@ -406,6 +406,23 @@ test("renders validation lab detail without strategy recommendation controls", a
   await expect(page.getByText("train evidence only")).toBeVisible();
   await expect(page.getByText("Candidate rows")).toBeVisible();
   await expect(page.getByText("Policy Candidate Comparison")).toBeVisible();
+  const costRiskWarning = page.getByLabel("Cost risk warning");
+  await expect(
+    costRiskWarning.getByRole("heading", {
+      name: "Execution cost risk",
+    })
+  ).toBeVisible();
+  await expect(
+    costRiskWarning.getByText("missing", { exact: true })
+  ).toHaveCount(2);
+  await expect(
+    costRiskWarning.getByText("COST_RISK_WARNING_MISSING")
+  ).toBeVisible();
+  await expect(
+    costRiskWarning.getByText(
+      "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee."
+    )
+  ).toBeVisible();
   const pboWarning = page.getByLabel("CPCV PBO validation warning");
   await expect(
     pboWarning.getByRole("heading", {
