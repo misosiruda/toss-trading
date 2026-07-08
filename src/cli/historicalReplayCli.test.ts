@@ -13,6 +13,7 @@ import test from "node:test";
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import { buildTripleBarrierLabelArtifact } from "../replay/tripleBarrierLabel.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { createPaperCostModel } from "../paper/costModel.js";
 import {
   historicalReplayCodexProviderMetadata,
   resolveHistoricalReplayPromptPolicy,
@@ -300,6 +301,8 @@ test("historical replay CLI writes batch run metadata", () => {
       "2025-02-03T09:00:00+09:00",
       "--step-seconds",
       "60",
+      "--paper-market-impact-bps-per-participation-rate",
+      "500",
       "--paper-take-profit-ratio",
       "0.15",
       "--batch-id",
@@ -331,14 +334,25 @@ test("historical replay CLI writes batch run metadata", () => {
     string,
     unknown
   >;
+  const executionPolicy = configuration["executionPolicy"] as Record<
+    string,
+    unknown
+  >;
 
   assert.equal(identity["runId"], "batch-smoke-run-002");
   assert.equal(identity["batchId"], "batch-smoke");
   assert.equal(identity["runIndex"], 2);
   assert.equal(window["source"], "explicit");
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
+  assert.equal(executionPolicy["marketImpactBpsPerParticipationRate"], 500);
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
   assert.equal(manifest["universeSnapshotDate"], "2025-01-01");
+  assert.equal(
+    manifest["costModelHash"],
+    createReplayResearchHash(
+      createPaperCostModel({ marketImpactBpsPerParticipationRate: 500 })
+    )
+  );
 });
 
 test("historical replay CLI records Codex provider metadata in research manifest", () => {
@@ -490,6 +504,8 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       String(31 * 24 * 60 * 60),
       "--risk-profile",
       "aggressive_paper",
+      "--paper-market-impact-bps-per-participation-rate",
+      "500",
       "--dynamic-cash-reserve",
       "--dynamic-cash-reserve-lookback-days",
       "10",
@@ -589,8 +605,16 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     string,
     unknown
   >;
+  const runExecutionPolicy = runConfiguration["executionPolicy"] as Record<
+    string,
+    unknown
+  >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
   assert.equal(runResearchManifest["universeSnapshotDate"], "2025-01-01");
+  assert.equal(
+    runExecutionPolicy["marketImpactBpsPerParticipationRate"],
+    500
+  );
   assert.deepEqual(runConfiguration["paperExitPolicy"], {
     takeProfitMode: "full_exit",
     takeProfitRatio: 0.15,

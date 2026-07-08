@@ -43,6 +43,9 @@ test("historical replay workflow plan builds runner input and run metadata", () 
         maxBudgetPerSymbolKrw: 200_000,
         allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
       },
+      executionPolicy: {
+        marketImpactBpsPerParticipationRate: 500
+      },
       riskProfile: "aggressive_paper",
       riskPolicy: {
         maxBudgetPerDecisionKrw: 200_000,
@@ -98,6 +101,10 @@ test("historical replay workflow plan builds runner input and run metadata", () 
   assert.equal(plan.runnerOptions.decisionProvider, decisionProvider);
   assert.equal(plan.runnerOptions.samplingPolicy, samplingPolicy);
   assert.deepEqual(plan.runnerOptions.paperExitPolicy, paperExitPolicy);
+  assert.equal(
+    plan.runnerOptions.executionPolicy?.marketImpactBpsPerParticipationRate,
+    500
+  );
   assert.equal(
     plan.metadataContext.identity.runId,
     "batch_smoke_2025_run_000002_20250203"
@@ -162,6 +169,12 @@ test("historical replay workflow plan builds runner input and run metadata", () 
     takeProfitRatio: 0.15,
     stopLossRatio: 0.08
   });
+  assert.equal(
+    plan.metadataContext.configuration.executionPolicy
+      ?.marketImpactBpsPerParticipationRate,
+    500
+  );
+  assert.equal(plan.metadataContext.configuration.executionPolicy?.feeBps, 0);
 });
 
 function snapshot(): HistoricalMarketSnapshot {

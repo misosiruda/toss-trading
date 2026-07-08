@@ -140,6 +140,21 @@ export const historicalReplayRunConfigurationSchema = z
         allowedActions: z.array(virtualActionSchema).min(1)
       })
       .strict(),
+    executionPolicy: z
+      .object({
+        fillPriceRule: z.literal("current_candidate_last_price"),
+        slippageBps: z.number().min(0),
+        feeBps: z.number().min(0),
+        taxBps: z.number().min(0),
+        fillRatio: z.number().min(0),
+        allowFractionalShares: z.boolean(),
+        maxVolumeParticipationRate: z.number().min(0).max(1),
+        minLiquidityFillRatio: z.number().min(0).max(1),
+        rejectStaleLiquidity: z.boolean(),
+        marketImpactBpsPerParticipationRate: z.number().min(0)
+      })
+      .strict()
+      .optional(),
     strategyPreset: z.string().trim().min(1).nullable(),
     riskProfile: z.enum(PAPER_RISK_PROFILE_NAMES).nullable(),
     riskPolicy: z

@@ -12,6 +12,7 @@ import type {
   PaperOrderEngine,
   PaperOrderResult
 } from "../paper/orderEngine.js";
+import type { PaperExecutionPolicy } from "../paper/executionModel.js";
 import {
   prunePaperExitPolicyState,
   type PaperExitPolicyState
@@ -40,6 +41,7 @@ export interface HistoricalReplayDecisionExecutionInput {
   recordedDecision: VirtualDecision;
   engine: PaperOrderEngine;
   riskPolicy: Partial<VirtualRiskPolicy>;
+  executionPolicy?: Partial<PaperExecutionPolicy> | undefined;
   paperExitPolicyState: PaperExitPolicyState;
   auditEvents: AuditEvent[];
   riskDecisions: VirtualRiskDecision[];
@@ -54,6 +56,7 @@ export interface HistoricalReplayDecisionItemExecutionInput {
   decisionItem: VirtualDecisionItem;
   engine: PaperOrderEngine;
   riskPolicy: Partial<VirtualRiskPolicy>;
+  executionPolicy?: Partial<PaperExecutionPolicy> | undefined;
   paperExitPolicyState: PaperExitPolicyState;
   auditEvents: AuditEvent[];
   riskDecisions: VirtualRiskDecision[];
@@ -132,6 +135,9 @@ export function executeHistoricalReplayDecisionItems(
       decisionItem: item,
       engine: input.engine,
       riskPolicy: input.riskPolicy,
+      ...(input.executionPolicy === undefined
+        ? {}
+        : { executionPolicy: input.executionPolicy }),
       paperExitPolicyState: input.paperExitPolicyState,
       auditEvents: input.auditEvents,
       riskDecisions: input.riskDecisions,
@@ -163,7 +169,10 @@ export function executeHistoricalReplayDecisionItem(
     packet: input.packet,
     portfolio: input.portfolio,
     decision: item,
-    riskPolicy: input.riskPolicy
+    riskPolicy: input.riskPolicy,
+    ...(input.executionPolicy === undefined
+      ? {}
+      : { executionPolicy: input.executionPolicy })
   });
   const currentPortfolio = result.portfolio;
   prunePaperExitPolicyState(input.paperExitPolicyState, currentPortfolio);

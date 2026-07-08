@@ -10,6 +10,7 @@ import {
 } from "../analytics/marketRegimeClassifier.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
+import type { PaperExecutionPolicy } from "../paper/executionModel.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import {
   normalizePaperExitPolicy,
@@ -124,6 +125,7 @@ export interface BatchReplayRunnerOptions {
   maxCandidates?: number;
   maxSnapshotAgeSeconds?: number;
   constraints?: MarketPacketConstraints;
+  executionPolicy?: Partial<PaperExecutionPolicy>;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
   allocationPolicy?: PaperAllocationPolicy;
@@ -573,6 +575,9 @@ export async function runHistoricalBatchReplay(
         maxSnapshotAgeSeconds:
           options.maxSnapshotAgeSeconds ?? DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
         constraints: options.constraints ?? DEFAULT_CONSTRAINTS,
+        ...(options.executionPolicy === undefined
+          ? {}
+          : { executionPolicy: options.executionPolicy }),
         ...(options.riskProfile === undefined
           ? {}
           : { riskProfile: options.riskProfile }),

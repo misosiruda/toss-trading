@@ -29,6 +29,7 @@ import {
 } from "../paper/marketRegimeAllocationPolicy.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
 import type { VirtualRiskPolicy } from "../paper/riskEngine.js";
+import type { PaperExecutionPolicy } from "../paper/executionModel.js";
 import {
   markPortfolioToMarket,
   pricePointsFromHistoricalSnapshots
@@ -72,6 +73,7 @@ export interface HistoricalReplayRunnerOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   riskPolicy?: Partial<VirtualRiskPolicy>;
+  executionPolicy?: Partial<PaperExecutionPolicy> | undefined;
   allocationPolicy?: PaperAllocationPolicy;
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
@@ -480,6 +482,9 @@ export function runHistoricalReplay(
           snapshots: input.snapshots,
           simulatedAt
         }),
+        ...(options.executionPolicy === undefined
+          ? {}
+          : { executionPolicy: options.executionPolicy }),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -591,6 +596,9 @@ export function runHistoricalReplay(
         snapshots: input.snapshots,
         simulatedAt
       }),
+      ...(options.executionPolicy === undefined
+        ? {}
+        : { executionPolicy: options.executionPolicy }),
       paperExitPolicyState,
       auditEvents,
       riskDecisions,
