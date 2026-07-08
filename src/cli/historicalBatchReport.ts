@@ -219,10 +219,63 @@ async function readUniverseCoverageReport(
     );
   }
 
-  if (!isUniverseCoverageReport(parsed)) {
+  const normalized = normalizeUniverseCoverageReport(parsed);
+  if (!isUniverseCoverageReport(normalized)) {
     throw new Error("invalid universe coverage report");
   }
-  return parsed;
+  return normalized;
+}
+
+function normalizeUniverseCoverageReport(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    minAvailableStrategyBucketSymbolCounts:
+      value["minAvailableStrategyBucketSymbolCounts"] === undefined
+        ? {}
+        : value["minAvailableStrategyBucketSymbolCounts"],
+    requiredStrategyBuckets:
+      value["requiredStrategyBuckets"] === undefined
+        ? []
+        : value["requiredStrategyBuckets"],
+    availableStrategyBuckets:
+      value["availableStrategyBuckets"] === undefined
+        ? []
+        : value["availableStrategyBuckets"],
+    availableStrategyBucketSymbolCounts:
+      value["availableStrategyBucketSymbolCounts"] === undefined
+        ? {}
+        : value["availableStrategyBucketSymbolCounts"],
+    missingRequiredStrategyBuckets:
+      value["missingRequiredStrategyBuckets"] === undefined
+        ? []
+        : value["missingRequiredStrategyBuckets"],
+    insufficientAvailableStrategyBucketSymbolCounts:
+      value["insufficientAvailableStrategyBucketSymbolCounts"] === undefined
+        ? []
+        : value["insufficientAvailableStrategyBucketSymbolCounts"],
+    symbolSummaries: Array.isArray(value["symbolSummaries"])
+      ? value["symbolSummaries"].map(normalizeUniverseCoverageSymbolSummary)
+      : value["symbolSummaries"]
+  };
+}
+
+function normalizeUniverseCoverageSymbolSummary(value: unknown): unknown {
+  if (
+    !isRecord(value) ||
+    value["strategyBucketSnapshotStatus"] !== undefined
+  ) {
+    return value;
+  }
+
+  return {
+    ...value,
+    strategyBucketSnapshotStatus:
+      typeof value["strategyBucket"] === "string" ? "missing" : "not_applicable"
+  };
 }
 
 async function readTripleBarrierLabelArtifact(

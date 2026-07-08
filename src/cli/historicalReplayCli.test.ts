@@ -1173,6 +1173,54 @@ test("historical batch report CLI reads explicit universe coverage report", () =
   );
 });
 
+test("historical batch report CLI normalizes auto-discovered legacy universe coverage report", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const coveragePath = join(batchDir, "historical-universe-coverage.json");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-legacy-coverage",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    coveragePath,
+    `${JSON.stringify(legacyUniverseCoverageReport())}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /## Universe Coverage/);
+  const report = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const coverage = report["universeCoverage"] as Record<string, unknown>;
+  assert.equal(report["sourceUniverseCoveragePath"], coveragePath);
+  assert.deepEqual(coverage["availableStrategyBucketSymbolCounts"], {});
+});
+
 test("historical batch report CLI rejects missing universe coverage path value", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
@@ -2019,6 +2067,17 @@ function universeCoverageReport(): Record<string, unknown> {
     disclaimer:
       "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal."
   };
+}
+
+function legacyUniverseCoverageReport(): Record<string, unknown> {
+  const report = universeCoverageReport();
+  delete report["minAvailableStrategyBucketSymbolCounts"];
+  delete report["requiredStrategyBuckets"];
+  delete report["availableStrategyBuckets"];
+  delete report["availableStrategyBucketSymbolCounts"];
+  delete report["missingRequiredStrategyBuckets"];
+  delete report["insufficientAvailableStrategyBucketSymbolCounts"];
+  return report;
 }
 
 function metaLabelEvaluationReport(): Record<string, unknown> {
