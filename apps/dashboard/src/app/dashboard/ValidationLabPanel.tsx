@@ -88,10 +88,7 @@ export function ValidationLabPanel({
           title="Overfitting warning"
           value={data.overfittingWarning}
         />
-        <ObjectSummary
-          title="Data universe coverage"
-          value={data.dataUniverseCoverage}
-        />
+        <DataUniverseCoverageSummary value={data.dataUniverseCoverage} />
         <ObjectSummary
           title="Provider failure"
           value={data.providerFailureSummary}
@@ -576,6 +573,47 @@ function ObjectSummary({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+function DataUniverseCoverageSummary({ value }: { value: unknown }) {
+  const metrics = dataUniverseCoverageMetrics(value);
+  return (
+    <article className="rounded-[8px] border border-[var(--border)] p-3">
+      <h3 className="text-sm font-semibold">Data universe coverage</h3>
+      {metrics === null ? null : (
+        <dl
+          aria-label="Data universe coverage strategy bucket metrics"
+          className="mt-3 grid gap-2 text-xs sm:grid-cols-2"
+        >
+          <CoverageMetric label="Status" value={metrics.status} />
+          <CoverageMetric label="Universe" value={metrics.universeId} />
+          <CoverageMetric
+            label="Available buckets"
+            value={metrics.availableBuckets}
+          />
+          <CoverageMetric label="Bucket gaps" value={metrics.bucketGaps} />
+        </dl>
+      )}
+      <pre
+        aria-label="Data universe coverage summary"
+        className="mt-3 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-[6px] bg-[var(--panel-muted)] p-3 font-mono text-xs leading-5 text-[var(--muted)]"
+        tabIndex={0}
+      >
+        {formatObject(value)}
+      </pre>
+    </article>
+  );
+}
+
+function CoverageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="font-medium uppercase text-[var(--muted)]">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-[var(--foreground)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function Warnings({ warnings }: { warnings: string[] }) {
   if (warnings.length === 0) {
     return null;
@@ -717,6 +755,44 @@ function formatObject(value: unknown): string {
   return `${serialized.slice(0, 900)}...`;
 }
 
+function dataUniverseCoverageMetrics(value: unknown): {
+  status: string;
+  universeId: string;
+  availableBuckets: string;
+  bucketGaps: string;
+} | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const missingRequiredBucketCount = readNullableNumber(
+    value["missingRequiredStrategyBucketCount"]
+  );
+  const insufficientBucketCount = readNullableNumber(
+    value["insufficientAvailableStrategyBucketSymbolCount"]
+  );
+  return {
+    status: readNullableString(value["coverageReportStatus"]) ?? "missing",
+    universeId: readNullableString(value["universeId"]) ?? "missing",
+    availableBuckets: formatNumberRecord(
+      readNumberRecord(value["availableStrategyBucketSymbolCounts"])
+    ),
+    bucketGaps: [
+      `missing required: ${formatNullableInteger(missingRequiredBucketCount)}`,
+      `insufficient: ${formatNullableInteger(insufficientBucketCount)}`
+    ].join(", ")
+  };
+}
+
+function formatNumberRecord(value: Record<string, number>): string {
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  if (entries.length === 0) {
+    return "missing";
+  }
+  return entries.map(([key, count]) => `${key}: ${count}`).join(", ");
+}
+
 function formatCandidateKeyLabel(value: string): string {
   return value.length <= 72
     ? value
@@ -732,4 +808,28 @@ function formatCandidateIdentifierList(values: Array<string | null>): string {
     return "missing";
   }
   return values.map(formatCandidateIdentifier).join(", ");
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function readNullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readNumberRecord(value: unknown): Record<string, number> {
+  if (!isPlainRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, number] =>
+        typeof entry[1] === "number" && Number.isFinite(entry[1])
+    )
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
