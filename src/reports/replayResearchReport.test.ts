@@ -299,11 +299,14 @@ function aggregateReport(
             insufficientOptionalSymbolCount: 0,
             missingRequiredMarketCount: 0,
             missingRequiredAssetTypeCount: 0,
+            missingRequiredStrategyBucketCount: 0,
             insufficientAvailableMarketSymbolCount: 1,
             insufficientAvailableAssetTypeSymbolCount: 1,
+            insufficientAvailableStrategyBucketSymbolCount: 0,
             corruptLineCount: 0,
             availableMarketSymbolCounts: { KR: 1 },
             availableAssetTypeSymbolCounts: { STOCK: 1 },
+            availableStrategyBucketSymbolCounts: { long_term: 1 },
             issues: ["REQUIRED_UNIVERSE_SYMBOL_MISSING"],
             warnings: [
               "universe selection bias warning: coverage status is insufficient for test-universe; available_required_symbols=1/2; available_symbols=1/3"

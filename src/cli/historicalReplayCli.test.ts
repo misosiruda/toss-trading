@@ -1173,6 +1173,54 @@ test("historical batch report CLI reads explicit universe coverage report", () =
   );
 });
 
+test("historical batch report CLI normalizes auto-discovered legacy universe coverage report", () => {
+  const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
+  const runsPath = join(batchDir, "batch-replay-runs.jsonl");
+  const coveragePath = join(batchDir, "historical-universe-coverage.json");
+  const outputPath = join(batchDir, "batch-replay-aggregate-report.json");
+  writeFileSync(
+    runsPath,
+    `${JSON.stringify({
+      mode: "paper_only",
+      batchId: "batch-legacy-coverage",
+      runId: "run_0",
+      runIndex: 0,
+      status: "skipped",
+      marketRegime: { label: "insufficient_data" },
+      dataAvailability: { status: "insufficient" },
+      window: {}
+    })}\n`,
+    "utf8"
+  );
+  writeFileSync(
+    coveragePath,
+    `${JSON.stringify(legacyUniverseCoverageReport())}\n`,
+    "utf8"
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReport.js"),
+      "--runs-path",
+      runsPath,
+      "--output-path",
+      outputPath
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /## Universe Coverage/);
+  const report = JSON.parse(readFileSync(outputPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const coverage = report["universeCoverage"] as Record<string, unknown>;
+  assert.equal(report["sourceUniverseCoveragePath"], coveragePath);
+  assert.deepEqual(coverage["availableStrategyBucketSymbolCounts"], {});
+});
+
 test("historical batch report CLI rejects missing universe coverage path value", () => {
   const batchDir = mkdtempSync(join(tmpdir(), "historical-batch-report-cli-"));
   const runsPath = join(batchDir, "batch-replay-runs.jsonl");
@@ -1681,12 +1729,24 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
   writeFileSync(
     join(dataDir, "historical-market-snapshots.jsonl"),
     [
-      JSON.stringify(snapshot("hist_005930_202501", "005930")),
-      JSON.stringify(snapshot("hist_000660_202501", "000660"))
+      JSON.stringify(
+        snapshot("hist_005930_202501", "005930", {
+          strategyBucket: "long_term"
+        })
+      ),
+      JSON.stringify(
+        snapshot("hist_000660_202501", "000660", {
+          strategyBucket: "swing"
+        })
+      )
     ].join("\n") + "\n",
     "utf8"
   );
-  writeFileSync(universePath, JSON.stringify(universe()), "utf8");
+  writeFileSync(
+    universePath,
+    JSON.stringify(strategyBucketCoverageUniverse()),
+    "utf8"
+  );
 
   const result = spawnSync(
     process.execPath,
@@ -1702,6 +1762,10 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
       "2025-02-28T23:59:59.999+09:00",
       "--min-monthly-coverage-ratio",
       "1",
+      "--require-strategy-buckets",
+      "long_term,swing",
+      "--min-available-strategy-bucket-symbols",
+      "long_term:1,swing:1",
       "--output-path",
       outputPath,
       "--json"
@@ -1718,6 +1782,18 @@ test("historical universe coverage CLI writes a JSON coverage report", () => {
 
   assert.equal(stdoutReport["status"], "available");
   assert.equal(storedReport["universeId"], "fixture-expanded");
+  assert.deepEqual(storedReport["requiredStrategyBuckets"], [
+    "long_term",
+    "swing"
+  ]);
+  assert.deepEqual(storedReport["availableStrategyBuckets"], [
+    "long_term",
+    "swing"
+  ]);
+  assert.deepEqual(storedReport["availableStrategyBucketSymbolCounts"], {
+    long_term: 1,
+    swing: 1
+  });
   assert.deepEqual(storedReport["missingOptionalSymbols"], [
     { market: "KR", symbol: "035420" }
   ]);
@@ -1920,6 +1996,7 @@ function snapshot(
     market?: HistoricalMarketSnapshot["market"];
     observedAt?: string;
     sourceRefs?: string[];
+    strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
   } = {}
 ): HistoricalMarketSnapshot {
   const observedAt = options.observedAt ?? "2025-02-03T09:00:00+09:00";
@@ -1929,6 +2006,9 @@ function snapshot(
     symbol,
     observedAt,
     interval: "1m",
+    ...(options.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: options.strategyBucket }),
     lastPriceKrw: 70_000,
     volume: 100_000,
     sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
@@ -1950,22 +2030,28 @@ function universeCoverageReport(): Record<string, unknown> {
     minAvailableSymbolCount: 2,
     minAvailableMarketSymbolCounts: { KR: 2 },
     minAvailableAssetTypeSymbolCounts: { STOCK: 2 },
+    minAvailableStrategyBucketSymbolCounts: { long_term: 1 },
     requireOptionalSymbols: false,
     requiredMarkets: ["KR"],
     requiredAssetTypes: ["STOCK"],
+    requiredStrategyBuckets: ["long_term"],
     availableMarkets: ["KR"],
     availableAssetTypes: ["STOCK"],
+    availableStrategyBuckets: ["long_term"],
     availableSymbolCount: 1,
     availableMarketSymbolCounts: { KR: 1 },
     availableAssetTypeSymbolCounts: { STOCK: 1 },
+    availableStrategyBucketSymbolCounts: { long_term: 1 },
     missingRequiredMarkets: [],
     missingRequiredAssetTypes: [],
+    missingRequiredStrategyBuckets: [],
     insufficientAvailableMarketSymbolCounts: [
       { market: "KR", minimum: 2, available: 1 }
     ],
     insufficientAvailableAssetTypeSymbolCounts: [
       { assetType: "STOCK", minimum: 2, available: 1 }
     ],
+    insufficientAvailableStrategyBucketSymbolCounts: [],
     corruptLineCount: 0,
     universeSymbolCount: 2,
     requiredSymbolCount: 2,
@@ -1981,6 +2067,17 @@ function universeCoverageReport(): Record<string, unknown> {
     disclaimer:
       "Paper-only historical universe coverage. This is not investment advice, not a performance guarantee, and not a live trading signal."
   };
+}
+
+function legacyUniverseCoverageReport(): Record<string, unknown> {
+  const report = universeCoverageReport();
+  delete report["minAvailableStrategyBucketSymbolCounts"];
+  delete report["requiredStrategyBuckets"];
+  delete report["availableStrategyBuckets"];
+  delete report["availableStrategyBucketSymbolCounts"];
+  delete report["missingRequiredStrategyBuckets"];
+  delete report["insufficientAvailableStrategyBucketSymbolCounts"];
+  return report;
 }
 
 function metaLabelEvaluationReport(): Record<string, unknown> {
@@ -2159,6 +2256,35 @@ function universe() {
       { market: "KR", symbol: "005930", required: true },
       { market: "KR", symbol: "000660", required: true },
       { market: "KR", symbol: "035420", required: false }
+    ],
+    disclaimer: "Paper-only fixture."
+  };
+}
+
+function strategyBucketCoverageUniverse() {
+  return {
+    mode: "paper_only_historical_universe",
+    universeId: "fixture-expanded",
+    snapshotDate: "2025-01-01",
+    symbols: [
+      {
+        market: "KR",
+        symbol: "005930",
+        strategyBucket: "long_term",
+        required: true
+      },
+      {
+        market: "KR",
+        symbol: "000660",
+        strategyBucket: "swing",
+        required: true
+      },
+      {
+        market: "KR",
+        symbol: "035420",
+        strategyBucket: "short_term",
+        required: false
+      }
     ],
     disclaimer: "Paper-only fixture."
   };

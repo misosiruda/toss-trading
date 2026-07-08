@@ -7,7 +7,7 @@ import {
   calculateSharpeValidationReport,
   type SharpeValidationReport
 } from "../analytics/sharpeValidation.js";
-import type { AssetType, Market } from "../domain/schemas.js";
+import type { AssetType, Market, StrategyBucket } from "../domain/schemas.js";
 import {
   CPCV_PBO_VALIDATION_SCHEMA_VERSION,
   calculateCpcvPboEstimateFromSelectionLog,
@@ -212,11 +212,14 @@ export interface BatchReplayUniverseCoverageSummary {
   insufficientOptionalSymbolCount: number;
   missingRequiredMarketCount: number;
   missingRequiredAssetTypeCount: number;
+  missingRequiredStrategyBucketCount: number;
   insufficientAvailableMarketSymbolCount: number;
   insufficientAvailableAssetTypeSymbolCount: number;
+  insufficientAvailableStrategyBucketSymbolCount: number;
   corruptLineCount: number;
   availableMarketSymbolCounts: Partial<Record<Market, number>>;
   availableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
+  availableStrategyBucketSymbolCounts: Partial<Record<StrategyBucket, number>>;
   issues: string[];
   warnings: string[];
 }
@@ -1822,6 +1825,7 @@ function renderUniverseCoverage(
     `insufficient_optional_symbol_count: ${coverage.insufficientOptionalSymbolCount}`,
     `available_market_symbol_counts: ${JSON.stringify(coverage.availableMarketSymbolCounts)}`,
     `available_asset_type_symbol_counts: ${JSON.stringify(coverage.availableAssetTypeSymbolCounts)}`,
+    `available_strategy_bucket_symbol_counts: ${JSON.stringify(coverage.availableStrategyBucketSymbolCounts)}`,
     `issues: ${JSON.stringify(coverage.issues)}`,
     `warnings: ${JSON.stringify(coverage.warnings)}`
   ].join("\n");
@@ -1854,13 +1858,19 @@ function summarizeUniverseCoverage(
       coverage.insufficientOptionalSymbols.length,
     missingRequiredMarketCount: coverage.missingRequiredMarkets.length,
     missingRequiredAssetTypeCount: coverage.missingRequiredAssetTypes.length,
+    missingRequiredStrategyBucketCount:
+      coverage.missingRequiredStrategyBuckets.length,
     insufficientAvailableMarketSymbolCount:
       coverage.insufficientAvailableMarketSymbolCounts.length,
     insufficientAvailableAssetTypeSymbolCount:
       coverage.insufficientAvailableAssetTypeSymbolCounts.length,
+    insufficientAvailableStrategyBucketSymbolCount:
+      coverage.insufficientAvailableStrategyBucketSymbolCounts.length,
     corruptLineCount: coverage.corruptLineCount,
     availableMarketSymbolCounts: coverage.availableMarketSymbolCounts,
     availableAssetTypeSymbolCounts: coverage.availableAssetTypeSymbolCounts,
+    availableStrategyBucketSymbolCounts:
+      coverage.availableStrategyBucketSymbolCounts,
     issues: [...coverage.issues]
   };
 

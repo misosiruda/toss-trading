@@ -11,7 +11,9 @@ import {
   assetTypeSchema,
   marketSchema,
   type AssetType,
-  type Market
+  type Market,
+  strategyBucketSchema,
+  type StrategyBucket
 } from "../domain/schemas.js";
 import {
   createStoragePaths,
@@ -36,9 +38,15 @@ const minAvailableMarketSymbolCounts = readMarketCountArg(
 const minAvailableAssetTypeSymbolCounts = readAssetTypeCountArg(
   "--min-available-asset-type-symbols"
 );
+const minAvailableStrategyBucketSymbolCounts = readStrategyBucketCountArg(
+  "--min-available-strategy-bucket-symbols"
+);
 const requireOptionalSymbols = args.includes("--require-optional-symbols");
 const requiredMarkets = readMarketListArg("--require-markets");
 const requiredAssetTypes = readAssetTypeListArg("--require-asset-types");
+const requiredStrategyBuckets = readStrategyBucketListArg(
+  "--require-strategy-buckets"
+);
 const outputPath = readArgValue("--output-path");
 const jsonOutput = args.includes("--json");
 
@@ -60,10 +68,12 @@ const report = assessHistoricalUniverseCoverage({
   minAvailableSymbolCount,
   minAvailableMarketSymbolCounts,
   minAvailableAssetTypeSymbolCounts,
+  minAvailableStrategyBucketSymbolCounts,
   corruptLineCount: snapshotRead.corruptLineCount,
   requireOptionalSymbols,
   requiredMarkets,
-  requiredAssetTypes
+  requiredAssetTypes,
+  requiredStrategyBuckets
 });
 
 if (outputPath !== undefined) {
@@ -107,6 +117,18 @@ function renderReport(): string {
     `min_available_asset_type_symbol_counts: ${formatCountRecord(
       report.minAvailableAssetTypeSymbolCounts
     )}`,
+    `required_strategy_buckets: ${
+      report.requiredStrategyBuckets.join(", ") || "none"
+    }`,
+    `available_strategy_buckets: ${
+      report.availableStrategyBuckets.join(", ") || "none"
+    }`,
+    `available_strategy_bucket_symbol_counts: ${formatCountRecord(
+      report.availableStrategyBucketSymbolCounts
+    )}`,
+    `min_available_strategy_bucket_symbol_counts: ${formatCountRecord(
+      report.minAvailableStrategyBucketSymbolCounts
+    )}`,
     `issues: ${report.issues.join(", ") || "none"}`,
     "",
     "## Missing Symbols",
@@ -114,6 +136,9 @@ function renderReport(): string {
     `optional: ${formatSymbols(report.missingOptionalSymbols)}`,
     `markets: ${report.missingRequiredMarkets.join(", ") || "none"}`,
     `asset_types: ${report.missingRequiredAssetTypes.join(", ") || "none"}`,
+    `strategy_buckets: ${
+      report.missingRequiredStrategyBuckets.join(", ") || "none"
+    }`,
     "",
     "## Lowest Coverage",
     ...report.symbolSummaries
@@ -171,6 +196,10 @@ function readAssetTypeListArg(name: string): AssetType[] {
   return readListArg(name).map((value) => assetTypeSchema.parse(value));
 }
 
+function readStrategyBucketListArg(name: string): StrategyBucket[] {
+  return readListArg(name).map((value) => strategyBucketSchema.parse(value));
+}
+
 function readMarketCountArg(name: string): Partial<Record<Market, number>> {
   const output: Partial<Record<Market, number>> = {};
   for (const item of readListArg(name)) {
@@ -189,6 +218,18 @@ function readAssetTypeCountArg(
     const [rawKey, rawCount] = item.split(":");
     const assetType = assetTypeSchema.parse(rawKey);
     output[assetType] = parseCount(rawCount, name, item);
+  }
+  return output;
+}
+
+function readStrategyBucketCountArg(
+  name: string
+): Partial<Record<StrategyBucket, number>> {
+  const output: Partial<Record<StrategyBucket, number>> = {};
+  for (const item of readListArg(name)) {
+    const [rawKey, rawCount] = item.split(":");
+    const strategyBucket = strategyBucketSchema.parse(rawKey);
+    output[strategyBucket] = parseCount(rawCount, name, item);
   }
   return output;
 }

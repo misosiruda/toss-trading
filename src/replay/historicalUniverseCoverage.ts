@@ -93,9 +93,13 @@ export interface HistoricalUniverseCoverageOptions {
   minAvailableSymbolCount?: number;
   minAvailableMarketSymbolCounts?: Partial<Record<Market, number>>;
   minAvailableAssetTypeSymbolCounts?: Partial<Record<AssetType, number>>;
+  minAvailableStrategyBucketSymbolCounts?: Partial<
+    Record<StrategyBucket, number>
+  >;
   requireOptionalSymbols?: boolean;
   requiredMarkets?: Market[];
   requiredAssetTypes?: AssetType[];
+  requiredStrategyBuckets?: StrategyBucket[];
 }
 
 export interface HistoricalUniverseCoverageSymbolSummary {
@@ -108,6 +112,11 @@ export interface HistoricalUniverseCoverageSymbolSummary {
   region: string | null;
   riskTags: string[];
   strategyBucket: StrategyBucket | null;
+  strategyBucketSnapshotStatus:
+    | "not_applicable"
+    | "matched"
+    | "missing"
+    | "mismatched";
   sector: string | null;
   segment: string | null;
   required: boolean;
@@ -134,16 +143,23 @@ export interface HistoricalUniverseCoverageReport {
   minAvailableSymbolCount: number;
   minAvailableMarketSymbolCounts: Partial<Record<Market, number>>;
   minAvailableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
+  minAvailableStrategyBucketSymbolCounts: Partial<
+    Record<StrategyBucket, number>
+  >;
   requireOptionalSymbols: boolean;
   requiredMarkets: Market[];
   requiredAssetTypes: AssetType[];
+  requiredStrategyBuckets: StrategyBucket[];
   availableMarkets: Market[];
   availableAssetTypes: AssetType[];
+  availableStrategyBuckets: StrategyBucket[];
   availableSymbolCount: number;
   availableMarketSymbolCounts: Partial<Record<Market, number>>;
   availableAssetTypeSymbolCounts: Partial<Record<AssetType, number>>;
+  availableStrategyBucketSymbolCounts: Partial<Record<StrategyBucket, number>>;
   missingRequiredMarkets: Market[];
   missingRequiredAssetTypes: AssetType[];
+  missingRequiredStrategyBuckets: StrategyBucket[];
   insufficientAvailableMarketSymbolCounts: Array<{
     market: Market;
     minimum: number;
@@ -151,6 +167,11 @@ export interface HistoricalUniverseCoverageReport {
   }>;
   insufficientAvailableAssetTypeSymbolCounts: Array<{
     assetType: AssetType;
+    minimum: number;
+    available: number;
+  }>;
+  insufficientAvailableStrategyBucketSymbolCounts: Array<{
+    strategyBucket: StrategyBucket;
     minimum: number;
     available: number;
   }>;
@@ -229,6 +250,10 @@ export function assessHistoricalUniverseCoverage(
     options.minAvailableAssetTypeSymbolCounts ?? {},
     "minAvailableAssetTypeSymbolCounts"
   );
+  const minAvailableStrategyBucketSymbolCounts = normalizeCountRecord(
+    options.minAvailableStrategyBucketSymbolCounts ?? {},
+    "minAvailableStrategyBucketSymbolCounts"
+  );
   const corruptLineCount = options.corruptLineCount ?? 0;
   validateNonNegativeInteger(corruptLineCount, "corruptLineCount");
 
@@ -270,6 +295,13 @@ export function assessHistoricalUniverseCoverage(
   const requireOptionalSymbols = options.requireOptionalSymbols === true;
   const requiredMarkets = uniqueSorted(options.requiredMarkets ?? []);
   const requiredAssetTypes = uniqueSorted(options.requiredAssetTypes ?? []);
+  const requiredStrategyBuckets = uniqueSorted(
+    options.requiredStrategyBuckets ?? []
+  );
+  const strategyBucketGateBuckets = uniqueSorted<StrategyBucket>([
+    ...requiredStrategyBuckets,
+    ...(Object.keys(minAvailableStrategyBucketSymbolCounts) as StrategyBucket[])
+  ]);
   const availableSymbolCount = symbolSummaries.filter(
     (summary) => summary.available
   ).length;
@@ -283,14 +315,28 @@ export function assessHistoricalUniverseCoverage(
       .filter((summary) => summary.available && summary.assetType !== null)
       .map((summary) => summary.assetType as AssetType)
   );
+  const availableStrategyBuckets = uniqueSorted(
+    symbolSummaries.flatMap((summary) =>
+      summary.available &&
+      summary.strategyBucket !== null &&
+      summary.strategyBucketSnapshotStatus === "matched"
+        ? [summary.strategyBucket]
+        : []
+    )
+  );
   const availableMarketSymbolCounts = countAvailableMarkets(symbolSummaries);
   const availableAssetTypeSymbolCounts =
     countAvailableAssetTypes(symbolSummaries);
+  const availableStrategyBucketSymbolCounts =
+    countAvailableStrategyBuckets(symbolSummaries);
   const missingRequiredMarkets = requiredMarkets.filter(
     (market) => !availableMarkets.includes(market)
   );
   const missingRequiredAssetTypes = requiredAssetTypes.filter(
     (assetType) => !availableAssetTypes.includes(assetType)
+  );
+  const missingRequiredStrategyBuckets = requiredStrategyBuckets.filter(
+    (strategyBucket) => !availableStrategyBuckets.includes(strategyBucket)
   );
   const insufficientAvailableMarketSymbolCounts =
     insufficientMarketSymbolCounts({
@@ -302,6 +348,21 @@ export function assessHistoricalUniverseCoverage(
       minimumCounts: minAvailableAssetTypeSymbolCounts,
       availableCounts: availableAssetTypeSymbolCounts
     });
+  const insufficientAvailableStrategyBucketSymbolCounts =
+    insufficientStrategyBucketSymbolCounts({
+      minimumCounts: minAvailableStrategyBucketSymbolCounts,
+      availableCounts: availableStrategyBucketSymbolCounts
+    });
+  const strategyBucketSnapshotIssueCount =
+    strategyBucketGateBuckets.length === 0
+      ? 0
+      : symbolSummaries.filter(
+          (summary) =>
+            summary.available &&
+            summary.strategyBucket !== null &&
+            strategyBucketGateBuckets.includes(summary.strategyBucket) &&
+            summary.strategyBucketSnapshotStatus !== "matched"
+        ).length;
   const issues = coverageIssues({
     corruptLineCount,
     missingRequiredSymbols,
@@ -311,10 +372,13 @@ export function assessHistoricalUniverseCoverage(
     requireOptionalSymbols,
     missingRequiredMarkets,
     missingRequiredAssetTypes,
+    missingRequiredStrategyBuckets,
     availableSymbolCount,
     minAvailableSymbolCount,
     insufficientAvailableMarketSymbolCounts,
-    insufficientAvailableAssetTypeSymbolCounts
+    insufficientAvailableAssetTypeSymbolCounts,
+    insufficientAvailableStrategyBucketSymbolCounts,
+    strategyBucketSnapshotIssueCount
   });
 
   return {
@@ -330,18 +394,24 @@ export function assessHistoricalUniverseCoverage(
     minAvailableSymbolCount,
     minAvailableMarketSymbolCounts,
     minAvailableAssetTypeSymbolCounts,
+    minAvailableStrategyBucketSymbolCounts,
     requireOptionalSymbols,
     requiredMarkets,
     requiredAssetTypes,
+    requiredStrategyBuckets,
     availableMarkets,
     availableAssetTypes,
+    availableStrategyBuckets,
     availableSymbolCount,
     availableMarketSymbolCounts,
     availableAssetTypeSymbolCounts,
+    availableStrategyBucketSymbolCounts,
     missingRequiredMarkets,
     missingRequiredAssetTypes,
+    missingRequiredStrategyBuckets,
     insufficientAvailableMarketSymbolCounts,
     insufficientAvailableAssetTypeSymbolCounts,
+    insufficientAvailableStrategyBucketSymbolCounts,
     corruptLineCount,
     universeSymbolCount: symbolSummaries.length,
     requiredSymbolCount: symbolSummaries.filter((summary) => summary.required)
@@ -387,6 +457,11 @@ function summarizeUniverseMember(input: {
       ? 0
       : roundRatio(coveredMonthCount / input.expectedMonths.length);
   const sortedSnapshots = [...input.snapshots].sort(compareSnapshots);
+  const strategyBucket = input.member.strategyBucket ?? null;
+  const strategyBucketSnapshotStatus = summarizeStrategyBucketSnapshotStatus({
+    expectedStrategyBucket: strategyBucket,
+    snapshots: sortedSnapshots
+  });
   const available =
     sortedSnapshots.length >= input.minSnapshotsPerSymbol &&
     monthlyCoverageRatio >= input.minMonthlyCoverageRatio;
@@ -400,7 +475,8 @@ function summarizeUniverseMember(input: {
     assetClass: input.member.assetClass ?? null,
     region: input.member.region ?? null,
     riskTags: input.member.riskTags ?? [],
-    strategyBucket: input.member.strategyBucket ?? null,
+    strategyBucket,
+    strategyBucketSnapshotStatus,
     sector: input.member.sector ?? null,
     segment: input.member.segment ?? null,
     required: input.member.required,
@@ -413,6 +489,30 @@ function summarizeUniverseMember(input: {
     missingMonths,
     available
   };
+}
+
+function summarizeStrategyBucketSnapshotStatus(input: {
+  expectedStrategyBucket: StrategyBucket | null;
+  snapshots: HistoricalMarketSnapshot[];
+}):
+  | "not_applicable"
+  | "matched"
+  | "missing"
+  | "mismatched" {
+  if (input.expectedStrategyBucket === null) {
+    return "not_applicable";
+  }
+  if (
+    input.snapshots.length === 0 ||
+    input.snapshots.some((snapshot) => snapshot.strategyBucket === undefined)
+  ) {
+    return "missing";
+  }
+  return input.snapshots.every(
+    (snapshot) => snapshot.strategyBucket === input.expectedStrategyBucket
+  )
+    ? "matched"
+    : "mismatched";
 }
 
 function snapshotsInRangeBySymbol(input: {
@@ -470,6 +570,7 @@ function coverageIssues(input: {
   requireOptionalSymbols: boolean;
   missingRequiredMarkets: Market[];
   missingRequiredAssetTypes: AssetType[];
+  missingRequiredStrategyBuckets: StrategyBucket[];
   availableSymbolCount: number;
   minAvailableSymbolCount: number;
   insufficientAvailableMarketSymbolCounts: Array<{
@@ -482,6 +583,12 @@ function coverageIssues(input: {
     minimum: number;
     available: number;
   }>;
+  insufficientAvailableStrategyBucketSymbolCounts: Array<{
+    strategyBucket: StrategyBucket;
+    minimum: number;
+    available: number;
+  }>;
+  strategyBucketSnapshotIssueCount: number;
 }): string[] {
   const issues: string[] = [];
   if (input.corruptLineCount > 0) {
@@ -508,6 +615,9 @@ function coverageIssues(input: {
   if (input.missingRequiredAssetTypes.length > 0) {
     issues.push("REQUIRED_ASSET_TYPE_MISSING");
   }
+  if (input.missingRequiredStrategyBuckets.length > 0) {
+    issues.push("REQUIRED_STRATEGY_BUCKET_MISSING");
+  }
   if (input.availableSymbolCount < input.minAvailableSymbolCount) {
     issues.push("AVAILABLE_UNIVERSE_SYMBOL_COUNT_BELOW_MINIMUM");
   }
@@ -516,6 +626,12 @@ function coverageIssues(input: {
   }
   if (input.insufficientAvailableAssetTypeSymbolCounts.length > 0) {
     issues.push("AVAILABLE_ASSET_TYPE_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
+  if (input.insufficientAvailableStrategyBucketSymbolCounts.length > 0) {
+    issues.push("AVAILABLE_STRATEGY_BUCKET_SYMBOL_COUNT_BELOW_MINIMUM");
+  }
+  if (input.strategyBucketSnapshotIssueCount > 0) {
+    issues.push("STRATEGY_BUCKET_SNAPSHOT_METADATA_INVALID");
   }
   return issues;
 }
@@ -561,6 +677,23 @@ function countAvailableAssetTypes(
   return sortCountRecord(counts);
 }
 
+function countAvailableStrategyBuckets(
+  summaries: HistoricalUniverseCoverageSymbolSummary[]
+): Partial<Record<StrategyBucket, number>> {
+  const counts: Partial<Record<StrategyBucket, number>> = {};
+  for (const summary of summaries) {
+    if (
+      !summary.available ||
+      summary.strategyBucket === null ||
+      summary.strategyBucketSnapshotStatus !== "matched"
+    ) {
+      continue;
+    }
+    counts[summary.strategyBucket] = (counts[summary.strategyBucket] ?? 0) + 1;
+  }
+  return sortCountRecord(counts);
+}
+
 function insufficientMarketSymbolCounts(input: {
   minimumCounts: Partial<Record<Market, number>>;
   availableCounts: Partial<Record<Market, number>>;
@@ -583,6 +716,28 @@ function insufficientAssetTypeSymbolCounts(input: {
       return available < minimum ? [{ assetType, minimum, available }] : [];
     })
     .sort((left, right) => left.assetType.localeCompare(right.assetType));
+}
+
+function insufficientStrategyBucketSymbolCounts(input: {
+  minimumCounts: Partial<Record<StrategyBucket, number>>;
+  availableCounts: Partial<Record<StrategyBucket, number>>;
+}): Array<{
+  strategyBucket: StrategyBucket;
+  minimum: number;
+  available: number;
+}> {
+  return (
+    Object.entries(input.minimumCounts) as Array<[StrategyBucket, number]>
+  )
+    .flatMap(([strategyBucket, minimum]) => {
+      const available = input.availableCounts[strategyBucket] ?? 0;
+      return available < minimum
+        ? [{ strategyBucket, minimum, available }]
+        : [];
+    })
+    .sort((left, right) =>
+      left.strategyBucket.localeCompare(right.strategyBucket)
+    );
 }
 
 function sortCountRecord<T extends string>(
