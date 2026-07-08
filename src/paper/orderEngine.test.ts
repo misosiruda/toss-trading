@@ -624,7 +624,7 @@ test("PaperOrderEngine records buy fill costs with slippage and fees", () => {
   assert.equal(result.trade?.spreadCostKrw, 0);
   assert.equal(result.trade?.impactCostKrw, 0);
   assert.equal(result.trade?.totalCostKrw, 140);
-  assert.equal(result.trade?.costModelVersion, "paper_cost_model.v3");
+  assert.equal(result.trade?.costModelVersion, "paper_cost_model.v4");
   assert.equal(result.trade?.fillStatus, "filled");
   assert.equal(result.trade?.liquidityStatus, "not_modeled");
   assert.equal(result.trade?.requestedNotionalKrw, 70_000);

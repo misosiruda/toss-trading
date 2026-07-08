@@ -207,7 +207,7 @@ test("batch replay aggregate report summarizes execution cost components", () =>
           notModeledLiquidityCount: 0,
           averageParticipationRate: 0.1,
           maxParticipationRate: 0.1,
-          costModelVersions: ["paper_cost_model.v3"]
+          costModelVersions: ["paper_cost_model.v4"]
         }
       ),
       withCostSummary(
@@ -224,7 +224,7 @@ test("batch replay aggregate report summarizes execution cost components", () =>
           notModeledLiquidityCount: 0,
           averageParticipationRate: 0.2,
           maxParticipationRate: 0.25,
-          costModelVersions: ["paper_cost_model.v3"]
+          costModelVersions: ["paper_cost_model.v4"]
         }
       ),
       withoutCostSummary(
@@ -265,7 +265,7 @@ test("batch replay aggregate report summarizes execution cost components", () =>
   assert.equal(report.overall.costSummary.averageRunParticipationRate, 0.15);
   assert.equal(report.overall.costSummary.maxParticipationRate, 0.25);
   assert.deepEqual(report.overall.costSummary.costModelVersions, [
-    "paper_cost_model.v3"
+    "paper_cost_model.v4"
   ]);
   assert.deepEqual(report.overall.costSummary.runIds, [
     "run_cost_0",
@@ -2508,7 +2508,7 @@ function costSummary(
     spreadCostKrw: 0,
     impactCostKrw: 0,
     totalCostKrw: 0,
-    costModelVersions: ["paper_cost_model.v3"],
+    costModelVersions: ["paper_cost_model.v4"],
     filledCount: 1,
     partialFillCount: 0,
     notModeledLiquidityCount: 0,
