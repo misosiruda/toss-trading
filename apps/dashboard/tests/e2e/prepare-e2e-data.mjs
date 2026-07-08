@@ -500,6 +500,65 @@ const aggregate = {
         }
       ]
     },
+    costSummary: {
+      sampleCount: 2,
+      tradeCount: 3,
+      feeKrw: 11,
+      taxKrw: 2,
+      slippageKrw: 4,
+      spreadCostKrw: 6,
+      impactCostKrw: 7,
+      totalCostKrw: 30,
+      averageCostPerRunKrw: 15,
+      averageCostPerTradeKrw: 10,
+      filledCount: 2,
+      partialFillCount: 1,
+      notModeledLiquidityCount: 0,
+      averageRunParticipationRate: 0.15,
+      maxParticipationRate: 0.25,
+      costModelVersions: ["paper_cost_model.v4"],
+      byStrategyBucket: [
+        {
+          strategyBucket: "short_term",
+          sampleCount: 2,
+          tradeCount: 3,
+          feeKrw: 11,
+          taxKrw: 2,
+          slippageKrw: 4,
+          spreadCostKrw: 6,
+          impactCostKrw: 7,
+          totalCostKrw: 30,
+          averageCostPerRunKrw: 15,
+          averageCostPerTradeKrw: 10,
+          filledCount: 2,
+          partialFillCount: 1,
+          notModeledLiquidityCount: 0,
+          averageRunParticipationRate: 0.15,
+          maxParticipationRate: 0.25,
+          costModelVersions: ["paper_cost_model.v4"],
+          runIds: [
+            "run_0",
+            "run_1",
+            "run_2",
+            "run_3",
+            "run_4",
+            "run_5",
+            "run_6"
+          ]
+        }
+      ],
+      missingStrategyBucketBreakdownCount: 7,
+      missingStrategyBucketBreakdownRunIds: [
+        "run_legacy_bucketless_0",
+        "run_legacy_bucketless_1",
+        "run_legacy_bucketless_2",
+        "run_legacy_bucketless_3",
+        "run_legacy_bucketless_4",
+        "run_legacy_bucketless_5",
+        "run_legacy_bucketless_6"
+      ],
+      runIds: ["run_0", "run_1"]
+    },
     runIds: ["run_0", "run_1", "run_2", "run_3"]
   },
   byRegime: {},

@@ -413,10 +413,18 @@ test("renders validation lab detail without strategy recommendation controls", a
     })
   ).toBeVisible();
   await expect(
-    costRiskWarning.getByText("missing", { exact: true })
-  ).toHaveCount(2);
+    costRiskWarning.getByText("warning", { exact: true })
+  ).toBeVisible();
+  await expect(costRiskWarning.getByText("short_term")).toBeVisible();
   await expect(
-    costRiskWarning.getByText("COST_RISK_WARNING_MISSING")
+    costRiskWarning.getByText(
+      "Missing strategy bucket cost breakdown runs: 7 total; sample: run_legacy_bucketless_0, run_legacy_bucketless_1, run_legacy_bucketless_2, run_legacy_bucketless_3, run_legacy_bucketless_4"
+    )
+  ).toBeVisible();
+  await expect(costRiskWarning).not.toContainText("run_legacy_bucketless_5");
+  await expect(costRiskWarning.getByText("COST_COMPONENTS_PRESENT")).toBeVisible();
+  await expect(
+    costRiskWarning.getByText("STRATEGY_BUCKET_COST_COVERAGE_PARTIAL")
   ).toBeVisible();
   await expect(
     costRiskWarning.getByText(
