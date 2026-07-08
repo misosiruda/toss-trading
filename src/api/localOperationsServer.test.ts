@@ -2828,6 +2828,13 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     );
     assert.equal(highestCostBucket["strategyBucket"], "short_term");
     assert.equal(highestCostBucket["totalCostKrw"], 30);
+    assert.deepEqual(highestCostBucket["runIds"], [
+      "run_0",
+      "run_1",
+      "run_2",
+      "run_3",
+      "run_4"
+    ]);
     assert.deepEqual(
       costRiskWarningMessages.map((warning) => warning["code"]),
       [
@@ -5525,7 +5532,7 @@ function aggregateCostSummary(): Record<string, unknown> {
         averageRunParticipationRate: 0.15,
         maxParticipationRate: 0.25,
         costModelVersions: ["paper_cost_model.v4"],
-        runIds: ["run_0", "run_1"]
+        runIds: ["run_0", "run_1", "run_2", "run_3", "run_4", "run_5", "run_6"]
       }
     ],
     missingStrategyBucketBreakdownCount: 7,

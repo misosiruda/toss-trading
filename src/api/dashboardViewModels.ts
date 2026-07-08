@@ -1842,7 +1842,7 @@ function costRiskBucketWarningView(
     impactCostKrw: bucket.impactCostKrw,
     averageCostPerTradeKrw: bucket.averageCostPerTradeKrw,
     maxParticipationRate: bucket.maxParticipationRate,
-    runIds: [...bucket.runIds]
+    runIds: [...bucket.runIds.slice(0, COST_RISK_WARNING_RUN_ID_SAMPLE_LIMIT)]
   };
 }
 
