@@ -22,6 +22,7 @@ import {
   type HistoricalUniverseManifest
 } from "../replay/historicalUniverseCoverage.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { createPaperCostModel } from "../paper/costModel.js";
 import { runHistoricalReplayWorkflow } from "./historicalReplayWorkflow.js";
 
 test("historical replay workflow writes a stored paper report", async () => {
@@ -308,6 +309,73 @@ test("historical replay workflow applies universe lifecycle risk gate", async ()
   );
 });
 
+test("historical replay workflow applies market impact execution policy", async () => {
+  const storageBaseDir = await mkdtemp(join(tmpdir(), "toss-replay-impact-"));
+  const paths = createStoragePaths(storageBaseDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    paths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot({
+      snapshotId: "hist_005930_impact",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000,
+      volume: 10
+    })
+  );
+
+  const result = await runHistoricalReplayWorkflow({
+    storageBaseDir,
+    clock: new SimulatedClock({
+      startAt: new Date("2025-01-02T09:00:00+09:00"),
+      endAt: new Date("2025-01-02T09:00:00+09:00"),
+      stepSeconds: 60
+    }),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    packetIdPrefix: "packet_historical_impact",
+    packetExpiresInSeconds: 60,
+    maxCandidates: 10,
+    maxSnapshotAgeSeconds: 300,
+    executionPolicy: {
+      marketImpactBpsPerParticipationRate: 500
+    },
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    },
+    riskPolicy: {
+      minCashReserveRatio: 0
+    }
+  });
+
+  const metadata = JSON.parse(
+    await readFile(paths.historicalReplayRunMetadataPath, "utf8")
+  ) as Record<string, unknown>;
+  const researchManifest = JSON.parse(
+    await readFile(paths.historicalReplayResearchManifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const configuration = metadata["configuration"] as Record<string, unknown>;
+  const executionPolicy = configuration["executionPolicy"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(result.replayResult.trades[0]?.impactCostKrw, 350);
+  assert.equal(result.replayResult.trades[0]?.totalCostKrw, 350);
+  assert.equal(result.replayResult.trades[0]?.participationRate, 0.1);
+  assert.equal(result.report.costSummary.impactCostKrw, 350);
+  assert.equal(result.report.costSummary.totalCostKrw, 350);
+  assert.equal(executionPolicy["marketImpactBpsPerParticipationRate"], 500);
+  assert.equal(
+    researchManifest["costModelHash"],
+    createReplayResearchHash(
+      createPaperCostModel({ marketImpactBpsPerParticipationRate: 500 })
+    )
+  );
+});
+
 test("historical replay research manifest hashes initial portfolio and replay snapshot fields", async () => {
   const baseline = await runWorkflowAndReadResearchManifest({});
   const withStoredPortfolio = await runWorkflowAndReadResearchManifest({
@@ -410,6 +478,7 @@ function snapshot(input: {
   sector?: string;
   openPriceKrw?: number;
   closePriceKrw?: number;
+  volume?: number;
   sourceRefs?: string[];
 }): HistoricalMarketSnapshot {
   return {
@@ -432,7 +501,7 @@ function snapshot(input: {
       ? {}
       : { closePriceKrw: input.closePriceKrw }),
     lastPriceKrw: input.lastPriceKrw,
-    volume: 100_000,
+    volume: input.volume ?? 100_000,
     sourceRefs: input.sourceRefs ?? [`fixture:${input.snapshotId}`],
     createdAt: "2026-06-12T09:00:00+09:00"
   };

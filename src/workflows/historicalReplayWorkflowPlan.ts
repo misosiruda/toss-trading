@@ -15,6 +15,10 @@ import type {
   CodexHistoricalReplayDecisionProviderLike,
   CodexHistoricalReplayRunnerOptions
 } from "../replay/codexHistoricalReplayRunner.js";
+import {
+  createPaperExecutionPolicy,
+  type PaperExecutionPolicy
+} from "../paper/executionModel.js";
 import type { HistoricalReplayRunMetadataContext } from "../replay/historicalReplayAuditLog.js";
 import type { HistoricalReplayInput } from "../replay/historicalReplayRunner.js";
 import type { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
@@ -36,6 +40,7 @@ export interface HistoricalReplayWorkflowOptions {
   maxCandidates: number;
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
+  executionPolicy?: Partial<PaperExecutionPolicy>;
   riskProfile?: PaperRiskProfileName;
   riskPolicy?: Partial<VirtualRiskPolicy>;
   allocationPolicy?: PaperAllocationPolicy;
@@ -78,6 +83,10 @@ export function createHistoricalReplayWorkflowPlan(
       input.options.initialCashKrw ?? DEFAULT_INITIAL_CASH_KRW,
       input.options.clock
     );
+  const executionPolicy =
+    input.options.executionPolicy === undefined
+      ? undefined
+      : createPaperExecutionPolicy(input.options.executionPolicy);
   const runnerOptions: Omit<CodexHistoricalReplayRunnerOptions, "onProgress"> = {
     clock: input.options.clock,
     decisionProvider: input.decisionProvider,
@@ -89,6 +98,7 @@ export function createHistoricalReplayWorkflowPlan(
     maxCandidates: input.options.maxCandidates,
     maxSnapshotAgeSeconds: input.options.maxSnapshotAgeSeconds,
     constraints: input.options.constraints,
+    ...(executionPolicy === undefined ? {} : { executionPolicy }),
     ...(input.options.riskPolicy === undefined
       ? {}
       : { riskPolicy: input.options.riskPolicy }),
@@ -181,6 +191,9 @@ function buildHistoricalReplayRunMetadataContext(
       maxCandidates: options.maxCandidates,
       maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
       constraints: options.constraints,
+      ...(options.executionPolicy === undefined
+        ? {}
+        : { executionPolicy: createPaperExecutionPolicy(options.executionPolicy) }),
       strategyPreset: options.strategyPreset ?? null,
       riskProfile: options.riskProfile ?? null,
       riskPolicy: serializeRiskPolicy(options.riskPolicy),

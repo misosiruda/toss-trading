@@ -11,6 +11,7 @@ import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
+import type { PaperExecutionPolicy } from "../paper/executionModel.js";
 import type { DynamicCashReservePolicy } from "../paper/dynamicCashReservePolicy.js";
 import {
   normalizePaperExitPolicy,
@@ -88,6 +89,7 @@ const riskProfile = resolvePaperRiskProfile({
 const paperExitPolicy = readPaperExitPolicyArg(
   strategyPreset?.paperExitPolicy
 );
+const paperExecutionPolicy = readPaperExecutionPolicyArg();
 const marketRegimeAllocationPolicy =
   readMarketRegimeAllocationPolicyArg() ??
   strategyPreset?.marketRegimeAllocationPolicy;
@@ -207,6 +209,9 @@ const result = await runHistoricalBatchReplay({
       }
     : {}),
   constraints: riskProfile.constraints,
+  ...(paperExecutionPolicy === undefined
+    ? {}
+    : { executionPolicy: paperExecutionPolicy }),
   riskProfile: riskProfile.name,
   riskPolicy,
   allocationPolicy: riskProfile.allocationPolicy
@@ -376,6 +381,18 @@ function readPaperExitPolicyArg(fallback?: PaperExitPolicy | undefined) {
       : { trailingStopFromPeakRatio })
   });
   return normalized ?? undefined;
+}
+
+function readPaperExecutionPolicyArg():
+  | Partial<PaperExecutionPolicy>
+  | undefined {
+  const marketImpactBpsPerParticipationRate = readOptionalNumberArg(
+    "--paper-market-impact-bps-per-participation-rate"
+  );
+  if (marketImpactBpsPerParticipationRate === undefined) {
+    return undefined;
+  }
+  return { marketImpactBpsPerParticipationRate };
 }
 
 function readMarketRegimeAllocationPolicyArg():

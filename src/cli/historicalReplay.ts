@@ -16,6 +16,7 @@ import {
   parsePaperRiskProfileName,
   resolvePaperRiskProfile
 } from "../paper/riskProfile.js";
+import type { PaperExecutionPolicy } from "../paper/executionModel.js";
 import { normalizePaperExitPolicy } from "../paper/exitPolicy.js";
 import { assessHistoricalDataAvailability } from "../replay/historicalDataAvailability.js";
 import {
@@ -55,6 +56,7 @@ const VALUE_OPTION_NAMES = new Set([
   "--max-candidates",
   "--max-snapshot-age-seconds",
   "--initial-cash-krw",
+  "--paper-market-impact-bps-per-participation-rate",
   "--decision-frequency",
   "--speed-multiplier",
   "--packet-id-prefix",
@@ -147,6 +149,7 @@ const riskProfile = resolvePaperRiskProfile({
     ? {}
     : { maxBudgetPerSymbolKrw: maxBudgetPerSymbolOverride })
 });
+const paperExecutionPolicy = readPaperExecutionPolicyArg();
 const paperExitPolicy = readPaperExitPolicyArg();
 const historicalPromptPolicy = resolveHistoricalReplayPromptPolicy({
   riskProfile: riskProfile.name
@@ -211,6 +214,9 @@ const result = await runHistoricalReplayWorkflow({
   packetExpiresInSeconds: readNumberArg("--packet-expires-in-seconds", 60),
   maxCandidates,
   maxSnapshotAgeSeconds,
+  ...(paperExecutionPolicy === undefined
+    ? {}
+    : { executionPolicy: paperExecutionPolicy }),
   ...(runId === undefined ? {} : { runId }),
   ...(batchId === undefined ? {} : { batchId }),
   ...(batchRunIndex === undefined ? {} : { batchRunIndex }),
@@ -320,6 +326,18 @@ function readPaperExitPolicyArg() {
       : { trailingStopFromPeakRatio })
   });
   return normalized ?? undefined;
+}
+
+function readPaperExecutionPolicyArg():
+  | Partial<PaperExecutionPolicy>
+  | undefined {
+  const marketImpactBpsPerParticipationRate = readOptionalNumberArg(
+    "--paper-market-impact-bps-per-participation-rate"
+  );
+  if (marketImpactBpsPerParticipationRate === undefined) {
+    return undefined;
+  }
+  return { marketImpactBpsPerParticipationRate };
 }
 
 function readTakeProfitModeArg() {

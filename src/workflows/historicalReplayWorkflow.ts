@@ -218,7 +218,9 @@ function createWorkflowResearchManifest(input: {
         metadata.configuration.marketRegimeAllocationPolicy,
       paperExitPolicy: metadata.configuration.paperExitPolicy
     },
-    costModel: createPaperCostModel(),
+    costModel: createPaperCostModel(
+      metadata.configuration.executionPolicy
+    ),
     executionModelVersion: PAPER_EXECUTION_MODEL_VERSION,
     warnings: promptMetadata.metadataMissing
       ? ["DECISION_PROVIDER_METADATA_MISSING"]
