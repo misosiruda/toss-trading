@@ -57,7 +57,7 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   assert.equal(report.costBreakdown.totalCostKrw, 30);
   assert.equal(report.costBreakdown.impactCostKrw, 7);
   assert.deepEqual(report.costBreakdown.costModelVersions, [
-    "paper_cost_model.v3"
+    "paper_cost_model.v4"
   ]);
   assert.equal(report.exposureBreakdown.averageExposureRatio, 0.42);
   assert.equal(report.regimeBreakdown.length, 2);
@@ -510,7 +510,7 @@ function costSummary(): BatchReplayGroupSummary["costSummary"] {
     notModeledLiquidityCount: 0,
     averageRunParticipationRate: 0.15,
     maxParticipationRate: 0.25,
-    costModelVersions: ["paper_cost_model.v3"],
+    costModelVersions: ["paper_cost_model.v4"],
     runIds: ["run_0", "run_1"]
   };
 }

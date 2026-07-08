@@ -27,7 +27,9 @@ test("paper cost model exposes versioned execution assumptions", () => {
   assert.equal(model.slippageModel, "linear_bps");
   assert.equal(model.spreadModel, "not_modeled");
   assert.equal(model.marketImpactModel, "not_modeled");
+  assert.equal(model.volatilityAdjustmentModel, "not_modeled");
   assert.equal(model.liquidityModel, "conservative_when_available");
+  assert.equal(model.costComponents.volatilityAdjustment, "not_modeled");
   assert.equal(model.executionPolicy.feeBps, 10);
   assert.equal(model.executionPolicy.taxBps, 20);
   assert.equal(model.executionPolicy.slippageBps, 5);
@@ -47,10 +49,22 @@ test("paper cost model records opt-in market impact assumptions", () => {
 
   assert.equal(model.marketImpactModel, "linear_participation_bps");
   assert.equal(model.costComponents.marketImpact, "participation_rate_bps");
+  assert.equal(model.volatilityAdjustmentModel, "not_modeled");
   assert.equal(model.executionPolicy.marketImpactBpsPerParticipationRate, 500);
   assert.match(
     model.assumptions.join("\n"),
     /market impact cost uses filled notional and filled volume participation rate/
+  );
+});
+
+test("paper cost model records volatility adjustment as explicit placeholder", () => {
+  const model = createPaperCostModel();
+
+  assert.equal(model.volatilityAdjustmentModel, "not_modeled");
+  assert.equal(model.costComponents.volatilityAdjustment, "not_modeled");
+  assert.match(
+    model.assumptions.join("\n"),
+    /volatility-adjusted slippage is an explicit not-modeled placeholder/
   );
 });
 

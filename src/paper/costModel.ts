@@ -3,7 +3,7 @@ import {
   type PaperExecutionPolicy
 } from "./executionModel.js";
 
-export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v3";
+export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v4";
 export const PAPER_EXECUTION_MODEL_VERSION = "execution_simulator.v3";
 
 export interface PaperCostModel {
@@ -15,6 +15,7 @@ export interface PaperCostModel {
   slippageModel: "linear_bps";
   spreadModel: "not_modeled";
   marketImpactModel: "not_modeled" | "linear_participation_bps";
+  volatilityAdjustmentModel: "not_modeled";
   liquidityModel: "conservative_when_available";
   executionPolicy: PaperExecutionPolicy;
   costComponents: {
@@ -23,6 +24,7 @@ export interface PaperCostModel {
     slippage: "slippage_bps";
     spread: "not_modeled";
     marketImpact: "not_modeled" | "participation_rate_bps";
+    volatilityAdjustment: "not_modeled";
   };
   assumptions: string[];
 }
@@ -45,6 +47,7 @@ export function createPaperCostModel(
     marketImpactModel: marketImpactModeled
       ? "linear_participation_bps"
       : "not_modeled",
+    volatilityAdjustmentModel: "not_modeled",
     liquidityModel: "conservative_when_available",
     executionPolicy,
     costComponents: {
@@ -54,12 +57,14 @@ export function createPaperCostModel(
       spread: "not_modeled",
       marketImpact: marketImpactModeled
         ? "participation_rate_bps"
-        : "not_modeled"
+        : "not_modeled",
+      volatilityAdjustment: "not_modeled"
     },
     assumptions: [
       "paper-only execution simulator",
       "no live broker order",
       "spread is an explicit zero placeholder",
+      "volatility-adjusted slippage is an explicit not-modeled placeholder",
       marketImpactModeled
         ? "market impact cost uses filled notional and filled volume participation rate"
         : "market impact is an explicit zero placeholder",
