@@ -89,8 +89,11 @@ export interface ReplayResearchDataUniverseCoverage {
   missingOptionalSymbolCount: number | null;
   insufficientRequiredSymbolCount: number | null;
   insufficientOptionalSymbolCount: number | null;
+  missingRequiredStrategyBucketCount: number | null;
+  insufficientAvailableStrategyBucketSymbolCount: number | null;
   availableMarketSymbolCounts: Record<string, number>;
   availableAssetTypeSymbolCounts: Record<string, number>;
+  availableStrategyBucketSymbolCounts: Record<string, number>;
   issues: string[];
   warnings: string[];
 }
@@ -554,8 +557,11 @@ function researchUniverseCoverage(
       missingOptionalSymbolCount: null,
       insufficientRequiredSymbolCount: null,
       insufficientOptionalSymbolCount: null,
+      missingRequiredStrategyBucketCount: null,
+      insufficientAvailableStrategyBucketSymbolCount: null,
       availableMarketSymbolCounts: {},
       availableAssetTypeSymbolCounts: {},
+      availableStrategyBucketSymbolCounts: {},
       issues: [],
       warnings: []
     };
@@ -577,9 +583,16 @@ function researchUniverseCoverage(
     missingOptionalSymbolCount: coverage.missingOptionalSymbolCount,
     insufficientRequiredSymbolCount: coverage.insufficientRequiredSymbolCount,
     insufficientOptionalSymbolCount: coverage.insufficientOptionalSymbolCount,
+    missingRequiredStrategyBucketCount:
+      coverage.missingRequiredStrategyBucketCount,
+    insufficientAvailableStrategyBucketSymbolCount:
+      coverage.insufficientAvailableStrategyBucketSymbolCount,
     availableMarketSymbolCounts: numberMap(coverage.availableMarketSymbolCounts),
     availableAssetTypeSymbolCounts: numberMap(
       coverage.availableAssetTypeSymbolCounts
+    ),
+    availableStrategyBucketSymbolCounts: numberMap(
+      coverage.availableStrategyBucketSymbolCounts
     ),
     issues: [...coverage.issues],
     warnings: [...coverage.warnings]

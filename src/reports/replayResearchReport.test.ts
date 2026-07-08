@@ -32,6 +32,18 @@ test("replay research report summarizes stored batch aggregate sections", () => 
   });
   assert.equal(report.dataUniverseCoverage.coverageReportStatus, "insufficient");
   assert.equal(report.dataUniverseCoverage.availableRequiredSymbolCount, 1);
+  assert.deepEqual(
+    report.dataUniverseCoverage.availableStrategyBucketSymbolCounts,
+    { long_term: 1 }
+  );
+  assert.equal(
+    report.dataUniverseCoverage.missingRequiredStrategyBucketCount,
+    0
+  );
+  assert.equal(
+    report.dataUniverseCoverage.insufficientAvailableStrategyBucketSymbolCount,
+    0
+  );
   assert.match(
     report.warnings.join("\n"),
     /universe selection bias warning/
