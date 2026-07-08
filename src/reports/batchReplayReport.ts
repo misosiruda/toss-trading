@@ -151,6 +151,8 @@ export interface BatchReplayCostBreakdownSummary {
   maxParticipationRate: number | null;
   costModelVersions: string[];
   byStrategyBucket: BatchReplayStrategyBucketCostBreakdownSummary[];
+  missingStrategyBucketBreakdownCount: number;
+  missingStrategyBucketBreakdownRunIds: string[];
   runIds: string[];
 }
 
@@ -202,8 +204,9 @@ type BatchReplayRunCostSummary = NonNullable<
   NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
 >;
 
-type BatchReplayRunStrategyBucketCostSummary =
-  BatchReplayRunCostSummary["byStrategyBucket"][number];
+type BatchReplayRunStrategyBucketCostSummary = NonNullable<
+  BatchReplayRunCostSummary["byStrategyBucket"]
+>[number];
 
 type BatchReplayRunCostRecord = BatchReplayRunRecord & {
   summary: NonNullable<BatchReplayRunRecord["summary"]> & {
@@ -1440,6 +1443,9 @@ function summarizeCostBreakdown(
   const maxParticipationRates = costSummaries
     .map((summary) => summary.maxParticipationRate)
     .filter((value): value is number => typeof value === "number");
+  const missingStrategyBucketBreakdownRunIds = costRecords
+    .filter((record) => !hasStrategyBucketCostBreakdown(record))
+    .map((record) => record.runId);
 
   return {
     sampleCount: costRecords.length,
@@ -1474,6 +1480,9 @@ function summarizeCostBreakdown(
       new Set(costSummaries.flatMap((summary) => summary.costModelVersions))
     ).sort(),
     byStrategyBucket: summarizeStrategyBucketCostBreakdowns(costRecords),
+    missingStrategyBucketBreakdownCount:
+      missingStrategyBucketBreakdownRunIds.length,
+    missingStrategyBucketBreakdownRunIds,
     runIds: costRecords.map((record) => record.runId)
   };
 }
@@ -1490,7 +1499,7 @@ function summarizeStrategyBucketCostBreakdowns(
   >();
 
   for (const record of costRecords) {
-    for (const summary of record.summary.costSummary.byStrategyBucket ?? []) {
+    for (const summary of strategyBucketCostSummaries(record)) {
       const current = buckets.get(summary.strategyBucket) ?? [];
       current.push({ runId: record.runId, summary });
       buckets.set(summary.strategyBucket, current);
@@ -1578,6 +1587,20 @@ function compareStrategyBucketCostBreakdowns(
   return bucketSortKey(left.strategyBucket).localeCompare(
     bucketSortKey(right.strategyBucket)
   );
+}
+
+function hasStrategyBucketCostBreakdown(
+  record: BatchReplayRunCostRecord
+): boolean {
+  return Array.isArray(record.summary.costSummary.byStrategyBucket);
+}
+
+function strategyBucketCostSummaries(
+  record: BatchReplayRunCostRecord
+): BatchReplayRunStrategyBucketCostSummary[] {
+  return hasStrategyBucketCostBreakdown(record)
+    ? record.summary.costSummary.byStrategyBucket
+    : [];
 }
 
 function sumCostField(

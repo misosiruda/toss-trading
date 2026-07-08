@@ -265,11 +265,35 @@ test("batch replay aggregate report summarizes execution cost components", () =>
           ]
         }
       ),
+      withLegacyBucketlessCostSummary(
+        record(
+          "run_cost_legacy_bucketless",
+          2,
+          "completed",
+          "bull",
+          0.015,
+          1_015_000
+        ),
+        {
+          feeKrw: 2,
+          taxKrw: 1,
+          slippageKrw: 1,
+          spreadCostKrw: 1,
+          impactCostKrw: 3,
+          totalCostKrw: 8,
+          filledCount: 1,
+          partialFillCount: 0,
+          notModeledLiquidityCount: 1,
+          averageParticipationRate: 0.3,
+          maxParticipationRate: 0.3,
+          costModelVersions: ["paper_cost_model.v3"]
+        }
+      ),
       withoutCostSummary(
-        record("run_legacy", 2, "completed", "bear", 0.01, 1_010_000)
+        record("run_legacy", 3, "completed", "bear", 0.01, 1_010_000)
       ),
       nonCompletedRecordWithSummary(
-        record("run_skipped_with_summary", 3, "completed", "bear", 0.03, 1_030_000),
+        record("run_skipped_with_summary", 4, "completed", "bear", 0.03, 1_030_000),
         "skipped",
         {
           feeKrw: 100,
@@ -288,26 +312,29 @@ test("batch replay aggregate report summarizes execution cost components", () =>
     ]
   });
 
-  assert.equal(report.overall.costSummary.sampleCount, 2);
-  assert.equal(report.overall.costSummary.tradeCount, 2);
-  assert.equal(report.overall.costSummary.feeKrw, 11);
-  assert.equal(report.overall.costSummary.taxKrw, 2);
-  assert.equal(report.overall.costSummary.slippageKrw, 4);
-  assert.equal(report.overall.costSummary.spreadCostKrw, 6);
-  assert.equal(report.overall.costSummary.impactCostKrw, 7);
-  assert.equal(report.overall.costSummary.totalCostKrw, 30);
-  assert.equal(report.overall.costSummary.averageCostPerRunKrw, 15);
-  assert.equal(report.overall.costSummary.averageCostPerTradeKrw, 15);
-  assert.equal(report.overall.costSummary.filledCount, 2);
+  assert.equal(report.overall.costSummary.sampleCount, 3);
+  assert.equal(report.overall.costSummary.tradeCount, 3);
+  assert.equal(report.overall.costSummary.feeKrw, 13);
+  assert.equal(report.overall.costSummary.taxKrw, 3);
+  assert.equal(report.overall.costSummary.slippageKrw, 5);
+  assert.equal(report.overall.costSummary.spreadCostKrw, 7);
+  assert.equal(report.overall.costSummary.impactCostKrw, 10);
+  assert.equal(report.overall.costSummary.totalCostKrw, 38);
+  assert.equal(report.overall.costSummary.averageCostPerRunKrw, 13);
+  assert.equal(report.overall.costSummary.averageCostPerTradeKrw, 13);
+  assert.equal(report.overall.costSummary.filledCount, 3);
   assert.equal(report.overall.costSummary.partialFillCount, 1);
-  assert.equal(report.overall.costSummary.averageRunParticipationRate, 0.15);
-  assert.equal(report.overall.costSummary.maxParticipationRate, 0.25);
+  assert.equal(report.overall.costSummary.notModeledLiquidityCount, 1);
+  assert.equal(report.overall.costSummary.averageRunParticipationRate, 0.2);
+  assert.equal(report.overall.costSummary.maxParticipationRate, 0.3);
   assert.deepEqual(report.overall.costSummary.costModelVersions, [
+    "paper_cost_model.v3",
     "paper_cost_model.v4"
   ]);
   assert.deepEqual(report.overall.costSummary.runIds, [
     "run_cost_0",
-    "run_cost_1"
+    "run_cost_1",
+    "run_cost_legacy_bucketless"
   ]);
   assert.deepEqual(report.overall.costSummary.byStrategyBucket, [
     {
@@ -351,8 +378,17 @@ test("batch replay aggregate report summarizes execution cost components", () =>
       runIds: ["run_cost_1"]
     }
   ]);
-  assert.equal(report.overall.totalTradeCount, 3);
-  assert.equal(report.byRegime.bull?.costSummary.totalCostKrw, 30);
+  assert.equal(report.overall.costSummary.missingStrategyBucketBreakdownCount, 1);
+  assert.deepEqual(
+    report.overall.costSummary.missingStrategyBucketBreakdownRunIds,
+    ["run_cost_legacy_bucketless"]
+  );
+  assert.equal(report.overall.totalTradeCount, 4);
+  assert.equal(report.byRegime.bull?.costSummary.totalCostKrw, 38);
+  assert.equal(
+    report.byRegime.bull?.costSummary.missingStrategyBucketBreakdownCount,
+    1
+  );
   assert.equal(report.byRegime.bear?.costSummary.sampleCount, 0);
 });
 
@@ -2613,6 +2649,31 @@ function withCostSummary(
     summary: {
       ...value.summary,
       costSummary: costSummary(overrides)
+    }
+  };
+}
+
+function withLegacyBucketlessCostSummary(
+  value: BatchReplayRunRecord,
+  overrides: Partial<
+    NonNullable<BatchReplayRunRecord["summary"]>["costSummary"]
+  >
+): BatchReplayRunRecord {
+  const next = withCostSummary(value, overrides);
+  if (next.summary === null) {
+    return next;
+  }
+  const cost = {
+    ...next.summary.costSummary
+  } as Record<string, unknown>;
+  delete cost["byStrategyBucket"];
+  return {
+    ...next,
+    summary: {
+      ...next.summary,
+      costSummary: cost as unknown as NonNullable<
+        BatchReplayRunRecord["summary"]
+      >["costSummary"]
     }
   };
 }

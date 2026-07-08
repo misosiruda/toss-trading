@@ -149,6 +149,8 @@ export interface ReplayResearchCostBreakdown
   maxParticipationRate: number | null;
   costModelVersions: string[];
   byStrategyBucket: ReplayResearchStrategyBucketCostBreakdown[];
+  missingStrategyBucketBreakdownCount: number;
+  missingStrategyBucketBreakdownRunIds: string[];
   runIds: string[];
 }
 
@@ -671,6 +673,11 @@ function researchCostBreakdown(
       costModelVersions: [...bucket.costModelVersions],
       runIds: [...bucket.runIds]
     })),
+    missingStrategyBucketBreakdownCount:
+      summary.missingStrategyBucketBreakdownCount,
+    missingStrategyBucketBreakdownRunIds: [
+      ...summary.missingStrategyBucketBreakdownRunIds
+    ],
     runIds: [...summary.runIds]
   };
 }
@@ -694,6 +701,8 @@ function emptyCostBreakdownSummary(): BatchReplayCostBreakdownSummary {
     maxParticipationRate: null,
     costModelVersions: [],
     byStrategyBucket: [],
+    missingStrategyBucketBreakdownCount: 0,
+    missingStrategyBucketBreakdownRunIds: [],
     runIds: []
   };
 }

@@ -81,6 +81,10 @@ test("replay research report summarizes stored batch aggregate sections", () => 
       runIds: ["run_0", "run_1"]
     }
   ]);
+  assert.equal(report.costBreakdown.missingStrategyBucketBreakdownCount, 1);
+  assert.deepEqual(report.costBreakdown.missingStrategyBucketBreakdownRunIds, [
+    "run_legacy_bucketless"
+  ]);
   assert.equal(report.exposureBreakdown.averageExposureRatio, 0.42);
   assert.equal(report.regimeBreakdown.length, 2);
   assert.equal(report.bucketBreakdown.validationSplitRoles.length, 2);
@@ -555,6 +559,8 @@ function costSummary(): BatchReplayGroupSummary["costSummary"] {
         runIds: ["run_0", "run_1"]
       }
     ],
+    missingStrategyBucketBreakdownCount: 1,
+    missingStrategyBucketBreakdownRunIds: ["run_legacy_bucketless"],
     runIds: ["run_0", "run_1"]
   };
 }
@@ -578,6 +584,8 @@ function emptyCostSummary(): BatchReplayGroupSummary["costSummary"] {
     maxParticipationRate: null,
     costModelVersions: [],
     byStrategyBucket: [],
+    missingStrategyBucketBreakdownCount: 0,
+    missingStrategyBucketBreakdownRunIds: [],
     runIds: []
   };
 }
