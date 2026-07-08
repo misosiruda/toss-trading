@@ -48,6 +48,7 @@ const META_LABEL_EVALUATION_READ_ONLY_NOTICE =
   "Meta-label evaluation is paper-only research evidence. It is not a strategy recommendation, sizing directive, or performance guarantee.";
 const COST_RISK_WARNING_READ_ONLY_NOTICE =
   "Cost risk warning is paper-only replay evidence. It is not a strategy recommendation, sizing directive, or performance guarantee.";
+const COST_RISK_WARNING_RUN_ID_SAMPLE_LIMIT = 5;
 
 type DashboardViewModelStatus = "ok" | "watch" | "breach" | "missing";
 type JsonFileStatus = "missing" | "ok" | "corrupt";
@@ -1804,7 +1805,10 @@ function costRiskWarningView(
     missingStrategyBucketBreakdownCount:
       costBreakdown.missingStrategyBucketBreakdownCount,
     missingStrategyBucketBreakdownRunIds: [
-      ...costBreakdown.missingStrategyBucketBreakdownRunIds
+      ...costBreakdown.missingStrategyBucketBreakdownRunIds.slice(
+        0,
+        COST_RISK_WARNING_RUN_ID_SAMPLE_LIMIT
+      )
     ],
     warningCount: warnings.length,
     warnings,

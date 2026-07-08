@@ -178,7 +178,7 @@ function CostRiskWarning({
       {variant === "detail" &&
       warning.missingStrategyBucketBreakdownCount > 0 ? (
         <p className="mt-3 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
-          Missing strategy bucket cost breakdown runs:{" "}
+          Missing strategy bucket cost breakdown run sample:{" "}
           {warning.missingStrategyBucketBreakdownRunIds.join(", ")}
         </p>
       ) : null}

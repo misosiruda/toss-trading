@@ -2814,11 +2814,17 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(costRiskWarning["maxParticipationRate"], 0.25);
     assert.equal(
       costRiskWarning["missingStrategyBucketBreakdownCount"],
-      1
+      7
     );
     assert.deepEqual(
       costRiskWarning["missingStrategyBucketBreakdownRunIds"],
-      ["run_legacy_bucketless"]
+      [
+        "run_legacy_bucketless_0",
+        "run_legacy_bucketless_1",
+        "run_legacy_bucketless_2",
+        "run_legacy_bucketless_3",
+        "run_legacy_bucketless_4"
+      ]
     );
     assert.equal(highestCostBucket["strategyBucket"], "short_term");
     assert.equal(highestCostBucket["totalCostKrw"], 30);
@@ -5522,8 +5528,16 @@ function aggregateCostSummary(): Record<string, unknown> {
         runIds: ["run_0", "run_1"]
       }
     ],
-    missingStrategyBucketBreakdownCount: 1,
-    missingStrategyBucketBreakdownRunIds: ["run_legacy_bucketless"],
+    missingStrategyBucketBreakdownCount: 7,
+    missingStrategyBucketBreakdownRunIds: [
+      "run_legacy_bucketless_0",
+      "run_legacy_bucketless_1",
+      "run_legacy_bucketless_2",
+      "run_legacy_bucketless_3",
+      "run_legacy_bucketless_4",
+      "run_legacy_bucketless_5",
+      "run_legacy_bucketless_6"
+    ],
     runIds: ["run_0", "run_1"]
   };
 }
