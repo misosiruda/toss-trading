@@ -15,7 +15,8 @@
 - `src/replay/combinatorialPurgedCv.ts`는 `combinatorial_purged_cv` standalone split plan을 생성한다.
 - `src/replay/cpcvPboValidation.ts`는 `cpcv_pbo_validation.v1` artifact schema와 standalone PBO calculator를 제공한다.
 - `BatchReplayAggregateReport.cpcvPboValidation`은 기존 sampled PBO-like split metric matrix를 `cpcv_pbo_validation.v1` artifact로 승격한다. 기존 aggregate는 full CPCV fold/sample id를 보존하지 않으므로 이 연결 artifact는 `status: "sampled"`, `splitPlan: null`, `CPCV_SPLIT_PLAN_UNAVAILABLE` warning을 사용한다.
-- replay research report와 dashboard validation lab의 read-only warning 표시는 후속 범위다.
+- `ReplayResearchReport`는 `cpcvPboValidation` summary를 read-only warning evidence로 표시한다.
+- Next.js dashboard validation lab은 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
 
 ## Contract 목표
 
@@ -152,6 +153,7 @@ interface CpcvPboWarning {
     | "CPCV_CONFIG_INVALID"
     | "CPCV_COMBINATION_BUDGET_EXCEEDED"
     | "CPCV_SAMPLED_MODE_USED"
+    | "CPCV_SPLIT_PLAN_UNAVAILABLE"
     | "CPCV_PURGE_OR_EMBARGO_REMOVED_ALL_TRAIN"
     | "PBO_CANDIDATE_COUNT_INSUFFICIENT"
     | "PBO_HOLDOUT_MATRIX_INSUFFICIENT"
@@ -202,7 +204,7 @@ standalone calculator는 다음 정책을 따른다.
 2. 완료: PBO calculator가 train/test matrix에서 `CpcvPboEstimate`를 계산한다.
 3. 완료: `BatchReplayAggregateReport.cpcvPboValidation`이 `overfittingDiagnostics`의 sampled matrix를 새 artifact schema로 승격한다.
 4. 완료: dashboard validation lab은 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
-5. 현재 범위: replay research report는 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
+5. 완료: replay research report는 `cpcvPboValidation` summary를 read-only warning으로 표시한다.
 
 ## Safety Boundary
 
