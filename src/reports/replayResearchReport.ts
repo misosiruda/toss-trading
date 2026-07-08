@@ -583,10 +583,12 @@ function researchUniverseCoverage(
     missingOptionalSymbolCount: coverage.missingOptionalSymbolCount,
     insufficientRequiredSymbolCount: coverage.insufficientRequiredSymbolCount,
     insufficientOptionalSymbolCount: coverage.insufficientOptionalSymbolCount,
-    missingRequiredStrategyBucketCount:
-      coverage.missingRequiredStrategyBucketCount,
-    insufficientAvailableStrategyBucketSymbolCount:
-      coverage.insufficientAvailableStrategyBucketSymbolCount,
+    missingRequiredStrategyBucketCount: readNumber(
+      coverage.missingRequiredStrategyBucketCount
+    ),
+    insufficientAvailableStrategyBucketSymbolCount: readNumber(
+      coverage.insufficientAvailableStrategyBucketSymbolCount
+    ),
     availableMarketSymbolCounts: numberMap(coverage.availableMarketSymbolCounts),
     availableAssetTypeSymbolCounts: numberMap(
       coverage.availableAssetTypeSymbolCounts

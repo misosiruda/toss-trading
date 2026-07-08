@@ -179,6 +179,40 @@ test("replay research report keeps legacy aggregate cost breakdown unavailable",
   );
 });
 
+test("replay research report keeps legacy universe bucket counts nullable", () => {
+  const aggregate = aggregateReport();
+  delete (
+    aggregate.universeCoverage as unknown as {
+      missingRequiredStrategyBucketCount?: number;
+    }
+  ).missingRequiredStrategyBucketCount;
+  delete (
+    aggregate.universeCoverage as unknown as {
+      insufficientAvailableStrategyBucketSymbolCount?: number;
+    }
+  ).insufficientAvailableStrategyBucketSymbolCount;
+
+  const report = buildReplayResearchReport({
+    aggregateReport: aggregate,
+    generatedAt: new Date("2026-06-24T09:00:00+09:00")
+  });
+  const serialized = JSON.stringify(report.dataUniverseCoverage);
+
+  assert.equal(
+    report.dataUniverseCoverage.missingRequiredStrategyBucketCount,
+    null
+  );
+  assert.equal(
+    report.dataUniverseCoverage.insufficientAvailableStrategyBucketSymbolCount,
+    null
+  );
+  assert.match(serialized, /"missingRequiredStrategyBucketCount":null/);
+  assert.match(
+    serialized,
+    /"insufficientAvailableStrategyBucketSymbolCount":null/
+  );
+});
+
 function aggregateReport(
   overrides: {
     trialSummary?: BatchReplayAggregateReport["trialSummary"];
