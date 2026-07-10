@@ -183,7 +183,7 @@ standalone calculator는 다음 정책을 따른다.
 - 모든 combination의 train candidate key 집합이 동일하지 않으면 서로 다른 competitor universe를 섞지 않고 `insufficient_matrix`로 fail-closed 처리한다.
 - 모든 값은 paper-only 사후 검증 지표이며 strategy 자동 선택이나 sizing으로 연결하지 않는다.
 
-## Warning Code 후보
+## Warning Code
 
 | Code | 의미 | 기본 severity |
 | --- | --- | --- |
