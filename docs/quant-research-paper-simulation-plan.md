@@ -45,13 +45,14 @@
 - universe coverage와 KR/US/ETF metadata
 - read-only Local Operations API / dashboard / MCP boundary
 
-남은 연구 후보:
+Q1\~Q9 이후 Research Hardening milestone으로 분리된 범위:
 
-- Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 계열은 아직 후보이며, 현재 report에는 per-sample Sharpe와 sample warning까지만 노출한다.
-- full CPCV/PBO 수학 구현은 아직 후보이며, 현재 구현은 sampled CPCV/PBO-like 사후 경고 지표다.
-- Triple Barrier Method와 meta-labeling은 아직 후보이며, AI confidence를 sizing에 직접 연결하지 않는 정책은 유지한다.
-- 날짜별 universe snapshot, delisted/suspended lifecycle, exchange calendar, FX stale rule은 survivorship/timezone 정합성 후속 후보로 남긴다.
-- nonlinear market impact와 volatility-adjusted slippage는 현재 placeholder/후속 후보이며, paper-only 체결 가정은 보수적으로 기록한다.
+- Sharpe confidence interval, Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 계열은 RH5 contract와 구현 상태를 따른다.
+- full CPCV/PBO 검증 구조는 RH6 contract와 구현 상태를 따른다.
+- Triple Barrier Method와 meta-labeling은 RH7 contract와 구현 상태를 따른다.
+- 날짜별 universe snapshot, delisted/suspended lifecycle, exchange calendar, FX stale rule은 RH2/RH3 contract와 구현 상태를 따른다.
+- nonlinear market impact와 volatility-adjusted slippage는 RH4 contract와 구현 상태를 따른다.
+- 이 항목들은 Q1\~Q9의 미완료가 아니라 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)가 추적하는 별도 milestone 범위다.
 
 ## 설계 원칙
 
@@ -722,7 +723,7 @@ Report 구획:
 
 Q1\~Q9는 현재 계획 기준으로 완료됐다. 기존 우선순위였던 재현성, trial logging, 비용/유동성, portfolio-level exposure aggregation, dynamic cash reserve, hedge, validation protocol, advanced metric, read-only research dashboard는 모두 paper-only 범위에서 구현된 상태다.
 
-후속으로 확장한다면 우선순위는 새 milestone으로 다시 정의해야 한다. 현재 문서에 남아 있는 항목 중 후속 후보는 Sharpe confidence interval/Deflated Sharpe Ratio, full CPCV/PBO, Triple Barrier Method, 날짜별 universe lifecycle, exchange calendar/FX stale rule, nonlinear market impact처럼 연구 정밀도를 더 높이는 작업이다. 이 후보들은 기존 Q1\~Q9 완료 여부와 분리해서 다룬다. 새 후속 milestone의 상세 순서는 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)를 기준으로 한다.
+Q1\~Q9 이후의 연구 정밀도 강화 항목은 별도 Research Hardening milestone으로 분리됐다. Sharpe confidence interval/Deflated Sharpe Ratio, full CPCV/PBO, Triple Barrier Method, 날짜별 universe lifecycle, exchange calendar/FX stale rule, nonlinear market impact 같은 항목은 기존 Q1\~Q9 완료 여부와 분리해서 다룬다. 상세 순서와 현재 결정은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)를 기준으로 한다.
 
 ## 성공 기준
 
@@ -741,4 +742,4 @@ Q1\~Q9는 현재 계획 기준으로 완료됐다. 기존 우선순위였던 재
 현재 상태:
 
 - 위 성공 기준은 Q1\~Q9 구현 범위에서 충족된 상태로 본다.
-- 남은 연구 후보는 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 새 milestone 범위로 분리하며, 현재 Q1\~Q9 계획의 미완료 항목으로 계산하지 않는다.
+- Q1\~Q9 이후 연구 정밀도 강화 항목은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 별도 milestone 범위로 분리하며, 현재 Q1\~Q9 계획의 미완료 항목으로 계산하지 않는다.
