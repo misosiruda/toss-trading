@@ -340,7 +340,7 @@
 - triple barrier label schema
 - profit-taking, stop-loss, time barrier config
 - event overlap과 purged validation 연결
-- meta-label 후보 schema
+- meta-label candidate schema
 - AI decision side와 deterministic sizing/risk gate 분리 문서화
 - label distribution report
 
@@ -361,17 +361,19 @@
 
 정책 기준:
 
-- Triple barrier label design과 schema 후보는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 한다.
+- Triple barrier label design과 schema는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 한다.
 
 현재 결정:
 
-- 첫 PR 범위는 `triple_barrier_label.v1` design과 label schema 후보 문서화로 제한한다.
-- 두 번째 PR 범위는 standalone `triple_barrier_label.v1` label generator, config hash, fixture test로 제한한다.
-- 세 번째 PR 범위는 generated label horizon을 `PurgedKFoldSample` 호환 입력으로 연결하는 helper와 unit test로 제한한다.
-- 네 번째 PR 범위는 `meta_label_candidate.v1` schema, side decision outcome helper, sizing directive reject unit test로 제한한다.
-- 다섯 번째 PR 범위는 standalone `meta_label_evaluation.v1` report schema, summary helper, unit test로 제한한다.
-- 여섯 번째 PR 범위는 `historicalBatchReport` aggregate 연결, Next.js Validation Lab의 read-only `meta_label_evaluation.v1` summary 표시, missing/invalid fallback으로 제한한다.
-- 일곱 번째 PR 범위는 `triple_barrier_label.v1` standard artifact path, `historicalBatchReport` aggregate 연결, batch aggregate report의 read-only label distribution 표시로 제한한다.
+- `triple_barrier_label.v1`, `meta_label_candidate.v1`, `meta_label_evaluation.v1` contract는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 하며, source of truth는 `src/replay/tripleBarrierLabel.ts`다.
+- standalone label generator는 historical market snapshot fixture와 event 목록에서 config hash, barrier touch result, direction label, purged sample, summary, warning을 가진 `triple_barrier_label.v1` artifact를 생성한다.
+- `buildTripleBarrierPurgedKFoldSamples`는 generated label horizon을 `PurgedKFoldSample` 호환 입력으로 변환해 overlap 제거와 embargo validation에 연결한다.
+- `meta_label_candidate.v1`과 `buildMetaLabelCandidate`는 side decision을 사후 label outcome과 비교하되 `sizingDirective`는 `null`만 허용하고, non-null 값은 `META_LABEL_SIZING_DIRECTIVE_REJECTED`로 fail-closed 처리한다.
+- `meta_label_evaluation.v1` report는 candidate outcome distribution, actionable candidate count, accuracy ratio를 standalone summary로 집계한다.
+- `historicalBatchReport`는 batch directory의 standard `triple-barrier-label-report.json`과 `meta-label-evaluation-report.json` artifact를 aggregate report에 read-only로 포함한다.
+- `runHistoricalBatchReplay`는 같은 `batchId` rerun 시작 시 standard label/evaluation artifact를 제거해 stale derived evidence가 sibling auto-load로 붙지 않게 한다.
+- Next.js Validation Lab은 `meta_label_evaluation.v1` summary를 read-only paper-only research evidence로 표시하고, batch aggregate report는 `triple_barrier_label.v1` label distribution을 read-only로 표시한다.
+- 이 범위는 paper-only replay artifact 해석용이며 strategy recommendation, sizing directive, performance guarantee, live `TradingSignal`, live `OrderIntent`, 자동 종목 추천으로 확장하지 않는다.
 
 권장 PR 분해:
 
