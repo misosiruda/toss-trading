@@ -113,7 +113,7 @@ interface SharpeValidationSelectionContext {
 
 ## Report 연결 계획
 
-후속 PR은 다음 순서로 연결한다.
+연결 순서는 다음과 같다.
 
 1. 완료: `HistoricalReplayReport.sharpeValidation` field와 Markdown render section에 single replay 검증 결과를 연결한다.
 2. 완료: `BatchReplayAggregateReport` group summary에 Sharpe validation을 연결한다.
