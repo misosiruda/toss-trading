@@ -287,7 +287,7 @@
 - combinatorial split generator
 - purged/embargo-aware CPCV split
 - fold별 train/test performance matrix
-- Probability of Backtest Overfitting 계산 후보
+- Probability of Backtest Overfitting 계산
 - strategy selection log와 PBO report 연결
 - compute budget과 max combination guard
 
@@ -307,16 +307,17 @@
 
 정책 기준:
 
-- CPCV/PBO validation design과 config/report schema 후보는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 한다.
+- CPCV/PBO validation design과 config/report schema는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 한다.
 
 현재 결정:
 
-- 첫 PR 범위는 `cpcv_pbo_validation.v1` contract와 config/report schema 후보 문서화로 제한한다.
-- 두 번째 PR 범위는 `combinatorial_purged_cv` standalone split generator, fail-closed config guard, unit test, 문서 연결로 제한한다.
-- 세 번째 PR 범위는 standalone `cpcv_pbo_validation.v1` artifact schema, PBO calculator, unit test, 문서 연결로 제한한다.
-- 네 번째 PR 범위는 `BatchReplayAggregateReport.cpcvPboValidation` sampled artifact 연결로 제한한다.
-- 다섯 번째 PR 범위는 dashboard validation lab의 `cpcvPboValidation` read-only warning 표시로 제한한다.
-- 여섯 번째 PR 범위는 replay research report의 `cpcvPboValidation` read-only warning 표시로 제한한다.
+- `cpcv_pbo_validation.v1` contract는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 하며, source of truth는 `src/replay/cpcvPboValidation.ts`다.
+- `src/replay/combinatorialPurgedCv.ts`는 `combinatorial_purged_cv` standalone split plan을 생성하고, invalid config와 exhaustive budget excess를 fail-closed 처리한다.
+- standalone PBO calculator는 config/split plan 일치 여부를 검증하고 `config`, `splitPlan`, `performanceMatrix`, `selectionLog`, `pbo`, `warnings`를 하나의 artifact로 기록한다.
+- PBO 계산은 train metric 기준 selected candidate, deterministic `candidate_key_asc` tie breaker, holdout rank percentile, insufficient/mismatched holdout matrix fail-closed warning을 사용한다.
+- `BatchReplayAggregateReport.cpcvPboValidation`은 기존 sampled PBO-like diagnostics를 `cpcv_pbo_validation.v1` artifact로 승격한다. 기존 aggregate는 full CPCV fold/sample id를 보존하지 않으므로 `status: "sampled"`, `splitPlan: null`, `CPCV_SPLIT_PLAN_UNAVAILABLE` warning을 사용한다.
+- `ReplayResearchReport`와 Next.js Validation Lab은 `cpcvPboValidation` status, PBO probability/status, evaluated combination count, sampled mode, split plan availability, warning을 read-only summary로 표시한다.
+- 이 범위는 paper-only replay artifact 해석용이며 strategy recommendation, sizing directive, performance guarantee, live strategy auto-selection으로 확장하지 않는다.
 
 권장 PR 분해:
 
