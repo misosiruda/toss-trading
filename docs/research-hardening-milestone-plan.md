@@ -238,7 +238,9 @@
 - standalone `calculateSharpeValidationReport()`는 sample Sharpe, 95% confidence interval, Lo-style adjusted Sharpe, benchmark-gated Probabilistic Sharpe Ratio, selection-context-gated Deflated Sharpe Ratio를 계산한다.
 - `HistoricalReplayReport.sharpeValidation`은 single replay return sample, lag 5 autocorrelation diagnostic, `candidateCount=1` / `trialCount=1` selection context를 기록하고 Markdown render에 read-only section을 표시한다.
 - `BatchReplayAggregateReport`는 `overall`, `byRegime`, `byValidationSplitRole` group summary마다 `sharpeValidation`을 생성하고, trial dispersion이 부족하면 DSR을 `missing_selection_context`로 fail-closed warning 처리한다.
-- `ReplayResearchReport`, legacy static dashboard renderer, Next.js Validation Lab은 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, selection context, warning을 read-only summary로 표시한다.
+- `ReplayResearchReport`는 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, selection context, warning을 read-only summary로 보존한다.
+- legacy static dashboard renderer는 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, sample count, warning을 read-only summary로 표시한다.
+- Next.js Validation Lab은 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, selection context, warning을 read-only summary로 표시한다.
 - insufficient sample, zero volatility, non-IID return, missing selection context는 pass처럼 보이지 않도록 warning으로 남긴다.
 - 이 범위는 paper-only replay artifact 해석용이며 strategy recommendation, sizing directive, performance guarantee로 확장하지 않는다.
 
