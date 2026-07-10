@@ -115,17 +115,21 @@ Smoke에서 실패하면 strategy 가정 평가로 넘어가지 않는다.
 
 ## Research matrix
 
-Research matrix는 smoke보다 긴 run count와 split artifact를 요구한다.
+Research matrix는 smoke보다 긴 run count와 split artifact를 요구한다. `--validation-splits-path`를 사용할 때 `--runs` 값은 assignment 수와 같아야 한다.
 
 권장 입력:
 
 ```powershell
-$RunCount = 16
+$RunCount = 9
 $Seed = "strategy-bucket-validation-research-001"
 $ValidationSplitsPath = "data/validation-splits/strategy-bucket-validation-assignments.json"
 ```
 
-현재 repository에는 기본 validation split assignment file이 없을 수 있다. 파일이 없으면 `--validation-splits-path`를 넣지 말고, 결과 판정은 `inconclusive` 또는 `conditional` 이하로 제한한다.
+Split artifact 생성:
+
+```powershell
+npm run historical:validation:splits -- -- --range-start $RangeStart --range-end $RangeEnd --train-months 24 --validation-months 6 --test-months 3 --step-months 3 --timezone-offset-minutes 540 --embargo-duration-days 5 --output-path $ValidationSplitsPath
+```
 
 Split artifact가 준비된 경우:
 
@@ -144,7 +148,7 @@ foreach ($Preset in $Presets) {
   $BatchId = "strategy-bucket-$Preset-research-001"
   $BatchDir = "$OutputDir/$BatchId"
 
-  npm run historical:batch:report -- -- --runs-path "$BatchDir/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --output-path "$BatchDir/batch-replay-aggregate-report.json"
+  npm run historical:batch:report -- -- --runs-path "$BatchDir/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --expected-sampled-cpcv-split-count $RunCount --output-path "$BatchDir/batch-replay-aggregate-report.json"
 }
 ```
 
