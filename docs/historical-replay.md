@@ -825,7 +825,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - train-side candidate competition이 없거나 일부 또는 전체 combination의 comparable test metric matrix가 없으면 `pbo.status="insufficient_matrix"`, `probability=null`, warning을 기록합니다.
 - sampled CPCV split plan을 입력으로 받으면 report `status`는 `sampled`이고 `CPCV_SAMPLED_MODE_USED` warning을 남깁니다.
 
-이 artifact는 여러 candidate의 selection bias를 사후 설명하기 위한 paper-only 검증 지표입니다. batch replay aggregate report 연결, dashboard 표시, strategy 자동 선택, live signal 생성은 후속 범위입니다.
+이 artifact는 여러 candidate의 selection bias를 사후 설명하기 위한 paper-only 검증 지표입니다. Batch replay aggregate report는 sampled PBO-like diagnostics를 `cpcv_pbo_validation.v1` artifact로 승격하고, Replay Research Report와 Next.js Validation Lab은 status, PBO probability/status, sampled mode, warning을 read-only summary로 표시합니다. 이 연결은 strategy 자동 선택이나 live signal 생성으로 확장하지 않습니다.
 
 ### Batch Aggregate Report
 
@@ -845,7 +845,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 새로 생성되는 batch run record의 `summary.costSummary`는 single `HistoricalReplayReport.costSummary`에서 가져온 fee, tax, slippage, spread, market impact, total cost, fill count, participation rate, cost model version, strategy bucket별 cost summary를 보관합니다. Aggregate report는 이 값을 `overall.costSummary`, `byRegime.*.costSummary`, `byValidationSplitRole.*.costSummary`로 합산하며 각 group의 `costSummary.byStrategyBucket`에 strategy bucket별 trade count, cost component, fill/liquidity count, participation rate, run ID를 함께 기록합니다. Replay research report도 같은 값을 `costBreakdown.byStrategyBucket`에 read-only 분석 summary로 복사합니다. `summary.costSummary`가 없는 legacy run record는 비용 sample에서 제외되며, `summary.costSummary`는 있지만 strategy bucket breakdown이 없는 legacy run record는 top-level cost sample에는 포함하되 `missingStrategyBucketBreakdownCount`와 `missingStrategyBucketBreakdownRunIds`로 표시합니다. replay research report는 cost sample이 하나도 없을 때만 `costBreakdown.status="unavailable"` warning을 남깁니다. Next.js Validation Lab의 `/dashboard/validation`은 Local Operations API `/dashboard/view-model/validation-lab`에서 `costRiskWarning`을 read-only로 받아 sample/trade 수, total/impact cost, partial fill 수, max participation, highest cost bucket, missing strategy bucket breakdown count, capped highest bucket run ID sample, capped missing bucket run ID sample을 경고 evidence로 표시합니다. 이 경고는 paper-only replay artifact 해석을 돕기 위한 검증 표시이며 strategy recommendation, sizing directive, performance guarantee가 아닙니다.
 
-Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, Lo-style adjusted Sharpe, benchmark가 없는 PSR `not_applicable` 상태, 아직 계산하지 않는 DSR 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, dashboard 표시 연결은 후속 PR 범위입니다.
+Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, Lo-style adjusted Sharpe, benchmark가 없는 PSR `not_applicable` 상태, 아직 계산하지 않는 DSR 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, Replay Research Report, legacy static dashboard renderer, Next.js Validation Lab은 missing/available 상태와 warning을 read-only로 표시합니다.
 
 `historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
 
