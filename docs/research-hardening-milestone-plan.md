@@ -200,7 +200,7 @@
 현재 결정:
 
 - `paper_cost_model.v4` / `execution_simulator.v3`는 fixed bps fee/tax/slippage 산식을 유지하고, spread와 volatility-adjusted slippage는 명시적 `not_modeled` placeholder로 기록한다.
-- candidate `volume` 또는 `averageVolume`이 있을 때 volume participation cap을 적용하고, liquidity decision은 filled/partial/rejected/not_modeled 상태와 participation rate를 paper trade/report에 남긴다.
+- candidate `volume` 또는 `averageVolume`이 있을 때 volume participation cap을 적용하고, paper trade/report에는 `fillStatus`(`filled`, `partial`, `rejected`), `liquidityStatus`(`not_modeled`, `sufficient`, `partial`, `rejected`, `stale`), participation rate를 분리해 남긴다.
 - 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며, 0보다 큰 paper-only policy에서는 filled notional과 filled participation rate 기준 `linear_participation_bps` impact cost를 계산한다.
 - market impact policy는 run metadata, `costModelHash`, trade cost component, historical replay report, batch aggregate cost summary에 남긴다.
 - strategy bucket별 cost drag는 aggregate `costSummary.byStrategyBucket`과 replay research `costBreakdown.byStrategyBucket`으로 보존한다.
