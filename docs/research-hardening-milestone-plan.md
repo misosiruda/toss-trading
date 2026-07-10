@@ -144,6 +144,18 @@
 - 특정 종목 추천
 - live universe 자동 변경
 
+정책 기준:
+
+- Universe lifecycle snapshot contract는 [historical-replay.md](historical-replay.md)의 `Universe manifest` 생명주기 snapshot 계약과 `docs/historical-universe.lifecycle-sample.json` fixture를 기준으로 한다.
+
+현재 결정:
+
+- `HistoricalUniverseManifest`는 date-scoped `snapshotDate`와 `active`, `suspended`, `delisted`, `unknown` lifecycle status를 가진다.
+- replay manifest는 `--universe-path`가 있을 때 normalized universe manifest를 `universeHash`에 포함하고 `universeSnapshotDate`를 저장한다.
+- candidate builder는 명시된 non-active lifecycle과 manifest 누락 symbol을 `HISTORICAL_LIFECYCLE_<STATUS>` reason code로 표시하고, risk engine은 non-hold decision을 `VIRTUAL_LIFECYCLE_NOT_ELIGIBLE`로 fail-closed reject한다.
+- universe coverage report는 `BatchReplayAggregateReport.universeCoverage`, `ReplayResearchReport.dataUniverseCoverage`, Next.js Validation Lab의 read-only data universe coverage summary로 연결한다.
+- 이 범위는 paper-only replay artifact 검증용이며 live universe 자동 변경, 실시간 listing feed, 특정 종목 추천으로 확장하지 않는다.
+
 완료 기준:
 
 - replay manifest가 universe snapshot hash와 snapshot date를 포함한다.
