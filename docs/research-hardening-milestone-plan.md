@@ -234,22 +234,21 @@
 
 현재 결정:
 
-- 첫 PR 범위는 `sharpe_validation.v1` contract와 schema 정의로 제한한다.
-- 두 번째 PR 범위는 standalone sample Sharpe calculator와 unit test로 제한한다.
-- 세 번째 PR 범위는 single `HistoricalReplayReport.sharpeValidation` 연결과 report render test로 제한한다.
-- 네 번째 PR 범위는 `BatchReplayAggregateReport` group summary의 `sharpeValidation` 연결과 aggregate report test로 제한한다.
-- 다섯 번째 PR 범위는 Lo-style serial correlation adjusted Sharpe calculator와 unit test로 제한한다.
-- 여섯 번째 PR 범위는 명시적 benchmark가 있는 standalone Probabilistic Sharpe Ratio calculator와 unit test로 제한한다.
-- 일곱 번째 PR 범위는 sample Sharpe standard error와 95% confidence interval calculator, unit test로 제한한다.
-- 여덟 번째 PR 범위는 standalone Deflated Sharpe Ratio calculator와 unit/report regression test로 제한한다.
-- 아홉 번째 PR 범위는 `ReplayResearchReport`와 static dashboard renderer의 read-only Sharpe validation 요약 표시로 제한한다.
-- 열 번째 PR 범위는 Next.js Validation Lab의 read-only Sharpe validation 요약 표시로 제한한다.
+- `sharpe_validation.v1` contract는 [sharpe-statistical-validation-contract.md](sharpe-statistical-validation-contract.md)를 기준으로 하며, source of truth는 `src/analytics/sharpeValidation.ts`다.
+- standalone `calculateSharpeValidationReport()`는 sample Sharpe, 95% confidence interval, Lo-style adjusted Sharpe, benchmark-gated Probabilistic Sharpe Ratio, selection-context-gated Deflated Sharpe Ratio를 계산한다.
+- `HistoricalReplayReport.sharpeValidation`은 single replay return sample, lag 5 autocorrelation diagnostic, `candidateCount=1` / `trialCount=1` selection context를 기록하고 Markdown render에 read-only section을 표시한다.
+- `BatchReplayAggregateReport`는 `overall`, `byRegime`, `byValidationSplitRole` group summary마다 `sharpeValidation`을 생성하고, trial dispersion이 부족하면 DSR을 `missing_selection_context`로 fail-closed warning 처리한다.
+- `ReplayResearchReport`는 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, selection context, warning을 read-only summary로 보존한다.
+- legacy static dashboard renderer는 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, sample count, warning을 read-only summary로 표시한다.
+- Next.js Validation Lab은 Sharpe validation status, sample Sharpe, Lo/PSR/DSR status, selection context, warning을 read-only summary로 표시한다.
+- insufficient sample, zero volatility, non-IID return, missing selection context는 pass처럼 보이지 않도록 warning으로 남긴다.
+- 이 범위는 paper-only replay artifact 해석용이며 strategy recommendation, sizing directive, performance guarantee로 확장하지 않는다.
 
 작업 범위:
 
-- Sharpe confidence interval 후보
-- Probabilistic Sharpe Ratio 후보
-- Deflated Sharpe Ratio 후보
+- Sharpe confidence interval
+- Probabilistic Sharpe Ratio
+- Deflated Sharpe Ratio
 - sample size, autocorrelation, skewness, kurtosis warning
 - per-bucket metric과 full-portfolio metric의 비교 기준 정리
 - dashboard/report에 통계적 신뢰도 경고 표시
