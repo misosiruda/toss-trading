@@ -53,7 +53,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 
 ## Research Reproducibility Manifest
 
-`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다. Calendar/FX fixture가 replay 결과에 영향을 주는 경우 [Replay Calendar And FX Contract](replay-calendar-fx-contract.md)의 hash 정책에 따라 fixture와 stale policy를 hash source로 관리합니다.
+`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다. 현재 manifest는 normalized snapshot의 calendar/FX source ref를 `dataSnapshotHash`에 포함하지만, normalized calendar/FX fixture 파일과 stale policy 자체는 아직 별도 hash source로 저장하지 않습니다. 해당 입력이 replay 결과를 구분해야 하는 contract가 되면 [Replay Calendar And FX Contract](replay-calendar-fx-contract.md)의 future `calendarHash`/`currencyConversionHash` 정책에 따라 manifest hash source를 확장합니다.
 
 필수 hash는 `sha256:<64 hex>` 형식이며, hash 대상은 JSON-compatible plain data를 stable key order로 직렬화한 값입니다. `Date`는 ISO string으로 canonicalize하고, `undefined`, `NaN`, `Infinity`, function, symbol, class instance 같은 비 JSON 입력은 fail-closed로 거절합니다.
 
