@@ -53,6 +53,7 @@ $OutputDir = "data/batch-replay"
 $UniversePath = "docs/historical-universe.global-broad.json"
 $RangeStart = "2023-01-01T00:00:00+09:00"
 $RangeEnd = "2026-05-31T23:59:59.999+09:00"
+$TargetRegimes = "bull,bear,sideways,mixed"
 ```
 
 `data/`는 gitignore 대상이다. generated replay artifact는 PR에 포함하지 않고, 필요한 결론만 별도 문서나 issue에 요약한다.
@@ -85,7 +86,7 @@ $Presets = @("long_term", "swing", "short_term", "intraday", "hedge")
 foreach ($Preset in $Presets) {
   $BatchId = "strategy-bucket-$Preset-smoke-001"
 
-  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed
+  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes
 }
 ```
 
@@ -132,7 +133,7 @@ Split artifact가 준비된 경우:
 foreach ($Preset in $Presets) {
   $BatchId = "strategy-bucket-$Preset-research-001"
 
-  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --validation-splits-path $ValidationSplitsPath
+  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes --validation-splits-path $ValidationSplitsPath
 }
 ```
 
@@ -156,7 +157,7 @@ Research 판정은 protocol의 `research_valid_for_paper_followup`, `conditional
 ```powershell
 $BatchId = "strategy-bucket-regime-cash-stress-001"
 
-npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-regime-cash-stress-001" --runs 8 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset regime_cash --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed
+npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-regime-cash-stress-001" --runs 8 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset regime_cash --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes
 
 npm run historical:batch:report -- -- --runs-path "$OutputDir/$BatchId/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --output-path "$OutputDir/$BatchId/batch-replay-aggregate-report.json"
 ```
@@ -188,7 +189,7 @@ $env:AI_DECISION_ENABLED = "true"
 $Preset = "swing"
 $BatchId = "strategy-bucket-$Preset-codex-paper-smoke-001"
 
-npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-codex-paper-smoke-001" --runs 2 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --max-decision-calls 2 --max-codex-calls-per-run 2
+npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-codex-paper-smoke-001" --runs 2 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes --max-decision-calls 2 --max-codex-calls-per-run 2
 
 npm run historical:batch:report -- -- --runs-path "$OutputDir/$BatchId/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --output-path "$OutputDir/$BatchId/batch-replay-aggregate-report.json"
 ```

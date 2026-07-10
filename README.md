@@ -201,6 +201,7 @@ Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbo
 퀀트 연구 기반 paper simulation 구현 기획은 [docs/quant-research-paper-simulation-plan.md](docs/quant-research-paper-simulation-plan.md)를 참고합니다.
 Strategy bucket별 검증 질문, 실패 조건, 판정 기준은 [docs/strategy-bucket-validation-protocol.md](docs/strategy-bucket-validation-protocol.md)를 참고합니다.
 Strategy bucket별 replay 실행 matrix와 결과 기록 절차는 [docs/strategy-bucket-validation-runbook.md](docs/strategy-bucket-validation-runbook.md)를 참고합니다.
+Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/strategy-bucket-validation-smoke-results.md](docs/strategy-bucket-validation-smoke-results.md)를 참고합니다.
 Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/research-hardening-milestone-plan.md](docs/research-hardening-milestone-plan.md)를 참고합니다.
 CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-validation-contract.md](docs/cpcv-pbo-validation-contract.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.

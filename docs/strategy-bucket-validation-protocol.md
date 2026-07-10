@@ -112,7 +112,7 @@ POST /paper/simulations/strategy-bucket-tests/validate
 bucket별 후보는 `--strategy-preset`으로 분리하고 같은 data, universe, calendar, cost, split 조건에서 반복 실행한다.
 
 ```powershell
-npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-<preset>-validation-001 --seed bucket-validation-001 --runs 16 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset <preset> --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed
+npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-<preset>-validation-001 --seed bucket-validation-001 --runs 16 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset <preset> --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes "bull,bear,sideways,mixed"
 ```
 
 실제 threshold와 run 수는 실험 전에 문서화한다. 실험 결과를 본 뒤 threshold를 바꾸면 selection bias로 기록한다.
