@@ -120,7 +120,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 batch run이 끝나면 aggregate report를 생성해 validation split, cost, Sharpe, CPCV/PBO, Triple Barrier/meta-label artifact를 한 곳에서 확인한다.
 
 ```powershell
-npm run historical:batch:report -- --batch-dir data/batch-replay/batch-<preset>-validation-001
+npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-<preset>-validation-001/batch-replay-runs.jsonl --output-path data/batch-replay/batch-<preset>-validation-001/batch-replay-aggregate-report.json
 ```
 
 report는 strategy 자동 선택이나 live trading signal이 아니다. report는 실패 조건과 warning을 숨기지 않는 research artifact다.
