@@ -182,13 +182,13 @@ $env:AI_DECISION_MODE = "paper_only"
 $env:AI_DECISION_ENABLED = "true"
 ```
 
-작은 call budget으로 한 bucket만 먼저 확인한다.
+작은 call budget으로 한 bucket만 먼저 확인한다. 이 smoke는 provider output path 확인이 목적이므로 replay sampling call cap과 Codex provider call cap을 같은 값으로 맞춘다.
 
 ```powershell
 $Preset = "swing"
 $BatchId = "strategy-bucket-$Preset-codex-paper-smoke-001"
 
-npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-codex-paper-smoke-001" --runs 2 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --max-codex-calls-per-run 2
+npm run historical:batch:replay -- -- --use-codex-ai --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "strategy-bucket-codex-paper-smoke-001" --runs 2 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes bull,bear,sideways,mixed --max-decision-calls 2 --max-codex-calls-per-run 2
 
 npm run historical:batch:report -- -- --runs-path "$OutputDir/$BatchId/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --output-path "$OutputDir/$BatchId/batch-replay-aggregate-report.json"
 ```
