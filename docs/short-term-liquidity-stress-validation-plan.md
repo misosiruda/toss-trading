@@ -139,13 +139,13 @@ $RangeEnd = "2026-05-31T23:59:59.999+09:00"
 $Seed = "strategy-bucket-validation-research-20260713-001-short_term"
 
 $Scenarios = @(
-  @{ Name = "control"; MaxParticipation = 0.1; MinFill = 0.1 },
-  @{ Name = "cap-1e-5-min-0.1"; MaxParticipation = 0.00001; MinFill = 0.1 },
-  @{ Name = "cap-1e-5-min-0.5"; MaxParticipation = 0.00001; MinFill = 0.5 }
+  @{ Name = "control"; BatchSlug = "control"; MaxParticipation = 0.1; MinFill = 0.1 },
+  @{ Name = "cap-1e-5-min-0.1"; BatchSlug = "cap-1e-5-min-0_1"; MaxParticipation = 0.00001; MinFill = 0.1 },
+  @{ Name = "cap-1e-5-min-0.5"; BatchSlug = "cap-1e-5-min-0_5"; MaxParticipation = 0.00001; MinFill = 0.5 }
 )
 
 foreach ($Scenario in $Scenarios) {
-  $BatchId = "strategy-bucket-short_term-liquidity-$($Scenario.Name)-20260713-001"
+  $BatchId = "strategy-bucket-short_term-liquidity-$($Scenario.BatchSlug)-20260713-001"
   node dist/cli/historicalBatchReplay.js --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed $Seed --runs 9 --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset short_term --universe-path $UniversePath --window-sampling balanced_regime --target-regimes "bull,bear,sideways,mixed" --validation-splits-path $ValidationSplitsPath --paper-fee-bps 10 --paper-tax-bps 20 --paper-slippage-bps 5 --paper-half-spread-bps 0 --paper-market-impact-bps-per-participation-rate 5000 --paper-max-volume-participation-rate $Scenario.MaxParticipation --paper-min-liquidity-fill-ratio $Scenario.MinFill
 
   node dist/cli/historicalBatchReport.js --runs-path "$OutputDir/$BatchId/batch-replay-runs.jsonl" --universe-coverage-path "$SourceDataDir/historical-universe-coverage.json" --expected-sampled-cpcv-split-count 9 --output-path "$OutputDir/$BatchId/batch-replay-aggregate-report.json"
