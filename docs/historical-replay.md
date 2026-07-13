@@ -84,7 +84,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 - `universeHash`는 `--universe-path`가 있으면 `HistoricalUniverseManifest`의 `snapshotDate`, lifecycle metadata, required/optional symbol metadata를 포함한 normalized manifest를 hash한다. `--universe-path`가 없으면 기존처럼 replay snapshot에서 관측된 symbol 요약을 hash하고 `universeSnapshotDate`는 `null`로 둔다.
 - hash가 없는 legacy run은 실행 실패가 아니라 report의 `reproducibility.status: "partial"`과 warning으로 표시한다.
 - 이 manifest는 paper-only 검증 artifact이며 live `TradingSignal`, live `OrderIntent`, broker order endpoint로 연결하지 않는다.
-- RH4 기준 `costModelHash`는 `paper_cost_model.v4` object를 hash한 값이다. 이 object에는 `executionModelVersion`, fill/fee/tax/slippage model name, spread placeholder, market impact model name, volatility-adjusted slippage placeholder, liquidity model name, normalized `executionPolicy`가 포함된다.
+- RH4 기준 `costModelHash`는 `paper_cost_model.v5` object를 hash한 값이다. 이 object에는 `executionModelVersion`, fill/fee/tax/slippage model name, fixed half-spread model name 또는 placeholder, market impact model name, volatility-adjusted slippage placeholder, liquidity model name, normalized `executionPolicy`가 포함된다.
 
 ## Artifact Contract
 
@@ -202,10 +202,11 @@ RH5 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe S
 
 Q3-2 기준:
 
-- `paper_cost_model.v4` / `execution_simulator.v3`는 fixed bps fee/tax/slippage 산식은 유지하고, candidate volume이 있을 때만 volume participation cap을 적용합니다.
-- v4 contract는 volatility-adjusted slippage를 `not_modeled` placeholder로 명시합니다. 이번 범위에서는 volatility input을 체결 가격 또는 비용 산식에 연결하지 않습니다.
+- `paper_cost_model.v5` / `execution_simulator.v4`는 fixed bps fee/tax/slippage 산식을 유지하고, opt-in fixed half-spread cost와 candidate volume이 있을 때의 volume participation cap을 적용합니다.
+- v5 contract는 volatility-adjusted slippage를 `not_modeled` placeholder로 명시합니다. 이번 범위에서는 volatility input을 체결 가격 또는 비용 산식에 연결하지 않습니다.
+- 기본 `halfSpreadBps=0`에서는 spread가 `not_modeled`이며 `spreadCostKrw=0`입니다. 0보다 큰 paper-only policy에서는 filled notional에 half-spread bps를 적용하고 매수 net amount에는 더하고 매도 net amount에서는 차감합니다. 이 비용은 fill price slippage와 분리해 기록합니다.
 - 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며 `impactCostKrw=0`입니다. 이 값을 0보다 크게 설정한 paper-only fixture에서는 filled notional과 filled participation rate를 기준으로 `linear_participation_bps` impact cost를 계산하고 `costModelHash`에 해당 policy를 포함합니다.
-- single replay와 batch replay CLI의 `--paper-market-impact-bps-per-participation-rate`는 같은 paper-only execution policy로 전달됩니다. 이 값은 run metadata `configuration.executionPolicy`, `costModelHash`, trade/report의 `impactCostKrw`에 반영됩니다.
+- single replay와 batch replay CLI의 `--paper-half-spread-bps`, `--paper-market-impact-bps-per-participation-rate`는 같은 paper-only execution policy로 전달됩니다. 이 값은 run metadata `configuration.executionPolicy`, `costModelHash`, trade/report의 `spreadCostKrw` 또는 `impactCostKrw`에 반영됩니다.
 - `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달되고, 현재 tick 이전 snapshot window에서 계산한 `averageVolume`은 `MarketCandidate.averageVolume`으로 전달됩니다.
 - `HistoricalMarketSnapshot.sector`가 있으면 `MarketCandidate.sector`로 전달되어 sector exposure cap과 evidence `featureRefs`에서 사용할 수 있습니다. sector가 없는 과거 dataset은 unknown metadata로 보수 처리됩니다.
 - `VirtualTrade`에는 `requestedNotionalKrw`, `filledNotionalKrw`, `fillStatus`, `liquidityStatus`, `participationRate`, `maxParticipationRate`, `volume`, `averageVolume`이 추가로 기록될 수 있습니다.
@@ -528,7 +529,8 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `--paper-take-profit-sell-ratio 0.5`: `partial_then_trail` 모드에서 최초 take-profit 도달 시 매도할 보유 수량 비율입니다.
 - `--paper-trailing-stop-from-peak-ratio 0.08`: `partial_then_trail` 모드에서 partial take-profit 이후 peak 가격 대비 하락률이 이 값을 넘으면 잔여 수량을 sell-all 합니다.
 - `--paper-market-impact-bps-per-participation-rate 500`: filled participation rate에 비례한 paper-only market impact cost를 적용합니다. 기본값은 `0`이며, 이번 범위는 aggregate report 구조 확장이 아니라 execution policy 전달과 per-trade/report cost 반영까지입니다.
-- batch replay CLI는 `--paper-fee-bps`, `--paper-tax-bps`, `--paper-slippage-bps`로 fixed paper execution cost를 명시할 수 있습니다. 세 값과 market impact 값은 0 이상의 숫자만 허용하며, 명시된 값은 run metadata, `costModelHash`, trade cost와 aggregate report에 반영됩니다.
+- `--paper-half-spread-bps 10`: filled notional에 10 bps fixed half-spread 비용을 적용합니다. 기본값 `0`은 spread `not_modeled` 상태를 유지합니다.
+- batch replay CLI는 `--paper-fee-bps`, `--paper-tax-bps`, `--paper-slippage-bps`, `--paper-half-spread-bps`로 fixed paper execution cost를 명시할 수 있습니다. 네 값과 market impact 값은 0 이상의 숫자만 허용하며, 명시된 값은 run metadata, `costModelHash`, trade cost와 aggregate report에 반영됩니다.
 
 동작:
 

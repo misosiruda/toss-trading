@@ -56,6 +56,7 @@ const VALUE_OPTION_NAMES = new Set([
   "--max-candidates",
   "--max-snapshot-age-seconds",
   "--initial-cash-krw",
+  "--paper-half-spread-bps",
   "--paper-market-impact-bps-per-participation-rate",
   "--decision-frequency",
   "--speed-multiplier",
@@ -268,6 +269,24 @@ function readOptionalNumberArg(
   return parsed;
 }
 
+function readOptionalNonnegativeNumberArg(name: string): number | undefined {
+  const raw = readArgValue(name);
+  if (raw === undefined) {
+    if (args.includes(name)) {
+      throw new Error(`${name} requires a value`);
+    }
+    return undefined;
+  }
+  if (raw.trim().length === 0) {
+    throw new Error(`${name} requires a value`);
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return parsed;
+}
+
 function readArgValue(name: string): string | undefined {
   const index = args.indexOf(name);
   if (index === -1) {
@@ -331,13 +350,24 @@ function readPaperExitPolicyArg() {
 function readPaperExecutionPolicyArg():
   | Partial<PaperExecutionPolicy>
   | undefined {
-  const marketImpactBpsPerParticipationRate = readOptionalNumberArg(
+  const halfSpreadBps = readOptionalNonnegativeNumberArg(
+    "--paper-half-spread-bps"
+  );
+  const marketImpactBpsPerParticipationRate = readOptionalNonnegativeNumberArg(
     "--paper-market-impact-bps-per-participation-rate"
   );
-  if (marketImpactBpsPerParticipationRate === undefined) {
+  if (
+    halfSpreadBps === undefined &&
+    marketImpactBpsPerParticipationRate === undefined
+  ) {
     return undefined;
   }
-  return { marketImpactBpsPerParticipationRate };
+  return {
+    ...(halfSpreadBps === undefined ? {} : { halfSpreadBps }),
+    ...(marketImpactBpsPerParticipationRate === undefined
+      ? {}
+      : { marketImpactBpsPerParticipationRate })
+  };
 }
 
 function readTakeProfitModeArg() {

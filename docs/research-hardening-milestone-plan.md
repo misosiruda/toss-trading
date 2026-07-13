@@ -195,11 +195,11 @@
 
 정책 기준:
 
-- RH4 cost/execution contract는 [historical-replay.md](historical-replay.md)의 `Q3-2 기준`과 `paper_cost_model.v4` / `execution_simulator.v3` 설명을 기준으로 한다.
+- RH4 cost/execution contract는 [historical-replay.md](historical-replay.md)의 `Q3-2 기준`과 `paper_cost_model.v5` / `execution_simulator.v4` 설명을 기준으로 한다.
 
 현재 결정:
 
-- `paper_cost_model.v4` / `execution_simulator.v3`는 fixed bps fee/tax/slippage 산식을 유지하고, spread와 volatility-adjusted slippage는 명시적 `not_modeled` placeholder로 기록한다.
+- `paper_cost_model.v5` / `execution_simulator.v4`는 fixed bps fee/tax/slippage 산식을 유지하고, opt-in fixed half-spread bps를 별도 cost component로 기록한다. 기본 half-spread 0과 volatility-adjusted slippage는 명시적 `not_modeled` placeholder로 기록한다.
 - candidate `volume` 또는 `averageVolume`이 있을 때 volume participation cap을 적용하고, paper trade/report에는 `fillStatus`(`filled`, `partial`, `rejected`), `liquidityStatus`(`not_modeled`, `sufficient`, `partial`, `rejected`, `stale`), participation rate를 분리해 남긴다.
 - 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며, 0보다 큰 paper-only policy에서는 filled notional과 filled participation rate 기준 `linear_participation_bps` impact cost를 계산한다.
 - market impact policy는 run metadata, `costModelHash`, trade cost component, historical replay report, batch aggregate cost summary에 남긴다.

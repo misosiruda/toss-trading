@@ -35,7 +35,7 @@ test("historical replay report summarizes replay result safely", () => {
   assert.equal(report.tradeSummary.tradeCount, 2);
   assert.equal(report.costSummary.totalCostKrw, 0);
   assert.deepEqual(report.costSummary.costModelVersions, [
-    "paper_cost_model.v4"
+    "paper_cost_model.v5"
   ]);
   assert.equal(report.costSummary.filledCount, 2);
   assert.equal(report.costSummary.partialFillCount, 0);

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
+import { historicalReplayRunConfigurationSchema } from "../replay/historicalReplayAuditLog.js";
 import { ReplaySamplingPolicy } from "../replay/replaySamplingPolicy.js";
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import { createHistoricalReplayWorkflowPlan } from "./historicalReplayWorkflowPlan.js";
@@ -104,6 +105,19 @@ test("historical replay workflow plan builds runner input and run metadata", () 
   assert.equal(
     plan.runnerOptions.executionPolicy?.marketImpactBpsPerParticipationRate,
     500
+  );
+  const legacyConfiguration = structuredClone(
+    plan.metadataContext.configuration
+  ) as Record<string, unknown>;
+  const legacyExecutionPolicy = legacyConfiguration["executionPolicy"] as Record<
+    string,
+    unknown
+  >;
+  delete legacyExecutionPolicy["halfSpreadBps"];
+  assert.equal(
+    historicalReplayRunConfigurationSchema.parse(legacyConfiguration)
+      .executionPolicy?.halfSpreadBps,
+    0
   );
   assert.equal(
     plan.metadataContext.identity.runId,

@@ -388,6 +388,9 @@ function readPaperExecutionPolicyArg():
   | undefined {
   const feeBps = readOptionalNonnegativeNumberArg("--paper-fee-bps");
   const taxBps = readOptionalNonnegativeNumberArg("--paper-tax-bps");
+  const halfSpreadBps = readOptionalNonnegativeNumberArg(
+    "--paper-half-spread-bps"
+  );
   const slippageBps = readOptionalNonnegativeNumberArg(
     "--paper-slippage-bps"
   );
@@ -398,6 +401,7 @@ function readPaperExecutionPolicyArg():
   if (
     feeBps === undefined &&
     taxBps === undefined &&
+    halfSpreadBps === undefined &&
     slippageBps === undefined &&
     marketImpactBpsPerParticipationRate === undefined
   ) {
@@ -406,6 +410,7 @@ function readPaperExecutionPolicyArg():
   return {
     ...(feeBps === undefined ? {} : { feeBps }),
     ...(taxBps === undefined ? {} : { taxBps }),
+    ...(halfSpreadBps === undefined ? {} : { halfSpreadBps }),
     ...(slippageBps === undefined ? {} : { slippageBps }),
     ...(marketImpactBpsPerParticipationRate === undefined
       ? {}
