@@ -1100,6 +1100,127 @@ test("batch replay aggregate report separates strategy preset cadence candidates
   assert.match(diagnostics.selectedCandidateKey ?? "", /preset=long_term/);
 });
 
+test("batch replay aggregate report separates candidate strategy bucket scopes", () => {
+  const promptHash = hash("b");
+  const sharedConfig = {
+    strategyPreset: "short_term" as const
+  };
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    records: [
+      record(
+        "scope_short_train",
+        0,
+        "completed",
+        "bull",
+        0.1,
+        1_100_000,
+        0,
+        "train"
+      ),
+      record(
+        "scope_swing_train",
+        1,
+        "completed",
+        "bull",
+        0.08,
+        1_080_000,
+        0,
+        "train"
+      ),
+      record(
+        "scope_short_validation",
+        2,
+        "completed",
+        "bull",
+        0.02,
+        1_020_000,
+        0,
+        "validation"
+      ),
+      record(
+        "scope_swing_validation",
+        3,
+        "completed",
+        "bull",
+        0.01,
+        1_010_000,
+        0,
+        "validation"
+      )
+    ],
+    selectionTrials: [
+      trial(
+        "scope_short_train",
+        0,
+        "completed",
+        promptHash,
+        hash("c"),
+        1,
+        0,
+        0,
+        0.1,
+        { ...sharedConfig, candidateStrategyBucket: "short_term" }
+      ),
+      trial(
+        "scope_swing_train",
+        1,
+        "completed",
+        promptHash,
+        hash("d"),
+        1,
+        0,
+        0,
+        0.08,
+        { ...sharedConfig, candidateStrategyBucket: "swing" }
+      ),
+      trial(
+        "scope_short_validation",
+        2,
+        "completed",
+        promptHash,
+        hash("e"),
+        1,
+        0,
+        0,
+        0.02,
+        { ...sharedConfig, candidateStrategyBucket: "short_term" }
+      ),
+      trial(
+        "scope_swing_validation",
+        3,
+        "completed",
+        promptHash,
+        hash("0"),
+        1,
+        0,
+        0,
+        0.01,
+        { ...sharedConfig, candidateStrategyBucket: "swing" }
+      )
+    ]
+  });
+
+  const diagnostics = report.overfittingDiagnostics!;
+  assert.equal(diagnostics.candidateCount, 2);
+  assert.deepEqual(
+    new Set(
+      diagnostics.splitMetricMatrix.map((row) => row.candidateStrategyBucket)
+    ),
+    new Set(["short_term", "swing"])
+  );
+  assert.ok(
+    diagnostics.splitMetricMatrix.some((row) =>
+      row.candidateKey.includes("candidateScope=short_term")
+    )
+  );
+  assert.ok(
+    diagnostics.splitMetricMatrix.some((row) =>
+      row.candidateKey.includes("candidateScope=swing")
+    )
+  );
+});
+
 test("batch replay aggregate report includes stored meta-label evaluation artifact", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -2940,6 +3061,8 @@ function trial(
         configOverrides.marketRegimeAllocationPolicyHash ?? hash("3"),
       exitPolicyHash: configOverrides.exitPolicyHash ?? hash("4"),
       strategyPreset: configOverrides.strategyPreset ?? null,
+      candidateStrategyBucket:
+        configOverrides.candidateStrategyBucket ?? null,
       replayCadence: configOverrides.replayCadence ?? null,
       riskProfile: configOverrides.riskProfile ?? "balanced",
       selectionMetric: "total_return_ratio"

@@ -273,6 +273,7 @@ export interface BatchReplaySplitMetricRow {
   marketRegimeAllocationPolicyHash: string;
   exitPolicyHash: string;
   strategyPreset: string | null;
+  candidateStrategyBucket: StrategyBucket | null;
   replayCadence: NonNullable<SelectionTrialRecord["config"]["replayCadence"]> | null;
   riskProfile: string | null;
   roleMetrics: Partial<Record<ValidationSplitRole, BatchReplayRoleMetric>>;
@@ -704,6 +705,8 @@ function buildSplitMetricMatrix(
           firstTrial.config.marketRegimeAllocationPolicyHash,
         exitPolicyHash: firstTrial.config.exitPolicyHash,
         strategyPreset: firstTrial.config.strategyPreset ?? null,
+        candidateStrategyBucket:
+          firstTrial.config.candidateStrategyBucket ?? null,
         replayCadence: firstTrial.config.replayCadence ?? null,
         riskProfile: firstTrial.config.riskProfile,
         roleMetrics: summarizeRoleMetrics(bucket),
@@ -780,6 +783,7 @@ function candidateKeyForTrial(trial: SelectionTrialRecord): string {
     `regimeAllocation=${trial.config.marketRegimeAllocationPolicyHash}`,
     `exit=${trial.config.exitPolicyHash}`,
     `preset=${trial.config.strategyPreset ?? "null"}`,
+    `candidateScope=${trial.config.candidateStrategyBucket ?? "null"}`,
     `cadence=${replayCadenceKey(trial.config.replayCadence ?? null)}`,
     `profile=${trial.config.riskProfile ?? "null"}`,
     `metric=${trial.config.selectionMetric}`

@@ -147,6 +147,7 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(result.failedCount, 0);
   assert.equal(manifest["status"], "completed");
   assert.equal(manifest["completedCount"], 2);
+  assert.equal(manifest["candidateStrategyBucket"], null);
   assert.equal(manifest["riskProfile"], null);
   assert.equal(manifest["paperExitPolicy"], null);
   assert.equal(
@@ -159,6 +160,12 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(firstRecord["status"], "completed");
   assert.equal(trialRecords[0]?.["status"], "completed");
   assert.equal(trialRecords[0]?.["trialSchemaVersion"], "selection_trial.v1");
+  assert.equal(
+    (trialRecords[0]?.["config"] as Record<string, unknown>)[
+      "candidateStrategyBucket"
+    ],
+    null
+  );
   assert.deepEqual(
     (trialRecords[0]?.["config"] as Record<string, unknown>)["replayCadence"],
     {
@@ -234,6 +241,103 @@ test("historical batch replay runner writes manifest and per-run records", async
   assert.equal(firstIdentity["runIndex"], 0);
   assert.equal(firstWindow["source"], "random_window");
   assert.equal(firstWindow["selectedMonth"], "2025-02");
+});
+
+test("historical batch replay runner propagates candidate strategy bucket metadata", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-scope-source-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-scope-output-"));
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_long_term",
+      "005930",
+      "2025-02-03T09:00:00+09:00",
+      70_000,
+      { strategyBucket: "long_term" }
+    )
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_000660_short_term",
+      "000660",
+      "2025-02-03T09:00:00+09:00",
+      120_000,
+      { strategyBucket: "short_term" }
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-short-term-scope",
+    seed: "seed-short-term-scope",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    stepSeconds: 604_800,
+    maxSnapshotAgeSeconds: 31 * 24 * 60 * 60,
+    candidateStrategyBucket: "short_term"
+  });
+  const manifest = JSON.parse(
+    await readFile(result.manifestPath, "utf8")
+  ) as Record<string, unknown>;
+  const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
+  const runStorageBaseDir = String(runRecords[0]?.["storageBaseDir"]);
+  const runPaths = createStoragePaths(runStorageBaseDir);
+  const runMetadata = JSON.parse(
+    await readFile(runPaths.historicalReplayRunMetadataPath, "utf8")
+  ) as Record<string, unknown>;
+  const runConfiguration = runMetadata["configuration"] as Record<string, unknown>;
+  const packetRecords = await readJsonl(runPaths.historicalReplayPacketLogPath);
+  const tradeRecords = await readJsonl(runPaths.historicalReplayTradeLogPath);
+  const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
+  const researchManifest = runRecords[0]?.["researchManifest"] as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(result.status, "completed");
+  assert.equal(manifest["candidateStrategyBucket"], "short_term");
+  assert.equal(runConfiguration["candidateStrategyBucket"], "short_term");
+  assert.deepEqual(
+    (packetRecords[0]?.["candidates"] as Array<Record<string, unknown>>).map(
+      (candidate) => [candidate["symbol"], candidate["strategyBucket"]]
+    ),
+    [["000660", "short_term"]]
+  );
+  assert.equal(tradeRecords[0]?.["symbol"], "000660");
+  assert.equal(tradeRecords[0]?.["strategyBucket"], "short_term");
+  assert.equal(trialConfig["candidateStrategyBucket"], "short_term");
+  assert.equal(trialConfig["configHash"], researchManifest["configHash"]);
+});
+
+test("historical batch replay runner rejects invalid candidate strategy bucket before artifacts", async () => {
+  const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-invalid-scope-"));
+  const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-invalid-output-"));
+
+  await assert.rejects(
+    () =>
+      runHistoricalBatchReplay({
+        sourceDataDir,
+        outputBaseDir,
+        batchId: "batch-invalid-scope",
+        seed: "seed-invalid-scope",
+        runCount: 1,
+        rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+        rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+        candidateStrategyBucket: "regime_cash" as never
+      }),
+    /candidateStrategyBucket/
+  );
+  await assert.rejects(
+    () => readFile(join(outputBaseDir, "batch-invalid-scope", "batch-replay-manifest.json")),
+    isFileNotFoundError
+  );
 });
 
 test("historical batch replay runner records validation split assignments", async () => {
@@ -1262,6 +1366,7 @@ function snapshot(
   options: {
     market?: HistoricalMarketSnapshot["market"];
     sourceRefs?: string[];
+    strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
   } = {}
 ): HistoricalMarketSnapshot {
   return {
@@ -1272,6 +1377,9 @@ function snapshot(
     interval: "1d",
     lastPriceKrw,
     volume: 100_000,
+    ...(options.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: options.strategyBucket }),
     sourceRefs: options.sourceRefs ?? [`fixture:${snapshotId}`],
     createdAt: observedAt
   };

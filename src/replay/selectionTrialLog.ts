@@ -1,5 +1,5 @@
 import type { MarketRegimeClassification } from "../analytics/marketRegimeClassifier.js";
-import type { Sha256Hash } from "../domain/schemas.js";
+import type { Sha256Hash, StrategyBucket } from "../domain/schemas.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
 import type { NormalizedPaperExitPolicy } from "../paper/exitPolicy.js";
@@ -58,6 +58,7 @@ export interface SelectionTrialConfig {
   marketRegimeAllocationPolicyHash: Sha256Hash;
   exitPolicyHash: Sha256Hash;
   strategyPreset?: StrategyReplayPresetName | null;
+  candidateStrategyBucket?: StrategyBucket | null;
   replayCadence?: SelectionTrialReplayCadenceConfig | null;
   riskProfile: PaperRiskProfileName | null;
   selectionMetric: "total_return_ratio";
@@ -104,6 +105,7 @@ export interface CreateSelectionTrialRecordInput {
   marketRegime: MarketRegimeClassification;
   decisionProviderMetadata: unknown;
   strategyPreset?: StrategyReplayPresetName | null;
+  candidateStrategyBucket?: StrategyBucket | null;
   replayCadence?: SelectionTrialReplayCadenceConfig | null;
   riskProfile: PaperRiskProfileName | null;
   riskPolicy: Partial<VirtualRiskPolicy> | undefined;
@@ -163,6 +165,7 @@ export function createSelectionTrialRecord(
       ),
       exitPolicyHash: hashTrialValue(input.paperExitPolicy),
       strategyPreset: input.strategyPreset ?? null,
+      candidateStrategyBucket: input.candidateStrategyBucket ?? null,
       replayCadence: input.replayCadence ?? null,
       riskProfile: input.riskProfile,
       selectionMetric: "total_return_ratio"

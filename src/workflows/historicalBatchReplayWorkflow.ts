@@ -41,11 +41,13 @@ import type {
   AssetType,
   AuditEvent,
   HistoricalMarketSnapshot,
-  Market
+  Market,
+  StrategyBucket
 } from "../domain/schemas.js";
 import {
   parseWithSchema,
-  replayResearchManifestSchema
+  replayResearchManifestSchema,
+  strategyBucketSchema
 } from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import type { StrategyReplayPresetName } from "../replay/strategyReplayPreset.js";
@@ -103,6 +105,7 @@ export interface BatchReplayRunnerOptions {
   outputBaseDir: string;
   batchId: string;
   strategyPreset?: StrategyReplayPresetName;
+  candidateStrategyBucket?: StrategyBucket;
   seed: string;
   runCount: number;
   rangeStart: Date;
@@ -215,6 +218,7 @@ export interface BatchReplayManifest {
   activeRun: BatchReplayActiveRunSnapshot | null;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   strategyPreset: StrategyReplayPresetName | null;
+  candidateStrategyBucket: StrategyBucket | null;
   riskProfile: PaperRiskProfileName | null;
   allocationPolicy: PaperAllocationPolicy | null;
   marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | null;
@@ -394,6 +398,7 @@ export async function runHistoricalBatchReplay(
     activeRun: null,
     decisionProvider: decisionProviderMetadata,
     strategyPreset: options.strategyPreset ?? null,
+    candidateStrategyBucket: options.candidateStrategyBucket ?? null,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -522,6 +527,7 @@ export async function runHistoricalBatchReplay(
       }),
       decisionProvider: decisionProviderMetadata,
       strategyPreset: options.strategyPreset ?? null,
+      candidateStrategyBucket: options.candidateStrategyBucket ?? null,
       riskProfile: options.riskProfile ?? null,
       allocationPolicy: options.allocationPolicy ?? null,
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -602,6 +608,9 @@ export async function runHistoricalBatchReplay(
         ...(options.strategyPreset === undefined
           ? {}
           : { strategyPreset: options.strategyPreset }),
+        ...(options.candidateStrategyBucket === undefined
+          ? {}
+          : { candidateStrategyBucket: options.candidateStrategyBucket }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
         ...(replayDecisionProviderMetadata === undefined
           ? {}
@@ -726,6 +735,7 @@ export async function runHistoricalBatchReplay(
     activeRun: null,
     decisionProvider: decisionProviderMetadata,
     strategyPreset: options.strategyPreset ?? null,
+    candidateStrategyBucket: options.candidateStrategyBucket ?? null,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -1362,6 +1372,7 @@ function selectionTrialRecord(input: {
     marketRegime: input.record.marketRegime,
     decisionProviderMetadata: input.decisionProviderMetadata,
     strategyPreset: input.options.strategyPreset ?? null,
+    candidateStrategyBucket: input.options.candidateStrategyBucket ?? null,
     replayCadence: {
       stepSeconds: input.options.stepSeconds ?? DEFAULT_STEP_SECONDS,
       everyNSteps: input.options.everyNSteps ?? null,
@@ -1414,6 +1425,13 @@ function batchReplayRunId(
 function validateBatchOptions(options: BatchReplayRunnerOptions): void {
   normalizeRequiredText(options.batchId, "batchId");
   normalizeRequiredText(options.seed, "seed");
+  if (options.candidateStrategyBucket !== undefined) {
+    parseWithSchema(
+      strategyBucketSchema,
+      options.candidateStrategyBucket,
+      "candidateStrategyBucket"
+    );
+  }
   if (!Number.isInteger(options.runCount) || options.runCount <= 0) {
     throw new Error("runCount must be a positive integer");
   }

@@ -61,6 +61,17 @@ test("selection trial hashes risk and exit policy separately", () => {
   assert.notEqual(base.config.exitPolicyHash, changedExit.config.exitPolicyHash);
 });
 
+test("selection trial records candidate strategy bucket identity", () => {
+  const scoped = createSelectionTrialRecord({
+    ...trialInput(),
+    candidateStrategyBucket: "short_term"
+  });
+  const broad = createSelectionTrialRecord(trialInput());
+
+  assert.equal(scoped.config.candidateStrategyBucket, "short_term");
+  assert.equal(broad.config.candidateStrategyBucket, null);
+});
+
 test("selection trial aligns skipped custom-provider prompt hash with manifest fallback", () => {
   const decisionProviderMetadata = {
     mode: "unknown_provider",

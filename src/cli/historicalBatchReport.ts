@@ -15,6 +15,7 @@ import {
   type SelectionTrialRecord,
   type SelectionTrialRunStatus
 } from "../replay/selectionTrialLog.js";
+import { strategyBucketSchema } from "../domain/schemas.js";
 import {
   metaLabelEvaluationReportSchema,
   tripleBarrierLabelArtifactSchema,
@@ -482,6 +483,8 @@ function isSelectionTrialConfig(value: unknown): boolean {
     isSha256Hash(value["exitPolicyHash"]) &&
     (value["strategyPreset"] === undefined ||
       isNullableString(value["strategyPreset"])) &&
+    (value["candidateStrategyBucket"] === undefined ||
+      isNullableStrategyBucket(value["candidateStrategyBucket"])) &&
     (value["replayCadence"] === undefined ||
       isNullableSelectionTrialReplayCadence(value["replayCadence"])) &&
     isNullableString(value["riskProfile"]) &&
@@ -510,6 +513,10 @@ function isReplayDecisionFrequency(value: unknown): boolean {
     value === "once_per_day" ||
     value === "once_per_week"
   );
+}
+
+function isNullableStrategyBucket(value: unknown): boolean {
+  return value === null || strategyBucketSchema.safeParse(value).success;
 }
 
 function isSelectionTrialOutcome(value: unknown): boolean {
