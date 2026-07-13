@@ -504,6 +504,12 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       String(31 * 24 * 60 * 60),
       "--risk-profile",
       "aggressive_paper",
+      "--paper-fee-bps",
+      "10",
+      "--paper-tax-bps",
+      "20",
+      "--paper-slippage-bps",
+      "5",
       "--paper-market-impact-bps-per-participation-rate",
       "500",
       "--dynamic-cash-reserve",
@@ -611,6 +617,9 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   >;
   assert.equal(runConfiguration["riskProfile"], "aggressive_paper");
   assert.equal(runResearchManifest["universeSnapshotDate"], "2025-01-01");
+  assert.equal(runExecutionPolicy["feeBps"], 10);
+  assert.equal(runExecutionPolicy["taxBps"], 20);
+  assert.equal(runExecutionPolicy["slippageBps"], 5);
   assert.equal(
     runExecutionPolicy["marketImpactBpsPerParticipationRate"],
     500
@@ -709,11 +718,18 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
     0.5
   );
   const trialSummary = aggregateReport["trialSummary"] as Record<string, unknown>;
+  const overall = aggregateReport["overall"] as Record<string, unknown>;
+  const aggregateCostSummary = overall["costSummary"] as Record<
+    string,
+    unknown
+  >;
   assert.equal(trialSummary["trialCount"], 1);
   assert.equal(trialSummary["selectedCount"], 0);
   assert.equal(trialSummary["unselectedCount"], 1);
   assert.equal(summary["runCount"], 1);
   assert.equal(summary["completedCount"], 1);
+  assert.ok(Number(aggregateCostSummary["totalCostKrw"]) > 0);
+  assert.match(String(runResearchManifest["costModelHash"]), /^sha256:/);
   assert.equal(output["decisionProvider"], "deterministic_fixture");
   assert.equal(output["maxCodexCallsPerRun"], null);
   assert.equal(
@@ -1547,6 +1563,40 @@ test("historical batch replay CLI rejects missing strategy preset value", () => 
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--strategy-preset requires a value/);
+});
+
+test("historical batch replay CLI rejects negative paper cost values", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--paper-slippage-bps",
+      "-1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--paper-slippage-bps must be a non-negative number/
+  );
+});
+
+test("historical batch replay CLI rejects missing paper cost values", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--paper-fee-bps",
+      "--runs",
+      "1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--paper-fee-bps requires a value/);
 });
 
 test("historical batch replay CLI applies hedge strategy preset risk policy", () => {

@@ -123,6 +123,10 @@ Research matrix는 smoke보다 긴 run count와 split artifact를 요구한다. 
 $RunCount = 9
 $Seed = "strategy-bucket-validation-research-001"
 $ValidationSplitsPath = "data/validation-splits/strategy-bucket-validation-assignments.json"
+$PaperFeeBps = 10
+$PaperTaxBps = 20
+$PaperSlippageBps = 5
+$PaperMarketImpactBpsPerParticipationRate = 500
 ```
 
 Split artifact 생성:
@@ -137,9 +141,11 @@ Split artifact가 준비된 경우:
 foreach ($Preset in $Presets) {
   $BatchId = "strategy-bucket-$Preset-research-001"
 
-  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes --validation-splits-path $ValidationSplitsPath
+  npm run historical:batch:replay:dry -- -- --source-data-dir $SourceDataDir --output-dir $OutputDir --batch-id $BatchId --seed "$Seed-$Preset" --runs $RunCount --random-window-from $RangeStart --random-window-to $RangeEnd --strategy-preset $Preset --universe-path $UniversePath --window-sampling balanced_regime --target-regimes $TargetRegimes --validation-splits-path $ValidationSplitsPath --paper-fee-bps $PaperFeeBps --paper-tax-bps $PaperTaxBps --paper-slippage-bps $PaperSlippageBps --paper-market-impact-bps-per-participation-rate $PaperMarketImpactBpsPerParticipationRate
 }
 ```
+
+비용 값은 paper-only validation fixture다. 실제 broker fee 또는 향후 성과를 나타내지 않는다. `short_term`과 `intraday`는 total cost가 0인 결과를 research-valid 근거로 사용하지 않는다.
 
 Research aggregate report:
 
