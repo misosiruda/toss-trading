@@ -20,6 +20,7 @@ const timezoneOffsetMinutes = readOptionalIntegerArg(
   "--timezone-offset-minutes"
 );
 const embargoDurationDays = readOptionalIntegerArg("--embargo-duration-days");
+const outputPath = readOptionalArgValue("--output-path");
 
 const plan = buildWalkForwardSplitPlan({
   rangeStart: readDateArg("--range-start"),
@@ -34,7 +35,6 @@ const plan = buildWalkForwardSplitPlan({
 
 const assignments = plan.splits.flatMap(walkForwardSplitAssignments);
 const artifact = buildArtifact(plan, assignments);
-const outputPath = readArgValue("--output-path");
 if (outputPath !== undefined) {
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
@@ -107,11 +107,8 @@ function readIntegerArg(name: string): number {
 }
 
 function readOptionalIntegerArg(name: string): number | undefined {
-  const value = readArgValue(name);
+  const value = readOptionalArgValue(name);
   if (value === undefined) {
-    if (args.includes(name)) {
-      throw new Error(`${name} requires a value`);
-    }
     return undefined;
   }
   const parsed = Number(value);
@@ -119,6 +116,14 @@ function readOptionalIntegerArg(name: string): number | undefined {
     throw new Error(`${name} must be an integer`);
   }
   return parsed;
+}
+
+function readOptionalArgValue(name: string): string | undefined {
+  const value = readArgValue(name);
+  if (value === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
 }
 
 function readArgValue(name: string): string | undefined {

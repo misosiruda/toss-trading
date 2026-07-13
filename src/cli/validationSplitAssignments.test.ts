@@ -87,3 +87,26 @@ test("validation split assignments CLI rejects invalid configuration", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /trainMonths/);
 });
+
+test("validation split assignments CLI rejects missing output path value", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "validationSplitAssignments.js"),
+      "--range-start",
+      "2025-01-01T00:00:00+09:00",
+      "--range-end",
+      "2025-03-31T23:59:59.999+09:00",
+      "--train-months",
+      "1",
+      "--validation-months",
+      "1",
+      "--output-path"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--output-path requires a value/);
+  assert.equal(result.stdout, "");
+});
