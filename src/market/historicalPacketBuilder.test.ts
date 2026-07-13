@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type {
   HistoricalMarketSnapshot,
+  StrategyBucket,
   VirtualPortfolio
 } from "../domain/schemas.js";
 import {
@@ -201,6 +202,158 @@ test("historical packet builder preserves snapshot asset metadata in candidates"
         featureScore.reasonCode === "SECTOR_AVAILABLE"
     ),
     true
+  );
+});
+
+test("historical packet builder scopes new-buy candidates by strategy bucket", () => {
+  const result = builder({ candidateStrategyBucket: "short_term" }).build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_short_term",
+        symbol: "111111",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        strategyBucket: "short_term"
+      }),
+      snapshot({
+        snapshotId: "hist_long_term",
+        symbol: "222222",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        strategyBucket: "long_term"
+      }),
+      snapshot({
+        snapshotId: "hist_missing_bucket",
+        symbol: "333333",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  assert.deepEqual(
+    result.status === "ok"
+      ? result.packet.candidates.map((candidate) => candidate.symbol)
+      : [],
+    ["111111"]
+  );
+  assert.equal(
+    result.status === "ok" && result.packet.candidates[0]?.strategyBucket,
+    "short_term"
+  );
+  assert.equal(
+    result.status === "ok" && result.packet.candidates[0]?.buyEligible,
+    true
+  );
+});
+
+test("historical packet builder fails closed when scoped candidates are absent", () => {
+  const result = builder({ candidateStrategyBucket: "short_term" }).build({
+    portfolio: portfolio(),
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_long_term_only",
+        symbol: "222222",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        strategyBucket: "long_term"
+      }),
+      snapshot({
+        snapshotId: "hist_missing_bucket_only",
+        symbol: "333333",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(
+    result.status === "failed" && result.reason,
+    "NO_HISTORICAL_CANDIDATES"
+  );
+  assert.equal(result.candidateSnapshotCount, 0);
+});
+
+test("historical packet builder keeps out-of-scope held candidates sell-only", () => {
+  const result = builder({
+    candidateStrategyBucket: "short_term",
+    maxCandidates: 1
+  }).build({
+    portfolio: {
+      ...portfolio(),
+      positions: [
+        {
+          market: "KR",
+          symbol: "222222",
+          quantity: 1,
+          averagePriceKrw: 100_000,
+          marketValueKrw: 100_000,
+          strategyBucket: "long_term",
+          updatedAt: "2025-01-02T09:00:00+09:00"
+        },
+        {
+          market: "KR",
+          symbol: "333333",
+          quantity: 1,
+          averagePriceKrw: 80_000,
+          marketValueKrw: 80_000,
+          updatedAt: "2025-01-02T09:00:00+09:00"
+        }
+      ]
+    },
+    snapshots: [
+      snapshot({
+        snapshotId: "hist_short_term_buy",
+        symbol: "111111",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        strategyBucket: "short_term"
+      }),
+      snapshot({
+        snapshotId: "hist_long_term_held",
+        symbol: "222222",
+        observedAt: "2025-01-02T09:00:00+09:00",
+        strategyBucket: "long_term"
+      }),
+      snapshot({
+        snapshotId: "hist_missing_bucket_held",
+        symbol: "333333",
+        observedAt: "2025-01-02T09:00:00+09:00"
+      })
+    ]
+  });
+
+  assert.equal(result.status, "ok");
+  const candidates = result.status === "ok" ? result.packet.candidates : [];
+  const matching = candidates.find((candidate) => candidate.symbol === "111111");
+  const mismatchedHeld = candidates.find(
+    (candidate) => candidate.symbol === "222222"
+  );
+  const missingBucketHeld = candidates.find(
+    (candidate) => candidate.symbol === "333333"
+  );
+
+  assert.equal(matching?.buyEligible, true);
+  for (const held of [mismatchedHeld, missingBucketHeld]) {
+    assert.equal(held?.positionExists, true);
+    assert.equal(held?.buyEligible, false);
+    assert.equal(held?.sellEligible, true);
+    assert.equal(
+      held?.blockedReasonCodes?.includes(
+        "CANDIDATE_STRATEGY_BUCKET_SCOPE_MISMATCH"
+      ),
+      true
+    );
+    assert.equal(held?.reasonCodes.includes("HISTORICAL_HELD_POSITION"), true);
+  }
+  assert.equal(mismatchedHeld?.strategyBucket, "long_term");
+  assert.equal(missingBucketHeld?.strategyBucket, undefined);
+});
+
+test("historical packet builder rejects invalid candidate strategy buckets", () => {
+  assert.throws(
+    () =>
+      builder({
+        candidateStrategyBucket: "regime_cash" as unknown as StrategyBucket
+      }),
+    /candidateStrategyBucket must be a valid strategy bucket/
   );
 });
 
@@ -613,6 +766,7 @@ function builder(
     maxCandidates: number;
     maxSnapshotAgeSeconds: number;
     universeManifest: HistoricalUniverseManifest;
+    candidateStrategyBucket: StrategyBucket;
   }> = {}
 ): HistoricalMarketPacketBuilder {
   return new HistoricalMarketPacketBuilder({
@@ -628,7 +782,10 @@ function builder(
     },
     ...(overrides.universeManifest === undefined
       ? {}
-      : { universeManifest: overrides.universeManifest })
+      : { universeManifest: overrides.universeManifest }),
+    ...(overrides.candidateStrategyBucket === undefined
+      ? {}
+      : { candidateStrategyBucket: overrides.candidateStrategyBucket })
   });
 }
 
