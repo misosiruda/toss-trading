@@ -11,6 +11,7 @@ export interface PaperExecutionPolicy {
   slippageBps: number;
   feeBps: number;
   taxBps: number;
+  halfSpreadBps: number;
   fillRatio: number;
   allowFractionalShares: boolean;
   maxVolumeParticipationRate: number;
@@ -66,6 +67,7 @@ export function createPaperExecutionPolicy(
     slippageBps: policy?.slippageBps ?? 0,
     feeBps: policy?.feeBps ?? 0,
     taxBps: policy?.taxBps ?? 0,
+    halfSpreadBps: normalizeNonnegativeNumber(policy?.halfSpreadBps, 0),
     fillRatio: policy?.fillRatio ?? 1,
     allowFractionalShares: policy?.allowFractionalShares ?? true,
     maxVolumeParticipationRate: policy?.maxVolumeParticipationRate ?? 0.1,
@@ -150,7 +152,9 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
   const slippageKrw = Math.round(
     Math.abs(fillPriceKrw - sourcePriceKrw) * quantity
   );
-  const spreadCostKrw = 0;
+  const spreadCostKrw = Math.round(
+    (grossAmountKrw * policy.halfSpreadBps) / 10_000
+  );
   const filledParticipationRate = calculateFilledParticipationRate({
     quantity,
     volume: input.volume,

@@ -33,6 +33,7 @@ test("paper cost model exposes versioned execution assumptions", () => {
   assert.equal(model.executionPolicy.feeBps, 10);
   assert.equal(model.executionPolicy.taxBps, 20);
   assert.equal(model.executionPolicy.slippageBps, 5);
+  assert.equal(model.executionPolicy.halfSpreadBps, 0);
   assert.equal(model.executionPolicy.fillRatio, 0.5);
   assert.equal(model.executionPolicy.allowFractionalShares, false);
   assert.equal(model.executionPolicy.maxVolumeParticipationRate, 0.05);
@@ -40,6 +41,18 @@ test("paper cost model exposes versioned execution assumptions", () => {
   assert.equal(model.executionPolicy.rejectStaleLiquidity, true);
   assert.equal(model.executionPolicy.marketImpactBpsPerParticipationRate, 0);
   assert.match(createReplayResearchHash(model), /^sha256:[a-f0-9]{64}$/);
+});
+
+test("paper cost model records opt-in fixed half-spread assumptions", () => {
+  const model = createPaperCostModel({ halfSpreadBps: 10 });
+
+  assert.equal(model.spreadModel, "fixed_half_spread_bps");
+  assert.equal(model.costComponents.spread, "half_spread_bps");
+  assert.equal(model.executionPolicy.halfSpreadBps, 10);
+  assert.match(
+    model.assumptions.join("\n"),
+    /spread cost uses filled notional and a fixed half-spread bps policy/
+  );
 });
 
 test("paper cost model records opt-in market impact assumptions", () => {
@@ -71,10 +84,14 @@ test("paper cost model records volatility adjustment as explicit placeholder", (
 test("paper cost model hash changes when execution cost policy changes", () => {
   const baseline = createReplayResearchHash(createPaperCostModel());
   const withFee = createReplayResearchHash(createPaperCostModel({ feeBps: 10 }));
+  const withSpread = createReplayResearchHash(
+    createPaperCostModel({ halfSpreadBps: 10 })
+  );
   const withMarketImpact = createReplayResearchHash(
     createPaperCostModel({ marketImpactBpsPerParticipationRate: 500 })
   );
 
   assert.notEqual(baseline, withFee);
+  assert.notEqual(baseline, withSpread);
   assert.notEqual(baseline, withMarketImpact);
 });

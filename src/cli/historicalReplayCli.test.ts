@@ -303,6 +303,8 @@ test("historical replay CLI writes batch run metadata", () => {
       "60",
       "--paper-market-impact-bps-per-participation-rate",
       "500",
+      "--paper-half-spread-bps",
+      "10",
       "--paper-take-profit-ratio",
       "0.15",
       "--batch-id",
@@ -345,12 +347,16 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(window["source"], "explicit");
   assert.equal(window["startAt"], "2025-02-03T00:00:00.000Z");
   assert.equal(executionPolicy["marketImpactBpsPerParticipationRate"], 500);
+  assert.equal(executionPolicy["halfSpreadBps"], 10);
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
   assert.equal(manifest["universeSnapshotDate"], "2025-01-01");
   assert.equal(
     manifest["costModelHash"],
     createReplayResearchHash(
-      createPaperCostModel({ marketImpactBpsPerParticipationRate: 500 })
+      createPaperCostModel({
+        halfSpreadBps: 10,
+        marketImpactBpsPerParticipationRate: 500
+      })
     )
   );
 });
@@ -508,6 +514,8 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "10",
       "--paper-tax-bps",
       "20",
+      "--paper-half-spread-bps",
+      "10",
       "--paper-slippage-bps",
       "5",
       "--paper-market-impact-bps-per-participation-rate",
@@ -619,6 +627,7 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(runResearchManifest["universeSnapshotDate"], "2025-01-01");
   assert.equal(runExecutionPolicy["feeBps"], 10);
   assert.equal(runExecutionPolicy["taxBps"], 20);
+  assert.equal(runExecutionPolicy["halfSpreadBps"], 10);
   assert.equal(runExecutionPolicy["slippageBps"], 5);
   assert.equal(
     runExecutionPolicy["marketImpactBpsPerParticipationRate"],
@@ -1581,6 +1590,60 @@ test("historical batch replay CLI rejects negative paper cost values", () => {
     result.stderr,
     /--paper-slippage-bps must be a non-negative number/
   );
+});
+
+test("historical batch replay CLI rejects negative half-spread", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--paper-half-spread-bps",
+      "-1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--paper-half-spread-bps must be a non-negative number/
+  );
+});
+
+test("historical replay CLI rejects invalid half-spread values", () => {
+  const negative = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--paper-half-spread-bps",
+      "-1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+  const missing = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--paper-half-spread-bps"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(negative.status, 0);
+  assert.match(
+    negative.stderr,
+    /--paper-half-spread-bps must be a non-negative number/
+  );
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /--paper-half-spread-bps requires a value/);
 });
 
 test("historical batch replay CLI rejects missing paper cost values", () => {

@@ -3,8 +3,8 @@ import {
   type PaperExecutionPolicy
 } from "./executionModel.js";
 
-export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v4";
-export const PAPER_EXECUTION_MODEL_VERSION = "execution_simulator.v3";
+export const PAPER_COST_MODEL_VERSION = "paper_cost_model.v5";
+export const PAPER_EXECUTION_MODEL_VERSION = "execution_simulator.v4";
 
 export interface PaperCostModel {
   modelVersion: typeof PAPER_COST_MODEL_VERSION;
@@ -13,7 +13,7 @@ export interface PaperCostModel {
   feeModel: "fixed_bps";
   taxModel: "sell_tax_bps";
   slippageModel: "linear_bps";
-  spreadModel: "not_modeled";
+  spreadModel: "not_modeled" | "fixed_half_spread_bps";
   marketImpactModel: "not_modeled" | "linear_participation_bps";
   volatilityAdjustmentModel: "not_modeled";
   liquidityModel: "conservative_when_available";
@@ -22,7 +22,7 @@ export interface PaperCostModel {
     fee: "fee_bps";
     tax: "sell_tax_bps";
     slippage: "slippage_bps";
-    spread: "not_modeled";
+    spread: "not_modeled" | "half_spread_bps";
     marketImpact: "not_modeled" | "participation_rate_bps";
     volatilityAdjustment: "not_modeled";
   };
@@ -35,6 +35,7 @@ export function createPaperCostModel(
   const executionPolicy = createPaperExecutionPolicy(policy);
   const marketImpactModeled =
     executionPolicy.marketImpactBpsPerParticipationRate > 0;
+  const spreadModeled = executionPolicy.halfSpreadBps > 0;
 
   return {
     modelVersion: PAPER_COST_MODEL_VERSION,
@@ -43,7 +44,7 @@ export function createPaperCostModel(
     feeModel: "fixed_bps",
     taxModel: "sell_tax_bps",
     slippageModel: "linear_bps",
-    spreadModel: "not_modeled",
+    spreadModel: spreadModeled ? "fixed_half_spread_bps" : "not_modeled",
     marketImpactModel: marketImpactModeled
       ? "linear_participation_bps"
       : "not_modeled",
@@ -54,7 +55,7 @@ export function createPaperCostModel(
       fee: "fee_bps",
       tax: "sell_tax_bps",
       slippage: "slippage_bps",
-      spread: "not_modeled",
+      spread: spreadModeled ? "half_spread_bps" : "not_modeled",
       marketImpact: marketImpactModeled
         ? "participation_rate_bps"
         : "not_modeled",
@@ -63,7 +64,9 @@ export function createPaperCostModel(
     assumptions: [
       "paper-only execution simulator",
       "no live broker order",
-      "spread is an explicit zero placeholder",
+      spreadModeled
+        ? "spread cost uses filled notional and a fixed half-spread bps policy"
+        : "spread is an explicit zero placeholder",
       "volatility-adjusted slippage is an explicit not-modeled placeholder",
       marketImpactModeled
         ? "market impact cost uses filled notional and filled volume participation rate"

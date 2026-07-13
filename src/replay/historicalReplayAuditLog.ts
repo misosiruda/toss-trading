@@ -146,6 +146,7 @@ export const historicalReplayRunConfigurationSchema = z
         slippageBps: z.number().min(0),
         feeBps: z.number().min(0),
         taxBps: z.number().min(0),
+        halfSpreadBps: z.number().min(0).default(0),
         fillRatio: z.number().min(0),
         allowFractionalShares: z.boolean(),
         maxVolumeParticipationRate: z.number().min(0).max(1),
