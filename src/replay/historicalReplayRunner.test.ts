@@ -13,6 +13,7 @@ import {
   type HistoricalReplayDecisionProvider,
   type HistoricalReplayRunnerOptions
 } from "./historicalReplayRunner.js";
+import { MarketPacketBuilder } from "../market/packetBuilder.js";
 import { ReplaySamplingPolicy } from "./replaySamplingPolicy.js";
 import { SimulatedClock } from "./simulatedClock.js";
 
@@ -65,6 +66,78 @@ test("historical replay runner is deterministic without AI", () => {
   assert.deepEqual(
     first.trades.map((trade) => trade.symbol),
     ["005930", "000660"]
+  );
+});
+
+test("first priced provider skips buy-ineligible candidates without allocation", () => {
+  const packetBuilder = new MarketPacketBuilder({
+    packetId: "packet_buy_eligibility",
+    generatedAt: new Date("2025-01-02T09:00:00+09:00"),
+    expiresInSeconds: 60,
+    maxCandidates: 2,
+    constraints: {
+      maxNewPositions: 2,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  });
+  const provider = new FirstPricedHistoricalDecisionProvider();
+  const mixedPacket = packetBuilder.build({
+    portfolio: portfolio(),
+    candidates: [
+      {
+        market: "KR",
+        symbol: "005930",
+        lastPriceKrw: 70_000,
+        ranking: 1,
+        additionalBuyBlockedReasonCodes: ["TEST_BUY_BLOCKED"],
+        sourceRefs: ["fixture:blocked"]
+      },
+      {
+        market: "KR",
+        symbol: "000660",
+        lastPriceKrw: 100_000,
+        ranking: 2,
+        sourceRefs: ["fixture:eligible"]
+      }
+    ]
+  }).packet;
+  const blockedOnlyPacket = new MarketPacketBuilder({
+    packetId: "packet_buy_blocked",
+    generatedAt: new Date("2025-01-02T09:00:00+09:00"),
+    expiresInSeconds: 60,
+    maxCandidates: 1,
+    constraints: {
+      maxNewPositions: 1,
+      maxBudgetPerSymbolKrw: 100_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  }).build({
+    portfolio: portfolio(),
+    candidates: [
+      {
+        market: "KR",
+        symbol: "005930",
+        lastPriceKrw: 70_000,
+        additionalBuyBlockedReasonCodes: ["TEST_BUY_BLOCKED"],
+        sourceRefs: ["fixture:blocked"]
+      }
+    ]
+  }).packet;
+
+  const mixedDecision = provider.decide(mixedPacket);
+  const blockedOnlyDecision = provider.decide(blockedOnlyPacket);
+
+  assert.deepEqual(
+    mixedDecision.decisions.map((decision) => [decision.symbol, decision.action]),
+    [["000660", "VIRTUAL_BUY"]]
+  );
+  assert.deepEqual(
+    blockedOnlyDecision.decisions.map((decision) => [
+      decision.symbol,
+      decision.action
+    ]),
+    [["005930", "VIRTUAL_HOLD"]]
   );
 });
 

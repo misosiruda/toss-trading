@@ -1,8 +1,10 @@
-import type {
-  HistoricalMarketSnapshot,
-  InstrumentLifecycleStatus,
-  MarketPacket,
-  VirtualPortfolio
+import {
+  strategyBucketSchema,
+  type HistoricalMarketSnapshot,
+  type InstrumentLifecycleStatus,
+  type MarketPacket,
+  type StrategyBucket,
+  type VirtualPortfolio
 } from "../domain/schemas.js";
 import {
   MarketPacketBuilder,
@@ -24,6 +26,7 @@ export interface HistoricalMarketPacketBuilderOptions {
   constraints: MarketPacketConstraints;
   allocationPolicy?: PaperAllocationPolicy;
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: StrategyBucket;
 }
 
 export interface HistoricalMarketPacketBuildInput {
@@ -83,6 +86,8 @@ interface IndexedHistoricalMarketSnapshot {
 const maxDetailedExclusionWarnings = 20;
 const maxMarketCandidateShare = 0.65;
 const maxAssetTypeCandidateShare = 0.75;
+const candidateStrategyBucketMismatchReason =
+  "CANDIDATE_STRATEGY_BUCKET_SCOPE_MISMATCH";
 
 export class HistoricalMarketSnapshotIndex {
   private readonly snapshotsByTime: IndexedHistoricalMarketSnapshot[];
@@ -209,7 +214,8 @@ export class HistoricalMarketSnapshotIndex {
         )
       })),
       maxCandidates: options.maxCandidates,
-      protectedSymbolKeys
+      protectedSymbolKeys,
+      candidateStrategyBucket: options.candidateStrategyBucket
     });
 
     const candidates = screenedCandidates.map((candidate, index) => {
@@ -218,6 +224,10 @@ export class HistoricalMarketSnapshotIndex {
         universeLifecycleBySymbol
       });
       warnings.push(...lifecycle.warnings);
+      const outOfScopeHeldCandidate =
+        options.candidateStrategyBucket !== undefined &&
+        candidate.snapshot.strategyBucket !== options.candidateStrategyBucket &&
+        protectedSymbolKeys.has(snapshotSymbolKey(candidate.snapshot));
       return toCandidateDraft(
         candidate.snapshot,
         index + 1,
@@ -229,7 +239,8 @@ export class HistoricalMarketSnapshotIndex {
             ...candidate.reasonCodes
           ]
         },
-        lifecycle
+        lifecycle,
+        outOfScopeHeldCandidate
       );
     });
 
@@ -297,7 +308,8 @@ function toCandidateDraft(
   lifecycle: HistoricalCandidateLifecycleMetadata = {
     reasonCodes: [],
     warnings: []
-  }
+  },
+  outOfScopeHeldCandidate = false
 ): MarketCandidateDraft {
   return {
     market: snapshot.market,
@@ -329,6 +341,13 @@ function toCandidateDraft(
       ...features.reasonCodes,
       ...lifecycle.reasonCodes
     ],
+    ...(outOfScopeHeldCandidate
+      ? {
+          additionalBuyBlockedReasonCodes: [
+            candidateStrategyBucketMismatchReason
+          ]
+        }
+      : {}),
     sourceRefs: [
       `historical_snapshot:${snapshot.snapshotId}`,
       ...snapshot.sourceRefs
@@ -396,6 +415,7 @@ function screenHistoricalCandidates(input: {
   candidates: HistoricalCandidateScreenInput[];
   maxCandidates: number;
   protectedSymbolKeys?: ReadonlySet<string>;
+  candidateStrategyBucket?: StrategyBucket | undefined;
 }): ScreenedHistoricalCandidate[] {
   if (input.maxCandidates <= 0 || input.candidates.length === 0) {
     return [];
@@ -444,6 +464,10 @@ function screenHistoricalCandidates(input: {
       break;
     }
     if (
+      !matchesCandidateStrategyBucket(
+        candidate.snapshot,
+        input.candidateStrategyBucket
+      ) ||
       (marketCounts.get(candidate.snapshot.market) ?? 0) >= marketLimit ||
       (assetTypeCounts.get(assetTypeKey(candidate.snapshot)) ?? 0) >=
         assetTypeLimit
@@ -463,6 +487,14 @@ function screenHistoricalCandidates(input: {
     if (selectedIds.has(candidate.snapshot.snapshotId)) {
       continue;
     }
+    if (
+      !matchesCandidateStrategyBucket(
+        candidate.snapshot,
+        input.candidateStrategyBucket
+      )
+    ) {
+      continue;
+    }
     selectCandidate(candidate, ["HISTORICAL_SCREENER_SCORE_FILL"]);
   }
 
@@ -474,6 +506,16 @@ function screenHistoricalCandidates(input: {
   }
 
   return selected;
+}
+
+function matchesCandidateStrategyBucket(
+  snapshot: HistoricalMarketSnapshot,
+  candidateStrategyBucket: StrategyBucket | undefined
+): boolean {
+  return (
+    candidateStrategyBucket === undefined ||
+    snapshot.strategyBucket === candidateStrategyBucket
+  );
 }
 
 function compareScreenInputs(
@@ -783,5 +825,11 @@ function validateOptions(options: HistoricalMarketPacketBuilderOptions): void {
     options.maxSnapshotAgeSeconds <= 0
   ) {
     throw new Error("maxSnapshotAgeSeconds must be a positive integer");
+  }
+  if (
+    options.candidateStrategyBucket !== undefined &&
+    !strategyBucketSchema.safeParse(options.candidateStrategyBucket).success
+  ) {
+    throw new Error("candidateStrategyBucket must be a valid strategy bucket");
   }
 }

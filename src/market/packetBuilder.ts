@@ -45,6 +45,7 @@ export interface MarketCandidateDraft {
   dividendYieldPct?: number;
   exDividendDate?: string;
   cooldownActive?: boolean;
+  additionalBuyBlockedReasonCodes?: string[];
   sourceRefs?: string[];
   collectedAt?: string;
   staleAfter?: string;
@@ -546,7 +547,9 @@ function deriveCandidateEligibility(input: {
   const maxOpenPositionCount =
     input.portfolioAllocation?.scheduledOpenPositionCeiling ??
     input.constraints.maxNewPositions;
-  const buyBlockedReasonCodes: string[] = [];
+  const buyBlockedReasonCodes: string[] = [
+    ...(input.candidate.additionalBuyBlockedReasonCodes ?? [])
+  ];
   const sellBlockedReasonCodes: string[] = [];
 
   if (!input.constraints.allowedActions.includes("VIRTUAL_BUY")) {

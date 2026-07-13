@@ -151,21 +151,28 @@ export class FirstPricedHistoricalDecisionProvider
 }
 
 function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
-  const candidates = packet.candidates.filter(
+  const pricedCandidates = packet.candidates.filter(
     (item) => item.lastPriceKrw !== undefined
   );
-  const firstCandidate = candidates[0];
+  const firstCandidate = pricedCandidates[0];
   if (firstCandidate === undefined) {
     return [];
   }
+  const buyCandidates = pricedCandidates.filter(
+    (candidate) => candidate.buyEligible !== false
+  );
 
   const allocation = packet.portfolioAllocation;
   if (allocation === undefined) {
+    const firstBuyCandidate = buyCandidates[0];
+    if (firstBuyCandidate === undefined) {
+      return [firstPricedHoldDecision({ packet, candidate: firstCandidate })];
+    }
     return [
       firstPricedDecision({
         packet,
-        candidate: firstCandidate,
-        budgetKrw: legacySingleShareBudgetKrw(packet, firstCandidate)
+        candidate: firstBuyCandidate,
+        budgetKrw: legacySingleShareBudgetKrw(packet, firstBuyCandidate)
       })
     ];
   }
@@ -187,10 +194,7 @@ function firstPricedDecisions(packet: MarketPacket): VirtualDecisionItem[] {
     packet.virtualPortfolio.cashKrw - allocation.minCashReserveKrw
   );
 
-  for (const candidate of candidates) {
-    if (candidate.buyEligible === false) {
-      continue;
-    }
+  for (const candidate of buyCandidates) {
     if (decisions.length >= packet.constraints.maxNewPositions) {
       break;
     }

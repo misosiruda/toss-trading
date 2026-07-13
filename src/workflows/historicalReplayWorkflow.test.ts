@@ -279,6 +279,44 @@ test("historical replay workflow applies universe lifecycle risk gate", async ()
     maxCandidates: 10,
     maxSnapshotAgeSeconds: 300,
     universeManifest: universeManifest({ lifecycleStatus: "delisted" }),
+    decisionProvider: {
+      async decide(packet) {
+        const candidate = packet.candidates[0];
+        assert.ok(candidate);
+        const dataRef =
+          candidate.dataRefs?.[0] ??
+          candidate.sourceRefs[0] ??
+          `candidate.${candidate.market}.${candidate.symbol}`;
+        return {
+          attempted: true,
+          decision: {
+            packetId: packet.packetId,
+            summary: "Lifecycle risk gate fixture.",
+            decisions: [
+              {
+                market: candidate.market,
+                symbol: candidate.symbol,
+                action: "VIRTUAL_BUY",
+                confidence: 0.6,
+                budgetKrw: 70_000,
+                thesis: "Exercise the deterministic lifecycle risk gate.",
+                riskFactors: ["Candidate lifecycle is not eligible."],
+                dataRefs: [dataRef],
+                claimSupport: [
+                  {
+                    claim: "Exercise the deterministic lifecycle risk gate.",
+                    dataRefs: [dataRef]
+                  }
+                ],
+                expiresAt: packet.expiresAt
+              }
+            ]
+          },
+          failure: null,
+          command: null
+        };
+      }
+    },
     constraints: {
       maxNewPositions: 3,
       maxBudgetPerSymbolKrw: 100_000,
