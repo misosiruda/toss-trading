@@ -99,4 +99,6 @@ npm run historical:batch:report -- -- --runs-path "$BatchDir/batch-replay-runs.j
 - `intraday`는 intraday-compatible source cadence가 준비되기 전까지 추가 parameter tuning을 진행하지 않는다.
 - sample/regime/PBO blocker는 cost revalidation과 별도 PR 범위로 다룬다.
 
+`short_term`의 fixed half-spread와 market impact bounded sensitivity 결과는 [Short-Term Spread And Market Impact Sensitivity 결과](short-term-spread-impact-sensitivity-results.md)에 기록한다.
+
 이 조건이 닫히기 전에는 두 preset을 실거래 적용 후보 또는 성과가 검증된 전략으로 표현하지 않는다.
