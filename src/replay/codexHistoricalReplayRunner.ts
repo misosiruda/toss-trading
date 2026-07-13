@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   HistoricalMarketSnapshot,
   MarketPacket,
+  StrategyBucket,
   VirtualDecision,
   VirtualPortfolio,
   VirtualRiskDecision,
@@ -46,6 +47,7 @@ import {
 } from "./historicalReplayProgress.js";
 import {
   appendHistoricalReplayAuditEvent,
+  enforceProviderDecisionCandidateScope,
   executeHistoricalReplayDecisionItem,
   enforceProviderDecisionExecutionCaps,
   progressEventFromHistoricalReplayExecutionEffect,
@@ -84,6 +86,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: StrategyBucket;
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
@@ -200,7 +203,10 @@ export async function runCodexHistoricalReplay(
         : { allocationPolicy }),
       ...(options.universeManifest === undefined
         ? {}
-        : { universeManifest: options.universeManifest })
+        : { universeManifest: options.universeManifest }),
+      ...(options.candidateStrategyBucket === undefined
+        ? {}
+        : { candidateStrategyBucket: options.candidateStrategyBucket })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -416,8 +422,20 @@ export async function runCodexHistoricalReplay(
         tick
       );
     }
+    const eligibleDecision = enforceProviderDecisionCandidateScope({
+      packet,
+      decision: filteredDecision.decision
+    });
+    if (eligibleDecision.rejectedItemCount > 0) {
+      appendHistoricalReplayAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_REJECTED",
+        `${eligibleDecision.rejectedItemCount} provider decision item(s) rejected: VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE`,
+        tick
+      );
+    }
     if (
-      filteredDecision.decision.decisions.length === 0 &&
+      eligibleDecision.decision.decisions.length === 0 &&
       decisionResult.decision.decisions.length > 0
     ) {
       currentPortfolio = markPortfolioToMarket({
@@ -446,7 +464,7 @@ export async function runCodexHistoricalReplay(
     const cappedDecision = enforceProviderDecisionExecutionCaps({
       packet,
       portfolio: currentPortfolio,
-      decision: filteredDecision.decision
+      decision: eligibleDecision.decision
     });
     if (
       cappedDecision.cappedItemCount > 0 ||

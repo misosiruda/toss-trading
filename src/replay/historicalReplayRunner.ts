@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   HistoricalMarketSnapshot,
   MarketPacket,
+  StrategyBucket,
   VirtualDecision,
   VirtualDecisionItem,
   VirtualPortfolio,
@@ -43,6 +44,7 @@ import {
 import { riskPolicyForReplayTick } from "./replayRiskPolicy.js";
 import {
   appendHistoricalReplayAuditEvent,
+  enforceProviderDecisionCandidateScope,
   enforceProviderDecisionExecutionCaps,
   executeHistoricalReplayDecisionItems,
   recordHistoricalReplayDecision,
@@ -78,6 +80,7 @@ export interface HistoricalReplayRunnerOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: StrategyBucket;
 }
 
 export interface HistoricalReplayInput {
@@ -426,7 +429,10 @@ export function runHistoricalReplay(
         : { allocationPolicy }),
       ...(options.universeManifest === undefined
         ? {}
-        : { universeManifest: options.universeManifest })
+        : { universeManifest: options.universeManifest }),
+      ...(options.candidateStrategyBucket === undefined
+        ? {}
+        : { candidateStrategyBucket: options.candidateStrategyBucket })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -550,8 +556,20 @@ export function runHistoricalReplay(
         tick
       );
     }
+    const eligibleDecision = enforceProviderDecisionCandidateScope({
+      packet,
+      decision: filteredDecision.decision
+    });
+    if (eligibleDecision.rejectedItemCount > 0) {
+      appendHistoricalReplayAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_REJECTED",
+        `${eligibleDecision.rejectedItemCount} provider decision item(s) rejected: VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE`,
+        tick
+      );
+    }
     if (
-      filteredDecision.decision.decisions.length === 0 &&
+      eligibleDecision.decision.decisions.length === 0 &&
       decision.decisions.length > 0
     ) {
       currentPortfolio = markPortfolioToMarket({
@@ -566,7 +584,7 @@ export function runHistoricalReplay(
     const cappedDecision = enforceProviderDecisionExecutionCaps({
       packet,
       portfolio: currentPortfolio,
-      decision: filteredDecision.decision
+      decision: eligibleDecision.decision
     });
     if (
       cappedDecision.cappedItemCount > 0 ||
