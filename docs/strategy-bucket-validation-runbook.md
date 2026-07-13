@@ -154,6 +154,8 @@ foreach ($Preset in $Presets) {
 
 Research 판정은 protocol의 `research_valid_for_paper_followup`, `conditional`, `invalid_for_current_data_or_model`, `inconclusive` 중 하나로만 기록한다. 특정 종목 판단, 매매 권유, 성과 약속 문구는 쓰지 않는다.
 
+2026-07-13 deterministic research matrix의 입력, 결과, blocker와 판정은 [Strategy Bucket Validation Research 결과](strategy-bucket-validation-research-results.md)에 기록한다.
+
 ## `regime_cash` policy stress
 
 `regime_cash`는 bucket 비교 matrix에 넣지 않는다. 별도 portfolio policy stress로 실행한다.
