@@ -207,6 +207,8 @@ Q3-2 기준:
 - 기본 `halfSpreadBps=0`에서는 spread가 `not_modeled`이며 `spreadCostKrw=0`입니다. 0보다 큰 paper-only policy에서는 filled notional에 half-spread bps를 적용하고 매수 net amount에는 더하고 매도 net amount에서는 차감합니다. 이 비용은 fill price slippage와 분리해 기록합니다.
 - 기본 `marketImpactBpsPerParticipationRate=0`에서는 market impact가 `not_modeled`이며 `impactCostKrw=0`입니다. 이 값을 0보다 크게 설정한 paper-only fixture에서는 filled notional과 filled participation rate를 기준으로 `linear_participation_bps` impact cost를 계산하고 `costModelHash`에 해당 policy를 포함합니다.
 - single replay와 batch replay CLI의 `--paper-half-spread-bps`, `--paper-market-impact-bps-per-participation-rate`는 같은 paper-only execution policy로 전달됩니다. 이 값은 run metadata `configuration.executionPolicy`, `costModelHash`, trade/report의 `spreadCostKrw` 또는 `impactCostKrw`에 반영됩니다.
+- batch replay CLI의 `--paper-max-volume-participation-rate`, `--paper-min-liquidity-fill-ratio`는 0과 1을 포함한 ratio만 허용합니다. 두 값은 existing `PaperExecutionPolicy`의 volume cap과 minimum partial-fill ratio를 override하고 run metadata와 `costModelHash`에 포함됩니다.
+- Liquidity ratio override는 candidate `volume` 또는 `averageVolume`이 있을 때만 fill/partial/reject 판단에 사용됩니다. Volume이 없으면 기존처럼 `liquidityStatus: "not_modeled"`를 유지하며 synthetic volume이나 실제 order book data를 만들지 않습니다.
 - `HistoricalMarketSnapshot.volume`은 `MarketCandidate.volume`으로 전달되고, 현재 tick 이전 snapshot window에서 계산한 `averageVolume`은 `MarketCandidate.averageVolume`으로 전달됩니다.
 - `HistoricalMarketSnapshot.sector`가 있으면 `MarketCandidate.sector`로 전달되어 sector exposure cap과 evidence `featureRefs`에서 사용할 수 있습니다. sector가 없는 과거 dataset은 unknown metadata로 보수 처리됩니다.
 - `VirtualTrade`에는 `requestedNotionalKrw`, `filledNotionalKrw`, `fillStatus`, `liquidityStatus`, `participationRate`, `maxParticipationRate`, `volume`, `averageVolume`이 추가로 기록될 수 있습니다.
@@ -530,6 +532,8 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `--paper-trailing-stop-from-peak-ratio 0.08`: `partial_then_trail` 모드에서 partial take-profit 이후 peak 가격 대비 하락률이 이 값을 넘으면 잔여 수량을 sell-all 합니다.
 - `--paper-market-impact-bps-per-participation-rate 500`: filled participation rate에 비례한 paper-only market impact cost를 적용합니다. 기본값은 `0`이며, 이번 범위는 aggregate report 구조 확장이 아니라 execution policy 전달과 per-trade/report cost 반영까지입니다.
 - `--paper-half-spread-bps 10`: filled notional에 10 bps fixed half-spread 비용을 적용합니다. 기본값 `0`은 spread `not_modeled` 상태를 유지합니다.
+- `--paper-max-volume-participation-rate 0.02`: volume이 있는 candidate의 paper fill을 effective volume의 최대 2%로 제한합니다. 기본값은 `0.1`입니다.
+- `--paper-min-liquidity-fill-ratio 0.25`: participation cap 적용 후 요청 notional의 25% 이상을 채울 수 있을 때만 partial fill을 허용하고, 그보다 작으면 `VIRTUAL_LIQUIDITY_INSUFFICIENT`로 거절합니다. 기본값은 `0.1`입니다.
 - batch replay CLI는 `--paper-fee-bps`, `--paper-tax-bps`, `--paper-slippage-bps`, `--paper-half-spread-bps`로 fixed paper execution cost를 명시할 수 있습니다. 네 값과 market impact 값은 0 이상의 숫자만 허용하며, 명시된 값은 run metadata, `costModelHash`, trade cost와 aggregate report에 반영됩니다.
 
 동작:

@@ -520,6 +520,10 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
       "5",
       "--paper-market-impact-bps-per-participation-rate",
       "500",
+      "--paper-max-volume-participation-rate",
+      "0.02",
+      "--paper-min-liquidity-fill-ratio",
+      "0.25",
       "--dynamic-cash-reserve",
       "--dynamic-cash-reserve-lookback-days",
       "10",
@@ -632,6 +636,22 @@ test("historical batch replay CLI writes batch manifest and aggregate report", (
   assert.equal(
     runExecutionPolicy["marketImpactBpsPerParticipationRate"],
     500
+  );
+  assert.equal(runExecutionPolicy["maxVolumeParticipationRate"], 0.02);
+  assert.equal(runExecutionPolicy["minLiquidityFillRatio"], 0.25);
+  assert.equal(
+    runResearchManifest["costModelHash"],
+    createReplayResearchHash(
+      createPaperCostModel({
+        feeBps: 10,
+        taxBps: 20,
+        halfSpreadBps: 10,
+        slippageBps: 5,
+        marketImpactBpsPerParticipationRate: 500,
+        maxVolumeParticipationRate: 0.02,
+        minLiquidityFillRatio: 0.25
+      })
+    )
   );
   assert.deepEqual(runConfiguration["paperExitPolicy"], {
     takeProfitMode: "full_exit",
@@ -1608,6 +1628,45 @@ test("historical batch replay CLI rejects negative half-spread", () => {
     result.stderr,
     /--paper-half-spread-bps must be a non-negative number/
   );
+});
+
+test("historical batch replay CLI rejects invalid liquidity ratios", () => {
+  const cases: Array<[string, string]> = [
+    ["--paper-max-volume-participation-rate", "-0.01"],
+    ["--paper-max-volume-participation-rate", "1.01"],
+    ["--paper-max-volume-participation-rate", "not-a-number"],
+    ["--paper-min-liquidity-fill-ratio", "-0.01"],
+    ["--paper-min-liquidity-fill-ratio", "1.01"],
+    ["--paper-min-liquidity-fill-ratio", "not-a-number"]
+  ];
+
+  for (const [name, value] of cases) {
+    const result = spawnSync(
+      process.execPath,
+      [join("dist", "cli", "historicalBatchReplay.js"), name, value],
+      { cwd: process.cwd(), encoding: "utf8" }
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      new RegExp(`${name} must be a number between 0 and 1`)
+    );
+  }
+
+  for (const name of [
+    "--paper-max-volume-participation-rate",
+    "--paper-min-liquidity-fill-ratio"
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [join("dist", "cli", "historicalBatchReplay.js"), name],
+      { cwd: process.cwd(), encoding: "utf8" }
+    );
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`${name} requires a value`));
+  }
 });
 
 test("historical replay CLI rejects invalid half-spread values", () => {

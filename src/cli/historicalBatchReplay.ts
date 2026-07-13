@@ -398,12 +398,20 @@ function readPaperExecutionPolicyArg():
     readOptionalNonnegativeNumberArg(
       "--paper-market-impact-bps-per-participation-rate"
     );
+  const maxVolumeParticipationRate = readOptionalRatioArg(
+    "--paper-max-volume-participation-rate"
+  );
+  const minLiquidityFillRatio = readOptionalRatioArg(
+    "--paper-min-liquidity-fill-ratio"
+  );
   if (
     feeBps === undefined &&
     taxBps === undefined &&
     halfSpreadBps === undefined &&
     slippageBps === undefined &&
-    marketImpactBpsPerParticipationRate === undefined
+    marketImpactBpsPerParticipationRate === undefined &&
+    maxVolumeParticipationRate === undefined &&
+    minLiquidityFillRatio === undefined
   ) {
     return undefined;
   }
@@ -414,7 +422,13 @@ function readPaperExecutionPolicyArg():
     ...(slippageBps === undefined ? {} : { slippageBps }),
     ...(marketImpactBpsPerParticipationRate === undefined
       ? {}
-      : { marketImpactBpsPerParticipationRate })
+      : { marketImpactBpsPerParticipationRate }),
+    ...(maxVolumeParticipationRate === undefined
+      ? {}
+      : { maxVolumeParticipationRate }),
+    ...(minLiquidityFillRatio === undefined
+      ? {}
+      : { minLiquidityFillRatio })
   };
 }
 
@@ -426,6 +440,18 @@ function readOptionalNonnegativeNumberArg(name: string): number | undefined {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative number`);
+  }
+  return parsed;
+}
+
+function readOptionalRatioArg(name: string): number | undefined {
+  const raw = readOptionalArgValue(name);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`${name} must be a number between 0 and 1`);
   }
   return parsed;
 }
