@@ -204,6 +204,7 @@ test("historical replay workflow writes a stored paper report", async () => {
   assert.equal(runClock["stepSeconds"], 60);
   assert.equal(runSamplingPolicy["everyNSteps"], 2);
   assert.equal(runConfiguration["initialCashKrw"], 1_000_000);
+  assert.equal(runConfiguration["candidateStrategyBucket"], null);
   assert.equal(runConfiguration["riskProfile"], null);
   assert.equal(runConfiguration["riskPolicy"], null);
   assert.equal(runConfiguration["paperExitPolicy"], null);
@@ -414,8 +415,80 @@ test("historical replay workflow applies market impact execution policy", async 
   );
 });
 
+test("historical replay workflow applies candidate strategy bucket scope", async () => {
+  const storageBaseDir = await mkdtemp(join(tmpdir(), "toss-replay-workflow-scope-"));
+  const paths = createStoragePaths(storageBaseDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    paths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot({
+      snapshotId: "hist_005930_long_term",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000,
+      strategyBucket: "long_term"
+    })
+  );
+  await snapshotStore.append(
+    snapshot({
+      snapshotId: "hist_000660_short_term",
+      symbol: "000660",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 120_000,
+      strategyBucket: "short_term"
+    })
+  );
+
+  const result = await runHistoricalReplayWorkflow({
+    storageBaseDir,
+    clock: new SimulatedClock({
+      startAt: new Date("2025-01-02T09:00:00+09:00"),
+      endAt: new Date("2025-01-02T09:00:00+09:00"),
+      stepSeconds: 60
+    }),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    packetIdPrefix: "packet_historical_workflow_scope",
+    packetExpiresInSeconds: 60,
+    maxCandidates: 10,
+    maxSnapshotAgeSeconds: 300,
+    candidateStrategyBucket: "short_term",
+    constraints: {
+      maxNewPositions: 3,
+      maxBudgetPerSymbolKrw: 200_000,
+      allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+    }
+  });
+  const packetLog = await readJsonl(paths.historicalReplayPacketLogPath);
+  const runMetadata = JSON.parse(
+    await readFile(paths.historicalReplayRunMetadataPath, "utf8")
+  ) as Record<string, unknown>;
+  const configuration = runMetadata["configuration"] as Record<string, unknown>;
+
+  assert.equal(result.replayResult.packetCount, 1);
+  assert.deepEqual(
+    (packetLog[0]?.["candidates"] as Array<Record<string, unknown>>).map(
+      (candidate) => [candidate["symbol"], candidate["strategyBucket"]]
+    ),
+    [["000660", "short_term"]]
+  );
+  assert.equal(result.replayResult.trades[0]?.symbol, "000660");
+  assert.equal(result.replayResult.trades[0]?.strategyBucket, "short_term");
+  assert.equal(configuration["candidateStrategyBucket"], "short_term");
+});
+
 test("historical replay research manifest hashes initial portfolio and replay snapshot fields", async () => {
   const baseline = await runWorkflowAndReadResearchManifest({});
+  const withCandidateStrategyBucket = await runWorkflowAndReadResearchManifest({
+    candidateStrategyBucket: "short_term",
+    snapshotInput: {
+      snapshotId: "hist_005930_0900",
+      symbol: "005930",
+      observedAt: "2025-01-02T09:00:00+09:00",
+      lastPriceKrw: 70_000,
+      strategyBucket: "short_term"
+    }
+  });
   const withStoredPortfolio = await runWorkflowAndReadResearchManifest({
     storedPortfolio: portfolioWithPosition()
   });
@@ -461,6 +534,11 @@ test("historical replay research manifest hashes initial portfolio and replay sn
     }
   });
 
+  assert.notEqual(
+    baseline["configHash"],
+    withCandidateStrategyBucket["configHash"],
+    "candidate strategy bucket must affect configHash"
+  );
   assert.notEqual(
     baseline["configHash"],
     withStoredPortfolio["configHash"],
@@ -549,6 +627,7 @@ async function runWorkflowAndReadResearchManifest(input: {
   storedPortfolio?: VirtualPortfolio;
   snapshotInput?: Parameters<typeof snapshot>[0];
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
 }): Promise<Record<string, unknown>> {
   const storageBaseDir = await mkdtemp(join(tmpdir(), "toss-replay-manifest-"));
   const paths = createStoragePaths(storageBaseDir);
@@ -589,6 +668,9 @@ async function runWorkflowAndReadResearchManifest(input: {
       maxBudgetPerSymbolKrw: 100_000,
       allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
     },
+    ...(input.candidateStrategyBucket === undefined
+      ? {}
+      : { candidateStrategyBucket: input.candidateStrategyBucket }),
     ...(input.universeManifest === undefined
       ? {}
       : { universeManifest: input.universeManifest })

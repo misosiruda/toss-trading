@@ -1,5 +1,6 @@
 import type {
   HistoricalMarketSnapshot,
+  StrategyBucket,
   VirtualPortfolio
 } from "../domain/schemas.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
@@ -50,6 +51,7 @@ export interface HistoricalReplayWorkflowOptions {
   decisionProviderMetadata?: unknown;
   universeManifest?: HistoricalUniverseManifest;
   strategyPreset?: StrategyReplayPresetName;
+  candidateStrategyBucket?: StrategyBucket;
   runId?: string;
   batchId?: string;
   batchRunIndex?: number;
@@ -117,6 +119,9 @@ export function createHistoricalReplayWorkflowPlan(
     ...(input.options.universeManifest === undefined
       ? {}
       : { universeManifest: input.options.universeManifest }),
+    ...(input.options.candidateStrategyBucket === undefined
+      ? {}
+      : { candidateStrategyBucket: input.options.candidateStrategyBucket }),
     ...(input.options.tickDelayMs === undefined
       ? {}
       : { tickDelayMs: input.options.tickDelayMs })
@@ -195,6 +200,7 @@ function buildHistoricalReplayRunMetadataContext(
         ? {}
         : { executionPolicy: createPaperExecutionPolicy(options.executionPolicy) }),
       strategyPreset: options.strategyPreset ?? null,
+      candidateStrategyBucket: options.candidateStrategyBucket ?? null,
       riskProfile: options.riskProfile ?? null,
       riskPolicy: serializeRiskPolicy(options.riskPolicy),
       allocationPolicy: options.allocationPolicy ?? null,

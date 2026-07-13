@@ -9,6 +9,7 @@ import {
   marketPacketSchema,
   parseWithSchema,
   replayResearchManifestSchema,
+  strategyBucketSchema,
   virtualActionSchema,
   virtualDecisionSchema,
   virtualRiskDecisionSchema,
@@ -157,6 +158,7 @@ export const historicalReplayRunConfigurationSchema = z
       .strict()
       .optional(),
     strategyPreset: z.string().trim().min(1).nullable(),
+    candidateStrategyBucket: strategyBucketSchema.nullable().default(null),
     riskProfile: z.enum(PAPER_RISK_PROFILE_NAMES).nullable(),
     riskPolicy: z
       .object({

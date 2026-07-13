@@ -48,6 +48,7 @@ test("historical replay workflow plan builds runner input and run metadata", () 
         marketImpactBpsPerParticipationRate: 500
       },
       riskProfile: "aggressive_paper",
+      candidateStrategyBucket: "short_term",
       riskPolicy: {
         maxBudgetPerDecisionKrw: 200_000,
         targetExposureRatio: 0.8,
@@ -102,6 +103,7 @@ test("historical replay workflow plan builds runner input and run metadata", () 
   assert.equal(plan.runnerOptions.decisionProvider, decisionProvider);
   assert.equal(plan.runnerOptions.samplingPolicy, samplingPolicy);
   assert.deepEqual(plan.runnerOptions.paperExitPolicy, paperExitPolicy);
+  assert.equal(plan.runnerOptions.candidateStrategyBucket, "short_term");
   assert.equal(
     plan.runnerOptions.executionPolicy?.marketImpactBpsPerParticipationRate,
     500
@@ -114,11 +116,15 @@ test("historical replay workflow plan builds runner input and run metadata", () 
     unknown
   >;
   delete legacyExecutionPolicy["halfSpreadBps"];
+  delete legacyConfiguration["candidateStrategyBucket"];
+  const parsedLegacyConfiguration = historicalReplayRunConfigurationSchema.parse(
+    legacyConfiguration
+  );
   assert.equal(
-    historicalReplayRunConfigurationSchema.parse(legacyConfiguration)
-      .executionPolicy?.halfSpreadBps,
+    parsedLegacyConfiguration.executionPolicy?.halfSpreadBps,
     0
   );
+  assert.equal(parsedLegacyConfiguration.candidateStrategyBucket, null);
   assert.equal(
     plan.metadataContext.identity.runId,
     "batch_smoke_2025_run_000002_20250203"
@@ -130,6 +136,10 @@ test("historical replay workflow plan builds runner input and run metadata", () 
   assert.equal(
     plan.metadataContext.configuration.riskPolicy?.maxBudgetPerDecisionKrw,
     200_000
+  );
+  assert.equal(
+    plan.metadataContext.configuration.candidateStrategyBucket,
+    "short_term"
   );
   assert.equal(
     plan.metadataContext.configuration.riskPolicy?.targetExposureRatio,
