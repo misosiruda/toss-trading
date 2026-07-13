@@ -277,6 +277,9 @@ function readOptionalNonnegativeNumberArg(name: string): number | undefined {
     }
     return undefined;
   }
+  if (raw.trim().length === 0) {
+    throw new Error(`${name} requires a value`);
+  }
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative number`);

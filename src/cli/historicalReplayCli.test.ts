@@ -1636,6 +1636,32 @@ test("historical replay CLI rejects invalid half-spread values", () => {
     ],
     { cwd: process.cwd(), encoding: "utf8" }
   );
+  const empty = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--paper-half-spread-bps",
+      ""
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+  const whitespace = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--start-at",
+      "2025-02-03T09:00:00+09:00",
+      "--end-at",
+      "2025-02-03T09:00:00+09:00",
+      "--paper-half-spread-bps",
+      "   "
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
 
   assert.notEqual(negative.status, 0);
   assert.match(
@@ -1644,6 +1670,10 @@ test("historical replay CLI rejects invalid half-spread values", () => {
   );
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /--paper-half-spread-bps requires a value/);
+  assert.notEqual(empty.status, 0);
+  assert.match(empty.stderr, /--paper-half-spread-bps requires a value/);
+  assert.notEqual(whitespace.status, 0);
+  assert.match(whitespace.stderr, /--paper-half-spread-bps requires a value/);
 });
 
 test("historical batch replay CLI rejects missing paper cost values", () => {
