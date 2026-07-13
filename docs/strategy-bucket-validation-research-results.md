@@ -115,3 +115,5 @@ npm run historical:batch:report -- -- --runs-path "$BatchDir/batch-replay-runs.j
 - Triple Barrier/meta-label은 동일 batch 기준 artifact가 준비될 때만 연결한다.
 
 이 조건을 닫기 전에는 어떤 preset도 실거래 적용 후보 또는 성과가 검증된 전략으로 표현하지 않는다.
+
+`short_term`과 `intraday`의 fixed fee, tax, slippage, market impact paired revalidation은 [Short-Term And Intraday Cost Revalidation 결과](short-intraday-cost-revalidation-results.md)에 기록한다.
