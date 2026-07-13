@@ -109,7 +109,7 @@ POST /paper/simulations/strategy-bucket-tests/validate
 
 ### 3. Preset별 batch replay 실행
 
-bucket별 후보는 `--strategy-preset`으로 분리하고 같은 data, universe, calendar, cost, split 조건에서 반복 실행한다.
+`--strategy-preset`은 bucket별 cadence/risk/exit configuration을 분리하지만 현재 candidate universe를 bucket으로 제한하지 않는다. Bucket-specific candidate validation은 [Strategy Preset Candidate Scope Audit](strategy-preset-candidate-scope-audit.md)의 명시적 scope contract가 구현되기 전까지 `inconclusive`로 해석한다. 같은 data, universe, calendar, cost, split 조건의 preset 반복 실행만으로 bucket candidate가 격리됐다고 간주하지 않는다.
 
 ```powershell
 npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-<preset>-validation-001 --seed bucket-validation-001 --runs 16 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset <preset> --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes "bull,bear,sideways,mixed"

@@ -130,7 +130,7 @@ node dist/cli/historicalBatchReport.js --runs-path "$BatchDir/batch-replay-runs.
 
 ## 다음 검증 조건
 
-- `short_term` bucket trade 자체에서 participation stress가 발생하도록 strategy bucket attribution과 candidate path를 먼저 확인한다.
+- `short_term` bucket trade 자체의 participation stress 전에 [Strategy Preset Candidate Scope Audit](strategy-preset-candidate-scope-audit.md)으로 preset과 candidate path의 현재 contract 및 fail-closed 구현 조건을 고정한다.
 - Train/validation에만 나타난 stress를 test role과 bear/sideways regime으로 일반화하지 않는다.
 - 실제 spread, order book depth, queue position, unfilled opportunity cost는 별도 evidence와 model contract가 있을 때만 검증한다.
 - Sample/regime/PBO blocker는 liquidity execution fixture와 분리된 PR에서 다룬다.
