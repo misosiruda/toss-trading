@@ -44,6 +44,7 @@ import {
 import { riskPolicyForReplayTick } from "./replayRiskPolicy.js";
 import {
   appendHistoricalReplayAuditEvent,
+  enforceProviderDecisionCandidateScope,
   enforceProviderDecisionExecutionCaps,
   executeHistoricalReplayDecisionItems,
   recordHistoricalReplayDecision,
@@ -555,8 +556,20 @@ export function runHistoricalReplay(
         tick
       );
     }
+    const eligibleDecision = enforceProviderDecisionCandidateScope({
+      packet,
+      decision: filteredDecision.decision
+    });
+    if (eligibleDecision.rejectedItemCount > 0) {
+      appendHistoricalReplayAuditEvent(
+        auditEvents,
+        "HISTORICAL_DECISION_REJECTED",
+        `${eligibleDecision.rejectedItemCount} provider decision item(s) rejected: VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE`,
+        tick
+      );
+    }
     if (
-      filteredDecision.decision.decisions.length === 0 &&
+      eligibleDecision.decision.decisions.length === 0 &&
       decision.decisions.length > 0
     ) {
       currentPortfolio = markPortfolioToMarket({
@@ -571,7 +584,7 @@ export function runHistoricalReplay(
     const cappedDecision = enforceProviderDecisionExecutionCaps({
       packet,
       portfolio: currentPortfolio,
-      decision: filteredDecision.decision
+      decision: eligibleDecision.decision
     });
     if (
       cappedDecision.cappedItemCount > 0 ||

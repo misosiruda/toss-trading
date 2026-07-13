@@ -100,6 +100,11 @@ export interface ProviderDecisionExecutionCapResult {
   heldItemCount: number;
 }
 
+export interface ProviderDecisionCandidateScopeResult {
+  decision: VirtualDecision;
+  rejectedItemCount: number;
+}
+
 export function recordHistoricalReplayDecision(
   input: HistoricalReplayDecisionRecordInput
 ): VirtualDecision {
@@ -312,6 +317,36 @@ export function suppressDecisionItemsForSymbols(
           : `${decision.summary} Provider items for exited symbols were suppressed.`
     },
     suppressedCount: decision.decisions.length - decisions.length
+  };
+}
+
+export function enforceProviderDecisionCandidateScope(input: {
+  packet: MarketPacket;
+  decision: VirtualDecision;
+}): ProviderDecisionCandidateScopeResult {
+  const decisions = input.decision.decisions.filter((item) => {
+    const candidate = input.packet.candidates.find(
+      (entry) => entry.market === item.market && entry.symbol === item.symbol
+    );
+    return !(
+      item.action === "VIRTUAL_BUY" &&
+      candidate?.buyEligible === false &&
+      candidate.blockedReasonCodes?.includes(
+        "CANDIDATE_STRATEGY_BUCKET_SCOPE_MISMATCH"
+      )
+    );
+  });
+
+  return {
+    decision: {
+      ...input.decision,
+      decisions,
+      summary:
+        decisions.length === input.decision.decisions.length
+          ? input.decision.summary
+          : `${input.decision.summary} Out-of-scope provider buys were rejected.`
+    },
+    rejectedItemCount: input.decision.decisions.length - decisions.length
   };
 }
 

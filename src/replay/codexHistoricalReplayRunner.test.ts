@@ -153,6 +153,67 @@ test("codex historical replay runner passes candidate bucket scope to packets", 
   assert.equal(result.trades[0]?.symbol, "222222");
 });
 
+test("codex historical replay runner rejects out-of-scope held buys", async () => {
+  const provider = new FakeCodexReplayProvider((packet) => ({
+    attempted: true,
+    decision: decision(packet.packetId, packet.candidates[0]?.symbol ?? "111111"),
+    failure: null,
+    command: null
+  }));
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider,
+      candidateStrategyBucket: "short_term"
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 900_000,
+        positions: [
+          {
+            market: "KR",
+            symbol: "111111",
+            quantity: 1,
+            averagePriceKrw: 70_000,
+            marketValueKrw: 70_000,
+            strategyBucket: "long_term",
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_long_term_held_0900",
+          symbol: "111111",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 80_000,
+          strategyBucket: "long_term"
+        })
+      ]
+    }
+  );
+
+  assert.equal(provider.calls, 1);
+  assert.equal(result.packets[0]?.candidates[0]?.buyEligible, false);
+  assert.equal(result.decisions.length, 0);
+  assert.equal(result.tradeCount, 0);
+  assert.equal(result.finalPortfolio.positions[0]?.marketValueKrw, 80_000);
+  assert.equal(
+    result.auditEvents.some(
+      (event) =>
+        event.eventType === "HISTORICAL_DECISION_REJECTED" &&
+        event.summary.includes("VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE")
+    ),
+    true
+  );
+});
+
 test("codex historical replay runner applies optional pacing once per tick", async () => {
   const delayCalls: number[] = [];
   const provider = new FakeCodexReplayProvider((packet) => ({

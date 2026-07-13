@@ -482,6 +482,7 @@ test("historical replay runner preserves out-of-scope held position work", () =>
         endAt: new Date("2025-01-02T09:00:00+09:00"),
         stepSeconds: 60
       }),
+      decisionProvider: new BuyFirstCandidateDecisionProvider(),
       candidateStrategyBucket: "short_term"
     },
     {
@@ -517,8 +518,16 @@ test("historical replay runner preserves out-of-scope held position work", () =>
   assert.equal(candidate?.positionExists, true);
   assert.equal(candidate?.buyEligible, false);
   assert.equal(candidate?.sellEligible, true);
-  assert.equal(result.decisions[0]?.decisions[0]?.action, "VIRTUAL_HOLD");
+  assert.equal(result.decisions.length, 0);
   assert.equal(result.tradeCount, 0);
+  assert.equal(
+    result.auditEvents.some(
+      (event) =>
+        event.eventType === "HISTORICAL_DECISION_REJECTED" &&
+        event.summary.includes("VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE")
+    ),
+    true
+  );
   assert.equal(result.finalPortfolio.positions[0]?.marketValueKrw, 80_000);
   assert.equal(result.finalPortfolio.positions[0]?.strategyBucket, "long_term");
 });
@@ -795,6 +804,41 @@ class HoldDecisionProvider implements HistoricalReplayDecisionProvider {
           claimSupport: [
             {
               claim: "Hold existing position.",
+              dataRefs: [dataRef]
+            }
+          ],
+          expiresAt: packet.expiresAt
+        }
+      ]
+    };
+  }
+}
+
+class BuyFirstCandidateDecisionProvider
+  implements HistoricalReplayDecisionProvider
+{
+  decide(
+    packet: Parameters<HistoricalReplayDecisionProvider["decide"]>[0]
+  ): VirtualDecision {
+    const candidate = packet.candidates[0];
+    assert.ok(candidate);
+    const dataRef = candidate.sourceRefs[0] ?? `packet:${packet.packetId}`;
+    return {
+      packetId: packet.packetId,
+      summary: "Attempt to buy the first packet candidate.",
+      decisions: [
+        {
+          market: candidate.market,
+          symbol: candidate.symbol,
+          action: "VIRTUAL_BUY",
+          confidence: 0.5,
+          budgetKrw: 80_000,
+          thesis: "Exercise provider action eligibility enforcement.",
+          riskFactors: ["Candidate may be buy-ineligible."],
+          dataRefs: [dataRef],
+          claimSupport: [
+            {
+              claim: "Exercise provider action eligibility enforcement.",
               dataRefs: [dataRef]
             }
           ],
