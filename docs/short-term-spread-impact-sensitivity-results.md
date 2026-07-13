@@ -129,5 +129,6 @@ node dist/cli/historicalBatchReport.js --runs-path "$BatchDir/batch-replay-runs.
 
 - Fixed spread sensitivity와 실제 spread evidence를 구분한 상태로 유지한다.
 - Market impact를 다시 평가하려면 결과를 본 뒤 coefficient만 키우지 말고, 사전에 고정한 paper-only liquidity stress fixture로 participation/no-fill/partial-fill 조건을 만든다.
+- 후속 liquidity stress scenario와 판정 gate는 [Short-Term Liquidity Stress Validation 계획](short-term-liquidity-stress-validation-plan.md)에 사전 고정한다.
 - Sample/regime/PBO blocker는 execution-cost sensitivity와 분리된 PR에서 다룬다.
 - 현재 결과를 이용한 parameter winner 선택이나 실거래 적용은 진행하지 않는다.
