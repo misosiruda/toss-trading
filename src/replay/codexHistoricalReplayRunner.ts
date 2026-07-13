@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   HistoricalMarketSnapshot,
   MarketPacket,
+  StrategyBucket,
   VirtualDecision,
   VirtualPortfolio,
   VirtualRiskDecision,
@@ -84,6 +85,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: StrategyBucket;
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
@@ -200,7 +202,10 @@ export async function runCodexHistoricalReplay(
         : { allocationPolicy }),
       ...(options.universeManifest === undefined
         ? {}
-        : { universeManifest: options.universeManifest })
+        : { universeManifest: options.universeManifest }),
+      ...(options.candidateStrategyBucket === undefined
+        ? {}
+        : { candidateStrategyBucket: options.candidateStrategyBucket })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex

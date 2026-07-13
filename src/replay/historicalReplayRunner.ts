@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   HistoricalMarketSnapshot,
   MarketPacket,
+  StrategyBucket,
   VirtualDecision,
   VirtualDecisionItem,
   VirtualPortfolio,
@@ -78,6 +79,7 @@ export interface HistoricalReplayRunnerOptions {
   marketRegimeAllocationPolicy?: MarketRegimeAllocationPolicy;
   paperExitPolicy?: PaperExitPolicy;
   universeManifest?: HistoricalUniverseManifest;
+  candidateStrategyBucket?: StrategyBucket;
 }
 
 export interface HistoricalReplayInput {
@@ -426,7 +428,10 @@ export function runHistoricalReplay(
         : { allocationPolicy }),
       ...(options.universeManifest === undefined
         ? {}
-        : { universeManifest: options.universeManifest })
+        : { universeManifest: options.universeManifest }),
+      ...(options.candidateStrategyBucket === undefined
+        ? {}
+        : { candidateStrategyBucket: options.candidateStrategyBucket })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex

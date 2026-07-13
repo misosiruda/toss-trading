@@ -426,6 +426,103 @@ test("historical replay runner skips packets when only future snapshots exist", 
   assert.equal(result.warnings.some((warning) => warning.includes("future")), true);
 });
 
+test("historical replay runner continues after an empty scoped tick", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      candidateStrategyBucket: "short_term"
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_long_term_0900",
+          symbol: "111111",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000,
+          strategyBucket: "long_term"
+        }),
+        snapshot({
+          snapshotId: "hist_short_term_0901",
+          symbol: "222222",
+          observedAt: "2025-01-02T09:01:00+09:00",
+          lastPriceKrw: 80_000,
+          strategyBucket: "short_term"
+        })
+      ]
+    }
+  );
+
+  assert.equal(result.tickCount, 2);
+  assert.equal(result.packetCount, 1);
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0]?.symbol, "222222");
+  assert.equal(
+    result.auditEvents.filter(
+      (event) => event.eventType === "HISTORICAL_PACKET_SKIPPED"
+    ).length,
+    1
+  );
+  assert.equal(
+    result.packets.every((packet) =>
+      packet.candidates.every(
+        (candidate) => candidate.strategyBucket === "short_term"
+      )
+    ),
+    true
+  );
+});
+
+test("historical replay runner preserves out-of-scope held position work", () => {
+  const result = runHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      candidateStrategyBucket: "short_term"
+    },
+    {
+      initialPortfolio: portfolio({
+        cashKrw: 900_000,
+        positions: [
+          {
+            market: "KR",
+            symbol: "111111",
+            quantity: 1,
+            averagePriceKrw: 70_000,
+            marketValueKrw: 70_000,
+            strategyBucket: "long_term",
+            updatedAt: "2025-01-02T08:59:00+09:00"
+          }
+        ]
+      }),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_long_term_held_0900",
+          symbol: "111111",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 80_000,
+          strategyBucket: "long_term"
+        })
+      ]
+    }
+  );
+
+  const candidate = result.packets[0]?.candidates[0];
+  assert.equal(result.packetCount, 1);
+  assert.equal(candidate?.symbol, "111111");
+  assert.equal(candidate?.positionExists, true);
+  assert.equal(candidate?.buyEligible, false);
+  assert.equal(candidate?.sellEligible, true);
+  assert.equal(result.decisions[0]?.decisions[0]?.action, "VIRTUAL_HOLD");
+  assert.equal(result.tradeCount, 0);
+  assert.equal(result.finalPortfolio.positions[0]?.marketValueKrw, 80_000);
+  assert.equal(result.finalPortfolio.positions[0]?.strategyBucket, "long_term");
+});
+
 test("historical replay runner preserves portfolio on sampled-out steps", () => {
   const decisionProvider = new CountingDecisionProvider();
   const result = runHistoricalReplay(
@@ -724,6 +821,7 @@ function snapshot(input: {
   observedAt: string;
   lastPriceKrw: number;
   market?: HistoricalMarketSnapshot["market"];
+  strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
 }): HistoricalMarketSnapshot {
   return {
     snapshotId: input.snapshotId,
@@ -732,6 +830,9 @@ function snapshot(input: {
     observedAt: input.observedAt,
     interval: "1m",
     lastPriceKrw: input.lastPriceKrw,
+    ...(input.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: input.strategyBucket }),
     volume: 100_000,
     sourceRefs: [`fixture:${input.snapshotId}`],
     createdAt: "2026-06-12T09:00:00+09:00"

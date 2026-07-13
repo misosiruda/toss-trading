@@ -97,6 +97,62 @@ test("codex historical replay runner executes async paper decisions", async () =
   );
 });
 
+test("codex historical replay runner passes candidate bucket scope to packets", async () => {
+  const packets: MarketPacket[] = [];
+  const provider = new FakeCodexReplayProvider((packet) => {
+    packets.push(packet);
+    return {
+      attempted: true,
+      decision: decision(packet.packetId, packet.candidates[0]?.symbol ?? "222222"),
+      failure: null,
+      command: null
+    };
+  });
+
+  const result = await runCodexHistoricalReplay(
+    {
+      ...runnerOptions(),
+      clock: new SimulatedClock({
+        startAt: new Date("2025-01-02T09:00:00+09:00"),
+        endAt: new Date("2025-01-02T09:00:00+09:00"),
+        stepSeconds: 60
+      }),
+      decisionProvider: provider,
+      candidateStrategyBucket: "short_term"
+    },
+    {
+      initialPortfolio: portfolio(),
+      snapshots: [
+        snapshot({
+          snapshotId: "hist_long_term_0900",
+          symbol: "111111",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 70_000,
+          strategyBucket: "long_term"
+        }),
+        snapshot({
+          snapshotId: "hist_short_term_0900",
+          symbol: "222222",
+          observedAt: "2025-01-02T09:00:00+09:00",
+          lastPriceKrw: 80_000,
+          strategyBucket: "short_term"
+        })
+      ]
+    }
+  );
+
+  assert.equal(provider.calls, 1);
+  assert.equal(result.packetCount, 1);
+  assert.deepEqual(
+    packets[0]?.candidates.map((candidate) => [
+      candidate.symbol,
+      candidate.strategyBucket
+    ]),
+    [["222222", "short_term"]]
+  );
+  assert.equal(result.trades[0]?.symbol, "222222");
+});
+
 test("codex historical replay runner applies optional pacing once per tick", async () => {
   const delayCalls: number[] = [];
   const provider = new FakeCodexReplayProvider((packet) => ({
@@ -721,6 +777,7 @@ function snapshot(input: {
   symbol: string;
   observedAt: string;
   lastPriceKrw: number;
+  strategyBucket?: HistoricalMarketSnapshot["strategyBucket"];
 }): HistoricalMarketSnapshot {
   return {
     snapshotId: input.snapshotId,
@@ -729,6 +786,9 @@ function snapshot(input: {
     observedAt: input.observedAt,
     interval: "1m",
     lastPriceKrw: input.lastPriceKrw,
+    ...(input.strategyBucket === undefined
+      ? {}
+      : { strategyBucket: input.strategyBucket }),
     volume: 100_000,
     sourceRefs: [`fixture:${input.snapshotId}`],
     createdAt: "2026-06-12T09:00:00+09:00"
