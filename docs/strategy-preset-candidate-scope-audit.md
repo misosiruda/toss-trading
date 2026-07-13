@@ -155,12 +155,13 @@ Scope가 다른 run은 같은 validation candidate로 합치지 않는다. Cost 
 
 1. `HistoricalMarketPacketBuilder`의 candidate strategy bucket scope와 held-position buy block을 구현한다.
 2. Sync/async historical replay runner가 candidate scope를 packet builder로 전달한다.
-3. 명시적 candidate strategy bucket workflow/CLI와 metadata/hash wiring을 구현한다.
-4. Targeted CLI, packet builder, held-position, metadata/hash 회귀 테스트를 실행한다.
-5. Merge 후 `short_term` bucket scoped liquidity stress 계획을 별도 문서로 사전 고정한다.
-6. Generated artifact는 `data/`에만 두고 결과 문서 PR에서 bucket 귀속과 fixture gate를 다시 판정한다.
+3. 명시적 candidate strategy bucket workflow option과 run metadata/config hash wiring을 구현한다.
+4. Batch workflow/CLI option validation과 batch/selection metadata wiring을 구현한다.
+5. Targeted CLI, packet builder, held-position, metadata/hash 회귀 테스트를 실행한다.
+6. Merge 후 `short_term` bucket scoped liquidity stress 계획을 별도 문서로 사전 고정한다.
+7. Generated artifact는 `data/`에만 두고 결과 문서 PR에서 bucket 귀속과 fixture gate를 다시 판정한다.
 
-이번 runner propagation PR에서는 위 순서의 2번만 구현한다. Workflow/CLI와 metadata/hash wiring, replay 재실행, threshold 변경 또는 strategy 판정 변경은 포함하지 않는다.
+이번 workflow PR에서는 위 순서의 3번만 구현한다. Batch workflow/CLI와 batch/selection metadata wiring, replay 재실행, threshold 변경 또는 strategy 판정 변경은 포함하지 않는다.
 
 ## Safety Boundary
 
