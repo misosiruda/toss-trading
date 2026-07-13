@@ -386,13 +386,43 @@ function readPaperExitPolicyArg(fallback?: PaperExitPolicy | undefined) {
 function readPaperExecutionPolicyArg():
   | Partial<PaperExecutionPolicy>
   | undefined {
-  const marketImpactBpsPerParticipationRate = readOptionalNumberArg(
-    "--paper-market-impact-bps-per-participation-rate"
+  const feeBps = readOptionalNonnegativeNumberArg("--paper-fee-bps");
+  const taxBps = readOptionalNonnegativeNumberArg("--paper-tax-bps");
+  const slippageBps = readOptionalNonnegativeNumberArg(
+    "--paper-slippage-bps"
   );
-  if (marketImpactBpsPerParticipationRate === undefined) {
+  const marketImpactBpsPerParticipationRate =
+    readOptionalNonnegativeNumberArg(
+      "--paper-market-impact-bps-per-participation-rate"
+    );
+  if (
+    feeBps === undefined &&
+    taxBps === undefined &&
+    slippageBps === undefined &&
+    marketImpactBpsPerParticipationRate === undefined
+  ) {
     return undefined;
   }
-  return { marketImpactBpsPerParticipationRate };
+  return {
+    ...(feeBps === undefined ? {} : { feeBps }),
+    ...(taxBps === undefined ? {} : { taxBps }),
+    ...(slippageBps === undefined ? {} : { slippageBps }),
+    ...(marketImpactBpsPerParticipationRate === undefined
+      ? {}
+      : { marketImpactBpsPerParticipationRate })
+  };
+}
+
+function readOptionalNonnegativeNumberArg(name: string): number | undefined {
+  const raw = readOptionalArgValue(name);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return parsed;
 }
 
 function readMarketRegimeAllocationPolicyArg():

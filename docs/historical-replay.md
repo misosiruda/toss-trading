@@ -528,6 +528,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-
 - `--paper-take-profit-sell-ratio 0.5`: `partial_then_trail` 모드에서 최초 take-profit 도달 시 매도할 보유 수량 비율입니다.
 - `--paper-trailing-stop-from-peak-ratio 0.08`: `partial_then_trail` 모드에서 partial take-profit 이후 peak 가격 대비 하락률이 이 값을 넘으면 잔여 수량을 sell-all 합니다.
 - `--paper-market-impact-bps-per-participation-rate 500`: filled participation rate에 비례한 paper-only market impact cost를 적용합니다. 기본값은 `0`이며, 이번 범위는 aggregate report 구조 확장이 아니라 execution policy 전달과 per-trade/report cost 반영까지입니다.
+- batch replay CLI는 `--paper-fee-bps`, `--paper-tax-bps`, `--paper-slippage-bps`로 fixed paper execution cost를 명시할 수 있습니다. 세 값과 market impact 값은 0 이상의 숫자만 허용하며, 명시된 값은 run metadata, `costModelHash`, trade cost와 aggregate report에 반영됩니다.
 
 동작:
 
