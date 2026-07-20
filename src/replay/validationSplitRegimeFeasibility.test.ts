@@ -461,16 +461,18 @@ test("feasibility builder closes insufficient without bucket fallback", () => {
 
 test("feasibility builder deduplicates overlapping role capacity", () => {
   const options = feasibilityBuilderOptions();
+  const assignments = [
+    ...options.assignments,
+    {
+      ...options.assignments[0]!,
+      splitId: "split-1",
+      splitIndex: 1
+    }
+  ];
   const artifact = buildValidationSplitRegimeFeasibilityArtifact({
     ...options,
-    assignments: [
-      ...options.assignments,
-      {
-        ...options.assignments[0]!,
-        splitId: "split-1",
-        splitIndex: 1
-      }
-    ]
+    assignments,
+    validationSplit: { assignments }
   });
   const train = artifact.roles.find((role) => role.splitRole === "train");
 
@@ -553,6 +555,20 @@ test("feasibility builder rejects malformed contracts", () => {
         )
       }),
     /inconsistent split definition/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        validationSplit: {
+          assignments: options.assignments.map((assignment) =>
+            assignment.splitRole === "test"
+              ? { ...assignment, testEnd: "2025-04-30T23:59:59.999+09:00" }
+              : assignment
+          )
+        }
+      }),
+    /validation split source assignments must match assessed assignments/
   );
   assert.throws(
     () =>
@@ -946,12 +962,13 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
       createdAt: "2026-07-20T00:00:00.000Z"
     })
   );
+  const assignments = (["train", "validation", "test"] as const).map(
+    (splitRole) => ({ ...baseAssignment, splitRole })
+  );
 
   return {
     generatedAt: "2026-07-20T00:00:00.000Z",
-    assignments: (["train", "validation", "test"] as const).map(
-      (splitRole) => ({ ...baseAssignment, splitRole })
-    ),
+    assignments,
     snapshots,
     dataSnapshot: { snapshotIds: snapshots.map((item) => item.snapshotId) },
     universe: { symbols: ["TEST"] },
@@ -960,7 +977,7 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
       corruptLineCount: 0,
       availableStrategyBuckets: ["short_term"]
     },
-    validationSplit: { assignments: [baseAssignment] },
+    validationSplit: { assignments },
     calendarValidation: {
       rules: [
         {

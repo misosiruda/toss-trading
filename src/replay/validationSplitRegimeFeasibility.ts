@@ -164,6 +164,14 @@ const feasibilityCoverageGateSchema = z
       });
     }
   });
+const validationSplitSourceSchema = z.union([
+  z.array(validationSplitAssignmentSchema),
+  z
+    .object({
+      assignments: z.array(validationSplitAssignmentSchema)
+    })
+    .passthrough()
+]);
 const candidateSchema = z
   .object({
     startAt: isoDateTimeSchema,
@@ -621,6 +629,10 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
     )
     .sort(compareValidationAssignments);
   assertUniqueValidationAssignments(assignments);
+  assertValidationSplitSourceMatchesAssignments(
+    options.validationSplit,
+    assignments
+  );
   const snapshots = options.snapshots.map((snapshot) =>
     parseWithSchema(
       historicalMarketSnapshotSchema,
@@ -1025,6 +1037,43 @@ function sameValidationSplitDefinition(
     left.testEnd === right.testEnd &&
     left.purgeDurationDays === right.purgeDurationDays &&
     left.embargoDurationDays === right.embargoDurationDays
+  );
+}
+
+function assertValidationSplitSourceMatchesAssignments(
+  source: unknown,
+  assignments: ValidationSplitAssignment[]
+): void {
+  const parsed = parseWithSchema(
+    validationSplitSourceSchema,
+    source,
+    "validation split source"
+  );
+  const sourceAssignments = (
+    Array.isArray(parsed) ? parsed : parsed.assignments
+  ).sort(compareValidationAssignments);
+  if (
+    sourceAssignments.length !== assignments.length ||
+    sourceAssignments.some(
+      (assignment, index) =>
+        !sameValidationAssignment(assignment, assignments[index]!)
+    )
+  ) {
+    throw new Error(
+      "validation split source assignments must match assessed assignments"
+    );
+  }
+}
+
+function sameValidationAssignment(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): boolean {
+  return (
+    left.splitId === right.splitId &&
+    left.splitIndex === right.splitIndex &&
+    left.splitRole === right.splitRole &&
+    sameValidationSplitDefinition(left, right)
   );
 }
 
