@@ -55,6 +55,15 @@ test("feasibility artifact schema rejects unsafe mode and invalid provenance", (
   );
 });
 
+test("available artifact requires derived role-level coverage", () => {
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse(
+      incompleteAvailableArtifact()
+    ).success,
+    false
+  );
+});
+
 test("default classifier config exposes the precommitted effective values", () => {
   assert.equal(Object.isFrozen(DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG), true);
   assert.deepEqual(defaultMarketRegimeClassifierConfig(), {
@@ -224,10 +233,63 @@ function artifact() {
       roleCapacityCounts: { train: 0, validation: 0, test: 0 },
       boundaryViolationCount: 0,
       embargoViolationCount: 0,
-      unavailableRoleRegimeCount: 12
+      unavailableRoleRegimeCount: 0
     },
     roles: [],
     assignments: [],
     warnings: []
+  };
+}
+
+function incompleteAvailableArtifact() {
+  const base = artifact();
+  const hash = `sha256:${"b".repeat(64)}`;
+  return {
+    ...base,
+    status: "available",
+    summary: {
+      ...base.summary,
+      assignmentCount: 1,
+      roleCounts: { train: 1, validation: 0, test: 0 },
+      candidateCount: 1,
+      uniqueCandidateCount: 1,
+      roleCapacityCounts: { train: 4, validation: 0, test: 0 },
+      unavailableRoleRegimeCount: 0
+    },
+    assignments: [
+      {
+        splitId: "split-0",
+        splitIndex: 0,
+        splitRole: "train",
+        roleStart: "2023-01-01T00:00:00+09:00",
+        roleEnd: "2023-04-30T23:59:59.999+09:00",
+        effectiveRoleEnd: "2023-04-30T23:59:59.999+09:00",
+        structuralCapacityCount: 4,
+        candidateCount: 1,
+        regimeCounts: {
+          bull: 1,
+          bear: 0,
+          sideways: 0,
+          mixed: 0,
+          insufficient_data: 0
+        },
+        availableTargetRegimes: ["bull"],
+        unavailableTargetRegimes: ["bear", "sideways", "mixed"],
+        candidates: [
+          {
+            startAt: "2023-01-01T00:00:00+09:00",
+            endAt: "2023-01-31T23:59:59.999+09:00",
+            regime: "bull",
+            scopeAvailable: true,
+            candidateHash: hash
+          }
+        ],
+        maximumPairwiseOverlapRatio: 0,
+        calendarRejectedCandidateCount: 3,
+        scopeUnavailableCandidateCount: 0,
+        warnings: []
+      }
+    ],
+    roles: []
   };
 }

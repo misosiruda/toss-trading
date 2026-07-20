@@ -152,6 +152,16 @@ const assignmentSchema = z
         message: "candidateCount must match candidates length"
       });
     }
+    if (
+      value.scopeUnavailableCandidateCount !==
+      value.candidates.filter((candidate) => !candidate.scopeAvailable).length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "scopeUnavailableCandidateCount must match unavailable candidates"
+      });
+    }
     for (const candidate of value.candidates) {
       if (
         Date.parse(candidate.startAt) < roleStartMs ||
@@ -180,7 +190,7 @@ const roleSchema = z
   })
   .strict();
 
-export const validationSplitRegimeFeasibilityArtifactSchema = z
+const validationSplitRegimeFeasibilityArtifactBaseSchema = z
   .object({
     schemaVersion: z.literal(
       VALIDATION_SPLIT_REGIME_FEASIBILITY_SCHEMA_VERSION
@@ -227,8 +237,11 @@ export const validationSplitRegimeFeasibilityArtifactSchema = z
     assignments: z.array(assignmentSchema),
     warnings: z.array(validationSplitRegimeFeasibilityWarningSchema)
   })
-  .strict()
-  .superRefine((value, context) => {
+  .strict();
+
+export const validationSplitRegimeFeasibilityArtifactSchema =
+  validationSplitRegimeFeasibilityArtifactBaseSchema.superRefine(
+    (value, context) => {
     if (value.summary.assignmentCount !== value.assignments.length) {
       context.addIssue({
         code: "custom",
@@ -249,6 +262,7 @@ export const validationSplitRegimeFeasibilityArtifactSchema = z
         message: "summary roleCounts must match assignments"
       });
     }
+    validateRoleAggregates(value, context);
     if (
       value.status === "available" &&
       (value.summary.assignmentCount === 0 ||
@@ -262,7 +276,8 @@ export const validationSplitRegimeFeasibilityArtifactSchema = z
         message: "available artifact must satisfy structural availability gates"
       });
     }
-  });
+    }
+  );
 
 export interface ValidationRoleCandidateEnumeration {
   roleWindow: ValidationRoleWindow;
@@ -331,4 +346,228 @@ function assertCandidatesInsideRole(
       );
     }
   }
+}
+
+type FeasibilityArtifactValue = z.infer<
+  typeof validationSplitRegimeFeasibilityArtifactBaseSchema
+>;
+type FeasibilityAssignment = FeasibilityArtifactValue["assignments"][number];
+type FeasibilityCandidate = FeasibilityAssignment["candidates"][number];
+
+function validateRoleAggregates(
+  value: FeasibilityArtifactValue,
+  context: z.RefinementCtx
+): void {
+  const assignmentsByRole = new Map<
+    FeasibilityAssignment["splitRole"],
+    FeasibilityAssignment[]
+  >();
+  for (const assignment of value.assignments) {
+    const assignments = assignmentsByRole.get(assignment.splitRole) ?? [];
+    assignments.push(assignment);
+    assignmentsByRole.set(assignment.splitRole, assignments);
+  }
+
+  const rolesByName = new Map<
+    FeasibilityArtifactValue["roles"][number]["splitRole"],
+    FeasibilityArtifactValue["roles"][number]
+  >();
+  for (const role of value.roles) {
+    if (rolesByName.has(role.splitRole)) {
+      addAggregateIssue(context, `duplicate role aggregate: ${role.splitRole}`);
+      continue;
+    }
+    rolesByName.set(role.splitRole, role);
+  }
+
+  let unavailableRoleRegimeCount = 0;
+  for (const splitRole of validationSplitRoleSchema.options) {
+    const assignments = assignmentsByRole.get(splitRole) ?? [];
+    const role = rolesByName.get(splitRole);
+    if (assignments.length === 0) {
+      if (role !== undefined) {
+        addAggregateIssue(
+          context,
+          `role aggregate has no assignments: ${splitRole}`
+        );
+      }
+      continue;
+    }
+    if (role === undefined) {
+      addAggregateIssue(context, `missing role aggregate: ${splitRole}`);
+      unavailableRoleRegimeCount += value.config.targetRegimes.length;
+      continue;
+    }
+    if (role.assignmentCount !== assignments.length) {
+      addAggregateIssue(
+        context,
+        `role assignmentCount mismatch: ${splitRole}`
+      );
+    }
+    if (
+      role.minimumCandidatesPerRoleRegime !==
+      value.config.minimumCandidatesPerRoleRegime
+    ) {
+      addAggregateIssue(
+        context,
+        `role minimum candidate count mismatch: ${splitRole}`
+      );
+    }
+
+    const candidates = deduplicatedRoleCandidates(assignments, context);
+    const regimeCounts = countCandidateRegimes(candidates.values());
+    if (!sameRegimeCounts(role.regimeCounts, regimeCounts)) {
+      addAggregateIssue(context, `role regimeCounts mismatch: ${splitRole}`);
+    }
+    if (role.uniqueCandidateCount !== candidates.size) {
+      addAggregateIssue(
+        context,
+        `role uniqueCandidateCount mismatch: ${splitRole}`
+      );
+    }
+
+    const availableTargetRegimes = value.config.targetRegimes.filter(
+      (regime) =>
+        regimeCounts[regime] >= value.config.minimumCandidatesPerRoleRegime
+    );
+    const unavailableTargetRegimes = value.config.targetRegimes.filter(
+      (regime) => !availableTargetRegimes.includes(regime)
+    );
+    if (!sameRegimeSet(role.availableTargetRegimes, availableTargetRegimes)) {
+      addAggregateIssue(
+        context,
+        `role availableTargetRegimes mismatch: ${splitRole}`
+      );
+    }
+    if (
+      !sameRegimeSet(
+        role.unavailableTargetRegimes,
+        unavailableTargetRegimes
+      )
+    ) {
+      addAggregateIssue(
+        context,
+        `role unavailableTargetRegimes mismatch: ${splitRole}`
+      );
+    }
+    unavailableRoleRegimeCount += unavailableTargetRegimes.length;
+
+    const requiredCapacity =
+      value.config.targetRegimes.length *
+      value.config.minimumCandidatesPerRoleRegime;
+    const expectedCapacityStatus =
+      role.structuralCapacityCount >= requiredCapacity
+        ? "sufficient"
+        : "insufficient";
+    if (role.capacityStatus !== expectedCapacityStatus) {
+      addAggregateIssue(context, `role capacityStatus mismatch: ${splitRole}`);
+    }
+    if (
+      value.summary.roleCapacityCounts[splitRole] !==
+      role.structuralCapacityCount
+    ) {
+      addAggregateIssue(
+        context,
+        `summary roleCapacityCounts mismatch: ${splitRole}`
+      );
+    }
+  }
+
+  if (
+    value.summary.unavailableRoleRegimeCount !==
+    unavailableRoleRegimeCount
+  ) {
+    addAggregateIssue(
+      context,
+      "summary unavailableRoleRegimeCount must match role aggregates"
+    );
+  }
+  if (
+    value.status === "available" &&
+    validationSplitRoleSchema.options.some(
+      (splitRole) =>
+        (assignmentsByRole.get(splitRole)?.length ?? 0) === 0 ||
+        !rolesByName.has(splitRole)
+    )
+  ) {
+    addAggregateIssue(
+      context,
+      "available artifact requires train, validation, and test aggregates"
+    );
+  }
+}
+
+function deduplicatedRoleCandidates(
+  assignments: FeasibilityAssignment[],
+  context: z.RefinementCtx
+): Map<string, FeasibilityCandidate> {
+  const candidates = new Map<string, FeasibilityCandidate>();
+  for (const assignment of assignments) {
+    for (const candidate of assignment.candidates) {
+      if (!candidate.scopeAvailable) {
+        continue;
+      }
+      const existing = candidates.get(candidate.candidateHash);
+      if (existing !== undefined && !sameCandidate(existing, candidate)) {
+        addAggregateIssue(
+          context,
+          `candidateHash payload mismatch: ${candidate.candidateHash}`
+        );
+        continue;
+      }
+      candidates.set(candidate.candidateHash, candidate);
+    }
+  }
+  return candidates;
+}
+
+function countCandidateRegimes(candidates: Iterable<FeasibilityCandidate>) {
+  const counts = {
+    bull: 0,
+    bear: 0,
+    sideways: 0,
+    mixed: 0,
+    insufficient_data: 0
+  };
+  for (const candidate of candidates) {
+    counts[candidate.regime] += 1;
+  }
+  return counts;
+}
+
+function sameRegimeCounts(
+  left: z.infer<typeof regimeCountsSchema>,
+  right: z.infer<typeof regimeCountsSchema>
+): boolean {
+  return feasibilityRegimeSchema.options.every(
+    (regime) => left[regime] === right[regime]
+  );
+}
+
+function sameRegimeSet(
+  left: Array<z.infer<typeof feasibilityTargetRegimeSchema>>,
+  right: Array<z.infer<typeof feasibilityTargetRegimeSchema>>
+): boolean {
+  return (
+    new Set(left).size === left.length &&
+    new Set(right).size === right.length &&
+    left.length === right.length &&
+    left.every((regime) => right.includes(regime))
+  );
+}
+
+function sameCandidate(
+  left: FeasibilityCandidate,
+  right: FeasibilityCandidate
+): boolean {
+  return (
+    left.startAt === right.startAt &&
+    left.endAt === right.endAt &&
+    left.regime === right.regime &&
+    left.scopeAvailable === right.scopeAvailable
+  );
+}
+
+function addAggregateIssue(context: z.RefinementCtx, message: string): void {
+  context.addIssue({ code: "custom", message });
 }
