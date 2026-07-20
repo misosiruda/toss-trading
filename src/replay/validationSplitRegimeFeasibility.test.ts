@@ -546,6 +546,18 @@ test("feasibility builder rejects malformed contracts", () => {
     () =>
       buildValidationSplitRegimeFeasibilityArtifact({
         ...options,
+        assignments: options.assignments.map((assignment) =>
+          assignment.splitRole === "validation"
+            ? { ...assignment, purgeDurationDays: 1 }
+            : assignment
+        )
+      }),
+    /inconsistent split definition/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
         snapshots: [...options.snapshots, { ...options.snapshots[0]! }]
       }),
     /duplicate historical snapshotId/

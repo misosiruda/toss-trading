@@ -976,6 +976,7 @@ function assertUniqueValidationAssignments(
   const identities = new Set<string>();
   const splitIdsByIndex = new Map<number, string>();
   const splitIndexesById = new Map<string, number>();
+  const definitionsBySplit = new Map<string, ValidationSplitAssignment>();
   for (const assignment of assignments) {
     const identity = `${assignment.splitIndex}:${assignment.splitId}:${assignment.splitRole}`;
     if (identities.has(identity)) {
@@ -993,10 +994,38 @@ function assertUniqueValidationAssignments(
         `validation splitId maps to multiple splitIndexes: ${assignment.splitId}`
       );
     }
+    const splitKey = `${assignment.splitIndex}:${assignment.splitId}`;
+    const definition = definitionsBySplit.get(splitKey);
+    if (
+      definition !== undefined &&
+      !sameValidationSplitDefinition(definition, assignment)
+    ) {
+      throw new Error(
+        `validation role assignments use inconsistent split definition: ${splitKey}`
+      );
+    }
     identities.add(identity);
     splitIdsByIndex.set(assignment.splitIndex, assignment.splitId);
     splitIndexesById.set(assignment.splitId, assignment.splitIndex);
+    definitionsBySplit.set(splitKey, assignment);
   }
+}
+
+function sameValidationSplitDefinition(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): boolean {
+  return (
+    left.validationProtocol === right.validationProtocol &&
+    left.trainStart === right.trainStart &&
+    left.trainEnd === right.trainEnd &&
+    left.validationStart === right.validationStart &&
+    left.validationEnd === right.validationEnd &&
+    left.testStart === right.testStart &&
+    left.testEnd === right.testEnd &&
+    left.purgeDurationDays === right.purgeDurationDays &&
+    left.embargoDurationDays === right.embargoDurationDays
+  );
 }
 
 function assertUniqueSnapshotIds(
