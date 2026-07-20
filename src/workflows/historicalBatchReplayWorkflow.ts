@@ -41,11 +41,13 @@ import type {
   AssetType,
   AuditEvent,
   HistoricalMarketSnapshot,
-  Market
+  Market,
+  StrategyBucket
 } from "../domain/schemas.js";
 import {
   parseWithSchema,
-  replayResearchManifestSchema
+  replayResearchManifestSchema,
+  strategyBucketSchema
 } from "../domain/schemas.js";
 import type { ReplayDecisionFrequency } from "../replay/replaySamplingPolicy.js";
 import type { StrategyReplayPresetName } from "../replay/strategyReplayPreset.js";
@@ -103,6 +105,7 @@ export interface BatchReplayRunnerOptions {
   outputBaseDir: string;
   batchId: string;
   strategyPreset?: StrategyReplayPresetName;
+  candidateStrategyBucket?: StrategyBucket;
   seed: string;
   runCount: number;
   rangeStart: Date;
@@ -215,6 +218,7 @@ export interface BatchReplayManifest {
   activeRun: BatchReplayActiveRunSnapshot | null;
   decisionProvider: BatchReplayDecisionProviderMetadata;
   strategyPreset: StrategyReplayPresetName | null;
+  candidateStrategyBucket: StrategyBucket | null;
   riskProfile: PaperRiskProfileName | null;
   allocationPolicy: PaperAllocationPolicy | null;
   marketRegimeAllocationPolicy: MarketRegimeAllocationPolicy | null;
@@ -394,6 +398,7 @@ export async function runHistoricalBatchReplay(
     activeRun: null,
     decisionProvider: decisionProviderMetadata,
     strategyPreset: options.strategyPreset ?? null,
+    candidateStrategyBucket: options.candidateStrategyBucket ?? null,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -424,21 +429,28 @@ export async function runHistoricalBatchReplay(
     const runStartedAt = dateForRun(startedAt, runIndex);
     const windowStart = new Date(window.startAt);
     const windowEnd = new Date(window.endAt);
-    const availability = assessHistoricalDataAvailability({
+    const availability = applyCandidateStrategyBucketAvailability({
+      report: assessHistoricalDataAvailability({
+        snapshots: snapshotRead.records,
+        windowStart,
+        windowEnd,
+        corruptLineCount: snapshotRead.corruptLineCount,
+        minWindowSnapshots: options.minWindowSnapshots ?? 1,
+        minSnapshotsPerRequiredSymbol:
+          options.minSnapshotsPerRequiredSymbol ?? 1,
+        requiredSymbols: options.requiredSymbols ?? [],
+        ...(options.calendarValidation === undefined
+          ? {}
+          : { calendarValidation: options.calendarValidation }),
+        ...(options.fxValidation === undefined
+          ? {}
+          : { fxValidation: options.fxValidation })
+      }),
       snapshots: snapshotRead.records,
       windowStart,
       windowEnd,
-      corruptLineCount: snapshotRead.corruptLineCount,
       minWindowSnapshots: options.minWindowSnapshots ?? 1,
-      minSnapshotsPerRequiredSymbol:
-        options.minSnapshotsPerRequiredSymbol ?? 1,
-      requiredSymbols: options.requiredSymbols ?? [],
-      ...(options.calendarValidation === undefined
-        ? {}
-        : { calendarValidation: options.calendarValidation }),
-      ...(options.fxValidation === undefined
-        ? {}
-        : { fxValidation: options.fxValidation })
+      candidateStrategyBucket: options.candidateStrategyBucket
     });
     const marketRegime =
       windowSelection.marketRegime ??
@@ -522,6 +534,7 @@ export async function runHistoricalBatchReplay(
       }),
       decisionProvider: decisionProviderMetadata,
       strategyPreset: options.strategyPreset ?? null,
+      candidateStrategyBucket: options.candidateStrategyBucket ?? null,
       riskProfile: options.riskProfile ?? null,
       allocationPolicy: options.allocationPolicy ?? null,
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -602,6 +615,9 @@ export async function runHistoricalBatchReplay(
         ...(options.strategyPreset === undefined
           ? {}
           : { strategyPreset: options.strategyPreset }),
+        ...(options.candidateStrategyBucket === undefined
+          ? {}
+          : { candidateStrategyBucket: options.candidateStrategyBucket }),
         ...(decisionProvider === undefined ? {} : { decisionProvider }),
         ...(replayDecisionProviderMetadata === undefined
           ? {}
@@ -726,6 +742,7 @@ export async function runHistoricalBatchReplay(
     activeRun: null,
     decisionProvider: decisionProviderMetadata,
     strategyPreset: options.strategyPreset ?? null,
+    candidateStrategyBucket: options.candidateStrategyBucket ?? null,
     riskProfile: options.riskProfile ?? null,
     allocationPolicy: options.allocationPolicy ?? null,
     marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy ?? null,
@@ -1328,6 +1345,44 @@ function summarizeAvailability(
   };
 }
 
+function applyCandidateStrategyBucketAvailability(input: {
+  report: HistoricalDataAvailabilityReport;
+  snapshots: HistoricalMarketSnapshot[];
+  windowStart: Date;
+  windowEnd: Date;
+  minWindowSnapshots: number;
+  candidateStrategyBucket: StrategyBucket | undefined;
+}): HistoricalDataAvailabilityReport {
+  if (input.candidateStrategyBucket === undefined) {
+    return input.report;
+  }
+
+  const scopedWindowSnapshotCount = input.snapshots.filter((snapshot) => {
+    const observedAt = Date.parse(snapshot.observedAt);
+    return (
+      snapshot.strategyBucket === input.candidateStrategyBucket &&
+      observedAt >= input.windowStart.getTime() &&
+      observedAt <= input.windowEnd.getTime()
+    );
+  }).length;
+  const issues = [...input.report.issues];
+  if (scopedWindowSnapshotCount === 0) {
+    issues.push("CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_MISSING");
+  }
+  if (scopedWindowSnapshotCount < input.minWindowSnapshots) {
+    issues.push(
+      "CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"
+    );
+  }
+  const uniqueIssues = Array.from(new Set(issues));
+
+  return {
+    ...input.report,
+    status: uniqueIssues.length === 0 ? "available" : "insufficient",
+    issues: uniqueIssues
+  };
+}
+
 async function appendRunRecord(
   filePath: string,
   record: BatchReplayRunRecord
@@ -1362,6 +1417,7 @@ function selectionTrialRecord(input: {
     marketRegime: input.record.marketRegime,
     decisionProviderMetadata: input.decisionProviderMetadata,
     strategyPreset: input.options.strategyPreset ?? null,
+    candidateStrategyBucket: input.options.candidateStrategyBucket ?? null,
     replayCadence: {
       stepSeconds: input.options.stepSeconds ?? DEFAULT_STEP_SECONDS,
       everyNSteps: input.options.everyNSteps ?? null,
@@ -1414,6 +1470,13 @@ function batchReplayRunId(
 function validateBatchOptions(options: BatchReplayRunnerOptions): void {
   normalizeRequiredText(options.batchId, "batchId");
   normalizeRequiredText(options.seed, "seed");
+  if (options.candidateStrategyBucket !== undefined) {
+    parseWithSchema(
+      strategyBucketSchema,
+      options.candidateStrategyBucket,
+      "candidateStrategyBucket"
+    );
+  }
   if (!Number.isInteger(options.runCount) || options.runCount <= 0) {
     throw new Error("runCount must be a positive integer");
   }
