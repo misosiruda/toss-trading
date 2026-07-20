@@ -428,7 +428,6 @@ export interface BuildValidationSplitRegimeFeasibilityArtifactOptions {
   generatedAt?: Date | string;
   assignments: ValidationSplitAssignment[];
   snapshots: HistoricalMarketSnapshot[];
-  dataSnapshot: unknown;
   universe: unknown;
   coverage: unknown;
   validationSplit: unknown;
@@ -637,13 +636,15 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
     options.validationSplit,
     assignments
   );
-  const snapshots = options.snapshots.map((snapshot) =>
-    parseWithSchema(
-      historicalMarketSnapshotSchema,
-      snapshot,
-      "historical market snapshot"
+  const snapshots = options.snapshots
+    .map((snapshot) =>
+      parseWithSchema(
+        historicalMarketSnapshotSchema,
+        snapshot,
+        "historical market snapshot"
+      )
     )
-  );
+    .sort(compareHistoricalSnapshotsForProvenance);
   const universe = parseWithSchema(
     historicalUniverseManifestSchema,
     options.universe,
@@ -662,7 +663,7 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
     options.calendarValidation.rules
   );
   const provenance = createValidationSplitRegimeFeasibilityProvenance({
-    dataSnapshot: options.dataSnapshot,
+    dataSnapshot: snapshots,
     universe: options.universe,
     coverage: options.coverage,
     validationSplit: options.validationSplit,
@@ -1114,6 +1115,18 @@ function assertSnapshotsInsideUniverse(
       );
     }
   }
+}
+
+function compareHistoricalSnapshotsForProvenance(
+  left: HistoricalMarketSnapshot,
+  right: HistoricalMarketSnapshot
+): number {
+  return (
+    Date.parse(left.observedAt) - Date.parse(right.observedAt) ||
+    compareCanonicalStrings(left.market, right.market) ||
+    compareCanonicalStrings(left.symbol, right.symbol) ||
+    compareCanonicalStrings(left.snapshotId, right.snapshotId)
+  );
 }
 
 function countAssignmentRoles(

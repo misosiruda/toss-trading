@@ -459,6 +459,28 @@ test("feasibility builder closes insufficient without bucket fallback", () => {
   );
 });
 
+test("feasibility builder hashes the snapshots actually assessed", () => {
+  const options = feasibilityBuilderOptions();
+  const first = buildValidationSplitRegimeFeasibilityArtifact(options);
+  const changed = buildValidationSplitRegimeFeasibilityArtifact({
+    ...options,
+    snapshots: options.snapshots.map((snapshot, index) =>
+      index === 1
+        ? { ...snapshot, lastPriceKrw: snapshot.lastPriceKrw + 1 }
+        : snapshot
+    )
+  });
+
+  assert.notEqual(
+    first.provenance.dataSnapshotHash,
+    changed.provenance.dataSnapshotHash
+  );
+  assert.notEqual(
+    first.assignments[0]?.candidates[0]?.candidateHash,
+    changed.assignments[0]?.candidates[0]?.candidateHash
+  );
+});
+
 test("feasibility builder deduplicates overlapping role capacity", () => {
   const options = feasibilityBuilderOptions();
   const assignments = [
@@ -980,7 +1002,6 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
     generatedAt: "2026-07-20T00:00:00.000Z",
     assignments,
     snapshots,
-    dataSnapshot: { snapshotIds: snapshots.map((item) => item.snapshotId) },
     universe: {
       mode: "paper_only_historical_universe",
       universeId: "builder-universe",
