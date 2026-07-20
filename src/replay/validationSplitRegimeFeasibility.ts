@@ -162,6 +162,16 @@ const assignmentSchema = z
           "scopeUnavailableCandidateCount must match unavailable candidates"
       });
     }
+    if (
+      value.structuralCapacityCount <
+      value.candidateCount + value.calendarRejectedCandidateCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "structuralCapacityCount must cover candidates and calendar rejections"
+      });
+    }
     for (const candidate of value.candidates) {
       if (
         Date.parse(candidate.startAt) < roleStartMs ||
@@ -425,6 +435,12 @@ function validateRoleAggregates(
         `role uniqueCandidateCount mismatch: ${splitRole}`
       );
     }
+    if (role.structuralCapacityCount < candidates.size) {
+      addAggregateIssue(
+        context,
+        `role structuralCapacityCount is below unique candidates: ${splitRole}`
+      );
+    }
 
     const availableTargetRegimes = value.config.targetRegimes.filter(
       (regime) =>
@@ -461,6 +477,12 @@ function validateRoleAggregates(
         : "insufficient";
     if (role.capacityStatus !== expectedCapacityStatus) {
       addAggregateIssue(context, `role capacityStatus mismatch: ${splitRole}`);
+    }
+    if (value.status === "available" && role.capacityStatus !== "sufficient") {
+      addAggregateIssue(
+        context,
+        `available artifact requires sufficient role capacity: ${splitRole}`
+      );
     }
     if (
       value.summary.roleCapacityCounts[splitRole] !==

@@ -64,6 +64,29 @@ test("available artifact requires derived role-level coverage", () => {
   );
 });
 
+test("available artifact requires sufficient structural capacity per role", () => {
+  const available = completeAvailableArtifact();
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse(available).success,
+    true
+  );
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      summary: {
+        ...available.summary,
+        roleCapacityCounts: { train: 0, validation: 0, test: 0 }
+      },
+      roles: available.roles.map((role) => ({
+        ...role,
+        structuralCapacityCount: 0,
+        capacityStatus: "insufficient"
+      }))
+    }).success,
+    false
+  );
+});
+
 test("default classifier config exposes the precommitted effective values", () => {
   assert.equal(Object.isFrozen(DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG), true);
   assert.deepEqual(defaultMarketRegimeClassifierConfig(), {
@@ -291,5 +314,104 @@ function incompleteAvailableArtifact() {
       }
     ],
     roles: []
+  };
+}
+
+function completeAvailableArtifact() {
+  const base = artifact();
+  const roleInputs = [
+    {
+      splitRole: "train" as const,
+      roleStart: "2023-01-01T00:00:00+09:00",
+      roleEnd: "2023-04-30T23:59:59.999+09:00",
+      effectiveRoleEnd: "2023-04-30T23:59:59.999+09:00",
+      candidateStart: "2023-01-01T00:00:00+09:00",
+      candidateEnd: "2023-01-31T23:59:59.999+09:00",
+      hashDigit: "1"
+    },
+    {
+      splitRole: "validation" as const,
+      roleStart: "2023-05-01T00:00:00+09:00",
+      roleEnd: "2023-06-30T23:59:59.999+09:00",
+      effectiveRoleEnd: null,
+      candidateStart: "2023-05-01T00:00:00+09:00",
+      candidateEnd: "2023-05-31T23:59:59.999+09:00",
+      hashDigit: "2"
+    },
+    {
+      splitRole: "test" as const,
+      roleStart: "2023-07-01T00:00:00+09:00",
+      roleEnd: "2023-09-30T23:59:59.999+09:00",
+      effectiveRoleEnd: null,
+      candidateStart: "2023-07-01T00:00:00+09:00",
+      candidateEnd: "2023-07-31T23:59:59.999+09:00",
+      hashDigit: "3"
+    }
+  ];
+  const assignments = roleInputs.map((input, splitIndex) => ({
+    splitId: `split-${splitIndex}`,
+    splitIndex,
+    splitRole: input.splitRole,
+    roleStart: input.roleStart,
+    roleEnd: input.roleEnd,
+    effectiveRoleEnd: input.effectiveRoleEnd,
+    structuralCapacityCount: 1,
+    candidateCount: 1,
+    regimeCounts: {
+      bull: 1,
+      bear: 0,
+      sideways: 0,
+      mixed: 0,
+      insufficient_data: 0
+    },
+    availableTargetRegimes: ["bull"],
+    unavailableTargetRegimes: [],
+    candidates: [
+      {
+        startAt: input.candidateStart,
+        endAt: input.candidateEnd,
+        regime: "bull",
+        scopeAvailable: true,
+        candidateHash: `sha256:${input.hashDigit.repeat(64)}`
+      }
+    ],
+    maximumPairwiseOverlapRatio: 0,
+    calendarRejectedCandidateCount: 0,
+    scopeUnavailableCandidateCount: 0,
+    warnings: []
+  }));
+  return {
+    ...base,
+    status: "available",
+    config: { ...base.config, targetRegimes: ["bull"] },
+    summary: {
+      ...base.summary,
+      assignmentCount: 3,
+      roleCounts: { train: 1, validation: 1, test: 1 },
+      candidateCount: 3,
+      uniqueCandidateCount: 3,
+      roleCapacityCounts: { train: 1, validation: 1, test: 1 },
+      unavailableRoleRegimeCount: 0
+    },
+    assignments,
+    roles: roleInputs.map((input) => ({
+      splitRole: input.splitRole,
+      assignmentCount: 1,
+      structuralCapacityCount: 1,
+      uniqueCandidateCount: 1,
+      regimeCounts: {
+        bull: 1,
+        bear: 0,
+        sideways: 0,
+        mixed: 0,
+        insufficient_data: 0
+      },
+      availableTargetRegimes: ["bull"],
+      unavailableTargetRegimes: [],
+      minimumCandidatesPerRoleRegime: 1,
+      capacityStatus: "sufficient",
+      maximumPairwiseOverlapRatio: 0,
+      warnings: []
+    }))
   };
 }
