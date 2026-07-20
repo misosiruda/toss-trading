@@ -180,6 +180,8 @@ Raw snapshot, 종목별 성과 또는 candidate ranking은 artifact에 복제하
 
 Assignment 하나가 모든 target regime을 포함할 필요는 없다. 예를 들어 3개월 test assignment에는 1개월 full window가 구조적으로 최대 3개뿐이므로 네 regime Cartesian product를 assignment-level gate로 적용하지 않는다. 세 test assignment에서 생성한 candidate를 합치고 동일 `candidateHash`를 제거한 test role aggregate에 target regime gate를 적용한다.
 
+Parser는 assignment의 `regimeCounts`와 available/unavailable target 목록을 `scopeAvailable=true` candidate에서 재계산해 검증한다. Summary의 `candidateCount`는 모든 assignment candidate row 수의 합, `uniqueCandidateCount`는 scoped candidate를 `candidateHash`로 deduplicate한 수와 일치해야 한다.
+
 `config.calendarValidation.rules`는 `market`, `exchange`, `timezone` 순으로 정렬한 normalized rule을 기록한다. `provenance.calendarHash`는 schema validation을 통과한 rule과 fixture를 다음 방식으로 정규화한 뒤 기존 `createReplayResearchHash()`로 계산한다.
 
 - Rule은 `market`, `exchange`, `timezone` 순으로 정렬한다.

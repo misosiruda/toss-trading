@@ -272,6 +272,8 @@ export const validationSplitRegimeFeasibilityArtifactSchema =
         message: "summary roleCounts must match assignments"
       });
     }
+    validateAssignmentDiagnostics(value, context);
+    validateSummaryCandidateCounts(value, context);
     validateRoleAggregates(value, context);
     if (
       value.status === "available" &&
@@ -363,6 +365,80 @@ type FeasibilityArtifactValue = z.infer<
 >;
 type FeasibilityAssignment = FeasibilityArtifactValue["assignments"][number];
 type FeasibilityCandidate = FeasibilityAssignment["candidates"][number];
+
+function validateAssignmentDiagnostics(
+  value: FeasibilityArtifactValue,
+  context: z.RefinementCtx
+): void {
+  for (const assignment of value.assignments) {
+    const scopedCandidates = assignment.candidates.filter(
+      (candidate) => candidate.scopeAvailable
+    );
+    const regimeCounts = countCandidateRegimes(scopedCandidates);
+    if (!sameRegimeCounts(assignment.regimeCounts, regimeCounts)) {
+      addAggregateIssue(
+        context,
+        `assignment regimeCounts mismatch: ${assignment.splitId}/${assignment.splitRole}`
+      );
+    }
+
+    const availableTargetRegimes = value.config.targetRegimes.filter(
+      (regime) => regimeCounts[regime] > 0
+    );
+    const unavailableTargetRegimes = value.config.targetRegimes.filter(
+      (regime) => !availableTargetRegimes.includes(regime)
+    );
+    if (
+      !sameRegimeSet(
+        assignment.availableTargetRegimes,
+        availableTargetRegimes
+      )
+    ) {
+      addAggregateIssue(
+        context,
+        `assignment availableTargetRegimes mismatch: ${assignment.splitId}/${assignment.splitRole}`
+      );
+    }
+    if (
+      !sameRegimeSet(
+        assignment.unavailableTargetRegimes,
+        unavailableTargetRegimes
+      )
+    ) {
+      addAggregateIssue(
+        context,
+        `assignment unavailableTargetRegimes mismatch: ${assignment.splitId}/${assignment.splitRole}`
+      );
+    }
+  }
+}
+
+function validateSummaryCandidateCounts(
+  value: FeasibilityArtifactValue,
+  context: z.RefinementCtx
+): void {
+  const candidateCount = value.assignments.reduce(
+    (total, assignment) => total + assignment.candidates.length,
+    0
+  );
+  if (value.summary.candidateCount !== candidateCount) {
+    addAggregateIssue(
+      context,
+      "summary candidateCount must match assignment candidates"
+    );
+  }
+
+  const uniqueCandidates = deduplicatedRoleCandidates(
+    value.assignments,
+    context
+  );
+  if (value.summary.uniqueCandidateCount !== uniqueCandidates.size) {
+    addAggregateIssue(
+      context,
+      "summary uniqueCandidateCount must match scoped assignment candidates"
+    );
+  }
+}
 
 function validateRoleAggregates(
   value: FeasibilityArtifactValue,

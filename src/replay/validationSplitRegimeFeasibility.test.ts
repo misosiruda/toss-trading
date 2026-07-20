@@ -87,6 +87,83 @@ test("available artifact requires sufficient structural capacity per role", () =
   );
 });
 
+test("assignment diagnostics must match scoped candidate regimes", () => {
+  const available = completeAvailableArtifact();
+  const firstAssignment = available.assignments[0];
+
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      assignments: [
+        {
+          ...firstAssignment,
+          regimeCounts: {
+            bull: 0,
+            bear: 1,
+            sideways: 0,
+            mixed: 0,
+            insufficient_data: 0
+          }
+        },
+        ...available.assignments.slice(1)
+      ]
+    }).success,
+    false
+  );
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      assignments: [
+        {
+          ...firstAssignment,
+          availableTargetRegimes: [],
+          unavailableTargetRegimes: ["bull"]
+        },
+        ...available.assignments.slice(1)
+      ]
+    }).success,
+    false
+  );
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      assignments: [
+        {
+          ...firstAssignment,
+          availableTargetRegimes: ["bull", "bull"]
+        },
+        ...available.assignments.slice(1)
+      ]
+    }).success,
+    false
+  );
+});
+
+test("summary candidate totals must match assignment candidates", () => {
+  const available = completeAvailableArtifact();
+
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      summary: {
+        ...available.summary,
+        candidateCount: 4
+      }
+    }).success,
+    false
+  );
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      summary: {
+        ...available.summary,
+        uniqueCandidateCount: 2
+      }
+    }).success,
+    false
+  );
+});
+
 test("default classifier config exposes the precommitted effective values", () => {
   assert.equal(Object.isFrozen(DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG), true);
   assert.deepEqual(defaultMarketRegimeClassifierConfig(), {
