@@ -6,7 +6,10 @@ import {
   MARKET_REGIME_CLASSIFIER_VERSION,
   type MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
-import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import type {
+  HistoricalMarketSnapshot,
+  Sha256Hash
+} from "../domain/schemas.js";
 import {
   isoDateTimeSchema,
   sha256HashSchema
@@ -16,9 +19,15 @@ import {
   type HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
 import {
+  MarketCalendarFixtureIndex,
+  parseMarketCalendarFixtures,
+  type MarketCalendarFixture
+} from "./marketCalendar.js";
+import {
   replayWindowCandidates,
   type ReplayWindowCandidate
 } from "./replayWindowSampler.js";
+import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
   validationSplitRoleSchema,
   type ValidationSplitAssignment
@@ -113,6 +122,29 @@ const marketRegimeClassifierConfigSchema = z
     breadthThreshold: z.number().finite().min(0).max(1)
   })
   .strict();
+const feasibilityCandidateHashInputSchema = z
+  .object({
+    startAt: isoDateTimeSchema,
+    endAt: isoDateTimeSchema,
+    timezoneOffsetMinutes: z.number().int(),
+    windowMonths: z.number().int().positive(),
+    calendarHash: sha256HashSchema,
+    marketRegimeClassifierHash: sha256HashSchema,
+    candidateStrategyBucket: z.literal("short_term"),
+    scopeAvailable: z.boolean(),
+    dataSnapshotHash: sha256HashSchema,
+    universeHash: sha256HashSchema,
+    coverageHash: sha256HashSchema
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Date.parse(value.startAt) > Date.parse(value.endAt)) {
+      context.addIssue({
+        code: "custom",
+        message: "candidate hash startAt must be before or equal to endAt"
+      });
+    }
+  });
 const candidateSchema = z
   .object({
     startAt: isoDateTimeSchema,
@@ -350,6 +382,17 @@ export interface ValidationRoleCandidateAvailabilityResult {
   >;
 }
 
+export interface ValidationSplitRegimeFeasibilityProvenanceInput {
+  dataSnapshot: unknown;
+  universe: unknown;
+  coverage: unknown;
+  validationSplit: unknown;
+  calendarValidation: HistoricalDataAvailabilityCalendarOptions;
+  marketRegimeClassifier: z.infer<
+    typeof marketRegimeClassifierConfigSchema
+  >;
+}
+
 export function enumerateValidationRoleCandidates(input: {
   assignment: ValidationSplitAssignment;
   windowMonths: number;
@@ -511,6 +554,94 @@ export function maximumPairwiseTradingDateOverlapRatio(input: {
   return roundOverlapRatio(maximumOverlapRatio);
 }
 
+export function createValidationSplitRegimeFeasibilityProvenance(
+  input: ValidationSplitRegimeFeasibilityProvenanceInput
+): FeasibilityArtifactValue["provenance"] {
+  return {
+    dataSnapshotHash: createReplayResearchHash(input.dataSnapshot),
+    universeHash: createReplayResearchHash(input.universe),
+    coverageHash: createReplayResearchHash(input.coverage),
+    validationSplitHash: createReplayResearchHash(input.validationSplit),
+    calendarHash: createValidationFeasibilityCalendarHash(
+      input.calendarValidation
+    ),
+    marketRegimeClassifierHash:
+      createValidationFeasibilityClassifierHash(
+        input.marketRegimeClassifier
+      )
+  };
+}
+
+export function createValidationFeasibilityCalendarHash(
+  input: HistoricalDataAvailabilityCalendarOptions
+): Sha256Hash {
+  const rules = input.rules.map((rule) => calendarRuleSchema.parse(rule));
+  const markets = new Set<string>();
+  for (const rule of rules) {
+    if (markets.has(rule.market)) {
+      throw new Error(
+        `duplicate calendarValidation rule for market: ${rule.market}`
+      );
+    }
+    markets.add(rule.market);
+  }
+
+  const fixtures = parseMarketCalendarFixtures(input.fixtures);
+  new MarketCalendarFixtureIndex(fixtures);
+  return createReplayResearchHash({
+    rules: [...rules].sort(compareCalendarRules),
+    fixtures: fixtures
+      .map(normalizeCalendarFixtureForHash)
+      .sort(compareCalendarFixtures)
+  });
+}
+
+export function createValidationFeasibilityClassifierHash(
+  input: z.infer<typeof marketRegimeClassifierConfigSchema>
+): Sha256Hash {
+  return createReplayResearchHash(
+    marketRegimeClassifierConfigSchema.parse(input)
+  );
+}
+
+export function createValidationFeasibilityCandidateHash(
+  input: z.infer<typeof feasibilityCandidateHashInputSchema>
+): Sha256Hash {
+  return createReplayResearchHash(
+    feasibilityCandidateHashInputSchema.parse(input)
+  );
+}
+
+function normalizeCalendarFixtureForHash(
+  fixture: MarketCalendarFixture
+) {
+  return {
+    calendarId: fixture.calendarId,
+    exchange: fixture.exchange,
+    market: fixture.market,
+    timezone: fixture.timezone,
+    sessionDate: fixture.sessionDate,
+    marketOpen: fixture.marketOpen,
+    marketClose: fixture.marketClose,
+    isHoliday: fixture.isHoliday,
+    holidayName: fixture.holidayName ?? null,
+    sourceRefs: [...fixture.sourceRefs].sort(compareCanonicalStrings),
+    createdAt: fixture.createdAt
+  };
+}
+
+function compareCalendarFixtures(
+  left: ReturnType<typeof normalizeCalendarFixtureForHash>,
+  right: ReturnType<typeof normalizeCalendarFixtureForHash>
+): number {
+  return (
+    compareCanonicalStrings(left.market, right.market) ||
+    compareCanonicalStrings(left.exchange, right.exchange) ||
+    compareCanonicalStrings(left.sessionDate, right.sessionDate) ||
+    compareCanonicalStrings(left.calendarId, right.calendarId)
+  );
+}
+
 function candidateTradingDates(input: {
   candidate: ReplayWindowCandidate;
   snapshots: HistoricalMarketSnapshot[];
@@ -538,7 +669,9 @@ function roundOverlapRatio(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-export function defaultMarketRegimeClassifierConfig() {
+export function defaultMarketRegimeClassifierConfig(): z.infer<
+  typeof marketRegimeClassifierConfigSchema
+> {
   return {
     version: MARKET_REGIME_CLASSIFIER_VERSION,
     ...DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG
