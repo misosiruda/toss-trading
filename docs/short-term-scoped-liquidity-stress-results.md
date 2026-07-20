@@ -90,8 +90,9 @@ No-fill은 trade count 차이로 추정하지 않고 각 run의 risk decision에
 | `min-0.1` scoped partial과 no-fill 각각 1 이상 | partial 13, no-fill 47로 충족 |
 | `min-0.5` no-fill이 `min-0.1`보다 적지 않음 | 50 >= 47로 충족 |
 | 모든 scenario modeled liquidity | `notModeledLiquidityCount=0`으로 충족 |
+| Split role 일반화 | no-fill이 train에만 발생해 `inconclusive` 조건 적용 |
 
-사전 정의한 fixture gate는 모두 충족했다. 따라서 현재 scoped historical volume과 deterministic liquidity model 조합에서 participation cap과 minimum fill gate의 execution path를 검증하는 fixture는 `valid`다.
+사전 정의한 수치 및 provenance gate는 충족했다. 그러나 계획 문서의 `inconclusive` 조건은 stress event가 특정 split role에만 있어 다른 role로 일반화할 수 없는 경우를 포함한다. Partial fill은 세 role에서 관측됐지만 fail-closed no-fill 47건과 50건은 모두 train에만 발생했으므로 fixture의 최종 판정은 `inconclusive`다.
 
 ## Liquidity 결과
 
@@ -129,9 +130,9 @@ Impact cost 감소는 cap이 modeled filled participation을 제한하는 현재
 
 ## 판정과 한계
 
-Liquidity execution fixture는 `valid`다. `short_term` strategy 판정은 `inconclusive`를 유지한다.
+Liquidity execution fixture는 split-role evidence 부족으로 `inconclusive`다. `short_term` strategy 판정도 `inconclusive`를 유지한다.
 
-이번 실행은 기존 broad run의 `UNKNOWN` bucket 한계를 닫고 scoped candidate, trade, position, partial fill과 no-fill provenance를 확인했다. 그러나 available `short_term` symbol은 3개이고 role별 return sample은 3개다. 관측 regime도 bull 7, mixed 2로 bear와 sideways가 없으며 no-fill은 train에만 편중됐다. 실제 spread/depth, queue position, opportunity cost와 독립적인 PBO candidate matrix도 없다.
+이번 실행은 기존 broad run의 `UNKNOWN` bucket 한계를 닫고 scoped candidate, trade, position, partial fill과 no-fill provenance를 확인했다. 또한 현재 train assignment에서는 participation cap과 minimum fill gate가 partial/no-fill path를 만드는 것을 확인했다. 그러나 available `short_term` symbol은 3개이고 role별 return sample은 3개다. 관측 regime도 bull 7, mixed 2로 bear와 sideways가 없으며 no-fill은 train에만 편중됐다. 실제 spread/depth, queue position, opportunity cost와 독립적인 PBO candidate matrix도 없다.
 
 따라서 이번 결과는 deterministic backend의 scoped liquidity execution contract evidence이며 strategy 유효성, 실거래 parameter 또는 예상 체결 품질의 evidence가 아니다. 기존 broad 결과와 return 또는 cost를 직접 비교해 strategy 개선으로 해석하지 않는다.
 
