@@ -238,6 +238,8 @@ Candidate window 수는 Sharpe `returnSampleCount`나 independent holdout 수가
 - 같은 split의 train/validation/test 경계는 겹치면 안 된다.
 - 다른 walk-forward split 간 overlap은 허용될 수 있지만 명시적으로 집계한다.
 - Overlapping candidate를 반복 실행해 Sharpe minimum 30을 충족했다고 주장하지 않는다.
+- 이 feasibility artifact에는 overlap 허용 threshold를 두지 않으며 `maximumPairwiseOverlapRatio`는 informational evidence로만 기록한다.
+- Overlap ratio는 `available`, `insufficient`, `invalid` status 계산에 사용하지 않는다.
 - Independent sample 기준은 feasibility 결과를 확인한 뒤 별도 statistical validation plan에서 고정한다.
 
 ## 판정 Gate
@@ -259,7 +261,6 @@ Candidate window 수는 Sharpe `returnSampleCount`나 independent holdout 수가
 - 한 assignment의 짧은 role window는 허용되지만, 같은 role의 전체 assignment를 합친 deduplicated structural capacity가 target gate보다 작다.
 - 유효한 role range가 1개월 full window를 담지 못해 structural capacity가 0이다.
 - Calendar 또는 scoped availability 적용 후 필수 candidate가 사라진다.
-- Candidate는 존재하지만 overlap이 커서 independent evidence 확장 근거로 사용할 수 없다.
 - Bear/sideways 또는 validation/test role evidence가 현재 source에 없다.
 
 ### `invalid`
@@ -271,7 +272,7 @@ Candidate window 수는 Sharpe `returnSampleCount`나 independent holdout 수가
 - Corrupt line 또는 schema failure를 무시하고 candidate를 생성한다.
 - 결과 확인 후 regime threshold, role range, scope 또는 minimum count를 바꾼다.
 
-`available`은 role-local candidate가 존재한다는 뜻뿐이다. Replay fixture, strategy 유효성, Sharpe/PBO readiness는 별도 판정이다.
+`available`은 role-local candidate가 존재한다는 뜻뿐이다. 높은 overlap이 있어도 위 availability gate를 충족하면 status는 `available`이며, 이 값은 independent evidence 확보를 뜻하지 않는다. Replay fixture, strategy 유효성, Sharpe/PBO readiness는 별도 판정이다.
 
 Role aggregate가 `available`이어도 개별 split이 모든 regime을 지원한다는 뜻은 아니다. 후속 replay selection 계획은 candidate의 원래 `splitId`와 `splitRole`을 보존하고 서로 다른 split의 performance를 하나의 independent sample처럼 합치지 않는다.
 
@@ -321,6 +322,7 @@ Unavailable target regime은 다른 regime으로 자동 대체하지 않는다. 
 - 같은 input과 고정 `generatedAt`에서 candidate hash와 artifact가 deterministic
 - Calendar rule/fixture 순서만 다른 동일 입력에서 normalized rule과 `calendarHash`가 동일
 - Calendar rule, timezone, session, holiday 또는 fixture provenance 변경 시 `calendarHash`와 candidate hash가 변경
+- 높은 overlap에서도 role-regime availability gate만으로 status를 계산하고 `maximumPairwiseOverlapRatio`를 그대로 기록
 
 ### Fail-closed 흐름
 
