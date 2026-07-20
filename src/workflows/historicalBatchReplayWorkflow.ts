@@ -429,21 +429,28 @@ export async function runHistoricalBatchReplay(
     const runStartedAt = dateForRun(startedAt, runIndex);
     const windowStart = new Date(window.startAt);
     const windowEnd = new Date(window.endAt);
-    const availability = assessHistoricalDataAvailability({
+    const availability = applyCandidateStrategyBucketAvailability({
+      report: assessHistoricalDataAvailability({
+        snapshots: snapshotRead.records,
+        windowStart,
+        windowEnd,
+        corruptLineCount: snapshotRead.corruptLineCount,
+        minWindowSnapshots: options.minWindowSnapshots ?? 1,
+        minSnapshotsPerRequiredSymbol:
+          options.minSnapshotsPerRequiredSymbol ?? 1,
+        requiredSymbols: options.requiredSymbols ?? [],
+        ...(options.calendarValidation === undefined
+          ? {}
+          : { calendarValidation: options.calendarValidation }),
+        ...(options.fxValidation === undefined
+          ? {}
+          : { fxValidation: options.fxValidation })
+      }),
       snapshots: snapshotRead.records,
       windowStart,
       windowEnd,
-      corruptLineCount: snapshotRead.corruptLineCount,
       minWindowSnapshots: options.minWindowSnapshots ?? 1,
-      minSnapshotsPerRequiredSymbol:
-        options.minSnapshotsPerRequiredSymbol ?? 1,
-      requiredSymbols: options.requiredSymbols ?? [],
-      ...(options.calendarValidation === undefined
-        ? {}
-        : { calendarValidation: options.calendarValidation }),
-      ...(options.fxValidation === undefined
-        ? {}
-        : { fxValidation: options.fxValidation })
+      candidateStrategyBucket: options.candidateStrategyBucket
     });
     const marketRegime =
       windowSelection.marketRegime ??
@@ -1335,6 +1342,44 @@ function summarizeAvailability(
     requiredSymbolCount: report.requiredSymbolCount,
     availableRequiredSymbolCount: report.availableRequiredSymbolCount,
     issues: report.issues
+  };
+}
+
+function applyCandidateStrategyBucketAvailability(input: {
+  report: HistoricalDataAvailabilityReport;
+  snapshots: HistoricalMarketSnapshot[];
+  windowStart: Date;
+  windowEnd: Date;
+  minWindowSnapshots: number;
+  candidateStrategyBucket: StrategyBucket | undefined;
+}): HistoricalDataAvailabilityReport {
+  if (input.candidateStrategyBucket === undefined) {
+    return input.report;
+  }
+
+  const scopedWindowSnapshotCount = input.snapshots.filter((snapshot) => {
+    const observedAt = Date.parse(snapshot.observedAt);
+    return (
+      snapshot.strategyBucket === input.candidateStrategyBucket &&
+      observedAt >= input.windowStart.getTime() &&
+      observedAt <= input.windowEnd.getTime()
+    );
+  }).length;
+  const issues = [...input.report.issues];
+  if (scopedWindowSnapshotCount === 0) {
+    issues.push("CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_MISSING");
+  }
+  if (scopedWindowSnapshotCount < input.minWindowSnapshots) {
+    issues.push(
+      "CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"
+    );
+  }
+  const uniqueIssues = Array.from(new Set(issues));
+
+  return {
+    ...input.report,
+    status: uniqueIssues.length === 0 ? "available" : "insufficient",
+    issues: uniqueIssues
   };
 }
 

@@ -316,6 +316,70 @@ test("historical batch replay runner propagates candidate strategy bucket metada
   assert.equal(trialConfig["configHash"], researchManifest["configHash"]);
 });
 
+test("historical batch replay runner skips windows without scoped candidates", async () => {
+  const sourceDataDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-empty-scope-source-")
+  );
+  const outputBaseDir = await mkdtemp(
+    join(tmpdir(), "batch-replay-empty-scope-output-")
+  );
+  const sourcePaths = createStoragePaths(sourceDataDir);
+  const snapshotStore = new FileHistoricalMarketSnapshotStore(
+    sourcePaths.historicalMarketSnapshotsPath
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_005930_long_term_only",
+      "005930",
+      "2025-02-03T09:00:00+09:00",
+      70_000,
+      { strategyBucket: "long_term" }
+    )
+  );
+  await snapshotStore.append(
+    snapshot(
+      "hist_000660_missing_bucket",
+      "000660",
+      "2025-02-03T09:00:00+09:00",
+      120_000
+    )
+  );
+
+  const result = await runHistoricalBatchReplay({
+    sourceDataDir,
+    outputBaseDir,
+    batchId: "batch-empty-short-term-scope",
+    seed: "seed-empty-short-term-scope",
+    runCount: 1,
+    rangeStart: new Date("2025-02-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    generatedAt: new Date("2026-06-12T10:00:00+09:00"),
+    candidateStrategyBucket: "short_term",
+    minWindowSnapshots: 1
+  });
+  const runRecords = await readJsonl(result.runsPath);
+  const trialRecords = await readJsonl(result.selectionTrialsPath);
+  const runRecord = runRecords[0]!;
+  const availability = runRecord["dataAvailability"] as Record<string, unknown>;
+  const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
+  const trialOutcome = trialRecords[0]?.["outcome"] as Record<string, unknown>;
+
+  assert.equal(result.completedCount, 0);
+  assert.equal(result.skippedCount, 1);
+  assert.equal(runRecord["status"], "skipped");
+  assert.equal(runRecord["skipReason"], "DATA_INSUFFICIENT");
+  assert.equal(runRecord["summary"], null);
+  assert.equal(runRecord["reportPath"], null);
+  assert.equal(availability["status"], "insufficient");
+  assert.deepEqual(availability["issues"], [
+    "CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_MISSING",
+    "CANDIDATE_STRATEGY_BUCKET_WINDOW_SNAPSHOT_COUNT_BELOW_MINIMUM"
+  ]);
+  assert.equal(trialRecords[0]?.["status"], "skipped");
+  assert.equal(trialConfig["candidateStrategyBucket"], "short_term");
+  assert.equal(trialOutcome["skipReason"], "DATA_INSUFFICIENT");
+});
+
 test("historical batch replay runner rejects invalid candidate strategy bucket before artifacts", async () => {
   const sourceDataDir = await mkdtemp(join(tmpdir(), "batch-replay-invalid-scope-"));
   const outputBaseDir = await mkdtemp(join(tmpdir(), "batch-replay-invalid-output-"));
