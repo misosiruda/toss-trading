@@ -160,6 +160,8 @@ interface ValidationSplitRegimeFeasibilityArtifact {
 - `maximumPairwiseOverlapRatio`
 - `warnings`
 
+`regimeCounts`는 target 네 label과 classifier의 fail-closed `insufficient_data` label을 함께 기록한다. `insufficient_data`는 target regime으로 승격하거나 다른 label로 대체하지 않는다.
+
 `AssignmentRegimeFeasibility`는 진단용 row이며 최소한 다음 필드를 가진다.
 
 - `splitId`, `splitIndex`, `splitRole`

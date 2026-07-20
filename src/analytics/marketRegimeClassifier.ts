@@ -57,30 +57,40 @@ export type MarketRegimesByMarket = Partial<
   Record<Market, MarketRegimeClassification>
 >;
 
-const DEFAULT_MIN_SYMBOLS = 1;
-const DEFAULT_MIN_SNAPSHOTS_PER_SYMBOL = 2;
-const DEFAULT_BULL_RETURN_THRESHOLD = 0.03;
-const DEFAULT_BEAR_RETURN_THRESHOLD = -0.03;
-const DEFAULT_SIDEWAYS_ABS_RETURN_THRESHOLD = 0.01;
-const DEFAULT_BREADTH_THRESHOLD = 0.6;
+export const MARKET_REGIME_CLASSIFIER_VERSION =
+  "market_regime_classifier.v1";
+export const DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG = Object.freeze({
+  minSymbols: 1,
+  minSnapshotsPerSymbol: 2,
+  bullReturnThreshold: 0.03,
+  bearReturnThreshold: -0.03,
+  sidewaysAbsReturnThreshold: 0.01,
+  breadthThreshold: 0.6
+} as const);
 
 export function classifyMarketRegime(
   options: MarketRegimeClassifierOptions
 ): MarketRegimeClassification {
   validateOptions(options);
 
-  const minSymbols = options.minSymbols ?? DEFAULT_MIN_SYMBOLS;
+  const minSymbols =
+    options.minSymbols ?? DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.minSymbols;
   const minSnapshotsPerSymbol =
-    options.minSnapshotsPerSymbol ?? DEFAULT_MIN_SNAPSHOTS_PER_SYMBOL;
+    options.minSnapshotsPerSymbol ??
+    DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.minSnapshotsPerSymbol;
   const thresholds = {
     bullReturnThreshold:
-      options.bullReturnThreshold ?? DEFAULT_BULL_RETURN_THRESHOLD,
+      options.bullReturnThreshold ??
+      DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.bullReturnThreshold,
     bearReturnThreshold:
-      options.bearReturnThreshold ?? DEFAULT_BEAR_RETURN_THRESHOLD,
+      options.bearReturnThreshold ??
+      DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.bearReturnThreshold,
     sidewaysAbsReturnThreshold:
       options.sidewaysAbsReturnThreshold ??
-      DEFAULT_SIDEWAYS_ABS_RETURN_THRESHOLD,
-    breadthThreshold: options.breadthThreshold ?? DEFAULT_BREADTH_THRESHOLD
+      DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.sidewaysAbsReturnThreshold,
+    breadthThreshold:
+      options.breadthThreshold ??
+      DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.breadthThreshold
   };
   const windowSnapshots = options.snapshots
     .filter((snapshot) =>
@@ -307,9 +317,13 @@ function validateOptions(options: MarketRegimeClassifierOptions): void {
   if (options.windowStart.getTime() > options.windowEnd.getTime()) {
     throw new Error("windowStart must be before or equal to windowEnd");
   }
-  validatePositiveInteger(options.minSymbols ?? DEFAULT_MIN_SYMBOLS, "minSymbols");
   validatePositiveInteger(
-    options.minSnapshotsPerSymbol ?? DEFAULT_MIN_SNAPSHOTS_PER_SYMBOL,
+    options.minSymbols ?? DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.minSymbols,
+    "minSymbols"
+  );
+  validatePositiveInteger(
+    options.minSnapshotsPerSymbol ??
+      DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG.minSnapshotsPerSymbol,
     "minSnapshotsPerSymbol"
   );
 }
