@@ -164,7 +164,7 @@ Scope가 다른 run은 같은 validation candidate로 합치지 않는다. Cost 
 8. Merge 후 `short_term` bucket scoped liquidity stress 계획을 별도 문서로 사전 고정한다.
 9. Generated artifact는 `data/`에만 두고 결과 문서 PR에서 bucket 귀속과 fixture gate를 다시 판정한다.
 
-이번 batch CLI PR에서는 위 순서의 5번만 구현한다. Single replay CLI option, replay 재실행, threshold 변경 또는 strategy 판정 변경은 포함하지 않는다.
+이번 single replay CLI PR에서는 위 순서의 6번만 구현한다. Replay 재실행, threshold 변경 또는 strategy 판정 변경은 포함하지 않는다. Single replay CLI에는 `--strategy-preset` surface가 없으므로 preset 기능을 새로 추가하지 않고 candidate scope option 자체의 schema validation만 적용한다.
 
 ## Safety Boundary
 

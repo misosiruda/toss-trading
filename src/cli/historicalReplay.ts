@@ -38,7 +38,11 @@ import {
   FileHistoricalMarketSnapshotStore
 } from "../storage/repositories.js";
 import { runHistoricalReplayWorkflow } from "../workflows/historicalReplayWorkflow.js";
-import type { Market } from "../domain/schemas.js";
+import {
+  strategyBucketSchema,
+  type Market,
+  type StrategyBucket
+} from "../domain/schemas.js";
 
 const VALUE_OPTION_NAMES = new Set([
   "--data-dir",
@@ -75,6 +79,7 @@ const VALUE_OPTION_NAMES = new Set([
   "--min-snapshots-per-symbol",
   "--required-symbols",
   "--universe-path",
+  "--candidate-strategy-bucket",
   ...CALENDAR_VALIDATION_VALUE_OPTION_NAMES,
   ...FX_VALIDATION_VALUE_OPTION_NAMES,
   "--run-id",
@@ -87,6 +92,7 @@ const positionalArgs = collectPositionalArgs(args);
 const dryRun = args.includes("--dry-run");
 const dataDir = readArgValue("--data-dir") ?? positionalArgs[0] ?? "data/paper";
 const universeManifest = readUniverseManifestArg();
+const candidateStrategyBucket = readCandidateStrategyBucketArg();
 const timezoneOffsetMinutes = readNumberArg("--timezone-offset-minutes", 540);
 const replayWindow = args.includes("--random-window")
   ? selectReplayWindow({
@@ -223,6 +229,9 @@ const result = await runHistoricalReplayWorkflow({
   ...(batchRunIndex === undefined ? {} : { batchRunIndex }),
   ...(replayWindow === null ? {} : { windowSelection: replayWindow }),
   ...(universeManifest === undefined ? {} : { universeManifest }),
+  ...(candidateStrategyBucket === undefined
+    ? {}
+    : { candidateStrategyBucket }),
   constraints: riskProfile.constraints,
   riskProfile: riskProfile.name,
   riskPolicy: riskProfile.riskPolicy,
@@ -299,6 +308,32 @@ function readArgValue(name: string): string | undefined {
   }
 
   return value;
+}
+
+function readOptionalArgValue(name: string): string | undefined {
+  const value = readArgValue(name);
+  if (value === undefined && args.includes(name)) {
+    throw new Error(`${name} requires a value`);
+  }
+  if (value !== undefined && value.trim().length === 0) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
+}
+
+function readCandidateStrategyBucketArg(): StrategyBucket | undefined {
+  const value = readOptionalArgValue("--candidate-strategy-bucket");
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = strategyBucketSchema.safeParse(value.trim());
+  if (!parsed.success) {
+    throw new Error(
+      `--candidate-strategy-bucket must be one of ${strategyBucketSchema.options.join(", ")}`
+    );
+  }
+  return parsed.data;
 }
 
 function readUniverseManifestArg() {
