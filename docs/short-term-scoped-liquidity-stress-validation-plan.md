@@ -207,7 +207,7 @@ foreach ($Scenario in $Scenarios) {
 
 - `batch-replay-manifest.json`
 - `batch-replay-runs.jsonl`
-- `selection-trials.jsonl`
+- `batch-replay-selection-trials.jsonl`
 - `batch-replay-aggregate-report.json`
 - 각 run의 metadata, packet, trade, risk decision과 research manifest artifact
 
