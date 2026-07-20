@@ -1,13 +1,20 @@
 import { z } from "zod";
 
 import {
+  classifyMarketRegime,
   DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG,
-  MARKET_REGIME_CLASSIFIER_VERSION
+  MARKET_REGIME_CLASSIFIER_VERSION,
+  type MarketRegimeLabel
 } from "../analytics/marketRegimeClassifier.js";
+import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
 import {
   isoDateTimeSchema,
   sha256HashSchema
 } from "../domain/schemas.js";
+import {
+  assessHistoricalDataAvailability,
+  type HistoricalDataAvailabilityCalendarOptions
+} from "./historicalDataAvailability.js";
 import {
   replayWindowCandidates,
   type ReplayWindowCandidate
@@ -324,6 +331,24 @@ export interface ValidationRoleCandidateEnumeration {
   >;
 }
 
+export interface ValidationRoleCandidateAssessment {
+  startAt: string;
+  endAt: string;
+  regime: MarketRegimeLabel;
+  scopeAvailable: boolean;
+}
+
+export interface ValidationRoleCandidateAvailabilityResult {
+  roleWindow: ValidationRoleWindow;
+  structuralCapacityCount: number;
+  candidates: ValidationRoleCandidateAssessment[];
+  calendarRejectedCandidateCount: number;
+  scopeUnavailableCandidateCount: number;
+  warnings: Array<
+    z.infer<typeof validationSplitRegimeFeasibilityWarningSchema>
+  >;
+}
+
 export function enumerateValidationRoleCandidates(input: {
   assignment: ValidationSplitAssignment;
   windowMonths: number;
@@ -354,6 +379,85 @@ export function enumerateValidationRoleCandidates(input: {
             }
           ]
         : []
+  };
+}
+
+export function assessValidationRoleCandidateAvailability(input: {
+  enumeration: ValidationRoleCandidateEnumeration;
+  snapshots: HistoricalMarketSnapshot[];
+  calendarValidation: HistoricalDataAvailabilityCalendarOptions;
+  candidateStrategyBucket: "short_term";
+}): ValidationRoleCandidateAvailabilityResult {
+  if (input.candidateStrategyBucket !== "short_term") {
+    throw new Error("candidateStrategyBucket must be short_term");
+  }
+
+  const candidates: ValidationRoleCandidateAssessment[] = [];
+  const warnings = [...input.enumeration.warnings];
+  let calendarRejectedCandidateCount = 0;
+  let scopeUnavailableCandidateCount = 0;
+
+  for (const candidate of input.enumeration.candidates) {
+    const windowStart = new Date(candidate.startMs);
+    const windowEnd = new Date(candidate.endMs);
+    const availability = assessHistoricalDataAvailability({
+      snapshots: input.snapshots,
+      windowStart,
+      windowEnd,
+      minWindowSnapshots: 0,
+      calendarValidation: input.calendarValidation
+    });
+    if (
+      (availability.calendarValidation?.rejectedSnapshotCount ?? 0) > 0
+    ) {
+      calendarRejectedCandidateCount += 1;
+      warnings.push({
+        code: "ROLE_CANDIDATE_CALENDAR_REJECTED",
+        message: "validation role candidate failed calendar validation",
+        splitId: input.enumeration.roleWindow.splitId,
+        splitRole: input.enumeration.roleWindow.splitRole
+      });
+      continue;
+    }
+
+    const scopedSnapshotCount = input.snapshots.filter((snapshot) => {
+      const observedAt = Date.parse(snapshot.observedAt);
+      return (
+        snapshot.strategyBucket === input.candidateStrategyBucket &&
+        observedAt >= candidate.startMs &&
+        observedAt <= candidate.endMs
+      );
+    }).length;
+    const scopeAvailable = scopedSnapshotCount > 0;
+    if (!scopeAvailable) {
+      scopeUnavailableCandidateCount += 1;
+      warnings.push({
+        code: "ROLE_CANDIDATE_SCOPE_UNAVAILABLE",
+        message: "validation role candidate has no scoped new-buy snapshot",
+        splitId: input.enumeration.roleWindow.splitId,
+        splitRole: input.enumeration.roleWindow.splitRole
+      });
+    }
+
+    candidates.push({
+      startAt: windowStart.toISOString(),
+      endAt: windowEnd.toISOString(),
+      regime: classifyMarketRegime({
+        snapshots: input.snapshots,
+        windowStart,
+        windowEnd
+      }).label,
+      scopeAvailable
+    });
+  }
+
+  return {
+    roleWindow: input.enumeration.roleWindow,
+    structuralCapacityCount: input.enumeration.structuralCapacityCount,
+    candidates,
+    calendarRejectedCandidateCount,
+    scopeUnavailableCandidateCount,
+    warnings
   };
 }
 

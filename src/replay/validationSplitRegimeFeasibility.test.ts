@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
+import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import { parseMarketCalendarFixture } from "./marketCalendar.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
+  assessValidationRoleCandidateAvailability,
   defaultMarketRegimeClassifierConfig,
   enumerateValidationRoleCandidates,
+  type ValidationRoleCandidateEnumeration,
   validationSplitRegimeFeasibilityArtifactSchema
 } from "./validationSplitRegimeFeasibility.js";
 import { validationRoleWindow } from "./validationRoleWindow.js";
@@ -347,6 +351,175 @@ test("train role fails closed when embargo removes the full role range", () => {
     /no non-embargo replay range/
   );
 });
+
+test("candidate availability keeps calendar-valid short-term scope", () => {
+  const result = assessValidationRoleCandidateAvailability({
+    enumeration: candidateEnumeration(),
+    snapshots: candidateSnapshots("short_term"),
+    calendarValidation: openCalendarValidation(),
+    candidateStrategyBucket: "short_term"
+  });
+
+  assert.deepEqual(result.candidates, [
+    {
+      startAt: "2025-02-03T00:00:00.000Z",
+      endAt: "2025-02-03T23:59:59.999Z",
+      regime: "bull",
+      scopeAvailable: true
+    }
+  ]);
+  assert.equal(result.calendarRejectedCandidateCount, 0);
+  assert.equal(result.scopeUnavailableCandidateCount, 0);
+  assert.deepEqual(result.warnings, []);
+});
+
+test("candidate availability does not fallback across strategy buckets", () => {
+  const result = assessValidationRoleCandidateAvailability({
+    enumeration: candidateEnumeration(),
+    snapshots: candidateSnapshots("long_term"),
+    calendarValidation: openCalendarValidation(),
+    candidateStrategyBucket: "short_term"
+  });
+
+  assert.equal(result.candidates[0]?.scopeAvailable, false);
+  assert.equal(result.scopeUnavailableCandidateCount, 1);
+  assert.deepEqual(result.warnings, [
+    {
+      code: "ROLE_CANDIDATE_SCOPE_UNAVAILABLE",
+      message: "validation role candidate has no scoped new-buy snapshot",
+      splitId: "split-0",
+      splitRole: "test"
+    }
+  ]);
+});
+
+test("candidate availability excludes calendar-invalid windows", () => {
+  const calendarValidation = openCalendarValidation();
+  calendarValidation.fixtures = [
+    parseMarketCalendarFixture({
+      ...calendarValidation.fixtures[0],
+      marketOpen: null,
+      marketClose: null,
+      isHoliday: true,
+      holidayName: "fixture holiday"
+    })
+  ];
+  const result = assessValidationRoleCandidateAvailability({
+    enumeration: candidateEnumeration(),
+    snapshots: candidateSnapshots("short_term"),
+    calendarValidation,
+    candidateStrategyBucket: "short_term"
+  });
+
+  assert.deepEqual(result.candidates, []);
+  assert.equal(result.calendarRejectedCandidateCount, 1);
+  assert.equal(result.scopeUnavailableCandidateCount, 0);
+  assert.deepEqual(result.warnings, [
+    {
+      code: "ROLE_CANDIDATE_CALENDAR_REJECTED",
+      message: "validation role candidate failed calendar validation",
+      splitId: "split-0",
+      splitRole: "test"
+    }
+  ]);
+});
+
+test("candidate availability rejects non-short-term runtime input", () => {
+  assert.throws(
+    () =>
+      assessValidationRoleCandidateAvailability({
+        enumeration: candidateEnumeration(),
+        snapshots: candidateSnapshots("short_term"),
+        calendarValidation: openCalendarValidation(),
+        candidateStrategyBucket: "long_term" as "short_term"
+      }),
+    /candidateStrategyBucket must be short_term/
+  );
+});
+
+function candidateEnumeration(): ValidationRoleCandidateEnumeration {
+  return {
+    roleWindow: {
+      splitId: "split-0",
+      splitIndex: 0,
+      splitRole: "test",
+      roleStart: "2025-02-03T00:00:00.000Z",
+      roleEnd: "2025-02-03T23:59:59.999Z",
+      effectiveRoleEnd: null
+    },
+    structuralCapacityCount: 1,
+    candidates: [
+      {
+        selectedMonth: "2025-02",
+        localStartDate: "2025-02-03",
+        localEndDate: "2025-02-03",
+        startMs: Date.parse("2025-02-03T00:00:00.000Z"),
+        endMs: Date.parse("2025-02-03T23:59:59.999Z")
+      }
+    ],
+    warnings: []
+  };
+}
+
+function candidateSnapshots(
+  strategyBucket: HistoricalMarketSnapshot["strategyBucket"]
+): HistoricalMarketSnapshot[] {
+  return [
+    candidateSnapshot("snapshot-1", "2025-02-03T01:00:00.000Z", 100),
+    candidateSnapshot(
+      "snapshot-2",
+      "2025-02-03T05:00:00.000Z",
+      105,
+      strategyBucket
+    )
+  ];
+}
+
+function candidateSnapshot(
+  snapshotId: string,
+  observedAt: string,
+  lastPriceKrw: number,
+  strategyBucket?: HistoricalMarketSnapshot["strategyBucket"]
+): HistoricalMarketSnapshot {
+  return {
+    snapshotId,
+    market: "KR",
+    symbol: "TEST",
+    observedAt,
+    interval: "1m",
+    lastPriceKrw,
+    volume: 1_000,
+    ...(strategyBucket === undefined ? {} : { strategyBucket }),
+    sourceRefs: [`fixture:${snapshotId}`],
+    createdAt: observedAt
+  };
+}
+
+function openCalendarValidation() {
+  return {
+    rules: [
+      {
+        market: "KR" as const,
+        exchange: "KRX",
+        timezone: "Asia/Seoul" as const
+      }
+    ],
+    fixtures: [
+      parseMarketCalendarFixture({
+        calendarId: "calendar.krx.2025-02-03",
+        exchange: "KRX",
+        market: "KR",
+        timezone: "Asia/Seoul",
+        sessionDate: "2025-02-03",
+        marketOpen: "2025-02-03T00:00:00.000Z",
+        marketClose: "2025-02-03T06:30:00.000Z",
+        isHoliday: false,
+        sourceRefs: ["fixture:calendar.krx.2025-02-03"],
+        createdAt: "2026-07-20T00:00:00.000Z"
+      })
+    ]
+  };
+}
 
 function assignment(
   splitRole: ValidationSplitAssignment["splitRole"],
