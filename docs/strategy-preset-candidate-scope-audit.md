@@ -186,7 +186,7 @@ node --test dist/market/historicalPacketBuilder.test.js dist/replay/historicalRe
 8. Merge 후 `short_term` bucket scoped liquidity stress 계획을 별도 문서로 사전 고정한다.
 9. Generated artifact는 `data/`에만 두고 결과 문서 PR에서 bucket 귀속과 fixture gate를 다시 판정한다.
 
-이번 documentation PR에서는 위 순서의 8번만 수행한다. [Short-Term Scoped Liquidity Stress Validation 계획](short-term-scoped-liquidity-stress-validation-plan.md)에 scope provenance, scenario, fixture gate, 중단 조건과 artifact 경계를 사전 고정한다. Replay 실행, generated artifact, threshold 또는 strategy 판정 변경은 포함하지 않는다.
+위 순서의 8번은 [Short-Term Scoped Liquidity Stress Validation 계획](short-term-scoped-liquidity-stress-validation-plan.md)으로 완료했고, 9번은 [Short-Term Scoped Liquidity Stress Validation 결과](short-term-scoped-liquidity-stress-results.md)로 기록했다. Scoped provenance와 수치 gate는 충족했지만 no-fill이 train role에만 발생해 liquidity execution fixture와 `short_term` strategy 판정은 모두 `inconclusive`를 유지한다. Generated artifact는 `data/`에만 보관하고 repository에는 포함하지 않는다.
 
 ## Safety Boundary
 
