@@ -11,8 +11,10 @@ import type {
   Sha256Hash
 } from "../domain/schemas.js";
 import {
+  assetTypeSchema,
   historicalMarketSnapshotSchema,
   isoDateTimeSchema,
+  marketSchema,
   parseWithSchema,
   sha256HashSchema,
   strategyBucketSchema
@@ -22,6 +24,7 @@ import {
   type HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
 import {
+  assessHistoricalUniverseCoverage,
   historicalUniverseManifestSchema,
   type HistoricalUniverseManifest
 } from "./historicalUniverseCoverage.js";
@@ -153,14 +156,45 @@ const feasibilityCandidateHashInputSchema = z
       });
     }
   });
-const feasibilityCoverageGateSchema = z
+const nonnegativeCoverageCountSchema = z.number().int().nonnegative();
+const feasibilityCoverageSourceSchema = z
   .object({
+    mode: z.literal("paper_only"),
+    universeId: z.string().trim().min(1),
     status: z.literal("available"),
+    rangeStart: isoDateTimeSchema,
+    rangeEnd: isoDateTimeSchema,
+    timezoneOffsetMinutes: z.number().int(),
+    minMonthlyCoverageRatio: z.number().finite().min(0).max(1),
+    minSnapshotsPerSymbol: nonnegativeCoverageCountSchema,
+    minAvailableSymbolCount: nonnegativeCoverageCountSchema,
+    minAvailableMarketSymbolCounts: z.partialRecord(
+      marketSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    minAvailableAssetTypeSymbolCounts: z.partialRecord(
+      assetTypeSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    minAvailableStrategyBucketSymbolCounts: z.partialRecord(
+      strategyBucketSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    requireOptionalSymbols: z.boolean(),
+    requiredMarkets: z.array(marketSchema),
+    requiredAssetTypes: z.array(assetTypeSchema),
+    requiredStrategyBuckets: z.array(strategyBucketSchema),
     corruptLineCount: z.literal(0),
     availableStrategyBuckets: z.array(strategyBucketSchema)
   })
   .passthrough()
   .superRefine((value, context) => {
+    if (Date.parse(value.rangeStart) > Date.parse(value.rangeEnd)) {
+      context.addIssue({
+        code: "custom",
+        message: "coverage rangeStart must be before or equal to rangeEnd"
+      });
+    }
     if (!value.availableStrategyBuckets.includes("short_term")) {
       context.addIssue({
         code: "custom",
@@ -653,11 +687,11 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
   assertUniqueSnapshotIds(snapshots);
   assertSnapshotsInsideUniverse(snapshots, universe);
   const targetRegimes = normalizeTargetRegimes(options.targetRegimes);
-  parseWithSchema(
-    feasibilityCoverageGateSchema,
-    options.coverage,
-    "validation feasibility coverage gate"
-  );
+  const coverage = validateCoverageAgainstAssessedSource({
+    coverage: options.coverage,
+    snapshots,
+    universe
+  });
   const classifierConfig = defaultMarketRegimeClassifierConfig();
   const calendarRules = normalizeCalendarRules(
     options.calendarValidation.rules
@@ -665,7 +699,7 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
   const provenance = createValidationSplitRegimeFeasibilityProvenance({
     dataSnapshot: snapshots,
     universe: options.universe,
-    coverage: options.coverage,
+    coverage,
     validationSplit: options.validationSplit,
     calendarValidation: options.calendarValidation,
     marketRegimeClassifier: classifierConfig
@@ -1132,6 +1166,66 @@ function assertSnapshotsInsideUniverse(
       );
     }
   }
+}
+
+function validateCoverageAgainstAssessedSource(input: {
+  coverage: unknown;
+  snapshots: HistoricalMarketSnapshot[];
+  universe: HistoricalUniverseManifest;
+}): z.infer<typeof feasibilityCoverageSourceSchema> {
+  const coverage = parseWithSchema(
+    feasibilityCoverageSourceSchema,
+    input.coverage,
+    "validation feasibility coverage gate"
+  );
+  if (coverage.universeId !== input.universe.universeId) {
+    throw new Error(
+      `coverage universeId does not match assessed universe: ${coverage.universeId}`
+    );
+  }
+  const rangeStart = new Date(coverage.rangeStart);
+  const rangeEnd = new Date(coverage.rangeEnd);
+  for (const snapshot of input.snapshots) {
+    const observedAt = Date.parse(snapshot.observedAt);
+    if (
+      observedAt < rangeStart.getTime() ||
+      observedAt > rangeEnd.getTime()
+    ) {
+      throw new Error(
+        `historical snapshot is outside coverage range: ${snapshot.snapshotId}`
+      );
+    }
+  }
+  const recomputed = assessHistoricalUniverseCoverage({
+    snapshots: input.snapshots,
+    universe: input.universe,
+    rangeStart,
+    rangeEnd,
+    corruptLineCount: coverage.corruptLineCount,
+    timezoneOffsetMinutes: coverage.timezoneOffsetMinutes,
+    minMonthlyCoverageRatio: coverage.minMonthlyCoverageRatio,
+    minSnapshotsPerSymbol: coverage.minSnapshotsPerSymbol,
+    minAvailableSymbolCount: coverage.minAvailableSymbolCount,
+    minAvailableMarketSymbolCounts:
+      coverage.minAvailableMarketSymbolCounts,
+    minAvailableAssetTypeSymbolCounts:
+      coverage.minAvailableAssetTypeSymbolCounts,
+    minAvailableStrategyBucketSymbolCounts:
+      coverage.minAvailableStrategyBucketSymbolCounts,
+    requireOptionalSymbols: coverage.requireOptionalSymbols,
+    requiredMarkets: coverage.requiredMarkets,
+    requiredAssetTypes: coverage.requiredAssetTypes,
+    requiredStrategyBuckets: coverage.requiredStrategyBuckets
+  });
+  if (
+    createReplayResearchHash(coverage) !==
+    createReplayResearchHash(recomputed)
+  ) {
+    throw new Error(
+      "coverage report does not match assessed snapshots and universe"
+    );
+  }
+  return coverage;
 }
 
 function compareHistoricalSnapshotsForProvenance(

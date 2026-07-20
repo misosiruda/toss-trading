@@ -3,6 +3,11 @@ import test from "node:test";
 
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
 import type { HistoricalMarketSnapshot } from "../domain/schemas.js";
+import {
+  assessHistoricalUniverseCoverage,
+  historicalUniverseManifestSchema,
+  type HistoricalUniverseCoverageReport
+} from "./historicalUniverseCoverage.js";
 import { parseMarketCalendarFixture } from "./marketCalendar.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
@@ -432,30 +437,18 @@ test("feasibility builder creates deterministic available role aggregates", () =
   );
 });
 
-test("feasibility builder closes insufficient without bucket fallback", () => {
+test("feasibility builder rejects stale coverage before bucket fallback", () => {
   const options = feasibilityBuilderOptions();
-  const artifact = buildValidationSplitRegimeFeasibilityArtifact({
-    ...options,
-    snapshots: options.snapshots.map((snapshot) => ({
-      ...snapshot,
-      strategyBucket: "long_term"
-    }))
-  });
-
-  assert.equal(artifact.status, "insufficient");
-  assert.equal(artifact.summary.uniqueCandidateCount, 0);
-  assert.equal(artifact.summary.unavailableRoleRegimeCount, 3);
-  assert.equal(
-    artifact.assignments.every(
-      (item) => item.candidates[0]?.scopeAvailable === false
-    ),
-    true
-  );
-  assert.equal(
-    artifact.warnings.every(
-      (warning) => warning.code === "ROLE_CANDIDATE_SCOPE_UNAVAILABLE"
-    ),
-    true
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        snapshots: options.snapshots.map((snapshot) => ({
+          ...snapshot,
+          strategyBucket: "long_term"
+        }))
+      }),
+    /coverage report does not match assessed snapshots and universe/
   );
 });
 
@@ -508,6 +501,7 @@ test("feasibility builder deduplicates overlapping role capacity", () => {
 
 test("feasibility builder rejects malformed contracts", () => {
   const options = feasibilityBuilderOptions();
+  const coverage = options.coverage as HistoricalUniverseCoverageReport;
   assert.throws(
     () =>
       buildValidationSplitRegimeFeasibilityArtifact({
@@ -625,6 +619,33 @@ test("feasibility builder rejects malformed contracts", () => {
         )
       }),
     /historical snapshot is outside declared universe: KR:OUTSIDE/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        coverage: { ...coverage, universeId: "stale-universe" }
+      }),
+    /coverage universeId does not match assessed universe/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        coverage: {
+          ...coverage,
+          rangeEnd: "2025-02-28T14:59:59.999Z"
+        }
+      }),
+    /historical snapshot is outside coverage range/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        snapshots: options.snapshots.slice(0, -1)
+      }),
+    /coverage report does not match assessed snapshots and universe/
   );
 });
 
@@ -993,7 +1014,7 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
       `builder-snapshot-${index}`,
       observedAt,
       index % 2 === 0 ? 100 : 105,
-      index % 2 === 0 ? undefined : "short_term"
+      "short_term"
     );
   });
   const fixtures = sessionDates.map((sessionDate) =>
@@ -1013,30 +1034,42 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
   const assignments = (["train", "validation", "test"] as const).map(
     (splitRole) => ({ ...baseAssignment, splitRole })
   );
+  const universeSource = {
+    mode: "paper_only_historical_universe",
+    universeId: "builder-universe",
+    snapshotDate: "2025-01-01",
+    symbols: [
+      {
+        market: "KR",
+        symbol: "TEST",
+        strategyBucket: "short_term",
+        required: true
+      }
+    ],
+    disclaimer: "Paper-only feasibility test universe."
+  } as const;
+  const universe = historicalUniverseManifestSchema.parse(universeSource);
+  const coverage = assessHistoricalUniverseCoverage({
+    snapshots,
+    universe,
+    rangeStart: new Date("2024-12-31T15:00:00.000Z"),
+    rangeEnd: new Date("2025-03-31T14:59:59.999Z"),
+    corruptLineCount: 0,
+    timezoneOffsetMinutes: 540,
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    minAvailableStrategyBucketSymbolCounts: { short_term: 1 },
+    requiredMarkets: ["KR"],
+    requiredStrategyBuckets: ["short_term"]
+  });
 
   return {
     generatedAt: "2026-07-20T00:00:00.000Z",
     assignments,
     snapshots,
-    universe: {
-      mode: "paper_only_historical_universe",
-      universeId: "builder-universe",
-      snapshotDate: "2025-01-01",
-      symbols: [
-        {
-          market: "KR",
-          symbol: "TEST",
-          strategyBucket: "short_term",
-          required: true
-        }
-      ],
-      disclaimer: "Paper-only feasibility test universe."
-    },
-    coverage: {
-      status: "available",
-      corruptLineCount: 0,
-      availableStrategyBuckets: ["short_term"]
-    },
+    universe: universeSource,
+    coverage,
     validationSplit: { assignments },
     calendarValidation: {
       rules: [
