@@ -281,8 +281,16 @@ test("historical replay CLI writes batch run metadata", () => {
   writeFileSync(
     join(dataDir, "historical-market-snapshots.jsonl"),
     [
-      JSON.stringify(snapshot("hist_005930_001", "005930")),
-      JSON.stringify(snapshot("hist_000660_001", "000660"))
+      JSON.stringify(
+        snapshot("hist_005930_001", "005930", {
+          strategyBucket: "short_term"
+        })
+      ),
+      JSON.stringify(
+        snapshot("hist_000660_001", "000660", {
+          strategyBucket: "short_term"
+        })
+      )
     ].join("\n") + "\n",
     "utf8"
   );
@@ -313,6 +321,8 @@ test("historical replay CLI writes batch run metadata", () => {
       "2",
       "--run-id",
       "batch-smoke-run-002",
+      "--candidate-strategy-bucket",
+      "short_term",
       "--universe-path",
       universePath
     ],
@@ -349,6 +359,7 @@ test("historical replay CLI writes batch run metadata", () => {
   assert.equal(executionPolicy["marketImpactBpsPerParticipationRate"], 500);
   assert.equal(executionPolicy["halfSpreadBps"], 10);
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.15);
+  assert.equal(configuration["candidateStrategyBucket"], "short_term");
   assert.equal(manifest["universeSnapshotDate"], "2025-01-01");
   assert.equal(
     manifest["costModelHash"],
@@ -358,6 +369,38 @@ test("historical replay CLI writes batch run metadata", () => {
         marketImpactBpsPerParticipationRate: 500
       })
     )
+  );
+});
+
+test("historical replay CLI rejects missing candidate strategy bucket value", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--candidate-strategy-bucket"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--candidate-strategy-bucket requires a value/);
+});
+
+test("historical replay CLI rejects invalid candidate strategy bucket", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalReplay.js"),
+      "--candidate-strategy-bucket",
+      "regime_cash"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--candidate-strategy-bucket must be one of long_term, swing, short_term, intraday, hedge/
   );
 });
 
