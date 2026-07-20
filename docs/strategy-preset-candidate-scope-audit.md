@@ -152,6 +152,28 @@ Scope가 다른 run은 같은 validation candidate로 합치지 않는다. Cost 
 - Existing held position의 exit와 mark-to-market은 candidate scope에서도 유지한다.
 - `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only` 기본 경계를 유지한다.
 
+## 통합 회귀 검증
+
+2026-07-20 `main`의 `737873c` 기준으로 candidate scope 관련 test file 11개를 함께 실행했다.
+
+```bash
+npm run build
+node --test dist/market/historicalPacketBuilder.test.js dist/replay/historicalReplayRunner.test.js dist/replay/codexHistoricalReplayRunner.test.js dist/paper/virtualDecisionValidation.test.js dist/paper/virtualDecisionRegression.test.js dist/workflows/historicalReplayWorkflowPlan.test.js dist/workflows/historicalReplayWorkflow.test.js dist/workflows/historicalBatchReplayWorkflow.test.js dist/replay/selectionTrialLog.test.js dist/reports/batchReplayReport.test.js dist/cli/historicalReplayCli.test.js
+```
+
+결과는 172 passed, 0 failed였다.
+
+| 검증 경계 | 확인 내용 |
+| --- | --- |
+| CLI | Batch와 single CLI scope 전달, missing/invalid 값 및 preset mismatch fail-closed |
+| Packet builder | Matching new-buy candidate 제한, scope 부재 시 fail-closed, out-of-scope held candidate의 sell-only 보존 |
+| Decision validation | `buyEligible=false` candidate의 `VIRTUAL_BUY`를 `VIRTUAL_DECISION_ACTION_NOT_ELIGIBLE`로 거절 |
+| Replay runner | Sync/async runner scope 전달, held-position work 지속, rejected decision audit |
+| Workflow/metadata | Run configuration scope 기록과 research `configHash` 분리 |
+| Batch/selection/report | Scoped window skip, selection candidate identity 분리, aggregate report scope 분리 |
+
+이 검증은 synthetic fixture 기반 회귀 테스트다. 실제 historical dataset replay, liquidity stress 재실행, threshold 변경 또는 strategy 유효성 판정은 수행하지 않았다. Generated artifact도 추가하지 않았다.
+
 ## 후속 검증 순서
 
 1. `HistoricalMarketPacketBuilder`의 candidate strategy bucket scope와 held-position buy block을 구현한다.
@@ -164,7 +186,7 @@ Scope가 다른 run은 같은 validation candidate로 합치지 않는다. Cost 
 8. Merge 후 `short_term` bucket scoped liquidity stress 계획을 별도 문서로 사전 고정한다.
 9. Generated artifact는 `data/`에만 두고 결과 문서 PR에서 bucket 귀속과 fixture gate를 다시 판정한다.
 
-이번 single replay CLI PR에서는 위 순서의 6번만 구현한다. Replay 재실행, threshold 변경 또는 strategy 판정 변경은 포함하지 않는다. Single replay CLI에는 `--strategy-preset` surface가 없으므로 preset 기능을 새로 추가하지 않고 candidate scope option 자체의 schema validation만 적용한다.
+이번 documentation PR에서는 위 순서의 7번 실행 결과만 기록한다. Production code, test code, replay artifact, threshold 또는 strategy 판정은 변경하지 않는다. 다음 단계의 liquidity stress는 별도 계획 문서를 먼저 고정한 뒤 실행한다.
 
 ## Safety Boundary
 
