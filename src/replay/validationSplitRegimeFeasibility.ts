@@ -76,7 +76,7 @@ const calendarRulesSchema = z
   .min(1)
   .superRefine((rules, context) => {
     const markets = new Set<string>();
-    for (const rule of rules) {
+    for (const [index, rule] of rules.entries()) {
       if (markets.has(rule.market)) {
         context.addIssue({
           code: "custom",
@@ -84,6 +84,15 @@ const calendarRulesSchema = z
         });
       }
       markets.add(rule.market);
+      if (
+        index > 0 &&
+        compareCalendarRules(rules[index - 1]!, rule) > 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "calendarValidation rules must use canonical order"
+        });
+      }
     }
   });
 const marketRegimeClassifierConfigSchema = z
@@ -381,6 +390,21 @@ type FeasibilityArtifactValue = z.infer<
 type FeasibilityAssignment = FeasibilityArtifactValue["assignments"][number];
 type FeasibilityCandidate = FeasibilityAssignment["candidates"][number];
 
+function compareCalendarRules(
+  left: z.infer<typeof calendarRuleSchema>,
+  right: z.infer<typeof calendarRuleSchema>
+): number {
+  return (
+    compareCanonicalStrings(left.market, right.market) ||
+    compareCanonicalStrings(left.exchange, right.exchange) ||
+    compareCanonicalStrings(left.timezone, right.timezone)
+  );
+}
+
+function compareCanonicalStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function validateAssignmentDiagnostics(
   value: FeasibilityArtifactValue,
   context: z.RefinementCtx
@@ -615,9 +639,22 @@ function deduplicatedRoleCandidates(
   context: z.RefinementCtx
 ): Map<string, FeasibilityCandidate> {
   const candidates = new Map<string, FeasibilityCandidate>();
+  const hashesByPayload = new Map<string, string>();
   for (const assignment of assignments) {
     for (const candidate of assignment.candidates) {
       if (!candidate.scopeAvailable) {
+        continue;
+      }
+      const payloadKey = candidatePayloadKey(candidate);
+      const payloadHash = hashesByPayload.get(payloadKey);
+      if (
+        payloadHash !== undefined &&
+        payloadHash !== candidate.candidateHash
+      ) {
+        addAggregateIssue(
+          context,
+          `candidate payload has multiple hashes: ${candidate.startAt}/${candidate.endAt}`
+        );
         continue;
       }
       const existing = candidates.get(candidate.candidateHash);
@@ -628,10 +665,20 @@ function deduplicatedRoleCandidates(
         );
         continue;
       }
+      hashesByPayload.set(payloadKey, candidate.candidateHash);
       candidates.set(candidate.candidateHash, candidate);
     }
   }
   return candidates;
+}
+
+function candidatePayloadKey(candidate: FeasibilityCandidate): string {
+  return JSON.stringify([
+    candidate.startAt,
+    candidate.endAt,
+    candidate.regime,
+    candidate.scopeAvailable
+  ]);
 }
 
 function countCandidateRegimes(candidates: Iterable<FeasibilityCandidate>) {

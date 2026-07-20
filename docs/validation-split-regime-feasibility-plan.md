@@ -182,7 +182,7 @@ Assignment 하나가 모든 target regime을 포함할 필요는 없다. 예를 
 
 Parser는 assignment의 `regimeCounts`와 available/unavailable target 목록을 `scopeAvailable=true` candidate에서 재계산해 검증한다. Summary의 `candidateCount`는 모든 assignment candidate row 수의 합, `uniqueCandidateCount`는 scoped candidate를 `candidateHash`로 deduplicate한 수와 일치해야 한다.
 
-`config.calendarValidation.rules`는 market별 규칙을 하나만 허용하며 `market`, `exchange`, `timezone` 순으로 정렬한 normalized rule을 기록한다. `provenance.calendarHash`는 schema validation을 통과한 rule과 fixture를 다음 방식으로 정규화한 뒤 기존 `createReplayResearchHash()`로 계산한다.
+`config.calendarValidation.rules`는 market별 규칙을 하나만 허용하며 `market`, `exchange`, `timezone` 순의 canonical order만 허용한다. `provenance.calendarHash`는 schema validation을 통과한 rule과 fixture를 다음 방식으로 정규화한 뒤 기존 `createReplayResearchHash()`로 계산한다.
 
 - Rule은 `market`, `exchange`, `timezone` 순으로 정렬한다.
 - Fixture는 `market`, `exchange`, `sessionDate`, `calendarId` 순으로 정렬한다.
@@ -190,6 +190,8 @@ Parser는 assignment의 `regimeCounts`와 available/unavailable target 목록을
 - Fixture의 `calendarId`, `exchange`, `market`, `timezone`, `sessionDate`, `marketOpen`, `marketClose`, `isHoliday`, `holidayName`, `sourceRefs`, `createdAt`을 모두 hash input에 포함한다.
 
 CLI의 rule 또는 fixture 입력 순서만 바뀌면 같은 `calendarHash`가 생성돼야 한다. Rule, timezone, session, holiday 또는 fixture provenance가 달라지면 hash도 달라져야 한다. `candidateHash`는 `startAt`, `endAt`, timezone, window length, `calendarHash`, `marketRegimeClassifierHash`, candidate scope와 source provenance로 계산하고 `splitId`, `splitIndex`, `splitRole`은 제외한다. 따라서 overlapping assignment가 같은 window를 열거해도 role aggregate capacity를 중복 증가시키지 않는다.
+
+Parser는 동일한 scoped candidate payload가 서로 다른 `candidateHash`로 반복되는 경우 writer/hash normalization 오류로 간주하고 artifact를 거절한다.
 
 `market_regime_classifier.v1`은 후속 구현에서 classifier module에 exported constant로 추가할 제안 contract version이다. `config.marketRegimeClassifier`는 현재 deterministic classifier의 effective minimum과 threshold를 default 해석 없이 모두 기록한다. `provenance.marketRegimeClassifierHash`는 version과 여섯 numeric config field를 기존 `createReplayResearchHash()`로 계산한다. Classifier logic이 바뀌면 version을 올려야 하며, threshold, minimum 또는 version 변경은 hash와 `candidateHash`를 변경해야 한다.
 

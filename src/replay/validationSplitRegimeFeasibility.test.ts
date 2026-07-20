@@ -74,6 +74,22 @@ test("feasibility artifact schema rejects duplicate calendar markets", () => {
   );
 });
 
+test("feasibility artifact schema requires canonical calendar rule order", () => {
+  const base = artifact();
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...base,
+      config: {
+        ...base.config,
+        calendarValidation: {
+          rules: [...base.config.calendarValidation.rules].reverse()
+        }
+      }
+    }).success,
+    false
+  );
+});
+
 test("available artifact requires derived role-level coverage", () => {
   assert.equal(
     validationSplitRegimeFeasibilityArtifactSchema.safeParse(
@@ -178,6 +194,48 @@ test("summary candidate totals must match assignment candidates", () => {
         ...available.summary,
         uniqueCandidateCount: 2
       }
+    }).success,
+    false
+  );
+});
+
+test("scoped candidate payload cannot use multiple hashes", () => {
+  const available = completeAvailableArtifact();
+  const firstAssignment = available.assignments[0]!;
+  const duplicateCandidate = {
+    ...firstAssignment.candidates[0]!,
+    candidateHash: `sha256:${"4".repeat(64)}`
+  };
+
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...available,
+      summary: {
+        ...available.summary,
+        candidateCount: 4,
+        uniqueCandidateCount: 4,
+        roleCapacityCounts: { train: 2, validation: 1, test: 1 }
+      },
+      assignments: [
+        {
+          ...firstAssignment,
+          structuralCapacityCount: 2,
+          candidateCount: 2,
+          regimeCounts: { ...firstAssignment.regimeCounts, bull: 2 },
+          candidates: [...firstAssignment.candidates, duplicateCandidate]
+        },
+        ...available.assignments.slice(1)
+      ],
+      roles: available.roles.map((role) =>
+        role.splitRole === "train"
+          ? {
+              ...role,
+              structuralCapacityCount: 2,
+              uniqueCandidateCount: 2,
+              regimeCounts: { ...role.regimeCounts, bull: 2 }
+            }
+          : role
+      )
     }).success,
     false
   );
