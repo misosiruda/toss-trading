@@ -7,6 +7,10 @@ import { parseMarketCalendarFixture } from "./marketCalendar.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
   assessValidationRoleCandidateAvailability,
+  createValidationFeasibilityCalendarHash,
+  createValidationFeasibilityCandidateHash,
+  createValidationFeasibilityClassifierHash,
+  createValidationSplitRegimeFeasibilityProvenance,
   defaultMarketRegimeClassifierConfig,
   enumerateValidationRoleCandidates,
   maximumPairwiseTradingDateOverlapRatio,
@@ -257,6 +261,119 @@ test("default classifier config exposes the precommitted effective values", () =
     sidewaysAbsReturnThreshold: 0.01,
     breadthThreshold: 0.6
   });
+});
+
+test("calendar provenance hash normalizes rule fixture and source-ref order", () => {
+  const kr = openCalendarValidation();
+  const usFixture = usCalendarFixture();
+  const usRule = {
+    market: "US" as const,
+    exchange: "NYSE",
+    timezone: "America/New_York" as const
+  };
+  const first = createValidationFeasibilityCalendarHash({
+    rules: [...kr.rules, usRule],
+    fixtures: [
+      { ...kr.fixtures[0]!, sourceRefs: ["fixture:b", "fixture:a"] },
+      usFixture
+    ]
+  });
+  const reordered = createValidationFeasibilityCalendarHash({
+    rules: [usRule, ...kr.rules],
+    fixtures: [
+      usFixture,
+      { ...kr.fixtures[0]!, sourceRefs: ["fixture:a", "fixture:b"] }
+    ]
+  });
+  const changed = createValidationFeasibilityCalendarHash({
+    rules: [...kr.rules, usRule],
+    fixtures: [
+      { ...kr.fixtures[0]!, createdAt: "2026-07-21T00:00:00.000Z" },
+      usFixture
+    ]
+  });
+
+  assert.equal(first, reordered);
+  assert.notEqual(first, changed);
+});
+
+test("classifier provenance hash covers effective config", () => {
+  const config = defaultMarketRegimeClassifierConfig();
+  const first = createValidationFeasibilityClassifierHash(config);
+
+  assert.equal(createValidationFeasibilityClassifierHash(config), first);
+  assert.notEqual(
+    createValidationFeasibilityClassifierHash({
+      ...config,
+      bullReturnThreshold: config.bullReturnThreshold + 0.01
+    }),
+    first
+  );
+});
+
+test("feasibility provenance hashes source contracts independently", () => {
+  const calendarValidation = openCalendarValidation();
+  const input = {
+    dataSnapshot: { rows: [1, 2] },
+    universe: { symbols: ["TEST"] },
+    coverage: { status: "available" },
+    validationSplit: { assignmentCount: 3 },
+    calendarValidation,
+    marketRegimeClassifier: defaultMarketRegimeClassifierConfig()
+  };
+  const first = createValidationSplitRegimeFeasibilityProvenance(input);
+  const changed = createValidationSplitRegimeFeasibilityProvenance({
+    ...input,
+    coverage: { status: "insufficient" }
+  });
+
+  assert.match(first.dataSnapshotHash, /^sha256:[a-f0-9]{64}$/);
+  assert.notEqual(first.coverageHash, changed.coverageHash);
+  assert.equal(first.dataSnapshotHash, changed.dataSnapshotHash);
+  assert.equal(first.calendarHash, changed.calendarHash);
+});
+
+test("candidate hash covers window scope and source provenance", () => {
+  const provenance = createValidationSplitRegimeFeasibilityProvenance({
+    dataSnapshot: { rows: [1, 2] },
+    universe: { symbols: ["TEST"] },
+    coverage: { status: "available" },
+    validationSplit: { assignmentCount: 3 },
+    calendarValidation: openCalendarValidation(),
+    marketRegimeClassifier: defaultMarketRegimeClassifierConfig()
+  });
+  const input = {
+    startAt: "2025-02-03T00:00:00.000Z",
+    endAt: "2025-02-03T23:59:59.999Z",
+    timezoneOffsetMinutes: 540,
+    windowMonths: 1,
+    calendarHash: provenance.calendarHash,
+    marketRegimeClassifierHash: provenance.marketRegimeClassifierHash,
+    candidateStrategyBucket: "short_term" as const,
+    scopeAvailable: true,
+    dataSnapshotHash: provenance.dataSnapshotHash,
+    universeHash: provenance.universeHash,
+    coverageHash: provenance.coverageHash
+  };
+  const first = createValidationFeasibilityCandidateHash(input);
+
+  assert.equal(createValidationFeasibilityCandidateHash(input), first);
+  assert.notEqual(
+    createValidationFeasibilityCandidateHash({
+      ...input,
+      scopeAvailable: false
+    }),
+    first
+  );
+  assert.throws(
+    () =>
+      createValidationFeasibilityCandidateHash({
+        ...input,
+        startAt: input.endAt,
+        endAt: input.startAt
+      }),
+    /candidate hash startAt/
+  );
 });
 
 test("train enumeration applies embargo before listing full windows", () => {
@@ -579,6 +696,21 @@ function openCalendarValidation() {
       })
     ]
   };
+}
+
+function usCalendarFixture() {
+  return parseMarketCalendarFixture({
+    calendarId: "calendar.nyse.2025-02-03",
+    exchange: "NYSE",
+    market: "US",
+    timezone: "America/New_York",
+    sessionDate: "2025-02-03",
+    marketOpen: "2025-02-03T14:30:00.000Z",
+    marketClose: "2025-02-03T21:00:00.000Z",
+    isHoliday: false,
+    sourceRefs: ["fixture:calendar.nyse.2025-02-03"],
+    createdAt: "2026-07-20T00:00:00.000Z"
+  });
 }
 
 function assignment(
