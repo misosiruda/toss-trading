@@ -578,6 +578,16 @@ test("feasibility builder rejects malformed contracts", () => {
       }),
     /duplicate historical snapshotId/
   );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        snapshots: options.snapshots.map((snapshot, index) =>
+          index === 0 ? { ...snapshot, symbol: "OUTSIDE" } : snapshot
+        )
+      }),
+    /historical snapshot is outside declared universe: KR:OUTSIDE/
+  );
 });
 
 test("train enumeration applies embargo before listing full windows", () => {
@@ -971,7 +981,20 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
     assignments,
     snapshots,
     dataSnapshot: { snapshotIds: snapshots.map((item) => item.snapshotId) },
-    universe: { symbols: ["TEST"] },
+    universe: {
+      mode: "paper_only_historical_universe",
+      universeId: "builder-universe",
+      snapshotDate: "2025-01-01",
+      symbols: [
+        {
+          market: "KR",
+          symbol: "TEST",
+          strategyBucket: "short_term",
+          required: true
+        }
+      ],
+      disclaimer: "Paper-only feasibility test universe."
+    },
     coverage: {
       status: "available",
       corruptLineCount: 0,

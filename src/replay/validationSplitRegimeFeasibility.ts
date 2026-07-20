@@ -22,6 +22,10 @@ import {
   type HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
 import {
+  historicalUniverseManifestSchema,
+  type HistoricalUniverseManifest
+} from "./historicalUniverseCoverage.js";
+import {
   MarketCalendarFixtureIndex,
   parseMarketCalendarFixtures,
   type MarketCalendarFixture
@@ -640,7 +644,13 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
       "historical market snapshot"
     )
   );
+  const universe = parseWithSchema(
+    historicalUniverseManifestSchema,
+    options.universe,
+    "historical universe manifest"
+  );
   assertUniqueSnapshotIds(snapshots);
+  assertSnapshotsInsideUniverse(snapshots, universe);
   const targetRegimes = normalizeTargetRegimes(options.targetRegimes);
   parseWithSchema(
     feasibilityCoverageGateSchema,
@@ -1086,6 +1096,23 @@ function assertUniqueSnapshotIds(
       throw new Error(`duplicate historical snapshotId: ${snapshot.snapshotId}`);
     }
     snapshotIds.add(snapshot.snapshotId);
+  }
+}
+
+function assertSnapshotsInsideUniverse(
+  snapshots: HistoricalMarketSnapshot[],
+  universe: HistoricalUniverseManifest
+): void {
+  const universeSymbols = new Set(
+    universe.symbols.map((symbol) => `${symbol.market}:${symbol.symbol}`)
+  );
+  for (const snapshot of snapshots) {
+    const symbolKey = `${snapshot.market}:${snapshot.symbol}`;
+    if (!universeSymbols.has(symbolKey)) {
+      throw new Error(
+        `historical snapshot is outside declared universe: ${symbolKey}`
+      );
+    }
   }
 }
 
