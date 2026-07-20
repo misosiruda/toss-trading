@@ -18,7 +18,12 @@ import {
   type PaperExitPolicy
 } from "../paper/exitPolicy.js";
 import type { MarketRegimeAllocationPolicy } from "../paper/marketRegimeAllocationPolicy.js";
-import type { Market, MarketPacket } from "../domain/schemas.js";
+import {
+  strategyBucketSchema,
+  type Market,
+  type MarketPacket,
+  type StrategyBucket
+} from "../domain/schemas.js";
 import {
   parseStrategyReplayPresetName,
   resolveStrategyReplayPreset
@@ -48,6 +53,11 @@ const strategyPreset =
   strategyPresetName === undefined
     ? undefined
     : resolveStrategyReplayPreset(strategyPresetName);
+const candidateStrategyBucket = readCandidateStrategyBucketArg();
+validateCandidateStrategyBucketPreset({
+  candidateStrategyBucket,
+  strategyPresetName
+});
 const everyNSteps = readOptionalNumberArg("--every-n-steps");
 const decisionFrequency =
   readDecisionFrequencyArg() ?? strategyPreset?.decisionFrequency;
@@ -145,6 +155,9 @@ const result = await runHistoricalBatchReplay({
   ...(strategyPresetName === undefined
     ? {}
     : { strategyPreset: strategyPresetName }),
+  ...(candidateStrategyBucket === undefined
+    ? {}
+    : { candidateStrategyBucket }),
   seed: readRequiredArgValue("--seed"),
   runCount: readNumberArg("--runs", 1),
   rangeStart: readDateArg("--random-window-from"),
@@ -232,6 +245,7 @@ console.log(
       skippedCount: result.skippedCount,
       failedCount: result.failedCount,
       strategyPreset: strategyPresetName ?? null,
+      candidateStrategyBucket: candidateStrategyBucket ?? null,
       decisionProvider: useCodexAi ? "codex_cli" : "deterministic_fixture",
       riskProfile: riskProfile.name,
       dynamicCashReservePolicy: dynamicCashReservePolicy ?? null,
@@ -344,6 +358,43 @@ function readOptionalArgValue(name: string): string | undefined {
     throw new Error(`${name} requires a value`);
   }
   return value;
+}
+
+function readCandidateStrategyBucketArg(): StrategyBucket | undefined {
+  const value = readOptionalArgValue("--candidate-strategy-bucket");
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = strategyBucketSchema.safeParse(value.trim());
+  if (!parsed.success) {
+    throw new Error(
+      `--candidate-strategy-bucket must be one of ${strategyBucketSchema.options.join(", ")}`
+    );
+  }
+  return parsed.data;
+}
+
+function validateCandidateStrategyBucketPreset(input: {
+  candidateStrategyBucket: StrategyBucket | undefined;
+  strategyPresetName: ReturnType<typeof parseStrategyReplayPresetName>;
+}): void {
+  if (input.candidateStrategyBucket === undefined) {
+    return;
+  }
+  if (input.strategyPresetName === "regime_cash") {
+    throw new Error(
+      "--candidate-strategy-bucket cannot be used with --strategy-preset regime_cash"
+    );
+  }
+  if (
+    input.strategyPresetName !== undefined &&
+    input.strategyPresetName !== input.candidateStrategyBucket
+  ) {
+    throw new Error(
+      "--candidate-strategy-bucket must match --strategy-preset"
+    );
+  }
 }
 
 function readRequiredArgValue(name: string): string {

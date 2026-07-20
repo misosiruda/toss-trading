@@ -1479,10 +1479,15 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   writeFileSync(
     join(sourceDataDir, "historical-market-snapshots.jsonl"),
     [
-      JSON.stringify(snapshot("hist_005930_preset_001", "005930")),
+      JSON.stringify(
+        snapshot("hist_005930_preset_001", "005930", {
+          strategyBucket: "short_term"
+        })
+      ),
       JSON.stringify(
         snapshot("hist_005930_preset_002", "005930", {
-          observedAt: "2025-02-10T09:00:00+09:00"
+          observedAt: "2025-02-10T09:00:00+09:00",
+          strategyBucket: "short_term"
         })
       )
     ].join("\n") + "\n",
@@ -1509,6 +1514,8 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
       "2025-02-28T23:59:59.999+09:00",
       "--strategy-preset",
       "short-term",
+      "--candidate-strategy-bucket",
+      "short_term",
       "--min-window-snapshots",
       "1",
       "--min-snapshots-per-symbol",
@@ -1556,10 +1563,13 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   const trialConfig = trialRecords[0]?.["config"] as Record<string, unknown>;
 
   assert.equal(output["strategyPreset"], "short_term");
+  assert.equal(output["candidateStrategyBucket"], "short_term");
   assert.equal(output["riskProfile"], "aggressive_paper");
   assert.equal(manifest["strategyPreset"], "short_term");
+  assert.equal(manifest["candidateStrategyBucket"], "short_term");
   assert.equal(manifest["riskProfile"], "aggressive_paper");
   assert.equal(configuration["strategyPreset"], "short_term");
+  assert.equal(configuration["candidateStrategyBucket"], "short_term");
   assert.equal(configuration["riskProfile"], "aggressive_paper");
   assert.equal(clock["stepSeconds"], 86_400);
   assert.equal(samplingPolicy["decisionFrequency"], "once_per_day");
@@ -1568,6 +1578,7 @@ test("historical batch replay CLI applies paper strategy preset defaults and ove
   assert.equal(paperExitPolicy["takeProfitRatio"], 0.06);
   assert.equal(paperExitPolicy["stopLossRatio"], 0.04);
   assert.equal(trialConfig["strategyPreset"], "short_term");
+  assert.equal(trialConfig["candidateStrategyBucket"], "short_term");
   assert.deepEqual(trialConfig["replayCadence"], {
     stepSeconds: 86_400,
     everyNSteps: null,
@@ -1592,6 +1603,80 @@ test("historical batch replay CLI rejects missing strategy preset value", () => 
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--strategy-preset requires a value/);
+});
+
+test("historical batch replay CLI rejects missing candidate strategy bucket value", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--candidate-strategy-bucket",
+      "--runs",
+      "1"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--candidate-strategy-bucket requires a value/);
+});
+
+test("historical batch replay CLI rejects invalid candidate strategy bucket", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--candidate-strategy-bucket",
+      "regime_cash"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--candidate-strategy-bucket must be one of long_term, swing, short_term, intraday, hedge/
+  );
+});
+
+test("historical batch replay CLI rejects candidate scope preset mismatch", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--strategy-preset",
+      "swing",
+      "--candidate-strategy-bucket",
+      "short_term"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--candidate-strategy-bucket must match --strategy-preset/
+  );
+});
+
+test("historical batch replay CLI rejects regime cash candidate scope", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      join("dist", "cli", "historicalBatchReplay.js"),
+      "--strategy-preset",
+      "regime-cash",
+      "--candidate-strategy-bucket",
+      "short_term"
+    ],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /--candidate-strategy-bucket cannot be used with --strategy-preset regime_cash/
+  );
 });
 
 test("historical batch replay CLI rejects negative paper cost values", () => {
