@@ -1000,6 +1000,10 @@ function assertUniqueValidationAssignments(
   const splitIdsByIndex = new Map<number, string>();
   const splitIndexesById = new Map<string, number>();
   const definitionsBySplit = new Map<string, ValidationSplitAssignment>();
+  const rolesBySplit = new Map<
+    string,
+    Set<z.infer<typeof validationSplitRoleSchema>>
+  >();
   for (const assignment of assignments) {
     const identity = `${assignment.splitIndex}:${assignment.splitId}:${assignment.splitRole}`;
     if (identities.has(identity)) {
@@ -1031,6 +1035,19 @@ function assertUniqueValidationAssignments(
     splitIdsByIndex.set(assignment.splitIndex, assignment.splitId);
     splitIndexesById.set(assignment.splitId, assignment.splitIndex);
     definitionsBySplit.set(splitKey, assignment);
+    const roles = rolesBySplit.get(splitKey) ?? new Set();
+    roles.add(assignment.splitRole);
+    rolesBySplit.set(splitKey, roles);
+  }
+  for (const [splitKey, roles] of rolesBySplit) {
+    const missingRoles = validationSplitRoleSchema.options.filter(
+      (role) => !roles.has(role)
+    );
+    if (missingRoles.length > 0) {
+      throw new Error(
+        `validation split is missing required roles: ${splitKey} (${missingRoles.join(",")})`
+      );
+    }
   }
 }
 

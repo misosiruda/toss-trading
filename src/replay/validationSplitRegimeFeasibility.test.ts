@@ -485,11 +485,11 @@ test("feasibility builder deduplicates overlapping role capacity", () => {
   const options = feasibilityBuilderOptions();
   const assignments = [
     ...options.assignments,
-    {
-      ...options.assignments[0]!,
+    ...options.assignments.map((assignment) => ({
+      ...assignment,
       splitId: "split-1",
       splitIndex: 1
-    }
+    }))
   ];
   const artifact = buildValidationSplitRegimeFeasibilityArtifact({
     ...options,
@@ -502,7 +502,7 @@ test("feasibility builder deduplicates overlapping role capacity", () => {
   assert.equal(train?.assignmentCount, 2);
   assert.equal(train?.structuralCapacityCount, 1);
   assert.equal(train?.uniqueCandidateCount, 1);
-  assert.equal(artifact.summary.candidateCount, 4);
+  assert.equal(artifact.summary.candidateCount, 6);
   assert.equal(artifact.summary.uniqueCandidateCount, 3);
 });
 
@@ -577,6 +577,22 @@ test("feasibility builder rejects malformed contracts", () => {
         )
       }),
     /inconsistent split definition/
+  );
+  const incompleteSplitAssignments = options.assignments.map(
+    (assignment, splitIndex) => ({
+      ...assignment,
+      splitId: `split-${splitIndex}`,
+      splitIndex
+    })
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        assignments: incompleteSplitAssignments,
+        validationSplit: { assignments: incompleteSplitAssignments }
+      }),
+    /validation split is missing required roles: 0:split-0 \(validation,test\)/
   );
   assert.throws(
     () =>
