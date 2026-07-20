@@ -344,6 +344,7 @@ export interface ValidationRoleCandidateAvailabilityResult {
   candidates: ValidationRoleCandidateAssessment[];
   calendarRejectedCandidateCount: number;
   scopeUnavailableCandidateCount: number;
+  maximumPairwiseOverlapRatio: number;
   warnings: Array<
     z.infer<typeof validationSplitRegimeFeasibilityWarningSchema>
   >;
@@ -387,12 +388,17 @@ export function assessValidationRoleCandidateAvailability(input: {
   snapshots: HistoricalMarketSnapshot[];
   calendarValidation: HistoricalDataAvailabilityCalendarOptions;
   candidateStrategyBucket: "short_term";
+  timezoneOffsetMinutes: number;
 }): ValidationRoleCandidateAvailabilityResult {
   if (input.candidateStrategyBucket !== "short_term") {
     throw new Error("candidateStrategyBucket must be short_term");
   }
+  if (!Number.isInteger(input.timezoneOffsetMinutes)) {
+    throw new Error("timezoneOffsetMinutes must be an integer");
+  }
 
   const candidates: ValidationRoleCandidateAssessment[] = [];
+  const overlapCandidates: ReplayWindowCandidate[] = [];
   const warnings = [...input.enumeration.warnings];
   let calendarRejectedCandidateCount = 0;
   let scopeUnavailableCandidateCount = 0;
@@ -420,6 +426,7 @@ export function assessValidationRoleCandidateAvailability(input: {
       continue;
     }
 
+    overlapCandidates.push(candidate);
     const scopedSnapshotCount = input.snapshots.filter((snapshot) => {
       const observedAt = Date.parse(snapshot.observedAt);
       return (
@@ -457,8 +464,78 @@ export function assessValidationRoleCandidateAvailability(input: {
     candidates,
     calendarRejectedCandidateCount,
     scopeUnavailableCandidateCount,
+    maximumPairwiseOverlapRatio:
+      maximumPairwiseTradingDateOverlapRatio({
+        candidates: overlapCandidates,
+        snapshots: input.snapshots,
+        timezoneOffsetMinutes: input.timezoneOffsetMinutes
+      }),
     warnings
   };
+}
+
+export function maximumPairwiseTradingDateOverlapRatio(input: {
+  candidates: ReplayWindowCandidate[];
+  snapshots: HistoricalMarketSnapshot[];
+  timezoneOffsetMinutes: number;
+}): number {
+  if (!Number.isInteger(input.timezoneOffsetMinutes)) {
+    throw new Error("timezoneOffsetMinutes must be an integer");
+  }
+
+  const tradingDates = input.candidates.map((candidate) =>
+    candidateTradingDates({
+      candidate,
+      snapshots: input.snapshots,
+      timezoneOffsetMinutes: input.timezoneOffsetMinutes
+    })
+  );
+  let maximumOverlapRatio = 0;
+  for (let leftIndex = 0; leftIndex < tradingDates.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < tradingDates.length;
+      rightIndex += 1
+    ) {
+      const left = tradingDates[leftIndex]!;
+      const right = tradingDates[rightIndex]!;
+      const intersectionCount = Array.from(left).filter((date) =>
+        right.has(date)
+      ).length;
+      const unionCount = new Set([...left, ...right]).size;
+      const overlapRatio =
+        unionCount === 0 ? 0 : intersectionCount / unionCount;
+      maximumOverlapRatio = Math.max(maximumOverlapRatio, overlapRatio);
+    }
+  }
+  return roundOverlapRatio(maximumOverlapRatio);
+}
+
+function candidateTradingDates(input: {
+  candidate: ReplayWindowCandidate;
+  snapshots: HistoricalMarketSnapshot[];
+  timezoneOffsetMinutes: number;
+}): Set<string> {
+  const dates = new Set<string>();
+  for (const snapshot of input.snapshots) {
+    const observedAt = Date.parse(snapshot.observedAt);
+    if (
+      observedAt < input.candidate.startMs ||
+      observedAt > input.candidate.endMs
+    ) {
+      continue;
+    }
+    dates.add(
+      new Date(observedAt + input.timezoneOffsetMinutes * 60_000)
+        .toISOString()
+        .slice(0, 10)
+    );
+  }
+  return dates;
+}
+
+function roundOverlapRatio(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 export function defaultMarketRegimeClassifierConfig() {

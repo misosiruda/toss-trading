@@ -9,6 +9,7 @@ import {
   assessValidationRoleCandidateAvailability,
   defaultMarketRegimeClassifierConfig,
   enumerateValidationRoleCandidates,
+  maximumPairwiseTradingDateOverlapRatio,
   type ValidationRoleCandidateEnumeration,
   validationSplitRegimeFeasibilityArtifactSchema
 } from "./validationSplitRegimeFeasibility.js";
@@ -357,7 +358,8 @@ test("candidate availability keeps calendar-valid short-term scope", () => {
     enumeration: candidateEnumeration(),
     snapshots: candidateSnapshots("short_term"),
     calendarValidation: openCalendarValidation(),
-    candidateStrategyBucket: "short_term"
+    candidateStrategyBucket: "short_term",
+    timezoneOffsetMinutes: 540
   });
 
   assert.deepEqual(result.candidates, [
@@ -370,6 +372,7 @@ test("candidate availability keeps calendar-valid short-term scope", () => {
   ]);
   assert.equal(result.calendarRejectedCandidateCount, 0);
   assert.equal(result.scopeUnavailableCandidateCount, 0);
+  assert.equal(result.maximumPairwiseOverlapRatio, 0);
   assert.deepEqual(result.warnings, []);
 });
 
@@ -378,7 +381,8 @@ test("candidate availability does not fallback across strategy buckets", () => {
     enumeration: candidateEnumeration(),
     snapshots: candidateSnapshots("long_term"),
     calendarValidation: openCalendarValidation(),
-    candidateStrategyBucket: "short_term"
+    candidateStrategyBucket: "short_term",
+    timezoneOffsetMinutes: 540
   });
 
   assert.equal(result.candidates[0]?.scopeAvailable, false);
@@ -408,7 +412,8 @@ test("candidate availability excludes calendar-invalid windows", () => {
     enumeration: candidateEnumeration(),
     snapshots: candidateSnapshots("short_term"),
     calendarValidation,
-    candidateStrategyBucket: "short_term"
+    candidateStrategyBucket: "short_term",
+    timezoneOffsetMinutes: 540
   });
 
   assert.deepEqual(result.candidates, []);
@@ -431,11 +436,66 @@ test("candidate availability rejects non-short-term runtime input", () => {
         enumeration: candidateEnumeration(),
         snapshots: candidateSnapshots("short_term"),
         calendarValidation: openCalendarValidation(),
-        candidateStrategyBucket: "long_term" as "short_term"
+        candidateStrategyBucket: "long_term" as "short_term",
+        timezoneOffsetMinutes: 540
       }),
     /candidateStrategyBucket must be short_term/
   );
 });
+
+test("candidate overlap uses local trading-date intersection over union", () => {
+  const candidates = [
+    replayCandidate("2025-02-02T00:00:00.000Z", "2025-02-03T23:59:59.999Z"),
+    replayCandidate("2025-02-03T00:00:00.000Z", "2025-02-04T23:59:59.999Z")
+  ];
+  const snapshots = [
+    candidateSnapshot("snapshot-overlap-1", "2025-02-02T01:00:00.000Z", 100),
+    candidateSnapshot("snapshot-overlap-2", "2025-02-03T01:00:00.000Z", 101),
+    candidateSnapshot("snapshot-overlap-3", "2025-02-04T01:00:00.000Z", 102)
+  ];
+
+  assert.equal(
+    maximumPairwiseTradingDateOverlapRatio({
+      candidates,
+      snapshots,
+      timezoneOffsetMinutes: 540
+    }),
+    0.333333
+  );
+  assert.equal(
+    maximumPairwiseTradingDateOverlapRatio({
+      candidates: [candidates[0]!],
+      snapshots,
+      timezoneOffsetMinutes: 540
+    }),
+    0
+  );
+});
+
+test("candidate overlap validates timezone offset at runtime", () => {
+  assert.throws(
+    () =>
+      maximumPairwiseTradingDateOverlapRatio({
+        candidates: [],
+        snapshots: [],
+        timezoneOffsetMinutes: 0.5
+      }),
+    /timezoneOffsetMinutes must be an integer/
+  );
+});
+
+function replayCandidate(
+  startAt: string,
+  endAt: string
+): ValidationRoleCandidateEnumeration["candidates"][number] {
+  return {
+    selectedMonth: startAt.slice(0, 7),
+    localStartDate: startAt.slice(0, 10),
+    localEndDate: endAt.slice(0, 10),
+    startMs: Date.parse(startAt),
+    endMs: Date.parse(endAt)
+  };
+}
 
 function candidateEnumeration(): ValidationRoleCandidateEnumeration {
   return {

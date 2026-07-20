@@ -242,7 +242,9 @@ CLI는 calendar fixture와 market rule을 필수 입력으로 받고 artifact에
 
 Regime classification은 broad market snapshot으로 수행할 수 있지만 replay feasibility는 `candidateStrategyBucket=short_term` availability를 별도로 통과해야 한다.
 
-`assessValidationRoleCandidateAvailability()`는 role-local enumeration 결과에 기존 calendar validator와 deterministic market regime classifier를 연결한다. Calendar warning이 있는 window는 candidate 결과에서 제외하고 `calendarRejectedCandidateCount`에 기록한다. Calendar-valid window는 broad snapshot으로 regime을 분류하되 `short_term` snapshot이 없으면 다른 bucket으로 대체하지 않고 `scopeAvailable=false` 및 `scopeUnavailableCandidateCount`로 보존한다. Candidate hash, overlap, role aggregate와 최종 artifact 조립은 후속 PR 범위다.
+`assessValidationRoleCandidateAvailability()`는 role-local enumeration 결과에 기존 calendar validator와 deterministic market regime classifier를 연결한다. Calendar warning이 있는 window는 candidate 결과에서 제외하고 `calendarRejectedCandidateCount`에 기록한다. Calendar-valid window는 broad snapshot으로 regime을 분류하되 `short_term` snapshot이 없으면 다른 bucket으로 대체하지 않고 `scopeAvailable=false` 및 `scopeUnavailableCandidateCount`로 보존한다.
+
+`maximumPairwiseTradingDateOverlapRatio()`는 calendar-valid candidate pair마다 configured timezone offset 기준 snapshot local trading-date 집합을 만들고 intersection trading-date 수를 union trading-date 수로 나눈다. Availability assessment는 이 값의 최댓값을 `maximumPairwiseOverlapRatio`로 기록하되 status gate에는 사용하지 않는다. Candidate hash, deterministic provenance, role aggregate와 최종 artifact 조립은 후속 PR 범위다.
 
 - Window 안에 `short_term` new-buy candidate snapshot이 없으면 해당 candidate를 scoped replay available로 세지 않는다.
 - Existing held-position-only work는 new-buy candidate availability를 대체하지 않는다.
