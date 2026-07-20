@@ -182,7 +182,7 @@ Assignment 하나가 모든 target regime을 포함할 필요는 없다. 예를 
 
 Parser는 assignment의 `regimeCounts`와 available/unavailable target 목록을 `scopeAvailable=true` candidate에서 재계산해 검증한다. Summary의 `candidateCount`는 모든 assignment candidate row 수의 합, `uniqueCandidateCount`는 scoped candidate를 `candidateHash`로 deduplicate한 수와 일치해야 한다.
 
-`config.calendarValidation.rules`는 `market`, `exchange`, `timezone` 순으로 정렬한 normalized rule을 기록한다. `provenance.calendarHash`는 schema validation을 통과한 rule과 fixture를 다음 방식으로 정규화한 뒤 기존 `createReplayResearchHash()`로 계산한다.
+`config.calendarValidation.rules`는 market별 규칙을 하나만 허용하며 `market`, `exchange`, `timezone` 순으로 정렬한 normalized rule을 기록한다. `provenance.calendarHash`는 schema validation을 통과한 rule과 fixture를 다음 방식으로 정규화한 뒤 기존 `createReplayResearchHash()`로 계산한다.
 
 - Rule은 `market`, `exchange`, `timezone` 순으로 정렬한다.
 - Fixture는 `market`, `exchange`, `sessionDate`, `calendarId` 순으로 정렬한다.

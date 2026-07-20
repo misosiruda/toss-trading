@@ -55,6 +55,25 @@ test("feasibility artifact schema rejects unsafe mode and invalid provenance", (
   );
 });
 
+test("feasibility artifact schema rejects duplicate calendar markets", () => {
+  const base = artifact();
+  assert.equal(
+    validationSplitRegimeFeasibilityArtifactSchema.safeParse({
+      ...base,
+      config: {
+        ...base.config,
+        calendarValidation: {
+          rules: [
+            { market: "KR", exchange: "KRX", timezone: "Asia/Seoul" },
+            { market: "KR", exchange: "KOSDAQ", timezone: "Asia/Seoul" }
+          ]
+        }
+      }
+    }).success,
+    false
+  );
+});
+
 test("available artifact requires derived role-level coverage", () => {
   assert.equal(
     validationSplitRegimeFeasibilityArtifactSchema.safeParse(

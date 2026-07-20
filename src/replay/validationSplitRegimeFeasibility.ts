@@ -71,6 +71,21 @@ const calendarRuleSchema = z
     timezone: z.enum(["Asia/Seoul", "America/New_York"])
   })
   .strict();
+const calendarRulesSchema = z
+  .array(calendarRuleSchema)
+  .min(1)
+  .superRefine((rules, context) => {
+    const markets = new Set<string>();
+    for (const rule of rules) {
+      if (markets.has(rule.market)) {
+        context.addIssue({
+          code: "custom",
+          message: `duplicate calendarValidation rule for market: ${rule.market}`
+        });
+      }
+      markets.add(rule.market);
+    }
+  });
 const marketRegimeClassifierConfigSchema = z
   .object({
     version: z.literal(MARKET_REGIME_CLASSIFIER_VERSION),
@@ -216,7 +231,7 @@ const validationSplitRegimeFeasibilityArtifactBaseSchema = z
         candidateStrategyBucket: z.literal("short_term"),
         minimumCandidatesPerRoleRegime: z.number().int().positive(),
         calendarValidation: z
-          .object({ rules: z.array(calendarRuleSchema).min(1) })
+          .object({ rules: calendarRulesSchema })
           .strict(),
         marketRegimeClassifier: marketRegimeClassifierConfigSchema
       })
