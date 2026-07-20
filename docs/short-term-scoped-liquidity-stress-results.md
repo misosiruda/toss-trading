@@ -168,7 +168,7 @@ data/batch-replay/short-term-scoped-liquidity-cap-1e-5-min-0_5-20260720-001
 
 ## 다음 검증 조건
 
-- Available `short_term` symbol과 independent validation sample을 늘리는 작업은 별도 사전 계획으로 고정한다.
+- Available `short_term` symbol과 independent validation sample을 늘리기 전에 [Validation Split Role-Local Regime Feasibility 계획](validation-split-regime-feasibility-plan.md)에 따라 split role 내부 candidate, regime coverage와 overlap을 별도 artifact로 확인한다.
 - Bear/sideways와 validation/test no-fill evidence가 없으므로 현재 결과를 해당 role/regime에 일반화하지 않는다.
 - 실제 spread, order book depth, queue position과 unfilled opportunity cost는 별도 evidence와 model contract가 있을 때만 검증한다.
 - Strategy 판정 변경은 liquidity fixture와 분리하고 sample, regime, PBO와 holdout evidence를 충족한 뒤 검토한다.
