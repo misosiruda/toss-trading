@@ -7,6 +7,7 @@ import { parseMarketCalendarFixture } from "./marketCalendar.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
   assessValidationRoleCandidateAvailability,
+  buildValidationSplitRegimeFeasibilityArtifact,
   createValidationFeasibilityCalendarHash,
   createValidationFeasibilityCandidateHash,
   createValidationFeasibilityClassifierHash,
@@ -14,6 +15,7 @@ import {
   defaultMarketRegimeClassifierConfig,
   enumerateValidationRoleCandidates,
   maximumPairwiseTradingDateOverlapRatio,
+  type BuildValidationSplitRegimeFeasibilityArtifactOptions,
   type ValidationRoleCandidateEnumeration,
   validationSplitRegimeFeasibilityArtifactSchema
 } from "./validationSplitRegimeFeasibility.js";
@@ -376,6 +378,180 @@ test("candidate hash covers window scope and source provenance", () => {
   );
 });
 
+test("feasibility builder creates deterministic available role aggregates", () => {
+  const options = feasibilityBuilderOptions();
+  const first = buildValidationSplitRegimeFeasibilityArtifact(options);
+  const reordered = buildValidationSplitRegimeFeasibilityArtifact({
+    ...options,
+    assignments: [...options.assignments].reverse(),
+    snapshots: [...options.snapshots].reverse(),
+    calendarValidation: {
+      ...options.calendarValidation,
+      fixtures: [...options.calendarValidation.fixtures].reverse()
+    }
+  });
+
+  assert.deepEqual(first, reordered);
+  assert.equal(first.status, "available");
+  assert.deepEqual(first.summary.roleCounts, {
+    train: 1,
+    validation: 1,
+    test: 1
+  });
+  assert.deepEqual(first.summary.roleCapacityCounts, {
+    train: 1,
+    validation: 1,
+    test: 1
+  });
+  assert.equal(first.summary.candidateCount, 3);
+  assert.equal(first.summary.uniqueCandidateCount, 3);
+  assert.equal(first.summary.unavailableRoleRegimeCount, 0);
+  assert.deepEqual(
+    first.roles.map((role) => ({
+      splitRole: role.splitRole,
+      regimeCounts: role.regimeCounts,
+      capacityStatus: role.capacityStatus
+    })),
+    ["train", "validation", "test"].map((splitRole) => ({
+      splitRole,
+      regimeCounts: {
+        bull: 1,
+        bear: 0,
+        sideways: 0,
+        mixed: 0,
+        insufficient_data: 0
+      },
+      capacityStatus: "sufficient"
+    }))
+  );
+  assert.equal(
+    first.assignments.every(
+      (item) => item.candidates[0]?.scopeAvailable === true
+    ),
+    true
+  );
+});
+
+test("feasibility builder closes insufficient without bucket fallback", () => {
+  const options = feasibilityBuilderOptions();
+  const artifact = buildValidationSplitRegimeFeasibilityArtifact({
+    ...options,
+    snapshots: options.snapshots.map((snapshot) => ({
+      ...snapshot,
+      strategyBucket: "long_term"
+    }))
+  });
+
+  assert.equal(artifact.status, "insufficient");
+  assert.equal(artifact.summary.uniqueCandidateCount, 0);
+  assert.equal(artifact.summary.unavailableRoleRegimeCount, 3);
+  assert.equal(
+    artifact.assignments.every(
+      (item) => item.candidates[0]?.scopeAvailable === false
+    ),
+    true
+  );
+  assert.equal(
+    artifact.warnings.every(
+      (warning) => warning.code === "ROLE_CANDIDATE_SCOPE_UNAVAILABLE"
+    ),
+    true
+  );
+});
+
+test("feasibility builder deduplicates overlapping role capacity", () => {
+  const options = feasibilityBuilderOptions();
+  const artifact = buildValidationSplitRegimeFeasibilityArtifact({
+    ...options,
+    assignments: [
+      ...options.assignments,
+      {
+        ...options.assignments[0]!,
+        splitId: "split-1",
+        splitIndex: 1
+      }
+    ]
+  });
+  const train = artifact.roles.find((role) => role.splitRole === "train");
+
+  assert.equal(artifact.status, "available");
+  assert.equal(train?.assignmentCount, 2);
+  assert.equal(train?.structuralCapacityCount, 1);
+  assert.equal(train?.uniqueCandidateCount, 1);
+  assert.equal(artifact.summary.candidateCount, 4);
+  assert.equal(artifact.summary.uniqueCandidateCount, 3);
+});
+
+test("feasibility builder rejects malformed contracts", () => {
+  const options = feasibilityBuilderOptions();
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        targetRegimes: ["bull", "bull"]
+      }),
+    /targetRegimes must not contain duplicates/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        assignments: [
+          {
+            ...options.assignments[0]!,
+            testStart: null,
+            testEnd: null,
+            splitRole: "test"
+          }
+        ]
+      }),
+    /test splitRole requires testStart and testEnd/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        coverage: {
+          status: "insufficient",
+          corruptLineCount: 0,
+          availableStrategyBuckets: ["short_term"]
+        }
+      }),
+    /validation feasibility coverage gate/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        coverage: {
+          status: "available",
+          corruptLineCount: 1,
+          availableStrategyBuckets: ["short_term"]
+        }
+      }),
+    /validation feasibility coverage gate/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        assignments: [
+          ...options.assignments,
+          { ...options.assignments[0]! }
+        ]
+      }),
+    /duplicate validation assignment/
+  );
+  assert.throws(
+    () =>
+      buildValidationSplitRegimeFeasibilityArtifact({
+        ...options,
+        snapshots: [...options.snapshots, { ...options.snapshots[0]! }]
+      }),
+    /duplicate historical snapshotId/
+  );
+});
+
 test("train enumeration applies embargo before listing full windows", () => {
   const result = enumerateValidationRoleCandidates({
     assignment: assignment("train", { embargoDurationDays: 5 }),
@@ -711,6 +887,84 @@ function usCalendarFixture() {
     sourceRefs: ["fixture:calendar.nyse.2025-02-03"],
     createdAt: "2026-07-20T00:00:00.000Z"
   });
+}
+
+function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtifactOptions {
+  const baseAssignment = {
+    validationProtocol: "walk_forward" as const,
+    splitId: "split-0",
+    splitIndex: 0,
+    trainStart: "2025-01-01T00:00:00+09:00",
+    trainEnd: "2025-01-31T23:59:59.999+09:00",
+    validationStart: "2025-02-01T00:00:00+09:00",
+    validationEnd: "2025-02-28T23:59:59.999+09:00",
+    testStart: "2025-03-01T00:00:00+09:00",
+    testEnd: "2025-03-31T23:59:59.999+09:00",
+    purgeDurationDays: 0,
+    embargoDurationDays: 0
+  };
+  const sessionDates = [
+    "2025-01-02",
+    "2025-01-31",
+    "2025-02-03",
+    "2025-02-28",
+    "2025-03-04",
+    "2025-03-31"
+  ];
+  const snapshots = sessionDates.map((sessionDate, index) => {
+    const observedAt = `${sessionDate}T0${index % 2 === 0 ? "1" : "5"}:00:00.000Z`;
+    return candidateSnapshot(
+      `builder-snapshot-${index}`,
+      observedAt,
+      index % 2 === 0 ? 100 : 105,
+      index % 2 === 0 ? undefined : "short_term"
+    );
+  });
+  const fixtures = sessionDates.map((sessionDate) =>
+    parseMarketCalendarFixture({
+      calendarId: `calendar.krx.${sessionDate}`,
+      exchange: "KRX",
+      market: "KR",
+      timezone: "Asia/Seoul",
+      sessionDate,
+      marketOpen: `${sessionDate}T00:00:00.000Z`,
+      marketClose: `${sessionDate}T06:30:00.000Z`,
+      isHoliday: false,
+      sourceRefs: [`fixture:calendar.krx.${sessionDate}`],
+      createdAt: "2026-07-20T00:00:00.000Z"
+    })
+  );
+
+  return {
+    generatedAt: "2026-07-20T00:00:00.000Z",
+    assignments: (["train", "validation", "test"] as const).map(
+      (splitRole) => ({ ...baseAssignment, splitRole })
+    ),
+    snapshots,
+    dataSnapshot: { snapshotIds: snapshots.map((item) => item.snapshotId) },
+    universe: { symbols: ["TEST"] },
+    coverage: {
+      status: "available",
+      corruptLineCount: 0,
+      availableStrategyBuckets: ["short_term"]
+    },
+    validationSplit: { assignments: [baseAssignment] },
+    calendarValidation: {
+      rules: [
+        {
+          market: "KR",
+          exchange: "KRX",
+          timezone: "Asia/Seoul"
+        }
+      ],
+      fixtures
+    },
+    windowMonths: 1,
+    timezoneOffsetMinutes: 540,
+    targetRegimes: ["bull"],
+    candidateStrategyBucket: "short_term",
+    minimumCandidatesPerRoleRegime: 1
+  };
 }
 
 function assignment(
