@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,6 +55,7 @@ test("feasibility artifact writer creates a schema-valid JSON artifact", async (
     validationSplitRegimeFeasibilityArtifactSchema.parse(JSON.parse(written)),
     validationSplitRegimeFeasibilityArtifactSchema.parse(artifact())
   );
+  assert.deepEqual(await readdir(join(directory, "nested")), ["artifact.json"]);
 });
 
 test("feasibility artifact writer preserves an existing output", async (t) => {
@@ -65,6 +73,7 @@ test("feasibility artifact writer preserves an existing output", async (t) => {
     (error: NodeJS.ErrnoException) => error.code === "EEXIST"
   );
   assert.equal(await readFile(outputPath, "utf8"), existing);
+  assert.deepEqual(await readdir(directory), ["artifact.json"]);
 });
 
 test(
