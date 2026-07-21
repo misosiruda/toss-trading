@@ -41,7 +41,8 @@ import { validationRoleWindow } from "./validationRoleWindow.js";
 
 test("feasibility artifact writer creates a schema-valid JSON artifact", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "validation-feasibility-"));
-  const outputPath = join(directory, "nested", "artifact.json");
+  const outputDirectory = join(directory, "nested", "deeper");
+  const outputPath = join(outputDirectory, "artifact.json");
   t.after(() => rm(directory, { recursive: true, force: true }));
 
   await writeValidationSplitRegimeFeasibilityArtifact({
@@ -55,7 +56,7 @@ test("feasibility artifact writer creates a schema-valid JSON artifact", async (
     validationSplitRegimeFeasibilityArtifactSchema.parse(JSON.parse(written)),
     validationSplitRegimeFeasibilityArtifactSchema.parse(artifact())
   );
-  assert.deepEqual(await readdir(join(directory, "nested")), ["artifact.json"]);
+  assert.deepEqual(await readdir(outputDirectory), ["artifact.json"]);
 });
 
 test("feasibility artifact writer preserves an existing output", async (t) => {

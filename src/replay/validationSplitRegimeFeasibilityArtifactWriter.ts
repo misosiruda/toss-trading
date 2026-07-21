@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { link, mkdir, open, realpath, unlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
 import { validationSplitRegimeFeasibilityArtifactSchema } from "./validationSplitRegimeFeasibility.js";
 
@@ -18,7 +18,12 @@ export async function writeValidationSplitRegimeFeasibilityArtifact(input: {
     `.${basename(input.outputPath)}.${randomUUID()}.tmp`
   );
 
-  await mkdir(outputDirectory, { recursive: true });
+  const firstCreatedDirectory = await mkdir(outputDirectory, {
+    recursive: true
+  });
+  if (firstCreatedDirectory !== undefined) {
+    await syncCreatedDirectoryChain(firstCreatedDirectory, outputDirectory);
+  }
   const temporaryFile = await open(temporaryPath, "wx");
   try {
     try {
@@ -38,6 +43,35 @@ export async function writeValidationSplitRegimeFeasibilityArtifact(input: {
     } finally {
       await syncOutputDirectory(outputDirectory);
     }
+  }
+}
+
+async function syncCreatedDirectoryChain(
+  firstCreatedDirectory: string,
+  outputDirectory: string
+): Promise<void> {
+  const [firstCreatedPath, outputPath] = await Promise.all([
+    realpath(firstCreatedDirectory),
+    realpath(outputDirectory)
+  ]);
+  const relativeOutputPath = relative(firstCreatedPath, outputPath);
+  if (
+    isAbsolute(relativeOutputPath) ||
+    relativeOutputPath === ".." ||
+    relativeOutputPath.startsWith(`..${sep}`)
+  ) {
+    throw new Error("created directory must be an ancestor of output directory");
+  }
+  const createdDirectories = [dirname(firstCreatedPath), firstCreatedPath];
+  let currentPath = firstCreatedPath;
+
+  for (const segment of relativeOutputPath.split(sep).filter(Boolean)) {
+    currentPath = join(currentPath, segment);
+    createdDirectories.push(currentPath);
+  }
+
+  for (const directory of createdDirectories) {
+    await syncOutputDirectory(directory);
   }
 }
 
