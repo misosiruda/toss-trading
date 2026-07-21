@@ -332,7 +332,7 @@ Unavailable target regime은 다른 regime으로 자동 대체하지 않는다. 
 3. Overlap summary와 deterministic hash/provenance 연결
 4. Read-only CLI와 generated artifact writer
 5. 실제 source preflight 및 feasibility 결과 문서
-6. 결과가 `available`일 때만 별도 role-local replay selection 계획
+6. 결과가 `available`일 때만 [별도 role-local replay selection 계획](validation-role-regime-replay-selection-plan.md)
 
 각 PR은 앞 단계 contract와 test만 포함한다. CLI 추가 전에는 workflow replay semantics를 변경하지 않는다.
 
