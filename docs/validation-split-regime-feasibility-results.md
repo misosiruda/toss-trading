@@ -145,7 +145,7 @@ Assignment 하나가 네 regime을 모두 포함하지 않는 경우가 많다. 
 
 ## 실행 명령
 
-Windows PowerShell에서 package script option을 보존하기 위해 npm delimiter 뒤에 literal `--`를 하나 더 전달했다.
+Package script option은 npm 표준 delimiter 하나 뒤에 전달했다. Exit code 확인 실행은 PowerShell `Start-Process`의 `ArgumentList`에 같은 argument 배열을 전달했다.
 
 ```powershell
 $env:BROKER_PROVIDER = "mock"
@@ -153,10 +153,8 @@ $env:TRADING_ENABLED = "false"
 $env:AI_DECISION_MODE = "paper_only"
 $env:AI_DECISION_ENABLED = "false"
 
-npm run historical:validation:regime-feasibility -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --validation-splits-path data/validation-splits/strategy-bucket-validation-assignments.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York --candidate-strategy-bucket short_term --window-months 1 --timezone-offset-minutes 540 --target-regimes "bull,bear,sideways,mixed" --min-candidates-per-role-regime 1 --output-path data/validation-feasibility/short-term-role-regime-feasibility.json
+npm run historical:validation:regime-feasibility -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --validation-splits-path data/validation-splits/strategy-bucket-validation-assignments.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York --candidate-strategy-bucket short_term --window-months 1 --timezone-offset-minutes 540 --target-regimes "bull,bear,sideways,mixed" --min-candidates-per-role-regime 1 --output-path data/validation-feasibility/short-term-role-regime-feasibility.json
 ```
-
-단일 delimiter로 실행한 최초 시도에서는 npm이 option 이름을 제거해 CLI가 positional argument를 거부했고 artifact는 생성되지 않았다. 위 command로 수정한 뒤에만 결과 artifact를 생성했다.
 
 ## Safety 확인
 
