@@ -57,6 +57,20 @@ test("feasibility CLI rejects provider options before source loading", () => {
   assert.equal(result.stdout, "");
 });
 
+test("feasibility CLI rejects missing snapshot market calendar rules", (t) => {
+  const fixture = createCliFixture(t, { includeUsMarket: true });
+
+  const result = runCli(fixture.args);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /missing --calendar-rule for snapshot markets: US/
+  );
+  assert.equal(result.stdout, "");
+  assert.equal(existsSync(fixture.outputPath), false);
+});
+
 function runCli(args: string[]) {
   return spawnSync(
     process.execPath,
@@ -65,7 +79,10 @@ function runCli(args: string[]) {
   );
 }
 
-function createCliFixture(t: TestContext) {
+function createCliFixture(
+  t: TestContext,
+  options: { includeUsMarket?: boolean } = {}
+) {
   const directory = mkdtempSync(join(tmpdir(), "feasibility-cli-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const sourceDataDir = join(directory, "source");
@@ -82,13 +99,27 @@ function createCliFixture(t: TestContext) {
     "2025-03-04",
     "2025-03-31"
   ];
-  const snapshots = sessionDates.map((sessionDate, index) =>
+  const krSnapshots = sessionDates.map((sessionDate, index) =>
     snapshot(
       `snapshot-${index}`,
       `${sessionDate}T0${index % 2 === 0 ? "1" : "5"}:00:00.000Z`,
       index % 2 === 0 ? 100 : 105
     )
   );
+  const snapshots = options.includeUsMarket
+    ? [
+        ...krSnapshots,
+        ...sessionDates.map((sessionDate, index) =>
+          snapshot(
+            `us-snapshot-${index}`,
+            `${sessionDate}T1${index % 2 === 0 ? "5" : "9"}:00:00.000Z`,
+            index % 2 === 0 ? 200 : 210,
+            "US",
+            "US-TEST"
+          )
+        )
+      ]
+    : krSnapshots;
   const universeSource = {
     mode: "paper_only_historical_universe",
     universeId: "cli-test",
@@ -99,7 +130,17 @@ function createCliFixture(t: TestContext) {
         symbol: "TEST",
         strategyBucket: "short_term",
         required: true
-      }
+      },
+      ...(options.includeUsMarket
+        ? [
+            {
+              market: "US" as const,
+              symbol: "US-TEST",
+              strategyBucket: "short_term" as const,
+              required: true
+            }
+          ]
+        : [])
     ],
     disclaimer: "Paper-only CLI test universe."
   } as const;
@@ -184,12 +225,14 @@ function createCliFixture(t: TestContext) {
 function snapshot(
   snapshotId: string,
   observedAt: string,
-  lastPriceKrw: number
+  lastPriceKrw: number,
+  market: "KR" | "US" = "KR",
+  symbol = "TEST"
 ): HistoricalMarketSnapshot {
   return {
     snapshotId,
-    market: "KR",
-    symbol: "TEST",
+    market,
+    symbol,
     observedAt,
     interval: "1m",
     strategyBucket: "short_term",

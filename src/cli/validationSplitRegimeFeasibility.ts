@@ -55,6 +55,7 @@ const sources = await readValidationSplitRegimeFeasibilitySources({
   validationSplitsPath,
   calendarFixturesPath
 });
+assertCalendarRulesCoverSnapshotMarkets(sources.snapshots, calendarRules);
 const artifact = buildValidationSplitRegimeFeasibilityArtifact({
   assignments: sources.assignments,
   snapshots: sources.snapshots,
@@ -153,4 +154,21 @@ function readTargetRegimes() {
     throw new Error("--target-regimes must not contain duplicates");
   }
   return values;
+}
+
+function assertCalendarRulesCoverSnapshotMarkets(
+  snapshots: readonly { market: string }[],
+  rules: readonly { market: string }[]
+): void {
+  const ruleMarkets = new Set(rules.map((rule) => rule.market));
+  const missingMarkets = Array.from(
+    new Set(snapshots.map((snapshot) => snapshot.market))
+  )
+    .filter((market) => !ruleMarkets.has(market))
+    .sort();
+  if (missingMarkets.length > 0) {
+    throw new Error(
+      `missing --calendar-rule for snapshot markets: ${missingMarkets.join(",")}`
+    );
+  }
 }
