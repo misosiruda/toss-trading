@@ -336,7 +336,7 @@ Unavailable target regime은 다른 regime으로 자동 대체하지 않는다. 
 
 각 PR은 앞 단계 contract와 test만 포함한다. CLI 추가 전에는 workflow replay semantics를 변경하지 않는다.
 
-Generated artifact writer는 filesystem 단위로 먼저 분리한다. Read-only CLI, source parser와 package script는 다음 작은 PR에서 연결한다.
+Generated artifact writer는 filesystem 단위로 먼저 분리했다. Source parser는 snapshot JSONL의 missing/empty/corrupt 상태와 universe, coverage, validation split, calendar fixture source의 schema를 fail-closed로 검증한다. Read-only CLI argument surface와 package script 연결은 다음 작은 PR 범위다.
 
 ## 테스트 요구사항
 
