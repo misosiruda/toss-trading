@@ -666,7 +666,7 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
     )
     .sort(compareValidationAssignments);
   assertUniqueValidationAssignments(assignments);
-  assertValidationSplitSourceMatchesAssignments(
+  const validationSplit = validateValidationSplitSourceAssignments(
     options.validationSplit,
     assignments
   );
@@ -700,7 +700,7 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
     dataSnapshot: snapshots,
     universe: options.universe,
     coverage,
-    validationSplit: options.validationSplit,
+    validationSplit,
     calendarValidation: options.calendarValidation,
     marketRegimeClassifier: classifierConfig
   });
@@ -1102,10 +1102,10 @@ function sameValidationSplitDefinition(
   );
 }
 
-function assertValidationSplitSourceMatchesAssignments(
+function validateValidationSplitSourceAssignments(
   source: unknown,
   assignments: ValidationSplitAssignment[]
-): void {
+): z.infer<typeof validationSplitSourceSchema> {
   const parsed = parseWithSchema(
     validationSplitSourceSchema,
     source,
@@ -1125,6 +1125,9 @@ function assertValidationSplitSourceMatchesAssignments(
       "validation split source assignments must match assessed assignments"
     );
   }
+  return Array.isArray(parsed)
+    ? sourceAssignments
+    : { ...parsed, assignments: sourceAssignments };
 }
 
 function sameValidationAssignment(

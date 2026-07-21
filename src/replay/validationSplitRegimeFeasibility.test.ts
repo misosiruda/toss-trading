@@ -390,6 +390,9 @@ test("feasibility builder creates deterministic available role aggregates", () =
     ...options,
     assignments: [...options.assignments].reverse(),
     snapshots: [...options.snapshots].reverse(),
+    validationSplit: {
+      assignments: [...options.assignments].reverse()
+    },
     calendarValidation: {
       ...options.calendarValidation,
       fixtures: [...options.calendarValidation.fixtures].reverse()
