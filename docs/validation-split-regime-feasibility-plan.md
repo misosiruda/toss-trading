@@ -338,6 +338,8 @@ Unavailable target regime은 다른 regime으로 자동 대체하지 않는다. 
 
 Generated artifact writer는 filesystem 단위로 분리했다. Source parser는 snapshot JSONL의 missing/empty/corrupt 상태와 universe, coverage, validation split, calendar fixture source의 schema를 fail-closed로 검증한다. `historical:validation:regime-feasibility` CLI는 계획에 고정한 source/config/output option만 허용하고 parser, deterministic builder, exclusive writer를 연결한다.
 
+실제 source preflight 결과는 [Validation Split Role-Local Regime Feasibility 결과](validation-split-regime-feasibility-results.md)에 기록한다. 고정 minimum 1 기준 artifact는 `available`이지만 observed-session calendar fixture의 독립성 한계와 regime별 최소 candidate 편중을 유지한 채 해석한다.
+
 ## 테스트 요구사항
 
 후속 구현 PR은 최소한 다음을 검증한다.
