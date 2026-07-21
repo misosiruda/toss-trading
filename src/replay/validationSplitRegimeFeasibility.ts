@@ -157,7 +157,7 @@ const feasibilityCandidateHashInputSchema = z
     }
   });
 const nonnegativeCoverageCountSchema = z.number().int().nonnegative();
-const feasibilityCoverageSourceSchema = z
+export const feasibilityCoverageSourceSchema = z
   .object({
     mode: z.literal("paper_only"),
     universeId: z.string().trim().min(1),
@@ -202,7 +202,7 @@ const feasibilityCoverageSourceSchema = z
       });
     }
   });
-const validationSplitSourceSchema = z.union([
+export const validationSplitSourceSchema = z.union([
   z.array(validationSplitAssignmentSchema),
   z
     .object({
