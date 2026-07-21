@@ -27,16 +27,22 @@ Provider, risk profile, execution policy 또는 order option은 사용하지 않
 
 ## Source와 Hash
 
-Filesystem SHA-256:
+실행 host working-tree raw byte SHA-256:
 
 | Input / artifact | SHA-256 |
 | --- | --- |
 | Snapshot JSONL | `sha256:19f454aadc2cc00b1bca7d34ffc651a9278359519ccf6d2361b0c3d3760ce92e` |
-| Universe JSON | `sha256:98aa2626d533e327c5938e97dcd3cdfcbe31c23222f718be976e9d0214fab4fc` |
+| Universe JSON, Windows CRLF checkout | `sha256:98aa2626d533e327c5938e97dcd3cdfcbe31c23222f718be976e9d0214fab4fc` |
 | Coverage JSON | `sha256:e54abf4d88e31cb67cbb9a9deddec8e063839190bc870b889ffcbd3dff17c69c` |
 | Validation split JSON | `sha256:c97a37d3b6c16b53c651d92e077596adc423bfc70407042a714f36f7799e58c7` |
 | Calendar fixture JSON | `sha256:571363e78a2601a7711bb7b7f85d35f1fa075d55ae11b2b20eaee888a43e7fff` |
 | Feasibility artifact JSON | `sha256:b099eaa253f43ebc8390e4fb1d4dec1bb1e19c2725532c2a4f27f87f7d247744` |
+
+실행 commit의 tracked universe Git blob SHA-256:
+
+| Git object | SHA-256 |
+| --- | --- |
+| `aa0aebe0f8ba89e025b63aff311cdb8c9cbd11dc:docs/historical-universe.global-broad.json` | `sha256:54008eeb6e0460bcf2fc9cf92f77b59611b6276076ed18254b38aef1f4e4ae97` |
 
 Artifact canonical provenance:
 
@@ -49,7 +55,7 @@ Artifact canonical provenance:
 | `calendarHash` | `sha256:1500fbb78d5b439381ade50973ae81be44c1472f57eccc0a2f8bbfd4d5b11e96` |
 | `marketRegimeClassifierHash` | `sha256:f1a60e8cd9c3412fd4d956d2190da8dc52863ada3e36fcf25ba6d35ea2133f23` |
 
-Filesystem hash는 raw file byte를 식별하고 artifact provenance hash는 schema validation과 canonical normalization 이후의 contract input을 식별하므로 서로 같은 값일 필요가 없다.
+실행 host universe file은 223개 CRLF line ending을 포함한 42,180 bytes이고 같은 commit의 Git blob은 223개 LF line ending을 포함한 41,957 bytes다. 이 line-ending 차이 때문에 raw SHA-256은 다르다. Artifact provenance hash는 JSON schema validation과 canonical normalization 이후의 contract input을 식별하므로 checkout line ending과 무관하게 별도 `universeHash`를 사용한다.
 
 ## Calendar Fixture 근거와 한계
 
