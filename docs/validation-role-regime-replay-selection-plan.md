@@ -169,7 +169,16 @@ Plan builder는 feasibility artifact를 schema로 다시 검증하고 다음 조
 
 Source status가 `insufficient` 또는 `invalid`이면 empty success plan을 만들지 않는다. 각각 non-ready plan status와 source warning을 기록할 수 있지만 `runs`는 비워야 하며 batch workflow 입력으로 사용할 수 없다.
 
-`feasibilityArtifactHash`는 schema parsing을 통과한 feasibility artifact 전체를 key-sorted canonical payload로 만든 뒤 기존 `createReplayResearchHash()`로 계산한다. Source의 `generatedAt`도 포함해 실제로 입력한 artifact instance를 식별하며, raw JSON whitespace나 object key insertion order에는 의존하지 않는다.
+`feasibilityArtifactHash`는 schema parsing을 통과한 feasibility artifact를 semantic-normalized payload로 만든 뒤 기존 `createReplayResearchHash()`로 계산한다. Object key 정렬만으로는 array 순서가 보존되므로 hash 전에 다음 array를 명시적으로 정렬한다.
+
+- `config.targetRegimes`, role의 available/unavailable regime: `bull`, `bear`, `sideways`, `mixed` 순서
+- `config.calendarValidation.rules`: `market`, `exchange`, `timezone` 순서
+- `roles`: `train`, `validation`, `test` 순서
+- `assignments`: `splitIndex`, role 순서, `splitId` 순서
+- Assignment `candidates`: `startAt`, `endAt`, `bull`, `bear`, `sideways`, `mixed`, `insufficient_data` regime 순서, `candidateHash` 순서
+- Artifact, role, assignment `warnings`: `code`, `splitRole`(`null` 우선, 이후 role 순서), `splitId`(`null` 우선), `message` 순서
+
+Source의 `generatedAt`은 normalized payload에 포함해 실제로 입력한 artifact instance를 식별한다. 따라서 raw JSON whitespace, object key insertion order 또는 위 source array들의 입력 순서만 바뀐 경우에는 같은 `feasibilityArtifactHash`가 생성되고, semantic field나 `generatedAt`이 바뀌면 hash도 바뀐다.
 
 ## Deduplication과 Ownership
 
@@ -319,7 +328,8 @@ Unavailable regime을 broad fallback, 다른 bucket 또는 다른 role candidate
 - 같은 role assignment 중복 candidate를 hash로 한 번만 schedule
 - 모든 source assignment reference 보존과 canonical execution assignment 선택
 - Input ordering과 무관한 run ordering 및 `planHash`
-- `generatedAt`만 다른 plan의 hash 동일
+- Source assignment, candidate, role, regime와 warning array 순서가 달라도 같은 `feasibilityArtifactHash`
+- Plan 자체의 `generatedAt`만 다른 plan의 hash 동일
 - Cross-role duplicate run이 같은 `evidenceGroupHash` 사용
 - Existing fixed validation과 standalone balanced sampling 미변경
 
