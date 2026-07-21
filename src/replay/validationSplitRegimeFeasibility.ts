@@ -11,13 +11,23 @@ import type {
   Sha256Hash
 } from "../domain/schemas.js";
 import {
+  assetTypeSchema,
+  historicalMarketSnapshotSchema,
   isoDateTimeSchema,
-  sha256HashSchema
+  marketSchema,
+  parseWithSchema,
+  sha256HashSchema,
+  strategyBucketSchema
 } from "../domain/schemas.js";
 import {
   assessHistoricalDataAvailability,
   type HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
+import {
+  assessHistoricalUniverseCoverage,
+  historicalUniverseManifestSchema,
+  type HistoricalUniverseManifest
+} from "./historicalUniverseCoverage.js";
 import {
   MarketCalendarFixtureIndex,
   parseMarketCalendarFixtures,
@@ -29,6 +39,7 @@ import {
 } from "./replayWindowSampler.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
+  validationSplitAssignmentSchema,
   validationSplitRoleSchema,
   type ValidationSplitAssignment
 } from "./validationProtocol.js";
@@ -145,6 +156,60 @@ const feasibilityCandidateHashInputSchema = z
       });
     }
   });
+const nonnegativeCoverageCountSchema = z.number().int().nonnegative();
+const feasibilityCoverageSourceSchema = z
+  .object({
+    mode: z.literal("paper_only"),
+    universeId: z.string().trim().min(1),
+    status: z.literal("available"),
+    rangeStart: isoDateTimeSchema,
+    rangeEnd: isoDateTimeSchema,
+    timezoneOffsetMinutes: z.number().int(),
+    minMonthlyCoverageRatio: z.number().finite().min(0).max(1),
+    minSnapshotsPerSymbol: nonnegativeCoverageCountSchema,
+    minAvailableSymbolCount: nonnegativeCoverageCountSchema,
+    minAvailableMarketSymbolCounts: z.partialRecord(
+      marketSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    minAvailableAssetTypeSymbolCounts: z.partialRecord(
+      assetTypeSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    minAvailableStrategyBucketSymbolCounts: z.partialRecord(
+      strategyBucketSchema,
+      nonnegativeCoverageCountSchema
+    ),
+    requireOptionalSymbols: z.boolean(),
+    requiredMarkets: z.array(marketSchema),
+    requiredAssetTypes: z.array(assetTypeSchema),
+    requiredStrategyBuckets: z.array(strategyBucketSchema),
+    corruptLineCount: z.literal(0),
+    availableStrategyBuckets: z.array(strategyBucketSchema)
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    if (Date.parse(value.rangeStart) > Date.parse(value.rangeEnd)) {
+      context.addIssue({
+        code: "custom",
+        message: "coverage rangeStart must be before or equal to rangeEnd"
+      });
+    }
+    if (!value.availableStrategyBuckets.includes("short_term")) {
+      context.addIssue({
+        code: "custom",
+        message: "coverage must include available short_term strategy bucket"
+      });
+    }
+  });
+const validationSplitSourceSchema = z.union([
+  z.array(validationSplitAssignmentSchema),
+  z
+    .object({
+      assignments: z.array(validationSplitAssignmentSchema)
+    })
+    .passthrough()
+]);
 const candidateSchema = z
   .object({
     startAt: isoDateTimeSchema,
@@ -393,6 +458,21 @@ export interface ValidationSplitRegimeFeasibilityProvenanceInput {
   >;
 }
 
+export interface BuildValidationSplitRegimeFeasibilityArtifactOptions {
+  generatedAt?: Date | string;
+  assignments: ValidationSplitAssignment[];
+  snapshots: HistoricalMarketSnapshot[];
+  universe: unknown;
+  coverage: unknown;
+  validationSplit: unknown;
+  calendarValidation: HistoricalDataAvailabilityCalendarOptions;
+  windowMonths: number;
+  timezoneOffsetMinutes: number;
+  targetRegimes: Array<z.infer<typeof feasibilityTargetRegimeSchema>>;
+  candidateStrategyBucket: "short_term";
+  minimumCandidatesPerRoleRegime: number;
+}
+
 export function enumerateValidationRoleCandidates(input: {
   assignment: ValidationSplitAssignment;
   windowMonths: number;
@@ -572,24 +652,270 @@ export function createValidationSplitRegimeFeasibilityProvenance(
   };
 }
 
+export function buildValidationSplitRegimeFeasibilityArtifact(
+  options: BuildValidationSplitRegimeFeasibilityArtifactOptions
+): ValidationSplitRegimeFeasibilityArtifact {
+  const generatedAt = normalizeGeneratedAt(options.generatedAt);
+  const assignments = options.assignments
+    .map((assignment) =>
+      parseWithSchema(
+        validationSplitAssignmentSchema,
+        assignment,
+        "validation split assignment"
+      )
+    )
+    .sort(compareValidationAssignments);
+  assertUniqueValidationAssignments(assignments);
+  const validationSplit = validateValidationSplitSourceAssignments(
+    options.validationSplit,
+    assignments
+  );
+  const snapshots = options.snapshots
+    .map((snapshot) =>
+      parseWithSchema(
+        historicalMarketSnapshotSchema,
+        snapshot,
+        "historical market snapshot"
+      )
+    )
+    .sort(compareHistoricalSnapshotsForProvenance);
+  const universe = parseWithSchema(
+    historicalUniverseManifestSchema,
+    options.universe,
+    "historical universe manifest"
+  );
+  assertUniqueSnapshotIds(snapshots);
+  assertSnapshotsInsideUniverse(snapshots, universe);
+  const targetRegimes = normalizeTargetRegimes(options.targetRegimes);
+  const coverage = validateCoverageAgainstAssessedSource({
+    coverage: options.coverage,
+    snapshots,
+    universe
+  });
+  const classifierConfig = defaultMarketRegimeClassifierConfig();
+  const calendarRules = normalizeCalendarRules(
+    options.calendarValidation.rules
+  );
+  const provenance = createValidationSplitRegimeFeasibilityProvenance({
+    dataSnapshot: snapshots,
+    universe: options.universe,
+    coverage,
+    validationSplit,
+    calendarValidation: options.calendarValidation,
+    marketRegimeClassifier: classifierConfig
+  });
+
+  const assessedAssignments = assignments.map((assignment) => {
+    const enumeration = enumerateValidationRoleCandidates({
+      assignment,
+      windowMonths: options.windowMonths,
+      timezoneOffsetMinutes: options.timezoneOffsetMinutes
+    });
+    const assessment = assessValidationRoleCandidateAvailability({
+      enumeration,
+      snapshots,
+      calendarValidation: options.calendarValidation,
+      candidateStrategyBucket: options.candidateStrategyBucket,
+      timezoneOffsetMinutes: options.timezoneOffsetMinutes
+    });
+    const candidates = assessment.candidates.map((candidate) => ({
+      ...candidate,
+      candidateHash: createValidationFeasibilityCandidateHash({
+        startAt: candidate.startAt,
+        endAt: candidate.endAt,
+        timezoneOffsetMinutes: options.timezoneOffsetMinutes,
+        windowMonths: options.windowMonths,
+        calendarHash: provenance.calendarHash,
+        marketRegimeClassifierHash:
+          provenance.marketRegimeClassifierHash,
+        candidateStrategyBucket: options.candidateStrategyBucket,
+        scopeAvailable: candidate.scopeAvailable,
+        dataSnapshotHash: provenance.dataSnapshotHash,
+        universeHash: provenance.universeHash,
+        coverageHash: provenance.coverageHash
+      })
+    }));
+    const scopedCandidates = candidates.filter(
+      (candidate) => candidate.scopeAvailable
+    );
+    const regimeCounts = countCandidateRegimes(scopedCandidates);
+    const availableTargetRegimes = targetRegimes.filter(
+      (regime) => regimeCounts[regime] > 0
+    );
+
+    return {
+      roleWindow: assessment.roleWindow,
+      structuralWindows: enumeration.candidates,
+      artifact: {
+        splitId: assessment.roleWindow.splitId,
+        splitIndex: assessment.roleWindow.splitIndex,
+        splitRole: assessment.roleWindow.splitRole,
+        roleStart: assessment.roleWindow.roleStart,
+        roleEnd: assessment.roleWindow.roleEnd,
+        effectiveRoleEnd: assessment.roleWindow.effectiveRoleEnd,
+        structuralCapacityCount: assessment.structuralCapacityCount,
+        candidateCount: candidates.length,
+        regimeCounts,
+        availableTargetRegimes,
+        unavailableTargetRegimes: targetRegimes.filter(
+          (regime) => !availableTargetRegimes.includes(regime)
+        ),
+        candidates,
+        maximumPairwiseOverlapRatio:
+          assessment.maximumPairwiseOverlapRatio,
+        calendarRejectedCandidateCount:
+          assessment.calendarRejectedCandidateCount,
+        scopeUnavailableCandidateCount:
+          assessment.scopeUnavailableCandidateCount,
+        warnings: assessment.warnings
+      }
+    };
+  });
+  const artifactAssignments = assessedAssignments.map(
+    (assignment) => assignment.artifact
+  );
+  const roles = validationSplitRoleSchema.options.flatMap((splitRole) => {
+    const roleAssignments = assessedAssignments.filter(
+      (assignment) => assignment.roleWindow.splitRole === splitRole
+    );
+    if (roleAssignments.length === 0) {
+      return [];
+    }
+    const candidates = deduplicateCandidates(
+      roleAssignments.flatMap((assignment) =>
+        assignment.artifact.candidates.filter(
+          (candidate) => candidate.scopeAvailable
+        )
+      )
+    );
+    const regimeCounts = countCandidateRegimes(candidates.values());
+    const availableTargetRegimes = targetRegimes.filter(
+      (regime) =>
+        regimeCounts[regime] >= options.minimumCandidatesPerRoleRegime
+    );
+    const structuralWindows = deduplicateReplayWindows(
+      roleAssignments.flatMap((assignment) => assignment.structuralWindows)
+    );
+    const overlapCandidates = deduplicateReplayWindows(
+      roleAssignments.flatMap((assignment) =>
+        assignment.artifact.candidates.map((candidate) =>
+          replayCandidateFromArtifact(candidate)
+        )
+      )
+    );
+    const structuralCapacityCount = structuralWindows.length;
+    const requiredCapacity =
+      targetRegimes.length * options.minimumCandidatesPerRoleRegime;
+
+    return [
+      {
+        splitRole,
+        assignmentCount: roleAssignments.length,
+        structuralCapacityCount,
+        uniqueCandidateCount: candidates.size,
+        regimeCounts,
+        availableTargetRegimes,
+        unavailableTargetRegimes: targetRegimes.filter(
+          (regime) => !availableTargetRegimes.includes(regime)
+        ),
+        minimumCandidatesPerRoleRegime:
+          options.minimumCandidatesPerRoleRegime,
+        capacityStatus:
+          structuralCapacityCount >= requiredCapacity
+            ? ("sufficient" as const)
+            : ("insufficient" as const),
+        maximumPairwiseOverlapRatio:
+          maximumPairwiseTradingDateOverlapRatio({
+            candidates: overlapCandidates,
+            snapshots,
+            timezoneOffsetMinutes: options.timezoneOffsetMinutes
+          }),
+        warnings: roleAssignments.flatMap(
+          (assignment) => assignment.artifact.warnings
+        )
+      }
+    ];
+  });
+  const roleCounts = countAssignmentRoles(artifactAssignments);
+  const roleCapacityCounts = emptyRoleCounts();
+  for (const role of roles) {
+    roleCapacityCounts[role.splitRole] = role.structuralCapacityCount;
+  }
+  const uniqueCandidates = deduplicateCandidates(
+    artifactAssignments.flatMap((assignment) =>
+      assignment.candidates.filter((candidate) => candidate.scopeAvailable)
+    )
+  );
+  const unavailableRoleRegimeCount = roles.reduce(
+    (total, role) => total + role.unavailableTargetRegimes.length,
+    0
+  );
+  const hasAllRoles = validationSplitRoleSchema.options.every(
+    (splitRole) => roleCounts[splitRole] > 0
+  );
+  const status =
+    assignments.length > 0 &&
+    uniqueCandidates.size > 0 &&
+    hasAllRoles &&
+    roles.every(
+      (role) =>
+        role.capacityStatus === "sufficient" &&
+        role.unavailableTargetRegimes.length === 0
+    )
+      ? "available"
+      : "insufficient";
+  const warnings = artifactAssignments.flatMap(
+    (assignment) => assignment.warnings
+  );
+
+  return parseWithSchema(
+    validationSplitRegimeFeasibilityArtifactSchema,
+    {
+      schemaVersion: VALIDATION_SPLIT_REGIME_FEASIBILITY_SCHEMA_VERSION,
+      mode: "paper_only",
+      status,
+      generatedAt,
+      config: {
+        windowMonths: options.windowMonths,
+        timezoneOffsetMinutes: options.timezoneOffsetMinutes,
+        targetRegimes,
+        candidateStrategyBucket: options.candidateStrategyBucket,
+        minimumCandidatesPerRoleRegime:
+          options.minimumCandidatesPerRoleRegime,
+        calendarValidation: { rules: calendarRules },
+        marketRegimeClassifier: classifierConfig
+      },
+      provenance,
+      summary: {
+        assignmentCount: artifactAssignments.length,
+        roleCounts,
+        candidateCount: artifactAssignments.reduce(
+          (total, assignment) => total + assignment.candidateCount,
+          0
+        ),
+        uniqueCandidateCount: uniqueCandidates.size,
+        roleCapacityCounts,
+        boundaryViolationCount: 0,
+        embargoViolationCount: 0,
+        unavailableRoleRegimeCount
+      },
+      roles,
+      assignments: artifactAssignments,
+      warnings
+    },
+    "validation split regime feasibility artifact"
+  );
+}
+
 export function createValidationFeasibilityCalendarHash(
   input: HistoricalDataAvailabilityCalendarOptions
 ): Sha256Hash {
-  const rules = input.rules.map((rule) => calendarRuleSchema.parse(rule));
-  const markets = new Set<string>();
-  for (const rule of rules) {
-    if (markets.has(rule.market)) {
-      throw new Error(
-        `duplicate calendarValidation rule for market: ${rule.market}`
-      );
-    }
-    markets.add(rule.market);
-  }
+  const rules = normalizeCalendarRules(input.rules);
 
   const fixtures = parseMarketCalendarFixtures(input.fixtures);
   new MarketCalendarFixtureIndex(fixtures);
   return createReplayResearchHash({
-    rules: [...rules].sort(compareCalendarRules),
+    rules,
     fixtures: fixtures
       .map(normalizeCalendarFixtureForHash)
       .sort(compareCalendarFixtures)
@@ -640,6 +966,338 @@ function compareCalendarFixtures(
     compareCanonicalStrings(left.sessionDate, right.sessionDate) ||
     compareCanonicalStrings(left.calendarId, right.calendarId)
   );
+}
+
+function normalizeCalendarRules(
+  input: HistoricalDataAvailabilityCalendarOptions["rules"]
+): Array<z.infer<typeof calendarRuleSchema>> {
+  const rules = input.map((rule) => calendarRuleSchema.parse(rule));
+  const markets = new Set<string>();
+  for (const rule of rules) {
+    if (markets.has(rule.market)) {
+      throw new Error(
+        `duplicate calendarValidation rule for market: ${rule.market}`
+      );
+    }
+    markets.add(rule.market);
+  }
+  return [...rules].sort(compareCalendarRules);
+}
+
+function normalizeTargetRegimes(
+  input: BuildValidationSplitRegimeFeasibilityArtifactOptions["targetRegimes"]
+): Array<z.infer<typeof feasibilityTargetRegimeSchema>> {
+  const regimes = input.map((regime) =>
+    feasibilityTargetRegimeSchema.parse(regime)
+  );
+  if (regimes.length === 0) {
+    throw new Error("targetRegimes must not be empty");
+  }
+  if (new Set(regimes).size !== regimes.length) {
+    throw new Error("targetRegimes must not contain duplicates");
+  }
+  const requested = new Set(regimes);
+  return feasibilityTargetRegimeSchema.options.filter((regime) =>
+    requested.has(regime)
+  );
+}
+
+function normalizeGeneratedAt(value: Date | string | undefined): string {
+  if (value === undefined) {
+    return new Date().toISOString();
+  }
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime())) {
+      throw new Error("generatedAt must be a valid date");
+    }
+    return value.toISOString();
+  }
+  return isoDateTimeSchema.parse(value);
+}
+
+function compareValidationAssignments(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): number {
+  return (
+    left.splitIndex - right.splitIndex ||
+    validationSplitRoleSchema.options.indexOf(left.splitRole) -
+      validationSplitRoleSchema.options.indexOf(right.splitRole) ||
+    compareCanonicalStrings(left.splitId, right.splitId)
+  );
+}
+
+function assertUniqueValidationAssignments(
+  assignments: ValidationSplitAssignment[]
+): void {
+  const identities = new Set<string>();
+  const splitIdsByIndex = new Map<number, string>();
+  const splitIndexesById = new Map<string, number>();
+  const definitionsBySplit = new Map<string, ValidationSplitAssignment>();
+  const rolesBySplit = new Map<
+    string,
+    Set<z.infer<typeof validationSplitRoleSchema>>
+  >();
+  for (const assignment of assignments) {
+    const identity = `${assignment.splitIndex}:${assignment.splitId}:${assignment.splitRole}`;
+    if (identities.has(identity)) {
+      throw new Error(`duplicate validation assignment: ${identity}`);
+    }
+    const splitId = splitIdsByIndex.get(assignment.splitIndex);
+    if (splitId !== undefined && splitId !== assignment.splitId) {
+      throw new Error(
+        `validation splitIndex maps to multiple splitIds: ${assignment.splitIndex}`
+      );
+    }
+    const splitIndex = splitIndexesById.get(assignment.splitId);
+    if (splitIndex !== undefined && splitIndex !== assignment.splitIndex) {
+      throw new Error(
+        `validation splitId maps to multiple splitIndexes: ${assignment.splitId}`
+      );
+    }
+    const splitKey = `${assignment.splitIndex}:${assignment.splitId}`;
+    const definition = definitionsBySplit.get(splitKey);
+    if (
+      definition !== undefined &&
+      !sameValidationSplitDefinition(definition, assignment)
+    ) {
+      throw new Error(
+        `validation role assignments use inconsistent split definition: ${splitKey}`
+      );
+    }
+    identities.add(identity);
+    splitIdsByIndex.set(assignment.splitIndex, assignment.splitId);
+    splitIndexesById.set(assignment.splitId, assignment.splitIndex);
+    definitionsBySplit.set(splitKey, assignment);
+    const roles = rolesBySplit.get(splitKey) ?? new Set();
+    roles.add(assignment.splitRole);
+    rolesBySplit.set(splitKey, roles);
+  }
+  for (const [splitKey, roles] of rolesBySplit) {
+    const missingRoles = validationSplitRoleSchema.options.filter(
+      (role) => !roles.has(role)
+    );
+    if (missingRoles.length > 0) {
+      throw new Error(
+        `validation split is missing required roles: ${splitKey} (${missingRoles.join(",")})`
+      );
+    }
+  }
+}
+
+function sameValidationSplitDefinition(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): boolean {
+  return (
+    left.validationProtocol === right.validationProtocol &&
+    left.trainStart === right.trainStart &&
+    left.trainEnd === right.trainEnd &&
+    left.validationStart === right.validationStart &&
+    left.validationEnd === right.validationEnd &&
+    left.testStart === right.testStart &&
+    left.testEnd === right.testEnd &&
+    left.purgeDurationDays === right.purgeDurationDays &&
+    left.embargoDurationDays === right.embargoDurationDays
+  );
+}
+
+function validateValidationSplitSourceAssignments(
+  source: unknown,
+  assignments: ValidationSplitAssignment[]
+): z.infer<typeof validationSplitSourceSchema> {
+  const parsed = parseWithSchema(
+    validationSplitSourceSchema,
+    source,
+    "validation split source"
+  );
+  const sourceAssignments = (
+    Array.isArray(parsed) ? parsed : parsed.assignments
+  ).sort(compareValidationAssignments);
+  if (
+    sourceAssignments.length !== assignments.length ||
+    sourceAssignments.some(
+      (assignment, index) =>
+        !sameValidationAssignment(assignment, assignments[index]!)
+    )
+  ) {
+    throw new Error(
+      "validation split source assignments must match assessed assignments"
+    );
+  }
+  return Array.isArray(parsed)
+    ? sourceAssignments
+    : { ...parsed, assignments: sourceAssignments };
+}
+
+function sameValidationAssignment(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): boolean {
+  return (
+    left.splitId === right.splitId &&
+    left.splitIndex === right.splitIndex &&
+    left.splitRole === right.splitRole &&
+    sameValidationSplitDefinition(left, right)
+  );
+}
+
+function assertUniqueSnapshotIds(
+  snapshots: HistoricalMarketSnapshot[]
+): void {
+  const snapshotIds = new Set<string>();
+  for (const snapshot of snapshots) {
+    if (snapshotIds.has(snapshot.snapshotId)) {
+      throw new Error(`duplicate historical snapshotId: ${snapshot.snapshotId}`);
+    }
+    snapshotIds.add(snapshot.snapshotId);
+  }
+}
+
+function assertSnapshotsInsideUniverse(
+  snapshots: HistoricalMarketSnapshot[],
+  universe: HistoricalUniverseManifest
+): void {
+  const universeSymbols = new Set(
+    universe.symbols.map((symbol) => `${symbol.market}:${symbol.symbol}`)
+  );
+  for (const snapshot of snapshots) {
+    const symbolKey = `${snapshot.market}:${snapshot.symbol}`;
+    if (!universeSymbols.has(symbolKey)) {
+      throw new Error(
+        `historical snapshot is outside declared universe: ${symbolKey}`
+      );
+    }
+  }
+}
+
+function validateCoverageAgainstAssessedSource(input: {
+  coverage: unknown;
+  snapshots: HistoricalMarketSnapshot[];
+  universe: HistoricalUniverseManifest;
+}): z.infer<typeof feasibilityCoverageSourceSchema> {
+  const coverage = parseWithSchema(
+    feasibilityCoverageSourceSchema,
+    input.coverage,
+    "validation feasibility coverage gate"
+  );
+  if (coverage.universeId !== input.universe.universeId) {
+    throw new Error(
+      `coverage universeId does not match assessed universe: ${coverage.universeId}`
+    );
+  }
+  const rangeStart = new Date(coverage.rangeStart);
+  const rangeEnd = new Date(coverage.rangeEnd);
+  for (const snapshot of input.snapshots) {
+    const observedAt = Date.parse(snapshot.observedAt);
+    if (
+      observedAt < rangeStart.getTime() ||
+      observedAt > rangeEnd.getTime()
+    ) {
+      throw new Error(
+        `historical snapshot is outside coverage range: ${snapshot.snapshotId}`
+      );
+    }
+  }
+  const recomputed = assessHistoricalUniverseCoverage({
+    snapshots: input.snapshots,
+    universe: input.universe,
+    rangeStart,
+    rangeEnd,
+    corruptLineCount: coverage.corruptLineCount,
+    timezoneOffsetMinutes: coverage.timezoneOffsetMinutes,
+    minMonthlyCoverageRatio: coverage.minMonthlyCoverageRatio,
+    minSnapshotsPerSymbol: coverage.minSnapshotsPerSymbol,
+    minAvailableSymbolCount: coverage.minAvailableSymbolCount,
+    minAvailableMarketSymbolCounts:
+      coverage.minAvailableMarketSymbolCounts,
+    minAvailableAssetTypeSymbolCounts:
+      coverage.minAvailableAssetTypeSymbolCounts,
+    minAvailableStrategyBucketSymbolCounts:
+      coverage.minAvailableStrategyBucketSymbolCounts,
+    requireOptionalSymbols: coverage.requireOptionalSymbols,
+    requiredMarkets: coverage.requiredMarkets,
+    requiredAssetTypes: coverage.requiredAssetTypes,
+    requiredStrategyBuckets: coverage.requiredStrategyBuckets
+  });
+  if (
+    createReplayResearchHash(coverage) !==
+    createReplayResearchHash(recomputed)
+  ) {
+    throw new Error(
+      "coverage report does not match assessed snapshots and universe"
+    );
+  }
+  return coverage;
+}
+
+function compareHistoricalSnapshotsForProvenance(
+  left: HistoricalMarketSnapshot,
+  right: HistoricalMarketSnapshot
+): number {
+  return (
+    Date.parse(left.observedAt) - Date.parse(right.observedAt) ||
+    compareCanonicalStrings(left.market, right.market) ||
+    compareCanonicalStrings(left.symbol, right.symbol) ||
+    compareCanonicalStrings(left.snapshotId, right.snapshotId)
+  );
+}
+
+function countAssignmentRoles(
+  assignments: FeasibilityAssignment[]
+): Record<z.infer<typeof validationSplitRoleSchema>, number> {
+  const counts = emptyRoleCounts();
+  for (const assignment of assignments) {
+    counts[assignment.splitRole] += 1;
+  }
+  return counts;
+}
+
+function emptyRoleCounts(): Record<
+  z.infer<typeof validationSplitRoleSchema>,
+  number
+> {
+  return { train: 0, validation: 0, test: 0 };
+}
+
+function deduplicateCandidates(
+  candidates: FeasibilityCandidate[]
+): Map<string, FeasibilityCandidate> {
+  const unique = new Map<string, FeasibilityCandidate>();
+  for (const candidate of candidates) {
+    const existing = unique.get(candidate.candidateHash);
+    if (existing !== undefined && !sameCandidate(existing, candidate)) {
+      throw new Error(
+        `candidateHash payload mismatch: ${candidate.candidateHash}`
+      );
+    }
+    unique.set(candidate.candidateHash, candidate);
+  }
+  return unique;
+}
+
+function deduplicateReplayWindows(
+  candidates: ReplayWindowCandidate[]
+): ReplayWindowCandidate[] {
+  const unique = new Map<string, ReplayWindowCandidate>();
+  for (const candidate of candidates) {
+    unique.set(`${candidate.startMs}:${candidate.endMs}`, candidate);
+  }
+  return Array.from(unique.values()).sort(
+    (left, right) => left.startMs - right.startMs || left.endMs - right.endMs
+  );
+}
+
+function replayCandidateFromArtifact(
+  candidate: FeasibilityCandidate
+): ReplayWindowCandidate {
+  return {
+    selectedMonth: candidate.startAt.slice(0, 7),
+    localStartDate: candidate.startAt.slice(0, 10),
+    localEndDate: candidate.endAt.slice(0, 10),
+    startMs: Date.parse(candidate.startAt),
+    endMs: Date.parse(candidate.endAt)
+  };
 }
 
 function candidateTradingDates(input: {
