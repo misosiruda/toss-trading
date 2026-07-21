@@ -1,4 +1,14 @@
 import assert from "node:assert/strict";
+import {
+  access,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
@@ -24,7 +34,65 @@ import {
   type ValidationRoleCandidateEnumeration,
   validationSplitRegimeFeasibilityArtifactSchema
 } from "./validationSplitRegimeFeasibility.js";
+import {
+  writeValidationSplitRegimeFeasibilityArtifact
+} from "./validationSplitRegimeFeasibilityArtifactWriter.js";
 import { validationRoleWindow } from "./validationRoleWindow.js";
+
+test("feasibility artifact writer creates a schema-valid JSON artifact", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "validation-feasibility-"));
+  const outputDirectory = join(directory, "nested", "deeper");
+  const outputPath = join(outputDirectory, "artifact.json");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  await writeValidationSplitRegimeFeasibilityArtifact({
+    outputPath,
+    artifact: artifact()
+  });
+
+  const written = await readFile(outputPath, "utf8");
+  assert.equal(written.endsWith("\n"), true);
+  assert.deepEqual(
+    validationSplitRegimeFeasibilityArtifactSchema.parse(JSON.parse(written)),
+    validationSplitRegimeFeasibilityArtifactSchema.parse(artifact())
+  );
+  assert.deepEqual(await readdir(outputDirectory), ["artifact.json"]);
+});
+
+test("feasibility artifact writer preserves an existing output", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "validation-feasibility-"));
+  const outputPath = join(directory, "artifact.json");
+  const existing = "existing artifact must remain unchanged\n";
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(outputPath, existing, "utf8");
+
+  await assert.rejects(
+    writeValidationSplitRegimeFeasibilityArtifact({
+      outputPath,
+      artifact: artifact()
+    }),
+    (error: NodeJS.ErrnoException) => error.code === "EEXIST"
+  );
+  assert.equal(await readFile(outputPath, "utf8"), existing);
+  assert.deepEqual(await readdir(directory), ["artifact.json"]);
+});
+
+test(
+  "feasibility artifact writer rejects invalid input before filesystem write",
+  async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "validation-feasibility-"));
+    const outputPath = join(directory, "nested", "artifact.json");
+    t.after(() => rm(directory, { recursive: true, force: true }));
+
+    await assert.rejects(
+      writeValidationSplitRegimeFeasibilityArtifact({
+        outputPath,
+        artifact: { ...artifact(), mode: "live" }
+      })
+    );
+    await assert.rejects(access(outputPath));
+  }
+);
 
 test("feasibility artifact schema accepts the paper-only v1 contract", () => {
   const parsed = validationSplitRegimeFeasibilityArtifactSchema.parse(
