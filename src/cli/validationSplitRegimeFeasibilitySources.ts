@@ -32,6 +32,7 @@ export interface ValidationSplitRegimeFeasibilitySourcePaths {
 
 export interface ValidationSplitRegimeFeasibilitySources {
   snapshots: HistoricalMarketSnapshot[];
+  universeSource: unknown;
   universe: HistoricalUniverseManifest;
   coverage: z.infer<typeof feasibilityCoverageSourceSchema>;
   validationSplit: z.infer<typeof validationSplitSourceSchema>;
@@ -74,6 +75,7 @@ export async function readValidationSplitRegimeFeasibilitySources(
 
   return {
     snapshots: snapshotRead.records,
+    universeSource,
     universe: parseWithSchema(
       historicalUniverseManifestSchema,
       universeSource,

@@ -21,6 +21,7 @@ test("feasibility source parser loads schema-valid read-only inputs", async (t) 
   );
 
   assert.equal(sources.snapshots.length, 1);
+  assert.deepEqual(sources.universeSource, fixture.universeSource);
   assert.equal(sources.universe.universeId, "parser-test");
   assert.equal(sources.coverage.status, "available");
   assert.equal(sources.assignments.length, 3);
@@ -179,7 +180,7 @@ async function createSourceFixture(t: TestContext) {
       "utf8"
     )
   ]);
-  return { paths, snapshot };
+  return { paths, snapshot, universeSource };
 }
 
 function historicalSnapshot(): HistoricalMarketSnapshot {

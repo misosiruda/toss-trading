@@ -18,7 +18,7 @@ export function readCalendarValidationOptionsFromArgs(
   args: readonly string[]
 ): HistoricalDataAvailabilityCalendarOptions | undefined {
   const fixturesPath = readCalendarFixturesPathArg(args);
-  const rules = readCalendarRules(args);
+  const rules = readCalendarValidationRulesFromArgs(args);
 
   if (fixturesPath === undefined) {
     if (rules.length > 0) {
@@ -85,7 +85,7 @@ function readCalendarFixtures(path: string) {
   return parseMarketCalendarFixtures(values);
 }
 
-function readCalendarRules(
+export function readCalendarValidationRulesFromArgs(
   args: readonly string[]
 ): HistoricalDataAvailabilityCalendarRule[] {
   return readArgValues(args, "--calendar-rule").map(parseCalendarRuleArg);
