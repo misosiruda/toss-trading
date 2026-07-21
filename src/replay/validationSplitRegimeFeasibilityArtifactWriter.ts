@@ -35,7 +35,27 @@ export async function writeValidationSplitRegimeFeasibilityArtifact(input: {
       if (!isNodeError(error) || error.code !== "ENOENT") {
         throw error;
       }
+    } finally {
+      await syncOutputDirectory(outputDirectory);
     }
+  }
+}
+
+async function syncOutputDirectory(outputDirectory: string): Promise<void> {
+  const directory = await open(outputDirectory, "r");
+  try {
+    await directory.sync();
+  } catch (error) {
+    // Node on Windows opens directory handles but rejects fsync with EPERM.
+    if (
+      process.platform !== "win32" ||
+      !isNodeError(error) ||
+      error.code !== "EPERM"
+    ) {
+      throw error;
+    }
+  } finally {
+    await directory.close();
   }
 }
 
