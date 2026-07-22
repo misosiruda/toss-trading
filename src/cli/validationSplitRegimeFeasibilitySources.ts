@@ -14,7 +14,9 @@ import {
 } from "../replay/marketCalendar.js";
 import {
   feasibilityCoverageSourceSchema,
-  validationSplitSourceSchema
+  validationSplitRegimeFeasibilityArtifactSchema,
+  validationSplitSourceSchema,
+  type ValidationSplitRegimeFeasibilityArtifact
 } from "../replay/validationSplitRegimeFeasibility.js";
 import type { ValidationSplitAssignment } from "../replay/validationProtocol.js";
 import {
@@ -92,6 +94,16 @@ export async function readValidationSplitRegimeFeasibilitySources(
       paths.calendarFixturesPath
     )
   };
+}
+
+export async function readValidationSplitRegimeFeasibilityArtifact(
+  path: string
+): Promise<ValidationSplitRegimeFeasibilityArtifact> {
+  return parseWithSchema(
+    validationSplitRegimeFeasibilityArtifactSchema,
+    await readJsonFile(path, "validation split regime feasibility artifact"),
+    "validation split regime feasibility artifact"
+  );
 }
 
 async function readJsonFile(path: string, label: string): Promise<unknown> {
