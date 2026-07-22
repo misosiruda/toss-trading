@@ -4,7 +4,11 @@ import test from "node:test";
 import type { ValidationSplitRegimeFeasibilityArtifact } from "./validationSplitRegimeFeasibility.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
+  buildValidationRoleRegimeReplayPlan,
   buildExhaustiveValidationRoleRegimeSelection,
+  createValidationRoleRegimeFeasibilityArtifactHash,
+  createValidationRoleRegimeReplayPlanHash,
+  parseValidationRoleRegimeReplayPlan,
   validationRoleRegimeReplayPlanSchema,
   validationRoleRegimeReplaySelectionRowSchema
 } from "./validationRoleRegimeReplayPlan.js";
@@ -51,10 +55,11 @@ test("exhaustive builder deduplicates within role and preserves source assignmen
     validationAssignments: [...sourceAssignments].reverse()
   });
 
-  assert.equal(rows.length, 7);
+  assert.equal(rows.length, 8);
   assert.deepEqual(
     rows.map((row) => `${row.splitRole}/${row.targetRegime}`),
     [
+      "train/bull",
       "train/bull",
       "train/bull",
       "train/bear",
@@ -66,7 +71,7 @@ test("exhaustive builder deduplicates within role and preserves source assignmen
   );
   assert.deepEqual(
     rows.map((row) => row.planIndex),
-    [0, 1, 2, 3, 4, 5, 6]
+    [0, 1, 2, 3, 4, 5, 6, 7]
   );
   assert.equal(rows.some((row) => row.candidateHash === HASH_X), false);
   assert.equal(
@@ -88,7 +93,7 @@ test("exhaustive builder deduplicates within role and preserves source assignmen
         (row) => row.splitRole === "train" && row.targetRegime === "bull"
       )
       .map((row) => row.candidateOrdinalWithinRoleRegime),
-    [0, 1]
+    [0, 1, 2]
   );
 });
 
@@ -172,6 +177,214 @@ test("exhaustive builder rejects source boundary and embargo mismatch", () => {
   );
 });
 
+test("plan builder groups cross-role evidence and derives canonical summary", () => {
+  const plan = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+
+  assert.equal(plan.status, "ready_for_paper_diagnostic");
+  assert.equal(plan.runs.length, 8);
+  assert.deepEqual(plan.summary, {
+    requiredRoleRegimeCellCount: 6,
+    coveredRoleRegimeCellCount: 6,
+    plannedRunCount: 8,
+    globalUniqueEvidenceGroupCount: 7,
+    crossRoleSharedEvidenceGroupCount: 1,
+    nonTargetCandidateCount: 1,
+    roleRunCounts: { train: 4, validation: 2, test: 2 },
+    roleRegimeRunCounts: {
+      "train.bull": 3,
+      "train.bear": 1,
+      "validation.bull": 1,
+      "validation.bear": 1,
+      "test.bull": 1,
+      "test.bear": 1
+    }
+  });
+  const shared = plan.runs.filter((run) => run.candidateHash === HASH_C);
+  assert.equal(shared.length, 2);
+  assert.deepEqual(
+    shared.map((run) => [run.splitRole, run.sharedRoles, run.sharedAcrossRoles]),
+    [
+      ["train", ["train", "validation"], true],
+      ["validation", ["train", "validation"], true]
+    ]
+  );
+  assert.equal(
+    plan.warnings.filter(
+      (warning) => warning.code === "CROSS_ROLE_EVIDENCE_SHARED"
+    ).length,
+    1
+  );
+  assert.equal(plan.warnings.length, 11);
+  assert.deepEqual(parseValidationRoleRegimeReplayPlan(plan), plan);
+});
+
+test("feasibility artifact hash ignores canonicalized array input order", () => {
+  const artifact = availableFeasibilityArtifact();
+  const reordered = {
+    ...artifact,
+    roles: [...artifact.roles].reverse(),
+    assignments: [...artifact.assignments]
+      .reverse()
+      .map((entry) => ({
+        ...entry,
+        availableTargetRegimes: [...entry.availableTargetRegimes].reverse(),
+        candidates: [...entry.candidates].reverse(),
+        warnings: [...entry.warnings].reverse()
+      })),
+    warnings: [...artifact.warnings].reverse()
+  };
+
+  assert.equal(
+    createValidationRoleRegimeFeasibilityArtifactHash(reordered),
+    createValidationRoleRegimeFeasibilityArtifactHash(artifact)
+  );
+  assert.notEqual(
+    createValidationRoleRegimeFeasibilityArtifactHash({
+      ...artifact,
+      generatedAt: "2026-07-22T00:00:00.000Z"
+    }),
+    createValidationRoleRegimeFeasibilityArtifactHash(artifact)
+  );
+});
+
+test("plan hash excludes plan generation time but binds semantic content", () => {
+  const first = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+  const second = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T01:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+
+  assert.equal(second.planHash, first.planHash);
+  assert.notEqual(second.generatedAt, first.generatedAt);
+  assert.notEqual(
+    createValidationRoleRegimeReplayPlanHash({
+      ...first,
+      summary: { ...first.summary, nonTargetCandidateCount: 2 }
+    }),
+    first.planHash
+  );
+});
+
+test("plan builder rejects unsupported calendar evidence classification", () => {
+  assert.throws(
+    () =>
+      buildValidationRoleRegimeReplayPlan({
+        feasibilityArtifact: availableFeasibilityArtifact(),
+        validationAssignments: assignments(),
+        generatedAt: "2026-07-22T00:00:00.000Z",
+        calendarEvidenceClass: "full_exchange_calendar" as never
+      }),
+    /calendar evidence class must be observed_session_only/
+  );
+});
+
+test("strict plan parser rejects hash and derived contract tampering", () => {
+  const plan = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+  assert.throws(
+    () => parseValidationRoleRegimeReplayPlan({ ...plan, planHash: HASH_A }),
+    /plan hash mismatch/
+  );
+
+  const summaryTampered = {
+    ...plan,
+    summary: { ...plan.summary, plannedRunCount: plan.runs.length + 1 }
+  };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...summaryTampered,
+        planHash: createValidationRoleRegimeReplayPlanHash(summaryTampered)
+      }),
+    /plan summary does not match replay runs/
+  );
+
+  const runs = plan.runs.map((run) =>
+    run.candidateHash === HASH_C
+      ? { ...run, sharedRoles: [run.splitRole] }
+      : run
+  );
+  const sharingTampered = { ...plan, runs };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...sharingTampered,
+        planHash: createValidationRoleRegimeReplayPlanHash(sharingTampered)
+      }),
+    /sharedRoles mismatch/
+  );
+});
+
+test("strict plan parser rejects unconfigured and missing role-regime cells", () => {
+  const plan = readyPlan();
+  const unconfiguredRuns = plan.runs.map((run) =>
+    run.splitRole === "test" && run.targetRegime === "bear"
+      ? {
+          ...run,
+          targetRegime: "sideways" as const,
+          runKey: `test_sideways_${run.candidateHash.replace(/^sha256:/, "")}`
+        }
+      : run
+  );
+  const unconfigured = { ...plan, runs: unconfiguredRuns };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...unconfigured,
+        planHash: createValidationRoleRegimeReplayPlanHash(unconfigured)
+      }),
+    /run targetRegime is not configured: test\/sideways/
+  );
+
+  const missing = {
+    ...plan,
+    runs: plan.runs.filter(
+      (run) => !(run.splitRole === "test" && run.targetRegime === "bear")
+    )
+  };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...missing,
+        planHash: createValidationRoleRegimeReplayPlanHash(missing)
+      }),
+    /required plan role-regime run missing: test\/bear/
+  );
+});
+
+test("strict plan parser rejects run windows outside source assignments", () => {
+  const plan = readyPlan();
+  const runs = plan.runs.map((run, index) =>
+    index === 0 ? { ...run, startAt: "2024-12-31T00:00:00.000Z" } : run
+  );
+  const tampered = { ...plan, runs };
+
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...tampered,
+        planHash: createValidationRoleRegimeReplayPlanHash(tampered)
+      }),
+    /run window exceeds source assignment/
+  );
+});
+
 function emptyPlan() {
   const value = hash("0");
   return {
@@ -216,6 +429,15 @@ function emptyPlan() {
   };
 }
 
+function readyPlan() {
+  return buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+}
+
 function selectionRow() {
   const assignment = assignments()[0]!;
   return {
@@ -243,7 +465,8 @@ function availableFeasibilityArtifact(): ValidationSplitRegimeFeasibilityArtifac
       candidate(HASH_G, "bull", "2025-03-20", true)
     ]),
     feasibilityAssignment(sourceAssignments[1]!, [
-      candidate(HASH_A, "bull", "2025-01-01", true)
+      candidate(HASH_A, "bull", "2025-01-01", true),
+      candidate(HASH_C, "bull", "2025-04-01", true)
     ]),
     feasibilityAssignment(sourceAssignments[2]!, [
       candidate(HASH_C, "bull", "2025-04-01", true),
@@ -291,16 +514,16 @@ function availableFeasibilityArtifact(): ValidationSplitRegimeFeasibilityArtifac
     summary: {
       assignmentCount: 4,
       roleCounts: { train: 2, validation: 1, test: 1 },
-      candidateCount: 10,
+      candidateCount: 11,
       uniqueCandidateCount: 8,
-      roleCapacityCounts: { train: 5, validation: 2, test: 2 },
+      roleCapacityCounts: { train: 6, validation: 2, test: 2 },
       boundaryViolationCount: 0,
       embargoViolationCount: 0,
       unavailableRoleRegimeCount: 0
     },
     roles: [
-      feasibilityRole("train", 2, 5, 4, {
-        bull: 2,
+      feasibilityRole("train", 2, 6, 5, {
+        bull: 3,
         bear: 1,
         sideways: 0,
         mixed: 0,
@@ -340,6 +563,22 @@ function assignment(
   splitIndex: number,
   splitRole: ValidationSplitAssignment["splitRole"]
 ): ValidationSplitAssignment {
+  if (splitId === "split-1") {
+    return {
+      validationProtocol: "walk_forward",
+      splitId,
+      splitIndex,
+      splitRole,
+      trainStart: "2025-01-01T00:00:00.000Z",
+      trainEnd: "2025-04-30T23:59:59.999Z",
+      validationStart: "2025-05-01T00:00:00.000Z",
+      validationEnd: "2025-05-31T23:59:59.999Z",
+      testStart: "2025-06-01T00:00:00.000Z",
+      testEnd: "2025-06-30T23:59:59.999Z",
+      purgeDurationDays: 0,
+      embargoDurationDays: 0
+    };
+  }
   return {
     validationProtocol: "walk_forward",
     splitId,
