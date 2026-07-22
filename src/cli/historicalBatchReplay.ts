@@ -43,9 +43,19 @@ import {
   validationSplitAssignmentSchema,
   type ValidationSplitAssignment
 } from "../replay/validationProtocol.js";
+import {
+  parseValidationRoleRegimeReplayPlan,
+  type ValidationRoleRegimeReplayPlan
+} from "../replay/validationRoleRegimeReplayPlan.js";
+import { feasibilityCoverageSourceSchema } from "../replay/validationSplitRegimeFeasibility.js";
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 
 const args = process.argv.slice(2);
+validateValidationRoleRegimePlanArgs();
+const validationRoleRegimePlanPath = readOptionalArgValue(
+  "--validation-role-regime-plan-path"
+);
+const validationRoleRegimePlan = readValidationRoleRegimePlanArg();
 const strategyPresetName = parseStrategyReplayPresetName(
   readOptionalArgValue("--strategy-preset")
 );
@@ -53,7 +63,20 @@ const strategyPreset =
   strategyPresetName === undefined
     ? undefined
     : resolveStrategyReplayPreset(strategyPresetName);
-const candidateStrategyBucket = readCandidateStrategyBucketArg();
+const requestedCandidateStrategyBucket = readCandidateStrategyBucketArg();
+if (
+  validationRoleRegimePlan !== undefined &&
+  requestedCandidateStrategyBucket !== undefined &&
+  requestedCandidateStrategyBucket !==
+    validationRoleRegimePlan.config.candidateStrategyBucket
+) {
+  throw new Error(
+    "--candidate-strategy-bucket must match --validation-role-regime-plan-path"
+  );
+}
+const candidateStrategyBucket =
+  validationRoleRegimePlan?.config.candidateStrategyBucket ??
+  requestedCandidateStrategyBucket;
 validateCandidateStrategyBucketPreset({
   candidateStrategyBucket,
   strategyPresetName
@@ -69,16 +92,29 @@ const maxCodexCallsPerRun = readNumberArg(
   "--max-codex-calls-per-run",
   maxDecisionCalls ?? 5
 );
-const universeManifest = readUniverseManifestArg();
+const universeSource = readUniverseSourceArg();
+const universeManifest =
+  universeSource === undefined
+    ? undefined
+    : parseHistoricalUniverseManifest(universeSource);
+const validationRoleRegimeCoverage = readValidationRoleRegimeCoverageArg();
 const requiredSymbols = readRequiredSymbols();
 const calendarValidation = readCalendarValidationOptionsFromArgs(args);
 const fxValidation = readFxValidationOptionsFromArgs(args);
-const windowSamplingMode = readWindowSamplingModeArg();
-const targetRegimes = readTargetRegimesArg();
+const windowSamplingMode =
+  validationRoleRegimePlan === undefined
+    ? readWindowSamplingModeArg()
+    : undefined;
+const targetRegimes =
+  validationRoleRegimePlan === undefined ? readTargetRegimesArg() : undefined;
 const validationSplitsPath = readArgValue("--validation-splits-path");
 const validationSplitAssignments = readValidationSplitAssignmentsArg();
 const effectiveWindowSamplingMode =
-  validationSplitAssignments === undefined ? windowSamplingMode : "fixed_range";
+  validationRoleRegimePlan !== undefined
+    ? "validation_role_regime_plan"
+    : validationSplitAssignments === undefined
+      ? windowSamplingMode
+      : "fixed_range";
 const initialCashKrw = readNumberArg("--initial-cash-krw", 1_000_000);
 const maxNewPositionsOverride = readOptionalNumberArg("--max-new-positions");
 const maxBudgetPerSymbolOverride = readOptionalNumberArg(
@@ -159,14 +195,22 @@ const result = await runHistoricalBatchReplay({
     ? {}
     : { candidateStrategyBucket }),
   seed: readRequiredArgValue("--seed"),
-  runCount: readNumberArg("--runs", 1),
-  rangeStart: readDateArg("--random-window-from"),
-  rangeEnd: readDateArg("--random-window-to"),
-  windowMonths: readNumberArg(
-    "--window-months",
-    strategyPreset?.windowMonths ?? 1
-  ),
-  timezoneOffsetMinutes: readNumberArg("--timezone-offset-minutes", 540),
+  runCount:
+    validationRoleRegimePlan?.runs.length ?? readNumberArg("--runs", 1),
+  rangeStart:
+    validationRoleRegimePlan === undefined
+      ? readDateArg("--random-window-from")
+      : new Date(earliestPlanBoundary(validationRoleRegimePlan)),
+  rangeEnd:
+    validationRoleRegimePlan === undefined
+      ? readDateArg("--random-window-to")
+      : new Date(latestPlanBoundary(validationRoleRegimePlan)),
+  windowMonths:
+    validationRoleRegimePlan?.config.windowMonths ??
+    readNumberArg("--window-months", strategyPreset?.windowMonths ?? 1),
+  timezoneOffsetMinutes:
+    validationRoleRegimePlan?.config.timezoneOffsetMinutes ??
+    readNumberArg("--timezone-offset-minutes", 540),
   stepSeconds: readNumberArg(
     "--step-seconds",
     strategyPreset?.stepSeconds ?? 60
@@ -196,11 +240,18 @@ const result = await runHistoricalBatchReplay({
   ...(universeManifest === undefined ? {} : { universeManifest }),
   ...(calendarValidation === undefined ? {} : { calendarValidation }),
   ...(fxValidation === undefined ? {} : { fxValidation }),
-  windowSamplingMode,
+  ...(windowSamplingMode === undefined ? {} : { windowSamplingMode }),
   ...(targetRegimes === undefined ? {} : { targetRegimes }),
   ...(validationSplitAssignments === undefined
     ? {}
     : { validationSplitAssignments }),
+  ...(validationRoleRegimePlan === undefined
+    ? {}
+    : {
+        validationRoleRegimePlan,
+        validationRoleRegimeCoverage,
+        validationRoleRegimeUniverseSource: universeSource
+      }),
   ...(paperExitPolicy === undefined ? {} : { paperExitPolicy }),
   ...(marketRegimeAllocationPolicy === undefined
     ? {}
@@ -253,6 +304,8 @@ console.log(
       marketRegimeAllocationPolicy: marketRegimeAllocationPolicy ?? null,
       windowSamplingMode: effectiveWindowSamplingMode,
       validationSplitsPath: validationSplitsPath ?? null,
+      validationRoleRegimePlanPath:
+        validationRoleRegimePlanPath ?? null,
       maxCodexCallsPerRun: useCodexAi ? maxCodexCallsPerRun : null
     },
     null,
@@ -347,6 +400,84 @@ function readArgValue(name: string): string | undefined {
   }
 
   return value;
+}
+
+function validateValidationRoleRegimePlanArgs(): void {
+  if (!args.includes("--validation-role-regime-plan-path")) {
+    return;
+  }
+  if (
+    args.filter((value) => value === "--validation-role-regime-plan-path")
+      .length !== 1
+  ) {
+    throw new Error(
+      "--validation-role-regime-plan-path must not be repeated"
+    );
+  }
+  const conflicts = [
+    "--validation-splits-path",
+    "--window-sampling",
+    "--target-regimes",
+    "--runs",
+    "--random-window-from",
+    "--random-window-to",
+    "--window-months",
+    "--timezone-offset-minutes"
+  ].filter((option) => args.includes(option));
+  if (conflicts.length > 0) {
+    throw new Error(
+      `--validation-role-regime-plan-path conflicts with ${conflicts.join(", ")}`
+    );
+  }
+  for (const option of [
+    "--universe-path",
+    "--coverage-path",
+    "--calendar-fixtures-path",
+    "--calendar-rule"
+  ]) {
+    if (!args.includes(option)) {
+      throw new Error(
+        `--validation-role-regime-plan-path requires ${option}`
+      );
+    }
+  }
+}
+
+function readValidationRoleRegimePlanArg():
+  | ValidationRoleRegimeReplayPlan
+  | undefined {
+  if (validationRoleRegimePlanPath === undefined) {
+    return undefined;
+  }
+  return parseValidationRoleRegimeReplayPlan(
+    JSON.parse(readFileSync(validationRoleRegimePlanPath, "utf8"))
+  );
+}
+
+function readValidationRoleRegimeCoverageArg(): unknown {
+  if (validationRoleRegimePlan === undefined) {
+    return undefined;
+  }
+  const coveragePath = readRequiredArgValue("--coverage-path");
+  return feasibilityCoverageSourceSchema.parse(
+    JSON.parse(readFileSync(coveragePath, "utf8"))
+  );
+}
+
+function earliestPlanBoundary(plan: ValidationRoleRegimeReplayPlan): string {
+  return plan.runs.reduce(
+    (earliest, run) =>
+      Date.parse(run.startAt) < Date.parse(earliest) ? run.startAt : earliest,
+    plan.runs[0]!.startAt
+  );
+}
+
+function latestPlanBoundary(plan: ValidationRoleRegimeReplayPlan): string {
+  return plan.runs.reduce(
+    (latest, run) =>
+      Date.parse(run.endAt) > Date.parse(latest) ? run.endAt : latest,
+    plan.runs[0]!.endAt
+  );
 }
 
 function readOptionalArgValue(name: string): string | undefined {
@@ -612,14 +743,12 @@ function readRequiredSymbols():
   return values.length === 0 ? undefined : dedupeSymbols(values);
 }
 
-function readUniverseManifestArg() {
+function readUniverseSourceArg(): unknown {
   const universePath = readArgValue("--universe-path");
   if (universePath === undefined) {
     return undefined;
   }
-  return parseHistoricalUniverseManifest(
-    JSON.parse(readFileSync(universePath, "utf8"))
-  );
+  return JSON.parse(readFileSync(universePath, "utf8")) as unknown;
 }
 
 function readValidationSplitAssignmentsArg():

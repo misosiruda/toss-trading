@@ -1,7 +1,15 @@
-import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  appendFile,
+  mkdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
+  DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG,
   classifyMarketRegime,
   classifyMarketRegimeByMarket,
   type MarketRegimeClassification,
@@ -67,10 +75,28 @@ import {
 import { SimulatedClock } from "../replay/simulatedClock.js";
 import type { CodexHistoricalReplayDecisionProviderLike } from "../replay/codexHistoricalReplayRunner.js";
 import {
+  createReplayResearchHash,
   missingReplayResearchManifestReference,
   replayResearchManifestReference,
   type ReplayResearchManifestReference
 } from "../replay/replayRunManifest.js";
+import {
+  buildValidationRoleRegimeBatchProvenance,
+  type ValidationRoleRegimeBatchProvenance,
+  type ValidationRoleRegimeBatchManifestProvenance,
+  type ValidationRoleRegimeBatchRunProvenance
+} from "../replay/validationRoleRegimeBatchProvenance.js";
+import {
+  parseValidationRoleRegimeReplayPlan,
+  type ValidationRoleRegimeReplayPlan
+} from "../replay/validationRoleRegimeReplayPlan.js";
+import {
+  createValidationFeasibilityCalendarHash,
+  createValidationFeasibilityCandidateHash,
+  createValidationFeasibilityClassifierHash,
+  defaultMarketRegimeClassifierConfig,
+  feasibilityCoverageSourceSchema
+} from "../replay/validationSplitRegimeFeasibility.js";
 import {
   createSelectionTrialRecord,
   type SelectionTrialRecord
@@ -99,7 +125,8 @@ export type BatchReplayManifestStatus =
 export type BatchReplayWindowSamplingMode =
   | "random"
   | "balanced_regime"
-  | "fixed_range";
+  | "fixed_range"
+  | "validation_role_regime_plan";
 
 export interface BatchReplayRunnerOptions {
   sourceDataDir: string;
@@ -138,6 +165,9 @@ export interface BatchReplayRunnerOptions {
   windowSamplingMode?: BatchReplayWindowSamplingMode;
   targetRegimes?: MarketRegimeLabel[];
   validationSplitAssignments?: ValidationSplitAssignment[];
+  validationRoleRegimePlan?: unknown;
+  validationRoleRegimeCoverage?: unknown;
+  validationRoleRegimeUniverseSource?: unknown;
   minWindowSnapshots?: number;
   minSnapshotsPerRequiredSymbol?: number;
   requiredSymbols?: HistoricalDataAvailabilitySymbolRequirement[];
@@ -226,6 +256,7 @@ export interface BatchReplayManifest {
   paperExitPolicy: NormalizedPaperExitPolicy | null;
   windowSampling: BatchReplayWindowSamplingSummary;
   validationProtocol: BatchReplayValidationProtocolSummary | null;
+  validationRoleRegimePlan: ValidationRoleRegimeBatchManifestProvenance | null;
   disclaimer: string;
 }
 
@@ -244,6 +275,7 @@ export interface BatchReplayActiveRunSnapshot {
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
   validationSplit: ValidationSplitAssignment | null;
+  validationRoleRegimePlan: ValidationRoleRegimeBatchRunProvenance | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
@@ -264,6 +296,7 @@ export interface BatchReplayRunRecord {
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
   validationSplit: ValidationSplitAssignment | null;
+  validationRoleRegimePlan: ValidationRoleRegimeBatchRunProvenance | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   dataAvailability: BatchReplayDataAvailabilitySummary;
@@ -343,34 +376,65 @@ const DEFAULT_CONSTRAINTS: MarketPacketConstraints = {
 export async function runHistoricalBatchReplay(
   options: BatchReplayRunnerOptions
 ): Promise<BatchReplayResult> {
-  validateBatchOptions(options);
+  const validationRoleRegimePlan =
+    options.validationRoleRegimePlan === undefined
+      ? null
+      : parseValidationRoleRegimeReplayPlan(options.validationRoleRegimePlan);
+  validateBatchOptions(options, validationRoleRegimePlan);
 
   const batchId = normalizeRequiredText(options.batchId, "batchId");
   const seed = normalizeRequiredText(options.seed, "seed");
+  const runCount = validationRoleRegimePlan?.runs.length ?? options.runCount;
+  const validationRoleRegimeProvenance =
+    validationRoleRegimePlan === null
+      ? null
+      : buildValidationRoleRegimeBatchProvenance(validationRoleRegimePlan);
   const startedAt = options.generatedAt ?? new Date();
   const paths = createBatchReplayArtifactPaths(options.outputBaseDir, batchId);
   const sourcePaths = createStoragePaths(options.sourceDataDir);
   const decisionProviderMetadata = batchDecisionProviderMetadata(options);
   const validationSplitAssignments = normalizeValidationSplitAssignments(
     options.validationSplitAssignments,
-    options.runCount
+    runCount
   );
   const validationProtocolSummary =
-    validationSplitAssignments === null
-      ? null
-      : validationProtocolSummaryFor(validationSplitAssignments);
+    validationRoleRegimeProvenance !== null
+      ? validationProtocolSummaryFor(
+          validationRoleRegimeProvenance.runs.map(
+            (run) => run.executionAssignment
+          )
+        )
+      : validationSplitAssignments === null
+        ? null
+        : validationProtocolSummaryFor(validationSplitAssignments);
   const snapshotRead = await new FileHistoricalMarketSnapshotStore(
     sourcePaths.historicalMarketSnapshotsPath
   ).readAll();
+  if (
+    validationRoleRegimePlan !== null &&
+    validationRoleRegimeProvenance !== null
+  ) {
+    assertValidationRoleRegimeRuntimeSources({
+      options,
+      plan: validationRoleRegimePlan,
+      provenance: validationRoleRegimeProvenance,
+      snapshots: snapshotRead.records,
+      corruptLineCount: snapshotRead.corruptLineCount
+    });
+    await assertValidationRoleRegimeOutputAbsent(paths.outputDir);
+  }
   const windowSamplingMode =
-    validationSplitAssignments === null
+    validationRoleRegimePlan !== null
+      ? "validation_role_regime_plan"
+      : validationSplitAssignments === null
       ? options.windowSamplingMode ?? "random"
       : "fixed_range";
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
   const initialCashKrw = options.initialCashKrw ?? DEFAULT_INITIAL_CASH_KRW;
   const initialWindowSamplingSummary = initialWindowSamplingSummaryFor(
     windowSamplingMode,
-    options.targetRegimes
+    validationRoleRegimePlan?.config.targetRegimes ?? options.targetRegimes,
+    validationRoleRegimePlan
   );
   const records: BatchReplayRunRecord[] = [];
 
@@ -390,7 +454,7 @@ export async function runHistoricalBatchReplay(
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
     selectionTrialsPath: paths.selectionTrialsPath,
-    runCount: options.runCount,
+    runCount,
     initialCashKrw,
     completedCount: 0,
     skippedCount: 0,
@@ -405,12 +469,14 @@ export async function runHistoricalBatchReplay(
     paperExitPolicy,
     windowSampling: initialWindowSamplingSummary,
     validationProtocol: validationProtocolSummary,
+    validationRoleRegimePlan:
+      validationRoleRegimeProvenance?.manifest ?? null,
     disclaimer: batchReplayDisclaimer()
   });
 
   let windowSamplingSummary = initialWindowSamplingSummary;
 
-  for (let runIndex = 0; runIndex < options.runCount; runIndex += 1) {
+  for (let runIndex = 0; runIndex < runCount; runIndex += 1) {
     const runSeed = `${seed}:${runIndex}`;
     const windowSelection = selectBatchReplayWindow({
       options,
@@ -420,7 +486,14 @@ export async function runHistoricalBatchReplay(
       windowSamplingMode,
       ...(validationSplitAssignments === null
         ? {}
-        : { validationSplitAssignment: validationSplitAssignments[runIndex]! })
+        : { validationSplitAssignment: validationSplitAssignments[runIndex]! }),
+      ...(validationRoleRegimeProvenance === null
+        ? {}
+        : {
+            validationRoleRegimeRun:
+              validationRoleRegimeProvenance.runs[runIndex]!,
+            validationRoleRegimePlan
+          })
     });
     windowSamplingSummary = windowSelection.summary;
     const window = windowSelection.window;
@@ -477,6 +550,8 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         validationSplit: windowSelection.validationSplitAssignment ?? null,
+        validationRoleRegimePlan:
+          windowSelection.validationRoleRegimeRun ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -514,7 +589,7 @@ export async function runHistoricalBatchReplay(
       sourceDataDir: options.sourceDataDir,
       runsPath: paths.runsPath,
       selectionTrialsPath: paths.selectionTrialsPath,
-      runCount: options.runCount,
+      runCount,
       initialCashKrw,
       completedCount: records.filter(isCompletedRunRecord).length,
       skippedCount: records.filter((record) => record.status === "skipped").length,
@@ -528,6 +603,8 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         validationSplit: windowSelection.validationSplitAssignment ?? null,
+        validationRoleRegimePlan:
+          windowSelection.validationRoleRegimeRun ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability
@@ -541,6 +618,8 @@ export async function runHistoricalBatchReplay(
       paperExitPolicy,
       windowSampling: windowSamplingSummary,
       validationProtocol: validationProtocolSummary,
+      validationRoleRegimePlan:
+        validationRoleRegimeProvenance?.manifest ?? null,
       disclaimer: batchReplayDisclaimer()
     });
 
@@ -642,6 +721,8 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         validationSplit: windowSelection.validationSplitAssignment ?? null,
+        validationRoleRegimePlan:
+          windowSelection.validationRoleRegimeRun ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -679,6 +760,8 @@ export async function runHistoricalBatchReplay(
         window,
         windowSampling: windowSelection.runWindowSampling,
         validationSplit: windowSelection.validationSplitAssignment ?? null,
+        validationRoleRegimePlan:
+          windowSelection.validationRoleRegimeRun ?? null,
         marketRegime,
         marketRegimesByMarket,
         availability,
@@ -708,7 +791,7 @@ export async function runHistoricalBatchReplay(
 
   const completedAt = terminalDateForRun({
     startedAt,
-    runIndex: options.runCount,
+    runIndex: runCount,
     wallClock: options.wallClockTimestamps === true
   });
   const completedCount = records.filter(isCompletedRunRecord).length;
@@ -734,7 +817,7 @@ export async function runHistoricalBatchReplay(
     sourceDataDir: options.sourceDataDir,
     runsPath: paths.runsPath,
     selectionTrialsPath: paths.selectionTrialsPath,
-    runCount: options.runCount,
+    runCount,
     initialCashKrw,
     completedCount,
     skippedCount,
@@ -749,6 +832,8 @@ export async function runHistoricalBatchReplay(
     paperExitPolicy,
     windowSampling: windowSamplingSummary,
     validationProtocol: validationProtocolSummary,
+    validationRoleRegimePlan:
+      validationRoleRegimeProvenance?.manifest ?? null,
     disclaimer: batchReplayDisclaimer()
   });
 
@@ -760,7 +845,7 @@ export async function runHistoricalBatchReplay(
     manifestPath: paths.manifestPath,
     runsPath: paths.runsPath,
     selectionTrialsPath: paths.selectionTrialsPath,
-    runCount: options.runCount,
+    runCount,
     completedCount,
     skippedCount,
     failedCount,
@@ -785,6 +870,7 @@ interface SelectedBatchReplayWindow {
   summary: BatchReplayWindowSamplingSummary;
   marketRegime?: MarketRegimeClassification;
   validationSplitAssignment?: ValidationSplitAssignment;
+  validationRoleRegimeRun?: ValidationRoleRegimeBatchRunProvenance;
 }
 
 function selectBatchReplayWindow(input: {
@@ -794,7 +880,39 @@ function selectBatchReplayWindow(input: {
   runSeed: string;
   windowSamplingMode: BatchReplayWindowSamplingMode;
   validationSplitAssignment?: ValidationSplitAssignment;
+  validationRoleRegimeRun?: ValidationRoleRegimeBatchRunProvenance;
+  validationRoleRegimePlan?: ValidationRoleRegimeReplayPlan | null;
 }): SelectedBatchReplayWindow {
+  if (
+    input.validationRoleRegimeRun !== undefined &&
+    input.validationRoleRegimePlan !== undefined &&
+    input.validationRoleRegimePlan !== null
+  ) {
+    return {
+      window: windowFromValidationRoleRegimeRun({
+        run: input.validationRoleRegimeRun,
+        plan: input.validationRoleRegimePlan,
+        runSeed: input.runSeed
+      }),
+      runWindowSampling: {
+        mode: "validation_role_regime_plan",
+        targetRegime: input.validationRoleRegimeRun.targetRegime,
+        targetCandidateCount: input.validationRoleRegimePlan.runs.filter(
+          (run) => run.targetRegime === input.validationRoleRegimeRun!.targetRegime
+        ).length,
+        fallbackReason: null
+      },
+      summary: initialWindowSamplingSummaryFor(
+        "validation_role_regime_plan",
+        input.validationRoleRegimePlan.config.targetRegimes,
+        input.validationRoleRegimePlan
+      ),
+      validationSplitAssignment:
+        input.validationRoleRegimeRun.executionAssignment,
+      validationRoleRegimeRun: input.validationRoleRegimeRun
+    };
+  }
+
   if (input.validationSplitAssignment !== undefined) {
     return {
       window: windowFromValidationSplitAssignment({
@@ -989,8 +1107,27 @@ function isCalendarValidReplayWindowCandidate(input: {
 
 function initialWindowSamplingSummaryFor(
   mode: BatchReplayWindowSamplingMode,
-  targetRegimes?: MarketRegimeLabel[]
+  targetRegimes?: MarketRegimeLabel[],
+  validationRoleRegimePlan?: ValidationRoleRegimeReplayPlan | null
 ): BatchReplayWindowSamplingSummary {
+  if (
+    mode === "validation_role_regime_plan" &&
+    validationRoleRegimePlan !== undefined &&
+    validationRoleRegimePlan !== null
+  ) {
+    const bucketCounts = emptyRegimeCounts();
+    for (const run of validationRoleRegimePlan.runs) {
+      bucketCounts[run.targetRegime] += 1;
+    }
+    return {
+      mode,
+      requestedTargetRegimes: [...validationRoleRegimePlan.config.targetRegimes],
+      activeTargetRegimes: [...validationRoleRegimePlan.config.targetRegimes],
+      unavailableTargetRegimes: [],
+      candidateCount: validationRoleRegimePlan.runs.length,
+      bucketCounts
+    };
+  }
   return {
     mode,
     requestedTargetRegimes:
@@ -1001,6 +1138,16 @@ function initialWindowSamplingSummaryFor(
     unavailableTargetRegimes: null,
     candidateCount: null,
     bucketCounts: null
+  };
+}
+
+function emptyRegimeCounts(): Record<MarketRegimeLabel, number> {
+  return {
+    bull: 0,
+    bear: 0,
+    sideways: 0,
+    mixed: 0,
+    insufficient_data: 0
   };
 }
 
@@ -1044,6 +1191,49 @@ function windowFromValidationSplitAssignment(input: {
     startAt: roleWindow.roleStart,
     endAt: effectiveRoleEnd
   };
+}
+
+function windowFromValidationRoleRegimeRun(input: {
+  run: ValidationRoleRegimeBatchRunProvenance;
+  plan: ValidationRoleRegimeReplayPlan;
+  runSeed: string;
+}): ReplayWindowSelection {
+  return {
+    seed: input.runSeed,
+    rangeStart: earliestPlanBoundary(input.plan),
+    rangeEnd: latestPlanBoundary(input.plan),
+    windowMonths: input.plan.config.windowMonths,
+    timezoneOffsetMinutes: input.plan.config.timezoneOffsetMinutes,
+    candidateCount: input.plan.runs.length,
+    selectedCandidateIndex: input.run.planIndex,
+    selectedMonth: input.run.runKey,
+    localStartDate: localDatePart(
+      input.run.startAt,
+      input.plan.config.timezoneOffsetMinutes
+    ),
+    localEndDate: localDatePart(
+      input.run.endAt,
+      input.plan.config.timezoneOffsetMinutes
+    ),
+    startAt: input.run.startAt,
+    endAt: input.run.endAt
+  };
+}
+
+function earliestPlanBoundary(plan: ValidationRoleRegimeReplayPlan): string {
+  return plan.runs.reduce(
+    (earliest, run) =>
+      Date.parse(run.startAt) < Date.parse(earliest) ? run.startAt : earliest,
+    plan.runs[0]!.startAt
+  );
+}
+
+function latestPlanBoundary(plan: ValidationRoleRegimeReplayPlan): string {
+  return plan.runs.reduce(
+    (latest, run) =>
+      Date.parse(run.endAt) > Date.parse(latest) ? run.endAt : latest,
+    plan.runs[0]!.endAt
+  );
 }
 
 function localDatePart(
@@ -1113,6 +1303,7 @@ function activeRunSnapshot(input: {
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
   validationSplit: ValidationSplitAssignment | null;
+  validationRoleRegimePlan: ValidationRoleRegimeBatchRunProvenance | null;
 }): BatchReplayActiveRunSnapshot {
   return {
     runId: input.runId,
@@ -1123,6 +1314,7 @@ function activeRunSnapshot(input: {
     window: input.window,
     windowSampling: input.windowSampling,
     validationSplit: input.validationSplit,
+    validationRoleRegimePlan: input.validationRoleRegimePlan,
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability)
@@ -1140,6 +1332,7 @@ function runRecord(input: {
   window: ReplayWindowSelection;
   windowSampling: BatchReplayRunWindowSampling;
   validationSplit: ValidationSplitAssignment | null;
+  validationRoleRegimePlan: ValidationRoleRegimeBatchRunProvenance | null;
   marketRegime: MarketRegimeClassification;
   marketRegimesByMarket: MarketRegimesByMarket;
   availability: HistoricalDataAvailabilityReport;
@@ -1168,6 +1361,7 @@ function runRecord(input: {
     window: input.window,
     windowSampling: input.windowSampling,
     validationSplit: input.validationSplit,
+    validationRoleRegimePlan: input.validationRoleRegimePlan,
     marketRegime: input.marketRegime,
     marketRegimesByMarket: input.marketRegimesByMarket,
     dataAvailability: summarizeAvailability(input.availability),
@@ -1424,7 +1618,10 @@ function batchReplayRunId(
   )}_run_${paddedIndex}_${safeArtifactPathPart(window.selectedMonth, "window")}`;
 }
 
-function validateBatchOptions(options: BatchReplayRunnerOptions): void {
+function validateBatchOptions(
+  options: BatchReplayRunnerOptions,
+  validationRoleRegimePlan: ValidationRoleRegimeReplayPlan | null
+): void {
   normalizeRequiredText(options.batchId, "batchId");
   normalizeRequiredText(options.seed, "seed");
   if (options.candidateStrategyBucket !== undefined) {
@@ -1454,6 +1651,210 @@ function validateBatchOptions(options: BatchReplayRunnerOptions): void {
   ) {
     throw new Error("validationSplitAssignments length must equal runCount");
   }
+  if (validationRoleRegimePlan === null) {
+    return;
+  }
+  if (
+    options.validationSplitAssignments !== undefined ||
+    options.fixedWindow !== undefined ||
+    options.windowSamplingMode !== undefined ||
+    options.targetRegimes !== undefined
+  ) {
+    throw new Error(
+      "validationRoleRegimePlan cannot be combined with existing window selection options"
+    );
+  }
+  if (options.runCount !== validationRoleRegimePlan.runs.length) {
+    throw new Error("runCount must equal validationRoleRegimePlan runs length");
+  }
+  if (
+    options.rangeStart.getTime() !==
+      Date.parse(earliestPlanBoundary(validationRoleRegimePlan)) ||
+    options.rangeEnd.getTime() !==
+      Date.parse(latestPlanBoundary(validationRoleRegimePlan))
+  ) {
+    throw new Error("range must match validationRoleRegimePlan boundaries");
+  }
+  if (
+    options.candidateStrategyBucket !==
+    validationRoleRegimePlan.config.candidateStrategyBucket
+  ) {
+    throw new Error(
+      "candidateStrategyBucket must match validationRoleRegimePlan"
+    );
+  }
+  if (
+    options.windowMonths !== undefined &&
+    options.windowMonths !== validationRoleRegimePlan.config.windowMonths
+  ) {
+    throw new Error("windowMonths must match validationRoleRegimePlan");
+  }
+  if (
+    options.timezoneOffsetMinutes !== undefined &&
+    options.timezoneOffsetMinutes !==
+      validationRoleRegimePlan.config.timezoneOffsetMinutes
+  ) {
+    throw new Error(
+      "timezoneOffsetMinutes must match validationRoleRegimePlan"
+    );
+  }
+  if (
+    options.universeManifest === undefined ||
+    options.validationRoleRegimeUniverseSource === undefined ||
+    options.calendarValidation === undefined ||
+    options.validationRoleRegimeCoverage === undefined
+  ) {
+    throw new Error(
+      "validationRoleRegimePlan requires universe, coverage, and calendar sources"
+    );
+  }
+}
+
+function assertValidationRoleRegimeRuntimeSources(input: {
+  options: BatchReplayRunnerOptions;
+  plan: ValidationRoleRegimeReplayPlan;
+  provenance: ValidationRoleRegimeBatchProvenance;
+  snapshots: HistoricalMarketSnapshot[];
+  corruptLineCount: number;
+}): void {
+  if (input.corruptLineCount !== 0) {
+    throw new Error("validation role-regime source snapshot is corrupt");
+  }
+  const orderedSnapshots = [...input.snapshots].sort(compareSourceSnapshots);
+  if (
+    createReplayResearchHash(orderedSnapshots) !==
+    input.plan.source.dataSnapshotHash
+  ) {
+    throw new Error("validation role-regime data snapshot hash mismatch");
+  }
+  if (
+    createReplayResearchHash(
+      input.options.validationRoleRegimeUniverseSource
+    ) !==
+    input.plan.source.universeHash
+  ) {
+    throw new Error("validation role-regime universe hash mismatch");
+  }
+  const coverage = feasibilityCoverageSourceSchema.parse(
+    input.options.validationRoleRegimeCoverage
+  );
+  if (
+    createReplayResearchHash(coverage) !== input.plan.source.coverageHash
+  ) {
+    throw new Error("validation role-regime coverage hash mismatch");
+  }
+  if (
+    createValidationFeasibilityCalendarHash(
+      input.options.calendarValidation!
+    ) !== input.plan.source.calendarHash
+  ) {
+    throw new Error("validation role-regime calendar hash mismatch");
+  }
+  const classifier = defaultMarketRegimeClassifierConfig();
+  if (
+    createValidationFeasibilityClassifierHash(classifier) !==
+    input.plan.source.marketRegimeClassifierHash
+  ) {
+    throw new Error("validation role-regime classifier hash mismatch");
+  }
+
+  for (const run of input.provenance.runs) {
+    const windowStart = new Date(run.startAt);
+    const windowEnd = new Date(run.endAt);
+    const availability = applyCandidateStrategyBucketAvailability({
+      report: assessHistoricalDataAvailability({
+        snapshots: input.snapshots,
+        windowStart,
+        windowEnd,
+        corruptLineCount: input.corruptLineCount,
+        minWindowSnapshots: input.options.minWindowSnapshots ?? 1,
+        minSnapshotsPerRequiredSymbol:
+          input.options.minSnapshotsPerRequiredSymbol ?? 1,
+        requiredSymbols: input.options.requiredSymbols ?? [],
+        calendarValidation: input.options.calendarValidation!,
+        ...(input.options.fxValidation === undefined
+          ? {}
+          : { fxValidation: input.options.fxValidation })
+      }),
+      snapshots: input.snapshots,
+      windowStart,
+      windowEnd,
+      minWindowSnapshots: input.options.minWindowSnapshots ?? 1,
+      candidateStrategyBucket: input.options.candidateStrategyBucket
+    });
+    if (availability.status !== "available") {
+      throw new Error(
+        `validation role-regime runtime source unavailable: ${run.runKey}`
+      );
+    }
+    const candidateHash = createValidationFeasibilityCandidateHash({
+      startAt: run.startAt,
+      endAt: run.endAt,
+      timezoneOffsetMinutes: input.plan.config.timezoneOffsetMinutes,
+      windowMonths: input.plan.config.windowMonths,
+      calendarHash: input.plan.source.calendarHash,
+      marketRegimeClassifierHash:
+        input.plan.source.marketRegimeClassifierHash,
+      candidateStrategyBucket: input.plan.config.candidateStrategyBucket,
+      scopeAvailable: true,
+      dataSnapshotHash: input.plan.source.dataSnapshotHash,
+      universeHash: input.plan.source.universeHash,
+      coverageHash: input.plan.source.coverageHash
+    });
+    if (candidateHash !== run.candidateHash) {
+      throw new Error(
+        `validation role-regime candidate hash mismatch: ${run.runKey}`
+      );
+    }
+    const { version: _version, ...classifierOptions } = classifier;
+    const regime = classifyMarketRegime({
+      snapshots: input.snapshots,
+      windowStart,
+      windowEnd,
+      ...classifierOptions
+    });
+    if (regime.label !== run.targetRegime) {
+      throw new Error(
+        `validation role-regime target regime mismatch: ${run.runKey}`
+      );
+    }
+  }
+}
+
+async function assertValidationRoleRegimeOutputAbsent(
+  outputDir: string
+): Promise<void> {
+  try {
+    await access(outputDir);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT"
+    ) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(
+    `validation role-regime batch output already exists: ${outputDir}`
+  );
+}
+
+function compareSourceSnapshots(
+  left: HistoricalMarketSnapshot,
+  right: HistoricalMarketSnapshot
+): number {
+  return (
+    Date.parse(left.observedAt) - Date.parse(right.observedAt) ||
+    compareText(left.market, right.market) ||
+    compareText(left.symbol, right.symbol) ||
+    compareText(left.snapshotId, right.snapshotId)
+  );
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function normalizeRequiredText(value: string, label: string): string {
