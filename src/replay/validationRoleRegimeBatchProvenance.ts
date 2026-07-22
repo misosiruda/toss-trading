@@ -4,12 +4,17 @@ import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
 import { feasibilityTargetRegimeSchema } from "./validationSplitRegimeFeasibility.js";
 import {
   validationSplitAssignmentSchema,
-  validationSplitRoleSchema
+  validationSplitRoleSchema,
+  type ValidationSplitAssignment,
+  type ValidationSplitRole
 } from "./validationProtocol.js";
+import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
+  VALIDATION_ROLE_ORDER,
   parseValidationRoleRegimeReplayPlan,
   validationRoleRegimeReplayPlanWarningSchema
 } from "./validationRoleRegimeReplayPlan.js";
+import { validationRoleWindow } from "./validationRoleWindow.js";
 
 export const VALIDATION_ROLE_REGIME_PLAN_SAMPLING_MODE =
   "validation_role_regime_plan";
@@ -91,6 +96,7 @@ export const validationRoleRegimeBatchRunProvenanceSchema = z
         message: "batch provenance evidenceGroupHash must match candidateHash"
       });
     }
+    validateRunAssignments(value, context);
   });
 
 export type ValidationRoleRegimeBatchManifestProvenance = z.infer<
@@ -143,4 +149,88 @@ export function buildValidationRoleRegimeBatchProvenance(
   }
 
   return { manifest, runs };
+}
+
+function validateRunAssignments(
+  value: z.infer<typeof validationRoleRegimeBatchRunProvenanceSchema>,
+  context: z.RefinementCtx
+): void {
+  const ordered = [...value.sourceAssignments].sort(compareAssignments);
+  if (!sameValue(value.sourceAssignments, ordered)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourceAssignments"],
+      message: "batch provenance sourceAssignments must use canonical order"
+    });
+  }
+
+  const assignmentKeys = new Set<string>();
+  for (const [index, assignment] of value.sourceAssignments.entries()) {
+    if (assignment.splitRole !== value.splitRole) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceAssignments", index, "splitRole"],
+        message: "batch provenance source assignment role must match splitRole"
+      });
+    }
+
+    const roleWindow = validationRoleWindow(assignment);
+    const effectiveRoleEnd = roleWindow.effectiveRoleEnd ?? roleWindow.roleEnd;
+    if (
+      Date.parse(value.startAt) < Date.parse(roleWindow.roleStart) ||
+      Date.parse(value.endAt) > Date.parse(effectiveRoleEnd)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceAssignments", index],
+        message: "batch provenance run window must fit every source assignment"
+      });
+    }
+
+    const key = assignmentKey(assignment);
+    if (assignmentKeys.has(key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceAssignments", index],
+        message: "batch provenance source assignments must not contain duplicates"
+      });
+    }
+    assignmentKeys.add(key);
+  }
+
+  if (!sameValue(value.executionAssignment, value.sourceAssignments[0])) {
+    context.addIssue({
+      code: "custom",
+      path: ["executionAssignment"],
+      message:
+        "batch provenance executionAssignment must match the first source assignment"
+    });
+  }
+}
+
+function compareAssignments(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): number {
+  return (
+    left.splitIndex - right.splitIndex ||
+    compareStrings(left.splitId, right.splitId) ||
+    roleIndex(left.splitRole) - roleIndex(right.splitRole)
+  );
+}
+
+function assignmentKey(assignment: ValidationSplitAssignment): string {
+  return `${assignment.splitIndex}\u0000${assignment.splitId}\u0000${assignment.splitRole}`;
+}
+
+function roleIndex(role: ValidationSplitRole): number {
+  return VALIDATION_ROLE_ORDER.indexOf(role);
+}
+
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return createReplayResearchHash(left) === createReplayResearchHash(right);
 }

@@ -137,6 +137,59 @@ test("batch provenance schemas reject unsafe and inconsistent payloads", () => {
   );
 });
 
+test("run provenance schema rejects unrelated or non-canonical assignments", () => {
+  const run = buildValidationRoleRegimeBatchProvenance(readyPlan()).runs[0]!;
+  const laterTrainAssignment = assignment({
+    splitId: "later-train-source",
+    splitIndex: 3,
+    splitRole: "train",
+    trainStart: "2025-01-01T00:00:00.000Z",
+    trainEnd: "2025-01-31T23:59:59.999Z",
+    validationStart: "2025-02-01T00:00:00.000Z",
+    validationEnd: "2025-02-28T23:59:59.999Z",
+    testStart: "2025-03-01T00:00:00.000Z",
+    testEnd: "2025-03-31T23:59:59.999Z"
+  });
+  const orderedAssignments = [run.executionAssignment, laterTrainAssignment];
+
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sourceAssignments: orderedAssignments,
+      executionAssignment: laterTrainAssignment
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sourceAssignments: [...orderedAssignments].reverse()
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sourceAssignments: [readyPlan().runs[1]!.executionAssignment]
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      startAt: "2024-12-31T00:00:00.000Z"
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sourceAssignments: [run.executionAssignment, run.executionAssignment]
+    }).success,
+    false
+  );
+});
+
 function readyPlan(): ValidationRoleRegimeReplayPlan {
   const trainAssignment = assignment({
     splitId: "train-source",
