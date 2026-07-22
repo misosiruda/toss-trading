@@ -275,6 +275,8 @@ Plan artifact 구현 이후 별도 PR에서 `historicalBatchReplay`에 명시적
 
 - `--validation-role-regime-plan-path`는 기존 `--validation-splits-path`, `--window-sampling`, `--target-regimes`, fixed window와 상호 배타적이다.
 - Run count는 plan의 `runs.length`에서 결정하며 사용자가 override하지 않는다.
+- `--runs`, `--random-window-from`, `--random-window-to`, `--window-months`, `--timezone-offset-minutes` override도 거부하고 range, window month, timezone은 plan에서 결정한다.
+- Runtime source 재검증을 위해 `--universe-path`, `--coverage-path`, `--calendar-fixtures-path`, 하나 이상의 `--calendar-rule`을 필수로 받는다.
 - 새 sampling mode는 `validation_role_regime_plan`으로 기록한다.
 - Workflow는 plan row의 exact start/end를 사용하고 random 또는 balanced sampler를 다시 호출하지 않는다.
 - Plan row의 full-boundary `executionAssignment`, `sourceAssignments`, `candidateHash`, `evidenceGroupHash`, `targetRegime`, `planHash`를 manifest와 run record에 남긴다.
@@ -282,6 +284,8 @@ Plan artifact 구현 이후 별도 PR에서 `historicalBatchReplay`에 명시적
 - Selected window의 recomputed regime과 target regime이 다르면 replay 전에 fail-closed로 중단한다.
 - Candidate scope, calendar validation, availability와 universe/range gate를 replay 직전에 다시 적용한다.
 - Plan provenance mismatch 또는 unavailable source는 run을 skipped success로 바꾸지 않고 batch 시작 전에 거부한다.
+- Snapshot, universe source, coverage, calendar와 default classifier hash를 plan provenance와 비교하고 모든 planned candidate hash, scope availability, recomputed regime을 artifact 생성 전에 재검증한다.
+- Plan mode의 batch output directory가 이미 존재하면 기존 artifact를 지우지 않고 거부한다.
 
 기존 `--validation-splits-path`의 9개 full-role `fixed_range` 동작과 standalone `balanced_regime` sampler는 그대로 유지한다.
 

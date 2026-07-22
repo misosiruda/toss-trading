@@ -2661,6 +2661,7 @@ function record(
             embargoDurationDays: 0,
             splitRole: validationSplitRole
           },
+    validationRoleRegimePlan: null,
     marketRegime: marketRegime(regime),
     marketRegimesByMarket: {
       KR: marketRegime(regime)
