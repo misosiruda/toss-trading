@@ -97,6 +97,7 @@ export const validationRoleRegimeBatchRunProvenanceSchema = z
       });
     }
     validateRunAssignments(value, context);
+    validateSharedRoles(value, context);
   });
 
 export type ValidationRoleRegimeBatchManifestProvenance = z.infer<
@@ -204,6 +205,48 @@ function validateRunAssignments(
       path: ["executionAssignment"],
       message:
         "batch provenance executionAssignment must match the first source assignment"
+    });
+  }
+}
+
+function validateSharedRoles(
+  value: z.infer<typeof validationRoleRegimeBatchRunProvenanceSchema>,
+  context: z.RefinementCtx
+): void {
+  const uniqueRoles = new Set(value.sharedRoles);
+  if (uniqueRoles.size !== value.sharedRoles.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["sharedRoles"],
+      message: "batch provenance sharedRoles must not contain duplicates"
+    });
+  }
+
+  const canonicalRoles = [...uniqueRoles].sort(
+    (left, right) => roleIndex(left) - roleIndex(right)
+  );
+  if (!sameValue(value.sharedRoles, canonicalRoles)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sharedRoles"],
+      message: "batch provenance sharedRoles must use canonical order"
+    });
+  }
+
+  if (!uniqueRoles.has(value.splitRole)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sharedRoles"],
+      message: "batch provenance sharedRoles must include splitRole"
+    });
+  }
+
+  if (value.sharedAcrossRoles !== (uniqueRoles.size > 1)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sharedAcrossRoles"],
+      message:
+        "batch provenance sharedAcrossRoles must match the shared role count"
     });
   }
 }

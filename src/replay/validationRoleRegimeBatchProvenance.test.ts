@@ -190,6 +190,41 @@ test("run provenance schema rejects unrelated or non-canonical assignments", () 
   );
 });
 
+test("run provenance schema rejects inconsistent shared-role metadata", () => {
+  const run = buildValidationRoleRegimeBatchProvenance(readyPlan()).runs[0]!;
+
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sharedRoles: ["validation"],
+      sharedAcrossRoles: false
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sharedRoles: ["train", "train"],
+      sharedAcrossRoles: true
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sharedRoles: ["validation", "train"]
+    }).success,
+    false
+  );
+  assert.equal(
+    validationRoleRegimeBatchRunProvenanceSchema.safeParse({
+      ...run,
+      sharedAcrossRoles: false
+    }).success,
+    false
+  );
+});
+
 function readyPlan(): ValidationRoleRegimeReplayPlan {
   const trainAssignment = assignment({
     splitId: "train-source",
