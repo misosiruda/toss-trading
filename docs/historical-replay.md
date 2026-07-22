@@ -403,6 +403,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2026-04-
 - `--validation-role-regime-plan-path`를 사용하면 strict-parsed ready plan의 ordered run을 exact window로 실행합니다. Run count, range, window month, timezone, `short_term` candidate scope는 plan에서 결정되며 random/balanced sampler를 호출하지 않습니다.
 - Plan mode는 `--universe-path`, `--coverage-path`, `--calendar-fixtures-path`, 하나 이상의 `--calendar-rule`을 필수로 받습니다. Snapshot, universe source, coverage, calendar, default classifier, candidate hash와 recomputed target regime이 plan provenance와 다르면 batch artifact 생성 전에 거부합니다.
 - Plan mode는 `--validation-splits-path`, `--window-sampling`, `--target-regimes`, `--runs`, random range와 window/timezone override를 함께 받을 수 없습니다. 기존 output directory가 있으면 덮어쓰지 않습니다.
+- 첫 deterministic fixture provider 실행 결과와 report independence 제한은 [Validation Role-Regime Replay Smoke Results](validation-role-regime-replay-smoke-results.md)에 기록합니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
 - Codex CLI AI 호출은 run마다 별도 `CodexCliDecisionProvider`를 생성하고 `codex exec --ephemeral`을 사용합니다. `--max-codex-calls-per-run`은 batch 전체가 아니라 각 run의 paper-only 호출 상한입니다.
 - `--use-codex-ai` 실행 전에는 기본으로 preflight decision을 1회 수행합니다. 이미 Codex 연결을 별도 확인한 경우에만 `--skip-codex-preflight`로 생략합니다.
