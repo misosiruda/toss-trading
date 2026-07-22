@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { writeExclusiveJsonArtifact } from "./exclusiveJsonArtifactWriter.js";
 import {
   createValidationRoleRegimeReplayPlanHash,
   parseValidationRoleRegimeReplayPlan,
@@ -71,6 +72,24 @@ test("plan artifact writer validates before filesystem mutation", async (t) => {
     /plan hash mismatch/
   );
   await assert.rejects(access(outputDirectory));
+});
+
+test("exclusive JSON writer rejects non-JSON roots before filesystem mutation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "exclusive-json-"));
+  const invalidValues = [undefined, () => undefined, Symbol("invalid")];
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  for (const [index, value] of invalidValues.entries()) {
+    const outputDirectory = join(directory, `invalid-${index}`);
+    await assert.rejects(
+      writeExclusiveJsonArtifact({
+        outputPath: join(outputDirectory, "artifact.json"),
+        value
+      }),
+      /artifact value must serialize to JSON/
+    );
+    await assert.rejects(access(outputDirectory));
+  }
 });
 
 function plan(): ValidationRoleRegimeReplayPlan {

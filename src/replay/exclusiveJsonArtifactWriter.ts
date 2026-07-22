@@ -6,7 +6,11 @@ export async function writeExclusiveJsonArtifact(input: {
   outputPath: string;
   value: unknown;
 }): Promise<void> {
-  const serialized = `${JSON.stringify(input.value, null, 2)}\n`;
+  const json = JSON.stringify(input.value, null, 2);
+  if (json === undefined) {
+    throw new TypeError("artifact value must serialize to JSON");
+  }
+  const serialized = `${json}\n`;
   const outputDirectory = dirname(input.outputPath);
   const temporaryPath = join(
     outputDirectory,
