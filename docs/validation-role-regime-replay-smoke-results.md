@@ -31,13 +31,14 @@ $env:AI_DECISION_MODE = "paper_only"
 
 ## 실행 명령
 
-Ready plan은 temp path에 재생성했다.
+Ready plan은 temp path에 재생성했다. 아래 재현 명령은 npm version별 argument forwarding 차이를 피하기 위해 build 후 CLI entrypoint를 직접 호출한다.
 
 ```powershell
 $Root = Join-Path $env:TEMP "toss-role-regime-smoke-20260722"
 $PlanPath = Join-Path $Root "short-term-role-regime-replay-plan.json"
 
-npm run historical:validation:role-regime-plan -- -- --feasibility-path data/validation-feasibility/short-term-role-regime-feasibility.json --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --validation-splits-path data/validation-splits/strategy-bucket-validation-assignments.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --selection-policy exhaustive_role_regime_candidates.v1 --calendar-evidence-class observed_session_only --output-path $PlanPath
+npm run build
+node dist/cli/validationRoleRegimeReplayPlan.js --feasibility-path data/validation-feasibility/short-term-role-regime-feasibility.json --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --validation-splits-path data/validation-splits/strategy-bucket-validation-assignments.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --selection-policy exhaustive_role_regime_candidates.v1 --calendar-evidence-class observed_session_only --output-path $PlanPath
 ```
 
 Plan의 50개 ordered run은 weekly replay step과 run별 decision call 상한 1로 실행했다.
@@ -45,7 +46,7 @@ Plan의 50개 ordered run은 weekly replay step과 run별 decision call 상한 1
 ```powershell
 $OutputDir = Join-Path $Root "batch-replay"
 
-npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir $OutputDir --batch-id validation-role-regime-plan-smoke-20260722-001 --seed validation-role-regime-plan-smoke-20260722-001 --strategy-preset short-term --validation-role-regime-plan-path $PlanPath --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1
+node dist/cli/historicalBatchReplay.js --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir $OutputDir --batch-id validation-role-regime-plan-smoke-20260722-001 --seed validation-role-regime-plan-smoke-20260722-001 --strategy-preset short-term --validation-role-regime-plan-path $PlanPath --universe-path docs/historical-universe.global-broad.json --coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --calendar-fixtures-path data/validation-feasibility/observed-session-calendar-fixtures.json --calendar-rule KR:KRX:Asia/Seoul --calendar-rule US:NYSE:America/New_York --decision-frequency once_per_week --max-decision-calls 1 --step-seconds 604800 --max-snapshot-age-seconds 2678400 --min-window-snapshots 1
 ```
 
 Batch run과 selection trial로 aggregate report를 생성했다.
@@ -53,18 +54,18 @@ Batch run과 selection trial로 aggregate report를 생성했다.
 ```powershell
 $BatchDir = Join-Path $OutputDir "validation-role-regime-plan-smoke-20260722-001"
 
-npm run historical:batch:report -- -- --runs-path (Join-Path $BatchDir "batch-replay-runs.jsonl") --universe-coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --output-path (Join-Path $BatchDir "batch-replay-aggregate-report.json")
+node dist/cli/historicalBatchReport.js --runs-path (Join-Path $BatchDir "batch-replay-runs.jsonl") --universe-coverage-path data/replay-2023-01-2026-05-global-broad-yahoo-daily/historical-universe-coverage.json --output-path (Join-Path $BatchDir "batch-replay-aggregate-report.json")
 ```
 
 ## Command Correction
 
-PowerShell에서 plan npm script를 처음 단일 separator로 실행했을 때 npm이 option 이름을 제거해 CLI가 다음 오류로 중단됐다.
+PowerShell과 npm `10.9.2`에서 plan npm script를 단일 separator로 실행했을 때 npm이 option 이름을 제거해 CLI가 다음 오류로 중단됐다.
 
 ```text
 Error: unexpected positional argument: data/validation-feasibility/short-term-role-regime-feasibility.json
 ```
 
-Plan이나 replay artifact는 생성되지 않았다. 이 저장소의 다른 CLI 예시와 동일하게 `npm run ... -- -- --option` 형태로 수정한 뒤 통과했다.
+Plan이나 replay artifact는 생성되지 않았다. 같은 환경에서는 이중 separator가 option 이름을 정상 전달해 smoke가 통과했지만, npm 11은 두 번째 separator를 literal `--`로 Node CLI에 전달한다. 재현 명령은 npm version별 separator 동작에 의존하지 않도록 `npm run build` 후 `node dist/cli/...`를 직접 호출한다.
 
 ## Ready Plan 결과
 
