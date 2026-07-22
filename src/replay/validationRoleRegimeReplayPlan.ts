@@ -649,6 +649,11 @@ function assertPlanContract(plan: ValidationRoleRegimeReplayPlan): void {
   }
 
   for (const [index, run] of plan.runs.entries()) {
+    if (!targetRegimes.includes(run.targetRegime)) {
+      throw new Error(
+        `run targetRegime is not configured: ${run.splitRole}/${run.targetRegime}`
+      );
+    }
     if (run.planIndex !== index) {
       throw new Error("planIndex must be zero-based and contiguous");
     }
@@ -674,6 +679,7 @@ function assertPlanContract(plan: ValidationRoleRegimeReplayPlan): void {
     roles.add(run.splitRole);
     rolesByCandidate.set(run.candidateHash, roles);
   }
+  assertRequiredPlanRoleRegimeCells(plan.runs, targetRegimes);
 
   for (const run of plan.runs) {
     const expectedRoles = Array.from(rolesByCandidate.get(run.candidateHash)!)
@@ -717,6 +723,15 @@ function assertCanonicalRunAssignments(
   for (const assignment of run.sourceAssignments) {
     if (assignment.splitRole !== run.splitRole) {
       throw new Error(`source assignment role mismatch: ${run.runKey}`);
+    }
+    const sourceWindow = validationRoleWindow(assignment);
+    const effectiveRoleEnd =
+      sourceWindow.effectiveRoleEnd ?? sourceWindow.roleEnd;
+    if (
+      Date.parse(run.startAt) < Date.parse(sourceWindow.roleStart) ||
+      Date.parse(run.endAt) > Date.parse(effectiveRoleEnd)
+    ) {
+      throw new Error(`run window exceeds source assignment: ${run.runKey}`);
     }
     const key = assignmentKey(assignment);
     if (keys.has(key)) {
@@ -893,6 +908,26 @@ function compareValidationAssignments(
     compareStrings(left.splitId, right.splitId) ||
     roleIndex(left.splitRole) - roleIndex(right.splitRole)
   );
+}
+
+function assertRequiredPlanRoleRegimeCells(
+  runs: readonly ValidationRoleRegimeReplayPlanRun[],
+  targetRegimes: readonly TargetRegime[]
+): void {
+  for (const splitRole of VALIDATION_ROLE_ORDER) {
+    for (const targetRegime of targetRegimes) {
+      if (
+        !runs.some(
+          (run) =>
+            run.splitRole === splitRole && run.targetRegime === targetRegime
+        )
+      ) {
+        throw new Error(
+          `required plan role-regime run missing: ${splitRole}/${targetRegime}`
+        );
+      }
+    }
+  }
 }
 
 function roleRegimeKey(

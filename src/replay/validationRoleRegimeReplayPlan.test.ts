@@ -331,6 +331,60 @@ test("strict plan parser rejects hash and derived contract tampering", () => {
   );
 });
 
+test("strict plan parser rejects unconfigured and missing role-regime cells", () => {
+  const plan = readyPlan();
+  const unconfiguredRuns = plan.runs.map((run) =>
+    run.splitRole === "test" && run.targetRegime === "bear"
+      ? {
+          ...run,
+          targetRegime: "sideways" as const,
+          runKey: `test_sideways_${run.candidateHash.replace(/^sha256:/, "")}`
+        }
+      : run
+  );
+  const unconfigured = { ...plan, runs: unconfiguredRuns };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...unconfigured,
+        planHash: createValidationRoleRegimeReplayPlanHash(unconfigured)
+      }),
+    /run targetRegime is not configured: test\/sideways/
+  );
+
+  const missing = {
+    ...plan,
+    runs: plan.runs.filter(
+      (run) => !(run.splitRole === "test" && run.targetRegime === "bear")
+    )
+  };
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...missing,
+        planHash: createValidationRoleRegimeReplayPlanHash(missing)
+      }),
+    /required plan role-regime run missing: test\/bear/
+  );
+});
+
+test("strict plan parser rejects run windows outside source assignments", () => {
+  const plan = readyPlan();
+  const runs = plan.runs.map((run, index) =>
+    index === 0 ? { ...run, startAt: "2024-12-31T00:00:00.000Z" } : run
+  );
+  const tampered = { ...plan, runs };
+
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeReplayPlan({
+        ...tampered,
+        planHash: createValidationRoleRegimeReplayPlanHash(tampered)
+      }),
+    /run window exceeds source assignment/
+  );
+});
+
 function emptyPlan() {
   const value = hash("0");
   return {
@@ -373,6 +427,15 @@ function emptyPlan() {
     warnings: [],
     planHash: value
   };
+}
+
+function readyPlan() {
+  return buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: availableFeasibilityArtifact(),
+    validationAssignments: assignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
 }
 
 function selectionRow() {
