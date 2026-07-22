@@ -38,6 +38,7 @@ import {
   writeValidationSplitRegimeFeasibilityArtifact
 } from "./validationSplitRegimeFeasibilityArtifactWriter.js";
 import { validationRoleWindow } from "./validationRoleWindow.js";
+import { verifyValidationRoleRegimeReplayPlanSources } from "./validationRoleRegimeReplayPlanSourceVerifier.js";
 
 test("feasibility artifact writer creates a schema-valid JSON artifact", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "validation-feasibility-"));
@@ -505,6 +506,75 @@ test("feasibility builder creates deterministic available role aggregates", () =
       (item) => item.candidates[0]?.scopeAvailable === true
     ),
     true
+  );
+});
+
+test("role-regime plan source verifier accepts a regenerated semantic match", () => {
+  const options = feasibilityBuilderOptions();
+  const feasibilityArtifact = buildValidationSplitRegimeFeasibilityArtifact(
+    options
+  );
+
+  assert.deepEqual(
+    verifyValidationRoleRegimeReplayPlanSources({
+      feasibilityArtifact,
+      assignments: [...options.assignments].reverse(),
+      snapshots: [...options.snapshots].reverse(),
+      universe: options.universe,
+      coverage: options.coverage,
+      validationSplit: {
+        assignments: [...options.assignments].reverse()
+      },
+      calendarFixtures: [...options.calendarValidation.fixtures].reverse()
+    }),
+    feasibilityArtifact
+  );
+});
+
+test("role-regime plan source verifier rejects changed calendar evidence", () => {
+  const options = feasibilityBuilderOptions();
+  const feasibilityArtifact = buildValidationSplitRegimeFeasibilityArtifact(
+    options
+  );
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeReplayPlanSources({
+        feasibilityArtifact,
+        assignments: options.assignments,
+        snapshots: options.snapshots,
+        universe: options.universe,
+        coverage: options.coverage,
+        validationSplit: options.validationSplit,
+        calendarFixtures: options.calendarValidation.fixtures.map(
+          (fixture, index) =>
+            index === 0
+              ? { ...fixture, createdAt: "2026-07-21T00:00:00.000Z" }
+              : fixture
+        )
+      }),
+    /feasibility artifact does not match regenerated source inputs/
+  );
+});
+
+test("role-regime plan source verifier rejects validation split provenance drift", () => {
+  const options = feasibilityBuilderOptions();
+  const feasibilityArtifact = buildValidationSplitRegimeFeasibilityArtifact(
+    options
+  );
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeReplayPlanSources({
+        feasibilityArtifact,
+        assignments: options.assignments,
+        snapshots: options.snapshots,
+        universe: options.universe,
+        coverage: options.coverage,
+        validationSplit: options.assignments,
+        calendarFixtures: options.calendarValidation.fixtures
+      }),
+    /feasibility artifact does not match regenerated source inputs/
   );
 });
 
