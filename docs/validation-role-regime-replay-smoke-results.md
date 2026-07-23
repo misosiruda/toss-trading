@@ -34,7 +34,9 @@ $env:AI_DECISION_MODE = "paper_only"
 Ready plan은 temp path에 재생성했다. 아래 재현 명령은 npm version별 argument forwarding 차이를 피하기 위해 build 후 CLI entrypoint를 직접 호출한다.
 
 ```powershell
-$Root = Join-Path $env:TEMP "toss-role-regime-smoke-20260722"
+$RunToken = [guid]::NewGuid().ToString("N")
+$Root = Join-Path $env:TEMP "toss-role-regime-smoke-$RunToken"
+New-Item -ItemType Directory -Path $Root | Out-Null
 $PlanPath = Join-Path $Root "short-term-role-regime-replay-plan.json"
 
 npm run build
@@ -163,7 +165,7 @@ Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 
 ## Artifact 정책
 
-다음 artifact는 `%TEMP%/toss-role-regime-smoke-20260722` 아래에서만 생성했으며 repository에 commit하지 않는다.
+기록 대상 실행의 artifact는 `%TEMP%/toss-role-regime-smoke-20260722` 아래에서만 생성했으며 repository에 commit하지 않는다. 재현 명령은 기존 artifact를 삭제하거나 덮어쓰지 않고 매번 `%TEMP%/toss-role-regime-smoke-<guid>` root를 새로 만든다.
 
 ```text
 short-term-role-regime-replay-plan.json
