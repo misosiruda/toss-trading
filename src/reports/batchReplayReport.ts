@@ -1798,6 +1798,22 @@ function summarizeValidationRoleRegimeEvidence(
     {};
   for (const record of plannedRecords) {
     const provenance = provenanceFor(record);
+    if (
+      record.window.startAt !== provenance.startAt ||
+      record.window.endAt !== provenance.endAt
+    ) {
+      throw new Error(
+        `validation role-regime replay window mismatch for run ${record.runId}`
+      );
+    }
+    if (
+      createReplayResearchHash(record.validationSplit) !==
+      createReplayResearchHash(provenance.executionAssignment)
+    ) {
+      throw new Error(
+        `validation role-regime executionAssignment mismatch for run ${record.runId}`
+      );
+    }
     if (record.validationSplit?.splitRole !== provenance.splitRole) {
       throw new Error(
         `validation role-regime splitRole mismatch for run ${record.runId}`
@@ -1927,6 +1943,10 @@ function emptyRunStatusCount(): BatchReplayRunStatusCount {
 function aggregateResultHash(record: BatchReplayRunRecord): string {
   return createReplayResearchHash({
     status: record.status,
+    window: {
+      startAt: record.window.startAt,
+      endAt: record.window.endAt
+    },
     summary: record.summary,
     marketRegime: record.marketRegime,
     marketRegimesByMarket: record.marketRegimesByMarket,

@@ -568,6 +568,53 @@ test("batch replay aggregate report rejects mixed planned and legacy records", (
   );
 });
 
+test("batch replay aggregate report rejects observed plan window or assignment mismatches", () => {
+  const planned = plannedRecord(
+    record("run_planned", 0, "completed", "bull", 0.01, 1_010_000, 0, "train"),
+    0,
+    "b",
+    ["train"],
+    {
+      plannedRunCount: 1,
+      globalUniqueEvidenceGroupCount: 1,
+      crossRoleSharedEvidenceGroupCount: 0
+    }
+  );
+
+  assert.throws(
+    () =>
+      buildBatchReplayAggregateReport({
+        generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+        records: [
+          {
+            ...planned,
+            window: {
+              ...planned.window,
+              startAt: "2025-01-01T00:00:00.000Z"
+            }
+          }
+        ]
+      }),
+    /replay window mismatch/
+  );
+  assert.throws(
+    () =>
+      buildBatchReplayAggregateReport({
+        generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+        records: [
+          {
+            ...planned,
+            validationSplit: {
+              ...planned.validationSplit!,
+              splitId: "foreign_window"
+            }
+          }
+        ]
+      }),
+    /executionAssignment mismatch/
+  );
+});
+
 test("batch replay aggregate report rejects conflicting duplicate evidence results", () => {
   const train = plannedRecord(
     record("run_train", 0, "completed", "bull", 0.03, 1_030_000, 0, "train"),
