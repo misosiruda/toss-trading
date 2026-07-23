@@ -464,9 +464,12 @@ Object key insertion order, raw JSON whitespace 또는 source file 입력 순서
 각 단계는 뒤 단계의 실행 또는 readiness 통과를 주장하지 않는다. Expanded paper-only replay는 preflight가 `ready_for_expansion_replay`인 별도 artifact를 제공할 때만 다음 PR에서 실행한다.
 
 현재 1단계는 `validationRoleRegimeEvidenceExpansionPreflight.ts`의 strict
-schema와 합성 fixture contract test로 구현했다. Source verifier, capacity
-builder, canonical hash 검증, writer, CLI와 실제 preflight artifact는 아직
-구현하지 않았다.
+schema와 합성 fixture contract test로 구현했다. 2단계의 첫 범위로
+`validationRoleRegimeEvidenceExpansionBaselineVerifier.ts`가 baseline
+feasibility, plan, readiness artifact의 strict schema와 hash, provenance,
+config 및 count 연결을 fail-closed로 검증한다. Expansion source verifier와
+명시적인 result-metric input 분류, capacity builder, preflight canonical hash
+검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
 
 ## 이번 문서 PR의 완료 기준
 
