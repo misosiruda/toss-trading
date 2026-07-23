@@ -510,6 +510,10 @@ test("batch replay aggregate report deduplicates planned evidence in global stat
   assert.equal(report.overall.runCount, 2);
   assert.equal(report.overall.returnSampleCount, 2);
   assert.equal(report.overall.averageTotalReturnRatio, 0.01);
+  assert.deepEqual(report.summary.regimeCounts, { bull: 1, bear: 1 });
+  assert.deepEqual(report.summary.regimeCountsByMarket, {
+    KR: { bull: 1, bear: 1 }
+  });
   assert.equal(report.byRegime.bull?.runCount, 1);
   assert.equal(report.byValidationSplitRole.train?.runCount, 1);
   assert.equal(report.byValidationSplitRole.validation?.runCount, 1);

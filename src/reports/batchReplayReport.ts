@@ -445,8 +445,8 @@ export function buildBatchReplayAggregateReport(
         .length,
       failedCount: records.filter((record) => record.status === "failed").length,
       returnSampleCount: globalAggregateRecords.filter(hasReturnSample).length,
-      regimeCounts: countRegimes(records),
-      regimeCountsByMarket: countRegimesByMarket(records),
+      regimeCounts: countRegimes(globalAggregateRecords),
+      regimeCountsByMarket: countRegimesByMarket(globalAggregateRecords),
       validationSplitRoleCounts: countValidationSplitRoles(records),
       dataAvailabilityIssues: summarizeDataAvailabilityIssues(records)
     },
