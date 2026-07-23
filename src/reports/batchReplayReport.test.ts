@@ -544,9 +544,66 @@ test("batch replay aggregate report deduplicates planned evidence in global stat
       }
     }
   });
+  assert.equal(
+    report.validationRoleRegimeStatisticalReadiness?.schemaVersion,
+    "validation_role_regime_statistical_readiness.v1"
+  );
+  assert.equal(
+    report.validationRoleRegimeStatisticalReadiness?.status,
+    "inconclusive"
+  );
+  assert.equal(
+    report.validationRoleRegimeStatisticalReadiness?.provenance.status,
+    "verified"
+  );
+  assert.deepEqual(
+    report.validationRoleRegimeStatisticalReadiness?.evidence.global,
+    {
+      plannedRunCount: 3,
+      globalUniqueEvidenceGroupCount: 2,
+      crossRoleSharedEvidenceGroupCount: 1
+    }
+  );
+  assert.deepEqual(
+    report.validationRoleRegimeStatisticalReadiness?.evidence.byRole.train,
+    {
+      plannedRunCount: 1,
+      roleLocalUniqueEvidenceGroupCount: 1,
+      roleExclusiveEvidenceGroupCount: 0,
+      crossRoleSharedEvidenceGroupCount: 1
+    }
+  );
+  assert.equal(
+    report.validationRoleRegimeStatisticalReadiness?.blockers.some(
+      (blocker) =>
+        blocker.code === "ROLE_SAMPLE_BELOW_STATISTICAL_MINIMUM" &&
+        blocker.splitRole === "test"
+    ),
+    true
+  );
   assert.match(
     renderBatchReplayAggregateReport(report),
     /global_unique_evidence_group_count: 2/
+  );
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /schema_version: validation_role_regime_statistical_readiness\.v1/
+  );
+});
+
+test("batch replay aggregate report omits readiness for legacy records", () => {
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+    records: [
+      record("run_legacy", 0, "completed", "bull", 0.01, 1_010_000)
+    ]
+  });
+
+  assert.equal(report.validationRoleRegimeEvidence, null);
+  assert.equal(report.validationRoleRegimeStatisticalReadiness, null);
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /## Validation Role-Regime Statistical Readiness\nnot_available/
   );
 });
 

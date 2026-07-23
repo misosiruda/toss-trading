@@ -38,6 +38,10 @@ import {
   validationRoleRegimeBatchRunProvenanceSchema,
   type ValidationRoleRegimeBatchRunProvenance
 } from "../replay/validationRoleRegimeBatchProvenance.js";
+import {
+  buildValidationRoleRegimeStatisticalReadinessArtifact,
+  type ValidationRoleRegimeStatisticalReadinessArtifact
+} from "../replay/validationRoleRegimeStatisticalReadiness.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
@@ -69,6 +73,7 @@ export interface BatchReplayAggregateReport {
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
   validationRoleRegimeEvidence?: BatchReplayValidationRoleRegimeEvidenceSummary | null;
+  validationRoleRegimeStatisticalReadiness?: ValidationRoleRegimeStatisticalReadinessArtifact | null;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
   cpcvPboValidation: CpcvPboValidationReport | null;
@@ -360,7 +365,7 @@ export function buildBatchReplayAggregateReport(
 ): BatchReplayAggregateReport {
   const records = [...options.records].sort(compareRunRecords);
   const validationRoleRegimeEvidenceResult =
-    summarizeValidationRoleRegimeEvidence(records);
+    summarizeValidationRoleRegimeEvidence(records, options.generatedAt);
   const globalAggregateRecords =
     validationRoleRegimeEvidenceResult?.independentRecords ?? records;
   const selectionTrials =
@@ -452,6 +457,8 @@ export function buildBatchReplayAggregateReport(
     },
     validationRoleRegimeEvidence:
       validationRoleRegimeEvidenceResult?.summary ?? null,
+    validationRoleRegimeStatisticalReadiness:
+      validationRoleRegimeEvidenceResult?.statisticalReadiness ?? null,
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overfittingDiagnostics,
@@ -507,6 +514,11 @@ export function renderBatchReplayAggregateReport(
     "## Validation Role-Regime Evidence",
     renderValidationRoleRegimeEvidence(
       report.validationRoleRegimeEvidence ?? null
+    ),
+    "",
+    "## Validation Role-Regime Statistical Readiness",
+    renderValidationRoleRegimeStatisticalReadiness(
+      report.validationRoleRegimeStatisticalReadiness ?? null
     ),
     "",
     "## Selection Trials",
@@ -1714,9 +1726,11 @@ function groupByRegime(
 }
 
 function summarizeValidationRoleRegimeEvidence(
-  records: BatchReplayRunRecord[]
+  records: BatchReplayRunRecord[],
+  generatedAt: Date
 ): {
   summary: BatchReplayValidationRoleRegimeEvidenceSummary;
+  statisticalReadiness: ValidationRoleRegimeStatisticalReadinessArtifact;
   independentRecords: BatchReplayRunRecord[];
 } | null {
   const plannedRecords = records.filter(
@@ -1914,6 +1928,27 @@ function summarizeValidationRoleRegimeEvidence(
       "validation role-regime report shared evidence count does not match plan summary"
     );
   }
+  const statisticalReadiness =
+    buildValidationRoleRegimeStatisticalReadinessArtifact({
+      generatedAt,
+      planHash: expectedPlanSummary.planHash,
+      expectedCounts: {
+        plannedRunCount: expectedPlanSummary.plannedRunCount,
+        globalUniqueEvidenceGroupCount:
+          expectedPlanSummary.globalUniqueEvidenceGroupCount,
+        crossRoleSharedEvidenceGroupCount:
+          expectedPlanSummary.crossRoleSharedEvidenceGroupCount
+      },
+      evidenceRows: plannedRecords.map((record) => {
+        const provenance = provenanceFor(record);
+        return {
+          splitRole: provenance.splitRole,
+          targetRegime: provenance.targetRegime,
+          evidenceGroupHash: provenance.evidenceGroupHash
+        };
+      }),
+      roleRegimeSampleMinimum: null
+    });
   return {
     summary: {
       planHash: provenanceFor(plannedRecords[0]!).planHash,
@@ -1927,6 +1962,7 @@ function summarizeValidationRoleRegimeEvidence(
       crossRoleSharedEvidenceWarnings,
       roleRegimeStatusCounts
     },
+    statisticalReadiness,
     independentRecords
   };
 }
@@ -2119,6 +2155,25 @@ function renderValidationRoleRegimeEvidence(
     `cross_role_shared_evidence_group_count: ${summary.crossRoleSharedEvidenceGroupCount}`,
     `cross_role_shared_evidence_warnings: ${JSON.stringify(summary.crossRoleSharedEvidenceWarnings)}`,
     `role_regime_status_counts: ${JSON.stringify(summary.roleRegimeStatusCounts)}`
+  ].join("\n");
+}
+
+function renderValidationRoleRegimeStatisticalReadiness(
+  artifact: ValidationRoleRegimeStatisticalReadinessArtifact | null
+): string {
+  if (artifact === null) {
+    return "not_available";
+  }
+  return [
+    `schema_version: ${artifact.schemaVersion}`,
+    `status: ${artifact.status}`,
+    `provenance_status: ${artifact.provenance.status}`,
+    `role_sample_minimum: ${artifact.config.roleSampleMinimum}`,
+    `role_regime_sample_minimum: ${artifact.config.roleRegimeSampleMinimum ?? "null"}`,
+    `global_evidence: ${JSON.stringify(artifact.evidence.global)}`,
+    `role_evidence: ${JSON.stringify(artifact.evidence.byRole)}`,
+    `role_regime_evidence: ${JSON.stringify(artifact.evidence.byRoleRegime)}`,
+    `blockers: ${JSON.stringify(artifact.blockers)}`
   ].join("\n");
 }
 

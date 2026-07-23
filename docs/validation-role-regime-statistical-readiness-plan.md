@@ -6,7 +6,7 @@
 
 이 계획의 목적은 결과 metric을 본 뒤 표본, window, regime 또는 판정 기준을 바꾸는 일을 막고, 어떤 근거가 충족돼야 paper-only research 판정을 다시 수행할 수 있는지 명시하는 것이다.
 
-다음 항목은 이 PR의 범위가 아니다.
+다음 항목은 이 계획을 최초 추가한 문서 PR의 범위가 아니었다. 실제 후속 구현 상태는 아래 작은 PR 순서에 기록한다.
 
 - 새 replay 실행, artifact 생성 또는 기존 결과 재해석
 - 통계 calculator, report schema, dashboard 또는 API 구현
@@ -181,10 +181,21 @@ src/replay/validationRoleRegimeStatisticalReadiness.test.ts
 
 ### PR 2. Aggregate readiness summary
 
-- Evidence-aware report에 readiness summary 연결
-- Role minimum 30 판정
-- Single-candidate, shared evidence, missing context warning 보존
-- Legacy 또는 partial provenance 입력 fail-closed test
+- Evidence-aware report에 `validationRoleRegimeStatisticalReadiness` 연결
+- Planned provenance row에서 global, role-local, role-exclusive, shared와 role-regime count 계산
+- Role minimum 30, single-candidate, empty cell, shared evidence blocker 생성
+- 미정인 role-regime minimum은 `null`과 `ROLE_REGIME_STATISTICAL_MINIMUM_UNDEFINED`로 보존
+- Legacy report는 readiness를 `null`로 유지
+- Mixed, partial, conflicting provenance 입력은 기존 report gate와 readiness schema에서 fail-closed 처리
+
+구현 위치:
+
+```text
+src/reports/batchReplayReport.ts
+src/replay/validationRoleRegimeStatisticalReadiness.ts
+```
+
+이 단계는 aggregate report 생성 시 readiness artifact를 계산하지만 기존 smoke artifact를 다시 실행하거나 결과 문서를 갱신하지 않는다. 실제 smoke 재검증은 expanded paper-only replay 단계에서 별도로 기록한다.
 
 ### PR 3. Calendar source contract
 

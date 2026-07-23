@@ -2,9 +2,118 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildValidationRoleRegimeStatisticalReadinessArtifact,
   validationRoleRegimeStatisticalReadinessArtifactSchema,
   type ValidationRoleRegimeStatisticalReadinessArtifact
 } from "./validationRoleRegimeStatisticalReadiness.js";
+
+test("readiness builder calculates global shared and role-exclusive evidence", () => {
+  const artifact = buildValidationRoleRegimeStatisticalReadinessArtifact({
+    generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+    planHash: hash("a"),
+    expectedCounts: {
+      plannedRunCount: 4,
+      globalUniqueEvidenceGroupCount: 3,
+      crossRoleSharedEvidenceGroupCount: 1
+    },
+    evidenceRows: [
+      { splitRole: "train", targetRegime: "bull", evidenceGroupHash: hash("b") },
+      {
+        splitRole: "validation",
+        targetRegime: "bull",
+        evidenceGroupHash: hash("b")
+      },
+      {
+        splitRole: "train",
+        targetRegime: "sideways",
+        evidenceGroupHash: hash("c")
+      },
+      { splitRole: "test", targetRegime: "bear", evidenceGroupHash: hash("d") }
+    ]
+  });
+
+  assert.equal(artifact.status, "inconclusive");
+  assert.equal(artifact.provenance.status, "verified");
+  assert.deepEqual(artifact.evidence.global, {
+    plannedRunCount: 4,
+    globalUniqueEvidenceGroupCount: 3,
+    crossRoleSharedEvidenceGroupCount: 1
+  });
+  assert.deepEqual(artifact.evidence.byRole.train, {
+    plannedRunCount: 2,
+    roleLocalUniqueEvidenceGroupCount: 2,
+    roleExclusiveEvidenceGroupCount: 1,
+    crossRoleSharedEvidenceGroupCount: 1
+  });
+  assert.deepEqual(artifact.evidence.byRole.validation, {
+    plannedRunCount: 1,
+    roleLocalUniqueEvidenceGroupCount: 1,
+    roleExclusiveEvidenceGroupCount: 0,
+    crossRoleSharedEvidenceGroupCount: 1
+  });
+  assert.equal(
+    artifact.evidence.byRoleRegime.train.sideways.uniqueEvidenceGroupCount,
+    1
+  );
+  assert.equal(
+    artifact.blockers.some(
+      (blocker) => blocker.code === "CROSS_ROLE_EVIDENCE_SHARED"
+    ),
+    true
+  );
+});
+
+test("readiness builder marks expected and observed count conflicts invalid", () => {
+  const artifact = buildValidationRoleRegimeStatisticalReadinessArtifact({
+    generatedAt: "2026-07-23T00:00:00.000Z",
+    planHash: hash("a"),
+    expectedCounts: {
+      plannedRunCount: 2,
+      globalUniqueEvidenceGroupCount: 1,
+      crossRoleSharedEvidenceGroupCount: 0
+    },
+    evidenceRows: [
+      { splitRole: "train", targetRegime: "bull", evidenceGroupHash: hash("b") }
+    ]
+  });
+
+  assert.equal(artifact.status, "invalid");
+  assert.equal(artifact.provenance.status, "conflict");
+  assert.equal(
+    artifact.blockers.some(
+      (blocker) => blocker.code === "PROVENANCE_COUNT_CONFLICT"
+    ),
+    true
+  );
+});
+
+test("readiness builder rejects one role evidence group assigned to multiple regimes", () => {
+  assert.throws(
+    () =>
+      buildValidationRoleRegimeStatisticalReadinessArtifact({
+        generatedAt: "2026-07-23T00:00:00.000Z",
+        planHash: hash("a"),
+        expectedCounts: {
+          plannedRunCount: 2,
+          globalUniqueEvidenceGroupCount: 1,
+          crossRoleSharedEvidenceGroupCount: 0
+        },
+        evidenceRows: [
+          {
+            splitRole: "train",
+            targetRegime: "bull",
+            evidenceGroupHash: hash("b")
+          },
+          {
+            splitRole: "train",
+            targetRegime: "bear",
+            evidenceGroupHash: hash("b")
+          }
+        ]
+      }),
+    /role-regime unique evidence counts must match the role total/
+  );
+});
 
 test("readiness artifact schema accepts a consistent paper-only contract", () => {
   const parsed =
@@ -349,4 +458,8 @@ function sharedEvidenceArtifact(): ValidationRoleRegimeStatisticalReadinessArtif
       }
     ]
   };
+}
+
+function hash(character: string): `sha256:${string}` {
+  return `sha256:${character.repeat(64)}`;
 }
