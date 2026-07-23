@@ -323,6 +323,17 @@ function validateSessionSchedule(
   index: number,
   context: z.RefinementCtx
 ): void {
+  if (
+    isWeekend(session.sessionDate) &&
+    session.sessionType !== "weekend"
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["sessions", index, "sessionType"],
+      message: "weekend date must use weekend session type"
+    });
+  }
+
   const closed =
     session.sessionType === "holiday" ||
     session.sessionType === "special_closure" ||

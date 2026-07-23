@@ -156,7 +156,7 @@ Session type:
 | `early_close` | `marketOpen`, `marketClose` 필수 | Regular close보다 이르고 `exceptionName` 필수 |
 | `holiday` | Timestamp `null` | `exceptionName` 필수 |
 | `special_closure` | Timestamp `null` | `exceptionName` 필수 |
-| `weekend` | Timestamp `null` | 실제 토요일/일요일이며 `exceptionName=null` |
+| `weekend` | Timestamp `null` | 실제 토요일/일요일이며 `exceptionName=null`; 토요일/일요일은 반드시 이 타입 사용 |
 
 Validation 기준:
 

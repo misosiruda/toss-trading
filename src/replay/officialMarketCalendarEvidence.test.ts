@@ -72,6 +72,61 @@ test("official calendar evidence rejects missing exchange-date coverage", () => 
   );
 });
 
+test("official calendar evidence rejects regular and early-close weekend sessions", () => {
+  const regularPayload = oneDayPayload({
+    sessionDate: "2025-03-08",
+    generatedAt: "2025-03-08T23:00:00.000Z",
+    krxOpen: "2025-03-08T00:00:00.000Z",
+    krxClose: "2025-03-08T06:30:00.000Z",
+    nyseOpen: "2025-03-08T14:30:00.000Z",
+    nyseClose: "2025-03-08T21:00:00.000Z",
+    nyseSessionType: "regular",
+    nyseExceptionName: null
+  });
+  const earlyClosePayload = {
+    ...regularPayload,
+    sessions: [
+      {
+        ...regularPayload.sessions[0],
+        sessionType: "weekend",
+        marketOpen: null,
+        marketClose: null,
+        exceptionName: null
+      },
+      {
+        ...regularPayload.sessions[1],
+        sessionType: "early_close",
+        marketClose: "2025-03-08T18:00:00.000Z",
+        exceptionName: "synthetic fixture early close"
+      }
+    ]
+  };
+  const regularOnlyPayload = {
+    ...regularPayload,
+    sessions: [
+      regularPayload.sessions[0],
+      {
+        ...regularPayload.sessions[1],
+        sessionType: "weekend",
+        marketOpen: null,
+        marketClose: null,
+        exceptionName: null
+      }
+    ]
+  };
+
+  for (const payload of [regularOnlyPayload, earlyClosePayload]) {
+    assert.throws(
+      () =>
+        officialMarketCalendarEvidenceArtifactSchema.parse({
+          ...payload,
+          artifactHash: hash("f")
+        }),
+      /weekend date must use weekend session type/
+    );
+  }
+});
+
 test("official calendar evidence rejects stale sources at read time", () => {
   const artifact = signedArtifact(postDstPayload());
 
