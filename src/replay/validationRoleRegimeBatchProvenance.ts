@@ -64,6 +64,9 @@ export const validationRoleRegimeBatchRunProvenanceSchema = z
   .object({
     samplingMode: z.literal(VALIDATION_ROLE_REGIME_PLAN_SAMPLING_MODE),
     planHash: sha256HashSchema,
+    plannedRunCount: z.number().int().positive(),
+    globalUniqueEvidenceGroupCount: z.number().int().positive(),
+    crossRoleSharedEvidenceGroupCount: z.number().int().nonnegative(),
     planIndex: z.number().int().nonnegative(),
     runKey: z
       .string()
@@ -84,6 +87,16 @@ export const validationRoleRegimeBatchRunProvenanceSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (
+      value.crossRoleSharedEvidenceGroupCount >
+      value.globalUniqueEvidenceGroupCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "cross-role shared evidence count must not exceed global unique evidence count"
+      });
+    }
     if (Date.parse(value.startAt) > Date.parse(value.endAt)) {
       context.addIssue({
         code: "custom",
@@ -139,6 +152,11 @@ export function buildValidationRoleRegimeBatchProvenance(
     validationRoleRegimeBatchRunProvenanceSchema.parse({
       samplingMode: VALIDATION_ROLE_REGIME_PLAN_SAMPLING_MODE,
       planHash: plan.planHash,
+      plannedRunCount: manifest.plannedRunCount,
+      globalUniqueEvidenceGroupCount:
+        manifest.globalUniqueEvidenceGroupCount,
+      crossRoleSharedEvidenceGroupCount:
+        manifest.crossRoleSharedEvidenceGroupCount,
       ...run
     })
   );

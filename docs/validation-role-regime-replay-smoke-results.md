@@ -131,7 +131,7 @@ Role-regime별 run status:
 
 이 표는 실행 plumbing과 cell coverage만 확인한다. Candidate가 하나뿐인 cell과 cross-role shared evidence가 있으므로 role 또는 regime 일반화 근거가 아니다.
 
-## Aggregate Report 제한
+## 초기 Aggregate Report 제한
 
 Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 
@@ -149,6 +149,23 @@ Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 
 현재 aggregate report는 50개 planned role row를 `returnSampleCount=50`으로 집계하고 `globalUniqueEvidenceGroupCount=39`를 독립 sample count로 노출하거나 global statistical aggregate에 적용하지 않는다. 따라서 aggregate report의 global return, Sharpe, hit-rate 또는 ranking 값은 이 smoke의 research evidence로 사용하면 안 된다. Report schema와 calculator가 evidence group 기준 deduplication을 적용하기 전까지 이 항목은 미완료 gate다.
 
+## Aggregate Report 후속 재검증
+
+2026-07-23에 같은 source, coverage, calendar, strategy preset을 사용하고 새 GUID temp root에서 ready plan부터 aggregate report까지 다시 실행했다. Plan provenance가 있는 보고서는 `evidenceGroupHash` 기준으로 전역 통계를 집계하며 역할별 진단에는 planned role row를 유지한다.
+
+| 항목 | 값 |
+| --- | ---: |
+| Plan status | `ready_for_paper_diagnostic` |
+| Planned run count | `50` |
+| Plan global unique evidence group count | `39` |
+| Report run count | `50` |
+| Report return sample count | `39` |
+| Report overall run count | `39` |
+| Report global unique evidence group count | `39` |
+| Report cross-role shared evidence group count | `11` |
+
+동일 evidence group의 상태와 집계 입력 결과는 서로 일치해 fail-closed conflict gate를 통과했다. 이 결과는 전역 표본 독립성 집계 계약을 확인하지만, 아래 statistical strategy validation의 표본 수와 일반화 한계를 해소하지는 않는다.
+
 ## 판정
 
 | Gate | 판정 | 근거 |
@@ -159,13 +176,13 @@ Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 | Provenance 보존 | pass | Manifest/run에 plan hash와 39 unique evidence group 보존 |
 | Selection 자동 승격 방지 | pass | 50개 trial 모두 `selected=false` |
 | Statistical strategy validation | inconclusive | Role sample 부족, shared evidence, observed-session calendar 제한 |
-| Global report independence | blocked | 50 planned rows를 39 independent evidence로 deduplicate하지 않음 |
+| Global report independence | pass | 50 planned rows를 39 independent evidence로 deduplicate하고 plan count와 일치 확인 |
 
-이번 smoke로 ready plan에서 deterministic fixture batch까지의 plumbing은 확인했다. 전략 유효성 판정은 완료되지 않았으며, report independence gate가 닫히기 전에는 50개 row를 독립 표본으로 해석하지 않는다.
+이번 smoke로 ready plan에서 deterministic fixture batch와 evidence-aware aggregate report까지의 plumbing은 확인했다. 전략 유효성 판정은 완료되지 않았으며, 역할별 planned row 50개를 독립 표본으로 해석하지 않는다.
 
 ## Artifact 정책
 
-기록 대상 실행의 artifact는 `%TEMP%/toss-role-regime-smoke-20260722` 아래에서만 생성했으며 repository에 commit하지 않는다. 재현 명령은 기존 artifact를 삭제하거나 덮어쓰지 않고 매번 `%TEMP%/toss-role-regime-smoke-<guid>` root를 새로 만든다.
+기록 대상 실행과 후속 재검증 artifact는 `%TEMP%` 아래에서만 생성했으며 repository에 commit하지 않는다. 재현 명령은 기존 artifact를 삭제하거나 덮어쓰지 않고 매번 GUID 기반 root를 새로 만든다.
 
 ```text
 short-term-role-regime-replay-plan.json

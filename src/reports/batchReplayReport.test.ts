@@ -471,6 +471,165 @@ test("batch replay aggregate report groups results by validation split role", ()
   assert.match(renderBatchReplayAggregateReport(report), /By Validation Split Role/);
 });
 
+test("batch replay aggregate report deduplicates planned evidence in global statistics", () => {
+  const sharedTrain = plannedRecord(
+    record("run_train", 0, "completed", "bull", 0.03, 1_030_000, 0, "train"),
+    0,
+    "b",
+    ["train", "validation"]
+  );
+  const sharedValidation = plannedRecord(
+    record(
+      "run_validation",
+      1,
+      "completed",
+      "bull",
+      0.03,
+      1_030_000,
+      0,
+      "validation"
+    ),
+    1,
+    "b",
+    ["train", "validation"]
+  );
+  const independentTest = plannedRecord(
+    record("run_test", 2, "completed", "bear", -0.01, 990_000, 0, "test"),
+    2,
+    "c",
+    ["test"]
+  );
+
+  const report = buildBatchReplayAggregateReport({
+    generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+    records: [sharedValidation, independentTest, sharedTrain]
+  });
+
+  assert.equal(report.summary.runCount, 3);
+  assert.equal(report.summary.returnSampleCount, 2);
+  assert.equal(report.overall.runCount, 2);
+  assert.equal(report.overall.returnSampleCount, 2);
+  assert.equal(report.overall.averageTotalReturnRatio, 0.01);
+  assert.equal(report.byRegime.bull?.runCount, 1);
+  assert.equal(report.byValidationSplitRole.train?.runCount, 1);
+  assert.equal(report.byValidationSplitRole.validation?.runCount, 1);
+  assert.deepEqual(report.validationRoleRegimeEvidence, {
+    planHash: hash("a"),
+    plannedRunCount: 3,
+    globalUniqueEvidenceGroupCount: 2,
+    independentReturnSampleCount: 2,
+    crossRoleSharedEvidenceGroupCount: 1,
+    crossRoleSharedEvidenceWarnings: [
+      {
+        code: "CROSS_ROLE_EVIDENCE_SHARED",
+        evidenceGroupHash: hash("b"),
+        candidateHash: hash("b"),
+        sharedRoles: ["train", "validation"],
+        runIds: ["run_train", "run_validation"]
+      }
+    ],
+    roleRegimeStatusCounts: {
+      train: {
+        bull: { runCount: 1, completedCount: 1, skippedCount: 0, failedCount: 0 }
+      },
+      validation: {
+        bull: { runCount: 1, completedCount: 1, skippedCount: 0, failedCount: 0 }
+      },
+      test: {
+        bear: { runCount: 1, completedCount: 1, skippedCount: 0, failedCount: 0 }
+      }
+    }
+  });
+  assert.match(
+    renderBatchReplayAggregateReport(report),
+    /global_unique_evidence_group_count: 2/
+  );
+});
+
+test("batch replay aggregate report rejects mixed planned and legacy records", () => {
+  const planned = plannedRecord(
+    record("run_planned", 0, "completed", "bull", 0.01, 1_010_000, 0, "train"),
+    0,
+    "b",
+    ["train"]
+  );
+
+  assert.throws(
+    () =>
+      buildBatchReplayAggregateReport({
+        generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+        records: [planned, record("run_legacy", 1, "completed", "bull", 0.01, 1_010_000)]
+      }),
+    /cannot mix planned and legacy run records/
+  );
+});
+
+test("batch replay aggregate report rejects conflicting duplicate evidence results", () => {
+  const train = plannedRecord(
+    record("run_train", 0, "completed", "bull", 0.03, 1_030_000, 0, "train"),
+    0,
+    "b",
+    ["train", "validation"],
+    {
+      plannedRunCount: 2,
+      globalUniqueEvidenceGroupCount: 1,
+      crossRoleSharedEvidenceGroupCount: 1
+    }
+  );
+  const validation = plannedRecord(
+    record(
+      "run_validation",
+      1,
+      "completed",
+      "bull",
+      0.02,
+      1_020_000,
+      0,
+      "validation"
+    ),
+    1,
+    "b",
+    ["train", "validation"],
+    {
+      plannedRunCount: 2,
+      globalUniqueEvidenceGroupCount: 1,
+      crossRoleSharedEvidenceGroupCount: 1
+    }
+  );
+
+  assert.throws(
+    () =>
+      buildBatchReplayAggregateReport({
+        generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+        records: [train, validation]
+      }),
+    /evidence group has conflicting results/
+  );
+});
+
+test("batch replay aggregate report rejects incomplete shared evidence groups", () => {
+  const incomplete = plannedRecord(
+    record("run_train", 0, "completed", "bull", 0.03, 1_030_000, 0, "train"),
+    0,
+    "b",
+    ["train", "validation"],
+    {
+      plannedRunCount: 2,
+      globalUniqueEvidenceGroupCount: 1,
+      crossRoleSharedEvidenceGroupCount: 1
+    }
+  );
+
+  assert.throws(
+    () =>
+      buildBatchReplayAggregateReport({
+        generatedAt: new Date("2026-07-23T00:00:00.000Z"),
+        records: [incomplete]
+      }),
+    /run count does not match plannedRunCount/
+  );
+});
+
 test("batch replay aggregate report calculates target return hit rates", () => {
   const report = buildBatchReplayAggregateReport({
     generatedAt: new Date("2026-06-12T10:00:00+09:00"),
@@ -2731,6 +2890,85 @@ function record(
       status === "completed" ? `data/batch/${runId}/historical-replay-report.json` : null,
     error: status === "failed" ? "fixture failure" : null,
     skipReason: status === "skipped" ? "DATA_INSUFFICIENT" : null
+  };
+}
+
+function plannedRecord(
+  value: BatchReplayRunRecord,
+  planIndex: number,
+  evidenceHashCharacter: string,
+  sharedRoles: ValidationSplitRole[],
+  planSummary = {
+    plannedRunCount: 3,
+    globalUniqueEvidenceGroupCount: 2,
+    crossRoleSharedEvidenceGroupCount: 1
+  }
+): BatchReplayRunRecord {
+  if (value.validationSplit === null) {
+    throw new Error("planned record fixture requires a validation split");
+  }
+  const validationSplit = plannedValidationSplit(value);
+  const candidateHash = hash(evidenceHashCharacter);
+  return {
+    ...value,
+    validationSplit,
+    windowSampling: {
+      mode: "validation_role_regime_plan",
+      targetRegime: value.marketRegime.label,
+      targetCandidateCount: 1,
+      fallbackReason: null
+    },
+    validationRoleRegimePlan: {
+      samplingMode: "validation_role_regime_plan",
+      planHash: hash("a"),
+      ...planSummary,
+      planIndex,
+      runKey: `plan_${planIndex}`,
+      splitRole: validationSplit.splitRole,
+      targetRegime: value.marketRegime.label as "bull" | "bear" | "sideways" | "mixed",
+      candidateOrdinalWithinRoleRegime: 0,
+      candidateHash,
+      evidenceGroupHash: candidateHash,
+      startAt: value.window.startAt,
+      endAt: value.window.endAt,
+      sourceAssignments: [validationSplit],
+      executionAssignment: validationSplit,
+      sharedAcrossRoles: sharedRoles.length > 1,
+      sharedRoles
+    }
+  };
+}
+
+function plannedValidationSplit(
+  value: BatchReplayRunRecord
+): NonNullable<BatchReplayRunRecord["validationSplit"]> {
+  const split = value.validationSplit!;
+  if (split.splitRole === "train") {
+    return {
+      ...split,
+      trainStart: value.window.startAt,
+      trainEnd: value.window.endAt,
+      validationStart: "2025-02-01T00:00:00.000Z",
+      validationEnd: "2025-02-28T23:59:59.999Z"
+    };
+  }
+  if (split.splitRole === "validation") {
+    return {
+      ...split,
+      trainStart: "2024-11-01T00:00:00.000Z",
+      trainEnd: "2024-11-30T23:59:59.999Z",
+      validationStart: value.window.startAt,
+      validationEnd: value.window.endAt
+    };
+  }
+  return {
+    ...split,
+    trainStart: "2024-10-01T00:00:00.000Z",
+    trainEnd: "2024-10-31T23:59:59.999Z",
+    validationStart: "2024-11-01T00:00:00.000Z",
+    validationEnd: "2024-11-30T23:59:59.999Z",
+    testStart: value.window.startAt,
+    testEnd: value.window.endAt
   };
 }
 
