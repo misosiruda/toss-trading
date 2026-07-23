@@ -33,6 +33,11 @@ import {
   type TripleBarrierLabelArtifact
 } from "../replay/tripleBarrierLabel.js";
 import type { ValidationSplitRole } from "../replay/validationProtocol.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import {
+  validationRoleRegimeBatchRunProvenanceSchema,
+  type ValidationRoleRegimeBatchRunProvenance
+} from "../replay/validationRoleRegimeBatchProvenance.js";
 import type { BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
 
 export interface BatchReplayAggregateReportOptions {
@@ -63,6 +68,7 @@ export interface BatchReplayAggregateReport {
   sourceMetaLabelEvaluationPath?: string | null;
   targetReturnThresholds: number[];
   summary: BatchReplayAggregateSummary;
+  validationRoleRegimeEvidence?: BatchReplayValidationRoleRegimeEvidenceSummary | null;
   trialSummary: BatchReplaySelectionTrialSummary | null;
   overfittingDiagnostics: BatchReplayOverfittingDiagnostics | null;
   cpcvPboValidation: CpcvPboValidationReport | null;
@@ -75,6 +81,36 @@ export interface BatchReplayAggregateReport {
     Record<ValidationSplitRole, BatchReplayGroupSummary>
   >;
   disclaimer: string;
+}
+
+export interface BatchReplayValidationRoleRegimeEvidenceSummary {
+  planHash: string;
+  plannedRunCount: number;
+  globalUniqueEvidenceGroupCount: number;
+  independentReturnSampleCount: number;
+  crossRoleSharedEvidenceGroupCount: number;
+  crossRoleSharedEvidenceWarnings: BatchReplayCrossRoleEvidenceWarning[];
+  roleRegimeStatusCounts: Partial<
+    Record<
+      ValidationSplitRole,
+      Partial<Record<MarketRegimeLabel, BatchReplayRunStatusCount>>
+    >
+  >;
+}
+
+export interface BatchReplayCrossRoleEvidenceWarning {
+  code: "CROSS_ROLE_EVIDENCE_SHARED";
+  evidenceGroupHash: string;
+  candidateHash: string;
+  sharedRoles: ValidationSplitRole[];
+  runIds: string[];
+}
+
+export interface BatchReplayRunStatusCount {
+  runCount: number;
+  completedCount: number;
+  skippedCount: number;
+  failedCount: number;
 }
 
 export interface BatchReplayAggregateSummary {
@@ -323,6 +359,10 @@ export function buildBatchReplayAggregateReport(
   options: BatchReplayAggregateReportOptions
 ): BatchReplayAggregateReport {
   const records = [...options.records].sort(compareRunRecords);
+  const validationRoleRegimeEvidenceResult =
+    summarizeValidationRoleRegimeEvidence(records);
+  const globalAggregateRecords =
+    validationRoleRegimeEvidenceResult?.independentRecords ?? records;
   const selectionTrials =
     options.selectionTrials === undefined
       ? null
@@ -343,7 +383,9 @@ export function buildBatchReplayAggregateReport(
     Record<ValidationSplitRole, BatchReplayGroupSummary>
   > = {};
 
-  for (const [label, groupRecords] of groupByRegime(records).entries()) {
+  for (const [label, groupRecords] of groupByRegime(
+    globalAggregateRecords
+  ).entries()) {
     byRegime[label] = summarizeGroup(label, groupRecords, targetReturnThresholds);
   }
   for (const [role, groupRecords] of groupByValidationSplitRole(records)) {
@@ -402,12 +444,14 @@ export function buildBatchReplayAggregateReport(
       skippedCount: records.filter((record) => record.status === "skipped")
         .length,
       failedCount: records.filter((record) => record.status === "failed").length,
-      returnSampleCount: records.filter(hasReturnSample).length,
-      regimeCounts: countRegimes(records),
-      regimeCountsByMarket: countRegimesByMarket(records),
+      returnSampleCount: globalAggregateRecords.filter(hasReturnSample).length,
+      regimeCounts: countRegimes(globalAggregateRecords),
+      regimeCountsByMarket: countRegimesByMarket(globalAggregateRecords),
       validationSplitRoleCounts: countValidationSplitRoles(records),
       dataAvailabilityIssues: summarizeDataAvailabilityIssues(records)
     },
+    validationRoleRegimeEvidence:
+      validationRoleRegimeEvidenceResult?.summary ?? null,
     trialSummary:
       selectionTrials === null ? null : summarizeSelectionTrials(selectionTrials),
     overfittingDiagnostics,
@@ -415,7 +459,11 @@ export function buildBatchReplayAggregateReport(
     tripleBarrierLabel,
     metaLabelEvaluation,
     universeCoverage,
-    overall: summarizeGroup("overall", records, targetReturnThresholds),
+    overall: summarizeGroup(
+      "overall",
+      globalAggregateRecords,
+      targetReturnThresholds
+    ),
     byRegime,
     byValidationSplitRole,
     disclaimer: batchAggregateDisclaimer()
@@ -455,6 +503,11 @@ export function renderBatchReplayAggregateReport(
     `regime_counts_by_market: ${JSON.stringify(report.summary.regimeCountsByMarket)}`,
     `validation_split_role_counts: ${JSON.stringify(report.summary.validationSplitRoleCounts)}`,
     `data_availability_issues: ${JSON.stringify(report.summary.dataAvailabilityIssues)}`,
+    "",
+    "## Validation Role-Regime Evidence",
+    renderValidationRoleRegimeEvidence(
+      report.validationRoleRegimeEvidence ?? null
+    ),
     "",
     "## Selection Trials",
     renderSelectionTrialSummary(report.trialSummary),
@@ -1660,6 +1713,249 @@ function groupByRegime(
   return groups;
 }
 
+function summarizeValidationRoleRegimeEvidence(
+  records: BatchReplayRunRecord[]
+): {
+  summary: BatchReplayValidationRoleRegimeEvidenceSummary;
+  independentRecords: BatchReplayRunRecord[];
+} | null {
+  const plannedRecords = records.filter(
+    (record) => record.validationRoleRegimePlan != null
+  );
+  if (plannedRecords.length === 0) {
+    return null;
+  }
+  if (plannedRecords.length !== records.length) {
+    throw new Error(
+      "validation role-regime report cannot mix planned and legacy run records"
+    );
+  }
+
+  const provenanceByRecord = new Map<
+    BatchReplayRunRecord,
+    ValidationRoleRegimeBatchRunProvenance
+  >(
+    plannedRecords.map((record) => [
+      record,
+      validationRoleRegimeBatchRunProvenanceSchema.parse(
+        record.validationRoleRegimePlan
+      )
+    ])
+  );
+  const provenanceFor = (
+    record: BatchReplayRunRecord
+  ): ValidationRoleRegimeBatchRunProvenance => provenanceByRecord.get(record)!;
+
+  const planHashes = new Set(
+    plannedRecords.map((record) => provenanceFor(record).planHash)
+  );
+  if (planHashes.size !== 1) {
+    throw new Error(
+      "validation role-regime report requires one consistent planHash"
+    );
+  }
+  const planSummaries = new Set(
+    plannedRecords.map((record) => {
+      const provenance = provenanceFor(record);
+      return createReplayResearchHash({
+        plannedRunCount: provenance.plannedRunCount,
+        globalUniqueEvidenceGroupCount:
+          provenance.globalUniqueEvidenceGroupCount,
+        crossRoleSharedEvidenceGroupCount:
+          provenance.crossRoleSharedEvidenceGroupCount
+      });
+    })
+  );
+  if (planSummaries.size !== 1) {
+    throw new Error(
+      "validation role-regime report requires consistent plan summary counts"
+    );
+  }
+  const expectedPlanSummary = provenanceFor(plannedRecords[0]!);
+  if (plannedRecords.length !== expectedPlanSummary.plannedRunCount) {
+    throw new Error(
+      "validation role-regime report run count does not match plannedRunCount"
+    );
+  }
+
+  const planIndexes = plannedRecords.map(
+    (record) => provenanceFor(record).planIndex
+  );
+  const uniquePlanIndexes = new Set(planIndexes);
+  if (
+    uniquePlanIndexes.size !== plannedRecords.length ||
+    [...planIndexes].sort((left, right) => left - right).some(
+      (planIndex, index) => planIndex !== index
+    )
+  ) {
+    throw new Error(
+      "validation role-regime report requires unique contiguous planIndex values"
+    );
+  }
+
+  const recordsByEvidenceGroup = new Map<string, BatchReplayRunRecord[]>();
+  const roleRegimeStatusCounts: BatchReplayValidationRoleRegimeEvidenceSummary["roleRegimeStatusCounts"] =
+    {};
+  for (const record of plannedRecords) {
+    const provenance = provenanceFor(record);
+    if (
+      record.window.startAt !== provenance.startAt ||
+      record.window.endAt !== provenance.endAt
+    ) {
+      throw new Error(
+        `validation role-regime replay window mismatch for run ${record.runId}`
+      );
+    }
+    if (
+      createReplayResearchHash(record.validationSplit) !==
+      createReplayResearchHash(provenance.executionAssignment)
+    ) {
+      throw new Error(
+        `validation role-regime executionAssignment mismatch for run ${record.runId}`
+      );
+    }
+    if (record.validationSplit?.splitRole !== provenance.splitRole) {
+      throw new Error(
+        `validation role-regime splitRole mismatch for run ${record.runId}`
+      );
+    }
+    if (record.marketRegime.label !== provenance.targetRegime) {
+      throw new Error(
+        `validation role-regime targetRegime mismatch for run ${record.runId}`
+      );
+    }
+    const grouped = recordsByEvidenceGroup.get(provenance.evidenceGroupHash) ?? [];
+    grouped.push(record);
+    recordsByEvidenceGroup.set(provenance.evidenceGroupHash, grouped);
+
+    const roleCounts = roleRegimeStatusCounts[provenance.splitRole] ?? {};
+    const counts = roleCounts[provenance.targetRegime] ?? emptyRunStatusCount();
+    counts.runCount += 1;
+    if (isCompletedRunRecord(record)) {
+      counts.completedCount += 1;
+    } else if (record.status === "skipped") {
+      counts.skippedCount += 1;
+    } else {
+      counts.failedCount += 1;
+    }
+    roleCounts[provenance.targetRegime] = counts;
+    roleRegimeStatusCounts[provenance.splitRole] = roleCounts;
+  }
+
+  const independentRecords: BatchReplayRunRecord[] = [];
+  const crossRoleSharedEvidenceWarnings: BatchReplayCrossRoleEvidenceWarning[] = [];
+  for (const [evidenceGroupHash, grouped] of recordsByEvidenceGroup) {
+    const representative = grouped[0]!;
+    const representativeProvenance = provenanceFor(representative);
+    const resultHash = aggregateResultHash(representative);
+    if (grouped.some((record) => aggregateResultHash(record) !== resultHash)) {
+      throw new Error(
+        `validation role-regime evidence group has conflicting results: ${evidenceGroupHash}`
+      );
+    }
+    if (
+      grouped.some(
+        (record) =>
+          provenanceFor(record).candidateHash !==
+          representativeProvenance.candidateHash
+      )
+    ) {
+      throw new Error(
+        `validation role-regime evidence group has conflicting candidateHash: ${evidenceGroupHash}`
+      );
+    }
+    const sharedRoles = Array.from(
+      new Set(grouped.map((record) => provenanceFor(record).splitRole))
+    );
+    if (
+      grouped.some((record) => {
+        const provenance = provenanceFor(record);
+        return (
+          provenance.sharedAcrossRoles !== (sharedRoles.length > 1) ||
+          createReplayResearchHash(provenance.sharedRoles) !==
+            createReplayResearchHash(sharedRoles)
+        );
+      })
+    ) {
+      throw new Error(
+        `validation role-regime evidence group has conflicting shared roles: ${evidenceGroupHash}`
+      );
+    }
+    independentRecords.push(representative);
+
+    if (sharedRoles.length > 1) {
+      crossRoleSharedEvidenceWarnings.push({
+        code: "CROSS_ROLE_EVIDENCE_SHARED",
+        evidenceGroupHash,
+        candidateHash: representativeProvenance.candidateHash,
+        sharedRoles: representativeProvenance.sharedRoles,
+        runIds: grouped.map((record) => record.runId).sort()
+      });
+    }
+  }
+
+  independentRecords.sort(compareRunRecords);
+  crossRoleSharedEvidenceWarnings.sort((left, right) =>
+    left.evidenceGroupHash.localeCompare(right.evidenceGroupHash)
+  );
+  if (
+    recordsByEvidenceGroup.size !==
+    expectedPlanSummary.globalUniqueEvidenceGroupCount
+  ) {
+    throw new Error(
+      "validation role-regime report evidence group count does not match plan summary"
+    );
+  }
+  if (
+    crossRoleSharedEvidenceWarnings.length !==
+    expectedPlanSummary.crossRoleSharedEvidenceGroupCount
+  ) {
+    throw new Error(
+      "validation role-regime report shared evidence count does not match plan summary"
+    );
+  }
+  return {
+    summary: {
+      planHash: provenanceFor(plannedRecords[0]!).planHash,
+      plannedRunCount: expectedPlanSummary.plannedRunCount,
+      globalUniqueEvidenceGroupCount:
+        expectedPlanSummary.globalUniqueEvidenceGroupCount,
+      independentReturnSampleCount:
+        independentRecords.filter(hasReturnSample).length,
+      crossRoleSharedEvidenceGroupCount:
+        expectedPlanSummary.crossRoleSharedEvidenceGroupCount,
+      crossRoleSharedEvidenceWarnings,
+      roleRegimeStatusCounts
+    },
+    independentRecords
+  };
+}
+
+function emptyRunStatusCount(): BatchReplayRunStatusCount {
+  return {
+    runCount: 0,
+    completedCount: 0,
+    skippedCount: 0,
+    failedCount: 0
+  };
+}
+
+function aggregateResultHash(record: BatchReplayRunRecord): string {
+  return createReplayResearchHash({
+    status: record.status,
+    window: {
+      startAt: record.window.startAt,
+      endAt: record.window.endAt
+    },
+    summary: record.summary,
+    marketRegime: record.marketRegime,
+    marketRegimesByMarket: record.marketRegimesByMarket,
+    dataAvailability: record.dataAvailability,
+    error: record.error,
+    skipReason: record.skipReason
+  });
+}
+
 function countRegimes(
   records: BatchReplayRunRecord[]
 ): Partial<Record<MarketRegimeLabel, number>> {
@@ -1807,6 +2103,23 @@ function compareSelectionTrialBuckets(
 
 function bucketSortKey(value: string | null): string {
   return value ?? "\uffff";
+}
+
+function renderValidationRoleRegimeEvidence(
+  summary: BatchReplayValidationRoleRegimeEvidenceSummary | null
+): string {
+  if (summary === null) {
+    return "not_available";
+  }
+  return [
+    `plan_hash: ${summary.planHash}`,
+    `planned_run_count: ${summary.plannedRunCount}`,
+    `global_unique_evidence_group_count: ${summary.globalUniqueEvidenceGroupCount}`,
+    `independent_return_sample_count: ${summary.independentReturnSampleCount}`,
+    `cross_role_shared_evidence_group_count: ${summary.crossRoleSharedEvidenceGroupCount}`,
+    `cross_role_shared_evidence_warnings: ${JSON.stringify(summary.crossRoleSharedEvidenceWarnings)}`,
+    `role_regime_status_counts: ${JSON.stringify(summary.roleRegimeStatusCounts)}`
+  ].join("\n");
 }
 
 function renderGroup(group: BatchReplayGroupSummary): string {

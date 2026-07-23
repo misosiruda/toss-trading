@@ -305,6 +305,8 @@ Selection trial은 run 결과를 winner로 자동 선택하지 않으며 기존 
 
 Report는 50 planned rows를 50 independent samples로 표시하면 안 된다. 같은 hash의 duplicate role run은 role 진단에는 남기되 global statistical aggregate에서 한 evidence group으로 처리한다.
 
+Aggregate report는 plan provenance가 있는 run만 입력된 경우 `evidenceGroupHash`별 대표 run으로 `summary.returnSampleCount`, `summary.regimeCounts`, `summary.regimeCountsByMarket`, `overall`, `byRegime`를 계산한다. `byValidationSplitRole`과 `summary.validationSplitRoleCounts`는 역할별 실행 진단을 위해 duplicate role run을 유지한다. Run provenance는 planned run, global unique evidence group, cross-role shared evidence group count를 반복 보존하며 report는 실제 관측 count와 대조한다. 각 run의 observed `window.startAt/endAt`와 `validationSplit`도 provenance의 planned window 및 `executionAssignment`와 정확히 일치해야 한다. 동일 evidence group의 상태 또는 집계 입력 결과가 다르거나 plan/legacy record가 섞이거나 JSONL이 불완전하면 대표 결과를 임의 선택하지 않고 report 생성을 fail-closed로 거부한다. `validationRoleRegimeEvidence`에는 `planHash`, planned run count, global unique evidence group count, independent return sample count, cross-role shared evidence warning, role-regime별 실행 상태 count를 기록한다.
+
 ## Fail-Closed 중단 조건
 
 다음 조건이면 ready plan 또는 batch run을 만들지 않는다.

@@ -37,6 +37,10 @@ test("batch provenance preserves manifest aggregates and exact plan run identity
   });
   assert.deepEqual(
     provenance.runs.map((run) => ({
+      plannedRunCount: run.plannedRunCount,
+      globalUniqueEvidenceGroupCount: run.globalUniqueEvidenceGroupCount,
+      crossRoleSharedEvidenceGroupCount:
+        run.crossRoleSharedEvidenceGroupCount,
       planIndex: run.planIndex,
       splitRole: run.splitRole,
       candidateHash: run.candidateHash,
@@ -48,6 +52,9 @@ test("batch provenance preserves manifest aggregates and exact plan run identity
     })),
     [
       {
+        plannedRunCount: 3,
+        globalUniqueEvidenceGroupCount: 2,
+        crossRoleSharedEvidenceGroupCount: 1,
         planIndex: 0,
         splitRole: "train",
         candidateHash: SHARED_HASH,
@@ -56,6 +63,9 @@ test("batch provenance preserves manifest aggregates and exact plan run identity
         sourceSplitIds: ["train-source"]
       },
       {
+        plannedRunCount: 3,
+        globalUniqueEvidenceGroupCount: 2,
+        crossRoleSharedEvidenceGroupCount: 1,
         planIndex: 1,
         splitRole: "validation",
         candidateHash: SHARED_HASH,
@@ -64,6 +74,9 @@ test("batch provenance preserves manifest aggregates and exact plan run identity
         sourceSplitIds: ["validation-source"]
       },
       {
+        plannedRunCount: 3,
+        globalUniqueEvidenceGroupCount: 2,
+        crossRoleSharedEvidenceGroupCount: 1,
         planIndex: 2,
         splitRole: "test",
         candidateHash: TEST_HASH,
