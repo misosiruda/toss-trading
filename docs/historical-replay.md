@@ -864,6 +864,8 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, Lo-style adjusted Sharpe, benchmark가 없는 PSR `not_applicable` 상태, 아직 계산하지 않는 DSR 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, Replay Research Report, legacy static dashboard renderer, Next.js Validation Lab은 missing/available 상태와 warning을 read-only로 표시합니다.
 
+`validationRoleRegimePlan` provenance가 모든 run record에 있으면 aggregate report는 `validationRoleRegimeStatisticalReadiness`를 생성합니다. 이 field는 planned run과 global unique evidence를 구분하고 role-local, role-exclusive, cross-role shared, role-regime cell count를 `validation_role_regime_statistical_readiness.v1` contract로 기록합니다. Role sample minimum은 기존 값 30을 사용하며 아직 계약되지 않은 role-regime minimum은 `null`과 blocker로 남깁니다. Legacy record만 있는 report는 이 field를 `null`로 유지하고, planned/legacy 혼합, incomplete plan, count conflict 또는 같은 evidence의 role 내 regime 충돌은 readiness를 임의 보정하지 않고 report 생성을 fail-closed로 거부합니다.
+
 `historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
 
 ```powershell
