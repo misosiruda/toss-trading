@@ -125,7 +125,16 @@ test("missing official calendar evidence requires its blocker", () => {
   );
 
   artifact.status = "inconclusive";
-  artifact.blockers = [blocker("OFFICIAL_CALENDAR_EVIDENCE_MISSING")];
+  artifact.blockers = [
+    blocker("OFFICIAL_CALENDAR_EVIDENCE_MISSING"),
+    blocker("DEPENDENCY_INPUT_INCOMPLETE")
+  ];
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      artifact
+    )
+  );
+  artifact.dependencyInputs.pairwise = [];
   assert.equal(
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
       artifact
@@ -178,6 +187,9 @@ test("combined capacity below target requires scoped blockers", () => {
     }
   }
   rebuildCombinedEvidence(artifact);
+  artifact.capacity.baseline = structuredClone(artifact.capacity.combined);
+  artifact.capacity.expansion = structuredClone(artifact.capacity.combined);
+  artifact.capacity.incremental = emptyCapacityView();
   artifact.status = "inconclusive";
   artifact.blockers = [
     blocker("ROLE_LOCAL_CAPACITY_BELOW_TARGET", "validation"),
@@ -219,6 +231,19 @@ test("capacity views reject global and role count conflicts", () => {
   assert.throws(() =>
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
       roleConflict
+    )
+  );
+});
+
+test("capacity summary views reject impossible incremental evidence", () => {
+  const artifact = readyArtifact();
+  artifact.capacity.incremental = structuredClone(
+    artifact.capacity.expansion
+  );
+
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      artifact
     )
   );
 });
@@ -483,7 +508,7 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
       baseline: structuredClone(capacityView),
       expansion: structuredClone(capacityView),
       combined: structuredClone(capacityView),
-      incremental: structuredClone(capacityView)
+      incremental: emptyCapacityView()
     },
     dependencyInputs: {
       candidateIntervals,
@@ -672,6 +697,18 @@ function emptyCapacityRole() {
       bear: 0,
       sideways: 0,
       mixed: 0
+    }
+  };
+}
+
+function emptyCapacityView() {
+  return {
+    globalUniqueEvidenceGroupCount: 0,
+    crossRoleSharedEvidenceGroupCount: 0,
+    byRole: {
+      train: emptyCapacityRole(),
+      validation: emptyCapacityRole(),
+      test: emptyCapacityRole()
     }
   };
 }

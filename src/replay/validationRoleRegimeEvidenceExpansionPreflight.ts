@@ -220,7 +220,10 @@ const capacitySummarySchema = z
     combined: capacityViewSchema,
     incremental: capacityViewSchema
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    validateCapacitySummaryRelationships(value, context);
+  });
 
 const candidateIntervalSchema = z
   .object({
@@ -429,14 +432,16 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
   .superRefine((value, context) => {
     validateTargets(value, context);
     const tradingDateSetConflict = hasTradingDateSetConflict(value);
+    const officialCalendarMissing =
+      value.source.officialCalendarArtifactHash === null;
     const dependencyInputsIncomplete = validateDependencyCompleteness(
       value,
-      tradingDateSetConflict,
+      tradingDateSetConflict || officialCalendarMissing,
       context
     );
     validateRequiredBlockers(
       value,
-      dependencyInputsIncomplete,
+      dependencyInputsIncomplete || officialCalendarMissing,
       tradingDateSetConflict,
       context
     );
@@ -467,6 +472,7 @@ type PreflightArtifact = z.infer<
 >;
 type ValidationRole = (typeof VALIDATION_ROLE_ORDER)[number];
 type TargetRegime = (typeof VALIDATION_TARGET_REGIME_ORDER)[number];
+type CapacitySummary = z.infer<typeof capacitySummarySchema>;
 
 const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
   "RESULT_METRIC_INPUT_FORBIDDEN",
@@ -481,7 +487,7 @@ const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
 
 function validateDependencyCompleteness(
   value: PreflightArtifact,
-  tradingDateSetConflict: boolean,
+  pairwiseDiagnosticsUnavailable: boolean,
   context: z.RefinementCtx
 ): boolean {
   const intervals = value.dependencyInputs.candidateIntervals;
@@ -552,13 +558,13 @@ function validateDependencyCompleteness(
     }
   }
 
-  if (tradingDateSetConflict) {
+  if (pairwiseDiagnosticsUnavailable) {
     if (value.dependencyInputs.pairwise.length > 0) {
       context.addIssue({
         code: "custom",
         path: ["dependencyInputs", "pairwise"],
         message:
-          "pairwise dependencies must be empty for a trading-date conflict"
+          "pairwise dependencies must be empty when diagnostics are unavailable"
       });
     }
     return incomplete;
@@ -650,6 +656,93 @@ function validateDependencyCompleteness(
     incomplete = true;
   }
   return incomplete;
+}
+
+function validateCapacitySummaryRelationships(
+  value: CapacitySummary,
+  context: z.RefinementCtx
+): void {
+  const baseline = value.baseline;
+  const expansion = value.expansion;
+  const combined = value.combined;
+  const incremental = value.incremental;
+
+  if (
+    baseline.globalUniqueEvidenceGroupCount +
+      incremental.globalUniqueEvidenceGroupCount !==
+    combined.globalUniqueEvidenceGroupCount
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["incremental", "globalUniqueEvidenceGroupCount"],
+      message:
+        "combined global capacity must equal baseline and incremental capacity"
+    });
+  }
+  if (
+    incremental.globalUniqueEvidenceGroupCount >
+    expansion.globalUniqueEvidenceGroupCount
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["incremental", "globalUniqueEvidenceGroupCount"],
+      message: "incremental global capacity must not exceed expansion capacity"
+    });
+  }
+  if (
+    incremental.crossRoleSharedEvidenceGroupCount >
+    expansion.crossRoleSharedEvidenceGroupCount
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["incremental", "crossRoleSharedEvidenceGroupCount"],
+      message:
+        "incremental shared capacity must not exceed expansion shared capacity"
+    });
+  }
+
+  for (const splitRole of VALIDATION_ROLE_ORDER) {
+    validateUnionDimension(
+      baseline.byRole[splitRole].roleLocalUniqueEvidenceGroupCount,
+      expansion.byRole[splitRole].roleLocalUniqueEvidenceGroupCount,
+      combined.byRole[splitRole].roleLocalUniqueEvidenceGroupCount,
+      incremental.byRole[splitRole].roleLocalUniqueEvidenceGroupCount,
+      ["incremental", "byRole", splitRole, "roleLocalUniqueEvidenceGroupCount"],
+      context
+    );
+    for (const targetRegime of VALIDATION_TARGET_REGIME_ORDER) {
+      validateUnionDimension(
+        baseline.byRole[splitRole].byRegime[targetRegime],
+        expansion.byRole[splitRole].byRegime[targetRegime],
+        combined.byRole[splitRole].byRegime[targetRegime],
+        incremental.byRole[splitRole].byRegime[targetRegime],
+        ["incremental", "byRole", splitRole, "byRegime", targetRegime],
+        context
+      );
+    }
+  }
+}
+
+function validateUnionDimension(
+  baseline: number,
+  expansion: number,
+  combined: number,
+  incremental: number,
+  path: Array<string | number>,
+  context: z.RefinementCtx
+): void {
+  if (
+    combined < Math.max(baseline, expansion) ||
+    combined > baseline + expansion ||
+    incremental > expansion
+  ) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message:
+        "capacity view must satisfy baseline, expansion, combined, and incremental bounds"
+    });
+  }
 }
 
 function validateTargets(
