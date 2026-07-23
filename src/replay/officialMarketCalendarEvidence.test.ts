@@ -208,6 +208,73 @@ test("official calendar evidence rejects offsetless artifact timestamps", () => 
   }
 });
 
+test("official calendar evidence rejects sub-minute session timestamps", () => {
+  const regularPayload = postDstPayload();
+  const earlyClosePayload = oneDayPayload({
+    sessionDate: "2025-11-28",
+    generatedAt: "2025-11-28T22:00:00.000Z",
+    krxOpen: "2025-11-28T00:00:00.000Z",
+    krxClose: "2025-11-28T06:30:00.000Z",
+    nyseOpen: "2025-11-28T14:30:00.000Z",
+    nyseClose: "2025-11-28T18:00:00.000Z",
+    nyseSessionType: "early_close",
+    nyseExceptionName: "synthetic fixture early close"
+  });
+  const invalidArtifacts: unknown[] = [
+    {
+      ...regularPayload,
+      sessions: [
+        {
+          ...regularPayload.sessions[0],
+          marketOpen: "2025-03-10T00:00:01.000Z"
+        },
+        regularPayload.sessions[1]
+      ],
+      artifactHash: hash("f")
+    },
+    {
+      ...regularPayload,
+      sessions: [
+        regularPayload.sessions[0],
+        {
+          ...regularPayload.sessions[1],
+          marketClose: "2025-03-10T20:00:00.001Z"
+        }
+      ],
+      artifactHash: hash("f")
+    },
+    {
+      ...earlyClosePayload,
+      sessions: [
+        earlyClosePayload.sessions[0],
+        {
+          ...earlyClosePayload.sessions[1],
+          marketOpen: "2025-11-28T14:30:59.999Z"
+        }
+      ],
+      artifactHash: hash("f")
+    },
+    {
+      ...earlyClosePayload,
+      sessions: [
+        earlyClosePayload.sessions[0],
+        {
+          ...earlyClosePayload.sessions[1],
+          marketClose: "2025-11-28T18:00:00.001Z"
+        }
+      ],
+      artifactHash: hash("f")
+    }
+  ];
+
+  for (const invalidArtifact of invalidArtifacts) {
+    assert.throws(
+      () => officialMarketCalendarEvidenceArtifactSchema.parse(invalidArtifact),
+      /must use whole-minute precision/
+    );
+  }
+});
+
 test("official calendar evidence rejects artifact hash mismatch", () => {
   const artifact = signedArtifact(postDstPayload());
 

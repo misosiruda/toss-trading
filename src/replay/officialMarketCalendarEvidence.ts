@@ -386,6 +386,20 @@ function validateSessionSchedule(
       message: "marketOpen must be before marketClose"
     });
   }
+  if (!usesWholeMinutePrecision(session.marketOpen)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sessions", index, "marketOpen"],
+      message: "marketOpen must use whole-minute precision"
+    });
+  }
+  if (!usesWholeMinutePrecision(session.marketClose)) {
+    context.addIssue({
+      code: "custom",
+      path: ["sessions", index, "marketClose"],
+      message: "marketClose must use whole-minute precision"
+    });
+  }
 
   const openLocal = localDateTimeParts(session.marketOpen, session.timezone);
   const closeLocal = localDateTimeParts(session.marketClose, session.timezone);
@@ -475,6 +489,11 @@ function localDateTimeParts(
 function minutesFromLocalTime(value: string): number {
   const [hour, minute] = value.split(":").map(Number);
   return hour! * 60 + minute!;
+}
+
+function usesWholeMinutePrecision(timestamp: string): boolean {
+  const parsed = new Date(timestamp);
+  return parsed.getUTCSeconds() === 0 && parsed.getUTCMilliseconds() === 0;
 }
 
 function calendarDateRange(startDate: string, endDate: string): string[] {
