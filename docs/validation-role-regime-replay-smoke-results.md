@@ -180,6 +180,8 @@ Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 
 이번 smoke로 ready plan에서 deterministic fixture batch와 evidence-aware aggregate report까지의 plumbing은 확인했다. 전략 유효성 판정은 완료되지 않았으며, 역할별 planned row 50개를 독립 표본으로 해석하지 않는다.
 
+남은 role별 sample, cross-role 독립성, serial dependence, multiple-testing context와 calendar evidence gate는 [Validation Role-Regime 통계 준비도 보강 계획](validation-role-regime-statistical-readiness-plan.md)에 사전 고정한다.
+
 ## Artifact 정책
 
 기록 대상 실행과 후속 재검증 artifact는 `%TEMP%` 아래에서만 생성했으며 repository에 commit하지 않는다. 재현 명령은 기존 artifact를 삭제하거나 덮어쓰지 않고 매번 GUID 기반 root를 새로 만든다.
