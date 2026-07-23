@@ -1,5 +1,6 @@
 import type { Sha256Hash } from "../domain/schemas.js";
 import {
+  createValidationFeasibilityCandidateHash,
   validationSplitRegimeFeasibilityArtifactSchema,
   type ValidationSplitRegimeFeasibilityArtifact
 } from "./validationSplitRegimeFeasibility.js";
@@ -15,6 +16,7 @@ import {
   type ValidationRoleRegimeStatisticalReadinessArtifact
 } from "./validationRoleRegimeStatisticalReadiness.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
+import { validationRoleWindow } from "./validationRoleWindow.js";
 
 export interface VerifyValidationRoleRegimeEvidenceExpansionBaselineOptions {
   feasibilityArtifact: unknown;
@@ -45,6 +47,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionBaseline(
       options.readinessArtifact
     );
   assertBaselineStatusesAreUsable(feasibility, plan, readiness);
+  assertFeasibilityCandidateHashes(feasibility);
   const feasibilityArtifactHash =
     createValidationRoleRegimeFeasibilityArtifactHash(feasibility);
 
@@ -128,6 +131,8 @@ function assertPlanMatchesFeasibility(
   ) {
     throw new Error("baseline plan config does not match feasibility config");
   }
+
+  assertPlanRunsMatchFeasibility(plan, feasibility);
 }
 
 function assertReadinessMatchesPlan(
@@ -206,4 +211,105 @@ function compareStrings(left: string, right: string): number {
     return 1;
   }
   return 0;
+}
+
+function assertFeasibilityCandidateHashes(
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): void {
+  for (const assignment of feasibility.assignments) {
+    for (const candidate of assignment.candidates) {
+      const expectedHash = createValidationFeasibilityCandidateHash({
+        startAt: candidate.startAt,
+        endAt: candidate.endAt,
+        timezoneOffsetMinutes: feasibility.config.timezoneOffsetMinutes,
+        windowMonths: feasibility.config.windowMonths,
+        calendarHash: feasibility.provenance.calendarHash,
+        marketRegimeClassifierHash:
+          feasibility.provenance.marketRegimeClassifierHash,
+        candidateStrategyBucket: feasibility.config.candidateStrategyBucket,
+        scopeAvailable: candidate.scopeAvailable,
+        dataSnapshotHash: feasibility.provenance.dataSnapshotHash,
+        universeHash: feasibility.provenance.universeHash,
+        coverageHash: feasibility.provenance.coverageHash
+      });
+      if (candidate.candidateHash !== expectedHash) {
+        throw new Error(
+          `baseline feasibility candidate hash mismatch: ${assignment.splitId}/${assignment.splitRole}`
+        );
+      }
+    }
+  }
+}
+
+function assertPlanRunsMatchFeasibility(
+  plan: ValidationRoleRegimeReplayPlan,
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): void {
+  for (const run of plan.runs) {
+    const matchingAssignments = feasibility.assignments.filter(
+      (assignment) =>
+        assignment.splitRole === run.splitRole &&
+        assignment.candidates.some(
+          (candidate) =>
+            candidate.scopeAvailable &&
+            candidate.candidateHash === run.candidateHash &&
+            candidate.startAt === run.startAt &&
+            candidate.endAt === run.endAt &&
+            candidate.regime === run.targetRegime
+        )
+    );
+    const expectedAssignmentKeys = matchingAssignments
+      .map(feasibilityAssignmentKey)
+      .sort(compareStrings);
+    if (expectedAssignmentKeys.length === 0) {
+      throw new Error(
+        `baseline plan run does not match feasibility candidates: ${run.runKey}`
+      );
+    }
+    const actualAssignmentKeys = run.sourceAssignments
+      .map((assignment) => {
+        const key = feasibilityAssignmentKey(assignment);
+        const feasibilityAssignment = matchingAssignments.find(
+          (candidate) => feasibilityAssignmentKey(candidate) === key
+        );
+        if (
+          feasibilityAssignment === undefined ||
+          !sameAssignmentWindow(feasibilityAssignment, assignment)
+        ) {
+          throw new Error(
+            `baseline plan source assignment does not match feasibility: ${run.runKey}`
+          );
+        }
+        return key;
+      })
+      .sort(compareStrings);
+
+    if (
+      !sameStrings(actualAssignmentKeys, expectedAssignmentKeys)
+    ) {
+      throw new Error(
+        `baseline plan run does not match feasibility candidates: ${run.runKey}`
+      );
+    }
+  }
+}
+
+function sameAssignmentWindow(
+  feasibilityAssignment: ValidationSplitRegimeFeasibilityArtifact["assignments"][number],
+  sourceAssignment: ValidationRoleRegimeReplayPlan["runs"][number]["sourceAssignments"][number]
+): boolean {
+  const sourceWindow = validationRoleWindow(sourceAssignment);
+  return (
+    feasibilityAssignment.roleStart === sourceWindow.roleStart &&
+    feasibilityAssignment.roleEnd === sourceWindow.roleEnd &&
+    feasibilityAssignment.effectiveRoleEnd === sourceWindow.effectiveRoleEnd
+  );
+}
+
+function feasibilityAssignmentKey(assignment: {
+  splitId: string;
+  splitIndex: number;
+  splitRole: string;
+}): string {
+  return `${assignment.splitIndex}\u0000${assignment.splitId}\u0000${assignment.splitRole}`;
 }

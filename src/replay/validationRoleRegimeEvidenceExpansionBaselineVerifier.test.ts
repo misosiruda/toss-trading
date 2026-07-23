@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
 import type { ValidationSplitRegimeFeasibilityArtifact } from "./validationSplitRegimeFeasibility.js";
+import { createValidationFeasibilityCandidateHash } from "./validationSplitRegimeFeasibility.js";
 import {
   buildValidationRoleRegimeReplayPlan,
   createValidationRoleRegimeFeasibilityArtifactHash,
@@ -239,6 +240,58 @@ test("baseline verifier rejects role-regime evidence redistributed from plan run
   );
 });
 
+test("baseline verifier rejects recomposed chains with corrupted candidate hashes", () => {
+  const feasibilityArtifact = readyFeasibilityFixture();
+  feasibilityArtifact.assignments[0]!.candidates[0]!.candidateHash = hash("f");
+  const fixtures = readyBaselineFixtures(feasibilityArtifact);
+
+  assert.throws(
+    () => verifyValidationRoleRegimeEvidenceExpansionBaseline(fixtures),
+    /baseline feasibility candidate hash mismatch/
+  );
+});
+
+test("baseline verifier rejects plan runs absent from linked feasibility", () => {
+  const feasibilityArtifact = readyFeasibilityFixture();
+  const alternateFeasibility = structuredClone(feasibilityArtifact);
+  const alternateCandidate =
+    alternateFeasibility.assignments[0]!.candidates[0]!;
+  alternateCandidate.startAt = "2023-02-01T00:00:00+09:00";
+  alternateCandidate.endAt = "2023-02-28T23:59:59.999+09:00";
+  alternateCandidate.candidateHash = candidateHash(
+    alternateFeasibility,
+    alternateCandidate
+  );
+  const alternatePlan = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact: alternateFeasibility,
+    validationAssignments: readyAssignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+  const relinkedPlan = withPlanHash({
+    ...alternatePlan,
+    source: {
+      ...alternatePlan.source,
+      feasibilityArtifactHash:
+        createValidationRoleRegimeFeasibilityArtifactHash(
+          feasibilityArtifact
+        ),
+      feasibilityStatus: feasibilityArtifact.status,
+      ...feasibilityArtifact.provenance
+    }
+  });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        feasibilityArtifact,
+        planArtifact: relinkedPlan,
+        readinessArtifact: readinessForPlan(relinkedPlan)
+      }),
+    /baseline plan run does not match feasibility candidates/
+  );
+});
+
 test("readiness hash ignores generation time but preserves semantic changes", () => {
   const fixtures = baselineFixtures();
   const changedTime = {
@@ -299,35 +352,20 @@ function baselineFixtures(): {
   return { feasibilityArtifact, planArtifact, readinessArtifact };
 }
 
-function readyBaselineFixtures(): {
+function readyBaselineFixtures(
+  feasibilityArtifact = readyFeasibilityFixture()
+): {
   feasibilityArtifact: ValidationSplitRegimeFeasibilityArtifact;
   planArtifact: ValidationRoleRegimeReplayPlan;
   readinessArtifact: ValidationRoleRegimeStatisticalReadinessArtifact;
 } {
-  const feasibilityArtifact = readyFeasibilityFixture();
   const planArtifact = buildValidationRoleRegimeReplayPlan({
     feasibilityArtifact,
     validationAssignments: readyAssignments(),
     generatedAt: "2026-07-22T00:00:00.000Z",
     calendarEvidenceClass: "observed_session_only"
   });
-  const readinessArtifact =
-    buildValidationRoleRegimeStatisticalReadinessArtifact({
-      generatedAt: "2026-07-23T00:00:00.000Z",
-      planHash: planArtifact.planHash,
-      expectedCounts: {
-        plannedRunCount: planArtifact.summary.plannedRunCount,
-        globalUniqueEvidenceGroupCount:
-          planArtifact.summary.globalUniqueEvidenceGroupCount,
-        crossRoleSharedEvidenceGroupCount:
-          planArtifact.summary.crossRoleSharedEvidenceGroupCount
-      },
-      evidenceRows: planArtifact.runs.map((run) => ({
-        splitRole: run.splitRole,
-        targetRegime: run.targetRegime,
-        evidenceGroupHash: run.evidenceGroupHash
-      }))
-    });
+  const readinessArtifact = readinessForPlan(planArtifact);
   return { feasibilityArtifact, planArtifact, readinessArtifact };
 }
 
@@ -437,7 +475,7 @@ function readyFeasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
     };
   });
 
-  return {
+  const artifact: ValidationSplitRegimeFeasibilityArtifact = {
     ...base,
     status: "available",
     config: {
@@ -473,6 +511,12 @@ function readyFeasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
     })),
     assignments
   };
+  for (const assignment of artifact.assignments) {
+    for (const candidate of assignment.candidates) {
+      candidate.candidateHash = candidateHash(artifact, candidate);
+    }
+  }
+  return artifact;
 }
 
 function readyAssignments(): ValidationSplitAssignment[] {
@@ -494,6 +538,47 @@ function readyAssignments(): ValidationSplitAssignment[] {
     { ...base, splitRole: "validation" },
     { ...base, splitRole: "test" }
   ];
+}
+
+function readinessForPlan(
+  plan: ValidationRoleRegimeReplayPlan
+): ValidationRoleRegimeStatisticalReadinessArtifact {
+  return buildValidationRoleRegimeStatisticalReadinessArtifact({
+    generatedAt: "2026-07-23T00:00:00.000Z",
+    planHash: plan.planHash,
+    expectedCounts: {
+      plannedRunCount: plan.summary.plannedRunCount,
+      globalUniqueEvidenceGroupCount:
+        plan.summary.globalUniqueEvidenceGroupCount,
+      crossRoleSharedEvidenceGroupCount:
+        plan.summary.crossRoleSharedEvidenceGroupCount
+    },
+    evidenceRows: plan.runs.map((run) => ({
+      splitRole: run.splitRole,
+      targetRegime: run.targetRegime,
+      evidenceGroupHash: run.evidenceGroupHash
+    }))
+  });
+}
+
+function candidateHash(
+  feasibility: ValidationSplitRegimeFeasibilityArtifact,
+  candidate: ValidationSplitRegimeFeasibilityArtifact["assignments"][number]["candidates"][number]
+): string {
+  return createValidationFeasibilityCandidateHash({
+    startAt: candidate.startAt,
+    endAt: candidate.endAt,
+    timezoneOffsetMinutes: feasibility.config.timezoneOffsetMinutes,
+    windowMonths: feasibility.config.windowMonths,
+    calendarHash: feasibility.provenance.calendarHash,
+    marketRegimeClassifierHash:
+      feasibility.provenance.marketRegimeClassifierHash,
+    candidateStrategyBucket: feasibility.config.candidateStrategyBucket,
+    scopeAvailable: candidate.scopeAvailable,
+    dataSnapshotHash: feasibility.provenance.dataSnapshotHash,
+    universeHash: feasibility.provenance.universeHash,
+    coverageHash: feasibility.provenance.coverageHash
+  });
 }
 
 function planFixture(
