@@ -222,6 +222,8 @@ src/replay/officialMarketCalendarEvidence.test.ts
 - Overlap, adjacency와 effective sample diagnostic 입력
 - 충족 불가 cell과 제외 사유 기록
 
+첫 작은 범위는 [Validation Role-Regime Evidence Expansion Preflight 계획](validation-role-regime-evidence-expansion-preflight-plan.md)에서 input allowlist, result-metric 금지 boundary, target/capacity/dependency/exclusion contract와 fail-closed status를 사전 고정한다. 이 문서 단계에는 schema, source scan, writer, CLI, generated artifact 또는 replay 실행을 포함하지 않는다.
+
 ### PR 5. Expanded paper-only replay와 결과 기록
 
 - 사전 고정한 plan으로 deterministic replay 실행
