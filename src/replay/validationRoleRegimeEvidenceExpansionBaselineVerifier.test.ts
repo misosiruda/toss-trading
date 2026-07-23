@@ -55,6 +55,53 @@ test("baseline verifier rejects unknown result fields in strict sources", () => 
   );
 });
 
+test("baseline verifier rejects invalid artifact statuses", () => {
+  const fixtures = baselineFixtures();
+  const invalidPlan = withPlanHash({
+    ...fixtures.planArtifact,
+    status: "invalid"
+  });
+  const invalidReadiness =
+    buildValidationRoleRegimeStatisticalReadinessArtifact({
+      generatedAt: fixtures.readinessArtifact.generatedAt,
+      planHash: fixtures.planArtifact.planHash,
+      expectedCounts: {
+        plannedRunCount: 1,
+        globalUniqueEvidenceGroupCount: 1,
+        crossRoleSharedEvidenceGroupCount: 0
+      },
+      evidenceRows: []
+    });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        feasibilityArtifact: {
+          ...fixtures.feasibilityArtifact,
+          status: "invalid"
+        }
+      }),
+    /baseline feasibility status must not be invalid/
+  );
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        planArtifact: invalidPlan
+      }),
+    /baseline plan status must not be invalid/
+  );
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        readinessArtifact: invalidReadiness
+      }),
+    /baseline readiness status must not be invalid/
+  );
+});
+
 test("baseline verifier rejects a plan linked to another feasibility artifact", () => {
   const fixtures = baselineFixtures();
   const changedPlan = withPlanHash({
@@ -168,6 +215,10 @@ test("readiness hash ignores generation time but preserves semantic changes", ()
       planHash: hash("f")
     }
   };
+  const reorderedBlockers = {
+    ...fixtures.readinessArtifact,
+    blockers: [...fixtures.readinessArtifact.blockers].reverse()
+  };
 
   assert.equal(
     createValidationRoleRegimeStatisticalReadinessArtifactHash(changedTime),
@@ -177,6 +228,14 @@ test("readiness hash ignores generation time but preserves semantic changes", ()
   );
   assert.notEqual(
     createValidationRoleRegimeStatisticalReadinessArtifactHash(changedSource),
+    createValidationRoleRegimeStatisticalReadinessArtifactHash(
+      fixtures.readinessArtifact
+    )
+  );
+  assert.equal(
+    createValidationRoleRegimeStatisticalReadinessArtifactHash(
+      reorderedBlockers
+    ),
     createValidationRoleRegimeStatisticalReadinessArtifactHash(
       fixtures.readinessArtifact
     )

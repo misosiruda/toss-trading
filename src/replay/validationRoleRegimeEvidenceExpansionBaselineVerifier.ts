@@ -10,6 +10,7 @@ import {
 } from "./validationRoleRegimeReplayPlan.js";
 import {
   validationRoleRegimeStatisticalReadinessArtifactSchema,
+  type ValidationRoleRegimeStatisticalReadinessBlocker,
   type ValidationRoleRegimeStatisticalReadinessArtifact
 } from "./validationRoleRegimeStatisticalReadiness.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
@@ -42,6 +43,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionBaseline(
     validationRoleRegimeStatisticalReadinessArtifactSchema.parse(
       options.readinessArtifact
     );
+  assertBaselineStatusesAreUsable(feasibility, plan, readiness);
   const feasibilityArtifactHash =
     createValidationRoleRegimeFeasibilityArtifactHash(feasibility);
 
@@ -67,7 +69,26 @@ export function createValidationRoleRegimeStatisticalReadinessArtifactHash(
   const artifact =
     validationRoleRegimeStatisticalReadinessArtifactSchema.parse(value);
   const { generatedAt: _generatedAt, ...payload } = artifact;
-  return createReplayResearchHash(payload);
+  return createReplayResearchHash({
+    ...payload,
+    blockers: [...payload.blockers].sort(compareReadinessBlockers)
+  });
+}
+
+function assertBaselineStatusesAreUsable(
+  feasibility: ValidationSplitRegimeFeasibilityArtifact,
+  plan: ValidationRoleRegimeReplayPlan,
+  readiness: ValidationRoleRegimeStatisticalReadinessArtifact
+): void {
+  if (feasibility.status === "invalid") {
+    throw new Error("baseline feasibility status must not be invalid");
+  }
+  if (plan.status === "invalid") {
+    throw new Error("baseline plan status must not be invalid");
+  }
+  if (readiness.status === "invalid") {
+    throw new Error("baseline readiness status must not be invalid");
+  }
 }
 
 function assertPlanMatchesFeasibility(
@@ -136,4 +157,27 @@ function sameStrings(
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function compareReadinessBlockers(
+  left: ValidationRoleRegimeStatisticalReadinessBlocker,
+  right: ValidationRoleRegimeStatisticalReadinessBlocker
+): number {
+  return compareStrings(readinessBlockerKey(left), readinessBlockerKey(right));
+}
+
+function readinessBlockerKey(
+  blocker: ValidationRoleRegimeStatisticalReadinessBlocker
+): string {
+  return `${blocker.code}:${blocker.splitRole ?? "*"}:${blocker.targetRegime ?? "*"}`;
+}
+
+function compareStrings(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
 }
