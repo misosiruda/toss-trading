@@ -68,11 +68,10 @@ test("preflight status fails closed for an invalid blocker", () => {
 });
 
 test("preflight status requires inconclusive for non-integrity blockers", () => {
-  const artifact = {
-    ...readyArtifact(),
-    status: "inconclusive",
-    blockers: [blocker("DEPENDENCY_INPUT_INCOMPLETE")]
-  };
+  const artifact = readyArtifact();
+  artifact.dependencyInputs.pairwise.pop();
+  artifact.status = "inconclusive";
+  artifact.blockers = [blocker("DEPENDENCY_INPUT_INCOMPLETE")];
 
   assert.equal(
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
@@ -90,6 +89,27 @@ test("preflight status requires inconclusive for non-integrity blockers", () => 
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
       ...artifact,
       status: "invalid"
+    })
+  );
+});
+
+test("missing expansion coverage is an invalid source condition", () => {
+  const artifact = {
+    ...readyArtifact(),
+    status: "invalid",
+    blockers: [blocker("EXPANSION_SOURCE_COVERAGE_MISSING")]
+  };
+
+  assert.equal(
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      artifact
+    ).status,
+    "invalid"
+  );
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
+      ...artifact,
+      status: "inconclusive"
     })
   );
 });
@@ -141,18 +161,23 @@ test("undefined role-regime target requires null targets and blocker", () => {
 
 test("combined capacity below target requires scoped blockers", () => {
   const artifact = readyArtifact();
-  artifact.capacity.combined.byRole.validation = {
-    roleLocalUniqueEvidenceGroupCount: 29,
-    roleExclusiveEvidenceGroupCount: 28,
-    byRegime: {
-      bull: 1,
-      bear: 8,
-      sideways: 10,
-      mixed: 10
+  artifact.dependencyInputs.candidateIntervals =
+    artifact.dependencyInputs.candidateIntervals.filter(
+      (interval) =>
+        !(
+          interval.splitRoles.length === 1 &&
+          interval.splitRoles[0] === "validation" &&
+          interval.targetRegime === "bull"
+        ) ||
+        Number.parseInt(interval.evidenceGroupHash.slice(-2), 16) % 8 >= 3
+    );
+  artifact.config.roleRegimeSampleMinimum = 6;
+  for (const role of ["train", "validation", "test"] as const) {
+    for (const regime of ["bull", "bear", "sideways", "mixed"] as const) {
+      artifact.targetMatrix.byRole[role].byRegime[regime] = 6;
     }
-  };
-  artifact.capacity.combined.globalUniqueEvidenceGroupCount = 90;
-  artifact.capacity.combined.crossRoleSharedEvidenceGroupCount = 2;
+  }
+  rebuildCombinedEvidence(artifact);
   artifact.status = "inconclusive";
   artifact.blockers = [
     blocker("ROLE_LOCAL_CAPACITY_BELOW_TARGET", "validation"),
@@ -258,6 +283,33 @@ test("dependency contract rejects overwritten or inconsistent date diagnostics",
   );
 });
 
+test("ready status requires complete accepted intervals and pairwise inputs", () => {
+  const missingInterval = readyArtifact();
+  missingInterval.dependencyInputs.candidateIntervals.pop();
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      missingInterval
+    )
+  );
+
+  const missingPair = readyArtifact();
+  missingPair.dependencyInputs.pairwise.pop();
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      missingPair
+    )
+  );
+
+  missingPair.status = "inconclusive";
+  missingPair.blockers = [blocker("DEPENDENCY_INPUT_INCOMPLETE")];
+  assert.equal(
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      missingPair
+    ).status,
+    "inconclusive"
+  );
+});
+
 test("strict preflight schema rejects stale derived blockers", () => {
   assert.throws(() =>
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
@@ -276,15 +328,6 @@ test("strict preflight schema rejects stale derived blockers", () => {
 });
 
 function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact {
-  const sourceVariant = {
-    feasibilityCandidateHash: hash("1"),
-    legacyReplayPlanEvidenceGroupHash: hash("2"),
-    sourceVariantHashVersion:
-      "evidence_expansion_source_variant.v1" as const,
-    sourceVariantHash: hash("3"),
-    observedTradingDatesHash: hash("4"),
-    universeMembershipHash: hash("5")
-  };
   const capacityRole = {
     roleLocalUniqueEvidenceGroupCount: 32,
     roleExclusiveEvidenceGroupCount: 30,
@@ -314,6 +357,7 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
       mixed: 2
     }
   };
+  const candidateIntervals = readyCandidateIntervals();
 
   return {
     schemaVersion:
@@ -358,51 +402,155 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
       incremental: structuredClone(capacityView)
     },
     dependencyInputs: {
-      candidateIntervals: [
-        {
-          evidenceGroupHash: hash("0"),
-          sourceVariants: [sourceVariant],
-          splitRoles: ["train"],
-          targetRegime: "bull",
-          startAt: "2020-01-01T00:00:00.000Z",
-          endAt: "2021-01-01T00:00:00.000Z",
-          canonicalTradingDatesHash: hash("4"),
-          combinedUniverseMembershipHash: hash("5")
-        },
-        {
-          evidenceGroupHash: hash("a"),
-          sourceVariants: [
-            {
-              ...sourceVariant,
-              feasibilityCandidateHash: hash("6"),
-              sourceVariantHash: hash("7")
-            }
-          ],
-          splitRoles: ["validation"],
-          targetRegime: "bear",
-          startAt: "2021-01-02T00:00:00.000Z",
-          endAt: "2022-01-01T00:00:00.000Z",
-          canonicalTradingDatesHash: hash("4"),
-          combinedUniverseMembershipHash: hash("5")
-        }
-      ],
-      pairwise: [
-        {
-          leftEvidenceGroupHash: hash("0"),
-          rightEvidenceGroupHash: hash("a"),
-          tradingDateOverlapCount: 0,
-          tradingDateUnionCount: 504,
-          tradingDateOverlapRatio: 0,
-          adjacencyTradingDayGap: 1,
-          sharedUniverse: true,
-          sameRegime: false,
-          crossRole: true
-        }
-      ]
+      candidateIntervals,
+      pairwise: createPairwiseDependencies(candidateIntervals)
     },
     exclusions: [],
     blockers: [],
     preflightHash: hash("f")
+  };
+}
+
+function readyCandidateIntervals(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+  "dependencyInputs"
+]["candidateIntervals"] {
+  const intervals: ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+    "dependencyInputs"
+  ]["candidateIntervals"] = [];
+  const exclusiveCounts = {
+    train: { bull: 7, bear: 8, sideways: 7, mixed: 8 },
+    validation: { bull: 7, bear: 7, sideways: 8, mixed: 8 },
+    test: { bull: 8, bear: 7, sideways: 7, mixed: 8 }
+  } as const;
+
+  for (const role of ["train", "validation", "test"] as const) {
+    for (const regime of ["bull", "bear", "sideways", "mixed"] as const) {
+      for (let count = 0; count < exclusiveCounts[role][regime]; count += 1) {
+        intervals.push(candidateInterval(intervals.length, [role], regime));
+      }
+    }
+  }
+  intervals.push(
+    candidateInterval(intervals.length, ["train", "validation"], "bull")
+  );
+  intervals.push(
+    candidateInterval(intervals.length, ["validation", "test"], "bear")
+  );
+  intervals.push(
+    candidateInterval(intervals.length, ["train", "test"], "sideways")
+  );
+  return intervals;
+}
+
+function candidateInterval(
+  index: number,
+  splitRoles: Array<"train" | "validation" | "test">,
+  targetRegime: "bull" | "bear" | "sideways" | "mixed"
+): ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+  "dependencyInputs"
+]["candidateIntervals"][number] {
+  const start = new Date(Date.UTC(2010, 0, 1 + index));
+  const end = new Date(start);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  return {
+    evidenceGroupHash: indexedHash(index),
+    sourceVariants: [
+      {
+        feasibilityCandidateHash: indexedHash(1_000 + index),
+        legacyReplayPlanEvidenceGroupHash: indexedHash(2_000 + index),
+        sourceVariantHashVersion: "evidence_expansion_source_variant.v1",
+        sourceVariantHash: indexedHash(3_000 + index),
+        observedTradingDatesHash: hash("4"),
+        universeMembershipHash: hash("5")
+      }
+    ],
+    splitRoles,
+    targetRegime,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    canonicalTradingDatesHash: hash("4"),
+    combinedUniverseMembershipHash: hash("5")
+  };
+}
+
+function createPairwiseDependencies(
+  intervals: ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+    "dependencyInputs"
+  ]["candidateIntervals"]
+): ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+  "dependencyInputs"
+]["pairwise"] {
+  const ordered = [...intervals].sort((left, right) =>
+    left.evidenceGroupHash.localeCompare(right.evidenceGroupHash)
+  );
+  const pairs: ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+    "dependencyInputs"
+  ]["pairwise"] = [];
+  for (let leftIndex = 0; leftIndex < ordered.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < ordered.length;
+      rightIndex += 1
+    ) {
+      const left = ordered[leftIndex]!;
+      const right = ordered[rightIndex]!;
+      pairs.push({
+        leftEvidenceGroupHash: left.evidenceGroupHash,
+        rightEvidenceGroupHash: right.evidenceGroupHash,
+        tradingDateOverlapCount: 1,
+        tradingDateUnionCount: 2,
+        tradingDateOverlapRatio: 0.5,
+        adjacencyTradingDayGap: null,
+        sharedUniverse: true,
+        sameRegime: left.targetRegime === right.targetRegime,
+        crossRole:
+          new Set([...left.splitRoles, ...right.splitRoles]).size > 1
+      });
+    }
+  }
+  return pairs;
+}
+
+function rebuildCombinedEvidence(
+  artifact: ValidationRoleRegimeEvidenceExpansionPreflightArtifact
+): void {
+  const intervals = artifact.dependencyInputs.candidateIntervals;
+  const byRole = {
+    train: emptyCapacityRole(),
+    validation: emptyCapacityRole(),
+    test: emptyCapacityRole()
+  };
+  let sharedCount = 0;
+  for (const interval of intervals) {
+    if (interval.splitRoles.length > 1) {
+      sharedCount += 1;
+    }
+    for (const role of interval.splitRoles) {
+      byRole[role].roleLocalUniqueEvidenceGroupCount += 1;
+      byRole[role].byRegime[interval.targetRegime] += 1;
+      if (interval.splitRoles.length === 1) {
+        byRole[role].roleExclusiveEvidenceGroupCount += 1;
+      }
+    }
+  }
+  artifact.capacity.combined = {
+    globalUniqueEvidenceGroupCount: intervals.length,
+    crossRoleSharedEvidenceGroupCount: sharedCount,
+    byRole
+  };
+  artifact.dependencyInputs.pairwise = createPairwiseDependencies(intervals);
+}
+
+function emptyCapacityRole() {
+  return {
+    roleLocalUniqueEvidenceGroupCount: 0,
+    roleExclusiveEvidenceGroupCount: 0,
+    byRegime: {
+      bull: 0,
+      bear: 0,
+      sideways: 0,
+      mixed: 0
+    }
   };
 }
 
@@ -421,4 +569,8 @@ function blocker(
 
 function hash(character: string): `sha256:${string}` {
   return `sha256:${character.repeat(64)}`;
+}
+
+function indexedHash(index: number): `sha256:${string}` {
+  return `sha256:${index.toString(16).padStart(64, "0")}`;
 }

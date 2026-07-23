@@ -402,7 +402,11 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
   .strict()
   .superRefine((value, context) => {
     validateTargets(value, context);
-    validateRequiredBlockers(value, context);
+    const dependencyInputsIncomplete = validateDependencyCompleteness(
+      value,
+      context
+    );
+    validateRequiredBlockers(value, dependencyInputsIncomplete, context);
     validateBlockerStatus(value, context);
   });
 
@@ -435,11 +439,131 @@ const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
   "RESULT_METRIC_INPUT_FORBIDDEN",
   "SOURCE_PROVENANCE_INVALID",
   "BASELINE_PROVENANCE_CONFLICT",
+  "EXPANSION_SOURCE_COVERAGE_MISSING",
   "OFFICIAL_CALENDAR_EVIDENCE_INVALID",
   "TRADING_DATE_SET_CONFLICT",
   "CANDIDATE_IDENTITY_CONFLICT",
   "EXCLUSION_COUNT_CONFLICT"
 ]);
+
+function validateDependencyCompleteness(
+  value: PreflightArtifact,
+  context: z.RefinementCtx
+): boolean {
+  const intervals = value.dependencyInputs.candidateIntervals;
+  let incomplete = false;
+  const intervalHashes = new Set<string>();
+  const roleLocalCounts = createRoleCounts();
+  const roleExclusiveCounts = createRoleCounts();
+  const roleRegimeCounts = createRoleRegimeCounts();
+  let crossRoleSharedCount = 0;
+
+  for (const [index, interval] of intervals.entries()) {
+    if (intervalHashes.has(interval.evidenceGroupHash)) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "candidateIntervals", index],
+        message: "candidate intervals must contain one row per evidence group"
+      });
+    }
+    intervalHashes.add(interval.evidenceGroupHash);
+    if (interval.splitRoles.length > 1) {
+      crossRoleSharedCount += 1;
+    }
+    for (const splitRole of interval.splitRoles) {
+      roleLocalCounts[splitRole] += 1;
+      roleRegimeCounts[splitRole][interval.targetRegime] += 1;
+      if (interval.splitRoles.length === 1) {
+        roleExclusiveCounts[splitRole] += 1;
+      }
+    }
+  }
+
+  const combined = value.capacity.combined;
+  if (
+    intervals.length !== combined.globalUniqueEvidenceGroupCount ||
+    crossRoleSharedCount !== combined.crossRoleSharedEvidenceGroupCount
+  ) {
+    incomplete = true;
+  }
+  for (const splitRole of VALIDATION_ROLE_ORDER) {
+    const capacity = combined.byRole[splitRole];
+    if (
+      roleLocalCounts[splitRole] !==
+        capacity.roleLocalUniqueEvidenceGroupCount ||
+      roleExclusiveCounts[splitRole] !==
+        capacity.roleExclusiveEvidenceGroupCount
+    ) {
+      incomplete = true;
+    }
+    for (const targetRegime of VALIDATION_TARGET_REGIME_ORDER) {
+      if (
+        roleRegimeCounts[splitRole][targetRegime] !==
+        capacity.byRegime[targetRegime]
+      ) {
+        incomplete = true;
+      }
+    }
+  }
+
+  const expectedPairKeys = new Set<string>();
+  const orderedHashes = [...intervalHashes].sort((left, right) =>
+    left.localeCompare(right)
+  );
+  for (let leftIndex = 0; leftIndex < orderedHashes.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < orderedHashes.length;
+      rightIndex += 1
+    ) {
+      expectedPairKeys.add(
+        pairKey(orderedHashes[leftIndex]!, orderedHashes[rightIndex]!)
+      );
+    }
+  }
+
+  const actualPairKeys = new Set<string>();
+  for (const [index, pair] of value.dependencyInputs.pairwise.entries()) {
+    if (
+      !intervalHashes.has(pair.leftEvidenceGroupHash) ||
+      !intervalHashes.has(pair.rightEvidenceGroupHash)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index],
+        message: "pairwise dependency must reference accepted evidence groups"
+      });
+      continue;
+    }
+    if (
+      pair.leftEvidenceGroupHash.localeCompare(
+        pair.rightEvidenceGroupHash
+      ) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index],
+        message: "pairwise dependency hashes must use canonical order"
+      });
+    }
+    const key = pairKey(
+      pair.leftEvidenceGroupHash,
+      pair.rightEvidenceGroupHash
+    );
+    if (actualPairKeys.has(key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index],
+        message: "pairwise dependencies must not contain duplicates"
+      });
+    }
+    actualPairKeys.add(key);
+  }
+  if (!sameSet(actualPairKeys, expectedPairKeys)) {
+    incomplete = true;
+  }
+  return incomplete;
+}
 
 function validateTargets(
   value: PreflightArtifact,
@@ -464,6 +588,7 @@ function validateTargets(
 
 function validateRequiredBlockers(
   value: PreflightArtifact,
+  dependencyInputsIncomplete: boolean,
   context: z.RefinementCtx
 ): void {
   const blockerKeys = new Set<string>();
@@ -499,6 +624,16 @@ function validateRequiredBlockers(
       blockerKeys,
       requiredBlockerKeys,
       "ROLE_REGIME_TARGET_UNDEFINED",
+      null,
+      null,
+      context
+    );
+  }
+  if (dependencyInputsIncomplete) {
+    requireDerivedBlocker(
+      blockerKeys,
+      requiredBlockerKeys,
+      "DEPENDENCY_INPUT_INCOMPLETE",
       null,
       null,
       context
@@ -619,6 +754,7 @@ const DERIVED_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
   "ROLE_EXCLUSIVE_CAPACITY_BELOW_TARGET",
   "ROLE_REGIME_TARGET_UNDEFINED",
   "ROLE_REGIME_CAPACITY_BELOW_TARGET",
+  "DEPENDENCY_INPUT_INCOMPLETE",
   "TRADING_DATE_SET_CONFLICT"
 ]);
 
@@ -647,4 +783,43 @@ function blockerKey(
   targetRegime: TargetRegime | null
 ): string {
   return `${code}:${splitRole ?? "*"}:${targetRegime ?? "*"}`;
+}
+
+function pairKey(leftHash: string, rightHash: string): string {
+  return `${leftHash}:${rightHash}`;
+}
+
+function createRoleCounts(): Record<ValidationRole, number> {
+  return {
+    train: 0,
+    validation: 0,
+    test: 0
+  };
+}
+
+function createRoleRegimeCounts(): Record<
+  ValidationRole,
+  Record<TargetRegime, number>
+> {
+  return {
+    train: createRegimeCounts(),
+    validation: createRegimeCounts(),
+    test: createRegimeCounts()
+  };
+}
+
+function createRegimeCounts(): Record<TargetRegime, number> {
+  return {
+    bull: 0,
+    bear: 0,
+    sideways: 0,
+    mixed: 0
+  };
+}
+
+function sameSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return (
+    left.size === right.size &&
+    Array.from(left).every((value) => right.has(value))
+  );
 }
