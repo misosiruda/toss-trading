@@ -165,6 +165,7 @@ Validation 기준:
 - Coverage의 모든 calendar date에 KRX와 NYSE session row가 각각 하나씩 있어야 한다.
 - Session은 exchange/date canonical order이며 duplicate 또는 누락을 허용하지 않는다.
 - Open/close timestamp는 IANA timezone으로 변환했을 때 `sessionDate`와 source local time에 일치해야 한다. NYSE DST offset은 fixed offset이 아니라 `America/New_York` 계산 결과를 사용한다.
+- `generatedAt`, `retrievedAt`, `staleAfter`, `marketOpen`, `marketClose`는 explicit timezone offset을 포함해야 한다. Offset 없는 timestamp는 host timezone에 따라 다르게 해석될 수 있으므로 fail-closed로 거부한다.
 - Artifact hash는 `artifactHash`를 제외한 strict payload의 canonical hash와 일치해야 한다.
 - Parser의 `asOf`가 source `retrievedAt`보다 이르거나 `staleAfter` 이상이면 fail-closed로 거부한다.
 

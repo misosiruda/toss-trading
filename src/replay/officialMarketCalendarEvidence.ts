@@ -33,6 +33,11 @@ const localTimeSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "local time must use HH:mm");
 
+const explicitOffsetDateTimeSchema = isoDateTimeSchema.refine(
+  hasExplicitTimeZoneOffset,
+  "date-time must include an explicit timezone offset"
+);
+
 const officialCalendarSourceSchema = z
   .object({
     sourceId: z.string().trim().min(1),
@@ -43,8 +48,8 @@ const officialCalendarSourceSchema = z
     publisher: z.string().trim().min(1),
     sourceUrl: z.url(),
     sourceDocumentHash: sha256HashSchema,
-    retrievedAt: isoDateTimeSchema,
-    staleAfter: isoDateTimeSchema,
+    retrievedAt: explicitOffsetDateTimeSchema,
+    staleAfter: explicitOffsetDateTimeSchema,
     regularSession: z
       .object({
         openLocalTime: localTimeSchema,
@@ -81,8 +86,8 @@ const officialCalendarSessionSchema = z
     timezone: z.enum(["Asia/Seoul", "America/New_York"]),
     sessionDate: calendarDateSchema,
     sessionType: officialCalendarSessionTypeSchema,
-    marketOpen: isoDateTimeSchema.nullable(),
-    marketClose: isoDateTimeSchema.nullable(),
+    marketOpen: explicitOffsetDateTimeSchema.nullable(),
+    marketClose: explicitOffsetDateTimeSchema.nullable(),
     exceptionName: z.string().trim().min(1).nullable()
   })
   .strict();
@@ -94,7 +99,7 @@ const officialMarketCalendarEvidenceBaseSchema = z
     ),
     mode: z.literal("paper_only"),
     purpose: z.literal("official_exchange_calendar_evidence"),
-    generatedAt: isoDateTimeSchema,
+    generatedAt: explicitOffsetDateTimeSchema,
     coverage: z
       .object({
         startDate: calendarDateSchema,
@@ -494,10 +499,7 @@ function isValidCalendarDate(value: string): boolean {
 }
 
 function parseDate(value: Date | string, field: string): Date {
-  if (
-    typeof value === "string" &&
-    !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
-  ) {
+  if (typeof value === "string" && !hasExplicitTimeZoneOffset(value)) {
     throw new Error(`${field} must include an explicit timezone offset`);
   }
   const parsed = value instanceof Date ? value : new Date(value);
@@ -505,4 +507,8 @@ function parseDate(value: Date | string, field: string): Date {
     throw new Error(`${field} must be a valid date`);
   }
   return parsed;
+}
+
+function hasExplicitTimeZoneOffset(value: string): boolean {
+  return /T.+(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
 }

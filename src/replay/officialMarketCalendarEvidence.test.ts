@@ -84,7 +84,7 @@ test("official calendar evidence rejects stale sources at read time", () => {
   );
 });
 
-test("official calendar evidence rejects offsetless freshness timestamps", () => {
+test("official calendar evidence rejects offsetless read-time asOf", () => {
   const artifact = signedArtifact(postDstPayload());
 
   assert.throws(
@@ -94,6 +94,63 @@ test("official calendar evidence rejects offsetless freshness timestamps", () =>
       }),
     /explicit timezone offset/
   );
+});
+
+test("official calendar evidence rejects offsetless artifact timestamps", () => {
+  const artifact = signedArtifact(postDstPayload());
+  const invalidArtifacts: unknown[] = [
+    {
+      ...artifact,
+      generatedAt: "2025-03-10T23:00:00"
+    },
+    {
+      ...artifact,
+      sources: [
+        {
+          ...artifact.sources[0],
+          retrievedAt: "2024-12-01T00:00:00"
+        },
+        artifact.sources[1]
+      ]
+    },
+    {
+      ...artifact,
+      sources: [
+        artifact.sources[0],
+        {
+          ...artifact.sources[1],
+          staleAfter: "2026-01-01T00:00:00"
+        }
+      ]
+    },
+    {
+      ...artifact,
+      sessions: [
+        {
+          ...artifact.sessions[0],
+          marketOpen: "2025-03-10T09:00:00"
+        },
+        artifact.sessions[1]
+      ]
+    },
+    {
+      ...artifact,
+      sessions: [
+        artifact.sessions[0],
+        {
+          ...artifact.sessions[1],
+          marketClose: "2025-03-10T16:00:00"
+        }
+      ]
+    }
+  ];
+
+  for (const invalidArtifact of invalidArtifacts) {
+    assert.throws(
+      () => officialMarketCalendarEvidenceArtifactSchema.parse(invalidArtifact),
+      /explicit timezone offset/
+    );
+  }
 });
 
 test("official calendar evidence rejects artifact hash mismatch", () => {
