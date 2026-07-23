@@ -15,6 +15,7 @@
 - `HistoricalMarketPacketBuilder`는 `simulatedAt` 이후 snapshot과 `maxSnapshotAgeSeconds`보다 오래된 snapshot을 제외한다.
 - `YahooHistoricalDailyCollector`는 USD snapshot을 KRW로 환산할 때 `yahoo_fx:<symbol>:<date>` source ref를 추가한다.
 - `src/replay/marketCalendar.ts`는 calendar fixture parsing, duplicate `exchange + sessionDate` index guard, IANA timezone 기반 local date 계산, session/holiday timestamp classification을 제공한다.
+- `src/replay/officialMarketCalendarEvidence.ts`는 `official_market_calendar_evidence.v1` strict contract, KRX/NYSE source provenance, 전체 exchange-date coverage, timezone/DST local session 검증, canonical artifact hash와 `asOf` freshness gate를 제공한다.
 - `assessHistoricalDataAvailability()`는 optional `calendarValidation` 입력이 있을 때 window snapshot을 market별 calendar rule과 fixture로 검증하고, 휴장일/fixture 누락/session mismatch/timezone mismatch를 fail-closed issue로 보고한다.
 - `historicalReplay` CLI의 `--check-data-availability`와 `--require-data-availability`는 optional `--calendar-fixtures-path`, `--calendar-rule` 입력을 받아 JSON array 또는 JSONL calendar fixture를 availability gate에 연결할 수 있다.
 - `runHistoricalBatchReplay()`는 optional `calendarValidation` 입력을 batch run별 availability preflight에 전달하고, calendar issue가 있는 window를 replay 실행 전 `DATA_INSUFFICIENT`로 skip한다.
@@ -30,9 +31,12 @@
 - Batch replay preflight에서 calendar/FX issue로 skip된 run은 run storage의 `audit-events.jsonl`에 `HISTORICAL_DATA_AVAILABILITY_REJECTED` audit event를 남긴다.
 - Next.js Validation Lab은 stored batch aggregate의 `summary.dataAvailabilityIssues`를 read-only calendar/FX availability warning으로 표시한다.
 
-현재 RH2 calendar/FX contract의 남은 gap은 다음과 같다.
+현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
-- 해당 없음. RH2 calendar/FX contract의 dashboard 연결은 Validation Lab warning으로 우선 노출한다.
+- 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 한다.
+- `official_market_calendar_evidence.v1` artifact를 생성하는 writer 또는 ingestion path는 아직 없다.
+- 새 official evidence contract는 기존 observed-session fixture, availability CLI, batch replay 또는 readiness report에 아직 연결되지 않았다.
+- 따라서 현재 replay calendar evidence class는 계속 `observed_session_only`이며 official holiday/early-close readiness는 충족되지 않았다.
 
 ## Contract 목표
 
@@ -113,6 +117,60 @@ Validation 기준:
 - `isHoliday=false`이면 `marketOpen`과 `marketClose`는 유효한 ISO timestamp여야 한다.
 - `marketOpen < marketClose`가 성립해야 한다.
 - 같은 `exchange + sessionDate` 중복은 fixture validation에서 reject한다.
+
+## Official Calendar Evidence Artifact
+
+`official_market_calendar_evidence.v1`은 기존 실행용 `MarketCalendarFixture`와 분리된 source provenance contract다. 이 artifact는 source를 수집하지 않으며, 입력이 official exchange evidence라고 주장하려면 다음 정보를 모두 제공하도록 강제한다.
+
+```json
+{
+  "schemaVersion": "official_market_calendar_evidence.v1",
+  "mode": "paper_only",
+  "purpose": "official_exchange_calendar_evidence",
+  "generatedAt": "2025-03-10T22:00:00.000Z",
+  "coverage": {
+    "startDate": "2025-03-10",
+    "endDate": "2025-03-10",
+    "exchanges": ["KRX", "NYSE"]
+  },
+  "sources": [],
+  "sessions": [],
+  "artifactHash": "sha256:<canonical-payload-hash>"
+}
+```
+
+Source 필수 provenance:
+
+- `sourceId`
+- `evidenceClass="official_exchange"`
+- Exchange와 일치하는 `market`, IANA `timezone`
+- `publisher`, `sourceUrl`, `sourceDocumentHash`
+- `retrievedAt`, `staleAfter`
+- Exchange regular session의 local open/close time
+
+Session type:
+
+| Type | Timestamp | 추가 조건 |
+| --- | --- | --- |
+| `regular` | `marketOpen`, `marketClose` 필수 | Source regular local open/close와 일치 |
+| `early_close` | `marketOpen`, `marketClose` 필수 | Regular close보다 이르고 `exceptionName` 필수 |
+| `holiday` | Timestamp `null` | `exceptionName` 필수 |
+| `special_closure` | Timestamp `null` | `exceptionName` 필수 |
+| `weekend` | Timestamp `null` | 실제 토요일/일요일이며 `exceptionName=null`; 토요일/일요일은 반드시 이 타입 사용 |
+
+Validation 기준:
+
+- Source와 session은 KRX/NYSE의 market/timezone mapping과 일치해야 한다.
+- Source는 KRX, NYSE canonical order로 각각 하나씩 존재해야 한다.
+- Coverage의 모든 calendar date에 KRX와 NYSE session row가 각각 하나씩 있어야 한다.
+- Session은 exchange/date canonical order이며 duplicate 또는 누락을 허용하지 않는다.
+- Open/close timestamp는 IANA timezone으로 변환했을 때 `sessionDate`와 source local time에 일치해야 한다. NYSE DST offset은 fixed offset이 아니라 `America/New_York` 계산 결과를 사용한다.
+- `generatedAt`, `retrievedAt`, `staleAfter`, `marketOpen`, `marketClose`는 explicit timezone offset을 포함해야 한다. Offset 없는 timestamp는 host timezone에 따라 다르게 해석될 수 있으므로 fail-closed로 거부한다.
+- Source regular session이 `HH:mm` 단위이므로 `marketOpen`과 `marketClose`의 초와 밀리초는 0이어야 한다.
+- Artifact hash는 `artifactHash`를 제외한 strict payload의 canonical hash와 일치해야 한다.
+- Parser의 `asOf`가 source `retrievedAt`보다 이르거나 `staleAfter` 이상이면 fail-closed로 거부한다.
+
+현재 test fixture의 publisher와 `.invalid` URL은 contract 검증용 합성 입력이다. 실제 official source 확보, 일정 정확성 또는 readiness 통과를 의미하지 않는다.
 
 ## Snapshot Mapping
 
@@ -203,7 +261,8 @@ Calendar/FX fixture가 replay 결과에 영향을 주는 순간 다음 hash sour
 
 - `dataSnapshotHash`: normalized snapshot field와 calendar/FX source ref
 - `configHash`: validation policy, stale threshold, timezone/session option
-- future `calendarHash`: normalized calendar fixture
+- `officialMarketCalendarEvidence.artifactHash`: official source provenance와 normalized exchange-date session payload
+- runtime `calendarHash`: 기존 normalized execution fixture. Official evidence 연결 전에는 observed-session class를 유지
 - future `currencyConversionHash`: normalized FX fixture와 stale policy
 
 Hash source에는 계좌번호, token, broker credential, raw order id를 넣지 않는다.

@@ -199,9 +199,21 @@ src/replay/validationRoleRegimeStatisticalReadiness.ts
 
 ### PR 3. Calendar source contract
 
-- KRX/NYSE calendar source provenance와 canonical fixture schema
-- Holiday, early-close, timezone, DST validation
-- Missing, stale, hash mismatch와 session mismatch fail-closed test
+- `official_market_calendar_evidence.v1` strict contract
+- KRX/NYSE publisher, source URL, retrieval/stale time와 source document hash provenance
+- Coverage 전체 exchange-date row와 canonical order
+- Regular, early-close, holiday, special-closure, weekend session validation
+- IANA timezone 기반 local session date/time과 NYSE DST validation
+- Missing coverage, stale source, artifact hash mismatch와 session mismatch fail-closed test
+
+구현 위치:
+
+```text
+src/replay/officialMarketCalendarEvidence.ts
+src/replay/officialMarketCalendarEvidence.test.ts
+```
+
+이 단계의 source와 `.invalid` URL은 합성 contract fixture다. 실제 official KRX/NYSE source 확보, artifact writer, observed-session fixture 교체, replay/CLI 연결 또는 calendar readiness 통과는 포함하지 않는다.
 
 ### PR 4. Evidence expansion preflight plan
 
