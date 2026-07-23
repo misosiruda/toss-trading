@@ -402,11 +402,18 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
   .strict()
   .superRefine((value, context) => {
     validateTargets(value, context);
+    const tradingDateSetConflict = hasTradingDateSetConflict(value);
     const dependencyInputsIncomplete = validateDependencyCompleteness(
       value,
+      tradingDateSetConflict,
       context
     );
-    validateRequiredBlockers(value, dependencyInputsIncomplete, context);
+    validateRequiredBlockers(
+      value,
+      dependencyInputsIncomplete,
+      tradingDateSetConflict,
+      context
+    );
     validateBlockerStatus(value, context);
   });
 
@@ -448,11 +455,13 @@ const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
 
 function validateDependencyCompleteness(
   value: PreflightArtifact,
+  tradingDateSetConflict: boolean,
   context: z.RefinementCtx
 ): boolean {
   const intervals = value.dependencyInputs.candidateIntervals;
   let incomplete = false;
   const intervalHashes = new Set<string>();
+  const intervalsByHash = new Map<string, (typeof intervals)[number]>();
   const roleLocalCounts = createRoleCounts();
   const roleExclusiveCounts = createRoleCounts();
   const roleRegimeCounts = createRoleRegimeCounts();
@@ -467,6 +476,7 @@ function validateDependencyCompleteness(
       });
     }
     intervalHashes.add(interval.evidenceGroupHash);
+    intervalsByHash.set(interval.evidenceGroupHash, interval);
     if (interval.splitRoles.length > 1) {
       crossRoleSharedCount += 1;
     }
@@ -506,6 +516,18 @@ function validateDependencyCompleteness(
     }
   }
 
+  if (tradingDateSetConflict) {
+    if (value.dependencyInputs.pairwise.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise"],
+        message:
+          "pairwise dependencies must be empty for a trading-date conflict"
+      });
+    }
+    return incomplete;
+  }
+
   const expectedPairKeys = new Set<string>();
   const orderedHashes = [...intervalHashes].sort((left, right) =>
     left.localeCompare(right)
@@ -524,16 +546,36 @@ function validateDependencyCompleteness(
 
   const actualPairKeys = new Set<string>();
   for (const [index, pair] of value.dependencyInputs.pairwise.entries()) {
-    if (
-      !intervalHashes.has(pair.leftEvidenceGroupHash) ||
-      !intervalHashes.has(pair.rightEvidenceGroupHash)
-    ) {
+    const leftInterval = intervalsByHash.get(pair.leftEvidenceGroupHash);
+    const rightInterval = intervalsByHash.get(pair.rightEvidenceGroupHash);
+    if (leftInterval === undefined || rightInterval === undefined) {
       context.addIssue({
         code: "custom",
         path: ["dependencyInputs", "pairwise", index],
         message: "pairwise dependency must reference accepted evidence groups"
       });
       continue;
+    }
+    const expectedSameRegime =
+      leftInterval.targetRegime === rightInterval.targetRegime;
+    if (pair.sameRegime !== expectedSameRegime) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index, "sameRegime"],
+        message: "pairwise sameRegime must match accepted intervals"
+      });
+    }
+    const expectedCrossRole =
+      new Set([
+        ...leftInterval.splitRoles,
+        ...rightInterval.splitRoles
+      ]).size > 1;
+    if (pair.crossRole !== expectedCrossRole) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index, "crossRole"],
+        message: "pairwise crossRole must match accepted interval roles"
+      });
     }
     if (
       pair.leftEvidenceGroupHash.localeCompare(
@@ -589,6 +631,7 @@ function validateTargets(
 function validateRequiredBlockers(
   value: PreflightArtifact,
   dependencyInputsIncomplete: boolean,
+  tradingDateSetConflict: boolean,
   context: z.RefinementCtx
 ): void {
   const blockerKeys = new Set<string>();
@@ -688,15 +731,7 @@ function validateRequiredBlockers(
     }
   }
 
-  const hasTradingDateSetConflict =
-    value.dependencyInputs.candidateIntervals.some((interval) =>
-      interval.sourceVariants.some(
-        (variant) =>
-          variant.observedTradingDatesHash !==
-          interval.canonicalTradingDatesHash
-      )
-    );
-  if (hasTradingDateSetConflict) {
+  if (tradingDateSetConflict) {
     requireDerivedBlocker(
       blockerKeys,
       requiredBlockerKeys,
@@ -783,6 +818,16 @@ function blockerKey(
   targetRegime: TargetRegime | null
 ): string {
   return `${code}:${splitRole ?? "*"}:${targetRegime ?? "*"}`;
+}
+
+function hasTradingDateSetConflict(value: PreflightArtifact): boolean {
+  return value.dependencyInputs.candidateIntervals.some((interval) =>
+    interval.sourceVariants.some(
+      (variant) =>
+        variant.observedTradingDatesHash !==
+        interval.canonicalTradingDatesHash
+    )
+  );
 }
 
 function pairKey(leftHash: string, rightHash: string): string {

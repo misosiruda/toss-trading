@@ -261,6 +261,12 @@ test("dependency contract rejects overwritten or inconsistent date diagnostics",
 
   artifact.status = "invalid";
   artifact.blockers = [blocker("TRADING_DATE_SET_CONFLICT")];
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      artifact
+    )
+  );
+  artifact.dependencyInputs.pairwise = [];
   assert.equal(
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
       artifact
@@ -279,6 +285,26 @@ test("dependency contract rejects overwritten or inconsistent date diagnostics",
   assert.throws(() =>
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
       invalidPairwise
+    )
+  );
+});
+
+test("pairwise flags must match accepted interval regime and roles", () => {
+  const sameRegimeConflict = readyArtifact();
+  sameRegimeConflict.dependencyInputs.pairwise[0]!.sameRegime =
+    !sameRegimeConflict.dependencyInputs.pairwise[0]!.sameRegime;
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      sameRegimeConflict
+    )
+  );
+
+  const crossRoleConflict = readyArtifact();
+  crossRoleConflict.dependencyInputs.pairwise[0]!.crossRole =
+    !crossRoleConflict.dependencyInputs.pairwise[0]!.crossRole;
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      crossRoleConflict
     )
   );
 });
