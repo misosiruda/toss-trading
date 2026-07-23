@@ -4,10 +4,12 @@ import test from "node:test";
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
 import type { ValidationSplitRegimeFeasibilityArtifact } from "./validationSplitRegimeFeasibility.js";
 import {
+  buildValidationRoleRegimeReplayPlan,
   createValidationRoleRegimeFeasibilityArtifactHash,
   createValidationRoleRegimeReplayPlanHash,
   type ValidationRoleRegimeReplayPlan
 } from "./validationRoleRegimeReplayPlan.js";
+import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import {
   buildValidationRoleRegimeStatisticalReadinessArtifact,
   type ValidationRoleRegimeStatisticalReadinessArtifact
@@ -203,6 +205,40 @@ test("baseline verifier rejects readiness counts derived from another plan", () 
   );
 });
 
+test("baseline verifier rejects role-regime evidence redistributed from plan runs", () => {
+  const fixtures = readyBaselineFixtures();
+  assert.doesNotThrow(() =>
+    verifyValidationRoleRegimeEvidenceExpansionBaseline(fixtures)
+  );
+
+  const redistributedReadiness =
+    buildValidationRoleRegimeStatisticalReadinessArtifact({
+      generatedAt: fixtures.readinessArtifact.generatedAt,
+      planHash: fixtures.planArtifact.planHash,
+      expectedCounts: {
+        plannedRunCount: fixtures.planArtifact.summary.plannedRunCount,
+        globalUniqueEvidenceGroupCount:
+          fixtures.planArtifact.summary.globalUniqueEvidenceGroupCount,
+        crossRoleSharedEvidenceGroupCount:
+          fixtures.planArtifact.summary.crossRoleSharedEvidenceGroupCount
+      },
+      evidenceRows: fixtures.planArtifact.runs.map((run) => ({
+        splitRole: "train",
+        targetRegime: run.targetRegime,
+        evidenceGroupHash: run.evidenceGroupHash
+      }))
+    });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        readinessArtifact: redistributedReadiness
+      }),
+    /baseline readiness evidence does not match plan runs/
+  );
+});
+
 test("readiness hash ignores generation time but preserves semantic changes", () => {
   const fixtures = baselineFixtures();
   const changedTime = {
@@ -263,6 +299,38 @@ function baselineFixtures(): {
   return { feasibilityArtifact, planArtifact, readinessArtifact };
 }
 
+function readyBaselineFixtures(): {
+  feasibilityArtifact: ValidationSplitRegimeFeasibilityArtifact;
+  planArtifact: ValidationRoleRegimeReplayPlan;
+  readinessArtifact: ValidationRoleRegimeStatisticalReadinessArtifact;
+} {
+  const feasibilityArtifact = readyFeasibilityFixture();
+  const planArtifact = buildValidationRoleRegimeReplayPlan({
+    feasibilityArtifact,
+    validationAssignments: readyAssignments(),
+    generatedAt: "2026-07-22T00:00:00.000Z",
+    calendarEvidenceClass: "observed_session_only"
+  });
+  const readinessArtifact =
+    buildValidationRoleRegimeStatisticalReadinessArtifact({
+      generatedAt: "2026-07-23T00:00:00.000Z",
+      planHash: planArtifact.planHash,
+      expectedCounts: {
+        plannedRunCount: planArtifact.summary.plannedRunCount,
+        globalUniqueEvidenceGroupCount:
+          planArtifact.summary.globalUniqueEvidenceGroupCount,
+        crossRoleSharedEvidenceGroupCount:
+          planArtifact.summary.crossRoleSharedEvidenceGroupCount
+      },
+      evidenceRows: planArtifact.runs.map((run) => ({
+        splitRole: run.splitRole,
+        targetRegime: run.targetRegime,
+        evidenceGroupHash: run.evidenceGroupHash
+      }))
+    });
+  return { feasibilityArtifact, planArtifact, readinessArtifact };
+}
+
 function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
   const sourceHash = hash("a");
   return {
@@ -313,6 +381,119 @@ function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
     assignments: [],
     warnings: []
   };
+}
+
+function readyFeasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
+  const base = feasibilityFixture();
+  const assignments = readyAssignments().map((assignment, index) => {
+    const roleStart =
+      assignment.splitRole === "train"
+        ? assignment.trainStart
+        : assignment.splitRole === "validation"
+          ? assignment.validationStart
+          : assignment.testStart!;
+    const roleEnd =
+      assignment.splitRole === "train"
+        ? assignment.trainEnd
+        : assignment.splitRole === "validation"
+          ? assignment.validationEnd
+          : assignment.testEnd!;
+    return {
+      splitId: assignment.splitId,
+      splitIndex: assignment.splitIndex,
+      splitRole: assignment.splitRole,
+      roleStart,
+      roleEnd,
+      effectiveRoleEnd: assignment.splitRole === "train" ? roleEnd : null,
+      structuralCapacityCount: 1,
+      candidateCount: 1,
+      regimeCounts: {
+        bull: 1,
+        bear: 0,
+        sideways: 0,
+        mixed: 0,
+        insufficient_data: 0
+      },
+      availableTargetRegimes: ["bull"] as Array<"bull">,
+      unavailableTargetRegimes: [],
+      candidates: [
+        {
+          startAt: roleStart,
+          endAt:
+            assignment.splitRole === "train"
+              ? "2023-01-31T23:59:59.999+09:00"
+              : assignment.splitRole === "validation"
+                ? "2023-05-31T23:59:59.999+09:00"
+                : "2023-07-31T23:59:59.999+09:00",
+          regime: "bull" as const,
+          scopeAvailable: true,
+          candidateHash: hash(String(index + 1))
+        }
+      ],
+      maximumPairwiseOverlapRatio: 0,
+      calendarRejectedCandidateCount: 0,
+      scopeUnavailableCandidateCount: 0,
+      warnings: []
+    };
+  });
+
+  return {
+    ...base,
+    status: "available",
+    config: {
+      ...base.config,
+      targetRegimes: ["bull"]
+    },
+    summary: {
+      ...base.summary,
+      assignmentCount: 3,
+      roleCounts: { train: 1, validation: 1, test: 1 },
+      candidateCount: 3,
+      uniqueCandidateCount: 3,
+      roleCapacityCounts: { train: 1, validation: 1, test: 1 }
+    },
+    roles: (["train", "validation", "test"] as const).map((splitRole) => ({
+      splitRole,
+      assignmentCount: 1,
+      structuralCapacityCount: 1,
+      uniqueCandidateCount: 1,
+      regimeCounts: {
+        bull: 1,
+        bear: 0,
+        sideways: 0,
+        mixed: 0,
+        insufficient_data: 0
+      },
+      availableTargetRegimes: ["bull"],
+      unavailableTargetRegimes: [],
+      minimumCandidatesPerRoleRegime: 1,
+      capacityStatus: "sufficient",
+      maximumPairwiseOverlapRatio: 0,
+      warnings: []
+    })),
+    assignments
+  };
+}
+
+function readyAssignments(): ValidationSplitAssignment[] {
+  const base = {
+    validationProtocol: "walk_forward" as const,
+    splitId: "split-0",
+    splitIndex: 0,
+    trainStart: "2023-01-01T00:00:00+09:00",
+    trainEnd: "2023-04-30T23:59:59.999+09:00",
+    validationStart: "2023-05-01T00:00:00+09:00",
+    validationEnd: "2023-06-30T23:59:59.999+09:00",
+    testStart: "2023-07-01T00:00:00+09:00",
+    testEnd: "2023-09-30T23:59:59.999+09:00",
+    purgeDurationDays: 0,
+    embargoDurationDays: 0
+  };
+  return [
+    { ...base, splitRole: "train" },
+    { ...base, splitRole: "validation" },
+    { ...base, splitRole: "test" }
+  ];
 }
 
 function planFixture(

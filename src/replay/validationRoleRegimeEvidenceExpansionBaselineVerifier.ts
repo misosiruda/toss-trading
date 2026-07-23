@@ -9,6 +9,7 @@ import {
   type ValidationRoleRegimeReplayPlan
 } from "./validationRoleRegimeReplayPlan.js";
 import {
+  buildValidationRoleRegimeStatisticalReadinessArtifact,
   validationRoleRegimeStatisticalReadinessArtifactSchema,
   type ValidationRoleRegimeStatisticalReadinessBlocker,
   type ValidationRoleRegimeStatisticalReadinessArtifact
@@ -146,6 +147,31 @@ function assertReadinessMatchesPlan(
       plan.summary.crossRoleSharedEvidenceGroupCount
   ) {
     throw new Error("baseline readiness expected counts do not match plan");
+  }
+
+  const expectedReadiness =
+    buildValidationRoleRegimeStatisticalReadinessArtifact({
+      generatedAt: readiness.generatedAt,
+      planHash: plan.planHash,
+      expectedCounts: {
+        plannedRunCount: plan.summary.plannedRunCount,
+        globalUniqueEvidenceGroupCount:
+          plan.summary.globalUniqueEvidenceGroupCount,
+        crossRoleSharedEvidenceGroupCount:
+          plan.summary.crossRoleSharedEvidenceGroupCount
+      },
+      evidenceRows: plan.runs.map((run) => ({
+        splitRole: run.splitRole,
+        targetRegime: run.targetRegime,
+        evidenceGroupHash: run.evidenceGroupHash
+      })),
+      roleRegimeSampleMinimum: readiness.config.roleRegimeSampleMinimum
+    });
+  if (
+    createReplayResearchHash(readiness.evidence) !==
+    createReplayResearchHash(expectedReadiness.evidence)
+  ) {
+    throw new Error("baseline readiness evidence does not match plan runs");
   }
 }
 
