@@ -1,6 +1,7 @@
 import type { Sha256Hash } from "../domain/schemas.js";
 import {
   createValidationFeasibilityCandidateHash,
+  createValidationFeasibilityClassifierHash,
   validationSplitRegimeFeasibilityArtifactSchema,
   type ValidationSplitRegimeFeasibilityArtifact
 } from "./validationSplitRegimeFeasibility.js";
@@ -47,6 +48,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionBaseline(
       options.readinessArtifact
     );
   assertBaselineStatusesAreUsable(feasibility, plan, readiness);
+  assertFeasibilityClassifierHash(feasibility);
   assertFeasibilityCandidateHashes(feasibility);
   const feasibilityArtifactHash =
     createValidationRoleRegimeFeasibilityArtifactHash(feasibility);
@@ -238,6 +240,17 @@ function assertFeasibilityCandidateHashes(
         );
       }
     }
+  }
+}
+
+function assertFeasibilityClassifierHash(
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): void {
+  const expectedHash = createValidationFeasibilityClassifierHash(
+    feasibility.config.marketRegimeClassifier
+  );
+  if (feasibility.provenance.marketRegimeClassifierHash !== expectedHash) {
+    throw new Error("baseline feasibility classifier hash mismatch");
   }
 }
 

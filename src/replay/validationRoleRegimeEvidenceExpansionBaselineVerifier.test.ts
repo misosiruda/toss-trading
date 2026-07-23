@@ -3,7 +3,10 @@ import test from "node:test";
 
 import { DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG } from "../analytics/marketRegimeClassifier.js";
 import type { ValidationSplitRegimeFeasibilityArtifact } from "./validationSplitRegimeFeasibility.js";
-import { createValidationFeasibilityCandidateHash } from "./validationSplitRegimeFeasibility.js";
+import {
+  createValidationFeasibilityCandidateHash,
+  createValidationFeasibilityClassifierHash
+} from "./validationSplitRegimeFeasibility.js";
 import {
   buildValidationRoleRegimeReplayPlan,
   createValidationRoleRegimeFeasibilityArtifactHash,
@@ -251,6 +254,17 @@ test("baseline verifier rejects recomposed chains with corrupted candidate hashe
   );
 });
 
+test("baseline verifier rejects classifier config provenance mismatch", () => {
+  const feasibilityArtifact = feasibilityFixture();
+  feasibilityArtifact.config.marketRegimeClassifier.bullReturnThreshold = 0.04;
+  const fixtures = baselineFixtures(feasibilityArtifact);
+
+  assert.throws(
+    () => verifyValidationRoleRegimeEvidenceExpansionBaseline(fixtures),
+    /baseline feasibility classifier hash mismatch/
+  );
+});
+
 test("baseline verifier rejects plan runs absent from linked feasibility", () => {
   const feasibilityArtifact = readyFeasibilityFixture();
   const alternateFeasibility = structuredClone(feasibilityArtifact);
@@ -331,12 +345,13 @@ test("readiness hash ignores generation time but preserves semantic changes", ()
   );
 });
 
-function baselineFixtures(): {
+function baselineFixtures(
+  feasibilityArtifact = feasibilityFixture()
+): {
   feasibilityArtifact: ValidationSplitRegimeFeasibilityArtifact;
   planArtifact: ValidationRoleRegimeReplayPlan;
   readinessArtifact: ValidationRoleRegimeStatisticalReadinessArtifact;
 } {
-  const feasibilityArtifact = feasibilityFixture();
   const planArtifact = planFixture(feasibilityArtifact);
   const readinessArtifact =
     buildValidationRoleRegimeStatisticalReadinessArtifact({
@@ -371,6 +386,10 @@ function readyBaselineFixtures(
 
 function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
   const sourceHash = hash("a");
+  const marketRegimeClassifier = {
+    version: "market_regime_classifier.v1" as const,
+    ...DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG
+  };
   return {
     schemaVersion: "validation_split_regime_feasibility.v1",
     mode: "paper_only",
@@ -392,10 +411,7 @@ function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
           }
         ]
       },
-      marketRegimeClassifier: {
-        version: "market_regime_classifier.v1",
-        ...DEFAULT_MARKET_REGIME_CLASSIFIER_CONFIG
-      }
+      marketRegimeClassifier
     },
     provenance: {
       dataSnapshotHash: sourceHash,
@@ -403,7 +419,8 @@ function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
       coverageHash: sourceHash,
       validationSplitHash: sourceHash,
       calendarHash: sourceHash,
-      marketRegimeClassifierHash: sourceHash
+      marketRegimeClassifierHash:
+        createValidationFeasibilityClassifierHash(marketRegimeClassifier)
     },
     summary: {
       assignmentCount: 0,

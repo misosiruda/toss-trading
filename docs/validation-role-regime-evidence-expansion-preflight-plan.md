@@ -195,7 +195,7 @@ Baseline과 expansion candidate는 서로 다른 두 identity를 가진다.
 
 ### Existing hash compatibility
 
-Baseline `validation_split_regime_feasibility.v1`의 `candidateHash`는 기존 `createValidationFeasibilityCandidateHash()` payload와 helper로만 재검증한다. 새 field를 기존 hash payload에 추가하거나 hash equality를 새 preflight identity와 비교하지 않는다.
+Baseline `validation_split_regime_feasibility.v1`의 `marketRegimeClassifierHash`는 기존 `createValidationFeasibilityClassifierHash()`로 classifier config에서 재계산한다. `candidateHash`는 기존 `createValidationFeasibilityCandidateHash()` payload와 helper로만 재검증한다. 새 field를 기존 hash payload에 추가하거나 hash equality를 새 preflight identity와 비교하지 않는다.
 
 현재 `validation_role_regime_replay_plan.v1`의 `candidateHash`와 `evidenceGroupHash`가 같은 값인 계약도 source artifact 검증에서는 그대로 유지한다. 이 기존 `evidenceGroupHash`는 baseline plan provenance를 검증하는 legacy field이며, baseline과 expansion 사이의 preflight deduplication key로 사용하지 않는다.
 
