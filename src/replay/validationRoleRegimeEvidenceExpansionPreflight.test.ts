@@ -309,6 +309,64 @@ test("pairwise flags must match accepted interval regime and roles", () => {
   );
 });
 
+test("dependency arrays require canonical ordering", () => {
+  const intervalOrderConflict = readyArtifact();
+  [
+    intervalOrderConflict.dependencyInputs.candidateIntervals[0],
+    intervalOrderConflict.dependencyInputs.candidateIntervals[1]
+  ] = [
+    intervalOrderConflict.dependencyInputs.candidateIntervals[1]!,
+    intervalOrderConflict.dependencyInputs.candidateIntervals[0]!
+  ];
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      intervalOrderConflict
+    )
+  );
+
+  const pairOrderConflict = readyArtifact();
+  [
+    pairOrderConflict.dependencyInputs.pairwise[0],
+    pairOrderConflict.dependencyInputs.pairwise[1]
+  ] = [
+    pairOrderConflict.dependencyInputs.pairwise[1]!,
+    pairOrderConflict.dependencyInputs.pairwise[0]!
+  ];
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      pairOrderConflict
+    )
+  );
+
+  const roleOrderConflict = readyArtifact();
+  const sharedInterval =
+    roleOrderConflict.dependencyInputs.candidateIntervals.find(
+      (interval) => interval.splitRoles.length > 1
+    )!;
+  sharedInterval.splitRoles.reverse();
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      roleOrderConflict
+    )
+  );
+
+  const variantOrderConflict = readyArtifact();
+  const variants =
+    variantOrderConflict.dependencyInputs.candidateIntervals[0]!
+      .sourceVariants;
+  variants.push({
+    ...variants[0]!,
+    feasibilityCandidateHash: indexedHash(4_001),
+    sourceVariantHash: indexedHash(4_002)
+  });
+  variants.reverse();
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse(
+      variantOrderConflict
+    )
+  );
+});
+
 test("ready status requires complete accepted intervals and pairwise inputs", () => {
   const missingInterval = readyArtifact();
   missingInterval.dependencyInputs.candidateIntervals.pop();
@@ -465,7 +523,7 @@ function readyCandidateIntervals(): ValidationRoleRegimeEvidenceExpansionPreflig
   intervals.push(
     candidateInterval(intervals.length, ["train", "test"], "sideways")
   );
-  return intervals;
+  return intervals.sort(compareFixtureIntervals);
 }
 
 function candidateInterval(
@@ -535,6 +593,44 @@ function createPairwiseDependencies(
     }
   }
   return pairs;
+}
+
+function compareFixtureIntervals(
+  left: ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+    "dependencyInputs"
+  ]["candidateIntervals"][number],
+  right: ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
+    "dependencyInputs"
+  ]["candidateIntervals"][number]
+): number {
+  const roleDifference = compareFixtureRoles(
+    left.splitRoles,
+    right.splitRoles
+  );
+  const regimes = ["bull", "bear", "sideways", "mixed"] as const;
+  return (
+    roleDifference ||
+    regimes.indexOf(left.targetRegime) - regimes.indexOf(right.targetRegime) ||
+    left.startAt.localeCompare(right.startAt) ||
+    left.endAt.localeCompare(right.endAt) ||
+    left.evidenceGroupHash.localeCompare(right.evidenceGroupHash)
+  );
+}
+
+function compareFixtureRoles(
+  left: ReadonlyArray<"train" | "validation" | "test">,
+  right: ReadonlyArray<"train" | "validation" | "test">
+): number {
+  const roles = ["train", "validation", "test"] as const;
+  const comparableLength = Math.min(left.length, right.length);
+  for (let index = 0; index < comparableLength; index += 1) {
+    const difference =
+      roles.indexOf(left[index]!) - roles.indexOf(right[index]!);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return left.length - right.length;
 }
 
 function rebuildCombinedEvidence(

@@ -59,6 +59,24 @@ export const evidenceExpansionSourceVariantReferenceSchema = z
   })
   .strict();
 
+const sourceVariantReferencesSchema = z
+  .array(evidenceExpansionSourceVariantReferenceSchema)
+  .min(1)
+  .superRefine((variants, context) => {
+    for (let index = 1; index < variants.length; index += 1) {
+      if (
+        compareSourceVariants(variants[index - 1]!, variants[index]!) >= 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: [index],
+          message:
+            "source variants must use canonical hash and candidate order"
+        });
+      }
+    }
+  });
+
 const roleRegimeTargetSchema = z
   .object({
     bull: z.number().int().positive().nullable(),
@@ -207,9 +225,7 @@ const capacitySummarySchema = z
 const candidateIntervalSchema = z
   .object({
     evidenceGroupHash: sha256HashSchema,
-    sourceVariants: z
-      .array(evidenceExpansionSourceVariantReferenceSchema)
-      .min(1),
+    sourceVariants: sourceVariantReferencesSchema,
     splitRoles: z.array(validationSplitRoleSchema).min(1),
     targetRegime: feasibilityTargetRegimeSchema,
     startAt: isoDateTimeSchema,
@@ -232,6 +248,18 @@ const candidateIntervalSchema = z
         path: ["splitRoles"],
         message: "candidate interval split roles must be unique"
       });
+    }
+    for (let index = 1; index < value.splitRoles.length; index += 1) {
+      if (
+        VALIDATION_ROLE_ORDER.indexOf(value.splitRoles[index - 1]!) >=
+        VALIDATION_ROLE_ORDER.indexOf(value.splitRoles[index]!)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["splitRoles", index],
+          message: "candidate interval split roles must use canonical order"
+        });
+      }
     }
     const sourceVariantHashes = value.sourceVariants.map(
       (variant) => variant.sourceVariantHash
@@ -308,9 +336,7 @@ const dependencyInputsSchema = z
 
 export const evidenceExpansionExclusionSchema = z
   .object({
-    sourceVariants: z
-      .array(evidenceExpansionSourceVariantReferenceSchema)
-      .min(1),
+    sourceVariants: sourceVariantReferencesSchema,
     evidenceGroupHash: sha256HashSchema,
     splitRole: validationSplitRoleSchema.nullable(),
     targetRegime: feasibilityTargetRegimeSchema.nullable(),
@@ -468,6 +494,16 @@ function validateDependencyCompleteness(
   let crossRoleSharedCount = 0;
 
   for (const [index, interval] of intervals.entries()) {
+    if (
+      index > 0 &&
+      compareCandidateIntervals(intervals[index - 1]!, interval) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "candidateIntervals", index],
+        message: "candidate intervals must use canonical order"
+      });
+    }
     if (intervalHashes.has(interval.evidenceGroupHash)) {
       context.addIssue({
         code: "custom",
@@ -545,6 +581,7 @@ function validateDependencyCompleteness(
   }
 
   const actualPairKeys = new Set<string>();
+  let previousPairKey: string | null = null;
   for (const [index, pair] of value.dependencyInputs.pairwise.entries()) {
     const leftInterval = intervalsByHash.get(pair.leftEvidenceGroupHash);
     const rightInterval = intervalsByHash.get(pair.rightEvidenceGroupHash);
@@ -592,6 +629,14 @@ function validateDependencyCompleteness(
       pair.leftEvidenceGroupHash,
       pair.rightEvidenceGroupHash
     );
+    if (previousPairKey !== null && previousPairKey.localeCompare(key) >= 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["dependencyInputs", "pairwise", index],
+        message: "pairwise dependencies must use canonical row order"
+      });
+    }
+    previousPairKey = key;
     if (actualPairKeys.has(key)) {
       context.addIssue({
         code: "custom",
@@ -826,6 +871,63 @@ function hasTradingDateSetConflict(value: PreflightArtifact): boolean {
       (variant) =>
         variant.observedTradingDatesHash !==
         interval.canonicalTradingDatesHash
+    )
+  );
+}
+
+function compareCandidateIntervals(
+  left: PreflightArtifact["dependencyInputs"]["candidateIntervals"][number],
+  right: PreflightArtifact["dependencyInputs"]["candidateIntervals"][number]
+): number {
+  return (
+    compareRoleLists(left.splitRoles, right.splitRoles) ||
+    VALIDATION_TARGET_REGIME_ORDER.indexOf(left.targetRegime) -
+      VALIDATION_TARGET_REGIME_ORDER.indexOf(right.targetRegime) ||
+    left.startAt.localeCompare(right.startAt) ||
+    left.endAt.localeCompare(right.endAt) ||
+    left.evidenceGroupHash.localeCompare(right.evidenceGroupHash) ||
+    compareSourceVariantLists(left.sourceVariants, right.sourceVariants)
+  );
+}
+
+function compareRoleLists(
+  left: readonly ValidationRole[],
+  right: readonly ValidationRole[]
+): number {
+  const comparableLength = Math.min(left.length, right.length);
+  for (let index = 0; index < comparableLength; index += 1) {
+    const difference =
+      VALIDATION_ROLE_ORDER.indexOf(left[index]!) -
+      VALIDATION_ROLE_ORDER.indexOf(right[index]!);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return left.length - right.length;
+}
+
+function compareSourceVariantLists(
+  left: readonly EvidenceExpansionSourceVariantReference[],
+  right: readonly EvidenceExpansionSourceVariantReference[]
+): number {
+  const comparableLength = Math.min(left.length, right.length);
+  for (let index = 0; index < comparableLength; index += 1) {
+    const difference = compareSourceVariants(left[index]!, right[index]!);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return left.length - right.length;
+}
+
+function compareSourceVariants(
+  left: EvidenceExpansionSourceVariantReference,
+  right: EvidenceExpansionSourceVariantReference
+): number {
+  return (
+    left.sourceVariantHash.localeCompare(right.sourceVariantHash) ||
+    left.feasibilityCandidateHash.localeCompare(
+      right.feasibilityCandidateHash
     )
   );
 }
