@@ -73,6 +73,65 @@ test("expansion source verifier hashes the returned normalized universe", () => 
   );
 });
 
+test("expansion source verifier canonicalizes universe symbol order", () => {
+  const fixtures = sourceFixtures();
+  const secondMember = {
+    ...fixtures.universe.symbols[0]!,
+    symbol: "654321"
+  };
+  const snapshots = fixtures.snapshots.flatMap((item) => [
+    item,
+    {
+      ...item,
+      snapshotId: `${item.snapshotId}-second`,
+      symbol: secondMember.symbol
+    }
+  ]);
+  const reversedUniverse = {
+    ...fixtures.universe,
+    symbols: [secondMember, fixtures.universe.symbols[0]!]
+  };
+  const coverage = assessHistoricalUniverseCoverage({
+    snapshots,
+    universe: {
+      ...reversedUniverse,
+      symbols: reversedUniverse.symbols.map((member) => ({
+        ...member,
+        lifecycleStatusSource: "explicit" as const
+      }))
+    },
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    requiredMarkets: ["KR"],
+    requiredStrategyBuckets: ["short_term"]
+  });
+  const reversedResult = verifyValidationRoleRegimeEvidenceExpansionSource({
+    ...fixtures,
+    snapshots,
+    universe: reversedUniverse,
+    coverage
+  });
+  const orderedResult = verifyValidationRoleRegimeEvidenceExpansionSource({
+    ...fixtures,
+    snapshots,
+    universe: {
+      ...reversedUniverse,
+      symbols: [...reversedUniverse.symbols].reverse()
+    },
+    coverage
+  });
+
+  assert.deepEqual(
+    reversedResult.universe.symbols.map((member) => member.symbol),
+    ["123456", "654321"]
+  );
+  assert.deepEqual(reversedResult.universe, orderedResult.universe);
+  assert.deepEqual(reversedResult.hashes, orderedResult.hashes);
+});
+
 test("expansion source verifier rejects duplicate snapshot ids", () => {
   const fixtures = sourceFixtures();
 

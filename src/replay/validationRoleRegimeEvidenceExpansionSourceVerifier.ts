@@ -58,7 +58,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
     .sort(compareSnapshots);
   assertUniqueSnapshotIds(snapshots);
 
-  const universe = historicalUniverseManifestSchema.parse(options.universe);
+  const universe = normalizeUniverse(options.universe);
   assertSnapshotsInsideUniverse(snapshots, universe);
 
   const coverage = verifyCoverage({
@@ -86,6 +86,14 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
       expansionCoverageHash: createReplayResearchHash(coverage),
       validationSplitHash: createReplayResearchHash(validationSplitSource)
     }
+  };
+}
+
+function normalizeUniverse(value: unknown): HistoricalUniverseManifest {
+  const parsed = historicalUniverseManifestSchema.parse(value);
+  return {
+    ...parsed,
+    symbols: [...parsed.symbols].sort(compareUniverseMembers)
   };
 }
 
@@ -203,6 +211,16 @@ function assertUniqueAssignments(
     }
     assignmentKeys.add(key);
   }
+}
+
+function compareUniverseMembers(
+  left: HistoricalUniverseManifest["symbols"][number],
+  right: HistoricalUniverseManifest["symbols"][number]
+): number {
+  return (
+    compareStrings(left.market, right.market) ||
+    compareStrings(left.symbol, right.symbol)
+  );
 }
 
 function compareSnapshots(
