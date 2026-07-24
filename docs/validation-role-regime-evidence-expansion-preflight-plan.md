@@ -259,6 +259,80 @@ interface EvidenceGroupHashInput {
 
 Baseline artifact의 기존 `candidateHash`와 replay-plan `evidenceGroupHash`는 기존 version의 payload/helper로 재검증한다. 그 검증이 끝난 source row에서 새 `sourceVariantHash`와 source-independent `evidenceGroupHash`를 계산한다. Expansion에도 동일한 preflight hash builder를 적용한다.
 
+### Observed set hash contract
+
+`observedTradingDatesHash`는 calendar date 문자열만 hash하지 않는다. 같은
+날짜의 KR과 US session 중 한 market이 누락돼도 같은 값이 되는 문제를
+막기 위해 market과 session date의 canonical set을 hash한다.
+
+```ts
+interface ObservedTradingDatesHashPayload {
+  version: "evidence_expansion_observed_trading_dates.v1";
+  sessions: Array<{
+    market: "KR" | "US";
+    sessionDate: string;
+  }>;
+}
+```
+
+- Candidate의 inclusive `[startAt, endAt]` 안에서 실제 평가한 snapshot만
+  입력으로 사용한다.
+- `sessionDate`는 snapshot timestamp의 UTC date slice가 아니라 검증된
+  calendar rule과 fixture가 반환한 market-local session date를 사용한다.
+- Calendar fixture가 없거나 market, exchange, timezone이 일치하지 않으면
+  날짜를 추정하거나 다른 timezone으로 대체하지 않는다.
+- 동일 market/session date는 한 번만 보존한다.
+- 순서는 market `KR`, `US`, 그 안에서 `sessionDate` 오름차순이다.
+- Candidate source file 순서, snapshot symbol 수와 동일 session의 중복
+  snapshot 수는 hash를 바꾸지 않는다.
+
+`universeMembershipHash`는 manifest 전체가 아니라 해당 candidate interval에서
+실제로 관측된 `short_term` scope symbol의 canonical membership set을
+hash한다.
+
+```ts
+interface UniverseMembershipHashPayload {
+  version: "evidence_expansion_universe_membership.v1";
+  members: Array<{
+    market: "KR" | "US";
+    symbol: string;
+  }>;
+}
+```
+
+- Candidate의 inclusive `[startAt, endAt]` 안에 있고 calendar validation을
+  통과한 snapshot 중 `strategyBucket === "short_term"`인 row만 사용한다.
+- Universe manifest에만 있고 candidate interval에서 관측되지 않은 symbol은
+  membership에 추가하지 않는다.
+- 동일 market/symbol은 한 번만 보존한다.
+- 순서는 market `KR`, `US`, 그 안에서 `symbol` 오름차순이다.
+- Name, price, source reference, risk tag와 manifest metadata는 membership
+  payload에 넣지 않는다.
+
+두 payload는 빈 canonical array도 deterministic하게 hash할 수 있다. 다만
+빈 observed trading-date set을 가진 candidate는
+`INSUFFICIENT_REGIME_DATA`, 빈 `short_term` membership을 가진 candidate는
+`scopeAvailable=false`와 `SCOPE_UNAVAILABLE` 없이 accepted capacity로
+승격할 수 없다.
+
+Hash builder는 hash만 반환하지 않고 검증·정규화한 canonical session 또는
+membership entry도 함께 반환한다. 후속 aggregation은 hash 문자열을
+역추정하지 않고 이 entry set을 사용한다.
+
+Official `canonicalTradingDatesHash`도
+`evidence_expansion_observed_trading_dates.v1` payload를 사용한다. 검증된
+expansion coverage가 사전 고정한 required market 각각에 대해 candidate
+interval 안에 완전히 포함된 official `regular` 및 `early_close` session만
+canonical set에 넣는다. Holiday, special closure와 weekend는 trading-date
+set에 넣지 않는다. Required market의 official coverage가 없으면 빈 set으로
+대체하지 않고 `OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는
+`DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다.
+
+`combinedUniverseMembershipHash`는 accepted source variant가 반환한 canonical
+membership entry의 실제 union을 같은
+`evidence_expansion_universe_membership.v1` payload로 hash한다.
+`sharedUniverse`도 두 union의 실제 market/symbol 교집합으로 계산한다.
+
 다음 mismatch는 `invalid`다.
 
 - 기존 feasibility `candidateHash`가 기존 helper의 재계산 결과와 다름
@@ -512,9 +586,11 @@ hash와 calendar/classifier, snapshot/universe/coverage, validation split,
 observed trading-date 및 universe membership hash를 포함한다. Baseline
 legacy replay-plan evidence group hash가 제공되면 재계산한 feasibility
 candidate hash와 일치해야 한다. Candidate enumeration, observed
-trading-date/universe membership hash builder, cross-candidate identity
-conflict 집계, capacity/exclusion 집계, writer와 CLI는 아직 구현하지
-않았다.
+trading-date/universe membership hash builder, official canonical trading-date
+builder, cross-candidate identity conflict 집계, capacity/exclusion 집계,
+writer와 CLI는 아직 구현하지 않았다. Observed trading-date와 universe
+membership의 canonical payload, 빈 set 처리, official 비교 및 combined
+union 규칙은 이 문서에서 고정했다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
 입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
