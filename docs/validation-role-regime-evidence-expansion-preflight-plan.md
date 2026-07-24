@@ -480,8 +480,38 @@ insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
 재계산한 값과 일치시킨다. Baseline validation split assignment source는
 `validationSplitHash`와 feasibility role window를 재검증하며 plan에 기록된
 전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion source verifier와
-명시적인 result-metric input 분류, capacity builder, preflight canonical hash
-검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
+capacity builder, preflight canonical hash 검증, writer, CLI와 실제 preflight
+artifact는 아직 구현하지 않았다.
+
+`validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
+입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
+policy의 strict allowlist로 제한한다. 어느 깊이에서든 result artifact,
+성과 metric, selection 결과 또는 AI action key가 발견되면 경로를 canonical
+정렬하고 `RESULT_METRIC_INPUT_FORBIDDEN` blocker가 있는 `invalid` 결과로
+fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에는 key 기반
+분류에 포함하지 않는다. `ReplayPerformanceMetrics`의
+`totalReturnRatio`, `costAdjustedTotalReturnRatio`, `maxDrawdownRatio`,
+`profitFactor`, `sharpeRatio` 같은 compound result key와 selection trial의
+`finalVirtualNetWorthKrw`를 명시적으로 차단한다. 허용 source evidence의
+`averageReturnRatio`처럼 용도가 다른 field를 오탐하지 않도록 임의의
+`*ReturnRatio` suffix 전체를 차단하지는 않는다. Batch aggregate의
+`averageTotalReturnRatio`, `medianTotalReturnRatio`, `winRate`,
+selection/holdout return metric, rank, degradation 및 PBO result key도
+동일하게 차단한다. Holdout degradation collection과 summary count도
+결과 입력으로 차단한다. CPCV selection record의 selected train/test
+metric, test rank percentile 및 tie-break result도 입력으로 허용하지
+않는다.
+Virtual position/trade의 realized/unrealized PnL key도 차단한다. Optional
+official calendar artifact 외의 모든 allowlisted source는 field 누락이나
+명시적 `undefined`, `null`, 빈 object/array 또는 scalar를 허용하지 않는다.
+Sharpe validation의 sample, Lo-adjusted, probabilistic 및 deflated
+metric과 read-only summary의 namespaced status/value/probability key도
+결과 입력으로 차단한다. Selection context의 `selectedByMetric`도 selection
+결과로 차단한다. Return sample count, mean return, volatility, skewness 및
+excess kurtosis 같은 distribution result key도 차단한다.
+개별 CPCV split의 train/test metric과 role별 return sample count도
+결과 입력으로 차단한다.
+Replay portfolio timeline의 `virtualNetWorthKrw`도 성과 결과로 차단한다.
 
 ## 이번 문서 PR의 완료 기준
 
