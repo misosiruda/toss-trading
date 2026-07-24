@@ -509,6 +509,31 @@ test("feasibility builder creates deterministic available role aggregates", () =
   );
 });
 
+test("feasibility builder preserves empty split sources as insufficient", () => {
+  const options = feasibilityBuilderOptions();
+  const artifact = buildValidationSplitRegimeFeasibilityArtifact({
+    ...options,
+    assignments: [],
+    validationSplit: { assignments: [] }
+  });
+
+  assert.equal(artifact.status, "insufficient");
+  assert.equal(artifact.summary.assignmentCount, 0);
+  assert.deepEqual(artifact.summary.roleCounts, {
+    train: 0,
+    validation: 0,
+    test: 0
+  });
+  assert.deepEqual(artifact.assignments, []);
+  assert.equal(
+    artifact.roles.every(
+      (role) =>
+        role.assignmentCount === 0 && role.capacityStatus === "insufficient"
+    ),
+    true
+  );
+});
+
 test("role-regime plan source verifier accepts a regenerated semantic match", () => {
   const options = feasibilityBuilderOptions();
   const feasibilityArtifact = buildValidationSplitRegimeFeasibilityArtifact(

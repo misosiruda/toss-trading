@@ -73,6 +73,11 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
   const assignments = Array.isArray(validationSplitSource)
     ? validationSplitSource
     : validationSplitSource.assignments;
+  if (assignments.length === 0) {
+    throw new Error(
+      "validation split source must include at least one complete split"
+    );
+  }
   assertValidValidationSplitAssignments(assignments);
 
   return {
