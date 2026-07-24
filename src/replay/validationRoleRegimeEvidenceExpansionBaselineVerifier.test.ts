@@ -163,6 +163,22 @@ test("baseline verifier rejects feasibility provenance and config drift", () => 
   );
 });
 
+test("baseline verifier normalizes feasibility target regime order", () => {
+  const feasibilityArtifact = feasibilityFixture();
+  feasibilityArtifact.config.targetRegimes = ["bear", "bull"];
+  const planArtifact = planFixture(feasibilityArtifact);
+  planArtifact.config.targetRegimes = ["bull", "bear"];
+  planArtifact.planHash = createValidationRoleRegimeReplayPlanHash(planArtifact);
+
+  assert.doesNotThrow(() =>
+    verifyValidationRoleRegimeEvidenceExpansionBaseline({
+      feasibilityArtifact,
+      planArtifact,
+      readinessArtifact: readinessForPlan(planArtifact)
+    })
+  );
+});
+
 test("baseline verifier rejects readiness linked to another plan", () => {
   const fixtures = baselineFixtures();
 

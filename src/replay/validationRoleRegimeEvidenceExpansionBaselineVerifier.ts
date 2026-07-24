@@ -7,6 +7,7 @@ import {
 } from "./validationSplitRegimeFeasibility.js";
 import {
   VALIDATION_ROLE_ORDER,
+  VALIDATION_TARGET_REGIME_ORDER,
   createValidationRoleRegimeFeasibilityArtifactHash,
   parseValidationRoleRegimeReplayPlan,
   type ValidationRoleRegimeReplayPlan
@@ -130,7 +131,10 @@ function assertPlanMatchesFeasibility(
     plan.config.windowMonths !== feasibility.config.windowMonths ||
     plan.config.timezoneOffsetMinutes !==
       feasibility.config.timezoneOffsetMinutes ||
-    !sameStrings(plan.config.targetRegimes, feasibility.config.targetRegimes)
+    !sameStrings(
+      plan.config.targetRegimes,
+      normalizeFeasibilityTargetRegimes(feasibility.config.targetRegimes)
+    )
   ) {
     throw new Error("baseline plan config does not match feasibility config");
   }
@@ -446,6 +450,14 @@ function isConfiguredTargetRegime(
   targetRegimes: readonly ValidationRoleRegimeReplayPlan["config"]["targetRegimes"][number][]
 ): regime is ValidationRoleRegimeReplayPlan["config"]["targetRegimes"][number] {
   return targetRegimes.some((targetRegime) => targetRegime === regime);
+}
+
+function normalizeFeasibilityTargetRegimes(
+  targetRegimes: readonly ValidationRoleRegimeReplayPlan["config"]["targetRegimes"][number][]
+): ValidationRoleRegimeReplayPlan["config"]["targetRegimes"] {
+  return VALIDATION_TARGET_REGIME_ORDER.filter((targetRegime) =>
+    targetRegimes.includes(targetRegime)
+  );
 }
 
 function sameAssignmentWindow(

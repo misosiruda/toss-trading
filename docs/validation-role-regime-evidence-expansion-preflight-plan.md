@@ -469,7 +469,8 @@ schema와 합성 fixture contract test로 구현했다. 2단계의 첫 범위로
 feasibility, plan, readiness artifact의 strict schema와 hash, provenance,
 config 및 count 연결을 fail-closed로 검증한다. `invalid` baseline status는
 검증 결과로 반환하지 않으며 readiness blocker는 canonical key 순서로
-정규화한 뒤 hash한다. Readiness의 role-local, role-exclusive 및 role-regime
+정규화한 뒤 hash한다. Feasibility target regime은 plan의 canonical regime
+순서로 정규화한 뒤 config를 비교한다. Readiness의 role-local, role-exclusive 및 role-regime
 evidence는 plan run에서 재구성한 deterministic 집계와 일치해야 한다.
 Feasibility candidate hash는 config와 provenance에서 재계산하며 plan run은
 동일 role, window, regime, hash 및 source assignment를 가진 scope-available
