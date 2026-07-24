@@ -490,7 +490,17 @@ source를 기존 strict schema로 검증한다. Snapshot은 provenance 순서로
 불일치와 duplicate validation assignment를 fail-closed로 거부한다. 검증된
 source에서 `expansionDataSnapshotHash`, `expansionUniverseHash`,
 `expansionCoverageHash`, `validationSplitHash`를 canonical하게 계산한다.
-Calendar/classifier 검증, candidate enumeration, source/evidence identity,
+`validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.ts`는
+calendar rule/fixture와 deterministic classifier config를 strict schema로
+검증하고 canonical 정렬 뒤 기존 feasibility helper로 hash한다. 계산된
+calendar/classifier hash는 baseline provenance와 일치해야 한다. Optional
+official calendar artifact가 제공되면 artifact hash와 `asOf` freshness를
+검증하고, legacy calendar rule 및 fixture가 official source/session과
+양방향으로 일치하는지도 fail-closed로 확인한다. Official coverage의
+모든 session은 legacy fixture에 존재해야 하며 legacy fixture도 같은
+official session을 가져야 한다. Artifact가 생략되면
+`officialCalendarArtifactHash`는 `null`로 유지하며 readiness 통과를
+주장하지 않는다. Candidate enumeration, source/evidence identity,
 capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder

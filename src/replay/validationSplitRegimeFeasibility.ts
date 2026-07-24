@@ -91,7 +91,7 @@ const roleCountsSchema = z
     test: z.number().int().nonnegative()
   })
   .strict();
-const calendarRuleSchema = z
+export const validationFeasibilityCalendarRuleSchema = z
   .object({
     market: z.enum(["KR", "US"]),
     exchange: z.string().trim().min(1),
@@ -99,7 +99,7 @@ const calendarRuleSchema = z
   })
   .strict();
 const calendarRulesSchema = z
-  .array(calendarRuleSchema)
+  .array(validationFeasibilityCalendarRuleSchema)
   .min(1)
   .superRefine((rules, context) => {
     const markets = new Set<string>();
@@ -122,7 +122,7 @@ const calendarRulesSchema = z
       }
     }
   });
-const marketRegimeClassifierConfigSchema = z
+export const marketRegimeClassifierConfigSchema = z
   .object({
     version: z.literal(MARKET_REGIME_CLASSIFIER_VERSION),
     minSymbols: z.number().int().positive(),
@@ -970,8 +970,10 @@ function compareCalendarFixtures(
 
 function normalizeCalendarRules(
   input: HistoricalDataAvailabilityCalendarOptions["rules"]
-): Array<z.infer<typeof calendarRuleSchema>> {
-  const rules = input.map((rule) => calendarRuleSchema.parse(rule));
+): Array<z.infer<typeof validationFeasibilityCalendarRuleSchema>> {
+  const rules = input.map((rule) =>
+    validationFeasibilityCalendarRuleSchema.parse(rule)
+  );
   const markets = new Set<string>();
   for (const rule of rules) {
     if (markets.has(rule.market)) {
@@ -1363,8 +1365,8 @@ type FeasibilityAssignment = FeasibilityArtifactValue["assignments"][number];
 type FeasibilityCandidate = FeasibilityAssignment["candidates"][number];
 
 function compareCalendarRules(
-  left: z.infer<typeof calendarRuleSchema>,
-  right: z.infer<typeof calendarRuleSchema>
+  left: z.infer<typeof validationFeasibilityCalendarRuleSchema>,
+  right: z.infer<typeof validationFeasibilityCalendarRuleSchema>
 ): number {
   return (
     compareCanonicalStrings(left.market, right.market) ||
