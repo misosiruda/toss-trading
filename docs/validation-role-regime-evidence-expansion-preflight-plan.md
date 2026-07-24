@@ -501,9 +501,11 @@ selection/holdout return metric, rank, degradation 및 PBO result key도
 test rank percentile 및 tie-break result도 입력으로 허용하지 않는다.
 Virtual position/trade의 realized/unrealized PnL key도 차단한다. Optional
 official calendar artifact 외의 모든 allowlisted source는 field 누락이나
-명시적 `undefined`를 허용하지 않는다. Sharpe validation의 sample,
-Lo-adjusted, probabilistic 및 deflated metric과 read-only summary의
-namespaced status/value/probability key도 결과 입력으로 차단한다.
+명시적 `undefined`, `null`, 빈 object/array 또는 scalar를 허용하지 않는다.
+Sharpe validation의 sample, Lo-adjusted, probabilistic 및 deflated
+metric과 read-only summary의 namespaced status/value/probability key도
+결과 입력으로 차단한다. Replay portfolio timeline의
+`virtualNetWorthKrw`도 성과 결과로 차단한다.
 
 ## 이번 문서 PR의 완료 기준
 

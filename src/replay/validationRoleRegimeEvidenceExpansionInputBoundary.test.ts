@@ -83,7 +83,8 @@ test("input boundary rejects compound replay performance metric keys", () => {
       realizedPnlKrw: 50_000,
       sharpeRatio: 0.7,
       unrealizedPnlKrw: 20_000
-    }
+    },
+    portfolioTimeline: [{ virtualNetWorthKrw: 1_050_000 }]
   };
 
   const result =
@@ -98,6 +99,7 @@ test("input boundary rejects compound replay performance metric keys", () => {
     "$.expansion.coverage.advancedPerformance.realizedPnlKrw",
     "$.expansion.coverage.advancedPerformance.sharpeRatio",
     "$.expansion.coverage.advancedPerformance.unrealizedPnlKrw",
+    "$.expansion.coverage.portfolioTimeline[0].virtualNetWorthKrw",
     "$.expansion.coverage.totalReturnRatio"
   ]);
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
@@ -229,6 +231,40 @@ test("input schema rejects every missing required source", () => {
   );
 });
 
+test("input schema rejects null, empty, and scalar required sources", () => {
+  const invalidInputs = [
+    {
+      ...allowedInput(),
+      calendarValidation: null
+    },
+    {
+      ...allowedInput(),
+      baseline: {
+        ...allowedInput().baseline,
+        planArtifact: {}
+      }
+    },
+    {
+      ...allowedInput(),
+      expansion: {
+        ...allowedInput().expansion,
+        snapshots: []
+      }
+    },
+    {
+      ...allowedInput(),
+      targetMatrix: "not-a-structured-source"
+    }
+  ];
+
+  for (const input of invalidInputs) {
+    assert.equal(
+      validationRoleRegimeEvidenceExpansionInputSchema.safeParse(input).success,
+      false
+    );
+  }
+});
+
 test("input boundary does not classify result words found only in values", () => {
   const input = allowedInput();
   input.expansion.coverage = {
@@ -253,7 +289,7 @@ function allowedInput(): ReturnType<
       validationSplitSource: { assignments: [] }
     },
     expansion: {
-      snapshots: [],
+      snapshots: [{ schemaVersion: "fixture" }],
       universe: { snapshotDate: "2026-07-24" },
       coverage: { status: "available" },
       validationSplitSource: { assignments: [] }

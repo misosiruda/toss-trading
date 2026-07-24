@@ -7,8 +7,8 @@ import {
 
 const requiredInputSourceSchema = z
   .unknown()
-  .refine((value) => value !== undefined, {
-    message: "required input source is missing"
+  .refine(isNonEmptyStructuredSource, {
+    message: "required input source must be a non-empty object or array"
   });
 
 const baselineInputSchema = z
@@ -73,6 +73,7 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "returnratio",
   "initialnetworthkrw",
   "finalnetworthkrw",
+  "virtualnetworthkrw",
   "finalvirtualnetworthkrw",
   "averagefinalvirtualnetworthkrw",
   "totalreturnratio",
@@ -206,6 +207,17 @@ function collectForbiddenResultInputPaths(
 
 function normalizeInputKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isNonEmptyStructuredSource(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.keys(value).length > 0
+  );
 }
 
 function compareStrings(left: string, right: string): number {
