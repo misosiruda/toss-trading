@@ -77,6 +77,7 @@ test("input boundary rejects compound replay performance metric keys", () => {
     totalReturnRatio: 0.1,
     advancedPerformance: {
       costAdjustedTotalReturnRatio: 0.08,
+      finalVirtualNetWorthKrw: 1_100_000,
       maxDrawdownRatio: -0.2,
       profitFactor: 1.5,
       sharpeRatio: 0.7
@@ -89,6 +90,7 @@ test("input boundary rejects compound replay performance metric keys", () => {
   assert.equal(result.status, "invalid");
   assert.deepEqual(result.forbiddenPaths, [
     "$.expansion.coverage.advancedPerformance.costAdjustedTotalReturnRatio",
+    "$.expansion.coverage.advancedPerformance.finalVirtualNetWorthKrw",
     "$.expansion.coverage.advancedPerformance.maxDrawdownRatio",
     "$.expansion.coverage.advancedPerformance.profitFactor",
     "$.expansion.coverage.advancedPerformance.sharpeRatio",

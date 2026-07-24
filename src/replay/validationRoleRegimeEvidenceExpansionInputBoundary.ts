@@ -67,6 +67,7 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "returnratio",
   "initialnetworthkrw",
   "finalnetworthkrw",
+  "finalvirtualnetworthkrw",
   "totalreturnratio",
   "grosstotalreturnratio",
   "costadjustedtotalreturnratio",
