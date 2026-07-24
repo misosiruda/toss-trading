@@ -99,6 +99,41 @@ test("input boundary rejects compound replay performance metric keys", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects batch aggregate result metric keys", () => {
+  const input = allowedInput();
+  const aggregateMetrics = {
+    averageTotalReturnRatio: 0.1,
+    medianTotalReturnRatio: 0.08,
+    minTotalReturnRatio: -0.2,
+    maxTotalReturnRatio: 0.3,
+    winRate: 0.6,
+    averageFinalVirtualNetWorthKrw: 1_100_000,
+    selectedTrainAverageTotalReturnRatio: 0.12,
+    selectedAverageTotalReturnRatio: 0.05,
+    medianCandidateAverageTotalReturnRatio: 0.03,
+    bestAverageTotalReturnRatio: 0.09,
+    degradationFromTrainRatio: -0.07,
+    selectedRank: 2,
+    selectedBelowMedian: false,
+    pboLikeScore: 0.4,
+    pboProbability: 0.4,
+    targetReturnHitRates: []
+  };
+  input.baseline.planArtifact = { aggregateMetrics };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(aggregateMetrics)
+      .map((key) => `$.baseline.planArtifact.aggregateMetrics.${key}`)
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary keeps unknown non-result options fail-closed", () => {
   assert.throws(() =>
     validateValidationRoleRegimeEvidenceExpansionInputBoundary({
