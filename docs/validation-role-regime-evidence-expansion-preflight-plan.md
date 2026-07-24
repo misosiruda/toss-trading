@@ -479,9 +479,19 @@ scope-available target candidate는 exhaustive plan run에 포함되어야 하�
 insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
 재계산한 값과 일치시킨다. Baseline validation split assignment source는
 `validationSplitHash`와 feasibility role window를 재검증하며 plan에 기록된
-전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion source verifier와
-capacity builder, preflight canonical hash 검증, writer, CLI와 실제 preflight
-artifact는 아직 구현하지 않았다.
+전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion candidate
+enumeration, capacity builder, preflight canonical hash 검증, writer, CLI와
+실제 preflight artifact는 아직 구현하지 않았다.
+
+`validationRoleRegimeEvidenceExpansionSourceVerifier.ts`는 expansion
+historical snapshot, universe manifest, coverage artifact와 validation split
+source를 기존 strict schema로 검증한다. Snapshot은 provenance 순서로
+정렬하고 duplicate `snapshotId`, universe 밖 symbol, coverage 재계산
+불일치와 duplicate validation assignment를 fail-closed로 거부한다. 검증된
+source에서 `expansionDataSnapshotHash`, `expansionUniverseHash`,
+`expansionCoverageHash`, `validationSplitHash`를 canonical하게 계산한다.
+Calendar/classifier 검증, candidate enumeration, source/evidence identity,
+capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
 입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
