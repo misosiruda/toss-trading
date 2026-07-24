@@ -202,6 +202,19 @@ test("expansion source verifier rejects duplicate validation assignments", () =>
   );
 });
 
+test("expansion source verifier rejects empty validation split sources", () => {
+  const fixtures = sourceFixtures();
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionSource({
+        ...fixtures,
+        validationSplitSource: []
+      }),
+    /validation split source must include at least one complete split/
+  );
+});
+
 test("expansion source verifier rejects validation splits missing roles", () => {
   const fixtures = sourceFixtures();
 

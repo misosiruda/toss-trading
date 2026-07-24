@@ -1030,6 +1030,11 @@ function compareValidationAssignments(
 export function assertValidValidationSplitAssignments(
   assignments: readonly ValidationSplitAssignment[]
 ): void {
+  if (assignments.length === 0) {
+    throw new Error(
+      "validation split source must include at least one complete split"
+    );
+  }
   const identities = new Set<string>();
   const splitIdsByIndex = new Map<number, string>();
   const splitIndexesById = new Map<string, number>();
