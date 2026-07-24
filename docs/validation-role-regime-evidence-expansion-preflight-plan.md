@@ -489,7 +489,12 @@ policy의 strict allowlist로 제한한다. 어느 깊이에서든 result artifa
 성과 metric, selection 결과 또는 AI action key가 발견되면 경로를 canonical
 정렬하고 `RESULT_METRIC_INPUT_FORBIDDEN` blocker가 있는 `invalid` 결과로
 fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에는 key 기반
-분류에 포함하지 않는다.
+분류에 포함하지 않는다. `ReplayPerformanceMetrics`의
+`totalReturnRatio`, `costAdjustedTotalReturnRatio`, `maxDrawdownRatio`,
+`profitFactor`, `sharpeRatio` 같은 compound result key도 명시적으로
+차단한다. 허용 source evidence의 `averageReturnRatio`처럼 용도가 다른
+field를 오탐하지 않도록 임의의 `*ReturnRatio` suffix 전체를 차단하지는
+않는다.
 
 ## 이번 문서 PR의 완료 기준
 

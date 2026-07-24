@@ -71,6 +71,32 @@ test("input boundary rejects forbidden result artifacts on the command surface",
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects compound replay performance metric keys", () => {
+  const input = allowedInput();
+  input.expansion.coverage = {
+    totalReturnRatio: 0.1,
+    advancedPerformance: {
+      costAdjustedTotalReturnRatio: 0.08,
+      maxDrawdownRatio: -0.2,
+      profitFactor: 1.5,
+      sharpeRatio: 0.7
+    }
+  };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(result.forbiddenPaths, [
+    "$.expansion.coverage.advancedPerformance.costAdjustedTotalReturnRatio",
+    "$.expansion.coverage.advancedPerformance.maxDrawdownRatio",
+    "$.expansion.coverage.advancedPerformance.profitFactor",
+    "$.expansion.coverage.advancedPerformance.sharpeRatio",
+    "$.expansion.coverage.totalReturnRatio"
+  ]);
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary keeps unknown non-result options fail-closed", () => {
   assert.throws(() =>
     validateValidationRoleRegimeEvidenceExpansionInputBoundary({
@@ -83,7 +109,8 @@ test("input boundary keeps unknown non-result options fail-closed", () => {
 test("input boundary does not classify result words found only in values", () => {
   const input = allowedInput();
   input.expansion.coverage = {
-    warning: "Sharpe and return values are not available"
+    warning: "Sharpe and return values are not available",
+    averageReturnRatio: 0.01
   };
 
   assert.equal(
