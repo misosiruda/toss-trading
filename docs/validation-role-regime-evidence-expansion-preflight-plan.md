@@ -500,8 +500,21 @@ official calendar artifact가 제공되면 artifact hash와 `asOf` freshness를
 모든 session은 legacy fixture에 존재해야 하며 legacy fixture도 같은
 official session을 가져야 한다. Artifact가 생략되면
 `officialCalendarArtifactHash`는 `null`로 유지하며 readiness 통과를
-주장하지 않는다. Candidate enumeration, source/evidence identity,
-capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
+주장하지 않는다.
+
+`validationRoleRegimeEvidenceExpansionCandidateIdentity.ts`는 기존
+feasibility candidate hash를 재계산하면서 source-independent
+`evidenceGroupHash`와 source-bound `sourceVariantHash`를 생성한다.
+`evidenceGroupHash`에는 interval과 사전 고정 window policy만 포함하고
+source provenance, validation split, regime, role 또는 결과 metric은
+포함하지 않는다. `sourceVariantHash`에는 재계산한 feasibility candidate
+hash와 calendar/classifier, snapshot/universe/coverage, validation split,
+observed trading-date 및 universe membership hash를 포함한다. Baseline
+legacy replay-plan evidence group hash가 제공되면 재계산한 feasibility
+candidate hash와 일치해야 한다. Candidate enumeration, observed
+trading-date/universe membership hash builder, cross-candidate identity
+conflict 집계, capacity/exclusion 집계, writer와 CLI는 아직 구현하지
+않았다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
 입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
