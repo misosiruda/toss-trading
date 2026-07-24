@@ -6,6 +6,7 @@ import {
   type ValidationSplitRegimeFeasibilityArtifact
 } from "./validationSplitRegimeFeasibility.js";
 import {
+  VALIDATION_ROLE_ORDER,
   createValidationRoleRegimeFeasibilityArtifactHash,
   parseValidationRoleRegimeReplayPlan,
   type ValidationRoleRegimeReplayPlan
@@ -134,6 +135,7 @@ function assertPlanMatchesFeasibility(
     throw new Error("baseline plan config does not match feasibility config");
   }
 
+  assertPlanStatusAndSummary(plan, feasibility);
   assertPlanRunsMatchFeasibility(plan, feasibility);
 }
 
@@ -258,31 +260,36 @@ function assertPlanRunsMatchFeasibility(
   plan: ValidationRoleRegimeReplayPlan,
   feasibility: ValidationSplitRegimeFeasibilityArtifact
 ): void {
-  for (const run of plan.runs) {
-    const matchingAssignments = feasibility.assignments.filter(
-      (assignment) =>
-        assignment.splitRole === run.splitRole &&
-        assignment.candidates.some(
-          (candidate) =>
-            candidate.scopeAvailable &&
-            candidate.candidateHash === run.candidateHash &&
-            candidate.startAt === run.startAt &&
-            candidate.endAt === run.endAt &&
-            candidate.regime === run.targetRegime
-        )
+  if (plan.status !== "ready_for_paper_diagnostic") {
+    return;
+  }
+  const expectedRuns = expectedFeasibilityRuns(feasibility);
+  if (plan.runs.length !== expectedRuns.size) {
+    throw new Error(
+      "baseline plan runs do not exhaust feasibility candidates"
     );
-    const expectedAssignmentKeys = matchingAssignments
-      .map(feasibilityAssignmentKey)
-      .sort(compareStrings);
-    if (expectedAssignmentKeys.length === 0) {
+  }
+
+  for (const run of plan.runs) {
+    const runKey = feasibilityRunKey(run.splitRole, run.candidateHash);
+    const expectedRun = expectedRuns.get(runKey);
+    if (
+      expectedRun === undefined ||
+      expectedRun.startAt !== run.startAt ||
+      expectedRun.endAt !== run.endAt ||
+      expectedRun.targetRegime !== run.targetRegime
+    ) {
       throw new Error(
         `baseline plan run does not match feasibility candidates: ${run.runKey}`
       );
     }
+    const expectedAssignmentKeys = expectedRun.sourceAssignments
+      .map(feasibilityAssignmentKey)
+      .sort(compareStrings);
     const actualAssignmentKeys = run.sourceAssignments
       .map((assignment) => {
         const key = feasibilityAssignmentKey(assignment);
-        const feasibilityAssignment = matchingAssignments.find(
+        const feasibilityAssignment = expectedRun.sourceAssignments.find(
           (candidate) => feasibilityAssignmentKey(candidate) === key
         );
         if (
@@ -304,7 +311,141 @@ function assertPlanRunsMatchFeasibility(
         `baseline plan run does not match feasibility candidates: ${run.runKey}`
       );
     }
+    expectedRuns.delete(runKey);
   }
+
+  if (expectedRuns.size !== 0) {
+    throw new Error(
+      "baseline plan runs do not exhaust feasibility candidates"
+    );
+  }
+}
+
+function assertPlanStatusAndSummary(
+  plan: ValidationRoleRegimeReplayPlan,
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): void {
+  const expectedStatus =
+    feasibility.status === "available"
+      ? "ready_for_paper_diagnostic"
+      : "insufficient";
+  if (plan.status !== expectedStatus) {
+    throw new Error("baseline plan status does not match feasibility status");
+  }
+  if (plan.status === "ready_for_paper_diagnostic") {
+    return;
+  }
+
+  const roleRegimeRunCounts: Record<string, number> = {};
+  for (const splitRole of VALIDATION_ROLE_ORDER) {
+    for (const targetRegime of feasibility.config.targetRegimes) {
+      roleRegimeRunCounts[`${splitRole}.${targetRegime}`] = 0;
+    }
+  }
+  const nonTargetCandidates = new Set<string>();
+  for (const assignment of feasibility.assignments) {
+    for (const candidate of assignment.candidates) {
+      if (
+        candidate.scopeAvailable &&
+        !isConfiguredTargetRegime(
+          candidate.regime,
+          feasibility.config.targetRegimes
+        )
+      ) {
+        nonTargetCandidates.add(
+          feasibilityRunKey(assignment.splitRole, candidate.candidateHash)
+        );
+      }
+    }
+  }
+  const expectedSummary: ValidationRoleRegimeReplayPlan["summary"] = {
+    requiredRoleRegimeCellCount:
+      VALIDATION_ROLE_ORDER.length * feasibility.config.targetRegimes.length,
+    coveredRoleRegimeCellCount: 0,
+    plannedRunCount: 0,
+    globalUniqueEvidenceGroupCount: 0,
+    crossRoleSharedEvidenceGroupCount: 0,
+    nonTargetCandidateCount: nonTargetCandidates.size,
+    roleRunCounts: { train: 0, validation: 0, test: 0 },
+    roleRegimeRunCounts
+  };
+  if (
+    createReplayResearchHash(plan.summary) !==
+    createReplayResearchHash(expectedSummary)
+  ) {
+    throw new Error("baseline non-ready plan summary mismatch");
+  }
+}
+
+function expectedFeasibilityRuns(
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): Map<
+  string,
+  {
+    startAt: string;
+    endAt: string;
+    targetRegime: ValidationRoleRegimeReplayPlan["runs"][number]["targetRegime"];
+    sourceAssignments: ValidationSplitRegimeFeasibilityArtifact["assignments"];
+  }
+> {
+  const expected = new Map<
+    string,
+    {
+      startAt: string;
+      endAt: string;
+      targetRegime: ValidationRoleRegimeReplayPlan["runs"][number]["targetRegime"];
+      sourceAssignments: ValidationSplitRegimeFeasibilityArtifact["assignments"];
+    }
+  >();
+  for (const assignment of feasibility.assignments) {
+    for (const candidate of assignment.candidates) {
+      if (
+        !candidate.scopeAvailable ||
+        !isConfiguredTargetRegime(
+          candidate.regime,
+          feasibility.config.targetRegimes
+        )
+      ) {
+        continue;
+      }
+      const key = feasibilityRunKey(
+        assignment.splitRole,
+        candidate.candidateHash
+      );
+      const existing = expected.get(key);
+      if (existing !== undefined) {
+        if (
+          existing.startAt !== candidate.startAt ||
+          existing.endAt !== candidate.endAt ||
+          existing.targetRegime !== candidate.regime
+        ) {
+          throw new Error(
+            `baseline feasibility candidate payload mismatch: ${candidate.candidateHash}`
+          );
+        }
+        existing.sourceAssignments.push(assignment);
+        continue;
+      }
+      expected.set(key, {
+        startAt: candidate.startAt,
+        endAt: candidate.endAt,
+        targetRegime: candidate.regime,
+        sourceAssignments: [assignment]
+      });
+    }
+  }
+  return expected;
+}
+
+function feasibilityRunKey(splitRole: string, candidateHash: string): string {
+  return `${splitRole}\u0000${candidateHash}`;
+}
+
+function isConfiguredTargetRegime(
+  regime: string,
+  targetRegimes: readonly ValidationRoleRegimeReplayPlan["config"]["targetRegimes"][number][]
+): regime is ValidationRoleRegimeReplayPlan["config"]["targetRegimes"][number] {
+  return targetRegimes.some((targetRegime) => targetRegime === regime);
 }
 
 function sameAssignmentWindow(

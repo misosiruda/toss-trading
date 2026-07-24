@@ -265,6 +265,49 @@ test("baseline verifier rejects classifier config provenance mismatch", () => {
   );
 });
 
+test("baseline verifier rejects non-ready plans for available feasibility", () => {
+  const feasibilityArtifact = readyFeasibilityFixture();
+  const planArtifact = planFixture(feasibilityArtifact);
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        feasibilityArtifact,
+        planArtifact,
+        readinessArtifact: readinessForPlan(planArtifact)
+      }),
+    /baseline plan status does not match feasibility status/
+  );
+});
+
+test("baseline verifier rejects plans that omit eligible candidates", () => {
+  const feasibilityArtifact = readyFeasibilityWithExtraTrainCandidate();
+  const reducedFeasibility = readyFeasibilityFixture();
+  const reducedPlan = readyBaselineFixtures(reducedFeasibility).planArtifact;
+  const relinkedPlan = withPlanHash({
+    ...reducedPlan,
+    source: {
+      ...reducedPlan.source,
+      feasibilityArtifactHash:
+        createValidationRoleRegimeFeasibilityArtifactHash(
+          feasibilityArtifact
+        ),
+      feasibilityStatus: feasibilityArtifact.status,
+      ...feasibilityArtifact.provenance
+    }
+  });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        feasibilityArtifact,
+        planArtifact: relinkedPlan,
+        readinessArtifact: readinessForPlan(relinkedPlan)
+      }),
+    /baseline plan runs do not exhaust feasibility candidates/
+  );
+});
+
 test("baseline verifier rejects plan runs absent from linked feasibility", () => {
   const feasibilityArtifact = readyFeasibilityFixture();
   const alternateFeasibility = structuredClone(feasibilityArtifact);
@@ -303,6 +346,28 @@ test("baseline verifier rejects plan runs absent from linked feasibility", () =>
         readinessArtifact: readinessForPlan(relinkedPlan)
       }),
     /baseline plan run does not match feasibility candidates/
+  );
+});
+
+test("baseline verifier rejects fabricated non-ready plan summary counts", () => {
+  const fixtures = baselineFixtures();
+  const planArtifact = withPlanHash({
+    ...fixtures.planArtifact,
+    summary: {
+      ...fixtures.planArtifact.summary,
+      coveredRoleRegimeCellCount: 1,
+      roleRunCounts: { train: 1, validation: 0, test: 0 }
+    }
+  });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        planArtifact,
+        readinessArtifact: readinessForPlan(planArtifact)
+      }),
+    /baseline non-ready plan summary mismatch/
   );
 });
 
@@ -536,6 +601,35 @@ function readyFeasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
   return artifact;
 }
 
+function readyFeasibilityWithExtraTrainCandidate(): ValidationSplitRegimeFeasibilityArtifact {
+  const artifact = readyFeasibilityFixture();
+  const trainAssignment = artifact.assignments.find(
+    (assignment) => assignment.splitRole === "train"
+  )!;
+  const candidate: ValidationSplitRegimeFeasibilityArtifact["assignments"][number]["candidates"][number] = {
+    startAt: "2023-02-01T00:00:00+09:00",
+    endAt: "2023-02-28T23:59:59.999+09:00",
+    regime: "bull" as const,
+    scopeAvailable: true,
+    candidateHash: hash("f")
+  };
+  candidate.candidateHash = candidateHash(artifact, candidate);
+  trainAssignment.candidates.push(candidate);
+  trainAssignment.structuralCapacityCount = 2;
+  trainAssignment.candidateCount = 2;
+  trainAssignment.regimeCounts.bull = 2;
+  artifact.summary.candidateCount = 4;
+  artifact.summary.uniqueCandidateCount = 4;
+  artifact.summary.roleCapacityCounts.train = 2;
+  const trainRole = artifact.roles.find(
+    (role) => role.splitRole === "train"
+  )!;
+  trainRole.structuralCapacityCount = 2;
+  trainRole.uniqueCandidateCount = 2;
+  trainRole.regimeCounts.bull = 2;
+  return artifact;
+}
+
 function readyAssignments(): ValidationSplitAssignment[] {
   const base = {
     validationProtocol: "walk_forward" as const,
@@ -601,6 +695,14 @@ function candidateHash(
 function planFixture(
   feasibility: ValidationSplitRegimeFeasibilityArtifact
 ): ValidationRoleRegimeReplayPlan {
+  const roleRegimeRunCounts = Object.fromEntries(
+    (["train", "validation", "test"] as const).flatMap((splitRole) =>
+      feasibility.config.targetRegimes.map((targetRegime) => [
+        `${splitRole}.${targetRegime}`,
+        0
+      ])
+    )
+  );
   const planWithoutHash: Omit<ValidationRoleRegimeReplayPlan, "planHash"> = {
     schemaVersion: "validation_role_regime_replay_plan.v1",
     mode: "paper_only",
@@ -625,14 +727,15 @@ function planFixture(
       regimeOrder: ["bull", "bear", "sideways", "mixed"]
     },
     summary: {
-      requiredRoleRegimeCellCount: 12,
+      requiredRoleRegimeCellCount:
+        3 * feasibility.config.targetRegimes.length,
       coveredRoleRegimeCellCount: 0,
       plannedRunCount: 0,
       globalUniqueEvidenceGroupCount: 0,
       crossRoleSharedEvidenceGroupCount: 0,
       nonTargetCandidateCount: 0,
       roleRunCounts: { train: 0, validation: 0, test: 0 },
-      roleRegimeRunCounts: {}
+      roleRegimeRunCounts
     },
     runs: [],
     warnings: []

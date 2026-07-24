@@ -473,7 +473,10 @@ config 및 count 연결을 fail-closed로 검증한다. `invalid` baseline statu
 evidence는 plan run에서 재구성한 deterministic 집계와 일치해야 한다.
 Feasibility candidate hash는 config와 provenance에서 재계산하며 plan run은
 동일 role, window, regime, hash 및 source assignment를 가진 scope-available
-feasibility candidate에 연결되어야 한다. Expansion source verifier와
+feasibility candidate에 연결되어야 한다. Available feasibility의 모든
+scope-available target candidate는 exhaustive plan run에 포함되어야 하며,
+insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
+재계산한 값과 일치시킨다. Expansion source verifier와
 명시적인 result-metric input 분류, capacity builder, preflight canonical hash
 검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
 
