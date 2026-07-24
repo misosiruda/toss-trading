@@ -198,7 +198,40 @@ test("expansion source verifier rejects duplicate validation assignments", () =>
           fixtures.assignments[0]!
         ]
       }),
-    /duplicate expansion validation assignment/
+    /duplicate validation assignment/
+  );
+});
+
+test("expansion source verifier rejects validation splits missing roles", () => {
+  const fixtures = sourceFixtures();
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionSource({
+        ...fixtures,
+        validationSplitSource: [fixtures.assignments[0]!]
+      }),
+    /validation split is missing required roles/
+  );
+});
+
+test("expansion source verifier rejects inconsistent split definitions", () => {
+  const fixtures = sourceFixtures();
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionSource({
+        ...fixtures,
+        validationSplitSource: fixtures.assignments.map((assignment) =>
+          assignment.splitRole === "validation"
+            ? {
+                ...assignment,
+                validationEnd: "2024-09-29T23:59:59.999+09:00"
+              }
+            : assignment
+        )
+      }),
+    /validation role assignments use inconsistent split definition/
   );
 });
 

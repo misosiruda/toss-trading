@@ -665,7 +665,7 @@ export function buildValidationSplitRegimeFeasibilityArtifact(
       )
     )
     .sort(compareValidationAssignments);
-  assertUniqueValidationAssignments(assignments);
+  assertValidValidationSplitAssignments(assignments);
   const validationSplit = validateValidationSplitSourceAssignments(
     options.validationSplit,
     assignments
@@ -1027,8 +1027,8 @@ function compareValidationAssignments(
   );
 }
 
-function assertUniqueValidationAssignments(
-  assignments: ValidationSplitAssignment[]
+export function assertValidValidationSplitAssignments(
+  assignments: readonly ValidationSplitAssignment[]
 ): void {
   const identities = new Set<string>();
   const splitIdsByIndex = new Map<number, string>();

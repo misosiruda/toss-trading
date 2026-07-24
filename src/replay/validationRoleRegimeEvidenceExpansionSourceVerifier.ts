@@ -15,6 +15,7 @@ import {
   VALIDATION_ROLE_ORDER
 } from "./validationRoleRegimeReplayPlan.js";
 import {
+  assertValidValidationSplitAssignments,
   feasibilityCoverageSourceSchema,
   validationSplitSourceSchema
 } from "./validationSplitRegimeFeasibility.js";
@@ -72,7 +73,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
   const assignments = Array.isArray(validationSplitSource)
     ? validationSplitSource
     : validationSplitSource.assignments;
-  assertUniqueAssignments(assignments);
+  assertValidValidationSplitAssignments(assignments);
 
   return {
     snapshots,
@@ -193,23 +194,6 @@ function assertSnapshotsInsideUniverse(
     if (!universeSymbols.has(key)) {
       throw new Error(`expansion snapshot is outside universe: ${key}`);
     }
-  }
-}
-
-function assertUniqueAssignments(
-  assignments: readonly ValidationSplitAssignment[]
-): void {
-  const assignmentKeys = new Set<string>();
-  for (const assignment of assignments) {
-    const key = [
-      assignment.splitIndex,
-      assignment.splitId,
-      assignment.splitRole
-    ].join(":");
-    if (assignmentKeys.has(key)) {
-      throw new Error(`duplicate expansion validation assignment: ${key}`);
-    }
-    assignmentKeys.add(key);
   }
 }
 
