@@ -116,6 +116,31 @@ test("input boundary rejects selection trial outcome fields", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects selection trial selection fields", () => {
+  const input = allowedInput();
+  const selection = {
+    selected: true,
+    selectedBy: "metric",
+    selectedAt: "2026-07-24T00:00:00.000Z",
+    selectionReason: "prior result"
+  };
+  input.expansion.coverage = { selectionTrial: { selection } };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(selection)
+      .map(
+        (key) => `$.expansion.coverage.selectionTrial.selection.${key}`
+      )
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary rejects compound replay performance metric keys", () => {
   const input = allowedInput();
   input.expansion.coverage = {
@@ -341,6 +366,18 @@ test("input schema rejects null, empty, and scalar required sources", () => {
   for (const input of invalidInputs) {
     assert.equal(
       validationRoleRegimeEvidenceExpansionInputSchema.safeParse(input).success,
+      false
+    );
+  }
+});
+
+test("input schema rejects malformed supplied official calendar artifacts", () => {
+  for (const officialCalendarArtifact of [null, {}, [], "invalid"]) {
+    assert.equal(
+      validationRoleRegimeEvidenceExpansionInputSchema.safeParse({
+        ...allowedInput(),
+        officialCalendarArtifact
+      }).success,
       false
     );
   }

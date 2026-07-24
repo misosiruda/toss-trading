@@ -2,6 +2,9 @@ import { z } from "zod";
 
 import { virtualPortfolioSchema } from "../domain/schemas.js";
 import {
+  officialMarketCalendarEvidenceArtifactSchema
+} from "./officialMarketCalendarEvidence.js";
+import {
   evidenceExpansionPreflightBlockerSchema,
   type EvidenceExpansionPreflightBlocker
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
@@ -35,7 +38,8 @@ export const validationRoleRegimeEvidenceExpansionInputSchema = z
     baseline: baselineInputSchema,
     expansion: expansionInputSchema,
     calendarValidation: requiredInputSourceSchema,
-    officialCalendarArtifact: z.unknown().optional(),
+    officialCalendarArtifact:
+      officialMarketCalendarEvidenceArtifactSchema.optional(),
     marketRegimeClassifier: requiredInputSourceSchema,
     targetMatrix: requiredInputSourceSchema,
     dependencyDiagnosticPolicy: requiredInputSourceSchema
@@ -152,6 +156,10 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "rejectedcount",
   "skipreason",
   "reportpath",
+  "selected",
+  "selectedby",
+  "selectedat",
+  "selectionreason",
   "airationale",
   "recommendation",
   "action",

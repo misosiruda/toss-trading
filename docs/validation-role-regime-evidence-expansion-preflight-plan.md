@@ -493,8 +493,10 @@ fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에�
 `totalReturnRatio`, `costAdjustedTotalReturnRatio`, `maxDrawdownRatio`,
 `profitFactor`, `sharpeRatio` 같은 compound result key와 selection trial의
 `finalVirtualNetWorthKrw`, trade/AI failure/rejection count, skip reason 및
-report path를 명시적으로 차단한다. 중립 wrapper 아래의 object도 strict
-`virtualPortfolioSchema`와 일치하면 virtual portfolio root path를 차단한다.
+report path를 명시적으로 차단한다. Selection state의 `selected`,
+`selectedBy`, `selectedAt`, `selectionReason`도 차단한다. 중립 wrapper
+아래의 object도 strict `virtualPortfolioSchema`와 일치하면 virtual
+portfolio root path를 차단한다.
 허용 source evidence의 `averageReturnRatio`처럼 용도가 다른 field를
 오탐하지 않도록 임의의 `*ReturnRatio` suffix 전체를 차단하지는 않는다.
 Batch aggregate의
@@ -504,9 +506,11 @@ selection/holdout return metric, rank, degradation 및 PBO result key도
 결과 입력으로 차단한다. CPCV selection record의 selected train/test
 metric, test rank percentile 및 tie-break result도 입력으로 허용하지
 않는다.
-Virtual position/trade의 realized/unrealized PnL key도 차단한다. Optional
-official calendar artifact 외의 모든 allowlisted source는 field 누락이나
-명시적 `undefined`, `null`, 빈 object/array 또는 scalar를 허용하지 않는다.
+Virtual position/trade의 realized/unrealized PnL key도 차단한다. Official
+calendar artifact는 생략할 수 있지만 제공 시
+`officialMarketCalendarEvidenceArtifactSchema`를 통과해야 한다. 나머지
+allowlisted source는 field 누락이나 명시적 `undefined`, `null`, 빈
+object/array 또는 scalar를 허용하지 않는다.
 Sharpe validation의 sample, Lo-adjusted, probabilistic 및 deflated
 metric과 read-only summary의 namespaced status/value/probability key도
 결과 입력으로 차단한다. Selection context의 `selectedByMetric`도 selection
