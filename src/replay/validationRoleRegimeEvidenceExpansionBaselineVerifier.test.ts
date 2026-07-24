@@ -22,6 +22,7 @@ import {
   createValidationRoleRegimeStatisticalReadinessArtifactHash,
   verifyValidationRoleRegimeEvidenceExpansionBaseline
 } from "./validationRoleRegimeEvidenceExpansionBaselineVerifier.js";
+import { createReplayResearchHash } from "./replayRunManifest.js";
 
 test("baseline verifier accepts a consistent paper-only artifact chain", () => {
   const fixtures = baselineFixtures();
@@ -174,7 +175,8 @@ test("baseline verifier normalizes feasibility target regime order", () => {
     verifyValidationRoleRegimeEvidenceExpansionBaseline({
       feasibilityArtifact,
       planArtifact,
-      readinessArtifact: readinessForPlan(planArtifact)
+      readinessArtifact: readinessForPlan(planArtifact),
+      validationSplitSource: []
     })
   );
 });
@@ -290,7 +292,8 @@ test("baseline verifier rejects non-ready plans for available feasibility", () =
       verifyValidationRoleRegimeEvidenceExpansionBaseline({
         feasibilityArtifact,
         planArtifact,
-        readinessArtifact: readinessForPlan(planArtifact)
+        readinessArtifact: readinessForPlan(planArtifact),
+        validationSplitSource: readyAssignments()
       }),
     /baseline plan status does not match feasibility status/
   );
@@ -318,7 +321,8 @@ test("baseline verifier rejects plans that omit eligible candidates", () => {
       verifyValidationRoleRegimeEvidenceExpansionBaseline({
         feasibilityArtifact,
         planArtifact: relinkedPlan,
-        readinessArtifact: readinessForPlan(relinkedPlan)
+        readinessArtifact: readinessForPlan(relinkedPlan),
+        validationSplitSource: readyAssignments()
       }),
     /baseline plan runs do not exhaust feasibility candidates/
   );
@@ -359,9 +363,29 @@ test("baseline verifier rejects plan runs absent from linked feasibility", () =>
       verifyValidationRoleRegimeEvidenceExpansionBaseline({
         feasibilityArtifact,
         planArtifact: relinkedPlan,
-        readinessArtifact: readinessForPlan(relinkedPlan)
+        readinessArtifact: readinessForPlan(relinkedPlan),
+        validationSplitSource: readyAssignments()
       }),
     /baseline plan run does not match feasibility candidates/
+  );
+});
+
+test("baseline verifier rejects mutated full source assignment payloads", () => {
+  const fixtures = readyBaselineFixtures();
+  const planArtifact = structuredClone(fixtures.planArtifact);
+  const run = planArtifact.runs[0]!;
+  run.sourceAssignments[0]!.purgeDurationDays = 1;
+  run.executionAssignment.purgeDurationDays = 1;
+  planArtifact.planHash = createValidationRoleRegimeReplayPlanHash(planArtifact);
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionBaseline({
+        ...fixtures,
+        planArtifact,
+        readinessArtifact: readinessForPlan(planArtifact)
+      }),
+    /baseline plan source assignment does not match validation split source/
   );
 });
 
@@ -432,6 +456,7 @@ function baselineFixtures(
   feasibilityArtifact: ValidationSplitRegimeFeasibilityArtifact;
   planArtifact: ValidationRoleRegimeReplayPlan;
   readinessArtifact: ValidationRoleRegimeStatisticalReadinessArtifact;
+  validationSplitSource: ValidationSplitAssignment[];
 } {
   const planArtifact = planFixture(feasibilityArtifact);
   const readinessArtifact =
@@ -445,7 +470,12 @@ function baselineFixtures(
       },
       evidenceRows: []
     });
-  return { feasibilityArtifact, planArtifact, readinessArtifact };
+  return {
+    feasibilityArtifact,
+    planArtifact,
+    readinessArtifact,
+    validationSplitSource: []
+  };
 }
 
 function readyBaselineFixtures(
@@ -454,6 +484,7 @@ function readyBaselineFixtures(
   feasibilityArtifact: ValidationSplitRegimeFeasibilityArtifact;
   planArtifact: ValidationRoleRegimeReplayPlan;
   readinessArtifact: ValidationRoleRegimeStatisticalReadinessArtifact;
+  validationSplitSource: ValidationSplitAssignment[];
 } {
   const planArtifact = buildValidationRoleRegimeReplayPlan({
     feasibilityArtifact,
@@ -462,7 +493,12 @@ function readyBaselineFixtures(
     calendarEvidenceClass: "observed_session_only"
   });
   const readinessArtifact = readinessForPlan(planArtifact);
-  return { feasibilityArtifact, planArtifact, readinessArtifact };
+  return {
+    feasibilityArtifact,
+    planArtifact,
+    readinessArtifact,
+    validationSplitSource: readyAssignments()
+  };
 }
 
 function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
@@ -498,7 +534,7 @@ function feasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
       dataSnapshotHash: sourceHash,
       universeHash: sourceHash,
       coverageHash: sourceHash,
-      validationSplitHash: sourceHash,
+      validationSplitHash: createReplayResearchHash([]),
       calendarHash: sourceHash,
       marketRegimeClassifierHash:
         createValidationFeasibilityClassifierHash(marketRegimeClassifier)
@@ -609,6 +645,9 @@ function readyFeasibilityFixture(): ValidationSplitRegimeFeasibilityArtifact {
     })),
     assignments
   };
+  artifact.provenance.validationSplitHash = createReplayResearchHash(
+    readyAssignments()
+  );
   for (const assignment of artifact.assignments) {
     for (const candidate of assignment.candidates) {
       candidate.candidateHash = candidateHash(artifact, candidate);

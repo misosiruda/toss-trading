@@ -2,6 +2,7 @@ import type { Sha256Hash } from "../domain/schemas.js";
 import {
   createValidationFeasibilityCandidateHash,
   createValidationFeasibilityClassifierHash,
+  validationSplitSourceSchema,
   validationSplitRegimeFeasibilityArtifactSchema,
   type ValidationSplitRegimeFeasibilityArtifact
 } from "./validationSplitRegimeFeasibility.js";
@@ -19,12 +20,14 @@ import {
   type ValidationRoleRegimeStatisticalReadinessArtifact
 } from "./validationRoleRegimeStatisticalReadiness.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
+import type { ValidationSplitAssignment } from "./validationProtocol.js";
 import { validationRoleWindow } from "./validationRoleWindow.js";
 
 export interface VerifyValidationRoleRegimeEvidenceExpansionBaselineOptions {
   feasibilityArtifact: unknown;
   planArtifact: unknown;
   readinessArtifact: unknown;
+  validationSplitSource: unknown;
 }
 
 export interface VerifiedValidationRoleRegimeEvidenceExpansionBaseline {
@@ -52,10 +55,19 @@ export function verifyValidationRoleRegimeEvidenceExpansionBaseline(
   assertBaselineStatusesAreUsable(feasibility, plan, readiness);
   assertFeasibilityClassifierHash(feasibility);
   assertFeasibilityCandidateHashes(feasibility);
+  const validationSplitAssignments = verifyValidationSplitSource(
+    options.validationSplitSource,
+    feasibility
+  );
   const feasibilityArtifactHash =
     createValidationRoleRegimeFeasibilityArtifactHash(feasibility);
 
-  assertPlanMatchesFeasibility(plan, feasibility, feasibilityArtifactHash);
+  assertPlanMatchesFeasibility(
+    plan,
+    feasibility,
+    feasibilityArtifactHash,
+    validationSplitAssignments
+  );
   assertReadinessMatchesPlan(readiness, plan);
 
   return {
@@ -102,7 +114,8 @@ function assertBaselineStatusesAreUsable(
 function assertPlanMatchesFeasibility(
   plan: ValidationRoleRegimeReplayPlan,
   feasibility: ValidationSplitRegimeFeasibilityArtifact,
-  feasibilityArtifactHash: Sha256Hash
+  feasibilityArtifactHash: Sha256Hash,
+  validationSplitAssignments: ReadonlyMap<string, ValidationSplitAssignment>
 ): void {
   if (
     plan.source.feasibilitySchemaVersion !== feasibility.schemaVersion ||
@@ -140,7 +153,11 @@ function assertPlanMatchesFeasibility(
   }
 
   assertPlanStatusAndSummary(plan, feasibility);
-  assertPlanRunsMatchFeasibility(plan, feasibility);
+  assertPlanRunsMatchFeasibility(
+    plan,
+    feasibility,
+    validationSplitAssignments
+  );
 }
 
 function assertReadinessMatchesPlan(
@@ -262,7 +279,8 @@ function assertFeasibilityClassifierHash(
 
 function assertPlanRunsMatchFeasibility(
   plan: ValidationRoleRegimeReplayPlan,
-  feasibility: ValidationSplitRegimeFeasibilityArtifact
+  feasibility: ValidationSplitRegimeFeasibilityArtifact,
+  validationSplitAssignments: ReadonlyMap<string, ValidationSplitAssignment>
 ): void {
   if (plan.status !== "ready_for_paper_diagnostic") {
     return;
@@ -296,12 +314,16 @@ function assertPlanRunsMatchFeasibility(
         const feasibilityAssignment = expectedRun.sourceAssignments.find(
           (candidate) => feasibilityAssignmentKey(candidate) === key
         );
+        const sourceAssignment = validationSplitAssignments.get(key);
         if (
           feasibilityAssignment === undefined ||
-          !sameAssignmentWindow(feasibilityAssignment, assignment)
+          !sameAssignmentWindow(feasibilityAssignment, assignment) ||
+          sourceAssignment === undefined ||
+          createReplayResearchHash(sourceAssignment) !==
+            createReplayResearchHash(assignment)
         ) {
           throw new Error(
-            `baseline plan source assignment does not match feasibility: ${run.runKey}`
+            `baseline plan source assignment does not match validation split source: ${run.runKey}`
           );
         }
         return key;
@@ -323,6 +345,65 @@ function assertPlanRunsMatchFeasibility(
       "baseline plan runs do not exhaust feasibility candidates"
     );
   }
+}
+
+function verifyValidationSplitSource(
+  value: unknown,
+  feasibility: ValidationSplitRegimeFeasibilityArtifact
+): Map<string, ValidationSplitAssignment> {
+  const parsed = validationSplitSourceSchema.parse(value);
+  const assignments = [
+    ...(Array.isArray(parsed) ? parsed : parsed.assignments)
+  ].sort(compareValidationSplitAssignments);
+  const normalizedSource = Array.isArray(parsed)
+    ? assignments
+    : { ...parsed, assignments };
+  if (
+    createReplayResearchHash(normalizedSource) !==
+    feasibility.provenance.validationSplitHash
+  ) {
+    throw new Error("baseline validation split source hash mismatch");
+  }
+
+  const indexed = new Map<string, ValidationSplitAssignment>();
+  for (const assignment of assignments) {
+    const key = feasibilityAssignmentKey(assignment);
+    if (indexed.has(key)) {
+      throw new Error(`duplicate baseline validation split assignment: ${key}`);
+    }
+    indexed.set(key, assignment);
+  }
+  if (indexed.size !== feasibility.assignments.length) {
+    throw new Error(
+      "baseline validation split assignments do not match feasibility"
+    );
+  }
+  for (const feasibilityAssignment of feasibility.assignments) {
+    const sourceAssignment = indexed.get(
+      feasibilityAssignmentKey(feasibilityAssignment)
+    );
+    if (
+      sourceAssignment === undefined ||
+      !sameAssignmentWindow(feasibilityAssignment, sourceAssignment)
+    ) {
+      throw new Error(
+        "baseline validation split assignments do not match feasibility"
+      );
+    }
+  }
+  return indexed;
+}
+
+function compareValidationSplitAssignments(
+  left: ValidationSplitAssignment,
+  right: ValidationSplitAssignment
+): number {
+  return (
+    left.splitIndex - right.splitIndex ||
+    compareStrings(left.splitId, right.splitId) ||
+    VALIDATION_ROLE_ORDER.indexOf(left.splitRole) -
+      VALIDATION_ROLE_ORDER.indexOf(right.splitRole)
+  );
 }
 
 function assertPlanStatusAndSummary(
