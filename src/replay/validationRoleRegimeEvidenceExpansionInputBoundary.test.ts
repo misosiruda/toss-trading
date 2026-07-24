@@ -71,6 +71,51 @@ test("input boundary rejects forbidden result artifacts on the command surface",
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects virtual portfolio shapes under neutral keys", () => {
+  const input = allowedInput();
+  input.expansion.coverage = {
+    payload: {
+      portfolioId: "portfolio-1",
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-07-24T00:00:00.000Z"
+    }
+  };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(result.forbiddenPaths, ["$.expansion.coverage.payload"]);
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
+test("input boundary rejects selection trial outcome fields", () => {
+  const input = allowedInput();
+  const outcome = {
+    tradeCount: 0,
+    aiDecisionFailureCount: 0,
+    rejectedCount: 0,
+    skipReason: null,
+    reportPath: null
+  };
+  input.expansion.coverage = { selectionTrial: { outcome } };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(outcome)
+      .map(
+        (key) => `$.expansion.coverage.selectionTrial.outcome.${key}`
+      )
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary rejects compound replay performance metric keys", () => {
   const input = allowedInput();
   input.expansion.coverage = {

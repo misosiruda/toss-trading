@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { virtualPortfolioSchema } from "../domain/schemas.js";
 import {
   evidenceExpansionPreflightBlockerSchema,
   type EvidenceExpansionPreflightBlocker
@@ -146,6 +147,11 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "holdoutdegradationcount",
   "degradationfromtrainratio",
   "selectedbelowmedian",
+  "tradecount",
+  "aidecisionfailurecount",
+  "rejectedcount",
+  "skipreason",
+  "reportpath",
   "airationale",
   "recommendation",
   "action",
@@ -205,6 +211,11 @@ function collectForbiddenResultInputPaths(
         visited
       );
     });
+    return;
+  }
+
+  if (virtualPortfolioSchema.safeParse(value).success) {
+    paths.push(path);
     return;
   }
 

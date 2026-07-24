@@ -492,9 +492,12 @@ fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에�
 분류에 포함하지 않는다. `ReplayPerformanceMetrics`의
 `totalReturnRatio`, `costAdjustedTotalReturnRatio`, `maxDrawdownRatio`,
 `profitFactor`, `sharpeRatio` 같은 compound result key와 selection trial의
-`finalVirtualNetWorthKrw`를 명시적으로 차단한다. 허용 source evidence의
-`averageReturnRatio`처럼 용도가 다른 field를 오탐하지 않도록 임의의
-`*ReturnRatio` suffix 전체를 차단하지는 않는다. Batch aggregate의
+`finalVirtualNetWorthKrw`, trade/AI failure/rejection count, skip reason 및
+report path를 명시적으로 차단한다. 중립 wrapper 아래의 object도 strict
+`virtualPortfolioSchema`와 일치하면 virtual portfolio root path를 차단한다.
+허용 source evidence의 `averageReturnRatio`처럼 용도가 다른 field를
+오탐하지 않도록 임의의 `*ReturnRatio` suffix 전체를 차단하지는 않는다.
+Batch aggregate의
 `averageTotalReturnRatio`, `medianTotalReturnRatio`, `winRate`,
 selection/holdout return metric, rank, degradation 및 PBO result key도
 동일하게 차단한다. Holdout degradation collection과 summary count도
