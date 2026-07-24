@@ -126,6 +126,7 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "taillossratio",
   "drawdown",
   "selectionmetric",
+  "selectedbymetric",
   "candidaterank",
   "selectedrank",
   "selectedcandidatekey",

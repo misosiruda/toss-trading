@@ -213,7 +213,8 @@ test("input boundary rejects namespaced Sharpe validation results", () => {
     deflatedSharpeRatioStatus: "computed",
     deflatedSharpeRatioProbability: 0.6,
     benchmarkSharpeRatio: 0,
-    trialSharpeRatioStandardDeviation: 0.1
+    trialSharpeRatioStandardDeviation: 0.1,
+    selectedByMetric: "sharpe_ratio"
   };
   input.expansion.coverage = { sharpeResults };
 
