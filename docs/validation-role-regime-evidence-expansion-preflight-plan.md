@@ -195,7 +195,7 @@ Baseline과 expansion candidate는 서로 다른 두 identity를 가진다.
 
 ### Existing hash compatibility
 
-Baseline `validation_split_regime_feasibility.v1`의 `candidateHash`는 기존 `createValidationFeasibilityCandidateHash()` payload와 helper로만 재검증한다. 새 field를 기존 hash payload에 추가하거나 hash equality를 새 preflight identity와 비교하지 않는다.
+Baseline `validation_split_regime_feasibility.v1`의 `marketRegimeClassifierHash`는 기존 `createValidationFeasibilityClassifierHash()`로 classifier config에서 재계산한다. `candidateHash`는 기존 `createValidationFeasibilityCandidateHash()` payload와 helper로만 재검증한다. 새 field를 기존 hash payload에 추가하거나 hash equality를 새 preflight identity와 비교하지 않는다.
 
 현재 `validation_role_regime_replay_plan.v1`의 `candidateHash`와 `evidenceGroupHash`가 같은 값인 계약도 source artifact 검증에서는 그대로 유지한다. 이 기존 `evidenceGroupHash`는 baseline plan provenance를 검증하는 legacy field이며, baseline과 expansion 사이의 preflight deduplication key로 사용하지 않는다.
 
@@ -464,9 +464,24 @@ Object key insertion order, raw JSON whitespace 또는 source file 입력 순서
 각 단계는 뒤 단계의 실행 또는 readiness 통과를 주장하지 않는다. Expanded paper-only replay는 preflight가 `ready_for_expansion_replay`인 별도 artifact를 제공할 때만 다음 PR에서 실행한다.
 
 현재 1단계는 `validationRoleRegimeEvidenceExpansionPreflight.ts`의 strict
-schema와 합성 fixture contract test로 구현했다. Source verifier, capacity
-builder, canonical hash 검증, writer, CLI와 실제 preflight artifact는 아직
-구현하지 않았다.
+schema와 합성 fixture contract test로 구현했다. 2단계의 첫 범위로
+`validationRoleRegimeEvidenceExpansionBaselineVerifier.ts`가 baseline
+feasibility, plan, readiness artifact의 strict schema와 hash, provenance,
+config 및 count 연결을 fail-closed로 검증한다. `invalid` baseline status는
+검증 결과로 반환하지 않으며 readiness blocker는 canonical key 순서로
+정규화한 뒤 hash한다. Feasibility target regime은 plan의 canonical regime
+순서로 정규화한 뒤 config를 비교한다. Readiness의 role-local, role-exclusive 및 role-regime
+evidence는 plan run에서 재구성한 deterministic 집계와 일치해야 한다.
+Feasibility candidate hash는 config와 provenance에서 재계산하며 plan run은
+동일 role, window, regime, hash 및 source assignment를 가진 scope-available
+feasibility candidate에 연결되어야 한다. Available feasibility의 모든
+scope-available target candidate는 exhaustive plan run에 포함되어야 하며,
+insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
+재계산한 값과 일치시킨다. Baseline validation split assignment source는
+`validationSplitHash`와 feasibility role window를 재검증하며 plan에 기록된
+전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion source verifier와
+명시적인 result-metric input 분류, capacity builder, preflight canonical hash
+검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
 
 ## 이번 문서 PR의 완료 기준
 
