@@ -166,6 +166,11 @@ test("input boundary rejects CPCV selection result fields", () => {
 test("input boundary rejects namespaced Sharpe validation results", () => {
   const input = allowedInput();
   const sharpeResults = {
+    returnSampleCount: 30,
+    meanReturnRatio: 0.01,
+    volatilityRatio: 0.04,
+    skewness: -0.2,
+    excessKurtosis: 0.5,
     sampleSharpe: {},
     sampleSharpeStatus: "computed",
     sampleSharpeValue: 0.8,
