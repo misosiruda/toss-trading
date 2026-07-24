@@ -480,8 +480,16 @@ insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
 재계산한 값과 일치시킨다. Baseline validation split assignment source는
 `validationSplitHash`와 feasibility role window를 재검증하며 plan에 기록된
 전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion source verifier와
-명시적인 result-metric input 분류, capacity builder, preflight canonical hash
-검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
+capacity builder, preflight canonical hash 검증, writer, CLI와 실제 preflight
+artifact는 아직 구현하지 않았다.
+
+`validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
+입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
+policy의 strict allowlist로 제한한다. 어느 깊이에서든 result artifact,
+성과 metric, selection 결과 또는 AI action key가 발견되면 경로를 canonical
+정렬하고 `RESULT_METRIC_INPUT_FORBIDDEN` blocker가 있는 `invalid` 결과로
+fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에는 key 기반
+분류에 포함하지 않는다.
 
 ## 이번 문서 PR의 완료 기준
 
