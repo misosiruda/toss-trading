@@ -217,6 +217,10 @@ test("input boundary rejects batch aggregate result metric keys", () => {
     degradationFromTrainRatio: -0.07,
     selectedRank: 2,
     selectedBelowMedian: false,
+    totalAiDecisionFailureCount: 3,
+    totalRejectedCount: 4,
+    totalMeaningfulRejectCount: 2,
+    totalDustRejectCount: 2,
     pboLikeScore: 0.4,
     pboProbability: 0.4,
     targetReturnHitRates: []

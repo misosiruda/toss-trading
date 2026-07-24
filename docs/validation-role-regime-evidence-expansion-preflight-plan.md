@@ -502,11 +502,13 @@ strict `virtualPortfolioSchema`와 일치하면 virtual portfolio root path를
 오탐하지 않도록 임의의 `*ReturnRatio` suffix 전체를 차단하지는 않는다.
 Batch aggregate의
 `averageTotalReturnRatio`, `medianTotalReturnRatio`, `winRate`,
-selection/holdout return metric, rank, degradation 및 PBO result key도
-동일하게 차단한다. Holdout degradation collection과 summary count도
-결과 입력으로 차단한다. CPCV selection record의 selected train/test
-metric, test rank percentile 및 tie-break result도 입력으로 허용하지
-않는다.
+selection/holdout return metric, rank, degradation, PBO result key와
+`totalAiDecisionFailureCount`, `totalRejectedCount`,
+`totalMeaningfulRejectCount`, `totalDustRejectCount`도 동일하게 차단한다.
+Result count의 `total*` prefix 변형은 제한된 forbidden suffix matcher로
+차단한다. Holdout degradation collection과 summary count도 결과 입력으로
+차단한다. CPCV selection record의 selected train/test metric, test rank
+percentile 및 tie-break result도 입력으로 허용하지 않는다.
 Virtual position/trade의 realized/unrealized PnL key도 차단한다. Official
 calendar artifact는 생략할 수 있지만 제공 시
 `officialMarketCalendarEvidenceArtifactSchema`를 통과해야 한다. 나머지

@@ -168,6 +168,13 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "actions"
 ]);
 
+const FORBIDDEN_RESULT_INPUT_KEY_SUFFIXES = [
+  "aidecisionfailurecount",
+  "rejectedcount",
+  "meaningfulrejectcount",
+  "dustrejectcount"
+] as const;
+
 export function validateValidationRoleRegimeEvidenceExpansionInputBoundary(
   value: unknown
 ): ValidationRoleRegimeEvidenceExpansionInputBoundaryResult {
@@ -231,11 +238,21 @@ function collectForbiddenResultInputPaths(
 
   for (const [key, entry] of Object.entries(value)) {
     const entryPath = `${path}.${key}`;
-    if (FORBIDDEN_RESULT_INPUT_KEYS.has(normalizeInputKey(key))) {
+    if (isForbiddenResultInputKey(key)) {
       paths.push(entryPath);
     }
     collectForbiddenResultInputPaths(entry, entryPath, paths, visited);
   }
+}
+
+function isForbiddenResultInputKey(value: string): boolean {
+  const normalized = normalizeInputKey(value);
+  return (
+    FORBIDDEN_RESULT_INPUT_KEYS.has(normalized) ||
+    FORBIDDEN_RESULT_INPUT_KEY_SUFFIXES.some((suffix) =>
+      normalized.endsWith(suffix)
+    )
+  );
 }
 
 function normalizeInputKey(value: string): string {
