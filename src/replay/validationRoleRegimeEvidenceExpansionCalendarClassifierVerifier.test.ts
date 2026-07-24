@@ -160,6 +160,25 @@ test("calendar/classifier verifier rejects legacy fixtures that conflict with of
   );
 });
 
+test("calendar/classifier verifier rejects official sessions absent from legacy fixtures", () => {
+  const calendarValidation = calendarSource();
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionCalendarClassifier({
+        calendarValidation,
+        marketRegimeClassifier: classifier,
+        officialCalendarArtifact: officialArtifactWithAdditionalSessionDate(),
+        asOf: "2025-03-12T00:00:00.000Z",
+        baselineCalendarHash:
+          createValidationFeasibilityCalendarHash(calendarValidation),
+        baselineMarketRegimeClassifierHash:
+          createValidationFeasibilityClassifierHash(classifier)
+      }),
+    /official session is missing calendar fixture: KRX:2025-03-11/
+  );
+});
+
 test("calendar/classifier verifier rejects unknown source fields", () => {
   const calendarValidation = calendarSource();
 
@@ -299,6 +318,40 @@ function officialArtifact(): OfficialMarketCalendarEvidenceArtifact {
   return {
     ...payload,
     artifactHash: createOfficialMarketCalendarEvidenceHash(payload)
+  };
+}
+
+function officialArtifactWithAdditionalSessionDate(): OfficialMarketCalendarEvidenceArtifact {
+  const artifact = officialArtifact();
+  const { artifactHash: _artifactHash, ...payload } = artifact;
+  const extendedPayload: OfficialMarketCalendarEvidencePayload = {
+    ...payload,
+    coverage: {
+      ...payload.coverage,
+      endDate: "2025-03-11"
+    },
+    sessions: [
+      payload.sessions[0]!,
+      {
+        ...payload.sessions[0]!,
+        sessionId: "krx-session-2025-03-11",
+        sessionDate: "2025-03-11",
+        marketOpen: "2025-03-11T09:00:00.000+09:00",
+        marketClose: "2025-03-11T15:30:00.000+09:00"
+      },
+      payload.sessions[1]!,
+      {
+        ...payload.sessions[1]!,
+        sessionId: "nyse-session-2025-03-11",
+        sessionDate: "2025-03-11",
+        marketOpen: "2025-03-11T09:30:00.000-04:00",
+        marketClose: "2025-03-11T16:00:00.000-04:00"
+      }
+    ]
+  };
+  return {
+    ...extendedPayload,
+    artifactHash: createOfficialMarketCalendarEvidenceHash(extendedPayload)
   };
 }
 

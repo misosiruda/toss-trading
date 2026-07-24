@@ -183,6 +183,19 @@ function assertCalendarMatchesOfficialEvidence(
       session
     ])
   );
+  const fixtureKeys = new Set(
+    calendarValidation.fixtures.map(
+      (fixture) => `${fixture.exchange}:${fixture.sessionDate}`
+    )
+  );
+  for (const session of official.sessions) {
+    const key = `${session.exchange}:${session.sessionDate}`;
+    if (!fixtureKeys.has(key)) {
+      throw new Error(
+        `official session is missing calendar fixture: ${key}`
+      );
+    }
+  }
   for (const fixture of calendarValidation.fixtures) {
     const session = officialSessions.get(
       `${fixture.exchange}:${fixture.sessionDate}`
