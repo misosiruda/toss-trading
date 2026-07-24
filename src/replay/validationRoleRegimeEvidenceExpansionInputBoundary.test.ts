@@ -161,6 +161,38 @@ test("input boundary rejects CPCV selection result fields", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects namespaced Sharpe validation results", () => {
+  const input = allowedInput();
+  const sharpeResults = {
+    sampleSharpe: {},
+    sampleSharpeStatus: "computed",
+    sampleSharpeValue: 0.8,
+    loAdjustedSharpe: {},
+    loAdjustedSharpeStatus: "computed",
+    probabilisticSharpeRatio: {},
+    probabilisticSharpeRatioStatus: "computed",
+    probabilisticSharpeRatioProbability: 0.7,
+    deflatedSharpeRatio: {},
+    deflatedSharpeRatioStatus: "computed",
+    deflatedSharpeRatioProbability: 0.6,
+    benchmarkSharpeRatio: 0,
+    trialSharpeRatioStandardDeviation: 0.1
+  };
+  input.expansion.coverage = { sharpeResults };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(sharpeResults)
+      .map((key) => `$.expansion.coverage.sharpeResults.${key}`)
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary keeps unknown non-result options fail-closed", () => {
   assert.throws(() =>
     validateValidationRoleRegimeEvidenceExpansionInputBoundary({
