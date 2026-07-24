@@ -132,6 +132,73 @@ test("expansion source verifier canonicalizes universe symbol order", () => {
   assert.deepEqual(reversedResult.hashes, orderedResult.hashes);
 });
 
+test("expansion source verifier canonicalizes nested provenance arrays", () => {
+  const fixtures = sourceFixtures();
+  const reversedRiskTags: NonNullable<
+    HistoricalMarketSnapshot["riskTags"]
+  > = ["leveraged", "currency_exposed"];
+  const orderedRiskTags = [...reversedRiskTags].reverse();
+  const snapshots = fixtures.snapshots.map((item) => ({
+    ...item,
+    riskTags: [...reversedRiskTags],
+    sourceRefs: ["fixture:z", "fixture:a"]
+  }));
+  const universe = {
+    ...fixtures.universe,
+    symbols: fixtures.universe.symbols.map((member) => ({
+      ...member,
+      riskTags: [...reversedRiskTags],
+      tags: ["tag-z", "tag-a"]
+    }))
+  };
+  const coverage = assessHistoricalUniverseCoverage({
+    snapshots,
+    universe: {
+      ...universe,
+      symbols: universe.symbols.map((member) => ({
+        ...member,
+        riskTags: [...orderedRiskTags],
+        tags: ["tag-a", "tag-z"],
+        lifecycleStatusSource: "explicit" as const
+      }))
+    },
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    requiredMarkets: ["KR"],
+    requiredStrategyBuckets: ["short_term"]
+  });
+  const reversedResult = verifyValidationRoleRegimeEvidenceExpansionSource({
+    ...fixtures,
+    snapshots,
+    universe,
+    coverage
+  });
+  const orderedResult = verifyValidationRoleRegimeEvidenceExpansionSource({
+    ...fixtures,
+    snapshots: snapshots.map((item) => ({
+      ...item,
+      riskTags: [...item.riskTags].reverse(),
+      sourceRefs: [...item.sourceRefs].reverse()
+    })),
+    universe: {
+      ...universe,
+      symbols: universe.symbols.map((member) => ({
+        ...member,
+        riskTags: [...member.riskTags].reverse(),
+        tags: [...member.tags].reverse()
+      }))
+    },
+    coverage
+  });
+
+  assert.deepEqual(reversedResult.snapshots, orderedResult.snapshots);
+  assert.deepEqual(reversedResult.universe, orderedResult.universe);
+  assert.deepEqual(reversedResult.hashes, orderedResult.hashes);
+});
+
 test("expansion source verifier rejects duplicate snapshot ids", () => {
   const fixtures = sourceFixtures();
 

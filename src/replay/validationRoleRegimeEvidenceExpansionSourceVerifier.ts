@@ -56,6 +56,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
 ): VerifiedValidationRoleRegimeEvidenceExpansionSource {
   const snapshots = expansionSnapshotSourceSchema
     .parse(options.snapshots)
+    .map(normalizeSnapshot)
     .sort(compareSnapshots);
   assertUniqueSnapshotIds(snapshots);
 
@@ -99,7 +100,29 @@ function normalizeUniverse(value: unknown): HistoricalUniverseManifest {
   const parsed = historicalUniverseManifestSchema.parse(value);
   return {
     ...parsed,
-    symbols: [...parsed.symbols].sort(compareUniverseMembers)
+    symbols: parsed.symbols
+      .map((member) => ({
+        ...member,
+        ...(member.riskTags === undefined
+          ? {}
+          : { riskTags: [...member.riskTags].sort(compareStrings) }),
+        ...(member.tags === undefined
+          ? {}
+          : { tags: [...member.tags].sort(compareStrings) })
+      }))
+      .sort(compareUniverseMembers)
+  };
+}
+
+function normalizeSnapshot(
+  snapshot: HistoricalMarketSnapshot
+): HistoricalMarketSnapshot {
+  return {
+    ...snapshot,
+    ...(snapshot.riskTags === undefined
+      ? {}
+      : { riskTags: [...snapshot.riskTags].sort(compareStrings) }),
+    sourceRefs: [...snapshot.sourceRefs].sort(compareStrings)
   };
 }
 
