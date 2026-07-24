@@ -82,7 +82,7 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
     assignments,
     hashes: {
       expansionDataSnapshotHash: createReplayResearchHash(snapshots),
-      expansionUniverseHash: createReplayResearchHash(options.universe),
+      expansionUniverseHash: createReplayResearchHash(universe),
       expansionCoverageHash: createReplayResearchHash(coverage),
       validationSplitHash: createReplayResearchHash(validationSplitSource)
     }

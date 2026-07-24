@@ -30,13 +30,47 @@ test("expansion source verifier parses and hashes canonical sources", () => {
   });
   assert.deepEqual(result.hashes, {
     expansionDataSnapshotHash: createReplayResearchHash(expectedSnapshots),
-    expansionUniverseHash: createReplayResearchHash(fixtures.universe),
+    expansionUniverseHash: createReplayResearchHash(result.universe),
     expansionCoverageHash: createReplayResearchHash(fixtures.coverage),
     validationSplitHash: createReplayResearchHash({
       sourceVersion: "fixture",
       assignments: expectedAssignments
     })
   });
+});
+
+test("expansion source verifier hashes the returned normalized universe", () => {
+  const fixtures = sourceFixtures();
+  const universe = {
+    ...fixtures.universe,
+    symbols: fixtures.universe.symbols.map((member) => ({
+      market: member.market,
+      symbol: member.symbol,
+      strategyBucket: member.strategyBucket
+    }))
+  };
+
+  const result = verifyValidationRoleRegimeEvidenceExpansionSource({
+    ...fixtures,
+    universe
+  });
+
+  assert.deepEqual(result.universe.symbols[0], {
+    market: "KR",
+    symbol: "123456",
+    strategyBucket: "short_term",
+    required: true,
+    lifecycleStatus: "unknown",
+    lifecycleStatusSource: "defaulted"
+  });
+  assert.equal(
+    result.hashes.expansionUniverseHash,
+    createReplayResearchHash(result.universe)
+  );
+  assert.notEqual(
+    result.hashes.expansionUniverseHash,
+    createReplayResearchHash(universe)
+  );
 });
 
 test("expansion source verifier rejects duplicate snapshot ids", () => {
