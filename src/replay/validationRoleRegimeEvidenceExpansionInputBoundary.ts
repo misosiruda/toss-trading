@@ -5,21 +5,27 @@ import {
   type EvidenceExpansionPreflightBlocker
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 
+const requiredInputSourceSchema = z
+  .unknown()
+  .refine((value) => value !== undefined, {
+    message: "required input source is missing"
+  });
+
 const baselineInputSchema = z
   .object({
-    feasibilityArtifact: z.unknown(),
-    planArtifact: z.unknown(),
-    readinessArtifact: z.unknown(),
-    validationSplitSource: z.unknown()
+    feasibilityArtifact: requiredInputSourceSchema,
+    planArtifact: requiredInputSourceSchema,
+    readinessArtifact: requiredInputSourceSchema,
+    validationSplitSource: requiredInputSourceSchema
   })
   .strict();
 
 const expansionInputSchema = z
   .object({
-    snapshots: z.unknown(),
-    universe: z.unknown(),
-    coverage: z.unknown(),
-    validationSplitSource: z.unknown()
+    snapshots: requiredInputSourceSchema,
+    universe: requiredInputSourceSchema,
+    coverage: requiredInputSourceSchema,
+    validationSplitSource: requiredInputSourceSchema
   })
   .strict();
 
@@ -27,11 +33,11 @@ export const validationRoleRegimeEvidenceExpansionInputSchema = z
   .object({
     baseline: baselineInputSchema,
     expansion: expansionInputSchema,
-    calendarValidation: z.unknown(),
+    calendarValidation: requiredInputSourceSchema,
     officialCalendarArtifact: z.unknown().optional(),
-    marketRegimeClassifier: z.unknown(),
-    targetMatrix: z.unknown(),
-    dependencyDiagnosticPolicy: z.unknown()
+    marketRegimeClassifier: requiredInputSourceSchema,
+    targetMatrix: requiredInputSourceSchema,
+    dependencyDiagnosticPolicy: requiredInputSourceSchema
   })
   .strict();
 
@@ -82,6 +88,8 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "calmarratio",
   "exposureadjustedreturnratio",
   "pnl",
+  "realizedpnlkrw",
+  "unrealizedpnlkrw",
   "sharpe",
   "sharperatio",
   "psr",

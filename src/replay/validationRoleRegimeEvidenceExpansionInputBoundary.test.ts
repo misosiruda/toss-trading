@@ -80,7 +80,9 @@ test("input boundary rejects compound replay performance metric keys", () => {
       finalVirtualNetWorthKrw: 1_100_000,
       maxDrawdownRatio: -0.2,
       profitFactor: 1.5,
-      sharpeRatio: 0.7
+      realizedPnlKrw: 50_000,
+      sharpeRatio: 0.7,
+      unrealizedPnlKrw: 20_000
     }
   };
 
@@ -93,7 +95,9 @@ test("input boundary rejects compound replay performance metric keys", () => {
     "$.expansion.coverage.advancedPerformance.finalVirtualNetWorthKrw",
     "$.expansion.coverage.advancedPerformance.maxDrawdownRatio",
     "$.expansion.coverage.advancedPerformance.profitFactor",
+    "$.expansion.coverage.advancedPerformance.realizedPnlKrw",
     "$.expansion.coverage.advancedPerformance.sharpeRatio",
+    "$.expansion.coverage.advancedPerformance.unrealizedPnlKrw",
     "$.expansion.coverage.totalReturnRatio"
   ]);
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
@@ -163,6 +167,33 @@ test("input boundary keeps unknown non-result options fail-closed", () => {
       ...allowedInput(),
       arbitrarySource: {}
     })
+  );
+});
+
+test("input schema rejects every missing required source", () => {
+  const result = validationRoleRegimeEvidenceExpansionInputSchema.safeParse({
+    baseline: { feasibilityArtifact: undefined },
+    expansion: { snapshots: undefined },
+    calendarValidation: undefined
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(
+    result.error.issues.map((issue) => issue.path.join(".")).sort(),
+    [
+      "baseline.feasibilityArtifact",
+      "baseline.planArtifact",
+      "baseline.readinessArtifact",
+      "baseline.validationSplitSource",
+      "calendarValidation",
+      "dependencyDiagnosticPolicy",
+      "expansion.coverage",
+      "expansion.snapshots",
+      "expansion.universe",
+      "expansion.validationSplitSource",
+      "marketRegimeClassifier",
+      "targetMatrix"
+    ]
   );
 });
 
