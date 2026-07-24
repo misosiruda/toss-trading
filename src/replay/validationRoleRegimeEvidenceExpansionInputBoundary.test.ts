@@ -134,6 +134,29 @@ test("input boundary rejects batch aggregate result metric keys", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects CPCV selection result fields", () => {
+  const input = allowedInput();
+  const selectionResult = {
+    selectedTrainMetric: 0.12,
+    selectedTestMetric: -0.04,
+    testRankPercentile: 0.8,
+    tieBreakApplied: true
+  };
+  input.baseline.readinessArtifact = { selectionResult };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(selectionResult)
+      .map((key) => `$.baseline.readinessArtifact.selectionResult.${key}`)
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary keeps unknown non-result options fail-closed", () => {
   assert.throws(() =>
     validateValidationRoleRegimeEvidenceExpansionInputBoundary({
