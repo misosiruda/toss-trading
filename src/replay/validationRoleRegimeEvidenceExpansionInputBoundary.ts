@@ -154,6 +154,8 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "tradecount",
   "aidecisionfailurecount",
   "rejectedcount",
+  "meaningfulrejectcount",
+  "dustrejectcount",
   "skipreason",
   "reportpath",
   "selected",

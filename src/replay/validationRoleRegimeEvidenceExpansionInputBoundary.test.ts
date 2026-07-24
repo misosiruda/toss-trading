@@ -116,6 +116,30 @@ test("input boundary rejects selection trial outcome fields", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects replay rejection-count fields", () => {
+  const input = allowedInput();
+  const riskSummary = {
+    meaningfulRejectCount: 2,
+    dustRejectCount: 1
+  };
+  input.expansion.coverage = { batchReplaySummary: { riskSummary } };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(riskSummary)
+      .map(
+        (key) =>
+          `$.expansion.coverage.batchReplaySummary.riskSummary.${key}`
+      )
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary rejects selection trial selection fields", () => {
   const input = allowedInput();
   const selection = {
