@@ -163,6 +163,34 @@ test("input boundary rejects CPCV selection result fields", () => {
   assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
 });
 
+test("input boundary rejects CPCV split performance metrics", () => {
+  const input = allowedInput();
+  const splitMetric = {
+    trainMetric: 0.12,
+    testMetric: -0.03,
+    trainReturnSampleCount: 20,
+    testReturnSampleCount: 10
+  };
+  input.expansion.coverage = {
+    cpcvPerformanceRows: [{ splitMetrics: [splitMetric] }]
+  };
+
+  const result =
+    validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
+
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(
+    result.forbiddenPaths,
+    Object.keys(splitMetric)
+      .map(
+        (key) =>
+          `$.expansion.coverage.cpcvPerformanceRows[0].splitMetrics[0].${key}`
+      )
+      .sort()
+  );
+  assert.equal(result.blockers[0]?.code, "RESULT_METRIC_INPUT_FORBIDDEN");
+});
+
 test("input boundary rejects namespaced Sharpe validation results", () => {
   const input = allowedInput();
   const sharpeResults = {

@@ -506,6 +506,8 @@ Sharpe validation의 sample, Lo-adjusted, probabilistic 및 deflated
 metric과 read-only summary의 namespaced status/value/probability key도
 결과 입력으로 차단한다. Return sample count, mean return, volatility,
 skewness 및 excess kurtosis 같은 distribution result key도 차단한다.
+개별 CPCV split의 train/test metric과 role별 return sample count도
+결과 입력으로 차단한다.
 Replay portfolio timeline의 `virtualNetWorthKrw`도 성과 결과로 차단한다.
 
 ## 이번 문서 PR의 완료 기준
