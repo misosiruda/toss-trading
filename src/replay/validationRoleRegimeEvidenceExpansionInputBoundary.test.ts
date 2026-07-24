@@ -118,6 +118,8 @@ test("input boundary rejects batch aggregate result metric keys", () => {
     selectedAverageTotalReturnRatio: 0.05,
     medianCandidateAverageTotalReturnRatio: 0.03,
     bestAverageTotalReturnRatio: 0.09,
+    holdoutDegradation: [],
+    holdoutDegradationCount: 1,
     degradationFromTrainRatio: -0.07,
     selectedRank: 2,
     selectedBelowMedian: false,

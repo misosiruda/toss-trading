@@ -141,6 +141,8 @@ const FORBIDDEN_RESULT_INPUT_KEYS = new Set([
   "selectedaveragetotalreturnratio",
   "mediancandidateaveragetotalreturnratio",
   "bestaveragetotalreturnratio",
+  "holdoutdegradation",
+  "holdoutdegradationcount",
   "degradationfromtrainratio",
   "selectedbelowmedian",
   "airationale",
