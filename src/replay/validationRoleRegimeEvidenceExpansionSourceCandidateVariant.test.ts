@@ -128,6 +128,19 @@ test("source candidate variant rejects identity and legacy mode mismatch", () =>
   );
 });
 
+test("source candidate variant rejects unknown runtime identities", () => {
+  for (const sourceIdentity of [undefined, "future"]) {
+    const value = input();
+    value.sourceIdentity =
+      sourceIdentity as unknown as "expansion" | "baseline";
+
+    assert.throws(
+      () => buildEvidenceExpansionSourceCandidateVariant(value),
+      /source identity must be expansion or baseline/
+    );
+  }
+});
+
 test("source candidate variant preserves an empty short-term scope", () => {
   const value = input();
   value.source.snapshots = value.source.snapshots.map((snapshot) => ({

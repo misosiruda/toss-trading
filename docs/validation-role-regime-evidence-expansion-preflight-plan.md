@@ -649,11 +649,12 @@ universe membership 및 source variant identity를 조립한다. Candidate가
 fail-closed로 거부한다. Verified source와 `sourceIdentity` discriminator를
 입력받아 expansion은 canonical expansion hash, baseline은 검증된
 `baselineProvenanceHashes`만 선택한다. 임의 provenance hash 주입은
-허용하지 않는다. Baseline identity는 non-null legacy replay-plan hash를
-요구하고 expansion identity는 legacy hash를 거부한다. Legacy hash가
-재계산된 feasibility candidate hash와 다르면 기존 identity gate에서
-fail-closed로 거부된다. Baseline run 열거, evidence group 및 capacity
-계산은 수행하지 않는다.
+허용하지 않는다. Runtime discriminator가 `expansion` 또는 `baseline`이
+아니면 expansion으로 fallback하지 않고 fail-closed로 거부한다. Baseline
+identity는 non-null legacy replay-plan hash를 요구하고 expansion identity는
+legacy hash를 거부한다. Legacy hash가 재계산된 feasibility candidate
+hash와 다르면 기존 identity gate에서 fail-closed로 거부된다. Baseline
+run 열거, evidence group 및 capacity 계산은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionAssignmentCandidates.ts`는 기존
 feasibility enumeration/availability helper를 재사용해 단일 validation
 assignment의 structural candidate를 열거한다. Calendar-valid candidate는

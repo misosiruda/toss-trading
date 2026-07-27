@@ -112,6 +112,14 @@ function assertSourceIdentityMatchesLegacyReference(
   legacyReplayPlanEvidenceGroupHash: Sha256Hash | null
 ): void {
   if (
+    sourceIdentity !== "expansion" &&
+    sourceIdentity !== "baseline"
+  ) {
+    throw new Error(
+      "source identity must be expansion or baseline"
+    );
+  }
+  if (
     sourceIdentity === "baseline" &&
     legacyReplayPlanEvidenceGroupHash === null
   ) {
