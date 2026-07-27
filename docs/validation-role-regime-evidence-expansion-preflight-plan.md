@@ -615,16 +615,20 @@ source provenance, validation split, regime, role 또는 결과 metric은
 hash와 calendar/classifier, snapshot/universe/coverage, validation split,
 observed trading-date 및 universe membership hash를 포함한다. Baseline
 legacy replay-plan evidence group hash가 제공되면 재계산한 feasibility
-candidate hash와 일치해야 한다. Candidate enumeration, observed
-trading-date/universe membership/canonical trading-date builder 연결,
-cross-candidate identity conflict 집계, capacity/exclusion 집계, writer와
-CLI는 아직 구현하지 않았다.
+candidate hash와 일치해야 한다. Candidate enumeration, canonical
+trading-date builder 연결, cross-candidate identity conflict 집계,
+capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
 `validationRoleRegimeEvidenceExpansionObservedTradingDates.ts`는 candidate
 inclusive interval의 verified session-open `1d` snapshot을 market/session date
 canonical set과 hash로 변환한다.
 `validationRoleRegimeEvidenceExpansionUniverseMembership.ts`는 같은 calendar
 검증을 통과한 observed `short_term` snapshot을 market/symbol canonical set과
 hash로 변환한다.
+`validationRoleRegimeEvidenceExpansionSourceCandidateVariant.ts`는 검증된
+source/calendar projection과 단일 candidate를 받아 observed trading-date,
+universe membership 및 source variant identity를 조립한다. Candidate가
+주장한 `scopeAvailable`과 실제 short-term membership 존재 여부가 다르면
+fail-closed로 거부한다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
