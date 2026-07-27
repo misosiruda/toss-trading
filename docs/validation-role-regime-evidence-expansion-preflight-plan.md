@@ -581,8 +581,8 @@ insufficient feasibility의 non-ready plan은 zero-run summary를 source에서
 재계산한 값과 일치시킨다. Baseline validation split assignment source는
 `validationSplitHash`와 feasibility role window를 재검증하며 plan에 기록된
 전체 `ValidationSplitAssignment` payload와 일치해야 한다. Expansion
-multi-assignment candidate aggregation, capacity builder, preflight canonical
-hash 검증, writer, CLI와 실제 preflight artifact는 아직 구현하지 않았다.
+capacity builder, preflight canonical hash 검증, writer, CLI와 실제
+preflight artifact는 아직 구현하지 않았다.
 
 `validationRoleRegimeEvidenceExpansionSourceVerifier.ts`는 expansion
 historical snapshot, universe manifest, coverage artifact와 validation split
@@ -615,9 +615,9 @@ source provenance, validation split, regime, role 또는 결과 metric은
 hash와 calendar/classifier, snapshot/universe/coverage, validation split,
 observed trading-date 및 universe membership hash를 포함한다. Baseline
 legacy replay-plan evidence group hash가 제공되면 재계산한 feasibility
-candidate hash와 일치해야 한다. Multi-assignment candidate aggregation,
-canonical trading-date builder 연결, cross-candidate identity conflict 집계,
-capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
+candidate hash와 일치해야 한다. Canonical trading-date builder 연결,
+cross-candidate identity conflict 집계, capacity/exclusion 집계, writer와
+CLI는 아직 구현하지 않았다.
 `validationRoleRegimeEvidenceExpansionObservedTradingDates.ts`는 candidate
 inclusive interval의 verified session-open `1d` snapshot을 market/session date
 canonical set과 hash로 변환한다.
@@ -636,6 +636,12 @@ source candidate variant로 조립하며 structural, calendar-rejected 및
 scope-unavailable count 불일치를 fail-closed로 거부한다. Assignment 전체
 payload는 verified validation split source의 assignment와 일치해야 하며
 regime label은 hash와 함께 검증된 classifier config로 다시 계산한다.
+`validationRoleRegimeEvidenceExpansionAssignmentCandidateAggregation.ts`는
+verified assignment 전체를 split index, split ID, role 순서로 열거하고
+assignment payload와 결과를 함께 보존한다. Structural, calendar-valid,
+calendar-rejected 및 scope-unavailable 총계를 집계하며 aggregate count
+불일치를 fail-closed로 거부한다. Evidence group deduplication, regime
+identity conflict 및 capacity/exclusion 판정은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
