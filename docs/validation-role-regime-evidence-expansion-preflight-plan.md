@@ -633,7 +633,9 @@ fail-closed로 거부한다.
 feasibility enumeration/availability helper를 재사용해 단일 validation
 assignment의 structural candidate를 열거한다. Calendar-valid candidate는
 source candidate variant로 조립하며 structural, calendar-rejected 및
-scope-unavailable count 불일치를 fail-closed로 거부한다.
+scope-unavailable count 불일치를 fail-closed로 거부한다. Assignment 전체
+payload는 verified validation split source의 assignment와 일치해야 하며
+regime label은 hash와 함께 검증된 classifier config로 다시 계산한다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

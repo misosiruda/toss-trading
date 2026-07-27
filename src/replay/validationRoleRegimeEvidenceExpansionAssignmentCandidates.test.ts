@@ -9,6 +9,10 @@ import type {
   HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
 import {
+  createValidationFeasibilityClassifierHash,
+  defaultMarketRegimeClassifierConfig
+} from "./validationSplitRegimeFeasibility.js";
+import {
   enumerateEvidenceExpansionAssignmentCandidates
 } from "./validationRoleRegimeEvidenceExpansionAssignmentCandidates.js";
 import type { ValidationSplitAssignment } from "./validationProtocol.js";
@@ -87,6 +91,11 @@ test("assignment enumeration preserves zero structural capacity", () => {
     trainStart: "2025-01-15T00:00:00+09:00",
     trainEnd: "2025-01-20T23:59:59.999+09:00"
   };
+  value.source.assignments = value.source.assignments.map((entry) => ({
+    ...entry,
+    trainStart: value.assignment.trainStart,
+    trainEnd: value.assignment.trainEnd
+  }));
 
   const result = enumerateEvidenceExpansionAssignmentCandidates(value);
 
@@ -100,12 +109,48 @@ test("assignment enumeration preserves zero structural capacity", () => {
   );
 });
 
+test("assignment enumeration honors the verified classifier config", () => {
+  const value = input();
+  value.calendarClassifier.marketRegimeClassifier = {
+    ...value.calendarClassifier.marketRegimeClassifier,
+    minSnapshotsPerSymbol: 1
+  };
+  value.calendarClassifier.hashes.marketRegimeClassifierHash =
+    createValidationFeasibilityClassifierHash(
+      value.calendarClassifier.marketRegimeClassifier
+    );
+
+  const result = enumerateEvidenceExpansionAssignmentCandidates(value);
+
+  assert.equal(result.candidates[0]?.regime, "sideways");
+});
+
+test("assignment enumeration rejects assignments outside verified source", () => {
+  const value = input();
+  value.assignment = {
+    ...value.assignment,
+    embargoDurationDays: 1
+  };
+
+  assert.throws(
+    () => enumerateEvidenceExpansionAssignmentCandidates(value),
+    /does not match verified validation split source/
+  );
+});
+
 function input() {
+  const marketRegimeClassifier = defaultMarketRegimeClassifierConfig();
+  const sourceAssignment = assignment();
   return {
-    assignment: assignment(),
+    assignment: sourceAssignment,
     source: {
       snapshots: [
         snapshot("session", "2025-01-02T00:00:00.000Z")
+      ],
+      assignments: [
+        sourceAssignment,
+        { ...sourceAssignment, splitRole: "validation" as const },
+        { ...sourceAssignment, splitRole: "test" as const }
       ],
       hashes: {
         expansionDataSnapshotHash: hash("3"),
@@ -116,10 +161,14 @@ function input() {
     },
     calendarClassifier: {
       calendarValidation: calendar(),
+      marketRegimeClassifier,
       hashes: {
         calendarHash: hash("1"),
         officialCalendarArtifactHash: null,
-        marketRegimeClassifierHash: hash("2")
+        marketRegimeClassifierHash:
+          createValidationFeasibilityClassifierHash(
+            marketRegimeClassifier
+          )
       }
     },
     windowMonths: 1,
