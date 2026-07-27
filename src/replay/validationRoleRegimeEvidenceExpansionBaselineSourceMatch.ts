@@ -13,32 +13,34 @@ type BaselineSourceProvenance = Pick<
   | "validationSplitHash"
 >;
 
-type VerifiedSourceHashes =
-  VerifiedValidationRoleRegimeEvidenceExpansionSource["hashes"];
+type VerifiedBaselineProvenanceHashes =
+  VerifiedValidationRoleRegimeEvidenceExpansionSource[
+    "baselineProvenanceHashes"
+  ];
 
 export function assertEvidenceExpansionBaselineSourceMatches(input: {
   baselineProvenance: BaselineSourceProvenance;
-  sourceHashes: VerifiedSourceHashes;
+  verifiedSourceProvenance: VerifiedBaselineProvenanceHashes;
 }): void {
   assertMatchingHash(
     "dataSnapshotHash",
     input.baselineProvenance.dataSnapshotHash,
-    input.sourceHashes.expansionDataSnapshotHash
+    input.verifiedSourceProvenance.dataSnapshotHash
   );
   assertMatchingHash(
     "universeHash",
     input.baselineProvenance.universeHash,
-    input.sourceHashes.expansionUniverseHash
+    input.verifiedSourceProvenance.universeHash
   );
   assertMatchingHash(
     "coverageHash",
     input.baselineProvenance.coverageHash,
-    input.sourceHashes.expansionCoverageHash
+    input.verifiedSourceProvenance.coverageHash
   );
   assertMatchingHash(
     "validationSplitHash",
     input.baselineProvenance.validationSplitHash,
-    input.sourceHashes.validationSplitHash
+    input.verifiedSourceProvenance.validationSplitHash
   );
 }
 

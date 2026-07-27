@@ -600,13 +600,19 @@ validation assignment를 fail-closed로 거부한다. 동일 verifier를 baselin
 raw source에도 적용하고 계산 hash를 baseline feasibility provenance와
 비교해야 한다. 검증된 source에서 `expansionDataSnapshotHash`,
 `expansionUniverseHash`, `expansionCoverageHash`, `validationSplitHash`를
-canonical하게 계산한다.
+canonical하게 계산한다. Baseline legacy provenance 대조를 위해 strict
+검증을 통과한 source에서 기존 feasibility builder와 같은 field별 hash
+계약을 적용한 `baselineProvenanceHashes`도 canonical expansion hash와
+분리해 보존한다. Snapshot은 schema parse 후 provenance 순서, universe는
+기존 원본 표현, coverage는 검증된 값, validation split은 canonical
+assignment 순서를 사용한다.
 `validationRoleRegimeEvidenceExpansionBaselineSourceMatch.ts`는 동일 source
-verifier로 baseline raw source를 재검증한 뒤 계산된 snapshot, universe,
-coverage 및 validation split hash가 baseline feasibility provenance와
-각각 일치하는지 확인한다. 하나라도 다르면 부분 baseline capacity를
-생성하지 않고 fail-closed로 거부한다. Baseline candidate variant,
-evidence group 및 capacity 계산은 수행하지 않는다.
+verifier로 baseline raw source를 재검증한 뒤
+`baselineProvenanceHashes`가 baseline feasibility provenance와 각각
+일치하는지 확인한다. Source verifier가 정규화한 expansion hash를 legacy
+baseline provenance와 직접 비교하지 않는다. 하나라도 다르면 부분
+baseline capacity를 생성하지 않고 fail-closed로 거부한다. Baseline
+candidate variant, evidence group 및 capacity 계산은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.ts`는
 calendar rule/fixture와 deterministic classifier config를 strict schema로
 검증하고 canonical 정렬 뒤 기존 feasibility helper로 hash한다. 계산된

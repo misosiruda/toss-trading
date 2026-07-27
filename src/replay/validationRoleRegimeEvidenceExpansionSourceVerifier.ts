@@ -43,6 +43,12 @@ export interface VerifiedValidationRoleRegimeEvidenceExpansionSource {
   coverage: FeasibilityCoverageSource;
   validationSplitSource: ValidationSplitSource;
   assignments: ValidationSplitAssignment[];
+  baselineProvenanceHashes: {
+    dataSnapshotHash: Sha256Hash;
+    universeHash: Sha256Hash;
+    coverageHash: Sha256Hash;
+    validationSplitHash: Sha256Hash;
+  };
   hashes: {
     expansionDataSnapshotHash: Sha256Hash;
     expansionUniverseHash: Sha256Hash;
@@ -54,8 +60,11 @@ export interface VerifiedValidationRoleRegimeEvidenceExpansionSource {
 export function verifyValidationRoleRegimeEvidenceExpansionSource(
   options: VerifyValidationRoleRegimeEvidenceExpansionSourceOptions
 ): VerifiedValidationRoleRegimeEvidenceExpansionSource {
-  const snapshots = expansionSnapshotSourceSchema
-    .parse(options.snapshots)
+  const parsedSnapshots = expansionSnapshotSourceSchema.parse(
+    options.snapshots
+  );
+  const baselineSnapshots = [...parsedSnapshots].sort(compareSnapshots);
+  const snapshots = parsedSnapshots
     .map(normalizeSnapshot)
     .sort(compareSnapshots);
   assertUniqueSnapshotIds(snapshots);
@@ -92,6 +101,12 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
     coverage,
     validationSplitSource,
     assignments,
+    baselineProvenanceHashes: {
+      dataSnapshotHash: createReplayResearchHash(baselineSnapshots),
+      universeHash: createReplayResearchHash(options.universe),
+      coverageHash: createReplayResearchHash(coverage),
+      validationSplitHash: createReplayResearchHash(validationSplitSource)
+    },
     hashes: {
       expansionDataSnapshotHash: createReplayResearchHash(snapshots),
       expansionUniverseHash: createReplayResearchHash(universe),

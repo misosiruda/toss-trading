@@ -13,10 +13,10 @@ const baselineProvenance = {
   validationSplitHash: hash("4")
 };
 
-const sourceHashes = {
-  expansionDataSnapshotHash: hash("1"),
-  expansionUniverseHash: hash("2"),
-  expansionCoverageHash: hash("3"),
+const verifiedSourceProvenance = {
+  dataSnapshotHash: hash("1"),
+  universeHash: hash("2"),
+  coverageHash: hash("3"),
   validationSplitHash: hash("4")
 };
 
@@ -24,41 +24,29 @@ test("baseline source match accepts the verified baseline provenance", () => {
   assert.doesNotThrow(() =>
     assertEvidenceExpansionBaselineSourceMatches({
       baselineProvenance,
-      sourceHashes
+      verifiedSourceProvenance
     })
   );
 });
 
 for (const scenario of [
-  {
-    field: "dataSnapshotHash",
-    sourceField: "expansionDataSnapshotHash"
-  },
-  {
-    field: "universeHash",
-    sourceField: "expansionUniverseHash"
-  },
-  {
-    field: "coverageHash",
-    sourceField: "expansionCoverageHash"
-  },
-  {
-    field: "validationSplitHash",
-    sourceField: "validationSplitHash"
-  }
+  "dataSnapshotHash",
+  "universeHash",
+  "coverageHash",
+  "validationSplitHash"
 ] as const) {
-  test(`baseline source match rejects ${scenario.field} drift`, () => {
+  test(`baseline source match rejects ${scenario} drift`, () => {
     assert.throws(
       () =>
         assertEvidenceExpansionBaselineSourceMatches({
           baselineProvenance,
-          sourceHashes: {
-            ...sourceHashes,
-            [scenario.sourceField]: hash("f")
+          verifiedSourceProvenance: {
+            ...verifiedSourceProvenance,
+            [scenario]: hash("f")
           }
         }),
       new RegExp(
-        `baseline raw source hash mismatch: ${scenario.field}`
+        `baseline raw source hash mismatch: ${scenario}`
       )
     );
   });
