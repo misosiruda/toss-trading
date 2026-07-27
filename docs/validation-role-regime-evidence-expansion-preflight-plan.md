@@ -723,6 +723,13 @@ baseline과 expansion consolidation을 source-independent
 서로 다른 hash로 매핑되면 fail-closed로 거부한다. Combined evidence
 group union, combined/incremental capacity, exclusion과 blocker는 생성하지
 않는다.
+`validationRoleRegimeEvidenceExpansionCrossSourceGroupMerge.ts`는 overlap으로
+검증된 단일 baseline/expansion evidence group의 role과 source variant를
+canonical union한다. Baseline은 legacy identity를 보존하고 expansion은
+legacy identity를 가지지 않아야 한다. 같은 `sourceVariantHash`는 legacy
+discriminator를 제외한 canonical payload가 같을 때만 deduplicate하며
+baseline provenance를 보존한다. 전체 group collection union,
+combined/incremental capacity, exclusion과 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
