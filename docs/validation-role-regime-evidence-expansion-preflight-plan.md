@@ -277,6 +277,11 @@ interface ObservedTradingDatesHashPayload {
 
 - Candidate의 inclusive `[startAt, endAt]` 안에서 실제 평가한 snapshot만
   입력으로 사용한다.
+- 첫 contract version의 observation timestamp policy는
+  `official_session_open_daily.v1`로 고정한다. Accepted daily snapshot의
+  `observedAt`은 검증된 calendar fixture의 `marketOpen`과 일치해야 한다.
+  Source가 다른 cadence 또는 close-aligned timestamp를 사용하거나 이
+  일치를 증명할 수 없으면 `SOURCE_PROVENANCE_INVALID` blocker로 닫는다.
 - `sessionDate`는 snapshot timestamp의 UTC date slice가 아니라 검증된
   calendar rule과 fixture가 반환한 market-local session date를 사용한다.
 - Calendar fixture가 없거나 market, exchange, timezone이 일치하지 않으면
@@ -322,16 +327,22 @@ membership entry도 함께 반환한다. 후속 aggregation은 hash 문자열을
 Official `canonicalTradingDatesHash`도
 `evidence_expansion_observed_trading_dates.v1` payload를 사용한다. 검증된
 expansion coverage가 사전 고정한 required market 각각에 대해 candidate
-inclusive `[startAt, endAt]`과 교차하는 official `regular` 및 `early_close`
-session을 canonical set에 넣는다. 교차 조건은
-`marketOpen <= endAt && marketClose >= startAt`이다. 따라서 candidate의
-timezone 기준 월 경계가 US session 중간을 지나더라도 interval 안의 유효한
-snapshot이 속한 market-local `sessionDate`를 official set에서도 보존한다.
-Holiday, special closure와 weekend는 trading-date set에 넣지 않는다.
-Required market의 official coverage가 없거나 교차 여부를 계산할 open/close
-timestamp가 검증되지 않으면 빈 set으로 대체하지 않고
-`OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는 `DEPENDENCY_INPUT_INCOMPLETE`
-blocker를 유지한다.
+inclusive `[startAt, endAt]` 안에 검증된 `marketOpen`이 있는 official
+`regular` 및 `early_close` session만 canonical set에 넣는다. 포함 조건은
+`startAt <= marketOpen && marketOpen <= endAt`이다. Candidate 경계가 session
+중간을 지나면 session-open daily snapshot과 official session을 양쪽 set에서
+모두 제외한다. Candidate 끝 경계 뒤에 session이 계속되더라도 `marketOpen`이
+interval 안이면 양쪽 set에 포함한다. Holiday, special closure와 weekend는
+trading-date set에 넣지 않는다. Required market의 official coverage가
+없거나 포함 여부를 계산할 `marketOpen`이 검증되지 않으면 빈 set으로
+대체하지 않고 `OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는
+`DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다.
+
+`official_session_open_daily.v1`은
+`validation_role_regime_evidence_expansion_preflight.v1`의 고정 의미이며
+CLI override를 받지 않는다. Intraday, session-close 또는 다른 timestamp
+cadence를 지원하려면 observed/official inclusion policy와 identity hash
+version을 함께 올리는 별도 contract가 필요하다.
 
 `combinedUniverseMembershipHash`는 accepted source variant가 반환한 canonical
 membership entry의 실제 union을 같은
@@ -594,8 +605,9 @@ candidate hash와 일치해야 한다. Candidate enumeration, observed
 trading-date/universe membership hash builder, official canonical trading-date
 builder, cross-candidate identity conflict 집계, capacity/exclusion 집계,
 writer와 CLI는 아직 구현하지 않았다. Observed trading-date와 universe
-membership의 canonical payload, 빈 set 처리, official 비교 및 combined
-union 규칙은 이 문서에서 고정했다.
+membership의 canonical payload, 빈 set 처리,
+`official_session_open_daily.v1` timestamp policy, official 비교 및
+combined union 규칙은 이 문서에서 고정했다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
 입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
