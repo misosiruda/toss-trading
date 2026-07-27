@@ -29,7 +29,10 @@ export interface EvidenceExpansionAssignmentCandidateAggregation {
 export function aggregateEvidenceExpansionAssignmentCandidates(input: {
   source: Pick<
     VerifiedValidationRoleRegimeEvidenceExpansionSource,
-    "snapshots" | "assignments" | "hashes"
+    | "snapshots"
+    | "assignments"
+    | "hashes"
+    | "baselineProvenanceHashes"
   >;
   calendarClassifier: Pick<
     VerifiedEvidenceExpansionCalendarClassifier,
