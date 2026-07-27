@@ -28,6 +28,15 @@ test("expansion source verifier parses and hashes canonical sources", () => {
     sourceVersion: "fixture",
     assignments: expectedAssignments
   });
+  assert.deepEqual(result.baselineProvenanceHashes, {
+    dataSnapshotHash: createReplayResearchHash(expectedSnapshots),
+    universeHash: createReplayResearchHash(fixtures.universe),
+    coverageHash: createReplayResearchHash(fixtures.coverage),
+    validationSplitHash: createReplayResearchHash({
+      sourceVersion: "fixture",
+      assignments: expectedAssignments
+    })
+  });
   assert.deepEqual(result.hashes, {
     expansionDataSnapshotHash: createReplayResearchHash(expectedSnapshots),
     expansionUniverseHash: createReplayResearchHash(result.universe),
@@ -69,6 +78,10 @@ test("expansion source verifier hashes the returned normalized universe", () => 
   );
   assert.notEqual(
     result.hashes.expansionUniverseHash,
+    createReplayResearchHash(universe)
+  );
+  assert.equal(
+    result.baselineProvenanceHashes.universeHash,
     createReplayResearchHash(universe)
   );
 });
