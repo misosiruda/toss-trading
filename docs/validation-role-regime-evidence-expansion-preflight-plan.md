@@ -623,8 +623,7 @@ hash와 calendar/classifier, snapshot/universe/coverage, validation split,
 observed trading-date 및 universe membership hash를 포함한다. Baseline
 legacy replay-plan evidence group hash가 제공되면 재계산한 feasibility
 candidate hash와 일치해야 한다. Canonical trading-date builder 연결,
-cross-candidate identity conflict 집계, capacity/exclusion 집계, writer와
-CLI는 아직 구현하지 않았다.
+capacity/exclusion 집계, writer와 CLI는 아직 구현하지 않았다.
 `validationRoleRegimeEvidenceExpansionObservedTradingDates.ts`는 candidate
 inclusive interval의 verified session-open `1d` snapshot을 market/session date
 canonical set과 hash로 변환한다.
@@ -655,6 +654,12 @@ calendar-valid candidate를 scope와 regime evidence만으로 분류한다.
 scope-unavailable 및 insufficient-regime count가 aggregation diagnostic과
 일치하지 않으면 fail-closed로 거부한다. Evidence group deduplication과
 capacity/exclusion row 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
+accepted candidate를 source-independent `evidenceGroupHash`로 묶고
+split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
+같은 evidence group의 interval 또는 regime label이 다르거나 같은
+`sourceVariantHash`가 다른 evidence group에 재사용되면 fail-closed로
+거부한다. Capacity count, exclusion row 및 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
