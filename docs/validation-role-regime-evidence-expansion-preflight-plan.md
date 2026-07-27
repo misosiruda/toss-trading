@@ -715,6 +715,14 @@ Duplicate hash, source variant group hash 불일치, 빈 source variant/role,
 unknown/non-canonical role 및 upstream unique count 불일치를 fail-closed로
 거부한다. Baseline, combined, incremental capacity와 target blocker는
 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionCrossSourceGroupClassification.ts`는
+baseline과 expansion consolidation을 source-independent
+`evidenceGroupHash`로 비교해 baseline overlap과 incremental group을
+분류한다. 두 source의 candidate bucket, window month와 timezone policy가
+일치해야 하며, 같은 hash의 interval 또는 regime이 다르거나 같은 interval이
+서로 다른 hash로 매핑되면 fail-closed로 거부한다. Combined evidence
+group union, combined/incremental capacity, exclusion과 blocker는 생성하지
+않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
