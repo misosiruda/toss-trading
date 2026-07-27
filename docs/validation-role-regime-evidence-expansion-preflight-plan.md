@@ -657,7 +657,8 @@ capacity/exclusion row 조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
-같은 evidence group의 interval 또는 regime label이 다르거나 같은
+같은 evidence group의 interval 또는 regime label이 다르거나 동일 interval
+payload가 서로 다른 evidence group hash로 매핑되거나 같은
 `sourceVariantHash`가 다른 evidence group에 재사용되면 fail-closed로
 거부한다. Capacity count, exclusion row 및 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된

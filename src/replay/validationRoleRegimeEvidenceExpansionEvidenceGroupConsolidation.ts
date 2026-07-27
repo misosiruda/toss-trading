@@ -54,6 +54,10 @@ export function consolidateEvidenceExpansionEvidenceGroups(
   }
 
   const groups = new Map<Sha256Hash, MutableEvidenceGroup>();
+  const evidenceGroupHashesByInterval = new Map<
+    string,
+    Map<string, Sha256Hash>
+  >();
   const sourceVariantOwners = new Map<string, Sha256Hash>();
   for (const entry of accepted) {
     if (
@@ -68,6 +72,27 @@ export function consolidateEvidenceExpansionEvidenceGroups(
     const { candidate } = entry;
     const targetRegime = requireTargetRegime(candidate.regime);
     const evidenceGroupHash = candidate.variant.evidenceGroupHash;
+    let hashesByEnd = evidenceGroupHashesByInterval.get(
+      candidate.startAt
+    );
+    if (hashesByEnd === undefined) {
+      hashesByEnd = new Map();
+      evidenceGroupHashesByInterval.set(
+        candidate.startAt,
+        hashesByEnd
+      );
+    }
+    const existingIntervalHash = hashesByEnd.get(candidate.endAt);
+    if (
+      existingIntervalHash !== undefined &&
+      existingIntervalHash !== evidenceGroupHash
+    ) {
+      throw new Error(
+        "evidence group interval payload maps to conflicting hashes"
+      );
+    }
+    hashesByEnd.set(candidate.endAt, evidenceGroupHash);
+
     const existingGroup = groups.get(evidenceGroupHash);
     let group: MutableEvidenceGroup;
     if (existingGroup === undefined) {

@@ -39,7 +39,7 @@ test("evidence group consolidation deduplicates roles and source variants", () =
 test("evidence group consolidation uses canonical group order", () => {
   const result = consolidateEvidenceExpansionEvidenceGroups(
     eligibility([
-      accepted("test", "sideways", hash("2"), hash("4")),
+      accepted("test", "sideways", hash("2"), hash("4"), 32),
       accepted("train", "bull", hash("1"), hash("3"))
     ])
   );
@@ -65,6 +65,19 @@ test("evidence group consolidation rejects regime conflicts", () => {
   );
 });
 
+test("evidence group consolidation rejects interval reverse-map conflicts", () => {
+  assert.throws(
+    () =>
+      consolidateEvidenceExpansionEvidenceGroups(
+        eligibility([
+          accepted("train", "bull", hash("1"), hash("3")),
+          accepted("validation", "bull", hash("2"), hash("4"))
+        ])
+      ),
+    /interval payload maps to conflicting hashes/
+  );
+});
+
 test("evidence group consolidation rejects source variant reuse", () => {
   const sharedVariantHash = hash("3");
 
@@ -73,7 +86,13 @@ test("evidence group consolidation rejects source variant reuse", () => {
       consolidateEvidenceExpansionEvidenceGroups(
         eligibility([
           accepted("train", "bull", hash("1"), sharedVariantHash),
-          accepted("validation", "bear", hash("2"), sharedVariantHash)
+          accepted(
+            "validation",
+            "bear",
+            hash("2"),
+            sharedVariantHash,
+            32
+          )
         ])
       ),
     /reused across evidence groups/
@@ -135,10 +154,16 @@ function accepted(
   splitRole: ValidationSplitRole,
   regime: "bull" | "bear" | "sideways" | "mixed",
   evidenceGroupHash: Sha256Hash,
-  sourceVariantHash: Sha256Hash
+  sourceVariantHash: Sha256Hash,
+  intervalOffsetDays = 0
 ): EvidenceExpansionCandidateEligibility {
-  const startAt = "2025-01-01T00:00:00.000Z";
-  const endAt = "2025-01-31T23:59:59.999Z";
+  const startMs =
+    Date.parse("2025-01-01T00:00:00.000Z") +
+    intervalOffsetDays * 24 * 60 * 60 * 1_000;
+  const startAt = new Date(startMs).toISOString();
+  const endAt = new Date(
+    startMs + 31 * 24 * 60 * 60 * 1_000 - 1
+  ).toISOString();
   return {
     assignment: {
       validationProtocol: "walk_forward",
