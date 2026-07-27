@@ -12,13 +12,18 @@ import type {
 import type { ValidationSplitRole } from "./validationProtocol.js";
 
 test("baseline capacity counts unique, shared, role, and regime groups", () => {
-  const result = buildEvidenceExpansionBaselineCapacityView(
-    consolidation([
-      group("1", "bull", ["train"]),
-      group("2", "bear", ["train", "validation"]),
-      group("3", "sideways", ["test"])
-    ])
+  const value = consolidation([
+    group("1", "bull", ["train"]),
+    group("2", "bear", ["train", "validation"]),
+    group("3", "sideways", ["test"])
+  ]);
+  assert.notEqual(
+    value.evidenceGroups[0]!.evidenceGroupHash,
+    value.evidenceGroups[0]!.sourceVariants[0]!.sourceVariant
+      .legacyReplayPlanEvidenceGroupHash
   );
+
+  const result = buildEvidenceExpansionBaselineCapacityView(value);
 
   assert.deepEqual(result, {
     globalUniqueEvidenceGroupCount: 3,

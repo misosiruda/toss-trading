@@ -40,6 +40,7 @@ export function buildEvidenceExpansionBaselineCapacityView(
       );
     }
     const sourceVariant = group.sourceVariants[0]!.sourceVariant;
+    // The new source-independent group hash intentionally differs from this legacy identity.
     if (
       sourceVariant.legacyReplayPlanEvidenceGroupHash === null ||
       sourceVariant.feasibilityCandidateHash !==
