@@ -48,6 +48,8 @@ Preflight builder는 다음 artifact와 source만 읽는다.
 - Baseline `validation_split_regime_feasibility.v1`
 - Baseline `validation_role_regime_replay_plan.v1`
 - Baseline `validation_role_regime_statistical_readiness.v1`
+- Baseline historical snapshot source
+- Baseline universe manifest와 coverage artifact
 - Expansion historical snapshot source
 - Expansion universe manifest와 coverage artifact
 - Validation split assignment source
@@ -290,6 +292,10 @@ interface ObservedTradingDatesHashPayload {
 - 순서는 market `KR`, `US`, 그 안에서 `sessionDate` 오름차순이다.
 - Candidate source file 순서, snapshot symbol 수와 동일 session의 중복
   snapshot 수는 hash를 바꾸지 않는다.
+- Baseline과 expansion source는 각각 snapshot, universe, coverage row를
+  제공해야 한다. Baseline raw source의 canonical hash는 baseline feasibility
+  artifact의 `dataSnapshotHash`, `universeHash`, `coverageHash`와 일치해야
+  하며 artifact에 기록된 hash만으로 row를 복원하지 않는다.
 
 `universeMembershipHash`는 manifest 전체가 아니라 해당 candidate interval에서
 실제로 관측된 `short_term` scope symbol의 canonical membership set을
@@ -337,6 +343,11 @@ trading-date set에 넣지 않는다. Required market의 official coverage가
 없거나 포함 여부를 계산할 `marketOpen`이 검증되지 않으면 빈 set으로
 대체하지 않고 `OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는
 `DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다.
+
+Baseline과 expansion coverage의 `requiredMarkets`는 비어 있을 수 없고,
+각 source의 universe 및 snapshot에 나타나는 모든 market을 포함해야 한다.
+일반 coverage helper의 default `[]`는 evidence-expansion preflight에서
+accepted market scope로 사용하지 않는다.
 
 `official_session_open_daily.v1`은
 `validation_role_regime_evidence_expansion_preflight.v1`의 고정 의미이며
@@ -577,9 +588,12 @@ enumeration, capacity builder, preflight canonical hash 검증, writer, CLI와
 historical snapshot, universe manifest, coverage artifact와 validation split
 source를 기존 strict schema로 검증한다. Snapshot은 provenance 순서로
 정렬하고 duplicate `snapshotId`, universe 밖 symbol, coverage 재계산
-불일치와 duplicate validation assignment를 fail-closed로 거부한다. 검증된
-source에서 `expansionDataSnapshotHash`, `expansionUniverseHash`,
-`expansionCoverageHash`, `validationSplitHash`를 canonical하게 계산한다.
+불일치, 빈 `requiredMarkets`, universe/snapshot market 누락과 duplicate
+validation assignment를 fail-closed로 거부한다. 동일 verifier를 baseline
+raw source에도 적용하고 계산 hash를 baseline feasibility provenance와
+비교해야 한다. 검증된 source에서 `expansionDataSnapshotHash`,
+`expansionUniverseHash`, `expansionCoverageHash`, `validationSplitHash`를
+canonical하게 계산한다.
 `validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.ts`는
 calendar rule/fixture와 deterministic classifier config를 strict schema로
 검증하고 canonical 정렬 뒤 기존 feasibility helper로 hash한다. 계산된
@@ -610,8 +624,9 @@ membership의 canonical payload, 빈 set 처리,
 combined union 규칙은 이 문서에서 고정했다.
 
 `validationRoleRegimeEvidenceExpansionInputBoundary.ts`는 preflight builder
-입력을 baseline, expansion, calendar, classifier, target matrix와 dependency
-policy의 strict allowlist로 제한한다. 어느 깊이에서든 result artifact,
+입력을 baseline artifact와 raw snapshot/universe/coverage, expansion,
+calendar, classifier, target matrix와 dependency policy의 strict allowlist로
+제한한다. 어느 깊이에서든 result artifact,
 성과 metric, selection 결과 또는 AI action key가 발견되면 경로를 canonical
 정렬하고 `RESULT_METRIC_INPUT_FORBIDDEN` blocker가 있는 `invalid` 결과로
 fail-closed 처리한다. 금지 용어가 scalar value에만 있는 경우에는 key 기반

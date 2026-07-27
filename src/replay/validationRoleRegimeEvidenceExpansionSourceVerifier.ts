@@ -68,6 +68,11 @@ export function verifyValidationRoleRegimeEvidenceExpansionSource(
     snapshots,
     universe
   });
+  assertRequiredMarketScope({
+    requiredMarkets: coverage.requiredMarkets,
+    snapshots,
+    universe
+  });
   const validationSplitSource = normalizeValidationSplitSource(
     options.validationSplitSource
   );
@@ -221,6 +226,31 @@ function assertSnapshotsInsideUniverse(
     const key = `${snapshot.market}:${snapshot.symbol}`;
     if (!universeSymbols.has(key)) {
       throw new Error(`expansion snapshot is outside universe: ${key}`);
+    }
+  }
+}
+
+function assertRequiredMarketScope(input: {
+  requiredMarkets: readonly string[];
+  snapshots: readonly HistoricalMarketSnapshot[];
+  universe: HistoricalUniverseManifest;
+}): void {
+  if (input.requiredMarkets.length === 0) {
+    throw new Error(
+      "evidence expansion coverage requiredMarkets must not be empty"
+    );
+  }
+
+  const requiredMarkets = new Set(input.requiredMarkets);
+  const evaluatedMarkets = new Set([
+    ...input.snapshots.map((snapshot) => snapshot.market),
+    ...input.universe.symbols.map((member) => member.market)
+  ]);
+  for (const market of [...evaluatedMarkets].sort(compareStrings)) {
+    if (!requiredMarkets.has(market)) {
+      throw new Error(
+        `evidence expansion coverage requiredMarkets is missing evaluated market: ${market}`
+      );
     }
   }
 }
