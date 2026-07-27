@@ -458,6 +458,13 @@ interface EvidenceExpansionExclusion {
 
 `CROSS_ROLE_SHARED_EVIDENCE`는 role-local diagnostic row를 제거한다는 뜻이 아니다. Role-exclusive capacity에서 제외되는 이유를 기록한다.
 
+Calendar-valid candidate의 primary eligibility reason은
+`SCOPE_UNAVAILABLE`, `INSUFFICIENT_REGIME_DATA` 순서로 판정한다. 따라서
+`scopeAvailable=false`이면서 regime이 `insufficient_data`인 candidate는
+`SCOPE_UNAVAILABLE` 한 건으로 분류하며 두 exclusion count에 중복
+반영하지 않는다. Calendar rejection은 이 eligibility 단계보다 앞선
+assignment enumeration diagnostic으로 보존한다.
+
 Summary의 structural count는 accepted unique evidence-group count와 exclusion count로 재계산 가능해야 한다. 같은 candidate가 여러 사유에 해당하면 canonical primary reason 하나와 별도 blocker를 사용해 이중 집계를 방지한다. Source variant가 여러 개여도 같은 `evidenceGroupHash`의 exclusion은 capacity에서 한 번만 센다.
 
 ## Blocker와 Status
@@ -642,6 +649,12 @@ assignment payload와 결과를 함께 보존한다. Structural, calendar-valid,
 calendar-rejected 및 scope-unavailable 총계를 집계하며 aggregate count
 불일치를 fail-closed로 거부한다. Evidence group deduplication, regime
 identity conflict 및 capacity/exclusion 판정은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCandidateEligibility.ts`는
+calendar-valid candidate를 scope와 regime evidence만으로 분류한다.
+`SCOPE_UNAVAILABLE`을 `INSUFFICIENT_REGIME_DATA`보다 먼저 적용하고 accepted,
+scope-unavailable 및 insufficient-regime count가 aggregation diagnostic과
+일치하지 않으면 fail-closed로 거부한다. Evidence group deduplication과
+capacity/exclusion row 조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
