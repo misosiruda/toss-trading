@@ -253,6 +253,76 @@ test("expansion source verifier rejects mismatched coverage", () => {
   );
 });
 
+test("expansion source verifier rejects empty required market scope", () => {
+  const fixtures = sourceFixtures();
+  const coverage = assessHistoricalUniverseCoverage({
+    snapshots: fixtures.snapshots,
+    universe: {
+      ...fixtures.universe,
+      symbols: fixtures.universe.symbols.map((member) => ({
+        ...member,
+        lifecycleStatusSource: "explicit" as const
+      }))
+    },
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    requiredStrategyBuckets: ["short_term"]
+  });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionSource({
+        ...fixtures,
+        coverage
+      }),
+    /requiredMarkets must not be empty/
+  );
+});
+
+test("expansion source verifier requires every evaluated market", () => {
+  const fixtures = sourceFixtures();
+  const usMember = {
+    ...fixtures.universe.symbols[0]!,
+    market: "US" as const,
+    symbol: "SPY",
+    required: false
+  };
+  const universe = {
+    ...fixtures.universe,
+    symbols: [...fixtures.universe.symbols, usMember]
+  };
+  const coverage = assessHistoricalUniverseCoverage({
+    snapshots: fixtures.snapshots,
+    universe: {
+      ...universe,
+      symbols: universe.symbols.map((member) => ({
+        ...member,
+        lifecycleStatusSource: "explicit" as const
+      }))
+    },
+    rangeStart: new Date("2025-01-01T00:00:00+09:00"),
+    rangeEnd: new Date("2025-02-28T23:59:59.999+09:00"),
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    requiredMarkets: ["KR"],
+    requiredStrategyBuckets: ["short_term"]
+  });
+
+  assert.throws(
+    () =>
+      verifyValidationRoleRegimeEvidenceExpansionSource({
+        ...fixtures,
+        universe,
+        coverage
+      }),
+    /requiredMarkets is missing evaluated market: US/
+  );
+});
+
 test("expansion source verifier rejects duplicate validation assignments", () => {
   const fixtures = sourceFixtures();
 

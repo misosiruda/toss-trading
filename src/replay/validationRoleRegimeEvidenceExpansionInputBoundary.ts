@@ -20,6 +20,9 @@ const baselineInputSchema = z
     feasibilityArtifact: requiredInputSourceSchema,
     planArtifact: requiredInputSourceSchema,
     readinessArtifact: requiredInputSourceSchema,
+    snapshots: requiredInputSourceSchema,
+    universe: requiredInputSourceSchema,
+    coverage: requiredInputSourceSchema,
     validationSplitSource: requiredInputSourceSchema
   })
   .strict();

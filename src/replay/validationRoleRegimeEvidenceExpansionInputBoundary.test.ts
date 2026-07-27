@@ -349,9 +349,12 @@ test("input schema rejects every missing required source", () => {
   assert.deepEqual(
     result.error.issues.map((issue) => issue.path.join(".")).sort(),
     [
+      "baseline.coverage",
       "baseline.feasibilityArtifact",
       "baseline.planArtifact",
       "baseline.readinessArtifact",
+      "baseline.snapshots",
+      "baseline.universe",
       "baseline.validationSplitSource",
       "calendarValidation",
       "dependencyDiagnosticPolicy",
@@ -376,6 +379,13 @@ test("input schema rejects null, empty, and scalar required sources", () => {
       baseline: {
         ...allowedInput().baseline,
         planArtifact: {}
+      }
+    },
+    {
+      ...allowedInput(),
+      baseline: {
+        ...allowedInput().baseline,
+        snapshots: []
       }
     },
     {
@@ -432,6 +442,9 @@ function allowedInput(): ReturnType<
       feasibilityArtifact: { schemaVersion: "fixture" },
       planArtifact: { schemaVersion: "fixture" },
       readinessArtifact: { schemaVersion: "fixture" },
+      snapshots: [{ schemaVersion: "fixture" }],
+      universe: { snapshotDate: "2026-07-24" },
+      coverage: { status: "available" },
       validationSplitSource: { assignments: [] }
     },
     expansion: {
