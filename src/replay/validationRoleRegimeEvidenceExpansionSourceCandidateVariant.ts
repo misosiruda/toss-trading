@@ -35,8 +35,9 @@ export function buildEvidenceExpansionSourceCandidateVariant(input: {
   candidate: EvidenceExpansionSourceCandidate;
   source: Pick<
     VerifiedValidationRoleRegimeEvidenceExpansionSource,
-    "snapshots" | "hashes"
+    "snapshots" | "hashes" | "baselineProvenanceHashes"
   >;
+  sourceIdentity: "expansion" | "baseline";
   calendarClassifier: Pick<
     VerifiedEvidenceExpansionCalendarClassifier,
     "calendarValidation" | "hashes"
@@ -44,6 +45,10 @@ export function buildEvidenceExpansionSourceCandidateVariant(input: {
   windowMonths: number;
   timezoneOffsetMinutes: number;
 }): EvidenceExpansionSourceCandidateVariant {
+  assertSourceIdentityMatchesLegacyReference(
+    input.sourceIdentity,
+    input.candidate.legacyReplayPlanEvidenceGroupHash
+  );
   const observedTradingDates = buildEvidenceExpansionObservedTradingDates({
     snapshots: input.source.snapshots,
     startAt: input.candidate.startAt,
@@ -62,6 +67,16 @@ export function buildEvidenceExpansionSourceCandidateVariant(input: {
       "source candidate scopeAvailable does not match observed short-term membership"
     );
   }
+  const identityProvenance =
+    input.sourceIdentity === "baseline"
+      ? input.source.baselineProvenanceHashes
+      : {
+          dataSnapshotHash:
+            input.source.hashes.expansionDataSnapshotHash,
+          universeHash: input.source.hashes.expansionUniverseHash,
+          coverageHash: input.source.hashes.expansionCoverageHash,
+          validationSplitHash: input.source.hashes.validationSplitHash
+        };
 
   const identity = createEvidenceExpansionCandidateIdentity({
     startAt: input.candidate.startAt,
@@ -73,11 +88,10 @@ export function buildEvidenceExpansionSourceCandidateVariant(input: {
     calendarHash: input.calendarClassifier.hashes.calendarHash,
     marketRegimeClassifierHash:
       input.calendarClassifier.hashes.marketRegimeClassifierHash,
-    dataSnapshotHash:
-      input.source.hashes.expansionDataSnapshotHash,
-    universeHash: input.source.hashes.expansionUniverseHash,
-    coverageHash: input.source.hashes.expansionCoverageHash,
-    validationSplitHash: input.source.hashes.validationSplitHash,
+    dataSnapshotHash: identityProvenance.dataSnapshotHash,
+    universeHash: identityProvenance.universeHash,
+    coverageHash: identityProvenance.coverageHash,
+    validationSplitHash: identityProvenance.validationSplitHash,
     observedTradingDatesHash:
       observedTradingDates.observedTradingDatesHash,
     universeMembershipHash:
@@ -91,4 +105,26 @@ export function buildEvidenceExpansionSourceCandidateVariant(input: {
     observedTradingDates: observedTradingDates.sessions,
     universeMembership: universeMembership.members
   };
+}
+
+function assertSourceIdentityMatchesLegacyReference(
+  sourceIdentity: "expansion" | "baseline",
+  legacyReplayPlanEvidenceGroupHash: Sha256Hash | null
+): void {
+  if (
+    sourceIdentity === "baseline" &&
+    legacyReplayPlanEvidenceGroupHash === null
+  ) {
+    throw new Error(
+      "baseline source identity requires a legacy replay-plan evidence group hash"
+    );
+  }
+  if (
+    sourceIdentity === "expansion" &&
+    legacyReplayPlanEvidenceGroupHash !== null
+  ) {
+    throw new Error(
+      "expansion source identity must not use a legacy replay-plan evidence group hash"
+    );
+  }
 }

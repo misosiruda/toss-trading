@@ -12,6 +12,9 @@ import {
   createEvidenceExpansionCandidateIdentity
 } from "./validationRoleRegimeEvidenceExpansionCandidateIdentity.js";
 import {
+  createValidationFeasibilityCandidateHash
+} from "./validationSplitRegimeFeasibility.js";
+import {
   buildEvidenceExpansionSourceCandidateVariant
 } from "./validationRoleRegimeEvidenceExpansionSourceCandidateVariant.js";
 
@@ -69,6 +72,62 @@ test("source candidate variant rejects scope availability mismatch", () => {
   );
 });
 
+test("source candidate variant accepts verified baseline provenance", () => {
+  const value = input();
+  value.sourceIdentity = "baseline";
+  value.source.baselineProvenanceHashes = {
+    dataSnapshotHash: hash("7"),
+    universeHash: hash("8"),
+    coverageHash: hash("9"),
+    validationSplitHash: hash("a")
+  };
+  value.candidate.legacyReplayPlanEvidenceGroupHash =
+    createValidationFeasibilityCandidateHash({
+      startAt: value.candidate.startAt,
+      endAt: value.candidate.endAt,
+      timezoneOffsetMinutes: value.timezoneOffsetMinutes,
+      windowMonths: value.windowMonths,
+      calendarHash: value.calendarClassifier.hashes.calendarHash,
+      marketRegimeClassifierHash:
+        value.calendarClassifier.hashes.marketRegimeClassifierHash,
+      candidateStrategyBucket: "short_term",
+      scopeAvailable: value.candidate.scopeAvailable,
+      dataSnapshotHash:
+        value.source.baselineProvenanceHashes.dataSnapshotHash,
+      universeHash: value.source.baselineProvenanceHashes.universeHash,
+      coverageHash: value.source.baselineProvenanceHashes.coverageHash
+    });
+
+  const result = buildEvidenceExpansionSourceCandidateVariant(value);
+
+  assert.equal(
+    result.sourceVariant.legacyReplayPlanEvidenceGroupHash,
+    value.candidate.legacyReplayPlanEvidenceGroupHash
+  );
+  assert.equal(
+    result.sourceVariant.feasibilityCandidateHash,
+    value.candidate.legacyReplayPlanEvidenceGroupHash
+  );
+});
+
+test("source candidate variant rejects identity and legacy mode mismatch", () => {
+  const missingLegacy = input();
+  missingLegacy.sourceIdentity = "baseline";
+
+  assert.throws(
+    () => buildEvidenceExpansionSourceCandidateVariant(missingLegacy),
+    /baseline source identity requires a legacy/
+  );
+
+  const unexpectedLegacy = input();
+  unexpectedLegacy.candidate.legacyReplayPlanEvidenceGroupHash = hash("f");
+
+  assert.throws(
+    () => buildEvidenceExpansionSourceCandidateVariant(unexpectedLegacy),
+    /expansion source identity must not use a legacy/
+  );
+});
+
 test("source candidate variant preserves an empty short-term scope", () => {
   const value = input();
   value.source.snapshots = value.source.snapshots.map((snapshot) => ({
@@ -104,7 +163,7 @@ function input() {
       startAt: "2025-01-02T00:00:00.000Z",
       endAt: "2025-01-03T06:30:00.000Z",
       scopeAvailable: true,
-      legacyReplayPlanEvidenceGroupHash: null
+      legacyReplayPlanEvidenceGroupHash: null as Sha256Hash | null
     },
     source: {
       snapshots: [
@@ -116,8 +175,15 @@ function input() {
         expansionUniverseHash: hash("4"),
         expansionCoverageHash: hash("5"),
         validationSplitHash: hash("6")
+      },
+      baselineProvenanceHashes: {
+        dataSnapshotHash: hash("3"),
+        universeHash: hash("4"),
+        coverageHash: hash("5"),
+        validationSplitHash: hash("6")
       }
     },
+    sourceIdentity: "expansion" as "expansion" | "baseline",
     calendarClassifier: {
       calendarValidation: calendar(),
       hashes: {

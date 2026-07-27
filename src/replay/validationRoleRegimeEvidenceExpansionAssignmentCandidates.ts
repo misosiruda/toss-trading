@@ -41,7 +41,10 @@ export function enumerateEvidenceExpansionAssignmentCandidates(input: {
   assignment: ValidationSplitAssignment;
   source: Pick<
     VerifiedValidationRoleRegimeEvidenceExpansionSource,
-    "snapshots" | "assignments" | "hashes"
+    | "snapshots"
+    | "assignments"
+    | "hashes"
+    | "baselineProvenanceHashes"
   >;
   calendarClassifier: Pick<
     VerifiedEvidenceExpansionCalendarClassifier,
@@ -110,6 +113,7 @@ export function enumerateEvidenceExpansionAssignmentCandidates(input: {
           legacyReplayPlanEvidenceGroupHash: null
         },
         source: input.source,
+        sourceIdentity: "expansion",
         calendarClassifier: input.calendarClassifier,
         windowMonths: input.windowMonths,
         timezoneOffsetMinutes: input.timezoneOffsetMinutes

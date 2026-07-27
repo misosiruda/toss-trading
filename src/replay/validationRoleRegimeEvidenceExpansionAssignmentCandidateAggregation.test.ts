@@ -93,6 +93,12 @@ function input() {
         expansionUniverseHash: hash("4"),
         expansionCoverageHash: hash("5"),
         validationSplitHash: hash("6")
+      },
+      baselineProvenanceHashes: {
+        dataSnapshotHash: hash("3"),
+        universeHash: hash("4"),
+        coverageHash: hash("5"),
+        validationSplitHash: hash("6")
       }
     },
     calendarClassifier: {
