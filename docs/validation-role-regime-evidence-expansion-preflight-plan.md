@@ -676,6 +676,11 @@ baseline run variant aggregation을 accepted-only candidate projection으로
 canonical `planIndex`, execution assignment role과 run/variant legacy identity
 연결이 다르면 fail-closed로 거부한다. Baseline capacity, combined 또는
 incremental capacity, exclusion과 blocker는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionBaselineCapacityView.ts`는 baseline
+evidence group의 accepted run count와 role membership count가 일치하고 각
+group이 legacy identity를 보존한 단일 baseline source variant만 가지는지
+확인한 뒤 기존 capacity builder를 재사용한다. Combined 또는 incremental
+capacity, exclusion과 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionAssignmentCandidates.ts`는 기존
 feasibility enumeration/availability helper를 재사용해 단일 validation
 assignment의 structural candidate를 열거한다. Calendar-valid candidate는
