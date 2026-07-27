@@ -322,11 +322,16 @@ membership entry도 함께 반환한다. 후속 aggregation은 hash 문자열을
 Official `canonicalTradingDatesHash`도
 `evidence_expansion_observed_trading_dates.v1` payload를 사용한다. 검증된
 expansion coverage가 사전 고정한 required market 각각에 대해 candidate
-interval 안에 완전히 포함된 official `regular` 및 `early_close` session만
-canonical set에 넣는다. Holiday, special closure와 weekend는 trading-date
-set에 넣지 않는다. Required market의 official coverage가 없으면 빈 set으로
-대체하지 않고 `OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는
-`DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다.
+inclusive `[startAt, endAt]`과 교차하는 official `regular` 및 `early_close`
+session을 canonical set에 넣는다. 교차 조건은
+`marketOpen <= endAt && marketClose >= startAt`이다. 따라서 candidate의
+timezone 기준 월 경계가 US session 중간을 지나더라도 interval 안의 유효한
+snapshot이 속한 market-local `sessionDate`를 official set에서도 보존한다.
+Holiday, special closure와 weekend는 trading-date set에 넣지 않는다.
+Required market의 official coverage가 없거나 교차 여부를 계산할 open/close
+timestamp가 검증되지 않으면 빈 set으로 대체하지 않고
+`OFFICIAL_CALENDAR_EVIDENCE_INVALID` 또는 `DEPENDENCY_INPUT_INCOMPLETE`
+blocker를 유지한다.
 
 `combinedUniverseMembershipHash`는 accepted source variant가 반환한 canonical
 membership entry의 실제 union을 같은
