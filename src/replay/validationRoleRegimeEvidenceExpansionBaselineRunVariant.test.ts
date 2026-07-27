@@ -9,7 +9,9 @@ import type {
   HistoricalDataAvailabilityCalendarOptions
 } from "./historicalDataAvailability.js";
 import {
-  createValidationFeasibilityCandidateHash
+  createValidationFeasibilityCandidateHash,
+  createValidationFeasibilityClassifierHash,
+  defaultMarketRegimeClassifierConfig
 } from "./validationSplitRegimeFeasibility.js";
 import {
   buildEvidenceExpansionBaselineRunVariant
@@ -97,6 +99,21 @@ test("baseline run variant rejects legacy identity drift", () => {
   );
 });
 
+test("baseline run variant rejects a recomposed regime label", () => {
+  const value = input();
+  const changedRun = {
+    ...value.run,
+    targetRegime: "bear" as const
+  };
+  value.run = changedRun;
+  value.plan.runs = [changedRun];
+
+  assert.throws(
+    () => buildEvidenceExpansionBaselineRunVariant(value),
+    /regime does not match the verified classifier/
+  );
+});
+
 function input() {
   const provenance = {
     dataSnapshotHash: hash("3"),
@@ -105,9 +122,13 @@ function input() {
     validationSplitHash: hash("6")
   };
   const calendarHash = hash("1");
-  const classifierHash = hash("2");
+  const marketRegimeClassifier =
+    defaultMarketRegimeClassifierConfig();
+  const classifierHash = createValidationFeasibilityClassifierHash(
+    marketRegimeClassifier
+  );
   const startAt = "2025-01-02T00:00:00.000Z";
-  const endAt = "2025-01-02T06:30:00.000Z";
+  const endAt = "2025-01-03T00:00:00.000Z";
   const candidateHash = createValidationFeasibilityCandidateHash({
     startAt,
     endAt,
@@ -167,7 +188,10 @@ function input() {
     run,
     plan,
     source: {
-      snapshots: [snapshot(startAt)],
+      snapshots: [
+        snapshot("baseline-snapshot-start", startAt, 10_000),
+        snapshot("baseline-snapshot-end", endAt, 10_500)
+      ],
       hashes: {
         expansionDataSnapshotHash: hash("a"),
         expansionUniverseHash: hash("b"),
@@ -178,6 +202,7 @@ function input() {
     },
     calendarClassifier: {
       calendarValidation: calendar(startAt, endAt),
+      marketRegimeClassifier,
       hashes: {
         calendarHash,
         officialCalendarArtifactHash: null,
@@ -204,23 +229,27 @@ function assignment(): ValidationSplitAssignment {
   };
 }
 
-function snapshot(observedAt: string): HistoricalMarketSnapshot {
+function snapshot(
+  snapshotId: string,
+  observedAt: string,
+  lastPriceKrw: number
+): HistoricalMarketSnapshot {
   return {
-    snapshotId: "baseline-snapshot",
+    snapshotId,
     market: "KR",
     symbol: "005930",
     strategyBucket: "short_term",
     observedAt,
     interval: "1d",
-    lastPriceKrw: 10_000,
+    lastPriceKrw,
     sourceRefs: ["fixture:baseline"],
     createdAt: observedAt
   };
 }
 
 function calendar(
-  marketOpen: string,
-  marketClose: string
+  firstMarketOpen: string,
+  secondMarketOpen: string
 ): HistoricalDataAvailabilityCalendarOptions {
   return {
     rules: [
@@ -233,10 +262,22 @@ function calendar(
         market: "KR",
         timezone: "Asia/Seoul",
         sessionDate: "2025-01-02",
-        marketOpen,
-        marketClose,
+        marketOpen: firstMarketOpen,
+        marketClose: "2025-01-02T06:30:00.000Z",
         isHoliday: false,
         sourceRefs: ["fixture:calendar.krx.2025-01-02"],
+        createdAt: "2026-07-27T00:00:00.000Z"
+      },
+      {
+        calendarId: "calendar.krx.2025-01-03",
+        exchange: "KRX",
+        market: "KR",
+        timezone: "Asia/Seoul",
+        sessionDate: "2025-01-03",
+        marketOpen: secondMarketOpen,
+        marketClose: "2025-01-03T06:30:00.000Z",
+        isHoliday: false,
+        sourceRefs: ["fixture:calendar.krx.2025-01-03"],
         createdAt: "2026-07-27T00:00:00.000Z"
       }
     ]

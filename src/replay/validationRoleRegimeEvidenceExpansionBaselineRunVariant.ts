@@ -1,3 +1,4 @@
+import { classifyMarketRegime } from "../analytics/marketRegimeClassifier.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
   assertEvidenceExpansionBaselineSourceMatches
@@ -29,7 +30,7 @@ export function buildEvidenceExpansionBaselineRunVariant(input: {
   >;
   calendarClassifier: Pick<
     VerifiedEvidenceExpansionCalendarClassifier,
-    "calendarValidation" | "hashes"
+    "calendarValidation" | "marketRegimeClassifier" | "hashes"
   >;
 }): EvidenceExpansionSourceCandidateVariant {
   if (input.plan.status !== "ready_for_paper_diagnostic") {
@@ -73,6 +74,21 @@ export function buildEvidenceExpansionBaselineRunVariant(input: {
   ) {
     throw new Error(
       "baseline run classifier hash does not match the verified plan"
+    );
+  }
+  const {
+    version: _classifierVersion,
+    ...classifierConfig
+  } = input.calendarClassifier.marketRegimeClassifier;
+  const classifiedRegime = classifyMarketRegime({
+    snapshots: input.source.snapshots,
+    windowStart: new Date(input.run.startAt),
+    windowEnd: new Date(input.run.endAt),
+    ...classifierConfig
+  }).label;
+  if (classifiedRegime !== input.run.targetRegime) {
+    throw new Error(
+      "baseline run regime does not match the verified classifier"
     );
   }
 

@@ -658,7 +658,9 @@ run 열거, evidence group 및 capacity 계산은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionBaselineRunVariant.ts`는 verified
 baseline plan의 단일 run을 baseline source candidate variant로 변환한다.
 Plan status와 exact run membership, legacy candidate/evidence hash,
-`baselineProvenanceHashes`, calendar 및 classifier hash를 다시 확인한 뒤
+`baselineProvenanceHashes`, calendar 및 classifier hash를 다시 확인한다.
+Verified classifier config와 baseline snapshot으로 run interval의 regime을
+다시 계산하고 `targetRegime`과 다르면 fail-closed로 거부한 뒤
 `sourceIdentity=baseline`으로 기존 variant builder를 호출한다. 전체
 baseline run 열거, regime conflict consolidation, evidence group 및
 capacity 계산은 수행하지 않는다.
