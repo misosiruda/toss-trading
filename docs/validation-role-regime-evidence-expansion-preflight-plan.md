@@ -664,6 +664,12 @@ Verified classifier config와 baseline snapshot으로 run interval의 regime을
 `sourceIdentity=baseline`으로 기존 variant builder를 호출한다. 전체
 baseline run 열거, regime conflict consolidation, evidence group 및
 capacity 계산은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionBaselineRunVariantAggregation.ts`는
+verified ready plan의 전체 run을 canonical `planIndex` 순서로 열거하고
+각 run을 baseline source candidate variant와 함께 보존한다. 빈 plan,
+비연속 index, duplicate `runKey`와 단일 run gate 실패를 fail-closed로
+거부한다. Evidence group consolidation, baseline capacity, combined 또는
+incremental capacity, exclusion과 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionAssignmentCandidates.ts`는 기존
 feasibility enumeration/availability helper를 재사용해 단일 validation
 assignment의 structural candidate를 열거한다. Calendar-valid candidate는
