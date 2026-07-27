@@ -670,6 +670,12 @@ verified ready plan의 전체 run을 canonical `planIndex` 순서로 열거하�
 비연속 index, duplicate `runKey`와 단일 run gate 실패를 fail-closed로
 거부한다. Evidence group consolidation, baseline capacity, combined 또는
 incremental capacity, exclusion과 blocker는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionBaselineEvidenceGroupConsolidation.ts`는
+baseline run variant aggregation을 accepted-only candidate projection으로
+변환하고 기존 evidence group consolidator를 재사용한다. Planned run count,
+canonical `planIndex`, execution assignment role과 run/variant legacy identity
+연결이 다르면 fail-closed로 거부한다. Baseline capacity, combined 또는
+incremental capacity, exclusion과 blocker는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionAssignmentCandidates.ts`는 기존
 feasibility enumeration/availability helper를 재사용해 단일 validation
 assignment의 structural candidate를 열거한다. Calendar-valid candidate는
