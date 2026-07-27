@@ -661,6 +661,14 @@ split role과 canonical entry set을 포함한 source variant를 deduplicate한�
 payload가 서로 다른 evidence group hash로 매핑되거나 같은
 `sourceVariantHash`가 다른 evidence group에 재사용되면 fail-closed로
 거부한다. Capacity count, exclusion row 및 blocker는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionCapacityView.ts`는 consolidated
+expansion evidence group을 global unique, cross-role shared, role-local,
+role-exclusive 및 role-regime count로 투영한다. Shared group은 각
+role-local count에는 보존하고 role-exclusive count에서는 제외한다.
+Duplicate hash, source variant group hash 불일치, 빈 source variant/role,
+unknown/non-canonical role 및 upstream unique count 불일치를 fail-closed로
+거부한다. Baseline, combined, incremental capacity와 target blocker는
+생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
