@@ -1,6 +1,5 @@
 import type {
-  EvidenceExpansionAcceptedEvidenceGroup,
-  EvidenceExpansionEvidenceGroupConsolidationResult
+  EvidenceExpansionAcceptedEvidenceGroup
 } from "./validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.js";
 import type {
   ValidationRoleRegimeEvidenceExpansionPreflightArtifact
@@ -14,8 +13,13 @@ import type { ValidationSplitRole } from "./validationProtocol.js";
 export type EvidenceExpansionCapacityView =
   ValidationRoleRegimeEvidenceExpansionPreflightArtifact["capacity"]["expansion"];
 
+export interface EvidenceExpansionCapacityCollection {
+  evidenceGroups: EvidenceExpansionAcceptedEvidenceGroup[];
+  uniqueEvidenceGroupCount: number;
+}
+
 export function buildEvidenceExpansionCapacityView(
-  consolidation: EvidenceExpansionEvidenceGroupConsolidationResult
+  consolidation: EvidenceExpansionCapacityCollection
 ): EvidenceExpansionCapacityView {
   if (
     consolidation.evidenceGroups.length !==
