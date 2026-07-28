@@ -780,6 +780,16 @@ market/symbol canonical union으로 조립하고
 evidence group 연결, non-empty membership, canonical order와
 `universeMembershipHash`를 fail-closed로 재검증한다. Candidate interval,
 pairwise dependency, calendar hash와 preflight artifact는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionDependencyCandidateInterval.ts`는
+accepted evidence group을 단일 dependency candidate interval row로
+투영한다. 검증된 calendar classifier의 official artifact와 검증된 expansion
+source coverage의 required market scope를 받아 evidence group interval에
+대한 canonical trading-date payload와 hash를 내부 재계산한다. 두 dependency
+contract의 기록 hash와 모든 source variant의 실제 observed set 및 reference
+hash가 canonical set과 일치할 때만 source reference, role, regime, interval과
+combined universe membership hash를 strict schema로 반환한다.
+Pairwise overlap/adjacency, blocker, preflight hash와 artifact는 생성하지
+않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네
