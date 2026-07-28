@@ -738,6 +738,12 @@ ordering/uniqueness, observed/universe evidence hash, source discriminator와
 cross-group source variant ownership 불일치는 fail-closed로 거부한다.
 Combined/incremental capacity, target 판정, exclusion과 blocker는 생성하지
 않는다.
+`validationRoleRegimeEvidenceExpansionCrossSourceCapacityViews.ts`는 union의
+combined/incremental collection과 source별 count conservation을 검증하고
+기존 capacity projection semantics를 두 collection에 각각 적용한다.
+Incremental group은 같은 hash의 combined group과 전체 canonical payload가
+같아야 한다. Baseline/expansion capacity, target 판정, exclusion과 blocker,
+preflight artifact 조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
