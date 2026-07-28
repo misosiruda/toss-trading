@@ -856,6 +856,15 @@ candidate interval과 pairwise row를 추정하지 않고 빈 dependency input�
 재계산할 수 있을 때만 complete dependency builder를 호출한다.
 Capacity, exclusion, 다른 blocker, 최종 status, hash와 preflight artifact는
 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightDerivedState.ts`는 verified
+dependency 입력과 strict target/capacity를 기존 dependency state 및 capacity
+target blocker builder에 직접 연결한다. Dependency input과 두 builder가
+생성한 blocker를 공용 canonical comparator로 정렬하고 동일
+code/role/regime key 중복을 fail-closed로 거부한다. 공용 comparator는
+capacity blocker와 preflight hash verifier에도 동일하게 적용한다.
+Exclusion, integrity blocker, 최종 status, hash와 preflight artifact는
+생성하지 않으므로 이 단계의 빈 blocker만으로 replay readiness를 주장하지
+않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
