@@ -225,7 +225,7 @@ export const evidenceExpansionCapacitySummarySchema = z
     validateCapacitySummaryRelationships(value, context);
   });
 
-const candidateIntervalSchema = z
+export const evidenceExpansionDependencyCandidateIntervalSchema = z
   .object({
     evidenceGroupHash: sha256HashSchema,
     sourceVariants: sourceVariantReferencesSchema,
@@ -332,7 +332,9 @@ const pairwiseDependencySchema = z
 
 const dependencyInputsSchema = z
   .object({
-    candidateIntervals: z.array(candidateIntervalSchema),
+    candidateIntervals: z.array(
+      evidenceExpansionDependencyCandidateIntervalSchema
+    ),
     pairwise: z.array(pairwiseDependencySchema)
   })
   .strict();
@@ -468,6 +470,9 @@ export type EvidenceExpansionTargetMatrix = z.infer<
 >;
 export type EvidenceExpansionCapacitySummary = z.infer<
   typeof evidenceExpansionCapacitySummarySchema
+>;
+export type EvidenceExpansionDependencyCandidateInterval = z.infer<
+  typeof evidenceExpansionDependencyCandidateIntervalSchema
 >;
 export type ValidationRoleRegimeEvidenceExpansionPreflightArtifact = z.infer<
   typeof validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
