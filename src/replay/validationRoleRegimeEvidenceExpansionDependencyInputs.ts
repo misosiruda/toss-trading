@@ -11,12 +11,16 @@ import {
   type EvidenceExpansionDependencyInputs
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 
-export function buildEvidenceExpansionDependencyInputs(input: {
+export interface EvidenceExpansionDependencyInputsInput {
   groups: EvidenceExpansionDependencyCandidateIntervalInput["group"][];
   source: EvidenceExpansionDependencyCandidateIntervalInput["source"];
   calendarClassifier:
     EvidenceExpansionDependencyCandidateIntervalInput["calendarClassifier"];
-}): EvidenceExpansionDependencyInputs {
+}
+
+export function buildEvidenceExpansionDependencyInputs(
+  input: EvidenceExpansionDependencyInputsInput
+): EvidenceExpansionDependencyInputs {
   const officialCalendarArtifact =
     input.calendarClassifier.officialCalendarArtifact;
   if (officialCalendarArtifact === null) {
