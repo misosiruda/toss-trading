@@ -9,6 +9,9 @@ import type {
 import {
   buildEvidenceExpansionEligibilityExclusions
 } from "./validationRoleRegimeEvidenceExpansionEligibilityExclusions.js";
+import {
+  buildEvidenceExpansionEligibilityPartition
+} from "./validationRoleRegimeEvidenceExpansionEligibilityPartition.js";
 import type { ValidationSplitRole } from "./validationProtocol.js";
 
 test("eligibility exclusions ignore accepted rows and sort by canonical key", () => {
@@ -405,6 +408,84 @@ test("eligibility exclusions reject conflicting interval-to-group mappings", () 
       );
     },
     /interval payload maps to conflicting evidence group hashes/
+  );
+});
+
+test("eligibility partition preserves accepted and excluded source variants", () => {
+  const partition = buildEvidenceExpansionEligibilityPartition({
+    eligibility: result([
+      eligibility("3", "3", "train", "bull", true, null),
+      eligibility(
+        "2",
+        "2",
+        "validation",
+        "sideways",
+        false,
+        "SCOPE_UNAVAILABLE"
+      ),
+      eligibility(
+        "1",
+        "1",
+        "test",
+        "insufficient_data",
+        true,
+        "INSUFFICIENT_REGIME_DATA"
+      )
+    ])
+  });
+
+  assert.deepEqual(
+    partition.consolidation.evidenceGroups.map(
+      (group) => group.evidenceGroupHash
+    ),
+    [hash("3")]
+  );
+  assert.deepEqual(
+    partition.exclusions.flatMap((exclusion) =>
+      exclusion.sourceVariants.map(
+        (variant) => variant.sourceVariantHash
+      )
+    ),
+    [hash("1"), hash("2")]
+  );
+});
+
+test("eligibility partition allows accepted and excluded variants in one evidence group", () => {
+  const partition = buildEvidenceExpansionEligibilityPartition({
+    eligibility: result([
+      eligibility("1", "1", "train", "bull", true, null),
+      eligibility(
+        "1",
+        "2",
+        "validation",
+        "bull",
+        false,
+        "SCOPE_UNAVAILABLE"
+      )
+    ])
+  });
+
+  assert.equal(partition.consolidation.evidenceGroups.length, 1);
+  assert.equal(partition.exclusions.length, 1);
+  assert.equal(
+    partition.consolidation.evidenceGroups[0]?.evidenceGroupHash,
+    partition.exclusions[0]?.evidenceGroupHash
+  );
+});
+
+test("eligibility partition rejects unrecognized root fields", () => {
+  const input = {
+    eligibility: result([
+      eligibility("1", "1", "train", "bull", true, null)
+    ]),
+    resultMetrics: {}
+  } as unknown as Parameters<
+    typeof buildEvidenceExpansionEligibilityPartition
+  >[0];
+
+  assert.throws(
+    () => buildEvidenceExpansionEligibilityPartition(input),
+    /eligibility partition input contains unknown fields/
   );
 });
 

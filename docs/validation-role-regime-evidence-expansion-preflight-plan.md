@@ -723,6 +723,16 @@ accepted/excluded status와 관계없이 모든 candidate 사이에서 검증한
 결과는 reason, 고정 role 순서, 고정 regime 순서, evidence group 및 source
 variant key 순서로 정렬한다. Calendar rejection, 다른 exclusion reason 및
 blocker/preflight artifact 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionEligibilityPartition.ts`는 같은
+calendar-valid eligibility result에서 accepted evidence group consolidation과
+scope/regime exclusion을 기존 builder로 각각 생성한다. Candidate,
+consolidation 및 exclusion의 `sourceVariantHash` 집합이 accepted/excluded
+상태와 양방향으로 일치하고 한 variant가 두 상태에 동시에 속하지 않는지
+fail-closed로 검증한다. 같은 source-independent evidence group에 accepted
+variant와 excluded variant가 함께 존재하는 것은 허용하며 두 provenance를
+모두 보존한다. Calendar-rejected candidate는 이 partition보다 앞선
+assignment diagnostic 범위에 남으며, 최종 status와 preflight artifact는
+생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
