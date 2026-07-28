@@ -3,6 +3,10 @@ import {
   type EvidenceExpansionDependencyInputsInput
 } from "./validationRoleRegimeEvidenceExpansionDependencyInputs.js";
 import {
+  createOfficialMarketCalendarEvidenceHash,
+  type OfficialMarketCalendarEvidenceArtifact
+} from "./officialMarketCalendarEvidence.js";
+import {
   evidenceExpansionCompleteDependencyInputsSchema,
   evidenceExpansionPreflightBlockerSchema,
   type EvidenceExpansionDependencyInputs,
@@ -56,14 +60,27 @@ function assertOfficialCalendarIdentity(
   const artifact = calendarClassifier.officialCalendarArtifact;
   const artifactHash =
     calendarClassifier.hashes.officialCalendarArtifactHash;
+  const recomputedArtifactHash =
+    artifact === null
+      ? null
+      : recomputeOfficialCalendarArtifactHash(artifact);
   if (
     (artifact === null) !== (artifactHash === null) ||
-    (artifact !== null && artifact.artifactHash !== artifactHash)
+    (artifact !== null &&
+      (artifact.artifactHash !== artifactHash ||
+        recomputedArtifactHash !== artifact.artifactHash))
   ) {
     throw new Error(
       "official calendar artifact does not match verified hash"
     );
   }
+}
+
+function recomputeOfficialCalendarArtifactHash(
+  artifact: OfficialMarketCalendarEvidenceArtifact
+): string {
+  const { artifactHash: _artifactHash, ...payload } = artifact;
+  return createOfficialMarketCalendarEvidenceHash(payload);
 }
 
 function assertExactInputKeys(

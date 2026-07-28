@@ -852,7 +852,8 @@ dependency builder에 연결한다. Official calendar artifact가 없으면
 candidate interval과 pairwise row를 추정하지 않고 빈 dependency input과
 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`,
 `DEPENDENCY_INPUT_INCOMPLETE` blocker를 함께 반환한다. Official artifact와
-기록 hash가 양방향으로 일치할 때만 complete dependency builder를 호출한다.
+기록 hash가 양방향으로 일치하고 canonical payload에서 artifact hash를
+재계산할 수 있을 때만 complete dependency builder를 호출한다.
 Capacity, exclusion, 다른 blocker, 최종 status, hash와 preflight artifact는
 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된

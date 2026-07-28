@@ -68,6 +68,17 @@ test("dependency state rejects official artifact hash mismatches", () => {
   );
 });
 
+test("dependency state recomputes the official artifact payload hash", () => {
+  const mutated = dependencyInput();
+  mutated.calendarClassifier.officialCalendarArtifact!.sources[0]!.publisher =
+    "mutated KRX fixture";
+
+  assert.throws(
+    () => buildEvidenceExpansionPreflightDependencyState(mutated),
+    /official calendar artifact does not match verified hash/
+  );
+});
+
 test("dependency state rejects unrecognized root fields", () => {
   const input = {
     ...dependencyInput(),
