@@ -846,6 +846,15 @@ canonical key 순서로 생성한다. 어느 role-regime target이라도 `null`�
 `ROLE_REGIME_TARGET_UNDEFINED` blocker 한 건을 보존하며 0이나 current
 capacity로 대체하지 않는다. Calendar, dependency, identity, exclusion
 blocker와 최종 status 또는 preflight artifact는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightDependencyState.ts`는
+verified calendar/source와 accepted evidence group을 기존 complete
+dependency builder에 연결한다. Official calendar artifact가 없으면
+candidate interval과 pairwise row를 추정하지 않고 빈 dependency input과
+`OFFICIAL_CALENDAR_EVIDENCE_MISSING`,
+`DEPENDENCY_INPUT_INCOMPLETE` blocker를 함께 반환한다. Official artifact와
+기록 hash가 양방향으로 일치할 때만 complete dependency builder를 호출한다.
+Capacity, exclusion, 다른 blocker, 최종 status, hash와 preflight artifact는
+생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
