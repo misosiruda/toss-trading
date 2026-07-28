@@ -278,7 +278,7 @@ export const evidenceExpansionDependencyCandidateIntervalSchema = z
     }
   });
 
-const pairwiseDependencySchema = z
+export const evidenceExpansionPairwiseDependencySchema = z
   .object({
     leftEvidenceGroupHash: sha256HashSchema,
     rightEvidenceGroupHash: sha256HashSchema,
@@ -297,6 +297,16 @@ const pairwiseDependencySchema = z
         code: "custom",
         path: ["rightEvidenceGroupHash"],
         message: "pairwise dependency must not compare an interval to itself"
+      });
+    } else if (
+      value.leftEvidenceGroupHash.localeCompare(
+        value.rightEvidenceGroupHash
+      ) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["rightEvidenceGroupHash"],
+        message: "pairwise dependency hashes must use canonical order"
       });
     }
     if (value.tradingDateOverlapCount > value.tradingDateUnionCount) {
@@ -335,7 +345,7 @@ const dependencyInputsSchema = z
     candidateIntervals: z.array(
       evidenceExpansionDependencyCandidateIntervalSchema
     ),
-    pairwise: z.array(pairwiseDependencySchema)
+    pairwise: z.array(evidenceExpansionPairwiseDependencySchema)
   })
   .strict();
 
@@ -473,6 +483,9 @@ export type EvidenceExpansionCapacitySummary = z.infer<
 >;
 export type EvidenceExpansionDependencyCandidateInterval = z.infer<
   typeof evidenceExpansionDependencyCandidateIntervalSchema
+>;
+export type EvidenceExpansionPairwiseDependency = z.infer<
+  typeof evidenceExpansionPairwiseDependencySchema
 >;
 export type ValidationRoleRegimeEvidenceExpansionPreflightArtifact = z.infer<
   typeof validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
