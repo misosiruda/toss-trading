@@ -753,6 +753,13 @@ single-group merge 결과와 비교한다. 네 view의 global/role/regime 관계
 preflight와 같은 exported capacity summary schema로 최종 검증한다. Target
 판정, exclusion과 blocker, dependency input, preflight artifact 조립은
 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
+`roleSampleMinimum=30`과 nullable positive integer
+`roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네
+role-regime target을 canonical하게 조립한다. `null`을 0이나 current
+candidate count로 대체하지 않으며 unknown input과 잘못된 minimum은
+fail-closed로 거부한다. Capacity 충족 판정, target blocker, status,
+preflight artifact 조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

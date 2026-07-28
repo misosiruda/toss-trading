@@ -98,7 +98,7 @@ const roleTargetSchema = z
   })
   .strict();
 
-const targetMatrixSchema = z
+export const evidenceExpansionTargetMatrixSchema = z
   .object({
     byRole: z
       .object({
@@ -421,7 +421,7 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
         )
       })
       .strict(),
-    targetMatrix: targetMatrixSchema,
+    targetMatrix: evidenceExpansionTargetMatrixSchema,
     capacity: evidenceExpansionCapacitySummarySchema,
     dependencyInputs: dependencyInputsSchema,
     exclusions: z.array(evidenceExpansionExclusionSchema),
@@ -462,6 +462,9 @@ export type EvidenceExpansionExclusion = z.infer<
 >;
 export type EvidenceExpansionPreflightBlocker = z.infer<
   typeof evidenceExpansionPreflightBlockerSchema
+>;
+export type EvidenceExpansionTargetMatrix = z.infer<
+  typeof evidenceExpansionTargetMatrixSchema
 >;
 export type EvidenceExpansionCapacitySummary = z.infer<
   typeof evidenceExpansionCapacitySummarySchema
