@@ -213,7 +213,7 @@ const capacityViewSchema = z
     }
   });
 
-const capacitySummarySchema = z
+export const evidenceExpansionCapacitySummarySchema = z
   .object({
     baseline: capacityViewSchema,
     expansion: capacityViewSchema,
@@ -422,7 +422,7 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
       })
       .strict(),
     targetMatrix: targetMatrixSchema,
-    capacity: capacitySummarySchema,
+    capacity: evidenceExpansionCapacitySummarySchema,
     dependencyInputs: dependencyInputsSchema,
     exclusions: z.array(evidenceExpansionExclusionSchema),
     blockers: z.array(evidenceExpansionPreflightBlockerSchema),
@@ -463,6 +463,9 @@ export type EvidenceExpansionExclusion = z.infer<
 export type EvidenceExpansionPreflightBlocker = z.infer<
   typeof evidenceExpansionPreflightBlockerSchema
 >;
+export type EvidenceExpansionCapacitySummary = z.infer<
+  typeof evidenceExpansionCapacitySummarySchema
+>;
 export type ValidationRoleRegimeEvidenceExpansionPreflightArtifact = z.infer<
   typeof validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
 >;
@@ -472,7 +475,7 @@ type PreflightArtifact = z.infer<
 >;
 type ValidationRole = (typeof VALIDATION_ROLE_ORDER)[number];
 type TargetRegime = (typeof VALIDATION_TARGET_REGIME_ORDER)[number];
-type CapacitySummary = z.infer<typeof capacitySummarySchema>;
+type CapacitySummary = EvidenceExpansionCapacitySummary;
 
 const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
   "RESULT_METRIC_INPUT_FORBIDDEN",

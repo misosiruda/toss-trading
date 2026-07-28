@@ -744,6 +744,15 @@ combined/incremental collection과 source별 count conservation을 검증하고
 Incremental group은 같은 hash의 combined group과 전체 canonical payload가
 같아야 한다. Baseline/expansion capacity, target 판정, exclusion과 blocker,
 preflight artifact 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCapacitySummary.ts`는 baseline과
+expansion consolidation count 및 group payload가 union source와 일치하는지
+확인하고 기존 baseline, expansion, cross-source capacity builder를
+조합한다. Source hash 집합에서 overlap count와 combined/incremental
+membership을 파생해 union과 양방향으로 대조하고, overlap payload는 기존
+single-group merge 결과와 비교한다. 네 view의 global/role/regime 관계는
+preflight와 같은 exported capacity summary schema로 최종 검증한다. Target
+판정, exclusion과 blocker, dependency input, preflight artifact 조립은
+수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
