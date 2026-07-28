@@ -4,6 +4,7 @@ import {
   type EvidenceExpansionSourceVariantReference
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 import type {
+  EvidenceExpansionCandidateEligibility,
   EvidenceExpansionCandidateEligibilityResult
 } from "./validationRoleRegimeEvidenceExpansionCandidateEligibility.js";
 import {
@@ -16,6 +17,14 @@ import {
 import type {
   EvidenceExpansionSourceCandidateVariant
 } from "./validationRoleRegimeEvidenceExpansionSourceCandidateVariant.js";
+
+interface CandidateClassificationIdentity {
+  scopeAvailable: boolean;
+  regime: EvidenceExpansionCandidateEligibility["candidate"]["regime"];
+  status: EvidenceExpansionCandidateEligibility["status"];
+  exclusionReason:
+    EvidenceExpansionCandidateEligibility["exclusionReason"];
+}
 
 export function buildEvidenceExpansionEligibilityExclusions(
   eligibility: EvidenceExpansionCandidateEligibilityResult
@@ -36,6 +45,10 @@ export function buildEvidenceExpansionEligibilityExclusions(
     string,
     EvidenceExpansionSourceCandidateVariant
   >();
+  const classificationsBySourceVariantHash = new Map<
+    string,
+    CandidateClassificationIdentity
+  >();
   for (const row of eligibility.candidates) {
     assertEvidenceGroupIntervalIdentity(
       row.candidate.variant.evidenceGroupHash,
@@ -48,6 +61,10 @@ export function buildEvidenceExpansionEligibilityExclusions(
       row.candidate.variant,
       sourceVariantOwners,
       sourceVariantsByHash
+    );
+    assertCandidateClassificationIdentity(
+      row,
+      classificationsBySourceVariantHash
     );
     if (row.status === "accepted") {
       continue;
@@ -181,6 +198,41 @@ function assertSourceVariantIdentity(
   sourceVariantsByHash.set(
     sourceVariant.sourceVariantHash,
     variant
+  );
+}
+
+function assertCandidateClassificationIdentity(
+  row: EvidenceExpansionCandidateEligibility,
+  classificationsBySourceVariantHash: Map<
+    string,
+    CandidateClassificationIdentity
+  >
+): void {
+  const sourceVariantHash =
+    row.candidate.variant.sourceVariant.sourceVariantHash;
+  const classification = {
+    scopeAvailable: row.candidate.scopeAvailable,
+    regime: row.candidate.regime,
+    status: row.status,
+    exclusionReason: row.exclusionReason
+  };
+  const existing = classificationsBySourceVariantHash.get(
+    sourceVariantHash
+  );
+  if (
+    existing !== undefined &&
+    (existing.scopeAvailable !== classification.scopeAvailable ||
+      existing.regime !== classification.regime ||
+      existing.status !== classification.status ||
+      existing.exclusionReason !== classification.exclusionReason)
+  ) {
+    throw new Error(
+      "eligibility source variant has conflicting classification payload"
+    );
+  }
+  classificationsBySourceVariantHash.set(
+    sourceVariantHash,
+    classification
   );
 }
 

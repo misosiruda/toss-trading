@@ -303,6 +303,31 @@ test("eligibility exclusions reject cross-status identity conflicts", () => {
       ),
     /source variant payload conflicts/
   );
+
+  const conflictingRegime = structuredClone(accepted);
+  conflictingRegime.status = "excluded";
+  conflictingRegime.exclusionReason =
+    "INSUFFICIENT_REGIME_DATA";
+  conflictingRegime.candidate.regime = "insufficient_data";
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([accepted, conflictingRegime])
+      ),
+    /conflicting classification payload/
+  );
+
+  const conflictingScope = structuredClone(accepted);
+  conflictingScope.status = "excluded";
+  conflictingScope.exclusionReason = "SCOPE_UNAVAILABLE";
+  conflictingScope.candidate.scopeAvailable = false;
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([accepted, conflictingScope])
+      ),
+    /conflicting classification payload/
+  );
 });
 
 test("eligibility exclusions reject duplicate source payload conflicts", () => {
