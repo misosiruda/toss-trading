@@ -100,6 +100,7 @@ function aggregation(
           },
           structuralCapacityCount: candidates.length,
           candidates,
+          calendarRejectedCandidates: [],
           calendarRejectedCandidateCount: 0,
           scopeUnavailableCandidateCount,
           warnings: []
@@ -108,6 +109,7 @@ function aggregation(
     ],
     structuralCapacityCount: candidates.length,
     calendarValidCandidateCount: candidates.length,
+    calendarRejectedCandidates: [],
     calendarRejectedCandidateCount: 0,
     scopeUnavailableCandidateCount
   };

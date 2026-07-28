@@ -22,6 +22,7 @@ test("assignment enumeration builds calendar-valid source variants", () => {
 
   assert.equal(result.structuralCapacityCount, 1);
   assert.equal(result.calendarRejectedCandidateCount, 0);
+  assert.deepEqual(result.calendarRejectedCandidates, []);
   assert.equal(result.scopeUnavailableCandidateCount, 0);
   assert.equal(result.candidates.length, 1);
   assert.equal(result.candidates[0]?.startAt, "2024-12-31T15:00:00.000Z");
@@ -43,6 +44,12 @@ test("assignment enumeration preserves calendar rejection counts", () => {
   assert.equal(result.structuralCapacityCount, 1);
   assert.deepEqual(result.candidates, []);
   assert.equal(result.calendarRejectedCandidateCount, 1);
+  assert.deepEqual(result.calendarRejectedCandidates, [
+    {
+      startAt: "2024-12-31T15:00:00.000Z",
+      endAt: "2025-01-31T14:59:59.999Z"
+    }
+  ]);
   assert.equal(result.scopeUnavailableCandidateCount, 0);
   assert.ok(
     result.warnings.some(
@@ -102,6 +109,7 @@ test("assignment enumeration preserves zero structural capacity", () => {
   assert.equal(result.structuralCapacityCount, 0);
   assert.deepEqual(result.candidates, []);
   assert.equal(result.calendarRejectedCandidateCount, 0);
+  assert.deepEqual(result.calendarRejectedCandidates, []);
   assert.ok(
     result.warnings.some(
       (warning) => warning.code === "ROLE_FULL_WINDOW_CAPACITY_ZERO"

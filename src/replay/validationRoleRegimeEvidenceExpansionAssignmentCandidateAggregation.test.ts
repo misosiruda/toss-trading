@@ -30,6 +30,7 @@ test("assignment aggregation uses canonical split and role order", () => {
   assert.equal(result.structuralCapacityCount, 3);
   assert.equal(result.calendarValidCandidateCount, 3);
   assert.equal(result.calendarRejectedCandidateCount, 0);
+  assert.deepEqual(result.calendarRejectedCandidates, []);
   assert.equal(result.scopeUnavailableCandidateCount, 0);
 });
 
@@ -50,6 +51,15 @@ test("assignment aggregation preserves rejection and scope totals", () => {
   assert.equal(result.structuralCapacityCount, 3);
   assert.equal(result.calendarValidCandidateCount, 2);
   assert.equal(result.calendarRejectedCandidateCount, 1);
+  assert.equal(result.calendarRejectedCandidates.length, 1);
+  assert.equal(
+    result.calendarRejectedCandidates[0]?.assignment.splitRole,
+    "validation"
+  );
+  assert.deepEqual(result.calendarRejectedCandidates[0]?.candidate, {
+    startAt: "2025-01-31T15:00:00.000Z",
+    endAt: "2025-02-28T14:59:59.999Z"
+  });
   assert.equal(result.scopeUnavailableCandidateCount, 1);
   assert.equal(
     result.assignmentCandidates[1]?.result
