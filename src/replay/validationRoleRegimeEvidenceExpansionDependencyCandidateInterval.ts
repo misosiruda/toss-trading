@@ -6,10 +6,12 @@ import type {
   VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
-  buildEvidenceExpansionCanonicalTradingDates
+  buildEvidenceExpansionCanonicalTradingDates,
+  type EvidenceExpansionCanonicalTradingDates
 } from "./validationRoleRegimeEvidenceExpansionCanonicalTradingDates.js";
 import {
-  buildEvidenceExpansionCombinedUniverseMembership
+  buildEvidenceExpansionCombinedUniverseMembership,
+  type EvidenceExpansionCombinedUniverseMembership
 } from "./validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.js";
 import type {
   EvidenceExpansionAcceptedEvidenceGroup
@@ -26,7 +28,7 @@ import type {
   VerifiedValidationRoleRegimeEvidenceExpansionSource
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
 
-export function buildEvidenceExpansionDependencyCandidateInterval(input: {
+export interface EvidenceExpansionDependencyCandidateIntervalInput {
   group: EvidenceExpansionAcceptedEvidenceGroup;
   source: Pick<
     VerifiedValidationRoleRegimeEvidenceExpansionSource,
@@ -36,7 +38,23 @@ export function buildEvidenceExpansionDependencyCandidateInterval(input: {
     VerifiedEvidenceExpansionCalendarClassifier,
     "officialCalendarArtifact" | "hashes"
   >;
-}): EvidenceExpansionDependencyCandidateInterval {
+}
+
+export interface EvidenceExpansionDependencyCandidateEvidence {
+  interval: EvidenceExpansionDependencyCandidateInterval;
+  canonicalTradingDates: EvidenceExpansionCanonicalTradingDates;
+  combinedUniverseMembership: EvidenceExpansionCombinedUniverseMembership;
+}
+
+export function buildEvidenceExpansionDependencyCandidateInterval(
+  input: EvidenceExpansionDependencyCandidateIntervalInput
+): EvidenceExpansionDependencyCandidateInterval {
+  return buildEvidenceExpansionDependencyCandidateEvidence(input).interval;
+}
+
+export function buildEvidenceExpansionDependencyCandidateEvidence(
+  input: EvidenceExpansionDependencyCandidateIntervalInput
+): EvidenceExpansionDependencyCandidateEvidence {
   const officialCalendarArtifact =
     input.calendarClassifier.officialCalendarArtifact;
   if (officialCalendarArtifact === null) {
@@ -91,20 +109,26 @@ export function buildEvidenceExpansionDependencyCandidateInterval(input: {
 
   const combinedUniverseMembership =
     buildEvidenceExpansionCombinedUniverseMembership(input.group);
-  return evidenceExpansionDependencyCandidateIntervalSchema.parse({
-    evidenceGroupHash: input.group.evidenceGroupHash,
-    sourceVariants: input.group.sourceVariants
-      .map((variant) => variant.sourceVariant)
-      .sort(compareSourceVariants),
-    splitRoles: input.group.splitRoles,
-    targetRegime: input.group.targetRegime,
-    startAt: input.group.startAt,
-    endAt: input.group.endAt,
-    canonicalTradingDatesHash:
-      canonicalTradingDates.canonicalTradingDatesHash,
-    combinedUniverseMembershipHash:
-      combinedUniverseMembership.combinedUniverseMembershipHash
-  });
+  const interval =
+    evidenceExpansionDependencyCandidateIntervalSchema.parse({
+      evidenceGroupHash: input.group.evidenceGroupHash,
+      sourceVariants: input.group.sourceVariants
+        .map((variant) => variant.sourceVariant)
+        .sort(compareSourceVariants),
+      splitRoles: input.group.splitRoles,
+      targetRegime: input.group.targetRegime,
+      startAt: input.group.startAt,
+      endAt: input.group.endAt,
+      canonicalTradingDatesHash:
+        canonicalTradingDates.canonicalTradingDatesHash,
+      combinedUniverseMembershipHash:
+        combinedUniverseMembership.combinedUniverseMembershipHash
+    });
+  return {
+    interval,
+    canonicalTradingDates,
+    combinedUniverseMembership
+  };
 }
 
 function compareSourceVariants(

@@ -428,7 +428,10 @@ Pairwise row는 evidence hash canonical order로 정렬한다. 자기 자신과�
 - `combinedUniverseMembershipHash`는 source variant universe membership의 canonical union을 hash한 값이다. Pairwise `sharedUniverse`는 이 union 간 실제 symbol intersection 존재 여부로 계산해 source 확장에 따른 shared universe를 누락하지 않는다.
 - Overlap ratio는 intersection trading-date count를 union trading-date count로 나눈 값이다.
 - Overlap이 있으면 `adjacencyTradingDayGap=null`이다.
-- 겹치지 않으면 두 interval 사이의 source trading-day gap을 기록한다.
+- 겹치지 않으면 각 canonical set의 official `marketOpen` 최소/최대 시각을
+  비교한다. 두 시각 범위가 겹치면 gap은 0이다. 분리돼 있으면 earlier
+  maximum과 later minimum 사이에 있는 required market의 verified official
+  open session 수를 `adjacencyTradingDayGap`으로 기록한다.
 - Calendar date 차이를 trading-day gap으로 대체하지 않는다.
 - Shared universe와 regime persistence는 serial dependence 진단 입력이지 독립성 증명이나 exclusion threshold가 아니다.
 - Effective sample size, autocorrelation correction 또는 cluster rule은 별도 사전 계약 전까지 계산하지 않는다.
@@ -790,6 +793,15 @@ hash가 canonical set과 일치할 때만 source reference, role, regime, interv
 combined universe membership hash를 strict schema로 반환한다.
 Pairwise overlap/adjacency, blocker, preflight hash와 artifact는 생성하지
 않는다.
+`validationRoleRegimeEvidenceExpansionPairwiseDependency.ts`는 두 accepted
+evidence group을 기존 candidate interval gate로 다시 검증하고 evidence hash
+canonical order의 단일 pairwise row를 생성한다. Trading-date intersection과
+union은 market/session-date key로 계산하고, 겹치지 않는 interval의 adjacency는
+verified official artifact에서 두 canonical market-open 범위 사이의 required
+market open session만 센다. Combined membership 실제 교집합으로
+`sharedUniverse`를 계산하며 같은 regime과 cross-role 여부를 interval
+contract에서 파생한다. 전체 pair collection, dependency hash, blocker,
+preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네

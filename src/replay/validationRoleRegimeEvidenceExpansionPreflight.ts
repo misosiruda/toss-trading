@@ -278,7 +278,7 @@ export const evidenceExpansionDependencyCandidateIntervalSchema = z
     }
   });
 
-const pairwiseDependencySchema = z
+export const evidenceExpansionPairwiseDependencySchema = z
   .object({
     leftEvidenceGroupHash: sha256HashSchema,
     rightEvidenceGroupHash: sha256HashSchema,
@@ -335,7 +335,7 @@ const dependencyInputsSchema = z
     candidateIntervals: z.array(
       evidenceExpansionDependencyCandidateIntervalSchema
     ),
-    pairwise: z.array(pairwiseDependencySchema)
+    pairwise: z.array(evidenceExpansionPairwiseDependencySchema)
   })
   .strict();
 
@@ -473,6 +473,9 @@ export type EvidenceExpansionCapacitySummary = z.infer<
 >;
 export type EvidenceExpansionDependencyCandidateInterval = z.infer<
   typeof evidenceExpansionDependencyCandidateIntervalSchema
+>;
+export type EvidenceExpansionPairwiseDependency = z.infer<
+  typeof evidenceExpansionPairwiseDependencySchema
 >;
 export type ValidationRoleRegimeEvidenceExpansionPreflightArtifact = z.infer<
   typeof validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
