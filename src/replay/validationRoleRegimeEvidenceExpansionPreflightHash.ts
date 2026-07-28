@@ -2,10 +2,12 @@ import type { Sha256Hash } from "../domain/schemas.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
   type EvidenceExpansionExclusion,
-  type EvidenceExpansionPreflightBlocker,
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
+import {
+  compareEvidenceExpansionPreflightBlockers
+} from "./validationRoleRegimeEvidenceExpansionPreflightBlockerOrder.js";
 import {
   VALIDATION_ROLE_ORDER,
   VALIDATION_TARGET_REGIME_ORDER
@@ -82,7 +84,7 @@ function assertCanonicalCollections(
   );
   assertCanonicalOrder(
     payload.blockers,
-    compareBlockers,
+    compareEvidenceExpansionPreflightBlockers,
     "preflight blockers"
   );
 }
@@ -109,18 +111,6 @@ function compareExclusions(
     regimeIndex(left.targetRegime) - regimeIndex(right.targetRegime) ||
     compareStrings(left.evidenceGroupHash, right.evidenceGroupHash) ||
     compareSourceVariantLists(left.sourceVariants, right.sourceVariants)
-  );
-}
-
-function compareBlockers(
-  left: EvidenceExpansionPreflightBlocker,
-  right: EvidenceExpansionPreflightBlocker
-): number {
-  return (
-    compareStrings(left.code, right.code) ||
-    roleIndex(left.splitRole) - roleIndex(right.splitRole) ||
-    regimeIndex(left.targetRegime) - regimeIndex(right.targetRegime) ||
-    compareStrings(left.message, right.message)
   );
 }
 

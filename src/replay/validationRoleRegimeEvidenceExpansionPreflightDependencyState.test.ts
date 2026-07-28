@@ -14,9 +14,18 @@ import type {
 import type {
   VerifiedValidationRoleRegimeEvidenceExpansionSource
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
+import type {
+  EvidenceExpansionCapacitySummary
+} from "./validationRoleRegimeEvidenceExpansionPreflight.js";
+import {
+  buildEvidenceExpansionPreflightDerivedState
+} from "./validationRoleRegimeEvidenceExpansionPreflightDerivedState.js";
 import {
   buildEvidenceExpansionPreflightDependencyState
 } from "./validationRoleRegimeEvidenceExpansionPreflightDependencyState.js";
+import {
+  buildEvidenceExpansionTargetMatrix
+} from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
 
 test("dependency state fails closed when official calendar evidence is unavailable", () => {
   const input = dependencyInput();
@@ -93,6 +102,81 @@ test("dependency state rejects unrecognized root fields", () => {
   );
 });
 
+test("derived state unions dependency and capacity blockers canonically", () => {
+  const dependency = dependencyInput();
+  dependency.calendarClassifier.officialCalendarArtifact = null;
+  dependency.calendarClassifier.hashes.officialCalendarArtifactHash = null;
+  const capacity = capacitySummary();
+  capacity.combined.byRole.validation.roleLocalUniqueEvidenceGroupCount = 29;
+  capacity.combined.byRole.validation.roleExclusiveEvidenceGroupCount = 29;
+  capacity.combined.byRole.validation.byRegime.mixed = 6;
+  capacity.combined.globalUniqueEvidenceGroupCount = 89;
+  capacity.baseline = structuredClone(capacity.combined);
+  capacity.expansion = structuredClone(capacity.combined);
+
+  const state = buildEvidenceExpansionPreflightDerivedState({
+    targetMatrix: buildEvidenceExpansionTargetMatrix({
+      roleSampleMinimum: 30,
+      roleRegimeSampleMinimum: 7
+    }),
+    capacity,
+    dependency
+  });
+
+  assert.deepEqual(
+    state.blockers.map(
+      ({ code, splitRole }) => `${code}:${splitRole ?? "*"}`
+    ),
+    [
+      "DEPENDENCY_INPUT_INCOMPLETE:*",
+      "OFFICIAL_CALENDAR_EVIDENCE_MISSING:*",
+      "ROLE_EXCLUSIVE_CAPACITY_BELOW_TARGET:validation",
+      "ROLE_LOCAL_CAPACITY_BELOW_TARGET:validation",
+      "ROLE_REGIME_CAPACITY_BELOW_TARGET:validation"
+    ]
+  );
+  assert.deepEqual(state.dependencyInputs, {
+    candidateIntervals: [],
+    pairwise: []
+  });
+});
+
+test("derived state remains blocker-free when its implemented gates pass", () => {
+  const state = buildEvidenceExpansionPreflightDerivedState({
+    targetMatrix: buildEvidenceExpansionTargetMatrix({
+      roleSampleMinimum: 30,
+      roleRegimeSampleMinimum: 7
+    }),
+    capacity: capacitySummary(),
+    dependency: dependencyInput()
+  });
+
+  assert.deepEqual(state.blockers, []);
+  assert.deepEqual(state.dependencyInputs, {
+    candidateIntervals: [],
+    pairwise: []
+  });
+});
+
+test("derived state rejects unrecognized root fields", () => {
+  const input = {
+    targetMatrix: buildEvidenceExpansionTargetMatrix({
+      roleSampleMinimum: 30,
+      roleRegimeSampleMinimum: 7
+    }),
+    capacity: capacitySummary(),
+    dependency: dependencyInput(),
+    status: "ready_for_expansion_replay"
+  } as unknown as Parameters<
+    typeof buildEvidenceExpansionPreflightDerivedState
+  >[0];
+
+  assert.throws(
+    () => buildEvidenceExpansionPreflightDerivedState(input),
+    /preflight derived state input contains unknown fields/
+  );
+});
+
 function dependencyInput(): {
   groups: [];
   source: Pick<
@@ -144,6 +228,58 @@ function dependencyInput(): {
           officialCalendarArtifact.artifactHash,
         marketRegimeClassifierHash: hash("e")
       }
+    }
+  };
+}
+
+function capacitySummary(): EvidenceExpansionCapacitySummary {
+  const view = {
+    globalUniqueEvidenceGroupCount: 90,
+    crossRoleSharedEvidenceGroupCount: 0,
+    byRole: {
+      train: capacityRole(),
+      validation: capacityRole(),
+      test: capacityRole()
+    }
+  };
+  return {
+    baseline: structuredClone(view),
+    expansion: structuredClone(view),
+    combined: structuredClone(view),
+    incremental: {
+      globalUniqueEvidenceGroupCount: 0,
+      crossRoleSharedEvidenceGroupCount: 0,
+      byRole: {
+        train: emptyCapacityRole(),
+        validation: emptyCapacityRole(),
+        test: emptyCapacityRole()
+      }
+    }
+  };
+}
+
+function capacityRole() {
+  return {
+    roleLocalUniqueEvidenceGroupCount: 30,
+    roleExclusiveEvidenceGroupCount: 30,
+    byRegime: {
+      bull: 8,
+      bear: 8,
+      sideways: 7,
+      mixed: 7
+    }
+  };
+}
+
+function emptyCapacityRole() {
+  return {
+    roleLocalUniqueEvidenceGroupCount: 0,
+    roleExclusiveEvidenceGroupCount: 0,
+    byRegime: {
+      bull: 0,
+      bear: 0,
+      sideways: 0,
+      mixed: 0
     }
   };
 }
