@@ -21,6 +21,9 @@ import {
 import {
   buildEvidenceExpansionPairwiseDependency
 } from "./validationRoleRegimeEvidenceExpansionPairwiseDependency.js";
+import {
+  evidenceExpansionPairwiseDependencySchema
+} from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 import type {
   EvidenceExpansionSourceCandidateVariant
 } from "./validationRoleRegimeEvidenceExpansionSourceCandidateVariant.js";
@@ -161,6 +164,24 @@ test("pairwise dependency preserves candidate fail-closed gates", () => {
         ...dependencies
       }),
     /trading-date set conflict/
+  );
+});
+
+test("pairwise dependency schema rejects reversed evidence hashes", () => {
+  assert.throws(
+    () =>
+      evidenceExpansionPairwiseDependencySchema.parse({
+        leftEvidenceGroupHash: hash("b"),
+        rightEvidenceGroupHash: hash("a"),
+        tradingDateOverlapCount: 0,
+        tradingDateUnionCount: 2,
+        tradingDateOverlapRatio: 0,
+        adjacencyTradingDayGap: 1,
+        sharedUniverse: false,
+        sameRegime: false,
+        crossRole: true
+      }),
+    /hashes must use canonical order/
   );
 });
 

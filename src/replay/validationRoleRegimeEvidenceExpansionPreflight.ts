@@ -298,6 +298,16 @@ export const evidenceExpansionPairwiseDependencySchema = z
         path: ["rightEvidenceGroupHash"],
         message: "pairwise dependency must not compare an interval to itself"
       });
+    } else if (
+      value.leftEvidenceGroupHash.localeCompare(
+        value.rightEvidenceGroupHash
+      ) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["rightEvidenceGroupHash"],
+        message: "pairwise dependency hashes must use canonical order"
+      });
     }
     if (value.tradingDateOverlapCount > value.tradingDateUnionCount) {
       context.addIssue({
