@@ -13,6 +13,9 @@ import {
   VALIDATION_ROLE_ORDER,
   VALIDATION_TARGET_REGIME_ORDER
 } from "./validationRoleRegimeReplayPlan.js";
+import type {
+  EvidenceExpansionSourceCandidateVariant
+} from "./validationRoleRegimeEvidenceExpansionSourceCandidateVariant.js";
 
 export function buildEvidenceExpansionEligibilityExclusions(
   eligibility: EvidenceExpansionCandidateEligibilityResult
@@ -29,6 +32,10 @@ export function buildEvidenceExpansionEligibilityExclusions(
     Map<string, string>
   >();
   const sourceVariantOwners = new Map<string, string>();
+  const sourceVariantsByHash = new Map<
+    string,
+    EvidenceExpansionSourceCandidateVariant
+  >();
   for (const row of eligibility.candidates) {
     assertEvidenceGroupIntervalIdentity(
       row.candidate.variant.evidenceGroupHash,
@@ -37,10 +44,10 @@ export function buildEvidenceExpansionEligibilityExclusions(
       intervalsByGroupHash,
       groupHashesByInterval
     );
-    assertSourceVariantOwner(
-      row.candidate.variant.sourceVariant.sourceVariantHash,
-      row.candidate.variant.evidenceGroupHash,
-      sourceVariantOwners
+    assertSourceVariantIdentity(
+      row.candidate.variant,
+      sourceVariantOwners,
+      sourceVariantsByHash
     );
     if (row.status === "accepted") {
       continue;
@@ -135,21 +142,46 @@ function assertEvidenceGroupIntervalIdentity(
   hashesByEnd.set(endAt, evidenceGroupHash);
 }
 
-function assertSourceVariantOwner(
-  sourceVariantHash: string,
-  evidenceGroupHash: string,
-  sourceVariantOwners: Map<string, string>
+function assertSourceVariantIdentity(
+  variant: EvidenceExpansionSourceCandidateVariant,
+  sourceVariantOwners: Map<string, string>,
+  sourceVariantsByHash: Map<
+    string,
+    EvidenceExpansionSourceCandidateVariant
+  >
 ): void {
-  const owner = sourceVariantOwners.get(sourceVariantHash);
+  const { sourceVariant } = variant;
+  const owner = sourceVariantOwners.get(
+    sourceVariant.sourceVariantHash
+  );
   if (
     owner !== undefined &&
-    owner !== evidenceGroupHash
+    owner !== variant.evidenceGroupHash
   ) {
     throw new Error(
       "eligibility source variant belongs to multiple evidence groups"
     );
   }
-  sourceVariantOwners.set(sourceVariantHash, evidenceGroupHash);
+  sourceVariantOwners.set(
+    sourceVariant.sourceVariantHash,
+    variant.evidenceGroupHash
+  );
+
+  const existing = sourceVariantsByHash.get(
+    sourceVariant.sourceVariantHash
+  );
+  if (
+    existing !== undefined &&
+    !sameSourceCandidateVariant(existing, variant)
+  ) {
+    throw new Error(
+      "eligibility source variant payload conflicts"
+    );
+  }
+  sourceVariantsByHash.set(
+    sourceVariant.sourceVariantHash,
+    variant
+  );
 }
 
 function mergeExclusionGroup(
@@ -207,7 +239,7 @@ function mergeSourceVariants(
       );
       if (
         existing !== undefined &&
-        !sameSourceVariant(existing, sourceVariant)
+        !sameSourceVariantReference(existing, sourceVariant)
       ) {
         throw new Error(
           "duplicate exclusion source variant payload conflicts"
@@ -222,7 +254,35 @@ function mergeSourceVariants(
   return [...sourceVariants.values()].sort(compareSourceVariants);
 }
 
-function sameSourceVariant(
+function sameSourceCandidateVariant(
+  left: EvidenceExpansionSourceCandidateVariant,
+  right: EvidenceExpansionSourceCandidateVariant
+): boolean {
+  return (
+    left.evidenceGroupHash === right.evidenceGroupHash &&
+    sameSourceVariantReference(
+      left.sourceVariant,
+      right.sourceVariant
+    ) &&
+    left.observedTradingDates.length ===
+      right.observedTradingDates.length &&
+    left.observedTradingDates.every(
+      (entry, index) =>
+        entry.market === right.observedTradingDates[index]?.market &&
+        entry.sessionDate ===
+          right.observedTradingDates[index]?.sessionDate
+    ) &&
+    left.universeMembership.length ===
+      right.universeMembership.length &&
+    left.universeMembership.every(
+      (entry, index) =>
+        entry.market === right.universeMembership[index]?.market &&
+        entry.symbol === right.universeMembership[index]?.symbol
+    )
+  );
+}
+
+function sameSourceVariantReference(
   left: EvidenceExpansionSourceVariantReference,
   right: EvidenceExpansionSourceVariantReference
 ): boolean {

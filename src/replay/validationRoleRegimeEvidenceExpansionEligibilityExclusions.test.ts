@@ -285,6 +285,24 @@ test("eligibility exclusions reject cross-status identity conflicts", () => {
       ),
     /interval payload maps to conflicting evidence group hashes/
   );
+
+  const conflictingPayload = eligibility(
+    "1",
+    "1",
+    "test",
+    "sideways",
+    false,
+    "SCOPE_UNAVAILABLE"
+  );
+  conflictingPayload.candidate.variant.sourceVariant
+    .feasibilityCandidateHash = hash("2");
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([accepted, conflictingPayload])
+      ),
+    /source variant payload conflicts/
+  );
 });
 
 test("eligibility exclusions reject duplicate source payload conflicts", () => {
