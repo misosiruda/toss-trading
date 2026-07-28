@@ -773,6 +773,13 @@ single-group merge 결과와 비교한다. 네 view의 global/role/regime 관계
 preflight와 같은 exported capacity summary schema로 최종 검증한다. Target
 판정, exclusion과 blocker, dependency input, preflight artifact 조립은
 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.ts`는
+accepted evidence group의 모든 source variant universe membership을
+market/symbol canonical union으로 조립하고
+`combinedUniverseMembershipHash`를 계산한다. 각 source variant의
+evidence group 연결, non-empty membership, canonical order와
+`universeMembershipHash`를 fail-closed로 재검증한다. Candidate interval,
+pairwise dependency, calendar hash와 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네
