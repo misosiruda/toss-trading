@@ -707,6 +707,15 @@ excluded eligibility row를 strict preflight exclusion으로 투영한다.
 일치해야 한다. 유효 regime은 exclusion에 보존하고 `insufficient_data`는
 `targetRegime=null`로 기록한다. Collection deduplication, calendar rejection,
 다른 exclusion reason 및 blocker/preflight artifact 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionEligibilityExclusions.ts`는 eligibility
+count를 candidate row에서 재검증하고 excluded row를
+`evidenceGroupHash`별로 한 번만 집계한다. 같은 group의 source variant는
+canonical union하고 여러 role이면 `splitRole=null`로 보존한다. Reason 또는
+target regime conflict, source variant payload conflict와 cross-group
+source variant 재사용은 fail-closed로 거부한다. 결과는 reason, role,
+regime, evidence group 및 source variant key 순서로 정렬한다. Calendar
+rejection, 다른 exclusion reason 및 blocker/preflight artifact 조립은
+수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
