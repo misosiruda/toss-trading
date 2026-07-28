@@ -760,6 +760,13 @@ role-regime target을 canonical하게 조립한다. `null`을 0이나 current
 candidate count로 대체하지 않으며 unknown input과 잘못된 minimum은
 fail-closed로 거부한다. Capacity 충족 판정, target blocker, status,
 preflight artifact 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCapacityTargetBlockers.ts`는
+검증된 target matrix와 capacity summary의 `combined` view를 비교해
+role-local, role-exclusive 및 role-regime capacity 부족 blocker를
+canonical key 순서로 생성한다. 어느 role-regime target이라도 `null`이면
+`ROLE_REGIME_TARGET_UNDEFINED` blocker 한 건을 보존하며 0이나 current
+capacity로 대체하지 않는다. Calendar, dependency, identity, exclusion
+blocker와 최종 status 또는 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
