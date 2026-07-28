@@ -1,12 +1,10 @@
 import type {
-  OfficialMarketCalendarEvidenceArtifact
-} from "./officialMarketCalendarEvidence.js";
-import type {
   EvidenceExpansionDependencyCandidateEvidence,
   EvidenceExpansionDependencyCandidateIntervalInput
 } from "./validationRoleRegimeEvidenceExpansionDependencyCandidateInterval.js";
 import {
-  buildEvidenceExpansionDependencyCandidateEvidence
+  buildEvidenceExpansionDependencyCandidateEvidence,
+  getVerifiedEvidenceExpansionDependencyCandidateContext
 } from "./validationRoleRegimeEvidenceExpansionDependencyCandidateInterval.js";
 import {
   evidenceExpansionPairwiseDependencySchema,
@@ -30,6 +28,31 @@ export function buildEvidenceExpansionPairwiseDependency(input: {
     source: input.source,
     calendarClassifier: input.calendarClassifier
   });
+  return buildEvidenceExpansionPairwiseDependencyFromEvidence({
+    left,
+    right
+  });
+}
+
+export function buildEvidenceExpansionPairwiseDependencyFromEvidence(input: {
+  left: EvidenceExpansionDependencyCandidateEvidence;
+  right: EvidenceExpansionDependencyCandidateEvidence;
+}): EvidenceExpansionPairwiseDependency {
+  const leftContext =
+    getVerifiedEvidenceExpansionDependencyCandidateContext(input.left);
+  const rightContext =
+    getVerifiedEvidenceExpansionDependencyCandidateContext(input.right);
+  if (
+    leftContext.officialCalendarArtifactHash !==
+      rightContext.officialCalendarArtifactHash ||
+    leftContext.requiredMarkets.join(",") !==
+      rightContext.requiredMarkets.join(",")
+  ) {
+    throw new Error(
+      "pairwise dependency candidate contexts must match"
+    );
+  }
+  const { left, right } = input;
   const [canonicalLeft, canonicalRight] =
     left.interval.evidenceGroupHash <
     right.interval.evidenceGroupHash
@@ -63,21 +86,15 @@ export function buildEvidenceExpansionPairwiseDependency(input: {
     );
   }
 
-  const officialCalendarArtifact =
-    input.calendarClassifier.officialCalendarArtifact;
-  if (officialCalendarArtifact === null) {
-    throw new Error(
-      "pairwise dependency requires official calendar evidence"
-    );
-  }
   const adjacencyTradingDayGap =
     tradingDateOverlapCount > 0
       ? null
       : calculateAdjacencyTradingDayGap({
           left: canonicalLeft,
           right: canonicalRight,
-          officialCalendarArtifact,
-          requiredMarkets: new Set(input.source.coverage.requiredMarkets)
+          officialCalendarSessions:
+            leftContext.officialCalendarSessions,
+          requiredMarkets: new Set(leftContext.requiredMarkets)
         });
   const leftMembers = new Set(
     canonicalLeft.combinedUniverseMembership.members.map(memberKey)
@@ -112,11 +129,17 @@ export function buildEvidenceExpansionPairwiseDependency(input: {
 function calculateAdjacencyTradingDayGap(input: {
   left: EvidenceExpansionDependencyCandidateEvidence;
   right: EvidenceExpansionDependencyCandidateEvidence;
-  officialCalendarArtifact: OfficialMarketCalendarEvidenceArtifact;
+  officialCalendarSessions: readonly {
+    sessionId: string;
+    market: string;
+    sessionDate: string;
+    sessionType: string;
+    marketOpen: string | null;
+  }[];
   requiredMarkets: ReadonlySet<string>;
 }): number {
   const openTimesByTradingDate = new Map<string, number>();
-  for (const session of input.officialCalendarArtifact.sessions) {
+  for (const session of input.officialCalendarSessions) {
     if (
       !input.requiredMarkets.has(session.market) ||
       (session.sessionType !== "regular" &&
