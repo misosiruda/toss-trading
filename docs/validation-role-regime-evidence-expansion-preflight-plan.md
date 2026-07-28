@@ -700,6 +700,13 @@ calendar-valid candidate를 scope와 regime evidence만으로 분류한다.
 scope-unavailable 및 insufficient-regime count가 aggregation diagnostic과
 일치하지 않으면 fail-closed로 거부한다. Evidence group deduplication과
 capacity/exclusion row 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionEligibilityExclusion.ts`는 단일
+excluded eligibility row를 strict preflight exclusion으로 투영한다.
+`SCOPE_UNAVAILABLE`은 실제 unavailable scope와,
+`INSUFFICIENT_REGIME_DATA`는 scoped `insufficient_data` regime과
+일치해야 한다. 유효 regime은 exclusion에 보존하고 `insufficient_data`는
+`targetRegime=null`로 기록한다. Collection deduplication, calendar rejection,
+다른 exclusion reason 및 blocker/preflight artifact 조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
