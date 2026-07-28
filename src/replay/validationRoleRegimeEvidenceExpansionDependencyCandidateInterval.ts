@@ -1,6 +1,7 @@
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
-  createOfficialMarketCalendarEvidenceHash
+  createOfficialMarketCalendarEvidenceHash,
+  type OfficialMarketCalendarEvidenceArtifact
 } from "./officialMarketCalendarEvidence.js";
 import type {
   VerifiedEvidenceExpansionCalendarClassifier
@@ -45,6 +46,18 @@ export interface EvidenceExpansionDependencyCandidateEvidence {
   canonicalTradingDates: EvidenceExpansionCanonicalTradingDates;
   combinedUniverseMembership: EvidenceExpansionCombinedUniverseMembership;
 }
+
+interface EvidenceExpansionDependencyCandidateContext {
+  officialCalendarArtifactHash: string;
+  officialCalendarSessions:
+    OfficialMarketCalendarEvidenceArtifact["sessions"];
+  requiredMarkets: Array<"KR" | "US">;
+}
+
+const verifiedDependencyCandidateContexts = new WeakMap<
+  EvidenceExpansionDependencyCandidateEvidence,
+  EvidenceExpansionDependencyCandidateContext
+>();
 
 export function buildEvidenceExpansionDependencyCandidateInterval(
   input: EvidenceExpansionDependencyCandidateIntervalInput
@@ -124,11 +137,86 @@ export function buildEvidenceExpansionDependencyCandidateEvidence(
       combinedUniverseMembershipHash:
         combinedUniverseMembership.combinedUniverseMembershipHash
     });
-  return {
+  const evidence = {
     interval,
-    canonicalTradingDates,
-    combinedUniverseMembership
+    canonicalTradingDates: {
+      ...canonicalTradingDates,
+      sessions: canonicalTradingDates.sessions.map((session) => ({
+        ...session
+      }))
+    },
+    combinedUniverseMembership: {
+      ...combinedUniverseMembership,
+      members: combinedUniverseMembership.members.map((member) => ({
+        ...member
+      }))
+    }
   };
+  freezeDependencyCandidateEvidence(evidence);
+  verifiedDependencyCandidateContexts.set(
+    evidence,
+    createDependencyCandidateContext({
+      officialCalendarArtifact,
+      requiredMarkets: input.source.coverage.requiredMarkets
+    })
+  );
+  return evidence;
+}
+
+export function getVerifiedEvidenceExpansionDependencyCandidateContext(
+  value: EvidenceExpansionDependencyCandidateEvidence
+): EvidenceExpansionDependencyCandidateContext {
+  const context = verifiedDependencyCandidateContexts.get(value);
+  if (context === undefined) {
+    throw new Error(
+      "dependency candidate evidence must come from the verified builder"
+    );
+  }
+  return context;
+}
+
+function freezeDependencyCandidateEvidence(
+  evidence: EvidenceExpansionDependencyCandidateEvidence
+): void {
+  for (const sourceVariant of evidence.interval.sourceVariants) {
+    Object.freeze(sourceVariant);
+  }
+  Object.freeze(evidence.interval.sourceVariants);
+  Object.freeze(evidence.interval.splitRoles);
+  Object.freeze(evidence.interval);
+  for (const session of evidence.canonicalTradingDates.sessions) {
+    Object.freeze(session);
+  }
+  Object.freeze(evidence.canonicalTradingDates.sessions);
+  Object.freeze(evidence.canonicalTradingDates);
+  for (const member of evidence.combinedUniverseMembership.members) {
+    Object.freeze(member);
+  }
+  Object.freeze(evidence.combinedUniverseMembership.members);
+  Object.freeze(evidence.combinedUniverseMembership);
+  Object.freeze(evidence);
+}
+
+function createDependencyCandidateContext(input: {
+  officialCalendarArtifact: OfficialMarketCalendarEvidenceArtifact;
+  requiredMarkets: readonly ("KR" | "US")[];
+}): EvidenceExpansionDependencyCandidateContext {
+  const context = {
+    officialCalendarArtifactHash:
+      input.officialCalendarArtifact.artifactHash,
+    officialCalendarSessions:
+      input.officialCalendarArtifact.sessions.map((session) => ({
+        ...session
+      })),
+    requiredMarkets: [...new Set(input.requiredMarkets)].sort()
+  };
+  for (const session of context.officialCalendarSessions) {
+    Object.freeze(session);
+  }
+  Object.freeze(context.officialCalendarSessions);
+  Object.freeze(context.requiredMarkets);
+  Object.freeze(context);
+  return context;
 }
 
 function compareSourceVariants(

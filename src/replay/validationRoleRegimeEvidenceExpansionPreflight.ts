@@ -349,6 +349,11 @@ const dependencyInputsSchema = z
   })
   .strict();
 
+export const evidenceExpansionCompleteDependencyInputsSchema =
+  dependencyInputsSchema.superRefine((value, context) => {
+    validateCompleteDependencyInputs(value, context);
+  });
+
 export const evidenceExpansionExclusionSchema = z
   .object({
     sourceVariants: sourceVariantReferencesSchema,
@@ -487,6 +492,9 @@ export type EvidenceExpansionDependencyCandidateInterval = z.infer<
 export type EvidenceExpansionPairwiseDependency = z.infer<
   typeof evidenceExpansionPairwiseDependencySchema
 >;
+export type EvidenceExpansionDependencyInputs = z.infer<
+  typeof dependencyInputsSchema
+>;
 export type ValidationRoleRegimeEvidenceExpansionPreflightArtifact = z.infer<
   typeof validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
 >;
@@ -526,7 +534,10 @@ function validateDependencyCompleteness(
   for (const [index, interval] of intervals.entries()) {
     if (
       index > 0 &&
-      compareCandidateIntervals(intervals[index - 1]!, interval) >= 0
+      compareEvidenceExpansionDependencyCandidateIntervals(
+        intervals[index - 1]!,
+        interval
+      ) >= 0
     ) {
       context.addIssue({
         code: "custom",
@@ -680,6 +691,120 @@ function validateDependencyCompleteness(
     incomplete = true;
   }
   return incomplete;
+}
+
+function validateCompleteDependencyInputs(
+  value: EvidenceExpansionDependencyInputs,
+  context: z.RefinementCtx
+): void {
+  const intervalsByHash = new Map<
+    string,
+    EvidenceExpansionDependencyCandidateInterval
+  >();
+  for (const [index, interval] of value.candidateIntervals.entries()) {
+    if (
+      index > 0 &&
+      compareEvidenceExpansionDependencyCandidateIntervals(
+        value.candidateIntervals[index - 1]!,
+        interval
+      ) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["candidateIntervals", index],
+        message: "candidate intervals must use canonical order"
+      });
+    }
+    if (intervalsByHash.has(interval.evidenceGroupHash)) {
+      context.addIssue({
+        code: "custom",
+        path: ["candidateIntervals", index],
+        message: "candidate intervals must contain one row per evidence group"
+      });
+    }
+    intervalsByHash.set(interval.evidenceGroupHash, interval);
+  }
+
+  const orderedHashes = [...intervalsByHash.keys()].sort((left, right) =>
+    left.localeCompare(right)
+  );
+  const expectedPairKeys = new Set<string>();
+  for (let leftIndex = 0; leftIndex < orderedHashes.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < orderedHashes.length;
+      rightIndex += 1
+    ) {
+      expectedPairKeys.add(
+        pairKey(orderedHashes[leftIndex]!, orderedHashes[rightIndex]!)
+      );
+    }
+  }
+
+  const actualPairKeys = new Set<string>();
+  let previousPairKey: string | null = null;
+  for (const [index, pair] of value.pairwise.entries()) {
+    const leftInterval = intervalsByHash.get(pair.leftEvidenceGroupHash);
+    const rightInterval = intervalsByHash.get(pair.rightEvidenceGroupHash);
+    if (leftInterval === undefined || rightInterval === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["pairwise", index],
+        message: "pairwise dependency must reference candidate intervals"
+      });
+      continue;
+    }
+    if (
+      pair.sameRegime !==
+      (leftInterval.targetRegime === rightInterval.targetRegime)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pairwise", index, "sameRegime"],
+        message: "pairwise sameRegime must match candidate intervals"
+      });
+    }
+    const expectedCrossRole =
+      new Set([
+        ...leftInterval.splitRoles,
+        ...rightInterval.splitRoles
+      ]).size > 1;
+    if (pair.crossRole !== expectedCrossRole) {
+      context.addIssue({
+        code: "custom",
+        path: ["pairwise", index, "crossRole"],
+        message: "pairwise crossRole must match candidate intervals"
+      });
+    }
+    const key = pairKey(
+      pair.leftEvidenceGroupHash,
+      pair.rightEvidenceGroupHash
+    );
+    if (previousPairKey !== null && previousPairKey.localeCompare(key) >= 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["pairwise", index],
+        message: "pairwise dependencies must use canonical row order"
+      });
+    }
+    previousPairKey = key;
+    if (actualPairKeys.has(key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["pairwise", index],
+        message: "pairwise dependencies must not contain duplicates"
+      });
+    }
+    actualPairKeys.add(key);
+  }
+  if (!sameSet(actualPairKeys, expectedPairKeys)) {
+    context.addIssue({
+      code: "custom",
+      path: ["pairwise"],
+      message:
+        "pairwise dependencies must cover every candidate interval pair"
+    });
+  }
 }
 
 function validateCapacitySummaryRelationships(
@@ -992,9 +1117,9 @@ function hasTradingDateSetConflict(value: PreflightArtifact): boolean {
   );
 }
 
-function compareCandidateIntervals(
-  left: PreflightArtifact["dependencyInputs"]["candidateIntervals"][number],
-  right: PreflightArtifact["dependencyInputs"]["candidateIntervals"][number]
+export function compareEvidenceExpansionDependencyCandidateIntervals(
+  left: EvidenceExpansionDependencyCandidateInterval,
+  right: EvidenceExpansionDependencyCandidateInterval
 ): number {
   return (
     compareRoleLists(left.splitRoles, right.splitRoles) ||

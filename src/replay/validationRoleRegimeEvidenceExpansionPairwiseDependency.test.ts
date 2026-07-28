@@ -19,9 +19,17 @@ import {
   type EvidenceExpansionObservedTradingDate
 } from "./validationRoleRegimeEvidenceExpansionObservedTradingDates.js";
 import {
-  buildEvidenceExpansionPairwiseDependency
+  buildEvidenceExpansionDependencyCandidateEvidence
+} from "./validationRoleRegimeEvidenceExpansionDependencyCandidateInterval.js";
+import {
+  buildEvidenceExpansionDependencyInputs
+} from "./validationRoleRegimeEvidenceExpansionDependencyInputs.js";
+import {
+  buildEvidenceExpansionPairwiseDependency,
+  buildEvidenceExpansionPairwiseDependencyFromEvidence
 } from "./validationRoleRegimeEvidenceExpansionPairwiseDependency.js";
 import {
+  evidenceExpansionCompleteDependencyInputsSchema,
   evidenceExpansionPairwiseDependencySchema
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 import type {
@@ -165,6 +173,36 @@ test("pairwise dependency preserves candidate fail-closed gates", () => {
       }),
     /trading-date set conflict/
   );
+
+  const verifiedLeft =
+    buildEvidenceExpansionDependencyCandidateEvidence({
+      group: left,
+      ...dependencies
+    });
+  const verifiedRight =
+    buildEvidenceExpansionDependencyCandidateEvidence({
+      group: evidenceGroup({
+        hashCharacter: "7",
+        startAt: "2025-01-06T00:00:00.000Z",
+        endAt: "2025-01-06T06:30:00.000Z",
+        observedTradingDates: [tradingDate("2025-01-06")],
+        splitRoles: ["validation"],
+        targetRegime: "bull",
+        symbol: "RIGHT"
+      }),
+      ...dependencies
+    });
+  assert.throws(() => {
+    verifiedLeft.interval.targetRegime = "bear";
+  }, TypeError);
+  assert.throws(
+    () =>
+      buildEvidenceExpansionPairwiseDependencyFromEvidence({
+        left: { ...verifiedLeft },
+        right: verifiedRight
+      }),
+    /must come from the verified builder/
+  );
 });
 
 test("pairwise dependency schema rejects reversed evidence hashes", () => {
@@ -182,6 +220,88 @@ test("pairwise dependency schema rejects reversed evidence hashes", () => {
         crossRole: true
       }),
     /hashes must use canonical order/
+  );
+});
+
+test("dependency inputs build canonical intervals and every pair", () => {
+  const dependencies = verifiedDependencies();
+  const earlier = evidenceGroup({
+    hashCharacter: "b",
+    startAt: "2025-01-02T00:00:00.000Z",
+    endAt: "2025-01-02T06:30:00.000Z",
+    observedTradingDates: [tradingDate("2025-01-02")],
+    splitRoles: ["train"],
+    targetRegime: "bull",
+    symbol: "EARLIER"
+  });
+  const middle = evidenceGroup({
+    hashCharacter: "c",
+    startAt: "2025-01-03T00:00:00.000Z",
+    endAt: "2025-01-03T06:30:00.000Z",
+    observedTradingDates: [tradingDate("2025-01-03")],
+    splitRoles: ["train"],
+    targetRegime: "bear",
+    symbol: "MIDDLE"
+  });
+  const later = evidenceGroup({
+    hashCharacter: "a",
+    startAt: "2025-01-06T00:00:00.000Z",
+    endAt: "2025-01-06T06:30:00.000Z",
+    observedTradingDates: [tradingDate("2025-01-06")],
+    splitRoles: ["validation"],
+    targetRegime: "bull",
+    symbol: "LATER"
+  });
+
+  const result = buildEvidenceExpansionDependencyInputs({
+    groups: [later, middle, earlier],
+    ...dependencies
+  });
+
+  assert.deepEqual(
+    result.candidateIntervals.map((interval) => interval.evidenceGroupHash),
+    [hash("b"), hash("c"), hash("a")]
+  );
+  assert.deepEqual(
+    result.pairwise.map((pair) => [
+      pair.leftEvidenceGroupHash,
+      pair.rightEvidenceGroupHash
+    ]),
+    [
+      [hash("a"), hash("b")],
+      [hash("a"), hash("c")],
+      [hash("b"), hash("c")]
+    ]
+  );
+  assert.throws(
+    () =>
+      evidenceExpansionCompleteDependencyInputsSchema.parse({
+        ...result,
+        pairwise: result.pairwise.slice(1)
+      }),
+    /must cover every candidate interval pair/
+  );
+});
+
+test("dependency inputs reject duplicate evidence groups", () => {
+  const dependencies = verifiedDependencies();
+  const group = evidenceGroup({
+    hashCharacter: "a",
+    startAt: "2025-01-02T00:00:00.000Z",
+    endAt: "2025-01-02T06:30:00.000Z",
+    observedTradingDates: [tradingDate("2025-01-02")],
+    splitRoles: ["train"],
+    targetRegime: "bull",
+    symbol: "DUPLICATE"
+  });
+
+  assert.throws(
+    () =>
+      buildEvidenceExpansionDependencyInputs({
+        groups: [group, group],
+        ...dependencies
+      }),
+    /require unique evidence groups/
   );
 });
 

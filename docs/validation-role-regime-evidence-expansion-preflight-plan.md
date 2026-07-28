@@ -802,6 +802,17 @@ market open session만 센다. Combined membership 실제 교집합으로
 `sharedUniverse`를 계산하며 같은 regime과 cross-role 여부를 interval
 contract에서 파생한다. 전체 pair collection, dependency hash, blocker,
 preflight artifact는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionDependencyInputs.ts`는 accepted evidence
+group collection을 group별로 한 번씩 candidate evidence로 검증하고,
+candidate interval canonical order와 evidence hash order의 모든 `nC2`
+pairwise row를 조립한다. Evidence-level pair helper는 같은 process에서
+verified candidate builder가 생성한 provenance를 요구해 plain object
+주입을 거부한다. Complete dependency input 전용 strict schema는
+candidate uniqueness/order, pair reference, row uniqueness/order,
+`sameRegime`/`crossRole` 파생값과 pair set completeness를 재검증한다.
+Official diagnostics unavailable 시 empty pairwise를 허용하는 preflight
+artifact schema는 변경하지 않는다. Dependency hash, blocker, status와
+preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네
