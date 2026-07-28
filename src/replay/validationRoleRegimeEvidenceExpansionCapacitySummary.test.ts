@@ -122,6 +122,27 @@ test("capacity summary rejects source collection payload drift", () => {
   );
 });
 
+test("capacity summary rejects fabricated union membership", () => {
+  const input = populatedInput();
+  const fabricated = group(
+    "9",
+    "9",
+    "bear",
+    ["train", "validation"],
+    false
+  );
+  input.union.baselineOverlapEvidenceGroupCount = 0;
+  input.union.incrementalUniqueEvidenceGroupCount = 2;
+  input.union.combinedUniqueEvidenceGroupCount = 4;
+  input.union.combinedEvidenceGroups.push(fabricated);
+  input.union.incrementalEvidenceGroups.push(fabricated);
+
+  assert.throws(
+    () => buildEvidenceExpansionCapacitySummary(input),
+    /overlap count does not match source hash intersection/
+  );
+});
+
 test("capacity summary preserves baseline provenance validation", () => {
   const input = populatedInput();
   input.baseline.evidenceGroups[0]!.sourceVariants[0]!.sourceVariant

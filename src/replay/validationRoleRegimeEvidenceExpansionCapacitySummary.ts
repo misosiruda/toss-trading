@@ -77,6 +77,37 @@ function assertUnionMatchesSourceCollections(input: {
   const incrementalByHash = indexGroups(
     input.union.incrementalEvidenceGroups
   );
+  const expectedCombinedHashes = new Set([
+    ...baselineByHash.keys(),
+    ...expansionByHash.keys()
+  ]);
+  const expectedIncrementalHashes = new Set(
+    [...expansionByHash.keys()].filter(
+      (hash) => !baselineByHash.has(hash)
+    )
+  );
+  const expectedOverlapCount = [...expansionByHash.keys()].filter(
+    (hash) => baselineByHash.has(hash)
+  ).length;
+  if (
+    input.union.baselineOverlapEvidenceGroupCount !==
+    expectedOverlapCount
+  ) {
+    throw new Error(
+      "capacity summary overlap count does not match source hash intersection"
+    );
+  }
+  if (
+    !sameSet(new Set(combinedByHash.keys()), expectedCombinedHashes) ||
+    !sameSet(
+      new Set(incrementalByHash.keys()),
+      expectedIncrementalHashes
+    )
+  ) {
+    throw new Error(
+      "capacity summary union membership does not match source collections"
+    );
+  }
 
   for (const baselineGroup of input.baseline.evidenceGroups) {
     const expansionGroup = expansionByHash.get(
@@ -136,5 +167,15 @@ function sameGroup(
     actual !== undefined &&
     createReplayResearchHash(actual) ===
       createReplayResearchHash(expected)
+  );
+}
+
+function sameSet(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>
+): boolean {
+  return (
+    left.size === right.size &&
+    [...left].every((value) => right.has(value))
   );
 }
