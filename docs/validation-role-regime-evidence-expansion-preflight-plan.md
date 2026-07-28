@@ -813,6 +813,13 @@ candidate uniqueness/order, pair reference, row uniqueness/order,
 Official diagnostics unavailable 시 empty pairwise를 허용하는 preflight
 artifact schema는 변경하지 않는다. Dependency hash, blocker, status와
 preflight artifact는 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightHash.ts`는 strict preflight
+payload에서 `preflightHash`를 제외한 canonical JSON hash를 생성하고 artifact
+hash를 검증한다. Exclusion은 reason, 고정 role/regime, evidence group,
+source variant 순서로, blocker는 code, 고정 role/regime, message 순서로
+검증하며 비정렬 또는 중복 collection을 fail-closed로 거부한다. Object key
+insertion order는 hash에 영향을 주지 않는다. Writer, CLI와 preflight artifact
+조립은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네

@@ -6,6 +6,12 @@ import {
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
+import {
+  bindValidationRoleRegimeEvidenceExpansionPreflightHash,
+  createValidationRoleRegimeEvidenceExpansionPreflightHash,
+  parseValidationRoleRegimeEvidenceExpansionPreflightArtifact,
+  type ValidationRoleRegimeEvidenceExpansionPreflightPayload
+} from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
 
 test("strict preflight schema accepts a synthetic ready fixture", () => {
   const artifact = readyArtifact();
@@ -18,6 +24,86 @@ test("strict preflight schema accepts a synthetic ready fixture", () => {
   assert.equal(parsed.status, "ready_for_expansion_replay");
   assert.equal(parsed.mode, "paper_only");
   assert.equal(parsed.blockers.length, 0);
+});
+
+test("preflight hash binds and verifies the strict canonical payload", () => {
+  const artifact = readyArtifact();
+  const payload = preflightPayload(artifact);
+  const reorderedPayload = Object.fromEntries(
+    Object.entries(payload).reverse()
+  );
+
+  assert.equal(
+    artifact.preflightHash,
+    createValidationRoleRegimeEvidenceExpansionPreflightHash(payload)
+  );
+  assert.equal(
+    createValidationRoleRegimeEvidenceExpansionPreflightHash(
+      reorderedPayload
+    ),
+    artifact.preflightHash
+  );
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(artifact),
+    artifact
+  );
+  assert.throws(
+    () =>
+      createValidationRoleRegimeEvidenceExpansionPreflightHash(artifact),
+    /must exclude preflightHash/
+  );
+});
+
+test("preflight hash rejects semantic mutation and non-canonical blockers", () => {
+  const artifact = readyArtifact();
+  artifact.generatedAt = "2026-07-24T00:00:00.000Z";
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(artifact),
+    /hash mismatch/
+  );
+
+  const payload = preflightPayload(readyArtifact());
+  payload.status = "invalid";
+  payload.blockers = [
+    blocker("SOURCE_PROVENANCE_INVALID"),
+    blocker("RESULT_METRIC_INPUT_FORBIDDEN")
+  ];
+  assert.throws(
+    () =>
+      bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload),
+    /canonical order/
+  );
+});
+
+test("preflight hash rejects non-canonical exclusions", () => {
+  const payload = preflightPayload(readyArtifact());
+  const [firstInterval, secondInterval] =
+    payload.dependencyInputs.candidateIntervals;
+  payload.exclusions = [
+    {
+      sourceVariants: structuredClone(firstInterval!.sourceVariants),
+      evidenceGroupHash: firstInterval!.evidenceGroupHash,
+      splitRole: "train",
+      targetRegime: "bull",
+      reason: "SCOPE_UNAVAILABLE",
+      message: "scope unavailable fixture"
+    },
+    {
+      sourceVariants: structuredClone(secondInterval!.sourceVariants),
+      evidenceGroupHash: secondInterval!.evidenceGroupHash,
+      splitRole: "train",
+      targetRegime: "bull",
+      reason: "INSUFFICIENT_REGIME_DATA",
+      message: "insufficient regime fixture"
+    }
+  ];
+
+  assert.throws(
+    () =>
+      bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload),
+    /canonical order/
+  );
 });
 
 test("strict preflight schema rejects unknown fields and non-paper mode", () => {
@@ -468,7 +554,7 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
   };
   const candidateIntervals = readyCandidateIntervals();
 
-  return {
+  const payload: ValidationRoleRegimeEvidenceExpansionPreflightPayload = {
     schemaVersion:
       "validation_role_regime_evidence_expansion_preflight.v1",
     mode: "paper_only",
@@ -515,9 +601,16 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
       pairwise: createPairwiseDependencies(candidateIntervals)
     },
     exclusions: [],
-    blockers: [],
-    preflightHash: hash("f")
+    blockers: []
   };
+  return bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload);
+}
+
+function preflightPayload(
+  artifact: ValidationRoleRegimeEvidenceExpansionPreflightArtifact
+): ValidationRoleRegimeEvidenceExpansionPreflightPayload {
+  const { preflightHash: _preflightHash, ...payload } = artifact;
+  return payload;
 }
 
 function readyCandidateIntervals(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact[
