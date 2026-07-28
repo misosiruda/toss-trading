@@ -782,10 +782,12 @@ evidence group 연결, non-empty membership, canonical order와
 pairwise dependency, calendar hash와 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionDependencyCandidateInterval.ts`는
 accepted evidence group을 단일 dependency candidate interval row로
-투영한다. Official calendar에서 조립된 canonical trading-date payload와
-hash를 재검증하고 모든 source variant의 실제 observed set 및 reference
-hash가 canonical set과 일치할 때만 source reference, role, regime,
-interval과 combined universe membership hash를 strict schema로 반환한다.
+투영한다. 검증된 calendar classifier의 official artifact와 검증된 expansion
+source coverage의 required market scope를 받아 evidence group interval에
+대한 canonical trading-date payload와 hash를 내부 재계산한다. 두 dependency
+contract의 기록 hash와 모든 source variant의 실제 observed set 및 reference
+hash가 canonical set과 일치할 때만 source reference, role, regime, interval과
+combined universe membership hash를 strict schema로 반환한다.
 Pairwise overlap/adjacency, blocker, preflight hash와 artifact는 생성하지
 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된

@@ -1,28 +1,77 @@
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
+  createOfficialMarketCalendarEvidenceHash
+} from "./officialMarketCalendarEvidence.js";
+import type {
+  VerifiedEvidenceExpansionCalendarClassifier
+} from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
+import {
+  buildEvidenceExpansionCanonicalTradingDates
+} from "./validationRoleRegimeEvidenceExpansionCanonicalTradingDates.js";
+import {
   buildEvidenceExpansionCombinedUniverseMembership
 } from "./validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.js";
-import type {
-  EvidenceExpansionCanonicalTradingDates
-} from "./validationRoleRegimeEvidenceExpansionCanonicalTradingDates.js";
 import type {
   EvidenceExpansionAcceptedEvidenceGroup
 } from "./validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.js";
 import {
-  EVIDENCE_EXPANSION_OBSERVED_TRADING_DATES_VERSION,
-  type EvidenceExpansionObservedTradingDate
+  EVIDENCE_EXPANSION_OBSERVED_TRADING_DATES_VERSION
 } from "./validationRoleRegimeEvidenceExpansionObservedTradingDates.js";
 import {
   evidenceExpansionDependencyCandidateIntervalSchema,
   type EvidenceExpansionDependencyCandidateInterval,
   type EvidenceExpansionSourceVariantReference
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
+import type {
+  VerifiedValidationRoleRegimeEvidenceExpansionSource
+} from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
 
 export function buildEvidenceExpansionDependencyCandidateInterval(input: {
   group: EvidenceExpansionAcceptedEvidenceGroup;
-  canonicalTradingDates: EvidenceExpansionCanonicalTradingDates;
+  source: Pick<
+    VerifiedValidationRoleRegimeEvidenceExpansionSource,
+    "coverage" | "hashes"
+  >;
+  calendarClassifier: Pick<
+    VerifiedEvidenceExpansionCalendarClassifier,
+    "officialCalendarArtifact" | "hashes"
+  >;
 }): EvidenceExpansionDependencyCandidateInterval {
-  assertCanonicalTradingDates(input.canonicalTradingDates);
+  const officialCalendarArtifact =
+    input.calendarClassifier.officialCalendarArtifact;
+  if (officialCalendarArtifact === null) {
+    throw new Error(
+      "dependency candidate interval requires official calendar evidence"
+    );
+  }
+  const { artifactHash, ...officialCalendarPayload } =
+    officialCalendarArtifact;
+  if (
+    createOfficialMarketCalendarEvidenceHash(officialCalendarPayload) !==
+      artifactHash ||
+    artifactHash !==
+      input.calendarClassifier.hashes.officialCalendarArtifactHash
+  ) {
+    throw new Error(
+      "dependency candidate interval official calendar hash mismatch"
+    );
+  }
+  if (
+    createReplayResearchHash(input.source.coverage) !==
+    input.source.hashes.expansionCoverageHash
+  ) {
+    throw new Error(
+      "dependency candidate interval coverage hash mismatch"
+    );
+  }
+
+  const canonicalTradingDates =
+    buildEvidenceExpansionCanonicalTradingDates({
+      officialCalendarArtifact,
+      requiredMarkets: input.source.coverage.requiredMarkets,
+      startAt: input.group.startAt,
+      endAt: input.group.endAt
+    });
   for (const variant of input.group.sourceVariants) {
     const observedTradingDatesHash = createReplayResearchHash({
       version: EVIDENCE_EXPANSION_OBSERVED_TRADING_DATES_VERSION,
@@ -32,7 +81,7 @@ export function buildEvidenceExpansionDependencyCandidateInterval(input: {
       variant.sourceVariant.observedTradingDatesHash !==
         observedTradingDatesHash ||
       observedTradingDatesHash !==
-        input.canonicalTradingDates.canonicalTradingDatesHash
+        canonicalTradingDates.canonicalTradingDatesHash
     ) {
       throw new Error(
         "dependency candidate interval trading-date set conflict"
@@ -52,36 +101,10 @@ export function buildEvidenceExpansionDependencyCandidateInterval(input: {
     startAt: input.group.startAt,
     endAt: input.group.endAt,
     canonicalTradingDatesHash:
-      input.canonicalTradingDates.canonicalTradingDatesHash,
+      canonicalTradingDates.canonicalTradingDatesHash,
     combinedUniverseMembershipHash:
       combinedUniverseMembership.combinedUniverseMembershipHash
   });
-}
-
-function assertCanonicalTradingDates(
-  value: EvidenceExpansionCanonicalTradingDates
-): void {
-  for (let index = 1; index < value.sessions.length; index += 1) {
-    if (
-      compareTradingDates(
-        value.sessions[index - 1]!,
-        value.sessions[index]!
-      ) >= 0
-    ) {
-      throw new Error(
-        "dependency canonical trading dates must use canonical order"
-      );
-    }
-  }
-  const computedHash = createReplayResearchHash({
-    version: EVIDENCE_EXPANSION_OBSERVED_TRADING_DATES_VERSION,
-    sessions: value.sessions
-  });
-  if (computedHash !== value.canonicalTradingDatesHash) {
-    throw new Error(
-      "dependency canonical trading-date hash mismatch"
-    );
-  }
 }
 
 function compareSourceVariants(
@@ -95,22 +118,6 @@ function compareSourceVariants(
       right.feasibilityCandidateHash
     )
   );
-}
-
-function compareTradingDates(
-  left: EvidenceExpansionObservedTradingDate,
-  right: EvidenceExpansionObservedTradingDate
-): number {
-  return (
-    marketOrder(left.market) - marketOrder(right.market) ||
-    compareStrings(left.sessionDate, right.sessionDate)
-  );
-}
-
-function marketOrder(
-  market: EvidenceExpansionObservedTradingDate["market"]
-): number {
-  return market === "KR" ? 0 : 1;
 }
 
 function compareStrings(left: string, right: string): number {
