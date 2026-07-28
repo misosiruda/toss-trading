@@ -226,9 +226,22 @@ function validateGroup(
       `${sourceIdentity} union group has invalid source variant cardinality`
     );
   }
+  const sourceVariantHashes = new Set<Sha256Hash>();
   for (let index = 0; index < group.sourceVariants.length; index += 1) {
     const variant = group.sourceVariants[index]!;
     validateVariant(variant, group.evidenceGroupHash, sourceIdentity);
+    if (
+      sourceVariantHashes.has(
+        variant.sourceVariant.sourceVariantHash
+      )
+    ) {
+      throw new Error(
+        `${sourceIdentity} union group contains duplicate sourceVariantHash`
+      );
+    }
+    sourceVariantHashes.add(
+      variant.sourceVariant.sourceVariantHash
+    );
     if (
       index > 0 &&
       compareVariants(group.sourceVariants[index - 1]!, variant) >= 0

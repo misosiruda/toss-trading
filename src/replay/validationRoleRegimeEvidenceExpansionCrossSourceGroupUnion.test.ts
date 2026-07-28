@@ -223,6 +223,32 @@ test("cross-source group union rejects non-canonical roles and variants", () => 
   );
 });
 
+test("cross-source group union rejects duplicate source variant hashes", () => {
+  const expansion = group(
+    32,
+    "bear",
+    ["validation"],
+    "b",
+    false
+  );
+  const first = variant(expansion.evidenceGroupHash, "a", false);
+  const second = variant(expansion.evidenceGroupHash, "b", false);
+  second.sourceVariant.sourceVariantHash =
+    first.sourceVariant.sourceVariantHash;
+  expansion.sourceVariants = [first, second];
+
+  assert.throws(
+    () =>
+      buildEvidenceExpansionCrossSourceGroupUnion(
+        unionInput(
+          consolidation([group(0, "bull", ["train"], "c", true)]),
+          consolidation([expansion])
+        )
+      ),
+    /duplicate sourceVariantHash/
+  );
+});
+
 test("cross-source group union rejects source hash reuse across groups", () => {
   const baseline = group(0, "bull", ["train"], "a", true);
   const incremental = group(
