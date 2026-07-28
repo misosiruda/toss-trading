@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { sha256HashSchema } from "../domain/schemas.js";
+import type {
+  VerifiedValidationRoleRegimeEvidenceExpansionBaseline
+} from "./validationRoleRegimeEvidenceExpansionBaselineVerifier.js";
+import type {
+  VerifiedEvidenceExpansionCalendarClassifier
+} from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
   EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM,
   evidenceExpansionPreflightConfigSchema,
@@ -8,58 +13,19 @@ import {
   type EvidenceExpansionTargetMatrix,
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
+import type {
+  VerifiedValidationRoleRegimeEvidenceExpansionSource
+} from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
 import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
 
-const preflightIdentityInputSchema = z
-  .object({
-    baseline: z
-      .object({
-        hashes: z
-          .object({
-            baselineFeasibilityArtifactHash: sha256HashSchema,
-            baselinePlanHash: sha256HashSchema,
-            baselineReadinessArtifactHash: sha256HashSchema
-          })
-          .strict(),
-        provenance: z
-          .object({
-            validationSplitHash: sha256HashSchema,
-            calendarHash: sha256HashSchema,
-            marketRegimeClassifierHash: sha256HashSchema
-          })
-          .strict(),
-        config: z
-          .object({
-            candidateStrategyBucket: z.literal("short_term"),
-            windowMonths: z.number().int().positive(),
-            timezoneOffsetMinutes: z.number().int()
-          })
-          .strict()
-      })
-      .strict(),
-    expansion: z
-      .object({
-        hashes: z
-          .object({
-            expansionDataSnapshotHash: sha256HashSchema,
-            expansionUniverseHash: sha256HashSchema,
-            expansionCoverageHash: sha256HashSchema,
-            validationSplitHash: sha256HashSchema
-          })
-          .strict(),
-        coverageTimezoneOffsetMinutes: z.number().int()
-      })
-      .strict(),
-    calendarClassifier: z
-      .object({
-        calendarHash: sha256HashSchema,
-        officialCalendarArtifactHash: sha256HashSchema.nullable(),
-        marketRegimeClassifierHash: sha256HashSchema
-      })
-      .strict(),
-    roleRegimeSampleMinimum: z.number().int().positive().nullable()
-  })
-  .strict();
+const roleRegimeSampleMinimumSchema = z.number().int().positive().nullable();
+
+export interface EvidenceExpansionPreflightIdentityInput {
+  baseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
+  expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
+  calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
+  roleRegimeSampleMinimum: number | null;
+}
 
 export interface EvidenceExpansionPreflightIdentity {
   source: ValidationRoleRegimeEvidenceExpansionPreflightArtifact["source"];
@@ -68,28 +34,31 @@ export interface EvidenceExpansionPreflightIdentity {
 }
 
 export function buildEvidenceExpansionPreflightIdentity(
-  input: unknown
+  input: EvidenceExpansionPreflightIdentityInput
 ): EvidenceExpansionPreflightIdentity {
-  const parsed = preflightIdentityInputSchema.parse(input);
-  assertIdentityLinks(parsed);
+  assertExactInputKeys(input);
+  const roleRegimeSampleMinimum =
+    roleRegimeSampleMinimumSchema.parse(input.roleRegimeSampleMinimum);
+  assertIdentityLinks(input);
 
   const source = evidenceExpansionPreflightSourceSchema.parse({
-    ...parsed.baseline.hashes,
-    ...parsed.expansion.hashes,
-    calendarHash: parsed.calendarClassifier.calendarHash,
+    ...input.baseline.hashes,
+    ...input.expansion.hashes,
+    calendarHash: input.calendarClassifier.hashes.calendarHash,
     officialCalendarArtifactHash:
-      parsed.calendarClassifier.officialCalendarArtifactHash,
+      input.calendarClassifier.hashes.officialCalendarArtifactHash,
     marketRegimeClassifierHash:
-      parsed.calendarClassifier.marketRegimeClassifierHash
+      input.calendarClassifier.hashes.marketRegimeClassifierHash
   });
   const config = evidenceExpansionPreflightConfigSchema.parse({
     candidateStrategyBucket:
-      parsed.baseline.config.candidateStrategyBucket,
+      input.baseline.feasibility.config.candidateStrategyBucket,
     targetRegimes: ["bull", "bear", "sideways", "mixed"],
-    windowMonths: parsed.baseline.config.windowMonths,
-    timezoneOffsetMinutes: parsed.baseline.config.timezoneOffsetMinutes,
+    windowMonths: input.baseline.feasibility.config.windowMonths,
+    timezoneOffsetMinutes:
+      input.baseline.feasibility.config.timezoneOffsetMinutes,
     roleSampleMinimum: EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM,
-    roleRegimeSampleMinimum: parsed.roleRegimeSampleMinimum,
+    roleRegimeSampleMinimum,
     inputPolicyVersion: "result_blind_capacity_scan.v1",
     dependencyDiagnosticPolicyVersion: "overlap_adjacency_inputs.v1"
   });
@@ -105,34 +74,52 @@ export function buildEvidenceExpansionPreflightIdentity(
 }
 
 function assertIdentityLinks(
-  input: z.infer<typeof preflightIdentityInputSchema>
+  input: EvidenceExpansionPreflightIdentityInput
 ): void {
   if (
     input.expansion.hashes.validationSplitHash !==
-    input.baseline.provenance.validationSplitHash
+    input.baseline.feasibility.provenance.validationSplitHash
   ) {
     throw new Error(
       "expansion validation split hash does not match baseline"
     );
   }
   if (
-    input.calendarClassifier.calendarHash !==
-    input.baseline.provenance.calendarHash
+    input.calendarClassifier.hashes.calendarHash !==
+    input.baseline.feasibility.provenance.calendarHash
   ) {
     throw new Error("expansion calendar hash does not match baseline");
   }
   if (
-    input.calendarClassifier.marketRegimeClassifierHash !==
-    input.baseline.provenance.marketRegimeClassifierHash
+    input.calendarClassifier.hashes.marketRegimeClassifierHash !==
+    input.baseline.feasibility.provenance.marketRegimeClassifierHash
   ) {
     throw new Error("expansion classifier hash does not match baseline");
   }
   if (
-    input.expansion.coverageTimezoneOffsetMinutes !==
-    input.baseline.config.timezoneOffsetMinutes
+    input.expansion.coverage.timezoneOffsetMinutes !==
+    input.baseline.feasibility.config.timezoneOffsetMinutes
   ) {
     throw new Error(
       "expansion coverage timezone does not match baseline config"
     );
+  }
+}
+
+function assertExactInputKeys(
+  input: EvidenceExpansionPreflightIdentityInput
+): void {
+  const actual = Object.keys(input).sort();
+  const expected = [
+    "baseline",
+    "calendarClassifier",
+    "expansion",
+    "roleRegimeSampleMinimum"
+  ];
+  if (
+    actual.length !== expected.length ||
+    actual.some((key, index) => key !== expected[index])
+  ) {
+    throw new Error("preflight identity input contains unknown fields");
   }
 }

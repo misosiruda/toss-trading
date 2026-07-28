@@ -825,8 +825,8 @@ canonical hash 검증을 통과한 preflight artifact만 exclusive JSON writer�
 전달한다. Existing output path는 `EEXIST`로 보존하고 schema/hash-invalid
 artifact는 output directory 생성 전에 거부한다. Default output path, artifact
 조립과 read-only CLI는 수행하지 않는다.
-`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 verified
-baseline, expansion source와 calendar/classifier projection에서 preflight
+`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 baseline,
+expansion source와 calendar/classifier verifier의 typed output에서 preflight
 `source`, `config`, `targetMatrix`를 조립한다. Validation split, calendar,
 classifier hash와 coverage timezone이 baseline contract와 다르면 fail-closed로
 거부한다. Target regime은 첫 version의 고정 순서를 사용하고 official

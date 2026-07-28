@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildEvidenceExpansionPreflightIdentity } from "./validationRoleRegimeEvidenceExpansionPreflightIdentity.js";
+import type {
+  VerifiedValidationRoleRegimeEvidenceExpansionBaseline
+} from "./validationRoleRegimeEvidenceExpansionBaselineVerifier.js";
+import type {
+  VerifiedEvidenceExpansionCalendarClassifier
+} from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
+import {
+  buildEvidenceExpansionPreflightIdentity,
+  type EvidenceExpansionPreflightIdentityInput
+} from "./validationRoleRegimeEvidenceExpansionPreflightIdentity.js";
+import type {
+  VerifiedValidationRoleRegimeEvidenceExpansionSource
+} from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
 
 test("preflight identity projects verified source, config, and targets", () => {
   const identity = buildEvidenceExpansionPreflightIdentity(input());
@@ -35,7 +47,7 @@ test("preflight identity projects verified source, config, and targets", () => {
 
 test("preflight identity preserves an unavailable official calendar", () => {
   const value = input();
-  value.calendarClassifier.officialCalendarArtifactHash = null;
+  value.calendarClassifier.hashes.officialCalendarArtifactHash = null;
 
   const identity = buildEvidenceExpansionPreflightIdentity(value);
 
@@ -56,19 +68,20 @@ test("preflight identity rejects mismatched verified links", () => {
     {
       field: "calendar",
       mutate: (value) => {
-        value.calendarClassifier.calendarHash = hash("b");
+        value.calendarClassifier.hashes.calendarHash = hash("b");
       }
     },
     {
       field: "classifier",
       mutate: (value) => {
-        value.calendarClassifier.marketRegimeClassifierHash = hash("b");
+        value.calendarClassifier.hashes.marketRegimeClassifierHash =
+          hash("b");
       }
     },
     {
       field: "timezone",
       mutate: (value) => {
-        value.expansion.coverageTimezoneOffsetMinutes = 0;
+        value.expansion.coverage.timezoneOffsetMinutes = 0;
       }
     }
   ];
@@ -84,13 +97,13 @@ test("preflight identity rejects mismatched verified links", () => {
 });
 
 test("preflight identity rejects result fields and invalid targets", () => {
+  const resultInput = {
+    ...input(),
+    resultMetrics: { sharpeRatio: 1 }
+  } as unknown as EvidenceExpansionPreflightIdentityInput;
   assert.throws(
-    () =>
-      buildEvidenceExpansionPreflightIdentity({
-        ...input(),
-        resultMetrics: { sharpeRatio: 1 }
-      }),
-    { name: "ZodError" }
+    () => buildEvidenceExpansionPreflightIdentity(resultInput),
+    /unknown fields/
   );
   assert.throws(
     () =>
@@ -103,40 +116,50 @@ test("preflight identity rejects result fields and invalid targets", () => {
 });
 
 function input() {
-  return {
-    baseline: {
+  const baseline = {
       hashes: {
         baselineFeasibilityArtifactHash: hash("1"),
         baselinePlanHash: hash("2"),
         baselineReadinessArtifactHash: hash("3")
       },
-      provenance: {
-        validationSplitHash: hash("7"),
-        calendarHash: hash("8"),
-        marketRegimeClassifierHash: hash("a")
-      },
-      config: {
-        candidateStrategyBucket: "short_term" as const,
-        windowMonths: 12,
-        timezoneOffsetMinutes: 540
+      feasibility: {
+        provenance: {
+          validationSplitHash: hash("7"),
+          calendarHash: hash("8"),
+          marketRegimeClassifierHash: hash("a")
+        },
+        config: {
+          candidateStrategyBucket: "short_term" as const,
+          windowMonths: 12,
+          timezoneOffsetMinutes: 540
+        }
       }
-    },
-    expansion: {
+    } as VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
+  const expansion = {
       hashes: {
         expansionDataSnapshotHash: hash("4"),
         expansionUniverseHash: hash("5"),
         expansionCoverageHash: hash("6"),
         validationSplitHash: hash("7")
       },
-      coverageTimezoneOffsetMinutes: 540
-    },
-    calendarClassifier: {
-      calendarHash: hash("8"),
-      officialCalendarArtifactHash: hash("9") as `sha256:${string}` | null,
-      marketRegimeClassifierHash: hash("a")
-    },
+      coverage: {
+        timezoneOffsetMinutes: 540
+      }
+    } as VerifiedValidationRoleRegimeEvidenceExpansionSource;
+  const calendarClassifier = {
+      hashes: {
+        calendarHash: hash("8"),
+        officialCalendarArtifactHash:
+          hash("9") as `sha256:${string}` | null,
+        marketRegimeClassifierHash: hash("a")
+      }
+    } as VerifiedEvidenceExpansionCalendarClassifier;
+  return {
+    baseline,
+    expansion,
+    calendarClassifier,
     roleRegimeSampleMinimum: 8
-  };
+  } satisfies EvidenceExpansionPreflightIdentityInput;
 }
 
 function hash(character: string): `sha256:${string}` {
