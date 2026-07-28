@@ -820,6 +820,11 @@ source variant 순서로, blocker는 code, 고정 role/regime, message 순서로
 검증하며 비정렬 또는 중복 collection을 fail-closed로 거부한다. Object key
 insertion order는 hash에 영향을 주지 않는다. Writer, CLI와 preflight artifact
 조립은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightArtifactWriter.ts`는
+canonical hash 검증을 통과한 preflight artifact만 exclusive JSON writer에
+전달한다. Existing output path는 `EEXIST`로 보존하고 schema/hash-invalid
+artifact는 output directory 생성 전에 거부한다. Default output path, artifact
+조립과 read-only CLI는 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionTargetMatrix.ts`는 사전 고정된
 `roleSampleMinimum=30`과 nullable positive integer
 `roleRegimeSampleMinimum`만 입력받아 세 role의 local/exclusive 및 네
