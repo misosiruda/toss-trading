@@ -101,16 +101,27 @@ function compareBlockers(
   right: EvidenceExpansionPreflightBlocker
 ): number {
   return (
-    compareStrings(blockerKey(left), blockerKey(right)) ||
+    compareStrings(left.code, right.code) ||
+    roleIndex(left.splitRole) - roleIndex(right.splitRole) ||
+    regimeIndex(left.targetRegime) - regimeIndex(right.targetRegime) ||
     compareStrings(left.message, right.message)
   );
 }
 
-function blockerKey(blocker: EvidenceExpansionPreflightBlocker): string {
-  return (
-    `${blocker.code}:${blocker.splitRole ?? "*"}:` +
-    `${blocker.targetRegime ?? "*"}`
-  );
+function roleIndex(
+  role: EvidenceExpansionPreflightBlocker["splitRole"]
+): number {
+  return role === null
+    ? VALIDATION_ROLE_ORDER.length
+    : VALIDATION_ROLE_ORDER.indexOf(role);
+}
+
+function regimeIndex(
+  regime: EvidenceExpansionPreflightBlocker["targetRegime"]
+): number {
+  return regime === null
+    ? VALIDATION_TARGET_REGIME_ORDER.length
+    : VALIDATION_TARGET_REGIME_ORDER.indexOf(regime);
 }
 
 function compareStrings(left: string, right: string): number {

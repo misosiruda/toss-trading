@@ -100,12 +100,12 @@ test("capacity target blockers use canonical blocker key ordering", () => {
       (blocker) => `${blocker.splitRole}/${blocker.targetRegime}`
     ),
     [
-      "test/mixed",
-      "test/sideways",
-      "train/mixed",
       "train/sideways",
+      "train/mixed",
+      "validation/sideways",
       "validation/mixed",
-      "validation/sideways"
+      "test/sideways",
+      "test/mixed"
     ]
   );
 });
