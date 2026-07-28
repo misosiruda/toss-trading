@@ -76,6 +76,58 @@ test("eligibility exclusions merge source variants and cross-role scope", () => 
   );
 });
 
+test("eligibility exclusions use fixed role and regime ordering", () => {
+  const exclusions = buildEvidenceExpansionEligibilityExclusions(
+    result([
+      eligibility(
+        "4",
+        "4",
+        "test",
+        "bull",
+        false,
+        "SCOPE_UNAVAILABLE"
+      ),
+      eligibility(
+        "3",
+        "3",
+        "train",
+        "mixed",
+        false,
+        "SCOPE_UNAVAILABLE"
+      ),
+      eligibility(
+        "2",
+        "2",
+        "validation",
+        "sideways",
+        false,
+        "SCOPE_UNAVAILABLE"
+      ),
+      eligibility(
+        "1",
+        "1",
+        "train",
+        "bull",
+        false,
+        "SCOPE_UNAVAILABLE"
+      )
+    ])
+  );
+
+  assert.deepEqual(
+    exclusions.map(
+      (exclusion) =>
+        `${exclusion.splitRole}/${exclusion.targetRegime}`
+    ),
+    [
+      "train/bull",
+      "train/mixed",
+      "validation/sideways",
+      "test/bull"
+    ]
+  );
+});
+
 test("eligibility exclusions deduplicate identical source variants", () => {
   const row = eligibility(
     "1",
@@ -212,6 +264,62 @@ test("eligibility exclusions reject duplicate source payload conflicts", () => {
   );
 });
 
+test("eligibility exclusions reject conflicting interval-to-group mappings", () => {
+  const reusedGroup = eligibility(
+    "1",
+    "1",
+    "train",
+    "sideways",
+    false,
+    "SCOPE_UNAVAILABLE"
+  );
+  const conflictingInterval = eligibility(
+    "1",
+    "2",
+    "test",
+    "sideways",
+    false,
+    "SCOPE_UNAVAILABLE"
+  );
+  conflictingInterval.candidate.endAt =
+    "2025-02-01T00:00:00.000Z";
+
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([reusedGroup, conflictingInterval])
+      ),
+    /hash has conflicting interval payload/
+  );
+
+  assert.throws(
+    () => {
+      const first = eligibility(
+        "1",
+        "1",
+        "train",
+        "sideways",
+        false,
+        "SCOPE_UNAVAILABLE"
+      );
+      const second = eligibility(
+        "2",
+        "2",
+        "test",
+        "sideways",
+        false,
+        "SCOPE_UNAVAILABLE"
+      );
+      second.candidate.startAt = first.candidate.startAt;
+      second.candidate.endAt = first.candidate.endAt;
+      return buildEvidenceExpansionEligibilityExclusions(
+        result([first, second])
+      );
+    },
+    /interval payload maps to conflicting evidence group hashes/
+  );
+});
+
 function result(
   candidates: EvidenceExpansionCandidateEligibility[]
 ): EvidenceExpansionCandidateEligibilityResult {
@@ -239,6 +347,7 @@ function eligibility(
   scopeAvailable: boolean,
   exclusionReason: EvidenceExpansionCandidateEligibility["exclusionReason"]
 ): EvidenceExpansionCandidateEligibility {
+  const interval = candidateInterval(groupCharacter);
   return {
     assignment: {
       validationProtocol: "walk_forward",
@@ -255,8 +364,8 @@ function eligibility(
       embargoDurationDays: 0
     },
     candidate: {
-      startAt: "2025-01-01T00:00:00.000Z",
-      endAt: "2025-01-31T23:59:59.999Z",
+      startAt: interval.startAt,
+      endAt: interval.endAt,
       regime,
       scopeAvailable,
       variant: {
@@ -278,6 +387,17 @@ function eligibility(
     },
     status: exclusionReason === null ? "accepted" : "excluded",
     exclusionReason
+  };
+}
+
+function candidateInterval(groupCharacter: string): {
+  startAt: string;
+  endAt: string;
+} {
+  const day = Number.parseInt(groupCharacter, 16);
+  return {
+    startAt: `2025-01-${String(day).padStart(2, "0")}T00:00:00.000Z`,
+    endAt: `2025-01-${String(day + 10).padStart(2, "0")}T23:59:59.999Z`
   };
 }
 

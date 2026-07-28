@@ -9,6 +9,10 @@ import type {
 import {
   buildEvidenceExpansionEligibilityExclusion
 } from "./validationRoleRegimeEvidenceExpansionEligibilityExclusion.js";
+import {
+  VALIDATION_ROLE_ORDER,
+  VALIDATION_TARGET_REGIME_ORDER
+} from "./validationRoleRegimeReplayPlan.js";
 
 export function buildEvidenceExpansionEligibilityExclusions(
   eligibility: EvidenceExpansionCandidateEligibilityResult
@@ -16,11 +20,26 @@ export function buildEvidenceExpansionEligibilityExclusions(
   assertEligibilityCounts(eligibility);
 
   const grouped = new Map<string, EvidenceExpansionExclusion[]>();
+  const intervalsByGroupHash = new Map<
+    string,
+    { startAt: string; endAt: string }
+  >();
+  const groupHashesByInterval = new Map<
+    string,
+    Map<string, string>
+  >();
   const sourceVariantOwners = new Map<string, string>();
   for (const row of eligibility.candidates) {
     if (row.status === "accepted") {
       continue;
     }
+    assertEvidenceGroupIntervalIdentity(
+      row.candidate.variant.evidenceGroupHash,
+      row.candidate.startAt,
+      row.candidate.endAt,
+      intervalsByGroupHash,
+      groupHashesByInterval
+    );
     const exclusion =
       buildEvidenceExpansionEligibilityExclusion(row);
     for (const sourceVariant of exclusion.sourceVariants) {
@@ -85,6 +104,47 @@ function assertEligibilityCounts(
       "eligibility exclusion counts do not match candidate rows"
     );
   }
+}
+
+function assertEvidenceGroupIntervalIdentity(
+  evidenceGroupHash: string,
+  startAt: string,
+  endAt: string,
+  intervalsByGroupHash: Map<
+    string,
+    { startAt: string; endAt: string }
+  >,
+  groupHashesByInterval: Map<string, Map<string, string>>
+): void {
+  const existingInterval = intervalsByGroupHash.get(
+    evidenceGroupHash
+  );
+  if (
+    existingInterval !== undefined &&
+    (existingInterval.startAt !== startAt ||
+      existingInterval.endAt !== endAt)
+  ) {
+    throw new Error(
+      "exclusion evidence group hash has conflicting interval payload"
+    );
+  }
+  intervalsByGroupHash.set(evidenceGroupHash, { startAt, endAt });
+
+  let hashesByEnd = groupHashesByInterval.get(startAt);
+  if (hashesByEnd === undefined) {
+    hashesByEnd = new Map();
+    groupHashesByInterval.set(startAt, hashesByEnd);
+  }
+  const existingHash = hashesByEnd.get(endAt);
+  if (
+    existingHash !== undefined &&
+    existingHash !== evidenceGroupHash
+  ) {
+    throw new Error(
+      "exclusion interval payload maps to conflicting evidence group hashes"
+    );
+  }
+  hashesByEnd.set(endAt, evidenceGroupHash);
 }
 
 function mergeExclusionGroup(
@@ -191,26 +251,49 @@ function compareExclusions(
   left: EvidenceExpansionExclusion,
   right: EvidenceExpansionExclusion
 ): number {
-  return compareStrings(exclusionKey(left), exclusionKey(right));
-}
-
-function exclusionKey(exclusion: EvidenceExpansionExclusion): string {
-  return [
-    exclusion.reason,
-    exclusion.splitRole ?? "*",
-    exclusion.targetRegime ?? "*",
-    exclusion.evidenceGroupHash,
-    ...exclusion.sourceVariants.map(sourceVariantKey)
-  ].join(":");
-}
-
-function sourceVariantKey(
-  sourceVariant: EvidenceExpansionSourceVariantReference
-): string {
   return (
-    `${sourceVariant.sourceVariantHash}:` +
-    sourceVariant.feasibilityCandidateHash
+    compareStrings(left.reason, right.reason) ||
+    roleIndex(left.splitRole) - roleIndex(right.splitRole) ||
+    regimeIndex(left.targetRegime) - regimeIndex(right.targetRegime) ||
+    compareStrings(left.evidenceGroupHash, right.evidenceGroupHash) ||
+    compareSourceVariantLists(
+      left.sourceVariants,
+      right.sourceVariants
+    )
   );
+}
+
+function compareSourceVariantLists(
+  left: readonly EvidenceExpansionSourceVariantReference[],
+  right: readonly EvidenceExpansionSourceVariantReference[]
+): number {
+  const comparableLength = Math.min(left.length, right.length);
+  for (let index = 0; index < comparableLength; index += 1) {
+    const difference = compareSourceVariants(
+      left[index]!,
+      right[index]!
+    );
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return left.length - right.length;
+}
+
+function roleIndex(
+  role: EvidenceExpansionExclusion["splitRole"]
+): number {
+  return role === null
+    ? VALIDATION_ROLE_ORDER.length
+    : VALIDATION_ROLE_ORDER.indexOf(role);
+}
+
+function regimeIndex(
+  regime: EvidenceExpansionExclusion["targetRegime"]
+): number {
+  return regime === null
+    ? VALIDATION_TARGET_REGIME_ORDER.length
+    : VALIDATION_TARGET_REGIME_ORDER.indexOf(regime);
 }
 
 function compareStrings(left: string, right: string): number {
