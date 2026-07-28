@@ -242,6 +242,51 @@ test("eligibility exclusions reject cross-group source reuse", () => {
   );
 });
 
+test("eligibility exclusions reject cross-status identity conflicts", () => {
+  const accepted = eligibility(
+    "1",
+    "1",
+    "train",
+    "bull",
+    true,
+    null
+  );
+  const conflictingSourceOwner = eligibility(
+    "2",
+    "1",
+    "test",
+    "sideways",
+    false,
+    "SCOPE_UNAVAILABLE"
+  );
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([accepted, conflictingSourceOwner])
+      ),
+    /source variant belongs to multiple evidence groups/
+  );
+
+  const conflictingInterval = eligibility(
+    "2",
+    "2",
+    "test",
+    "sideways",
+    false,
+    "SCOPE_UNAVAILABLE"
+  );
+  conflictingInterval.candidate.startAt =
+    accepted.candidate.startAt;
+  conflictingInterval.candidate.endAt = accepted.candidate.endAt;
+  assert.throws(
+    () =>
+      buildEvidenceExpansionEligibilityExclusions(
+        result([accepted, conflictingInterval])
+      ),
+    /interval payload maps to conflicting evidence group hashes/
+  );
+});
+
 test("eligibility exclusions reject duplicate source payload conflicts", () => {
   const first = eligibility(
     "1",

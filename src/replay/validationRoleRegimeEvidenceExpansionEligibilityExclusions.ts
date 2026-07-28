@@ -30,9 +30,6 @@ export function buildEvidenceExpansionEligibilityExclusions(
   >();
   const sourceVariantOwners = new Map<string, string>();
   for (const row of eligibility.candidates) {
-    if (row.status === "accepted") {
-      continue;
-    }
     assertEvidenceGroupIntervalIdentity(
       row.candidate.variant.evidenceGroupHash,
       row.candidate.startAt,
@@ -40,25 +37,16 @@ export function buildEvidenceExpansionEligibilityExclusions(
       intervalsByGroupHash,
       groupHashesByInterval
     );
+    assertSourceVariantOwner(
+      row.candidate.variant.sourceVariant.sourceVariantHash,
+      row.candidate.variant.evidenceGroupHash,
+      sourceVariantOwners
+    );
+    if (row.status === "accepted") {
+      continue;
+    }
     const exclusion =
       buildEvidenceExpansionEligibilityExclusion(row);
-    for (const sourceVariant of exclusion.sourceVariants) {
-      const owner = sourceVariantOwners.get(
-        sourceVariant.sourceVariantHash
-      );
-      if (
-        owner !== undefined &&
-        owner !== exclusion.evidenceGroupHash
-      ) {
-        throw new Error(
-          "exclusion source variant belongs to multiple evidence groups"
-        );
-      }
-      sourceVariantOwners.set(
-        sourceVariant.sourceVariantHash,
-        exclusion.evidenceGroupHash
-      );
-    }
     const group = grouped.get(exclusion.evidenceGroupHash) ?? [];
     group.push(exclusion);
     grouped.set(exclusion.evidenceGroupHash, group);
@@ -145,6 +133,23 @@ function assertEvidenceGroupIntervalIdentity(
     );
   }
   hashesByEnd.set(endAt, evidenceGroupHash);
+}
+
+function assertSourceVariantOwner(
+  sourceVariantHash: string,
+  evidenceGroupHash: string,
+  sourceVariantOwners: Map<string, string>
+): void {
+  const owner = sourceVariantOwners.get(sourceVariantHash);
+  if (
+    owner !== undefined &&
+    owner !== evidenceGroupHash
+  ) {
+    throw new Error(
+      "eligibility source variant belongs to multiple evidence groups"
+    );
+  }
+  sourceVariantOwners.set(sourceVariantHash, evidenceGroupHash);
 }
 
 function mergeExclusionGroup(
