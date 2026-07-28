@@ -394,6 +394,43 @@ export const evidenceExpansionPreflightBlockerSchema = z
     }
   });
 
+export const evidenceExpansionPreflightSourceSchema = z
+  .object({
+    baselineFeasibilityArtifactHash: sha256HashSchema,
+    baselinePlanHash: sha256HashSchema,
+    baselineReadinessArtifactHash: sha256HashSchema,
+    expansionDataSnapshotHash: sha256HashSchema,
+    expansionUniverseHash: sha256HashSchema,
+    expansionCoverageHash: sha256HashSchema,
+    validationSplitHash: sha256HashSchema,
+    calendarHash: sha256HashSchema,
+    officialCalendarArtifactHash: sha256HashSchema.nullable(),
+    marketRegimeClassifierHash: sha256HashSchema
+  })
+  .strict();
+
+export const evidenceExpansionPreflightConfigSchema = z
+  .object({
+    candidateStrategyBucket: z.literal("short_term"),
+    targetRegimes: z.tuple([
+      z.literal("bull"),
+      z.literal("bear"),
+      z.literal("sideways"),
+      z.literal("mixed")
+    ]),
+    windowMonths: z.number().int().positive(),
+    timezoneOffsetMinutes: z.number().int(),
+    roleSampleMinimum: z.literal(
+      EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM
+    ),
+    roleRegimeSampleMinimum: z.number().int().positive().nullable(),
+    inputPolicyVersion: z.literal("result_blind_capacity_scan.v1"),
+    dependencyDiagnosticPolicyVersion: z.literal(
+      "overlap_adjacency_inputs.v1"
+    )
+  })
+  .strict();
+
 export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
   .object({
     schemaVersion: z.literal(
@@ -403,41 +440,8 @@ export const validationRoleRegimeEvidenceExpansionPreflightArtifactSchema = z
     purpose: z.literal("evidence_expansion_preflight"),
     status: evidenceExpansionPreflightStatusSchema,
     generatedAt: isoDateTimeSchema,
-    source: z
-      .object({
-        baselineFeasibilityArtifactHash: sha256HashSchema,
-        baselinePlanHash: sha256HashSchema,
-        baselineReadinessArtifactHash: sha256HashSchema,
-        expansionDataSnapshotHash: sha256HashSchema,
-        expansionUniverseHash: sha256HashSchema,
-        expansionCoverageHash: sha256HashSchema,
-        validationSplitHash: sha256HashSchema,
-        calendarHash: sha256HashSchema,
-        officialCalendarArtifactHash: sha256HashSchema.nullable(),
-        marketRegimeClassifierHash: sha256HashSchema
-      })
-      .strict(),
-    config: z
-      .object({
-        candidateStrategyBucket: z.literal("short_term"),
-        targetRegimes: z.tuple([
-          z.literal("bull"),
-          z.literal("bear"),
-          z.literal("sideways"),
-          z.literal("mixed")
-        ]),
-        windowMonths: z.number().int().positive(),
-        timezoneOffsetMinutes: z.number().int(),
-        roleSampleMinimum: z.literal(
-          EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM
-        ),
-        roleRegimeSampleMinimum: z.number().int().positive().nullable(),
-        inputPolicyVersion: z.literal("result_blind_capacity_scan.v1"),
-        dependencyDiagnosticPolicyVersion: z.literal(
-          "overlap_adjacency_inputs.v1"
-        )
-      })
-      .strict(),
+    source: evidenceExpansionPreflightSourceSchema,
+    config: evidenceExpansionPreflightConfigSchema,
     targetMatrix: evidenceExpansionTargetMatrixSchema,
     capacity: evidenceExpansionCapacitySummarySchema,
     dependencyInputs: dependencyInputsSchema,
