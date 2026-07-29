@@ -988,6 +988,12 @@ baseline/expansion evidence, target matrix,
 capacity, dependency group/source 또는 window policy를 별도로 제공할 수 없다.
 Identity와 evidence core field를 함께 반환하지만 integrity blocker, 최종
 status, hash와 preflight artifact는 생성하지 않는다.
+`deriveEvidenceExpansionPreflightStatus`는 strict blocker schema를 통과한
+collection에서 invalid blocker를 최우선으로 판정하고, 그 외 blocker가
+있으면 `inconclusive`, blocker가 없으면
+`ready_for_expansion_replay`를 반환한다. Preflight artifact schema의 status
+invariant도 같은 helper를 사용한다. Core state 연결, artifact 조립, hash,
+writer와 CLI 호출은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

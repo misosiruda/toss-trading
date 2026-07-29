@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  deriveEvidenceExpansionPreflightStatus,
   type EvidenceExpansionPreflightBlocker,
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
@@ -12,6 +13,34 @@ import {
   parseValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   type ValidationRoleRegimeEvidenceExpansionPreflightPayload
 } from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
+
+test("preflight status derives deterministic blocker precedence", () => {
+  assert.equal(
+    deriveEvidenceExpansionPreflightStatus([]),
+    "ready_for_expansion_replay"
+  );
+  assert.equal(
+    deriveEvidenceExpansionPreflightStatus([
+      blocker("DEPENDENCY_INPUT_INCOMPLETE")
+    ]),
+    "inconclusive"
+  );
+  assert.equal(
+    deriveEvidenceExpansionPreflightStatus([
+      blocker("DEPENDENCY_INPUT_INCOMPLETE"),
+      blocker("SOURCE_PROVENANCE_INVALID")
+    ]),
+    "invalid"
+  );
+});
+
+test("preflight status rejects malformed blocker scope", () => {
+  assert.throws(() =>
+    deriveEvidenceExpansionPreflightStatus([
+      blocker("DEPENDENCY_INPUT_INCOMPLETE", "train")
+    ])
+  );
+});
 
 test("strict preflight schema accepts a synthetic ready fixture", () => {
   const artifact = readyArtifact();
