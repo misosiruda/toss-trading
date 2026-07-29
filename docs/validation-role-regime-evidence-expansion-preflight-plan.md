@@ -1000,6 +1000,14 @@ core blocker collection을 status helper에 연결한다. Caller는 prebuilt cor
 blocker 또는 status를 주입할 수 없다. Identity, evidence, blocker와 status를
 함께 반환하지만 schema version, mode, purpose, generatedAt, preflight hash,
 artifact binding, writer와 CLI 호출은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightArtifactBuilder.ts`는 verified
+core input과 명시적 `generatedAt`에서 status state를 내부 재생성하고 고정
+schema version, `paper_only` mode와 purpose를 추가한 뒤 기존 canonical hash
+binder로 strict preflight artifact를 생성한다. Status state의
+`partitionSummary`는 diagnostic-only field이므로 artifact contract에
+투영하지 않는다. Root allowlist는
+caller-provided status, blocker와 `preflightHash`를 거부한다. Output path,
+writer, CLI와 expanded replay 실행은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
