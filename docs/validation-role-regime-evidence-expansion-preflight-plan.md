@@ -965,8 +965,9 @@ Exclusion, integrity blocker, 최종 status, hash와 preflight artifact는
 생성하지 않으므로 이 단계의 빈 blocker만으로 replay readiness를 주장하지
 않는다.
 `validationRoleRegimeEvidenceExpansionPreflightEvidenceState.ts`는 검증된
-candidate evidence state의 accepted group과 capacity를 preflight derived
-state에 내부 연결한다. Caller는 dependency source와 calendar classifier만
+candidate evidence state의 baseline/expansion combined accepted group
+union과 capacity를 preflight derived state에 내부 연결한다. Caller는
+dependency source와 calendar classifier만
 제공하며 dependency group이나 capacity를 별도 입력할 수 없다. Partition
 summary, capacity, dependency input, exclusion과 현재 구현된 dependency 및
 capacity blocker를 함께 반환하지만 identity, integrity blocker, 최종 status,

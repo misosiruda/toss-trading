@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Market, Sha256Hash } from "../domain/schemas.js";
+import {
+  createOfficialMarketCalendarEvidenceHash,
+  type OfficialMarketCalendarEvidenceArtifact,
+  type OfficialMarketCalendarEvidencePayload
+} from "./officialMarketCalendarEvidence.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import type {
   EvidenceExpansionAssignmentCandidateAggregation
@@ -83,6 +88,28 @@ test("preflight evidence state connects candidate capacity and dependency blocke
       "ROLE_LOCAL_CAPACITY_BELOW_TARGET:test",
       "ROLE_REGIME_TARGET_UNDEFINED:*"
     ]
+  );
+});
+
+test("preflight evidence state builds dependencies from the combined accepted union", () => {
+  const input = stateInput();
+  input.dependencySource = dependencySource(true);
+
+  const state = buildEvidenceExpansionPreflightEvidenceState(input);
+
+  assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 2);
+  assert.deepEqual(
+    state.dependencyInputs.candidateIntervals.map(
+      ({ targetRegime }) => targetRegime
+    ),
+    ["bull", "bear"]
+  );
+  assert.equal(state.dependencyInputs.pairwise.length, 1);
+  assert.equal(
+    state.blockers.some(
+      ({ code }) => code === "DEPENDENCY_INPUT_INCOMPLETE"
+    ),
+    false
   );
 });
 
@@ -280,13 +307,15 @@ function baselineConsolidation(): Parameters<
   };
 }
 
-function dependencySource(): EvidenceExpansionPreflightDependencySource {
+function dependencySource(
+  includeOfficialCalendar = false
+): EvidenceExpansionPreflightDependencySource {
   const coverage = {
     mode: "paper_only" as const,
     universeId: "fixture-universe",
     status: "available" as const,
     rangeStart: "2025-01-01T00:00:00.000Z",
-    rangeEnd: "2025-01-31T23:59:59.999Z",
+    rangeEnd: "2025-02-28T23:59:59.999Z",
     timezoneOffsetMinutes: 0,
     minMonthlyCoverageRatio: 1,
     minSnapshotsPerSymbol: 1,
@@ -313,18 +342,133 @@ function dependencySource(): EvidenceExpansionPreflightDependencySource {
       validationSplitHash: hash("c")
     }
   };
+  const officialCalendarArtifact = includeOfficialCalendar
+    ? officialArtifact()
+    : null;
   const calendarClassifier: Pick<
     VerifiedEvidenceExpansionCalendarClassifier,
     "officialCalendarArtifact" | "hashes"
   > = {
-    officialCalendarArtifact: null,
+    officialCalendarArtifact,
     hashes: {
       calendarHash: hash("d"),
-      officialCalendarArtifactHash: null,
+      officialCalendarArtifactHash:
+        officialCalendarArtifact?.artifactHash ?? null,
       marketRegimeClassifierHash: hash("e")
     }
   };
   return { source, calendarClassifier };
+}
+
+function officialArtifact(): OfficialMarketCalendarEvidenceArtifact {
+  const payload: OfficialMarketCalendarEvidencePayload = {
+    schemaVersion: "official_market_calendar_evidence.v1",
+    mode: "paper_only",
+    purpose: "official_exchange_calendar_evidence",
+    generatedAt: "2025-03-01T00:00:00.000Z",
+    coverage: {
+      startDate: "2025-01-01",
+      endDate: "2025-03-01",
+      exchanges: ["KRX", "NYSE"]
+    },
+    sources: [
+      officialSource("KR"),
+      officialSource("US")
+    ],
+    sessions: (["KR", "US"] as Market[]).flatMap((market) =>
+      calendarDates().map((sessionDate) =>
+        officialSession(
+          market,
+          sessionDate,
+          market === "KR" &&
+            (sessionDate === "2025-01-02" ||
+              sessionDate === "2025-02-03")
+            ? "regular"
+            : isWeekend(sessionDate)
+              ? "weekend"
+              : "holiday"
+        )
+      )
+    )
+  };
+  return {
+    ...payload,
+    artifactHash: createOfficialMarketCalendarEvidenceHash(payload)
+  };
+}
+
+function officialSource(
+  market: Market
+): OfficialMarketCalendarEvidencePayload["sources"][number] {
+  const korean = market === "KR";
+  return {
+    sourceId: korean ? "official.krx" : "official.nyse",
+    evidenceClass: "official_exchange",
+    exchange: korean ? "KRX" : "NYSE",
+    market,
+    timezone: korean ? "Asia/Seoul" : "America/New_York",
+    publisher: korean
+      ? "synthetic KRX fixture"
+      : "synthetic NYSE fixture",
+    sourceUrl: korean
+      ? "https://example.com/krx"
+      : "https://example.com/nyse",
+    sourceDocumentHash: hash(korean ? "8" : "9"),
+    retrievedAt: "2025-01-01T00:00:00.000Z",
+    staleAfter: "2026-01-01T00:00:00.000Z",
+    regularSession: {
+      openLocalTime: korean ? "09:00" : "09:30",
+      closeLocalTime: korean ? "15:30" : "16:00"
+    }
+  };
+}
+
+function officialSession(
+  market: Market,
+  sessionDate: string,
+  sessionType: "regular" | "holiday" | "weekend" = "regular"
+): OfficialMarketCalendarEvidencePayload["sessions"][number] {
+  const korean = market === "KR";
+  const closed = sessionType !== "regular";
+  return {
+    sessionId: `${korean ? "krx" : "nyse"}.${sessionDate}`,
+    sourceId: korean ? "official.krx" : "official.nyse",
+    exchange: korean ? "KRX" : "NYSE",
+    market,
+    timezone: korean ? "Asia/Seoul" : "America/New_York",
+    sessionDate,
+    sessionType,
+    marketOpen: closed
+      ? null
+      : korean
+        ? `${sessionDate}T09:00:00+09:00`
+        : `${sessionDate}T09:30:00-05:00`,
+    marketClose: closed
+      ? null
+      : korean
+        ? `${sessionDate}T15:30:00+09:00`
+        : `${sessionDate}T16:00:00-05:00`,
+    exceptionName:
+      sessionType === "holiday" ? "fixture holiday" : null
+  };
+}
+
+function calendarDates(): string[] {
+  const dates: string[] = [];
+  const end = Date.parse("2025-03-01T00:00:00.000Z");
+  for (
+    let current = Date.parse("2025-01-01T00:00:00.000Z");
+    current <= end;
+    current += 24 * 60 * 60 * 1000
+  ) {
+    dates.push(new Date(current).toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function isWeekend(sessionDate: string): boolean {
+  const day = new Date(`${sessionDate}T00:00:00.000Z`).getUTCDay();
+  return day === 0 || day === 6;
 }
 
 function hash(character: string): Sha256Hash {

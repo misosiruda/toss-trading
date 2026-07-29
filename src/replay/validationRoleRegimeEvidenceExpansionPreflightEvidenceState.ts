@@ -66,7 +66,8 @@ export function buildEvidenceExpansionPreflightEvidenceState(input: {
     targetMatrix: input.targetMatrix,
     capacity: candidateState.capacityState.capacity,
     dependency: {
-      groups: input.partition.consolidation.evidenceGroups,
+      groups:
+        candidateState.capacityState.union.combinedEvidenceGroups,
       source: input.dependencySource.source,
       calendarClassifier:
         input.dependencySource.calendarClassifier
