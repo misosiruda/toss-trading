@@ -81,6 +81,40 @@ test("partition summary rejects accepted raw count drift", () => {
   );
 });
 
+test("partition summary preserves source variant group ownership", () => {
+  const input = distinctValidGroupInput();
+  const acceptedGroup =
+    input.partition.consolidation.evidenceGroups[0]!;
+  const exclusion = input.partition.exclusions.find(
+    (value) => value.reason === "SCOPE_UNAVAILABLE"
+  )!;
+  const acceptedSourceVariant =
+    acceptedGroup.sourceVariants[0]!.sourceVariant;
+  acceptedGroup.sourceVariants[0]!.sourceVariant =
+    exclusion.sourceVariants[0]!;
+  exclusion.sourceVariants[0] = acceptedSourceVariant;
+
+  assert.throws(
+    () => buildEvidenceExpansionCandidatePartitionSummary(input),
+    /source variants do not cover valid candidates/
+  );
+});
+
+test("partition summary rejects accepted variant group drift", () => {
+  const input = summaryInput();
+  const acceptedGroup =
+    input.partition.consolidation.evidenceGroups[0]!;
+  acceptedGroup.sourceVariants[0] = {
+    ...acceptedGroup.sourceVariants[0]!,
+    evidenceGroupHash: hash("9")
+  };
+
+  assert.throws(
+    () => buildEvidenceExpansionCandidatePartitionSummary(input),
+    /accepted variant group does not match container/
+  );
+});
+
 test("partition summary rejects aggregation count drift", () => {
   const input = summaryInput();
   input.aggregation.structuralCapacityCount = 5;
@@ -206,6 +240,24 @@ function summaryInput(): {
     windowMonths: 1,
     timezoneOffsetMinutes: 540
   };
+}
+
+function distinctValidGroupInput(): ReturnType<typeof summaryInput> {
+  const input = summaryInput();
+  const candidates =
+    input.aggregation.assignmentCandidates[1]!.result.candidates;
+  const startAt = "2025-03-01T00:00:00.000Z";
+  const endAt = "2025-03-31T23:59:59.999Z";
+  const evidenceGroupHash = groupHash(startAt, endAt);
+  for (const value of candidates) {
+    value.startAt = startAt;
+    value.endAt = endAt;
+    value.variant.evidenceGroupHash = evidenceGroupHash;
+  }
+  input.partition.exclusions.find(
+    (value) => value.reason === "SCOPE_UNAVAILABLE"
+  )!.evidenceGroupHash = evidenceGroupHash;
+  return input;
 }
 
 function assignmentCandidates(

@@ -778,8 +778,10 @@ Calendar-valid/rejected interval hash를 같은 window policy로 재계산하고
 accepted/excluded group union이 structural group set과 양방향으로 일치해야
 한다. Assignment별/flattened calendar rejection도 candidate partition과
 같은 공용 assertion으로 다시 대조한다. Calendar-valid candidate의
-`sourceVariantHash`는 accepted 또는 excluded variant 집합 중 정확히 하나에
-속해야 하며 이 분류로 accepted/excluded raw count를 다시 계산한다.
+`sourceVariantHash`는 원래 `evidenceGroupHash`와 결합한 identity 기준으로
+accepted 또는 excluded variant 집합 중 정확히 하나에 속해야 하며 이
+분류로 accepted/excluded raw count를 다시 계산한다. Accepted variant의
+embedded group hash도 consolidation container와 일치해야 한다.
 Accepted/excluded 교집합을 별도 count로 보존하며 unique union 보존식,
 aggregation count domain, duplicate group 또는 partition coverage 불일치를
 fail-closed로 거부한다. Blocker, status와 preflight artifact는 생성하지

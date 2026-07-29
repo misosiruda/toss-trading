@@ -117,17 +117,29 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
       "candidate partition summary exclusions contain duplicate groups"
     );
   }
-  const acceptedSourceVariants = new Set(
-    input.partition.consolidation.evidenceGroups.flatMap((group) =>
-      group.sourceVariants.map(
-        (variant) => variant.sourceVariant.sourceVariantHash
-      )
-    )
-  );
+  const acceptedSourceVariants = new Set<string>();
+  for (const group of input.partition.consolidation.evidenceGroups) {
+    for (const variant of group.sourceVariants) {
+      if (variant.evidenceGroupHash !== group.evidenceGroupHash) {
+        throw new Error(
+          "candidate partition summary accepted variant group does not match container"
+        );
+      }
+      acceptedSourceVariants.add(
+        sourceVariantIdentity(
+          group.evidenceGroupHash,
+          variant.sourceVariant.sourceVariantHash
+        )
+      );
+    }
+  }
   const excludedSourceVariants = new Set(
     exclusions.flatMap((exclusion) =>
-      exclusion.sourceVariants.map(
-        (variant) => variant.sourceVariantHash
+      exclusion.sourceVariants.map((variant) =>
+        sourceVariantIdentity(
+          exclusion.evidenceGroupHash,
+          variant.sourceVariantHash
+        )
       )
     )
   );
@@ -141,9 +153,11 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
     );
   }
   const validSourceVariants = new Set(
-    validCandidates.map(
-      (candidate) =>
+    validCandidates.map((candidate) =>
+      sourceVariantIdentity(
+        candidate.variant.evidenceGroupHash,
         candidate.variant.sourceVariant.sourceVariantHash
+      )
     )
   );
   const partitionSourceVariants = new Set([
@@ -158,13 +172,15 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
   let acceptedCandidateCount = 0;
   let excludedValidCandidateCount = 0;
   for (const candidate of validCandidates) {
-    const sourceVariantHash =
-      candidate.variant.sourceVariant.sourceVariantHash;
-    if (acceptedSourceVariants.has(sourceVariantHash)) {
+    const sourceVariant = sourceVariantIdentity(
+      candidate.variant.evidenceGroupHash,
+      candidate.variant.sourceVariant.sourceVariantHash
+    );
+    if (acceptedSourceVariants.has(sourceVariant)) {
       acceptedCandidateCount += 1;
       continue;
     }
-    if (excludedSourceVariants.has(sourceVariantHash)) {
+    if (excludedSourceVariants.has(sourceVariant)) {
       excludedValidCandidateCount += 1;
       continue;
     }
@@ -266,6 +282,13 @@ function sameSet(
     left.size === right.size &&
     [...left].every((value) => right.has(value))
   );
+}
+
+function sourceVariantIdentity(
+  evidenceGroupHash: Sha256Hash,
+  sourceVariantHash: Sha256Hash
+): string {
+  return `${evidenceGroupHash}:${sourceVariantHash}`;
 }
 
 function assertExactInputKeys(input: {
