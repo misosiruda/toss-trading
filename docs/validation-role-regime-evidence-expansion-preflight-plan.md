@@ -848,6 +848,15 @@ collection에서 내부 재계산해 fabricated intermediate 주입을 허용하
 검증을 그대로 통과한 state만 반환한다. Candidate enumeration, exclusion,
 target blocker, dependency input, status, hash와 preflight artifact는
 조립하지 않는다.
+`validationRoleRegimeEvidenceExpansionBaselineOverlapExclusionState.ts`는
+동일 source collection과 window policy에서 cross-source capacity state를
+내부 재계산하고 검증된 baseline overlap group만
+`DUPLICATE_BASELINE_EVIDENCE` exclusion으로 투영한다. Exclusion에는
+expansion source variant, target regime과 단일 role을 보존하며 여러 role에
+걸친 group은 `splitRole=null`로 기록한다. Overlap exclusion은 expansion
+진단 row를 삭제하거나 combined capacity를 다시 차감하지 않는다. 다른
+exclusion reason, blocker, status, hash와 preflight artifact는 조립하지
+않는다.
 `validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.ts`는
 accepted evidence group의 모든 source variant universe membership을
 market/symbol canonical union으로 조립하고
