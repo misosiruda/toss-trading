@@ -538,6 +538,23 @@ const INVALID_BLOCKER_CODES = new Set<EvidenceExpansionPreflightBlockerCode>([
   "EXCLUSION_COUNT_CONFLICT"
 ]);
 
+export function deriveEvidenceExpansionPreflightStatus(
+  blockers: unknown
+): EvidenceExpansionPreflightStatus {
+  const parsedBlockers =
+    evidenceExpansionPreflightBlockerSchema.array().parse(blockers);
+  if (
+    parsedBlockers.some((blocker) =>
+      INVALID_BLOCKER_CODES.has(blocker.code)
+    )
+  ) {
+    return "invalid";
+  }
+  return parsedBlockers.length > 0
+    ? "inconclusive"
+    : "ready_for_expansion_replay";
+}
+
 function validateDependencyCompleteness(
   value: PreflightArtifact,
   pairwiseDiagnosticsUnavailable: boolean,
@@ -1074,14 +1091,9 @@ function validateBlockerStatus(
   value: PreflightArtifact,
   context: z.RefinementCtx
 ): void {
-  const hasInvalidBlocker = value.blockers.some((blocker) =>
-    INVALID_BLOCKER_CODES.has(blocker.code)
+  const expectedStatus = deriveEvidenceExpansionPreflightStatus(
+    value.blockers
   );
-  const expectedStatus = hasInvalidBlocker
-    ? "invalid"
-    : value.blockers.length > 0
-      ? "inconclusive"
-      : "ready_for_expansion_replay";
   if (value.status !== expectedStatus) {
     context.addIssue({
       code: "custom",
