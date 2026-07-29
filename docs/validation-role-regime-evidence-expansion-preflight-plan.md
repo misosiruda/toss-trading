@@ -866,6 +866,15 @@ capacity에서 group을 제거하지 않으며 role-exclusive count에 포함되
 이유만 설명한다. Baseline overlap exclusion과 공용 comparator로 합치고
 정렬하며 다른 exclusion reason, blocker, status, hash와 preflight artifact는
 조립하지 않는다.
+`validationRoleRegimeEvidenceExpansionCandidateEvidenceState.ts`는 assignment
+aggregation에서 eligibility와 candidate partition을 결정적으로 재생성해
+전달된 partition의 consolidation 및 exclusion provenance 전체를 대조한 뒤
+partition summary를 내부 생성하고, partition의 accepted consolidation만
+cross-role shared exclusion state에 연결한다. Eligibility/calendar exclusion과 cross-source
+overlap/shared exclusion을 strict schema로 검증한 뒤 공용 comparator로
+합치고 동일 canonical identity 중복을 fail-closed로 거부한다. Raw/unique
+partition summary, cross-source capacity state와 canonical exclusion을 함께
+반환하지만 blocker, status, hash와 preflight artifact는 조립하지 않는다.
 `validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.ts`는
 accepted evidence group의 모든 source variant universe membership을
 market/symbol canonical union으로 조립하고
