@@ -17,8 +17,14 @@ import type {
   VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
+  buildEvidenceExpansionPreflightArtifact
+} from "./validationRoleRegimeEvidenceExpansionPreflightArtifactBuilder.js";
+import {
   buildEvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
+import {
+  parseValidationRoleRegimeEvidenceExpansionPreflightArtifact
+} from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
 import {
   buildEvidenceExpansionPreflightStatusState
 } from "./validationRoleRegimeEvidenceExpansionPreflightStatusState.js";
@@ -84,6 +90,63 @@ test("preflight status state derives status from verified core blockers", () => 
       (blocker) => blocker.code === "ROLE_REGIME_TARGET_UNDEFINED"
     )
   );
+});
+
+test("preflight artifact builder binds verified status state and hash", () => {
+  const artifact = buildEvidenceExpansionPreflightArtifact({
+    ...coreInput(),
+    generatedAt: "2026-07-29T00:00:00.000Z"
+  });
+
+  assert.equal(
+    artifact.schemaVersion,
+    "validation_role_regime_evidence_expansion_preflight.v1"
+  );
+  assert.equal(artifact.mode, "paper_only");
+  assert.equal(artifact.purpose, "evidence_expansion_preflight");
+  assert.equal(artifact.status, "inconclusive");
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      artifact
+    ),
+    artifact
+  );
+});
+
+test("preflight artifact builder rejects caller-provided derived fields", () => {
+  for (const field of ["status", "blockers", "preflightHash"]) {
+    const input = {
+      ...coreInput(),
+      generatedAt: "2026-07-29T00:00:00.000Z",
+      [field]: field === "blockers" ? [] : "caller-value"
+    } as unknown as Parameters<
+      typeof buildEvidenceExpansionPreflightArtifact
+    >[0];
+
+    assert.throws(
+      () => buildEvidenceExpansionPreflightArtifact(input),
+      /artifact builder input contains unknown fields/
+    );
+  }
+});
+
+test("preflight artifact builder rejects non-canonical generatedAt", () => {
+  for (const generatedAt of [
+    "not-an-iso-date",
+    "2026-07-29",
+    "July 29, 2026",
+    "2026-07-29T09:00:00.000+09:00",
+    "2026-07-29T00:00:00Z"
+  ]) {
+    assert.throws(
+      () =>
+        buildEvidenceExpansionPreflightArtifact({
+          ...coreInput(),
+          generatedAt
+        }),
+      /generatedAt must use canonical UTC ISO datetime/
+    );
+  }
 });
 
 test("preflight core state preserves an insufficient baseline as empty evidence", () => {
