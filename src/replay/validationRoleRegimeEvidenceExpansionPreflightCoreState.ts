@@ -1,18 +1,24 @@
-import type {
-  EvidenceExpansionAssignmentCandidateAggregation
+import {
+  aggregateEvidenceExpansionAssignmentCandidates
 } from "./validationRoleRegimeEvidenceExpansionAssignmentCandidateAggregation.js";
 import type {
   VerifiedValidationRoleRegimeEvidenceExpansionBaseline
 } from "./validationRoleRegimeEvidenceExpansionBaselineVerifier.js";
+import {
+  consolidateEvidenceExpansionBaselineEvidenceGroups
+} from "./validationRoleRegimeEvidenceExpansionBaselineEvidenceGroupConsolidation.js";
+import {
+  aggregateEvidenceExpansionBaselineRunVariants
+} from "./validationRoleRegimeEvidenceExpansionBaselineRunVariantAggregation.js";
 import type {
   VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
-import type {
-  EvidenceExpansionCandidatePartition
+import {
+  classifyEvidenceExpansionCandidateEligibility
+} from "./validationRoleRegimeEvidenceExpansionCandidateEligibility.js";
+import {
+  buildEvidenceExpansionCandidatePartition
 } from "./validationRoleRegimeEvidenceExpansionCandidatePartition.js";
-import type {
-  EvidenceExpansionEvidenceGroupConsolidationResult
-} from "./validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.js";
 import {
   buildEvidenceExpansionPreflightEvidenceState,
   type EvidenceExpansionPreflightEvidenceState
@@ -32,12 +38,9 @@ export interface EvidenceExpansionPreflightCoreState
 export function buildEvidenceExpansionPreflightCoreState(input: {
   baselineIdentity:
     VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
-  baselineEvidence: EvidenceExpansionEvidenceGroupConsolidationResult;
   expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   roleRegimeSampleMinimum: number | null;
-  aggregation: EvidenceExpansionAssignmentCandidateAggregation;
-  partition: EvidenceExpansionCandidatePartition;
 }): EvidenceExpansionPreflightCoreState {
   assertExactInputKeys(input);
   const identity = buildEvidenceExpansionPreflightIdentity({
@@ -51,11 +54,32 @@ export function buildEvidenceExpansionPreflightCoreState(input: {
     windowMonths: identity.config.windowMonths,
     timezoneOffsetMinutes: identity.config.timezoneOffsetMinutes
   };
+  const baselineEvidence =
+    consolidateEvidenceExpansionBaselineEvidenceGroups(
+      aggregateEvidenceExpansionBaselineRunVariants({
+        plan: input.baselineIdentity.plan,
+        source: input.expansion,
+        calendarClassifier: input.calendarClassifier
+      })
+    );
+  const aggregation = aggregateEvidenceExpansionAssignmentCandidates({
+    source: input.expansion,
+    calendarClassifier: input.calendarClassifier,
+    windowMonths: windowPolicy.windowMonths,
+    timezoneOffsetMinutes: windowPolicy.timezoneOffsetMinutes
+  });
+  const partition = buildEvidenceExpansionCandidatePartition({
+    aggregation,
+    eligibility:
+      classifyEvidenceExpansionCandidateEligibility(aggregation),
+    windowMonths: windowPolicy.windowMonths,
+    timezoneOffsetMinutes: windowPolicy.timezoneOffsetMinutes
+  });
   const evidenceState =
     buildEvidenceExpansionPreflightEvidenceState({
-      aggregation: input.aggregation,
-      partition: input.partition,
-      baseline: input.baselineEvidence,
+      aggregation,
+      partition,
+      baseline: baselineEvidence,
       baselineWindowPolicy: windowPolicy,
       expansionWindowPolicy: windowPolicy,
       targetMatrix: identity.targetMatrix,
@@ -74,21 +98,15 @@ export function buildEvidenceExpansionPreflightCoreState(input: {
 function assertExactInputKeys(input: {
   baselineIdentity:
     VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
-  baselineEvidence: EvidenceExpansionEvidenceGroupConsolidationResult;
   expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   roleRegimeSampleMinimum: number | null;
-  aggregation: EvidenceExpansionAssignmentCandidateAggregation;
-  partition: EvidenceExpansionCandidatePartition;
 }): void {
   const actual = Object.keys(input).sort();
   const expected = [
-    "aggregation",
-    "baselineEvidence",
     "baselineIdentity",
     "calendarClassifier",
     "expansion",
-    "partition",
     "roleRegimeSampleMinimum"
   ];
   if (

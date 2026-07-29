@@ -975,8 +975,10 @@ hash와 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionPreflightCoreState.ts`는 verified
 baseline/expansion/calendar에서 identity를 내부 생성하고 identity config의
 window policy와 target matrix, verified expansion/calendar dependency
-source를 evidence state에 직접 연결한다. Caller는 target matrix, capacity,
-dependency group/source 또는 window policy를 별도로 제공할 수 없다.
+source를 evidence state에 직접 연결한다. Baseline plan run aggregation과
+expansion assignment aggregation, eligibility 및 partition도 verified source에서
+내부 재생성한다. Caller는 baseline/expansion evidence, target matrix,
+capacity, dependency group/source 또는 window policy를 별도로 제공할 수 없다.
 Identity와 evidence core field를 함께 반환하지만 integrity blocker, 최종
 status, hash와 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
