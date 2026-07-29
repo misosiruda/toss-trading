@@ -3,7 +3,8 @@ import type {
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
   enumerateEvidenceExpansionAssignmentCandidates,
-  type EvidenceExpansionAssignmentCandidates
+  type EvidenceExpansionAssignmentCandidates,
+  type EvidenceExpansionCalendarRejectedCandidate
 } from "./validationRoleRegimeEvidenceExpansionAssignmentCandidates.js";
 import type {
   VerifiedValidationRoleRegimeEvidenceExpansionSource
@@ -20,6 +21,10 @@ export interface EvidenceExpansionAssignmentCandidateGroup {
 
 export interface EvidenceExpansionAssignmentCandidateAggregation {
   assignmentCandidates: EvidenceExpansionAssignmentCandidateGroup[];
+  calendarRejectedCandidates: Array<{
+    assignment: ValidationSplitAssignment;
+    candidate: EvidenceExpansionCalendarRejectedCandidate;
+  }>;
   structuralCapacityCount: number;
   calendarValidCandidateCount: number;
   calendarRejectedCandidateCount: number;
@@ -73,6 +78,13 @@ export function aggregateEvidenceExpansionAssignmentCandidates(input: {
       total + entry.result.calendarRejectedCandidateCount,
     0
   );
+  const calendarRejectedCandidates = assignmentCandidates.flatMap(
+    ({ assignment, result }) =>
+      result.calendarRejectedCandidates.map((candidate) => ({
+        assignment,
+        candidate
+      }))
+  );
   const scopeUnavailableCandidateCount = assignmentCandidates.reduce(
     (total, entry) =>
       total + entry.result.scopeUnavailableCandidateCount,
@@ -92,9 +104,18 @@ export function aggregateEvidenceExpansionAssignmentCandidates(input: {
       "aggregate scope-unavailable count exceeds calendar-valid candidates"
     );
   }
+  if (
+    calendarRejectedCandidates.length !==
+    calendarRejectedCandidateCount
+  ) {
+    throw new Error(
+      "aggregate calendar rejection rows do not match candidate count"
+    );
+  }
 
   return {
     assignmentCandidates,
+    calendarRejectedCandidates,
     structuralCapacityCount,
     calendarValidCandidateCount,
     calendarRejectedCandidateCount,

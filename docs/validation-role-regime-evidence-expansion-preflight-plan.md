@@ -691,11 +691,16 @@ source candidate variant로 조립하며 structural, calendar-rejected 및
 scope-unavailable count 불일치를 fail-closed로 거부한다. Assignment 전체
 payload는 verified validation split source의 assignment와 일치해야 하며
 regime label은 hash와 함께 검증된 classifier config로 다시 계산한다.
+Structural enumeration과 calendar-valid assessment의 canonical interval
+차집합을 `calendarRejectedCandidates`로 보존하고 rejected row 수가 기존
+diagnostic count와 다르면 fail-closed로 거부한다.
 `validationRoleRegimeEvidenceExpansionAssignmentCandidateAggregation.ts`는
 verified assignment 전체를 split index, split ID, role 순서로 열거하고
 assignment payload와 결과를 함께 보존한다. Structural, calendar-valid,
 calendar-rejected 및 scope-unavailable 총계를 집계하며 aggregate count
-불일치를 fail-closed로 거부한다. Evidence group deduplication, regime
+불일치를 fail-closed로 거부한다. Calendar-rejected interval은 canonical
+assignment와 함께 평탄화해 후속 diagnostic provenance로 보존한다.
+Evidence group deduplication, regime
 identity conflict 및 capacity/exclusion 판정은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCandidateEligibility.ts`는
 calendar-valid candidate를 scope와 regime evidence만으로 분류한다.
