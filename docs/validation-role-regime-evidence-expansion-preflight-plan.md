@@ -857,6 +857,15 @@ expansion source variant, target regime과 단일 role을 보존하며 여러 ro
 진단 row를 삭제하거나 combined capacity를 다시 차감하지 않는다. 다른
 exclusion reason, blocker, status, hash와 preflight artifact는 조립하지
 않는다.
+`validationRoleRegimeEvidenceExpansionCrossRoleSharedExclusionState.ts`는
+검증된 baseline overlap exclusion state의 combined union에서 둘 이상의
+validation role을 가진 group을 `CROSS_ROLE_SHARED_EVIDENCE` exclusion으로
+투영한다. Combined group의 baseline/expansion source variant 전체와 target
+regime을 보존하고 `splitRole=null`로 기록한다. 이 exclusion은 role-local
+capacity에서 group을 제거하지 않으며 role-exclusive count에 포함되지 않는
+이유만 설명한다. Baseline overlap exclusion과 공용 comparator로 합치고
+정렬하며 다른 exclusion reason, blocker, status, hash와 preflight artifact는
+조립하지 않는다.
 `validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.ts`는
 accepted evidence group의 모든 source variant universe membership을
 market/symbol canonical union으로 조립하고
