@@ -21,6 +21,7 @@ export function buildEvidenceExpansionPreflightArtifact(
   input: EvidenceExpansionPreflightArtifactBuilderInput
 ): ValidationRoleRegimeEvidenceExpansionPreflightArtifact {
   assertExactInputKeys(input);
+  assertCanonicalGeneratedAt(input.generatedAt);
   const state = buildEvidenceExpansionPreflightStatusState({
     baselineIdentity: input.baselineIdentity,
     expansion: input.expansion,
@@ -43,6 +44,18 @@ export function buildEvidenceExpansionPreflightArtifact(
     exclusions: state.exclusions,
     blockers: state.blockers
   });
+}
+
+function assertCanonicalGeneratedAt(value: string): void {
+  const timestamp = Date.parse(value);
+  if (
+    !Number.isFinite(timestamp) ||
+    new Date(timestamp).toISOString() !== value
+  ) {
+    throw new Error(
+      "preflight artifact generatedAt must use canonical UTC ISO datetime"
+    );
+  }
 }
 
 function assertExactInputKeys(

@@ -130,13 +130,23 @@ test("preflight artifact builder rejects caller-provided derived fields", () => 
   }
 });
 
-test("preflight artifact builder rejects invalid generatedAt", () => {
-  assert.throws(() =>
-    buildEvidenceExpansionPreflightArtifact({
-      ...coreInput(),
-      generatedAt: "not-an-iso-date"
-    })
-  );
+test("preflight artifact builder rejects non-canonical generatedAt", () => {
+  for (const generatedAt of [
+    "not-an-iso-date",
+    "2026-07-29",
+    "July 29, 2026",
+    "2026-07-29T09:00:00.000+09:00",
+    "2026-07-29T00:00:00Z"
+  ]) {
+    assert.throws(
+      () =>
+        buildEvidenceExpansionPreflightArtifact({
+          ...coreInput(),
+          generatedAt
+        }),
+      /generatedAt must use canonical UTC ISO datetime/
+    );
+  }
 });
 
 test("preflight core state preserves an insufficient baseline as empty evidence", () => {

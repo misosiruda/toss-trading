@@ -1005,7 +1005,9 @@ core input과 명시적 `generatedAt`에서 status state를 내부 재생성하�
 schema version, `paper_only` mode와 purpose를 추가한 뒤 기존 canonical hash
 binder로 strict preflight artifact를 생성한다. Status state의
 `partitionSummary`는 diagnostic-only field이므로 artifact contract에
-투영하지 않는다. Root allowlist는
+투영하지 않는다. `generatedAt`은 UTC와 millisecond precision을 포함한
+`Date.prototype.toISOString()` canonical representation만 허용하며
+date-only, locale 또는 offset 표현은 hash binding 전에 거부한다. Root allowlist는
 caller-provided status, blocker와 `preflightHash`를 거부한다. Output path,
 writer, CLI와 expanded replay 실행은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
