@@ -45,7 +45,9 @@ export function buildEvidenceExpansionCandidatePartition(input: {
     input.windowMonths,
     input.timezoneOffsetMinutes
   );
-  assertCalendarRejectionsMatchAggregation(input.aggregation);
+  assertEvidenceExpansionCalendarRejectionAggregation(
+    input.aggregation
+  );
 
   const eligibilityPartition =
     buildEvidenceExpansionEligibilityPartition({
@@ -111,7 +113,7 @@ function assertEligibilityMatchesAggregation(
   }
 }
 
-function assertCalendarRejectionsMatchAggregation(
+export function assertEvidenceExpansionCalendarRejectionAggregation(
   aggregation: EvidenceExpansionAssignmentCandidateAggregation
 ): void {
   const nestedRows = aggregation.assignmentCandidates.flatMap(
