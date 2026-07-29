@@ -752,6 +752,19 @@ variant와 excluded variant가 함께 존재하는 것은 허용하며 두 prove
 모두 보존한다. Calendar-rejected candidate는 이 partition보다 앞선
 assignment diagnostic 범위에 남으며, 최종 status와 preflight artifact는
 생성하지 않는다.
+`validationRoleRegimeEvidenceExpansionCandidatePartition.ts`는 assignment
+aggregation과 calendar-valid eligibility row를 assignment, candidate,
+source variant 및 observed evidence payload 기준으로 양방향 대조한다.
+Calendar-valid `evidenceGroupHash`도 partition의 window month와 timezone
+policy로 재계산해 upstream identity와 정확히 일치해야 한다.
+Assignment별 calendar rejection diagnostic과 top-level flattened row도
+assignment payload와 interval 기준으로 양방향 일치해야 한다.
+일치할 때만 eligibility partition과 calendar rejection exclusion을 결합하고
+preflight hash verifier와 같은 canonical exclusion comparator로 정렬한다.
+같은 evidence group이 calendar-valid와 calendar-rejected 상태에 동시에
+나타나거나 duplicate candidate/exclusion identity가 있으면 fail-closed로
+거부한다. Capacity, blocker, final status, hash와 preflight artifact는
+조립하지 않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.

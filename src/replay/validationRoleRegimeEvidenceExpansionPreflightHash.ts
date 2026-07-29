@@ -1,7 +1,6 @@
 import type { Sha256Hash } from "../domain/schemas.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
-  type EvidenceExpansionExclusion,
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   validationRoleRegimeEvidenceExpansionPreflightArtifactSchema
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
@@ -9,9 +8,8 @@ import {
   compareEvidenceExpansionPreflightBlockers
 } from "./validationRoleRegimeEvidenceExpansionPreflightBlockerOrder.js";
 import {
-  VALIDATION_ROLE_ORDER,
-  VALIDATION_TARGET_REGIME_ORDER
-} from "./validationRoleRegimeReplayPlan.js";
+  compareEvidenceExpansionPreflightExclusions
+} from "./validationRoleRegimeEvidenceExpansionPreflightExclusionOrder.js";
 
 const EMPTY_SHA256_HASH =
   `sha256:${"0".repeat(64)}` as Sha256Hash;
@@ -79,7 +77,7 @@ function assertCanonicalCollections(
 ): void {
   assertCanonicalOrder(
     payload.exclusions,
-    compareExclusions,
+    compareEvidenceExpansionPreflightExclusions,
     "preflight exclusions"
   );
   assertCanonicalOrder(
@@ -99,65 +97,4 @@ function assertCanonicalOrder<T>(
       throw new Error(`${label} must use canonical order`);
     }
   }
-}
-
-function compareExclusions(
-  left: EvidenceExpansionExclusion,
-  right: EvidenceExpansionExclusion
-): number {
-  return (
-    compareStrings(left.reason, right.reason) ||
-    roleIndex(left.splitRole) - roleIndex(right.splitRole) ||
-    regimeIndex(left.targetRegime) - regimeIndex(right.targetRegime) ||
-    compareStrings(left.evidenceGroupHash, right.evidenceGroupHash) ||
-    compareSourceVariantLists(left.sourceVariants, right.sourceVariants)
-  );
-}
-
-function compareSourceVariantLists(
-  left: EvidenceExpansionExclusion["sourceVariants"],
-  right: EvidenceExpansionExclusion["sourceVariants"]
-): number {
-  const comparableLength = Math.min(left.length, right.length);
-  for (let index = 0; index < comparableLength; index += 1) {
-    const difference =
-      compareStrings(
-        left[index]!.sourceVariantHash,
-        right[index]!.sourceVariantHash
-      ) ||
-      compareStrings(
-        left[index]!.feasibilityCandidateHash,
-        right[index]!.feasibilityCandidateHash
-      );
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return left.length - right.length;
-}
-
-function roleIndex(
-  role: EvidenceExpansionExclusion["splitRole"]
-): number {
-  return role === null
-    ? VALIDATION_ROLE_ORDER.length
-    : VALIDATION_ROLE_ORDER.indexOf(role);
-}
-
-function regimeIndex(
-  regime: EvidenceExpansionExclusion["targetRegime"]
-): number {
-  return regime === null
-    ? VALIDATION_TARGET_REGIME_ORDER.length
-    : VALIDATION_TARGET_REGIME_ORDER.indexOf(regime);
-}
-
-function compareStrings(left: string, right: string): number {
-  if (left < right) {
-    return -1;
-  }
-  if (left > right) {
-    return 1;
-  }
-  return 0;
 }
