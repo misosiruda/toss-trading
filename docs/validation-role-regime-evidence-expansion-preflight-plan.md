@@ -1016,6 +1016,11 @@ verified builder input과 명시적 `outputPath`에서 strict artifact를 먼저
 Root allowlist와 artifact build가 filesystem mutation보다 먼저 수행되며
 existing output은 `EEXIST`로 보존한다. Default output path, source scan,
 CLI와 expanded replay 실행은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightInspect.ts`는 명시적
+`--artifact-path` 하나만 받아 기존 preflight artifact의 strict schema,
+canonical collection order와 `preflightHash`를 검증한 뒤 JSON stdout으로
+출력한다. Output write, artifact 생성, default path, source scan과 replay
+실행은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
