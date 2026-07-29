@@ -1026,6 +1026,12 @@ canonical collection order와 `preflightHash`를 검증한 뒤 JSON stdout으로
 result-metric 금지 boundary를 적용한다. Invalid JSON과 forbidden result
 path는 fail-closed로 거부한다. Source별 verifier, artifact builder, writer,
 CLI와 replay 실행은 아직 연결하지 않는다.
+`verifyEvidenceExpansionPreflightDeclaredPolicy`는 source bundle의 full
+`targetMatrix`와 `dependencyDiagnosticPolicy`만 strict 검증한다. Matrix는
+세 role과 네 regime 전체에서 하나의 nullable positive
+`roleRegimeSampleMinimum`을 사용해야 하며 dependency policy version은
+`overlap_adjacency_inputs.v1`로 고정한다. Source verifier, artifact build와
+write는 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
