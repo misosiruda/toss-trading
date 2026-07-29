@@ -839,6 +839,15 @@ single-group merge 결과와 비교한다. 네 view의 global/role/regime 관계
 preflight와 같은 exported capacity summary schema로 최종 검증한다. Target
 판정, exclusion과 blocker, dependency input, preflight artifact 조립은
 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCrossSourceCapacityState.ts`는 baseline
+및 expansion accepted consolidation과 각 window policy를 입력받아
+cross-source classification, canonical group union과 네 capacity view를
+순서대로 조립한다. Classification과 union은 외부 입력으로 받지 않고 source
+collection에서 내부 재계산해 fabricated intermediate 주입을 허용하지 않는다.
+기존 union과 capacity builder의 identity, provenance, count conservation
+검증을 그대로 통과한 state만 반환한다. Candidate enumeration, exclusion,
+target blocker, dependency input, status, hash와 preflight artifact는
+조립하지 않는다.
 `validationRoleRegimeEvidenceExpansionCombinedUniverseMembership.ts`는
 accepted evidence group의 모든 source variant universe membership을
 market/symbol canonical union으로 조립하고
