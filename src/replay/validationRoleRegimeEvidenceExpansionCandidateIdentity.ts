@@ -52,7 +52,16 @@ export const evidenceExpansionCandidateIdentityInputSchema = z
 
 const evidenceGroupHashInputSchema = z
   .object(evidenceGroupHashInputShape)
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (Date.parse(value.startAt) >= Date.parse(value.endAt)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endAt"],
+        message: "evidence group startAt must be before endAt"
+      });
+    }
+  });
 
 const sourceVariantHashInputSchema = z
   .object({
@@ -75,19 +84,25 @@ export interface EvidenceExpansionCandidateIdentity {
   sourceVariant: EvidenceExpansionSourceVariantReference;
 }
 
+export function createEvidenceExpansionEvidenceGroupHash(
+  value: unknown
+): Sha256Hash {
+  return createReplayResearchHash(
+    evidenceGroupHashInputSchema.parse(value)
+  );
+}
+
 export function createEvidenceExpansionCandidateIdentity(
   value: unknown
 ): EvidenceExpansionCandidateIdentity {
   const input = evidenceExpansionCandidateIdentityInputSchema.parse(value);
-  const evidenceGroupHash = createReplayResearchHash(
-    evidenceGroupHashInputSchema.parse({
-      startAt: input.startAt,
-      endAt: input.endAt,
-      candidateStrategyBucket: input.candidateStrategyBucket,
-      windowMonths: input.windowMonths,
-      timezoneOffsetMinutes: input.timezoneOffsetMinutes
-    })
-  );
+  const evidenceGroupHash = createEvidenceExpansionEvidenceGroupHash({
+    startAt: input.startAt,
+    endAt: input.endAt,
+    candidateStrategyBucket: input.candidateStrategyBucket,
+    windowMonths: input.windowMonths,
+    timezoneOffsetMinutes: input.timezoneOffsetMinutes
+  });
   const feasibilityCandidateHash =
     createValidationFeasibilityCandidateHash({
       startAt: input.startAt,

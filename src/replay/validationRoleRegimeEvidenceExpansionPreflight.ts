@@ -62,20 +62,11 @@ export const evidenceExpansionSourceVariantReferenceSchema = z
 const sourceVariantReferencesSchema = z
   .array(evidenceExpansionSourceVariantReferenceSchema)
   .min(1)
-  .superRefine((variants, context) => {
-    for (let index = 1; index < variants.length; index += 1) {
-      if (
-        compareSourceVariants(variants[index - 1]!, variants[index]!) >= 0
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: [index],
-          message:
-            "source variants must use canonical hash and candidate order"
-        });
-      }
-    }
-  });
+  .superRefine(validateCanonicalSourceVariants);
+
+const exclusionSourceVariantReferencesSchema = z
+  .array(evidenceExpansionSourceVariantReferenceSchema)
+  .superRefine(validateCanonicalSourceVariants);
 
 const roleRegimeTargetSchema = z
   .object({
@@ -356,14 +347,40 @@ export const evidenceExpansionCompleteDependencyInputsSchema =
 
 export const evidenceExpansionExclusionSchema = z
   .object({
-    sourceVariants: sourceVariantReferencesSchema,
+    sourceVariants: exclusionSourceVariantReferencesSchema,
     evidenceGroupHash: sha256HashSchema,
     splitRole: validationSplitRoleSchema.nullable(),
     targetRegime: feasibilityTargetRegimeSchema.nullable(),
     reason: evidenceExpansionExclusionReasonSchema,
     message: z.string().trim().min(1)
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const calendarRejected =
+      value.reason === "CALENDAR_SESSION_REJECTED";
+    if (calendarRejected && value.sourceVariants.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceVariants"],
+        message:
+          "calendar rejection must not claim a validated source variant"
+      });
+    }
+    if (!calendarRejected && value.sourceVariants.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceVariants"],
+        message: "non-calendar exclusion requires a source variant"
+      });
+    }
+    if (calendarRejected && value.targetRegime !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetRegime"],
+        message: "calendar rejection must not claim a target regime"
+      });
+    }
+  });
 
 export const evidenceExpansionPreflightBlockerSchema = z
   .object({
@@ -1164,6 +1181,26 @@ function compareSourceVariantLists(
     }
   }
   return left.length - right.length;
+}
+
+function validateCanonicalSourceVariants(
+  variants: z.infer<
+    typeof evidenceExpansionSourceVariantReferenceSchema
+  >[],
+  context: z.RefinementCtx
+): void {
+  for (let index = 1; index < variants.length; index += 1) {
+    if (
+      compareSourceVariants(variants[index - 1]!, variants[index]!) >= 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: [index],
+        message:
+          "source variants must use canonical hash and candidate order"
+      });
+    }
+  }
 }
 
 function compareSourceVariants(
