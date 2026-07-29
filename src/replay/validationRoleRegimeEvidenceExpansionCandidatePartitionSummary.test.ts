@@ -34,11 +34,11 @@ test("partition summary reconciles raw candidates and unique groups", () => {
     buildEvidenceExpansionCandidatePartitionSummary(input);
 
   assert.deepEqual(summary, {
-    structuralCandidateCount: 3,
-    calendarValidCandidateCount: 2,
+    structuralCandidateCount: 4,
+    calendarValidCandidateCount: 3,
     calendarRejectedCandidateCount: 1,
     acceptedCandidateCount: 1,
-    excludedCandidateCount: 2,
+    excludedCandidateCount: 3,
     uniqueStructuralEvidenceGroupCount: 2,
     uniqueAcceptedEvidenceGroupCount: 1,
     uniqueExcludedEvidenceGroupCount: 2,
@@ -71,19 +71,19 @@ test("partition summary rejects duplicate excluded groups", () => {
   );
 });
 
-test("partition summary rejects unique group count overflow", () => {
+test("partition summary rejects accepted raw count drift", () => {
   const input = summaryInput();
-  input.partition.consolidation.acceptedCandidateCount = 0;
+  input.partition.consolidation.acceptedCandidateCount = 2;
 
   assert.throws(
     () => buildEvidenceExpansionCandidatePartitionSummary(input),
-    /unique groups exceed candidate counts/
+    /accepted raw count does not match source variants/
   );
 });
 
 test("partition summary rejects aggregation count drift", () => {
   const input = summaryInput();
-  input.aggregation.structuralCapacityCount = 4;
+  input.aggregation.structuralCapacityCount = 5;
 
   assert.throws(
     () => buildEvidenceExpansionCandidatePartitionSummary(input),
@@ -144,6 +144,12 @@ function summaryInput(): {
     "2",
     false
   );
+  const secondExcluded = candidate(
+    accepted.startAt,
+    accepted.endAt,
+    "3",
+    false
+  );
   const rejected = {
     startAt: "2025-02-01T00:00:00.000Z",
     endAt: "2025-02-28T23:59:59.999Z"
@@ -159,7 +165,11 @@ function summaryInput(): {
     aggregation: {
       assignmentCandidates: [
         assignmentCandidates(acceptedAssignment, [accepted], []),
-        assignmentCandidates(excludedAssignment, [excluded], []),
+        assignmentCandidates(
+          excludedAssignment,
+          [excluded, secondExcluded],
+          []
+        ),
         assignmentCandidates(rejectedAssignment, [], [rejected])
       ],
       calendarRejectedCandidates: [
@@ -168,10 +178,10 @@ function summaryInput(): {
           candidate: structuredClone(rejected)
         }
       ],
-      structuralCapacityCount: 3,
-      calendarValidCandidateCount: 2,
+      structuralCapacityCount: 4,
+      calendarValidCandidateCount: 3,
       calendarRejectedCandidateCount: 1,
-      scopeUnavailableCandidateCount: 1
+      scopeUnavailableCandidateCount: 2
     },
     partition: {
       consolidation: {
@@ -190,7 +200,7 @@ function summaryInput(): {
       },
       exclusions: [
         calendarExclusion(rejectedGroupHash),
-        scopeExclusion(excluded)
+        scopeExclusion(excluded, secondExcluded)
       ]
     },
     windowMonths: 1,
@@ -264,11 +274,13 @@ function calendarExclusion(
 }
 
 function scopeExclusion(
-  value: EvidenceExpansionEnumeratedAssignmentCandidate
+  ...values: EvidenceExpansionEnumeratedAssignmentCandidate[]
 ): EvidenceExpansionExclusion {
   return {
-    sourceVariants: [value.variant.sourceVariant],
-    evidenceGroupHash: value.variant.evidenceGroupHash,
+    sourceVariants: values.map(
+      (value) => value.variant.sourceVariant
+    ),
+    evidenceGroupHash: values[0]!.variant.evidenceGroupHash,
     splitRole: "validation",
     targetRegime: "bull",
     reason: "SCOPE_UNAVAILABLE",

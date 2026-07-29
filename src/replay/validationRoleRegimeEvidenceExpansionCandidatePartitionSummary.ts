@@ -105,14 +105,6 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
       "candidate partition summary accepted groups do not match unique count"
     );
   }
-  if (
-    input.partition.consolidation.acceptedCandidateCount >
-    input.aggregation.calendarValidCandidateCount
-  ) {
-    throw new Error(
-      "candidate partition summary accepted count exceeds valid candidates"
-    );
-  }
 
   const exclusions = evidenceExpansionExclusionSchema.array().parse(
     input.partition.exclusions
@@ -125,14 +117,84 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
       "candidate partition summary exclusions contain duplicate groups"
     );
   }
+  const acceptedSourceVariants = new Set(
+    input.partition.consolidation.evidenceGroups.flatMap((group) =>
+      group.sourceVariants.map(
+        (variant) => variant.sourceVariant.sourceVariantHash
+      )
+    )
+  );
+  const excludedSourceVariants = new Set(
+    exclusions.flatMap((exclusion) =>
+      exclusion.sourceVariants.map(
+        (variant) => variant.sourceVariantHash
+      )
+    )
+  );
+  if (
+    [...acceptedSourceVariants].some((hash) =>
+      excludedSourceVariants.has(hash)
+    )
+  ) {
+    throw new Error(
+      "candidate partition summary source variant has conflicting status"
+    );
+  }
+  const validSourceVariants = new Set(
+    validCandidates.map(
+      (candidate) =>
+        candidate.variant.sourceVariant.sourceVariantHash
+    )
+  );
+  const partitionSourceVariants = new Set([
+    ...acceptedSourceVariants,
+    ...excludedSourceVariants
+  ]);
+  if (!sameSet(validSourceVariants, partitionSourceVariants)) {
+    throw new Error(
+      "candidate partition summary source variants do not cover valid candidates"
+    );
+  }
+  let acceptedCandidateCount = 0;
+  let excludedValidCandidateCount = 0;
+  for (const candidate of validCandidates) {
+    const sourceVariantHash =
+      candidate.variant.sourceVariant.sourceVariantHash;
+    if (acceptedSourceVariants.has(sourceVariantHash)) {
+      acceptedCandidateCount += 1;
+      continue;
+    }
+    if (excludedSourceVariants.has(sourceVariantHash)) {
+      excludedValidCandidateCount += 1;
+      continue;
+    }
+    throw new Error(
+      "candidate partition summary valid candidate is unclassified"
+    );
+  }
+  if (
+    acceptedCandidateCount !==
+    input.partition.consolidation.acceptedCandidateCount
+  ) {
+    throw new Error(
+      "candidate partition summary accepted raw count does not match source variants"
+    );
+  }
   const excludedCandidateCount =
-    input.aggregation.structuralCapacityCount -
-    input.partition.consolidation.acceptedCandidateCount;
+    excludedValidCandidateCount +
+    input.aggregation.calendarRejectedCandidateCount;
+  if (
+    acceptedCandidateCount + excludedCandidateCount !==
+    input.aggregation.structuralCapacityCount
+  ) {
+    throw new Error(
+      "candidate partition summary raw candidate counts do not reconcile"
+    );
+  }
   if (
     structuralGroups.size >
       input.aggregation.structuralCapacityCount ||
-    acceptedGroups.size >
-      input.partition.consolidation.acceptedCandidateCount ||
+    acceptedGroups.size > acceptedCandidateCount ||
     excludedGroups.size > excludedCandidateCount ||
     excludedCandidateCount <
       input.aggregation.calendarRejectedCandidateCount
@@ -172,7 +234,7 @@ export function buildEvidenceExpansionCandidatePartitionSummary(input: {
     calendarRejectedCandidateCount:
       input.aggregation.calendarRejectedCandidateCount,
     acceptedCandidateCount:
-      input.partition.consolidation.acceptedCandidateCount,
+      acceptedCandidateCount,
     excludedCandidateCount,
     uniqueStructuralEvidenceGroupCount: structuralGroups.size,
     uniqueAcceptedEvidenceGroupCount: acceptedGroups.size,
