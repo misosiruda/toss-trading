@@ -964,6 +964,13 @@ capacity blocker와 preflight hash verifier에도 동일하게 적용한다.
 Exclusion, integrity blocker, 최종 status, hash와 preflight artifact는
 생성하지 않으므로 이 단계의 빈 blocker만으로 replay readiness를 주장하지
 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightEvidenceState.ts`는 검증된
+candidate evidence state의 accepted group과 capacity를 preflight derived
+state에 내부 연결한다. Caller는 dependency source와 calendar classifier만
+제공하며 dependency group이나 capacity를 별도 입력할 수 없다. Partition
+summary, capacity, dependency input, exclusion과 현재 구현된 dependency 및
+capacity blocker를 함께 반환하지만 identity, integrity blocker, 최종 status,
+hash와 preflight artifact는 생성하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
