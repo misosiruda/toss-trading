@@ -994,6 +994,12 @@ collection에서 invalid blocker를 최우선으로 판정하고, 그 외 blocke
 `ready_for_expansion_replay`를 반환한다. Preflight artifact schema의 status
 invariant도 같은 helper를 사용한다. Core state 연결, artifact 조립, hash,
 writer와 CLI 호출은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflightStatusState.ts`는 verified
+baseline/expansion/calendar input에서 core state를 내부 재생성하고 해당
+core blocker collection을 status helper에 연결한다. Caller는 prebuilt core,
+blocker 또는 status를 주입할 수 없다. Identity, evidence, blocker와 status를
+함께 반환하지만 schema version, mode, purpose, generatedAt, preflight hash,
+artifact binding, writer와 CLI 호출은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

@@ -20,6 +20,9 @@ import {
   buildEvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
 import {
+  buildEvidenceExpansionPreflightStatusState
+} from "./validationRoleRegimeEvidenceExpansionPreflightStatusState.js";
+import {
   createValidationFeasibilityCandidateHash,
   createValidationFeasibilityClassifierHash,
   defaultMarketRegimeClassifierConfig
@@ -64,6 +67,23 @@ test("preflight core state derives identity and evidence inputs from verified so
     uniqueExcludedEvidenceGroupCount: 2,
     acceptedExcludedSharedEvidenceGroupCount: 0
   });
+});
+
+test("preflight status state derives status from verified core blockers", () => {
+  const state = buildEvidenceExpansionPreflightStatusState(coreInput());
+
+  assert.equal(state.status, "inconclusive");
+  assert.ok(
+    state.blockers.some(
+      (blocker) =>
+        blocker.code === "OFFICIAL_CALENDAR_EVIDENCE_MISSING"
+    )
+  );
+  assert.ok(
+    state.blockers.some(
+      (blocker) => blocker.code === "ROLE_REGIME_TARGET_UNDEFINED"
+    )
+  );
 });
 
 test("preflight core state preserves an insufficient baseline as empty evidence", () => {
