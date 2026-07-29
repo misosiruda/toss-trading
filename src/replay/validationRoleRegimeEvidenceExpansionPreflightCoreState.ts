@@ -41,13 +41,17 @@ export interface EvidenceExpansionPreflightCoreState
   extends EvidenceExpansionPreflightIdentity,
     EvidenceExpansionPreflightEvidenceState {}
 
-export function buildEvidenceExpansionPreflightCoreState(input: {
+export interface EvidenceExpansionPreflightCoreStateInput {
   baselineIdentity:
     VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
   expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   roleRegimeSampleMinimum: number | null;
-}): EvidenceExpansionPreflightCoreState {
+}
+
+export function buildEvidenceExpansionPreflightCoreState(
+  input: EvidenceExpansionPreflightCoreStateInput
+): EvidenceExpansionPreflightCoreState {
   assertExactInputKeys(input);
   const identity = buildEvidenceExpansionPreflightIdentity({
     baseline: input.baselineIdentity,
@@ -125,13 +129,9 @@ function deriveBaselineEvidence(input: {
   );
 }
 
-function assertExactInputKeys(input: {
-  baselineIdentity:
-    VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
-  expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
-  calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
-  roleRegimeSampleMinimum: number | null;
-}): void {
+function assertExactInputKeys(
+  input: EvidenceExpansionPreflightCoreStateInput
+): void {
   const actual = Object.keys(input).sort();
   const expected = [
     "baselineIdentity",
