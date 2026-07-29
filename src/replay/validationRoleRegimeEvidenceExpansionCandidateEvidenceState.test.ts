@@ -97,6 +97,37 @@ test("candidate evidence state preserves exclusion provenance by stage", () => {
   assert.equal(scope.splitRole, "validation");
 });
 
+test("candidate evidence state rejects altered partition exclusion provenance", () => {
+  const mutations: Array<
+    (exclusion: EvidenceExpansionExclusion) => void
+  > = [
+    (exclusion) => {
+      exclusion.reason = "INSUFFICIENT_REGIME_DATA";
+    },
+    (exclusion) => {
+      exclusion.splitRole = "train";
+    },
+    (exclusion) => {
+      exclusion.targetRegime = "bear";
+    },
+    (exclusion) => {
+      exclusion.sourceVariants[0]!.feasibilityCandidateHash =
+        hash("4");
+    }
+  ];
+
+  for (const mutate of mutations) {
+    const input = stateInput();
+    input.partition = structuredClone(input.partition);
+    mutate(input.partition.exclusions[0]!);
+
+    assert.throws(
+      () => buildEvidenceExpansionCandidateEvidenceState(input),
+      /partition does not match aggregation/
+    );
+  }
+});
+
 test("candidate evidence state rejects partition count drift", () => {
   const input = stateInput();
   input.partition.consolidation.acceptedCandidateCount = 2;

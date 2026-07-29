@@ -1,8 +1,16 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type {
   EvidenceExpansionAssignmentCandidateAggregation
 } from "./validationRoleRegimeEvidenceExpansionAssignmentCandidateAggregation.js";
+import {
+  classifyEvidenceExpansionCandidateEligibility
+} from "./validationRoleRegimeEvidenceExpansionCandidateEligibility.js";
 import type {
   EvidenceExpansionCandidatePartition
+} from "./validationRoleRegimeEvidenceExpansionCandidatePartition.js";
+import {
+  buildEvidenceExpansionCandidatePartition
 } from "./validationRoleRegimeEvidenceExpansionCandidatePartition.js";
 import {
   buildEvidenceExpansionCandidatePartitionSummary,
@@ -50,6 +58,7 @@ export function buildEvidenceExpansionCandidateEvidenceState(input: {
       timezoneOffsetMinutes:
         input.expansionWindowPolicy.timezoneOffsetMinutes
     });
+  assertPartitionMatchesAggregation(input);
   const crossSourceState =
     buildEvidenceExpansionCrossRoleSharedExclusionState({
       baseline: input.baseline,
@@ -71,6 +80,27 @@ export function buildEvidenceExpansionCandidateEvidenceState(input: {
     capacityState: crossSourceState.capacityState,
     exclusions
   };
+}
+
+function assertPartitionMatchesAggregation(input: {
+  aggregation: EvidenceExpansionAssignmentCandidateAggregation;
+  partition: EvidenceExpansionCandidatePartition;
+  expansionWindowPolicy: EvidenceExpansionGroupWindowPolicy;
+}): void {
+  const eligibility =
+    classifyEvidenceExpansionCandidateEligibility(input.aggregation);
+  const expected = buildEvidenceExpansionCandidatePartition({
+    aggregation: input.aggregation,
+    eligibility,
+    windowMonths: input.expansionWindowPolicy.windowMonths,
+    timezoneOffsetMinutes:
+      input.expansionWindowPolicy.timezoneOffsetMinutes
+  });
+  if (!isDeepStrictEqual(input.partition, expected)) {
+    throw new Error(
+      "candidate evidence state partition does not match aggregation"
+    );
+  }
 }
 
 function assertDistinctExclusions(
