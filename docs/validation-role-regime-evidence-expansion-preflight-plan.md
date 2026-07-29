@@ -1010,6 +1010,12 @@ binder로 strict preflight artifact를 생성한다. Status state의
 date-only, locale 또는 offset 표현은 hash binding 전에 거부한다. Root allowlist는
 caller-provided status, blocker와 `preflightHash`를 거부한다. Output path,
 writer, CLI와 expanded replay 실행은 수행하지 않는다.
+`buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact`는
+verified builder input과 명시적 `outputPath`에서 strict artifact를 먼저
+생성한 뒤 기존 exclusive writer로 한 번 기록하고 생성 artifact를 반환한다.
+Root allowlist와 artifact build가 filesystem mutation보다 먼저 수행되며
+existing output은 `EEXIST`로 보존한다. Default output path, source scan,
+CLI와 expanded replay 실행은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import type {
@@ -19,6 +22,9 @@ import type {
 import {
   buildEvidenceExpansionPreflightArtifact
 } from "./validationRoleRegimeEvidenceExpansionPreflightArtifactBuilder.js";
+import {
+  buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact
+} from "./validationRoleRegimeEvidenceExpansionPreflightArtifactWriter.js";
 import {
   buildEvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
@@ -147,6 +153,62 @@ test("preflight artifact builder rejects non-canonical generatedAt", () => {
       /generatedAt must use canonical UTC ISO datetime/
     );
   }
+});
+
+test("preflight build-and-write creates one strict artifact", async (t) => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "evidence-expansion-preflight-build-")
+  );
+  const outputPath = join(directory, "nested", "preflight.json");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  const artifact =
+    await buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact({
+      ...coreInput(),
+      generatedAt: "2026-07-29T00:00:00.000Z",
+      outputPath
+    });
+  const written = JSON.parse(await readFile(outputPath, "utf8"));
+
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      written
+    ),
+    artifact
+  );
+  await assert.rejects(
+    buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact({
+      ...coreInput(),
+      generatedAt: "2026-07-29T00:00:00.000Z",
+      outputPath
+    }),
+    (error: NodeJS.ErrnoException) => error.code === "EEXIST"
+  );
+});
+
+test("preflight build-and-write rejects derived fields before filesystem mutation", async (t) => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "evidence-expansion-preflight-build-")
+  );
+  const outputDirectory = join(directory, "nested");
+  const outputPath = join(outputDirectory, "preflight.json");
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const input = {
+    ...coreInput(),
+    generatedAt: "2026-07-29T00:00:00.000Z",
+    outputPath,
+    status: "caller-value"
+  } as unknown as Parameters<
+    typeof buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact
+  >[0];
+
+  await assert.rejects(
+    buildAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      input
+    ),
+    /build-and-write input contains unknown fields/
+  );
+  await assert.rejects(access(outputDirectory));
 });
 
 test("preflight core state preserves an insufficient baseline as empty evidence", () => {
