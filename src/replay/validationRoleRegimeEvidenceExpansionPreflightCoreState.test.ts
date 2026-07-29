@@ -78,6 +78,19 @@ test("preflight core state preserves an insufficient baseline as empty evidence"
   assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 1);
 });
 
+test("preflight core state rejects baseline source drift for an insufficient baseline", () => {
+  const input = coreInput();
+  input.baselineIdentity = insufficientBaselineIdentity(
+    input.baselineIdentity
+  );
+  input.expansion.baselineProvenanceHashes.universeHash = hash("f");
+
+  assert.throws(
+    () => buildEvidenceExpansionPreflightCoreState(input),
+    /baseline raw source hash mismatch: universeHash/
+  );
+});
+
 test("preflight core state rejects caller-provided derived inputs", () => {
   for (const field of [
     "targetMatrix",

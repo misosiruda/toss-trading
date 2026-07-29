@@ -7,6 +7,9 @@ import type {
 import {
   consolidateEvidenceExpansionBaselineEvidenceGroups
 } from "./validationRoleRegimeEvidenceExpansionBaselineEvidenceGroupConsolidation.js";
+import {
+  assertEvidenceExpansionBaselineSourceMatches
+} from "./validationRoleRegimeEvidenceExpansionBaselineSourceMatch.js";
 import type {
   EvidenceExpansionEvidenceGroupConsolidationResult
 } from "./validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.js";
@@ -97,6 +100,11 @@ function deriveBaselineEvidence(input: {
   expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
 }): EvidenceExpansionEvidenceGroupConsolidationResult {
+  assertEvidenceExpansionBaselineSourceMatches({
+    baselineProvenance: input.baselineIdentity.plan.source,
+    verifiedSourceProvenance:
+      input.expansion.baselineProvenanceHashes
+  });
   if (
     input.baselineIdentity.plan.status !==
     "ready_for_paper_diagnostic"
