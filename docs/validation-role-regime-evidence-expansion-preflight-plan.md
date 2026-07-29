@@ -1021,6 +1021,11 @@ CLI와 expanded replay 실행은 수행하지 않는다.
 canonical collection order와 `preflightHash`를 검증한 뒤 JSON stdout으로
 출력한다. Output write, artifact 생성, default path, source scan과 replay
 실행은 수행하지 않는다.
+`readValidationRoleRegimeEvidenceExpansionPreflightInput`은 명시적
+`inputPath`의 단일 JSON source bundle을 읽고 기존 input root allowlist와
+result-metric 금지 boundary를 적용한다. Invalid JSON과 forbidden result
+path는 fail-closed로 거부한다. Source별 verifier, artifact builder, writer,
+CLI와 replay 실행은 아직 연결하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
