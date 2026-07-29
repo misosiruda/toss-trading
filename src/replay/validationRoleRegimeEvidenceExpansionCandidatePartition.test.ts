@@ -40,7 +40,7 @@ test("candidate partition combines accepted and all implemented exclusions", () 
     partition.consolidation.evidenceGroups.map(
       (group) => group.evidenceGroupHash
     ),
-    [hash("1")]
+    [rows[0]!.candidate.variant.evidenceGroupHash]
   );
   assert.deepEqual(
     partition.exclusions.map((exclusion) => exclusion.reason),
@@ -72,23 +72,27 @@ test("candidate partition rejects aggregation and eligibility drift", () => {
   );
 });
 
+test("candidate partition rejects calendar-valid policy hash drift", () => {
+  const input = partitionInput([
+    eligibility("1", "1", "train", true, null)
+  ]);
+  input.windowMonths = 2;
+
+  assert.throws(
+    () => buildEvidenceExpansionCandidatePartition(input),
+    /calendar-valid evidence group hash does not match partition policy/
+  );
+});
+
 test("candidate partition rejects calendar-valid and rejected group overlap", () => {
   const rows = [
     eligibility("1", "1", "train", true, null)
   ];
   const input = partitionInput(rows);
   const rejected = input.aggregation.calendarRejectedCandidates[0]!;
-  const rejectedGroupHash = createEvidenceExpansionEvidenceGroupHash({
-    startAt: rejected.candidate.startAt,
-    endAt: rejected.candidate.endAt,
-    candidateStrategyBucket: "short_term",
-    windowMonths: input.windowMonths,
-    timezoneOffsetMinutes: input.timezoneOffsetMinutes
-  });
-  input.eligibility.candidates[0]!.candidate.variant.evidenceGroupHash =
-    rejectedGroupHash;
-  input.aggregation.assignmentCandidates[0]!.result.candidates[0]!
-    .variant.evidenceGroupHash = rejectedGroupHash;
+  const valid = input.eligibility.candidates[0]!.candidate;
+  rejected.candidate.startAt = valid.startAt;
+  rejected.candidate.endAt = valid.endAt;
 
   assert.throws(
     () => buildEvidenceExpansionCandidatePartition(input),
@@ -210,7 +214,13 @@ function eligibility(
       regime: "bull",
       scopeAvailable,
       variant: {
-        evidenceGroupHash: hash(groupCharacter),
+        evidenceGroupHash: createEvidenceExpansionEvidenceGroupHash({
+          startAt: interval.startAt,
+          endAt: interval.endAt,
+          candidateStrategyBucket: "short_term",
+          windowMonths: 1,
+          timezoneOffsetMinutes: 540
+        }),
         sourceVariant: {
           feasibilityCandidateHash: hash(sourceCharacter),
           legacyReplayPlanEvidenceGroupHash: null,

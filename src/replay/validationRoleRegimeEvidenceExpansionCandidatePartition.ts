@@ -5,6 +5,9 @@ import type {
   EvidenceExpansionEnumeratedAssignmentCandidate
 } from "./validationRoleRegimeEvidenceExpansionAssignmentCandidates.js";
 import {
+  createEvidenceExpansionEvidenceGroupHash
+} from "./validationRoleRegimeEvidenceExpansionCandidateIdentity.js";
+import {
   buildEvidenceExpansionCalendarRejectionExclusions
 } from "./validationRoleRegimeEvidenceExpansionCalendarRejectionExclusions.js";
 import type {
@@ -38,7 +41,9 @@ export function buildEvidenceExpansionCandidatePartition(input: {
   assertExactInputKeys(input);
   assertEligibilityMatchesAggregation(
     input.aggregation,
-    input.eligibility
+    input.eligibility,
+    input.windowMonths,
+    input.timezoneOffsetMinutes
   );
 
   const eligibilityPartition =
@@ -71,13 +76,20 @@ export function buildEvidenceExpansionCandidatePartition(input: {
 
 function assertEligibilityMatchesAggregation(
   aggregation: EvidenceExpansionAssignmentCandidateAggregation,
-  eligibility: EvidenceExpansionCandidateEligibilityResult
+  eligibility: EvidenceExpansionCandidateEligibilityResult,
+  windowMonths: number,
+  timezoneOffsetMinutes: number
 ): void {
   const aggregationRows = aggregation.assignmentCandidates.flatMap(
     ({ assignment, result }) =>
-      result.candidates.map((candidate) =>
-        candidateRowKey(assignment, candidate)
-      )
+      result.candidates.map((candidate) => {
+        assertCandidateGroupHashMatchesPolicy(
+          candidate,
+          windowMonths,
+          timezoneOffsetMinutes
+        );
+        return candidateRowKey(assignment, candidate);
+      })
   );
   const eligibilityRows = eligibility.candidates.map(
     ({ assignment, candidate }) =>
@@ -94,6 +106,25 @@ function assertEligibilityMatchesAggregation(
   if (!sameSet(expected, actual)) {
     throw new Error(
       "eligibility candidates do not match aggregation candidates"
+    );
+  }
+}
+
+function assertCandidateGroupHashMatchesPolicy(
+  candidate: EvidenceExpansionEnumeratedAssignmentCandidate,
+  windowMonths: number,
+  timezoneOffsetMinutes: number
+): void {
+  const expected = createEvidenceExpansionEvidenceGroupHash({
+    startAt: candidate.startAt,
+    endAt: candidate.endAt,
+    candidateStrategyBucket: "short_term",
+    windowMonths,
+    timezoneOffsetMinutes
+  });
+  if (candidate.variant.evidenceGroupHash !== expected) {
+    throw new Error(
+      "calendar-valid evidence group hash does not match partition policy"
     );
   }
 }
