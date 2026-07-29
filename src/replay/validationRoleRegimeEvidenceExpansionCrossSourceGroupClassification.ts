@@ -29,11 +29,10 @@ export function classifyEvidenceExpansionCrossSourceGroups(input: {
     input.baselineWindowPolicy,
     input.expansionWindowPolicy
   );
-  const baseline = indexEvidenceGroups(input.baseline, "baseline", true);
+  const baseline = indexEvidenceGroups(input.baseline, "baseline");
   const expansion = indexEvidenceGroups(
     input.expansion,
-    "expansion",
-    false
+    "expansion"
   );
   const overlapEvidenceGroupHashes: Sha256Hash[] = [];
   const incrementalEvidenceGroups: EvidenceExpansionAcceptedEvidenceGroup[] =
@@ -106,8 +105,7 @@ function assertSameWindowPolicy(
 
 function indexEvidenceGroups(
   consolidation: EvidenceExpansionEvidenceGroupConsolidationResult,
-  sourceName: "baseline" | "expansion",
-  requireNonEmpty: boolean
+  sourceName: "baseline" | "expansion"
 ): {
   byHash: Map<Sha256Hash, EvidenceExpansionAcceptedEvidenceGroup>;
   hashByInterval: Map<string, Sha256Hash>;
@@ -120,12 +118,6 @@ function indexEvidenceGroups(
       `${sourceName} evidence groups do not match unique count`
     );
   }
-  if (requireNonEmpty && consolidation.evidenceGroups.length === 0) {
-    throw new Error(
-      "cross-source classification requires baseline evidence groups"
-    );
-  }
-
   const byHash = new Map<
     Sha256Hash,
     EvidenceExpansionAcceptedEvidenceGroup

@@ -81,8 +81,7 @@ function assertUnionCounts(
   if (
     counts.some(
       (count) => !Number.isInteger(count) || count < 0
-    ) ||
-    union.baselineUniqueEvidenceGroupCount === 0
+    )
   ) {
     throw new Error(
       "cross-source capacity requires valid non-negative union counts"

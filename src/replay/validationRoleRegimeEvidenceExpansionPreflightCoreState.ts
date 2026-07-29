@@ -7,6 +7,9 @@ import type {
 import {
   consolidateEvidenceExpansionBaselineEvidenceGroups
 } from "./validationRoleRegimeEvidenceExpansionBaselineEvidenceGroupConsolidation.js";
+import type {
+  EvidenceExpansionEvidenceGroupConsolidationResult
+} from "./validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.js";
 import {
   aggregateEvidenceExpansionBaselineRunVariants
 } from "./validationRoleRegimeEvidenceExpansionBaselineRunVariantAggregation.js";
@@ -54,14 +57,7 @@ export function buildEvidenceExpansionPreflightCoreState(input: {
     windowMonths: identity.config.windowMonths,
     timezoneOffsetMinutes: identity.config.timezoneOffsetMinutes
   };
-  const baselineEvidence =
-    consolidateEvidenceExpansionBaselineEvidenceGroups(
-      aggregateEvidenceExpansionBaselineRunVariants({
-        plan: input.baselineIdentity.plan,
-        source: input.expansion,
-        calendarClassifier: input.calendarClassifier
-      })
-    );
+  const baselineEvidence = deriveBaselineEvidence(input);
   const aggregation = aggregateEvidenceExpansionAssignmentCandidates({
     source: input.expansion,
     calendarClassifier: input.calendarClassifier,
@@ -93,6 +89,32 @@ export function buildEvidenceExpansionPreflightCoreState(input: {
     ...identity,
     ...evidenceState
   };
+}
+
+function deriveBaselineEvidence(input: {
+  baselineIdentity:
+    VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
+  expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
+  calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
+}): EvidenceExpansionEvidenceGroupConsolidationResult {
+  if (
+    input.baselineIdentity.plan.status !==
+    "ready_for_paper_diagnostic"
+  ) {
+    return {
+      evidenceGroups: [],
+      acceptedCandidateCount: 0,
+      uniqueEvidenceGroupCount: 0
+    };
+  }
+
+  return consolidateEvidenceExpansionBaselineEvidenceGroups(
+    aggregateEvidenceExpansionBaselineRunVariants({
+      plan: input.baselineIdentity.plan,
+      source: input.expansion,
+      calendarClassifier: input.calendarClassifier
+    })
+  );
 }
 
 function assertExactInputKeys(input: {

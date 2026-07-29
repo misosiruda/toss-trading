@@ -66,6 +66,18 @@ test("preflight core state derives identity and evidence inputs from verified so
   });
 });
 
+test("preflight core state preserves an insufficient baseline as empty evidence", () => {
+  const input = coreInput();
+  input.baselineIdentity = insufficientBaselineIdentity(
+    input.baselineIdentity
+  );
+
+  const state = buildEvidenceExpansionPreflightCoreState(input);
+
+  assert.equal(state.capacity.baseline.globalUniqueEvidenceGroupCount, 0);
+  assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 1);
+});
+
 test("preflight core state rejects caller-provided derived inputs", () => {
   for (const field of [
     "targetMatrix",
@@ -89,6 +101,29 @@ test("preflight core state rejects caller-provided derived inputs", () => {
     );
   }
 });
+
+function insufficientBaselineIdentity(
+  baseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline
+): VerifiedValidationRoleRegimeEvidenceExpansionBaseline {
+  return {
+    ...baseline,
+    plan: {
+      ...baseline.plan,
+      status: "insufficient",
+      source: {
+        ...baseline.plan.source,
+        feasibilityStatus: "insufficient"
+      },
+      runs: [],
+      summary: {
+        ...baseline.plan.summary,
+        plannedRunCount: 0,
+        globalUniqueEvidenceGroupCount: 0,
+        crossRoleSharedEvidenceGroupCount: 0
+      }
+    }
+  };
+}
 
 function coreInput(): Parameters<
   typeof buildEvidenceExpansionPreflightCoreState
