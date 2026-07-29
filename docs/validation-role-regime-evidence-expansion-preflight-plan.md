@@ -459,6 +459,12 @@ interface EvidenceExpansionExclusion {
 }
 ```
 
+`sourceVariants`는 원칙적으로 한 개 이상의 calendar-validated source
+variant를 요구한다. 단, `CALENDAR_SESSION_REJECTED`는 calendar gate 이전에
+제외되어 validated source variant를 만들 수 없으므로 빈 배열이어야 한다.
+이 경우 `evidenceGroupHash`는 interval과 사전 고정 window policy로만
+계산하고 `targetRegime`은 `null`로 유지한다.
+
 `CROSS_ROLE_SHARED_EVIDENCE`는 role-local diagnostic row를 제거한다는 뜻이 아니다. Role-exclusive capacity에서 제외되는 이유를 기록한다.
 
 Calendar-valid candidate의 primary eligibility reason은
@@ -702,6 +708,14 @@ calendar-rejected 및 scope-unavailable 총계를 집계하며 aggregate count
 assignment와 함께 평탄화해 후속 diagnostic provenance로 보존한다.
 Evidence group deduplication, regime
 identity conflict 및 capacity/exclusion 판정은 수행하지 않는다.
+`validationRoleRegimeEvidenceExpansionCalendarRejectionExclusions.ts`는
+assignment aggregation의 calendar-rejected interval을 source-independent
+`evidenceGroupHash`로 묶어 `CALENDAR_SESSION_REJECTED` exclusion으로
+투영한다. Calendar gate를 통과하지 못한 candidate에는 validated source
+variant나 regime을 주장하지 않는다. 같은 group이 여러 role에 존재하면
+`splitRole=null`로 보존하고 diagnostic count 불일치, duplicate assignment
+candidate 또는 interval identity conflict를 fail-closed로 거부한다. 다른
+exclusion, blocker, final status와 preflight artifact는 조립하지 않는다.
 `validationRoleRegimeEvidenceExpansionCandidateEligibility.ts`는
 calendar-valid candidate를 scope와 regime evidence만으로 분류한다.
 `SCOPE_UNAVAILABLE`을 `INSUFFICIENT_REGIME_DATA`보다 먼저 적용하고 accepted,
