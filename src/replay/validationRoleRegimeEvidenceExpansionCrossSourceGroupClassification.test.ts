@@ -43,15 +43,18 @@ test("cross-source groups allow an empty expansion", () => {
   assert.equal(result.incrementalUniqueEvidenceGroupCount, 0);
 });
 
-test("cross-source groups reject empty baseline evidence", () => {
-  assert.throws(
-    () =>
-      classify({
-        baseline: consolidation([]),
-        expansion: consolidation([])
-      }),
-    /requires baseline evidence groups/
-  );
+test("cross-source groups classify all expansion evidence as incremental when baseline is empty", () => {
+  const incremental = group("a", "bull", 0);
+
+  const result = classify({
+    baseline: consolidation([]),
+    expansion: consolidation([incremental])
+  });
+
+  assert.equal(result.baselineUniqueEvidenceGroupCount, 0);
+  assert.equal(result.baselineOverlapEvidenceGroupCount, 0);
+  assert.equal(result.incrementalUniqueEvidenceGroupCount, 1);
+  assert.deepEqual(result.incrementalEvidenceGroups, [incremental]);
 });
 
 test("cross-source groups reject consolidation count drift", () => {

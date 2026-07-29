@@ -84,6 +84,27 @@ test("cross-source capacity state supports an empty expansion", () => {
   assert.equal(state.capacity.incremental.globalUniqueEvidenceGroupCount, 0);
 });
 
+test("cross-source capacity state treats an empty baseline as zero capacity", () => {
+  const expansion = group(
+    0,
+    "bull",
+    ["train"],
+    "a",
+    false
+  );
+
+  const state = buildEvidenceExpansionCrossSourceCapacityState({
+    baseline: consolidation([]),
+    expansion: consolidation([expansion]),
+    baselineWindowPolicy: policy,
+    expansionWindowPolicy: policy
+  });
+
+  assert.equal(state.capacity.baseline.globalUniqueEvidenceGroupCount, 0);
+  assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 1);
+  assert.equal(state.capacity.incremental.globalUniqueEvidenceGroupCount, 1);
+});
+
 test("cross-source capacity state rejects mismatched window policies", () => {
   const input = {
     baseline: consolidation([

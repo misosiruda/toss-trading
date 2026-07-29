@@ -45,9 +45,9 @@ export function buildEvidenceExpansionCapacitySummary(input: {
     );
   }
 
-  const baseline = buildEvidenceExpansionBaselineCapacityView(
-    input.baseline
-  );
+  const baseline = isEmptyConsolidation(input.baseline)
+    ? buildEvidenceExpansionCapacityView(input.baseline)
+    : buildEvidenceExpansionBaselineCapacityView(input.baseline);
   const expansion = buildEvidenceExpansionCapacityView(
     input.expansion
   );
@@ -62,6 +62,16 @@ export function buildEvidenceExpansionCapacitySummary(input: {
     combined: crossSource.combined,
     incremental: crossSource.incremental
   });
+}
+
+function isEmptyConsolidation(
+  value: EvidenceExpansionEvidenceGroupConsolidationResult
+): boolean {
+  return (
+    value.evidenceGroups.length === 0 &&
+    value.acceptedCandidateCount === 0 &&
+    value.uniqueEvidenceGroupCount === 0
+  );
 }
 
 function assertUnionMatchesSourceCollections(input: {

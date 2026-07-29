@@ -67,6 +67,22 @@ test("cross-source capacity supports an empty incremental view", () => {
   assert.equal(result.incremental.globalUniqueEvidenceGroupCount, 0);
 });
 
+test("cross-source capacity supports an empty baseline view", () => {
+  const incremental = group("a", "bull", ["train"]);
+  const result = buildEvidenceExpansionCrossSourceCapacityViews({
+    baselineUniqueEvidenceGroupCount: 0,
+    expansionUniqueEvidenceGroupCount: 1,
+    baselineOverlapEvidenceGroupCount: 0,
+    incrementalUniqueEvidenceGroupCount: 1,
+    combinedUniqueEvidenceGroupCount: 1,
+    combinedEvidenceGroups: [incremental],
+    incrementalEvidenceGroups: [incremental]
+  });
+
+  assert.equal(result.combined.globalUniqueEvidenceGroupCount, 1);
+  assert.equal(result.incremental.globalUniqueEvidenceGroupCount, 1);
+});
+
 test("cross-source capacity rejects collection count drift", () => {
   const union = populatedUnion();
   union.combinedUniqueEvidenceGroupCount = 4;
