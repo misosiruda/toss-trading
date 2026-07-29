@@ -474,7 +474,13 @@ Calendar-valid candidate의 primary eligibility reason은
 반영하지 않는다. Calendar rejection은 이 eligibility 단계보다 앞선
 assignment enumeration diagnostic으로 보존한다.
 
-Summary의 structural count는 accepted unique evidence-group count와 exclusion count로 재계산 가능해야 한다. 같은 candidate가 여러 사유에 해당하면 canonical primary reason 하나와 별도 blocker를 사용해 이중 집계를 방지한다. Source variant가 여러 개여도 같은 `evidenceGroupHash`의 exclusion은 capacity에서 한 번만 센다.
+Summary의 unique structural count는 accepted와 excluded evidence-group
+집합의 union으로 재계산 가능해야 한다. 같은 evidence group에 accepted와
+excluded source variant가 함께 있으면 교집합을 별도 보존해 이중 집계를
+방지한다. 같은 candidate가 여러 사유에 해당하면 canonical primary reason
+하나와 별도 blocker를 사용한다. Source variant가 여러 개여도 같은
+`evidenceGroupHash`의 exclusion은 한 번만 센다. Raw structural candidate
+count와 unique evidence-group count는 서로 대체하지 않는다.
 
 ## Blocker와 Status
 
@@ -765,6 +771,21 @@ preflight hash verifier와 같은 canonical exclusion comparator로 정렬한다
 나타나거나 duplicate candidate/exclusion identity가 있으면 fail-closed로
 거부한다. Capacity, blocker, final status, hash와 preflight artifact는
 조립하지 않는다.
+`validationRoleRegimeEvidenceExpansionCandidatePartitionSummary.ts`는 raw
+structural, calendar-valid/rejected 및 accepted/excluded candidate count와
+unique structural/accepted/excluded evidence-group count를 분리해 보존한다.
+Calendar-valid/rejected interval hash를 같은 window policy로 재계산하고
+accepted/excluded group union이 structural group set과 양방향으로 일치해야
+한다. Assignment별/flattened calendar rejection도 candidate partition과
+같은 공용 assertion으로 다시 대조한다. Calendar-valid candidate의
+`sourceVariantHash`는 원래 `evidenceGroupHash`와 결합한 identity 기준으로
+accepted 또는 excluded variant 집합 중 정확히 하나에 속해야 하며 이
+분류로 accepted/excluded raw count를 다시 계산한다. Accepted variant의
+embedded group hash도 consolidation container와 일치해야 한다.
+Accepted/excluded 교집합을 별도 count로 보존하며 unique union 보존식,
+aggregation count domain, duplicate group 또는 partition coverage 불일치를
+fail-closed로 거부한다. Blocker, status와 preflight artifact는 생성하지
+않는다.
 `validationRoleRegimeEvidenceExpansionEvidenceGroupConsolidation.ts`는
 accepted candidate를 source-independent `evidenceGroupHash`로 묶고
 split role과 canonical entry set을 포함한 source variant를 deduplicate한다.
