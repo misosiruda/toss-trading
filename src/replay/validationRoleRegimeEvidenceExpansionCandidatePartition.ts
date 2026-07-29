@@ -45,6 +45,7 @@ export function buildEvidenceExpansionCandidatePartition(input: {
     input.windowMonths,
     input.timezoneOffsetMinutes
   );
+  assertCalendarRejectionsMatchAggregation(input.aggregation);
 
   const eligibilityPartition =
     buildEvidenceExpansionEligibilityPartition({
@@ -110,6 +111,45 @@ function assertEligibilityMatchesAggregation(
   }
 }
 
+function assertCalendarRejectionsMatchAggregation(
+  aggregation: EvidenceExpansionAssignmentCandidateAggregation
+): void {
+  const nestedRows = aggregation.assignmentCandidates.flatMap(
+    ({ assignment, result }) =>
+      result.calendarRejectedCandidates.map((candidate) =>
+        calendarRejectedRowKey(assignment, candidate)
+      )
+  );
+  const flattenedRows = aggregation.calendarRejectedCandidates.map(
+    ({ assignment, candidate }) =>
+      calendarRejectedRowKey(assignment, candidate)
+  );
+  const expected = uniqueRowSet(
+    nestedRows,
+    "aggregation contains duplicate nested calendar rejections"
+  );
+  const actual = uniqueRowSet(
+    flattenedRows,
+    "aggregation contains duplicate flattened calendar rejections"
+  );
+  if (!sameSet(expected, actual)) {
+    throw new Error(
+      "flattened calendar rejections do not match assignment diagnostics"
+    );
+  }
+}
+
+function calendarRejectedRowKey(
+  assignment: ValidationSplitAssignment,
+  candidate: { startAt: string; endAt: string }
+): string {
+  return JSON.stringify([
+    ...assignmentIdentity(assignment),
+    candidate.startAt,
+    candidate.endAt
+  ]);
+}
+
 function assertCandidateGroupHashMatchesPolicy(
   candidate: EvidenceExpansionEnumeratedAssignmentCandidate,
   windowMonths: number,
@@ -135,18 +175,7 @@ function candidateRowKey(
 ): string {
   const { sourceVariant } = candidate.variant;
   return JSON.stringify([
-    assignment.validationProtocol,
-    assignment.splitId,
-    assignment.splitIndex,
-    assignment.splitRole,
-    assignment.trainStart,
-    assignment.trainEnd,
-    assignment.validationStart,
-    assignment.validationEnd,
-    assignment.testStart,
-    assignment.testEnd,
-    assignment.purgeDurationDays,
-    assignment.embargoDurationDays,
+    ...assignmentIdentity(assignment),
     candidate.startAt,
     candidate.endAt,
     candidate.regime,
@@ -167,6 +196,25 @@ function candidateRowKey(
       entry.symbol
     ])
   ]);
+}
+
+function assignmentIdentity(
+  assignment: ValidationSplitAssignment
+): unknown[] {
+  return [
+    assignment.validationProtocol,
+    assignment.splitId,
+    assignment.splitIndex,
+    assignment.splitRole,
+    assignment.trainStart,
+    assignment.trainEnd,
+    assignment.validationStart,
+    assignment.validationEnd,
+    assignment.testStart,
+    assignment.testEnd,
+    assignment.purgeDurationDays,
+    assignment.embargoDurationDays
+  ];
 }
 
 function assertCalendarGroupsDoNotOverlapEligibility(

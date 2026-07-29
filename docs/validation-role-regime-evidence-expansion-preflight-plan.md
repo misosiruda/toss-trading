@@ -757,6 +757,8 @@ aggregation과 calendar-valid eligibility row를 assignment, candidate,
 source variant 및 observed evidence payload 기준으로 양방향 대조한다.
 Calendar-valid `evidenceGroupHash`도 partition의 window month와 timezone
 policy로 재계산해 upstream identity와 정확히 일치해야 한다.
+Assignment별 calendar rejection diagnostic과 top-level flattened row도
+assignment payload와 interval 기준으로 양방향 일치해야 한다.
 일치할 때만 eligibility partition과 calendar rejection exclusion을 결합하고
 preflight hash verifier와 같은 canonical exclusion comparator로 정렬한다.
 같은 evidence group이 calendar-valid와 calendar-rejected 상태에 동시에

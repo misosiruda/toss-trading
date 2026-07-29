@@ -84,6 +84,19 @@ test("candidate partition rejects calendar-valid policy hash drift", () => {
   );
 });
 
+test("candidate partition rejects flattened calendar rejection drift", () => {
+  const input = partitionInput([
+    eligibility("1", "1", "train", true, null)
+  ]);
+  input.aggregation.calendarRejectedCandidates[0]!.candidate.endAt =
+    "2025-04-01T23:59:59.999Z";
+
+  assert.throws(
+    () => buildEvidenceExpansionCandidatePartition(input),
+    /flattened calendar rejections do not match assignment diagnostics/
+  );
+});
+
 test("candidate partition rejects calendar-valid and rejected group overlap", () => {
   const rows = [
     eligibility("1", "1", "train", true, null)
@@ -93,6 +106,12 @@ test("candidate partition rejects calendar-valid and rejected group overlap", ()
   const valid = input.eligibility.candidates[0]!.candidate;
   rejected.candidate.startAt = valid.startAt;
   rejected.candidate.endAt = valid.endAt;
+  const nestedRejected =
+    input.aggregation.assignmentCandidates.flatMap(
+      ({ result }) => result.calendarRejectedCandidates
+    )[0]!;
+  nestedRejected.startAt = valid.startAt;
+  nestedRejected.endAt = valid.endAt;
 
   assert.throws(
     () => buildEvidenceExpansionCandidatePartition(input),
@@ -144,7 +163,9 @@ function partitionInput(
       }
     }
   ];
-  const assignmentCandidates = rows.map((row) => {
+  const assignmentCandidates: EvidenceExpansionAssignmentCandidateAggregation[
+    "assignmentCandidates"
+  ] = rows.map((row) => {
     const candidate = structuredClone(row.candidate);
     return {
       assignment: structuredClone(row.assignment),
@@ -159,6 +180,24 @@ function partitionInput(
         warnings: []
       }
     };
+  });
+  const rejectedAssignment =
+    calendarRejectedCandidates[0]!.assignment;
+  assignmentCandidates.push({
+    assignment: structuredClone(rejectedAssignment),
+    result: {
+      roleWindow: validationRoleWindow(rejectedAssignment),
+      structuralCapacityCount: 1,
+      candidates: [],
+      calendarRejectedCandidates: [
+        structuredClone(
+          calendarRejectedCandidates[0]!.candidate
+        )
+      ],
+      calendarRejectedCandidateCount: 1,
+      scopeUnavailableCandidateCount: 0,
+      warnings: []
+    }
   });
   return {
     aggregation: {
