@@ -94,7 +94,8 @@ interface ValidationRoleRegimeEvidenceExpansionPreflight {
     expansionDataSnapshotHash: string;
     expansionUniverseHash: string;
     expansionCoverageHash: string;
-    validationSplitHash: string;
+    baselineValidationSplitHash: string;
+    expansionValidationSplitHash: string;
     calendarHash: string;
     officialCalendarArtifactHash: string | null;
     marketRegimeClassifierHash: string;
@@ -607,7 +608,7 @@ Repository에 존재하는 contract와 실행 host의 gitignored local file은 �
 | Baseline replay plan | 보존된 actual artifact 없음 | 기존 smoke 결과는 temp path artifact를 commit하지 않았다고 기록 | 재생성 feasibility와 동일 official-derived fixture/source로 새 GUID temp root에서 재생성 |
 | Baseline statistical readiness | 보존된 role-regime actual artifact 없음 | 기존 smoke 결과의 aggregate artifact는 temp path 정책으로 보존하지 않음 | 동일 calendar hash의 재생성 plan, exact-window paper-only replay와 aggregate report에서 다시 생성 |
 | Baseline raw source | local file 존재, Git 미추적 | `data/replay-2023-01-2026-05-global-broad-yahoo-daily` | Baseline artifact chain과 canonical provenance 일치 확인 |
-| Expansion source | 사전 고정되지 않음 | Local data directory 존재 자체는 expansion 선택 근거가 아님 | 결과를 보기 전에 source path, 기간, universe, coverage와 split provenance를 문서로 고정 |
+| Expansion source | 사전 고정되지 않음, split provenance 분리 미구현 | Local data directory 존재 자체는 expansion 선택 근거가 아니며 current source-pair verifier는 baseline과 expansion split hash equality를 요구 | Split provenance 분리 구현 후 결과를 보기 전에 source path, 기간, universe, coverage와 expansion split policy를 문서로 고정 |
 | Role-regime minimum | 정책 값 8 결정, actual bundle 미생성 | `validation-role-regime-evidence-expansion-target-policy.md` | Actual source bundle에 8을 명시하고 strict target matrix로 검증 |
 | Official calendar evidence | ingestion/writer와 legacy projection 없음 | `replay-calendar-fx-contract.md`가 ingestion path 및 기존 fixture 연결 미구현을 명시 | KRX/NYSE provenance, full coverage와 freshness를 갖춘 artifact ingestion 및 full legacy rule/fixture projection을 별도 구현 |
 | Preflight source bundle | 생성하지 않음 | Actual baseline chain과 expansion source가 아직 고정되지 않음 | 위 입력을 고정한 뒤 result-metric 없는 allowlisted JSON bundle 생성 |
@@ -640,9 +641,11 @@ replay input으로 승격하지 않는다.
 
 실제 6단계는 다음 순서로만 진행한다.
 
-1. 고정된 `roleRegimeSampleMinimum=8` 정책을 유지하면서 expansion source
-   range, universe, coverage, validation split, canonical `generatedAt`과 temp
-   output root를 결과 확인 전에 문서 PR로 고정한다.
+1. [Split Provenance 계획](validation-role-regime-evidence-expansion-split-provenance-plan.md)에
+   따라 baseline/expansion validation split hash를 분리한다. 이후 고정된
+   `roleRegimeSampleMinimum=8` 정책을 유지하면서 expansion source range,
+   universe, coverage, expansion validation split, canonical `generatedAt`과
+   temp output root를 결과 확인 전에 문서 PR로 고정한다.
 2. Official calendar evidence ingestion/writer와 full legacy rule/fixture
    projection을 구현한다. Projection은 official artifact의 모든 KRX/NYSE
    exchange-date session을 보존하고 양방향 일치를 검증한다.
@@ -696,6 +699,13 @@ canonical하게 계산한다. Baseline legacy provenance 대조를 위해 strict
 분리해 보존한다. Snapshot은 schema parse 후 provenance 순서, universe는
 기존 원본 표현, coverage는 검증된 값, validation split은 canonical
 assignment 순서를 사용한다.
+현재 `validationRoleRegimeEvidenceExpansionSourcePairVerifier.ts`와
+`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 baseline과
+expansion의 validation split hash equality를 요구한다. 이 조건은 baseline
+범위 밖 interval을 여는 expansion split을 차단하므로 actual source 등록 전
+split provenance 분리 계획에 따라 두 hash와 compatibility gate로 교체해야
+한다. 교체 전에는 local source overlap이나 directory 존재만으로 expansion
+readiness를 주장하지 않는다.
 `validationRoleRegimeEvidenceExpansionBaselineSourceMatch.ts`는 동일 source
 verifier로 baseline raw source를 재검증한 뒤
 `baselineProvenanceHashes`가 baseline feasibility provenance와 각각
