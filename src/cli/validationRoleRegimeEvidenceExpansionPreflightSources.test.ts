@@ -25,7 +25,6 @@ test("preflight source reader returns partial verified bundle state", async (t) 
     await readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
       fixture.inputPath,
       {
-        asOf: "2026-07-23T00:00:00.000Z",
         generatedAt: "2026-07-30T00:00:00.000Z"
       }
     );
@@ -77,7 +76,6 @@ test("preflight source reader rejects split drift without output mutation", asyn
     readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
       fixture.inputPath,
       {
-        asOf: "2026-07-23T00:00:00.000Z",
         generatedAt: "2026-07-30T00:00:00.000Z"
       }
     ),

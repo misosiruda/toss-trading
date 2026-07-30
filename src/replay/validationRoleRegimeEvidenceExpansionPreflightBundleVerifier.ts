@@ -44,7 +44,6 @@ export interface EvidenceExpansionPreflightBundleVerificationState {
 }
 
 export interface VerifyEvidenceExpansionPreflightBundleOptions {
-  asOf: Date | string;
   generatedAt: string;
 }
 
@@ -52,6 +51,7 @@ export function verifyEvidenceExpansionPreflightBundle(
   input: unknown,
   options: VerifyEvidenceExpansionPreflightBundleOptions
 ): EvidenceExpansionPreflightBundleVerificationState {
+  assertExactVerificationOptions(options);
   const boundary =
     validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
   if (boundary.status === "invalid") {
@@ -96,7 +96,7 @@ export function verifyEvidenceExpansionPreflightBundle(
       marketRegimeClassifier: accepted.marketRegimeClassifier,
       officialCalendarArtifact:
         accepted.officialCalendarArtifact,
-      asOf: options.asOf,
+      asOf: options.generatedAt,
       baselineCalendarHash:
         verifiedBaseline.plan.source.calendarHash,
       baselineMarketRegimeClassifierHash:
@@ -129,4 +129,19 @@ export function verifyEvidenceExpansionPreflightBundle(
     verifiedSourcePair: sourcePair,
     verifiedDeclaredPolicy: declaredPolicy
   };
+}
+
+function assertExactVerificationOptions(
+  options: VerifyEvidenceExpansionPreflightBundleOptions
+): void {
+  const actual = Object.keys(options).sort();
+  const expected = ["generatedAt"];
+  if (
+    actual.length !== expected.length ||
+    actual.some((key, index) => key !== expected[index])
+  ) {
+    throw new Error(
+      "preflight bundle verification options contain unknown fields"
+    );
+  }
 }

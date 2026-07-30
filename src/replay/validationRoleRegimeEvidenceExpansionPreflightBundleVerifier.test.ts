@@ -13,7 +13,6 @@ import {
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
 
 const verificationOptions = {
-  asOf: "2026-07-23T00:00:00.000Z",
   generatedAt: "2026-07-30T00:00:00.000Z"
 } as const;
 
@@ -94,6 +93,24 @@ test("preflight bundle verifier rejects non-canonical artifact time", () => {
         generatedAt: "2026-07-30T09:00:00+09:00"
       }),
     /generatedAt must use canonical UTC ISO datetime/
+  );
+});
+
+test("preflight bundle verifier rejects an independent freshness time", () => {
+  const options = {
+    ...verificationOptions,
+    asOf: "2025-01-01T00:00:00.000Z"
+  } as unknown as Parameters<
+    typeof verifyEvidenceExpansionPreflightBundle
+  >[1];
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        preflightBundle(),
+        options
+      ),
+    /bundle verification options contain unknown fields/
   );
 });
 
