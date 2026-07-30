@@ -1049,10 +1049,11 @@ calendar/classifier source는 이어지는 calendar/classifier verifier 연결�
 state를 반환한다. Reader와 verifier가 모두 input boundary를 적용하며
 실패해도 input file 외 filesystem mutation을 수행하지 않는다. Default path,
 output write와 replay 실행은 연결하지 않는다. Calendar/classifier
-verification에 필요한 `asOf`는 source JSON이나 현재 시각에서 암묵적으로
-정하지 않고 caller가 명시적으로 전달한다. Verified bundle에서 core state를
-내부 재생성하지만 artifact build, output write와 replay 실행은 연결하지
-않는다.
+freshness 시각은 source JSON이나 현재 시각에서 암묵적으로 정하지 않고
+artifact `generatedAt`과 같은 canonical UTC ISO datetime을 caller가
+명시적으로 전달한다. 별도 historical freshness 시각은 허용하지 않는다.
+Verified bundle에서 core state와 strict artifact를 내부 재생성해 state로
+반환하지만 output write와 replay 실행은 연결하지 않는다.
 `verifyEvidenceExpansionPreflightBundle`은 accepted baseline feasibility,
 plan, readiness artifact와 validation split source를 기존 baseline verifier에
 연결한다. Verified baseline plan provenance는 source-pair verifier가 raw
@@ -1077,11 +1078,14 @@ aggregation, source variant identity, evidence consolidation, capacity,
 dependency input, exclusion과 blocker는 기존 deterministic builder가 내부
 재생성한다. Daily session-open source contract 위반 등 core invariant 실패는
 state 반환 전에 fail-closed로 거부한다. Core blocker는 diagnostic state로
-반환한다. Verified core input은 기존 status state builder에서 한 번만
-재생성하고 derived `status`와 status field를 제거한 `coreState`를 bundle
-verification state로 분리한다. Caller는 prebuilt core, blocker 또는 status를
-주입할 수 없다. Artifact hash, output write와 replay 실행은 아직 연결하지
-않는다.
+반환한다. Verified core input은 기존 artifact build-state builder에서 한 번만
+재생성하고 derived `status`, status field를 제거한 `coreState`와 canonical
+hash가 결합된 strict `artifact`를 bundle verification state로 분리한다.
+`generatedAt`은 source나 현재 시각에서 추정하지 않고 caller가 canonical UTC
+ISO datetime으로 명시해야 하며 official calendar freshness도 같은 시각에서
+검증한다. 별도 `asOf`를 options에 주입하면 source 검증 전에 fail-closed로
+거부한다. Caller는 prebuilt core, blocker, status, artifact 또는 preflight
+hash를 주입할 수 없다. Output write와 replay 실행은 아직 연결하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

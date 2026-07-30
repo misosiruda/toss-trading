@@ -24,7 +24,9 @@ test("preflight source reader returns partial verified bundle state", async (t) 
   const state =
     await readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
       fixture.inputPath,
-      { asOf: "2026-07-23T00:00:00.000Z" }
+      {
+        generatedAt: "2026-07-30T00:00:00.000Z"
+      }
     );
 
   assert.equal(
@@ -45,6 +47,11 @@ test("preflight source reader returns partial verified bundle state", async (t) 
       .expansionDataSnapshotHash
   );
   assert.equal(state.status, "inconclusive");
+  assert.equal(
+    state.artifact.generatedAt,
+    "2026-07-30T00:00:00.000Z"
+  );
+  assert.equal(state.artifact.status, state.status);
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
 
@@ -68,7 +75,9 @@ test("preflight source reader rejects split drift without output mutation", asyn
   await assert.rejects(
     readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
       fixture.inputPath,
-      { asOf: "2026-07-23T00:00:00.000Z" }
+      {
+        generatedAt: "2026-07-30T00:00:00.000Z"
+      }
     ),
     /baseline and expansion validation split sources must match/
   );

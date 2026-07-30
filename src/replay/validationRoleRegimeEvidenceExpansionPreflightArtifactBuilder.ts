@@ -1,8 +1,10 @@
 import {
   VALIDATION_ROLE_REGIME_EVIDENCE_EXPANSION_PREFLIGHT_SCHEMA_VERSION,
+  type EvidenceExpansionPreflightStatus,
   type ValidationRoleRegimeEvidenceExpansionPreflightArtifact
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 import type {
+  EvidenceExpansionPreflightCoreState,
   EvidenceExpansionPreflightCoreStateInput
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
 import {
@@ -17,9 +19,21 @@ export interface EvidenceExpansionPreflightArtifactBuilderInput
   generatedAt: string;
 }
 
+export interface EvidenceExpansionPreflightArtifactBuildState {
+  artifact: ValidationRoleRegimeEvidenceExpansionPreflightArtifact;
+  coreState: EvidenceExpansionPreflightCoreState;
+  status: EvidenceExpansionPreflightStatus;
+}
+
 export function buildEvidenceExpansionPreflightArtifact(
   input: EvidenceExpansionPreflightArtifactBuilderInput
 ): ValidationRoleRegimeEvidenceExpansionPreflightArtifact {
+  return buildEvidenceExpansionPreflightArtifactState(input).artifact;
+}
+
+export function buildEvidenceExpansionPreflightArtifactState(
+  input: EvidenceExpansionPreflightArtifactBuilderInput
+): EvidenceExpansionPreflightArtifactBuildState {
   assertExactInputKeys(input);
   assertCanonicalGeneratedAt(input.generatedAt);
   const state = buildEvidenceExpansionPreflightStatusState({
@@ -29,14 +43,15 @@ export function buildEvidenceExpansionPreflightArtifact(
     calendarClassifier: input.calendarClassifier,
     roleRegimeSampleMinimum: input.roleRegimeSampleMinimum
   });
+  const { status, ...coreState } = state;
 
-  return bindValidationRoleRegimeEvidenceExpansionPreflightHash({
+  const artifact = bindValidationRoleRegimeEvidenceExpansionPreflightHash({
     schemaVersion:
       VALIDATION_ROLE_REGIME_EVIDENCE_EXPANSION_PREFLIGHT_SCHEMA_VERSION,
     mode: "paper_only",
     purpose: "evidence_expansion_preflight",
     generatedAt: input.generatedAt,
-    status: state.status,
+    status,
     source: state.source,
     config: state.config,
     targetMatrix: state.targetMatrix,
@@ -45,6 +60,12 @@ export function buildEvidenceExpansionPreflightArtifact(
     exclusions: state.exclusions,
     blockers: state.blockers
   });
+
+  return {
+    artifact,
+    coreState,
+    status
+  };
 }
 
 function assertCanonicalGeneratedAt(value: string): void {

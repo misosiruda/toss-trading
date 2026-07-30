@@ -7,12 +7,13 @@ import {
 } from "./historicalUniverseCoverage.js";
 import { verifyEvidenceExpansionPreflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
 import { createEvidenceExpansionPreflightBundleTestFixture as preflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
+import { parseValidationRoleRegimeEvidenceExpansionPreflightArtifact } from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
 import {
   createEvidenceExpansionSourceVerifierTestAssignments
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
 
 const verificationOptions = {
-  asOf: "2026-07-23T00:00:00.000Z"
+  generatedAt: "2026-07-30T00:00:00.000Z"
 } as const;
 
 test("preflight bundle verifier composes verified sources into core state", () => {
@@ -55,6 +56,21 @@ test("preflight bundle verifier composes verified sources into core state", () =
   );
   assert.equal(verified.status, "inconclusive");
   assert.equal("status" in verified.coreState, false);
+  assert.equal(
+    verified.artifact.generatedAt,
+    verificationOptions.generatedAt
+  );
+  assert.equal(verified.artifact.status, verified.status);
+  assert.deepEqual(
+    verified.artifact.capacity,
+    verified.coreState.capacity
+  );
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      verified.artifact
+    ),
+    verified.artifact
+  );
   assert.deepEqual(
     verified.verifiedSourcePair.expansion.baselineProvenanceHashes,
     verified.verifiedSourcePair.baseline.baselineProvenanceHashes
@@ -66,6 +82,35 @@ test("preflight bundle verifier composes verified sources into core state", () =
   assert.equal(
     verified.acceptedInput.baseline.feasibilityArtifact,
     input.baseline.feasibilityArtifact
+  );
+});
+
+test("preflight bundle verifier rejects non-canonical artifact time", () => {
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(preflightBundle(), {
+        ...verificationOptions,
+        generatedAt: "2026-07-30T09:00:00+09:00"
+      }),
+    /generatedAt must use canonical UTC ISO datetime/
+  );
+});
+
+test("preflight bundle verifier rejects an independent freshness time", () => {
+  const options = {
+    ...verificationOptions,
+    asOf: "2025-01-01T00:00:00.000Z"
+  } as unknown as Parameters<
+    typeof verifyEvidenceExpansionPreflightBundle
+  >[1];
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        preflightBundle(),
+        options
+      ),
+    /bundle verification options contain unknown fields/
   );
 });
 

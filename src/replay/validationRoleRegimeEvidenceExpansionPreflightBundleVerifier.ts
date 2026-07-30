@@ -14,7 +14,10 @@ import {
   type VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
-  type EvidenceExpansionPreflightCoreState
+  buildEvidenceExpansionPreflightArtifactState
+} from "./validationRoleRegimeEvidenceExpansionPreflightArtifactBuilder.js";
+import type {
+  EvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
 import {
   verifyEvidenceExpansionPreflightDeclaredPolicy,
@@ -24,15 +27,14 @@ import {
   verifyEvidenceExpansionSourcePair,
   type VerifiedEvidenceExpansionSourcePair
 } from "./validationRoleRegimeEvidenceExpansionSourcePairVerifier.js";
-import {
-  buildEvidenceExpansionPreflightStatusState
-} from "./validationRoleRegimeEvidenceExpansionPreflightStatusState.js";
 import type {
-  EvidenceExpansionPreflightStatus
+  EvidenceExpansionPreflightStatus,
+  ValidationRoleRegimeEvidenceExpansionPreflightArtifact
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
+  artifact: ValidationRoleRegimeEvidenceExpansionPreflightArtifact;
   coreState: EvidenceExpansionPreflightCoreState;
   status: EvidenceExpansionPreflightStatus;
   verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
@@ -42,13 +44,14 @@ export interface EvidenceExpansionPreflightBundleVerificationState {
 }
 
 export interface VerifyEvidenceExpansionPreflightBundleOptions {
-  asOf: Date | string;
+  generatedAt: string;
 }
 
 export function verifyEvidenceExpansionPreflightBundle(
   input: unknown,
   options: VerifyEvidenceExpansionPreflightBundleOptions
 ): EvidenceExpansionPreflightBundleVerificationState {
+  assertExactVerificationOptions(options);
   const boundary =
     validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
   if (boundary.status === "invalid") {
@@ -93,7 +96,7 @@ export function verifyEvidenceExpansionPreflightBundle(
       marketRegimeClassifier: accepted.marketRegimeClassifier,
       officialCalendarArtifact:
         accepted.officialCalendarArtifact,
-      asOf: options.asOf,
+      asOf: options.generatedAt,
       baselineCalendarHash:
         verifiedBaseline.plan.source.calendarHash,
       baselineMarketRegimeClassifierHash:
@@ -105,18 +108,20 @@ export function verifyEvidenceExpansionPreflightBundle(
       dependencyDiagnosticPolicy:
         accepted.dependencyDiagnosticPolicy
     });
-  const { status, ...coreState } =
-    buildEvidenceExpansionPreflightStatusState({
+  const { artifact, coreState, status } =
+    buildEvidenceExpansionPreflightArtifactState({
       baselineIdentity: verifiedBaseline,
       baselineSource: sourcePair.baseline,
       expansion: sourcePair.expansion,
       calendarClassifier: verifiedCalendarClassifier,
       roleRegimeSampleMinimum:
-        declaredPolicy.roleRegimeSampleMinimum
+        declaredPolicy.roleRegimeSampleMinimum,
+      generatedAt: options.generatedAt
     });
 
   return {
     acceptedInput: accepted,
+    artifact,
     coreState,
     status,
     verifiedBaseline,
@@ -124,4 +129,19 @@ export function verifyEvidenceExpansionPreflightBundle(
     verifiedSourcePair: sourcePair,
     verifiedDeclaredPolicy: declaredPolicy
   };
+}
+
+function assertExactVerificationOptions(
+  options: VerifyEvidenceExpansionPreflightBundleOptions
+): void {
+  const actual = Object.keys(options).sort();
+  const expected = ["generatedAt"];
+  if (
+    actual.length !== expected.length ||
+    actual.some((key, index) => key !== expected[index])
+  ) {
+    throw new Error(
+      "preflight bundle verification options contain unknown fields"
+    );
+  }
 }
