@@ -14,7 +14,6 @@ import {
   type VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
-  buildEvidenceExpansionPreflightCoreState,
   type EvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
 import {
@@ -25,10 +24,17 @@ import {
   verifyEvidenceExpansionSourcePair,
   type VerifiedEvidenceExpansionSourcePair
 } from "./validationRoleRegimeEvidenceExpansionSourcePairVerifier.js";
+import {
+  buildEvidenceExpansionPreflightStatusState
+} from "./validationRoleRegimeEvidenceExpansionPreflightStatusState.js";
+import type {
+  EvidenceExpansionPreflightStatus
+} from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
   coreState: EvidenceExpansionPreflightCoreState;
+  status: EvidenceExpansionPreflightStatus;
   verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
   verifiedCalendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   verifiedSourcePair: VerifiedEvidenceExpansionSourcePair;
@@ -99,18 +105,20 @@ export function verifyEvidenceExpansionPreflightBundle(
       dependencyDiagnosticPolicy:
         accepted.dependencyDiagnosticPolicy
     });
-  const coreState = buildEvidenceExpansionPreflightCoreState({
-    baselineIdentity: verifiedBaseline,
-    baselineSource: sourcePair.baseline,
-    expansion: sourcePair.expansion,
-    calendarClassifier: verifiedCalendarClassifier,
-    roleRegimeSampleMinimum:
-      declaredPolicy.roleRegimeSampleMinimum
-  });
+  const { status, ...coreState } =
+    buildEvidenceExpansionPreflightStatusState({
+      baselineIdentity: verifiedBaseline,
+      baselineSource: sourcePair.baseline,
+      expansion: sourcePair.expansion,
+      calendarClassifier: verifiedCalendarClassifier,
+      roleRegimeSampleMinimum:
+        declaredPolicy.roleRegimeSampleMinimum
+    });
 
   return {
     acceptedInput: accepted,
     coreState,
+    status,
     verifiedBaseline,
     verifiedCalendarClassifier,
     verifiedSourcePair: sourcePair,

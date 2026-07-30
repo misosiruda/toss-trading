@@ -53,6 +53,8 @@ test("preflight bundle verifier composes verified sources into core state", () =
     verified.coreState.capacity.expansion.byRole.train.byRegime.bull,
     1
   );
+  assert.equal(verified.status, "inconclusive");
+  assert.equal("status" in verified.coreState, false);
   assert.deepEqual(
     verified.verifiedSourcePair.expansion.baselineProvenanceHashes,
     verified.verifiedSourcePair.baseline.baselineProvenanceHashes
