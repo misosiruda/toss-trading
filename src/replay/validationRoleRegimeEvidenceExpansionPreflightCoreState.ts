@@ -44,6 +44,7 @@ export interface EvidenceExpansionPreflightCoreState
 export interface EvidenceExpansionPreflightCoreStateInput {
   baselineIdentity:
     VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
+  baselineSource: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   roleRegimeSampleMinimum: number | null;
@@ -101,13 +102,13 @@ export function buildEvidenceExpansionPreflightCoreState(
 function deriveBaselineEvidence(input: {
   baselineIdentity:
     VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
-  expansion: VerifiedValidationRoleRegimeEvidenceExpansionSource;
+  baselineSource: VerifiedValidationRoleRegimeEvidenceExpansionSource;
   calendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
 }): EvidenceExpansionEvidenceGroupConsolidationResult {
   assertEvidenceExpansionBaselineSourceMatches({
     baselineProvenance: input.baselineIdentity.plan.source,
     verifiedSourceProvenance:
-      input.expansion.baselineProvenanceHashes
+      input.baselineSource.baselineProvenanceHashes
   });
   if (
     input.baselineIdentity.plan.status !==
@@ -123,7 +124,7 @@ function deriveBaselineEvidence(input: {
   return consolidateEvidenceExpansionBaselineEvidenceGroups(
     aggregateEvidenceExpansionBaselineRunVariants({
       plan: input.baselineIdentity.plan,
-      source: input.expansion,
+      source: input.baselineSource,
       calendarClassifier: input.calendarClassifier
     })
   );
@@ -135,6 +136,7 @@ function assertExactInputKeys(
   const actual = Object.keys(input).sort();
   const expected = [
     "baselineIdentity",
+    "baselineSource",
     "calendarClassifier",
     "expansion",
     "roleRegimeSampleMinimum"

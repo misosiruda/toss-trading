@@ -228,7 +228,7 @@ test("preflight core state rejects baseline source drift for an insufficient bas
   input.baselineIdentity = insufficientBaselineIdentity(
     input.baselineIdentity
   );
-  input.expansion.baselineProvenanceHashes.universeHash = hash("f");
+  input.baselineSource.baselineProvenanceHashes.universeHash = hash("f");
 
   assert.throws(
     () => buildEvidenceExpansionPreflightCoreState(input),
@@ -288,6 +288,7 @@ function coreInput(): Parameters<
 >[0] {
   return {
     baselineIdentity: baselineIdentity(),
+    baselineSource: expansionSource(),
     expansion: expansionSource(),
     calendarClassifier: calendarClassifier(),
     roleRegimeSampleMinimum: null

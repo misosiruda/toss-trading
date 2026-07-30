@@ -24,6 +24,7 @@ export function buildEvidenceExpansionPreflightArtifact(
   assertCanonicalGeneratedAt(input.generatedAt);
   const state = buildEvidenceExpansionPreflightStatusState({
     baselineIdentity: input.baselineIdentity,
+    baselineSource: input.baselineSource,
     expansion: input.expansion,
     calendarClassifier: input.calendarClassifier,
     roleRegimeSampleMinimum: input.roleRegimeSampleMinimum
@@ -64,6 +65,7 @@ function assertExactInputKeys(
   const actual = Object.keys(input).sort();
   const expected = [
     "baselineIdentity",
+    "baselineSource",
     "calendarClassifier",
     "expansion",
     "generatedAt",
