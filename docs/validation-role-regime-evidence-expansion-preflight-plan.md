@@ -1091,7 +1091,14 @@ hash를 주입할 수 없다. Output write와 replay 실행은 아직 연결하�
 read-verify state의 strict artifact를 기존 exclusive writer에 전달한다.
 Source, provenance, calendar, policy, core 또는 artifact hash 검증이 실패하면
 output directory를 만들지 않으며 existing output은 `EEXIST`로 보존한다.
-Default input/output path, CLI command surface와 replay 실행은 연결하지 않는다.
+Default input/output path와 replay 실행은 연결하지 않는다.
+`validationRoleRegimeEvidenceExpansionPreflight.ts`는
+`--input-path`, `--generated-at`, `--output-path`를 각각 한 번씩 요구하고
+그 외 option과 positional argument를 source 접근 전에 거부한다. 기존
+read-verify-write orchestration만 호출하고 strict paper-only artifact를
+stdout과 명시적 output path에 동일하게 반환한다. Existing output은
+`EEXIST`로 보존하며 source 자동 탐색, default path와 replay 실행은 수행하지
+않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
