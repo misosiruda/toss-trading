@@ -14,7 +14,10 @@ import {
   type VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
-  type EvidenceExpansionPreflightCoreState
+  buildEvidenceExpansionPreflightArtifactState
+} from "./validationRoleRegimeEvidenceExpansionPreflightArtifactBuilder.js";
+import type {
+  EvidenceExpansionPreflightCoreState
 } from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
 import {
   verifyEvidenceExpansionPreflightDeclaredPolicy,
@@ -24,15 +27,14 @@ import {
   verifyEvidenceExpansionSourcePair,
   type VerifiedEvidenceExpansionSourcePair
 } from "./validationRoleRegimeEvidenceExpansionSourcePairVerifier.js";
-import {
-  buildEvidenceExpansionPreflightStatusState
-} from "./validationRoleRegimeEvidenceExpansionPreflightStatusState.js";
 import type {
-  EvidenceExpansionPreflightStatus
+  EvidenceExpansionPreflightStatus,
+  ValidationRoleRegimeEvidenceExpansionPreflightArtifact
 } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
+  artifact: ValidationRoleRegimeEvidenceExpansionPreflightArtifact;
   coreState: EvidenceExpansionPreflightCoreState;
   status: EvidenceExpansionPreflightStatus;
   verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
@@ -43,6 +45,7 @@ export interface EvidenceExpansionPreflightBundleVerificationState {
 
 export interface VerifyEvidenceExpansionPreflightBundleOptions {
   asOf: Date | string;
+  generatedAt: string;
 }
 
 export function verifyEvidenceExpansionPreflightBundle(
@@ -105,18 +108,20 @@ export function verifyEvidenceExpansionPreflightBundle(
       dependencyDiagnosticPolicy:
         accepted.dependencyDiagnosticPolicy
     });
-  const { status, ...coreState } =
-    buildEvidenceExpansionPreflightStatusState({
+  const { artifact, coreState, status } =
+    buildEvidenceExpansionPreflightArtifactState({
       baselineIdentity: verifiedBaseline,
       baselineSource: sourcePair.baseline,
       expansion: sourcePair.expansion,
       calendarClassifier: verifiedCalendarClassifier,
       roleRegimeSampleMinimum:
-        declaredPolicy.roleRegimeSampleMinimum
+        declaredPolicy.roleRegimeSampleMinimum,
+      generatedAt: options.generatedAt
     });
 
   return {
     acceptedInput: accepted,
+    artifact,
     coreState,
     status,
     verifiedBaseline,
