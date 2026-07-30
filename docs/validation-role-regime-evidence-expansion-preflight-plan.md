@@ -1068,8 +1068,10 @@ caller가 명시한 `asOf`를 기준으로 freshness와 legacy calendar 양방�
 declared policy 검증과 state 반환 전에 fail-closed로 거부한다. Artifact
 build, write와 replay 실행은 아직 연결하지 않는다.
 `verifyEvidenceExpansionPreflightBundle`은 verified baseline, expansion
-source, calendar/classifier와 declared role-regime minimum을 기존 core state
-builder에 연결한다. Core input은 accepted raw field나 caller-provided
+source pair, calendar/classifier와 declared role-regime minimum을 기존 core
+state builder에 연결한다. Baseline evidence는 verified baseline raw source,
+expansion evidence는 verified expansion raw source에서 각각 재생성한다.
+Core input은 accepted raw field나 caller-provided
 capacity, exclusion, dependency input 또는 blocker를 받지 않는다. Candidate
 aggregation, source variant identity, evidence consolidation, capacity,
 dependency input, exclusion과 blocker는 기존 deterministic builder가 내부

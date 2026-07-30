@@ -19,6 +19,7 @@ export async function buildAndWriteValidationRoleRegimeEvidenceExpansionPrefligh
   assertExactBuildAndWriteInputKeys(input);
   const artifact = buildEvidenceExpansionPreflightArtifact({
     baselineIdentity: input.baselineIdentity,
+    baselineSource: input.baselineSource,
     expansion: input.expansion,
     calendarClassifier: input.calendarClassifier,
     roleRegimeSampleMinimum: input.roleRegimeSampleMinimum,
@@ -53,6 +54,7 @@ function assertExactBuildAndWriteInputKeys(
   const actual = Object.keys(input).sort();
   const expected = [
     "baselineIdentity",
+    "baselineSource",
     "calendarClassifier",
     "expansion",
     "generatedAt",

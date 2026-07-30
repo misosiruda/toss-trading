@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  assessHistoricalUniverseCoverage,
+  historicalUniverseManifestSchema
+} from "./historicalUniverseCoverage.js";
 import { verifyEvidenceExpansionPreflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
 import { createEvidenceExpansionPreflightBundleTestFixture as preflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import {
@@ -178,5 +182,49 @@ test("preflight bundle verifier rejects non-daily expansion source before return
         verificationOptions
       ),
     /observed trading-date snapshot must use 1d interval/
+  );
+});
+
+test("preflight bundle verifier derives baseline and expansion capacity from separate sources", () => {
+  const input = preflightBundle();
+  input.expansion.snapshots = input.expansion.snapshots.filter(
+    (snapshot) => snapshot.snapshotId !== "bundle-snapshot-0"
+  );
+  input.expansion.coverage = assessHistoricalUniverseCoverage({
+    snapshots: input.expansion.snapshots,
+    universe: historicalUniverseManifestSchema.parse(
+      input.expansion.universe
+    ),
+    rangeStart: new Date("2024-12-31T15:00:00.000Z"),
+    rangeEnd: new Date("2025-03-31T14:59:59.999Z"),
+    corruptLineCount: 0,
+    timezoneOffsetMinutes: 540,
+    minMonthlyCoverageRatio: 1,
+    minSnapshotsPerSymbol: 1,
+    minAvailableSymbolCount: 1,
+    minAvailableStrategyBucketSymbolCounts: { short_term: 1 },
+    requiredMarkets: ["KR"],
+    requiredStrategyBuckets: ["short_term"]
+  });
+
+  const verified = verifyEvidenceExpansionPreflightBundle(
+    input,
+    verificationOptions
+  );
+
+  assert.equal(
+    verified.coreState.capacity.baseline.byRole.train.byRegime.bull,
+    1
+  );
+  assert.equal(
+    verified.coreState.capacity.expansion.byRole.train.byRegime.bull,
+    0
+  );
+  assert.ok(
+    verified.coreState.exclusions.some(
+      (exclusion) =>
+        exclusion.splitRole === "train" &&
+        exclusion.reason === "INSUFFICIENT_REGIME_DATA"
+    )
   );
 });

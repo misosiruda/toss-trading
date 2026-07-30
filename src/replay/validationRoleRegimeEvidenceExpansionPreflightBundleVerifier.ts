@@ -101,6 +101,7 @@ export function verifyEvidenceExpansionPreflightBundle(
     });
   const coreState = buildEvidenceExpansionPreflightCoreState({
     baselineIdentity: verifiedBaseline,
+    baselineSource: sourcePair.baseline,
     expansion: sourcePair.expansion,
     calendarClassifier: verifiedCalendarClassifier,
     roleRegimeSampleMinimum:
