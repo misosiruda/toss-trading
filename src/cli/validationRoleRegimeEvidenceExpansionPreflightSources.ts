@@ -4,6 +4,20 @@ import {
   validateValidationRoleRegimeEvidenceExpansionInputBoundary,
   type ValidationRoleRegimeEvidenceExpansionInput
 } from "../replay/validationRoleRegimeEvidenceExpansionInputBoundary.js";
+import {
+  verifyEvidenceExpansionPreflightBundle,
+  type EvidenceExpansionPreflightBundleVerificationState
+} from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
+
+export async function readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
+  inputPath: string
+): Promise<EvidenceExpansionPreflightBundleVerificationState> {
+  const input =
+    await readValidationRoleRegimeEvidenceExpansionPreflightInput(
+      inputPath
+    );
+  return verifyEvidenceExpansionPreflightBundle(input);
+}
 
 export async function readValidationRoleRegimeEvidenceExpansionPreflightInput(
   inputPath: string
