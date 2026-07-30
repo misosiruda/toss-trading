@@ -1050,7 +1050,9 @@ state를 반환한다. Reader와 verifier가 모두 input boundary를 적용하�
 실패해도 input file 외 filesystem mutation을 수행하지 않는다. Default path,
 output write와 replay 실행은 연결하지 않는다. Calendar/classifier
 verification에 필요한 `asOf`는 source JSON이나 현재 시각에서 암묵적으로
-정하지 않고 caller가 명시적으로 전달한다.
+정하지 않고 caller가 명시적으로 전달한다. Verified bundle에서 core state를
+내부 재생성하지만 artifact build, output write와 replay 실행은 연결하지
+않는다.
 `verifyEvidenceExpansionPreflightBundle`은 accepted baseline feasibility,
 plan, readiness artifact와 validation split source를 기존 baseline verifier에
 연결한다. Verified baseline plan provenance는 source-pair verifier가 raw
@@ -1065,6 +1067,16 @@ caller가 명시한 `asOf`를 기준으로 freshness와 legacy calendar 양방�
 일치까지 검증한다. Hash drift, stale evidence 또는 session conflict는
 declared policy 검증과 state 반환 전에 fail-closed로 거부한다. Artifact
 build, write와 replay 실행은 아직 연결하지 않는다.
+`verifyEvidenceExpansionPreflightBundle`은 verified baseline, expansion
+source, calendar/classifier와 declared role-regime minimum을 기존 core state
+builder에 연결한다. Core input은 accepted raw field나 caller-provided
+capacity, exclusion, dependency input 또는 blocker를 받지 않는다. Candidate
+aggregation, source variant identity, evidence consolidation, capacity,
+dependency input, exclusion과 blocker는 기존 deterministic builder가 내부
+재생성한다. Daily session-open source contract 위반 등 core invariant 실패는
+state 반환 전에 fail-closed로 거부한다. Core blocker는 diagnostic state로
+반환하지만 status, artifact hash, output write와 replay 실행은 아직
+연결하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed

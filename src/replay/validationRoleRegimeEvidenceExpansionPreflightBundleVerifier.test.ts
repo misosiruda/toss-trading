@@ -11,7 +11,7 @@ const verificationOptions = {
   asOf: "2026-07-23T00:00:00.000Z"
 } as const;
 
-test("preflight bundle verifier composes source, baseline, calendar, and policy verification", () => {
+test("preflight bundle verifier composes verified sources into core state", () => {
   const input = preflightBundle();
 
   const verified = verifyEvidenceExpansionPreflightBundle(
@@ -35,6 +35,19 @@ test("preflight bundle verifier composes source, baseline, calendar, and policy 
     verified.verifiedCalendarClassifier.hashes
       .marketRegimeClassifierHash,
     verified.verifiedBaseline.plan.source.marketRegimeClassifierHash
+  );
+  assert.equal(
+    verified.coreState.source.expansionDataSnapshotHash,
+    verified.verifiedSourcePair.expansion.hashes
+      .expansionDataSnapshotHash
+  );
+  assert.equal(
+    verified.coreState.capacity.baseline.byRole.train.byRegime.bull,
+    1
+  );
+  assert.equal(
+    verified.coreState.capacity.expansion.byRole.train.byRegime.bull,
+    1
   );
   assert.deepEqual(
     verified.verifiedSourcePair.expansion.baselineProvenanceHashes,
@@ -151,5 +164,19 @@ test("preflight bundle verifier rejects calendar and classifier provenance drift
         verificationOptions
       ),
     /classifier hash does not match baseline/
+  );
+});
+
+test("preflight bundle verifier rejects non-daily expansion source before returning core state", () => {
+  const input = preflightBundle();
+  input.expansion.snapshots[0]!.interval = "1m";
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
+    /observed trading-date snapshot must use 1d interval/
   );
 });

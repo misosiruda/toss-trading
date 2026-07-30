@@ -39,6 +39,11 @@ test("preflight source reader returns partial verified bundle state", async (t) 
     state.verifiedCalendarClassifier.hashes.calendarHash,
     state.verifiedBaseline.plan.source.calendarHash
   );
+  assert.equal(
+    state.coreState.source.expansionDataSnapshotHash,
+    state.verifiedSourcePair.expansion.hashes
+      .expansionDataSnapshotHash
+  );
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
 

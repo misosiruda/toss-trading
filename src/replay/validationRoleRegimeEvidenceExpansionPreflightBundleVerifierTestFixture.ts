@@ -129,8 +129,7 @@ function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtif
   const snapshots = sessionDates.map((sessionDate, index) =>
     snapshot({
       snapshotId: `bundle-snapshot-${index}`,
-      observedAt:
-        `${sessionDate}T0${index % 2 === 0 ? "1" : "5"}:00:00.000Z`,
+      observedAt: `${sessionDate}T00:00:00.000Z`,
       lastPriceKrw: index % 2 === 0 ? 100 : 105
     })
   );
@@ -216,7 +215,7 @@ function snapshot(input: {
     market: "KR",
     symbol: "TEST",
     observedAt: input.observedAt,
-    interval: "1m",
+    interval: "1d",
     lastPriceKrw: input.lastPriceKrw,
     volume: 1_000,
     strategyBucket: "short_term",

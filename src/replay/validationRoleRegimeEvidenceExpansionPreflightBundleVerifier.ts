@@ -14,6 +14,10 @@ import {
   type VerifiedEvidenceExpansionCalendarClassifier
 } from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
 import {
+  buildEvidenceExpansionPreflightCoreState,
+  type EvidenceExpansionPreflightCoreState
+} from "./validationRoleRegimeEvidenceExpansionPreflightCoreState.js";
+import {
   verifyEvidenceExpansionPreflightDeclaredPolicy,
   type VerifiedEvidenceExpansionPreflightDeclaredPolicy
 } from "./validationRoleRegimeEvidenceExpansionPreflightPolicyVerifier.js";
@@ -24,6 +28,7 @@ import {
 
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
+  coreState: EvidenceExpansionPreflightCoreState;
   verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
   verifiedCalendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   verifiedSourcePair: VerifiedEvidenceExpansionSourcePair;
@@ -94,9 +99,17 @@ export function verifyEvidenceExpansionPreflightBundle(
       dependencyDiagnosticPolicy:
         accepted.dependencyDiagnosticPolicy
     });
+  const coreState = buildEvidenceExpansionPreflightCoreState({
+    baselineIdentity: verifiedBaseline,
+    expansion: sourcePair.expansion,
+    calendarClassifier: verifiedCalendarClassifier,
+    roleRegimeSampleMinimum:
+      declaredPolicy.roleRegimeSampleMinimum
+  });
 
   return {
     acceptedInput: accepted,
+    coreState,
     verifiedBaseline,
     verifiedCalendarClassifier,
     verifiedSourcePair: sourcePair,
