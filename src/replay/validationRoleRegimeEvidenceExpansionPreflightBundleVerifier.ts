@@ -10,6 +10,10 @@ import {
   assertEvidenceExpansionBaselineSourceMatches
 } from "./validationRoleRegimeEvidenceExpansionBaselineSourceMatch.js";
 import {
+  verifyEvidenceExpansionCalendarClassifier,
+  type VerifiedEvidenceExpansionCalendarClassifier
+} from "./validationRoleRegimeEvidenceExpansionCalendarClassifierVerifier.js";
+import {
   verifyEvidenceExpansionPreflightDeclaredPolicy,
   type VerifiedEvidenceExpansionPreflightDeclaredPolicy
 } from "./validationRoleRegimeEvidenceExpansionPreflightPolicyVerifier.js";
@@ -21,12 +25,18 @@ import {
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
   verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
+  verifiedCalendarClassifier: VerifiedEvidenceExpansionCalendarClassifier;
   verifiedSourcePair: VerifiedEvidenceExpansionSourcePair;
   verifiedDeclaredPolicy: VerifiedEvidenceExpansionPreflightDeclaredPolicy;
 }
 
+export interface VerifyEvidenceExpansionPreflightBundleOptions {
+  asOf: Date | string;
+}
+
 export function verifyEvidenceExpansionPreflightBundle(
-  input: unknown
+  input: unknown,
+  options: VerifyEvidenceExpansionPreflightBundleOptions
 ): EvidenceExpansionPreflightBundleVerificationState {
   const boundary =
     validateValidationRoleRegimeEvidenceExpansionInputBoundary(input);
@@ -66,6 +76,18 @@ export function verifyEvidenceExpansionPreflightBundle(
     verifiedSourceProvenance:
       sourcePair.baseline.baselineProvenanceHashes
   });
+  const verifiedCalendarClassifier =
+    verifyEvidenceExpansionCalendarClassifier({
+      calendarValidation: accepted.calendarValidation,
+      marketRegimeClassifier: accepted.marketRegimeClassifier,
+      officialCalendarArtifact:
+        accepted.officialCalendarArtifact,
+      asOf: options.asOf,
+      baselineCalendarHash:
+        verifiedBaseline.plan.source.calendarHash,
+      baselineMarketRegimeClassifierHash:
+        verifiedBaseline.plan.source.marketRegimeClassifierHash
+    });
   const declaredPolicy =
     verifyEvidenceExpansionPreflightDeclaredPolicy({
       targetMatrix: accepted.targetMatrix,
@@ -76,6 +98,7 @@ export function verifyEvidenceExpansionPreflightBundle(
   return {
     acceptedInput: accepted,
     verifiedBaseline,
+    verifiedCalendarClassifier,
     verifiedSourcePair: sourcePair,
     verifiedDeclaredPolicy: declaredPolicy
   };

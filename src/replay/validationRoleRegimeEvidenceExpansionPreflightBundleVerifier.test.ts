@@ -7,10 +7,17 @@ import {
   createEvidenceExpansionSourceVerifierTestAssignments
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
 
-test("preflight bundle verifier composes boundary, source pair, baseline, and policy", () => {
+const verificationOptions = {
+  asOf: "2026-07-23T00:00:00.000Z"
+} as const;
+
+test("preflight bundle verifier composes source, baseline, calendar, and policy verification", () => {
   const input = preflightBundle();
 
-  const verified = verifyEvidenceExpansionPreflightBundle(input);
+  const verified = verifyEvidenceExpansionPreflightBundle(
+    input,
+    verificationOptions
+  );
 
   assert.equal(
     verified.verifiedDeclaredPolicy.roleRegimeSampleMinimum,
@@ -19,6 +26,15 @@ test("preflight bundle verifier composes boundary, source pair, baseline, and po
   assert.equal(
     verified.verifiedBaseline.plan.status,
     "ready_for_paper_diagnostic"
+  );
+  assert.equal(
+    verified.verifiedCalendarClassifier.hashes.calendarHash,
+    verified.verifiedBaseline.plan.source.calendarHash
+  );
+  assert.equal(
+    verified.verifiedCalendarClassifier.hashes
+      .marketRegimeClassifierHash,
+    verified.verifiedBaseline.plan.source.marketRegimeClassifierHash
   );
   assert.deepEqual(
     verified.verifiedSourcePair.expansion.baselineProvenanceHashes,
@@ -43,7 +59,11 @@ test("preflight bundle verifier rejects result input before source verification"
   };
 
   assert.throws(
-    () => verifyEvidenceExpansionPreflightBundle(input),
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
     /preflight input rejected: \$\.historicalReplayReport/
   );
 });
@@ -60,7 +80,11 @@ test("preflight bundle verifier rejects source-pair split drift", () => {
   };
 
   assert.throws(
-    () => verifyEvidenceExpansionPreflightBundle(input),
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
     /baseline and expansion validation split sources must match/
   );
 });
@@ -70,7 +94,11 @@ test("preflight bundle verifier rejects a non-canonical declared target", () => 
   input.targetMatrix.byRole.validation.byRegime.bear = 9;
 
   assert.throws(
-    () => verifyEvidenceExpansionPreflightBundle(input),
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
     /target matrix must use one canonical role-regime minimum/
   );
 });
@@ -83,7 +111,45 @@ test("preflight bundle verifier rejects baseline raw source provenance drift", (
   };
 
   assert.throws(
-    () => verifyEvidenceExpansionPreflightBundle(input),
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
     /baseline raw source hash mismatch: universeHash/
+  );
+});
+
+test("preflight bundle verifier rejects calendar and classifier provenance drift", () => {
+  const calendarDrift = preflightBundle();
+  (
+    calendarDrift.calendarValidation as {
+      fixtures: Array<{ sourceRefs: string[] }>;
+    }
+  ).fixtures[0]!.sourceRefs.push("fixture:calendar-drift");
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        calendarDrift,
+        verificationOptions
+      ),
+    /calendar hash does not match baseline/
+  );
+
+  const classifierDrift = preflightBundle();
+  (
+    classifierDrift.marketRegimeClassifier as {
+      bullReturnThreshold: number;
+    }
+  ).bullReturnThreshold = 0.04;
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        classifierDrift,
+        verificationOptions
+      ),
+    /classifier hash does not match baseline/
   );
 });
