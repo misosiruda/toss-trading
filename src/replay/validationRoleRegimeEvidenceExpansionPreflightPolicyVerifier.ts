@@ -12,6 +12,8 @@ import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEviden
 export const EVIDENCE_EXPANSION_DEPENDENCY_DIAGNOSTIC_POLICY_VERSION =
   "overlap_adjacency_inputs.v1" as const;
 
+export const EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM = 8 as const;
+
 const declaredPolicySchema = z
   .object({
     targetMatrix: evidenceExpansionTargetMatrixSchema,
@@ -38,6 +40,15 @@ export function verifyEvidenceExpansionPreflightDeclaredPolicy(
   const parsed = declaredPolicySchema.parse(input);
   const roleRegimeSampleMinimum =
     parsed.targetMatrix.byRole.train.byRegime.bull;
+  if (
+    roleRegimeSampleMinimum !== null &&
+    roleRegimeSampleMinimum !==
+      EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM
+  ) {
+    throw new Error(
+      `evidence expansion role-regime minimum must be null or ${EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM}`
+    );
+  }
   const canonicalTargetMatrix = buildEvidenceExpansionTargetMatrix({
     roleSampleMinimum: EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM,
     roleRegimeSampleMinimum

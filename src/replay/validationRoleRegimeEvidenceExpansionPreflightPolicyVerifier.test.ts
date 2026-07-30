@@ -4,6 +4,7 @@ import test from "node:test";
 import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
 import {
   EVIDENCE_EXPANSION_DEPENDENCY_DIAGNOSTIC_POLICY_VERSION,
+  EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM,
   verifyEvidenceExpansionPreflightDeclaredPolicy
 } from "./validationRoleRegimeEvidenceExpansionPreflightPolicyVerifier.js";
 
@@ -28,10 +29,11 @@ test("preflight policy verifier accepts a canonical nullable target", () => {
   );
 });
 
-test("preflight policy verifier accepts one positive role-regime minimum", () => {
+test("preflight policy verifier accepts the preregistered role-regime minimum", () => {
   const targetMatrix = buildEvidenceExpansionTargetMatrix({
     roleSampleMinimum: 30,
-    roleRegimeSampleMinimum: 8
+    roleRegimeSampleMinimum:
+      EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM
   });
 
   const verified = verifyEvidenceExpansionPreflightDeclaredPolicy({
@@ -41,7 +43,29 @@ test("preflight policy verifier accepts one positive role-regime minimum", () =>
     }
   });
 
-  assert.equal(verified.roleRegimeSampleMinimum, 8);
+  assert.equal(
+    verified.roleRegimeSampleMinimum,
+    EVIDENCE_EXPANSION_ROLE_REGIME_SAMPLE_MINIMUM
+  );
+});
+
+test("preflight policy verifier rejects a different positive role-regime minimum", () => {
+  const targetMatrix = buildEvidenceExpansionTargetMatrix({
+    roleSampleMinimum: 30,
+    roleRegimeSampleMinimum: 7
+  });
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightDeclaredPolicy({
+        targetMatrix,
+        dependencyDiagnosticPolicy: {
+          version:
+            EVIDENCE_EXPANSION_DEPENDENCY_DIAGNOSTIC_POLICY_VERSION
+        }
+      }),
+    /role-regime minimum must be null or 8/
+  );
 });
 
 test("preflight policy verifier rejects mixed role-regime targets", () => {

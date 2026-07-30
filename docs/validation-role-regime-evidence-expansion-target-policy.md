@@ -87,9 +87,8 @@ Actual preflight source bundle은 `roleRegimeSampleMinimum=8`을 명시해야 �
 
 - 값이 누락되거나 `null`이면 `ROLE_REGIME_TARGET_UNDEFINED` blocker를
   유지한다.
-- 8과 다른 값이면 정책 불일치로 기록하고 actual CLI 실행 전에 입력을
-  수정한다. 현재 verifier는 target matrix 내부 일관성과 positive integer를
-  검증하며 정책 값 8 자체를 코드 상수로 강제하지 않는다.
+- 8이 아닌 non-null 값은 declared-policy verifier가 source bundle 검증
+  단계에서 fail-closed로 거부한다.
 - Role-local, role-exclusive 또는 role-regime target 중 하나라도 미달하면
   `ready_for_expansion_replay`로 승격하지 않는다.
 - 부족한 cell에 맞춰 source range, classifier threshold 또는 target을 사후

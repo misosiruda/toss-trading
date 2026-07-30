@@ -154,9 +154,9 @@ role-regime capacity floor는
 `ROLE_REGIME_TARGET_UNDEFINED` blocker를 생성한다.
 
 `null` target을 0으로 취급하거나 current candidate count로 채우지 않는다.
-Actual source bundle은 정책 값 8을 명시해야 한다. 현재 verifier는 positive
-integer와 target matrix 내부 일관성을 검증하므로, 8이 아닌 입력은 CLI 실행
-전 정책 불일치로 차단한다.
+Actual source bundle은 정책 값 8을 명시해야 한다. Declared-policy verifier는
+`null` 또는 8과 canonical target matrix만 허용하며 다른 positive integer를
+fail-closed로 거부한다.
 
 Role-local candidate가 30개여도 cross-role shared candidate를 제외한 role-exclusive count가 30 미만이면 해당 role target은 미충족이다.
 
@@ -633,9 +633,8 @@ feasibility/plan에 기록된 `calendarHash`와 bundle verifier가 재계산한 
 Official calendar artifact를 생략하면 preflight는
 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`과 `DEPENDENCY_INPUT_INCOMPLETE` blocker를
 유지한다. Actual source bundle의 role-regime minimum이 `null`이면
-`ROLE_REGIME_TARGET_UNDEFINED` blocker를 유지한다. 정책 값 8이 아닌 입력은
-현재 verifier의 자동 blocker가 아니라 실행 전 사전등록 불일치로 차단한다.
-이 상태의
+`ROLE_REGIME_TARGET_UNDEFINED` blocker를 유지한다. 정책 값 8이 아닌 non-null
+입력은 declared-policy verification에서 거부한다. 이 상태의
 `inconclusive` artifact는 plumbing과 gap 진단에는 사용할 수 있지만 expanded
 replay input으로 승격하지 않는다.
 
