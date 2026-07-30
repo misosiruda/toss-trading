@@ -44,6 +44,7 @@ test("preflight source reader returns partial verified bundle state", async (t) 
     state.verifiedSourcePair.expansion.hashes
       .expansionDataSnapshotHash
   );
+  assert.equal(state.status, "inconclusive");
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
 

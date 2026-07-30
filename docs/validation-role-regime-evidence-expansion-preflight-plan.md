@@ -1077,8 +1077,11 @@ aggregation, source variant identity, evidence consolidation, capacity,
 dependency input, exclusion과 blocker는 기존 deterministic builder가 내부
 재생성한다. Daily session-open source contract 위반 등 core invariant 실패는
 state 반환 전에 fail-closed로 거부한다. Core blocker는 diagnostic state로
-반환하지만 status, artifact hash, output write와 replay 실행은 아직
-연결하지 않는다.
+반환한다. Verified core input은 기존 status state builder에서 한 번만
+재생성하고 derived `status`와 status field를 제거한 `coreState`를 bundle
+verification state로 분리한다. Caller는 prebuilt core, blocker 또는 status를
+주입할 수 없다. Artifact hash, output write와 replay 실행은 아직 연결하지
+않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
