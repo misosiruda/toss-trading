@@ -1032,6 +1032,12 @@ CLI와 replay 실행은 아직 연결하지 않는다.
 `roleRegimeSampleMinimum`을 사용해야 하며 dependency policy version은
 `overlap_adjacency_inputs.v1`로 고정한다. Source verifier, artifact build와
 write는 수행하지 않는다.
+`verifyEvidenceExpansionSourcePair`는 baseline과 expansion raw source를
+각각 기존 strict source verifier에 통과시키고 validation split hash가
+동일한지 확인한다. Core용 verified expansion에는 caller-provided hash가
+아니라 verified baseline raw provenance hash를 결합한다. Unknown pair/source
+field는 verification 전에 거부한다. Baseline artifact, calendar, policy,
+artifact build와 write는 연결하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
