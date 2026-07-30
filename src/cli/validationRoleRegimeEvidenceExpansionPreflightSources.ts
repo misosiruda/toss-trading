@@ -9,6 +9,31 @@ import {
   type EvidenceExpansionPreflightBundleVerificationState,
   type VerifyEvidenceExpansionPreflightBundleOptions
 } from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
+import {
+  writeValidationRoleRegimeEvidenceExpansionPreflightArtifact
+} from "../replay/validationRoleRegimeEvidenceExpansionPreflightArtifactWriter.js";
+
+export interface ReadVerifyAndWriteEvidenceExpansionPreflightOptions
+  extends VerifyEvidenceExpansionPreflightBundleOptions {
+  outputPath: string;
+}
+
+export async function readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+  inputPath: string,
+  options: ReadVerifyAndWriteEvidenceExpansionPreflightOptions
+): Promise<EvidenceExpansionPreflightBundleVerificationState> {
+  assertExactReadVerifyAndWriteOptions(options);
+  const state =
+    await readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
+      inputPath,
+      { generatedAt: options.generatedAt }
+    );
+  await writeValidationRoleRegimeEvidenceExpansionPreflightArtifact({
+    outputPath: options.outputPath,
+    artifact: state.artifact
+  });
+  return state;
+}
 
 export async function readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
   inputPath: string,
@@ -45,6 +70,21 @@ async function readJsonFile(path: string): Promise<unknown> {
   } catch {
     throw new Error(
       "evidence expansion preflight input must contain valid JSON"
+    );
+  }
+}
+
+function assertExactReadVerifyAndWriteOptions(
+  options: ReadVerifyAndWriteEvidenceExpansionPreflightOptions
+): void {
+  const actual = Object.keys(options).sort();
+  const expected = ["generatedAt", "outputPath"];
+  if (
+    actual.length !== expected.length ||
+    actual.some((key, index) => key !== expected[index])
+  ) {
+    throw new Error(
+      "preflight read-verify-write options contain unknown fields"
     );
   }
 }

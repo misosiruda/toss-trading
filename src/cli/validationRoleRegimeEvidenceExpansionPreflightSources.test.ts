@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,8 +15,10 @@ import test from "node:test";
 import { createEvidenceExpansionPreflightBundleTestFixture } from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import type { ValidationRoleRegimeEvidenceExpansionInput } from "../replay/validationRoleRegimeEvidenceExpansionInputBoundary.js";
 import { createEvidenceExpansionSourceVerifierTestAssignments } from "../replay/validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
+import { parseValidationRoleRegimeEvidenceExpansionPreflightArtifact } from "../replay/validationRoleRegimeEvidenceExpansionPreflightHash.js";
 import {
   readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle,
+  readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact,
   readValidationRoleRegimeEvidenceExpansionPreflightInput
 } from "./validationRoleRegimeEvidenceExpansionPreflightSources.js";
 
@@ -84,6 +94,94 @@ test("preflight source reader rejects split drift without output mutation", asyn
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
 
+test("preflight source workflow writes one verified artifact", async (t) => {
+  const fixture = await createFixture(t);
+  const source = createEvidenceExpansionPreflightBundleTestFixture();
+  await writeFile(
+    fixture.inputPath,
+    `${JSON.stringify(source, null, 2)}\n`,
+    "utf8"
+  );
+
+  const state =
+    await readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      fixture.inputPath,
+      {
+        generatedAt: "2026-07-30T00:00:00.000Z",
+        outputPath: fixture.outputPath
+      }
+    );
+  const written = JSON.parse(
+    await readFile(fixture.outputPath, "utf8")
+  );
+
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      written
+    ),
+    state.artifact
+  );
+  assert.deepEqual(
+    await readdir(fixture.outputDirectory),
+    ["preflight.json"]
+  );
+});
+
+test("preflight source workflow rejects source drift before output mutation", async (t) => {
+  const fixture = await createFixture(t);
+  const source = createEvidenceExpansionPreflightBundleTestFixture();
+  source.expansion = {
+    ...source.expansion,
+    validationSplitSource: {
+      sourceVersion: "expanded-split-source",
+      assignments:
+        createEvidenceExpansionSourceVerifierTestAssignments()
+    }
+  };
+  await writeFile(
+    fixture.inputPath,
+    `${JSON.stringify(source, null, 2)}\n`,
+    "utf8"
+  );
+
+  await assert.rejects(
+    readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      fixture.inputPath,
+      {
+        generatedAt: "2026-07-30T00:00:00.000Z",
+        outputPath: fixture.outputPath
+      }
+    ),
+    /baseline and expansion validation split sources must match/
+  );
+  await assert.rejects(access(fixture.outputDirectory));
+});
+
+test("preflight source workflow preserves an existing output", async (t) => {
+  const fixture = await createFixture(t);
+  const source = createEvidenceExpansionPreflightBundleTestFixture();
+  const existing = "existing preflight must remain unchanged\n";
+  await writeFile(
+    fixture.inputPath,
+    `${JSON.stringify(source, null, 2)}\n`,
+    "utf8"
+  );
+  await mkdir(fixture.outputDirectory);
+  await writeFile(fixture.outputPath, existing, "utf8");
+
+  await assert.rejects(
+    readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      fixture.inputPath,
+      {
+        generatedAt: "2026-07-30T00:00:00.000Z",
+        outputPath: fixture.outputPath
+      }
+    ),
+    (error: NodeJS.ErrnoException) => error.code === "EEXIST"
+  );
+  assert.equal(await readFile(fixture.outputPath, "utf8"), existing);
+});
+
 test("preflight source reader accepts one allowlisted JSON bundle", async (t) => {
   const fixture = await createFixture(t);
   const source = preflightInput();
@@ -139,6 +237,8 @@ test("preflight source reader rejects result metrics without output mutation", a
 async function createFixture(t: test.TestContext): Promise<{
   directory: string;
   inputPath: string;
+  outputDirectory: string;
+  outputPath: string;
 }> {
   const directory = await mkdtemp(
     join(tmpdir(), "evidence-expansion-preflight-source-")
@@ -146,7 +246,9 @@ async function createFixture(t: test.TestContext): Promise<{
   t.after(() => rm(directory, { recursive: true, force: true }));
   return {
     directory,
-    inputPath: join(directory, "input.json")
+    inputPath: join(directory, "input.json"),
+    outputDirectory: join(directory, "output"),
+    outputPath: join(directory, "output", "preflight.json")
   };
 }
 

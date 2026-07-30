@@ -1086,6 +1086,12 @@ ISO datetime으로 명시해야 하며 official calendar freshness도 같은 시
 검증한다. 별도 `asOf`를 options에 주입하면 source 검증 전에 fail-closed로
 거부한다. Caller는 prebuilt core, blocker, status, artifact 또는 preflight
 hash를 주입할 수 없다. Output write와 replay 실행은 아직 연결하지 않는다.
+`readVerifyAndWriteValidationRoleRegimeEvidenceExpansionPreflightArtifact`는
+명시적 `inputPath`, canonical `generatedAt`과 `outputPath`만 받아 기존
+read-verify state의 strict artifact를 기존 exclusive writer에 전달한다.
+Source, provenance, calendar, policy, core 또는 artifact hash 검증이 실패하면
+output directory를 만들지 않으며 existing output은 `EEXIST`로 보존한다.
+Default input/output path, CLI command surface와 replay 실행은 연결하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
