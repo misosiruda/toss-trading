@@ -85,15 +85,20 @@ Hash mismatch, partial provenance, mixed input 또는 count conflict가 있으�
 
 현재 feasibility minimum 1은 실행 가능성 확인 기준일 뿐 통계적 일반화 기준이 아니다. Candidate가 하나뿐인 cell은 `ROLE_REGIME_SINGLE_CANDIDATE`를 유지하고 해당 regime의 반복성을 판정하지 않는다.
 
-Role-regime별 통계 minimum은 아직 계약되지 않았다. 후속 구현 전에 다음을 별도 문서에서 사전 결정해야 한다.
+Evidence expansion preflight의 role-regime capacity floor는
+[Validation Role-Regime Evidence Expansion Target 정책](validation-role-regime-evidence-expansion-target-policy.md)에서
+cell별 8로 사전 고정한다. 네 cell을 모두 충족하면 role별 32개가 되어 기존
+role minimum 30과 모순되지 않는다.
 
-- 판정 대상 metric과 효과 크기
-- 허용 오차와 confidence 또는 power 기준
-- Serial dependence를 반영한 effective sample size 계산 방식
-- Market별 분리 여부와 sparse regime 처리
-- Cell minimum 미달 시 `inconclusive`로 닫는 규칙
+이 값은 반복 근거 확보를 위한 capacity floor이며 통계적 유효성의
+충분조건이 아니다. 판정 대상 metric과 효과 크기, 허용 오차와 confidence
+또는 power, serial dependence를 반영한 effective sample size, market별 분리
+여부와 sparse regime 처리는 후속 판정 계약에서 별도로 고정해야 한다.
+Cell minimum 미달 또는 다른 readiness gate 미충족 시 `inconclusive`로
+닫는다.
 
-현재 결과를 보고 cell minimum을 정하거나, 부족한 cell만 좋은 결과가 나올 때까지 반복하지 않는다.
+현재 결과에 맞춰 target 8을 낮추거나, 부족한 cell만 좋은 결과가 나올 때까지
+반복하지 않는다.
 
 ### 4. Cross-role 독립성
 
@@ -184,7 +189,7 @@ src/replay/validationRoleRegimeStatisticalReadiness.test.ts
 - Evidence-aware report에 `validationRoleRegimeStatisticalReadiness` 연결
 - Planned provenance row에서 global, role-local, role-exclusive, shared와 role-regime count 계산
 - Role minimum 30, single-candidate, empty cell, shared evidence blocker 생성
-- 미정인 role-regime minimum은 `null`과 `ROLE_REGIME_STATISTICAL_MINIMUM_UNDEFINED`로 보존
+- Role-regime minimum이 실행 입력에 전달되지 않으면 `null`과 `ROLE_REGIME_STATISTICAL_MINIMUM_UNDEFINED`로 보존
 - Legacy report는 readiness를 `null`로 유지
 - Mixed, partial, conflicting provenance 입력은 기존 report gate와 readiness schema에서 fail-closed 처리
 

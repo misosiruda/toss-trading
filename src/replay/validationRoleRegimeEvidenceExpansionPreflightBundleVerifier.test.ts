@@ -8,6 +8,7 @@ import {
 import { verifyEvidenceExpansionPreflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
 import { createEvidenceExpansionPreflightBundleTestFixture as preflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import { parseValidationRoleRegimeEvidenceExpansionPreflightArtifact } from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
+import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
 import {
   createEvidenceExpansionSourceVerifierTestAssignments
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
@@ -164,6 +165,23 @@ test("preflight bundle verifier rejects a non-canonical declared target", () => 
         verificationOptions
       ),
     /target matrix must use one canonical role-regime minimum/
+  );
+});
+
+test("preflight bundle verifier rejects a target below the preregistered minimum", () => {
+  const input = preflightBundle();
+  input.targetMatrix = buildEvidenceExpansionTargetMatrix({
+    roleSampleMinimum: 30,
+    roleRegimeSampleMinimum: 7
+  });
+
+  assert.throws(
+    () =>
+      verifyEvidenceExpansionPreflightBundle(
+        input,
+        verificationOptions
+      ),
+    /role-regime minimum must be null or 8/
   );
 });
 
