@@ -4,8 +4,64 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createEvidenceExpansionPreflightBundleTestFixture } from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import type { ValidationRoleRegimeEvidenceExpansionInput } from "../replay/validationRoleRegimeEvidenceExpansionInputBoundary.js";
-import { readValidationRoleRegimeEvidenceExpansionPreflightInput } from "./validationRoleRegimeEvidenceExpansionPreflightSources.js";
+import { createEvidenceExpansionSourceVerifierTestAssignments } from "../replay/validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
+import {
+  readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle,
+  readValidationRoleRegimeEvidenceExpansionPreflightInput
+} from "./validationRoleRegimeEvidenceExpansionPreflightSources.js";
+
+test("preflight source reader returns partial verified bundle state", async (t) => {
+  const fixture = await createFixture(t);
+  const source = createEvidenceExpansionPreflightBundleTestFixture();
+  await writeFile(
+    fixture.inputPath,
+    `${JSON.stringify(source, null, 2)}\n`,
+    "utf8"
+  );
+
+  const state =
+    await readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
+      fixture.inputPath
+    );
+
+  assert.equal(
+    state.verifiedDeclaredPolicy.roleRegimeSampleMinimum,
+    null
+  );
+  assert.deepEqual(
+    state.verifiedSourcePair.expansion.baselineProvenanceHashes,
+    state.verifiedSourcePair.baseline.baselineProvenanceHashes
+  );
+  assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
+});
+
+test("preflight source reader rejects split drift without output mutation", async (t) => {
+  const fixture = await createFixture(t);
+  const source = createEvidenceExpansionPreflightBundleTestFixture();
+  source.expansion = {
+    ...source.expansion,
+    validationSplitSource: {
+      sourceVersion: "expanded-split-source",
+      assignments:
+        createEvidenceExpansionSourceVerifierTestAssignments()
+    }
+  };
+  await writeFile(
+    fixture.inputPath,
+    `${JSON.stringify(source, null, 2)}\n`,
+    "utf8"
+  );
+
+  await assert.rejects(
+    readAndVerifyValidationRoleRegimeEvidenceExpansionPreflightBundle(
+      fixture.inputPath
+    ),
+    /baseline and expansion validation split sources must match/
+  );
+  assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
+});
 
 test("preflight source reader accepts one allowlisted JSON bundle", async (t) => {
   const fixture = await createFixture(t);

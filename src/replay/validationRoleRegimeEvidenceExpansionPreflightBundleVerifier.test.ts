@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { EvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionPreflight.js";
 import { verifyEvidenceExpansionPreflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
-import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
-import type { VerifyValidationRoleRegimeEvidenceExpansionSourceOptions } from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
+import { createEvidenceExpansionPreflightBundleTestFixture as preflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import {
-  createEvidenceExpansionSourceVerifierTestAssignments,
-  createEvidenceExpansionSourceVerifierTestFixture
+  createEvidenceExpansionSourceVerifierTestAssignments
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
 
 test("preflight bundle verifier composes boundary, source pair, and policy", () => {
@@ -73,49 +70,3 @@ test("preflight bundle verifier rejects a non-canonical declared target", () => 
     /target matrix must use one canonical role-regime minimum/
   );
 });
-
-interface PreflightBundleFixture {
-  baseline: VerifyValidationRoleRegimeEvidenceExpansionSourceOptions & {
-    feasibilityArtifact: object;
-    planArtifact: object;
-    readinessArtifact: object;
-  };
-  expansion: VerifyValidationRoleRegimeEvidenceExpansionSourceOptions;
-  calendarValidation: object;
-  marketRegimeClassifier: object;
-  targetMatrix: EvidenceExpansionTargetMatrix;
-  dependencyDiagnosticPolicy: {
-    version: "overlap_adjacency_inputs.v1";
-  };
-}
-
-function preflightBundle(): PreflightBundleFixture {
-  return {
-    baseline: {
-      feasibilityArtifact: { fixture: "baseline-feasibility" },
-      planArtifact: { fixture: "baseline-plan" },
-      readinessArtifact: { fixture: "baseline-readiness" },
-      ...sourceOptions()
-    },
-    expansion: sourceOptions(),
-    calendarValidation: { fixture: "calendar-validation" },
-    marketRegimeClassifier: {
-      fixture: "market-regime-classifier"
-    },
-    targetMatrix: buildEvidenceExpansionTargetMatrix({
-      roleSampleMinimum: 30,
-      roleRegimeSampleMinimum: null
-    }),
-    dependencyDiagnosticPolicy: {
-      version: "overlap_adjacency_inputs.v1"
-    }
-  };
-}
-
-function sourceOptions(): VerifyValidationRoleRegimeEvidenceExpansionSourceOptions {
-  const {
-    assignments: _assignments,
-    ...source
-  } = createEvidenceExpansionSourceVerifierTestFixture();
-  return source;
-}
