@@ -1038,6 +1038,12 @@ write는 수행하지 않는다.
 아니라 verified baseline raw provenance hash를 결합한다. Unknown pair/source
 field는 verification 전에 거부한다. Baseline artifact, calendar, policy,
 artifact build와 write는 연결하지 않는다.
+`verifyEvidenceExpansionPreflightBundle`은 unknown source bundle에 input
+boundary를 다시 적용한 뒤 verified source pair와 declared policy를 순서대로
+조립한다. Forbidden result input은 source verification 전에 거부한다.
+Accepted baseline artifact, calendar와 classifier source는 raw input으로
+보존하지만 아직 verified state로 주장하지 않는다. Artifact build, write와
+replay 실행은 수행하지 않는다.
 `validationRoleRegimeEvidenceExpansionCanonicalTradingDates.ts`는 검증된
 official artifact와 non-empty required market scope가 candidate interval을
 포함하는지 확인하고 official `regular`/`early_close` session을 observed
