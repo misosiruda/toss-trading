@@ -3,6 +3,13 @@ import {
   type ValidationRoleRegimeEvidenceExpansionInput
 } from "./validationRoleRegimeEvidenceExpansionInputBoundary.js";
 import {
+  verifyValidationRoleRegimeEvidenceExpansionBaseline,
+  type VerifiedValidationRoleRegimeEvidenceExpansionBaseline
+} from "./validationRoleRegimeEvidenceExpansionBaselineVerifier.js";
+import {
+  assertEvidenceExpansionBaselineSourceMatches
+} from "./validationRoleRegimeEvidenceExpansionBaselineSourceMatch.js";
+import {
   verifyEvidenceExpansionPreflightDeclaredPolicy,
   type VerifiedEvidenceExpansionPreflightDeclaredPolicy
 } from "./validationRoleRegimeEvidenceExpansionPreflightPolicyVerifier.js";
@@ -13,6 +20,7 @@ import {
 
 export interface EvidenceExpansionPreflightBundleVerificationState {
   acceptedInput: ValidationRoleRegimeEvidenceExpansionInput;
+  verifiedBaseline: VerifiedValidationRoleRegimeEvidenceExpansionBaseline;
   verifiedSourcePair: VerifiedEvidenceExpansionSourcePair;
   verifiedDeclaredPolicy: VerifiedEvidenceExpansionPreflightDeclaredPolicy;
 }
@@ -44,6 +52,20 @@ export function verifyEvidenceExpansionPreflightBundle(
         accepted.expansion.validationSplitSource
     }
   });
+  const verifiedBaseline =
+    verifyValidationRoleRegimeEvidenceExpansionBaseline({
+      feasibilityArtifact:
+        accepted.baseline.feasibilityArtifact,
+      planArtifact: accepted.baseline.planArtifact,
+      readinessArtifact: accepted.baseline.readinessArtifact,
+      validationSplitSource:
+        accepted.baseline.validationSplitSource
+    });
+  assertEvidenceExpansionBaselineSourceMatches({
+    baselineProvenance: verifiedBaseline.plan.source,
+    verifiedSourceProvenance:
+      sourcePair.baseline.baselineProvenanceHashes
+  });
   const declaredPolicy =
     verifyEvidenceExpansionPreflightDeclaredPolicy({
       targetMatrix: accepted.targetMatrix,
@@ -53,6 +75,7 @@ export function verifyEvidenceExpansionPreflightBundle(
 
   return {
     acceptedInput: accepted,
+    verifiedBaseline,
     verifiedSourcePair: sourcePair,
     verifiedDeclaredPolicy: declaredPolicy
   };

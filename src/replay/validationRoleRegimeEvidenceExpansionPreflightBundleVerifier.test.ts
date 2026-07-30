@@ -7,7 +7,7 @@ import {
   createEvidenceExpansionSourceVerifierTestAssignments
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifierTestFixture.js";
 
-test("preflight bundle verifier composes boundary, source pair, and policy", () => {
+test("preflight bundle verifier composes boundary, source pair, baseline, and policy", () => {
   const input = preflightBundle();
 
   const verified = verifyEvidenceExpansionPreflightBundle(input);
@@ -15,6 +15,10 @@ test("preflight bundle verifier composes boundary, source pair, and policy", () 
   assert.equal(
     verified.verifiedDeclaredPolicy.roleRegimeSampleMinimum,
     null
+  );
+  assert.equal(
+    verified.verifiedBaseline.plan.status,
+    "ready_for_paper_diagnostic"
   );
   assert.deepEqual(
     verified.verifiedSourcePair.expansion.baselineProvenanceHashes,
@@ -68,5 +72,18 @@ test("preflight bundle verifier rejects a non-canonical declared target", () => 
   assert.throws(
     () => verifyEvidenceExpansionPreflightBundle(input),
     /target matrix must use one canonical role-regime minimum/
+  );
+});
+
+test("preflight bundle verifier rejects baseline raw source provenance drift", () => {
+  const input = preflightBundle();
+  input.baseline.universe = {
+    ...(input.baseline.universe as Record<string, unknown>),
+    disclaimer: "Changed after baseline artifact generation."
+  };
+
+  assert.throws(
+    () => verifyEvidenceExpansionPreflightBundle(input),
+    /baseline raw source hash mismatch: universeHash/
   );
 });
