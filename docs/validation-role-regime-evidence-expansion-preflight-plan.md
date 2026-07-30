@@ -146,9 +146,17 @@ interface EvidenceExpansionRoleTarget {
 }
 ```
 
-현재 계약된 role sample minimum은 30이다. Role-regime statistical minimum은 아직 결정되지 않았으므로 첫 artifact에서 `byRegime` target은 `null`을 허용하고 `ROLE_REGIME_TARGET_UNDEFINED` blocker를 생성한다.
+현재 계약된 role sample minimum은 30이다. Actual expansion 실행의
+role-regime capacity floor는
+[Validation Role-Regime Evidence Expansion Target 정책](validation-role-regime-evidence-expansion-target-policy.md)에서
+각 cell 8로 사전 고정한다. Strict schema는 fail-closed 상태를 표현하기 위해
+`byRegime`의 `null`을 계속 허용하며, 이 경우
+`ROLE_REGIME_TARGET_UNDEFINED` blocker를 생성한다.
 
-`null` target을 0으로 취급하거나 current candidate count로 채우지 않는다. Role-regime minimum이 별도 사전 계약으로 결정되기 전에는 preflight status를 `ready_for_expansion_replay`로 만들 수 없다.
+`null` target을 0으로 취급하거나 current candidate count로 채우지 않는다.
+Actual source bundle은 정책 값 8을 명시해야 한다. 현재 verifier는 positive
+integer와 target matrix 내부 일관성을 검증하므로, 8이 아닌 입력은 CLI 실행
+전 정책 불일치로 차단한다.
 
 Role-local candidate가 30개여도 cross-role shared candidate를 제외한 role-exclusive count가 30 미만이면 해당 role target은 미충족이다.
 
@@ -600,7 +608,7 @@ Repository에 존재하는 contract와 실행 host의 gitignored local file은 �
 | Baseline statistical readiness | 보존된 role-regime actual artifact 없음 | 기존 smoke 결과의 aggregate artifact는 temp path 정책으로 보존하지 않음 | 동일 calendar hash의 재생성 plan, exact-window paper-only replay와 aggregate report에서 다시 생성 |
 | Baseline raw source | local file 존재, Git 미추적 | `data/replay-2023-01-2026-05-global-broad-yahoo-daily` | Baseline artifact chain과 canonical provenance 일치 확인 |
 | Expansion source | 사전 고정되지 않음 | Local data directory 존재 자체는 expansion 선택 근거가 아님 | 결과를 보기 전에 source path, 기간, universe, coverage와 split provenance를 문서로 고정 |
-| Role-regime minimum | `null`, 미결정 | 현재 target contract가 `ROLE_REGIME_TARGET_UNDEFINED` blocker를 요구 | 결과를 보기 전에 별도 근거와 문서 PR로 값 결정 |
+| Role-regime minimum | 정책 값 8 결정, actual bundle 미생성 | `validation-role-regime-evidence-expansion-target-policy.md` | Actual source bundle에 8을 명시하고 strict target matrix로 검증 |
 | Official calendar evidence | ingestion/writer와 legacy projection 없음 | `replay-calendar-fx-contract.md`가 ingestion path 및 기존 fixture 연결 미구현을 명시 | KRX/NYSE provenance, full coverage와 freshness를 갖춘 artifact ingestion 및 full legacy rule/fixture projection을 별도 구현 |
 | Preflight source bundle | 생성하지 않음 | Actual baseline chain과 expansion source가 아직 고정되지 않음 | 위 입력을 고정한 뒤 result-metric 없는 allowlisted JSON bundle 생성 |
 
@@ -624,16 +632,18 @@ feasibility/plan에 기록된 `calendarHash`와 bundle verifier가 재계산한 
 
 Official calendar artifact를 생략하면 preflight는
 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`과 `DEPENDENCY_INPUT_INCOMPLETE` blocker를
-유지한다. Role-regime minimum이 `null`이면
-`ROLE_REGIME_TARGET_UNDEFINED` blocker도 유지한다. 이 상태의
+유지한다. Actual source bundle의 role-regime minimum이 `null`이면
+`ROLE_REGIME_TARGET_UNDEFINED` blocker를 유지한다. 정책 값 8이 아닌 입력은
+현재 verifier의 자동 blocker가 아니라 실행 전 사전등록 불일치로 차단한다.
+이 상태의
 `inconclusive` artifact는 plumbing과 gap 진단에는 사용할 수 있지만 expanded
 replay input으로 승격하지 않는다.
 
 실제 6단계는 다음 순서로만 진행한다.
 
-1. Expansion source range, universe, coverage, validation split,
-   `roleRegimeSampleMinimum`, canonical `generatedAt`과 temp output root를 결과
-   확인 전에 문서 PR로 고정한다.
+1. 고정된 `roleRegimeSampleMinimum=8` 정책을 유지하면서 expansion source
+   range, universe, coverage, validation split, canonical `generatedAt`과 temp
+   output root를 결과 확인 전에 문서 PR로 고정한다.
 2. Official calendar evidence ingestion/writer와 full legacy rule/fixture
    projection을 구현한다. Projection은 official artifact의 모든 KRX/NYSE
    exchange-date session을 보존하고 양방향 일치를 검증한다.
