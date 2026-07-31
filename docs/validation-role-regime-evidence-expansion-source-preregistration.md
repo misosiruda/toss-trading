@@ -26,7 +26,9 @@ score와 AI decision 결과는 입력으로 사용하지 않았다.
 | Universe source | `docs/historical-universe.global-broad.json` |
 | Universe identity | `global-paper-broad-v1`, `snapshotDate=2026-06-17` |
 | Coverage artifact | `data/replay-2013-01-2022-12-global-broad-yahoo-daily/historical-universe-coverage.json` |
-| Validation split source | `tmp/validation-role-regime-evidence-expansion/03381bec-861a-49db-8c38-a871d0cee5d9/sources/expansion-validation-splits.json` |
+| Validation split source | `data/validation-splits/evidence-expansion-2013-01-2022-12-validation-assignments.json` |
+| Validation split `generatedAt` | `2026-08-01T00:00:00.000Z` |
+| Validation split hash | `sha256:afde7c8d062f0892f9d361f046074b36abf3e0babdc2a65bb69ddc7bc4149fad` |
 | Preflight `generatedAt` | `2026-08-01T00:00:00.000Z` |
 | Temp output root | `tmp/validation-role-regime-evidence-expansion/03381bec-861a-49db-8c38-a871d0cee5d9` |
 | Preflight bundle path | `tmp/validation-role-regime-evidence-expansion/03381bec-861a-49db-8c38-a871d0cee5d9/preflight/source-bundle.json` |
@@ -36,8 +38,8 @@ score와 AI decision 결과는 입력으로 사용하지 않았다.
 존재, 수정 시각 또는 file name만으로 provenance를 인정하지 않는다. Strict
 schema와 canonical hash 검증을 통과한 payload만 source bundle에 포함한다.
 
-2026-07-31 사전 등록 시점에 snapshot directory와 temp output root는 모두
-존재하지 않는다.
+2026-07-31 사전 등록 시점에 snapshot directory, validation split source와
+temp output root는 모두 존재하지 않는다.
 
 ## Source 선택 근거
 
@@ -139,13 +141,17 @@ npm run historical:yahoo:ingest -- -- --data-dir data/replay-2013-01-2022-12-glo
 
 npm run historical:universe:coverage -- -- --data-dir data/replay-2013-01-2022-12-global-broad-yahoo-daily --universe-path docs/historical-universe.global-broad.json --range-start 2013-01-01T00:00:00+09:00 --range-end 2022-12-31T23:59:59.999+09:00 --min-monthly-coverage-ratio 1 --min-snapshots-per-symbol 1 --require-markets 'KR,US' --require-asset-types 'STOCK,ETF' --require-strategy-buckets 'long_term,swing,short_term,intraday,hedge' --min-available-symbols 120 --min-available-market-symbols 'KR:50,US:50' --min-available-asset-type-symbols 'STOCK:80,ETF:30' --min-available-strategy-bucket-symbols 'long_term:1,swing:1,short_term:1,intraday:1,hedge:1' --output-path data/replay-2013-01-2022-12-global-broad-yahoo-daily/historical-universe-coverage.json
 
-npm run historical:validation:splits -- -- --range-start 2013-01-01T00:00:00+09:00 --range-end 2022-12-31T23:59:59.999+09:00 --train-months 40 --validation-months 40 --test-months 40 --step-months 120 --timezone-offset-minutes 540 --embargo-duration-days 5 --output-path tmp/validation-role-regime-evidence-expansion/03381bec-861a-49db-8c38-a871d0cee5d9/sources/expansion-validation-splits.json
+npm run historical:validation:splits -- -- --range-start 2013-01-01T00:00:00+09:00 --range-end 2022-12-31T23:59:59.999+09:00 --train-months 40 --validation-months 40 --test-months 40 --step-months 120 --timezone-offset-minutes 540 --embargo-duration-days 5 --generated-at 2026-08-01T00:00:00.000Z --output-path data/validation-splits/evidence-expansion-2013-01-2022-12-validation-assignments.json
 ```
 
-`historical:validation:splits` CLI의 `generatedAt`은 실행 시각을 기록하지만
-split hash는 strict-validated assignment payload에서 별도로 계산한다.
-Preflight CLI에는 사전 등록한
-`2026-08-01T00:00:00.000Z`를 명시적으로 전달해야 한다.
+Validation split hash는 strict validation과 canonical assignment 정렬 후에도
+wrapper의 `mode`, `schemaVersion`, 고정 `generatedAt`, plan, summary와
+disclaimer를 포함한 전체 normalized source를 식별한다. 따라서 등록 command는
+`--generated-at 2026-08-01T00:00:00.000Z`를 반드시 사용한다. Preflight
+CLI에도 같은 canonical UTC timestamp를 명시적으로 전달한다. Recomputed
+split hash는 등록한
+`sha256:afde7c8d062f0892f9d361f046074b36abf3e0babdc2a65bb69ddc7bc4149fad`와
+일치해야 한다.
 
 ## Fail-Closed Gate
 
@@ -156,7 +162,9 @@ Preflight CLI에는 사전 등록한
 - Coverage status가 `available`이 아니면 threshold를 낮추지 않고 중단한다.
 - Split policy, assignment boundary 또는 canonical split hash가 등록 contract와
   다르면 중단한다.
-- Existing temp output root 또는 output path가 있으면 덮어쓰지 않는다.
+- Validation split source path가 이미 있으면 덮어쓰지 않는다.
+- Preflight temp output root 또는 output path가 preflight 시작 전에 이미
+  있으면 덮어쓰지 않는다.
 - Official-derived calendar fixture가 준비되지 않았거나 baseline chain과
   `calendarHash`가 다르면 preflight를 실행하지 않는다.
 - Preflight `generatedAt` 또는 output root를 변경해야 하면 결과를 확인하기
