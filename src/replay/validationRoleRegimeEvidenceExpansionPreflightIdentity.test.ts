@@ -25,7 +25,8 @@ test("preflight identity projects verified source, config, and targets", () => {
     expansionDataSnapshotHash: hash("4"),
     expansionUniverseHash: hash("5"),
     expansionCoverageHash: hash("6"),
-    validationSplitHash: hash("7"),
+    baselineValidationSplitHash: hash("7"),
+    expansionValidationSplitHash: hash("7"),
     calendarHash: hash("8"),
     officialCalendarArtifactHash: hash("9"),
     marketRegimeClassifierHash: hash("a")

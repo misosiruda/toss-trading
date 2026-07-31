@@ -419,12 +419,26 @@ export const evidenceExpansionPreflightSourceSchema = z
     expansionDataSnapshotHash: sha256HashSchema,
     expansionUniverseHash: sha256HashSchema,
     expansionCoverageHash: sha256HashSchema,
-    validationSplitHash: sha256HashSchema,
+    baselineValidationSplitHash: sha256HashSchema,
+    expansionValidationSplitHash: sha256HashSchema,
     calendarHash: sha256HashSchema,
     officialCalendarArtifactHash: sha256HashSchema.nullable(),
     marketRegimeClassifierHash: sha256HashSchema
   })
-  .strict();
+  .strict()
+  .superRefine((source, context) => {
+    if (
+      source.baselineValidationSplitHash !==
+      source.expansionValidationSplitHash
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expansionValidationSplitHash"],
+        message:
+          "expansion validation split hash must match baseline until the compatibility gate is implemented"
+      });
+    }
+  });
 
 export const evidenceExpansionPreflightConfigSchema = z
   .object({

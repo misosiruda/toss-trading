@@ -105,6 +105,29 @@ test("preflight hash rejects semantic mutation and non-canonical blockers", () =
   );
 });
 
+test("preflight hash binds baseline and expansion split provenance fields", () => {
+  const splitMutation = readyArtifact();
+  splitMutation.source.baselineValidationSplitHash = hash("a");
+  splitMutation.source.expansionValidationSplitHash = hash("a");
+  assert.throws(
+    () =>
+      parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+        splitMutation
+      ),
+    /hash mismatch/
+  );
+});
+
+test("preflight source schema rejects split drift before compatibility gate", () => {
+  const payload = preflightPayload(readyArtifact());
+  payload.source.expansionValidationSplitHash = hash("a");
+
+  assert.throws(
+    () => bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload),
+    /must match baseline until the compatibility gate is implemented/
+  );
+});
+
 test("preflight hash rejects non-canonical exclusions", () => {
   const payload = preflightPayload(readyArtifact());
   const [firstInterval, secondInterval] =
@@ -597,7 +620,8 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
       expansionDataSnapshotHash: hash("d"),
       expansionUniverseHash: hash("e"),
       expansionCoverageHash: hash("f"),
-      validationSplitHash: hash("6"),
+      baselineValidationSplitHash: hash("6"),
+      expansionValidationSplitHash: hash("6"),
       calendarHash: hash("7"),
       officialCalendarArtifactHash: hash("8"),
       marketRegimeClassifierHash: hash("9")
