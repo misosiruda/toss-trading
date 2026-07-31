@@ -17,6 +17,7 @@
 - `src/replay/marketCalendar.ts`는 calendar fixture parsing, duplicate `exchange + sessionDate` index guard, IANA timezone 기반 local date 계산, session/holiday timestamp classification을 제공한다.
 - `src/replay/officialMarketCalendarEvidence.ts`는 `official_market_calendar_evidence.v1` strict contract, KRX/NYSE source provenance, 전체 exchange-date coverage, timezone/DST local session 검증, canonical artifact hash와 `asOf` freshness gate를 제공한다.
 - `src/replay/officialMarketCalendarEvidenceArtifactWriter.ts`는 strict schema, artifact hash와 artifact `generatedAt` 기준 source freshness를 검증한 뒤 official evidence JSON을 durable exclusive writer로 기록한다. Existing output은 덮어쓰지 않는다.
+- `src/replay/officialMarketCalendarLegacyProjection.ts`는 검증된 official evidence의 KRX/NYSE source를 legacy calendar rule로, 모든 exchange-date session을 `MarketCalendarFixture`로 결정론적으로 투영한다. Open session timestamp와 closed session semantics를 보존하고 artifact/source/session provenance를 `sourceRefs`에 결합한다.
 - `assessHistoricalDataAvailability()`는 optional `calendarValidation` 입력이 있을 때 window snapshot을 market별 calendar rule과 fixture로 검증하고, 휴장일/fixture 누락/session mismatch/timezone mismatch를 fail-closed issue로 보고한다.
 - `historicalReplay` CLI의 `--check-data-availability`와 `--require-data-availability`는 optional `--calendar-fixtures-path`, `--calendar-rule` 입력을 받아 JSON array 또는 JSONL calendar fixture를 availability gate에 연결할 수 있다.
 - `runHistoricalBatchReplay()`는 optional `calendarValidation` 입력을 batch run별 availability preflight에 전달하고, calendar issue가 있는 window를 replay 실행 전 `DATA_INSUFFICIENT`로 skip한다.
@@ -36,7 +37,7 @@
 
 - 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 한다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
-- 새 official evidence contract는 기존 observed-session fixture, availability CLI, batch replay 또는 readiness report에 아직 연결되지 않았다.
+- 새 official evidence contract는 legacy rule/fixture로 투영할 수 있지만 availability CLI, batch replay 또는 readiness report가 이 projection을 직접 호출하도록 연결되지는 않았다.
 - 따라서 현재 replay calendar evidence class는 계속 `observed_session_only`이며 official holiday/early-close readiness는 충족되지 않았다.
 
 ## Contract 목표
