@@ -6,7 +6,10 @@ import {
   historicalUniverseManifestSchema
 } from "./historicalUniverseCoverage.js";
 import { verifyEvidenceExpansionPreflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifier.js";
-import { createEvidenceExpansionPreflightBundleTestFixture as preflightBundle } from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
+import {
+  createDistinctCompatibleSplitPreflightBundleTestFixture,
+  createEvidenceExpansionPreflightBundleTestFixture as preflightBundle
+} from "./validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 import { parseValidationRoleRegimeEvidenceExpansionPreflightArtifact } from "./validationRoleRegimeEvidenceExpansionPreflightHash.js";
 import { buildEvidenceExpansionTargetMatrix } from "./validationRoleRegimeEvidenceExpansionTargetMatrix.js";
 import {
@@ -84,6 +87,36 @@ test("preflight bundle verifier composes verified sources into core state", () =
     verified.acceptedInput.baseline.feasibilityArtifact,
     input.baseline.feasibilityArtifact
   );
+});
+
+test("preflight bundle verifier preserves distinct compatible split provenance without claiming duplicate evidence", () => {
+  const verified = verifyEvidenceExpansionPreflightBundle(
+    createDistinctCompatibleSplitPreflightBundleTestFixture(),
+    verificationOptions
+  );
+
+  assert.notEqual(
+    verified.verifiedSourcePair.expansion.hashes.validationSplitHash,
+    verified.verifiedSourcePair.baseline.hashes.validationSplitHash
+  );
+  assert.equal(
+    verified.coreState.source.baselineValidationSplitHash,
+    verified.verifiedSourcePair.baseline.hashes.validationSplitHash
+  );
+  assert.equal(
+    verified.coreState.source.expansionValidationSplitHash,
+    verified.verifiedSourcePair.expansion.hashes.validationSplitHash
+  );
+  assert.equal(
+    verified.coreState.capacity.incremental
+      .globalUniqueEvidenceGroupCount,
+    0
+  );
+  assert.equal(
+    verified.coreState.capacity.combined.globalUniqueEvidenceGroupCount,
+    verified.coreState.capacity.baseline.globalUniqueEvidenceGroupCount
+  );
+  assert.equal(verified.status, "inconclusive");
 });
 
 test("preflight bundle verifier rejects non-canonical artifact time", () => {

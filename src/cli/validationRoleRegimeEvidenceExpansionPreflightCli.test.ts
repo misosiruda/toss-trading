@@ -12,7 +12,11 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { parseValidationRoleRegimeEvidenceExpansionPreflightArtifact } from "../replay/validationRoleRegimeEvidenceExpansionPreflightHash.js";
-import { createEvidenceExpansionPreflightBundleTestFixture } from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
+import {
+  createDistinctCompatibleSplitPreflightBundleTestFixture,
+  createEvidenceExpansionPreflightBundleTestFixture,
+  type EvidenceExpansionPreflightBundleTestFixture
+} from "../replay/validationRoleRegimeEvidenceExpansionPreflightBundleVerifierTestFixture.js";
 
 test("preflight CLI writes and prints one strict paper-only artifact", (t) => {
   const fixture = createFixture(t);
@@ -34,6 +38,39 @@ test("preflight CLI writes and prints one strict paper-only artifact", (t) => {
     "2026-07-30T00:00:00.000Z"
   );
   assert.deepEqual(storedArtifact, stdoutArtifact);
+});
+
+test("preflight create and inspect CLIs preserve distinct compatible split provenance", (t) => {
+  const fixture = createFixture(
+    t,
+    createDistinctCompatibleSplitPreflightBundleTestFixture()
+  );
+
+  const createResult = runCli(cliArgs(fixture));
+
+  assert.equal(createResult.status, 0, createResult.stderr);
+  const created =
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      JSON.parse(createResult.stdout)
+    );
+  assert.notEqual(
+    created.source.baselineValidationSplitHash,
+    created.source.expansionValidationSplitHash
+  );
+  assert.equal(
+    created.capacity.incremental.globalUniqueEvidenceGroupCount,
+    0
+  );
+
+  const inspectResult = runInspectCli(fixture.outputPath);
+
+  assert.equal(inspectResult.status, 0, inspectResult.stderr);
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      JSON.parse(inspectResult.stdout)
+    ),
+    created
+  );
 });
 
 test("preflight CLI preserves an existing output", (t) => {
@@ -76,7 +113,11 @@ test("preflight CLI requires each explicit path and generation time", () => {
   assert.equal(repeated.stdout, "");
 });
 
-function createFixture(t: test.TestContext): {
+function createFixture(
+  t: test.TestContext,
+  source: EvidenceExpansionPreflightBundleTestFixture =
+    createEvidenceExpansionPreflightBundleTestFixture()
+): {
   directory: string;
   inputPath: string;
   outputPath: string;
@@ -89,11 +130,7 @@ function createFixture(t: test.TestContext): {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(
     inputPath,
-    `${JSON.stringify(
-      createEvidenceExpansionPreflightBundleTestFixture(),
-      null,
-      2
-    )}\n`,
+    `${JSON.stringify(source, null, 2)}\n`,
     "utf8"
   );
   return { directory, inputPath, outputPath };
@@ -124,6 +161,26 @@ function runCli(args: readonly string[]) {
         "validationRoleRegimeEvidenceExpansionPreflight.js"
       ),
       ...args
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8"
+    }
+  );
+}
+
+function runInspectCli(artifactPath: string) {
+  return spawnSync(
+    process.execPath,
+    [
+      join(
+        process.cwd(),
+        "dist",
+        "cli",
+        "validationRoleRegimeEvidenceExpansionPreflightInspect.js"
+      ),
+      "--artifact-path",
+      artifactPath
     ],
     {
       cwd: process.cwd(),
