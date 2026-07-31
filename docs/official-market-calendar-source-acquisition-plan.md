@@ -70,6 +70,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `requestBodyHash` | 전송한 exact request body bytes의 `sha256:<hex>` 또는 body가 없으면 `null` |
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
+| `redirectChain` | Requested URL부터 final URL까지 각 HTTPS URL과 response status를 순서대로 기록 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
@@ -122,24 +123,28 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
 
 1. `requestedUrl`과 `finalUrl`의 host가 exchange official domain allowlist에
    속한다.
-2. HTTP response가 성공이고 redirect loop 또는 authentication page가 아니다.
-3. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
-4. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
-5. Method, canonical request parameter/body hash와 representation header가
+2. Requested URL, final URL과 모든 redirect hop이 `https:`이며 platform trust
+   store 기반 certificate chain과 hostname 검증을 통과한다. Insecure TLS
+   option, certificate verification bypass와 protocol downgrade를 허용하지
+   않는다.
+3. HTTP response가 성공이고 redirect loop 또는 authentication page가 아니다.
+4. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
+5. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
+6. Method, canonical request parameter/body hash와 representation header가
    실제 acquisition request와 일치한다.
-6. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
+7. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-7. Parsed row coverage, source-backed schedule coverage와 rule applicability가
+8. Parsed row coverage, source-backed schedule coverage와 rule applicability가
    `evidenceRoles`별 metadata interval과 일치한다.
-8. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
+9. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
-9. Source collection 사이에 같은 exchange-date의 session type 또는
+10. Source collection 사이에 같은 exchange-date의 session type 또는
    timestamp가 충돌하지 않는다.
-10. Manifest의 document 목록, metadata hash, source byte hash와
+11. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
-11. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
+12. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
-12. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
+13. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
     없이 덮고 각 interval이 accepted schedule document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
@@ -192,11 +197,23 @@ Revised exclusive writer는 다음 immutable package를 publish해야 한다.
         └── <source-document-sha256>.bin
 ```
 
-각 durable document metadata는 package-relative `archivePath`,
-`sourceDocumentHash`와 `contentLength`를 함께 가진다. `archivePath`는
-`sources/sha256/<hex>.bin` 형식만 허용하며 path traversal과 package 밖
-reference를 거부한다. Parser/auditor는 sidecar bytes의 length와 hash를 다시
-계산한 뒤에만 source parser를 재실행할 수 있다.
+Accepted acquisition metadata는 publish 과정에서 변경하지 않는다.
+`metadataHash`는 `archivePath`가 없는 canonical acquisition metadata만
+식별하고 `collectionHash`도 이 metadata hash와 source document hash로
+계산한다.
+
+Package-relative path는 revised artifact의 별도
+`sourceArchiveBindings`에 둔다. 각 binding은 `documentId`, `archivePath`,
+`sourceDocumentHash`와 `contentLength`를 가지며 artifact canonical hash에
+포함된다. `archivePath`는 `sources/sha256/<hex>.bin` 형식만 허용하고 path
+traversal과 package 밖 reference를 거부한다. Parser/auditor는 binding과
+sidecar bytes의 length/hash를 다시 계산한 뒤에만 source parser를 재실행할
+수 있다.
+
+여러 document metadata가 같은 exact bytes를 참조하면 동일 `archivePath`를
+공유할 수 있다. Shared binding은 `sourceDocumentHash`와 `contentLength`가
+모두 같아야 한다. 같은 path를 다른 hash/length에 연결하는 conflicting
+reuse만 거부한다.
 
 Package writer는 existing output root를 덮어쓰지 않는다. 같은 parent의
 writer-owned staging directory에 artifact와 모든 sidecar를 기록하고 durable
@@ -209,8 +226,8 @@ platform-specific compatibility 상태와 테스트를 명시하고 POSIX durabi
 Rename 이후 parent sync 실패는 package root를 삭제하거나 덮어쓰지 않고
 실패를 반환하며, operator inspection 전에는 published evidence로 재사용하지
 않는다. 이미 publish된 package 또는 unrelated path는 어떤 실패에서도
-변경하지 않는다. Artifact는 누락 sidecar, duplicate archive path, hash/path
-불일치 또는 unreferenced sidecar가 있으면 fail-closed로 거부한다.
+변경하지 않는다. Artifact는 누락 sidecar, conflicting archive path reuse,
+hash/path 불일치 또는 unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
 ## Session 생성 기준
 
@@ -281,6 +298,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
 - Durable package의 source byte sidecar 누락 또는 hash/length 불일치
+- HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
 - dynamic request method, parameter, body hash 또는 representation header 누락
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
@@ -311,13 +329,16 @@ date-effective regular-session regime과 session-level document provenance를
 - declared coverage gap reject
 - source byte hash mismatch reject
 - canonical request method/parameter/body/header mismatch reject
+- non-HTTPS URL, redirect downgrade와 certificate validation failure reject
 - evidence role과 row coverage/applicability mismatch reject
 - sparse exception row와 source-backed schedule coverage 분리 검증
 - exception schedule interval gap/overlap reject
 - collection manifest 또는 referenced document hash mismatch reject
 - durable artifact에서 canonical manifest/document metadata 누락 reject
 - durable source sidecar 누락, mutation 또는 unreferenced file reject
-- archive path traversal, duplicate path와 hash/path mismatch reject
+- archive path traversal, conflicting path reuse와 hash/path mismatch reject
+- identical source bytes의 shared sidecar binding 허용
+- acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
 - existing package 보존과 staging failure cleanup
 - atomic rename 후 parent directory sync와 POSIX sync failure 처리
 - regular-session regime gap/overlap reject
