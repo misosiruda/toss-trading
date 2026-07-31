@@ -18,11 +18,18 @@ readiness 통과를 주장하지 않는다.
 | --- | --- | --- | --- |
 | KRX | `https://global.krx.co.kr/contents/GLB/05/0501/0501110000/GLB0501110000.jsp` | `Market Closing(Holiday)` 조회와 download UI | 조회 request contract, download response format, 2013-01-01부터 2026-05-31까지의 실제 row coverage |
 | KRX | `https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp` | KOSPI regular session 09:00부터 15:30, holiday category | 날짜별 holiday, special closure와 delayed open row |
+| KRX | `https://global.krx.co.kr/contents/GLB/01/0107/0107010000/20170630_eng_brochure.pdf` | 2016-08-01부터 securities regular session 30분 연장 | 2013부터 변경일까지 적용된 전체 historical session rule archive |
 | NYSE | `https://www.nyse.com/trade/hours-calendars` | 2026, 2027, 2028 holiday와 scheduled early close | 2013부터 2025까지의 first-party historical archive |
 
 현재 entry point만으로 대상 기간의 complete exchange-date session을 만들 수
 없다. KRX dynamic request를 추측하거나 NYSE의 현재 규칙을 과거 기간에
 소급 적용하지 않는다.
+
+KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
+brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서
+대상 기간의 KRX regular close는 단일 값이 아니며, 2016-08-01 이전 15:00과
+이후 15:30을 date-effective regime으로 분리해야 한다. 실제 regime boundary와
+각 값은 해당 official source document hash에 결합한다.
 
 ## Acquisition Package
 
@@ -32,11 +39,17 @@ local path에 보존한다.
 ```text
 tmp/official-market-calendar-source/<acquisition-id>/
 ├── krx/
-│   ├── source.bin
-│   └── metadata.json
+│   ├── collection-manifest.json
+│   └── documents/
+│       └── <document-id>/
+│           ├── source.bin
+│           └── metadata.json
 └── nyse/
-    ├── source.bin
-    └── metadata.json
+    ├── collection-manifest.json
+    └── documents/
+        └── <document-id>/
+            ├── source.bin
+            └── metadata.json
 ```
 
 `source.bin`은 parser가 읽은 exact response bytes 또는 official download
@@ -47,6 +60,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 
 | 필드 | 기준 |
 | --- | --- |
+| `documentId` | Collection 안에서 unique한 stable document identity |
 | `exchange` | `KRX` 또는 `NYSE` |
 | `publisher` | Official page에서 확인한 publisher name |
 | `requestedUrl` | 최초 요청한 official URL |
@@ -58,10 +72,29 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `sourceDocumentHash` | exact bytes의 `sha256:<hex>` |
 | `coverageStartDate` | source가 직접 제공하는 첫 session date |
 | `coverageEndDate` | source가 직접 제공하는 마지막 session date |
+| `evidenceRoles` | `holiday_rows`, `session_hours`, `special_closure` 등 원문이 직접 뒷받침하는 역할 |
 | `parserContractVersion` | source format adapter contract version |
 
 Metadata 값은 실제 response와 parser 결과에서 계산한다. File name, local
 수정 시각, page title 또는 URL만으로 provenance를 인정하지 않는다.
+
+`collection-manifest.json`은 exchange별 accepted document를 하나의 검증
+단위로 결합하며 다음 필드를 가져야 한다.
+
+| 필드 | 기준 |
+| --- | --- |
+| `schemaVersion` | `official_market_calendar_source_collection.v1` |
+| `collectionId` | Exchange와 acquisition을 식별하는 stable identity |
+| `exchange` | `KRX` 또는 `NYSE` |
+| `coverageStartDate` / `coverageEndDate` | Collection이 설명하는 전체 date range |
+| `documents` | Canonical `documentId` 순서의 metadata hash와 `sourceDocumentHash` 목록 |
+| `regularSessionRegimes` | `regimeId`, effective start/end date, local open/close, 근거 `documentIds` |
+| `collectionHash` | `collectionHash`를 제외한 canonical manifest payload hash |
+
+Manifest hash가 각 원문 hash를 대체하지 않는다. Collection verification은
+manifest hash와 모든 referenced metadata/source byte hash를 함께 검증한다.
+Session-level provenance는 해당 session을 뒷받침한 `documentIds`와
+date-effective `regimeId`를 보존해야 한다.
 
 ## Source Acceptance
 
@@ -79,17 +112,44 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    collection이 빠짐없이 설명한다.
 8. Source collection 사이에 같은 exchange-date의 session type 또는
    timestamp가 충돌하지 않는다.
+9. Manifest의 document 목록, metadata hash, source byte hash와
+   `collectionHash`가 모두 재계산 값과 일치한다.
+10. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
+    regime이 하나 이상의 accepted official document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
-record로 보존한다. Hash 하나로 여러 원문을 대표하거나 가장 최근 문서의
-규칙을 과거 날짜에 소급하지 않는다.
+record로 보존하고 collection manifest가 모든 원문 hash를 결합한다. 가장
+최근 문서의 규칙을 과거 날짜에 소급하지 않는다.
+
+## Evidence Contract 선행 변경
+
+현재 `official_market_calendar_evidence.v1`은 exchange별 source 하나,
+source별 `regularSession` 하나와 session별 `sourceId` 하나만 허용한다.
+따라서 여러 archive document와 date-effective regular-session regime을
+손실 없이 표현할 수 없다.
+
+Source adapter 구현 전에 evidence contract는 다음 정보를 strict schema와
+canonical hash에 포함하도록 revision해야 한다.
+
+- Exchange source의 `sourceCollectionHash`
+- Collection에 포함된 모든 document identity와 source document hash
+- Date-effective `regularSessionRegimes`
+- 각 session의 근거 `documentIds`
+- Open session이 참조한 `regularSessionRegimeId`
+- Session date에 effective한 regime으로 open/close를 검증하는 validator
+
+Contract revision은 v1 artifact를 암묵적으로 재해석하지 않는다. Schema
+version을 명시적으로 올리고 writer, parser, projection과 회귀 테스트를 함께
+갱신해야 한다. 이 변경이 완료되기 전에는 source adapter가 calendar session
+row를 생성하지 않는다.
 
 ## Session 생성 기준
 
 Ingestion adapter는 accepted source row에서 다음 값만 생성할 수 있다.
 
 - `regular`: source가 regular session임을 직접 나타내거나 accepted holiday
-  collection과 complete date coverage에서 결정론적으로 확인된 거래일
+  collection과 complete date coverage에서 결정론적으로 확인된 거래일이며,
+  session date에 effective한 `regularSessionRegimeId`의 open/close를 사용
 - `early_close`: official source가 해당 날짜와 close time을 명시한 session
 - `holiday`: official source가 holiday로 명시한 날짜
 - `special_closure`: 정규 holiday rule 외 exchange closure를 official
@@ -141,6 +201,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 
 - KRX dynamic request 또는 download format 미확인
 - NYSE 2013부터 2025까지의 first-party archive 미확보
+- Multi-document collection과 date-effective session regime을 표현하는
+  evidence contract revision 미구현
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
 - source hash, byte length, coverage 불일치
@@ -155,9 +217,11 @@ official evidence를 대체하지 않는다.
 
 ## 검증 계획
 
-후속 source adapter PR은 exchange 하나와 source format 하나만 다룬다.
-각 adapter는 checked-in synthetic fixture와 byte-level parser test를 가져야
-하며 실제 downloaded source는 commit하지 않는다.
+먼저 evidence contract revision PR에서 multi-document collection,
+date-effective regular-session regime과 session-level document provenance를
+구현한다. 그 다음 source adapter PR은 exchange 하나와 source format 하나만
+다룬다. 각 adapter는 checked-in synthetic fixture와 byte-level parser test를
+가져야 하며 실제 downloaded source는 commit하지 않는다.
 
 필수 test case:
 
@@ -166,6 +230,9 @@ official evidence를 대체하지 않는다.
 - duplicate/conflicting date reject
 - declared coverage gap reject
 - source byte hash mismatch reject
+- collection manifest 또는 referenced document hash mismatch reject
+- regular-session regime gap/overlap reject
+- session date와 effective regime mismatch reject
 - timezone/DST open-close conversion
 - existing output 보존
 
