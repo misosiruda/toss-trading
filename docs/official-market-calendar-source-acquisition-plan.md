@@ -218,16 +218,24 @@ reuse만 거부한다.
 Package writer는 existing output root를 덮어쓰지 않는다. 같은 parent의
 writer-owned staging directory에 artifact와 모든 sidecar를 기록하고 durable
 flush, byte/hash/metadata cross-check를 완료한 뒤 package root로 atomic
-rename한다. Rename 성공 후 parent directory를 `fsync`하고 이 sync가 끝난
+no-replace publish한다. Platform의 no-replace primitive는 destination이
+existing empty directory이거나 concurrent writer가 먼저 생성한 경우에도
+실패해야 한다. Preflight existence check, 일반 POSIX `rename` 또는
+cooperative lock만으로 no-replace를 주장하지 않는다. Atomic no-replace를
+지원하거나 동등하게 보장할 수 없는 platform에서는 publish를 fail-closed로
+중단한다.
+
+No-replace publish 성공 후 parent directory를 `fsync`하고 이 sync가 끝난
 뒤에만 publish 완료를 반환한다. POSIX parent sync 실패는 성공으로 축소하지
 않는다. Windows에서 directory sync가 `EPERM`으로 지원되지 않는 경우는
 platform-specific compatibility 상태와 테스트를 명시하고 POSIX durability
-완료로 주장하지 않는다. Rename 이전 실패는 writer-owned staging만 정리한다.
-Rename 이후 parent sync 실패는 package root를 삭제하거나 덮어쓰지 않고
-실패를 반환하며, operator inspection 전에는 published evidence로 재사용하지
-않는다. 이미 publish된 package 또는 unrelated path는 어떤 실패에서도
-변경하지 않는다. Artifact는 누락 sidecar, conflicting archive path reuse,
-hash/path 불일치 또는 unreferenced sidecar가 있으면 fail-closed로 거부한다.
+완료로 주장하지 않는다. Publish 이전 실패는 writer-owned staging만
+정리한다. Publish 이후 parent sync 실패는 package root를 삭제하거나
+덮어쓰지 않고 실패를 반환하며, operator inspection 전에는 published
+evidence로 재사용하지 않는다. 이미 publish된 package 또는 unrelated path는
+어떤 실패에서도 변경하지 않는다. Artifact는 누락 sidecar, conflicting
+archive path reuse, hash/path 불일치 또는 unreferenced sidecar가 있으면
+fail-closed로 거부한다.
 
 ## Session 생성 기준
 
@@ -306,6 +314,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - duplicate date, conflicting session 또는 unknown source format
 - Target interval의 delayed-open source 또는 `sessionHoursExceptions`
   provenance 누락
+- Atomic no-replace publish primitive 미지원 또는 destination collision
 - freshness policy 미등록 또는 stale source
 
 이 상태에서는 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`과
@@ -339,8 +348,9 @@ date-effective regular-session regime과 session-level document provenance를
 - archive path traversal, conflicting path reuse와 hash/path mismatch reject
 - identical source bytes의 shared sidecar binding 허용
 - acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
-- existing package 보존과 staging failure cleanup
-- atomic rename 후 parent directory sync와 POSIX sync failure 처리
+- existing empty package와 concurrent destination 생성 시 no-replace reject
+- atomic no-replace 미지원 platform reject와 staging failure cleanup
+- no-replace publish 후 parent directory sync와 POSIX sync failure 처리
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
 - delayed-open exception provenance와 actual open/close 검증
