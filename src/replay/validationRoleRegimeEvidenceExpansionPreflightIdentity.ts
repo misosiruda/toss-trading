@@ -84,14 +84,6 @@ function assertIdentityLinks(
   input: EvidenceExpansionPreflightIdentityInput
 ): void {
   if (
-    input.expansion.hashes.validationSplitHash !==
-    input.baseline.feasibility.provenance.validationSplitHash
-  ) {
-    throw new Error(
-      "expansion validation split hash does not match baseline"
-    );
-  }
-  if (
     input.calendarClassifier.hashes.calendarHash !==
     input.baseline.feasibility.provenance.calendarHash
   ) {

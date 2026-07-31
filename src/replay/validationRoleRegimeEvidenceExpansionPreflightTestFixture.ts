@@ -61,7 +61,7 @@ export function createEvidenceExpansionPreflightTestArtifact(): ValidationRoleRe
     config: {
       candidateStrategyBucket: "short_term",
       targetRegimes: ["bull", "bear", "sideways", "mixed"],
-      windowMonths: 12,
+      windowMonths: 1,
       timezoneOffsetMinutes: 540,
       roleSampleMinimum: 30,
       roleRegimeSampleMinimum: null,

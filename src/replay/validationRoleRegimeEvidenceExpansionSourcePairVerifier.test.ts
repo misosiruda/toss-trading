@@ -37,7 +37,7 @@ test("source pair verifier binds baseline provenance to verified expansion", () 
   );
 });
 
-test("source pair verifier rejects validation split drift", () => {
+test("source pair verifier accepts compatible split provenance drift", () => {
   const baseline = sourceOptions();
   const expansion = {
     ...sourceOptions(),
@@ -48,13 +48,35 @@ test("source pair verifier rejects validation split drift", () => {
     }
   };
 
+  const pair = verifyEvidenceExpansionSourcePair({
+    baseline,
+    expansion
+  });
+
+  assert.notEqual(
+    pair.baseline.hashes.validationSplitHash,
+    pair.expansion.hashes.validationSplitHash
+  );
+});
+
+test("source pair verifier rejects incompatible split policy", () => {
+  const baseline = sourceOptions();
+  const expansion = sourceOptions();
+  expansion.validationSplitSource =
+    createEvidenceExpansionSourceVerifierTestAssignments().map(
+      (assignment) => ({
+        ...assignment,
+        embargoDurationDays: 1
+      })
+    );
+
   assert.throws(
     () =>
       verifyEvidenceExpansionSourcePair({
         baseline,
         expansion
       }),
-    /baseline and expansion validation split sources must match/
+    /embargo policies must match/
   );
 });
 

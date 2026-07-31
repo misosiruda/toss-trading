@@ -34,7 +34,7 @@ test("preflight identity projects verified source, config, and targets", () => {
   assert.deepEqual(identity.config, {
     candidateStrategyBucket: "short_term",
     targetRegimes: ["bull", "bear", "sideways", "mixed"],
-    windowMonths: 12,
+    windowMonths: 1,
     timezoneOffsetMinutes: 540,
     roleSampleMinimum: 30,
     roleRegimeSampleMinimum: 8,
@@ -55,17 +55,27 @@ test("preflight identity preserves an unavailable official calendar", () => {
   assert.equal(identity.source.officialCalendarArtifactHash, null);
 });
 
+test("preflight identity preserves separately verified split hashes", () => {
+  const value = input();
+  value.expansion.hashes.validationSplitHash = hash("b");
+
+  const identity = buildEvidenceExpansionPreflightIdentity(value);
+
+  assert.equal(
+    identity.source.baselineValidationSplitHash,
+    hash("7")
+  );
+  assert.equal(
+    identity.source.expansionValidationSplitHash,
+    hash("b")
+  );
+});
+
 test("preflight identity rejects mismatched verified links", () => {
   const mismatches: Array<{
     field: string;
     mutate: (value: ReturnType<typeof input>) => void;
   }> = [
-    {
-      field: "validation split",
-      mutate: (value) => {
-        value.expansion.hashes.validationSplitHash = hash("b");
-      }
-    },
     {
       field: "calendar",
       mutate: (value) => {
@@ -131,7 +141,7 @@ function input() {
         },
         config: {
           candidateStrategyBucket: "short_term" as const,
-          windowMonths: 12,
+          windowMonths: 1,
           timezoneOffsetMinutes: 540
         }
       }

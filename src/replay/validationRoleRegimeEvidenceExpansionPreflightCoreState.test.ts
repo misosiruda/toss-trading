@@ -52,7 +52,9 @@ import type {
 } from "./validationProtocol.js";
 
 test("preflight core state derives identity and evidence inputs from verified sources", () => {
-  const state = buildEvidenceExpansionPreflightCoreState(coreInput());
+  const input = coreInput();
+  input.expansion.hashes.validationSplitHash = hash("e");
+  const state = buildEvidenceExpansionPreflightCoreState(input);
 
   assert.deepEqual(state.config, {
     candidateStrategyBucket: "short_term",
@@ -66,7 +68,7 @@ test("preflight core state derives identity and evidence inputs from verified so
       "overlap_adjacency_inputs.v1"
   });
   assert.equal(state.source.baselineValidationSplitHash, hash("c"));
-  assert.equal(state.source.expansionValidationSplitHash, hash("c"));
+  assert.equal(state.source.expansionValidationSplitHash, hash("e"));
   assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 2);
   assert.equal(state.targetMatrix.byRole.train.byRegime.bull, null);
   assert.deepEqual(state.partitionSummary, {

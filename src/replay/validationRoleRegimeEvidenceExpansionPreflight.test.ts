@@ -106,25 +106,38 @@ test("preflight hash rejects semantic mutation and non-canonical blockers", () =
 });
 
 test("preflight hash binds baseline and expansion split provenance fields", () => {
-  const splitMutation = readyArtifact();
-  splitMutation.source.baselineValidationSplitHash = hash("a");
-  splitMutation.source.expansionValidationSplitHash = hash("a");
-  assert.throws(
-    () =>
-      parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
-        splitMutation
-      ),
-    /hash mismatch/
-  );
+  for (const field of [
+    "baselineValidationSplitHash",
+    "expansionValidationSplitHash"
+  ] as const) {
+    const mutation = readyArtifact();
+    mutation.source[field] = hash("a");
+    assert.throws(
+      () =>
+        parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+          mutation
+        ),
+      /hash mismatch/
+    );
+  }
 });
 
-test("preflight source schema rejects split drift before compatibility gate", () => {
+test("preflight source schema preserves separate compatible split identities", () => {
   const payload = preflightPayload(readyArtifact());
   payload.source.expansionValidationSplitHash = hash("a");
 
-  assert.throws(
-    () => bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload),
-    /must match baseline until the compatibility gate is implemented/
+  const artifact =
+    bindValidationRoleRegimeEvidenceExpansionPreflightHash(payload);
+
+  assert.notEqual(
+    artifact.source.baselineValidationSplitHash,
+    artifact.source.expansionValidationSplitHash
+  );
+  assert.deepEqual(
+    parseValidationRoleRegimeEvidenceExpansionPreflightArtifact(
+      artifact
+    ),
+    artifact
   );
 });
 
@@ -173,6 +186,24 @@ test("strict preflight schema rejects unknown fields and non-paper mode", () => 
     validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
       ...readyArtifact(),
       mode: "live"
+    })
+  );
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
+      ...readyArtifact(),
+      config: {
+        ...readyArtifact().config,
+        windowMonths: 2
+      }
+    })
+  );
+  assert.throws(() =>
+    validationRoleRegimeEvidenceExpansionPreflightArtifactSchema.parse({
+      ...readyArtifact(),
+      config: {
+        ...readyArtifact().config,
+        timezoneOffsetMinutes: 0
+      }
     })
   );
 });
@@ -629,7 +660,7 @@ function readyArtifact(): ValidationRoleRegimeEvidenceExpansionPreflightArtifact
     config: {
       candidateStrategyBucket: "short_term",
       targetRegimes: ["bull", "bear", "sideways", "mixed"],
-      windowMonths: 12,
+      windowMonths: 1,
       timezoneOffsetMinutes: 540,
       roleSampleMinimum: 30,
       roleRegimeSampleMinimum: 2,

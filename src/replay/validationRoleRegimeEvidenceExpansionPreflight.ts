@@ -425,20 +425,7 @@ export const evidenceExpansionPreflightSourceSchema = z
     officialCalendarArtifactHash: sha256HashSchema.nullable(),
     marketRegimeClassifierHash: sha256HashSchema
   })
-  .strict()
-  .superRefine((source, context) => {
-    if (
-      source.baselineValidationSplitHash !==
-      source.expansionValidationSplitHash
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["expansionValidationSplitHash"],
-        message:
-          "expansion validation split hash must match baseline until the compatibility gate is implemented"
-      });
-    }
-  });
+  .strict();
 
 export const evidenceExpansionPreflightConfigSchema = z
   .object({
@@ -449,8 +436,8 @@ export const evidenceExpansionPreflightConfigSchema = z
       z.literal("sideways"),
       z.literal("mixed")
     ]),
-    windowMonths: z.number().int().positive(),
-    timezoneOffsetMinutes: z.number().int(),
+    windowMonths: z.literal(1),
+    timezoneOffsetMinutes: z.literal(540),
     roleSampleMinimum: z.literal(
       EVIDENCE_EXPANSION_ROLE_SAMPLE_MINIMUM
     ),

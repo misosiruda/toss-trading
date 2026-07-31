@@ -36,6 +36,9 @@ import {
 import type {
   VerifiedValidationRoleRegimeEvidenceExpansionSource
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
+import {
+  assertCompatibleEvidenceExpansionValidationSplits
+} from "./validationRoleRegimeEvidenceExpansionSplitCompatibility.js";
 
 export interface EvidenceExpansionPreflightCoreState
   extends EvidenceExpansionPreflightIdentity,
@@ -54,6 +57,10 @@ export function buildEvidenceExpansionPreflightCoreState(
   input: EvidenceExpansionPreflightCoreStateInput
 ): EvidenceExpansionPreflightCoreState {
   assertExactInputKeys(input);
+  assertCompatibleEvidenceExpansionValidationSplits({
+    baselineAssignments: input.baselineSource.assignments,
+    expansionAssignments: input.expansion.assignments
+  });
   const identity = buildEvidenceExpansionPreflightIdentity({
     baseline: input.baselineIdentity,
     expansion: input.expansion,
