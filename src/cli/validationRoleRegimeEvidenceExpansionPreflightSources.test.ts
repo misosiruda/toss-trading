@@ -65,7 +65,7 @@ test("preflight source reader returns partial verified bundle state", async (t) 
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
 
-test("preflight source reader rejects split drift without output mutation", async (t) => {
+test("preflight source reader rejects conflicting split boundaries without output mutation", async (t) => {
   const fixture = await createFixture(t);
   const source = createEvidenceExpansionPreflightBundleTestFixture();
   source.expansion = {
@@ -89,7 +89,7 @@ test("preflight source reader rejects split drift without output mutation", asyn
         generatedAt: "2026-07-30T00:00:00.000Z"
       }
     ),
-    /baseline and expansion validation split sources must match/
+    /validation split identity maps to conflicting boundaries/
   );
   assert.deepEqual(await readdir(fixture.directory), ["input.json"]);
 });
@@ -127,7 +127,7 @@ test("preflight source workflow writes one verified artifact", async (t) => {
   );
 });
 
-test("preflight source workflow rejects source drift before output mutation", async (t) => {
+test("preflight source workflow rejects conflicting split boundaries before output mutation", async (t) => {
   const fixture = await createFixture(t);
   const source = createEvidenceExpansionPreflightBundleTestFixture();
   source.expansion = {
@@ -152,7 +152,7 @@ test("preflight source workflow rejects source drift before output mutation", as
         outputPath: fixture.outputPath
       }
     ),
-    /baseline and expansion validation split sources must match/
+    /validation split identity maps to conflicting boundaries/
   );
   await assert.rejects(access(fixture.outputDirectory));
 });

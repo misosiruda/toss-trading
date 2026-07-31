@@ -133,7 +133,7 @@ test("preflight bundle verifier rejects result input before source verification"
   );
 });
 
-test("preflight bundle verifier rejects source-pair split drift", () => {
+test("preflight bundle verifier rejects conflicting split identity boundaries", () => {
   const input = preflightBundle();
   input.expansion = {
     ...input.expansion,
@@ -150,7 +150,7 @@ test("preflight bundle verifier rejects source-pair split drift", () => {
         input,
         verificationOptions
       ),
-    /baseline and expansion validation split sources must match/
+    /validation split identity maps to conflicting boundaries/
   );
 });
 

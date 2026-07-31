@@ -3,6 +3,9 @@ import {
   type VerifiedValidationRoleRegimeEvidenceExpansionSource,
   type VerifyValidationRoleRegimeEvidenceExpansionSourceOptions
 } from "./validationRoleRegimeEvidenceExpansionSourceVerifier.js";
+import {
+  assertCompatibleEvidenceExpansionValidationSplits
+} from "./validationRoleRegimeEvidenceExpansionSplitCompatibility.js";
 
 export interface VerifyEvidenceExpansionSourcePairOptions {
   baseline: VerifyValidationRoleRegimeEvidenceExpansionSourceOptions;
@@ -32,14 +35,10 @@ export function verifyEvidenceExpansionSourcePair(
     verifyValidationRoleRegimeEvidenceExpansionSource(input.baseline);
   const verifiedExpansion =
     verifyValidationRoleRegimeEvidenceExpansionSource(input.expansion);
-  if (
-    baseline.hashes.validationSplitHash !==
-    verifiedExpansion.hashes.validationSplitHash
-  ) {
-    throw new Error(
-      "baseline and expansion validation split sources must match"
-    );
-  }
+  assertCompatibleEvidenceExpansionValidationSplits({
+    baselineAssignments: baseline.assignments,
+    expansionAssignments: verifiedExpansion.assignments
+  });
 
   return {
     baseline,

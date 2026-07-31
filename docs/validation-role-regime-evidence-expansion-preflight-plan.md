@@ -701,15 +701,17 @@ canonical하게 계산한다. Baseline legacy provenance 대조를 위해 strict
 assignment 순서를 사용한다.
 Preflight artifact source schema와 canonical hash는
 `baselineValidationSplitHash`와 `expansionValidationSplitHash`를 분리해
-보존한다. Compatibility gate 구현 전에는 schema도 두 hash의 equality를
-fail-closed로 요구한다. 또한
-`validationRoleRegimeEvidenceExpansionSourcePairVerifier.ts`와
-`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 아직 baseline과
-expansion의 validation split hash equality를 요구한다. 이 조건은 baseline
-범위 밖 interval을 여는 expansion split을 차단하므로 actual source 등록 전
-split provenance 분리 계획에 따라 compatibility gate로 교체해야 한다.
-교체 전에는 local source overlap이나 directory 존재만으로 expansion
-readiness를 주장하지 않는다.
+보존한다.
+`validationRoleRegimeEvidenceExpansionSplitCompatibility.ts`는 각 source가
+기존 strict assignment와 role boundary 검증을 통과한 뒤 source 내부에서
+하나의 `walk_forward`, purge와 embargo policy를 사용하는지 확인한다.
+Baseline과 expansion policy가 다르거나 같은 split identity가 서로 다른
+boundary를 가리키면 fail-closed로 거부한다. Source-pair와 direct core-state
+경로는 이 compatibility gate를 통과한 뒤에만 서로 다른 split hash를
+보존한다. Preflight config schema는 `short_term`, 1개월과 KST 540분을
+literal policy로 유지한다. Hash difference 자체는 신규 evidence 근거가
+아니며 local source overlap이나 directory 존재만으로 expansion readiness를
+주장하지 않는다.
 `validationRoleRegimeEvidenceExpansionBaselineSourceMatch.ts`는 동일 source
 verifier로 baseline raw source를 재검증한 뒤
 `baselineProvenanceHashes`가 baseline feasibility provenance와 각각

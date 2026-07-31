@@ -141,11 +141,14 @@ Source-independent `evidenceGroupHash` payload는 변경하지 않는다.
 각 PR은 뒤 단계의 source 확보, artifact 생성 또는 readiness 통과를 주장하지
 않는다.
 
-2026-07-31 기준 1단계의 preflight source schema와 canonical hash 분리는
-구현됐다. Preflight source schema, source-pair와 preflight identity의
-unconditional split hash equality는 유지되므로 서로 다른 expansion split은
-아직 fail-closed로 거부된다. Compatibility verifier와 equality 제거는
-2단계 범위다.
+2026-07-31 기준 1단계의 preflight source schema와 canonical hash 분리,
+2단계의 split compatibility verifier와 unconditional hash equality 제거가
+구현됐다. Compatibility gate는 strict assignment 검증 이후 source별 uniform
+`walk_forward`, purge, embargo policy와 동일 split identity의 boundary
+일관성을 확인하고 preflight config는 `short_term`, 1개월, KST 540분을
+literal로 제한한다. Distinct hash는 이 gate를 통과해야 보존되지만 그 자체로
+신규 evidence를 뜻하지 않는다. Bundle, writer, inspect와 CLI 전체 회귀
+갱신은 3단계 범위다.
 
 ## Non-Goals
 
