@@ -76,7 +76,8 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `contentLength` | 저장한 exact byte length |
 | `sourceDocumentHash` | exact bytes의 `sha256:<hex>` |
 | `evidenceRoles` | `holiday_rows`, `session_hours`, `special_closure` 등 원문이 직접 뒷받침하는 역할 |
-| `rowCoverageStartDate` / `rowCoverageEndDate` | 날짜별 row를 제공하는 문서의 첫/마지막 date, rule-only 문서는 `null` |
+| `rowCoverageStartDate` / `rowCoverageEndDate` | 실제 parsed exception row의 첫/마지막 date, row가 없거나 rule-only 문서는 `null` |
+| `scheduleCoverageStartDate` / `scheduleCoverageEndDate` | Source가 exception schedule의 완전성을 직접 주장하는 전체 기간, rule-only 문서는 `null` |
 | `applicabilityStartDate` / `applicabilityEndDate` | Rule이 직접 명시하는 effective interval, open-ended end는 `null` |
 | `parserContractVersion` | source format adapter contract version |
 
@@ -86,11 +87,15 @@ Cookie, authorization header, token과 계정 식별자는 metadata에 저장하
 않는다. Source acquisition에 secret 또는 authenticated session이 필요하면
 public official evidence source로 자동 승격하지 않고 blocker로 남긴다.
 
-`holiday_rows` 또는 `special_closure`처럼 날짜별 row를 주장하는 document는
-non-null row coverage를 가져야 한다. `session_hours`처럼 rule을 주장하는
-document는 source가 직접 뒷받침하는 applicability interval을 가져야 하며,
-새 rule로 대체되는 날짜가 source에 없으면 end를 `null`로 유지한다. 하나의
-document가 두 역할을 모두 가지면 두 interval을 독립적으로 기록한다.
+`holiday_rows` 또는 `special_closure`처럼 exception schedule을 주장하는
+document는 source-backed schedule coverage를 가져야 한다. Row coverage는
+실제로 나온 sparse exception row의 범위만 나타내며 schedule completeness를
+대신하지 않는다. Source가 schedule coverage를 직접 뒷받침하지 않으면 해당
+document에서 unlisted weekday를 regular session으로 추론하지 않는다.
+`session_hours`처럼 rule을 주장하는 document는 source가 직접 뒷받침하는
+applicability interval을 가져야 하며, 새 rule로 대체되는 날짜가 source에
+없으면 end를 `null`로 유지한다. 하나의 document가 두 역할을 모두 가지면
+schedule coverage와 rule applicability를 독립적으로 기록한다.
 
 `collection-manifest.json`은 exchange별 accepted document를 하나의 검증
 단위로 결합하며 다음 필드를 가져야 한다.
@@ -102,6 +107,7 @@ document가 두 역할을 모두 가지면 두 interval을 독립적으로 기�
 | `exchange` | `KRX` 또는 `NYSE` |
 | `coverageStartDate` / `coverageEndDate` | Collection이 설명하는 전체 date range |
 | `documents` | Canonical `documentId` 순서의 metadata hash와 `sourceDocumentHash` 목록 |
+| `exceptionScheduleIntervals` | Accepted schedule coverage를 canonical date/document 순서로 결합한 interval 목록 |
 | `regularSessionRegimes` | `regimeId`, effective start/end date, local open/close, 근거 `documentIds` |
 | `collectionHash` | `collectionHash`를 제외한 canonical manifest payload hash |
 
@@ -123,8 +129,8 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    실제 acquisition request와 일치한다.
 6. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-7. Parsed row coverage와 rule applicability가 `evidenceRoles`별 metadata
-   interval과 일치한다.
+7. Parsed row coverage, source-backed schedule coverage와 rule applicability가
+   `evidenceRoles`별 metadata interval과 일치한다.
 8. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
 9. Source collection 사이에 같은 exchange-date의 session type 또는
@@ -133,6 +139,8 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    `collectionHash`가 모두 재계산 값과 일치한다.
 11. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
+12. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
+    없이 덮고 각 interval이 accepted schedule document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
 record로 보존하고 collection manifest가 모든 원문 hash를 결합한다. 가장
@@ -149,8 +157,10 @@ Source adapter 구현 전에 evidence contract는 다음 정보를 strict schema
 canonical hash에 포함하도록 revision해야 한다.
 
 - Exchange source의 `sourceCollectionHash`
-- Collection에 포함된 모든 document identity와 source document hash
+- Canonical collection manifest와 collection에 포함된 모든 document metadata
+- 모든 document identity, metadata hash와 source document hash
 - Date-effective `regularSessionRegimes`
+- Source-backed `exceptionScheduleIntervals`
 - 각 session의 근거 `documentIds`
 - Open session이 참조한 `regularSessionRegimeId`
 - Session date에 effective한 regime으로 open/close를 검증하는 validator
@@ -160,13 +170,21 @@ version을 명시적으로 올리고 writer, parser, projection과 회귀 테스
 갱신해야 한다. 이 변경이 완료되기 전에는 source adapter가 calendar session
 row를 생성하지 않는다.
 
+Revised durable artifact는 `sourceCollectionHash`만 저장하지 않는다. Canonical
+collection manifest와 referenced document metadata의 request method/URL,
+retrieval time, evidence roles, row/schedule/applicability interval, metadata
+hash와 source byte hash를 payload 안에 포함한다. Exclusive writer는 이
+metadata를 session evidence와 같은 artifact에 기록해야 하며, gitignored
+acquisition package가 삭제돼도 provenance interpretation이 가능해야 한다.
+
 ## Session 생성 기준
 
 Ingestion adapter는 accepted source row에서 다음 값만 생성할 수 있다.
 
 - `regular`: source가 regular session임을 직접 나타내거나 accepted holiday
-  collection과 complete date coverage에서 결정론적으로 확인된 거래일이며,
-  session date에 effective한 `regularSessionRegimeId`의 open/close를 사용
+  collection의 source-backed exception schedule interval 안에서 unlisted
+  weekday로 결정론적으로 확인된 거래일이며, session date에 effective한
+  `regularSessionRegimeId`의 open/close를 사용
 - `early_close`: official source가 해당 날짜와 close time을 명시한 session
 - `holiday`: official source가 holiday로 명시한 날짜
 - `special_closure`: 정규 holiday rule 외 exchange closure를 official
@@ -225,6 +243,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - dynamic request method, parameter, body hash 또는 representation header 누락
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
+- Exception schedule coverage gap 또는 source-backed completeness 누락
 - duplicate date, conflicting session 또는 unknown source format
 - delayed open 등 current contract가 손실 없이 표현하지 못하는 session
 - freshness policy 미등록 또는 stale source
@@ -251,7 +270,10 @@ date-effective regular-session regime과 session-level document provenance를
 - source byte hash mismatch reject
 - canonical request method/parameter/body/header mismatch reject
 - evidence role과 row coverage/applicability mismatch reject
+- sparse exception row와 source-backed schedule coverage 분리 검증
+- exception schedule interval gap/overlap reject
 - collection manifest 또는 referenced document hash mismatch reject
+- durable artifact에서 canonical manifest/document metadata 누락 reject
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
 - timezone/DST open-close conversion
