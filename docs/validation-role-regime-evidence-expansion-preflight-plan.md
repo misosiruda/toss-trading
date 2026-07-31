@@ -699,12 +699,16 @@ canonical하게 계산한다. Baseline legacy provenance 대조를 위해 strict
 분리해 보존한다. Snapshot은 schema parse 후 provenance 순서, universe는
 기존 원본 표현, coverage는 검증된 값, validation split은 canonical
 assignment 순서를 사용한다.
-현재 `validationRoleRegimeEvidenceExpansionSourcePairVerifier.ts`와
-`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 baseline과
+Preflight artifact source schema와 canonical hash는
+`baselineValidationSplitHash`와 `expansionValidationSplitHash`를 분리해
+보존한다. Compatibility gate 구현 전에는 schema도 두 hash의 equality를
+fail-closed로 요구한다. 또한
+`validationRoleRegimeEvidenceExpansionSourcePairVerifier.ts`와
+`validationRoleRegimeEvidenceExpansionPreflightIdentity.ts`는 아직 baseline과
 expansion의 validation split hash equality를 요구한다. 이 조건은 baseline
 범위 밖 interval을 여는 expansion split을 차단하므로 actual source 등록 전
-split provenance 분리 계획에 따라 두 hash와 compatibility gate로 교체해야
-한다. 교체 전에는 local source overlap이나 directory 존재만으로 expansion
+split provenance 분리 계획에 따라 compatibility gate로 교체해야 한다.
+교체 전에는 local source overlap이나 directory 존재만으로 expansion
 readiness를 주장하지 않는다.
 `validationRoleRegimeEvidenceExpansionBaselineSourceMatch.ts`는 동일 source
 verifier로 baseline raw source를 재검증한 뒤

@@ -43,7 +43,14 @@ export function buildEvidenceExpansionPreflightIdentity(
 
   const source = evidenceExpansionPreflightSourceSchema.parse({
     ...input.baseline.hashes,
-    ...input.expansion.hashes,
+    expansionDataSnapshotHash:
+      input.expansion.hashes.expansionDataSnapshotHash,
+    expansionUniverseHash: input.expansion.hashes.expansionUniverseHash,
+    expansionCoverageHash: input.expansion.hashes.expansionCoverageHash,
+    baselineValidationSplitHash:
+      input.baseline.feasibility.provenance.validationSplitHash,
+    expansionValidationSplitHash:
+      input.expansion.hashes.validationSplitHash,
     calendarHash: input.calendarClassifier.hashes.calendarHash,
     officialCalendarArtifactHash:
       input.calendarClassifier.hashes.officialCalendarArtifactHash,

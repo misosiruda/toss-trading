@@ -65,7 +65,8 @@ test("preflight core state derives identity and evidence inputs from verified so
     dependencyDiagnosticPolicyVersion:
       "overlap_adjacency_inputs.v1"
   });
-  assert.equal(state.source.validationSplitHash, hash("c"));
+  assert.equal(state.source.baselineValidationSplitHash, hash("c"));
+  assert.equal(state.source.expansionValidationSplitHash, hash("c"));
   assert.equal(state.capacity.combined.globalUniqueEvidenceGroupCount, 2);
   assert.equal(state.targetMatrix.byRole.train.byRegime.bull, null);
   assert.deepEqual(state.partitionSummary, {
