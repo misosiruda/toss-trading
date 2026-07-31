@@ -177,6 +177,31 @@ hash와 source byte hash를 payload 안에 포함한다. Exclusive writer는 이
 metadata를 session evidence와 같은 artifact에 기록해야 하며, gitignored
 acquisition package가 삭제돼도 provenance interpretation이 가능해야 한다.
 
+Exact source bytes도 gitignored acquisition package에만 남기지 않는다.
+Revised exclusive writer는 다음 immutable package를 publish해야 한다.
+
+```text
+<output-root>/official-market-calendar-evidence-package.v2/
+├── artifact.json
+└── sources/
+    └── sha256/
+        └── <source-document-sha256>.bin
+```
+
+각 durable document metadata는 package-relative `archivePath`,
+`sourceDocumentHash`와 `contentLength`를 함께 가진다. `archivePath`는
+`sources/sha256/<hex>.bin` 형식만 허용하며 path traversal과 package 밖
+reference를 거부한다. Parser/auditor는 sidecar bytes의 length와 hash를 다시
+계산한 뒤에만 source parser를 재실행할 수 있다.
+
+Package writer는 existing output root를 덮어쓰지 않는다. 같은 parent의
+writer-owned staging directory에 artifact와 모든 sidecar를 기록하고 durable
+flush, byte/hash/metadata cross-check를 완료한 뒤 package root로 atomic
+rename한다. 실패하면 writer-owned staging만 정리하며 이미 publish된 package
+또는 unrelated path를 변경하지 않는다. Artifact는 누락 sidecar, duplicate
+archive path, hash/path 불일치 또는 unreferenced sidecar가 있으면
+fail-closed로 거부한다.
+
 ## Session 생성 기준
 
 Ingestion adapter는 accepted source row에서 다음 값만 생성할 수 있다.
@@ -240,6 +265,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   evidence contract revision 미구현
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
+- Durable package의 source byte sidecar 누락 또는 hash/length 불일치
 - dynamic request method, parameter, body hash 또는 representation header 누락
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
@@ -274,6 +300,9 @@ date-effective regular-session regime과 session-level document provenance를
 - exception schedule interval gap/overlap reject
 - collection manifest 또는 referenced document hash mismatch reject
 - durable artifact에서 canonical manifest/document metadata 누락 reject
+- durable source sidecar 누락, mutation 또는 unreferenced file reject
+- archive path traversal, duplicate path와 hash/path mismatch reject
+- existing package 보존과 staging failure cleanup
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
 - timezone/DST open-close conversion
