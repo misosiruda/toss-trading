@@ -104,6 +104,19 @@ export function createEvidenceExpansionPreflightBundleTestFixture(): EvidenceExp
   };
 }
 
+export function createDistinctCompatibleSplitPreflightBundleTestFixture(): EvidenceExpansionPreflightBundleTestFixture {
+  const fixture = createEvidenceExpansionPreflightBundleTestFixture();
+  const validationSplitSource =
+    fixture.expansion.validationSplitSource as {
+      assignments: unknown;
+    };
+  fixture.expansion.validationSplitSource = {
+    sourceVersion: "expanded-compatible-split-source",
+    assignments: structuredClone(validationSplitSource.assignments)
+  };
+  return fixture;
+}
+
 function feasibilityBuilderOptions(): BuildValidationSplitRegimeFeasibilityArtifactOptions {
   const baseAssignment = {
     validationProtocol: "walk_forward" as const,
