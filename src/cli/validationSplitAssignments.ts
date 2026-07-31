@@ -21,6 +21,9 @@ const timezoneOffsetMinutes = readOptionalIntegerArg(
 );
 const embargoDurationDays = readOptionalIntegerArg("--embargo-duration-days");
 const outputPath = readOptionalArgValue("--output-path");
+const generatedAt =
+  readOptionalCanonicalUtcDateTimeArg("--generated-at") ??
+  new Date().toISOString();
 
 const plan = buildWalkForwardSplitPlan({
   rangeStart: readDateArg("--range-start"),
@@ -34,10 +37,17 @@ const plan = buildWalkForwardSplitPlan({
 });
 
 const assignments = plan.splits.flatMap(walkForwardSplitAssignments);
-const artifact = buildArtifact(plan, assignments);
+const artifact = buildArtifact(plan, assignments, generatedAt);
 if (outputPath !== undefined) {
   mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  writeFileSync(
+    outputPath,
+    `${JSON.stringify(artifact, null, 2)}\n`,
+    {
+      encoding: "utf8",
+      flag: "wx"
+    }
+  );
 }
 
 console.log(JSON.stringify(artifact, null, 2));
@@ -58,12 +68,13 @@ interface ValidationSplitAssignmentArtifact {
 
 function buildArtifact(
   plan: WalkForwardSplitPlan,
-  assignments: ValidationSplitAssignment[]
+  assignments: ValidationSplitAssignment[],
+  generatedAt: string
 ): ValidationSplitAssignmentArtifact {
   return {
     mode: "paper_only",
     schemaVersion: "validation_split_assignment.v1",
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     plan,
     summary: {
       splitCount: plan.splitCount,
@@ -116,6 +127,25 @@ function readOptionalIntegerArg(name: string): number | undefined {
     throw new Error(`${name} must be an integer`);
   }
   return parsed;
+}
+
+function readOptionalCanonicalUtcDateTimeArg(
+  name: string
+): string | undefined {
+  const value = readOptionalArgValue(name);
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = new Date(value);
+  if (
+    !Number.isFinite(parsed.getTime()) ||
+    parsed.toISOString() !== value
+  ) {
+    throw new Error(
+      `${name} must use canonical UTC ISO datetime with millisecond precision`
+    );
+  }
+  return value;
 }
 
 function readOptionalArgValue(name: string): string | undefined {

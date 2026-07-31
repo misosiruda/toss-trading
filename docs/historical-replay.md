@@ -783,10 +783,10 @@ Embargo summary 예시:
 
 Batch replay에 연결할 때 `--validation-splits-path`는 assignment array 또는 `{ "assignments": [...] }` 형식의 JSON 파일을 받습니다. 각 assignment는 하나의 run에 1:1로 대응하므로 파일의 assignment 수와 `--runs` 값이 같아야 합니다.
 
-Walk-forward assignment artifact는 `historical:validation:splits` CLI로 생성할 수 있습니다. 이 CLI는 local JSON artifact를 생성할 뿐이며 replay 실행, Codex provider 호출, broker API 호출, 주문 생성은 수행하지 않습니다.
+Walk-forward assignment artifact는 `historical:validation:splits` CLI로 생성할 수 있습니다. 이 CLI는 local JSON artifact를 생성할 뿐이며 replay 실행, Codex provider 호출, broker API 호출, 주문 생성은 수행하지 않습니다. `--generated-at`을 생략하면 현재 UTC 시각을 기록하고, 지정하면 millisecond precision의 canonical UTC ISO datetime만 허용합니다. 고정 provenance가 필요한 source contract는 `--generated-at`을 명시해야 합니다. `--output-path`가 이미 존재하면 덮어쓰지 않고 실패합니다.
 
 ```powershell
-npm run historical:validation:splits -- -- --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --train-months 24 --validation-months 6 --test-months 3 --step-months 3 --timezone-offset-minutes 540 --embargo-duration-days 5 --output-path data/validation-splits/walk-forward-assignments.json
+npm run historical:validation:splits -- -- --range-start 2023-01-01T00:00:00+09:00 --range-end 2026-05-31T23:59:59.999+09:00 --train-months 24 --validation-months 6 --test-months 3 --step-months 3 --timezone-offset-minutes 540 --embargo-duration-days 5 --generated-at 2026-08-01T00:00:00.000Z --output-path data/validation-splits/walk-forward-assignments.json
 ```
 
 ```powershell
