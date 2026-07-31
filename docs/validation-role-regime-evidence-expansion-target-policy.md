@@ -105,8 +105,9 @@ target을 충족하지 않으며 계속 `inconclusive`다.
 
 Expansion source range, universe, coverage, validation split, canonical
 `generatedAt`과 temp output root는 이번 문서에서 선택하지 않는다. 해당
-입력은 source overlap과 실제 확보 가능 범위를 별도 검토한 다음 결과 확인
-전에 후속 문서 PR로 고정한다.
+입력은 [Split Provenance 계획](validation-role-regime-evidence-expansion-split-provenance-plan.md)에
+따라 baseline/expansion split identity를 분리하고 source overlap과 실제
+확보 가능 범위를 검토한 다음 결과 확인 전에 후속 문서 PR로 고정한다.
 
 ## Non-Goals
 
