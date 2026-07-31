@@ -63,20 +63,34 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `documentId` | Collection 안에서 unique한 stable document identity |
 | `exchange` | `KRX` 또는 `NYSE` |
 | `publisher` | Official page에서 확인한 publisher name |
+| `requestMethod` | Uppercase HTTP method |
 | `requestedUrl` | 최초 요청한 official URL |
+| `requestParameters` | Query/form parameter의 key와 value를 canonical key 순서로 기록한 secret-free object |
+| `requestBodyContentType` | Request body media type 또는 body가 없으면 `null` |
+| `requestBodyHash` | 전송한 exact request body bytes의 `sha256:<hex>` 또는 body가 없으면 `null` |
+| `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
 | `contentLength` | 저장한 exact byte length |
 | `sourceDocumentHash` | exact bytes의 `sha256:<hex>` |
-| `coverageStartDate` | source가 직접 제공하는 첫 session date |
-| `coverageEndDate` | source가 직접 제공하는 마지막 session date |
 | `evidenceRoles` | `holiday_rows`, `session_hours`, `special_closure` 등 원문이 직접 뒷받침하는 역할 |
+| `rowCoverageStartDate` / `rowCoverageEndDate` | 날짜별 row를 제공하는 문서의 첫/마지막 date, rule-only 문서는 `null` |
+| `applicabilityStartDate` / `applicabilityEndDate` | Rule이 직접 명시하는 effective interval, open-ended end는 `null` |
 | `parserContractVersion` | source format adapter contract version |
 
 Metadata 값은 실제 response와 parser 결과에서 계산한다. File name, local
 수정 시각, page title 또는 URL만으로 provenance를 인정하지 않는다.
+Cookie, authorization header, token과 계정 식별자는 metadata에 저장하지
+않는다. Source acquisition에 secret 또는 authenticated session이 필요하면
+public official evidence source로 자동 승격하지 않고 blocker로 남긴다.
+
+`holiday_rows` 또는 `special_closure`처럼 날짜별 row를 주장하는 document는
+non-null row coverage를 가져야 한다. `session_hours`처럼 rule을 주장하는
+document는 source가 직접 뒷받침하는 applicability interval을 가져야 하며,
+새 rule로 대체되는 날짜가 source에 없으면 end를 `null`로 유지한다. 하나의
+document가 두 역할을 모두 가지면 두 interval을 독립적으로 기록한다.
 
 `collection-manifest.json`은 exchange별 accepted document를 하나의 검증
 단위로 결합하며 다음 필드를 가져야 한다.
@@ -105,16 +119,19 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
 2. HTTP response가 성공이고 redirect loop 또는 authentication page가 아니다.
 3. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
 4. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
-5. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
+5. Method, canonical request parameter/body hash와 representation header가
+   실제 acquisition request와 일치한다.
+6. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-6. Parsed coverage가 metadata의 coverage와 일치한다.
-7. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
+7. Parsed row coverage와 rule applicability가 `evidenceRoles`별 metadata
+   interval과 일치한다.
+8. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
-8. Source collection 사이에 같은 exchange-date의 session type 또는
+9. Source collection 사이에 같은 exchange-date의 session type 또는
    timestamp가 충돌하지 않는다.
-9. Manifest의 document 목록, metadata hash, source byte hash와
+10. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
-10. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
+11. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
@@ -205,7 +222,9 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   evidence contract revision 미구현
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
+- dynamic request method, parameter, body hash 또는 representation header 누락
 - source hash, byte length, coverage 불일치
+- Evidence role과 row coverage/applicability interval 불일치
 - duplicate date, conflicting session 또는 unknown source format
 - delayed open 등 current contract가 손실 없이 표현하지 못하는 session
 - freshness policy 미등록 또는 stale source
@@ -230,6 +249,8 @@ date-effective regular-session regime과 session-level document provenance를
 - duplicate/conflicting date reject
 - declared coverage gap reject
 - source byte hash mismatch reject
+- canonical request method/parameter/body/header mismatch reject
+- evidence role과 row coverage/applicability mismatch reject
 - collection manifest 또는 referenced document hash mismatch reject
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
