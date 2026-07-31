@@ -151,12 +151,20 @@ literal로 제한한다. Distinct hash는 이 gate를 통과해야 artifact에 �
 그 자체로 신규 evidence를 뜻하지 않는다. 경계와 evidence interval이 같은
 fixture에서는 distinct split hash를 유지하면서 incremental unique evidence를
 0으로 계산하고 create CLI가 기록한 artifact를 inspect CLI가 strict hash
-검증하는 회귀 테스트로 이 해석을 고정한다. Actual expansion source 사전
-등록은 4단계 범위다.
+검증하는 회귀 테스트로 이 해석을 고정한다.
+
+4단계 입력은
+[Evidence Expansion Source 사전 등록](validation-role-regime-evidence-expansion-source-preregistration.md)에서
+결과 확인 전에 고정했다. Yahoo daily와 `global-paper-broad-v1` universe를
+사용하는 2013-01-01부터 2022-12-31 KST까지의 expansion source, 기존
+global-broad coverage minimum, non-overlapping 40/40/40개월 단일
+`walk_forward` split, canonical preflight `generatedAt`과 새 temp output
+root를 등록했다. Source 수집, coverage와 split artifact 생성, official
+calendar ingestion 또는 preflight 실행은 아직 수행하지 않았다.
 
 ## Non-Goals
 
-- Expansion source 선택, 수집 또는 coverage 생성
+- Expansion source 수집, coverage 또는 validation split artifact 생성
 - Validation split assignment 또는 preflight artifact 생성
 - Official calendar ingestion 또는 full legacy fixture 생성
 - Replay 실행, strategy metric 계산 또는 유효성 판정
