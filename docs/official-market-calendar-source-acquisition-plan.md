@@ -80,7 +80,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
 | `contentEncoding` | `Content-Encoding` 값 또는 encoding이 없으면 `null` |
-| `transferFraming` | `content_length`, `chunked`, `stream_end` 또는 `connection_close` |
+| `transferFraming` | `content_length`, `chunked` 또는 HTTP/2/3 `stream_end`. HTTP/1.x `connection_close`는 accepted evidence에서 금지 |
 | `declaredContentLength` | Server `Content-Length`의 non-negative byte count 또는 header가 없으면 `null` |
 | `transferCompleted` | HTTP client가 framing별 정상 end-of-message를 확인한 경우에만 `true` |
 | `contentLength` | 저장한 exact byte length |
@@ -103,12 +103,17 @@ Acquisition client는 transparent content decoding을 비활성화하고 HTTP tr
 framing을 제거한 뒤 Content-Encoding을 적용하기 전의 exact message content
 octets를 `source.bin`으로 저장한다. Parser는 recorded `contentEncoding`을 strict
 contract로 검증한 뒤 명시적으로 decode한다. `transferCompleted`는 declared
-length 수신 완료, terminal chunk, HTTP/2/3 end-of-stream 또는 정상
-close-delimited EOF를 client가 확인한 경우에만 `true`이다.
-Cookie, authorization header, token과 계정 식별자는 metadata에 저장하지
-않고 각 redirect entry에도 포함하지 않는다. Source acquisition에 secret 또는
-authenticated session이 필요하면 public official evidence source로 자동
-승격하지 않고 blocker로 남긴다.
+length 수신 완료, terminal chunk 또는 HTTP/2/3 end-of-stream을 client가 확인한
+경우에만 `true`이다. HTTP/1.x close-delimited response는 정상 EOF와 premature
+FIN을 구분할 수 없으므로 parser 결과나 저장 후 hash와 무관하게 거부한다.
+
+Acquisition client는 cookie jar/store를 비활성화하고 최초 요청과 모든 redirect
+effective request에 `Cookie` header를 전송하지 않는다. Response의 `Set-Cookie`를
+후속 hop에 replay하지 않는다. Cookie, authorization header, token과 계정
+식별자는 metadata에 저장하지 않고 각 redirect entry에도 포함하지 않는다.
+Source acquisition에 cookie, secret 또는 authenticated session이 필요하면 public
+official evidence source로 자동 승격하지 않고 blocker로 남긴다. 실제 effective
+request에 `Cookie`가 존재한 acquisition은 값의 공개 여부와 무관하게 거부한다.
 
 Exception completeness는 `holiday_schedule`, `special_closure_schedule`,
 `session_hours_exception_schedule` coverage role별로 독립 검증한다. 하나의
@@ -187,8 +192,9 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
 4. Final HTTP response가 성공이고 redirect loop 또는 authentication page가
    아니다.
 5. `transferCompleted`가 `true`이고 recorded `transferFraming`이 실제 protocol
-   completion과 일치한다. `declaredContentLength`가 있으면 저장한 exact
-   message content octets의 `contentLength`와 같아야 한다.
+    completion과 일치한다. `declaredContentLength`가 있으면 저장한 exact
+    message content octets의 `contentLength`와 같아야 한다. HTTP/1.x
+    `connection_close` framing은 허용하지 않는다.
 6. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
 7. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
 8. Top-level request/final response field가 redirect chain의 first/last entry와
@@ -310,9 +316,26 @@ Coordinator는 writer와 reader 사이에 exclusive publication state lock을
 사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에
 추가한다. 어떤 sync failure에서도 추가하지 않으므로 rename 후 record가 보여도
 reader는 quarantined 상태로 거부한다. Process start 시 set은 항상 empty이며,
-visible record를 자동 활성화하지 않는다. Explicit recovery가 package, record,
-hash/path, ancestor durability를 다시 검증하고 sync한 뒤 audit event를 남긴
-경우에만 현재 process의 set에 추가할 수 있다.
+visible package나 record를 자동 활성화하지 않는다.
+
+Idempotent explicit recovery는 다음 두 상태를 구분한다. Package와 record가 모두
+있으면 두 object의 canonical hash/path, sidecar와 ancestor durability를 다시
+검증하고 필요한 directory sync와 audit를 완료한 뒤에만 활성화한다. Hash-addressed package는
+완전하지만 record가 없으면 coordinator lock 아래 artifact, canonical
+`artifactHash`, package path, 모든 metadata/binding/sidecar byte hash와 length 및
+package tree를 전부 재검증한다. 검증된 populated package directory와 package
+parent를 bottom-up 다시 `fsync`한 후에만 package에서 deterministic publication
+record를 재구성하고 writer-owned staging file sync, record hash 검증, atomic
+no-replace rename과 record parent `fsync` 순서로 missing record를 생성한다. 기존
+package를 rewrite하거나 rename하지 않는다.
+
+Orphan recovery 중 concurrent record가 먼저 나타나면 expected canonical record와
+hash/path가 정확히 같은 경우에만 기존 record를 재검증하고 계속하며, 다르면
+collision으로 거부한다. Incomplete package, unreferenced/missing sidecar 또는 hash
+불일치는 record를 생성하지 않고 blocker로 유지한다. 성공 시
+`publication_record_recovered` audit event를 남긴 뒤 verified set에 추가한다.
+Writer retry가 existing package destination을 만나도 자동 성공 처리하지 않고,
+동일 requested `artifactHash`의 record 누락 상태에만 이 recovery로 전환한다.
 
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `exchange`, `collectionId`,
@@ -455,6 +478,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   binding의 exchange/collection/document identity 불일치
 - Artifact canonical hash와 package hash directory 불일치
 - HTTP message framing 미완료 또는 declared/stored content length 불일치
+- HTTP/1.x `connection_close` framing 또는 outbound `Cookie`가 존재한 acquisition
 - Durable namespace ancestor sync 실패
 - Staging file 또는 populated nested directory의 publication 전 sync 실패
 - Publication record 누락, hash/path 불일치 또는 record parent sync 실패
@@ -500,8 +524,10 @@ date-effective regular-session regime과 session-level document provenance를
 - source byte hash mismatch reject
 - truncated Content-Length, missing terminal chunk와 reset stream reject
 - declared/stored content length 및 transfer completion 독립 검증
+- HTTP/1.x close-delimited response가 valid row boundary에서 끝나도 reject
 - recorded Content-Encoding의 explicit decode와 unknown encoding reject
 - redirect hop별 effective method/parameter/body/header mismatch reject
+- Initial/redirect request cookie jar 비활성화와 outbound `Cookie` 존재 시 reject
 - POST 301/302/303 redirect의 GET 전환과 body 제거 provenance 검증
 - top-level first request/final response와 redirect chain 경계 mismatch reject
 - non-HTTPS URL, redirect downgrade와 certificate validation failure reject
@@ -534,6 +560,9 @@ date-effective regular-session regime과 session-level document provenance를
 - existing empty package와 concurrent destination 생성 시 no-replace reject
 - atomic no-replace 미지원 platform reject와 staging failure cleanup
 - package parent sync failure 시 publication record 미생성 및 reader quarantine
+- Record staging/rename 실패 뒤 valid orphan package에서 deterministic missing
+  record만 no-replace로 복구하고 audit 후 활성화
+- Orphan package incomplete/hash mismatch와 concurrent conflicting record reject
 - record rename 성공 후 parent sync failure 시 verified set 미등록 및 reader reject
 - process restart 시 empty verified set과 explicit recovery activation 검증
 - publication record hash/path/no-replace/parent sync와 recovery audit 검증
