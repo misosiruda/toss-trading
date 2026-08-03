@@ -36,6 +36,7 @@
 현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
 - 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 한다.
+- [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual source acquisition과 adapter 구현은 아직 수행하지 않았다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
 - 새 official evidence contract는 legacy rule/fixture로 투영할 수 있지만 availability CLI, batch replay 또는 readiness report가 이 projection을 직접 호출하도록 연결되지는 않았다.
 - 따라서 현재 replay calendar evidence class는 계속 `observed_session_only`이며 official holiday/early-close readiness는 충족되지 않았다.
