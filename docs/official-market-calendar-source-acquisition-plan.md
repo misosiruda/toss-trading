@@ -68,15 +68,22 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `requestParameters` | Query/form parameter의 key와 value를 canonical key 순서로 기록한 secret-free object |
 | `requestBodyContentType` | Request body media type 또는 body가 없으면 `null` |
 | `requestBodyHash` | 전송한 exact request body bytes의 `sha256:<hex>` 또는 body가 없으면 `null` |
+| `requestHeaderPolicyVersion` | Credential-free effective request header allowlist version |
+| `requestHeaderNames` | 실제 initial request에 전송한 header name의 lowercase canonical 목록 |
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
-| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, representation headers, negotiated response protocol version, response status, `Location`과 `Content-Range` 값 또는 부재를 순서대로 기록 |
+| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names와 safe representation/cache header values, negotiated response protocol version, response status, `Location`, `Content-Range`, `Date`, `Age`와 response cache-control 값 또는 부재를 순서대로 기록 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
+| `cacheRequestPolicyVersion` | Revalidation/bypass request와 response cache metadata 검증 policy version |
+| `responseDate` | Final response의 strict HTTP `Date` timestamp |
+| `responseAgeSeconds` | Final response `Age`의 non-negative integer 또는 header가 없으면 `null` |
+| `responseCacheControl` | Final response `Cache-Control`의 canonical directive 목록 또는 header가 없으면 `null` |
+| `effectiveResponseAt` | `retrievedAt`에서 conservative effective cache age를 뺀 freshness 기준 시각 |
 | `freshnessPolicyVersion` | 등록 후 변경하지 않는 source/coverage별 freshness policy identity |
 | `freshnessPolicyDefinition` | Source/coverage selector, expiry derivation rule과 parameters를 포함한 canonical policy definition |
 | `freshnessPolicyHash` | policy definition의 canonical `sha256:<hex>` |
-| `staleAfter` | `retrievedAt`과 등록된 policy에서 결정론적으로 계산한 effective expiry |
+| `staleAfter` | `effectiveResponseAt`과 등록된 policy에서 결정론적으로 계산한 effective expiry |
 | `httpStatus` | 성공 response status |
 | `httpProtocolVersion` | Final response에서 실제 negotiated된 `http_1_0`, `http_1_1`, `http_2` 또는 `http_3` |
 | `contentType` | response header의 media type |
@@ -95,13 +102,22 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 
 Metadata 값은 실제 response와 parser 결과에서 계산한다. File name, local
 수정 시각, page title 또는 URL만으로 provenance를 인정하지 않는다.
-Top-level request field는 `redirectChain` 첫 entry와 같고 `finalUrl`,
-`httpStatus`, `httpProtocolVersion`, `contentRange`는 마지막 entry의
-URL/status/protocol/content-range와 같아야 한다. Acquisition client는
+Top-level request field와 `requestHeaderNames`는 `redirectChain` 첫 entry와 같고
+`finalUrl`, `httpStatus`, `httpProtocolVersion`, `contentRange`, `responseDate`,
+`responseAgeSeconds`, `responseCacheControl`은 마지막 entry의 해당 response 값과
+같아야 한다. Acquisition client는
 opaque automatic redirect follow를 사용하지 않고 각 response와 다음 effective
 request를 관찰 가능하게 기록한다. 301/302/303 이후 POST가 GET으로 바뀌거나
 body/header가 제거되면 변경된 실제 method, `null` body hash와 effective
 headers를 다음 entry에 기록하며 최초 요청 정보에서 추론하지 않는다.
+
+Acquisition client는 credential provider, proxy credential, HTTP auth handler와
+client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
+versioned strict header-name allowlist와 대조하고 실제 lowercase header name
+목록을 redirect entry에 기록한다. `Authorization`, `Proxy-Authorization`,
+`Cookie`, API-key header 또는 allowlist 밖 header가 하나라도 있으면 값을
+metadata에 저장하지 않고 acquisition 자체를 거부한다. URL userinfo와 secret-bearing
+request parameter도 허용하지 않는다.
 Acquisition client는 transparent content decoding을 비활성화하고 HTTP transfer
 framing을 제거한 뒤 Content-Encoding을 적용하기 전의 exact message content
 octets를 `source.bin`으로 저장한다. Parser는 recorded `contentEncoding`을 strict
@@ -120,6 +136,26 @@ HTTP/1.x framing label은 fail-closed로 거부한다. HTTP/2/3 response에
 `Content-Length`가 있어도 transfer completion은 `stream_end`로 기록하고 declared
 length는 저장 bytes와 별도로 교차검증한다.
 
+Initial request와 모든 redirect effective request는 canonical cache revalidation
+header인 `Cache-Control: no-cache, no-store, max-age=0`과 `Pragma: no-cache`를
+전송하고 conditional `If-None-Match`/`If-Modified-Since`를 보내지 않는다. Final
+response의 `Date`는
+필수이며 strict HTTP date로 parse하고 `retrievedAt`보다 늦으면 거부한다. `Age`는
+없거나 single non-negative decimal integer여야 하며 duplicate, negative 또는
+invalid value를 거부한다. 다음 값을 canonical metadata에 포함한다.
+
+```text
+apparentAgeSeconds = max(0, floor(retrievedAt - responseDate))
+effectiveCacheAgeSeconds = max(apparentAgeSeconds, responseAgeSeconds ?? 0)
+effectiveResponseAt = retrievedAt - effectiveCacheAgeSeconds
+```
+
+Freshness policy는 download 완료 시각이 아니라 `effectiveResponseAt`에서
+`staleAfter`를 계산한다. Cache revalidation request, response `Date`/`Age`와
+cache-control metadata field가 누락되거나 boundary와 다르면 accepted evidence로
+승격하지 않는다. Response `Cache-Control` header 부재는 field를 생략하지 않고
+canonical `null`로 기록한다.
+
 Acquisition client는 최초 요청과 redirect effective request에 `Range` 또는
 `If-Range` header를 전송하지 않고 automatic segmented/range retry를 사용하지
 않는다. Final response는 exact `200`이어야 하고 `Content-Range`가 없어야 한다.
@@ -129,11 +165,10 @@ Acquisition client는 최초 요청과 redirect effective request에 `Range` 또
 
 Acquisition client는 cookie jar/store를 비활성화하고 최초 요청과 모든 redirect
 effective request에 `Cookie` header를 전송하지 않는다. Response의 `Set-Cookie`를
-후속 hop에 replay하지 않는다. Cookie, authorization header, token과 계정
-식별자는 metadata에 저장하지 않고 각 redirect entry에도 포함하지 않는다.
-Source acquisition에 cookie, secret 또는 authenticated session이 필요하면 public
-official evidence source로 자동 승격하지 않고 blocker로 남긴다. 실제 effective
-request에 `Cookie`가 존재한 acquisition은 값의 공개 여부와 무관하게 거부한다.
+후속 hop에 replay하지 않는다. Source acquisition에 cookie, secret 또는
+authenticated session이 필요하면 public official evidence source로 자동
+승격하지 않고 blocker로 남긴다. 실제 effective request에 `Cookie` 또는 다른
+credential header가 존재한 acquisition은 값의 공개 여부와 무관하게 거부한다.
 
 Exception completeness는 `holiday_schedule`, `special_closure_schedule`,
 `session_hours_exception_schedule` coverage role별로 독립 검증한다. 하나의
@@ -207,11 +242,15 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    않는다.
 3. `redirectPolicyVersion`이 등록된 정책이고 각 response `Location`이 다음
    entry URL과 일치하며 모든 hop의 실제 method, parameters, body hash와
-   representation header가 metadata와 일치한다. Opaque auto-follow 결과는
-   accepted evidence로 사용하지 않는다.
+   effective header names, safe representation/cache header가 metadata와 일치한다.
+   모든 request는 registered credential-free header allowlist를 통과하고 cache
+   revalidation header를 포함해야 한다. Opaque auto-follow 결과는 accepted
+   evidence로 사용하지 않는다.
 4. Final HTTP response status가 exact `200`이고 `contentRange`가 `null`이며
    redirect loop 또는 authentication page가 아니다. 모든 effective request에
-   `Range`와 `If-Range`가 없어야 한다.
+   `Range`, `If-Range`와 credential header가 없어야 한다. Final `Date`/`Age`는
+   strict cache policy를 통과하고 top-level cache metadata가 final redirect
+   entry와 일치해야 한다.
 5. `transferCompleted`가 `true`이고 recorded `transferFraming`이 실제 protocol
     completion과 protocol/framing allowlist에 일치한다. Top-level
     `httpProtocolVersion`은 final redirect entry의 negotiated protocol과 같아야
@@ -465,13 +504,15 @@ open을 regular session으로 축소하거나 close time을 regime에서 추정�
 
 ## Freshness 기준
 
-`retrievedAt`은 실제 source retrieval 시각이다. `freshnessPolicyVersion`과
-`freshnessPolicyHash`는 source update cadence와 대상 coverage의 완결성을
-구분하는 등록된 immutable policy를 식별한다. Canonical
+`retrievedAt`은 실제 source transfer 완료 시각이고 `effectiveResponseAt`은 final
+response `Date`/`Age`에서 계산한 conservative freshness 기준 시각이다.
+`freshnessPolicyVersion`과 `freshnessPolicyHash`는 source update cadence와 대상
+coverage의 완결성을 구분하는 등록된 immutable policy를 식별한다. Canonical
 `freshnessPolicyDefinition`도 artifact에 보존해 registry 없이 hash와 expiry를
-재계산할 수 있어야 한다. `staleAfter`는 이 policy와 `retrievedAt`에서
+재계산할 수 있어야 한다. `staleAfter`는 이 policy와 `effectiveResponseAt`에서
 결정론적으로 계산하고 document metadata, revised canonical artifact와
-`artifactHash`에 결합한다. 실행 시각의 별도 입력으로 expiry를 교체하지 않는다.
+`artifactHash`에 결합한다. 실행 시각의 별도 입력이나 download 완료 시각으로
+expiry를 교체하지 않는다.
 
 다음 처리는 금지한다.
 
@@ -482,8 +523,9 @@ open을 regular session으로 축소하거나 close time을 regime에서 추정�
   취급
 
 Freshness policy가 등록되지 않았거나 policy hash가 registry definition과
-일치하지 않거나 recorded `staleAfter`가 결정론적 재계산 값과 다르거나 artifact
-`generatedAt`이 freshness window 밖이면 ingestion은 artifact를 생성하지 않는다.
+일치하지 않거나 cache metadata/effective response age가 재계산 값과 다르거나
+recorded `staleAfter`가 결정론적 재계산 값과 다르거나 artifact `generatedAt`이
+freshness window 밖이면 ingestion은 artifact를 생성하지 않는다.
 Publication 이후 reader도 기존 `official_market_calendar_evidence.v1`의 `asOf`
 gate를 유지한다. Explicit `asOf`가 없거나 offset이 없거나 document
 `retrievedAt <= asOf < staleAfter`를 하나라도 만족하지 않으면 package를 열지
@@ -526,7 +568,10 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - Negotiated HTTP protocol version 누락/불일치 또는 protocol/framing 조합 위반
 - Final status가 `200`이 아니거나 `Content-Range`, outbound `Range` 또는
   `If-Range`가 존재한 acquisition
-- HTTP/1.x `connection_close` framing 또는 outbound `Cookie`가 존재한 acquisition
+- Cache revalidation header, response `Date`/`Age`, effective cache age 또는
+  `effectiveResponseAt` 누락·불일치
+- HTTP/1.x `connection_close` framing 또는 outbound credential header가 존재한
+  acquisition
 - Durable namespace ancestor sync 실패
 - Staging file 또는 populated nested directory의 publication 전 sync 실패
 - Publication record 누락, hash/path 불일치 또는 record parent sync 실패
@@ -579,10 +624,16 @@ date-effective regular-session regime과 session-level document provenance를
 - Final exact 200과 absent `Content-Range` 검증, 206/multipart range reject
 - Initial/redirect `Range`·`If-Range`와 automatic partial assembly reject
 - Partial bytes가 valid row boundary와 일치하는 hash를 가져도 reject
+- Revalidation cache request header와 final/redirect `Date`·`Age` boundary 검증
+- Cached 200의 apparent/header age 중 큰 값으로 `effectiveResponseAt`과
+  `staleAfter`를 계산하고 current download time 기반 extension reject
+- Missing/future `Date`, duplicate/negative/invalid `Age`와 cache metadata mismatch reject
 - HTTP/1.x close-delimited response가 valid row boundary에서 끝나도 reject
 - recorded Content-Encoding의 explicit decode와 unknown encoding reject
 - redirect hop별 effective method/parameter/body/header mismatch reject
-- Initial/redirect request cookie jar 비활성화와 outbound `Cookie` 존재 시 reject
+- Initial/redirect strict header-name allowlist와 canonical effective name 검증
+- Credential provider/proxy auth/client certificate 비활성화와 outbound
+  `Authorization`, `Proxy-Authorization`, `Cookie`, API-key 또는 unknown header reject
 - POST 301/302/303 redirect의 GET 전환과 body 제거 provenance 검증
 - top-level first request/final response와 redirect chain 경계 mismatch reject
 - non-HTTPS URL, redirect downgrade와 certificate validation failure reject
