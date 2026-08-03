@@ -70,7 +70,8 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `requestBodyHash` | 전송한 exact request body bytes의 `sha256:<hex>` 또는 body가 없으면 `null` |
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
-| `redirectChain` | Requested URL부터 final URL까지 각 HTTPS URL과 response status를 순서대로 기록 |
+| `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
+| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, representation headers, response status와 `Location`을 순서대로 기록 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
@@ -84,9 +85,16 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 
 Metadata 값은 실제 response와 parser 결과에서 계산한다. File name, local
 수정 시각, page title 또는 URL만으로 provenance를 인정하지 않는다.
+Top-level request field는 `redirectChain` 첫 entry와 같고 `finalUrl`,
+`httpStatus`는 마지막 entry의 URL/status와 같아야 한다. Acquisition client는
+opaque automatic redirect follow를 사용하지 않고 각 response와 다음 effective
+request를 관찰 가능하게 기록한다. 301/302/303 이후 POST가 GET으로 바뀌거나
+body/header가 제거되면 변경된 실제 method, `null` body hash와 effective
+headers를 다음 entry에 기록하며 최초 요청 정보에서 추론하지 않는다.
 Cookie, authorization header, token과 계정 식별자는 metadata에 저장하지
-않는다. Source acquisition에 secret 또는 authenticated session이 필요하면
-public official evidence source로 자동 승격하지 않고 blocker로 남긴다.
+않고 각 redirect entry에도 포함하지 않는다. Source acquisition에 secret 또는
+authenticated session이 필요하면 public official evidence source로 자동
+승격하지 않고 blocker로 남긴다.
 
 `holiday_rows` 또는 `special_closure`처럼 exception schedule을 주장하는
 document는 source-backed schedule coverage를 가져야 한다. Row coverage는
@@ -121,30 +129,35 @@ date-effective `regimeId`를 보존해야 한다.
 
 Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된다.
 
-1. `requestedUrl`과 `finalUrl`의 host가 exchange official domain allowlist에
-   속한다.
+1. `requestedUrl`, `finalUrl`과 모든 redirect entry의 host가 exchange official
+   domain allowlist에 속한다.
 2. Requested URL, final URL과 모든 redirect hop이 `https:`이며 platform trust
    store 기반 certificate chain과 hostname 검증을 통과한다. Insecure TLS
    option, certificate verification bypass와 protocol downgrade를 허용하지
    않는다.
-3. HTTP response가 성공이고 redirect loop 또는 authentication page가 아니다.
-4. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
-5. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
-6. Method, canonical request parameter/body hash와 representation header가
-   실제 acquisition request와 일치한다.
-7. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
+3. `redirectPolicyVersion`이 등록된 정책이고 각 response `Location`이 다음
+   entry URL과 일치하며 모든 hop의 실제 method, parameters, body hash와
+   representation header가 metadata와 일치한다. Opaque auto-follow 결과는
+   accepted evidence로 사용하지 않는다.
+4. Final HTTP response가 성공이고 redirect loop 또는 authentication page가
+   아니다.
+5. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
+6. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
+7. Top-level request/final response field가 redirect chain의 first/last entry와
+   일치하고 final entry response bytes가 저장한 `source.bin`이다.
+8. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-8. Parsed row coverage, source-backed schedule coverage와 rule applicability가
+9. Parsed row coverage, source-backed schedule coverage와 rule applicability가
    `evidenceRoles`별 metadata interval과 일치한다.
-9. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
+10. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
-10. Source collection 사이에 같은 exchange-date의 session type 또는
+11. Source collection 사이에 같은 exchange-date의 session type 또는
    timestamp가 충돌하지 않는다.
-11. Manifest의 document 목록, metadata hash, source byte hash와
+12. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
-12. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
+13. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
-13. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
+14. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
     없이 덮고 각 interval이 accepted schedule document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
@@ -317,7 +330,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - raw source bytes 또는 metadata 누락
 - Durable package의 source byte sidecar 누락 또는 hash/length 불일치
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
-- dynamic request method, parameter, body hash 또는 representation header 누락
+- redirect policy 또는 hop별 effective method, parameter, body hash,
+  representation header 누락/불일치
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
 - Exception schedule coverage gap 또는 source-backed completeness 누락
@@ -347,7 +361,9 @@ date-effective regular-session regime과 session-level document provenance를
 - duplicate/conflicting date reject
 - declared coverage gap reject
 - source byte hash mismatch reject
-- canonical request method/parameter/body/header mismatch reject
+- redirect hop별 effective method/parameter/body/header mismatch reject
+- POST 301/302/303 redirect의 GET 전환과 body 제거 provenance 검증
+- top-level first request/final response와 redirect chain 경계 mismatch reject
 - non-HTTPS URL, redirect downgrade와 certificate validation failure reject
 - evidence role과 row coverage/applicability mismatch reject
 - sparse exception row와 source-backed schedule coverage 분리 검증
