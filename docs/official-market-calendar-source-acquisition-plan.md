@@ -75,6 +75,10 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
+| `contentEncoding` | `Content-Encoding` 값 또는 encoding이 없으면 `null` |
+| `transferFraming` | `content_length`, `chunked`, `stream_end` 또는 `connection_close` |
+| `declaredContentLength` | Server `Content-Length`의 non-negative byte count 또는 header가 없으면 `null` |
+| `transferCompleted` | HTTP client가 framing별 정상 end-of-message를 확인한 경우에만 `true` |
 | `contentLength` | 저장한 exact byte length |
 | `sourceDocumentHash` | exact bytes의 `sha256:<hex>` |
 | `evidenceRoles` | `holiday_rows`, `session_hours`, `special_closure` 등 원문이 직접 뒷받침하는 역할 |
@@ -91,6 +95,12 @@ opaque automatic redirect follow를 사용하지 않고 각 response와 다음 e
 request를 관찰 가능하게 기록한다. 301/302/303 이후 POST가 GET으로 바뀌거나
 body/header가 제거되면 변경된 실제 method, `null` body hash와 effective
 headers를 다음 entry에 기록하며 최초 요청 정보에서 추론하지 않는다.
+Acquisition client는 transparent content decoding을 비활성화하고 HTTP transfer
+framing을 제거한 뒤 Content-Encoding을 적용하기 전의 exact message content
+octets를 `source.bin`으로 저장한다. Parser는 recorded `contentEncoding`을 strict
+contract로 검증한 뒤 명시적으로 decode한다. `transferCompleted`는 declared
+length 수신 완료, terminal chunk, HTTP/2/3 end-of-stream 또는 정상
+close-delimited EOF를 client가 확인한 경우에만 `true`이다.
 Cookie, authorization header, token과 계정 식별자는 metadata에 저장하지
 않고 각 redirect entry에도 포함하지 않는다. Source acquisition에 secret 또는
 authenticated session이 필요하면 public official evidence source로 자동
@@ -141,23 +151,26 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    accepted evidence로 사용하지 않는다.
 4. Final HTTP response가 성공이고 redirect loop 또는 authentication page가
    아니다.
-5. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
-6. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
-7. Top-level request/final response field가 redirect chain의 first/last entry와
+5. `transferCompleted`가 `true`이고 recorded `transferFraming`이 실제 protocol
+   completion과 일치한다. `declaredContentLength`가 있으면 저장한 exact
+   message content octets의 `contentLength`와 같아야 한다.
+6. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
+7. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
+8. Top-level request/final response field가 redirect chain의 first/last entry와
    일치하고 final entry response bytes가 저장한 `source.bin`이다.
-8. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
+9. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-9. Parsed row coverage, source-backed schedule coverage와 rule applicability가
+10. Parsed row coverage, source-backed schedule coverage와 rule applicability가
    `evidenceRoles`별 metadata interval과 일치한다.
-10. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
+11. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
-11. Source collection 사이에 같은 exchange-date의 session type 또는
+12. Source collection 사이에 같은 exchange-date의 session type 또는
    timestamp가 충돌하지 않는다.
-12. Manifest의 document 목록, metadata hash, source byte hash와
+13. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
-13. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
+14. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
-14. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
+15. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
     없이 덮고 각 interval이 accepted schedule document를 참조한다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
@@ -205,12 +218,15 @@ Revised exclusive writer는 다음 immutable package를 publish해야 한다.
 
 ```text
 <output-root>/official-market-calendar-evidence-package.v2/
-└── sha256/
-    └── <artifact-sha256-hex>/
-        ├── artifact.json
-        └── sources/
-            └── sha256/
-                └── <source-document-sha256>.bin
+├── sha256/
+│   └── <artifact-sha256-hex>/
+│       ├── artifact.json
+│       └── sources/
+│           └── sha256/
+│               └── <source-document-sha256>.bin
+└── published/
+    └── sha256/
+        └── <artifact-sha256-hex>.json
 ```
 
 Accepted acquisition metadata는 publish 과정에서 변경하지 않는다.
@@ -226,6 +242,13 @@ Freshness 재획득이나 source collection 변경으로 canonical artifact payl
 package 교체로 새 evidence를 게시하지 않는다. Reader는 선택한 explicit
 `artifactHash` 또는 별도 검증된 catalog reference로 package를 연다.
 
+`published/sha256/<artifact-sha256-hex>.json`은 package와 분리된 immutable
+publication record이다. Record는 schema version, `artifactHash`, package-relative
+path와 자기 hash field를 제외한 canonical record SHA-256인
+`publicationRecordHash`를 가진다. Reader는 package hash/path 검증과 valid
+publication record를 모두 통과한 artifact만 accepted evidence로 연다. Hash
+package만 존재하고 record가 없거나 invalid하면 quarantined 상태로 거부한다.
+
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `documentId`, `archivePath`,
 `sourceDocumentHash`와 `contentLength`를 가지며 artifact canonical hash에
@@ -239,28 +262,38 @@ sidecar bytes의 length/hash를 다시 계산한 뒤에만 source parser를 재�
 모두 같아야 한다. 같은 path를 다른 hash/length에 연결하는 conflicting
 reuse만 거부한다.
 
-Package writer는 existing output root를 덮어쓰지 않는다. Artifact hash
-namespace의 같은 parent에 writer-owned staging directory를 만들고 artifact와
-모든 sidecar를 기록한 뒤 durable flush, byte/hash/metadata/path cross-check를
-완료한다. 검증된 `artifactHash`에서 destination을 계산해 package root로
-atomic no-replace publish한다. Platform의 no-replace primitive는 같은
+Package writer는 existing output root를 덮어쓰지 않는다. Version, package hash와
+publication-record namespace는 publication 전에 durable 상태여야 한다. Writer가
+새 ancestor directory를 만들면 한 level씩 생성하고 새 directory와 그 parent를
+`fsync`해 이미 durable한 `output-root`까지 모든 새 directory entry를 sync한다.
+이 과정이 실패하면 package publication을 시작하지 않는다.
+
+Artifact hash namespace의 같은 parent에 writer-owned staging directory를 만들고
+artifact와 모든 sidecar를 기록한 뒤 durable flush와 byte/hash/metadata/path
+cross-check를 완료한다. 검증된 `artifactHash`에서 destination을 계산해 package
+root로 atomic no-replace publish한다. Platform의 no-replace primitive는 같은
 artifact identity의 destination이 existing empty directory이거나 concurrent
 writer가 먼저 생성한 경우에도 실패해야 한다. Preflight existence check,
 일반 POSIX `rename` 또는 cooperative lock만으로 no-replace를 주장하지 않는다.
 Atomic no-replace를 지원하거나 동등하게 보장할 수 없는 platform에서는
 publish를 fail-closed로 중단한다.
 
-No-replace publish 성공 후 parent directory를 `fsync`하고 이 sync가 끝난
-뒤에만 publish 완료를 반환한다. POSIX parent sync 실패는 성공으로 축소하지
-않는다. Windows에서 directory sync가 `EPERM`으로 지원되지 않는 경우는
-platform-specific compatibility 상태와 테스트를 명시하고 POSIX durability
-완료로 주장하지 않는다. Publish 이전 실패는 writer-owned staging만
-정리한다. Publish 이후 parent sync 실패는 package root를 삭제하거나
-덮어쓰지 않고 실패를 반환하며, operator inspection 전에는 published
-evidence로 재사용하지 않는다. 이미 publish된 package 또는 unrelated path는
-어떤 실패에서도 변경하지 않는다. Artifact는 누락 sidecar, conflicting
-archive path reuse, hash/path 불일치 또는 unreferenced sidecar가 있으면
-fail-closed로 거부한다.
+Package no-replace 성공 후 immediate parent를 `fsync`한다. 이 sync가 성공한
+뒤에만 publication record를 writer-owned staging file에 기록하고 file sync,
+record hash 검증, atomic no-replace rename과 record parent `fsync` 순서로
+publish한다. 모든 단계가 끝난 뒤에만 publish 완료를 반환한다. Package parent
+sync 또는 record publication이 실패하면 publication record를 만들거나 accepted
+상태로 재사용하지 않고 package를 quarantined 상태로 남긴다. Explicit recovery는
+전체 package/hash/path와 ancestor durability를 다시 검증한 뒤에만 새 immutable
+record를 publish할 수 있으며 자동 복구하지 않는다.
+
+POSIX sync failure는 성공으로 축소하지 않는다. Windows에서 directory sync가
+`EPERM`으로 지원되지 않는 경우는 platform-specific compatibility 상태와
+테스트를 명시하고 POSIX durability 완료로 주장하지 않는다. Package publish
+이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
+publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
+Artifact는 누락 sidecar, conflicting archive path reuse, hash/path 불일치 또는
+unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
 ## Session 생성 기준
 
@@ -341,6 +374,9 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - raw source bytes 또는 metadata 누락
 - Durable package의 source byte sidecar 누락 또는 hash/length 불일치
 - Artifact canonical hash와 package hash directory 불일치
+- HTTP message framing 미완료 또는 declared/stored content length 불일치
+- Durable namespace ancestor sync 실패
+- Publication record 누락, hash/path 불일치 또는 record parent sync 실패
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
 - redirect policy 또는 hop별 effective method, parameter, body hash,
   representation header 누락/불일치
@@ -373,6 +409,9 @@ date-effective regular-session regime과 session-level document provenance를
 - duplicate/conflicting date reject
 - declared coverage gap reject
 - source byte hash mismatch reject
+- truncated Content-Length, missing terminal chunk와 reset stream reject
+- declared/stored content length 및 transfer completion 독립 검증
+- recorded Content-Encoding의 explicit decode와 unknown encoding reject
 - redirect hop별 effective method/parameter/body/header mismatch reject
 - POST 301/302/303 redirect의 GET 전환과 body 제거 provenance 검증
 - top-level first request/final response와 redirect chain 경계 mismatch reject
@@ -389,9 +428,11 @@ date-effective regular-session regime과 session-level document provenance를
 - freshness/source 변경 artifact의 distinct hash directory 공존
 - artifact hash와 package directory identity mismatch reject
 - 동일 artifact identity 재게시 destination collision reject
+- first publication의 newly created ancestor sync failure 처리
 - existing empty package와 concurrent destination 생성 시 no-replace reject
 - atomic no-replace 미지원 platform reject와 staging failure cleanup
-- no-replace publish 후 parent directory sync와 POSIX sync failure 처리
+- package parent sync failure 시 publication record 미생성 및 reader quarantine
+- publication record hash/path/no-replace/parent sync와 explicit recovery 검증
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
 - validated exception의 field-level precedence와 unaffected regime field 검증
