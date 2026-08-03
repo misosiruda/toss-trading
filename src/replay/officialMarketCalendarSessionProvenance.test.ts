@@ -136,6 +136,98 @@ test("calendar session provenance binds effective regime documents", () => {
   ]);
 });
 
+test("calendar session provenance binds only date-applicable regime documents", () => {
+  const krx = collection("KRX", "krx.collection", "shared.document");
+  const payload = withoutHash(krx);
+  payload.documents[0]!.applicabilityEndDate = "2025-09-30";
+  payload.documents.push(document("zz.document", "b", "15:30"));
+  payload.documents[1]!.applicabilityStartDate = "2025-10-01";
+  payload.regularSessionRegimes[0]!.documentIds.push("zz.document");
+  const expanded = sign(payload);
+
+  assert.doesNotThrow(() =>
+    parseOfficialMarketCalendarSessionProvenance(sessionProvenance(), {
+      collections: [expanded]
+    })
+  );
+  assert.doesNotThrow(() =>
+    parseOfficialMarketCalendarSessionProvenance(
+      {
+        ...sessionProvenance(),
+        sessionId: "krx.2025-10-02",
+        sessionDate: "2025-10-02",
+        sourceDocumentRefs: [
+          ref("KRX", "krx.collection", "zz.document")
+        ]
+      },
+      { collections: [expanded] }
+    )
+  );
+});
+
+test("calendar session provenance applies supersession-derived document end", () => {
+  const krx = collection("KRX", "krx.collection", "shared.document");
+  const payload = withoutHash(krx);
+  payload.documents[0]!.regularSessionHours!.closeLocalTime = "15:00";
+  payload.documents.push(document("zz.document", "b", "15:30"));
+  payload.documents[1]!.applicabilityStartDate = "2025-07-01";
+  payload.regularSessionRegimes = [
+    {
+      regimeId: "krx.regular.1500",
+      effectiveStartDate: "2025-01-01",
+      effectiveEndDate: "2025-06-30",
+      openLocalTime: "09:00",
+      closeLocalTime: "15:00",
+      documentIds: ["shared.document"]
+    },
+    {
+      regimeId: "krx.regular.1530",
+      effectiveStartDate: "2025-07-01",
+      effectiveEndDate: null,
+      openLocalTime: "09:00",
+      closeLocalTime: "15:30",
+      documentIds: ["zz.document"]
+    }
+  ];
+  payload.regularSessionSupersessions = [
+    {
+      supersessionId: "krx.2025-07-01",
+      supersededRegimeId: "krx.regular.1500",
+      replacementRegimeId: "krx.regular.1530",
+      supersededDocumentIds: ["shared.document"],
+      replacementDocumentIds: ["zz.document"],
+      replacementEffectiveStartDate: "2025-07-01",
+      derivedSupersededEndDate: "2025-06-30"
+    }
+  ];
+  const transitioned = sign(payload);
+
+  assert.doesNotThrow(() =>
+    parseOfficialMarketCalendarSessionProvenance(
+      {
+        ...sessionProvenance(),
+        sessionId: "krx.2025-06-30",
+        sessionDate: "2025-06-30",
+        regularSessionRegimeId: "krx.regular.1500"
+      },
+      { collections: [transitioned] }
+    )
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSessionProvenance(
+        {
+          ...sessionProvenance(),
+          sessionId: "krx.2025-07-01-old",
+          sessionDate: "2025-07-01",
+          regularSessionRegimeId: "krx.regular.1500"
+        },
+        { collections: [transitioned] }
+      ),
+    /does not match effective regime/
+  );
+});
+
 test("calendar session provenance rejects cross-exchange refs", () => {
   const krx = collection("KRX", "krx.collection", "shared.document");
   const nyse = collection("NYSE", "nyse.collection", "shared.document");

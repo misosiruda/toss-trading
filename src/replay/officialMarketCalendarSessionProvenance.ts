@@ -154,10 +154,27 @@ export function parseOfficialMarketCalendarSessionProvenance(
   }
 
   const referencedDocumentIds = resolved.map(({ ref }) => ref.documentId);
+  const applicableDocumentIds = regime.documentIds.filter((documentId) => {
+    const document = collection.documents.find(
+      (candidate) => candidate.documentId === documentId
+    )!;
+    if (
+      document.applicabilityStartDate === null ||
+      document.applicabilityStartDate > provenance.sessionDate
+    ) {
+      return false;
+    }
+    const applicabilityEnd = resolveDocumentApplicabilityEnd(
+      documentId,
+      document.applicabilityEndDate,
+      collection
+    );
+    return provenance.sessionDate <= applicabilityEnd;
+  });
   if (
-    referencedDocumentIds.length !== regime.documentIds.length ||
+    referencedDocumentIds.length !== applicableDocumentIds.length ||
     referencedDocumentIds.some(
-      (documentId, index) => documentId !== regime.documentIds[index]
+      (documentId, index) => documentId !== applicableDocumentIds[index]
     )
   ) {
     throw new Error(
@@ -165,6 +182,20 @@ export function parseOfficialMarketCalendarSessionProvenance(
     );
   }
   return provenance;
+}
+
+function resolveDocumentApplicabilityEnd(
+  documentId: string,
+  declaredEnd: string | null,
+  collection: OfficialMarketCalendarSourceCollection
+): string {
+  if (declaredEnd !== null) {
+    return declaredEnd;
+  }
+  const supersession = collection.regularSessionSupersessions.find(
+    (candidate) => candidate.supersededDocumentIds.includes(documentId)
+  );
+  return supersession?.derivedSupersededEndDate ?? collection.coverageEndDate;
 }
 
 function parseCollections(
