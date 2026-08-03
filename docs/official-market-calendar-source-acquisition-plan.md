@@ -118,6 +118,15 @@ applicability interval을 가져야 하며, 새 rule로 대체되는 날짜가 s
 없으면 end를 `null`로 유지한다. 하나의 document가 두 역할을 모두 가지면
 schedule coverage와 rule applicability를 독립적으로 기록한다.
 
+각 `regularSessionRegime`의 `documentIds`는 `session_hours` evidence role을
+가진 accepted document만 참조해야 한다. 모든 referenced document의
+applicability interval은 regime의 전체 effective interval을 합쳐서 덮어야 하며
+gap 또는 ambiguous overlap을 허용하지 않는다. Regime의 local open/close는
+해당 interval에 대해 source에서 parsed한 session-hours 값과 정확히 같아야 한다.
+Holiday 또는 special-closure 역할만 가진 document, regime interval을 덮지 않는
+document나 서로 다른 open/close를 주장하는 document로 regime을 accepted
+처리하지 않는다.
+
 `collection-manifest.json`은 exchange별 accepted document를 하나의 검증
 단위로 결합하며 다음 필드를 가져야 한다.
 
@@ -171,8 +180,10 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    timestamp가 충돌하지 않는다.
 13. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
-14. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
-    regime이 하나 이상의 accepted official document를 참조한다.
+14. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮는다. 각
+    regime은 `session_hours` 역할을 가진 accepted official document만 참조하고,
+    referenced applicability interval이 regime 전체를 덮으며, regime의 local
+    open/close가 해당 interval에서 parsed한 source 값과 정확히 일치한다.
 15. `requiredExceptionCoverageRoles`가 versioned exchange contract와 일치한다.
     각 required role의 `exceptionScheduleIntervals`가 target range를 독립적으로
     gap이나 ambiguous overlap 없이 덮고 accepted completeness document를
@@ -206,11 +217,19 @@ canonical hash에 포함하도록 revision해야 한다.
 - `delayed_open` session type
 - Session date에 effective한 regime 또는 hours exception으로 open/close를
   검증하는 validator
+- `buildEvidenceExpansionCanonicalTradingDates()`와
+  `calculateAdjacencyTradingDayGap()`의 open-session allowlist에 `delayed_open`을
+  포함하는 downstream migration
+- `validation-role-regime-evidence-expansion-preflight-plan.md`의 canonical
+  trading-date 계약을 `regular`, `early_close`, `delayed_open`으로 맞추는 문서
+  migration
 
 Contract revision은 v1 artifact를 암묵적으로 재해석하지 않는다. Schema
-version을 명시적으로 올리고 writer, parser, projection과 회귀 테스트를 함께
-갱신해야 한다. 이 변경이 완료되기 전에는 source adapter가 calendar session
-row를 생성하지 않는다.
+version을 명시적으로 올리고 writer, parser, projection, canonical trading-date
+builder, pairwise adjacency calculator, preflight 계약 문서와 회귀 테스트를 함께
+갱신해야 한다. `delayed_open`이 canonical trading date와 pairwise trading-day
+gap 양쪽에서 open session으로 유지되는 테스트를 포함한다. 이 변경이 완료되기
+전에는 source adapter가 calendar session row를 생성하지 않는다.
 
 Revised durable artifact는 `sourceCollectionHash`만 저장하지 않는다. Canonical
 collection manifest와 referenced document metadata의 request method/URL,
@@ -400,6 +419,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   representation header 누락/불일치
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
+- Regular-session regime의 `session_hours` role, applicability coverage 또는
+  parsed open/close binding 불일치
 - Required exception coverage role 누락, role별 schedule gap/overlap 또는
   source-backed completeness 누락
 - duplicate date, conflicting exception/session 또는 unknown source format
@@ -456,10 +477,14 @@ date-effective regular-session regime과 session-level document provenance를
 - process restart 시 empty verified set과 explicit recovery activation 검증
 - publication record hash/path/no-replace/parent sync와 recovery audit 검증
 - regular-session regime gap/overlap reject
+- regime document의 `session_hours` role 누락, applicability gap/overlap 또는
+  parsed open/close 불일치 reject
 - session date와 effective regime mismatch reject
 - validated exception의 field-level precedence와 unaffected regime field 검증
 - 같은 exchange/date의 exception type 또는 override timestamp conflict reject
 - delayed-open exception provenance와 actual open/close 검증
+- `delayed_open`이 canonical trading-date hash와 pairwise adjacency gap에
+  포함되고 holiday, special closure와 weekend는 제외되는 downstream 회귀 검증
 - timezone/DST open-close conversion
 - existing output 보존
 
