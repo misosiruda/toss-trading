@@ -106,11 +106,13 @@ Cookie, authorization header, token과 계정 식별자는 metadata에 저장하
 authenticated session이 필요하면 public official evidence source로 자동
 승격하지 않고 blocker로 남긴다.
 
-`holiday_rows` 또는 `special_closure`처럼 exception schedule을 주장하는
-document는 source-backed schedule coverage를 가져야 한다. Row coverage는
-실제로 나온 sparse exception row의 범위만 나타내며 schedule completeness를
-대신하지 않는다. Source가 schedule coverage를 직접 뒷받침하지 않으면 해당
-document에서 unlisted weekday를 regular session으로 추론하지 않는다.
+Exception completeness는 `holiday_schedule`, `special_closure_schedule`,
+`session_hours_exception_schedule` coverage role별로 독립 검증한다. 하나의
+document가 여러 role의 completeness를 직접 주장할 수 있지만 한 role의
+coverage가 다른 role을 대신하지 않는다. Row coverage는 실제로 나온 sparse
+exception row의 범위만 나타내며 schedule completeness를 대신하지 않는다.
+Source가 특정 role의 schedule coverage를 직접 뒷받침하지 않으면 해당 role의
+unlisted weekday를 exception 없음으로 해석하지 않는다.
 `session_hours`처럼 rule을 주장하는 document는 source가 직접 뒷받침하는
 applicability interval을 가져야 하며, 새 rule로 대체되는 날짜가 source에
 없으면 end를 `null`로 유지한다. 하나의 document가 두 역할을 모두 가지면
@@ -126,7 +128,8 @@ schedule coverage와 rule applicability를 독립적으로 기록한다.
 | `exchange` | `KRX` 또는 `NYSE` |
 | `coverageStartDate` / `coverageEndDate` | Collection이 설명하는 전체 date range |
 | `documents` | Canonical `documentId` 순서의 metadata hash와 `sourceDocumentHash` 목록 |
-| `exceptionScheduleIntervals` | Accepted schedule coverage를 canonical date/document 순서로 결합한 interval 목록 |
+| `requiredExceptionCoverageRoles` | Versioned exchange contract가 target interval에 요구하는 exception coverage role 목록 |
+| `exceptionScheduleIntervals` | `coverageRole`, start/end date와 근거 `documentIds`를 role/date/document 순서로 결합한 interval 목록 |
 | `regularSessionRegimes` | `regimeId`, effective start/end date, local open/close, 근거 `documentIds` |
 | `collectionHash` | `collectionHash`를 제외한 canonical manifest payload hash |
 
@@ -170,8 +173,10 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    `collectionHash`가 모두 재계산 값과 일치한다.
 14. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮고 각
     regime이 하나 이상의 accepted official document를 참조한다.
-15. `exceptionScheduleIntervals`가 target range를 gap이나 ambiguous overlap
-    없이 덮고 각 interval이 accepted schedule document를 참조한다.
+15. `requiredExceptionCoverageRoles`가 versioned exchange contract와 일치한다.
+    각 required role의 `exceptionScheduleIntervals`가 target range를 독립적으로
+    gap이나 ambiguous overlap 없이 덮고 accepted completeness document를
+    참조한다. 한 role의 interval로 다른 role의 gap을 채우지 않는다.
 
 Official archive가 여러 문서로 나뉘면 각 document를 별도 acquisition
 record로 보존하고 collection manifest가 모든 원문 hash를 결합한다. 가장
@@ -191,7 +196,8 @@ canonical hash에 포함하도록 revision해야 한다.
 - Canonical collection manifest와 collection에 포함된 모든 document metadata
 - 모든 document identity, metadata hash와 source document hash
 - Date-effective `regularSessionRegimes`
-- Source-backed `exceptionScheduleIntervals`
+- Versioned `requiredExceptionCoverageRoles`
+- Coverage role별 source-backed `exceptionScheduleIntervals`
 - Date-specific, source-backed `sessionHoursExceptions`
 - `early_close`의 close override와 `delayed_open`의 open/close override
 - 각 session의 근거 `documentIds`
@@ -245,9 +251,19 @@ package 교체로 새 evidence를 게시하지 않는다. Reader는 선택한 ex
 `published/sha256/<artifact-sha256-hex>.json`은 package와 분리된 immutable
 publication record이다. Record는 schema version, `artifactHash`, package-relative
 path와 자기 hash field를 제외한 canonical record SHA-256인
-`publicationRecordHash`를 가진다. Reader는 package hash/path 검증과 valid
-publication record를 모두 통과한 artifact만 accepted evidence로 연다. Hash
-package만 존재하고 record가 없거나 invalid하면 quarantined 상태로 거부한다.
+`publicationRecordHash`를 가진다. Record 존재는 acceptance의 필요조건일 뿐
+충분조건이 아니다. Deterministic backend의 `PublicationCoordinator`만 package
+selection을 소유하며 process-local `verifiedPublicationSet`에 포함된
+`artifactHash`만 reader에 제공한다. Raw filesystem path 또는 publication record
+scan으로 package를 직접 여는 reader surface는 금지한다.
+
+Coordinator는 writer와 reader 사이에 exclusive publication state lock을
+사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에
+추가한다. 어떤 sync failure에서도 추가하지 않으므로 rename 후 record가 보여도
+reader는 quarantined 상태로 거부한다. Process start 시 set은 항상 empty이며,
+visible record를 자동 활성화하지 않는다. Explicit recovery가 package, record,
+hash/path, ancestor durability를 다시 검증하고 sync한 뒤 audit event를 남긴
+경우에만 현재 process의 set에 추가할 수 있다.
 
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `documentId`, `archivePath`,
@@ -281,11 +297,11 @@ publish를 fail-closed로 중단한다.
 Package no-replace 성공 후 immediate parent를 `fsync`한다. 이 sync가 성공한
 뒤에만 publication record를 writer-owned staging file에 기록하고 file sync,
 record hash 검증, atomic no-replace rename과 record parent `fsync` 순서로
-publish한다. 모든 단계가 끝난 뒤에만 publish 완료를 반환한다. Package parent
-sync 또는 record publication이 실패하면 publication record를 만들거나 accepted
-상태로 재사용하지 않고 package를 quarantined 상태로 남긴다. Explicit recovery는
-전체 package/hash/path와 ancestor durability를 다시 검증한 뒤에만 새 immutable
-record를 publish할 수 있으며 자동 복구하지 않는다.
+publish한다. Record parent sync가 성공한 뒤 coordinator가 verified set을
+갱신하고 lock을 해제하며, 그 뒤에만 publish 완료를 반환한다. Package parent
+sync, record rename 또는 record parent sync가 실패하면 verified set을 갱신하지
+않는다. Record가 final path에 보이는 실패도 reader에는 quarantined이며 explicit
+recovery 전에는 accepted 상태로 재사용하지 않는다.
 
 POSIX sync failure는 성공으로 축소하지 않는다. Windows에서 directory sync가
 `EPERM`으로 지원되지 않는 경우는 platform-specific compatibility 상태와
@@ -299,10 +315,11 @@ unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
 Ingestion adapter는 accepted source row에서 다음 값만 생성할 수 있다.
 
-- `regular`: source가 regular session임을 직접 나타내거나 accepted holiday
-  collection의 source-backed exception schedule interval 안에서 unlisted
-  weekday로 결정론적으로 확인된 거래일이며, session date에 effective한
-  `regularSessionRegimeId`의 open/close를 사용
+- `regular`: source가 regular session임을 직접 나타내거나 모든
+  `requiredExceptionCoverageRoles`의 source-backed interval이 해당 exchange/date를
+  덮고 어떤 role에도 exception row가 없는 weekday로 결정론적으로 확인된
+  거래일이며, session date에 effective한 `regularSessionRegimeId`의 open/close를
+  사용
 - `early_close`: official source가 해당 날짜와 close time을 명시한 session
 - `delayed_open`: official source가 해당 날짜의 delayed open과 실제 close를
   명시하고 `sessionHoursExceptionId`로 provenance를 결합한 open session
@@ -377,12 +394,14 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - HTTP message framing 미완료 또는 declared/stored content length 불일치
 - Durable namespace ancestor sync 실패
 - Publication record 누락, hash/path 불일치 또는 record parent sync 실패
+- `PublicationCoordinator` verified activation 누락
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
 - redirect policy 또는 hop별 effective method, parameter, body hash,
   representation header 누락/불일치
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
-- Exception schedule coverage gap 또는 source-backed completeness 누락
+- Required exception coverage role 누락, role별 schedule gap/overlap 또는
+  source-backed completeness 누락
 - duplicate date, conflicting exception/session 또는 unknown source format
 - Target interval의 delayed-open source 또는 `sessionHoursExceptions`
   provenance 누락
@@ -418,7 +437,8 @@ date-effective regular-session regime과 session-level document provenance를
 - non-HTTPS URL, redirect downgrade와 certificate validation failure reject
 - evidence role과 row coverage/applicability mismatch reject
 - sparse exception row와 source-backed schedule coverage 분리 검증
-- exception schedule interval gap/overlap reject
+- required exception role 목록 mismatch와 role별 interval gap/overlap reject
+- holiday coverage만으로 special-closure/session-hours role gap을 채우지 않음
 - collection manifest 또는 referenced document hash mismatch reject
 - durable artifact에서 canonical manifest/document metadata 누락 reject
 - durable source sidecar 누락, mutation 또는 unreferenced file reject
@@ -432,7 +452,9 @@ date-effective regular-session regime과 session-level document provenance를
 - existing empty package와 concurrent destination 생성 시 no-replace reject
 - atomic no-replace 미지원 platform reject와 staging failure cleanup
 - package parent sync failure 시 publication record 미생성 및 reader quarantine
-- publication record hash/path/no-replace/parent sync와 explicit recovery 검증
+- record rename 성공 후 parent sync failure 시 verified set 미등록 및 reader reject
+- process restart 시 empty verified set과 explicit recovery activation 검증
+- publication record hash/path/no-replace/parent sync와 recovery audit 검증
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
 - validated exception의 field-level precedence와 unaffected regime field 검증
