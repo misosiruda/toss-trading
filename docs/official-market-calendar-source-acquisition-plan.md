@@ -83,7 +83,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `sourceDocumentHash` | exact bytes의 `sha256:<hex>` |
 | `evidenceRoles` | `holiday_rows`, `session_hours`, `special_closure` 등 원문이 직접 뒷받침하는 역할 |
 | `rowCoverageStartDate` / `rowCoverageEndDate` | 실제 parsed exception row의 첫/마지막 date, row가 없거나 rule-only 문서는 `null` |
-| `scheduleCoverageStartDate` / `scheduleCoverageEndDate` | Source가 exception schedule의 완전성을 직접 주장하는 전체 기간, rule-only 문서는 `null` |
+| `scheduleCoverageIntervals` | Source가 exception schedule의 완전성을 직접 주장하는 `coverageRole`, start/end date 목록. Completeness를 주장하지 않는 role은 entry가 없으며 role/start/end 순서로 canonical 정렬 |
 | `applicabilityStartDate` / `applicabilityEndDate` | Rule이 직접 명시하는 effective interval, open-ended end는 `null` |
 | `parserContractVersion` | source format adapter contract version |
 
@@ -113,6 +113,10 @@ coverage가 다른 role을 대신하지 않는다. Row coverage는 실제로 나
 exception row의 범위만 나타내며 schedule completeness를 대신하지 않는다.
 Source가 특정 role의 schedule coverage를 직접 뒷받침하지 않으면 해당 role의
 unlisted weekday를 exception 없음으로 해석하지 않는다.
+한 document가 role마다 서로 다른 기간의 completeness를 주장하면
+`scheduleCoverageIntervals`에 role별 interval을 별도로 기록한다. 같은 role의
+복수 interval은 겹치거나 인접한 구간을 canonical merge한 뒤 저장하며, 다른
+role의 더 넓은 interval로 좁은 role의 coverage를 확장하지 않는다.
 `session_hours`처럼 rule을 주장하는 document는 source가 직접 뒷받침하는
 applicability interval을 가져야 하며, 새 rule로 대체되는 날짜가 source에
 없으면 end를 `null`로 유지한다. 하나의 document가 두 역할을 모두 가지면
@@ -172,8 +176,10 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
    일치하고 final entry response bytes가 저장한 `source.bin`이다.
 9. Parser가 unknown column, duplicate date, invalid date 또는 ambiguous session
    type을 만나면 fail-closed로 중단한다.
-10. Parsed row coverage, source-backed schedule coverage와 rule applicability가
-   `evidenceRoles`별 metadata interval과 일치한다.
+10. Parsed row coverage, role-keyed `scheduleCoverageIntervals`와 rule
+    applicability가 `evidenceRoles`별 source claim과 일치한다. Manifest의 각
+    `exceptionScheduleInterval`은 referenced document metadata의 동일
+    `coverageRole` interval union 안에 완전히 포함되어야 한다.
 11. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
 12. Source collection 사이에 같은 exchange-date의 session type 또는
@@ -419,6 +425,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   representation header 누락/불일치
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
+- Document의 role-keyed schedule coverage 누락/충돌 또는 manifest interval의
+  동일 role metadata coverage 이탈
 - Regular-session regime의 `session_hours` role, applicability coverage 또는
   parsed open/close binding 불일치
 - Required exception coverage role 누락, role별 schedule gap/overlap 또는
@@ -458,6 +466,10 @@ date-effective regular-session regime과 session-level document provenance를
 - non-HTTPS URL, redirect downgrade와 certificate validation failure reject
 - evidence role과 row coverage/applicability mismatch reject
 - sparse exception row와 source-backed schedule coverage 분리 검증
+- 한 document의 role별 서로 다른 schedule coverage interval 보존과 canonical
+  merge 검증
+- manifest exception interval이 referenced document의 동일 role coverage를
+  벗어나거나 다른 role coverage를 차용하면 reject
 - required exception role 목록 mismatch와 role별 interval gap/overlap reject
 - holiday coverage만으로 special-closure/session-hours role gap을 채우지 않음
 - collection manifest 또는 referenced document hash mismatch reject
