@@ -250,6 +250,8 @@ canonical hash에 포함하도록 revision해야 한다.
 - `delayed_open` session type
 - Session date에 effective한 regime 또는 hours exception으로 open/close를
   검증하는 validator
+- 모든 reader open에서 explicit `asOf`로 document별 freshness를 다시 검증하는
+  coordinator gate
 - `buildEvidenceExpansionCanonicalTradingDates()`와
   `calculateAdjacencyTradingDayGap()`의 open-session allowlist에 `delayed_open`을
   포함하는 downstream migration
@@ -309,8 +311,10 @@ path와 자기 hash field를 제외한 canonical record SHA-256인
 `publicationRecordHash`를 가진다. Record 존재는 acceptance의 필요조건일 뿐
 충분조건이 아니다. Deterministic backend의 `PublicationCoordinator`만 package
 selection을 소유하며 process-local `verifiedPublicationSet`에 포함된
-`artifactHash`만 reader에 제공한다. Raw filesystem path 또는 publication record
-scan으로 package를 직접 여는 reader surface는 금지한다.
+`artifactHash`만 freshness 검증 후보로 삼는다. Set membership은 package/record의
+구조적 검증과 durability만 의미하며 현재 시각 freshness를 보증하지 않는다. Raw
+filesystem path 또는 publication record scan으로 package를 직접 여는 reader
+surface는 금지한다.
 
 Coordinator는 writer와 reader 사이에 exclusive publication state lock을
 사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에
@@ -336,6 +340,19 @@ collision으로 거부한다. Incomplete package, unreferenced/missing sidecar �
 `publication_record_recovered` audit event를 남긴 뒤 verified set에 추가한다.
 Writer retry가 existing package destination을 만나도 자동 성공 처리하지 않고,
 동일 requested `artifactHash`의 record 누락 상태에만 이 recovery로 전환한다.
+
+모든 reader open은 explicit timezone offset을 가진 `asOf`를 필수 입력으로 받아
+coordinator를 호출한다. Coordinator는 read handle을 반환하기 직전에 artifact의
+모든 referenced document에 `retrievedAt <= asOf < staleAfter`를 다시 적용한다.
+Activation/recovery 시각 또는 artifact `generatedAt` 검증 결과를 캐시해 이
+read-time gate를 생략하지 않는다. 한 document라도 `asOf < retrievedAt`이면
+handle을 fail-closed로 거부하고 `source_not_yet_retrieved` audit을 남기되 구조적
+set membership은 변경하지 않는다. `asOf`가 어느 document의 `staleAfter`와
+같거나 늦으면 coordinator lock 아래 해당 hash를 `verifiedPublicationSet`에서
+제거하고 read를 거부하며 `publication_freshness_rejected` audit에
+`artifactHash`, `asOf`와 expired `SourceDocumentRef`를 기록한다. 검증된 handle은
+해당 explicit `asOf`에만 결합되며 후속 replay는 새 open과 freshness 검증을
+수행해야 한다.
 
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `exchange`, `collectionId`,
@@ -443,6 +460,10 @@ open을 regular session으로 축소하거나 close time을 regime에서 추정�
 Freshness policy가 등록되지 않았거나 policy hash가 registry definition과
 일치하지 않거나 recorded `staleAfter`가 결정론적 재계산 값과 다르거나 artifact
 `generatedAt`이 freshness window 밖이면 ingestion은 artifact를 생성하지 않는다.
+Publication 이후 reader도 기존 `official_market_calendar_evidence.v1`의 `asOf`
+gate를 유지한다. Explicit `asOf`가 없거나 offset이 없거나 document
+`retrievedAt <= asOf < staleAfter`를 하나라도 만족하지 않으면 package를 열지
+않는다.
 
 ## Cross-Source Verification
 
@@ -483,6 +504,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - Staging file 또는 populated nested directory의 publication 전 sync 실패
 - Publication record 누락, hash/path 불일치 또는 record parent sync 실패
 - `PublicationCoordinator` verified activation 누락
+- Reader open의 explicit `asOf` 누락/형식 오류 또는 document별 read-time
+  freshness 실패
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
 - redirect policy 또는 hop별 effective method, parameter, body hash,
   representation header 누락/불일치
@@ -552,6 +575,10 @@ date-effective regular-session regime과 session-level document provenance를
 - freshness/source 변경 artifact의 distinct hash directory 공존
 - freshness policy version/hash 또는 derived `staleAfter` 변경 시 distinct
   canonical artifact hash와 재계산 mismatch reject
+- 같은 process에서 expiry 전 open 성공 후 exact `staleAfter` 또는 이후 open은
+  전체 package reject, verified set eviction과 freshness audit 검증
+- 여러 document 중 하나만 expired이거나 `asOf < retrievedAt`이어도 package 전체
+  reject하고 후속 replay가 cached activation을 재사용하지 않음
 - artifact hash와 package directory identity mismatch reject
 - 동일 artifact identity 재게시 destination collision reject
 - first publication의 newly created ancestor sync failure 처리
