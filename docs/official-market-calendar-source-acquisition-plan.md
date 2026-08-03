@@ -164,8 +164,11 @@ document나 서로 다른 open/close를 주장하는 document로 regime을 accep
 
 Manifest hash가 각 원문 hash를 대체하지 않는다. Collection verification은
 manifest hash와 모든 referenced metadata/source byte hash를 함께 검증한다.
-Session-level provenance는 해당 session을 뒷받침한 `documentIds`와
-date-effective `regimeId`를 보존해야 한다.
+Collection manifest 내부 `documentIds`는 해당 manifest의 `exchange`와
+`collectionId` scope에서만 해석한다. Combined artifact의 session-level
+provenance는 해당 session을 뒷받침한 `(exchange, collectionId, documentId)`
+`SourceDocumentRef` 목록과 date-effective `regimeId`를 보존해야 한다. Local
+`documentId` 단독 값을 artifact-level key로 사용하지 않는다.
 
 ## Source Acceptance
 
@@ -235,7 +238,7 @@ canonical hash에 포함하도록 revision해야 한다.
 - Coverage role별 source-backed `exceptionScheduleIntervals`
 - Date-specific, source-backed `sessionHoursExceptions`
 - `early_close`의 close override와 `delayed_open`의 open/close override
-- 각 session의 근거 `documentIds`
+- 각 session의 근거 composite `SourceDocumentRef` 목록
 - Open session이 참조한 `regularSessionRegimeId`
 - Non-regular open session이 참조한 `sessionHoursExceptionId`
 - `delayed_open` session type
@@ -312,12 +315,15 @@ hash/path, ancestor durability를 다시 검증하고 sync한 뒤 audit event를
 경우에만 현재 process의 set에 추가할 수 있다.
 
 Package-relative path는 revised artifact의 별도
-`sourceArchiveBindings`에 둔다. 각 binding은 `documentId`, `archivePath`,
-`sourceDocumentHash`와 `contentLength`를 가지며 artifact canonical hash에
-포함된다. `archivePath`는 `sources/sha256/<hex>.bin` 형식만 허용하고 path
-traversal과 package 밖 reference를 거부한다. Parser/auditor는 binding과
-sidecar bytes의 length/hash를 다시 계산한 뒤에만 source parser를 재실행할
-수 있다.
+`sourceArchiveBindings`에 둔다. 각 binding은 `exchange`, `collectionId`,
+`documentId`로 구성한 `SourceDocumentRef`, `archivePath`, `sourceDocumentHash`와
+`contentLength`를 가지며 artifact canonical hash에 포함된다. Binding은
+exchange/collection/document 순서로 canonical 정렬하고 full composite key가
+unique해야 한다. Ref의 collection manifest와 metadata가 존재하고 exchange 및
+local document identity가 모두 일치해야 한다. `archivePath`는
+`sources/sha256/<hex>.bin` 형식만 허용하고 path traversal과 package 밖 reference를
+거부한다. Parser/auditor는 binding과 sidecar bytes의 length/hash를 다시 계산한
+뒤에만 source parser를 재실행할 수 있다.
 
 여러 document metadata가 같은 exact bytes를 참조하면 동일 `archivePath`를
 공유할 수 있다. Shared binding은 `sourceDocumentHash`와 `contentLength`가
@@ -445,6 +451,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
 - Durable package의 source byte sidecar 누락 또는 hash/length 불일치
+- Artifact-level `SourceDocumentRef` qualifier 누락, unknown composite ref 또는
+  binding의 exchange/collection/document identity 불일치
 - Artifact canonical hash와 package hash directory 불일치
 - HTTP message framing 미완료 또는 declared/stored content length 불일치
 - Durable namespace ancestor sync 실패
@@ -509,6 +517,10 @@ date-effective regular-session regime과 session-level document provenance를
 - durable artifact에서 canonical manifest/document metadata 누락 reject
 - durable source sidecar 누락, mutation 또는 unreferenced file reject
 - archive path traversal, conflicting path reuse와 hash/path mismatch reject
+- KRX와 NYSE collection이 같은 local `documentId`를 서로 다른 bytes에 사용해도
+  composite `SourceDocumentRef`로 각각 정확히 binding
+- Unqualified `documentId`, duplicate/unknown composite ref 또는 ref와
+  collection metadata identity mismatch reject
 - identical source bytes의 shared sidecar binding 허용
 - acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
 - freshness/source 변경 artifact의 distinct hash directory 공존
