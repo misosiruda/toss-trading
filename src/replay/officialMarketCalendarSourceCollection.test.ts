@@ -61,6 +61,34 @@ test("official calendar source collection rejects role substitution", () => {
   );
 });
 
+test("official calendar source collection rejects reduced exchange coverage contract", () => {
+  const payload = collectionPayload();
+  payload.requiredExceptionCoverageRoles.roles = ["holiday_schedule"];
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /coverage contract does not match exchange registry/
+  );
+});
+
+test("official calendar source collection rejects unregistered coverage contract version", () => {
+  const payload = collectionPayload();
+  payload.requiredExceptionCoverageRoles.contractVersion =
+    "krx_exception_coverage.v2";
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /coverage contract does not match exchange registry/
+  );
+});
+
+test("official calendar source collection binds intervals to document role coverage", () => {
+  const payload = collectionPayload();
+  payload.documents[0]!.scheduleCoverageIntervals[0]!.endDate = "2016-06-30";
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /exceeds referenced document role coverage/
+  );
+});
+
 test("official calendar source collection rejects coverage gaps", () => {
   const payload = collectionPayload();
   payload.exceptionScheduleIntervals[0]!.startDate = "2016-01-02";
@@ -120,6 +148,15 @@ test("official calendar source collection accepts contiguous multi-document regi
   assert.doesNotThrow(() => createOfficialMarketCalendarSourceCollectionHash(payload));
 });
 
+test("official calendar source collection rejects unresolved open-ended regime overlap", () => {
+  const payload = collectionPayload();
+  payload.regularSessionSupersessions = [];
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /extends outside regime without supersession/
+  );
+});
+
 test("official calendar source collection rejects ambiguous regime boundaries", () => {
   const payload = collectionPayload();
   payload.regularSessionRegimes[0]!.effectiveEndDate = "2016-08-01";
@@ -150,6 +187,29 @@ test("official calendar source collection binds supersession documents to regime
   );
 });
 
+test("official calendar source collection requires supersession documents at boundary", () => {
+  const payload = collectionPayload();
+  payload.documents[1]!.applicabilityEndDate = "2016-06-30";
+  payload.documents.splice(
+    2,
+    0,
+    document(
+      "krx.hours.1500.continued",
+      ["session_hours"],
+      "2016-07-01",
+      "2016-07-31"
+    )
+  );
+  payload.regularSessionRegimes[0]!.documentIds = [
+    "krx.hours.1500",
+    "krx.hours.1500.continued"
+  ];
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /superseded documents must cover the derived boundary date/
+  );
+});
+
 function signedCollection() {
   const payload = collectionPayload();
   return {
@@ -167,13 +227,26 @@ function collectionPayload(): OfficialMarketCalendarSourceCollectionPayload {
     coverageEndDate: "2016-12-31",
     documents: [
       document("krx.holidays", ["holiday_rows", "holiday_schedule"], null, null),
-      document("krx.hours.1500", ["session_hours"], "2016-01-01", "2016-07-31"),
+      document("krx.hours.1500", ["session_hours"], "2016-01-01", null),
       document("krx.hours.1530", ["session_hours"], "2016-08-01", null),
-      document("krx.special", ["special_closure", "special_closure_schedule"], null, null)
+      document(
+        "krx.special",
+        [
+          "session_hours_exception_schedule",
+          "special_closure",
+          "special_closure_schedule"
+        ],
+        null,
+        null
+      )
     ],
     requiredExceptionCoverageRoles: {
       contractVersion: "krx_exception_coverage.v1",
-      roles: ["holiday_schedule", "special_closure_schedule"]
+      roles: [
+        "holiday_schedule",
+        "session_hours_exception_schedule",
+        "special_closure_schedule"
+      ]
     },
     exceptionScheduleIntervals: [
       {
@@ -181,6 +254,12 @@ function collectionPayload(): OfficialMarketCalendarSourceCollectionPayload {
         startDate: "2016-01-01",
         endDate: "2016-12-31",
         documentIds: ["krx.holidays"]
+      },
+      {
+        coverageRole: "session_hours_exception_schedule",
+        startDate: "2016-01-01",
+        endDate: "2016-12-31",
+        documentIds: ["krx.special"]
       },
       {
         coverageRole: "special_closure_schedule",
@@ -233,9 +312,26 @@ function document(
     metadataHash: hash(seed),
     sourceDocumentHash: hash(seed === "f" ? "e" : "f"),
     evidenceRoles,
+    scheduleCoverageIntervals: evidenceRoles
+      .filter(isExceptionCoverageRole)
+      .map((coverageRole) => ({
+        coverageRole,
+        startDate: "2016-01-01",
+        endDate: "2016-12-31"
+      })),
     applicabilityStartDate,
     applicabilityEndDate
   };
+}
+
+function isExceptionCoverageRole(
+  role: OfficialMarketCalendarSourceCollectionPayload["documents"][number]["evidenceRoles"][number]
+): role is OfficialMarketCalendarSourceCollectionPayload["documents"][number]["scheduleCoverageIntervals"][number]["coverageRole"] {
+  return (
+    role === "holiday_schedule" ||
+    role === "session_hours_exception_schedule" ||
+    role === "special_closure_schedule"
+  );
 }
 
 function hash(character: string): `sha256:${string}` {

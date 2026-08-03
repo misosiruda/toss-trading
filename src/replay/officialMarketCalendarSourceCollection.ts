@@ -17,6 +17,29 @@ export const OFFICIAL_CALENDAR_SOURCE_EVIDENCE_ROLES = [
 
 const exchangeSchema = z.enum(["KRX", "NYSE"]);
 const evidenceRoleSchema = z.enum(OFFICIAL_CALENDAR_SOURCE_EVIDENCE_ROLES);
+const exceptionCoverageRoleSchema = z.enum([
+  "holiday_schedule",
+  "session_hours_exception_schedule",
+  "special_closure_schedule"
+]);
+const REQUIRED_EXCEPTION_COVERAGE_CONTRACTS = {
+  KRX: {
+    contractVersion: "krx_exception_coverage.v1",
+    roles: [
+      "holiday_schedule",
+      "session_hours_exception_schedule",
+      "special_closure_schedule"
+    ]
+  },
+  NYSE: {
+    contractVersion: "nyse_exception_coverage.v1",
+    roles: [
+      "holiday_schedule",
+      "session_hours_exception_schedule",
+      "special_closure_schedule"
+    ]
+  }
+} as const;
 const calendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -26,18 +49,70 @@ const localTimeSchema = z
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "local time must use HH:mm");
 const identifierSchema = z.string().trim().min(1);
 
+const documentScheduleCoverageIntervalSchema = z
+  .object({
+    coverageRole: exceptionCoverageRoleSchema,
+    startDate: calendarDateSchema,
+    endDate: calendarDateSchema
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.startDate > value.endDate) {
+      issue(
+        context,
+        ["endDate"],
+        "document schedule coverage start must not follow end"
+      );
+    }
+  });
+
 const documentSchema = z
   .object({
     documentId: identifierSchema,
     metadataHash: sha256HashSchema,
     sourceDocumentHash: sha256HashSchema,
     evidenceRoles: z.array(evidenceRoleSchema).min(1),
+    scheduleCoverageIntervals: z.array(
+      documentScheduleCoverageIntervalSchema
+    ),
     applicabilityStartDate: calendarDateSchema.nullable(),
     applicabilityEndDate: calendarDateSchema.nullable()
   })
   .strict()
   .superRefine((value, context) => {
     validateCanonicalStrings(value.evidenceRoles, context, ["evidenceRoles"]);
+    let previousKey: string | null = null;
+    const previousEndByRole = new Map<string, string>();
+    for (const [index, interval] of value.scheduleCoverageIntervals.entries()) {
+      const key = `${interval.coverageRole}:${interval.startDate}:${interval.endDate}`;
+      if (previousKey !== null && previousKey.localeCompare(key) >= 0) {
+        issue(
+          context,
+          ["scheduleCoverageIntervals", index],
+          "document schedule coverage must use canonical role and date order"
+        );
+      }
+      previousKey = key;
+      if (!value.evidenceRoles.includes(interval.coverageRole)) {
+        issue(
+          context,
+          ["scheduleCoverageIntervals", index, "coverageRole"],
+          "document schedule coverage role must be declared in evidenceRoles"
+        );
+      }
+      const previousEnd = previousEndByRole.get(interval.coverageRole);
+      if (
+        previousEnd !== undefined &&
+        interval.startDate <= nextCalendarDate(previousEnd)
+      ) {
+        issue(
+          context,
+          ["scheduleCoverageIntervals", index],
+          "same-role document schedule coverage intervals must be merged"
+        );
+      }
+      previousEndByRole.set(interval.coverageRole, interval.endDate);
+    }
     if (
       value.applicabilityStartDate !== null &&
       value.applicabilityEndDate !== null &&
@@ -53,11 +128,7 @@ const documentSchema = z
 
 const exceptionScheduleIntervalSchema = z
   .object({
-    coverageRole: z.enum([
-      "holiday_schedule",
-      "session_hours_exception_schedule",
-      "special_closure_schedule"
-    ]),
+    coverageRole: exceptionCoverageRoleSchema,
     startDate: calendarDateSchema,
     endDate: calendarDateSchema,
     documentIds: z.array(identifierSchema).min(1)
@@ -150,13 +221,7 @@ const sourceCollectionBaseSchema = z
       .object({
         contractVersion: identifierSchema,
         roles: z
-          .array(
-            z.enum([
-              "holiday_schedule",
-              "session_hours_exception_schedule",
-              "special_closure_schedule"
-            ])
-          )
+          .array(exceptionCoverageRoleSchema)
           .min(1)
       })
       .strict(),
@@ -218,6 +283,23 @@ function validateCollection(
     context,
     ["requiredExceptionCoverageRoles", "roles"]
   );
+  const requiredContract = REQUIRED_EXCEPTION_COVERAGE_CONTRACTS[value.exchange];
+  if (
+    value.requiredExceptionCoverageRoles.contractVersion !==
+      requiredContract.contractVersion ||
+    value.requiredExceptionCoverageRoles.roles.length !==
+      requiredContract.roles.length ||
+    requiredContract.roles.some(
+      (role, index) =>
+        value.requiredExceptionCoverageRoles.roles[index] !== role
+    )
+  ) {
+    issue(
+      context,
+      ["requiredExceptionCoverageRoles"],
+      "required exception coverage contract does not match exchange registry"
+    );
+  }
 
   const documents = new Map(
     value.documents.map((document) => [document.documentId, document])
@@ -259,6 +341,24 @@ function validateExceptionIntervals(
       if (document === undefined || !document.evidenceRoles.includes(interval.coverageRole)) {
         issue(context, ["exceptionScheduleIntervals", index, "documentIds"], "exception interval document must exist and declare its coverage role");
       }
+    }
+    const sourceCoverage = interval.documentIds.flatMap((documentId) =>
+      (documents.get(documentId)?.scheduleCoverageIntervals ?? [])
+        .filter(
+          (documentInterval) =>
+            documentInterval.coverageRole === interval.coverageRole
+        )
+        .map((documentInterval) => ({
+          startDate: documentInterval.startDate,
+          endDate: documentInterval.endDate
+        }))
+    );
+    if (!coversDateRange(sourceCoverage, interval.startDate, interval.endDate)) {
+      issue(
+        context,
+        ["exceptionScheduleIntervals", index, "documentIds"],
+        "exception interval exceeds referenced document role coverage"
+      );
     }
   }
 
@@ -316,8 +416,17 @@ function validateRegimes(
         continue;
       }
       applicabilityIntervals.push({
-        startDate: document.applicabilityStartDate,
-        endDate: document.applicabilityEndDate ?? effectiveEnd
+        startDate:
+          document.applicabilityStartDate < value.coverageStartDate
+            ? value.coverageStartDate
+            : document.applicabilityStartDate,
+        endDate: resolveApplicabilityEnd(
+          documentId,
+          document.applicabilityEndDate,
+          value,
+          index,
+          context
+        )
       });
     }
     validateRegimeApplicability(
@@ -340,15 +449,18 @@ function validateRegimeApplicability(
   regimeIndex: number,
   context: z.RefinementCtx
 ): void {
-  const ordered = intervals
-    .map((interval) => ({
-      startDate: interval.startDate < regimeStart ? regimeStart : interval.startDate,
-      endDate: interval.endDate > regimeEnd ? regimeEnd : interval.endDate
-    }))
-    .filter((interval) => interval.startDate <= interval.endDate)
-    .sort((left, right) => left.startDate.localeCompare(right.startDate));
+  const ordered = [...intervals].sort((left, right) =>
+    left.startDate.localeCompare(right.startDate)
+  );
   let expectedStart = regimeStart;
   for (const interval of ordered) {
+    if (interval.startDate < regimeStart || interval.endDate > regimeEnd) {
+      issue(
+        context,
+        ["regularSessionRegimes", regimeIndex, "documentIds"],
+        "regime document applicability extends outside regime without supersession"
+      );
+    }
     if (interval.startDate !== expectedStart) {
       issue(
         context,
@@ -365,6 +477,33 @@ function validateRegimeApplicability(
       "regime document applicability must cover the regime interval"
     );
   }
+}
+
+function resolveApplicabilityEnd(
+  documentId: string,
+  declaredEnd: string | null,
+  value: OfficialMarketCalendarSourceCollectionPayload,
+  regimeIndex: number,
+  context: z.RefinementCtx
+): string {
+  if (declaredEnd !== null) {
+    return declaredEnd > value.coverageEndDate
+      ? value.coverageEndDate
+      : declaredEnd;
+  }
+  const supersessions = value.regularSessionSupersessions.filter(
+    (supersession) =>
+      supersession.supersededDocumentIds.includes(documentId)
+  );
+  if (supersessions.length > 1) {
+    issue(
+      context,
+      ["regularSessionRegimes", regimeIndex, "documentIds"],
+      "open-ended regime document has ambiguous supersessions"
+    );
+    return value.coverageEndDate;
+  }
+  return supersessions[0]?.derivedSupersededEndDate ?? value.coverageEndDate;
 }
 
 function validateSupersessions(
@@ -396,6 +535,34 @@ function validateSupersessions(
         issue(context, ["regularSessionSupersessions", index], "supersession documents must exist and declare session_hours evidence");
       }
     }
+    for (const documentId of supersession.supersededDocumentIds) {
+      if (
+        !documentCoversDate(
+          documents.get(documentId),
+          supersession.derivedSupersededEndDate
+        )
+      ) {
+        issue(
+          context,
+          ["regularSessionSupersessions", index, "supersededDocumentIds"],
+          "superseded documents must cover the derived boundary date"
+        );
+      }
+    }
+    for (const documentId of supersession.replacementDocumentIds) {
+      if (
+        !documentCoversDate(
+          documents.get(documentId),
+          supersession.replacementEffectiveStartDate
+        )
+      ) {
+        issue(
+          context,
+          ["regularSessionSupersessions", index, "replacementDocumentIds"],
+          "replacement documents must cover the effective start date"
+        );
+      }
+    }
     if (
       superseded === undefined ||
       supersession.supersededDocumentIds.some(
@@ -413,6 +580,48 @@ function validateSupersessions(
       );
     }
   }
+}
+
+function documentCoversDate(
+  document:
+    | OfficialMarketCalendarSourceCollectionPayload["documents"][number]
+    | undefined,
+  date: string
+): boolean {
+  return (
+    document?.applicabilityStartDate !== null &&
+    document?.applicabilityStartDate !== undefined &&
+    document.applicabilityStartDate <= date &&
+    (document.applicabilityEndDate === null ||
+      document.applicabilityEndDate >= date)
+  );
+}
+
+function coversDateRange(
+  intervals: Array<{ startDate: string; endDate: string }>,
+  targetStart: string,
+  targetEnd: string
+): boolean {
+  let expectedStart = targetStart;
+  const ordered = [...intervals].sort((left, right) =>
+    left.startDate.localeCompare(right.startDate)
+  );
+  for (const interval of ordered) {
+    if (interval.endDate < expectedStart || interval.startDate > targetEnd) {
+      continue;
+    }
+    if (interval.startDate > expectedStart) {
+      return false;
+    }
+    if (interval.endDate >= targetEnd) {
+      return true;
+    }
+    const next = nextCalendarDate(interval.endDate);
+    if (next > expectedStart) {
+      expectedStart = next;
+    }
+  }
+  return false;
 }
 
 function validateCanonicalStrings(
