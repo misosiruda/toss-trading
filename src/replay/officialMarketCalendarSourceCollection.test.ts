@@ -145,7 +145,7 @@ test("official calendar source collection rejects regime applicability gaps", ()
   payload.documents[2]!.applicabilityStartDate = "2016-08-02";
   assert.throws(
     () => createOfficialMarketCalendarSourceCollectionHash(payload),
-    /applicability must cover the regime without gaps or overlap/
+    /applicability union must cover the regime without gaps/
   );
 });
 
@@ -164,6 +164,32 @@ test("official calendar source collection accepts contiguous multi-document regi
   ];
 
   assert.doesNotThrow(() => createOfficialMarketCalendarSourceCollectionHash(payload));
+});
+
+test("official calendar source collection accepts overlapping corroborating regime evidence", () => {
+  const payload = collectionPayload();
+  payload.documents.splice(
+    3,
+    0,
+    document(
+      "krx.hours.1530.corroborating",
+      ["session_hours"],
+      "2016-08-01",
+      null
+    )
+  );
+  payload.regularSessionRegimes[1]!.documentIds = [
+    "krx.hours.1530",
+    "krx.hours.1530.corroborating"
+  ];
+  payload.regularSessionSupersessions[0]!.replacementDocumentIds = [
+    "krx.hours.1530",
+    "krx.hours.1530.corroborating"
+  ];
+
+  assert.doesNotThrow(() =>
+    createOfficialMarketCalendarSourceCollectionHash(payload)
+  );
 });
 
 test("official calendar source collection rejects unresolved open-ended regime overlap", () => {

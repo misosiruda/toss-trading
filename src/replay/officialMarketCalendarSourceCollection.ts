@@ -504,14 +504,20 @@ function validateRegimeApplicability(
         "regime document applicability extends outside regime without supersession"
       );
     }
-    if (interval.startDate !== expectedStart) {
+    if (interval.endDate < expectedStart) {
+      continue;
+    }
+    if (interval.startDate > expectedStart) {
       issue(
         context,
         ["regularSessionRegimes", regimeIndex, "documentIds"],
-        "regime document applicability must cover the regime without gaps or overlap"
+        "regime document applicability union must cover the regime without gaps"
       );
     }
-    expectedStart = nextCalendarDate(interval.endDate);
+    const nextStart = nextCalendarDate(interval.endDate);
+    if (nextStart > expectedStart) {
+      expectedStart = nextStart;
+    }
   }
   if (ordered.length === 0 || expectedStart !== nextCalendarDate(regimeEnd)) {
     issue(
