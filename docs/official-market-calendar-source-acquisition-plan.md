@@ -167,6 +167,7 @@ canonical hash에 포함하도록 revision해야 한다.
 - Date-effective `regularSessionRegimes`
 - Source-backed `exceptionScheduleIntervals`
 - Date-specific, source-backed `sessionHoursExceptions`
+- `early_close`의 close override와 `delayed_open`의 open/close override
 - 각 session의 근거 `documentIds`
 - Open session이 참조한 `regularSessionRegimeId`
 - Non-regular open session이 참조한 `sessionHoursExceptionId`
@@ -255,12 +256,18 @@ Ingestion adapter는 accepted source row에서 다음 값만 생성할 수 있�
 
 Open/close timestamp는 `Asia/Seoul` 또는 `America/New_York` timezone으로
 계산한다. NYSE offset을 상수로 두지 않고 해당 session date의 DST를
-적용한다. `regular`은 date-effective regime과 정확히 일치해야 한다.
-`early_close`는 regular open과 source-backed early close를 검증한다.
-`delayed_open`은 regular open보다 늦고 date-specific
-`sessionHoursExceptions`에 기록된 실제 open/close와 정확히 일치해야 한다.
-Delayed open을 regular session으로 축소하거나 close time을 regime에서
-추정하지 않는다.
+적용한다. Date-effective `regularSessionRegime`은 해당 날짜 open/close의
+기본값이다. Accepted provenance와 coverage 검증을 통과한 canonical
+`sessionHoursException`이 있으면 그 날짜에만 field-level override를 먼저
+적용한 뒤 effective session hours를 계산한다.
+
+`regular`은 exception이 없고 date-effective regime과 정확히 일치해야 한다.
+`early_close`는 exception의 close override를 사용하고 open은 effective
+regime open을 유지한다. `delayed_open`은 exception의 실제 open/close
+override를 모두 사용하며 open이 regular open보다 늦어야 한다. 각
+non-regular open session은 `sessionHoursExceptionId`를 참조해야 한다. Delayed
+open을 regular session으로 축소하거나 close time을 regime에서 추정하지
+않는다.
 
 ## Freshness 기준
 
@@ -287,8 +294,11 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - KRX source가 NYSE date를 설명하거나 반대 exchange date를 대신하지 않는다.
 - 각 exchange는 coverage의 모든 calendar date에 정확히 한 session을 가진다.
 - Weekend row는 공식 holiday row와 중복 생성하지 않는다.
-- Official exception과 regular-session rule이 충돌하면 exception을 자동
-  우선하지 않고 source conflict로 중단한다.
+- 검증된 canonical `sessionHoursException`의 field-level override는 regular
+  hours와 다르다는 이유만으로 conflict로 처리하지 않고 해당 날짜에만
+  deterministic precedence를 가진다.
+- 같은 exchange/date의 official exception document가 서로 다른 session type,
+  override field 또는 timestamp를 주장하면 source conflict로 중단한다.
 - 결합된 payload는 existing strict contract와 canonical hash 검증을
   통과해야 한다.
 - 검증된 artifact만 existing exclusive writer와 legacy projection에
@@ -311,7 +321,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - source hash, byte length, coverage 불일치
 - Evidence role과 row coverage/applicability interval 불일치
 - Exception schedule coverage gap 또는 source-backed completeness 누락
-- duplicate date, conflicting session 또는 unknown source format
+- duplicate date, conflicting exception/session 또는 unknown source format
 - Target interval의 delayed-open source 또는 `sessionHoursExceptions`
   provenance 누락
 - Atomic no-replace publish primitive 미지원 또는 destination collision
@@ -353,6 +363,8 @@ date-effective regular-session regime과 session-level document provenance를
 - no-replace publish 후 parent directory sync와 POSIX sync failure 처리
 - regular-session regime gap/overlap reject
 - session date와 effective regime mismatch reject
+- validated exception의 field-level precedence와 unaffected regime field 검증
+- 같은 exchange/date의 exception type 또는 override timestamp conflict reject
 - delayed-open exception provenance와 actual open/close 검증
 - timezone/DST open-close conversion
 - existing output 보존
