@@ -71,13 +71,14 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
-| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, representation headers, response status와 `Location`을 순서대로 기록 |
+| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, representation headers, negotiated response protocol version, response status와 `Location`을 순서대로 기록 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `freshnessPolicyVersion` | 등록 후 변경하지 않는 source/coverage별 freshness policy identity |
 | `freshnessPolicyDefinition` | Source/coverage selector, expiry derivation rule과 parameters를 포함한 canonical policy definition |
 | `freshnessPolicyHash` | policy definition의 canonical `sha256:<hex>` |
 | `staleAfter` | `retrievedAt`과 등록된 policy에서 결정론적으로 계산한 effective expiry |
 | `httpStatus` | 성공 response status |
+| `httpProtocolVersion` | Final response에서 실제 negotiated된 `http_1_0`, `http_1_1`, `http_2` 또는 `http_3` |
 | `contentType` | response header의 media type |
 | `contentEncoding` | `Content-Encoding` 값 또는 encoding이 없으면 `null` |
 | `transferFraming` | `content_length`, `chunked` 또는 HTTP/2/3 `stream_end`. HTTP/1.x `connection_close`는 accepted evidence에서 금지 |
@@ -94,7 +95,8 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 Metadata 값은 실제 response와 parser 결과에서 계산한다. File name, local
 수정 시각, page title 또는 URL만으로 provenance를 인정하지 않는다.
 Top-level request field는 `redirectChain` 첫 entry와 같고 `finalUrl`,
-`httpStatus`는 마지막 entry의 URL/status와 같아야 한다. Acquisition client는
+`httpStatus`, `httpProtocolVersion`은 마지막 entry의 URL/status/protocol과
+같아야 한다. Acquisition client는
 opaque automatic redirect follow를 사용하지 않고 각 response와 다음 effective
 request를 관찰 가능하게 기록한다. 301/302/303 이후 POST가 GET으로 바뀌거나
 body/header가 제거되면 변경된 실제 method, `null` body hash와 effective
@@ -106,6 +108,16 @@ contract로 검증한 뒤 명시적으로 decode한다. `transferCompleted`는 d
 length 수신 완료, terminal chunk 또는 HTTP/2/3 end-of-stream을 client가 확인한
 경우에만 `true`이다. HTTP/1.x close-delimited response는 정상 EOF와 premature
 FIN을 구분할 수 없으므로 parser 결과나 저장 후 hash와 무관하게 거부한다.
+Protocol/framing 조합은 다음만 허용한다.
+
+- `http_1_0`: `content_length`
+- `http_1_1`: `content_length` 또는 `chunked`
+- `http_2`, `http_3`: `stream_end`
+
+Unknown protocol, HTTP/1.x `stream_end`, HTTP/1.0 `chunked` 또는 HTTP/2/3의
+HTTP/1.x framing label은 fail-closed로 거부한다. HTTP/2/3 response에
+`Content-Length`가 있어도 transfer completion은 `stream_end`로 기록하고 declared
+length는 저장 bytes와 별도로 교차검증한다.
 
 Acquisition client는 cookie jar/store를 비활성화하고 최초 요청과 모든 redirect
 effective request에 `Cookie` header를 전송하지 않는다. Response의 `Set-Cookie`를
@@ -192,9 +204,11 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
 4. Final HTTP response가 성공이고 redirect loop 또는 authentication page가
    아니다.
 5. `transferCompleted`가 `true`이고 recorded `transferFraming`이 실제 protocol
-    completion과 일치한다. `declaredContentLength`가 있으면 저장한 exact
-    message content octets의 `contentLength`와 같아야 한다. HTTP/1.x
-    `connection_close` framing은 허용하지 않는다.
+    completion과 protocol/framing allowlist에 일치한다. Top-level
+    `httpProtocolVersion`은 final redirect entry의 negotiated protocol과 같아야
+    한다. `declaredContentLength`가 있으면 저장한 exact message content octets의
+    `contentLength`와 같아야 한다. HTTP/1.x `connection_close` framing은 허용하지
+    않는다.
 6. 저장한 byte length와 metadata의 `contentLength`가 일치한다.
 7. exact bytes에서 다시 계산한 hash가 `sourceDocumentHash`와 일치한다.
 8. Top-level request/final response field가 redirect chain의 first/last entry와
@@ -500,6 +514,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   binding의 exchange/collection/document identity 불일치
 - Artifact canonical hash와 package hash directory 불일치
 - HTTP message framing 미완료 또는 declared/stored content length 불일치
+- Negotiated HTTP protocol version 누락/불일치 또는 protocol/framing 조합 위반
 - HTTP/1.x `connection_close` framing 또는 outbound `Cookie`가 존재한 acquisition
 - Durable namespace ancestor sync 실패
 - Staging file 또는 populated nested directory의 publication 전 sync 실패
@@ -548,6 +563,8 @@ date-effective regular-session regime과 session-level document provenance를
 - source byte hash mismatch reject
 - truncated Content-Length, missing terminal chunk와 reset stream reject
 - declared/stored content length 및 transfer completion 독립 검증
+- Final/redirect negotiated protocol version 보존과 top-level boundary 일치 검증
+- HTTP/1.0, HTTP/1.1, HTTP/2/3 framing allowlist 및 mismatch reject
 - HTTP/1.x close-delimited response가 valid row boundary에서 끝나도 reject
 - recorded Content-Encoding의 explicit decode와 unknown encoding reject
 - redirect hop별 effective method/parameter/body/header mismatch reject
