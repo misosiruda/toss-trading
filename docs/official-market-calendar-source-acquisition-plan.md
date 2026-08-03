@@ -205,16 +205,26 @@ Revised exclusive writer는 다음 immutable package를 publish해야 한다.
 
 ```text
 <output-root>/official-market-calendar-evidence-package.v2/
-├── artifact.json
-└── sources/
-    └── sha256/
-        └── <source-document-sha256>.bin
+└── sha256/
+    └── <artifact-sha256-hex>/
+        ├── artifact.json
+        └── sources/
+            └── sha256/
+                └── <source-document-sha256>.bin
 ```
 
 Accepted acquisition metadata는 publish 과정에서 변경하지 않는다.
 `metadataHash`는 `archivePath`가 없는 canonical acquisition metadata만
 식별하고 `collectionHash`도 이 metadata hash와 source document hash로
-계산한다.
+계산한다. Revised artifact는 `artifactHash`를 제외한 canonical artifact
+payload의 SHA-256인 `artifactHash`를 가지며 package directory 이름의
+`<artifact-sha256-hex>`와 정확히 일치해야 한다.
+
+Freshness 재획득이나 source collection 변경으로 canonical artifact payload가
+바뀌면 새 `artifactHash` directory에 publish한다. 이전 immutable package는
+그대로 보존하며 fixed package directory, mutable `latest` directory 또는 기존
+package 교체로 새 evidence를 게시하지 않는다. Reader는 선택한 explicit
+`artifactHash` 또는 별도 검증된 catalog reference로 package를 연다.
 
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `documentId`, `archivePath`,
@@ -229,15 +239,16 @@ sidecar bytes의 length/hash를 다시 계산한 뒤에만 source parser를 재�
 모두 같아야 한다. 같은 path를 다른 hash/length에 연결하는 conflicting
 reuse만 거부한다.
 
-Package writer는 existing output root를 덮어쓰지 않는다. 같은 parent의
-writer-owned staging directory에 artifact와 모든 sidecar를 기록하고 durable
-flush, byte/hash/metadata cross-check를 완료한 뒤 package root로 atomic
-no-replace publish한다. Platform의 no-replace primitive는 destination이
-existing empty directory이거나 concurrent writer가 먼저 생성한 경우에도
-실패해야 한다. Preflight existence check, 일반 POSIX `rename` 또는
-cooperative lock만으로 no-replace를 주장하지 않는다. Atomic no-replace를
-지원하거나 동등하게 보장할 수 없는 platform에서는 publish를 fail-closed로
-중단한다.
+Package writer는 existing output root를 덮어쓰지 않는다. Artifact hash
+namespace의 같은 parent에 writer-owned staging directory를 만들고 artifact와
+모든 sidecar를 기록한 뒤 durable flush, byte/hash/metadata/path cross-check를
+완료한다. 검증된 `artifactHash`에서 destination을 계산해 package root로
+atomic no-replace publish한다. Platform의 no-replace primitive는 같은
+artifact identity의 destination이 existing empty directory이거나 concurrent
+writer가 먼저 생성한 경우에도 실패해야 한다. Preflight existence check,
+일반 POSIX `rename` 또는 cooperative lock만으로 no-replace를 주장하지 않는다.
+Atomic no-replace를 지원하거나 동등하게 보장할 수 없는 platform에서는
+publish를 fail-closed로 중단한다.
 
 No-replace publish 성공 후 parent directory를 `fsync`하고 이 sync가 끝난
 뒤에만 publish 완료를 반환한다. POSIX parent sync 실패는 성공으로 축소하지
@@ -329,6 +340,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - 대상 기간 일부의 official source provenance 누락
 - raw source bytes 또는 metadata 누락
 - Durable package의 source byte sidecar 누락 또는 hash/length 불일치
+- Artifact canonical hash와 package hash directory 불일치
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
 - redirect policy 또는 hop별 effective method, parameter, body hash,
   representation header 누락/불일치
@@ -374,6 +386,9 @@ date-effective regular-session regime과 session-level document provenance를
 - archive path traversal, conflicting path reuse와 hash/path mismatch reject
 - identical source bytes의 shared sidecar binding 허용
 - acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
+- freshness/source 변경 artifact의 distinct hash directory 공존
+- artifact hash와 package directory identity mismatch reject
+- 동일 artifact identity 재게시 destination collision reject
 - existing empty package와 concurrent destination 생성 시 no-replace reject
 - atomic no-replace 미지원 platform reject와 staging failure cleanup
 - no-replace publish 후 parent directory sync와 POSIX sync failure 처리
