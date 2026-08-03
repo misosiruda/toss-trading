@@ -73,6 +73,10 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
 | `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, representation headers, response status와 `Location`을 순서대로 기록 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
+| `freshnessPolicyVersion` | 등록 후 변경하지 않는 source/coverage별 freshness policy identity |
+| `freshnessPolicyDefinition` | Source/coverage selector, expiry derivation rule과 parameters를 포함한 canonical policy definition |
+| `freshnessPolicyHash` | policy definition의 canonical `sha256:<hex>` |
+| `staleAfter` | `retrievedAt`과 등록된 policy에서 결정론적으로 계산한 effective expiry |
 | `httpStatus` | 성공 response status |
 | `contentType` | response header의 media type |
 | `contentEncoding` | `Content-Encoding` 값 또는 encoding이 없으면 `null` |
@@ -239,10 +243,13 @@ gap 양쪽에서 open session으로 유지되는 테스트를 포함한다. 이 
 
 Revised durable artifact는 `sourceCollectionHash`만 저장하지 않는다. Canonical
 collection manifest와 referenced document metadata의 request method/URL,
-retrieval time, evidence roles, row/schedule/applicability interval, metadata
-hash와 source byte hash를 payload 안에 포함한다. Exclusive writer는 이
-metadata를 session evidence와 같은 artifact에 기록해야 하며, gitignored
-acquisition package가 삭제돼도 provenance interpretation이 가능해야 한다.
+retrieval time, canonical freshness policy definition/version/hash와 derived
+expiry, evidence roles, row/schedule/applicability interval, metadata hash와 source
+byte hash를 payload 안에 포함한다. Exclusive writer는 이 metadata를 session
+evidence와 같은 artifact에 기록해야 하며, gitignored acquisition package나
+policy registry가 없어도 provenance와 expiry derivation을 재현할 수 있어야 한다.
+Policy identity, definition 또는 derived expiry가 달라지면 canonical artifact
+payload와 `artifactHash`도 달라져야 한다.
 
 Exact source bytes도 gitignored acquisition package에만 남기지 않는다.
 Revised exclusive writer는 다음 immutable package를 publish해야 한다.
@@ -310,9 +317,13 @@ publication-record namespace는 publication 전에 durable 상태여야 한다. 
 이 과정이 실패하면 package publication을 시작하지 않는다.
 
 Artifact hash namespace의 같은 parent에 writer-owned staging directory를 만들고
-artifact와 모든 sidecar를 기록한 뒤 durable flush와 byte/hash/metadata/path
-cross-check를 완료한다. 검증된 `artifactHash`에서 destination을 계산해 package
-root로 atomic no-replace publish한다. Platform의 no-replace primitive는 같은
+artifact와 모든 sidecar를 기록한 뒤 각 file을 durable flush하고
+byte/hash/metadata/path cross-check를 완료한다. 그 다음 populated nested
+directory에서 staging package root 방향으로 `sources/sha256`, `sources`와 모든
+중간 directory 및 staging root를 bottom-up `fsync`해 각 file/subdirectory entry를
+durable하게 만든다. 어느 file 또는 staging directory sync라도 실패하면 publish를
+시작하지 않는다. 검증된 `artifactHash`에서 destination을 계산해 package root로
+atomic no-replace publish한다. Platform의 no-replace primitive는 같은
 artifact identity의 destination이 existing empty directory이거나 concurrent
 writer가 먼저 생성한 경우에도 실패해야 한다. Preflight existence check,
 일반 POSIX `rename` 또는 cooperative lock만으로 no-replace를 주장하지 않는다.
@@ -370,9 +381,13 @@ open을 regular session으로 축소하거나 close time을 regime에서 추정�
 
 ## Freshness 기준
 
-`retrievedAt`은 실제 source retrieval 시각이다. `staleAfter`는 source
-update cadence와 대상 coverage의 완결성을 확인한 뒤 별도 실행 입력에서
-명시한다.
+`retrievedAt`은 실제 source retrieval 시각이다. `freshnessPolicyVersion`과
+`freshnessPolicyHash`는 source update cadence와 대상 coverage의 완결성을
+구분하는 등록된 immutable policy를 식별한다. Canonical
+`freshnessPolicyDefinition`도 artifact에 보존해 registry 없이 hash와 expiry를
+재계산할 수 있어야 한다. `staleAfter`는 이 policy와 `retrievedAt`에서
+결정론적으로 계산하고 document metadata, revised canonical artifact와
+`artifactHash`에 결합한다. 실행 시각의 별도 입력으로 expiry를 교체하지 않는다.
 
 다음 처리는 금지한다.
 
@@ -382,8 +397,9 @@ update cadence와 대상 coverage의 완결성을 확인한 뒤 별도 실행 �
 - 과거 archive의 불변성과 최신 future calendar freshness를 같은 주장으로
   취급
 
-`staleAfter` policy가 등록되지 않았거나 artifact `generatedAt`이 freshness
-window 밖이면 ingestion은 artifact를 생성하지 않는다.
+Freshness policy가 등록되지 않았거나 policy hash가 registry definition과
+일치하지 않거나 recorded `staleAfter`가 결정론적 재계산 값과 다르거나 artifact
+`generatedAt`이 freshness window 밖이면 ingestion은 artifact를 생성하지 않는다.
 
 ## Cross-Source Verification
 
@@ -418,6 +434,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - Artifact canonical hash와 package hash directory 불일치
 - HTTP message framing 미완료 또는 declared/stored content length 불일치
 - Durable namespace ancestor sync 실패
+- Staging file 또는 populated nested directory의 publication 전 sync 실패
 - Publication record 누락, hash/path 불일치 또는 record parent sync 실패
 - `PublicationCoordinator` verified activation 누락
 - HTTPS/certificate 검증 실패, redirect downgrade 또는 insecure TLS option
@@ -435,7 +452,7 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - Target interval의 delayed-open source 또는 `sessionHoursExceptions`
   provenance 누락
 - Atomic no-replace publish primitive 미지원 또는 destination collision
-- freshness policy 미등록 또는 stale source
+- freshness policy identity/hash/derived expiry 누락·불일치 또는 stale source
 
 이 상태에서는 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`과
 `DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다. Observed market snapshot,
@@ -479,9 +496,13 @@ date-effective regular-session regime과 session-level document provenance를
 - identical source bytes의 shared sidecar binding 허용
 - acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
 - freshness/source 변경 artifact의 distinct hash directory 공존
+- freshness policy version/hash 또는 derived `staleAfter` 변경 시 distinct
+  canonical artifact hash와 재계산 mismatch reject
 - artifact hash와 package directory identity mismatch reject
 - 동일 artifact identity 재게시 destination collision reject
 - first publication의 newly created ancestor sync failure 처리
+- artifact/sidecar file sync 후 populated staging directory를 bottom-up sync하지
+  않거나 nested directory sync가 실패하면 publication 미실행
 - existing empty package와 concurrent destination 생성 시 no-replace reject
 - atomic no-replace 미지원 platform reject와 staging failure cleanup
 - package parent sync failure 시 publication record 미생성 및 reader quarantine
