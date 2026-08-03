@@ -89,6 +89,24 @@ test("official calendar source collection binds intervals to document role cover
   );
 });
 
+test("official calendar source collection binds regime hours to source documents", () => {
+  const payload = collectionPayload();
+  payload.regularSessionRegimes[0]!.closeLocalTime = "15:10";
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /regime hours must match every referenced session_hours document/
+  );
+});
+
+test("official calendar source collection rejects non-ASCII identifiers", () => {
+  const payload = collectionPayload();
+  payload.documents[0]!.documentId = "krx.휴일";
+  assert.throws(
+    () => createOfficialMarketCalendarSourceCollectionHash(payload),
+    /identifier must use the registered ASCII grammar/
+  );
+});
+
 test("official calendar source collection rejects coverage gaps", () => {
   const payload = collectionPayload();
   payload.exceptionScheduleIntervals[0]!.startDate = "2016-01-02";
@@ -312,6 +330,12 @@ function document(
     metadataHash: hash(seed),
     sourceDocumentHash: hash(seed === "f" ? "e" : "f"),
     evidenceRoles,
+    regularSessionHours: evidenceRoles.includes("session_hours")
+      ? {
+          openLocalTime: "09:00",
+          closeLocalTime: documentId.includes("1530") ? "15:30" : "15:00"
+        }
+      : null,
     scheduleCoverageIntervals: evidenceRoles
       .filter(isExceptionCoverageRole)
       .map((coverageRole) => ({

@@ -47,7 +47,28 @@ const calendarDateSchema = z
 const localTimeSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "local time must use HH:mm");
-const identifierSchema = z.string().trim().min(1);
+const identifierSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/,
+    "identifier must use the registered ASCII grammar"
+  );
+
+const regularSessionHoursSchema = z
+  .object({
+    openLocalTime: localTimeSchema,
+    closeLocalTime: localTimeSchema
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (minutes(value.openLocalTime) >= minutes(value.closeLocalTime)) {
+      issue(
+        context,
+        ["closeLocalTime"],
+        "document regular session open must be before close"
+      );
+    }
+  });
 
 const documentScheduleCoverageIntervalSchema = z
   .object({
@@ -72,6 +93,7 @@ const documentSchema = z
     metadataHash: sha256HashSchema,
     sourceDocumentHash: sha256HashSchema,
     evidenceRoles: z.array(evidenceRoleSchema).min(1),
+    regularSessionHours: regularSessionHoursSchema.nullable(),
     scheduleCoverageIntervals: z.array(
       documentScheduleCoverageIntervalSchema
     ),
@@ -85,7 +107,7 @@ const documentSchema = z
     const previousEndByRole = new Map<string, string>();
     for (const [index, interval] of value.scheduleCoverageIntervals.entries()) {
       const key = `${interval.coverageRole}:${interval.startDate}:${interval.endDate}`;
-      if (previousKey !== null && previousKey.localeCompare(key) >= 0) {
+      if (previousKey !== null && compareCanonicalText(previousKey, key) >= 0) {
         issue(
           context,
           ["scheduleCoverageIntervals", index],
@@ -112,6 +134,16 @@ const documentSchema = z
         );
       }
       previousEndByRole.set(interval.coverageRole, interval.endDate);
+    }
+    if (
+      value.evidenceRoles.includes("session_hours") !==
+      (value.regularSessionHours !== null)
+    ) {
+      issue(
+        context,
+        ["regularSessionHours"],
+        "session_hours evidence and parsed regular session hours must coexist"
+      );
     }
     if (
       value.applicabilityStartDate !== null &&
@@ -318,7 +350,7 @@ function validateExceptionIntervals(
   const previousEndByRole = new Map<string, string>();
   for (const [index, interval] of value.exceptionScheduleIntervals.entries()) {
     const key = `${interval.coverageRole}:${interval.startDate}:${interval.endDate}`;
-    if (previousKey !== null && previousKey.localeCompare(key) >= 0) {
+    if (previousKey !== null && compareCanonicalText(previousKey, key) >= 0) {
       issue(context, ["exceptionScheduleIntervals", index], "exception schedule intervals must use canonical role and date order");
     }
     previousKey = key;
@@ -411,6 +443,17 @@ function validateRegimes(
         issue(context, ["regularSessionRegimes", index, "documentIds"], "regime document must exist and declare session_hours evidence");
         continue;
       }
+      if (
+        document.regularSessionHours === null ||
+        document.regularSessionHours.openLocalTime !== regime.openLocalTime ||
+        document.regularSessionHours.closeLocalTime !== regime.closeLocalTime
+      ) {
+        issue(
+          context,
+          ["regularSessionRegimes", index, "documentIds"],
+          "regime hours must match every referenced session_hours document"
+        );
+      }
       if (document.applicabilityStartDate === null) {
         issue(context, ["regularSessionRegimes", index, "documentIds"], "regime document must declare applicability start");
         continue;
@@ -450,7 +493,7 @@ function validateRegimeApplicability(
   context: z.RefinementCtx
 ): void {
   const ordered = [...intervals].sort((left, right) =>
-    left.startDate.localeCompare(right.startDate)
+    compareCanonicalText(left.startDate, right.startDate)
   );
   let expectedStart = regimeStart;
   for (const interval of ordered) {
@@ -517,7 +560,11 @@ function validateSupersessions(
   const ids = new Set<string>();
   let previousId: string | null = null;
   for (const [index, supersession] of value.regularSessionSupersessions.entries()) {
-    if (ids.has(supersession.supersessionId) || (previousId !== null && previousId.localeCompare(supersession.supersessionId) >= 0)) {
+    if (
+      ids.has(supersession.supersessionId) ||
+      (previousId !== null &&
+        compareCanonicalText(previousId, supersession.supersessionId) >= 0)
+    ) {
       issue(context, ["regularSessionSupersessions", index, "supersessionId"], "supersessions must have unique canonical IDs");
     }
     ids.add(supersession.supersessionId);
@@ -604,7 +651,7 @@ function coversDateRange(
 ): boolean {
   let expectedStart = targetStart;
   const ordered = [...intervals].sort((left, right) =>
-    left.startDate.localeCompare(right.startDate)
+    compareCanonicalText(left.startDate, right.startDate)
   );
   for (const interval of ordered) {
     if (interval.endDate < expectedStart || interval.startDate > targetEnd) {
@@ -629,10 +676,17 @@ function validateCanonicalStrings(
   context: z.RefinementCtx,
   path: PropertyKey[]
 ): void {
-  const canonical = [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  const canonical = [...new Set(values)].sort(compareCanonicalText);
   if (canonical.length !== values.length || canonical.some((value, index) => value !== values[index])) {
     issue(context, path, "values must be unique and use canonical lexical order");
   }
+}
+
+function compareCanonicalText(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
 }
 
 function issue(context: z.RefinementCtx, path: PropertyKey[], message: string): void {
