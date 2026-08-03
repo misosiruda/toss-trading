@@ -348,11 +348,12 @@ Activation/recovery 시각 또는 artifact `generatedAt` 검증 결과를 캐시
 read-time gate를 생략하지 않는다. 한 document라도 `asOf < retrievedAt`이면
 handle을 fail-closed로 거부하고 `source_not_yet_retrieved` audit을 남기되 구조적
 set membership은 변경하지 않는다. `asOf`가 어느 document의 `staleAfter`와
-같거나 늦으면 coordinator lock 아래 해당 hash를 `verifiedPublicationSet`에서
-제거하고 read를 거부하며 `publication_freshness_rejected` audit에
-`artifactHash`, `asOf`와 expired `SourceDocumentRef`를 기록한다. 검증된 handle은
-해당 explicit `asOf`에만 결합되며 후속 replay는 새 open과 freshness 검증을
-수행해야 한다.
+같거나 늦으면 해당 read를 거부하고 `publication_freshness_rejected` audit에
+`artifactHash`, `asOf`와 expired `SourceDocumentRef`를 기록하되 구조적 set
+membership은 변경하지 않는다. Explicit `asOf` 요청은 시간 순서가 보장되지
+않으므로 stale request가 이후 valid historical request의 결과를 바꾸지 않아야
+한다. 검증된 handle은 해당 explicit `asOf`에만 결합되며 후속 replay는 새 open과
+freshness 검증을 수행해야 한다.
 
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `exchange`, `collectionId`,
@@ -576,7 +577,9 @@ date-effective regular-session regime과 session-level document provenance를
 - freshness policy version/hash 또는 derived `staleAfter` 변경 시 distinct
   canonical artifact hash와 재계산 mismatch reject
 - 같은 process에서 expiry 전 open 성공 후 exact `staleAfter` 또는 이후 open은
-  전체 package reject, verified set eviction과 freshness audit 검증
+  해당 read만 reject하고 freshness audit을 남기며 structural set은 유지
+- Stale `asOf` reject 뒤 valid historical `asOf` open이 성공해 request order와
+  무관한 결과를 유지
 - 여러 document 중 하나만 expired이거나 `asOf < retrievedAt`이어도 package 전체
   reject하고 후속 replay가 cached activation을 재사용하지 않음
 - artifact hash와 package directory identity mismatch reject
