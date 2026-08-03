@@ -122,9 +122,20 @@ unlisted weekday를 exception 없음으로 해석하지 않는다.
 복수 interval은 겹치거나 인접한 구간을 canonical merge한 뒤 저장하며, 다른
 role의 더 넓은 interval로 좁은 role의 coverage를 확장하지 않는다.
 `session_hours`처럼 rule을 주장하는 document는 source가 직접 뒷받침하는
-applicability interval을 가져야 하며, 새 rule로 대체되는 날짜가 source에
-없으면 end를 `null`로 유지한다. 하나의 document가 두 역할을 모두 가지면
-schedule coverage와 rule applicability를 독립적으로 기록한다.
+applicability interval을 가져야 한다. Source가 end date를 명시하지 않으면
+document metadata의 `applicabilityEndDate`는 `null`로 보존하며 후속 문서의
+retrieval/publication date로 원문 값을 덮어쓰지 않는다. 하나의 document가 두
+역할을 모두 가지면 schedule coverage와 rule applicability를 독립적으로 기록한다.
+
+후속 accepted `session_hours` document set이 같은 exchange의 replacement full
+regular hours와 `replacementEffectiveStartDate`를 함께 뒷받침하면 manifest의
+`regularSessionSupersessions`가 이전 open-ended rule을 종료할 수 있다. 각 record는
+`supersessionId`, superseded/replacement `documentIds`, replacement effective
+start와 그 전 calendar date인 `derivedSupersededEndDate`를 canonical하게
+보존한다. Superseded document는 직전 날짜를 source-declared applicability로
+덮어야 하고 replacement document set은 effective start를 덮어야 한다. Effective
+start, replacement hours 또는 대상 rule이 모호하거나 같은 boundary에 복수
+replacement가 있으면 supersession을 추론하지 않고 overlap blocker를 유지한다.
 
 각 `regularSessionRegime`의 `documentIds`는 `session_hours` evidence role을
 가진 accepted document만 참조해야 한다. 모든 referenced document의
@@ -148,6 +159,7 @@ document나 서로 다른 open/close를 주장하는 document로 regime을 accep
 | `requiredExceptionCoverageRoles` | Versioned exchange contract가 target interval에 요구하는 exception coverage role 목록 |
 | `exceptionScheduleIntervals` | `coverageRole`, start/end date와 근거 `documentIds`를 role/date/document 순서로 결합한 interval 목록 |
 | `regularSessionRegimes` | `regimeId`, effective start/end date, local open/close, 근거 `documentIds` |
+| `regularSessionSupersessions` | Official replacement effective date로 open-ended prior rule을 종료한 provenance-backed boundary 목록 |
 | `collectionHash` | `collectionHash`를 제외한 canonical manifest payload hash |
 
 Manifest hash가 각 원문 hash를 대체하지 않는다. Collection verification은
@@ -186,8 +198,9 @@ Exchange source는 다음 조건을 모두 충족해야 accepted 상태가 된�
     `coverageRole` interval union 안에 완전히 포함되어야 한다.
 11. 2013-01-01부터 2026-05-31까지 필요한 exchange-date를 official source
    collection이 빠짐없이 설명한다.
-12. Source collection 사이에 같은 exchange-date의 session type 또는
-   timestamp가 충돌하지 않는다.
+12. Validated `regularSessionSupersession`을 적용한 effective regime 기준으로
+    같은 exchange-date의 session type 또는 timestamp가 충돌하지 않는다. Raw
+    open-ended claim의 overlap을 document 순서나 선택으로 임의 해소하지 않는다.
 13. Manifest의 document 목록, metadata hash, source byte hash와
    `collectionHash`가 모두 재계산 값과 일치한다.
 14. `regularSessionRegimes`가 gap이나 overlap 없이 대상 기간을 덮는다. 각
@@ -217,6 +230,7 @@ canonical hash에 포함하도록 revision해야 한다.
 - Canonical collection manifest와 collection에 포함된 모든 document metadata
 - 모든 document identity, metadata hash와 source document hash
 - Date-effective `regularSessionRegimes`
+- Provenance-backed `regularSessionSupersessions`와 derived prior end boundary
 - Versioned `requiredExceptionCoverageRoles`
 - Coverage role별 source-backed `exceptionScheduleIntervals`
 - Date-specific, source-backed `sessionHoursExceptions`
@@ -446,6 +460,8 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
   동일 role metadata coverage 이탈
 - Regular-session regime의 `session_hours` role, applicability coverage 또는
   parsed open/close binding 불일치
+- Open-ended session-hours rule의 supersession 근거 누락·모호성 또는 derived
+  boundary 불일치
 - Required exception coverage role 누락, role별 schedule gap/overlap 또는
   source-backed completeness 누락
 - duplicate date, conflicting exception/session 또는 unknown source format
@@ -510,6 +526,11 @@ date-effective regular-session regime과 session-level document provenance를
 - process restart 시 empty verified set과 explicit recovery activation 검증
 - publication record hash/path/no-replace/parent sync와 recovery audit 검증
 - regular-session regime gap/overlap reject
+- source-declared open end 보존과 provenance-backed supersession boundary 검증
+- KRX 2016 transition에서 prior 15:00 regime은 2016-07-31에 종료되고 replacement
+  15:30 regime은 official effective date인 2016-08-01에 시작하는 회귀 검증
+- replacement effective date/hours 누락, 복수 replacement 또는 retrieval date
+  기반 boundary 추론 reject
 - regime document의 `session_hours` role 누락, applicability gap/overlap 또는
   parsed open/close 불일치 reject
 - session date와 effective regime mismatch reject
