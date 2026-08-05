@@ -66,8 +66,11 @@ test("calendar response freshness rejects a derived time mismatch", () => {
 test("calendar response freshness rejects invalid timestamps and Age", () => {
   for (const invalid of [
     freshness({ retrievedAt: "2025-07-01T12:00:10" }),
+    freshness({ retrievedAt: "2025-07-01T12:00:10.000999Z" }),
     freshness({ responseDate: "2025-07-01T12:00:00.500Z" }),
     freshness({ responseDate: "2025-07-01T12:00:00.000999Z" }),
+    freshness({ effectiveResponseAt: "2025-07-01T12:00:00.000999Z" }),
+    freshness({ effectiveResponseAt: "2025-07-01T21:00:00.000+09:00" }),
     freshness({ responseAgeSeconds: -1 }),
     freshness({ responseAgeSeconds: 1.5 }),
     freshness({ responseAgeSeconds: Number.MAX_SAFE_INTEGER + 1 }),

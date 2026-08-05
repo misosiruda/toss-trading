@@ -5,6 +5,9 @@ import { isoDateTimeSchema } from "../domain/schemas.js";
 const explicitOffsetDateTimeSchema = isoDateTimeSchema.refine(
   hasExplicitTimeZoneOffset,
   "date-time must include an explicit timezone offset"
+).refine(
+  hasAtMostMillisecondPrecision,
+  "date-time must not exceed millisecond precision"
 );
 const responseDateTimeSchema = explicitOffsetDateTimeSchema.refine(
   (value) =>
@@ -12,6 +15,12 @@ const responseDateTimeSchema = explicitOffsetDateTimeSchema.refine(
       value
     ),
   "response Date must use whole-second precision"
+);
+const effectiveResponseDateTimeSchema = explicitOffsetDateTimeSchema.refine(
+  (value) =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
+    new Date(value).toISOString() === value,
+  "effective response time must use canonical UTC millisecond format"
 );
 
 const responseFreshnessInputSchema = z
@@ -30,7 +39,7 @@ const responseFreshnessInputSchema = z
 export const officialMarketCalendarResponseFreshnessSchema =
   responseFreshnessInputSchema
     .safeExtend({
-      effectiveResponseAt: explicitOffsetDateTimeSchema
+      effectiveResponseAt: effectiveResponseDateTimeSchema
     })
     .strict();
 
@@ -91,4 +100,10 @@ export function resolveOfficialMarketCalendarResponseFreshness(
 
 function hasExplicitTimeZoneOffset(value: string): boolean {
   return /T.+(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+}
+
+function hasAtMostMillisecondPrecision(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/i.test(
+    value
+  );
 }
