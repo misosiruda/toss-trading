@@ -8,6 +8,9 @@ const explicitOffsetDateTimeSchema = isoDateTimeSchema.refine(
 ).refine(
   hasAtMostMillisecondPrecision,
   "date-time must not exceed millisecond precision"
+).refine(
+  representsExactCalendarDateTime,
+  "date-time must represent an existing calendar date"
 );
 const responseDateTimeSchema = explicitOffsetDateTimeSchema.refine(
   (value) =>
@@ -105,5 +108,38 @@ function hasExplicitTimeZoneOffset(value: string): boolean {
 function hasAtMostMillisecondPrecision(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/i.test(
     value
+  );
+}
+
+function representsExactCalendarDateTime(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/i.exec(
+      value
+    );
+  if (match === null) {
+    return false;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+
+  const offsetMinutes =
+    match[8]!.toUpperCase() === "Z"
+      ? 0
+      : (match[9] === "+" ? 1 : -1) *
+        (Number(match[10]) * 60 + Number(match[11]));
+  const local = new Date(parsed + offsetMinutes * 60_000);
+  const milliseconds = Number((match[7] ?? "").padEnd(3, "0"));
+
+  return (
+    local.getUTCFullYear() === Number(match[1]) &&
+    local.getUTCMonth() + 1 === Number(match[2]) &&
+    local.getUTCDate() === Number(match[3]) &&
+    local.getUTCHours() === Number(match[4]) &&
+    local.getUTCMinutes() === Number(match[5]) &&
+    local.getUTCSeconds() === Number(match[6]) &&
+    local.getUTCMilliseconds() === milliseconds
   );
 }
