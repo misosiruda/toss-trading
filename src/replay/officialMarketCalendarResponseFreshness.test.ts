@@ -7,7 +7,7 @@ test("calendar response freshness uses apparent age when it is larger", () => {
   const resolved = resolveOfficialMarketCalendarResponseFreshness(
     freshness({
       retrievedAt: "2025-07-01T12:00:10.000Z",
-      responseDate: "2025-07-01T12:00:00.000Z",
+      responseDate: "2025-07-01T12:00:00Z",
       responseAgeSeconds: 5,
       effectiveResponseAt: "2025-07-01T12:00:00.000Z"
     })
@@ -45,7 +45,7 @@ test("calendar response freshness rejects a future response Date", () => {
     () =>
       resolveOfficialMarketCalendarResponseFreshness(
         freshness({
-          responseDate: "2025-07-01T12:00:11.000Z",
+          responseDate: "2025-07-01T12:00:11Z",
           effectiveResponseAt: "2025-07-01T12:00:10.000Z"
         })
       ),
@@ -67,6 +67,7 @@ test("calendar response freshness rejects invalid timestamps and Age", () => {
   for (const invalid of [
     freshness({ retrievedAt: "2025-07-01T12:00:10" }),
     freshness({ responseDate: "2025-07-01T12:00:00.500Z" }),
+    freshness({ responseDate: "2025-07-01T12:00:00.000999Z" }),
     freshness({ responseAgeSeconds: -1 }),
     freshness({ responseAgeSeconds: 1.5 }),
     freshness({ responseAgeSeconds: Number.MAX_SAFE_INTEGER + 1 }),
@@ -100,7 +101,7 @@ function freshness(
 ) {
   return {
     retrievedAt: "2025-07-01T12:00:10.000Z",
-    responseDate: "2025-07-01T12:00:00.000Z",
+    responseDate: "2025-07-01T12:00:00Z",
     responseAgeSeconds: 5,
     effectiveResponseAt: "2025-07-01T12:00:00.000Z",
     ...overrides

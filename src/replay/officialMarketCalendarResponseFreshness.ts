@@ -7,7 +7,10 @@ const explicitOffsetDateTimeSchema = isoDateTimeSchema.refine(
   "date-time must include an explicit timezone offset"
 );
 const responseDateTimeSchema = explicitOffsetDateTimeSchema.refine(
-  (value) => Date.parse(value) % 1_000 === 0,
+  (value) =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/i.test(
+      value
+    ),
   "response Date must use whole-second precision"
 );
 
