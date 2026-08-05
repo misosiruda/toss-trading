@@ -17,6 +17,9 @@ import {
   type OfficialMarketCalendarSourceBackedClosure
 } from "./officialMarketCalendarSourceBackedClosure.js";
 import {
+  resolveOfficialMarketCalendarSessionHoursExceptions
+} from "./officialMarketCalendarSessionHoursException.js";
+import {
   officialMarketCalendarWeekendSessionSchema,
   resolveOfficialMarketCalendarWeekendSessions,
   type OfficialMarketCalendarWeekendSession
@@ -114,6 +117,11 @@ export function resolveOfficialMarketCalendarSessionSet(
       sessionHoursExceptions: options.sessionHoursExceptions
     }
   );
+  const sessionHoursExceptions =
+    resolveOfficialMarketCalendarSessionHoursExceptions(
+      options.sessionHoursExceptions,
+      { collections: selectedCollections }
+    );
   const closures = resolveOfficialMarketCalendarSourceBackedClosures(
     sessionSet.sourceBackedClosures,
     { collections: selectedCollections }
@@ -128,6 +136,22 @@ export function resolveOfficialMarketCalendarSessionSet(
     ...closures.map(({ closure }) => closure),
     ...weekends.map(({ session }) => session)
   ];
+  const openExchangeDates = new Set(
+    openSessions.map(({ session }) =>
+      exchangeDateKey(session.exchange, session.sessionDate)
+    )
+  );
+  for (const { exception } of sessionHoursExceptions) {
+    if (
+      !openExchangeDates.has(
+        exchangeDateKey(exception.exchange, exception.sessionDate)
+      )
+    ) {
+      throw new Error(
+        "official calendar session hours exception must resolve to an open session"
+      );
+    }
+  }
   validateCompleteCoverage(sessionSet, sessions);
   return { sessionSet, sourceCollections };
 }

@@ -20,7 +20,7 @@
 - `src/replay/officialMarketCalendarOpenSession.ts`는 `regular`/`early_close`/`delayed_open` session의 regime provenance, optional exception identity, effective local hours와 composite source-ref union을 fail-closed로 결합한다.
 - `src/replay/officialMarketCalendarSourceBackedClosure.ts`는 `holiday`/`special_closure` session의 row-role document provenance와 role별 schedule completeness coverage를 분리해 fail-closed로 검증한다.
 - `src/replay/officialMarketCalendarWeekendSession.ts`는 Gregorian weekend session을 verified source collection identity/hash와 결합하되 official row provenance를 가장하지 않도록 `sourceDocumentRefs=[]`를 강제한다.
-- `src/replay/officialMarketCalendarSessionSet.ts`는 open/closure/weekend 계약을 KRX/NYSE coverage의 모든 exchange-date에 정확히 하나의 session이 존재하는 canonical set으로 결합한다.
+- `src/replay/officialMarketCalendarSessionSet.ts`는 open/closure/weekend 계약을 KRX/NYSE coverage의 모든 exchange-date에 정확히 하나의 session이 존재하는 canonical set으로 결합하고, 모든 `sessionHoursException`이 같은 exchange-date의 open session에 귀속되지 않으면 source conflict로 중단한다.
 - `src/replay/officialMarketCalendarEvidenceArtifactWriter.ts`는 strict schema, artifact hash와 artifact `generatedAt` 기준 source freshness를 검증한 뒤 official evidence JSON을 durable exclusive writer로 기록한다. Existing output은 덮어쓰지 않는다.
 - `src/replay/officialMarketCalendarLegacyProjection.ts`는 검증된 official evidence의 KRX/NYSE source를 legacy calendar rule로, 모든 exchange-date session을 `MarketCalendarFixture`로 결정론적으로 투영한다. Open session timestamp와 closed session semantics를 보존하고 artifact/source/session provenance를 `sourceRefs`에 결합한다.
 - `assessHistoricalDataAvailability()`는 optional `calendarValidation` 입력이 있을 때 window snapshot을 market별 calendar rule과 fixture로 검증하고, 휴장일/fixture 누락/session mismatch/timezone mismatch를 fail-closed issue로 보고한다.
