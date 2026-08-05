@@ -76,6 +76,18 @@ test("calendar session set rejects session hours exceptions for closed dates", (
   );
 });
 
+test("calendar session set allows session hours exceptions outside coverage", () => {
+  const fixture = fixtures();
+  fixture.sessionHoursExceptions.push(sessionHoursException("2025-07-03"));
+
+  const resolved = resolveOfficialMarketCalendarSessionSet(
+    sessionSet(fixture.collections),
+    fixture
+  );
+
+  assert.equal(resolved.sessionSet.weekendSessions.length, 4);
+});
+
 test("calendar session set rejects duplicate global session IDs", () => {
   const fixture = fixtures();
   const value = sessionSet(fixture.collections);
@@ -233,12 +245,12 @@ function provenance() {
   };
 }
 
-function sessionHoursException() {
+function sessionHoursException(sessionDate = "2025-07-05") {
   return {
     schemaVersion: "official_market_calendar_session_hours_exception.v1",
-    exceptionId: "nyse.early-close.2025-07-05",
+    exceptionId: `nyse.early-close.${sessionDate}`,
     exchange: "NYSE",
-    sessionDate: "2025-07-05",
+    sessionDate,
     exceptionType: "early_close",
     openLocalTimeOverride: null,
     closeLocalTimeOverride: "13:00",

@@ -143,6 +143,12 @@ export function resolveOfficialMarketCalendarSessionSet(
   );
   for (const { exception } of sessionHoursExceptions) {
     if (
+      exception.sessionDate < sessionSet.coverage.startDate ||
+      exception.sessionDate > sessionSet.coverage.endDate
+    ) {
+      continue;
+    }
+    if (
       !openExchangeDates.has(
         exchangeDateKey(exception.exchange, exception.sessionDate)
       )
