@@ -21,6 +21,10 @@ import {
   verifyOfficialMarketCalendarRangeRequestBoundary
 } from "./officialMarketCalendarRangeRequestBoundary.js";
 import {
+  type OfficialMarketCalendarRedirectClientPolicy,
+  verifyOfficialMarketCalendarRedirectClientPolicy
+} from "./officialMarketCalendarRedirectClientPolicy.js";
+import {
   type OfficialMarketCalendarRedirectLocationBoundary,
   verifyOfficialMarketCalendarRedirectLocationBoundary
 } from "./officialMarketCalendarRedirectLocationBoundary.js";
@@ -44,6 +48,7 @@ const redirectChainBoundarySchema = z
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
+    redirectClientPolicy: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
     methodBoundary: z.record(z.string(), z.unknown())
@@ -56,6 +61,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
+  redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
   methodBoundary: OfficialMarketCalendarRedirectMethodBoundary;
@@ -80,6 +86,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ),
     rangeRequestBoundaries: rawBoundary.rangeRequestBoundaries.map(
       verifyOfficialMarketCalendarRangeRequestBoundary
+    ),
+    redirectClientPolicy: verifyOfficialMarketCalendarRedirectClientPolicy(
+      rawBoundary.redirectClientPolicy
     ),
     statusBoundary: verifyOfficialMarketCalendarRedirectStatusBoundary(
       rawBoundary.statusBoundary
