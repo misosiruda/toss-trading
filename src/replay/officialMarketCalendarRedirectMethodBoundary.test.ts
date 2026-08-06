@@ -53,6 +53,23 @@ test("calendar redirect method boundary rejects GET request bodies", () => {
   );
 });
 
+test("calendar redirect method boundary rejects disconnected transitions", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectMethodBoundary({
+        transitions: [
+          transition(),
+          transition({
+            responseStatus: 303,
+            requestMethod: "POST",
+            requestBodyHash: hash("d")
+          })
+        ]
+      }),
+    /must form one continuous request chain/
+  );
+});
+
 test("calendar redirect method boundary rejects unsupported values and fields", () => {
   for (const invalidTransition of [
     { ...transition(), responseStatus: 307 },
@@ -82,7 +99,10 @@ function transitions() {
   return {
     transitions: [
       transition({ responseStatus: 301 }),
-      transition(),
+      transition({
+        requestMethod: "GET",
+        requestBodyHash: null
+      }),
       transition({
         responseStatus: 303,
         requestMethod: "GET",

@@ -37,5 +37,18 @@ export type OfficialMarketCalendarRedirectMethodBoundary = z.infer<
 export function verifyOfficialMarketCalendarRedirectMethodBoundary(
   value: unknown
 ): OfficialMarketCalendarRedirectMethodBoundary {
-  return redirectMethodBoundarySchema.parse(value);
+  const boundary = redirectMethodBoundarySchema.parse(value);
+  for (const [index, transition] of boundary.transitions.entries()) {
+    const previousTransition = boundary.transitions[index - 1];
+    if (
+      previousTransition !== undefined &&
+      (previousTransition.nextRequestMethod !== transition.requestMethod ||
+        previousTransition.nextRequestBodyHash !== transition.requestBodyHash)
+    ) {
+      throw new Error(
+        "redirect method transitions must form one continuous request chain"
+      );
+    }
+  }
+  return boundary;
 }
