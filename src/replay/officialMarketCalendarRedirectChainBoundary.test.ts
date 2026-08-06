@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
 
@@ -95,6 +96,21 @@ test("calendar redirect chain boundary rejects credential observation count mism
   }
 });
 
+test("calendar redirect chain boundary rejects cache request count mismatch", () => {
+  for (const cacheRequests of [
+    [cacheRequest()],
+    [cacheRequest(), cacheRequest(), cacheRequest()]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ cacheRequests })
+        ),
+      /cache request observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary rejects range observation count mismatch", () => {
   for (const rangeRequests of [
     [rangeRequest()],
@@ -153,10 +169,23 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /must not contain Range or If-Range headers/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          cacheRequests: [
+            cacheRequest(),
+            cacheRequest({ ifNoneMatchHeaderValues: ['"etag"'] })
+          ]
+        })
+      ),
+    /must not contain conditional headers/
+  );
 });
 
 function chain(
   overrides: Partial<{
+    cacheRequests: ReturnType<typeof cacheRequest>[];
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
@@ -171,6 +200,10 @@ function chain(
     "https://global.krx.co.kr/download"
   ];
   return {
+    cacheRequestPolicies: overrides.cacheRequests ?? [
+      cacheRequest(),
+      cacheRequest()
+    ],
     credentialHeaderBoundary: {
       effectiveRequests: overrides.credentialRequests ?? [
         credentialRequest(),
@@ -201,6 +234,25 @@ function chain(
     methodBoundary: {
       transitions: overrides.transitions ?? [methodTransition()]
     }
+  };
+}
+
+function cacheRequest(
+  overrides: Partial<{
+    cacheControlHeaderValues: string[];
+    pragmaHeaderValues: string[];
+    ifNoneMatchHeaderValues: string[];
+    ifModifiedSinceHeaderValues: string[];
+  }> = {}
+) {
+  return {
+    cacheRequestPolicyVersion:
+      OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION,
+    cacheControlHeaderValues: ["no-cache, no-store, max-age=0"],
+    pragmaHeaderValues: ["no-cache"],
+    ifNoneMatchHeaderValues: [],
+    ifModifiedSinceHeaderValues: [],
+    ...overrides
   };
 }
 
