@@ -95,6 +95,21 @@ test("calendar redirect chain boundary rejects credential observation count mism
   }
 });
 
+test("calendar redirect chain boundary rejects range observation count mismatch", () => {
+  for (const rangeRequests of [
+    [rangeRequest()],
+    [rangeRequest(), rangeRequest(), rangeRequest()]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ rangeRequests })
+        ),
+      /range observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -126,6 +141,18 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /must not contain credential headers/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          rangeRequests: [
+            rangeRequest(),
+            rangeRequest({ rangeHeaderValues: ["bytes=0-99"] })
+          ]
+        })
+      ),
+    /must not contain Range or If-Range headers/
+  );
 });
 
 function chain(
@@ -133,6 +160,7 @@ function chain(
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
+    rangeRequests: ReturnType<typeof rangeRequest>[];
     responseStatuses: number[];
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
@@ -160,6 +188,10 @@ function chain(
       effectiveRequestUrls,
       finalUrl: effectiveRequestUrls[effectiveRequestUrls.length - 1]
     },
+    rangeRequestBoundaries: overrides.rangeRequests ?? [
+      rangeRequest(),
+      rangeRequest()
+    ],
     statusBoundary: {
       responseStatuses: overrides.responseStatuses ?? [302]
     },
@@ -169,6 +201,19 @@ function chain(
     methodBoundary: {
       transitions: overrides.transitions ?? [methodTransition()]
     }
+  };
+}
+
+function rangeRequest(
+  overrides: Partial<{
+    rangeHeaderValues: string[];
+    ifRangeHeaderValues: string[];
+  }> = {}
+) {
+  return {
+    rangeHeaderValues: [],
+    ifRangeHeaderValues: [],
+    ...overrides
   };
 }
 

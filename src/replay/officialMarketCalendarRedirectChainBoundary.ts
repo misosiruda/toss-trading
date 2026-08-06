@@ -13,6 +13,10 @@ import {
   verifyOfficialMarketCalendarHttpsUrlBoundary
 } from "./officialMarketCalendarHttpsUrlBoundary.js";
 import {
+  type OfficialMarketCalendarRangeRequestBoundary,
+  verifyOfficialMarketCalendarRangeRequestBoundary
+} from "./officialMarketCalendarRangeRequestBoundary.js";
+import {
   type OfficialMarketCalendarRedirectLocationBoundary,
   verifyOfficialMarketCalendarRedirectLocationBoundary
 } from "./officialMarketCalendarRedirectLocationBoundary.js";
@@ -30,6 +34,9 @@ const redirectChainBoundarySchema = z
     credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
+    rangeRequestBoundaries: z
+      .array(z.record(z.string(), z.unknown()))
+      .min(1),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
     methodBoundary: z.record(z.string(), z.unknown())
@@ -40,6 +47,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
+  rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
   methodBoundary: OfficialMarketCalendarRedirectMethodBoundary;
@@ -58,6 +66,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ),
     httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
       rawBoundary.httpsUrlBoundary
+    ),
+    rangeRequestBoundaries: rawBoundary.rangeRequestBoundaries.map(
+      verifyOfficialMarketCalendarRangeRequestBoundary
     ),
     statusBoundary: verifyOfficialMarketCalendarRedirectStatusBoundary(
       rawBoundary.statusBoundary
@@ -114,6 +125,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar credential observations must match effective request count"
+    );
+  }
+  if (
+    boundary.rangeRequestBoundaries.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar range observations must match effective request count"
     );
   }
   for (const [index, responseStatus] of
