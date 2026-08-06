@@ -40,6 +40,35 @@ test("calendar redirect Location boundary rejects next URL mismatch", () => {
   );
 });
 
+test("calendar redirect Location boundary strips Location fragments", () => {
+  const boundary = redirects({
+    redirectHops: [hop({ locationHeaderValues: ["/download#section"] })]
+  });
+
+  assert.deepEqual(
+    verifyOfficialMarketCalendarRedirectLocationBoundary(boundary),
+    boundary
+  );
+});
+
+test("calendar redirect Location boundary rejects fragments in effective URLs", () => {
+  for (const redirectHop of [
+    hop({ responseUrl: "https://official.example/source#section" }),
+    hop({
+      locationHeaderValues: ["/download#section"],
+      nextEffectiveRequestUrl: "https://official.example/download#section"
+    })
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectLocationBoundary(
+          redirects({ redirectHops: [redirectHop] })
+        ),
+      /must not contain a fragment/
+    );
+  }
+});
+
 test("calendar redirect Location boundary rejects disconnected hops", () => {
   assert.throws(
     () =>

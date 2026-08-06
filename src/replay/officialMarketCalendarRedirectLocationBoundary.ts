@@ -69,6 +69,7 @@ export function verifyOfficialMarketCalendarRedirectLocationBoundary(
         "official calendar redirect Location must use canonical serialization"
       );
     }
+    resolvedLocation.hash = "";
     if (resolvedLocation.href !== hop.nextEffectiveRequestUrl) {
       throw new Error(
         "official calendar redirect Location must match next effective request URL"
@@ -88,6 +89,11 @@ function requireCanonicalAbsoluteUrl(rawUrl: string): void {
   if (url.href !== rawUrl) {
     throw new Error(
       "official calendar redirect URL must use canonical serialization"
+    );
+  }
+  if (url.hash !== "") {
+    throw new Error(
+      "official calendar effective request URL must not contain a fragment"
     );
   }
 }
