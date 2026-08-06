@@ -40,6 +40,25 @@ test("calendar redirect Location boundary rejects next URL mismatch", () => {
   );
 });
 
+test("calendar redirect Location boundary rejects disconnected hops", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectLocationBoundary(
+        redirects({
+          redirectHops: [
+            hop(),
+            hop({
+              responseUrl: "https://unrelated.example/source",
+              locationHeaderValues: ["/final"],
+              nextEffectiveRequestUrl: "https://unrelated.example/final"
+            })
+          ]
+        })
+      ),
+    /must form one continuous URL chain/
+  );
+});
+
 test("calendar redirect Location boundary rejects insecure and userinfo URLs", () => {
   for (const nextEffectiveRequestUrl of [
     "http://official.example/download",
