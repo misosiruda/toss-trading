@@ -199,6 +199,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       chain({ insecureTlsBypassEnabled: true })
     )
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalHttpStatus: 206 })
+      ),
+    /final response status must be exactly 200/
+  );
 });
 
 function chain(
@@ -208,6 +215,7 @@ function chain(
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
+    finalHttpStatus: number;
     insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
@@ -245,6 +253,11 @@ function chain(
       domainAllowlistPolicyVersion:
         OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION,
       urls: overrides.domainUrls ?? effectiveRequestUrls
+    },
+    finalResponseBoundary: {
+      httpStatus: overrides.finalHttpStatus ?? 200,
+      contentRangeHeaderValues: [],
+      contentRange: null
     },
     httpsUrlBoundary: {
       requestedUrl: effectiveRequestUrls[0],
