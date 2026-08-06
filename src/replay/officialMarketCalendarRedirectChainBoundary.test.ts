@@ -43,6 +43,24 @@ test("calendar redirect chain boundary rejects status identity mismatch", () => 
   );
 });
 
+test("calendar redirect chain boundary rejects effective URL mismatch", () => {
+  for (const effectiveRequestUrls of [
+    ["https://official.example/source"],
+    [
+      "https://official.example/source",
+      "https://official.example/other"
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ effectiveRequestUrls })
+        ),
+      /Location chain must match effective request URLs/
+    );
+  }
+});
+
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -61,12 +79,22 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
 
 function chain(
   overrides: Partial<{
+    effectiveRequestUrls: string[];
     responseStatuses: number[];
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
   }> = {}
 ) {
+  const effectiveRequestUrls = overrides.effectiveRequestUrls ?? [
+    "https://official.example/source",
+    "https://official.example/download"
+  ];
   return {
+    httpsUrlBoundary: {
+      requestedUrl: effectiveRequestUrls[0],
+      effectiveRequestUrls,
+      finalUrl: effectiveRequestUrls[effectiveRequestUrls.length - 1]
+    },
     statusBoundary: {
       responseStatuses: overrides.responseStatuses ?? [302]
     },

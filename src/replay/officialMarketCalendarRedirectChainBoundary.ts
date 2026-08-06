@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  type OfficialMarketCalendarHttpsUrlBoundary,
+  verifyOfficialMarketCalendarHttpsUrlBoundary
+} from "./officialMarketCalendarHttpsUrlBoundary.js";
+import {
   type OfficialMarketCalendarRedirectLocationBoundary,
   verifyOfficialMarketCalendarRedirectLocationBoundary
 } from "./officialMarketCalendarRedirectLocationBoundary.js";
@@ -15,6 +19,7 @@ import {
 
 const redirectChainBoundarySchema = z
   .object({
+    httpsUrlBoundary: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
     methodBoundary: z.record(z.string(), z.unknown())
@@ -22,6 +27,7 @@ const redirectChainBoundarySchema = z
   .strict();
 
 export interface OfficialMarketCalendarRedirectChainBoundary {
+  httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
   methodBoundary: OfficialMarketCalendarRedirectMethodBoundary;
@@ -32,6 +38,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
   const boundary = {
+    httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
+      rawBoundary.httpsUrlBoundary
+    ),
     statusBoundary: verifyOfficialMarketCalendarRedirectStatusBoundary(
       rawBoundary.statusBoundary
     ),
@@ -49,6 +58,24 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar redirect boundaries must contain the same hop count"
+    );
+  }
+  const expectedEffectiveRequestUrls = [
+    boundary.locationBoundary.redirectHops[0]?.responseUrl,
+    ...boundary.locationBoundary.redirectHops.map(
+      (hop) => hop.nextEffectiveRequestUrl
+    )
+  ];
+  if (
+    expectedEffectiveRequestUrls.length !==
+      boundary.httpsUrlBoundary.effectiveRequestUrls.length ||
+    expectedEffectiveRequestUrls.some(
+      (url, index) =>
+        url !== boundary.httpsUrlBoundary.effectiveRequestUrls[index]
+    )
+  ) {
+    throw new Error(
+      "official calendar redirect Location chain must match effective request URLs"
     );
   }
   for (const [index, responseStatus] of
