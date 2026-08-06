@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  type OfficialMarketCalendarDomainAllowlistInput,
+  verifyOfficialMarketCalendarDomainAllowlist
+} from "./officialMarketCalendarDomainAllowlist.js";
+import {
   type OfficialMarketCalendarHttpsUrlBoundary,
   verifyOfficialMarketCalendarHttpsUrlBoundary
 } from "./officialMarketCalendarHttpsUrlBoundary.js";
@@ -19,6 +23,7 @@ import {
 
 const redirectChainBoundarySchema = z
   .object({
+    domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
@@ -27,6 +32,7 @@ const redirectChainBoundarySchema = z
   .strict();
 
 export interface OfficialMarketCalendarRedirectChainBoundary {
+  domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
@@ -38,6 +44,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
   const boundary = {
+    domainAllowlistBoundary: verifyOfficialMarketCalendarDomainAllowlist(
+      rawBoundary.domainAllowlistBoundary
+    ),
     httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
       rawBoundary.httpsUrlBoundary
     ),
@@ -76,6 +85,18 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar redirect Location chain must match effective request URLs"
+    );
+  }
+  if (
+    boundary.domainAllowlistBoundary.urls.length !==
+      boundary.httpsUrlBoundary.effectiveRequestUrls.length ||
+    boundary.domainAllowlistBoundary.urls.some(
+      (url, index) =>
+        url !== boundary.httpsUrlBoundary.effectiveRequestUrls[index]
+    )
+  ) {
+    throw new Error(
+      "official calendar redirect allowlist URLs must match effective request URLs"
     );
   }
   for (const [index, responseStatus] of

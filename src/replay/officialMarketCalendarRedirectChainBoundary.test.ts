@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
 
 interface MethodTransition {
@@ -45,10 +46,10 @@ test("calendar redirect chain boundary rejects status identity mismatch", () => 
 
 test("calendar redirect chain boundary rejects effective URL mismatch", () => {
   for (const effectiveRequestUrls of [
-    ["https://official.example/source"],
+    ["https://global.krx.co.kr/source"],
     [
-      "https://official.example/source",
-      "https://official.example/other"
+      "https://global.krx.co.kr/source",
+      "https://global.krx.co.kr/other"
     ]
   ]) {
     assert.throws(
@@ -57,6 +58,24 @@ test("calendar redirect chain boundary rejects effective URL mismatch", () => {
           chain({ effectiveRequestUrls })
         ),
       /Location chain must match effective request URLs/
+    );
+  }
+});
+
+test("calendar redirect chain boundary rejects allowlist URL mismatch", () => {
+  for (const domainUrls of [
+    ["https://global.krx.co.kr/source"],
+    [
+      "https://global.krx.co.kr/source",
+      "https://global.krx.co.kr/other"
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ domainUrls })
+        ),
+      /allowlist URLs must match effective request URLs/
     );
   }
 });
@@ -75,10 +94,16 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       }),
     /Unrecognized key/
   );
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      chain({ domainUrls: ["https://www.nyse.com/source"] })
+    )
+  );
 });
 
 function chain(
   overrides: Partial<{
+    domainUrls: string[];
     effectiveRequestUrls: string[];
     responseStatuses: number[];
     redirectHops: ReturnType<typeof locationHop>[];
@@ -86,10 +111,16 @@ function chain(
   }> = {}
 ) {
   const effectiveRequestUrls = overrides.effectiveRequestUrls ?? [
-    "https://official.example/source",
-    "https://official.example/download"
+    "https://global.krx.co.kr/source",
+    "https://global.krx.co.kr/download"
   ];
   return {
+    domainAllowlistBoundary: {
+      exchange: "KRX",
+      domainAllowlistPolicyVersion:
+        OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION,
+      urls: overrides.domainUrls ?? effectiveRequestUrls
+    },
     httpsUrlBoundary: {
       requestedUrl: effectiveRequestUrls[0],
       effectiveRequestUrls,
@@ -109,17 +140,17 @@ function chain(
 
 function locationHop() {
   return {
-    responseUrl: "https://official.example/source",
+    responseUrl: "https://global.krx.co.kr/source",
     locationHeaderValues: ["/download"],
-    nextEffectiveRequestUrl: "https://official.example/download"
+    nextEffectiveRequestUrl: "https://global.krx.co.kr/download"
   };
 }
 
 function secondLocationHop() {
   return {
-    responseUrl: "https://official.example/download",
+    responseUrl: "https://global.krx.co.kr/download",
     locationHeaderValues: ["/final"],
-    nextEffectiveRequestUrl: "https://official.example/final"
+    nextEffectiveRequestUrl: "https://global.krx.co.kr/final"
   };
 }
 
