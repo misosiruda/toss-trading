@@ -9,6 +9,10 @@ import {
   verifyOfficialMarketCalendarCredentialHeaderBoundary
 } from "./officialMarketCalendarCredentialHeaderBoundary.js";
 import {
+  type OfficialMarketCalendarCredentialFreeClientPolicy,
+  verifyOfficialMarketCalendarCredentialFreeClientPolicy
+} from "./officialMarketCalendarCredentialFreeClientPolicy.js";
+import {
   type OfficialMarketCalendarDomainAllowlistInput,
   verifyOfficialMarketCalendarDomainAllowlist
 } from "./officialMarketCalendarDomainAllowlist.js";
@@ -42,6 +46,7 @@ const redirectChainBoundarySchema = z
     cacheRequestPolicies: z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
+    credentialFreeClientPolicy: z.record(z.string(), z.unknown()),
     credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
@@ -57,6 +62,7 @@ const redirectChainBoundarySchema = z
 
 export interface OfficialMarketCalendarRedirectChainBoundary {
   cacheRequestPolicies: OfficialMarketCalendarCacheRequestPolicyInput[];
+  credentialFreeClientPolicy: OfficialMarketCalendarCredentialFreeClientPolicy;
   credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
@@ -74,6 +80,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   const boundary = {
     cacheRequestPolicies: rawBoundary.cacheRequestPolicies.map(
       verifyOfficialMarketCalendarCacheRequestPolicy
+    ),
+    credentialFreeClientPolicy: verifyOfficialMarketCalendarCredentialFreeClientPolicy(
+      rawBoundary.credentialFreeClientPolicy
     ),
     credentialHeaderBoundary: verifyOfficialMarketCalendarCredentialHeaderBoundary(
       rawBoundary.credentialHeaderBoundary
