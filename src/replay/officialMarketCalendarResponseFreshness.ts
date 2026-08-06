@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { isoDateTimeSchema } from "../domain/schemas.js";
+import type { OfficialMarketCalendarResponseCacheHeaders } from "./officialMarketCalendarResponseCacheHeaders.js";
 
 const explicitOffsetDateTimeSchema = isoDateTimeSchema.refine(
   hasExplicitTimeZoneOffset,
@@ -45,6 +46,13 @@ export const officialMarketCalendarResponseFreshnessSchema =
       effectiveResponseAt: effectiveResponseDateTimeSchema
     })
     .strict();
+
+const responseFreshnessObservationSchema = z
+  .object({
+    retrievedAt: explicitOffsetDateTimeSchema,
+    effectiveResponseAt: effectiveResponseDateTimeSchema
+  })
+  .strict();
 
 export type OfficialMarketCalendarResponseFreshness = z.infer<
   typeof officialMarketCalendarResponseFreshnessSchema
@@ -99,6 +107,17 @@ export function resolveOfficialMarketCalendarResponseFreshness(
     apparentAgeSeconds,
     effectiveCacheAgeSeconds
   };
+}
+
+export function resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
+  value: unknown,
+  cacheHeaders: OfficialMarketCalendarResponseCacheHeaders
+): ResolvedOfficialMarketCalendarResponseFreshness {
+  const observation = responseFreshnessObservationSchema.parse(value);
+  return resolveOfficialMarketCalendarResponseFreshness({
+    ...observation,
+    ...cacheHeaders
+  });
 }
 
 function hasExplicitTimeZoneOffset(value: string): boolean {
