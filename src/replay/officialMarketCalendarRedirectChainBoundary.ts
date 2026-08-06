@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  type OfficialMarketCalendarCacheRequestPolicyInput,
+  verifyOfficialMarketCalendarCacheRequestPolicy
+} from "./officialMarketCalendarCacheRequestPolicy.js";
+import {
   type OfficialMarketCalendarCredentialHeaderBoundary,
   verifyOfficialMarketCalendarCredentialHeaderBoundary
 } from "./officialMarketCalendarCredentialHeaderBoundary.js";
@@ -31,6 +35,9 @@ import {
 
 const redirectChainBoundarySchema = z
   .object({
+    cacheRequestPolicies: z
+      .array(z.record(z.string(), z.unknown()))
+      .min(1),
     credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
@@ -44,6 +51,7 @@ const redirectChainBoundarySchema = z
   .strict();
 
 export interface OfficialMarketCalendarRedirectChainBoundary {
+  cacheRequestPolicies: OfficialMarketCalendarCacheRequestPolicyInput[];
   credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
@@ -58,6 +66,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
   const boundary = {
+    cacheRequestPolicies: rawBoundary.cacheRequestPolicies.map(
+      verifyOfficialMarketCalendarCacheRequestPolicy
+    ),
     credentialHeaderBoundary: verifyOfficialMarketCalendarCredentialHeaderBoundary(
       rawBoundary.credentialHeaderBoundary
     ),
@@ -117,6 +128,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar redirect allowlist URLs must match effective request URLs"
+    );
+  }
+  if (
+    boundary.cacheRequestPolicies.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar cache request observations must match effective request count"
     );
   }
   if (
