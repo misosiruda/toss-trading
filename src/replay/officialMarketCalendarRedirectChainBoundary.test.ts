@@ -206,6 +206,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /final response status must be exactly 200/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ transferCompleted: false })
+      ),
+    /transfer must be complete/
+  );
 });
 
 function chain(
@@ -220,6 +227,7 @@ function chain(
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
+    transferCompleted: boolean;
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
   }> = {}
@@ -258,6 +266,13 @@ function chain(
       httpStatus: overrides.finalHttpStatus ?? 200,
       contentRangeHeaderValues: [],
       contentRange: null
+    },
+    finalTransferCompletion: {
+      httpProtocolVersion: "http_1_1",
+      transferFraming: "content_length",
+      transferCompleted: overrides.transferCompleted ?? true,
+      declaredContentLength: 100,
+      contentLength: 100
     },
     httpsUrlBoundary: {
       requestedUrl: effectiveRequestUrls[0],
