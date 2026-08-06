@@ -17,6 +17,10 @@ import {
   verifyOfficialMarketCalendarDomainAllowlist
 } from "./officialMarketCalendarDomainAllowlist.js";
 import {
+  type OfficialMarketCalendarFinalResponseBoundary,
+  verifyOfficialMarketCalendarFinalResponseBoundary
+} from "./officialMarketCalendarFinalResponseBoundary.js";
+import {
   type OfficialMarketCalendarHttpsUrlBoundary,
   verifyOfficialMarketCalendarHttpsUrlBoundary
 } from "./officialMarketCalendarHttpsUrlBoundary.js";
@@ -53,6 +57,7 @@ const redirectChainBoundarySchema = z
     credentialFreeClientPolicy: z.record(z.string(), z.unknown()),
     credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
+    finalResponseBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
@@ -70,6 +75,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   credentialFreeClientPolicy: OfficialMarketCalendarCredentialFreeClientPolicy;
   credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
+  finalResponseBoundary: OfficialMarketCalendarFinalResponseBoundary;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
   redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
@@ -95,6 +101,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ),
     domainAllowlistBoundary: verifyOfficialMarketCalendarDomainAllowlist(
       rawBoundary.domainAllowlistBoundary
+    ),
+    finalResponseBoundary: verifyOfficialMarketCalendarFinalResponseBoundary(
+      rawBoundary.finalResponseBoundary
     ),
     httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
       rawBoundary.httpsUrlBoundary
