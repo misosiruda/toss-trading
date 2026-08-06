@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
+import { OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION } from "./officialMarketCalendarCredentialFreeClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
@@ -187,11 +188,17 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       chain({ automaticRedirectFollowEnabled: true })
     )
   );
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      chain({ credentialProviderConfigured: true })
+    )
+  );
 });
 
 function chain(
   overrides: Partial<{
     cacheRequests: ReturnType<typeof cacheRequest>[];
+    credentialProviderConfigured: boolean;
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
@@ -211,6 +218,15 @@ function chain(
       cacheRequest(),
       cacheRequest()
     ],
+    credentialFreeClientPolicy: {
+      credentialFreeClientPolicyVersion:
+        OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION,
+      credentialProviderConfigured:
+        overrides.credentialProviderConfigured ?? false,
+      proxyCredentialConfigured: false,
+      httpAuthHandlerConfigured: false,
+      cookieJarConfigured: false
+    },
     credentialHeaderBoundary: {
       effectiveRequests: overrides.credentialRequests ?? [
         credentialRequest(),
