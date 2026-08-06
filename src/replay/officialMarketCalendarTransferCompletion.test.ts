@@ -116,6 +116,7 @@ test("calendar transfer completion rejects unknown protocol framing and fields",
 
 function completion(
   overrides: Partial<{
+    responseUrl: string;
     httpProtocolVersion: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     transferFraming: "content_length" | "chunked" | "stream_end";
     transferCompleted: boolean;
@@ -124,6 +125,7 @@ function completion(
   }> = {}
 ) {
   return {
+    responseUrl: "https://official.example/calendar",
     httpProtocolVersion: "http_1_1" as const,
     transferFraming: "content_length" as const,
     transferCompleted: true,

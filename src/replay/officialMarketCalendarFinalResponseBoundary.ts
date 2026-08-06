@@ -1,8 +1,17 @@
 import { z } from "zod";
 
+export const officialMarketCalendarHttpProtocolVersionSchema = z.enum([
+  "http_1_0",
+  "http_1_1",
+  "http_2",
+  "http_3"
+]);
+
 const finalResponseBoundarySchema = z
   .object({
+    responseUrl: z.string().min(1),
     httpStatus: z.number().int(),
+    httpProtocolVersion: officialMarketCalendarHttpProtocolVersionSchema,
     contentRangeHeaderValues: z.array(z.string()),
     contentRange: z.null()
   })

@@ -64,13 +64,17 @@ test("calendar final response boundary rejects invalid types and unknown fields"
 
 function boundary(
   overrides: Partial<{
+    responseUrl: string;
     httpStatus: number;
+    httpProtocolVersion: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     contentRangeHeaderValues: string[];
     contentRange: null;
   }> = {}
 ) {
   return {
+    responseUrl: "https://official.example/calendar",
     httpStatus: 200,
+    httpProtocolVersion: "http_1_1" as const,
     contentRangeHeaderValues: [],
     contentRange: null,
     ...overrides

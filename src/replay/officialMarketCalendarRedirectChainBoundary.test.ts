@@ -129,6 +129,25 @@ test("calendar redirect chain boundary rejects range observation count mismatch"
   }
 });
 
+test("calendar redirect chain boundary binds transfer to final response identity", () => {
+  for (const boundary of [
+    chain({ finalResponseUrl: "https://global.krx.co.kr/source" }),
+    chain({ transferResponseUrl: "https://global.krx.co.kr/source" })
+  ]) {
+    assert.throws(
+      () => verifyOfficialMarketCalendarRedirectChainBoundary(boundary),
+      /response and transfer URLs must match final URL/
+    );
+  }
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalResponseProtocol: "http_2" })
+      ),
+    /response and transfer protocol must match/
+  );
+});
+
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -223,11 +242,14 @@ function chain(
     domainUrls: string[];
     effectiveRequestUrls: string[];
     finalHttpStatus: number;
+    finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
+    finalResponseUrl: string;
     insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
     transferCompleted: boolean;
+    transferResponseUrl: string;
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
   }> = {}
@@ -263,11 +285,18 @@ function chain(
       urls: overrides.domainUrls ?? effectiveRequestUrls
     },
     finalResponseBoundary: {
+      responseUrl:
+        overrides.finalResponseUrl ??
+        effectiveRequestUrls[effectiveRequestUrls.length - 1],
       httpStatus: overrides.finalHttpStatus ?? 200,
+      httpProtocolVersion: overrides.finalResponseProtocol ?? "http_1_1",
       contentRangeHeaderValues: [],
       contentRange: null
     },
     finalTransferCompletion: {
+      responseUrl:
+        overrides.transferResponseUrl ??
+        effectiveRequestUrls[effectiveRequestUrls.length - 1],
       httpProtocolVersion: "http_1_1",
       transferFraming: "content_length",
       transferCompleted: overrides.transferCompleted ?? true,

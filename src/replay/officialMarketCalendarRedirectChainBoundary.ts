@@ -199,6 +199,24 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       "official calendar range observations must match effective request count"
     );
   }
+  if (
+    boundary.finalResponseBoundary.responseUrl !==
+      boundary.httpsUrlBoundary.finalUrl ||
+    boundary.finalTransferCompletion.responseUrl !==
+      boundary.httpsUrlBoundary.finalUrl
+  ) {
+    throw new Error(
+      "official calendar final response and transfer URLs must match final URL"
+    );
+  }
+  if (
+    boundary.finalResponseBoundary.httpProtocolVersion !==
+    boundary.finalTransferCompletion.httpProtocolVersion
+  ) {
+    throw new Error(
+      "official calendar final response and transfer protocol must match"
+    );
+  }
   for (const [index, responseStatus] of
     boundary.statusBoundary.responseStatuses.entries()) {
     if (
