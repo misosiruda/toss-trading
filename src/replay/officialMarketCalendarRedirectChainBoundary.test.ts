@@ -4,6 +4,7 @@ import test from "node:test";
 import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
+import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
 
 interface MethodTransition {
   responseStatus: number;
@@ -181,6 +182,11 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /must not contain conditional headers/
   );
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      chain({ automaticRedirectFollowEnabled: true })
+    )
+  );
 });
 
 function chain(
@@ -190,6 +196,7 @@ function chain(
     domainUrls: string[];
     effectiveRequestUrls: string[];
     rangeRequests: ReturnType<typeof rangeRequest>[];
+    automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
@@ -225,6 +232,13 @@ function chain(
       rangeRequest(),
       rangeRequest()
     ],
+    redirectClientPolicy: {
+      redirectPolicyVersion: OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION,
+      automaticRedirectFollowEnabled:
+        overrides.automaticRedirectFollowEnabled ?? false,
+      responsePerHopObservationRequired: true,
+      effectiveRequestPerHopObservationRequired: true
+    },
     statusBoundary: {
       responseStatuses: overrides.responseStatuses ?? [302]
     },
