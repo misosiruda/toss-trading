@@ -44,6 +44,11 @@ export function verifyOfficialMarketCalendarDomainAllowlist(
     } catch {
       throw new Error("official calendar allowlist URL must be valid");
     }
+    if (url.href !== rawUrl) {
+      throw new Error(
+        "official calendar allowlist URL must use canonical serialization"
+      );
+    }
     if (!allowedHostnames.includes(url.hostname) || url.port !== "") {
       throw new Error(
         `official calendar URL host is not allowed for ${input.exchange}`

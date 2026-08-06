@@ -84,6 +84,23 @@ test("calendar domain allowlist rejects invalid URLs", () => {
   );
 });
 
+test("calendar domain allowlist rejects parser-normalized URLs", () => {
+  for (const rawUrl of [
+    " https://global.krx.co.kr/contents/calendar",
+    "https:global.krx.co.kr/contents/calendar",
+    "https://GLOBAL.KRX.CO.KR/contents/calendar",
+    "https://global.krx.co.kr:443/contents/calendar"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarDomainAllowlist(
+          allowlist({ urls: [rawUrl] })
+        ),
+      /must use canonical serialization/
+    );
+  }
+});
+
 test("calendar domain allowlist rejects unknown version and fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarDomainAllowlist({
