@@ -6,7 +6,13 @@ import { verifyOfficialMarketCalendarFinalResponseBoundary } from "./officialMar
 test("calendar final response boundary accepts exact 200 without Content-Range", () => {
   assert.deepEqual(
     verifyOfficialMarketCalendarFinalResponseBoundary(boundary()),
-    boundary()
+    {
+      ...boundary(),
+      responseCacheHeaders: {
+        responseDate: "2025-07-01T12:00:00Z",
+        responseAgeSeconds: 30
+      }
+    }
   );
 });
 
@@ -63,6 +69,21 @@ test("calendar final response boundary binds nested transfer protocol", () => {
   );
 });
 
+test("calendar final response boundary requires valid nested cache headers", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        boundary({
+          responseCacheHeaders: {
+            dateHeaderValues: [],
+            ageHeaderValues: []
+          }
+        })
+      ),
+    /exactly one Date/
+  );
+});
+
 test("calendar final response boundary rejects invalid types and unknown fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarFinalResponseBoundary(
@@ -86,6 +107,7 @@ function boundary(
     httpProtocolVersion: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     contentRangeHeaderValues: string[];
     contentRange: null;
+    responseCacheHeaders: ReturnType<typeof responseCacheHeaders>;
     transferCompletion: ReturnType<typeof completion>;
   }> = {}
 ) {
@@ -95,8 +117,16 @@ function boundary(
     httpProtocolVersion: "http_1_1" as const,
     contentRangeHeaderValues: [],
     contentRange: null,
+    responseCacheHeaders: responseCacheHeaders(),
     transferCompletion: completion(),
     ...overrides
+  };
+}
+
+function responseCacheHeaders() {
+  return {
+    dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
+    ageHeaderValues: ["30"]
   };
 }
 

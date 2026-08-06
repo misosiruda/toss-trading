@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { officialMarketCalendarHttpProtocolVersionSchema } from "./officialMarketCalendarHttpProtocolVersion.js";
 import {
+  type OfficialMarketCalendarResponseCacheHeaders,
+  parseOfficialMarketCalendarResponseCacheHeaders
+} from "./officialMarketCalendarResponseCacheHeaders.js";
+import {
   type OfficialMarketCalendarTransferCompletion,
   verifyOfficialMarketCalendarTransferCompletion
 } from "./officialMarketCalendarTransferCompletion.js";
@@ -13,6 +17,7 @@ const finalResponseBoundarySchema = z
     httpProtocolVersion: officialMarketCalendarHttpProtocolVersionSchema,
     contentRangeHeaderValues: z.array(z.string()),
     contentRange: z.null(),
+    responseCacheHeaders: z.record(z.string(), z.unknown()),
     transferCompletion: z.record(z.string(), z.unknown())
   })
   .strict();
@@ -25,6 +30,7 @@ export interface OfficialMarketCalendarFinalResponseBoundary {
   >;
   contentRangeHeaderValues: string[];
   contentRange: null;
+  responseCacheHeaders: OfficialMarketCalendarResponseCacheHeaders;
   transferCompletion: OfficialMarketCalendarTransferCompletion;
 }
 
@@ -34,6 +40,9 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
   const rawBoundary = finalResponseBoundarySchema.parse(value);
   const boundary = {
     ...rawBoundary,
+    responseCacheHeaders: parseOfficialMarketCalendarResponseCacheHeaders(
+      rawBoundary.responseCacheHeaders
+    ),
     transferCompletion: verifyOfficialMarketCalendarTransferCompletion(
       rawBoundary.transferCompletion
     )

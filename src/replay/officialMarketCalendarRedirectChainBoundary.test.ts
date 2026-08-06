@@ -21,7 +21,16 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
 
   assert.deepEqual(
     verifyOfficialMarketCalendarRedirectChainBoundary(boundary),
-    boundary
+    {
+      ...boundary,
+      finalResponseBoundary: {
+        ...boundary.finalResponseBoundary,
+        responseCacheHeaders: {
+          responseDate: "2025-07-01T12:00:00Z",
+          responseAgeSeconds: null
+        }
+      }
+    }
   );
 });
 
@@ -231,6 +240,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /transfer must be complete/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalDateHeaderValues: [] })
+      ),
+    /exactly one Date/
+  );
 });
 
 function chain(
@@ -241,6 +257,7 @@ function chain(
     domainUrls: string[];
     effectiveRequestUrls: string[];
     finalHttpStatus: number;
+    finalDateHeaderValues: string[];
     finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     finalResponseUrl: string;
     insecureTlsBypassEnabled: boolean;
@@ -290,6 +307,12 @@ function chain(
       httpProtocolVersion: overrides.finalResponseProtocol ?? "http_1_1",
       contentRangeHeaderValues: [],
       contentRange: null,
+      responseCacheHeaders: {
+        dateHeaderValues: overrides.finalDateHeaderValues ?? [
+          "Tue, 01 Jul 2025 12:00:00 GMT"
+        ],
+        ageHeaderValues: []
+      },
       transferCompletion: transferCompletion({
         transferCompleted: overrides.transferCompleted ?? true
       })
