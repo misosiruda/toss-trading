@@ -47,9 +47,14 @@ export function verifyOfficialMarketCalendarRedirectLocationBoundary(
     } catch {
       throw new Error("official calendar redirect Location must be valid");
     }
+    const absoluteLocation = /^[A-Za-z][A-Za-z\d+.-]*:/u.test(rawLocation);
+    const networkPathLocation = rawLocation.startsWith("//");
+    const canonicalNetworkPath = resolvedLocation.href.slice(
+      resolvedLocation.protocol.length
+    );
     if (
-      /^[A-Za-z][A-Za-z\d+.-]*:/u.test(rawLocation) &&
-      resolvedLocation.href !== rawLocation
+      (absoluteLocation && resolvedLocation.href !== rawLocation) ||
+      (networkPathLocation && canonicalNetworkPath !== rawLocation)
     ) {
       throw new Error(
         "official calendar redirect Location must use canonical serialization"

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { verifyOfficialMarketCalendarRedirectLocationBoundary } from "./officialMarketCalendarRedirectLocationBoundary.js";
 
-test("calendar redirect Location boundary accepts absolute and relative links", () => {
+test("calendar redirect Location boundary accepts canonical redirect links", () => {
   const boundary = redirects();
 
   assert.deepEqual(
@@ -67,6 +67,8 @@ test("calendar redirect Location boundary rejects parser-normalized URLs", () =>
     hop({
       locationHeaderValues: ["https://OFFICIAL.EXAMPLE/download"]
     }),
+    hop({ locationHeaderValues: ["//OFFICIAL.EXAMPLE/download"] }),
+    hop({ locationHeaderValues: ["//official.example:443/download"] }),
     hop({ locationHeaderValues: [" /download"] }),
     hop({ locationHeaderValues: ["\\download"] })
   ]) {
@@ -104,8 +106,13 @@ function redirects(
       hop(),
       hop({
         responseUrl: "https://official.example/download",
-        locationHeaderValues: ["https://official.example/final"],
+        locationHeaderValues: ["//official.example/final"],
         nextEffectiveRequestUrl: "https://official.example/final"
+      }),
+      hop({
+        responseUrl: "https://official.example/final",
+        locationHeaderValues: ["https://official.example/archive"],
+        nextEffectiveRequestUrl: "https://official.example/archive"
       })
     ],
     ...overrides
