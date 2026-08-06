@@ -48,11 +48,6 @@ import {
   type OfficialMarketCalendarTlsClientPolicy,
   verifyOfficialMarketCalendarTlsClientPolicy
 } from "./officialMarketCalendarTlsClientPolicy.js";
-import {
-  type OfficialMarketCalendarTransferCompletion,
-  verifyOfficialMarketCalendarTransferCompletion
-} from "./officialMarketCalendarTransferCompletion.js";
-
 const redirectChainBoundarySchema = z
   .object({
     cacheRequestPolicies: z
@@ -62,7 +57,6 @@ const redirectChainBoundarySchema = z
     credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     finalResponseBoundary: z.record(z.string(), z.unknown()),
-    finalTransferCompletion: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
@@ -81,7 +75,6 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   finalResponseBoundary: OfficialMarketCalendarFinalResponseBoundary;
-  finalTransferCompletion: OfficialMarketCalendarTransferCompletion;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
   redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
@@ -110,9 +103,6 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ),
     finalResponseBoundary: verifyOfficialMarketCalendarFinalResponseBoundary(
       rawBoundary.finalResponseBoundary
-    ),
-    finalTransferCompletion: verifyOfficialMarketCalendarTransferCompletion(
-      rawBoundary.finalTransferCompletion
     ),
     httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
       rawBoundary.httpsUrlBoundary
@@ -201,20 +191,10 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   }
   if (
     boundary.finalResponseBoundary.responseUrl !==
-      boundary.httpsUrlBoundary.finalUrl ||
-    boundary.finalTransferCompletion.responseUrl !==
-      boundary.httpsUrlBoundary.finalUrl
+    boundary.httpsUrlBoundary.finalUrl
   ) {
     throw new Error(
-      "official calendar final response and transfer URLs must match final URL"
-    );
-  }
-  if (
-    boundary.finalResponseBoundary.httpProtocolVersion !==
-    boundary.finalTransferCompletion.httpProtocolVersion
-  ) {
-    throw new Error(
-      "official calendar final response and transfer protocol must match"
+      "official calendar final response URL must match final URL"
     );
   }
   for (const [index, responseStatus] of

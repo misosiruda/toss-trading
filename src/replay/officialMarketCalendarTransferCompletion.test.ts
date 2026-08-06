@@ -125,7 +125,6 @@ function completion(
   }> = {}
 ) {
   return {
-    responseUrl: "https://official.example/calendar",
     httpProtocolVersion: "http_1_1" as const,
     transferFraming: "content_length" as const,
     transferCompleted: true,

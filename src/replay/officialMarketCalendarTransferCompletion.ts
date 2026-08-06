@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { officialMarketCalendarHttpProtocolVersionSchema } from "./officialMarketCalendarFinalResponseBoundary.js";
+import { officialMarketCalendarHttpProtocolVersionSchema } from "./officialMarketCalendarHttpProtocolVersion.js";
 
 const transferFramingSchema = z.enum([
   "content_length",
@@ -15,7 +15,6 @@ const contentLengthSchema = z
 
 const transferCompletionSchema = z
   .object({
-    responseUrl: z.string().min(1),
     httpProtocolVersion: officialMarketCalendarHttpProtocolVersionSchema,
     transferFraming: transferFramingSchema,
     transferCompleted: z.boolean(),
