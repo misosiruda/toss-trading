@@ -88,6 +88,33 @@ test("calendar redirect Location boundary rejects disconnected hops", () => {
   );
 });
 
+test("calendar redirect Location boundary rejects URL loops", () => {
+  for (const redirectHops of [
+    [
+      hop({
+        locationHeaderValues: ["/source"],
+        nextEffectiveRequestUrl: "https://official.example/source"
+      })
+    ],
+    [
+      hop(),
+      hop({
+        responseUrl: "https://official.example/download",
+        locationHeaderValues: ["/source"],
+        nextEffectiveRequestUrl: "https://official.example/source"
+      })
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectLocationBoundary(
+          redirects({ redirectHops })
+        ),
+      /URL chain must not loop/
+    );
+  }
+});
+
 test("calendar redirect Location boundary rejects insecure and userinfo URLs", () => {
   for (const nextEffectiveRequestUrl of [
     "http://official.example/download",

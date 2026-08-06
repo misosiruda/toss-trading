@@ -24,6 +24,7 @@ export function verifyOfficialMarketCalendarRedirectLocationBoundary(
   value: unknown
 ): OfficialMarketCalendarRedirectLocationBoundary {
   const boundary = redirectLocationBoundarySchema.parse(value);
+  const visitedEffectiveRequestUrls = new Set<string>();
   for (const [index, hop] of boundary.redirectHops.entries()) {
     const previousHop = boundary.redirectHops[index - 1];
     if (
@@ -41,6 +42,13 @@ export function verifyOfficialMarketCalendarRedirectLocationBoundary(
     });
     requireCanonicalAbsoluteUrl(hop.responseUrl);
     requireCanonicalAbsoluteUrl(hop.nextEffectiveRequestUrl);
+    if (index === 0) {
+      visitedEffectiveRequestUrls.add(hop.responseUrl);
+    }
+    if (visitedEffectiveRequestUrls.has(hop.nextEffectiveRequestUrl)) {
+      throw new Error("official calendar redirect URL chain must not loop");
+    }
+    visitedEffectiveRequestUrls.add(hop.nextEffectiveRequestUrl);
     const [rawLocation] = hop.locationHeaderValues;
     if (hop.locationHeaderValues.length !== 1 || rawLocation === undefined) {
       throw new Error(
