@@ -40,6 +40,10 @@ import {
   type OfficialMarketCalendarRedirectStatusBoundary,
   verifyOfficialMarketCalendarRedirectStatusBoundary
 } from "./officialMarketCalendarRedirectStatusBoundary.js";
+import {
+  type OfficialMarketCalendarTlsClientPolicy,
+  verifyOfficialMarketCalendarTlsClientPolicy
+} from "./officialMarketCalendarTlsClientPolicy.js";
 
 const redirectChainBoundarySchema = z
   .object({
@@ -56,7 +60,8 @@ const redirectChainBoundarySchema = z
     redirectClientPolicy: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
-    methodBoundary: z.record(z.string(), z.unknown())
+    methodBoundary: z.record(z.string(), z.unknown()),
+    tlsClientPolicy: z.record(z.string(), z.unknown())
   })
   .strict();
 
@@ -71,6 +76,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
   methodBoundary: OfficialMarketCalendarRedirectMethodBoundary;
+  tlsClientPolicy: OfficialMarketCalendarTlsClientPolicy;
 }
 
 export function verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -107,6 +113,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ),
     methodBoundary: verifyOfficialMarketCalendarRedirectMethodBoundary(
       rawBoundary.methodBoundary
+    ),
+    tlsClientPolicy: verifyOfficialMarketCalendarTlsClientPolicy(
+      rawBoundary.tlsClientPolicy
     )
   };
   const hopCount = boundary.statusBoundary.responseStatuses.length;

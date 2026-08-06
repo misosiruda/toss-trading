@@ -6,6 +6,7 @@ import { OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION } from "
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
+import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
   responseStatus: number;
@@ -193,6 +194,11 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       chain({ credentialProviderConfigured: true })
     )
   );
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      chain({ insecureTlsBypassEnabled: true })
+    )
+  );
 });
 
 function chain(
@@ -202,6 +208,7 @@ function chain(
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
+    insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
@@ -263,6 +270,14 @@ function chain(
     },
     methodBoundary: {
       transitions: overrides.transitions ?? [methodTransition()]
+    },
+    tlsClientPolicy: {
+      tlsClientPolicyVersion: OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION,
+      trustStore: "platform_default",
+      certificateChainVerification: "required",
+      hostnameVerification: "required",
+      insecureTlsBypassEnabled: overrides.insecureTlsBypassEnabled ?? false,
+      clientCertificateConfigured: false
     }
   };
 }
