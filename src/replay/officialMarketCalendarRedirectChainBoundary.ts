@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  type OfficialMarketCalendarCredentialHeaderBoundary,
+  verifyOfficialMarketCalendarCredentialHeaderBoundary
+} from "./officialMarketCalendarCredentialHeaderBoundary.js";
+import {
   type OfficialMarketCalendarDomainAllowlistInput,
   verifyOfficialMarketCalendarDomainAllowlist
 } from "./officialMarketCalendarDomainAllowlist.js";
@@ -23,6 +27,7 @@ import {
 
 const redirectChainBoundarySchema = z
   .object({
+    credentialHeaderBoundary: z.record(z.string(), z.unknown()),
     domainAllowlistBoundary: z.record(z.string(), z.unknown()),
     httpsUrlBoundary: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
@@ -32,6 +37,7 @@ const redirectChainBoundarySchema = z
   .strict();
 
 export interface OfficialMarketCalendarRedirectChainBoundary {
+  credentialHeaderBoundary: OfficialMarketCalendarCredentialHeaderBoundary;
   domainAllowlistBoundary: OfficialMarketCalendarDomainAllowlistInput;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
@@ -44,6 +50,9 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
   const boundary = {
+    credentialHeaderBoundary: verifyOfficialMarketCalendarCredentialHeaderBoundary(
+      rawBoundary.credentialHeaderBoundary
+    ),
     domainAllowlistBoundary: verifyOfficialMarketCalendarDomainAllowlist(
       rawBoundary.domainAllowlistBoundary
     ),
@@ -97,6 +106,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar redirect allowlist URLs must match effective request URLs"
+    );
+  }
+  if (
+    boundary.credentialHeaderBoundary.effectiveRequests.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar credential observations must match effective request count"
     );
   }
   for (const [index, responseStatus] of

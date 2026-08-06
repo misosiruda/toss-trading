@@ -80,6 +80,21 @@ test("calendar redirect chain boundary rejects allowlist URL mismatch", () => {
   }
 });
 
+test("calendar redirect chain boundary rejects credential observation count mismatch", () => {
+  for (const credentialRequests of [
+    [credentialRequest()],
+    [credentialRequest(), credentialRequest(), credentialRequest()]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ credentialRequests })
+        ),
+      /credential observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -99,10 +114,23 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       chain({ domainUrls: ["https://www.nyse.com/source"] })
     )
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          credentialRequests: [
+            credentialRequest(),
+            credentialRequest({ authorizationHeaderValues: ["secret"] })
+          ]
+        })
+      ),
+    /must not contain credential headers/
+  );
 });
 
 function chain(
   overrides: Partial<{
+    credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
     responseStatuses: number[];
@@ -115,6 +143,12 @@ function chain(
     "https://global.krx.co.kr/download"
   ];
   return {
+    credentialHeaderBoundary: {
+      effectiveRequests: overrides.credentialRequests ?? [
+        credentialRequest(),
+        credentialRequest()
+      ]
+    },
     domainAllowlistBoundary: {
       exchange: "KRX",
       domainAllowlistPolicyVersion:
@@ -135,6 +169,21 @@ function chain(
     methodBoundary: {
       transitions: overrides.transitions ?? [methodTransition()]
     }
+  };
+}
+
+function credentialRequest(
+  overrides: Partial<{
+    authorizationHeaderValues: string[];
+    proxyAuthorizationHeaderValues: string[];
+    cookieHeaderValues: string[];
+  }> = {}
+) {
+  return {
+    authorizationHeaderValues: [],
+    proxyAuthorizationHeaderValues: [],
+    cookieHeaderValues: [],
+    ...overrides
   };
 }
 
