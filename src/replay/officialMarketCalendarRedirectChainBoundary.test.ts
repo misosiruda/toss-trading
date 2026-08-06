@@ -129,6 +129,24 @@ test("calendar redirect chain boundary rejects range observation count mismatch"
   }
 });
 
+test("calendar redirect chain boundary derives transfer from final response", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalResponseUrl: "https://global.krx.co.kr/source" })
+      ),
+    /final response URL must match final URL/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary({
+        ...chain(),
+        finalTransferCompletion: transferCompletion()
+      }),
+    /Unrecognized key/
+  );
+});
+
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
@@ -206,6 +224,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /final response status must be exactly 200/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ transferCompleted: false })
+      ),
+    /transfer must be complete/
+  );
 });
 
 function chain(
@@ -216,10 +241,13 @@ function chain(
     domainUrls: string[];
     effectiveRequestUrls: string[];
     finalHttpStatus: number;
+    finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
+    finalResponseUrl: string;
     insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
+    transferCompleted: boolean;
     redirectHops: ReturnType<typeof locationHop>[];
     transitions: MethodTransition[];
   }> = {}
@@ -255,9 +283,16 @@ function chain(
       urls: overrides.domainUrls ?? effectiveRequestUrls
     },
     finalResponseBoundary: {
+      responseUrl:
+        overrides.finalResponseUrl ??
+        effectiveRequestUrls[effectiveRequestUrls.length - 1],
       httpStatus: overrides.finalHttpStatus ?? 200,
+      httpProtocolVersion: overrides.finalResponseProtocol ?? "http_1_1",
       contentRangeHeaderValues: [],
-      contentRange: null
+      contentRange: null,
+      transferCompletion: transferCompletion({
+        transferCompleted: overrides.transferCompleted ?? true
+      })
     },
     httpsUrlBoundary: {
       requestedUrl: effectiveRequestUrls[0],
@@ -292,6 +327,21 @@ function chain(
       insecureTlsBypassEnabled: overrides.insecureTlsBypassEnabled ?? false,
       clientCertificateConfigured: false
     }
+  };
+}
+
+function transferCompletion(
+  overrides: Partial<{
+    transferCompleted: boolean;
+  }> = {}
+) {
+  return {
+    httpProtocolVersion: "http_1_1" as const,
+    transferFraming: "content_length" as const,
+    transferCompleted: true,
+    declaredContentLength: 100,
+    contentLength: 100,
+    ...overrides
   };
 }
 

@@ -1,11 +1,7 @@
 import { z } from "zod";
 
-const httpProtocolVersionSchema = z.enum([
-  "http_1_0",
-  "http_1_1",
-  "http_2",
-  "http_3"
-]);
+import { officialMarketCalendarHttpProtocolVersionSchema } from "./officialMarketCalendarHttpProtocolVersion.js";
+
 const transferFramingSchema = z.enum([
   "content_length",
   "chunked",
@@ -19,7 +15,7 @@ const contentLengthSchema = z
 
 const transferCompletionSchema = z
   .object({
-    httpProtocolVersion: httpProtocolVersionSchema,
+    httpProtocolVersion: officialMarketCalendarHttpProtocolVersionSchema,
     transferFraming: transferFramingSchema,
     transferCompleted: z.boolean(),
     declaredContentLength: contentLengthSchema.nullable(),

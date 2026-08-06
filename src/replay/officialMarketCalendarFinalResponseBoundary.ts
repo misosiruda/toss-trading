@@ -1,21 +1,51 @@
 import { z } from "zod";
 
+import { officialMarketCalendarHttpProtocolVersionSchema } from "./officialMarketCalendarHttpProtocolVersion.js";
+import {
+  type OfficialMarketCalendarTransferCompletion,
+  verifyOfficialMarketCalendarTransferCompletion
+} from "./officialMarketCalendarTransferCompletion.js";
+
 const finalResponseBoundarySchema = z
   .object({
+    responseUrl: z.string().min(1),
     httpStatus: z.number().int(),
+    httpProtocolVersion: officialMarketCalendarHttpProtocolVersionSchema,
     contentRangeHeaderValues: z.array(z.string()),
-    contentRange: z.null()
+    contentRange: z.null(),
+    transferCompletion: z.record(z.string(), z.unknown())
   })
   .strict();
 
-export type OfficialMarketCalendarFinalResponseBoundary = z.infer<
-  typeof finalResponseBoundarySchema
->;
+export interface OfficialMarketCalendarFinalResponseBoundary {
+  responseUrl: string;
+  httpStatus: number;
+  httpProtocolVersion: z.infer<
+    typeof officialMarketCalendarHttpProtocolVersionSchema
+  >;
+  contentRangeHeaderValues: string[];
+  contentRange: null;
+  transferCompletion: OfficialMarketCalendarTransferCompletion;
+}
 
 export function verifyOfficialMarketCalendarFinalResponseBoundary(
   value: unknown
 ): OfficialMarketCalendarFinalResponseBoundary {
-  const boundary = finalResponseBoundarySchema.parse(value);
+  const rawBoundary = finalResponseBoundarySchema.parse(value);
+  const boundary = {
+    ...rawBoundary,
+    transferCompletion: verifyOfficialMarketCalendarTransferCompletion(
+      rawBoundary.transferCompletion
+    )
+  };
+  if (
+    boundary.httpProtocolVersion !==
+    boundary.transferCompletion.httpProtocolVersion
+  ) {
+    throw new Error(
+      "official calendar final response and transfer protocol must match"
+    );
+  }
   if (boundary.httpStatus !== 200) {
     throw new Error(
       "official calendar final response status must be exactly 200"

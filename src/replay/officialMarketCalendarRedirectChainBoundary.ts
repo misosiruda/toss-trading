@@ -48,7 +48,6 @@ import {
   type OfficialMarketCalendarTlsClientPolicy,
   verifyOfficialMarketCalendarTlsClientPolicy
 } from "./officialMarketCalendarTlsClientPolicy.js";
-
 const redirectChainBoundarySchema = z
   .object({
     cacheRequestPolicies: z
@@ -188,6 +187,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar range observations must match effective request count"
+    );
+  }
+  if (
+    boundary.finalResponseBoundary.responseUrl !==
+    boundary.httpsUrlBoundary.finalUrl
+  ) {
+    throw new Error(
+      "official calendar final response URL must match final URL"
     );
   }
   for (const [index, responseStatus] of
