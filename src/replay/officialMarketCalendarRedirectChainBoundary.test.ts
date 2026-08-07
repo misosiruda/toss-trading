@@ -16,8 +16,10 @@ import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMa
 interface MethodTransition {
   responseStatus: number;
   requestMethod: string;
+  requestBodyContentType: string | null;
   requestBodyHash: string | null;
   nextRequestMethod: string;
+  nextRequestBodyContentType: null;
   nextRequestBodyHash: null;
 }
 
@@ -670,8 +672,10 @@ function methodTransition(): MethodTransition {
   return {
     responseStatus: 302,
     requestMethod: "POST",
+    requestBodyContentType: "application/x-www-form-urlencoded",
     requestBodyHash: hash("a"),
     nextRequestMethod: "GET",
+    nextRequestBodyContentType: null,
     nextRequestBodyHash: null
   };
 }
@@ -680,8 +684,10 @@ function secondMethodTransition(): MethodTransition {
   return {
     responseStatus: 303,
     requestMethod: "GET",
+    requestBodyContentType: null,
     requestBodyHash: null,
     nextRequestMethod: "GET",
+    nextRequestBodyContentType: null,
     nextRequestBodyHash: null
   };
 }
