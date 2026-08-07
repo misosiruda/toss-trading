@@ -63,6 +63,8 @@ export function verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
       redirectChainBoundary.httpsUrlBoundary.requestedUrl ||
     sourceSelector.requestMethod !==
       initialMethodTransition.requestMethod ||
+    sourceSelector.requestBodyContentType !==
+      initialMethodTransition.requestBodyContentType ||
     sourceSelector.requestBodyHash !==
       initialMethodTransition.requestBodyHash
   ) {
