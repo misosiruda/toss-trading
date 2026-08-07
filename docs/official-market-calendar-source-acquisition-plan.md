@@ -590,7 +590,8 @@ body bytes의 hash와 일치해야 한다. 한 field만 `null`인 selector나 me
 
 `coverageSelector`는 document가 직접 주장하는 coverage를 선택한다.
 `evidenceRoles`는 canonical unique 순서여야 하며 row coverage start/end는 둘 다
-`null`이거나 둘 다 existing calendar date여야 한다. Schedule interval은
+`null`이거나 둘 다 existing calendar date여야 한다. Non-null
+`rowCoverageStartDate`는 `rowCoverageEndDate` 이후일 수 없다. Schedule interval은
 `coverageRole`, `startDate`, `endDate` 순서의 canonical unique list이고 각 start는
 end 이후일 수 없다. Applicability start가 `null`이면 end도 `null`이어야 하며,
 start가 있으면 end는 `null`인 open-ended claim 또는 start 이상인 existing date만
@@ -640,6 +641,7 @@ provenance로 보존하지만 `durationSeconds`를 자동 생성하거나 늘리
 | Recomputed hash와 registry/recorded hash 불일치 | reject |
 | Source 또는 coverage selector exact mismatch | reject |
 | Request body content type/hash pair 누락 또는 actual request mismatch | reject |
+| Row coverage start/end pair 누락 또는 reversed range | reject |
 | Unknown definition field, role, rule type 또는 non-canonical 배열 | reject |
 | `durationSeconds`가 0, 음수, 소수, unsafe integer | reject |
 | Expiry overflow 또는 non-canonical `staleAfter` | reject |
