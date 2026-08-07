@@ -4,6 +4,10 @@ import test from "node:test";
 import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION } from "./officialMarketCalendarCredentialFreeClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
+  createOfficialMarketCalendarFreshnessPolicyHash
+} from "./officialMarketCalendarFreshnessPolicy.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
@@ -41,6 +45,15 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
           },
           apparentAgeSeconds: 10,
           effectiveCacheAgeSeconds: 10
+        },
+        freshnessPolicyExpiry: {
+          freshnessPolicyVersion: "krx_calendar_annual.v1",
+          freshnessPolicyHash:
+            boundary.finalResponseBoundary.freshnessPolicyExpiry
+              .freshnessPolicyEntry.freshnessPolicyHash,
+          effectiveResponseAt: "2025-07-01T12:00:00.000Z",
+          durationSeconds: 86_400,
+          staleAfter: "2025-07-02T12:00:00.000Z"
         }
       }
     }
@@ -351,6 +364,7 @@ function chain(
         effectiveResponseAt:
           overrides.finalEffectiveResponseAt ?? "2025-07-01T12:00:00.000Z"
       },
+      freshnessPolicyExpiry: policyExpiry(),
       transferCompletion: transferCompletion({
         transferCompleted: overrides.transferCompleted ?? true
       })
@@ -388,6 +402,50 @@ function chain(
       insecureTlsBypassEnabled: overrides.insecureTlsBypassEnabled ?? false,
       clientCertificateConfigured: false
     }
+  };
+}
+
+function policyExpiry() {
+  const definition = {
+    schemaVersion:
+      OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
+    sourceSelector: {
+      exchange: "KRX" as const,
+      requestMethod: "GET" as const,
+      requestedUrl: "https://global.krx.co.kr/calendar",
+      requestParameters: {},
+      requestBodyContentType: null,
+      requestBodyHash: null,
+      representationHeaders: {},
+      parserContractVersion: "krx_calendar_pdf.v1"
+    },
+    coverageSelector: {
+      evidenceRoles: ["holiday_rows", "holiday_schedule"] as const,
+      rowCoverageStartDate: "2026-01-01",
+      rowCoverageEndDate: "2026-12-31",
+      scheduleCoverageIntervals: [
+        {
+          coverageRole: "holiday_schedule" as const,
+          startDate: "2026-01-01",
+          endDate: "2026-12-31"
+        }
+      ],
+      applicabilityStartDate: null,
+      applicabilityEndDate: null
+    },
+    expiryRule: {
+      type: "fixed_duration_from_effective_response" as const,
+      durationSeconds: 86_400
+    }
+  };
+  return {
+    freshnessPolicyEntry: {
+      freshnessPolicyVersion: "krx_calendar_annual.v1",
+      freshnessPolicyDefinition: definition,
+      freshnessPolicyHash:
+        createOfficialMarketCalendarFreshnessPolicyHash(definition)
+    },
+    staleAfter: "2025-07-02T12:00:00.000Z"
   };
 }
 

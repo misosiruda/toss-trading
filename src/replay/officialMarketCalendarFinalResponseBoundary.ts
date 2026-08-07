@@ -14,6 +14,10 @@ import {
   resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders
 } from "./officialMarketCalendarResponseFreshness.js";
 import {
+  type ResolvedOfficialMarketCalendarFreshnessPolicyExpiry,
+  resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness
+} from "./officialMarketCalendarFreshnessPolicyExpiry.js";
+import {
   type OfficialMarketCalendarTransferCompletion,
   verifyOfficialMarketCalendarTransferCompletion
 } from "./officialMarketCalendarTransferCompletion.js";
@@ -28,6 +32,7 @@ const finalResponseBoundarySchema = z
     responseCacheHeaders: z.record(z.string(), z.unknown()),
     responseCacheControl: z.record(z.string(), z.unknown()),
     responseFreshness: z.record(z.string(), z.unknown()),
+    freshnessPolicyExpiry: z.record(z.string(), z.unknown()),
     transferCompletion: z.record(z.string(), z.unknown())
   })
   .strict();
@@ -43,6 +48,7 @@ export interface OfficialMarketCalendarFinalResponseBoundary {
   responseCacheHeaders: OfficialMarketCalendarResponseCacheHeaders;
   responseCacheControl: OfficialMarketCalendarResponseCacheControl;
   responseFreshness: ResolvedOfficialMarketCalendarResponseFreshness;
+  freshnessPolicyExpiry: ResolvedOfficialMarketCalendarFreshnessPolicyExpiry;
   transferCompletion: OfficialMarketCalendarTransferCompletion;
 }
 
@@ -57,14 +63,20 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
     parseOfficialMarketCalendarResponseCacheControl(
       rawBoundary.responseCacheControl
     );
+  const responseFreshness =
+    resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
+      rawBoundary.responseFreshness,
+      responseCacheHeaders
+    );
   const boundary = {
     ...rawBoundary,
     responseCacheHeaders,
     responseCacheControl,
-    responseFreshness:
-      resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
-        rawBoundary.responseFreshness,
-        responseCacheHeaders
+    responseFreshness,
+    freshnessPolicyExpiry:
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+        rawBoundary.freshnessPolicyExpiry,
+        responseFreshness.freshness
       ),
     transferCompletion: verifyOfficialMarketCalendarTransferCompletion(
       rawBoundary.transferCompletion

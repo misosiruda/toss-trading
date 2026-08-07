@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { verifyOfficialMarketCalendarFinalResponseBoundary } from "./officialMarketCalendarFinalResponseBoundary.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
+  createOfficialMarketCalendarFreshnessPolicyHash
+} from "./officialMarketCalendarFreshnessPolicy.js";
 
 test("calendar final response boundary accepts exact 200 without Content-Range", () => {
   assert.deepEqual(
@@ -24,6 +28,15 @@ test("calendar final response boundary accepts exact 200 without Content-Range",
         },
         apparentAgeSeconds: 30,
         effectiveCacheAgeSeconds: 30
+      },
+      freshnessPolicyExpiry: {
+        freshnessPolicyVersion: "krx_calendar_annual.v1",
+        freshnessPolicyHash:
+          boundary().freshnessPolicyExpiry.freshnessPolicyEntry
+            .freshnessPolicyHash,
+        effectiveResponseAt: "2025-07-01T12:00:00.000Z",
+        durationSeconds: 86_400,
+        staleAfter: "2025-07-02T12:00:00.000Z"
       }
     }
   );
@@ -154,6 +167,36 @@ test("calendar final response boundary derives freshness from nested cache heade
   );
 });
 
+test("calendar final response boundary binds nested policy expiry", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        boundary({
+          freshnessPolicyExpiry: policyExpiry({
+            staleAfter: "2025-07-02T12:00:00.001Z"
+          })
+        })
+      ),
+    /does not match/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        {
+          ...boundary(),
+          freshnessPolicyExpiry: {
+            ...policyExpiry(),
+            effectiveResponseAt: "2025-07-01T12:00:00.000Z"
+          }
+        }
+      ),
+    /Unrecognized key/
+  );
+  const { freshnessPolicyExpiry: _freshnessPolicyExpiry, ...missing } =
+    boundary();
+  assert.throws(() => verifyOfficialMarketCalendarFinalResponseBoundary(missing));
+});
+
 test("calendar final response boundary rejects invalid types and unknown fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarFinalResponseBoundary(
@@ -182,6 +225,7 @@ function boundary(
       cacheControlHeaderValues: string[];
     };
     responseFreshness: ReturnType<typeof responseFreshness>;
+    freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     transferCompletion: ReturnType<typeof completion>;
   }> = {}
 ) {
@@ -196,8 +240,57 @@ function boundary(
       cacheControlHeaderValues: []
     },
     responseFreshness: responseFreshness(),
+    freshnessPolicyExpiry: policyExpiry(),
     transferCompletion: completion(),
     ...overrides
+  };
+}
+
+function policyExpiry(
+  overrides: Partial<{
+    staleAfter: string;
+  }> = {}
+) {
+  const definition = {
+    schemaVersion:
+      OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
+    sourceSelector: {
+      exchange: "KRX" as const,
+      requestMethod: "GET" as const,
+      requestedUrl: "https://global.krx.co.kr/calendar",
+      requestParameters: {},
+      requestBodyContentType: null,
+      requestBodyHash: null,
+      representationHeaders: {},
+      parserContractVersion: "krx_calendar_pdf.v1"
+    },
+    coverageSelector: {
+      evidenceRoles: ["holiday_rows", "holiday_schedule"] as const,
+      rowCoverageStartDate: "2026-01-01",
+      rowCoverageEndDate: "2026-12-31",
+      scheduleCoverageIntervals: [
+        {
+          coverageRole: "holiday_schedule" as const,
+          startDate: "2026-01-01",
+          endDate: "2026-12-31"
+        }
+      ],
+      applicabilityStartDate: null,
+      applicabilityEndDate: null
+    },
+    expiryRule: {
+      type: "fixed_duration_from_effective_response" as const,
+      durationSeconds: 86_400
+    }
+  };
+  return {
+    freshnessPolicyEntry: {
+      freshnessPolicyVersion: "krx_calendar_annual.v1",
+      freshnessPolicyDefinition: definition,
+      freshnessPolicyHash:
+        createOfficialMarketCalendarFreshnessPolicyHash(definition)
+    },
+    staleAfter: overrides.staleAfter ?? "2025-07-02T12:00:00.000Z"
   };
 }
 
