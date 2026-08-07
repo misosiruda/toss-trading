@@ -8,7 +8,7 @@ import {
   OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
   createOfficialMarketCalendarFreshnessPolicyHash
 } from "./officialMarketCalendarFreshnessPolicy.js";
-import { verifyOfficialMarketCalendarRedirectChainBoundary } from "./officialMarketCalendarRedirectChainBoundary.js";
+import { verifyOfficialMarketCalendarRedirectChainBoundary as verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
@@ -183,6 +183,14 @@ test("calendar redirect chain boundary derives transfer from final response", ()
 });
 
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
+        chain(),
+        []
+      ),
+    /version is not registered/
+  );
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
       chain({ responseStatuses: [307] })
@@ -447,6 +455,13 @@ function policyExpiry() {
     },
     staleAfter: "2025-07-02T12:00:00.000Z"
   };
+}
+
+function verifyOfficialMarketCalendarRedirectChainBoundary(value: unknown) {
+  return verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
+    value,
+    [policyExpiry().freshnessPolicyEntry]
+  );
 }
 
 function transferCompletion(
