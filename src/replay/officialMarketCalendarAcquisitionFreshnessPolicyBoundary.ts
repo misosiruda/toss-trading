@@ -51,6 +51,25 @@ export function verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
       "official calendar final response freshness policy identity does not match registry"
     );
   }
+  const sourceSelector =
+    registeredEntry.freshnessPolicyDefinition.sourceSelector;
+  const initialMethodTransition =
+    redirectChainBoundary.methodBoundary.transitions[0];
+  if (
+    initialMethodTransition === undefined ||
+    sourceSelector.exchange !==
+      redirectChainBoundary.domainAllowlistBoundary.exchange ||
+    sourceSelector.requestedUrl !==
+      redirectChainBoundary.httpsUrlBoundary.requestedUrl ||
+    sourceSelector.requestMethod !==
+      initialMethodTransition.requestMethod ||
+    sourceSelector.requestBodyHash !==
+      initialMethodTransition.requestBodyHash
+  ) {
+    throw new Error(
+      "official calendar freshness policy selectors do not match verified initial request"
+    );
+  }
   return {
     redirectChainBoundary,
     freshnessPolicySelectorBinding:

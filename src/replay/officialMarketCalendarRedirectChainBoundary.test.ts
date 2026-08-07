@@ -121,6 +121,35 @@ test("calendar acquisition policy boundary rejects selector mismatch and unknown
   );
 });
 
+test("calendar acquisition policy boundary binds selectors to the verified initial request", () => {
+  for (const freshnessPolicyExpiry of [
+    policyExpiry({ requestedUrl: "https://global.krx.co.kr/calendar" }),
+    policyExpiry({
+      exchange: "NYSE",
+      requestedUrl: "https://www.nyse.com/source"
+    }),
+    policyExpiry({
+      requestMethod: "GET",
+      requestBodyContentType: null,
+      requestBodyHash: null
+    }),
+    policyExpiry({ requestBodyHash: hash("b") })
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+          {
+            redirectChainBoundary: chain({ freshnessPolicyExpiry }),
+            freshnessPolicySelectorMetadata:
+              policySelectorMetadata(freshnessPolicyExpiry)
+          },
+          policyRegistry(freshnessPolicyExpiry)
+        ),
+      /do not match verified initial request/
+    );
+  }
+});
+
 test("calendar redirect chain boundary rejects mismatched hop counts", () => {
   for (const boundary of [
     chain({ responseStatuses: [302, 303] }),
@@ -371,6 +400,7 @@ function chain(
     finalEffectiveResponseAt: string;
     finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     finalResponseUrl: string;
+    freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
@@ -433,7 +463,8 @@ function chain(
         effectiveResponseAt:
           overrides.finalEffectiveResponseAt ?? "2025-07-01T12:00:00.000Z"
       },
-      freshnessPolicyExpiry: policyExpiry(),
+      freshnessPolicyExpiry:
+        overrides.freshnessPolicyExpiry ?? policyExpiry(),
       transferCompletion: transferCompletion({
         transferCompleted: overrides.transferCompleted ?? true
       })
@@ -474,17 +505,32 @@ function chain(
   };
 }
 
-function policyExpiry() {
+function policyExpiry(
+  overrides: Partial<{
+    exchange: "KRX" | "NYSE";
+    requestMethod: "GET" | "POST";
+    requestedUrl: string;
+    requestBodyContentType: string | null;
+    requestBodyHash: string | null;
+  }> = {}
+) {
   const definition = {
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
     sourceSelector: {
-      exchange: "KRX" as const,
-      requestMethod: "GET" as const,
-      requestedUrl: "https://global.krx.co.kr/calendar",
+      exchange: overrides.exchange ?? ("KRX" as const),
+      requestMethod: overrides.requestMethod ?? ("POST" as const),
+      requestedUrl:
+        overrides.requestedUrl ?? "https://global.krx.co.kr/source",
       requestParameters: {},
-      requestBodyContentType: null,
-      requestBodyHash: null,
+      requestBodyContentType:
+        overrides.requestBodyContentType === undefined
+          ? "application/x-www-form-urlencoded"
+          : overrides.requestBodyContentType,
+      requestBodyHash:
+        overrides.requestBodyHash === undefined
+          ? hash("a")
+          : overrides.requestBodyHash,
       representationHeaders: {},
       parserContractVersion: "krx_calendar_pdf.v1"
     },
@@ -525,12 +571,16 @@ function verifyOfficialMarketCalendarRedirectChainBoundary(value: unknown) {
   );
 }
 
-function policyRegistry() {
-  return [policyExpiry().freshnessPolicyEntry];
+function policyRegistry(
+  freshnessPolicyExpiry = policyExpiry()
+) {
+  return [freshnessPolicyExpiry.freshnessPolicyEntry];
 }
 
-function policySelectorMetadata() {
-  const definition = policyExpiry().freshnessPolicyEntry
+function policySelectorMetadata(
+  freshnessPolicyExpiry = policyExpiry()
+) {
+  const definition = freshnessPolicyExpiry.freshnessPolicyEntry
     .freshnessPolicyDefinition;
   return {
     ...definition.sourceSelector,
