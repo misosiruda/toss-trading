@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { z } from "zod";
 
 import { sha256HashSchema, type Sha256Hash } from "../domain/schemas.js";
@@ -175,6 +177,31 @@ export function parseOfficialMarketCalendarFreshnessPolicyRegistry(
     versions.add(entry.freshnessPolicyVersion);
   }
   return entries;
+}
+
+export function resolveOfficialMarketCalendarFreshnessPolicyFromRegistry(
+  value: unknown,
+  registry: unknown
+): OfficialMarketCalendarFreshnessPolicyRegistryEntry {
+  const recordedEntry =
+    parseOfficialMarketCalendarFreshnessPolicyRegistryEntry(value);
+  const registeredEntry =
+    parseOfficialMarketCalendarFreshnessPolicyRegistry(registry).find(
+      (entry) =>
+        entry.freshnessPolicyVersion ===
+        recordedEntry.freshnessPolicyVersion
+    );
+  if (registeredEntry === undefined) {
+    throw new Error(
+      "official calendar freshness policy version is not registered"
+    );
+  }
+  if (!isDeepStrictEqual(recordedEntry, registeredEntry)) {
+    throw new Error(
+      "official calendar recorded freshness policy does not match registry"
+    );
+  }
+  return registeredEntry;
 }
 
 function validateDefinition(

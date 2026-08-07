@@ -6,7 +6,8 @@ import {
   createOfficialMarketCalendarFreshnessPolicyHash,
   parseOfficialMarketCalendarFreshnessPolicyDefinition,
   parseOfficialMarketCalendarFreshnessPolicyRegistry,
-  parseOfficialMarketCalendarFreshnessPolicyRegistryEntry
+  parseOfficialMarketCalendarFreshnessPolicyRegistryEntry,
+  resolveOfficialMarketCalendarFreshnessPolicyFromRegistry
 } from "./officialMarketCalendarFreshnessPolicy.js";
 
 type EvidenceRole =
@@ -164,6 +165,51 @@ test("calendar freshness policy rejects hash mismatch and duplicate versions", (
   assert.throws(
     () => parseOfficialMarketCalendarFreshnessPolicyRegistry([entry, entry]),
     /versions must be unique/
+  );
+});
+
+test("calendar freshness policy resolves an exact recorded registry entry", () => {
+  const recordedEntry = registryEntry(
+    policyDefinition({
+      requestParameters: { year: "2026", locale: "en" }
+    })
+  );
+  const registeredEntry = registryEntry(
+    policyDefinition({
+      requestParameters: { locale: "en", year: "2026" }
+    })
+  );
+  assert.deepEqual(
+    resolveOfficialMarketCalendarFreshnessPolicyFromRegistry(recordedEntry, [
+      registeredEntry
+    ]),
+    registeredEntry
+  );
+});
+
+test("calendar freshness policy rejects an unregistered recorded version", () => {
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyFromRegistry(
+        registryEntry(),
+        []
+      ),
+    /version is not registered/
+  );
+});
+
+test("calendar freshness policy rejects registry definition substitution", () => {
+  const recordedEntry = registryEntry();
+  const registeredEntry = registryEntry(
+    policyDefinition({ durationSeconds: 172_800 })
+  );
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyFromRegistry(
+        recordedEntry,
+        [registeredEntry]
+      ),
+    /does not match registry/
   );
 });
 
