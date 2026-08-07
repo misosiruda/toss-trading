@@ -28,6 +28,16 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
         responseCacheHeaders: {
           responseDate: "2025-07-01T12:00:00Z",
           responseAgeSeconds: null
+        },
+        responseFreshness: {
+          freshness: {
+            retrievedAt: "2025-07-01T12:00:10.000Z",
+            effectiveResponseAt: "2025-07-01T12:00:00.000Z",
+            responseDate: "2025-07-01T12:00:00Z",
+            responseAgeSeconds: null
+          },
+          apparentAgeSeconds: 10,
+          effectiveCacheAgeSeconds: 10
         }
       }
     }
@@ -247,6 +257,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /exactly one Date/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalEffectiveResponseAt: "2025-07-01T12:00:01.000Z" })
+      ),
+    /does not match cache age/
+  );
 });
 
 function chain(
@@ -258,6 +275,7 @@ function chain(
     effectiveRequestUrls: string[];
     finalHttpStatus: number;
     finalDateHeaderValues: string[];
+    finalEffectiveResponseAt: string;
     finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     finalResponseUrl: string;
     insecureTlsBypassEnabled: boolean;
@@ -312,6 +330,11 @@ function chain(
           "Tue, 01 Jul 2025 12:00:00 GMT"
         ],
         ageHeaderValues: []
+      },
+      responseFreshness: {
+        retrievedAt: "2025-07-01T12:00:10.000Z",
+        effectiveResponseAt:
+          overrides.finalEffectiveResponseAt ?? "2025-07-01T12:00:00.000Z"
       },
       transferCompletion: transferCompletion({
         transferCompleted: overrides.transferCompleted ?? true

@@ -11,6 +11,16 @@ test("calendar final response boundary accepts exact 200 without Content-Range",
       responseCacheHeaders: {
         responseDate: "2025-07-01T12:00:00Z",
         responseAgeSeconds: 30
+      },
+      responseFreshness: {
+        freshness: {
+          retrievedAt: "2025-07-01T12:00:30.000Z",
+          effectiveResponseAt: "2025-07-01T12:00:00.000Z",
+          responseDate: "2025-07-01T12:00:00Z",
+          responseAgeSeconds: 30
+        },
+        apparentAgeSeconds: 30,
+        effectiveCacheAgeSeconds: 30
       }
     }
   );
@@ -84,6 +94,33 @@ test("calendar final response boundary requires valid nested cache headers", () 
   );
 });
 
+test("calendar final response boundary derives freshness from nested cache headers", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        boundary({
+          responseFreshness: {
+            retrievedAt: "2025-07-01T12:00:30.000Z",
+            effectiveResponseAt: "2025-07-01T12:00:01.000Z"
+          }
+        })
+      ),
+    /does not match cache age/
+  );
+  assert.throws(() =>
+    verifyOfficialMarketCalendarFinalResponseBoundary(
+      {
+        ...boundary(),
+        responseFreshness: {
+          retrievedAt: "2025-07-01T12:00:30.000Z",
+          responseDate: "2025-07-01T12:00:00Z",
+          effectiveResponseAt: "2025-07-01T12:00:00.000Z"
+        }
+      }
+    )
+  );
+});
+
 test("calendar final response boundary rejects invalid types and unknown fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarFinalResponseBoundary(
@@ -108,6 +145,7 @@ function boundary(
     contentRangeHeaderValues: string[];
     contentRange: null;
     responseCacheHeaders: ReturnType<typeof responseCacheHeaders>;
+    responseFreshness: ReturnType<typeof responseFreshness>;
     transferCompletion: ReturnType<typeof completion>;
   }> = {}
 ) {
@@ -118,6 +156,7 @@ function boundary(
     contentRangeHeaderValues: [],
     contentRange: null,
     responseCacheHeaders: responseCacheHeaders(),
+    responseFreshness: responseFreshness(),
     transferCompletion: completion(),
     ...overrides
   };
@@ -127,6 +166,13 @@ function responseCacheHeaders() {
   return {
     dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
     ageHeaderValues: ["30"]
+  };
+}
+
+function responseFreshness() {
+  return {
+    retrievedAt: "2025-07-01T12:00:30.000Z",
+    effectiveResponseAt: "2025-07-01T12:00:00.000Z"
   };
 }
 

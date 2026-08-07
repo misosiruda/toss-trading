@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveOfficialMarketCalendarResponseFreshness } from "./officialMarketCalendarResponseFreshness.js";
+import {
+  resolveOfficialMarketCalendarResponseFreshness,
+  resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders
+} from "./officialMarketCalendarResponseFreshness.js";
 
 test("calendar response freshness uses apparent age when it is larger", () => {
   const resolved = resolveOfficialMarketCalendarResponseFreshness(
@@ -107,6 +110,37 @@ test("calendar response freshness rejects unknown fields", () => {
         downloadCompletedAt: "2025-07-01T12:00:10.000Z"
       }),
     /Unrecognized key/
+  );
+});
+
+test("calendar response freshness derives Date and Age from cache headers", () => {
+  const resolved =
+    resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
+      {
+        retrievedAt: "2025-07-01T12:00:10.000Z",
+        effectiveResponseAt: "2025-07-01T11:59:40.000Z"
+      },
+      {
+        responseDate: "2025-07-01T12:00:00Z",
+        responseAgeSeconds: 30
+      }
+    );
+
+  assert.equal(resolved.effectiveCacheAgeSeconds, 30);
+  assert.equal(resolved.freshness.responseDate, "2025-07-01T12:00:00Z");
+  assert.equal(resolved.freshness.responseAgeSeconds, 30);
+  assert.throws(() =>
+    resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
+      {
+        retrievedAt: "2025-07-01T12:00:10.000Z",
+        responseDate: "2025-07-01T12:00:01Z",
+        effectiveResponseAt: "2025-07-01T11:59:40.000Z"
+      },
+      {
+        responseDate: "2025-07-01T12:00:00Z",
+        responseAgeSeconds: 30
+      }
+    )
   );
 });
 
