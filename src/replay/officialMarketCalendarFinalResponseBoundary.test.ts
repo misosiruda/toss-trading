@@ -12,6 +12,9 @@ test("calendar final response boundary accepts exact 200 without Content-Range",
         responseDate: "2025-07-01T12:00:00Z",
         responseAgeSeconds: 30
       },
+      responseCacheControl: {
+        responseCacheControl: null
+      },
       responseFreshness: {
         freshness: {
           retrievedAt: "2025-07-01T12:00:30.000Z",
@@ -94,6 +97,36 @@ test("calendar final response boundary requires valid nested cache headers", () 
   );
 });
 
+test("calendar final response boundary binds nested Cache-Control", () => {
+  assert.deepEqual(
+    verifyOfficialMarketCalendarFinalResponseBoundary(
+      boundary({
+        responseCacheControl: {
+          cacheControlHeaderValues: ["Public, max-age=60"]
+        }
+      })
+    ).responseCacheControl,
+    {
+      responseCacheControl: ["max-age=60", "public"]
+    }
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        boundary({
+          responseCacheControl: {
+            cacheControlHeaderValues: ["max-age =60"]
+          }
+        })
+      ),
+    /valid directive syntax/
+  );
+  const { responseCacheControl: _responseCacheControl, ...missing } = boundary();
+  assert.throws(() =>
+    verifyOfficialMarketCalendarFinalResponseBoundary(missing)
+  );
+});
+
 test("calendar final response boundary derives freshness from nested cache headers", () => {
   assert.throws(
     () =>
@@ -145,6 +178,9 @@ function boundary(
     contentRangeHeaderValues: string[];
     contentRange: null;
     responseCacheHeaders: ReturnType<typeof responseCacheHeaders>;
+    responseCacheControl: {
+      cacheControlHeaderValues: string[];
+    };
     responseFreshness: ReturnType<typeof responseFreshness>;
     transferCompletion: ReturnType<typeof completion>;
   }> = {}
@@ -156,6 +192,9 @@ function boundary(
     contentRangeHeaderValues: [],
     contentRange: null,
     responseCacheHeaders: responseCacheHeaders(),
+    responseCacheControl: {
+      cacheControlHeaderValues: []
+    },
     responseFreshness: responseFreshness(),
     transferCompletion: completion(),
     ...overrides
