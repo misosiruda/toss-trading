@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { verifyOfficialMarketCalendarFinalResponseBoundary } from "./officialMarketCalendarFinalResponseBoundary.js";
+import { verifyOfficialMarketCalendarFinalResponseBoundary as verifyOfficialMarketCalendarFinalResponseBoundaryWithRegistry } from "./officialMarketCalendarFinalResponseBoundary.js";
 import {
   OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
   createOfficialMarketCalendarFreshnessPolicyHash
@@ -197,6 +197,25 @@ test("calendar final response boundary binds nested policy expiry", () => {
   assert.throws(() => verifyOfficialMarketCalendarFinalResponseBoundary(missing));
 });
 
+test("calendar final response boundary requires a registered policy", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundaryWithRegistry(
+        boundary(),
+        []
+      ),
+    /version is not registered/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundaryWithRegistry(
+        boundary(),
+        [policyExpiry({ durationSeconds: 172_800 }).freshnessPolicyEntry]
+      ),
+    /does not match registry/
+  );
+});
+
 test("calendar final response boundary rejects invalid types and unknown fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarFinalResponseBoundary(
@@ -249,6 +268,7 @@ function boundary(
 function policyExpiry(
   overrides: Partial<{
     staleAfter: string;
+    durationSeconds: number;
   }> = {}
 ) {
   const definition = {
@@ -280,7 +300,7 @@ function policyExpiry(
     },
     expiryRule: {
       type: "fixed_duration_from_effective_response" as const,
-      durationSeconds: 86_400
+      durationSeconds: overrides.durationSeconds ?? 86_400
     }
   };
   return {
@@ -292,6 +312,13 @@ function policyExpiry(
     },
     staleAfter: overrides.staleAfter ?? "2025-07-02T12:00:00.000Z"
   };
+}
+
+function verifyOfficialMarketCalendarFinalResponseBoundary(value: unknown) {
+  return verifyOfficialMarketCalendarFinalResponseBoundaryWithRegistry(
+    value,
+    [policyExpiry().freshnessPolicyEntry]
+  );
 }
 
 function responseCacheHeaders() {

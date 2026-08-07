@@ -15,7 +15,7 @@ import {
 } from "./officialMarketCalendarResponseFreshness.js";
 import {
   type ResolvedOfficialMarketCalendarFreshnessPolicyExpiry,
-  resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness
+  resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness
 } from "./officialMarketCalendarFreshnessPolicyExpiry.js";
 import {
   type OfficialMarketCalendarTransferCompletion,
@@ -53,7 +53,8 @@ export interface OfficialMarketCalendarFinalResponseBoundary {
 }
 
 export function verifyOfficialMarketCalendarFinalResponseBoundary(
-  value: unknown
+  value: unknown,
+  freshnessPolicyRegistry: unknown
 ): OfficialMarketCalendarFinalResponseBoundary {
   const rawBoundary = finalResponseBoundarySchema.parse(value);
   const responseCacheHeaders = parseOfficialMarketCalendarResponseCacheHeaders(
@@ -74,8 +75,9 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
     responseCacheControl,
     responseFreshness,
     freshnessPolicyExpiry:
-      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(
         rawBoundary.freshnessPolicyExpiry,
+        freshnessPolicyRegistry,
         responseFreshness.freshness
       ),
     transferCompletion: verifyOfficialMarketCalendarTransferCompletion(

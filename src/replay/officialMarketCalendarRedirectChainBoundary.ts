@@ -85,7 +85,8 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
 }
 
 export function verifyOfficialMarketCalendarRedirectChainBoundary(
-  value: unknown
+  value: unknown,
+  freshnessPolicyRegistry: unknown
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
   const boundary = {
@@ -102,7 +103,8 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       rawBoundary.domainAllowlistBoundary
     ),
     finalResponseBoundary: verifyOfficialMarketCalendarFinalResponseBoundary(
-      rawBoundary.finalResponseBoundary
+      rawBoundary.finalResponseBoundary,
+      freshnessPolicyRegistry
     ),
     httpsUrlBoundary: verifyOfficialMarketCalendarHttpsUrlBoundary(
       rawBoundary.httpsUrlBoundary
