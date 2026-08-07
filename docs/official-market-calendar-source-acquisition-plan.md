@@ -552,6 +552,8 @@ interface OfficialMarketCalendarFreshnessPolicyDefinitionV1 {
     requestMethod: string;
     requestedUrl: string;
     requestParameters: CanonicalJsonObject;
+    requestBodyContentType: string | null;
+    requestBodyHash: Sha256Hash | null;
     representationHeaders: CanonicalJsonObject;
     parserContractVersion: string;
   };
@@ -577,10 +579,14 @@ interface OfficialMarketCalendarFreshnessPolicyDefinitionV1 {
 `sourceSelector`는 actual request와 parser contract에서 관찰하거나 사전 고정한
 값만 사용한다. Redirect 이후 `finalUrl`, response header, retrieval 시각,
 `documentId`, local path와 source byte hash는 selector가 아니다. 같은 official
-entry point라도 request parameter, representation header 또는 parser contract가
-다르면 별도 definition을 등록한다. URL은 HTTPS boundary가 승인한 canonical
+entry point라도 request parameter, request body, representation header 또는 parser
+contract가 다르면 별도 definition을 등록한다. URL은 HTTPS boundary가 승인한 canonical
 serialization이어야 하고 request method와 parameter/header object는 acquisition
-metadata의 canonical 값과 exact match해야 한다.
+metadata의 canonical 값과 exact match해야 한다. Body가 없으면
+`requestBodyContentType`과 `requestBodyHash`가 모두 `null`이어야 한다. Body가
+있으면 두 field가 모두 non-null이어야 하고 actual media type 및 exact request
+body bytes의 hash와 일치해야 한다. 한 field만 `null`인 selector나 metadata는
+거부한다.
 
 `coverageSelector`는 document가 직접 주장하는 coverage를 선택한다.
 `evidenceRoles`는 canonical unique 순서여야 하며 row coverage start/end는 둘 다
@@ -633,6 +639,7 @@ provenance로 보존하지만 `durationSeconds`를 자동 생성하거나 늘리
 | Registry definition과 recorded definition 불일치 | reject |
 | Recomputed hash와 registry/recorded hash 불일치 | reject |
 | Source 또는 coverage selector exact mismatch | reject |
+| Request body content type/hash pair 누락 또는 actual request mismatch | reject |
 | Unknown definition field, role, rule type 또는 non-canonical 배열 | reject |
 | `durationSeconds`가 0, 음수, 소수, unsafe integer | reject |
 | Expiry overflow 또는 non-canonical `staleAfter` | reject |
