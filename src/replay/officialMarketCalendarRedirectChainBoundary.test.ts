@@ -135,6 +135,7 @@ test("calendar acquisition policy boundary binds selectors to the verified initi
       requestBodyContentType: null,
       requestBodyHash: null
     }),
+    policyExpiry({ requestBodyContentType: "application/json" }),
     policyExpiry({ requestBodyHash: hash("b") })
   ]) {
     assert.throws(
