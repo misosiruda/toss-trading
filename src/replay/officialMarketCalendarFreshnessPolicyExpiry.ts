@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import {
   type OfficialMarketCalendarFreshnessPolicyRegistryEntry,
-  parseOfficialMarketCalendarFreshnessPolicyRegistryEntry
+  parseOfficialMarketCalendarFreshnessPolicyRegistryEntry,
+  resolveOfficialMarketCalendarFreshnessPolicyFromRegistry
 } from "./officialMarketCalendarFreshnessPolicy.js";
 import { resolveOfficialMarketCalendarResponseFreshness } from "./officialMarketCalendarResponseFreshness.js";
 
@@ -96,6 +97,26 @@ export function resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFr
     effectiveResponseAt:
       verifiedResponseFreshness.freshness.effectiveResponseAt
   });
+}
+
+export function resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(
+  value: unknown,
+  registry: unknown,
+  responseFreshness: unknown
+): ResolvedOfficialMarketCalendarFreshnessPolicyExpiry {
+  const input = recordedExpiryInputSchema.parse(value);
+  const freshnessPolicyEntry =
+    resolveOfficialMarketCalendarFreshnessPolicyFromRegistry(
+      input.freshnessPolicyEntry,
+      registry
+    );
+  return resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+    {
+      ...input,
+      freshnessPolicyEntry
+    },
+    responseFreshness
+  );
 }
 
 function canonicalUtcMilliseconds(timestamp: number): string {
