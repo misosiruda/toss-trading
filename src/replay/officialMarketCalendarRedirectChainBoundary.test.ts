@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary } from "./officialMarketCalendarAcquisitionFreshnessPolicyBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION } from "./officialMarketCalendarCredentialFreeClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
@@ -57,6 +58,66 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
         }
       }
     }
+  );
+});
+
+test("calendar acquisition policy boundary binds redirect policy identity to selectors", () => {
+  const result =
+    verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+      {
+        redirectChainBoundary: chain(),
+        freshnessPolicySelectorMetadata: policySelectorMetadata()
+      },
+      policyRegistry()
+    );
+  assert.equal(
+    result.redirectChainBoundary.finalResponseBoundary
+      .freshnessPolicyExpiry.freshnessPolicyVersion,
+    "krx_calendar_annual.v1"
+  );
+  assert.deepEqual(
+    result.freshnessPolicySelectorBinding.selectorMetadata,
+    policySelectorMetadata()
+  );
+});
+
+test("calendar acquisition policy boundary rejects selector mismatch and unknown fields", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        },
+        []
+      ),
+    /version is not registered/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: {
+            ...policySelectorMetadata(),
+            evidenceRoles: ["holiday_rows"]
+          }
+        },
+        policyRegistry()
+      ),
+    /do not match acquisition metadata/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata(),
+          currentTime: "2025-07-01T12:00:00.000Z"
+        },
+        policyRegistry()
+      ),
+    /Unrecognized key/
   );
 });
 
@@ -460,8 +521,21 @@ function policyExpiry() {
 function verifyOfficialMarketCalendarRedirectChainBoundary(value: unknown) {
   return verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
     value,
-    [policyExpiry().freshnessPolicyEntry]
+    policyRegistry()
   );
+}
+
+function policyRegistry() {
+  return [policyExpiry().freshnessPolicyEntry];
+}
+
+function policySelectorMetadata() {
+  const definition = policyExpiry().freshnessPolicyEntry
+    .freshnessPolicyDefinition;
+  return {
+    ...definition.sourceSelector,
+    ...definition.coverageSelector
+  };
 }
 
 function transferCompletion(
