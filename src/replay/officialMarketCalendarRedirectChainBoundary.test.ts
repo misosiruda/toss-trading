@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary } from "./officialMarketCalendarAcquisitionFreshnessPolicyBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION } from "./officialMarketCalendarCacheRequestPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_CREDENTIAL_FREE_CLIENT_POLICY_VERSION } from "./officialMarketCalendarCredentialFreeClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION } from "./officialMarketCalendarDomainAllowlist.js";
@@ -58,6 +59,95 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
       }
     }
   );
+});
+
+test("calendar acquisition policy boundary binds redirect policy identity to selectors", () => {
+  const result =
+    verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+      {
+        redirectChainBoundary: chain(),
+        freshnessPolicySelectorMetadata: policySelectorMetadata()
+      },
+      policyRegistry()
+    );
+  assert.equal(
+    result.redirectChainBoundary.finalResponseBoundary
+      .freshnessPolicyExpiry.freshnessPolicyVersion,
+    "krx_calendar_annual.v1"
+  );
+  assert.deepEqual(
+    result.freshnessPolicySelectorBinding.selectorMetadata,
+    policySelectorMetadata()
+  );
+});
+
+test("calendar acquisition policy boundary rejects selector mismatch and unknown fields", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        },
+        []
+      ),
+    /version is not registered/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: {
+            ...policySelectorMetadata(),
+            evidenceRoles: ["holiday_rows"]
+          }
+        },
+        policyRegistry()
+      ),
+    /do not match acquisition metadata/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+        {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata(),
+          currentTime: "2025-07-01T12:00:00.000Z"
+        },
+        policyRegistry()
+      ),
+    /Unrecognized key/
+  );
+});
+
+test("calendar acquisition policy boundary binds selectors to the verified initial request", () => {
+  for (const freshnessPolicyExpiry of [
+    policyExpiry({ requestedUrl: "https://global.krx.co.kr/calendar" }),
+    policyExpiry({
+      exchange: "NYSE",
+      requestedUrl: "https://www.nyse.com/source"
+    }),
+    policyExpiry({
+      requestMethod: "GET",
+      requestBodyContentType: null,
+      requestBodyHash: null
+    }),
+    policyExpiry({ requestBodyHash: hash("b") })
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+          {
+            redirectChainBoundary: chain({ freshnessPolicyExpiry }),
+            freshnessPolicySelectorMetadata:
+              policySelectorMetadata(freshnessPolicyExpiry)
+          },
+          policyRegistry(freshnessPolicyExpiry)
+        ),
+      /do not match verified initial request/
+    );
+  }
 });
 
 test("calendar redirect chain boundary rejects mismatched hop counts", () => {
@@ -310,6 +400,7 @@ function chain(
     finalEffectiveResponseAt: string;
     finalResponseProtocol: "http_1_0" | "http_1_1" | "http_2" | "http_3";
     finalResponseUrl: string;
+    freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     insecureTlsBypassEnabled: boolean;
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
@@ -372,7 +463,8 @@ function chain(
         effectiveResponseAt:
           overrides.finalEffectiveResponseAt ?? "2025-07-01T12:00:00.000Z"
       },
-      freshnessPolicyExpiry: policyExpiry(),
+      freshnessPolicyExpiry:
+        overrides.freshnessPolicyExpiry ?? policyExpiry(),
       transferCompletion: transferCompletion({
         transferCompleted: overrides.transferCompleted ?? true
       })
@@ -413,17 +505,32 @@ function chain(
   };
 }
 
-function policyExpiry() {
+function policyExpiry(
+  overrides: Partial<{
+    exchange: "KRX" | "NYSE";
+    requestMethod: "GET" | "POST";
+    requestedUrl: string;
+    requestBodyContentType: string | null;
+    requestBodyHash: string | null;
+  }> = {}
+) {
   const definition = {
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
     sourceSelector: {
-      exchange: "KRX" as const,
-      requestMethod: "GET" as const,
-      requestedUrl: "https://global.krx.co.kr/calendar",
+      exchange: overrides.exchange ?? ("KRX" as const),
+      requestMethod: overrides.requestMethod ?? ("POST" as const),
+      requestedUrl:
+        overrides.requestedUrl ?? "https://global.krx.co.kr/source",
       requestParameters: {},
-      requestBodyContentType: null,
-      requestBodyHash: null,
+      requestBodyContentType:
+        overrides.requestBodyContentType === undefined
+          ? "application/x-www-form-urlencoded"
+          : overrides.requestBodyContentType,
+      requestBodyHash:
+        overrides.requestBodyHash === undefined
+          ? hash("a")
+          : overrides.requestBodyHash,
       representationHeaders: {},
       parserContractVersion: "krx_calendar_pdf.v1"
     },
@@ -460,8 +567,25 @@ function policyExpiry() {
 function verifyOfficialMarketCalendarRedirectChainBoundary(value: unknown) {
   return verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
     value,
-    [policyExpiry().freshnessPolicyEntry]
+    policyRegistry()
   );
+}
+
+function policyRegistry(
+  freshnessPolicyExpiry = policyExpiry()
+) {
+  return [freshnessPolicyExpiry.freshnessPolicyEntry];
+}
+
+function policySelectorMetadata(
+  freshnessPolicyExpiry = policyExpiry()
+) {
+  const definition = freshnessPolicyExpiry.freshnessPolicyEntry
+    .freshnessPolicyDefinition;
+  return {
+    ...definition.sourceSelector,
+    ...definition.coverageSelector
+  };
 }
 
 function transferCompletion(
