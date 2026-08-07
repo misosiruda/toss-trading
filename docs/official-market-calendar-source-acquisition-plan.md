@@ -514,6 +514,137 @@ coverage의 완결성을 구분하는 등록된 immutable policy를 식별한다
 `artifactHash`에 결합한다. 실행 시각의 별도 입력이나 download 완료 시각으로
 expiry를 교체하지 않는다.
 
+### Freshness Policy Contract
+
+Freshness policy는 acquisition 결과를 본 뒤 선택하는 TTL 설정이 아니다. Source
+document를 accepted evidence로 평가하기 전에 registry에 immutable entry로
+등록하고, metadata는 등록된 entry의 version, canonical definition과 hash를
+그대로 보존해야 한다. V1 definition은 다음 strict shape를 사용한다.
+
+```typescript
+type OfficialCalendarSourceEvidenceRole =
+  | "holiday_rows"
+  | "holiday_schedule"
+  | "session_hours"
+  | "session_hours_exception_schedule"
+  | "special_closure"
+  | "special_closure_schedule";
+
+type OfficialCalendarExceptionCoverageRole =
+  | "holiday_schedule"
+  | "session_hours_exception_schedule"
+  | "special_closure_schedule";
+
+type CanonicalJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | CanonicalJsonValue[]
+  | { [key: string]: CanonicalJsonValue };
+
+type CanonicalJsonObject = { [key: string]: CanonicalJsonValue };
+
+interface OfficialMarketCalendarFreshnessPolicyDefinitionV1 {
+  schemaVersion: "official_market_calendar_freshness_policy_definition.v1";
+  sourceSelector: {
+    exchange: "KRX" | "NYSE";
+    requestMethod: string;
+    requestedUrl: string;
+    requestParameters: CanonicalJsonObject;
+    representationHeaders: CanonicalJsonObject;
+    parserContractVersion: string;
+  };
+  coverageSelector: {
+    evidenceRoles: OfficialCalendarSourceEvidenceRole[];
+    rowCoverageStartDate: string | null;
+    rowCoverageEndDate: string | null;
+    scheduleCoverageIntervals: Array<{
+      coverageRole: OfficialCalendarExceptionCoverageRole;
+      startDate: string;
+      endDate: string;
+    }>;
+    applicabilityStartDate: string | null;
+    applicabilityEndDate: string | null;
+  };
+  expiryRule: {
+    type: "fixed_duration_from_effective_response";
+    durationSeconds: number;
+  };
+}
+```
+
+`sourceSelector`는 actual request와 parser contract에서 관찰하거나 사전 고정한
+값만 사용한다. Redirect 이후 `finalUrl`, response header, retrieval 시각,
+`documentId`, local path와 source byte hash는 selector가 아니다. 같은 official
+entry point라도 request parameter, representation header 또는 parser contract가
+다르면 별도 definition을 등록한다. URL은 HTTPS boundary가 승인한 canonical
+serialization이어야 하고 request method와 parameter/header object는 acquisition
+metadata의 canonical 값과 exact match해야 한다.
+
+`coverageSelector`는 document가 직접 주장하는 coverage를 선택한다.
+`evidenceRoles`는 canonical unique 순서여야 하며 row coverage start/end는 둘 다
+`null`이거나 둘 다 existing calendar date여야 한다. Schedule interval은
+`coverageRole`, `startDate`, `endDate` 순서의 canonical unique list이고 각 start는
+end 이후일 수 없다. Applicability start가 `null`이면 end도 `null`이어야 하며,
+start가 있으면 end는 `null`인 open-ended claim 또는 start 이상인 existing date만
+허용한다. Metadata의 coverage claim과 selector가 exact match하지 않으면 broad
+role, overlapping interval 또는 exchange-level default policy로 fallback하지 않는다.
+
+Registry entry는 다음 세 값을 하나의 immutable record로 관리한다.
+
+```typescript
+interface OfficialMarketCalendarFreshnessPolicyRegistryEntryV1 {
+  freshnessPolicyVersion: string;
+  freshnessPolicyDefinition: OfficialMarketCalendarFreshnessPolicyDefinitionV1;
+  freshnessPolicyHash: Sha256Hash;
+}
+```
+
+`freshnessPolicyVersion`은 registered ASCII identifier grammar를 사용하며 registry
+안에서 unique하다. 이미 등록된 version의 definition 또는 hash를 in-place로
+변경하지 않는다. Definition 변경은 새 version과 새 hash를 사용한다.
+`Sha256Hash`는 project의 lowercase `sha256:<64 hex>` strict schema를 사용한다.
+`freshnessPolicyHash`는 기존 `createReplayResearchHash()` canonical JSON 규칙으로
+definition 전체만 hash한 값이다. Version이나 recorded hash 자체는 hash input에
+넣지 않는다. Acquisition metadata의 version으로 registry entry를 exact lookup한
+뒤 recorded definition과 hash를 registry 값 및 재계산 hash와 각각 비교한다.
+
+V1 expiry rule은 하나만 허용한다.
+
+```text
+policyExpiry = effectiveResponseAt + durationSeconds * 1,000 milliseconds
+staleAfter = canonicalUtcMilliseconds(policyExpiry)
+```
+
+`durationSeconds`는 0보다 큰 safe integer여야 한다. `effectiveResponseAt`은 검증된
+final-response freshness 결과에서만 가져오며 별도 caller timestamp를 허용하지
+않는다. Millisecond 연산이 finite exact integer가 아니거나 JavaScript Date 범위를
+벗어나면 fail-closed로 거부한다. Recorded `staleAfter`는 canonical UTC millisecond
+format이어야 하며 재계산 값과 exact match해야 한다. Response `Cache-Control`은
+provenance로 보존하지만 `durationSeconds`를 자동 생성하거나 늘리는 입력으로
+사용하지 않는다.
+
+다음 validation matrix를 구현 contract로 고정한다.
+
+| 입력 또는 상태 | 결과 |
+| --- | --- |
+| Registry에 없는 `freshnessPolicyVersion` | reject |
+| Registry definition과 recorded definition 불일치 | reject |
+| Recomputed hash와 registry/recorded hash 불일치 | reject |
+| Source 또는 coverage selector exact mismatch | reject |
+| Unknown definition field, role, rule type 또는 non-canonical 배열 | reject |
+| `durationSeconds`가 0, 음수, 소수, unsafe integer | reject |
+| Expiry overflow 또는 non-canonical `staleAfter` | reject |
+| Recorded `staleAfter`와 derived expiry 불일치 | reject |
+| 같은 immutable entry와 같은 `effectiveResponseAt` | 동일한 `staleAfter` 반환 |
+
+첫 구현 PR은 definition과 registry entry의 strict parser, canonical hash 검증까지만
+다룬다. 다음 PR에서 `effectiveResponseAt` 기반 expiry derivation을 추가하고, 그
+다음 final-response/acquisition metadata에 결합한다. Registry에 넣을 실제
+source별 duration 값은 source update cadence와 coverage 완결성 근거를 별도 문서
+PR로 사전 등록하기 전까지 추가하지 않는다.
+
 다음 처리는 금지한다.
 
 - 코드 내부 default TTL로 `staleAfter` 자동 생성
