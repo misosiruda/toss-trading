@@ -16,7 +16,7 @@ test("calendar response Cache-Control canonicalizes field lines", () => {
   assert.deepEqual(
     parseOfficialMarketCalendarResponseCacheControl({
       cacheControlHeaderValues: [
-        " Public, max-age = 60 ",
+        " Public, max-age=60 ",
         'no-cache="Set-Cookie, Authorization"'
       ]
     }),
@@ -64,6 +64,8 @@ test("calendar response Cache-Control rejects malformed directive lists", () => 
     "public,",
     "public,,max-age=60",
     "max-age=",
+    "max-age =60",
+    "max-age= 60",
     "max-age = 60 extra",
     'private="unterminated',
     'private="bad\rvalue"',

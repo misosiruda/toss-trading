@@ -51,11 +51,11 @@ function parseFieldValue(value: string): ParsedDirective[] {
   while (index < value.length) {
     const nameToken = readToken(value, index);
     const name = nameToken.value.toLowerCase();
-    index = skipOptionalWhitespace(value, nameToken.nextIndex);
+    index = nameToken.nextIndex;
 
     let argument: string | null = null;
     if (value[index] === "=") {
-      index = skipOptionalWhitespace(value, index + 1);
+      index += 1;
       if (value[index] === '"') {
         const quoted = readQuotedString(value, index);
         argument = quoted.canonical;
@@ -65,8 +65,8 @@ function parseFieldValue(value: string): ParsedDirective[] {
         argument = token.value;
         index = token.nextIndex;
       }
-      index = skipOptionalWhitespace(value, index);
     }
+    index = skipOptionalWhitespace(value, index);
 
     directives.push({
       name,
