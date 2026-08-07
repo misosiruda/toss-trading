@@ -4,6 +4,7 @@ import {
   type OfficialMarketCalendarFreshnessPolicyRegistryEntry,
   parseOfficialMarketCalendarFreshnessPolicyRegistryEntry
 } from "./officialMarketCalendarFreshnessPolicy.js";
+import { resolveOfficialMarketCalendarResponseFreshness } from "./officialMarketCalendarResponseFreshness.js";
 
 const canonicalUtcMillisecondSchema = z
   .string()
@@ -22,6 +23,13 @@ const expiryInputSchema = z
   .object({
     freshnessPolicyEntry: z.record(z.string(), z.unknown()),
     effectiveResponseAt: canonicalUtcMillisecondSchema,
+    staleAfter: canonicalUtcMillisecondSchema
+  })
+  .strict();
+
+const recordedExpiryInputSchema = z
+  .object({
+    freshnessPolicyEntry: z.record(z.string(), z.unknown()),
     staleAfter: canonicalUtcMillisecondSchema
   })
   .strict();
@@ -74,6 +82,20 @@ export function resolveOfficialMarketCalendarFreshnessPolicyExpiry(
     durationSeconds,
     staleAfter
   };
+}
+
+export function resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+  value: unknown,
+  responseFreshness: unknown
+): ResolvedOfficialMarketCalendarFreshnessPolicyExpiry {
+  const input = recordedExpiryInputSchema.parse(value);
+  const verifiedResponseFreshness =
+    resolveOfficialMarketCalendarResponseFreshness(responseFreshness);
+  return resolveOfficialMarketCalendarFreshnessPolicyExpiry({
+    ...input,
+    effectiveResponseAt:
+      verifiedResponseFreshness.freshness.effectiveResponseAt
+  });
 }
 
 function canonicalUtcMilliseconds(timestamp: number): string {

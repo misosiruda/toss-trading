@@ -5,7 +5,11 @@ import {
   OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
   createOfficialMarketCalendarFreshnessPolicyHash
 } from "./officialMarketCalendarFreshnessPolicy.js";
-import { resolveOfficialMarketCalendarFreshnessPolicyExpiry } from "./officialMarketCalendarFreshnessPolicyExpiry.js";
+import {
+  resolveOfficialMarketCalendarFreshnessPolicyExpiry,
+  resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness
+} from "./officialMarketCalendarFreshnessPolicyExpiry.js";
+import { resolveOfficialMarketCalendarResponseFreshness } from "./officialMarketCalendarResponseFreshness.js";
 
 test("calendar freshness policy expiry derives staleAfter deterministically", () => {
   const input = expiry();
@@ -107,6 +111,43 @@ test("calendar freshness policy expiry rejects unknown fields", () => {
   );
 });
 
+test("calendar freshness policy expiry derives effective time from response freshness", () => {
+  const { effectiveResponseAt: _effectiveResponseAt, ...recordedExpiry } =
+    expiry();
+
+  assert.deepEqual(
+    resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+      recordedExpiry,
+      responseFreshness().freshness
+    ),
+    resolveOfficialMarketCalendarFreshnessPolicyExpiry(expiry())
+  );
+});
+
+test("calendar freshness policy expiry rejects caller effective time in bound input", () => {
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+        expiry(),
+        responseFreshness().freshness
+      ),
+    /Unrecognized key/
+  );
+});
+
+test("calendar freshness policy expiry bound input preserves mismatch rejection", () => {
+  const { effectiveResponseAt: _effectiveResponseAt, ...recordedExpiry } =
+    expiry({ staleAfter: "2025-07-02T12:00:00.001Z" });
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness(
+        recordedExpiry,
+        responseFreshness().freshness
+      ),
+    /does not match/
+  );
+});
+
 function expiry(
   overrides: Partial<{
     effectiveResponseAt: string;
@@ -163,6 +204,15 @@ function policyDefinition(durationSeconds: number) {
       durationSeconds
     }
   };
+}
+
+function responseFreshness() {
+  return resolveOfficialMarketCalendarResponseFreshness({
+    retrievedAt: "2025-07-01T12:00:10.000Z",
+    responseDate: "2025-07-01T12:00:00Z",
+    responseAgeSeconds: 5,
+    effectiveResponseAt: "2025-07-01T12:00:00.000Z"
+  });
 }
 
 function hash(character: string): string {
