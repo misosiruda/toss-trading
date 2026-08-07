@@ -59,6 +59,11 @@ function verifyCanonicalObject(
       `official calendar request parameter keys must be valid Unicode at ${path}`
     );
   }
+  if (keys.some(isArrayIndexKey)) {
+    throw new Error(
+      `official calendar request parameter keys must not use array-index grammar at ${path}`
+    );
+  }
   const canonicalKeys = [...keys].sort(compareUtf8Text);
   if (keys.some((key, index) => key !== canonicalKeys[index])) {
     throw new Error(
@@ -87,6 +92,16 @@ function verifyNestedCanonicalObjects(
 
 function compareUtf8Text(left: string, right: string): number {
   return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+function isArrayIndexKey(value: string): boolean {
+  const index = Number(value);
+  return (
+    Number.isInteger(index) &&
+    index >= 0 &&
+    index < 4_294_967_295 &&
+    String(index) === value
+  );
 }
 
 function containsLoneSurrogate(value: string): boolean {

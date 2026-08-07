@@ -56,6 +56,22 @@ test("calendar request parameters boundary rejects malformed Unicode keys", () =
   );
 });
 
+test("calendar request parameters boundary rejects array-index-like keys", () => {
+  for (const requestParameters of [
+    { "0": "value" },
+    JSON.parse('{"10":"a","2":"b"}') as Record<string, unknown>,
+    { nested: { "4294967294": "value" } }
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRequestParametersBoundary(
+          requests({ effectiveRequests: [{ requestParameters }] })
+        ),
+      /must not use array-index grammar/
+    );
+  }
+});
+
 test("calendar request parameters boundary rejects invalid shape and fields", () => {
   assert.throws(() =>
     verifyOfficialMarketCalendarRequestParametersBoundary(
