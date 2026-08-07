@@ -7,6 +7,7 @@ import {
 } from "./officialMarketCalendarFreshnessPolicy.js";
 import {
   resolveOfficialMarketCalendarFreshnessPolicyExpiry,
+  resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness,
   resolveOfficialMarketCalendarFreshnessPolicyExpiryFromResponseFreshness
 } from "./officialMarketCalendarFreshnessPolicyExpiry.js";
 import { resolveOfficialMarketCalendarResponseFreshness } from "./officialMarketCalendarResponseFreshness.js";
@@ -145,6 +146,51 @@ test("calendar freshness policy expiry bound input preserves mismatch rejection"
         responseFreshness().freshness
       ),
     /does not match/
+  );
+});
+
+test("calendar freshness policy expiry resolves a registered policy", () => {
+  const { effectiveResponseAt: _effectiveResponseAt, ...recordedExpiry } =
+    expiry();
+  assert.deepEqual(
+    resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(
+      recordedExpiry,
+      [recordedExpiry.freshnessPolicyEntry],
+      responseFreshness().freshness
+    ),
+    resolveOfficialMarketCalendarFreshnessPolicyExpiry(expiry())
+  );
+});
+
+test("calendar freshness policy expiry rejects an unregistered policy", () => {
+  const { effectiveResponseAt: _effectiveResponseAt, ...recordedExpiry } =
+    expiry();
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(
+        recordedExpiry,
+        [],
+        responseFreshness().freshness
+      ),
+    /version is not registered/
+  );
+});
+
+test("calendar freshness policy expiry rejects registered policy substitution", () => {
+  const { effectiveResponseAt: _effectiveResponseAt, ...recordedExpiry } =
+    expiry();
+  const substitutedEntry = expiry({
+    durationSeconds: 172_800,
+    staleAfter: "2025-07-03T12:00:00.000Z"
+  }).freshnessPolicyEntry;
+  assert.throws(
+    () =>
+      resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(
+        recordedExpiry,
+        [substitutedEntry],
+        responseFreshness().freshness
+      ),
+    /does not match registry/
   );
 });
 
