@@ -29,6 +29,9 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
           responseDate: "2025-07-01T12:00:00Z",
           responseAgeSeconds: null
         },
+        responseCacheControl: {
+          responseCacheControl: null
+        },
         responseFreshness: {
           freshness: {
             retrievedAt: "2025-07-01T12:00:10.000Z",
@@ -264,6 +267,13 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
       ),
     /does not match cache age/
   );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({ finalCacheControlHeaderValues: ["max-age =60"] })
+      ),
+    /valid directive syntax/
+  );
 });
 
 function chain(
@@ -273,6 +283,7 @@ function chain(
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
     effectiveRequestUrls: string[];
+    finalCacheControlHeaderValues: string[];
     finalHttpStatus: number;
     finalDateHeaderValues: string[];
     finalEffectiveResponseAt: string;
@@ -330,6 +341,10 @@ function chain(
           "Tue, 01 Jul 2025 12:00:00 GMT"
         ],
         ageHeaderValues: []
+      },
+      responseCacheControl: {
+        cacheControlHeaderValues:
+          overrides.finalCacheControlHeaderValues ?? []
       },
       responseFreshness: {
         retrievedAt: "2025-07-01T12:00:10.000Z",

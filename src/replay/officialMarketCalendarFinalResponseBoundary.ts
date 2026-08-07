@@ -6,6 +6,10 @@ import {
   parseOfficialMarketCalendarResponseCacheHeaders
 } from "./officialMarketCalendarResponseCacheHeaders.js";
 import {
+  type OfficialMarketCalendarResponseCacheControl,
+  parseOfficialMarketCalendarResponseCacheControl
+} from "./officialMarketCalendarResponseCacheControl.js";
+import {
   type ResolvedOfficialMarketCalendarResponseFreshness,
   resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders
 } from "./officialMarketCalendarResponseFreshness.js";
@@ -22,6 +26,7 @@ const finalResponseBoundarySchema = z
     contentRangeHeaderValues: z.array(z.string()),
     contentRange: z.null(),
     responseCacheHeaders: z.record(z.string(), z.unknown()),
+    responseCacheControl: z.record(z.string(), z.unknown()),
     responseFreshness: z.record(z.string(), z.unknown()),
     transferCompletion: z.record(z.string(), z.unknown())
   })
@@ -36,6 +41,7 @@ export interface OfficialMarketCalendarFinalResponseBoundary {
   contentRangeHeaderValues: string[];
   contentRange: null;
   responseCacheHeaders: OfficialMarketCalendarResponseCacheHeaders;
+  responseCacheControl: OfficialMarketCalendarResponseCacheControl;
   responseFreshness: ResolvedOfficialMarketCalendarResponseFreshness;
   transferCompletion: OfficialMarketCalendarTransferCompletion;
 }
@@ -47,9 +53,14 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
   const responseCacheHeaders = parseOfficialMarketCalendarResponseCacheHeaders(
     rawBoundary.responseCacheHeaders
   );
+  const responseCacheControl =
+    parseOfficialMarketCalendarResponseCacheControl(
+      rawBoundary.responseCacheControl
+    );
   const boundary = {
     ...rawBoundary,
     responseCacheHeaders,
+    responseCacheControl,
     responseFreshness:
       resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
         rawBoundary.responseFreshness,
