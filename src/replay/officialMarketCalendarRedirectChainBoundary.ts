@@ -365,6 +365,18 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   }
   for (const [index, request] of
     boundary.representationHeadersBoundary.effectiveRequests.entries()) {
+    if (
+      Object.keys(request.representationHeaders).some(
+        (headerName) => !REPRESENTATION_REQUEST_HEADER_NAMES.has(headerName)
+      )
+    ) {
+      throw new Error(
+        `official calendar representation header keys must belong to the representation category at effective request ${index}`
+      );
+    }
+  }
+  for (const [index, request] of
+    boundary.representationHeadersBoundary.effectiveRequests.entries()) {
     const requestHeaderNames =
       boundary.requestHeaderNamesBoundary.effectiveRequests[index]
         ?.requestHeaderNames;
