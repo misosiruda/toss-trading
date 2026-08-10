@@ -33,6 +33,10 @@ import {
   verifyOfficialMarketCalendarRequestParametersBoundary
 } from "./officialMarketCalendarRequestParametersBoundary.js";
 import {
+  type OfficialMarketCalendarRepresentationHeadersBoundary,
+  verifyOfficialMarketCalendarRepresentationHeadersBoundary
+} from "./officialMarketCalendarRepresentationHeadersBoundary.js";
+import {
   type OfficialMarketCalendarRedirectClientPolicy,
   verifyOfficialMarketCalendarRedirectClientPolicy
 } from "./officialMarketCalendarRedirectClientPolicy.js";
@@ -66,6 +70,7 @@ const redirectChainBoundarySchema = z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
     requestParametersBoundary: z.record(z.string(), z.unknown()),
+    representationHeadersBoundary: z.record(z.string(), z.unknown()),
     redirectClientPolicy: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
@@ -83,6 +88,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
   requestParametersBoundary: OfficialMarketCalendarRequestParametersBoundary;
+  representationHeadersBoundary: OfficialMarketCalendarRepresentationHeadersBoundary;
   redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
@@ -121,6 +127,10 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     requestParametersBoundary:
       verifyOfficialMarketCalendarRequestParametersBoundary(
         rawBoundary.requestParametersBoundary
+      ),
+    representationHeadersBoundary:
+      verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+        rawBoundary.representationHeadersBoundary
       ),
     redirectClientPolicy: verifyOfficialMarketCalendarRedirectClientPolicy(
       rawBoundary.redirectClientPolicy
@@ -207,6 +217,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar parameter observations must match effective request count"
+    );
+  }
+  if (
+    boundary.representationHeadersBoundary.effectiveRequests.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar representation header observations must match effective request count"
     );
   }
   if (

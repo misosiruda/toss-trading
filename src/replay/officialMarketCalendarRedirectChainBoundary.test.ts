@@ -296,6 +296,25 @@ test("calendar redirect chain boundary rejects parameter observation count misma
   }
 });
 
+test("calendar redirect chain boundary rejects representation header observation count mismatch", () => {
+  for (const representationHeaderRequests of [
+    [representationHeaderRequest()],
+    [
+      representationHeaderRequest(),
+      representationHeaderRequest(),
+      representationHeaderRequest()
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ representationHeaderRequests })
+        ),
+      /representation header observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary derives transfer from final response", () => {
   assert.throws(
     () =>
@@ -322,6 +341,15 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
   assert.throws(() =>
     verifyOfficialMarketCalendarRedirectChainBoundary(
       missingRequestParametersBoundary
+    )
+  );
+  const {
+    representationHeadersBoundary: _representationHeadersBoundary,
+    ...missingRepresentationHeadersBoundary
+  } = chain();
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      missingRepresentationHeadersBoundary
     )
   );
   assert.throws(
@@ -383,6 +411,23 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
               requestParameters: { year: "2026", locale: "en" }
             }),
             parameterRequest()
+          ]
+        })
+      ),
+    /must use canonical key order/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          representationHeaderRequests: [
+            representationHeaderRequest({
+              representationHeaders: {
+                "accept-language": "ko-KR",
+                accept: "application/pdf"
+              }
+            }),
+            representationHeaderRequest()
           ]
         })
       ),
@@ -469,6 +514,9 @@ function chain(
     insecureTlsBypassEnabled: boolean;
     parameterRequests: ReturnType<typeof parameterRequest>[];
     rangeRequests: ReturnType<typeof rangeRequest>[];
+    representationHeaderRequests: ReturnType<
+      typeof representationHeaderRequest
+    >[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
     transferCompleted: boolean;
@@ -548,6 +596,12 @@ function chain(
       effectiveRequests: overrides.parameterRequests ?? [
         parameterRequest(),
         parameterRequest()
+      ]
+    },
+    representationHeadersBoundary: {
+      effectiveRequests: overrides.representationHeaderRequests ?? [
+        representationHeaderRequest(),
+        representationHeaderRequest()
       ]
     },
     redirectClientPolicy: {
@@ -715,6 +769,17 @@ function parameterRequest(
 ) {
   return {
     requestParameters: {},
+    ...overrides
+  };
+}
+
+function representationHeaderRequest(
+  overrides: Partial<{
+    representationHeaders: Record<string, unknown>;
+  }> = {}
+) {
+  return {
+    representationHeaders: {},
     ...overrides
   };
 }
