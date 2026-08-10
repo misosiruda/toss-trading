@@ -67,6 +67,14 @@ function validateDefinition(
         OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION,
       urls: [value.sourceSelector.requestedUrl]
     });
+    if (new URL(value.sourceSelector.requestedUrl).hash !== "") {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceSelector", "requestedUrl"],
+        message:
+          "request header policy requested URL must not contain a fragment"
+      });
+    }
   } catch (error) {
     context.addIssue({
       code: "custom",

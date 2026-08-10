@@ -101,6 +101,16 @@ test("calendar request header policy rejects invalid source selectors", () => {
       parseOfficialMarketCalendarRequestHeaderPolicyDefinition(definition)
     );
   }
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarRequestHeaderPolicyDefinition(
+        policyDefinition({
+          requestedUrl:
+            "https://global.krx.co.kr/contents/calendar#variant"
+        })
+      ),
+    /requested URL must not contain a fragment/
+  );
 });
 
 test("calendar request header policy rejects invalid schema versions and unknown fields", () => {
