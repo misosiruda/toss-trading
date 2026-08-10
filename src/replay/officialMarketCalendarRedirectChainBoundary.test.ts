@@ -330,6 +330,41 @@ test("calendar redirect chain boundary rejects cache request header name mismatc
   }
 });
 
+test("calendar redirect chain boundary rejects credential request header name mismatch", () => {
+  for (const headerNameRequests of [
+    [
+      headerNameRequest({
+        requestHeaderNames: ["authorization", "cache-control", "pragma"]
+      }),
+      headerNameRequest()
+    ],
+    [
+      headerNameRequest(),
+      headerNameRequest({
+        requestHeaderNames: ["cache-control", "cookie", "pragma"]
+      })
+    ],
+    [
+      headerNameRequest(),
+      headerNameRequest({
+        requestHeaderNames: [
+          "cache-control",
+          "pragma",
+          "proxy-authorization"
+        ]
+      })
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ headerNameRequests })
+        ),
+      /credential request header names must match verified credential boundary/
+    );
+  }
+});
+
 test("calendar redirect chain boundary rejects parameter observation count mismatch", () => {
   for (const parameterRequests of [
     [parameterRequest()],

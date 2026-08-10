@@ -243,6 +243,19 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       );
     }
   }
+  for (const [index, request] of
+    boundary.requestHeaderNamesBoundary.effectiveRequests.entries()) {
+    const requestHeaderNames = request.requestHeaderNames;
+    if (
+      requestHeaderNames.includes("authorization") ||
+      requestHeaderNames.includes("proxy-authorization") ||
+      requestHeaderNames.includes("cookie")
+    ) {
+      throw new Error(
+        `official calendar credential request header names must match verified credential boundary at effective request ${index}`
+      );
+    }
+  }
   if (
     boundary.requestParametersBoundary.effectiveRequests.length !==
     boundary.httpsUrlBoundary.effectiveRequestUrls.length
