@@ -636,6 +636,48 @@ test("calendar redirect chain boundary rejects representation header keys missin
   }
 });
 
+test("calendar redirect chain boundary rejects representation request header names without recorded values", () => {
+  for (const [missingValueRequestIndex, headerNameRequests] of [
+    [
+      headerNameRequest({
+        requestHeaderNames: [
+          "accept",
+          "cache-control",
+          "content-type",
+          "pragma"
+        ]
+      }),
+      headerNameRequest()
+    ],
+    [
+      headerNameRequest({
+        requestHeaderNames: [
+          "cache-control",
+          "content-type",
+          "pragma"
+        ]
+      }),
+      headerNameRequest({
+        requestHeaderNames: [
+          "accept-language",
+          "cache-control",
+          "pragma"
+        ]
+      })
+    ]
+  ].entries()) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ headerNameRequests })
+        ),
+      new RegExp(
+        `representation request header names must have recorded values at effective request ${missingValueRequestIndex}`
+      )
+    );
+  }
+});
+
 test("calendar redirect chain boundary derives transfer from final response", () => {
   assert.throws(
     () =>
