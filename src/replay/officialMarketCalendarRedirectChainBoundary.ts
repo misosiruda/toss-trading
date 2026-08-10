@@ -268,6 +268,25 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       );
     }
   }
+  for (const [index, request] of
+    boundary.requestHeaderNamesBoundary.effectiveRequests.entries()) {
+    const requestBodyContentType =
+      index === 0
+        ? boundary.methodBoundary.transitions[0]?.requestBodyContentType
+        : boundary.methodBoundary.transitions[index - 1]
+            ?.nextRequestBodyContentType;
+    const hasContentTypeHeader =
+      request.requestHeaderNames.includes("content-type");
+    if (
+      requestBodyContentType === undefined ||
+      (requestBodyContentType === null && hasContentTypeHeader) ||
+      (requestBodyContentType !== null && !hasContentTypeHeader)
+    ) {
+      throw new Error(
+        `official calendar content-type request header name must match verified request body metadata at effective request ${index}`
+      );
+    }
+  }
   if (
     boundary.requestParametersBoundary.effectiveRequests.length !==
     boundary.httpsUrlBoundary.effectiveRequestUrls.length
