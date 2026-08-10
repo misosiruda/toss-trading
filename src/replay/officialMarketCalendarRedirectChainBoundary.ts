@@ -256,6 +256,18 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       );
     }
   }
+  for (const [index, request] of
+    boundary.requestHeaderNamesBoundary.effectiveRequests.entries()) {
+    const requestHeaderNames = request.requestHeaderNames;
+    if (
+      requestHeaderNames.includes("range") ||
+      requestHeaderNames.includes("if-range")
+    ) {
+      throw new Error(
+        `official calendar range request header names must match verified range boundary at effective request ${index}`
+      );
+    }
+  }
   if (
     boundary.requestParametersBoundary.effectiveRequests.length !==
     boundary.httpsUrlBoundary.effectiveRequestUrls.length
