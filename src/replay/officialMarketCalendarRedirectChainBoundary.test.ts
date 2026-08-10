@@ -293,6 +293,21 @@ test("calendar redirect chain boundary rejects range observation count mismatch"
   }
 });
 
+test("calendar redirect chain boundary rejects request header name observation count mismatch", () => {
+  for (const headerNameRequests of [
+    [headerNameRequest()],
+    [headerNameRequest(), headerNameRequest(), headerNameRequest()]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ headerNameRequests })
+        ),
+      /request header name observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary rejects parameter observation count mismatch", () => {
   for (const parameterRequests of [
     [parameterRequest()],
@@ -346,6 +361,15 @@ test("calendar redirect chain boundary derives transfer from final response", ()
 });
 
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
+  const {
+    requestHeaderNamesBoundary: _requestHeaderNamesBoundary,
+    ...missingRequestHeaderNamesBoundary
+  } = chain();
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      missingRequestHeaderNamesBoundary
+    )
+  );
   const {
     requestParametersBoundary: _requestParametersBoundary,
     ...missingRequestParametersBoundary
@@ -413,6 +437,20 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
         })
       ),
     /must not contain Range or If-Range headers/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          headerNameRequests: [
+            headerNameRequest({
+              requestHeaderNames: ["pragma", "cache-control"]
+            }),
+            headerNameRequest()
+          ]
+        })
+      ),
+    /canonical order without duplicates/
   );
   assert.throws(
     () =>
@@ -524,6 +562,7 @@ function chain(
     finalResponseUrl: string;
     freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     insecureTlsBypassEnabled: boolean;
+    headerNameRequests: ReturnType<typeof headerNameRequest>[];
     parameterRequests: ReturnType<typeof parameterRequest>[];
     rangeRequests: ReturnType<typeof rangeRequest>[];
     representationHeaderRequests: ReturnType<
@@ -604,6 +643,14 @@ function chain(
       rangeRequest(),
       rangeRequest()
     ],
+    requestHeaderNamesBoundary: {
+      effectiveRequests: overrides.headerNameRequests ?? [
+        headerNameRequest({
+          requestHeaderNames: ["cache-control", "content-type", "pragma"]
+        }),
+        headerNameRequest()
+      ]
+    },
     requestParametersBoundary: {
       effectiveRequests: overrides.parameterRequests ?? [
         parameterRequest(),
@@ -782,6 +829,17 @@ function parameterRequest(
 ) {
   return {
     requestParameters: {},
+    ...overrides
+  };
+}
+
+function headerNameRequest(
+  overrides: Partial<{
+    requestHeaderNames: string[];
+  }> = {}
+) {
+  return {
+    requestHeaderNames: ["cache-control", "pragma"],
     ...overrides
   };
 }

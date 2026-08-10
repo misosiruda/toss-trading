@@ -29,6 +29,10 @@ import {
   verifyOfficialMarketCalendarRangeRequestBoundary
 } from "./officialMarketCalendarRangeRequestBoundary.js";
 import {
+  type OfficialMarketCalendarRequestHeaderNamesBoundary,
+  verifyOfficialMarketCalendarRequestHeaderNamesBoundary
+} from "./officialMarketCalendarRequestHeaderNamesBoundary.js";
+import {
   type OfficialMarketCalendarRequestParametersBoundary,
   verifyOfficialMarketCalendarRequestParametersBoundary
 } from "./officialMarketCalendarRequestParametersBoundary.js";
@@ -69,6 +73,7 @@ const redirectChainBoundarySchema = z
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
+    requestHeaderNamesBoundary: z.record(z.string(), z.unknown()),
     requestParametersBoundary: z.record(z.string(), z.unknown()),
     representationHeadersBoundary: z.record(z.string(), z.unknown()),
     redirectClientPolicy: z.record(z.string(), z.unknown()),
@@ -87,6 +92,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   finalResponseBoundary: OfficialMarketCalendarFinalResponseBoundary;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
+  requestHeaderNamesBoundary: OfficialMarketCalendarRequestHeaderNamesBoundary;
   requestParametersBoundary: OfficialMarketCalendarRequestParametersBoundary;
   representationHeadersBoundary: OfficialMarketCalendarRepresentationHeadersBoundary;
   redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
@@ -124,6 +130,10 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     rangeRequestBoundaries: rawBoundary.rangeRequestBoundaries.map(
       verifyOfficialMarketCalendarRangeRequestBoundary
     ),
+    requestHeaderNamesBoundary:
+      verifyOfficialMarketCalendarRequestHeaderNamesBoundary(
+        rawBoundary.requestHeaderNamesBoundary
+      ),
     requestParametersBoundary:
       verifyOfficialMarketCalendarRequestParametersBoundary(
         rawBoundary.requestParametersBoundary
@@ -209,6 +219,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar range observations must match effective request count"
+    );
+  }
+  if (
+    boundary.requestHeaderNamesBoundary.effectiveRequests.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar request header name observations must match effective request count"
     );
   }
   if (
