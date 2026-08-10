@@ -257,6 +257,21 @@ test("calendar redirect chain boundary rejects range observation count mismatch"
   }
 });
 
+test("calendar redirect chain boundary rejects parameter observation count mismatch", () => {
+  for (const parameterRequests of [
+    [parameterRequest()],
+    [parameterRequest(), parameterRequest(), parameterRequest()]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ parameterRequests })
+        ),
+      /parameter observations must match effective request count/
+    );
+  }
+});
+
 test("calendar redirect chain boundary derives transfer from final response", () => {
   assert.throws(
     () =>
@@ -276,6 +291,15 @@ test("calendar redirect chain boundary derives transfer from final response", ()
 });
 
 test("calendar redirect chain boundary preserves child fail-closed validation", () => {
+  const {
+    requestParametersBoundary: _requestParametersBoundary,
+    ...missingRequestParametersBoundary
+  } = chain();
+  assert.throws(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      missingRequestParametersBoundary
+    )
+  );
   assert.throws(
     () =>
       verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
@@ -325,6 +349,20 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
         })
       ),
     /must not contain Range or If-Range headers/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          parameterRequests: [
+            parameterRequest({
+              requestParameters: { year: "2026", locale: "en" }
+            }),
+            parameterRequest()
+          ]
+        })
+      ),
+    /must use canonical key order/
   );
   assert.throws(
     () =>
@@ -405,6 +443,7 @@ function chain(
     finalResponseUrl: string;
     freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     insecureTlsBypassEnabled: boolean;
+    parameterRequests: ReturnType<typeof parameterRequest>[];
     rangeRequests: ReturnType<typeof rangeRequest>[];
     automaticRedirectFollowEnabled: boolean;
     responseStatuses: number[];
@@ -481,6 +520,12 @@ function chain(
       rangeRequest(),
       rangeRequest()
     ],
+    requestParametersBoundary: {
+      effectiveRequests: overrides.parameterRequests ?? [
+        parameterRequest(),
+        parameterRequest()
+      ]
+    },
     redirectClientPolicy: {
       redirectPolicyVersion: OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION,
       automaticRedirectFollowEnabled:
@@ -634,6 +679,17 @@ function rangeRequest(
   return {
     rangeHeaderValues: [],
     ifRangeHeaderValues: [],
+    ...overrides
+  };
+}
+
+function parameterRequest(
+  overrides: Partial<{
+    requestParameters: Record<string, unknown>;
+  }> = {}
+) {
+  return {
+    requestParameters: {},
     ...overrides
   };
 }

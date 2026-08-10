@@ -29,6 +29,10 @@ import {
   verifyOfficialMarketCalendarRangeRequestBoundary
 } from "./officialMarketCalendarRangeRequestBoundary.js";
 import {
+  type OfficialMarketCalendarRequestParametersBoundary,
+  verifyOfficialMarketCalendarRequestParametersBoundary
+} from "./officialMarketCalendarRequestParametersBoundary.js";
+import {
   type OfficialMarketCalendarRedirectClientPolicy,
   verifyOfficialMarketCalendarRedirectClientPolicy
 } from "./officialMarketCalendarRedirectClientPolicy.js";
@@ -61,6 +65,7 @@ const redirectChainBoundarySchema = z
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
+    requestParametersBoundary: z.record(z.string(), z.unknown()),
     redirectClientPolicy: z.record(z.string(), z.unknown()),
     statusBoundary: z.record(z.string(), z.unknown()),
     locationBoundary: z.record(z.string(), z.unknown()),
@@ -77,6 +82,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   finalResponseBoundary: OfficialMarketCalendarFinalResponseBoundary;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
+  requestParametersBoundary: OfficialMarketCalendarRequestParametersBoundary;
   redirectClientPolicy: OfficialMarketCalendarRedirectClientPolicy;
   statusBoundary: OfficialMarketCalendarRedirectStatusBoundary;
   locationBoundary: OfficialMarketCalendarRedirectLocationBoundary;
@@ -112,6 +118,10 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     rangeRequestBoundaries: rawBoundary.rangeRequestBoundaries.map(
       verifyOfficialMarketCalendarRangeRequestBoundary
     ),
+    requestParametersBoundary:
+      verifyOfficialMarketCalendarRequestParametersBoundary(
+        rawBoundary.requestParametersBoundary
+      ),
     redirectClientPolicy: verifyOfficialMarketCalendarRedirectClientPolicy(
       rawBoundary.redirectClientPolicy
     ),
@@ -189,6 +199,14 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar range observations must match effective request count"
+    );
+  }
+  if (
+    boundary.requestParametersBoundary.effectiveRequests.length !==
+    boundary.httpsUrlBoundary.effectiveRequestUrls.length
+  ) {
+    throw new Error(
+      "official calendar parameter observations must match effective request count"
     );
   }
   if (
