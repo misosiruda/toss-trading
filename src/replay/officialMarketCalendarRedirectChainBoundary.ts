@@ -284,6 +284,22 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       "official calendar representation header observations must match effective request count"
     );
   }
+  for (const [index, request] of
+    boundary.representationHeadersBoundary.effectiveRequests.entries()) {
+    const requestHeaderNames =
+      boundary.requestHeaderNamesBoundary.effectiveRequests[index]
+        ?.requestHeaderNames;
+    if (
+      requestHeaderNames === undefined ||
+      Object.keys(request.representationHeaders).some(
+        (headerName) => !requestHeaderNames.includes(headerName)
+      )
+    ) {
+      throw new Error(
+        `official calendar representation header keys must be present in verified request header names at effective request ${index}`
+      );
+    }
+  }
   if (
     boundary.finalResponseBoundary.responseUrl !==
     boundary.httpsUrlBoundary.finalUrl
