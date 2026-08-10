@@ -33,6 +33,10 @@ import {
   verifyOfficialMarketCalendarRequestHeaderNamesBoundary
 } from "./officialMarketCalendarRequestHeaderNamesBoundary.js";
 import {
+  type OfficialMarketCalendarRequestHeaderPolicyRegistryEntry
+} from "./officialMarketCalendarRequestHeaderPolicy.js";
+import { resolveRegisteredOfficialMarketCalendarRequestHeaderPolicy } from "./officialMarketCalendarRequestHeaderPolicyRegistry.js";
+import {
   type OfficialMarketCalendarRequestParametersBoundary,
   verifyOfficialMarketCalendarRequestParametersBoundary
 } from "./officialMarketCalendarRequestParametersBoundary.js";
@@ -73,6 +77,7 @@ const redirectChainBoundarySchema = z
     rangeRequestBoundaries: z
       .array(z.record(z.string(), z.unknown()))
       .min(1),
+    requestHeaderPolicyVersion: z.unknown(),
     requestHeaderNamesBoundary: z.record(z.string(), z.unknown()),
     requestParametersBoundary: z.record(z.string(), z.unknown()),
     representationHeadersBoundary: z.record(z.string(), z.unknown()),
@@ -92,6 +97,7 @@ export interface OfficialMarketCalendarRedirectChainBoundary {
   finalResponseBoundary: OfficialMarketCalendarFinalResponseBoundary;
   httpsUrlBoundary: OfficialMarketCalendarHttpsUrlBoundary;
   rangeRequestBoundaries: OfficialMarketCalendarRangeRequestBoundary[];
+  requestHeaderPolicyVersion: OfficialMarketCalendarRequestHeaderPolicyRegistryEntry["requestHeaderPolicyVersion"];
   requestHeaderNamesBoundary: OfficialMarketCalendarRequestHeaderNamesBoundary;
   requestParametersBoundary: OfficialMarketCalendarRequestParametersBoundary;
   representationHeadersBoundary: OfficialMarketCalendarRepresentationHeadersBoundary;
@@ -107,6 +113,10 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   freshnessPolicyRegistry: unknown
 ): OfficialMarketCalendarRedirectChainBoundary {
   const rawBoundary = redirectChainBoundarySchema.parse(value);
+  const requestHeaderPolicy =
+    resolveRegisteredOfficialMarketCalendarRequestHeaderPolicy(
+      rawBoundary.requestHeaderPolicyVersion
+    );
   const boundary = {
     cacheRequestPolicies: rawBoundary.cacheRequestPolicies.map(
       verifyOfficialMarketCalendarCacheRequestPolicy
@@ -130,6 +140,8 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     rangeRequestBoundaries: rawBoundary.rangeRequestBoundaries.map(
       verifyOfficialMarketCalendarRangeRequestBoundary
     ),
+    requestHeaderPolicyVersion:
+      requestHeaderPolicy.requestHeaderPolicyVersion,
     requestHeaderNamesBoundary:
       verifyOfficialMarketCalendarRequestHeaderNamesBoundary(
         rawBoundary.requestHeaderNamesBoundary
@@ -195,6 +207,18 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
   ) {
     throw new Error(
       "official calendar redirect allowlist URLs must match effective request URLs"
+    );
+  }
+  const requestHeaderPolicySourceSelector =
+    requestHeaderPolicy.requestHeaderPolicyDefinition.sourceSelector;
+  if (
+    requestHeaderPolicySourceSelector.exchange !==
+      boundary.domainAllowlistBoundary.exchange ||
+    requestHeaderPolicySourceSelector.requestedUrl !==
+      boundary.httpsUrlBoundary.requestedUrl
+  ) {
+    throw new Error(
+      "official calendar request header policy source selector must match verified initial request"
     );
   }
   if (
@@ -316,6 +340,20 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ) {
       throw new Error(
         `official calendar representation header keys must be present in verified request header names at effective request ${index}`
+      );
+    }
+  }
+  const allowedRequestHeaderNames =
+    requestHeaderPolicy.requestHeaderPolicyDefinition.allowedHeaderNames;
+  for (const [index, request] of
+    boundary.requestHeaderNamesBoundary.effectiveRequests.entries()) {
+    if (
+      request.requestHeaderNames.some(
+        (headerName) => !allowedRequestHeaderNames.includes(headerName)
+      )
+    ) {
+      throw new Error(
+        `official calendar request header names must stay within registered policy at effective request ${index}`
       );
     }
   }

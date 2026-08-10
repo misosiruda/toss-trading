@@ -9,6 +9,7 @@ import {
   OFFICIAL_MARKET_CALENDAR_FRESHNESS_POLICY_DEFINITION_VERSION,
   createOfficialMarketCalendarFreshnessPolicyHash
 } from "./officialMarketCalendarFreshnessPolicy.js";
+import { OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS } from "./officialMarketCalendarRequestHeaderPolicyRegistry.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary as verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
@@ -22,6 +23,14 @@ interface MethodTransition {
   nextRequestBodyContentType: null;
   nextRequestBodyHash: null;
 }
+
+const KRX_REQUESTED_URL =
+  "https://global.krx.co.kr/contents/GLB/05/0501/0501110000/GLB0501110000.jsp";
+const KRX_REDIRECTED_URL = `${KRX_REQUESTED_URL}?download=1`;
+const KRX_FINAL_URL = `${KRX_REQUESTED_URL}?download=2`;
+const NYSE_REQUESTED_URL =
+  "https://www.nyse.com/trade/hours-calendars";
+const NYSE_REDIRECTED_URL = `${NYSE_REQUESTED_URL}?download=1`;
 
 test("calendar redirect chain boundary accepts aligned hop contracts", () => {
   const boundary = chain();
@@ -318,6 +327,103 @@ test("calendar redirect chain boundary rejects request header name observation c
       /request header name observations must match effective request count/
     );
   }
+});
+
+test("calendar redirect chain boundary requires a registered request header policy version", () => {
+  const {
+    requestHeaderPolicyVersion: _requestHeaderPolicyVersion,
+    ...missingVersion
+  } = chain();
+  assert.throws(
+    () => verifyOfficialMarketCalendarRedirectChainBoundary(missingVersion),
+    /expected nonoptional/
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          requestHeaderPolicyVersion: "test.unknown_request_headers.v1"
+        })
+      ),
+    /version is not registered/
+  );
+});
+
+test("calendar redirect chain boundary binds request header policy to the initial source selector", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundary(
+        chain({
+          requestHeaderPolicyVersion:
+            OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_REGULAR_SESSION
+        })
+      ),
+    /source selector must match verified initial request/
+  );
+});
+
+test("calendar redirect chain boundary rejects header names outside the registered policy", () => {
+  const freshnessPolicyExpiry = policyExpiry({
+    exchange: "NYSE",
+    requestMethod: "GET",
+    requestedUrl: NYSE_REQUESTED_URL,
+    requestBodyContentType: null,
+    requestBodyHash: null
+  });
+  const boundary = chain({
+    exchange: "NYSE",
+    requestHeaderPolicyVersion:
+      OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.NYSE_TRADE_HOURS_CALENDARS,
+    effectiveRequestUrls: [NYSE_REQUESTED_URL, NYSE_REDIRECTED_URL],
+    freshnessPolicyExpiry,
+    headerNameRequests: [
+      headerNameRequest({
+        requestHeaderNames: [
+          "accept",
+          "accept-language",
+          "cache-control",
+          "pragma"
+        ]
+      }),
+      headerNameRequest()
+    ],
+    redirectHops: [
+      {
+        responseUrl: NYSE_REQUESTED_URL,
+        locationHeaderValues: ["?download=1"],
+        nextEffectiveRequestUrl: NYSE_REDIRECTED_URL
+      }
+    ],
+    transitions: [
+      {
+        responseStatus: 302,
+        requestMethod: "GET",
+        requestBodyContentType: null,
+        requestBodyHash: null,
+        nextRequestMethod: "GET",
+        nextRequestBodyContentType: null,
+        nextRequestBodyHash: null
+      }
+    ]
+  });
+
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
+        boundary,
+        policyRegistry(freshnessPolicyExpiry)
+      ),
+    /must stay within registered policy at effective request 0/
+  );
+});
+
+test("calendar redirect chain boundary resolves the configured official request header policy by default", () => {
+  assert.doesNotThrow(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry(
+      chain(),
+      policyRegistry()
+    )
+  );
 });
 
 test("calendar redirect chain boundary rejects cache request header name mismatch", () => {
@@ -741,6 +847,7 @@ function chain(
     credentialProviderConfigured: boolean;
     credentialRequests: ReturnType<typeof credentialRequest>[];
     domainUrls: string[];
+    exchange: "KRX" | "NYSE";
     effectiveRequestUrls: string[];
     finalCacheControlHeaderValues: string[];
     finalHttpStatus: number;
@@ -753,6 +860,7 @@ function chain(
     headerNameRequests: ReturnType<typeof headerNameRequest>[];
     parameterRequests: ReturnType<typeof parameterRequest>[];
     rangeRequests: ReturnType<typeof rangeRequest>[];
+    requestHeaderPolicyVersion: string;
     representationHeaderRequests: ReturnType<
       typeof representationHeaderRequest
     >[];
@@ -764,8 +872,8 @@ function chain(
   }> = {}
 ) {
   const effectiveRequestUrls = overrides.effectiveRequestUrls ?? [
-    "https://global.krx.co.kr/source",
-    "https://global.krx.co.kr/download"
+    KRX_REQUESTED_URL,
+    KRX_REDIRECTED_URL
   ];
   return {
     cacheRequestPolicies: overrides.cacheRequests ?? [
@@ -788,7 +896,7 @@ function chain(
       ]
     },
     domainAllowlistBoundary: {
-      exchange: "KRX",
+      exchange: overrides.exchange ?? "KRX",
       domainAllowlistPolicyVersion:
         OFFICIAL_MARKET_CALENDAR_DOMAIN_ALLOWLIST_POLICY_VERSION,
       urls: overrides.domainUrls ?? effectiveRequestUrls
@@ -831,6 +939,9 @@ function chain(
       rangeRequest(),
       rangeRequest()
     ],
+    requestHeaderPolicyVersion:
+      overrides.requestHeaderPolicyVersion ??
+      OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_MARKET_CLOSING_HOLIDAY,
     requestHeaderNamesBoundary: {
       effectiveRequests: overrides.headerNameRequests ?? [
         headerNameRequest({
@@ -896,7 +1007,7 @@ function policyExpiry(
       exchange: overrides.exchange ?? ("KRX" as const),
       requestMethod: overrides.requestMethod ?? ("POST" as const),
       requestedUrl:
-        overrides.requestedUrl ?? "https://global.krx.co.kr/source",
+        overrides.requestedUrl ?? KRX_REQUESTED_URL,
       requestParameters: overrides.requestParameters ?? {},
       requestBodyContentType:
         overrides.requestBodyContentType === undefined
@@ -1060,17 +1171,17 @@ function credentialRequest(
 
 function locationHop() {
   return {
-    responseUrl: "https://global.krx.co.kr/source",
-    locationHeaderValues: ["/download"],
-    nextEffectiveRequestUrl: "https://global.krx.co.kr/download"
+    responseUrl: KRX_REQUESTED_URL,
+    locationHeaderValues: ["?download=1"],
+    nextEffectiveRequestUrl: KRX_REDIRECTED_URL
   };
 }
 
 function secondLocationHop() {
   return {
-    responseUrl: "https://global.krx.co.kr/download",
-    locationHeaderValues: ["/final"],
-    nextEffectiveRequestUrl: "https://global.krx.co.kr/final"
+    responseUrl: KRX_REDIRECTED_URL,
+    locationHeaderValues: ["?download=2"],
+    nextEffectiveRequestUrl: KRX_FINAL_URL
   };
 }
 
