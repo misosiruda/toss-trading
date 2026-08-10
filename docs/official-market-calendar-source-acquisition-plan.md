@@ -45,7 +45,7 @@ exact resolve하고 initial exchange/requested URL과 모든 recorded effective 
 header name이 allowed-name 상한 안에 있는지 결합한다. 실제 HTTP client에서
 effective request header name을 관찰하는 wiring은 아직 없다. Recorded `accept`와
 `accept-language` name은 같은 effective request의 `representationHeaders` own
-value를 반드시 가져야 하고, 모든 representation key도 recorded header name에
+string value를 반드시 가져야 하고, 모든 representation key도 recorded header name에
 존재해야 한다. `representationHeaders` key는 representation category인 `accept`와
 `accept-language`만 허용하며 cache 또는 request-body header를 representation
 value로 중복 기록하면 거부한다. 사전 등록과 redirect-chain 결합만으로 source acquisition,
@@ -98,7 +98,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `requestBodyHash` | 전송한 exact request body bytes의 `sha256:<hex>` 또는 body가 없으면 `null` |
 | `requestHeaderPolicyVersion` | Credential-free effective request header allowlist version |
 | `requestHeaderNames` | 실제 initial request에 전송한 header name의 lowercase canonical 목록 |
-| `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header의 canonical object |
+| `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header를 string value로 보존한 canonical object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
 | `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names와 safe representation/cache header values, negotiated response protocol version, response status, `Location`, `Content-Range`, `Date`, `Age`와 response cache-control 값 또는 부재를 순서대로 기록 |

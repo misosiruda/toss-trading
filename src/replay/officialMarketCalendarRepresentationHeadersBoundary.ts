@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import {
-  officialMarketCalendarCanonicalJsonValueSchema,
   verifyOfficialMarketCalendarCanonicalJsonObject
 } from "./officialMarketCalendarCanonicalJsonObject.js";
 
@@ -16,7 +15,7 @@ const effectiveRequestRepresentationHeadersSchema = z
   .object({
     representationHeaders: z.record(
       lowercaseHeaderNameSchema,
-      officialMarketCalendarCanonicalJsonValueSchema
+      z.string()
     )
   })
   .strict();

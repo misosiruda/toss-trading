@@ -47,8 +47,13 @@ test("calendar representation headers boundary rejects non-canonical key order",
   );
 });
 
-test("calendar representation headers boundary rejects non-JSON values", () => {
+test("calendar representation headers boundary rejects non-string values", () => {
   for (const representationHeaders of [
+    { accept: null },
+    { accept: false },
+    { accept: 1 },
+    { accept: ["application/pdf"] },
+    { accept: { mediaType: "application/pdf" } },
     { accept: undefined },
     { accept: Number.NaN },
     { accept: Number.POSITIVE_INFINITY }
