@@ -18,8 +18,9 @@ const HARD_PROHIBITED_HEADER_NAMES = new Set([
   "proxy-authorization",
   "range"
 ]);
-const CREDENTIAL_HEADER_NAME_PATTERN =
-  /(?:^|[-_])(?:api[-_]?key|auth(?:entication|orization)?|cookie|token|secret)(?:$|[-_])/;
+const API_KEY_HEADER_NAME_PATTERN = /api[-_]?key/;
+const CREDENTIAL_ALIAS_HEADER_NAME_PATTERN =
+  /(?:^|[-_])(?:auth(?:entication|orization)?|cookie|token|secret)(?:$|[-_])/;
 
 const lowercaseHeaderNameSchema = z
   .string()
@@ -117,7 +118,8 @@ function validateDefinition(
   const hardProhibitedHeaderName = value.allowedHeaderNames.find(
     (headerName) =>
       HARD_PROHIBITED_HEADER_NAMES.has(headerName) ||
-      CREDENTIAL_HEADER_NAME_PATTERN.test(headerName)
+      API_KEY_HEADER_NAME_PATTERN.test(headerName) ||
+      CREDENTIAL_ALIAS_HEADER_NAME_PATTERN.test(headerName)
   );
   if (hardProhibitedHeaderName !== undefined) {
     context.addIssue({

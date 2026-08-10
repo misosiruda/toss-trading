@@ -72,6 +72,9 @@ test("calendar request header policy rejects hard-prohibited names", () => {
     "x-client-secret",
     "x-cookie",
     "x-goog-api-key",
+    "x-rapidapi-key",
+    "x-rapidapi_key",
+    "x-rapidapikey",
     "x_auth_key"
   ]) {
     assert.throws(
