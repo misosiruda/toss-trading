@@ -402,6 +402,41 @@ test("calendar redirect chain boundary rejects range request header name mismatc
   }
 });
 
+test("calendar redirect chain boundary rejects content-type request header name mismatch", () => {
+  for (const headerNameRequests of [
+    [
+      headerNameRequest({
+        requestHeaderNames: ["cache-control", "pragma"]
+      }),
+      headerNameRequest()
+    ],
+    [
+      headerNameRequest({
+        requestHeaderNames: [
+          "cache-control",
+          "content-type",
+          "pragma"
+        ]
+      }),
+      headerNameRequest({
+        requestHeaderNames: [
+          "cache-control",
+          "content-type",
+          "pragma"
+        ]
+      })
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ headerNameRequests })
+        ),
+      /content-type request header name must match verified request body metadata/
+    );
+  }
+});
+
 test("calendar redirect chain boundary rejects parameter observation count mismatch", () => {
   for (const parameterRequests of [
     [parameterRequest()],
