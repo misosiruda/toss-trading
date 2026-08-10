@@ -124,6 +124,29 @@ test("calendar acquisition policy boundary rejects selector mismatch and unknown
 });
 
 test("calendar acquisition policy boundary binds selectors to the verified initial request", () => {
+  const matchingRequestParameters = { locale: "ko", year: "2026" };
+  const matchingFreshnessPolicyExpiry = policyExpiry({
+    requestParameters: matchingRequestParameters
+  });
+  assert.doesNotThrow(() =>
+    verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
+      {
+        redirectChainBoundary: chain({
+          freshnessPolicyExpiry: matchingFreshnessPolicyExpiry,
+          parameterRequests: [
+            parameterRequest({
+              requestParameters: matchingRequestParameters
+            }),
+            parameterRequest()
+          ]
+        }),
+        freshnessPolicySelectorMetadata: policySelectorMetadata(
+          matchingFreshnessPolicyExpiry
+        )
+      },
+      policyRegistry(matchingFreshnessPolicyExpiry)
+    )
+  );
   for (const freshnessPolicyExpiry of [
     policyExpiry({ requestedUrl: "https://global.krx.co.kr/calendar" }),
     policyExpiry({
@@ -135,6 +158,7 @@ test("calendar acquisition policy boundary binds selectors to the verified initi
       requestBodyContentType: null,
       requestBodyHash: null
     }),
+    policyExpiry({ requestParameters: { locale: "en" } }),
     policyExpiry({ requestBodyContentType: "application/json" }),
     policyExpiry({ requestBodyHash: hash("b") })
   ]) {
@@ -557,6 +581,7 @@ function policyExpiry(
   overrides: Partial<{
     exchange: "KRX" | "NYSE";
     requestMethod: "GET" | "POST";
+    requestParameters: Record<string, unknown>;
     requestedUrl: string;
     requestBodyContentType: string | null;
     requestBodyHash: string | null;
@@ -570,7 +595,7 @@ function policyExpiry(
       requestMethod: overrides.requestMethod ?? ("POST" as const),
       requestedUrl:
         overrides.requestedUrl ?? "https://global.krx.co.kr/source",
-      requestParameters: {},
+      requestParameters: overrides.requestParameters ?? {},
       requestBodyContentType:
         overrides.requestBodyContentType === undefined
           ? "application/x-www-form-urlencoded"

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { z } from "zod";
 
 import { parseOfficialMarketCalendarFreshnessPolicyRegistry } from "./officialMarketCalendarFreshnessPolicy.js";
@@ -55,14 +57,22 @@ export function verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
     registeredEntry.freshnessPolicyDefinition.sourceSelector;
   const initialMethodTransition =
     redirectChainBoundary.methodBoundary.transitions[0];
+  const initialRequestParameters =
+    redirectChainBoundary.requestParametersBoundary.effectiveRequests[0]
+      ?.requestParameters;
   if (
     initialMethodTransition === undefined ||
+    initialRequestParameters === undefined ||
     sourceSelector.exchange !==
       redirectChainBoundary.domainAllowlistBoundary.exchange ||
     sourceSelector.requestedUrl !==
       redirectChainBoundary.httpsUrlBoundary.requestedUrl ||
     sourceSelector.requestMethod !==
       initialMethodTransition.requestMethod ||
+    !isDeepStrictEqual(
+      sourceSelector.requestParameters,
+      initialRequestParameters
+    ) ||
     sourceSelector.requestBodyContentType !==
       initialMethodTransition.requestBodyContentType ||
     sourceSelector.requestBodyHash !==
