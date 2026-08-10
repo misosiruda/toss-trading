@@ -19,7 +19,7 @@ const HARD_PROHIBITED_HEADER_NAMES = new Set([
   "range"
 ]);
 const CREDENTIAL_HEADER_NAME_PATTERN =
-  /(?:^|[-_])(?:api[-_]?key|token|secret)(?:$|[-_])/;
+  /(?:^|[-_])(?:api[-_]?key|auth(?:entication|orization)?|cookie|token|secret)(?:$|[-_])/;
 
 const lowercaseHeaderNameSchema = z
   .string()
