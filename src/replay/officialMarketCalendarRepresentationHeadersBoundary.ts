@@ -10,12 +10,18 @@ const lowercaseHeaderNameSchema = z
     /^[!#$%&'*+\-.^_`|~0-9a-z]+$/,
     "representation header name must be a lowercase HTTP field name"
   );
+const representationHeaderValueSchema = z
+  .string()
+  .regex(
+    /^(?:|[\x21-\x7e](?:[\x09\x20-\x7e]*[\x21-\x7e])?)$/,
+    "representation header value must use canonical safe ASCII HTTP field-value characters"
+  );
 
 const effectiveRequestRepresentationHeadersSchema = z
   .object({
     representationHeaders: z.record(
       lowercaseHeaderNameSchema,
-      z.string()
+      representationHeaderValueSchema
     )
   })
   .strict();
