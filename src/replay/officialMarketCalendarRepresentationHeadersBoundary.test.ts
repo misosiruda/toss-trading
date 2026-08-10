@@ -28,6 +28,51 @@ test("calendar representation headers boundary rejects invalid header names", ()
   }
 });
 
+test("calendar representation headers boundary accepts canonical safe ASCII field values", () => {
+  for (const value of [
+    "",
+    "application/pdf",
+    "text/html, application/xhtml+xml",
+    "en-US,\ten;q=0.8"
+  ]) {
+    assert.doesNotThrow(() =>
+      verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+        requests({
+          effectiveRequests: [
+            { representationHeaders: { accept: value } }
+          ]
+        })
+      )
+    );
+  }
+});
+
+test("calendar representation headers boundary rejects non-canonical field values", () => {
+  for (const value of [
+    " application/pdf",
+    "application/pdf ",
+    "\tapplication/pdf",
+    "application/pdf\t",
+    "application/\u0000pdf",
+    "application/\u001fpdf",
+    "application/\u007fpdf",
+    "application/\r\nx-injected: value",
+    "text/\ud55c\uae00"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { accept: value } }
+            ]
+          })
+        ),
+      /canonical safe ASCII HTTP field-value characters/
+    );
+  }
+});
+
 test("calendar representation headers boundary rejects non-canonical key order", () => {
   assert.throws(
     () =>
