@@ -23,6 +23,12 @@ const lowercaseHeaderNameSchema = z
     /^[!#$%&'*+\-.^_`|~0-9a-z]+$/,
     "request header policy name must be a lowercase HTTP field name"
   );
+const policyVersionSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/,
+    "request header policy version must use the registered ASCII grammar"
+  );
 
 export const officialMarketCalendarRequestHeaderPolicyDefinitionSchema = z
   .object({
@@ -44,12 +50,67 @@ export type OfficialMarketCalendarRequestHeaderPolicyDefinition = z.infer<
   typeof officialMarketCalendarRequestHeaderPolicyDefinitionSchema
 >;
 
+const registryEntrySchema = z
+  .object({
+    requestHeaderPolicyVersion: policyVersionSchema,
+    requestHeaderPolicyDefinition:
+      officialMarketCalendarRequestHeaderPolicyDefinitionSchema
+  })
+  .strict();
+
+export type OfficialMarketCalendarRequestHeaderPolicyRegistryEntry = z.infer<
+  typeof registryEntrySchema
+>;
+
 export function parseOfficialMarketCalendarRequestHeaderPolicyDefinition(
   value: unknown
 ): OfficialMarketCalendarRequestHeaderPolicyDefinition {
   return officialMarketCalendarRequestHeaderPolicyDefinitionSchema.parse(
     value
   );
+}
+
+export function parseOfficialMarketCalendarRequestHeaderPolicyRegistryEntry(
+  value: unknown
+): OfficialMarketCalendarRequestHeaderPolicyRegistryEntry {
+  return registryEntrySchema.parse(value);
+}
+
+export function parseOfficialMarketCalendarRequestHeaderPolicyRegistry(
+  value: unknown
+): OfficialMarketCalendarRequestHeaderPolicyRegistryEntry[] {
+  const entries = z
+    .array(z.unknown())
+    .parse(value)
+    .map(parseOfficialMarketCalendarRequestHeaderPolicyRegistryEntry);
+  const versions = new Set<string>();
+  for (const entry of entries) {
+    if (versions.has(entry.requestHeaderPolicyVersion)) {
+      throw new Error(
+        "official calendar request header policy versions must be unique"
+      );
+    }
+    versions.add(entry.requestHeaderPolicyVersion);
+  }
+  return entries;
+}
+
+export function resolveOfficialMarketCalendarRequestHeaderPolicyFromRegistry(
+  requestHeaderPolicyVersion: unknown,
+  registry: unknown
+): OfficialMarketCalendarRequestHeaderPolicyRegistryEntry {
+  const version = policyVersionSchema.parse(requestHeaderPolicyVersion);
+  const entry = parseOfficialMarketCalendarRequestHeaderPolicyRegistry(
+    registry
+  ).find(
+    (candidate) => candidate.requestHeaderPolicyVersion === version
+  );
+  if (entry === undefined) {
+    throw new Error(
+      "official calendar request header policy version is not registered"
+    );
+  }
+  return entry;
 }
 
 function validateDefinition(
