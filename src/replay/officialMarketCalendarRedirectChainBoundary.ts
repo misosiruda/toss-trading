@@ -64,6 +64,12 @@ import {
   type OfficialMarketCalendarTlsClientPolicy,
   verifyOfficialMarketCalendarTlsClientPolicy
 } from "./officialMarketCalendarTlsClientPolicy.js";
+
+const REPRESENTATION_REQUEST_HEADER_NAMES: ReadonlySet<string> = new Set([
+  "accept",
+  "accept-language"
+]);
+
 const redirectChainBoundarySchema = z
   .object({
     cacheRequestPolicies: z
@@ -354,6 +360,24 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
     ) {
       throw new Error(
         `official calendar request header names must stay within registered policy at effective request ${index}`
+      );
+    }
+  }
+  for (const [index, request] of
+    boundary.representationHeadersBoundary.effectiveRequests.entries()) {
+    const requestHeaderNames =
+      boundary.requestHeaderNamesBoundary.effectiveRequests[index]
+        ?.requestHeaderNames;
+    if (
+      requestHeaderNames === undefined ||
+      requestHeaderNames.some(
+        (headerName) =>
+          REPRESENTATION_REQUEST_HEADER_NAMES.has(headerName) &&
+          !Object.hasOwn(request.representationHeaders, headerName)
+      )
+    ) {
+      throw new Error(
+        `official calendar representation request header names must have recorded values at effective request ${index}`
       );
     }
   }
