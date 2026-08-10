@@ -25,6 +25,26 @@ readiness 통과를 주장하지 않는다.
 없다. KRX dynamic request를 추측하거나 NYSE의 현재 규칙을 과거 기간에
 소급 적용하지 않는다.
 
+### Request Header Policy 사전 등록
+
+확인된 entry point는 다음 immutable request-header policy version으로 사전
+등록한다. KRX policy는 fixed known-safe set인 `accept`, `accept-language`,
+`cache-control`, `content-type`, `pragma`만 허용하고 NYSE policy는 `accept`,
+`cache-control`, `pragma`만 허용한다.
+
+| Exchange | `requestHeaderPolicyVersion` | Official entry point |
+| --- | --- | --- |
+| KRX | `krx_market_closing_holiday_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/05/0501/0501110000/GLB0501110000.jsp` |
+| KRX | `krx_regular_session_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp` |
+| KRX | `krx_2016_session_extension_brochure_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/01/0107/0107010000/20170630_eng_brochure.pdf` |
+| NYSE | `nyse_trade_hours_calendars_request_headers.v1` | `https://www.nyse.com/trade/hours-calendars` |
+
+Allowed name은 실제 request에 모두 전송해야 하는 목록이 아니라 source별 상한이다.
+실제 effective request header name은 별도로 관찰하고 redirect chain과 exact
+결합해야 한다. 사전 등록만으로 source acquisition, historical coverage 또는
+readiness 통과를 주장하지 않는다. 등록 밖 header가 필요하면 기존 version을
+변경하지 않고 별도 검토와 새 version 등록 전까지 acquisition을 거부한다.
+
 KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
 brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서
 대상 기간의 KRX regular close는 단일 값이 아니며, 2016-08-01 이전 15:00과
