@@ -149,6 +149,18 @@ test("calendar acquisition policy boundary binds selectors to the verified initi
               representationHeaders: matchingRepresentationHeaders
             }),
             representationHeaderRequest()
+          ],
+          headerNameRequests: [
+            headerNameRequest({
+              requestHeaderNames: [
+                "accept",
+                "accept-language",
+                "cache-control",
+                "content-type",
+                "pragma"
+              ]
+            }),
+            headerNameRequest()
           ]
         }),
         freshnessPolicySelectorMetadata: policySelectorMetadata(
@@ -420,6 +432,65 @@ test("calendar redirect chain boundary rejects representation header observation
           chain({ representationHeaderRequests })
         ),
       /representation header observations must match effective request count/
+    );
+  }
+});
+
+test("calendar redirect chain boundary accepts representation header keys present in request names", () => {
+  assert.doesNotThrow(() =>
+    verifyOfficialMarketCalendarRedirectChainBoundary(
+      chain({
+        headerNameRequests: [
+          headerNameRequest({
+            requestHeaderNames: [
+              "accept",
+              "cache-control",
+              "content-type",
+              "pragma"
+            ]
+          }),
+          headerNameRequest({
+            requestHeaderNames: [
+              "accept-language",
+              "cache-control",
+              "pragma"
+            ]
+          })
+        ],
+        representationHeaderRequests: [
+          representationHeaderRequest({
+            representationHeaders: { accept: "application/pdf" }
+          }),
+          representationHeaderRequest({
+            representationHeaders: { "accept-language": "ko-KR" }
+          })
+        ]
+      })
+    )
+  );
+});
+
+test("calendar redirect chain boundary rejects representation header keys missing from request names", () => {
+  for (const representationHeaderRequests of [
+    [
+      representationHeaderRequest({
+        representationHeaders: { accept: "application/pdf" }
+      }),
+      representationHeaderRequest()
+    ],
+    [
+      representationHeaderRequest(),
+      representationHeaderRequest({
+        representationHeaders: { "accept-language": "ko-KR" }
+      })
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRedirectChainBoundary(
+          chain({ representationHeaderRequests })
+        ),
+      /representation header keys must be present in verified request header names/
     );
   }
 });
