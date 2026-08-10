@@ -229,6 +229,20 @@ export function verifyOfficialMarketCalendarRedirectChainBoundary(
       "official calendar request header name observations must match effective request count"
     );
   }
+  for (const [index, request] of
+    boundary.requestHeaderNamesBoundary.effectiveRequests.entries()) {
+    const requestHeaderNames = request.requestHeaderNames;
+    if (
+      !requestHeaderNames.includes("cache-control") ||
+      !requestHeaderNames.includes("pragma") ||
+      requestHeaderNames.includes("if-none-match") ||
+      requestHeaderNames.includes("if-modified-since")
+    ) {
+      throw new Error(
+        `official calendar cache request header names must match verified cache policy at effective request ${index}`
+      );
+    }
+  }
   if (
     boundary.requestParametersBoundary.effectiveRequests.length !==
     boundary.httpsUrlBoundary.effectiveRequestUrls.length
