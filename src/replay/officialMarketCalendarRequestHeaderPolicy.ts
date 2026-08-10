@@ -9,18 +9,13 @@ export const OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_DEFINITION_VERSION =
   "official_market_calendar_request_header_policy_definition.v1";
 
 const REQUIRED_HEADER_NAMES = ["cache-control", "pragma"] as const;
-const HARD_PROHIBITED_HEADER_NAMES = new Set([
-  "authorization",
-  "cookie",
-  "if-modified-since",
-  "if-none-match",
-  "if-range",
-  "proxy-authorization",
-  "range"
+const KNOWN_SAFE_HEADER_NAMES = new Set([
+  "accept",
+  "accept-language",
+  "cache-control",
+  "content-type",
+  "pragma"
 ]);
-const API_KEY_HEADER_NAME_PATTERN = /api[-_]?key/;
-const CREDENTIAL_ALIAS_HEADER_NAME_PATTERN =
-  /(?:^|[-_])(?:auth(?:entication|orization)?|cookie|token|secret)(?:$|[-_])/;
 
 const lowercaseHeaderNameSchema = z
   .string()
@@ -115,17 +110,14 @@ function validateDefinition(
     });
   }
 
-  const hardProhibitedHeaderName = value.allowedHeaderNames.find(
-    (headerName) =>
-      HARD_PROHIBITED_HEADER_NAMES.has(headerName) ||
-      API_KEY_HEADER_NAME_PATTERN.test(headerName) ||
-      CREDENTIAL_ALIAS_HEADER_NAME_PATTERN.test(headerName)
+  const unknownHeaderName = value.allowedHeaderNames.find(
+    (headerName) => !KNOWN_SAFE_HEADER_NAMES.has(headerName)
   );
-  if (hardProhibitedHeaderName !== undefined) {
+  if (unknownHeaderName !== undefined) {
     context.addIssue({
       code: "custom",
       path: ["allowedHeaderNames"],
-      message: `request header policy must not allow hard-prohibited header ${hardProhibitedHeaderName}`
+      message: `request header policy must only allow known-safe header names; received ${unknownHeaderName}`
     });
   }
 }

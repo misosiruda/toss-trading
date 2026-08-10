@@ -54,8 +54,8 @@ test("calendar request header policy rejects missing required cache names", () =
   }
 });
 
-test("calendar request header policy rejects hard-prohibited names", () => {
-  for (const hardProhibitedHeaderName of [
+test("calendar request header policy rejects names outside the known-safe set", () => {
+  for (const unknownHeaderName of [
     "authorization",
     "cookie",
     "if-modified-since",
@@ -75,6 +75,10 @@ test("calendar request header policy rejects hard-prohibited names", () => {
     "x-rapidapi-key",
     "x-rapidapi_key",
     "x-rapidapikey",
+    "ocp-apim-subscription-key",
+    "x-client-key",
+    "x-custom",
+    "x-functions-key",
     "x_auth_key"
   ]) {
     assert.throws(
@@ -83,12 +87,12 @@ test("calendar request header policy rejects hard-prohibited names", () => {
           policyDefinition({
             allowedHeaderNames: [
               "cache-control",
-              hardProhibitedHeaderName,
+              unknownHeaderName,
               "pragma"
             ].sort()
           })
         ),
-      /must not allow hard-prohibited header/
+      /must only allow known-safe header names/
     );
   }
 });
