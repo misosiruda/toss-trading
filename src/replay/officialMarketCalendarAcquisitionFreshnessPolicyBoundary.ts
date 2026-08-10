@@ -60,9 +60,13 @@ export function verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
   const initialRequestParameters =
     redirectChainBoundary.requestParametersBoundary.effectiveRequests[0]
       ?.requestParameters;
+  const initialRepresentationHeaders =
+    redirectChainBoundary.representationHeadersBoundary.effectiveRequests[0]
+      ?.representationHeaders;
   if (
     initialMethodTransition === undefined ||
     initialRequestParameters === undefined ||
+    initialRepresentationHeaders === undefined ||
     sourceSelector.exchange !==
       redirectChainBoundary.domainAllowlistBoundary.exchange ||
     sourceSelector.requestedUrl !==
@@ -76,7 +80,11 @@ export function verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
     sourceSelector.requestBodyContentType !==
       initialMethodTransition.requestBodyContentType ||
     sourceSelector.requestBodyHash !==
-      initialMethodTransition.requestBodyHash
+      initialMethodTransition.requestBodyHash ||
+    !isDeepStrictEqual(
+      sourceSelector.representationHeaders,
+      initialRepresentationHeaders
+    )
   ) {
     throw new Error(
       "official calendar freshness policy selectors do not match verified initial request"

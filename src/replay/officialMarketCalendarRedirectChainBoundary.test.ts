@@ -125,8 +125,13 @@ test("calendar acquisition policy boundary rejects selector mismatch and unknown
 
 test("calendar acquisition policy boundary binds selectors to the verified initial request", () => {
   const matchingRequestParameters = { locale: "ko", year: "2026" };
+  const matchingRepresentationHeaders = {
+    accept: "application/pdf",
+    "accept-language": "ko-KR"
+  };
   const matchingFreshnessPolicyExpiry = policyExpiry({
-    requestParameters: matchingRequestParameters
+    requestParameters: matchingRequestParameters,
+    representationHeaders: matchingRepresentationHeaders
   });
   assert.doesNotThrow(() =>
     verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary(
@@ -138,6 +143,12 @@ test("calendar acquisition policy boundary binds selectors to the verified initi
               requestParameters: matchingRequestParameters
             }),
             parameterRequest()
+          ],
+          representationHeaderRequests: [
+            representationHeaderRequest({
+              representationHeaders: matchingRepresentationHeaders
+            }),
+            representationHeaderRequest()
           ]
         }),
         freshnessPolicySelectorMetadata: policySelectorMetadata(
@@ -160,7 +171,8 @@ test("calendar acquisition policy boundary binds selectors to the verified initi
     }),
     policyExpiry({ requestParameters: { locale: "en" } }),
     policyExpiry({ requestBodyContentType: "application/json" }),
-    policyExpiry({ requestBodyHash: hash("b") })
+    policyExpiry({ requestBodyHash: hash("b") }),
+    policyExpiry({ representationHeaders: { accept: "text/html" } })
   ]) {
     assert.throws(
       () =>
@@ -636,6 +648,7 @@ function policyExpiry(
     exchange: "KRX" | "NYSE";
     requestMethod: "GET" | "POST";
     requestParameters: Record<string, unknown>;
+    representationHeaders: Record<string, unknown>;
     requestedUrl: string;
     requestBodyContentType: string | null;
     requestBodyHash: string | null;
@@ -658,7 +671,7 @@ function policyExpiry(
         overrides.requestBodyHash === undefined
           ? hash("a")
           : overrides.requestBodyHash,
-      representationHeaders: {},
+      representationHeaders: overrides.representationHeaders ?? {},
       parserContractVersion: "krx_calendar_pdf.v1"
     },
     coverageSelector: {
