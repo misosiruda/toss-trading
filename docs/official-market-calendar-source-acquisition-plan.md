@@ -46,7 +46,9 @@ header name이 allowed-name 상한 안에 있는지 결합한다. 실제 HTTP cl
 effective request header name을 관찰하는 wiring은 아직 없다. Recorded `accept`와
 `accept-language` name은 같은 effective request의 `representationHeaders` own
 value를 반드시 가져야 하고, 모든 representation key도 recorded header name에
-존재해야 한다. 사전 등록과 redirect-chain 결합만으로 source acquisition,
+존재해야 한다. `representationHeaders` key는 representation category인 `accept`와
+`accept-language`만 허용하며 cache 또는 request-body header를 representation
+value로 중복 기록하면 거부한다. 사전 등록과 redirect-chain 결합만으로 source acquisition,
 historical coverage 또는 readiness 통과를 주장하지 않는다. 등록 밖 header가
 필요하면 기존 version을 변경하지 않고 별도 검토와 새 version 등록 전까지
 acquisition을 거부한다.
