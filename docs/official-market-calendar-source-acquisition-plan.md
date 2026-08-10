@@ -40,10 +40,13 @@ readiness 통과를 주장하지 않는다.
 | NYSE | `nyse_trade_hours_calendars_request_headers.v1` | `https://www.nyse.com/trade/hours-calendars` |
 
 Allowed name은 실제 request에 모두 전송해야 하는 목록이 아니라 source별 상한이다.
-실제 effective request header name은 별도로 관찰하고 redirect chain과 exact
-결합해야 한다. 사전 등록만으로 source acquisition, historical coverage 또는
-readiness 통과를 주장하지 않는다. 등록 밖 header가 필요하면 기존 version을
-변경하지 않고 별도 검토와 새 version 등록 전까지 acquisition을 거부한다.
+`officialMarketCalendarRedirectChainBoundary.ts`는 recorded version을 registry에서
+exact resolve하고 initial exchange/requested URL과 모든 recorded effective request
+header name이 allowed-name 상한 안에 있는지 결합한다. 실제 HTTP client에서
+effective request header name을 관찰하는 wiring은 아직 없다. 사전 등록과
+redirect-chain 결합만으로 source acquisition, historical coverage 또는 readiness
+통과를 주장하지 않는다. 등록 밖 header가 필요하면 기존 version을 변경하지 않고
+별도 검토와 새 version 등록 전까지 acquisition을 거부한다.
 
 KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
 brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서
