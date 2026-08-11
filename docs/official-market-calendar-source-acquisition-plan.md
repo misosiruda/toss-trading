@@ -56,11 +56,11 @@ acquisition을 거부한다.
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
-0부터 1까지의 값과 최대 세 자리 소수만 허용한다. 같은 media range에서
-case-insensitive parameter name을 중복 기록할 수 없고 `q` 뒤에 parameter를
-기록할 수 없다. Malformed 또는 빈 `accept` value는 source request를
-보내기 전에 fail-closed로 거부한다. 모든 representation field value는 정규식
-검증 비용을 제한하기 위해 8,192 character 상한을 가진다.
+0부터 1까지의 값과 최대 세 자리 소수만 허용한다. 같은 media range를 ASCII case-insensitive하게 중복
+기록할 수 없고, media range 안에서도 case-insensitive parameter name을 중복 기록할 수 없으며 `q` 뒤에
+parameter를 기록할 수 없다. Malformed, 빈 값 또는 중복 media range를 가진
+`accept` value는 source request를 보내기 전에 fail-closed로 거부한다. 모든 representation field value는
+정규식 검증 비용을 제한하기 위해 8,192 character 상한을 가진다.
 
 Recorded `accept-language` value도 non-empty canonical language-range list여야
 한다. 각 range는 `*` 또는 1~8개 ASCII letter로 시작하고 각 1~8개 ASCII

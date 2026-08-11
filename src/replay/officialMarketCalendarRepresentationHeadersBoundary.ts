@@ -38,6 +38,97 @@ const acceptLanguageHeaderValuePattern = new RegExp(
   `^${languageRangeWithWeight}(?:[\\t ]*,[\\t ]*${languageRangeWithWeight})*$`
 );
 
+function normalizeAcceptParameterValue(value: string): string {
+  if (!value.startsWith('"')) {
+    return value;
+  }
+  let normalized = "";
+  for (let index = 1; index < value.length - 1; index += 1) {
+    if (value[index] === "\\") {
+      index += 1;
+    }
+    normalized += value[index];
+  }
+  return normalized;
+}
+
+function canonicalAcceptMediaRangeIdentity(entry: string): string {
+  const segments: string[] = [];
+  let quoted = false;
+  let escaped = false;
+  let segmentStart = 0;
+
+  for (let index = 0; index <= entry.length; index += 1) {
+    const character = entry[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (quoted && character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && (character === ";" || character === undefined)) {
+      segments.push(entry.slice(segmentStart, index).trim());
+      segmentStart = index + 1;
+    }
+  }
+
+  const [mediaRangeValue = "", ...parameters] = segments;
+  const normalizedParameters: Array<[string, string]> = parameters.flatMap((parameter) => {
+    const equalsIndex = parameter.indexOf("=");
+    const name = parameter.slice(0, equalsIndex).trim().toLowerCase();
+    if (name === "q") {
+      return [];
+    }
+    return [
+      [name, normalizeAcceptParameterValue(parameter.slice(equalsIndex + 1))]
+    ];
+  });
+  normalizedParameters.sort(([leftName, leftValue], [rightName, rightValue]) =>
+    leftName.localeCompare(rightName) || leftValue.localeCompare(rightValue)
+  );
+  return JSON.stringify([mediaRangeValue.toLowerCase(), normalizedParameters]);
+}
+
+function hasDuplicateAcceptMediaRange(value: string): boolean {
+  const mediaRanges = new Set<string>();
+  let quoted = false;
+  let escaped = false;
+  let entryStart = 0;
+
+  for (let index = 0; index <= value.length; index += 1) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (quoted && character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && (character === "," || character === undefined)) {
+      const identity = canonicalAcceptMediaRangeIdentity(
+        value.slice(entryStart, index)
+      );
+      if (mediaRanges.has(identity)) {
+        return true;
+      }
+      mediaRanges.add(identity);
+      entryStart = index + 1;
+    }
+  }
+  return false;
+}
+
 function hasDuplicateAcceptParameterName(value: string): boolean {
   let quoted = false;
   let escaped = false;
@@ -131,6 +222,11 @@ export function verifyOfficialMarketCalendarRepresentationHeadersBoundary(
     if (accept !== undefined && !acceptHeaderValuePattern.test(accept)) {
       throw new Error(
         `effectiveRequests[${index}].representationHeaders.accept must be a canonical Accept media-range list`
+      );
+    }
+    if (accept !== undefined && hasDuplicateAcceptMediaRange(accept)) {
+      throw new Error(
+        `effectiveRequests[${index}].representationHeaders.accept must not repeat case-insensitive media ranges`
       );
     }
     if (accept !== undefined && hasDuplicateAcceptParameterName(accept)) {

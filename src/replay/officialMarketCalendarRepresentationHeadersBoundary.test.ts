@@ -80,6 +80,8 @@ test("calendar representation headers boundary accepts canonical Accept media ra
     "text/*;q=0.8",
     "text/html;level=1, application/xhtml+xml;q=0.9",
     'application/json;profile="calendar v1"',
+    'application/json;profile="calendar, v1"',
+    'application/json;profile="text/html,x", text/html',
     'application/json;profile="calendar\tv1"'
   ]) {
     assert.doesNotThrow(() =>
@@ -110,6 +112,61 @@ test("calendar representation headers boundary bounds field value length", () =>
       ),
     /must not exceed 8192 characters/
   );
+});
+
+test("calendar representation headers boundary distinguishes Accept media parameters", () => {
+  assert.doesNotThrow(() =>
+    verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+      requests({
+        effectiveRequests: [
+          {
+            representationHeaders: {
+              accept:
+                "application/json;profile=v1, application/json;profile=v2"
+            }
+          }
+        ]
+      })
+    )
+  );
+});
+
+test("calendar representation headers boundary preserves Accept parameter boundaries", () => {
+  assert.doesNotThrow(() =>
+    verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+      requests({
+        effectiveRequests: [
+          {
+            representationHeaders: {
+              accept: 'application/json;a="x;b=y", application/json;a=x;b=y'
+            }
+          }
+        ]
+      })
+    )
+  );
+});
+
+test("calendar representation headers boundary rejects duplicate Accept media ranges", () => {
+  for (const value of [
+    "application/json, APPLICATION/JSON",
+    "text/*;q=0.8, TEXT/*;q=0.7",
+    "application/json;a=1;b=2;q=0.5, application/json;b=2;a=1;q=0.7",
+    'application/json;profile=v1;q=0.5, application/json;profile="v1";q=0.7',
+    "*/*, */*;q=0.5"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { accept: value } }
+            ]
+          })
+        ),
+      /must not repeat case-insensitive media ranges/
+    );
+  }
 });
 
 test("calendar representation headers boundary rejects duplicate Accept parameters", () => {
