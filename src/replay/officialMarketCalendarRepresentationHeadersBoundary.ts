@@ -32,6 +32,11 @@ const mediaRangeWithParameters = `${mediaRange}(?:[\\t ]*${nonWeightParameter})*
 const acceptHeaderValuePattern = new RegExp(
   `^${mediaRangeWithParameters}(?:[\\t ]*,[\\t ]*${mediaRangeWithParameters})*$`
 );
+const languageRange = "(?:\\*|[A-Za-z]{1,8}(?:-[0-9A-Za-z]{1,8})*)";
+const languageRangeWithWeight = `${languageRange}(?:[\\t ]*${weightParameter})?`;
+const acceptLanguageHeaderValuePattern = new RegExp(
+  `^${languageRangeWithWeight}(?:[\\t ]*,[\\t ]*${languageRangeWithWeight})*$`
+);
 
 function hasDuplicateAcceptParameterName(value: string): boolean {
   let quoted = false;
@@ -117,6 +122,15 @@ export function verifyOfficialMarketCalendarRepresentationHeadersBoundary(
     if (accept !== undefined && hasDuplicateAcceptParameterName(accept)) {
       throw new Error(
         `effectiveRequests[${index}].representationHeaders.accept must not repeat case-insensitive parameter names within a media range`
+      );
+    }
+    const acceptLanguage = request.representationHeaders["accept-language"];
+    if (
+      acceptLanguage !== undefined &&
+      !acceptLanguageHeaderValuePattern.test(acceptLanguage)
+    ) {
+      throw new Error(
+        `effectiveRequests[${index}].representationHeaders.accept-language must be a canonical Accept-Language language-range list`
       );
     }
   }
