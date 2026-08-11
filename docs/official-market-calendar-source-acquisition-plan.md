@@ -60,8 +60,14 @@ media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시�
 case-insensitive parameter name을 중복 기록할 수 없고 `q` 뒤에 parameter를
 기록할 수 없다. Malformed 또는 빈 `accept` value는 source request를
 보내기 전에 fail-closed로 거부한다. 모든 representation field value는 정규식
-검증 비용을 제한하기 위해 8,192 character 상한을 가진다. `accept-language`의 field-specific grammar와
-실제 HTTP client 관찰 wiring은 아직 구현하지 않는다.
+검증 비용을 제한하기 위해 8,192 character 상한을 가진다.
+
+Recorded `accept-language` value도 non-empty canonical language-range list여야
+한다. 각 range는 `*` 또는 1~8개 ASCII letter로 시작하고 각 1~8개 ASCII
+alphanumeric subtag를 hyphen으로 연결한다. Range별 optional `q` weight는
+`accept`와 같은 unquoted 0부터 1까지의 값과 최대 세 자리 소수만 허용한다.
+Malformed 또는 빈 `accept-language` value는 source request 전에 fail-closed로
+거부한다. 실제 HTTP client 관찰 wiring은 아직 구현하지 않는다.
 
 KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
 brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서

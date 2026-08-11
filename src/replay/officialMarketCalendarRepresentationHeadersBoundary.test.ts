@@ -168,6 +168,62 @@ test("calendar representation headers boundary rejects malformed Accept values",
   }
 });
 
+test("calendar representation headers boundary accepts canonical Accept-Language ranges", () => {
+  for (const value of [
+    "*",
+    "ko",
+    "ko-KR",
+    "en-US, en;q=0.8",
+    "zh-Hant-TW;q=0.125",
+    "de-DE-1996;Q=1.000"
+  ]) {
+    assert.doesNotThrow(() =>
+      verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+        requests({
+          effectiveRequests: [
+            { representationHeaders: { "accept-language": value } }
+          ]
+        })
+      )
+    );
+  }
+});
+
+test("calendar representation headers boundary rejects malformed Accept-Language values", () => {
+  for (const value of [
+    "",
+    "-ko",
+    "ko-",
+    "ko--KR",
+    "languagex-KR",
+    "ko-123456789",
+    "ko_KR",
+    "*/KR",
+    "ko-KR,",
+    ",ko-KR",
+    "ko-KR;;q=0.8",
+    "ko-KR;q",
+    "ko-KR;q=2",
+    "ko-KR;q=bogus",
+    'ko-KR;q="0.8"',
+    "ko-KR;q=0.1234",
+    "ko-KR;q=0.8;q=0.7",
+    "ko-KR;level=1"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { "accept-language": value } }
+            ]
+          })
+        ),
+      /canonical Accept-Language language-range list/
+    );
+  }
+});
+
 test("calendar representation headers boundary rejects non-canonical key order", () => {
   assert.throws(
     () =>
