@@ -39,7 +39,7 @@ test("calendar representation headers boundary accepts canonical safe ASCII fiel
       verifyOfficialMarketCalendarRepresentationHeadersBoundary(
         requests({
           effectiveRequests: [
-            { representationHeaders: { accept: value } }
+            { representationHeaders: { "x-representation": value } }
           ]
         })
       )
@@ -69,6 +69,101 @@ test("calendar representation headers boundary rejects non-canonical field value
           })
         ),
       /canonical safe ASCII HTTP field-value characters/
+    );
+  }
+});
+
+test("calendar representation headers boundary accepts canonical Accept media ranges", () => {
+  for (const value of [
+    "*/*",
+    "application/pdf",
+    "text/*;q=0.8",
+    "text/html;level=1, application/xhtml+xml;q=0.9",
+    'application/json;profile="calendar v1"',
+    'application/json;profile="calendar\tv1"'
+  ]) {
+    assert.doesNotThrow(() =>
+      verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+        requests({
+          effectiveRequests: [
+            { representationHeaders: { accept: value } }
+          ]
+        })
+      )
+    );
+  }
+});
+
+test("calendar representation headers boundary bounds field value length", () => {
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+        requests({
+          effectiveRequests: [
+            {
+              representationHeaders: {
+                accept: `application/json;profile="${"a".repeat(8_192)}"`
+              }
+            }
+          ]
+        })
+      ),
+    /must not exceed 8192 characters/
+  );
+});
+
+test("calendar representation headers boundary rejects duplicate Accept parameters", () => {
+  for (const value of [
+    "application/json;profile=v1;profile=v2",
+    "application/json;profile=v1;PROFILE=v2"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { accept: value } }
+            ]
+          })
+        ),
+      /must not repeat case-insensitive parameter names/
+    );
+  }
+});
+
+test("calendar representation headers boundary rejects malformed Accept values", () => {
+  for (const value of [
+    "",
+    "application",
+    "*/pdf",
+    "application/",
+    "/pdf",
+    "application/pdf,",
+    ",application/pdf",
+    "application/pdf;;q=0.8",
+    "application/pdf;q",
+    "application/pdf;q=2",
+    "application/pdf;q=bogus",
+    'application/pdf;q="0.8"',
+    "application/pdf;q=0.1234",
+    "application/pdf;Q=1.1",
+    "application/pdf;q=0.8;q=0.7",
+    "application/pdf;q=0.8;Q=0.7",
+    "application/pdf;q=0.8;profile=v1",
+    "application/*json",
+    "**/**",
+    'application/json;profile="unterminated'
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { accept: value } }
+            ]
+          })
+        ),
+      /canonical Accept media-range list/
     );
   }
 });
