@@ -83,6 +83,20 @@ function hasDuplicateAcceptParameterName(value: string): boolean {
   return false;
 }
 
+function hasDuplicateAcceptLanguageRange(value: string): boolean {
+  const ranges = new Set<string>();
+  for (const entry of value.split(",")) {
+    const range = entry.split(";", 1)[0]?.trim().toLowerCase();
+    if (range !== undefined && ranges.has(range)) {
+      return true;
+    }
+    if (range !== undefined) {
+      ranges.add(range);
+    }
+  }
+  return false;
+}
+
 const effectiveRequestRepresentationHeadersSchema = z
   .object({
     representationHeaders: z.record(
@@ -131,6 +145,14 @@ export function verifyOfficialMarketCalendarRepresentationHeadersBoundary(
     ) {
       throw new Error(
         `effectiveRequests[${index}].representationHeaders.accept-language must be a canonical Accept-Language language-range list`
+      );
+    }
+    if (
+      acceptLanguage !== undefined &&
+      hasDuplicateAcceptLanguageRange(acceptLanguage)
+    ) {
+      throw new Error(
+        `effectiveRequests[${index}].representationHeaders.accept-language must not repeat case-insensitive language ranges`
       );
     }
   }

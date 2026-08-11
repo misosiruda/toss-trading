@@ -224,6 +224,26 @@ test("calendar representation headers boundary rejects malformed Accept-Language
   }
 });
 
+test("calendar representation headers boundary rejects duplicate Accept-Language ranges", () => {
+  for (const value of [
+    "ko-KR, KO-kr",
+    "en;q=0.8, EN;q=0.7",
+    "*, *;q=0.5"
+  ]) {
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarRepresentationHeadersBoundary(
+          requests({
+            effectiveRequests: [
+              { representationHeaders: { "accept-language": value } }
+            ]
+          })
+        ),
+      /must not repeat case-insensitive language ranges/
+    );
+  }
+});
+
 test("calendar representation headers boundary rejects non-canonical key order", () => {
   assert.throws(
     () =>

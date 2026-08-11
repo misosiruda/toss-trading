@@ -66,8 +66,9 @@ Recorded `accept-language` value도 non-empty canonical language-range list여�
 한다. 각 range는 `*` 또는 1~8개 ASCII letter로 시작하고 각 1~8개 ASCII
 alphanumeric subtag를 hyphen으로 연결한다. Range별 optional `q` weight는
 `accept`와 같은 unquoted 0부터 1까지의 값과 최대 세 자리 소수만 허용한다.
-Malformed 또는 빈 `accept-language` value는 source request 전에 fail-closed로
-거부한다. 실제 HTTP client 관찰 wiring은 아직 구현하지 않는다.
+같은 language range를 ASCII case-insensitive하게 중복 기록할 수 없다.
+Malformed, 빈 값 또는 중복 range를 가진 `accept-language` value는 source request
+전에 fail-closed로 거부한다. 실제 HTTP client 관찰 wiring은 아직 구현하지 않는다.
 
 KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
 brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서
