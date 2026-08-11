@@ -53,6 +53,16 @@ historical coverage 또는 readiness 통과를 주장하지 않는다. 등록 �
 필요하면 기존 version을 변경하지 않고 별도 검토와 새 version 등록 전까지
 acquisition을 거부한다.
 
+Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
+media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
+`name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
+0부터 1까지의 값과 최대 세 자리 소수만 허용한다. 같은 media range에서
+case-insensitive parameter name을 중복 기록할 수 없고 `q` 뒤에 parameter를
+기록할 수 없다. Malformed 또는 빈 `accept` value는 source request를
+보내기 전에 fail-closed로 거부한다. 모든 representation field value는 정규식
+검증 비용을 제한하기 위해 8,192 character 상한을 가진다. `accept-language`의 field-specific grammar와
+실제 HTTP client 관찰 wiring은 아직 구현하지 않는다.
+
 KRX current trading page는 regular close를 15:30으로 표시하고, KRX 2016
 brochure는 2016-08-01부터 regular session을 30분 연장했다고 기록한다. 따라서
 대상 기간의 KRX regular close는 단일 값이 아니며, 2016-08-01 이전 15:00과
