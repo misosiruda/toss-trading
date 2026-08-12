@@ -17,7 +17,7 @@
 
 ## 공식 문서 기준
 
-이 문서는 2026-06-17 확인 기준으로 다음 official source를 참고했다.
+이 문서는 2026-08-12 확인 기준으로 다음 official source를 참고했다.
 
 - Human documentation: https://developers.tossinvest.com/docs
 - LLM entrypoint: https://developers.tossinvest.com/llms.txt
@@ -31,7 +31,7 @@
 | --- | --- |
 | `openapi` | `3.1.0` |
 | `info.title` | `토스증권 Open API` |
-| `info.version` | `1.1.1` |
+| `info.version` | `1.2.13` |
 | base server | `https://openapi.tossinvest.com` |
 | auth | OAuth 2.0 Client Credentials Grant |
 | account/order header | `X-Tossinvest-Account` |

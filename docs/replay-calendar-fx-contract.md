@@ -113,9 +113,25 @@ missing, stale source와 ambiguous coverage는 deterministic reject code를 반�
 replay evidence class를 `null`로 유지한다. Unknown field, `official_exchange` 입력과
 broker source의 exchange-grade 승격 시도는 strict schema에서 거부한다.
 
-이 transition은 source response를 parse하거나 provenance/hash/coverage를 직접
-검증하지 않는다. Synthetic fixture parser/normalization과 provenance/hash/coverage
-contract는 후속 Small PR로 분리한다.
+`src/replay/officialBrokerObservedCalendarResponse.ts`는 2026-08-12에 확인한 official
+OpenAPI `1.2.13`의 KR/US market calendar response를 synthetic fixture로 고정한
+`official_broker_observed_calendar_response.v1` strict parser/normalizer다. KR은
+`integrated` 안의 `preMarket`, `regularMarket`, `afterMarket`, US는 `dayMarket`,
+`preMarket`, `regularMarket`, `afterMarket`을 nullable session으로 읽는다. 세 returned
+day의 필수 존재, requested date와 `today.date` 일치, strict chronological order,
+session time/auction boundary와 non-overlap을 검증한다. Missing/unknown field,
+cross-market shape, explicit offset 없는 timestamp와 ambiguous KR all-null integrated
+object를 fail-closed로 거부한다. Official response timestamp는 documented KST
+`+09:00` offset을 가져야 하며 다른 offset은 schema mismatch로 처리한다.
+
+Normalized output은 `previous_business_day`, `today`, `next_business_day`와 market별
+canonical session order를 사용하고 timestamp를 UTC ISO string으로 정규화한다.
+휴장 응답은 holiday archive completeness를 주장하지 않고 `status="closed"`, 빈
+session 목록으로만 보존한다. Output source class는 `official_broker_observed`로
+고정되며 `official_exchange`로 승격할 수 없다.
+
+이 parser는 actual network transport를 호출하거나 provenance/hash/coverage를 직접
+검증하지 않는다. Provenance/hash/coverage contract는 후속 Small PR로 분리한다.
 
 ## Contract 목표
 
