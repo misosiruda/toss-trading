@@ -119,7 +119,9 @@ OpenAPI `1.2.13`의 KR/US market calendar response를 synthetic fixture로 고�
 `integrated` 안의 `preMarket`, `regularMarket`, `afterMarket`, US는 `dayMarket`,
 `preMarket`, `regularMarket`, `afterMarket`을 nullable session으로 읽는다. 세 returned
 day의 필수 존재, requested date와 `today.date` 일치, strict chronological order,
-session time/auction boundary와 non-overlap을 검증한다. Missing/unknown field,
+session time/auction boundary와 non-overlap을 검증한다. 각 timestamp는 KR session의
+same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
+포함해 returned market date와 결합한다. Missing/unknown field,
 cross-market shape, explicit offset 없는 timestamp와 ambiguous KR all-null integrated
 object를 fail-closed로 거부한다. Official response timestamp는 documented KST
 `+09:00` offset을 가져야 하며 다른 offset은 schema mismatch로 처리한다.

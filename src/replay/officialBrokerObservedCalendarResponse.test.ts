@@ -163,6 +163,48 @@ test("rejects requested-date mismatch and non-chronological days", () => {
   );
 });
 
+test("binds KR and overnight US sessions to each returned market date", () => {
+  const wrongKrDay = krResponse();
+  wrongKrDay.result.today.integrated = krIntegrated("2026-03-24");
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarResponse(wrongKrDay, {
+        market: "KR",
+        requestedDate: "2026-03-25"
+      }),
+    /must match marketDate KST relationship/
+  );
+
+  const wrongUsDay = usResponse();
+  wrongUsDay.result.today = usDay("2026-03-24");
+  wrongUsDay.result.today.date = "2026-03-25";
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarResponse(wrongUsDay, {
+        market: "US",
+        requestedDate: "2026-03-25"
+      }),
+    /must match marketDate KST relationship/
+  );
+
+  const validUs = parseOfficialBrokerObservedCalendarResponse(usResponse(), {
+    market: "US",
+    requestedDate: "2026-03-25"
+  });
+  assert.equal(
+    validUs.days[1].sessions.find(
+      ({ sessionType }) => sessionType === "regular_market"
+    )?.endAt,
+    "2026-03-25T20:00:00.000Z"
+  );
+  assert.equal(
+    validUs.days[1].sessions.find(
+      ({ sessionType }) => sessionType === "after_market"
+    )?.startAt,
+    "2026-03-25T20:00:00.000Z"
+  );
+});
+
 test("rejects malformed, inverted, and overlapping session timestamps", () => {
   const missingOffset = krResponse();
   missingOffset.result.today.integrated!.regularMarket!.startTime =

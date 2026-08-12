@@ -476,6 +476,14 @@ function validateSessionSequence(
         });
       }
     }
+    validateSessionMarketDate(
+      market,
+      day,
+      session,
+      dayIndex,
+      sessionIndex,
+      context
+    );
     if (start < previousEnd) {
       context.addIssue({
         code: "custom",
@@ -485,6 +493,83 @@ function validateSessionSequence(
     }
     previousTypeIndex = typeIndex;
     previousEnd = end;
+  }
+}
+
+function validateSessionMarketDate(
+  market: "KR" | "US",
+  day: NormalizedDay,
+  session: NormalizedSession,
+  dayIndex: number,
+  sessionIndex: number,
+  context: z.RefinementCtx
+): void {
+  const nextDate = nextCalendarDate(day.marketDate);
+  const expectedStartDate =
+    market === "US" && session.sessionType === "after_market"
+      ? nextDate
+      : day.marketDate;
+  const expectedEndDate =
+    market === "US" &&
+    (session.sessionType === "regular_market" ||
+      session.sessionType === "after_market")
+      ? nextDate
+      : day.marketDate;
+
+  validateKstDate(
+    session.startAt,
+    expectedStartDate,
+    ["days", dayIndex, "sessions", sessionIndex, "startAt"],
+    context
+  );
+  validateKstDate(
+    session.endAt,
+    expectedEndDate,
+    ["days", dayIndex, "sessions", sessionIndex, "endAt"],
+    context
+  );
+  if (session.singlePriceAuctionStartAt !== null) {
+    validateKstDate(
+      session.singlePriceAuctionStartAt,
+      expectedStartDate,
+      [
+        "days",
+        dayIndex,
+        "sessions",
+        sessionIndex,
+        "singlePriceAuctionStartAt"
+      ],
+      context
+    );
+  }
+  if (session.singlePriceAuctionEndAt !== null) {
+    validateKstDate(
+      session.singlePriceAuctionEndAt,
+      expectedEndDate,
+      [
+        "days",
+        dayIndex,
+        "sessions",
+        sessionIndex,
+        "singlePriceAuctionEndAt"
+      ],
+      context
+    );
+  }
+}
+
+function validateKstDate(
+  value: string,
+  expectedDate: string,
+  path: PropertyKey[],
+  context: z.RefinementCtx
+): void {
+  if (kstDatePart(value) !== expectedDate) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message: "normalized calendar session must match marketDate KST relationship"
+    });
   }
 }
 
@@ -498,6 +583,19 @@ function nullableCanonicalTimestamp(
   return value === null || value === undefined
     ? null
     : canonicalTimestamp(value);
+}
+
+function kstDatePart(value: string): string {
+  const kstOffsetMilliseconds = 9 * 60 * 60 * 1_000;
+  return new Date(Date.parse(value) + kstOffsetMilliseconds)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function nextCalendarDate(date: string): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
 }
 
 function isValidCalendarDate(value: string): boolean {
