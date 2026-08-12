@@ -67,11 +67,41 @@
 
 현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
-- 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 한다.
-- [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual source acquisition과 adapter 구현은 아직 수행하지 않았다.
+- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Response schema 검증, provenance artifact, historical coverage probe와 replay 연결은 아직 없다.
+- 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 `official_exchange` evidence를 만들 수 있다.
+- [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 `official_exchange`용 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual exchange source acquisition과 adapter 구현은 아직 수행하지 않았다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
 - 새 official evidence contract는 legacy rule/fixture로 투영할 수 있지만 availability CLI, batch replay 또는 readiness report가 이 projection을 직접 호출하도록 연결되지는 않았다.
 - 따라서 현재 replay calendar evidence class는 계속 `observed_session_only`이며 official holiday/early-close readiness는 충족되지 않았다.
+
+## Calendar Evidence Source Hierarchy
+
+Calendar source, source evidence class와 replay evidence class는 서로 다른 책임이다.
+
+| 구분 | 책임 | 허용되는 주장 | 금지되는 승격 또는 주장 |
+| --- | --- | --- | --- |
+| `official_broker_observed` | Official Toss Open API `GET /api/v1/market-calendar/{KR|US}` response를 requested date와 실제 returned session 범위에 한정해 검증한 operational/observed broker calendar input | 검증된 request와 response 범위 안의 observed session 후보 | KRX/NYSE first-party archive와 동급 취급, exchange historical completeness, official holiday archive completeness, `official_exchange` readiness |
+| `official_exchange` | KRX/NYSE first-party raw document와 source-backed collection으로 exchange-grade historical evidence 구성 | 검증된 document coverage와 provenance 범위의 exchange calendar evidence | 미확인 기간 소급, Toss response 또는 third-party source로 raw exchange evidence 대체 |
+| `observed_session_only` | Historical completeness가 입증되기 전 replay가 유지하는 calendar evidence class | 실제 검증된 observed session 범위의 paper-only replay input 후보 | Official holiday/early-close completeness 또는 `official_exchange` readiness |
+
+Official Toss Open API calendar는 primary operational/observed broker source다. KRX와
+NYSE raw document는 별도의 상위 exchange-grade historical evidence다. Source가
+official broker라고 해서 replay evidence class가 자동 승격되지는 않는다. 실제
+historical coverage가 검증되기 전에는 `observed_session_only`를 유지한다.
+
+Future `official_broker_observed` contract는 최소한 request path/query, requested
+date, market, retrieval timestamp, exact response hash와 byte length, source/API
+version, stale policy와 requested/returned coverage 결과를 secret-free provenance로
+기록해야 한다. Unsupported date, partial response, schema mismatch, provenance 누락,
+stale source 또는 coverage 불명확성은 observed input 후보를 만들지 않고
+fail-closed로 처리한다. Access token과 client credential은 artifact, log, docs,
+test fixture 또는 PR body에 기록하지 않는다.
+
+현재 `official_market_calendar_evidence.v1`의 `purpose`와 `evidenceClass`는 각각
+`official_exchange_calendar_evidence`, `official_exchange`로 고정돼 있다.
+`official_broker_observed`를 이 schema에 주입하거나 v1 artifact를 재해석하지
+않는다. Strict contract, synthetic fixture parser/normalization, provenance/hash와
+coverage gate는 후속 Small PR로 분리한다.
 
 ## Contract 목표
 
@@ -155,7 +185,7 @@ Validation 기준:
 
 ## Official Calendar Evidence Artifact
 
-`official_market_calendar_evidence.v1`은 기존 실행용 `MarketCalendarFixture`와 분리된 source provenance contract다. 이 artifact는 source를 수집하지 않으며, 입력이 official exchange evidence라고 주장하려면 다음 정보를 모두 제공하도록 강제한다.
+`official_market_calendar_evidence.v1`은 기존 실행용 `MarketCalendarFixture`와 분리된 `official_exchange` source provenance contract다. 이 artifact는 source를 수집하지 않으며, 입력이 official exchange evidence라고 주장하려면 다음 정보를 모두 제공하도록 강제한다. Official Toss Open API의 `official_broker_observed` response는 이 artifact에 넣지 않는다.
 
 ```json
 {

@@ -2,8 +2,10 @@
 
 ## 목적
 
-이 문서는 `official_market_calendar_evidence.v1` ingestion 구현 전에 KRX와
-NYSE official source document를 어떤 증거로 확보하고 검증할지 고정한다.
+이 문서는 `official_exchange` calendar evidence ingestion 구현 전에 KRX와
+NYSE first-party official source document를 어떤 증거로 확보하고 검증할지
+고정한다. Official Toss Open API의 `official_broker_observed` 책임과 혼합하지
+않는다.
 
 대상 기간은 현재 evidence expansion과 baseline replay를 합친
 2013-01-01부터 2026-05-31까지다. 이 문서는 source를 다운로드하거나
@@ -24,6 +26,13 @@ readiness 통과를 주장하지 않는다.
 현재 entry point만으로 대상 기간의 complete exchange-date session을 만들 수
 없다. KRX dynamic request를 추측하거나 NYSE의 현재 규칙을 과거 기간에
 소급 적용하지 않는다.
+
+이 미확인 상태는 `official_exchange` 승격 blocker다. Official Toss Open API
+`GET /api/v1/market-calendar/{KR|US}`는 별도의 primary operational/observed broker
+calendar source이며 `official_broker_observed` class로 관리한다. Toss response는
+실제로 검증된 requested date와 returned session 범위에 한해서만
+`observed_session_only` paper-only replay input 후보가 될 수 있고, KRX/NYSE
+first-party archive 또는 historical completeness를 대신하지 않는다.
 
 ### Request Header Policy 사전 등록
 
@@ -782,10 +791,19 @@ KRX와 NYSE source는 독립적으로 검증한 뒤 하나의 canonical payload�
 - Atomic no-replace publish primitive 미지원 또는 destination collision
 - freshness policy identity/hash/derived expiry 누락·불일치 또는 stale source
 
-이 상태에서는 `OFFICIAL_CALENDAR_EVIDENCE_MISSING`과
-`DEPENDENCY_INPUT_INCOMPLETE` blocker를 유지한다. Observed market snapshot,
-제3자 calendar package, 국가 공휴일 library 또는 수동 holiday list로
-official evidence를 대체하지 않는다.
+이 상태에서는 `official_exchange` readiness에 대해
+`OFFICIAL_CALENDAR_EVIDENCE_MISSING`과 `DEPENDENCY_INPUT_INCOMPLETE` blocker를
+유지한다. Observed market snapshot, Official Toss Open API response, 제3자
+calendar package, 국가 공휴일 library 또는 수동 holiday list로 KRX/NYSE
+first-party evidence를 대체하지 않는다.
+
+이 blocker는 credential 없이 가능한 `official_broker_observed` 문서, strict
+contract, synthetic parser/normalization test, provenance/hash와 coverage gate의
+독립 구현을 막지 않는다. 다만 Toss response를 실제 replay input 후보로
+승격하려면 requested date/market, request path/query, retrieval timestamp, response
+hash/byte length, source/API version, stale policy와 requested/returned coverage를
+검증해야 한다. Unsupported date, partial response, schema mismatch, provenance 누락,
+stale source 또는 coverage 불명확성은 fail-closed로 거부한다.
 
 ## 검증 계획
 
@@ -886,7 +904,8 @@ combined ingestion CLI, actual artifact 생성 또는 baseline replay 재생성�
 
 ## Non-Goals
 
-- Official source 다운로드 또는 local artifact 생성
+- KRX/NYSE official source 다운로드 또는 local artifact 생성
+- Official Toss Open API network transport, OAuth credential 또는 response bytes 취득
 - KRX dynamic endpoint 추측 구현
 - NYSE historical archive를 third-party source로 대체
 - Ingestion adapter, combined CLI 또는 runtime 연결 구현
