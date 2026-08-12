@@ -67,7 +67,7 @@
 
 현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
-- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Response schema 검증, provenance artifact, historical coverage probe와 replay 연결은 아직 없다.
+- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Strict response/evidence/replay adapter와 credential-free coverage probe contract는 분리된 synthetic/in-memory 입력으로 구현됐지만, 실제 adapter response bytes를 evidence로 조립하는 network acquisition coordinator는 아직 없다.
 - 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 `official_exchange` evidence를 만들 수 있다.
 - [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 `official_exchange`용 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual exchange source acquisition과 adapter 구현은 아직 수행하지 않았다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
@@ -146,6 +146,21 @@ fixture의 `isHoliday` fail-closed 분기를 사용하되 이름을
 `Toss broker-observed market closure`로 고정한다. 이는 official holiday 이름이나
 holiday/archive completeness claim이 아니다. Adapter output은 계속
 `observed_session_only`이며 replay를 실행하거나 파일/network를 읽지 않는다.
+
+`src/replay/officialBrokerObservedCalendarCoverageProbe.ts`는 credential 없이 생성할
+수 있는 `every_calendar_date.v1` plan과 evidence 기반 report를 제공한다. Plan은 최대
+10,000일 범위의 모든 calendar date를 빠짐없이 canonical order로 요청하도록
+고정한다. Report builder는 각 verified observation의 evidence, exact raw bytes와
+freshness를 다시 검증하고 replay adapter의 regular-session/timezone 경계까지
+통과시킨다. 변환 불가능한 evidence, rejected observation과 관찰되지 않은 plan
+date를 별도로 기록한다. 서로 다른 evidence가 겹쳐 반환한 같은 market date의 status/session이
+다르면 returned-date conflict로 판정한다. 모든 plan date가 verified이고 conflict가
+0일 때만 `coverageStatus="verified"`와 observed replay `eligible`을 기록한다. 이는
+명시된 planned-date 범위의 broker observation coverage만 뜻한다. Report가 verified여도
+historical completeness는 `not_claimed`, `officialExchangeReadiness`는
+`not_established`, replay class는 `observed_session_only`로 유지한다. Plan/report는
+canonical hash를 포함하지만 HTTP/OAuth를 호출하거나 raw bytes/credential을 report에
+저장하지 않는다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,
@@ -160,8 +175,9 @@ canonical session order를 사용하고 timestamp를 UTC ISO string으로 정규
 session 목록으로만 보존한다. Output source class는 `official_broker_observed`로
 고정되며 `official_exchange`로 승격할 수 없다.
 
-이 parser는 actual network transport를 호출하거나 provenance/hash/coverage를 직접
-검증하지 않는다. Provenance/hash/coverage contract는 후속 Small PR로 분리한다.
+이 parser 자체는 actual network transport를 호출하거나 provenance/hash/coverage를
+직접 검증하지 않는다. 해당 책임은 별도 evidence, replay adapter와 coverage probe
+contract가 담당하며 actual acquisition coordinator는 아직 구현하지 않는다.
 
 ## Contract 목표
 
