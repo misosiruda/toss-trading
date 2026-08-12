@@ -140,15 +140,29 @@ const verifiedProbeResultSchema = z
   })
   .strict();
 
-const rejectedProbeResultSchema = z
-  .object({
-    requestedDate: calendarDateSchema,
-    status: z.literal("rejected"),
-    evidenceArtifactHash: z.null(),
-    rejectionCode:
-      brokerObservedCalendarEvidenceTransitionRejectionCodeSchema
-  })
-  .strict();
+const rejectedProbeResultSchema = z.discriminatedUnion("rejectionStage", [
+  z
+    .object({
+      requestedDate: calendarDateSchema,
+      status: z.literal("rejected"),
+      rejectionStage: z.literal("acquisition"),
+      evidenceArtifactHash: z.null(),
+      rejectionCode:
+        brokerObservedCalendarEvidenceTransitionRejectionCodeSchema
+    })
+    .strict(),
+  z
+    .object({
+      requestedDate: calendarDateSchema,
+      status: z.literal("rejected"),
+      rejectionStage: z.literal("replay_adapter"),
+      evidenceArtifactHash: sha256HashSchema,
+      rejectionCode: z.literal(
+        "OFFICIAL_BROKER_CALENDAR_COVERAGE_AMBIGUOUS"
+      )
+    })
+    .strict()
+]);
 
 const missingProbeResultSchema = z
   .object({
@@ -161,7 +175,7 @@ const missingProbeResultSchema = z
   })
   .strict();
 
-const probeResultSchema = z.discriminatedUnion("status", [
+const probeResultSchema = z.union([
   verifiedProbeResultSchema,
   rejectedProbeResultSchema,
   missingProbeResultSchema
@@ -186,6 +200,9 @@ const probeIssueCodeSchema = z.enum([
   "OFFICIAL_BROKER_CALENDAR_PROBE_REJECTED",
   "OFFICIAL_BROKER_CALENDAR_RETURNED_DATE_CONFLICT"
 ]);
+
+type ProbeResult = z.infer<typeof probeResultSchema>;
+type ReturnedDateConflict = z.infer<typeof returnedDateConflictSchema>;
 
 const probeReportPayloadSchema = z
   .object({
@@ -357,6 +374,7 @@ function buildReportPayload(
       return {
         requestedDate,
         status: "rejected" as const,
+        rejectionStage: "acquisition" as const,
         evidenceArtifactHash: null,
         rejectionCode: observation.rejectionCode
       };
@@ -388,7 +406,8 @@ function buildReportPayload(
       return {
         requestedDate,
         status: "rejected" as const,
-        evidenceArtifactHash: null,
+        rejectionStage: "replay_adapter" as const,
+        evidenceArtifactHash: evidence.artifactHash,
         rejectionCode:
           "OFFICIAL_BROKER_CALENDAR_COVERAGE_AMBIGUOUS" as const
       };
@@ -555,6 +574,7 @@ function validateProbePlanPayload(
 
 function validateProbeReportPayload(
   value: {
+    evaluatedAt: string;
     plan: { requestedDates: string[] };
     status: "verified" | "insufficient";
     coverageStatus: "verified" | "ambiguous";
@@ -566,14 +586,8 @@ function validateProbeReportPayload(
       missingDateCount: number;
       conflictDateCount: number;
     };
-    results: Array<{
-      requestedDate: string;
-      status: "verified" | "rejected" | "missing";
-    }>;
-    returnedDateConflicts: Array<{
-      marketDate: string;
-      evidenceArtifactHashes: string[];
-    }>;
+    results: ProbeResult[];
+    returnedDateConflicts: ReturnedDateConflict[];
     issueCodes: string[];
   },
   context: z.RefinementCtx
@@ -633,6 +647,8 @@ function validateProbeReportPayload(
   }
 
   validateCanonicalConflicts(value.returnedDateConflicts, context);
+  validateVerifiedResultMetadata(value, context);
+  validateConflictArtifactReferences(value, context);
   const verified =
     counts.verifiedDateCount === counts.plannedDateCount &&
     counts.conflictDateCount === 0;
@@ -646,6 +662,103 @@ function validateProbeReportPayload(
       ["status"],
       "calendar coverage probe status must fail closed for gaps or conflicts"
     );
+  }
+}
+
+function validateVerifiedResultMetadata(
+  value: {
+    evaluatedAt: string;
+    results: ProbeResult[];
+  },
+  context: z.RefinementCtx
+): void {
+  const evaluatedAt = Date.parse(value.evaluatedAt);
+  for (const [index, result] of value.results.entries()) {
+    if (result.status !== "verified") {
+      continue;
+    }
+    const verified = verifiedProbeResultSchema.parse(result);
+    if (
+      evaluatedAt < Date.parse(verified.retrievedAt) ||
+      evaluatedAt >= Date.parse(verified.staleAfter)
+    ) {
+      issue(
+        context,
+        ["results", index, "staleAfter"],
+        "verified calendar coverage probe result must be fresh at evaluatedAt"
+      );
+    }
+    if (Date.parse(verified.retrievedAt) >= Date.parse(verified.staleAfter)) {
+      issue(
+        context,
+        ["results", index, "staleAfter"],
+        "verified calendar coverage probe stale time must follow retrieval"
+      );
+    }
+    if (
+      verified.returnedDates[0] >= verified.returnedDates[1] ||
+      verified.returnedDates[1] >= verified.returnedDates[2] ||
+      verified.returnedDates[1] !== verified.requestedDate
+    ) {
+      issue(
+        context,
+        ["results", index, "returnedDates"],
+        "verified calendar coverage probe returned dates must bind requested date"
+      );
+    }
+    if (
+      verified.returnedDateRange.startDate !== verified.returnedDates[0] ||
+      verified.returnedDateRange.endDate !== verified.returnedDates[2]
+    ) {
+      issue(
+        context,
+        ["results", index, "returnedDateRange"],
+        "verified calendar coverage probe returned date range mismatch"
+      );
+    }
+    const range = verified.returnedSessionRange;
+    if (
+      (verified.returnedSessionCount === 0) !== (range === null) ||
+      (range !== null && Date.parse(range.startAt) >= Date.parse(range.endAt))
+    ) {
+      issue(
+        context,
+        ["results", index, "returnedSessionRange"],
+        "verified calendar coverage probe session count and range mismatch"
+      );
+    }
+  }
+}
+
+function validateConflictArtifactReferences(
+  value: {
+    results: ProbeResult[];
+    returnedDateConflicts: ReturnedDateConflict[];
+  },
+  context: z.RefinementCtx
+): void {
+  const resultHashes = new Set(
+    value.results.flatMap(({ evidenceArtifactHash }) =>
+      typeof evidenceArtifactHash === "string" ? [evidenceArtifactHash] : []
+    )
+  );
+  for (const [conflictIndex, conflict] of
+    value.returnedDateConflicts.entries()) {
+    for (const [hashIndex, hash] of
+      conflict.evidenceArtifactHashes.entries()) {
+      if (!resultHashes.has(hash)) {
+        issue(
+          context,
+          [
+            "returnedDateConflicts",
+            conflictIndex,
+            "evidenceArtifactHashes",
+            hashIndex
+          ],
+          "calendar coverage probe conflict hash must reference a result"
+        );
+      }
+    }
   }
 }
 

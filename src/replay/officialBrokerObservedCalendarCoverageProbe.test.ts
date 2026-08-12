@@ -130,6 +130,7 @@ test("reports rejected and missing dates as ambiguous and ineligible", () => {
   assert.deepEqual(report.results[1], {
     requestedDate: "2026-03-25",
     status: "rejected",
+    rejectionStage: "acquisition",
     evidenceArtifactHash: null,
     rejectionCode: "OFFICIAL_BROKER_CALENDAR_SCHEMA_MISMATCH"
   });
@@ -185,6 +186,10 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
   response.result.previousBusinessDay.integrated!.regularMarket!.endTime =
     "2026-03-24T15:25:00+09:00";
   const rawResponseBytes = Buffer.from(JSON.stringify(response), "utf8");
+  const replayRejectedEvidence = evidenceFor(
+    "2026-03-25",
+    rawResponseBytes
+  );
   const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
     plan,
     evaluatedAt: "2026-03-25T12:00:00.000Z",
@@ -193,7 +198,7 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
       {
         status: "verified",
         requestedDate: "2026-03-25",
-        evidence: evidenceFor("2026-03-25", rawResponseBytes),
+        evidence: replayRejectedEvidence,
         rawResponseBytes
       }
     ]
@@ -212,7 +217,8 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
   assert.deepEqual(report.results[1], {
     requestedDate: "2026-03-25",
     status: "rejected",
-    evidenceArtifactHash: null,
+    rejectionStage: "replay_adapter",
+    evidenceArtifactHash: replayRejectedEvidence.artifactHash,
     rejectionCode: "OFFICIAL_BROKER_CALENDAR_COVERAGE_AMBIGUOUS"
   });
   assert.deepEqual(report.issueCodes, [
@@ -222,6 +228,23 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
   assert.deepEqual(
     report.returnedDateConflicts.map(({ marketDate }) => marketDate),
     ["2026-03-24", "2026-03-25"]
+  );
+
+  const orphanedConflict = structuredClone(report);
+  const rejectedResult = orphanedConflict.results[1];
+  assert.equal(rejectedResult?.status, "rejected");
+  if (rejectedResult?.status === "rejected") {
+    rejectedResult.evidenceArtifactHash =
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+  }
+  const { reportHash: _oldHash, ...orphanedPayload } = orphanedConflict;
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarCoverageProbeReport({
+        ...orphanedPayload,
+        reportHash: createReplayResearchHash(orphanedPayload)
+      }),
+    /conflict hash must reference a result/
   );
 });
 
@@ -335,6 +358,40 @@ test("revalidates raw bytes, freshness, report hash, and strict observation fiel
       }),
     /report hash mismatch/
   );
+
+  for (const mutate of [
+    (tampered: typeof report) => {
+      const result = tampered.results[0];
+      assert.equal(result?.status, "verified");
+      if (result?.status === "verified") {
+        tampered.evaluatedAt = result.staleAfter;
+      }
+    },
+    (tampered: typeof report) => {
+      const result = tampered.results[0];
+      assert.equal(result?.status, "verified");
+      if (result?.status === "verified") {
+        result.returnedDateRange.endDate = result.returnedDates[1];
+      }
+    },
+    (tampered: typeof report) => {
+      const result = tampered.results[0];
+      assert.equal(result?.status, "verified");
+      if (result?.status === "verified") {
+        result.returnedSessionRange = null;
+      }
+    }
+  ]) {
+    const tampered = structuredClone(report);
+    mutate(tampered);
+    const { reportHash: _oldHash, ...payload } = tampered;
+    assert.throws(() =>
+      parseOfficialBrokerObservedCalendarCoverageProbeReport({
+        ...payload,
+        reportHash: createReplayResearchHash(payload)
+      })
+    );
+  }
 });
 
 test("rejects reversed and excessively large probe ranges", () => {
