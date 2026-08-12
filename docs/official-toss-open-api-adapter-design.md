@@ -9,6 +9,7 @@
 핵심 목표는 다음과 같다.
 
 - official API와 비공식 `tossinvest-cli` source의 책임을 분리한다.
+- Official market calendar의 operational/observed broker source 책임과 KRX/NYSE exchange-grade historical evidence 책임을 분리한다.
 - `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false` 기본값을 유지한 채 설계만 문서화한다.
 - market/account/order endpoint를 바로 live trading path로 연결하지 않고, mock, read-only, dry-run, Risk Engine, OrderRouter 순서로만 확장한다.
 - Codex MCP surface에 raw broker API, raw `tossctl`, raw `codex exec`, `place_order`를 노출하지 않는다.
@@ -59,6 +60,23 @@
 | `GET` | `/api/v1/exchange-rate` | 환율 조회 |
 | `GET` | `/api/v1/market-calendar/KR` | 국내 장 운영 정보 조회 |
 | `GET` | `/api/v1/market-calendar/US` | 해외 장 운영 정보 조회 |
+
+Market calendar endpoint는 primary operational/observed broker calendar source다.
+Future evidence class는 `official_broker_observed`이며 실제로 검증된 requested date와
+returned session 범위에만 적용한다. 이 source는 KRX/NYSE first-party raw document
+기반 `official_exchange` evidence보다 아래 계층이고, historical completeness,
+official holiday archive completeness 또는 `official_exchange` readiness를
+증명하지 않는다. Historical coverage가 검증되기 전 replay calendar evidence
+class는 `observed_session_only`를 유지한다.
+
+Future evidence contract는 request path/query, requested date, market, retrieval
+timestamp, exact response hash와 byte length, source/API version, stale policy와
+requested/returned coverage 결과를 기록해야 한다. Unsupported date, partial
+response, schema mismatch, provenance 누락, stale source와 coverage 불명확성은
+fail-closed로 거부한다. Access token과 client credential은 기록하지 않는다.
+이 source hierarchy 결정만으로 network transport, OAuth credential, response bytes
+취득, response schema/parser 또는 replay 연결을 승인하지 않는다. 각 책임은 별도
+Small PR에서 strict contract와 fail-closed test를 함께 검토한다.
 
 ### Account, Asset
 
@@ -269,6 +287,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 ## 공식 API와 `tossinvest-cli` 관계
 
 - official Toss Open API는 production broker adapter의 primary source 후보다.
+- Official Toss Open API market calendar는 primary operational/observed broker calendar source이며 evidence class는 `official_broker_observed`다.
+- KRX/NYSE first-party raw document는 별도의 상위 `official_exchange` historical evidence다. Toss response를 이 계층으로 승격하거나 exchange archive completeness 근거로 사용하지 않는다.
 - `tossinvest-cli` fork는 optional read-only intelligence source로만 유지한다.
 - account, order, execution, holdings source of truth는 official API 또는 mock broker가 담당해야 한다.
 - 비공식 source의 ranking, signals, watchlist-like data는 candidate enrichment에는 쓸 수 있지만 live order routing의 필수 근거가 될 수 없다.
