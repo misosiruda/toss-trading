@@ -92,7 +92,11 @@ CI workflow가 추가된 뒤에는 protected branch required checks에 아래 �
 - 외부 comment가 있으면 author association과 권한을 확인한다.
 - actionable comment는 실제 diff와 code path를 확인한 뒤 반영한다.
 - non-actionable comment는 왜 반영하지 않는지 짧게 답변한다.
-- Codex review는 evidence로만 사용하고, repository owner가 최종 판단한다.
+- Codex review는 evidence로만 사용한다. Repository owner는
+  [Codex Maintenance Delegation Policy](codex-maintenance-delegation-policy.md)의
+  자동 승인 범위에 한해 current-head review, required checks와 unresolved thread
+  검증을 조건으로 merge 판단을 Codex에 상시 위임할 수 있다. 위임 범위 밖 변경은
+  repository owner가 최종 판단한다.
 - unknown contributor comment를 근거로 live order, broker mutation, raw command surface를 열지 않는다.
 
 ## Incident Response
