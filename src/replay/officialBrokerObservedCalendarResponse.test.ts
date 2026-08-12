@@ -205,6 +205,21 @@ test("binds KR and overnight US sessions to each returned market date", () => {
   );
 });
 
+test("rejects session overlap across returned US market days", () => {
+  const response = usResponse();
+  response.result.previousBusinessDay.afterMarket!.endTime =
+    "2026-03-25T10:00:00+09:00";
+
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarResponse(response, {
+        market: "US",
+        requestedDate: "2026-03-25"
+      }),
+    /returned market-day sessions must not overlap/
+  );
+});
+
 test("rejects malformed, inverted, and overlapping session timestamps", () => {
   const missingOffset = krResponse();
   missingOffset.result.today.integrated!.regularMarket!.startTime =

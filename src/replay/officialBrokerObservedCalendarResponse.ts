@@ -410,6 +410,7 @@ function validateNormalizedResponse(
     }
     validateSessionSequence(value.market, day, index, context);
   }
+  validateReturnedSessionTimeline(value.days, context);
 
   if (value.days[1].marketDate !== value.requestedDate) {
     context.addIssue({
@@ -427,6 +428,32 @@ function validateNormalizedResponse(
       path: ["days"],
       message: "returned calendar days must be strictly chronological"
     });
+  }
+}
+
+function validateReturnedSessionTimeline(
+  days: [NormalizedDay, NormalizedDay, NormalizedDay],
+  context: z.RefinementCtx
+): void {
+  let previousReturnedEnd: number | null = null;
+  for (const [dayIndex, day] of days.entries()) {
+    if (day.sessions.length === 0) {
+      continue;
+    }
+    const firstStart = Date.parse(day.sessions[0]!.startAt);
+    if (
+      previousReturnedEnd !== null &&
+      Number.isFinite(firstStart) &&
+      firstStart < previousReturnedEnd
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["days", dayIndex, "sessions", 0, "startAt"],
+        message: "returned market-day sessions must not overlap"
+      });
+    }
+    const lastEnd = Date.parse(day.sessions.at(-1)!.endAt);
+    previousReturnedEnd = Number.isFinite(lastEnd) ? lastEnd : null;
   }
 }
 
