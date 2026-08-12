@@ -121,6 +121,19 @@ OpenAPI `1.2.13`의 KR/US market calendar response를 synthetic fixture로 고�
 day의 필수 존재, requested date와 `today.date` 일치, strict chronological order,
 session time과 positive auction interval boundary, day 내부와 returned day 사이의
 non-overlap을 검증한다.
+
+`src/replay/officialBrokerObservedCalendarEvidence.ts`는 parser 결과를
+`official_broker_observed_calendar_evidence.v1` provenance artifact로 결합한다.
+Market별 OpenAPI `1.2.13` GET path/operation id와 exact `date` query, retrieval
+timestamp, raw response SHA-256/byte length, parser contract version을 기록한다.
+Raw bytes를 다시 제공해야 response hash와 normalized response가 함께 검증되며,
+request/response/coverage/freshness metadata와 canonical artifact hash 중 하나라도
+달라지면 거부한다. Freshness policy는 retrieval부터 86,400초이며 `asOf`가 retrieval
+이전이거나 `staleAfter` 이상이면 fail-closed다. Coverage는 requested date, 반환된
+세 date, 실제 반환 session count/range만 포함한다. Historical completeness는
+`not_claimed`, replay evidence class는 `observed_session_only`로 고정하며
+`official_exchange` 승격을 허용하지 않는다. 이 artifact는 network acquisition이나
+실행용 calendar fixture가 아니다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,

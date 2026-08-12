@@ -78,6 +78,18 @@ fail-closed로 거부한다. Access token과 client credential은 기록하지 �
 취득, response schema/parser 또는 replay 연결을 승인하지 않는다. 각 책임은 별도
 Small PR에서 strict contract와 fail-closed test를 함께 검토한다.
 
+`official_broker_observed_calendar_evidence.v1`은 이 metadata 경계를 구현한다.
+OpenAPI `1.2.13`의 market별 exact GET path, operation id와 `date` query를 요청
+market/date에 결합하고, exact UTF-8 JSON response bytes의 SHA-256과 byte length를
+보존한다. Raw bytes 자체와 credential은 artifact에 넣지 않는다. 정규화 response,
+request identity, response identity, requested/returned date와 session range,
+24시간 retrieval-age freshness policy를 하나의 canonical artifact hash로 묶는다.
+Freshness는 retrieval 시각 이상이고 `staleAfter` 미만인 `asOf`에서만 통과한다.
+Coverage는 반환된 세 date와 그 response에 실제로 포함된 session에만 `verified`이며
+historical completeness는 항상 `not_claimed`, replay class는 계속
+`observed_session_only`다. 이 계약은 synthetic/in-memory bytes만 처리하며 HTTP
+transport, OAuth 또는 replay fixture 연결을 추가하지 않는다.
+
 ### Account, Asset
 
 | Method | Path | 설명 |
