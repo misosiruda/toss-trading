@@ -100,8 +100,22 @@ test fixture 또는 PR body에 기록하지 않는다.
 현재 `official_market_calendar_evidence.v1`의 `purpose`와 `evidenceClass`는 각각
 `official_exchange_calendar_evidence`, `official_exchange`로 고정돼 있다.
 `official_broker_observed`를 이 schema에 주입하거나 v1 artifact를 재해석하지
-않는다. Strict contract, synthetic fixture parser/normalization, provenance/hash와
-coverage gate는 후속 Small PR로 분리한다.
+않는다.
+
+`src/replay/officialBrokerObservedCalendarEvidenceTransition.ts`는
+`broker_observed_calendar_evidence_transition.v1` strict contract로 source evidence
+class와 replay evidence class의 전이를 분리한다. Source registry는
+`official_broker_observed`, `official_exchange`만 허용하고 broker transition input은
+`official_broker_observed`와 `paper_only`로 고정한다. 모든 gate가 verified 상태일
+때만 `observed_session_only` 후보를 반환하고 historical completeness claim은 항상
+`not_claimed`다. Unsupported date, partial response, schema mismatch, provenance
+missing, stale source와 ambiguous coverage는 deterministic reject code를 반환하고
+replay evidence class를 `null`로 유지한다. Unknown field, `official_exchange` 입력과
+broker source의 exchange-grade 승격 시도는 strict schema에서 거부한다.
+
+이 transition은 source response를 parse하거나 provenance/hash/coverage를 직접
+검증하지 않는다. Synthetic fixture parser/normalization과 provenance/hash/coverage
+contract는 후속 Small PR로 분리한다.
 
 ## Contract 목표
 
