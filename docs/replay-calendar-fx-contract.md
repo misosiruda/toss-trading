@@ -160,8 +160,12 @@ date를 별도로 기록한다. 서로 다른 evidence가 겹쳐 반환한 같�
 historical completeness는 `not_claimed`, `officialExchangeReadiness`는
 `not_established`, replay class는 `observed_session_only`로 유지한다. Plan/report는
 canonical hash를 포함하지만 HTTP/OAuth를 호출하거나 raw bytes/credential을 report에
-저장하지 않는다. Stored report parser는 requested date별 non-null evidence artifact
-hash 고유성도 요구해 하나의 evidence가 복수 날짜 coverage로 재사용되지 않게 한다.
+저장하지 않는다. Stored report parser는 report만 신뢰하지 않고 requested date별
+evidence와 exact raw bytes observation을 다시 받아 같은 plan/evaluatedAt으로 report
+전체를 재생성한 뒤 exact match를 요구한다. 따라서 conflict, summary, issue와 status를
+함께 바꾸고 public hash를 다시 계산해도 원본 observation과 다르면 거부한다. 또한
+non-null evidence artifact hash 고유성을 요구해 하나의 evidence가 복수 날짜 coverage로
+재사용되지 않게 한다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,

@@ -93,7 +93,9 @@ test("reports verified planned-date coverage without historical completeness cla
   const { reportHash, ...payload } = report;
   assert.equal(reportHash, createReplayResearchHash(payload));
   assert.deepEqual(
-    parseOfficialBrokerObservedCalendarCoverageProbeReport(report),
+    parseOfficialBrokerObservedCalendarCoverageProbeReport(report, {
+      observations
+    }),
     report
   );
 
@@ -111,7 +113,7 @@ test("reports verified planned-date coverage without historical completeness cla
       parseOfficialBrokerObservedCalendarCoverageProbeReport({
         ...reusedPayload,
         reportHash: createReplayResearchHash(reusedPayload)
-      }),
+      }, { observations }),
     /artifact hashes must be unique/
   );
 });
@@ -176,10 +178,11 @@ test("fails closed when overlapping returned dates disagree", () => {
     evidence: evidenceFor("2026-03-25", conflictingBytes),
     rawResponseBytes: conflictingBytes
   };
+  const observations = [first, second];
   const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
     plan,
     evaluatedAt: "2026-03-25T12:00:00.000Z",
-    observations: [first, second]
+    observations
   });
 
   assert.equal(report.status, "insufficient");
@@ -195,6 +198,26 @@ test("fails closed when overlapping returned dates disagree", () => {
     report.returnedDateConflicts[0]?.evidenceArtifactHashes,
     [first.evidence.artifactHash, second.evidence.artifactHash].sort()
   );
+
+  const erasedConflict = structuredClone(report);
+  erasedConflict.status = "verified";
+  erasedConflict.coverageStatus = "verified";
+  erasedConflict.observedReplayEligibility = "eligible";
+  erasedConflict.summary.conflictDateCount = 0;
+  erasedConflict.issueCodes = [];
+  erasedConflict.returnedDateConflicts = [];
+  const { reportHash: _oldHash, ...erasedPayload } = erasedConflict;
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarCoverageProbeReport(
+        {
+          ...erasedPayload,
+          reportHash: createReplayResearchHash(erasedPayload)
+        },
+        { observations }
+      ),
+    /does not match verified observations/
+  );
 });
 
 test("rejects evidence that cannot cross the regular-session replay boundary", () => {
@@ -208,18 +231,19 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
     "2026-03-25",
     rawResponseBytes
   );
+  const observations = [
+    verifiedObservation("2026-03-24"),
+    {
+      status: "verified" as const,
+      requestedDate: "2026-03-25",
+      evidence: replayRejectedEvidence,
+      rawResponseBytes
+    }
+  ];
   const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
     plan,
     evaluatedAt: "2026-03-25T12:00:00.000Z",
-    observations: [
-      verifiedObservation("2026-03-24"),
-      {
-        status: "verified",
-        requestedDate: "2026-03-25",
-        evidence: replayRejectedEvidence,
-        rawResponseBytes
-      }
-    ]
+    observations
   });
 
   assert.equal(report.status, "insufficient");
@@ -261,7 +285,7 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
       parseOfficialBrokerObservedCalendarCoverageProbeReport({
         ...orphanedPayload,
         reportHash: createReplayResearchHash(orphanedPayload)
-      }),
+      }, { observations }),
     /conflict hash must reference a result/
   );
 });
@@ -373,7 +397,7 @@ test("revalidates raw bytes, freshness, report hash, and strict observation fiel
         ...report,
         reportHash:
           "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }),
+      }, { observations: [observation] }),
     /report hash mismatch/
   );
 
@@ -414,7 +438,7 @@ test("revalidates raw bytes, freshness, report hash, and strict observation fiel
       parseOfficialBrokerObservedCalendarCoverageProbeReport({
         ...payload,
         reportHash: createReplayResearchHash(payload)
-      })
+      }, { observations: [observation] })
     );
   }
 });

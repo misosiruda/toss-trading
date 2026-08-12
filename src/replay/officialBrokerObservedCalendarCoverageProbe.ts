@@ -279,6 +279,10 @@ export interface BuildOfficialBrokerObservedCalendarCoverageProbeReportOptions {
   observations: unknown[];
 }
 
+export interface ParseOfficialBrokerObservedCalendarCoverageProbeReportOptions {
+  observations: unknown[];
+}
+
 export function createOfficialBrokerObservedCalendarCoverageProbePlan(
   input: unknown
 ): OfficialBrokerObservedCalendarCoverageProbePlan {
@@ -331,9 +335,21 @@ export function buildOfficialBrokerObservedCalendarCoverageProbeReport(
 }
 
 export function parseOfficialBrokerObservedCalendarCoverageProbeReport(
-  value: unknown
+  value: unknown,
+  options: ParseOfficialBrokerObservedCalendarCoverageProbeReportOptions
 ): OfficialBrokerObservedCalendarCoverageProbeReport {
-  return officialBrokerObservedCalendarCoverageProbeReportSchema.parse(value);
+  const report = officialBrokerObservedCalendarCoverageProbeReportSchema.parse(value);
+  const rebuilt = buildOfficialBrokerObservedCalendarCoverageProbeReport({
+    plan: report.plan,
+    evaluatedAt: report.evaluatedAt,
+    observations: options.observations
+  });
+  if (!isDeepStrictEqual(report, rebuilt)) {
+    throw new Error(
+      "calendar coverage probe report does not match verified observations"
+    );
+  }
+  return report;
 }
 
 function buildReportPayload(
