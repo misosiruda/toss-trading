@@ -353,8 +353,12 @@ function validateAuctionBoundary(
     return;
   }
   if (
-    Date.parse(auctionAt) < Date.parse(startAt) ||
-    Date.parse(auctionAt) > Date.parse(endAt)
+    (boundary === "start" &&
+      (Date.parse(auctionAt) < Date.parse(startAt) ||
+        Date.parse(auctionAt) >= Date.parse(endAt))) ||
+    (boundary === "end" &&
+      (Date.parse(auctionAt) <= Date.parse(startAt) ||
+        Date.parse(auctionAt) > Date.parse(endAt)))
   ) {
     throw new Error(
       `${sessionType} single price auction ${boundary} must remain inside session`
@@ -496,14 +500,18 @@ function validateSessionSequence(
       ["singlePriceAuctionStartAt", session.singlePriceAuctionStartAt],
       ["singlePriceAuctionEndAt", session.singlePriceAuctionEndAt]
     ] as const) {
-      if (
-        auctionAt !== null &&
-        (Date.parse(auctionAt) < start || Date.parse(auctionAt) > end)
-      ) {
+      const auction = auctionAt === null ? null : Date.parse(auctionAt);
+      const outsideAuctionInterval =
+        auction !== null &&
+        (field === "singlePriceAuctionStartAt"
+          ? auction < start || auction >= end
+          : auction <= start || auction > end);
+      if (outsideAuctionInterval) {
         context.addIssue({
           code: "custom",
           path: ["days", dayIndex, "sessions", sessionIndex, field],
-          message: "normalized auction timestamp must remain inside session"
+          message:
+            "normalized auction timestamp must define a positive interval inside session"
         });
       }
     }

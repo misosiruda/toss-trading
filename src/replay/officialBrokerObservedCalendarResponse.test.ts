@@ -220,6 +220,31 @@ test("rejects session overlap across returned US market days", () => {
   );
 });
 
+test("rejects zero-length KR auction intervals in raw and normalized responses", () => {
+  const zeroStartInterval = krResponse();
+  zeroStartInterval.result.today.integrated!.regularMarket!.singlePriceAuctionStartTime =
+    zeroStartInterval.result.today.integrated!.regularMarket!.endTime;
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarResponse(zeroStartInterval, {
+        market: "KR",
+        requestedDate: "2026-03-25"
+      }),
+    /must remain inside session/
+  );
+
+  const normalized = parseOfficialBrokerObservedCalendarResponse(krResponse(), {
+    market: "KR",
+    requestedDate: "2026-03-25"
+  });
+  const afterMarket = normalized.days[1].sessions[2]!;
+  afterMarket.singlePriceAuctionEndAt = afterMarket.startAt;
+  assert.equal(
+    officialBrokerObservedCalendarResponseSchema.safeParse(normalized).success,
+    false
+  );
+});
+
 test("rejects malformed, inverted, and overlapping session timestamps", () => {
   const missingOffset = krResponse();
   missingOffset.result.today.integrated!.regularMarket!.startTime =
