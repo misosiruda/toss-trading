@@ -308,6 +308,53 @@ test("normalized response schema rejects broker-to-exchange promotion", () => {
   );
 });
 
+test("normalized response schema rejects invalid canonical UTC timestamps without throwing", () => {
+  const result = parseOfficialBrokerObservedCalendarResponse(krResponse(), {
+    market: "KR",
+    requestedDate: "2026-03-25"
+  });
+
+  for (const timestamp of [
+    "2026-03-24T99:99:99.999Z",
+    "2026-03-24T24:00:00.000Z"
+  ]) {
+    const malformed = structuredClone(result);
+    malformed.days[0].sessions[0]!.startAt = timestamp;
+    let success: boolean | undefined;
+    assert.doesNotThrow(() => {
+      success =
+        officialBrokerObservedCalendarResponseSchema.safeParse(
+          malformed
+        ).success;
+    });
+    assert.equal(success, false);
+  }
+});
+
+test("normalized response schema rejects unsupported auction fields", () => {
+  const kr = parseOfficialBrokerObservedCalendarResponse(krResponse(), {
+    market: "KR",
+    requestedDate: "2026-03-25"
+  });
+  kr.days[0].sessions[2]!.singlePriceAuctionStartAt =
+    kr.days[0].sessions[2]!.startAt;
+  assert.equal(
+    officialBrokerObservedCalendarResponseSchema.safeParse(kr).success,
+    false
+  );
+
+  const us = parseOfficialBrokerObservedCalendarResponse(usResponse(), {
+    market: "US",
+    requestedDate: "2026-03-25"
+  });
+  us.days[0].sessions[0]!.singlePriceAuctionStartAt =
+    us.days[0].sessions[0]!.startAt;
+  assert.equal(
+    officialBrokerObservedCalendarResponseSchema.safeParse(us).success,
+    false
+  );
+});
+
 interface KrMarketDayFixture {
   date: string;
   integrated: KrIntegratedFixture | null;

@@ -122,8 +122,9 @@ day의 필수 존재, requested date와 `today.date` 일치, strict chronologica
 session time/auction boundary와 non-overlap을 검증한다. 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,
-cross-market shape, explicit offset 없는 timestamp와 ambiguous KR all-null integrated
-object를 fail-closed로 거부한다. Official response timestamp는 documented KST
+cross-market shape, explicit offset 없는 timestamp, invalid/non-canonical normalized UTC
+timestamp, market/session에서 지원하지 않는 auction field와 ambiguous KR all-null
+integrated object를 fail-closed로 거부한다. Official response timestamp는 documented KST
 `+09:00` offset을 가져야 하며 다른 offset은 schema mismatch로 처리한다.
 
 Normalized output은 `previous_business_day`, `today`, `next_business_day`와 market별

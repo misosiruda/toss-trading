@@ -25,6 +25,10 @@ const canonicalUtcDateTimeSchema = z
   .regex(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
     "normalized date-time must use canonical UTC format"
+  )
+  .refine(
+    isCanonicalUtcDateTime,
+    "normalized date-time must be a valid exact canonical UTC timestamp"
   );
 
 const krPreMarketSessionSchema = z
@@ -476,6 +480,13 @@ function validateSessionSequence(
         });
       }
     }
+    validateAuctionFieldSupport(
+      market,
+      session,
+      dayIndex,
+      sessionIndex,
+      context
+    );
     validateSessionMarketDate(
       market,
       day,
@@ -493,6 +504,48 @@ function validateSessionSequence(
     }
     previousTypeIndex = typeIndex;
     previousEnd = end;
+  }
+}
+
+function validateAuctionFieldSupport(
+  market: "KR" | "US",
+  session: NormalizedSession,
+  dayIndex: number,
+  sessionIndex: number,
+  context: z.RefinementCtx
+): void {
+  const allowsAuctionStart =
+    market === "KR" &&
+    (session.sessionType === "pre_market" ||
+      session.sessionType === "regular_market");
+  const allowsAuctionEnd =
+    market === "KR" && session.sessionType === "after_market";
+
+  if (!allowsAuctionStart && session.singlePriceAuctionStartAt !== null) {
+    context.addIssue({
+      code: "custom",
+      path: [
+        "days",
+        dayIndex,
+        "sessions",
+        sessionIndex,
+        "singlePriceAuctionStartAt"
+      ],
+      message: "normalized auction start is not supported for market session"
+    });
+  }
+  if (!allowsAuctionEnd && session.singlePriceAuctionEndAt !== null) {
+    context.addIssue({
+      code: "custom",
+      path: [
+        "days",
+        dayIndex,
+        "sessions",
+        sessionIndex,
+        "singlePriceAuctionEndAt"
+      ],
+      message: "normalized auction end is not supported for market session"
+    });
   }
 }
 
@@ -560,7 +613,7 @@ function validateSessionMarketDate(
 
 function validateKstDate(
   value: string,
-  expectedDate: string,
+  expectedDate: string | null,
   path: PropertyKey[],
   context: z.RefinementCtx
 ): void {
@@ -585,14 +638,23 @@ function nullableCanonicalTimestamp(
     : canonicalTimestamp(value);
 }
 
-function kstDatePart(value: string): string {
+function kstDatePart(value: string): string | null {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
   const kstOffsetMilliseconds = 9 * 60 * 60 * 1_000;
-  return new Date(Date.parse(value) + kstOffsetMilliseconds)
-    .toISOString()
-    .slice(0, 10);
+  const kstTimestamp = timestamp + kstOffsetMilliseconds;
+  if (!Number.isFinite(kstTimestamp)) {
+    return null;
+  }
+  return new Date(kstTimestamp).toISOString().slice(0, 10);
 }
 
-function nextCalendarDate(date: string): string {
+function nextCalendarDate(date: string): string | null {
+  if (!isValidCalendarDate(date)) {
+    return null;
+  }
   const value = new Date(`${date}T00:00:00.000Z`);
   value.setUTCDate(value.getUTCDate() + 1);
   return value.toISOString().slice(0, 10);
@@ -603,5 +665,12 @@ function isValidCalendarDate(value: string): boolean {
   return (
     Number.isFinite(timestamp) &&
     new Date(timestamp).toISOString().slice(0, 10) === value
+  );
+}
+
+function isCanonicalUtcDateTime(value: string): boolean {
+  const timestamp = Date.parse(value);
+  return (
+    Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
   );
 }
