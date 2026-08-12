@@ -98,6 +98,17 @@ official holiday 명칭이나 completeness로 해석하지 않는다. Adapter는
 artifact/raw-response hash, freshness와 eligible transition을 사용 시점에 다시
 검증하고 network, credential, source file write 또는 replay 실행을 수행하지 않는다.
 
+Credential-free coverage probe는 지정 범위의 모든 calendar date를 canonical plan으로
+열거하고 외부에서 제공된 verified evidence observation만 평가한다. Missing/rejected
+date 또는 겹치는 response의 동일 returned date session 불일치가 하나라도 있으면
+coverage를 `ambiguous`, observed replay eligibility를 `rejected`로 보고한다. 모든
+planned date가 verified여도 이 결과는 계획 범위의 broker observation coverage이며
+historical completeness 또는 `official_exchange` readiness가 아니다. Probe는
+HTTP/OAuth를 호출하지 않고 raw response bytes나 credential을 report에 저장하지 않는다.
+Stored report를 다시 읽을 때는 별도로 보관된 evidence와 exact raw bytes observation을
+요구하고 report를 완전히 재생성해 비교한다. Report의 public hash만 다시 계산해서
+conflict나 reject 결과를 지우는 변경은 검증을 통과할 수 없다.
+
 ### Account, Asset
 
 | Method | Path | 설명 |
