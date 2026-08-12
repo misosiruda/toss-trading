@@ -90,6 +90,14 @@ historical completeness는 항상 `not_claimed`, replay class는 계속
 `observed_session_only`다. 이 계약은 synthetic/in-memory bytes만 처리하며 HTTP
 transport, OAuth 또는 replay fixture 연결을 추가하지 않는다.
 
+후속 read-only replay adapter는 verified evidence를 기존 market calendar
+validation rule과 세 returned-day fixture로만 투영한다. Open day에는 exactly one
+regular session을 요구하고 KR/US IANA timezone에서 기존 fixture parser를 다시
+통과시킨다. Closed day는 legacy replay의 no-session fail-closed 표현으로만 보존하며
+official holiday 명칭이나 completeness로 해석하지 않는다. Adapter는 evidence의
+artifact/raw-response hash, freshness와 eligible transition을 사용 시점에 다시
+검증하고 network, credential, source file write 또는 replay 실행을 수행하지 않는다.
+
 ### Account, Asset
 
 | Method | Path | 설명 |
