@@ -134,6 +134,18 @@ request/response/coverage/freshness metadata와 canonical artifact hash 중 하�
 `not_claimed`, replay evidence class는 `observed_session_only`로 고정하며
 `official_exchange` 승격을 허용하지 않는다. 이 artifact는 network acquisition이나
 실행용 calendar fixture가 아니다.
+
+`src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 검증된 evidence와 exact
+raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
+`calendarValidation` 입력으로 변환한다. Market별 rule은 KR/`KRX`/`Asia/Seoul` 또는
+US/`NYSE`/`America/New_York` 하나이고 fixture는 response가 반환한 세 date에만
+생성한다. Open day는 regular session이 정확히 하나일 때만 기존 단일-session
+fixture로 변환한다. Regular session 누락, fixture timezone/date 불일치, evidence
+hash, source ref, rule 또는 transition 변조는 모두 거부한다. Closed day는 legacy
+fixture의 `isHoliday` fail-closed 분기를 사용하되 이름을
+`Toss broker-observed market closure`로 고정한다. 이는 official holiday 이름이나
+holiday/archive completeness claim이 아니다. Adapter output은 계속
+`observed_session_only`이며 replay를 실행하거나 파일/network를 읽지 않는다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,
