@@ -377,6 +377,7 @@ function buildReportPayload(
         `calendar coverage probe evidence does not match plan: ${requestedDate}`
       );
     }
+    verifiedEvidence.push(evidence);
     try {
       buildOfficialBrokerObservedCalendarReplayInput({
         evidence,
@@ -392,7 +393,6 @@ function buildReportPayload(
           "OFFICIAL_BROKER_CALENDAR_COVERAGE_AMBIGUOUS" as const
       };
     }
-    verifiedEvidence.push(evidence);
     return verifiedResult(evidence);
   });
 

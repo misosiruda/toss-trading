@@ -179,14 +179,17 @@ test("fails closed when overlapping returned dates disagree", () => {
 });
 
 test("rejects evidence that cannot cross the regular-session replay boundary", () => {
-  const plan = planFor("2026-03-25", "2026-03-25");
+  const plan = planFor("2026-03-24", "2026-03-25");
   const response = krResponse("2026-03-25");
   response.result.today.integrated!.regularMarket = null;
+  response.result.previousBusinessDay.integrated!.regularMarket!.endTime =
+    "2026-03-24T15:25:00+09:00";
   const rawResponseBytes = Buffer.from(JSON.stringify(response), "utf8");
   const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
     plan,
     evaluatedAt: "2026-03-25T12:00:00.000Z",
     observations: [
+      verifiedObservation("2026-03-24"),
       {
         status: "verified",
         requestedDate: "2026-03-25",
@@ -200,18 +203,26 @@ test("rejects evidence that cannot cross the regular-session replay boundary", (
   assert.equal(report.coverageStatus, "ambiguous");
   assert.equal(report.observedReplayEligibility, "rejected");
   assert.deepEqual(report.summary, {
-    plannedDateCount: 1,
-    verifiedDateCount: 0,
+    plannedDateCount: 2,
+    verifiedDateCount: 1,
     rejectedDateCount: 1,
     missingDateCount: 0,
-    conflictDateCount: 0
+    conflictDateCount: 2
   });
-  assert.deepEqual(report.results[0], {
+  assert.deepEqual(report.results[1], {
     requestedDate: "2026-03-25",
     status: "rejected",
     evidenceArtifactHash: null,
     rejectionCode: "OFFICIAL_BROKER_CALENDAR_COVERAGE_AMBIGUOUS"
   });
+  assert.deepEqual(report.issueCodes, [
+    "OFFICIAL_BROKER_CALENDAR_PROBE_REJECTED",
+    "OFFICIAL_BROKER_CALENDAR_RETURNED_DATE_CONFLICT"
+  ]);
+  assert.deepEqual(
+    report.returnedDateConflicts.map(({ marketDate }) => marketDate),
+    ["2026-03-24", "2026-03-25"]
+  );
 });
 
 test("rejects duplicate, out-of-plan, and mismatched evidence observations", () => {
