@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
 import {
+  OFFICIAL_BROKER_OBSERVED_CALENDAR_MAXIMUM_AGE_SECONDS,
   officialBrokerObservedCalendarEvidenceSchema,
   verifyOfficialBrokerObservedCalendarEvidence,
   type OfficialBrokerObservedCalendarEvidence
@@ -648,6 +649,7 @@ function validateProbeReportPayload(
 
   validateCanonicalConflicts(value.returnedDateConflicts, context);
   validateVerifiedResultMetadata(value, context);
+  validateUniqueResultArtifactHashes(value.results, context);
   validateConflictArtifactReferences(value, context);
   const verified =
     counts.verifiedDateCount === counts.plannedDateCount &&
@@ -688,11 +690,14 @@ function validateVerifiedResultMetadata(
         "verified calendar coverage probe result must be fresh at evaluatedAt"
       );
     }
-    if (Date.parse(verified.retrievedAt) >= Date.parse(verified.staleAfter)) {
+    if (
+      Date.parse(verified.staleAfter) - Date.parse(verified.retrievedAt) !==
+      OFFICIAL_BROKER_OBSERVED_CALENDAR_MAXIMUM_AGE_SECONDS * 1_000
+    ) {
       issue(
         context,
         ["results", index, "staleAfter"],
-        "verified calendar coverage probe stale time must follow retrieval"
+        "verified calendar coverage probe stale time must match evidence freshness policy"
       );
     }
     if (
@@ -727,6 +732,27 @@ function validateVerifiedResultMetadata(
         "verified calendar coverage probe session count and range mismatch"
       );
     }
+  }
+}
+
+function validateUniqueResultArtifactHashes(
+  results: ProbeResult[],
+  context: z.RefinementCtx
+): void {
+  const seen = new Set<string>();
+  for (const [index, result] of results.entries()) {
+    const hash = result.evidenceArtifactHash;
+    if (hash === null) {
+      continue;
+    }
+    if (seen.has(hash)) {
+      issue(
+        context,
+        ["results", index, "evidenceArtifactHash"],
+        "calendar coverage probe evidence artifact hashes must be unique across requested dates"
+      );
+    }
+    seen.add(hash);
   }
 }
 

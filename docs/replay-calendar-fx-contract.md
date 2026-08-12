@@ -151,7 +151,7 @@ holiday/archive completeness claim이 아니다. Adapter output은 계속
 수 있는 `every_calendar_date.v1` plan과 evidence 기반 report를 제공한다. Plan은 최대
 10,000일 범위의 모든 calendar date를 빠짐없이 canonical order로 요청하도록
 고정한다. Report builder는 각 verified observation의 evidence, exact raw bytes와
-freshness를 다시 검증하고 replay adapter의 regular-session/timezone 경계까지
+고정 86,400초 freshness를 다시 검증하고 replay adapter의 regular-session/timezone 경계까지
 통과시킨다. 변환 불가능한 evidence, rejected observation과 관찰되지 않은 plan
 date를 별도로 기록한다. 서로 다른 evidence가 겹쳐 반환한 같은 market date의 status/session이
 다르면 returned-date conflict로 판정한다. 모든 plan date가 verified이고 conflict가
@@ -160,7 +160,8 @@ date를 별도로 기록한다. 서로 다른 evidence가 겹쳐 반환한 같�
 historical completeness는 `not_claimed`, `officialExchangeReadiness`는
 `not_established`, replay class는 `observed_session_only`로 유지한다. Plan/report는
 canonical hash를 포함하지만 HTTP/OAuth를 호출하거나 raw bytes/credential을 report에
-저장하지 않는다.
+저장하지 않는다. Stored report parser는 requested date별 non-null evidence artifact
+hash 고유성도 요구해 하나의 evidence가 복수 날짜 coverage로 재사용되지 않게 한다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,

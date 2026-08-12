@@ -96,6 +96,24 @@ test("reports verified planned-date coverage without historical completeness cla
     parseOfficialBrokerObservedCalendarCoverageProbeReport(report),
     report
   );
+
+  const reusedEvidence = structuredClone(report);
+  const firstResult = reusedEvidence.results[0];
+  const secondResult = reusedEvidence.results[1];
+  assert.equal(firstResult?.status, "verified");
+  assert.equal(secondResult?.status, "verified");
+  if (firstResult?.status === "verified" && secondResult?.status === "verified") {
+    secondResult.evidenceArtifactHash = firstResult.evidenceArtifactHash;
+  }
+  const { reportHash: _oldReusedHash, ...reusedPayload } = reusedEvidence;
+  assert.throws(
+    () =>
+      parseOfficialBrokerObservedCalendarCoverageProbeReport({
+        ...reusedPayload,
+        reportHash: createReplayResearchHash(reusedPayload)
+      }),
+    /artifact hashes must be unique/
+  );
 });
 
 test("reports rejected and missing dates as ambiguous and ineligible", () => {
@@ -365,6 +383,13 @@ test("revalidates raw bytes, freshness, report hash, and strict observation fiel
       assert.equal(result?.status, "verified");
       if (result?.status === "verified") {
         tampered.evaluatedAt = result.staleAfter;
+      }
+    },
+    (tampered: typeof report) => {
+      const result = tampered.results[0];
+      assert.equal(result?.status, "verified");
+      if (result?.status === "verified") {
+        result.staleAfter = "2026-03-27T01:00:00.000Z";
       }
     },
     (tampered: typeof report) => {
