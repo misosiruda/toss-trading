@@ -70,8 +70,8 @@ official holiday archive completeness 또는 `official_exchange` readiness를
 class는 `observed_session_only`를 유지한다.
 
 Future evidence contract는 request path/query, requested date, market, retrieval
-timestamp, exact response hash와 byte length, parser/API contract snapshot identity,
-stale policy와 requested/returned coverage 결과를 기록해야 한다. Unversioned provider
+timestamp, accepted identity payload의 exact hash와 byte length, parser/API contract
+snapshot identity, stale policy와 requested/returned coverage 결과를 기록해야 한다. Unversioned provider
 response가 실제 배포 version을 노출하지 않으면 이를 추정하거나 contract snapshot version을
 provider-served version으로 표시하지 않는다. Unsupported date, partial response, schema
 mismatch, provenance 누락, stale source와 coverage 불명확성은 fail-closed로 거부한다.
@@ -82,7 +82,7 @@ Small PR에서 strict contract와 fail-closed test를 함께 검토한다.
 
 `official_broker_observed_calendar_evidence.v1`은 이 metadata 경계를 구현한다.
 OpenAPI `1.2.13`의 market별 exact GET path, operation id와 `date` query를 요청
-market/date에 결합하고, exact UTF-8 JSON response bytes의 SHA-256과 byte length를
+market/date에 결합하고, exact UTF-8 JSON identity payload bytes의 SHA-256과 byte length를
 보존한다. Legacy `source.apiVersion="1.2.13"`은 이 synthetic-only v1 parser가 검증된
 OpenAPI contract snapshot identity이며 실제 network response를 제공한 deployment version
 관측값이 아니다. Raw bytes 자체와 credential은 artifact에 넣지 않는다. 정규화 response,
@@ -121,8 +121,8 @@ surface 승인이 아니다.
 
 | 책임 | 허용 request | 필수 제한 |
 | --- | --- | --- |
-| Token issuer transport | `POST https://openapi.tossinvest.com/oauth2/token` | `application/x-www-form-urlencoded`, `grant_type=client_credentials`, redirect 금지, credential/token masking |
-| Calendar read-only transport | `GET https://openapi.tossinvest.com/api/v1/market-calendar/KR` 또는 `/US` | canonical `date=YYYY-MM-DD` query를 exactly one으로 요구, Bearer 외 credential header 금지, `X-Tossinvest-Account` 금지 |
+| Token issuer transport | `POST https://openapi.tossinvest.com/oauth2/token` | `application/x-www-form-urlencoded`, `grant_type=client_credentials`, `Accept-Encoding: identity`, redirect 금지, credential/token masking |
+| Calendar read-only transport | `GET https://openapi.tossinvest.com/api/v1/market-calendar/KR` 또는 `/US` | canonical `date=YYYY-MM-DD` query를 exactly one으로 요구, `Accept-Encoding: identity`, Bearer 외 credential header 금지, `X-Tossinvest-Account` 금지 |
 
 공통 fail-closed 조건:
 
@@ -141,12 +141,20 @@ surface 승인이 아니다.
   account header를 임의 주입하지 않는다.
 - 각 request는 10,000ms 이하의 finite timeout을 적용한다. Token response는 256KiB,
   calendar response는 1MiB를 초과하면 body를 사용하지 않고 거부한다.
+- Token POST와 calendar GET은 exact `Accept-Encoding: identity`를 전송하고 HTTP library의
+  automatic compression advertisement와 response decompression을 비활성화한다. Caller,
+  config 또는 retry path가 다른 `Accept-Encoding`을 주입할 수 없다.
 - Calendar GET request는 `Range`와 `If-Range` header를 보내지 않는다. Caller, config 또는
   retry path가 이 header를 주입하면 socket 전송 전에 거부한다.
 - Calendar final response는 status exact `200`만 허용하고 raw `Content-Range` header가
   없어야 한다. `206 Partial Content`, 그 밖의 `2xx`와 status `200`의 `Content-Range`
   response는 body가 syntactically valid calendar JSON이어도 parser 또는 evidence builder에
   전달하지 않는다.
+- Token과 calendar response의 raw `Content-Encoding` header는 값이 `identity`여도
+  허용하지 않는다. Transport는 raw header를 확인한 뒤 HTTP transfer framing이 제거되고
+  content decoding은 수행되지 않은 exact payload bytes를 streaming으로 센다. Token
+  256KiB와 calendar 1MiB cap, UTF-8 JSON parser, calendar response SHA-256/byte length는
+  모두 이 동일한 bytes에 적용한다.
 - 허용된 status/header를 통과한 response도 complete `application/json` body만 사용한다.
   Unsupported content type, truncated body, size 초과, timeout과 transport error는 partial
   evidence를 만들지 않는다.
@@ -489,6 +497,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, `Range`/`If-Range`, 임의 query/path와 redirect를 거부한다.
 - calendar final response가 exact `200`이고 raw `Content-Range`가 없을 때만 parser로 전달되며, valid JSON body를 가진 `206`과 status `200`/`Content-Range` 조합을 거부한다.
+- token/calendar request가 exact `Accept-Encoding: identity`만 보내고 automatic
+  decompression을 비활성화하며 raw `Content-Encoding` response를 parser 전에 거부한다.
+- 작은 compressed body와 decoded oversize payload를 조합한 gzip/br fixture를 거부하고,
+  accepted identity payload의 byte count/hash와 parser input이 exact same bytes인지 검증한다.
 - test-only loopback HTTPS connector에서 canonical production URL, destination authority, hostname-only HTTP Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
 - read-only client의 staggered `401` test에서 token A의 늦은 실패가 current token B를
   invalidation하거나 token C를 발급하지 않고, 동일 generation reissue가 single-flight로
@@ -520,8 +532,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser provenance와 verifier dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
-| 10 | Token issuer network transport | exact token POST, finite limits, masked error와 test-only loopback HTTPS connector test | market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact `200`, no Range/Content-Range, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, partial response, account/order/general market endpoint |
+| 10 | Token issuer network transport | exact token POST, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |

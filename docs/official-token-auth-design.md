@@ -44,6 +44,7 @@ official Toss Open API adapter를 구현하기 전에 OAuth2 Client Credentials 
 POST /oauth2/token
 Content-Type: application/x-www-form-urlencoded
 Accept: application/json
+Accept-Encoding: identity
 ```
 
 요청 body:
@@ -134,11 +135,16 @@ Operations API에 노출하지 않는다.
   연결 전에 fail-closed 처리한다.
 - Base URL은 userinfo, path, query, fragment가 없는 exact HTTPS origin만 허용하고,
   request method/path/content type/grant type은 caller가 변경할 수 없게 한다.
+- Request는 `Accept-Encoding: identity`를 exact value로 전송한다. HTTP library가
+  `gzip`, `deflate` 또는 `br`를 자동 광고하거나 caller가 값을 바꾸지 못하게 한다.
 - Automatic redirect, cookie jar, client certificate, `Proxy-Authorization`과
   caller-provided `Authorization` header를 금지한다.
-- Request timeout은 10,000ms 이하, response body는 256KiB 이하로 제한한다.
-  `application/json`이 아닌 성공 response, incomplete body와 size 초과는 token parser에
-  전달하지 않는다.
+- Automatic content decompression을 비활성화하고 raw response header를 body parsing 전에
+  확인한다. Raw `Content-Encoding` header가 하나라도 있으면 값이 `identity`여도 거부한다.
+- Request timeout은 10,000ms 이하로 제한하고, HTTP transfer framing 제거 후 content
+  decoding 전 exact payload bytes를 streaming으로 최대 256KiB까지만 수신한다. 이 bytes가
+  그대로 UTF-8 JSON token parser 입력이다. `application/json`이 아닌 성공 response,
+  incomplete body와 size 초과는 token parser에 전달하지 않는다.
 - `client_id`, `client_secret`, encoded form body, `access_token`, raw provider response와
   credential-bearing header는 log, audit, error, metric 또는 test snapshot에 기록하지
   않는다. 진단에는 masked error code, status, byte length와 timing만 사용할 수 있다.
@@ -154,7 +160,8 @@ Operations API에 노출하지 않는다.
   account/order adapter와 broker mutation은 이 계약 범위가 아니다.
 
 Credential과 허용 IP가 없는 환경에서도 exact request serialization, redirect/timeout,
-oversized/non-JSON response, masking과 abort 동작은 local mock server로 검증한다. 실제
+oversized/non-JSON/content-encoded response, masking과 abort 동작은 local mock server로
+검증한다. 실제
 external token issue 검증은 owner가 repository 밖에서 credential과 허용 IP를 설정한
 뒤에만 수행하며, 실행하지 않은 경우 PR에 명시한다.
 
@@ -277,6 +284,11 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
 - 403 `access_denied`를 credential retry가 아닌 허용 IP/readiness failure로 구분한다.
 - production token transport가 exact HTTPS origin/path만 허용하고 redirect, timeout, oversized/non-JSON response를 fail-closed 처리한다.
+- token request가 exact `Accept-Encoding: identity`를 전송하고 automatic decompression을
+  사용하지 않으며 raw `Content-Encoding` response를 parser 전에 거부한다.
+- 작은 encoded body가 decode 후 256KiB를 넘는 gzip/br fixture를 포함해 모든
+  content-coded response를 거부하고, identity payload byte count가 cap을 넘으면 streaming
+  수신을 중단한다.
 - test-only loopback HTTPS connector test가 canonical production URL, destination authority, hostname-only SNI와 TLS verification을 유지하고 request body나 response token을 snapshot/log에 남기지 않는다.
 - log/audit payload에서 `client_id`, `client_secret`, `access_token`이 masking된다.
 - MCP enabled tool과 Local Operations API route에 token value 반환 surface가 추가되지 않는다.
@@ -294,7 +306,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
 | 7a | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
-| 8 | Token issuer network transport | exact `/oauth2/token` POST, finite limits, test-only loopback HTTPS connector와 fail-closed tests | account/order/general API request, external credential call |
+| 8 | Token issuer network transport | exact `/oauth2/token` POST, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist | account header, broker mutation |
 | 10 | Calendar acquisition coordinator | token과 calendar response를 paper-only evidence boundary에 조립 | persistent token/raw bytes, replay 실행 |
 

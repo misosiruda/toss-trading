@@ -102,6 +102,14 @@ status `200`/`Content-Range` 조합은 body가 strict response parser를 통과�
 response parsing과 evidence builder 전에 거부한다. 이 조건은 기존
 `officialMarketCalendarFinalResponseBoundary`의 complete-representation 원칙과 같다.
 
+Token과 calendar request는 exact `Accept-Encoding: identity`만 전송하고 transport의
+automatic response decompression을 비활성화한다. Raw `Content-Encoding` header가 존재하면
+값이 `identity`여도 parser 전에 거부한다. HTTP transfer framing 제거 후 content decoding
+전 exact identity payload bytes를 streaming으로 세어 token 256KiB/calendar 1MiB cap을
+적용하며, calendar parser와 response SHA-256/byte length는 모두 이 동일한 bytes를 입력으로
+사용한다. Encoded byte length, decoded byte length 또는 library-decoded body를 evidence
+identity로 혼용하지 않는다.
+
 Provider가 query 생략 시 기본 기준일을 선택하더라도 acquisition coordinator는 이
 동작을 사용하지 않는다. Canonical `date=YYYY-MM-DD`를 exactly one으로 전송하고
 effective query의 값이 requested date, evidence request와 일치하는지 response parsing
@@ -136,8 +144,8 @@ document hash/operation/parser mismatch와 provider deployment version claim을 
 completeness를 추정해 version drift를 우회할 수 없다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
-date, market, retrieval timestamp, exact response hash와 byte length, parser/API contract
-snapshot identity, stale policy와 requested/returned coverage 결과를 secret-free
+date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,
+parser/API contract snapshot identity, stale policy와 requested/returned coverage 결과를 secret-free
 provenance로 기록해야 한다. Actual provider deployment version은 authoritative
 request-response binding이 확인될 때만 별도 contract로 추가한다. Unsupported date, partial
 response, schema mismatch, provenance 누락, stale source 또는 coverage 불명확성은 observed
@@ -175,7 +183,9 @@ Market별 OpenAPI `1.2.13` GET path/operation id와 exact `date` query, retrieva
 timestamp, raw response SHA-256/byte length, parser contract version을 기록한다.
 Legacy `source.apiVersion`은 이 parser contract snapshot을 식별하며 provider가 실제 제공한
 API version을 관측했다는 뜻이 아니다.
-Raw bytes를 다시 제공해야 response hash와 normalized response가 함께 검증되며,
+Network coordinator는 위 identity-only transport를 통과한 exact payload bytes만 이
+synthetic/in-memory builder의 raw bytes 입력과 같은 의미로 전달할 수 있다. Raw bytes를 다시
+제공해야 response hash와 normalized response가 함께 검증되며,
 request/response/coverage/freshness metadata와 canonical artifact hash 중 하나라도
 달라지면 거부한다. Freshness policy는 retrieval부터 86,400초이며 `asOf`가 retrieval
 이전이거나 `staleAfter` 이상이면 fail-closed다. Coverage는 requested date, 반환된
