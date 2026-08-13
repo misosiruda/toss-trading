@@ -78,6 +78,7 @@ Codex는 다음 중 하나가 실제 다음 단계에 필수일 때만 `OWNER_AC
 6. live order, broker mutation 또는 trading enable
 7. 법적, 라이선스 또는 비용 책임을 수반하는 선택
 8. 서로 양립할 수 없는 product/domain 정책 중 하나를 선택해야 하는 경우
+9. Repository owner가 작성하지 않은 collaborator PR의 merge 판단
 
 다음 사실만으로는 중단할 수 없다.
 
@@ -116,8 +117,10 @@ fail-closed 중단할 수 있다. 추정만으로 실행 한계를 주장하지 
 ## Small-PR 및 Review 루프
 
 1. `AGENTS.md`, 관련 rule, 이 문서, active roadmap과 대상 코드를 읽는다.
-2. GitHub identity, repository, push permission, branch, worktree와 open PR을
-   fail-closed로 확인한다.
+2. GitHub identity, repository, push permission, branch, worktree, open PR과 PR
+   author를 fail-closed로 확인한다. 이 상시 위임으로 merge할 수 있는 PR author는
+   exact owner login `misosiruda`뿐이다. Collaborator-authored PR은 이어서 수정하거나
+   merge하지 않고 명시적인 owner review를 요구한다.
 3. 중단된 동일 목적 PR 또는 remote branch가 있으면 중복 생성하지 않고 이어간다.
 4. 독립 검토 가능한 책임 하나만 구현하고 문서, 테스트, checklist와 PR 본문 범위를
    실제 diff에 맞춘다.
