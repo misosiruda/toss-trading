@@ -160,6 +160,31 @@ OpenAPI `1.2.14` calendar schema가 현재 `1.2.13` parser/evidence contract와
 response를 evidence builder에 전달하지 않는다. Version drift를 무시하거나 metadata만
 `1.2.14`로 바꿔 기존 artifact를 재해석하는 동작은 fail-closed로 금지한다.
 
+### Test-only network injection 계약
+
+Local integration test는 production URL allowlist를 localhost URL로 완화하지 않는다.
+Request validator가 exact logical origin, method, path와 query를 먼저 통과시킨 뒤 저수준
+socket connector만 test factory에서 주입한다.
+
+- Logical request URL, HTTP `Host`, TLS SNI와 provenance는 계속
+  `openapi.tossinvest.com:443`을 사용한다. Loopback dial address와 ephemeral port는
+  artifact, request identity 또는 application config에 나타나지 않는다.
+- Test connector는 validated production host의 socket dial만 `127.0.0.1` 또는 `::1`의
+  지정된 ephemeral HTTPS server로 매핑한다. 다른 host, non-loopback address와 두 번째
+  redirect target은 거부한다.
+- Local HTTPS server는 per-test CA가 서명하고 SAN이 `openapi.tossinvest.com`인 server
+  certificate를 사용한다. Test connector에만 해당 CA를 주입하며 hostname/certificate
+  verification은 유지한다. `NODE_TLS_REJECT_UNAUTHORIZED=0`,
+  `rejectUnauthorized=false`와 plaintext HTTP는 허용하지 않는다.
+- Production factory는 dial target, custom CA 또는 test connector 입력을 받지 않고
+  platform trust 기반 connector만 구성한다. Test factory는 별도 test-only module에 두고
+  runtime config, env, CLI, MCP, dashboard 또는 Local Operations API에 노출하지 않는다.
+- Redirect, timeout, oversized body, incomplete stream과 abort test는 이 loopback HTTPS
+  server가 응답을 제어해 실행한다. Redirect `Location`은 logical production URL 기준으로
+  검증하며 automatic follow 금지는 그대로 적용한다.
+- Test fixture는 synthetic credential/token만 사용하고 mock response를 official evidence로
+  표시하지 않는다. Test dial metadata도 evidence builder 입력에 포함하지 않는다.
+
 ### Account, Asset
 
 | Method | Path | 설명 |
@@ -414,7 +439,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
-- local mock server에서 token과 calendar response byte boundary를 검증하되 mock bytes를 official evidence로 표시하지 않는다.
+- test-only loopback HTTPS connector에서 logical production URL, Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
 - coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
@@ -439,8 +464,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, parser/evidence version gate와 regression test | network, metadata-only version bump |
-| 10 | Token issuer network transport | exact token POST, finite limits, masked error와 local mock test | market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 local mock test | query 생략, account/order/general market endpoint |
+| 10 | Token issuer network transport | exact token POST, finite limits, masked error와 test-only loopback HTTPS connector test | market/account/order request, external credential call |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
