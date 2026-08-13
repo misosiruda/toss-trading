@@ -41,9 +41,9 @@
 - `src/replay/officialMarketCalendarRepresentationHeadersBoundary.ts`는 effective request별 `representationHeaders`를 lowercase HTTP field-name에서 최대 8,192 character의 canonical safe-ASCII field value로 매핑되는 strict object로 검증하고 key가 UTF-8 byte lexical canonical order를 만족하는지 fail-closed로 확인한다. Generic value는 empty를 허용하며 non-empty value는 visible ASCII로 시작·종료하고 내부에는 visible ASCII, SP와 HTAB만 허용한다. Leading/trailing whitespace, control character, DEL, non-ASCII와 non-string value는 거부한다. Recorded `accept` value는 추가로 non-empty `type/subtype`, `type/*`, `*/*` media-range list와 explicit parameter `name=value` 문법을 통과해야 하며 quoted parameter 내부 literal HTAB을 허용한다. Media range별 `q` weight는 최대 하나, unquoted 0부터 1까지와 최대 세 자리 소수로 제한하며 `q` 뒤 parameter, case-insensitive media range 반복과 case-insensitive parameter name 중복을 거부한다. Redirect-chain은 이 boundary를 필수 child로 검증하고 effective request 수와 관찰 수를 exact match하며 모든 representation key가 같은 effective request의 verified header-name 목록에 존재하고 `accept`·`accept-language` category에 속하는지 확인한다. Recorded `accept`·`accept-language` request header name도 같은 effective request의 representation object에 own value가 있어야 하며, acquisition freshness policy boundary는 verified initial representation headers를 registered selector와 exact match한다. Recorded `accept-language` value는 non-empty `*` 또는 1\~8 ASCII letter와 각 1\~8 ASCII alphanumeric subtag로 구성된 language-range list여야 하며 range별 optional `q` weight는 같은 범위와 정밀도로 제한하고 같은 range의 ASCII case-insensitive 중복을 거부한다. 실제 HTTP request 관찰 wiring은 아직 구현하지 않는다. 공통 canonical object key 검증은 `src/replay/officialMarketCalendarCanonicalJsonObject.ts`가 담당하며 request parameters boundary도 같은 verifier를 사용한다.
 - `src/replay/officialMarketCalendarFinalResponseBoundary.ts`는 하나의 final-response object에서 response URL, negotiated protocol, raw `Date`/`Age` cache header, raw `Cache-Control`, cache-header-derived freshness, registry-bound freshness policy expiry와 nested transfer completion을 함께 검증하고 status가 exact `200`이며 raw `Content-Range` value가 없고 recorded `contentRange`가 `null`인지 fail-closed로 검증한다. Freshness policy registry는 verifier의 필수 외부 입력이며 미등록 또는 recorded entry와 다른 policy를 거부한다. Nested transfer protocol은 final response protocol과 같아야 하며 redirect chain의 final URL identity 결합은 `officialMarketCalendarRedirectChainBoundary.ts`가 담당한다. Selector-to-metadata binding, 실제 source별 policy registry 값과 HTTP transport는 아직 구현하지 않는다.
 - `src/replay/officialMarketCalendarTransferCompletion.ts`는 negotiated HTTP protocol별 허용 framing, explicit transfer completion, `content_length` framing의 declared length와 recorded byte length 일치를 fail-closed로 검증한다. Final response boundary가 이 contract를 nested child로 검증하므로 별도 sibling evidence 결합은 허용하지 않는다. 실제 byte stream 수신과 HTTP transport는 아직 구현하지 않는다.
-- `src/replay/officialMarketCalendarResponseCacheHeaders.ts`는 final response의 raw `Date`/`Age` header value 목록에서 duplicate를 보존해 검증하고, canonical IMF-fixdate와 nullable single decimal age만 freshness 입력으로 정규화한다. Final response의 필수 nested cache-header 결합은 `officialMarketCalendarFinalResponseBoundary.ts`가 담당한다. Freshness 계산과 HTTP transport는 아직 구현하지 않는다.
+- `src/replay/officialMarketCalendarResponseCacheHeaders.ts`는 final response의 raw `Date`/`Age` header value 목록에서 duplicate를 보존해 검증하고, canonical IMF-fixdate와 nullable single decimal age만 freshness 입력으로 정규화한다. 현재 raw `Expires`는 받지 않으므로 actual Toss network v2 전에 nullable single canonical `Expires`를 추가하는 backward-compatible parser/schema 확장이 필요하다. Final response의 필수 nested cache-header 결합은 `officialMarketCalendarFinalResponseBoundary.ts`가 담당한다. Expires-aware freshness 계산과 HTTP transport는 아직 구현하지 않는다.
 - `src/replay/officialMarketCalendarResponseCacheControl.ts`는 final response의 raw `Cache-Control` field line을 HTTP cache-directive grammar로 parse하고 directive name 소문자화, quoted-string escape 정규화와 canonical 정렬을 수행하며 header 부재를 `null`로 보존한다. Duplicate directive와 malformed list/token/quoted-string은 fail-closed로 거부한다. Final response의 필수 nested 결합은 `officialMarketCalendarFinalResponseBoundary.ts`가 담당하며 freshness policy와 HTTP transport는 아직 구현하지 않는다.
-- `src/replay/officialMarketCalendarResponseFreshness.ts`는 존재하는 calendar date인 explicit-offset timestamp만 허용하고, final response `Date`의 apparent age와 nullable `Age` header 중 큰 값을 사용해 `effectiveResponseAt`을 재계산하며 stored metadata와 다르면 fail-closed로 거부한다. Final response 결합에서는 Date/Age 중복 입력을 허용하지 않고 검증된 cache-header 결과를 policy expiry 결합에도 사용한다. 이 기존 helper는 response delay를 입력받지 않으므로 actual Toss network v2에는 그대로 사용하지 않으며, final attempt의 transport-derived delay를 포함하는 backward-compatible network-bound variant가 선행돼야 한다.
+- `src/replay/officialMarketCalendarResponseFreshness.ts`는 존재하는 calendar date인 explicit-offset timestamp만 허용하고, final response `Date`의 apparent age와 nullable `Age` header 중 큰 값을 사용해 `effectiveResponseAt`을 재계산하며 stored metadata와 다르면 fail-closed로 거부한다. Final response 결합에서는 Date/Age 중복 입력을 허용하지 않고 검증된 cache-header 결과를 policy expiry 결합에도 사용한다. 이 기존 helper는 response delay, response directive semantics와 `Expires`를 입력받지 않으므로 actual Toss network v2에는 그대로 사용하지 않으며, final attempt의 transport-derived delay와 Expires-aware response expiry를 포함하는 backward-compatible network-bound variant가 선행돼야 한다.
 - `src/replay/officialMarketCalendarFreshnessPolicy.ts`는 source/request-body/representation/parser identity와 row/schedule/applicability coverage selector, fixed-duration expiry rule을 strict definition으로 검증한다. Registry entry는 immutable ASCII version과 canonical definition hash를 결합하고 registry 안의 duplicate version을 거부한다. Recorded entry의 version을 registry에서 exact lookup하고 definition/hash 전체가 등록값과 다르면 fail-closed로 거부한다. `staleAfter` derivation은 `officialMarketCalendarFreshnessPolicyExpiry.ts`가 담당하며 실제 source별 registry 값과 full acquisition metadata wiring은 아직 구현하지 않는다.
 - `src/replay/officialMarketCalendarFreshnessPolicySelectorBinding.ts`는 registered policy definition의 source/coverage selector를 policy-relevant acquisition metadata projection으로 평탄화하고 caller projection의 전체 field와 value가 exact match하는지 검증한다. Key insertion order 차이는 허용하지만 field 누락, unknown field, source/coverage 값 mismatch와 미등록 policy는 fail-closed로 거부한다. Full acquisition metadata schema와 coordinator wiring은 아직 구현하지 않는다.
 - `src/replay/officialMarketCalendarAcquisitionFreshnessPolicyBoundary.ts`는 같은 registry로 redirect-chain/final-response를 먼저 검증하고 resolved policy version/hash가 가리키는 registered entry를 policy-relevant acquisition metadata projection과 결합한다. Registered source selector의 exchange, initial requested URL, method, request parameters, body content type, body hash와 representation headers는 verified redirect-chain initial request와 exact match해야 한다. Selector mismatch와 unknown top-level field는 fail-closed로 거부한다. Parser contract의 full acquisition metadata wiring, source byte/parser 결과 결합과 전체 acquisition coordinator는 아직 구현하지 않는다.
@@ -109,9 +109,9 @@ Initial calendar GET과 guarded `401` 뒤 retry는 exact
 `Cache-Control: no-cache, no-store, max-age=0`과 `Pragma: no-cache`를 보내고
 `If-None-Match`/`If-Modified-Since` conditional request를 금지한다. Final response의 raw
 `Date`는 exactly one canonical IMF-fixdate, raw `Age`는 없거나 single non-negative decimal
-integer여야 한다. Response cache-control은 canonical directive list 또는 header 부재를
-`null`로 보존한다. Duplicate/missing/invalid cache metadata는 parser/evidence builder 전에
-거부한다.
+integer, raw `Expires`는 없거나 single canonical IMF-fixdate여야 한다. Response
+cache-control과 `Expires`는 canonical value 또는 header 부재를 `null`로 보존한다.
+Duplicate/missing/invalid cache metadata는 parser/evidence builder 전에 거부한다.
 
 Initial calendar request와 유일한 retry는 각각 실제 사용한 token lease generation을
 보존한다. Initial refreshable `401`은 해당 generation만 compare-and-clear한 뒤 current/new
@@ -153,8 +153,8 @@ response를 제공한 provider deployment version 관측값이 아니다.
 merge돼야 한다. V2 provenance는 immutable trusted parser contract registry가 결합한 exact
 `source.apiContractVersion="1.2.14"`, official OpenAPI document SHA-256, calendar operation
 id/path와 response parser contract version, cache request policy version, actual retrieval
-completion, raw header에서 parse한 canonical `responseDate`와 nullable
-`responseAgeSeconds`, final attempt의 monotonic elapsed time에서 올림한
+completion, raw header에서 parse한 canonical `responseDate`, nullable
+`responseAgeSeconds`와 nullable `responseExpires`, final attempt의 monotonic elapsed time에서 올림한
 `responseDelayMilliseconds`, canonical response cache-control, corrected
 `effectiveResponseAt`과 `staleAfter`를 기록한다. OpenAPI document identity는 bytes를 해석한 contract snapshot이지
 provider deployment version 관측 증거가 아니다. Coordinator는 임의의 caller-provided
@@ -251,8 +251,18 @@ correctedAgeValueMilliseconds = (responseAgeSeconds ?? 0) * 1,000 + responseDela
 correctedInitialAgeMilliseconds = max(apparentAgeMilliseconds, correctedAgeValueMilliseconds)
 effectiveResponseAtMs = completedAtMs - correctedInitialAgeMilliseconds
 policyStaleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
-responseDirectiveStaleAfterMs = effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
-staleAfterMs = min(policyStaleAfterMs, responseDirectiveStaleAfterMs)
+expiresFreshnessLifetimeMilliseconds = responseExpiresMs == null
+  ? null
+  : max(0, responseExpiresMs - responseDateMs)
+expiresStaleAfterMs = expiresFreshnessLifetimeMilliseconds == null
+  ? null
+  : effectiveResponseAtMs + expiresFreshnessLifetimeMilliseconds
+responseStaleAfterMs = hasValidatedResponseMaxAge
+  ? effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
+  : responseExpiresMs != null
+    ? expiresStaleAfterMs
+    : policyStaleAfterMs
+staleAfterMs = min(policyStaleAfterMs, responseStaleAfterMs)
 ```
 
 Response semantic allowlist는 `public`, `private`, `no-transform`, `must-revalidate`,
@@ -264,6 +274,12 @@ evidence reuse 의미를 추측하지 않고 parser/evidence builder 전에 거�
 non-lifetime directive는 provenance로만 보존하며 expiry를 늘리지 않는다. `max-age=0`,
 `s-maxage=0` 또는 corrected age 때문에 `completedAt >= staleAfter`이면 initial evaluation에서
 already-stale로 거부한다.
+
+Raw `Expires`는 없거나 exactly one canonical IMF-fixdate여야 하며 nullable provenance로
+보존한다. `max-age`/`s-maxage`가 하나라도 있으면 `Expires`보다 우선하고, 둘 다 없으면
+`Expires - Date`의 non-negative freshness lifetime을 corrected `effectiveResponseAt`에 더해
+response expiry를 계산한다. 이 fallback의 `Expires <= Date`, corrected age로 이미 만료된
+response, millisecond subtraction/addition overflow와 canonical date range 이탈은 fail-closed다.
 
 Monotonic clock 역행, deadline 초과, second-to-millisecond 변환과 age/delay 합산의 safe-integer
 overflow, timestamp subtraction/addition의 canonical date range 이탈은 fail-closed다. Guarded

@@ -200,18 +200,20 @@ surface 승인이 아니다.
   replay input과 report는 unverifiable로 취급해 fail-closed로 거부하며 재사용하려면 acquisition을
   다시 수행한다.
 - Calendar final response의 raw `Date`는 exactly one canonical IMF-fixdate여야 하고 raw
-  `Age`는 없거나 single non-negative decimal integer여야 한다. Duplicate/missing/invalid
-  `Date`, duplicate/invalid `Age`와 invalid `Cache-Control` directive syntax는 body가 valid
-  calendar JSON이어도 거부한다. Response `Cache-Control` 부재는 canonical `null`로 보존한다.
+  `Age`는 없거나 single non-negative decimal integer, raw `Expires`는 없거나 single canonical
+  IMF-fixdate여야 한다. Duplicate/missing/invalid `Date`, duplicate/invalid `Age`,
+  duplicate/invalid `Expires`와 invalid `Cache-Control` directive syntax는 body가 valid calendar
+  JSON이어도 거부한다. Response `Cache-Control`과 `Expires` 부재는 각각 canonical `null`로
+  보존한다.
 - Calendar transport는 final request attempt 시작 직전에 monotonic clock을 기록하고,
   status/header/encoding/size 검증을 통과한 complete body 수신 시 같은 monotonic clock과
   coordinator-owned UTC clock을 읽어 immutable `completedAt`을 transport result에 결합한다.
   Final attempt의 monotonic elapsed nanoseconds를 millisecond로 올림한
-  `responseDelayMilliseconds`는 safe integer `0..10,000`이어야 한다. Raw `Date`/`Age`와
-  `completedAt`은 기존 `parseOfficialMarketCalendarResponseCacheHeaders`와
-  `parseOfficialMarketCalendarResponseCacheControl`로 검증하되, response delay를 받지 않는
-  현재 `resolveOfficialMarketCalendarResponseFreshness`를 actual network v2에 그대로 사용하지
-  않는다. Backward-compatible network-bound variant가 HTTP corrected age를 다음과 같이
+  `responseDelayMilliseconds`는 safe integer `0..10,000`이어야 한다. Raw
+  `Date`/`Age`/`Expires`와 `completedAt`은 기존 cache header/control parser를 확장한
+  backward-compatible network-bound variant로 검증한다. Response delay와 `Expires`를 받지
+  않는 현재 `resolveOfficialMarketCalendarResponseFreshness`를 actual network v2에 그대로
+  사용하지 않는다. Network-bound variant가 HTTP corrected age와 expiry를 다음과 같이
   결정론적으로 계산해야 한다.
 
   ```text
@@ -221,8 +223,18 @@ surface 승인이 아니다.
   correctedInitialAgeMilliseconds = max(apparentAgeMilliseconds, correctedAgeValueMilliseconds)
   effectiveResponseAtMs = completedAtMs - correctedInitialAgeMilliseconds
   policyStaleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
-  responseDirectiveStaleAfterMs = effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
-  staleAfterMs = min(policyStaleAfterMs, responseDirectiveStaleAfterMs)
+  expiresFreshnessLifetimeMilliseconds = responseExpiresMs == null
+    ? null
+    : max(0, responseExpiresMs - responseDateMs)
+  expiresStaleAfterMs = expiresFreshnessLifetimeMilliseconds == null
+    ? null
+    : effectiveResponseAtMs + expiresFreshnessLifetimeMilliseconds
+  responseStaleAfterMs = hasValidatedResponseMaxAge
+    ? effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
+    : responseExpiresMs != null
+      ? expiresStaleAfterMs
+      : policyStaleAfterMs
+  staleAfterMs = min(policyStaleAfterMs, responseStaleAfterMs)
   ```
 
   Response semantic allowlist는 `public`, `private`, `no-transform`, `must-revalidate`,
@@ -234,6 +246,11 @@ surface 승인이 아니다.
   추측하지 않고 거부한다. 허용된 non-lifetime directive는 provenance로 보존하되
   `staleAfter`를 늘리지 않는다. 따라서 `max-age=0`, `s-maxage=0` 또는 corrected age 때문에
   `completedAt >= staleAfter`가 되면 initial evaluation부터 already-stale로 거부한다.
+  `max-age`/`s-maxage`가 하나라도 있으면 raw `Expires`보다 우선하고, 둘 다 없을 때만
+  `Expires - Date`의 non-negative freshness lifetime을 corrected `effectiveResponseAt`에 더해
+  response expiry를 계산한다. 이 fallback `Expires`가 `Date`와 같거나 이전이거나 corrected
+  age 때문에 이미 expiry에 도달했으면 evidence를 만들지 않는다. `Expires` millisecond
+  subtraction과 expiry addition의 overflow 또는 canonical date range 이탈도 fail-closed다.
 
   Monotonic clock 역행, deadline 초과, second-to-millisecond 변환과 age/delay 합산의 safe-integer
   overflow, timestamp subtraction/addition의 canonical date range 이탈은 evidence 생성 전에
@@ -251,10 +268,11 @@ surface 승인이 아니다.
 - Existing `official_broker_observed_calendar_evidence.v1` synthetic/in-memory builder는
   caller-provided `retrievedAt`에서 `staleAfter`를 계산하고 response cache provenance를
   표현하지 못하므로 actual network response handoff에 사용하지 않는다. V2 evidence가
-  `retrievedAt`, raw header에서 parse한 canonical `responseDate`와 nullable
-  `responseAgeSeconds`, transport가 측정한 `responseDelayMilliseconds`, canonical response
-  cache-control, `effectiveResponseAt`과 cache-adjusted `staleAfter`를 strict provenance로
-  기록하고 재검증한 뒤에만 coordinator가 actual response를 evidence로 조립할 수 있다.
+  `retrievedAt`, raw header에서 parse한 canonical `responseDate`, nullable
+  `responseAgeSeconds`와 nullable `responseExpires`, transport가 측정한
+  `responseDelayMilliseconds`, canonical response cache-control, `effectiveResponseAt`과
+  cache-adjusted `staleAfter`를 strict provenance로 기록하고 재검증한 뒤에만 coordinator가
+  actual response를 evidence로 조립할 수 있다.
 - Coordinator output은 `paper_only`, `official_broker_observed`,
   `observed_session_only`로 고정한다. Historical completeness와 `official_exchange`
   readiness를 주장하거나 Risk Engine, order, portfolio mutation 경로에 연결하지 않는다.
@@ -280,8 +298,9 @@ response를 evidence builder에 전달하지 않는다. Schema compatibility만�
   contract version은 response parser의 interpretation context이며 response hash나 실제
   provider deployment version의 관측 증거가 아니다. V2 source provenance는 위 cache
   request policy version, `retrievedAt`, canonical `responseDate`, nullable
-  `responseAgeSeconds`, transport-derived `responseDelayMilliseconds`, canonical response
-  cache-control, corrected `effectiveResponseAt`과 `staleAfter`도 필수로 결합한다.
+  `responseAgeSeconds`, nullable `responseExpires`, transport-derived
+  `responseDelayMilliseconds`, canonical response cache-control, corrected
+  `effectiveResponseAt`과 `staleAfter`도 필수로 결합한다.
 - Immutable trusted parser contract registry는 API contract version, OpenAPI document hash,
   calendar operation id/path와 response parser contract version을 하나의 entry로 결합한다.
   Coordinator와 builder는 caller-provided version string을 신뢰하지 않고 검증된 registry
@@ -630,6 +649,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   `no-cache`, `no-store`, unknown extension directive를 fail-closed로 거부한다. Strict
   `max-age`/`s-maxage`는 86,400초 policy expiry를 줄이는 cap으로만 사용하고 zero, quoted,
   malformed, overflow와 initial already-stale boundary를 검증한다.
+- raw `Expires` 부재, canonical value, duplicate/malformed value를 검증하고 nullable provenance로
+  보존한다. `max-age`/`s-maxage`가 없을 때 `Expires - Date` lifetime을 corrected
+  `effectiveResponseAt`에 적용하며 fallback past/equal expiry, corrected-age expiry와 arithmetic
+  overflow를 fail-closed로 검증한다. `max-age`/`s-maxage`가 있으면 `Expires`보다 우선해야 한다.
 - token/calendar request가 exact `Accept-Encoding: identity`만 보내고 automatic
   decompression을 비활성화하며 raw `Content-Encoding` response를 parser 전에 거부한다.
 - 작은 compressed body와 decoded oversize payload를 조합한 gzip/br fixture를 거부하고,
@@ -688,7 +711,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, response cache directive cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |
 | 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |

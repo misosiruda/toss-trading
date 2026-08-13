@@ -305,6 +305,10 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
   검증하고 `no-cache`, `no-store`, unknown extension directive를 거부한다. Strict unquoted
   `max-age`/`s-maxage`는 86,400초 freshness를 줄이는 cap으로만 사용하며 zero, quoted,
   malformed, overflow와 initial already-stale boundary를 fail-closed로 검증한다.
+- Calendar response raw `Expires`를 nullable canonical IMF-fixdate provenance로 검증한다.
+  `max-age`/`s-maxage`가 없을 때 `Expires - Date` lifetime을 corrected `effectiveResponseAt`에
+  적용하며 duplicate/malformed value와 fallback past/already-stale expiry 및 arithmetic
+  overflow를 fail-closed로 거부한다.
 - Unknown 또는 stale generation invalidation은 current cache를 변경하지 않고, generation
   identity가 token value/hash/log에 노출되지 않는다.
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
@@ -340,7 +344,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
 | 7a | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, no Range/Content-Range, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
-| 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`, response cache directive cap과 monotonic response-delay corrected freshness | account header, broker mutation |
+| 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap과 monotonic response-delay corrected freshness | account header, broker mutation |
 | 9a | Version-aware calendar evidence consumers | response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
 | 9b | Ephemeral calendar acquisition lifecycle | v2 evidence/raw-byte process-local envelope와 detached output persistence 거부 | durable raw-byte store, workflow artifact persistence |
 | 10 | Calendar acquisition coordinator | token과 calendar response를 ephemeral paper-only observation boundary에 조립 | persistent token/raw bytes, stored report, replay 실행 |
