@@ -59,11 +59,17 @@ threat model, disabled default와 테스트 조건을 해당 contract에 먼저 
 - `TRADING_ENABLED=true` 또는 live provider를 기본값으로 설정
 - deterministic Risk Engine, sizing 또는 allocation gate 우회
 - AI evidence를 live `TradingSignal` 또는 `OrderIntent`로 직접 승격
-- secret, token, account identifier 또는 execution data 저장과 출력
+- secret 또는 token 저장과 출력
+- real account identifier, real order ID 또는 real execution data를 raw/unmasked
+  형태로 저장하거나 출력
 - evidence class, historical completeness 또는 source trust의 근거 없는 승격
 - branch protection, ruleset, repository access 또는 GitHub Actions permission 변경
 - 외부 데이터 삭제, 유료 서비스 사용 또는 법적·라이선스 조건 수락
 - 특정 종목 추천, 투자 조언 또는 수익 보장 표현
+
+Structured contract를 통과한 paper-only simulated fill, execution-cost와 virtual
+portfolio artifact는 이 금지에 포함되지 않는다. 해당 artifact도 실제 계좌, 주문,
+credential 또는 execution identity를 포함하면 masking policy를 통과해야 한다.
 
 ## Owner 판단이 필요한 경우
 
