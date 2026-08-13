@@ -150,10 +150,13 @@ external token issue 검증은 owner가 repository 밖에서 credential과 허�
 뒤에만 수행하며, 실행하지 않은 경우 PR에 명시한다.
 
 Local test는 base URL을 localhost로 바꾸지 않는다. Request validation 뒤에만
-test-only socket connector를 주입해 logical URL, HTTP `Host`와 TLS SNI는
-`openapi.tossinvest.com:443`으로 유지하면서 dial address를 loopback ephemeral HTTPS
-server로 매핑한다. Server certificate는 per-test CA가 서명하고 SAN은 production
-hostname과 일치해야 하며, 해당 CA는 test connector에만 주입한다. Production factory는
+test-only socket connector를 주입해 logical request URL은
+`https://openapi.tossinvest.com`, destination authority는
+`openapi.tossinvest.com:443`, HTTP `Host`와 TLS SNI/servername은 port 없는
+`openapi.tossinvest.com`으로 유지하면서 dial address를 loopback ephemeral HTTPS
+server로 매핑한다. Server certificate는 per-test CA가 서명하고 SAN은 이 bare
+production hostname과 일치해야 하며, 해당 CA는 test connector에만 주입한다. Authority
+port는 TLS servername 또는 certificate SAN 비교에 사용하지 않는다. Production factory는
 dial target, custom CA 또는 test connector를 받지 않고 runtime env/API에도 이 override를
 노출하지 않는다. Plaintext HTTP, TLS verification disable과 non-loopback dial은 모두
 거부한다. 세부 경계는 [Official Toss Open API Adapter Design](official-toss-open-api-adapter-design.md)의
@@ -247,7 +250,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
 - 403 `access_denied`를 credential retry가 아닌 허용 IP/readiness failure로 구분한다.
 - production token transport가 exact HTTPS origin/path만 허용하고 redirect, timeout, oversized/non-JSON response를 fail-closed 처리한다.
-- test-only loopback HTTPS connector test가 logical production URL과 TLS verification을 유지하고 request body나 response token을 snapshot/log에 남기지 않는다.
+- test-only loopback HTTPS connector test가 canonical production URL, destination authority, hostname-only SNI와 TLS verification을 유지하고 request body나 response token을 snapshot/log에 남기지 않는다.
 - log/audit payload에서 `client_id`, `client_secret`, `access_token`이 masking된다.
 - MCP enabled tool과 Local Operations API route에 token value 반환 surface가 추가되지 않는다.
 - `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본값이 유지된다.

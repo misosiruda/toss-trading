@@ -166,9 +166,12 @@ Local integration test는 production URL allowlist를 localhost URL로 완화하
 Request validator가 exact logical origin, method, path와 query를 먼저 통과시킨 뒤 저수준
 socket connector만 test factory에서 주입한다.
 
-- Logical request URL, HTTP `Host`, TLS SNI와 provenance는 계속
-  `openapi.tossinvest.com:443`을 사용한다. Loopback dial address와 ephemeral port는
-  artifact, request identity 또는 application config에 나타나지 않는다.
+- Logical request URL과 provenance origin은 `https://openapi.tossinvest.com`,
+  destination authority는 `openapi.tossinvest.com:443`, HTTP `Host` header는
+  `openapi.tossinvest.com`, TLS SNI/servername은 port 없는 bare DNS hostname
+  `openapi.tossinvest.com`을 사용한다. Loopback dial address와 ephemeral port는
+  artifact, request identity 또는 application config에 나타나지 않는다. Authority의
+  port를 TLS servername에 전달하거나 certificate SAN과 비교하지 않는다.
 - Test connector는 validated production host의 socket dial만 `127.0.0.1` 또는 `::1`의
   지정된 ephemeral HTTPS server로 매핑한다. 다른 host, non-loopback address와 두 번째
   redirect target은 거부한다.
@@ -439,7 +442,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
-- test-only loopback HTTPS connector에서 logical production URL, Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
+- test-only loopback HTTPS connector에서 canonical production URL, destination authority, hostname-only HTTP Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
 - coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
