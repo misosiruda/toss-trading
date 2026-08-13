@@ -96,6 +96,12 @@ config, redirect, timeout, response-size/content-type 위반과 partial body는 
 전에 fail-closed 처리한다. Raw response bytes는 parser와 evidence hash 입력을 위해
 memory에서만 전달하고 public artifact나 log에 저장하지 않는다.
 
+Calendar GET request에는 `Range` 또는 `If-Range`를 보내지 않는다. Final response는 exact
+status `200`이고 raw `Content-Range`가 없어야 하며, `206 Partial Content`, 그 밖의 `2xx`와
+status `200`/`Content-Range` 조합은 body가 strict response parser를 통과할 JSON이어도
+response parsing과 evidence builder 전에 거부한다. 이 조건은 기존
+`officialMarketCalendarFinalResponseBoundary`의 complete-representation 원칙과 같다.
+
 Provider가 query 생략 시 기본 기준일을 선택하더라도 acquisition coordinator는 이
 동작을 사용하지 않는다. Canonical `date=YYYY-MM-DD`를 exactly one으로 전송하고
 effective query의 값이 requested date, evidence request와 일치하는지 response parsing

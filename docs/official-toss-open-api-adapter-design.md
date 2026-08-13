@@ -141,9 +141,15 @@ surface 승인이 아니다.
   account header를 임의 주입하지 않는다.
 - 각 request는 10,000ms 이하의 finite timeout을 적용한다. Token response는 256KiB,
   calendar response는 1MiB를 초과하면 body를 사용하지 않고 거부한다.
-- 성공 response는 complete `application/json` body만 허용한다. Unsupported content
-  type, truncated body, size 초과, timeout과 transport error는 partial evidence를 만들지
-  않는다.
+- Calendar GET request는 `Range`와 `If-Range` header를 보내지 않는다. Caller, config 또는
+  retry path가 이 header를 주입하면 socket 전송 전에 거부한다.
+- Calendar final response는 status exact `200`만 허용하고 raw `Content-Range` header가
+  없어야 한다. `206 Partial Content`, 그 밖의 `2xx`와 status `200`의 `Content-Range`
+  response는 body가 syntactically valid calendar JSON이어도 parser 또는 evidence builder에
+  전달하지 않는다.
+- 허용된 status/header를 통과한 response도 complete `application/json` body만 사용한다.
+  Unsupported content type, truncated body, size 초과, timeout과 transport error는 partial
+  evidence를 만들지 않는다.
 - 첫 구현은 기존 read-only client의 invalid/expired token 대상 guarded reissue 1회
   외에 network, `429` 또는 `5xx` 자동 retry를 추가하지 않는다.
 - Guarded reissue 전에 HTTP request가 사용한 token generation을 보존하고 AuthClient가
@@ -481,7 +487,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
-- calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
+- calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, `Range`/`If-Range`, 임의 query/path와 redirect를 거부한다.
+- calendar final response가 exact `200`이고 raw `Content-Range`가 없을 때만 parser로 전달되며, valid JSON body를 가진 `206`과 status `200`/`Content-Range` 조합을 거부한다.
 - test-only loopback HTTPS connector에서 canonical production URL, destination authority, hostname-only HTTP Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
 - read-only client의 staggered `401` test에서 token A의 늦은 실패가 current token B를
   invalidation하거나 token C를 발급하지 않고, 동일 generation reissue가 single-flight로
@@ -514,7 +521,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser provenance와 verifier dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, finite limits, masked error와 test-only loopback HTTPS connector test | market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, account/order/general market endpoint |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact `200`, no Range/Content-Range, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, partial response, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
