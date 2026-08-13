@@ -1,6 +1,6 @@
 # Official Toss Open API Adapter Design
 
-> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, mocked token auth client, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지이며 actual network transport, order adapter, live order routing, live trading enable 기능은 구현하지 않는다.
+> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, mocked token auth client, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지다. Calendar 전용 actual network transport와 acquisition coordinator는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, order adapter, live order routing, live trading enable 기능은 계속 구현하지 않는다.
 
 ## 목적
 
@@ -17,7 +17,7 @@
 
 ## 공식 문서 기준
 
-이 문서는 2026-08-12 확인 기준으로 다음 official source를 참고했다.
+이 문서는 2026-08-13 확인 기준으로 다음 official source를 참고했다.
 
 - Human documentation: https://developers.tossinvest.com/docs
 - LLM entrypoint: https://developers.tossinvest.com/llms.txt
@@ -31,12 +31,12 @@
 | --- | --- |
 | `openapi` | `3.1.0` |
 | `info.title` | `토스증권 Open API` |
-| `info.version` | `1.2.13` |
+| `info.version` | `1.2.14` |
 | base server | `https://openapi.tossinvest.com` |
 | auth | OAuth 2.0 Client Credentials Grant |
 | account/order header | `X-Tossinvest-Account` |
 
-구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다.
+구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 현재 calendar response/evidence contract는 `1.2.13`에 고정돼 있으므로 `1.2.14` response compatibility가 별도 PR에서 입증되기 전에는 network response를 기존 evidence로 승격하지 않는다.
 
 ## 현재 공식 API 표면
 
@@ -109,6 +109,52 @@ Stored report를 다시 읽을 때는 별도로 보관된 evidence와 exact raw 
 요구하고 report를 완전히 재생성해 비교한다. Report의 public hash만 다시 계산해서
 conflict나 reject 결과를 지우는 변경은 검증을 통과할 수 없다.
 
+### Calendar 전용 network acquisition 허용 경계
+
+Standing maintenance delegation에 따라 actual network 구현은 다음 두 책임으로만
+제한한다. 이 승인은 general-purpose official API client, account 조회 또는 order
+surface 승인이 아니다.
+
+| 책임 | 허용 request | 필수 제한 |
+| --- | --- | --- |
+| Token issuer transport | `POST https://openapi.tossinvest.com/oauth2/token` | `application/x-www-form-urlencoded`, `grant_type=client_credentials`, redirect 금지, credential/token masking |
+| Calendar read-only transport | `GET https://openapi.tossinvest.com/api/v1/market-calendar/KR` 또는 `/US` | optional `date` query만 허용, Bearer 외 credential header 금지, `X-Tossinvest-Account` 금지 |
+
+공통 fail-closed 조건:
+
+- `TOSS_OPEN_API_AUTH_ENABLED=false`를 기본값으로 유지하고 disabled/invalid config에서는
+  DNS 또는 socket 연결 전에 중단한다.
+- Base URL은 userinfo, path, query, fragment가 없는 exact HTTPS origin
+  `https://openapi.tossinvest.com`만 허용한다. 임의 host, protocol-relative URL,
+  backslash path와 caller-provided absolute URL은 거부한다.
+- Automatic redirect, cookie jar, client certificate와 credential-bearing proxy auth를
+  사용하지 않는다. `Authorization`, `Content-Type`, `Accept` 외의 credential 또는
+  account header를 임의 주입하지 않는다.
+- 각 request는 10,000ms 이하의 finite timeout을 적용한다. Token response는 256KiB,
+  calendar response는 1MiB를 초과하면 body를 사용하지 않고 거부한다.
+- 성공 response는 complete `application/json` body만 허용한다. Unsupported content
+  type, truncated body, size 초과, timeout과 transport error는 partial evidence를 만들지
+  않는다.
+- 첫 구현은 기존 read-only client의 invalid/expired token 대상 guarded reissue 1회
+  외에 network, `429` 또는 `5xx` 자동 retry를 추가하지 않는다.
+- Token과 credential은 process memory 밖에 저장하지 않는다. Calendar exact response
+  bytes는 evidence hash와 parser 입력을 위해 acquisition result의 memory에만 보존하며
+  log, PR body 또는 public artifact에 기록하지 않는다. Durable raw-byte 저장은 별도
+  threat model과 저장 계약 전에는 도입하지 않는다.
+- Coordinator output은 `paper_only`, `official_broker_observed`,
+  `observed_session_only`로 고정한다. Historical completeness와 `official_exchange`
+  readiness를 주장하거나 Risk Engine, order, portfolio mutation 경로에 연결하지 않는다.
+
+실제 external request에는 owner가 repository 밖에서 발급한 credential과 허용 IP 설정이
+필요하다. 이 외부 설정이 없어도 transport, local mock server, coordinator, preflight와
+negative test 구현은 계속할 수 있다. 실제 호출을 실행하지 않은 PR은 그 사실을
+명시하며, mock 결과를 official response evidence로 기록하지 않는다.
+
+OpenAPI `1.2.14` calendar schema가 현재 `1.2.13` parser/evidence contract와
+호환된다는 byte-level fixture 검증이 merge되기 전에는 acquisition coordinator가 받은
+response를 evidence builder에 전달하지 않는다. Version drift를 무시하거나 metadata만
+`1.2.14`로 바꿔 기존 artifact를 재해석하는 동작은 fail-closed로 금지한다.
+
 ### Account, Asset
 
 | Method | Path | 설명 |
@@ -140,12 +186,14 @@ conflict나 reject 결과를 지우는 변경은 검증을 통과할 수 없다.
 - mock-first 구현 순서 정의
 - read-only account/market snapshot과 order mutation path 분리
 - rate limit, error envelope, audit, masking 정책 설계
+- 위 allowlist에 한정된 safe-disabled token/calendar transport와 paper-only acquisition coordinator
 
 ### 이 문서가 금지하는 것
 
 - real `client_id`, `client_secret`, account id, token 문서화
-- official API 실제 호출 코드 추가
-- 실제 network transport 구현
+- calendar allowlist 밖 official API 실제 호출 코드 추가
+- 임의 URL/method를 받는 general-purpose network transport 구현
+- account, holdings, order, order history endpoint를 calendar acquisition에 연결
 - `TRADING_ENABLED=true` 기본값 또는 예시 추가
 - live `TradingSignal`, live `OrderIntent`, `OrderRouter`, broker adapter 구현
 - `place_order` MCP tool enabled surface 추가
@@ -162,14 +210,19 @@ flowchart TD
     AC --> H["Authenticated read-only HTTP client with injected transport"]
     H --> M["Read-only market data adapter with mocked HTTP tests"]
     M --> A["Read-only account and holdings snapshot reader"]
-    A --> R["Live RiskEngine implementation with mock broker"]
+    A --> NC["Calendar network acquisition contract"]
+    NC --> V["OpenAPI calendar compatibility gate"]
+    V --> NT["Safe-disabled token issuer transport"]
+    NT --> CT["Calendar-only GET transport"]
+    CT --> CC["Paper-only acquisition coordinator"]
+    CC --> R["Live RiskEngine implementation with mock broker"]
     R --> TM["Live trading threat model"]
     TM --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
     P --> Q["Deployment gate"]
 ```
 
-후속 PR은 이 순서를 건너뛰면 안 된다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
+후속 PR은 이 순서를 건너뛰면 안 된다. Calendar transport는 current OpenAPI compatibility gate를 먼저 통과해야 하고, token issuer와 calendar GET 책임을 서로 다른 PR로 유지한다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
 
 ## 제안 계층
 
@@ -270,7 +323,7 @@ TOSS_OPEN_API_DRY_RUN=true
 구현 정책:
 
 - adapter는 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`를 읽어 audit/debug metadata로 남긴다.
-- `429`는 `Retry-After`를 우선하고 jitter가 있는 backoff를 적용한다.
+- `429`와 `Retry-After`는 rate-limit metadata로 보존한다. 첫 token/calendar network transport는 자동 retry하지 않으며, bounded jitter backoff는 후속 endpoint-specific orchestrator 계약에서만 도입한다.
 - order mutation은 retry 가능성이 공식적으로 안전하다고 확인되기 전까지 blind retry하지 않는다.
 - `ORDER`와 `ORDER_INFO`는 장 시작 피크 한도를 별도 budget으로 둔다.
 
@@ -284,7 +337,7 @@ TOSS_OPEN_API_DRY_RUN=true
 - `401 invalid-token`, `401 expired-token`은 token refresh 또는 auth failure로 분리한다.
 - `400 account-header-required`는 config error로 fail-closed 처리한다.
 - `400 confirm-high-value-required`는 backend가 자동으로 `confirmHighValueOrder=true`를 붙이지 않는다. 별도 high-value order policy와 명시 승인 없이는 reject한다.
-- `429`는 rate limit degraded status로 기록하고 재시도 가능 여부를 endpoint group별로 판단한다.
+- `429`는 rate limit degraded status로 기록한다. 이 문서가 승인한 첫 calendar acquisition 경로는 재시도하지 않고 fail-closed 결과를 반환한다.
 - `5xx` 또는 network timeout은 circuit breaker와 no-order/no-position-mutation 정책으로 처리한다.
 
 ## Idempotency와 duplicate prevention
@@ -354,6 +407,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 후속 구현은 최소 다음 테스트를 포함해야 한다.
 
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
+- token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
+- calendar transport가 KR/US exact GET path와 optional `date`만 허용하고 account header, 임의 query/path와 redirect를 거부한다.
+- local mock server에서 token과 calendar response byte boundary를 검증하되 mock bytes를 official evidence로 표시하지 않는다.
+- coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
@@ -375,11 +432,17 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 5 | Authenticated read-only HTTP client | Bearer injection, read-only method guard, error/rate mapping tests | actual network transport, mutation retry |
 | 6 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
-| 8 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
-| 9 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
-| 10 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
-| 11 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
-| 12 | Deployment packaging | process isolation, config, monitoring | default live enable |
+| 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
+| 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, parser/evidence version gate와 regression test | network, metadata-only version bump |
+| 10 | Token issuer network transport | exact token POST, finite limits, masked error와 local mock test | market/account/order request, external credential call |
+| 11 | Calendar GET network transport | KR/US allowlist, Bearer, exact bytes, finite limits와 local mock test | account/order/general market endpoint |
+| 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
+| 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
+| 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
+| 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 16 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
+| 17 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
+| 18 | Deployment packaging | process isolation, config, monitoring | default live enable |
 
 ## Merge 전 체크리스트
 

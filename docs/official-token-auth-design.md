@@ -1,6 +1,6 @@
 # Official Toss Open API Token Auth Design
 
-> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser, injected `TossOpenApiTokenIssuer` 기반 mocked `TossOpenApiAuthClient`, injected transport 기반 `TossOpenApiReadOnlyHttpClient`다. real network transport, official API actual call, persistent token store, account/order adapter, live trading 기능은 구현하지 않는다.
+> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser, injected `TossOpenApiTokenIssuer` 기반 mocked `TossOpenApiAuthClient`, injected transport 기반 `TossOpenApiReadOnlyHttpClient`다. Calendar acquisition 전용 token issuer network transport는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, persistent token store, account/order network adapter, live trading 기능은 계속 구현하지 않는다.
 
 ## 목적
 
@@ -16,7 +16,7 @@ official Toss Open API adapter를 구현하기 전에 OAuth2 Client Credentials 
 
 ## 공식 문서 기준
 
-이 문서는 2026-06-17 확인 기준으로 다음 official source를 참고했다.
+이 문서는 2026-08-13 확인 기준으로 다음 official source를 참고했다.
 
 - Auth Markdown: https://openapi.tossinvest.com/openapi-docs/latest/api-reference/Apis/AuthApi.md
 - OpenAPI JSON source of truth: https://openapi.tossinvest.com/openapi-docs/latest/openapi.json
@@ -26,7 +26,7 @@ official Toss Open API adapter를 구현하기 전에 OAuth2 Client Credentials 
 | 항목 | 값 |
 | --- | --- |
 | `openapi` | `3.1.0` |
-| `info.version` | `1.1.1` |
+| `info.version` | `1.2.14` |
 | base server | `https://openapi.tossinvest.com` |
 | auth operation | `issueOAuth2Token` |
 | auth path | `POST /oauth2/token` |
@@ -82,7 +82,8 @@ Accept: application/json
 | `400` | `invalid_request` | 필수 값 누락 또는 형식 오류다. config/parser 또는 request builder 오류로 fail-closed 처리한다. |
 | `400` | `unsupported_grant_type` | `client_credentials` 외 grant type 사용 시 fail-closed 처리한다. |
 | `401` | `invalid_client` | secret/config 오류다. retry loop로 숨기지 않고 operational failure로 기록한다. |
-| `429` | rate limit exceeded | `AUTH` budget 초과다. `Retry-After`가 있으면 우선하고 jitter backoff를 적용한다. |
+| `403` | `access_denied` | 허용 IP 또는 client access 설정 오류다. credential을 재시도하지 않고 owner-action readiness failure로 기록한다. |
+| `429` | rate limit exceeded | `AUTH` budget 초과다. 첫 network transport는 `Retry-After`를 진단 metadata로 보존하고 자동 retry하지 않는다. |
 
 401 응답의 `WWW-Authenticate` header는 진단 metadata로만 사용하고 secret과 token은 함께 기록하지 않는다.
 
@@ -115,6 +116,38 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache, single-flight를 검증한다.
 - `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping, 401 token failure 1회 guarded reissue를 검증한다.
 - 실제 network transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
+
+## Calendar 전용 Token Issuer Transport 계약
+
+Production network 구현은 calendar acquisition을 위한 exact
+`POST https://openapi.tossinvest.com/oauth2/token` 한 경로만 허용한다. 이 transport는
+`TossOpenApiTokenIssuer`를 구현하지만 raw token endpoint를 MCP, dashboard 또는 Local
+Operations API에 노출하지 않는다.
+
+필수 경계:
+
+- `TOSS_OPEN_API_AUTH_ENABLED=false` 또는 config `status`가 `ready`가 아니면 DNS/socket
+  연결 전에 fail-closed 처리한다.
+- Base URL은 userinfo, path, query, fragment가 없는 exact HTTPS origin만 허용하고,
+  request method/path/content type/grant type은 caller가 변경할 수 없게 한다.
+- Automatic redirect, cookie jar, client certificate, `Proxy-Authorization`과
+  caller-provided `Authorization` header를 금지한다.
+- Request timeout은 10,000ms 이하, response body는 256KiB 이하로 제한한다.
+  `application/json`이 아닌 성공 response, incomplete body와 size 초과는 token parser에
+  전달하지 않는다.
+- `client_id`, `client_secret`, encoded form body, `access_token`, raw provider response와
+  credential-bearing header는 log, audit, error, metric 또는 test snapshot에 기록하지
+  않는다. 진단에는 masked error code, status, byte length와 timing만 사용할 수 있다.
+- 첫 구현은 automatic network retry를 하지 않는다. Concurrent caller는 기존
+  `TossOpenApiAuthClient` single-flight를 사용하고, retry/backoff 정책은 별도 계약 없이는
+  transport에 추가하지 않는다.
+- Token은 기존 정책대로 process memory에만 보관한다. Persistent cache, token 반환 API,
+  account/order adapter와 broker mutation은 이 계약 범위가 아니다.
+
+Credential과 허용 IP가 없는 환경에서도 exact request serialization, redirect/timeout,
+oversized/non-JSON response, masking과 abort 동작은 local mock server로 검증한다. 실제
+external token issue 검증은 owner가 repository 밖에서 credential과 허용 IP를 설정한
+뒤에만 수행하며, 실행하지 않은 경우 PR에 명시한다.
 
 ## Token Lifecycle
 
@@ -154,7 +187,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 
 - read-only market/account GET 요청은 guarded reissue 후 1회 retry를 검토할 수 있다.
 - mutation 요청은 idempotency key, order status reconciliation, Risk Engine approval 재확인 없이 retry하지 않는다.
-- `429`는 endpoint group budget을 기준으로 backoff하고 busy loop를 만들지 않는다.
+- `429`는 endpoint group budget failure로 분류하고 첫 network transport에서 자동 retry하지 않는다. 후속 orchestrator retry를 도입하려면 bounded backoff와 `Retry-After` 우선순위를 별도 계약으로 검토한다.
 
 ## 계층 책임
 
@@ -202,6 +235,9 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 - `expires_in` 기준 expiry와 safety margin이 적용된다.
 - concurrent token request가 single-flight로 합쳐진다.
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
+- 403 `access_denied`를 credential retry가 아닌 허용 IP/readiness failure로 구분한다.
+- production token transport가 exact HTTPS origin/path만 허용하고 redirect, timeout, oversized/non-JSON response를 fail-closed 처리한다.
+- local mock server test가 request body나 response token을 snapshot/log에 남기지 않는다.
 - log/audit payload에서 `client_id`, `client_secret`, `access_token`이 masking된다.
 - MCP enabled tool과 Local Operations API route에 token value 반환 surface가 추가되지 않는다.
 - `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본값이 유지된다.
@@ -216,6 +252,10 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 4 | Authenticated read-only HTTP client | Bearer injection, read-only method guard, error/rate mapping tests | actual network transport, mutation retry |
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
+| 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
+| 8 | Token issuer network transport | exact `/oauth2/token` POST, finite limits, local mock server와 fail-closed tests | account/order/general API request, external credential call |
+| 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist | account header, broker mutation |
+| 10 | Calendar acquisition coordinator | token과 calendar response를 paper-only evidence boundary에 조립 | persistent token/raw bytes, replay 실행 |
 
 order gateway 구현은 live Risk Engine, threat model, dry-run OrderRouter가 merge된 뒤에만 검토한다.
 
