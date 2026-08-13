@@ -4,6 +4,12 @@ This project is a personal trading backend with a Codex-attached MCP operations 
 
 If `.cursor/rules` exists, read the relevant rules before making changes. If it does not exist, follow this `AGENTS.md` and the documents under `docs/`.
 
+For autonomous repository maintenance, including Codex Cloud small-PR loops,
+also read `docs/codex-maintenance-delegation-policy.md`. That document defines
+the owner's standing delegation, the discovery loop, and the only conditions
+that may stop for owner action. It does not relax any hard safety rule in this
+file.
+
 ## Core Boundary
 
 Codex is not the trading engine.
