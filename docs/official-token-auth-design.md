@@ -322,12 +322,15 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request와 raw `Date`/`Age` cache-adjusted freshness | account header, broker mutation |
 | 9a | Version-aware calendar evidence consumers | replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
-| 10 | Calendar acquisition coordinator | token과 calendar response를 paper-only evidence boundary에 조립 | persistent token/raw bytes, replay 실행 |
+| 9b | Ephemeral calendar acquisition lifecycle | v2 evidence/raw-byte process-local envelope와 detached output persistence 거부 | durable raw-byte store, workflow artifact persistence |
+| 10 | Calendar acquisition coordinator | token과 calendar response를 ephemeral paper-only observation boundary에 조립 | persistent token/raw bytes, stored report, replay 실행 |
 
 Calendar acquisition coordinator는 adapter design의 OpenAPI compatibility, version-aware
-evidence transition과 version-aware replay consumer migration이 모두 merge된 뒤에만
-구현한다. V2 evidence를 v1-only replay adapter 또는 coverage probe에 전달하지 않으며,
-response cache provenance가 없는 v1 builder에 actual network response를 전달하지 않는다.
+evidence transition, version-aware replay consumer migration과 ephemeral lifecycle boundary가
+모두 merge된 뒤에만 구현한다. V2 evidence를 v1-only replay adapter 또는 coverage probe에
+전달하지 않으며, response cache provenance가 없는 v1 builder에 actual network response를
+전달하지 않는다. Durable raw-byte 저장 계약 전에는 network-derived v2 evidence, replay input과
+coverage report를 process 밖에 저장하거나 export하지 않는다.
 
 order gateway 구현은 live Risk Engine, threat model, dry-run OrderRouter가 merge된 뒤에만 검토한다.
 

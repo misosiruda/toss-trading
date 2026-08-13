@@ -112,6 +112,9 @@ HTTP/OAuth를 호출하지 않고 raw response bytes나 credential을 report에 
 Stored report를 다시 읽을 때는 별도로 보관된 evidence와 exact raw bytes observation을
 요구하고 report를 완전히 재생성해 비교한다. Report의 public hash만 다시 계산해서
 conflict나 reject 결과를 지우는 변경은 검증을 통과할 수 없다.
+이 stored-report 경로는 synthetic v1 또는 별도 저장 계약으로 exact bytes를 제공할 수 있는
+observation에만 적용한다. Actual network-derived v2 observation과 그 coverage report는 아래
+ephemeral lifecycle 경계 때문에 process 재시작 뒤 stored-report 입력으로 사용할 수 없다.
 
 ### Calendar 전용 network acquisition 허용 경계
 
@@ -182,6 +185,15 @@ surface 승인이 아니다.
   bytes는 evidence hash와 parser 입력을 위해 acquisition result의 memory에만 보존하며
   log, PR body 또는 public artifact에 기록하지 않는다. Durable raw-byte 저장은 별도
   threat model과 저장 계약 전에는 도입하지 않는다.
+- Actual network acquisition result는 v2 evidence, exact response bytes와 검증된 cache
+  metadata를 함께 가진 process-local ephemeral observation envelope로만 표현한다. Coordinator는
+  이 envelope를 같은 process의 replay adapter 또는 coverage probe에 직접 전달할 수 있지만
+  evidence나 derived replay input/coverage report를 envelope에서 분리해 JSON, file, DB, object
+  store, audit, CLI, MCP 또는 API output으로 직렬화하거나 저장할 수 없다. Consumer는 같은 exact
+  bytes로 version별 verifier를 통과한 뒤에만 결과를 사용하고, 성공/실패와 관계없이 consumer
+  chain 종료 시 bytes reference를 폐기한다. Process 종료 또는 bytes 누락 뒤 남은 v2 evidence,
+  replay input과 report는 unverifiable로 취급해 fail-closed로 거부하며 재사용하려면 acquisition을
+  다시 수행한다.
 - Calendar final response의 raw `Date`는 exactly one canonical IMF-fixdate여야 하고 raw
   `Age`는 없거나 single non-negative decimal integer여야 한다. Duplicate/missing/invalid
   `Date`, duplicate/invalid `Age`와 invalid `Cache-Control` directive syntax는 body가 valid
@@ -260,6 +272,12 @@ response를 evidence builder에 전달하지 않는다. Schema compatibility만�
   거부한다. Existing v1 replay input과 coverage report 검증은 그대로 통과해야 하며, 이
   migration이 merge되기 전에는 coordinator가 v2 evidence를 replay adapter 또는 coverage
   probe에 전달하지 않는다.
+- Consumer migration 뒤 별도 ephemeral lifecycle boundary가 network-derived v2 evidence와
+  exact bytes를 하나의 process-local envelope로 결합하고 detached evidence, replay input,
+  coverage report의 persistence/export를 거부해야 한다. Durable content-addressed raw-byte store를
+  도입하려면 response bytes의 confidentiality classification, hash-to-evidence atomic binding,
+  file permission, retention/deletion, tamper detection과 restart readback을 정의한 별도 threat
+  model과 저장 계약이 먼저 merge돼야 한다. 이 prerequisite 전에는 coordinator를 구현하지 않는다.
 
 Calendar URL과 official OpenAPI `latest` document는 versioned immutable identifier가 아니므로
 registry 선택만으로 response가 `1.2.14` deployment에서 제공됐다고 주장할 수 없다. Provider가
@@ -596,6 +614,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   구분하고 각 observation의 exact raw bytes와 `asOf`를 version별 verifier에 다시 전달한다.
   V1 regression은 유지하고 v2 success, unknown schema, raw-byte 누락/불일치와 registry
   mismatch를 fail-closed로 검증한다.
+- network-derived v2 observation envelope가 exact bytes와 evidence를 같은 process에서만
+  consumer에 전달하고, detached evidence/replay input/coverage report의 serialization,
+  artifact writer 전달과 process-restart readback을 fail-closed로 거부하며 completion/error 뒤
+  bytes reference를 폐기한다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
@@ -624,7 +646,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 10 | Token issuer network transport | exact token POST, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, cache-adjusted freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
-| 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
+| 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |
+| 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
 | 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |

@@ -150,6 +150,9 @@ completion, raw header에서 parse한 canonical `responseDate`와 nullable
 provider deployment version 관측 증거가 아니다. Coordinator는 임의의 caller-provided
 version/cache metadata/timestamp를 받지 않고 검증된 registry entry와 network observation만
 builder에 전달한다.
+V2 artifact만으로는 response hash와 normalized response를 재검증할 수 없다. Actual network
+observation은 v2 evidence, exact response bytes와 검증된 cache metadata를 함께 가진
+process-local ephemeral envelope 안에서만 verified 상태를 유지한다.
 
 Calendar endpoint와 official OpenAPI `latest` document는 immutable versioned resource가
 아니므로 v2 strict schema는 `source.apiVersion` 또는 `source.providerApiVersion` claim을
@@ -242,6 +245,15 @@ retrieval/evaluation/cache timestamp를 받지 않으며 caller, provider body, 
 factory에만 주입한다. 같은 cached representation의 재조회는 completion 시각만으로 freshness를
 연장할 수 없다.
 
+Durable raw-byte threat model과 저장 계약이 merge되기 전에는 actual network-derived v2
+observation과 그 replay input/coverage report를 process 밖으로 persist/export하지 않는다.
+Coordinator는 ephemeral envelope를 같은 process의 version-aware consumer에 직접 넘기고,
+consumer는 exact bytes로 evidence를 다시 검증한 뒤 성공/실패와 관계없이 chain 종료 시 bytes
+reference를 폐기한다. Detached v2 evidence, replay input 또는 report, process 재시작 뒤 남은
+artifact와 raw-byte 누락 입력은 unverifiable로 fail-closed 처리한다. JSON/file/DB/object store,
+workflow artifact writer, audit, CLI, MCP와 API response는 이 envelope 또는 derived output의
+durable sink가 될 수 없다. 재사용하려면 acquisition을 다시 수행한다.
+
 현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1 검증된 evidence와 exact
 raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
 `calendarValidation` 입력으로 변환한다. Market별 rule은 KR/`KRX`/`Asia/Seoul` 또는
@@ -272,7 +284,9 @@ evidence와 exact raw bytes observation을 다시 받아 같은 plan/evaluatedAt
 전체를 재생성한 뒤 exact match를 요구한다. 따라서 conflict, summary, issue와 status를
 함께 바꾸고 public hash를 다시 계산해도 원본 observation과 다르면 거부한다. 또한
 non-null evidence artifact hash 고유성을 요구해 하나의 evidence가 복수 날짜 coverage로
-재사용되지 않게 한다.
+재사용되지 않게 한다. 이 stored-report 검증은 synthetic v1 또는 승인된 별도 저장 계약으로
+exact bytes를 공급할 수 있는 observation에만 적용한다. Actual network-derived v2 report는
+ephemeral envelope의 lifetime을 벗어나 저장하거나 다시 읽을 수 없다.
 각 timestamp는 KR session의
 same-day KST date, US `regularMarket`/`afterMarket`의 next-day KST overnight boundary를
 포함해 returned market date와 결합한다. Missing/unknown field,
@@ -291,8 +305,8 @@ session 목록으로만 보존한다. Output source class는 `official_broker_ob
 직접 검증하지 않는다. 해당 책임은 별도 evidence, replay adapter와 coverage probe
 contract가 담당한다. Calendar 전용 acquisition coordinator의 구현 계약은 승인됐지만
 OpenAPI compatibility gate, version-aware evidence transition, replay adapter/coverage probe
-consumer migration, token issuer transport와 calendar GET transport 뒤의 별도 Small PR로
-남아 있다.
+consumer migration, ephemeral acquisition lifecycle boundary, token issuer transport와 calendar
+GET transport 뒤의 별도 Small PR로 남아 있다.
 
 ## Contract 목표
 
