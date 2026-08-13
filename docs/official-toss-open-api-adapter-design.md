@@ -218,6 +218,15 @@ response를 evidence builder에 전달하지 않는다. Schema compatibility만�
   registry에 없는 API contract version, document hash/operation/parser mismatch와 contract
   version 누락은 artifact 생성 또는 검증 전에 fail-closed로 거부한다. V2에 actual provider
   version을 주장하는 unknown field를 추가하는 것도 strict schema에서 거부한다.
+- Evidence transition은 schema/builder/verifier 추가만으로 완료되지 않는다. 현재 v1 schema와
+  verifier에 고정된 `officialBrokerObservedCalendarReplayAdapter.ts`와
+  `officialBrokerObservedCalendarCoverageProbe.ts`도 별도 consumer-migration PR에서 v1/v2
+  schema-version dispatch를 사용해야 한다. 두 consumer는 version별 verifier에 같은 exact raw
+  response bytes와 `asOf`를 전달해 response hash, byte length, normalized response와 freshness를
+  다시 검증하고 unknown schema, raw-byte 누락/불일치와 registry mismatch를 fail-closed로
+  거부한다. Existing v1 replay input과 coverage report 검증은 그대로 통과해야 하며, 이
+  migration이 merge되기 전에는 coordinator가 v2 evidence를 replay adapter 또는 coverage
+  probe에 전달하지 않는다.
 
 Calendar URL과 official OpenAPI `latest` document는 versioned immutable identifier가 아니므로
 registry 선택만으로 response가 `1.2.14` deployment에서 제공됐다고 주장할 수 없다. Provider가
@@ -319,7 +328,8 @@ flowchart TD
     V --> EV["Version-aware calendar evidence transition"]
     EV --> NT["Safe-disabled token issuer transport"]
     NT --> CT["Calendar-only GET transport"]
-    CT --> CC["Paper-only acquisition coordinator"]
+    CT --> EC["Version-aware replay consumer migration"]
+    EC --> CC["Paper-only acquisition coordinator"]
     CC --> R["Live RiskEngine implementation with mock broker"]
     R --> TM["Live trading threat model"]
     TM --> O["OrderRouter with dry-run broker gateway"]
@@ -327,7 +337,12 @@ flowchart TD
     P --> Q["Deployment gate"]
 ```
 
-후속 PR은 이 순서를 건너뛰면 안 된다. Calendar transport는 current OpenAPI compatibility gate와 backward-compatible version-aware evidence transition을 먼저 통과해야 하고, token issuer와 calendar GET 책임을 서로 다른 PR로 유지한다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
+후속 PR은 이 순서를 건너뛰면 안 된다. Calendar transport는 current OpenAPI compatibility
+gate와 backward-compatible version-aware evidence transition을 먼저 통과해야 하고, token
+issuer와 calendar GET 책임을 서로 다른 PR로 유지한다. Acquisition coordinator는 추가로
+replay adapter/coverage probe consumer migration이 merge된 뒤에만 구현한다. 특히
+`POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock
+OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
 
 ## 제안 계층
 
@@ -536,6 +551,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   `staleAfter`가 이 시각에서 계산되는지 검증한다. Caller/provider/env가 arbitrary 또는
   future timestamp를 주입하는 surface가 없어야 한다.
 - evidence verifier가 기존 v1/`1.2.13` artifact를 그대로 검증하고, v2가 registry의 exact API contract version/OpenAPI document hash/operation/parser contract를 기록하며 unknown 또는 mismatched contract identity와 provider deployment version claim을 거부한다.
+- replay adapter와 coverage probe가 shared schema-version dispatch로 v1/v2 evidence를
+  구분하고 각 observation의 exact raw bytes와 `asOf`를 version별 verifier에 다시 전달한다.
+  V1 regression은 유지하고 v2 success, unknown schema, raw-byte 누락/불일치와 registry
+  mismatch를 fail-closed로 검증한다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
@@ -563,6 +582,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
+| 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |

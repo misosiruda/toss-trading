@@ -321,7 +321,12 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 7a | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist | account header, broker mutation |
+| 9a | Version-aware calendar evidence consumers | replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
 | 10 | Calendar acquisition coordinator | token과 calendar response를 paper-only evidence boundary에 조립 | persistent token/raw bytes, replay 실행 |
+
+Calendar acquisition coordinator는 adapter design의 OpenAPI compatibility, version-aware
+evidence transition과 version-aware replay consumer migration이 모두 merge된 뒤에만
+구현한다. V2 evidence를 v1-only replay adapter 또는 coverage probe에 전달하지 않는다.
 
 order gateway 구현은 live Risk Engine, threat model, dry-run OrderRouter가 merge된 뒤에만 검토한다.
 

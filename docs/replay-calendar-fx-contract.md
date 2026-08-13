@@ -150,6 +150,17 @@ document hash/operation/parser mismatch와 provider deployment version claim을 
 거부한다. 기존 v1 artifact를 rewrite하거나 metadata 상수만 `1.2.14`로 바꾸고 historical
 completeness를 추정해 version drift를 우회할 수 없다.
 
+V2 evidence transition은 replay consumer migration을 포함한 선행 chain으로 취급한다.
+현재 `officialBrokerObservedCalendarReplayAdapter.ts`의 embedded evidence schema와 verifier,
+`officialBrokerObservedCalendarCoverageProbe.ts`의 verified evidence collection은 v1 contract에
+고정돼 있다. 별도 Small PR에서 두 consumer가 shared schema-version dispatcher를 사용하고
+v1/v2 각각의 exact raw response bytes와 `asOf`를 version별 verifier에 다시 전달해야 한다.
+Replay input과 coverage report를 다시 읽을 때도 같은 dispatch와 raw-byte 검증을 반복하며,
+unknown schema, raw-byte 누락/불일치, registry mismatch 또는 version별 normalized response
+mismatch는 `observed_session_only` input과 coverage result를 만들기 전에 거부한다. Existing
+v1 artifact/replay input/coverage report regression을 보존하고 이 migration이 merge되기
+전에는 coordinator가 v2 evidence를 consumer에 전달하지 않는다.
+
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,
 parser/API contract snapshot identity, stale policy와 requested/returned coverage 결과를 secret-free
@@ -210,7 +221,7 @@ completion에서 시작되게 한다. Production clock override는 금지하고 
 test-only factory에만 주입한다. Synthetic fixture용 builder가 timestamp를 직접 받는 현재
 interface는 network acquisition caller contract로 재사용하지 않는다.
 
-`src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 검증된 evidence와 exact
+현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1 검증된 evidence와 exact
 raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
 `calendarValidation` 입력으로 변환한다. Market별 rule은 KR/`KRX`/`Asia/Seoul` 또는
 US/`NYSE`/`America/New_York` 하나이고 fixture는 response가 반환한 세 date에만
@@ -258,8 +269,9 @@ session 목록으로만 보존한다. Output source class는 `official_broker_ob
 이 parser 자체는 actual network transport를 호출하거나 provenance/hash/coverage를
 직접 검증하지 않는다. 해당 책임은 별도 evidence, replay adapter와 coverage probe
 contract가 담당한다. Calendar 전용 acquisition coordinator의 구현 계약은 승인됐지만
-OpenAPI compatibility gate, version-aware evidence transition, token issuer transport와
-calendar GET transport 뒤의 별도 Small PR로 남아 있다.
+OpenAPI compatibility gate, version-aware evidence transition, replay adapter/coverage probe
+consumer migration, token issuer transport와 calendar GET transport 뒤의 별도 Small PR로
+남아 있다.
 
 ## Contract 목표
 
