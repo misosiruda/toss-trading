@@ -70,10 +70,12 @@ official holiday archive completeness 또는 `official_exchange` readiness를
 class는 `observed_session_only`를 유지한다.
 
 Future evidence contract는 request path/query, requested date, market, retrieval
-timestamp, exact response hash와 byte length, source/API version, stale policy와
-requested/returned coverage 결과를 기록해야 한다. Unsupported date, partial
-response, schema mismatch, provenance 누락, stale source와 coverage 불명확성은
-fail-closed로 거부한다. Access token과 client credential은 기록하지 않는다.
+timestamp, exact response hash와 byte length, parser/API contract snapshot identity,
+stale policy와 requested/returned coverage 결과를 기록해야 한다. Unversioned provider
+response가 실제 배포 version을 노출하지 않으면 이를 추정하거나 contract snapshot version을
+provider-served version으로 표시하지 않는다. Unsupported date, partial response, schema
+mismatch, provenance 누락, stale source와 coverage 불명확성은 fail-closed로 거부한다.
+Access token과 client credential은 기록하지 않는다.
 이 source hierarchy 결정만으로 network transport, OAuth credential, response bytes
 취득, response schema/parser 또는 replay 연결을 승인하지 않는다. 각 책임은 별도
 Small PR에서 strict contract와 fail-closed test를 함께 검토한다.
@@ -81,7 +83,9 @@ Small PR에서 strict contract와 fail-closed test를 함께 검토한다.
 `official_broker_observed_calendar_evidence.v1`은 이 metadata 경계를 구현한다.
 OpenAPI `1.2.13`의 market별 exact GET path, operation id와 `date` query를 요청
 market/date에 결합하고, exact UTF-8 JSON response bytes의 SHA-256과 byte length를
-보존한다. Raw bytes 자체와 credential은 artifact에 넣지 않는다. 정규화 response,
+보존한다. Legacy `source.apiVersion="1.2.13"`은 이 synthetic-only v1 parser가 검증된
+OpenAPI contract snapshot identity이며 실제 network response를 제공한 deployment version
+관측값이 아니다. Raw bytes 자체와 credential은 artifact에 넣지 않는다. 정규화 response,
 request identity, response identity, requested/returned date와 session range,
 24시간 retrieval-age freshness policy를 하나의 canonical artifact hash로 묶는다.
 Freshness는 retrieval 시각 이상이고 `staleAfter` 미만인 `asOf`에서만 통과한다.
@@ -142,6 +146,10 @@ surface 승인이 아니다.
   않는다.
 - 첫 구현은 기존 read-only client의 invalid/expired token 대상 guarded reissue 1회
   외에 network, `429` 또는 `5xx` 자동 retry를 추가하지 않는다.
+- Guarded reissue 전에 HTTP request가 사용한 token generation을 보존하고 AuthClient가
+  failed generation과 current cached generation을 compare-and-clear하도록 client contract를
+  강화한다. Token A의 늦은 `401`이 이미 발급된 token B를 지우거나 token C를 발급하는
+  unconditional invalidation 경로가 남아 있으면 production transport를 연결하지 않는다.
 - Token과 credential은 process memory 밖에 저장하지 않는다. Calendar exact response
   bytes는 evidence hash와 parser 입력을 위해 acquisition result의 memory에만 보존하며
   log, PR body 또는 public artifact에 기록하지 않는다. Durable raw-byte 저장은 별도
@@ -162,19 +170,30 @@ response를 evidence builder에 전달하지 않는다. Schema compatibility만�
 
 - `official_broker_observed_calendar_evidence.v1` schema, builder와 verifier는
   OpenAPI `1.2.13`에 계속 고정한다. 기존 v1 artifact를 rewrite하거나 v1의
-  `source.apiVersion` 상수만 `1.2.14`로 바꾸지 않는다.
+  legacy `source.apiVersion` 상수만 `1.2.14`로 바꾸지 않는다. 이 field는 v1 parser contract
+  snapshot identity이며 acquired provider deployment version이 아니다.
 - `1.2.14` response는 별도 `official_broker_observed_calendar_evidence.v2`
-  schema/builder/verifier가 exact
-  `source.apiVersion="1.2.14"`와 검증에 사용한 official OpenAPI document의 SHA-256을
-  provenance에 기록할 때만 받을 수 있다. 이 hash는 response hash와 다른 contract
-  snapshot identity다.
-- Immutable trusted version registry는 API version, OpenAPI document hash, calendar
-  operation id/path와 response parser contract version을 하나의 entry로 결합한다.
+  schema/builder/verifier가 `source.apiContractVersion="1.2.14"`와 검증에 사용한 official
+  OpenAPI document의 SHA-256을 provenance에 기록할 때만 받을 수 있다. V2는
+  `source.apiVersion` 또는 `source.providerApiVersion`을 허용하지 않는다. 이 hash와
+  contract version은 response parser의 interpretation context이며 response hash나 실제
+  provider deployment version의 관측 증거가 아니다.
+- Immutable trusted parser contract registry는 API contract version, OpenAPI document hash,
+  calendar operation id/path와 response parser contract version을 하나의 entry로 결합한다.
   Coordinator와 builder는 caller-provided version string을 신뢰하지 않고 검증된 registry
-  entry를 전달받아 exact provenance를 구성한다.
+  entry를 전달받아 exact parser provenance를 구성한다.
 - Verifier는 artifact schema version으로 v1과 v2 검증 경로를 결정한다. Unknown schema,
-  registry에 없는 API version, document hash/operation/parser mismatch와 API version 누락은
-  artifact 생성 또는 검증 전에 fail-closed로 거부한다.
+  registry에 없는 API contract version, document hash/operation/parser mismatch와 contract
+  version 누락은 artifact 생성 또는 검증 전에 fail-closed로 거부한다. V2에 actual provider
+  version을 주장하는 unknown field를 추가하는 것도 strict schema에서 거부한다.
+
+Calendar URL과 official OpenAPI `latest` document는 versioned immutable identifier가 아니므로
+registry 선택만으로 response가 `1.2.14` deployment에서 제공됐다고 주장할 수 없다. Provider가
+공식적으로 정의한 authenticated response header/body field, versioned endpoint 또는 signed
+manifest 같은 contemporaneous binding을 확인하기 전에는 provider-served API version은
+`unknown/not_claimed` 의미로만 취급하고 artifact field로 기록하지 않는다. 향후 binding을
+추가하려면 해당 값의 official semantics, request-response 결합과 위변조 방지 test를 별도
+contract PR에서 먼저 고정한다.
 
 따라서 version drift를 무시하거나 metadata만 `1.2.14`로 바꿔 기존 artifact를 재해석하는
 동작은 금지한다. Compatibility test와 version-aware evidence transition 중 하나라도
@@ -464,8 +483,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
 - test-only loopback HTTPS connector에서 canonical production URL, destination authority, hostname-only HTTP Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
-- coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
-- evidence verifier가 기존 v1/`1.2.13` artifact를 그대로 검증하고, v2가 registry의 exact API version/OpenAPI document hash/operation/parser contract를 기록하며 unknown 또는 mismatched version identity를 거부한다.
+- read-only client의 staggered `401` test에서 token A의 늦은 실패가 current token B를
+  invalidation하거나 token C를 발급하지 않고, 동일 generation reissue가 single-flight로
+  합쳐지며 각 request가 최대 1회만 retry되는지 검증한다.
+- coordinator가 disabled/invalid config, OpenAPI contract mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
+- evidence verifier가 기존 v1/`1.2.13` artifact를 그대로 검증하고, v2가 registry의 exact API contract version/OpenAPI document hash/operation/parser contract를 기록하며 unknown 또는 mismatched contract identity와 provider deployment version claim을 거부한다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
@@ -489,7 +511,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
-| 9a | Version-aware calendar evidence transition | v1/`1.2.13` 보존, v2 registry-bound API/document/parser provenance와 verifier dispatch test | v1 rewrite, caller-provided version trust, network |
+| 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser provenance와 verifier dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
+| 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, finite limits, masked error와 test-only loopback HTTPS connector test | market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |

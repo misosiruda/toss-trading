@@ -106,26 +106,37 @@ request provenance를 만들 수 없으므로 evidence artifact를 생성하지 
 contract는 검증된 `1.2.13` snapshot에 고정돼 있다. `1.2.14` calendar response의
 byte-level compatibility만으로 actual response handoff를 승인하지 않는다. 기존
 `official_broker_observed_calendar_evidence.v1` schema/builder/verifier와
-`source.apiVersion`은 `1.2.13` 의미를 그대로 보존한다.
+legacy `source.apiVersion`은 `1.2.13` parser contract snapshot 의미를 그대로 보존한다.
+이 field는 synthetic-only v1 parser가 검증된 OpenAPI contract identity이며 actual network
+response를 제공한 provider deployment version 관측값이 아니다.
 
 `1.2.14` bytes를 evidence builder에 전달하기 전에는 backward-compatible
 `official_broker_observed_calendar_evidence.v2` schema/builder/verifier가 별도 PR에서
-merge돼야 한다. V2 provenance는 immutable trusted version registry가 결합한 exact API
-version, official OpenAPI document SHA-256, calendar operation id/path와 response parser
-contract version을 기록한다. Coordinator는 임의의 caller-provided version string을 받지
-않고 검증된 registry entry만 builder에 전달한다.
-Verifier는 artifact schema version으로 v1/v2를 분기하며 unknown schema/API version,
-registry 누락과 document hash/operation/parser mismatch를 fail-closed로 거부한다. 기존 v1
-artifact를 rewrite하거나 metadata 상수만 `1.2.14`로 바꾸고 historical completeness를
-추정해 version drift를 우회할 수 없다.
+merge돼야 한다. V2 provenance는 immutable trusted parser contract registry가 결합한 exact
+`source.apiContractVersion="1.2.14"`, official OpenAPI document SHA-256, calendar operation
+id/path와 response parser contract version을 기록한다. OpenAPI document identity는 bytes를
+해석한 contract snapshot이지 provider deployment version 관측 증거가 아니다. Coordinator는
+임의의 caller-provided version string을 받지 않고 검증된 registry entry만 builder에
+전달한다.
+
+Calendar endpoint와 official OpenAPI `latest` document는 immutable versioned resource가
+아니므로 v2 strict schema는 `source.apiVersion` 또는 `source.providerApiVersion` claim을
+허용하지 않는다. Provider가 공식적으로 정의한 authenticated response metadata, versioned
+endpoint 또는 signed manifest로 contemporaneous binding을 제공하기 전에는 actual served
+version은 `unknown/not_claimed`이며 artifact에 쓰지 않는다. Verifier는 artifact schema
+version으로 v1/v2를 분기하고 unknown schema/API contract version, registry 누락,
+document hash/operation/parser mismatch와 provider deployment version claim을 fail-closed로
+거부한다. 기존 v1 artifact를 rewrite하거나 metadata 상수만 `1.2.14`로 바꾸고 historical
+completeness를 추정해 version drift를 우회할 수 없다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
-date, market, retrieval timestamp, exact response hash와 byte length, source/API
-version, stale policy와 requested/returned coverage 결과를 secret-free provenance로
-기록해야 한다. Unsupported date, partial response, schema mismatch, provenance 누락,
-stale source 또는 coverage 불명확성은 observed input 후보를 만들지 않고
-fail-closed로 처리한다. Access token과 client credential은 artifact, log, docs,
-test fixture 또는 PR body에 기록하지 않는다.
+date, market, retrieval timestamp, exact response hash와 byte length, parser/API contract
+snapshot identity, stale policy와 requested/returned coverage 결과를 secret-free
+provenance로 기록해야 한다. Actual provider deployment version은 authoritative
+request-response binding이 확인될 때만 별도 contract로 추가한다. Unsupported date, partial
+response, schema mismatch, provenance 누락, stale source 또는 coverage 불명확성은 observed
+input 후보를 만들지 않고 fail-closed로 처리한다. Access token과 client credential은
+artifact, log, docs, test fixture 또는 PR body에 기록하지 않는다.
 
 현재 `official_market_calendar_evidence.v1`의 `purpose`와 `evidenceClass`는 각각
 `official_exchange_calendar_evidence`, `official_exchange`로 고정돼 있다.
@@ -156,6 +167,8 @@ non-overlap을 검증한다.
 `official_broker_observed_calendar_evidence.v1` provenance artifact로 결합한다.
 Market별 OpenAPI `1.2.13` GET path/operation id와 exact `date` query, retrieval
 timestamp, raw response SHA-256/byte length, parser contract version을 기록한다.
+Legacy `source.apiVersion`은 이 parser contract snapshot을 식별하며 provider가 실제 제공한
+API version을 관측했다는 뜻이 아니다.
 Raw bytes를 다시 제공해야 response hash와 normalized response가 함께 검증되며,
 request/response/coverage/freshness metadata와 canonical artifact hash 중 하나라도
 달라지면 거부한다. Freshness policy는 retrieval부터 86,400초이며 `asOf`가 retrieval

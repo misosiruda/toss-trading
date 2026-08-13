@@ -115,6 +115,10 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환한다.
 - `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache, single-flight를 검증한다.
 - `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping, 401 token failure 1회 guarded reissue를 검증한다.
+- 현재 `TossOpenApiReadOnlyHttpClient`는 실패 요청이 사용한 token identity를 전달하지 않고
+  `TossOpenApiAuthClient.clearToken()`이 current cache를 무조건 지운다. 따라서 token A를
+  사용한 늦은 `401`이 이미 발급된 token B를 지울 수 있으므로 generation-aware invalidation
+  hardening 전에는 production network transport가 이 reissue 경로에 의존할 수 없다.
 - 실제 network transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
 
 ## Calendar 전용 Token Issuer Transport 계약
@@ -139,8 +143,13 @@ Operations API에 노출하지 않는다.
   credential-bearing header는 log, audit, error, metric 또는 test snapshot에 기록하지
   않는다. 진단에는 masked error code, status, byte length와 timing만 사용할 수 있다.
 - 첫 구현은 automatic network retry를 하지 않는다. Concurrent caller는 기존
-  `TossOpenApiAuthClient` single-flight를 사용하고, retry/backoff 정책은 별도 계약 없이는
-  transport에 추가하지 않는다.
+  `TossOpenApiAuthClient` single-flight와 아래 generation-aware invalidation을 함께 사용한다.
+  Retry/backoff 정책은 별도 계약 없이는 transport에 추가하지 않는다.
+- `401 invalid-token` 또는 expired-token reissue는 request에 사용한 in-memory token
+  generation을 AuthClient에 전달해 compare-and-clear한다. 실패 generation이 current cached
+  generation과 같을 때만 cache를 비우며, 이미 더 새로운 generation이 있으면 no-op으로
+  처리하고 그 token을 1회 retry에 재사용한다. Token value 비교나 unconditional
+  `clearToken()`은 허용하지 않는다.
 - Token은 기존 정책대로 process memory에만 보관한다. Persistent cache, token 반환 API,
   account/order adapter와 broker mutation은 이 계약 범위가 아니다.
 
@@ -170,14 +179,22 @@ dial target, custom CA 또는 test connector를 받지 않고 runtime env/API에
 2. process memory token cache에 유효 token이 있으면 재사용한다.
 3. token이 없거나 safety margin 안으로 만료가 가까워지면 `POST /oauth2/token`을 호출한다.
 4. 동시에 여러 요청이 token을 요구하면 single-flight로 token 발급 요청을 1개만 수행한다.
-5. 새 token이 발급되면 `expires_in` 기준 만료 시각과 함께 memory cache를 갱신한다.
-6. API 요청이 `401 invalid-token` 또는 expired-token 계열로 실패하면 guarded reissue를 1회만 시도한다.
+5. 새 token이 발급되면 `expires_in` 기준 만료 시각과 monotonic in-memory generation을
+   함께 cache하고 HTTP client에는 token lease를 전달한다.
+6. API 요청이 `401 invalid-token` 또는 expired-token 계열로 실패하면 그 요청이 사용한
+   generation만 compare-and-clear한다.
+7. Invalidation이 current generation에 적용됐으면 single-flight로 새 token을 발급하고,
+   이미 newer generation이 있으면 추가 발급 없이 current token을 사용해 정확히 1회만
+   retry한다.
 
 주의:
 
 - 공식 문서는 refresh token을 제공하지 않으므로 refresh flow를 만들지 않는다.
 - client당 유효 access token은 1개이며 재발급 시 이전 token이 즉시 무효화된다.
 - 구현은 token 재발급이 기존 in-flight 요청을 깨뜨릴 수 있음을 audit/debug metadata에 남겨야 한다.
+- Generation은 process-local non-secret counter이며 token value, hash 또는 prefix를 identity로
+  사용하지 않는다. Log/audit에는 raw generation을 요청 상관관계 식별자로 노출하지 않고
+  stale invalidation 발생 여부 같은 bounded 상태만 기록한다.
 - order mutation 요청은 auth failure 후 blind retry하지 않는다. retry 가능성은 OrderRouter idempotency 정책이 있는 PR에서 별도 판단한다.
 
 ## 동시성 및 운영 제약
@@ -187,6 +204,10 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 ### In-process
 
 - token 발급은 single-flight promise 또는 lock으로 묶는다.
+- AuthClient는 `invalidateToken(failedGeneration)` 같은 compare-and-clear contract를 제공하고,
+  read-only client는 실제 request에 사용한 lease generation만 전달한다.
+- Token A 요청 두 개 중 첫 `401`이 B를 발급한 뒤 늦게 도착한 두 번째 A `401`은 B를
+  지우지 않는다. 두 요청의 retry는 B를 사용하고 token C를 발급하지 않아야 한다.
 - near-expiry reissue 중에는 기존 token을 사용하는 read-only 요청과 새 token 발급 요청의 경계를 명시한다.
 - token 발급 실패 시 기존 token이 아직 유효하면 read-only 요청 재사용 가능 여부를 보수적으로 판단한다.
 
@@ -207,7 +228,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 계층 | 책임 | 금지 |
 | --- | --- | --- |
 | `TossOpenApiAuthConfig` | env parsing, required secret validation, safe default | secret logging, live trading enable |
-| `TossOpenApiAuthClient` | token request, memory cache, expiry, single-flight | token persistent store, business decision |
+| `TossOpenApiAuthClient` | token request, memory cache, expiry, single-flight, generation compare-and-clear | token persistent store, business decision |
 | `TossOpenApiHttpClient` | Bearer header injection, timeout, rate limit/error mapping | Risk Engine 우회, order retry 판단 |
 | `TossOpenApiMarketDataAdapter` | read-only market endpoint 호출 | token 직접 발급, order mutation |
 | `TossOpenApiOrderGateway` | future gated mutation call | auth failure blind retry, Codex direct call |
@@ -247,6 +268,12 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 - `token_type`이 `Bearer`가 아니면 token을 cache하지 않는다.
 - `expires_in` 기준 expiry와 safety margin이 적용된다.
 - concurrent token request가 single-flight로 합쳐진다.
+- 동일 generation의 concurrent `401`은 compare-and-clear와 single-flight로 새 token 발급
+  하나에 합쳐지고 각 request는 최대 1회만 retry한다.
+- Token A를 사용한 staggered `401`에서 먼저 도착한 응답이 B를 발급한 뒤 늦은 A 응답이
+  B를 지우거나 token C를 발급하지 않는다.
+- Unknown 또는 stale generation invalidation은 current cache를 변경하지 않고, generation
+  identity가 token value/hash/log에 노출되지 않는다.
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
 - 403 `access_denied`를 credential retry가 아닌 허용 IP/readiness failure로 구분한다.
 - production token transport가 exact HTTPS origin/path만 허용하고 redirect, timeout, oversized/non-JSON response를 fail-closed 처리한다.
@@ -266,6 +293,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
+| 7a | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, finite limits, test-only loopback HTTPS connector와 fail-closed tests | account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist | account header, broker mutation |
 | 10 | Calendar acquisition coordinator | token과 calendar response를 paper-only evidence boundary에 조립 | persistent token/raw bytes, replay 실행 |
