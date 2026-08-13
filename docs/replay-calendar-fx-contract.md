@@ -103,6 +103,14 @@ request 시작부터 DNS/TCP/TLS, response header와 complete body 수신까지�
 stream을 abort하고 partial bytes를 폐기한다. Token response도 calendar와 같이 exact status
 `200`만 parser/cache로 전달하며, valid JSON을 가진 다른 `2xx`를 허용하지 않는다.
 
+Initial calendar GET과 guarded `401` 뒤 retry는 exact
+`Cache-Control: no-cache, no-store, max-age=0`과 `Pragma: no-cache`를 보내고
+`If-None-Match`/`If-Modified-Since` conditional request를 금지한다. Final response의 raw
+`Date`는 exactly one canonical IMF-fixdate, raw `Age`는 없거나 single non-negative decimal
+integer여야 한다. Response cache-control은 canonical directive list 또는 header 부재를
+`null`로 보존한다. Duplicate/missing/invalid cache metadata는 parser/evidence builder 전에
+거부한다.
+
 Calendar GET request에는 `Range` 또는 `If-Range`를 보내지 않는다. Final response는 exact
 status `200`이고 raw `Content-Range`가 없어야 하며, `206 Partial Content`, 그 밖의 `2xx`와
 status `200`/`Content-Range` 조합은 body가 strict response parser를 통과할 JSON이어도
@@ -135,10 +143,13 @@ response를 제공한 provider deployment version 관측값이 아니다.
 `official_broker_observed_calendar_evidence.v2` schema/builder/verifier가 별도 PR에서
 merge돼야 한다. V2 provenance는 immutable trusted parser contract registry가 결합한 exact
 `source.apiContractVersion="1.2.14"`, official OpenAPI document SHA-256, calendar operation
-id/path와 response parser contract version을 기록한다. OpenAPI document identity는 bytes를
-해석한 contract snapshot이지 provider deployment version 관측 증거가 아니다. Coordinator는
-임의의 caller-provided version string을 받지 않고 검증된 registry entry만 builder에
-전달한다.
+id/path와 response parser contract version, cache request policy version, actual retrieval
+completion, raw header에서 parse한 canonical `responseDate`와 nullable
+`responseAgeSeconds`, canonical response cache-control, cache-adjusted `effectiveResponseAt`과
+`staleAfter`를 기록한다. OpenAPI document identity는 bytes를 해석한 contract snapshot이지
+provider deployment version 관측 증거가 아니다. Coordinator는 임의의 caller-provided
+version/cache metadata/timestamp를 받지 않고 검증된 registry entry와 network observation만
+builder에 전달한다.
 
 Calendar endpoint와 official OpenAPI `latest` document는 immutable versioned resource가
 아니므로 v2 strict schema는 `source.apiVersion` 또는 `source.providerApiVersion` claim을
@@ -201,25 +212,35 @@ Market별 OpenAPI `1.2.13` GET path/operation id와 exact `date` query, retrieva
 timestamp, raw response SHA-256/byte length, parser contract version을 기록한다.
 Legacy `source.apiVersion`은 이 parser contract snapshot을 식별하며 provider가 실제 제공한
 API version을 관측했다는 뜻이 아니다.
-Network coordinator는 위 identity-only transport를 통과한 exact payload bytes만 이
-synthetic/in-memory builder의 raw bytes 입력과 같은 의미로 전달할 수 있다. Raw bytes를 다시
-제공해야 response hash와 normalized response가 함께 검증되며,
+V1 synthetic/in-memory builder는 raw bytes를 다시 제공해야 response hash와 normalized
+response를 함께 검증하며,
 request/response/coverage/freshness metadata와 canonical artifact hash 중 하나라도
 달라지면 거부한다. Freshness policy는 retrieval부터 86,400초이며 `asOf`가 retrieval
 이전이거나 `staleAfter` 이상이면 fail-closed다. Coverage는 requested date, 반환된
 세 date, 실제 반환 session count/range만 포함한다. Historical completeness는
 `not_claimed`, replay evidence class는 `observed_session_only`로 고정하며
 `official_exchange` 승격을 허용하지 않는다. 이 artifact는 network acquisition이나
-실행용 calendar fixture가 아니다.
+실행용 calendar fixture가 아니다. V1은 response cache provenance를 표현하지 못하므로
+actual network response handoff에 사용하지 않는다.
 
 Actual network coordinator는 accepted complete calendar body 수신 시 coordinator-owned UTC
-clock을 한 번 읽어 immutable completion timestamp를 transport result에 결합한다. Public
-coordinator input은 `retrievedAt`/`evaluatedAt`을 받지 않으며 caller, provider, env 또는
-config timestamp를 신뢰하지 않는다. 이 completion timestamp를 existing builder의
-`retrievedAt`과 initial `evaluatedAt`에 동일하게 전달해 86,400초 freshness가 실제 acquisition
-completion에서 시작되게 한다. Production clock override는 금지하고 deterministic clock은
-test-only factory에만 주입한다. Synthetic fixture용 builder가 timestamp를 직접 받는 현재
-interface는 network acquisition caller contract로 재사용하지 않는다.
+clock을 한 번 읽어 immutable `completedAt`을 transport result에 결합한다. Raw `Date`가
+`completedAt`보다 늦으면 거부하고 다음 기존 response freshness semantics를 적용한다.
+
+```text
+apparentAgeSeconds = max(0, floor((completedAtMs - responseDateMs) / 1,000))
+effectiveCacheAgeSeconds = max(apparentAgeSeconds, responseAgeSeconds ?? 0)
+effectiveResponseAtMs = completedAtMs - effectiveCacheAgeSeconds * 1,000
+staleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
+```
+
+V2 evidence의 `retrievedAt`은 실제 completion인 `completedAt`, initial `evaluatedAt`도
+`completedAt`으로 기록하지만 freshness는 `effectiveResponseAt`에서만 시작한다.
+`completedAt >= staleAfter`이면 evidence 생성 전에 거부한다. Public coordinator input은
+retrieval/evaluation/cache timestamp를 받지 않으며 caller, provider body, env 또는 config 값을
+신뢰하지 않는다. Production clock override는 금지하고 deterministic clock은 test-only
+factory에만 주입한다. 같은 cached representation의 재조회는 completion 시각만으로 freshness를
+연장할 수 없다.
 
 현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1 검증된 evidence와 exact
 raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
