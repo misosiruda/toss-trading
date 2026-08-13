@@ -250,8 +250,20 @@ apparentAgeMilliseconds = max(0, completedAtMs - responseDateMs)
 correctedAgeValueMilliseconds = (responseAgeSeconds ?? 0) * 1,000 + responseDelayMilliseconds
 correctedInitialAgeMilliseconds = max(apparentAgeMilliseconds, correctedAgeValueMilliseconds)
 effectiveResponseAtMs = completedAtMs - correctedInitialAgeMilliseconds
-staleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
+policyStaleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
+responseDirectiveStaleAfterMs = effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
+staleAfterMs = min(policyStaleAfterMs, responseDirectiveStaleAfterMs)
 ```
+
+Response semantic allowlist는 `public`, `private`, `no-transform`, `must-revalidate`,
+`proxy-revalidate`, `max-age`, `s-maxage`, `no-cache`, `no-store`로 고정한다. `max-age`와
+`s-maxage`는 unquoted `0|[1-9][0-9]*` safe integer argument를 정확히 하나 요구하고,
+`validatedResponseMaxAgeSeconds`는 두 값 중 최솟값이며 둘 다 없으면 86,400이다. 나머지
+directive는 argument를 허용하지 않는다. `no-cache`, `no-store`와 allowlist 밖 extension은
+evidence reuse 의미를 추측하지 않고 parser/evidence builder 전에 거부한다. 허용된
+non-lifetime directive는 provenance로만 보존하며 expiry를 늘리지 않는다. `max-age=0`,
+`s-maxage=0` 또는 corrected age 때문에 `completedAt >= staleAfter`이면 initial evaluation에서
+already-stale로 거부한다.
 
 Monotonic clock 역행, deadline 초과, second-to-millisecond 변환과 age/delay 합산의 safe-integer
 overflow, timestamp subtraction/addition의 canonical date range 이탈은 fail-closed다. Guarded

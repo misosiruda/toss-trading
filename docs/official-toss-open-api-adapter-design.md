@@ -220,8 +220,20 @@ surface 승인이 아니다.
   correctedAgeValueMilliseconds = (responseAgeSeconds ?? 0) * 1,000 + responseDelayMilliseconds
   correctedInitialAgeMilliseconds = max(apparentAgeMilliseconds, correctedAgeValueMilliseconds)
   effectiveResponseAtMs = completedAtMs - correctedInitialAgeMilliseconds
-  staleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
+  policyStaleAfterMs = effectiveResponseAtMs + 86,400 * 1,000
+  responseDirectiveStaleAfterMs = effectiveResponseAtMs + validatedResponseMaxAgeSeconds * 1,000
+  staleAfterMs = min(policyStaleAfterMs, responseDirectiveStaleAfterMs)
   ```
+
+  Response semantic allowlist는 `public`, `private`, `no-transform`, `must-revalidate`,
+  `proxy-revalidate`, `max-age`, `s-maxage`, `no-cache`, `no-store`로 고정한다. `max-age`와
+  `s-maxage`는 unquoted `0|[1-9][0-9]*` safe integer argument를 정확히 하나 요구하며,
+  `validatedResponseMaxAgeSeconds`는 두 값 중 최솟값이고 둘 다 없으면 86,400이다. 나머지
+  directive는 argument를 허용하지 않는다. `no-cache` 또는 `no-store`는 offline evidence
+  reuse와 양립할 수 없으므로 evidence 생성 전에 거부하고, allowlist 밖 extension도 의미를
+  추측하지 않고 거부한다. 허용된 non-lifetime directive는 provenance로 보존하되
+  `staleAfter`를 늘리지 않는다. 따라서 `max-age=0`, `s-maxage=0` 또는 corrected age 때문에
+  `completedAt >= staleAfter`가 되면 initial evaluation부터 already-stale로 거부한다.
 
   Monotonic clock 역행, deadline 초과, second-to-millisecond 변환과 age/delay 합산의 safe-integer
   overflow, timestamp subtraction/addition의 canonical date range 이탈은 evidence 생성 전에
@@ -614,6 +626,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   cache-control을 canonicalize한다. Test clock의 `completedAt`, older `Date`와 larger `Age`
   fixture에서 `effectiveResponseAt`과 `staleAfter`가 cache age를 반영하며, 같은 cached bytes의
   재조회가 freshness를 연장하지 않고 이미 stale인 response는 evidence를 만들지 않는다.
+- response cache-control exact semantic allowlist와 directive argument 규칙을 검증하고
+  `no-cache`, `no-store`, unknown extension directive를 fail-closed로 거부한다. Strict
+  `max-age`/`s-maxage`는 86,400초 policy expiry를 줄이는 cap으로만 사용하고 zero, quoted,
+  malformed, overflow와 initial already-stale boundary를 검증한다.
 - token/calendar request가 exact `Accept-Encoding: identity`만 보내고 automatic
   decompression을 비활성화하며 raw `Content-Encoding` response를 parser 전에 거부한다.
 - 작은 compressed body와 decoded oversize payload를 조합한 gzip/br fixture를 거부하고,
@@ -672,7 +688,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, response cache directive cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |
 | 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
