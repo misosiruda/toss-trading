@@ -96,6 +96,13 @@ config, redirect, timeout, response-size/content-type 위반과 partial body는 
 전에 fail-closed 처리한다. Raw response bytes는 parser와 evidence hash 입력을 위해
 memory에서만 전달하고 public artifact나 log에 저장하지 않는다.
 
+Token issue와 calendar GET의 각 network attempt는 socket inactivity timeout이 아니라
+request 시작부터 DNS/TCP/TLS, response header와 complete body 수신까지를 포함하는
+10,000ms 이하의 monotonic absolute deadline을 사용한다. Chunk 수신으로 deadline을
+연장하지 않으며, slow-drip을 포함해 deadline 안에 complete body를 받지 못하면 request와
+stream을 abort하고 partial bytes를 폐기한다. Token response도 calendar와 같이 exact status
+`200`만 parser/cache로 전달하며, valid JSON을 가진 다른 `2xx`를 허용하지 않는다.
+
 Calendar GET request에는 `Range` 또는 `If-Range`를 보내지 않는다. Final response는 exact
 status `200`이고 raw `Content-Range`가 없어야 하며, `206 Partial Content`, 그 밖의 `2xx`와
 status `200`/`Content-Range` 조합은 body가 strict response parser를 통과할 JSON이어도
@@ -193,6 +200,15 @@ request/response/coverage/freshness metadata와 canonical artifact hash 중 하�
 `not_claimed`, replay evidence class는 `observed_session_only`로 고정하며
 `official_exchange` 승격을 허용하지 않는다. 이 artifact는 network acquisition이나
 실행용 calendar fixture가 아니다.
+
+Actual network coordinator는 accepted complete calendar body 수신 시 coordinator-owned UTC
+clock을 한 번 읽어 immutable completion timestamp를 transport result에 결합한다. Public
+coordinator input은 `retrievedAt`/`evaluatedAt`을 받지 않으며 caller, provider, env 또는
+config timestamp를 신뢰하지 않는다. 이 completion timestamp를 existing builder의
+`retrievedAt`과 initial `evaluatedAt`에 동일하게 전달해 86,400초 freshness가 실제 acquisition
+completion에서 시작되게 한다. Production clock override는 금지하고 deterministic clock은
+test-only factory에만 주입한다. Synthetic fixture용 builder가 timestamp를 직접 받는 현재
+interface는 network acquisition caller contract로 재사용하지 않는다.
 
 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 검증된 evidence와 exact
 raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only

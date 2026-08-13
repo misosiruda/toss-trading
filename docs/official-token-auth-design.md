@@ -141,10 +141,17 @@ Operations API에 노출하지 않는다.
   caller-provided `Authorization` header를 금지한다.
 - Automatic content decompression을 비활성화하고 raw response header를 body parsing 전에
   확인한다. Raw `Content-Encoding` header가 하나라도 있으면 값이 `identity`여도 거부한다.
-- Request timeout은 10,000ms 이하로 제한하고, HTTP transfer framing 제거 후 content
-  decoding 전 exact payload bytes를 streaming으로 최대 256KiB까지만 수신한다. 이 bytes가
-  그대로 UTF-8 JSON token parser 입력이다. `application/json`이 아닌 성공 response,
-  incomplete body와 size 초과는 token parser에 전달하지 않는다.
+- Token issue attempt마다 request 시작 직전에 monotonic absolute deadline을 설정하고
+  DNS lookup, TCP connection, TLS handshake, response header와 complete body 수신 전체를
+  10,000ms 이하로 제한한다. Socket inactivity timeout만 사용하거나 response chunk를 받을
+  때 deadline을 재설정하지 않는다. Deadline까지 complete body가 수신되지 않으면
+  request/socket/stream을 abort하고 partial bytes를 폐기한다.
+- Token response는 status exact `200`만 허용한다. `201`, `202`, `204`, `206`을 포함한
+  그 밖의 `2xx`와 non-`2xx`는 body가 syntactically valid token JSON이어도 token parser나
+  cache에 전달하지 않는다. Status 검증 뒤 HTTP transfer framing 제거 후 content decoding 전
+  exact payload bytes를 streaming으로 최대 256KiB까지만 수신하며, 이 bytes가 그대로 UTF-8
+  JSON token parser 입력이다. `application/json`이 아닌 response, incomplete body와 size
+  초과도 token parser에 전달하지 않는다.
 - `client_id`, `client_secret`, encoded form body, `access_token`, raw provider response와
   credential-bearing header는 log, audit, error, metric 또는 test snapshot에 기록하지
   않는다. 진단에는 masked error code, status, byte length와 timing만 사용할 수 있다.
@@ -283,7 +290,13 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
   identity가 token value/hash/log에 노출되지 않는다.
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
 - 403 `access_denied`를 credential retry가 아닌 허용 IP/readiness failure로 구분한다.
-- production token transport가 exact HTTPS origin/path만 허용하고 redirect, timeout, oversized/non-JSON response를 fail-closed 처리한다.
+- production token transport가 exact HTTPS origin/path만 허용하고 redirect, absolute
+  deadline, oversized/non-JSON response를 fail-closed 처리한다.
+- token issue의 DNS/TCP/TLS/header/complete body 전체 deadline이 10,000ms 이하이며,
+  deadline보다 짧은 간격으로 body chunk를 계속 보내는 slow-drip response도 absolute
+  deadline에 abort되고 partial bytes가 parser/cache에 전달되지 않는다.
+- token response status가 exact `200`일 때만 parser와 cache로 전달되고, valid token JSON을
+  가진 `201`, `202`, `204`, `206`과 그 밖의 non-`200` response를 거부한다.
 - token request가 exact `Accept-Encoding: identity`를 전송하고 automatic decompression을
   사용하지 않으며 raw `Content-Encoding` response를 parser 전에 거부한다.
 - 작은 encoded body가 decode 후 256KiB를 넘는 gzip/br fixture를 포함해 모든

@@ -139,8 +139,13 @@ surface 승인이 아니다.
 - Automatic redirect, cookie jar, client certificate와 credential-bearing proxy auth를
   사용하지 않는다. `Authorization`, `Content-Type`, `Accept` 외의 credential 또는
   account header를 임의 주입하지 않는다.
-- 각 request는 10,000ms 이하의 finite timeout을 적용한다. Token response는 256KiB,
-  calendar response는 1MiB를 초과하면 body를 사용하지 않고 거부한다.
+- Token issue와 calendar GET의 각 network attempt는 request 시작 직전에 monotonic absolute
+  deadline을 설정하고 DNS lookup, TCP connection, TLS handshake, response header와 complete
+  body 수신 전체를 10,000ms 이하로 제한한다. Socket inactivity timeout만 사용하거나
+  response chunk 수신마다 deadline을 재설정하지 않는다. Guarded `401` 뒤 calendar retry는
+  별도 attempt지만 각 attempt가 같은 absolute deadline 상한을 지켜야 한다. Deadline까지
+  complete body가 수신되지 않으면 request/socket/stream을 abort하고 partial bytes를 폐기한다.
+  Token response는 256KiB, calendar response는 1MiB를 초과하면 body를 사용하지 않고 거부한다.
 - Token POST와 calendar GET은 exact `Accept-Encoding: identity`를 전송하고 HTTP library의
   automatic compression advertisement와 response decompression을 비활성화한다. Caller,
   config 또는 retry path가 다른 `Accept-Encoding`을 주입할 수 없다.
@@ -150,6 +155,9 @@ surface 승인이 아니다.
   없어야 한다. `206 Partial Content`, 그 밖의 `2xx`와 status `200`의 `Content-Range`
   response는 body가 syntactically valid calendar JSON이어도 parser 또는 evidence builder에
   전달하지 않는다.
+- Token response도 status exact `200`만 허용한다. `201`, `202`, `204`, `206`을 포함한
+  그 밖의 `2xx`와 non-`2xx`는 body가 syntactically valid token JSON이어도 token parser나
+  cache에 전달하지 않는다.
 - Token과 calendar response의 raw `Content-Encoding` header는 값이 `identity`여도
   허용하지 않는다. Transport는 raw header를 확인한 뒤 HTTP transfer framing이 제거되고
   content decoding은 수행되지 않은 exact payload bytes를 streaming으로 센다. Token
@@ -168,6 +176,16 @@ surface 승인이 아니다.
   bytes는 evidence hash와 parser 입력을 위해 acquisition result의 memory에만 보존하며
   log, PR body 또는 public artifact에 기록하지 않는다. Durable raw-byte 저장은 별도
   threat model과 저장 계약 전에는 도입하지 않는다.
+- Calendar transport는 status/header/encoding/size 검증을 통과한 complete body를 수신한
+  시점에 coordinator-owned UTC clock을 정확히 한 번 읽어 immutable `completedAt`을 transport
+  result에 결합한다. Acquisition coordinator public input은 `retrievedAt` 또는 `evaluatedAt`
+  을 받지 않으며, provider response, caller, env, config 값으로 이를 덮어쓸 수 없다.
+  Coordinator는 이 `completedAt`을 existing synthetic/in-memory evidence builder의
+  `retrievedAt`과 initial `evaluatedAt`에 동일하게 전달하고, freshness `staleAfter`가 이
+  network completion 시점에서만 계산되게 한다. Production factory는 clock override를
+  노출하지 않고, deterministic clock injection은 test-only factory에만 둔다. Existing
+  generic builder가 synthetic fixture를 위해 timestamp input을 받는 사실은 network
+  coordinator caller에게 timestamp 선택권을 부여하지 않는다.
 - Coordinator output은 `paper_only`, `official_broker_observed`,
   `observed_session_only`로 고정한다. Historical completeness와 `official_exchange`
   readiness를 주장하거나 Risk Engine, order, portfolio mutation 경로에 연결하지 않는다.
@@ -494,7 +512,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 후속 구현은 최소 다음 테스트를 포함해야 한다.
 
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
-- token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
+- token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, absolute
+  deadline, oversized 또는 non-JSON response를 거부한다.
+- token과 calendar 각 attempt의 DNS/TCP/TLS/header/complete body 전체 deadline이
+  10,000ms 이하이며, deadline보다 짧은 간격으로 body chunk를 계속 보내는 slow-drip
+  response도 absolute deadline에 abort되고 partial bytes가 parser/cache/evidence builder에
+  전달되지 않는다.
+- token response가 exact `200`일 때만 parser와 cache로 전달되며, valid token JSON을 가진
+  `201`, `202`, `204`, `206`과 그 밖의 non-`200` response를 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, `Range`/`If-Range`, 임의 query/path와 redirect를 거부한다.
 - calendar final response가 exact `200`이고 raw `Content-Range`가 없을 때만 parser로 전달되며, valid JSON body를 가진 `206`과 status `200`/`Content-Range` 조합을 거부한다.
 - token/calendar request가 exact `Accept-Encoding: identity`만 보내고 automatic
@@ -506,6 +531,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   invalidation하거나 token C를 발급하지 않고, 동일 generation reissue가 single-flight로
   합쳐지며 각 request가 최대 1회만 retry되는지 검증한다.
 - coordinator가 disabled/invalid config, OpenAPI contract mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
+- coordinator public input이 retrieval/evaluation timestamp를 받지 않고, accepted complete
+  body의 test-clock `completedAt`을 `retrievedAt`과 initial `evaluatedAt`에 exact bind하며
+  `staleAfter`가 이 시각에서 계산되는지 검증한다. Caller/provider/env가 arbitrary 또는
+  future timestamp를 주입하는 surface가 없어야 한다.
 - evidence verifier가 기존 v1/`1.2.13` artifact를 그대로 검증하고, v2가 registry의 exact API contract version/OpenAPI document hash/operation/parser contract를 기록하며 unknown 또는 mismatched contract identity와 provider deployment version claim을 거부한다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
