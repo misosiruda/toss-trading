@@ -36,7 +36,7 @@
 | auth | OAuth 2.0 Client Credentials Grant |
 | account/order header | `X-Tossinvest-Account` |
 
-구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 현재 calendar response/evidence contract는 `1.2.13`에 고정돼 있으므로 `1.2.14` response compatibility가 별도 PR에서 입증되기 전에는 network response를 기존 evidence로 승격하지 않는다.
+구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 현재 calendar response/evidence contract는 `1.2.13`에 고정돼 있으므로 `1.2.14` response compatibility와 version-aware evidence transition이 별도 PR에서 입증되기 전에는 network response를 evidence builder에 전달하지 않는다.
 
 ## 현재 공식 API 표면
 
@@ -157,8 +157,28 @@ negative test 구현은 계속할 수 있다. 실제 호출을 실행하지 않�
 
 OpenAPI `1.2.14` calendar schema가 현재 `1.2.13` parser/evidence contract와
 호환된다는 byte-level fixture 검증이 merge되기 전에는 acquisition coordinator가 받은
-response를 evidence builder에 전달하지 않는다. Version drift를 무시하거나 metadata만
-`1.2.14`로 바꿔 기존 artifact를 재해석하는 동작은 fail-closed로 금지한다.
+response를 evidence builder에 전달하지 않는다. Schema compatibility만으로 handoff를
+승인하지 않으며, 다음 backward-compatible evidence transition도 먼저 merge돼야 한다.
+
+- `official_broker_observed_calendar_evidence.v1` schema, builder와 verifier는
+  OpenAPI `1.2.13`에 계속 고정한다. 기존 v1 artifact를 rewrite하거나 v1의
+  `source.apiVersion` 상수만 `1.2.14`로 바꾸지 않는다.
+- `1.2.14` response는 별도 `official_broker_observed_calendar_evidence.v2`
+  schema/builder/verifier가 exact
+  `source.apiVersion="1.2.14"`와 검증에 사용한 official OpenAPI document의 SHA-256을
+  provenance에 기록할 때만 받을 수 있다. 이 hash는 response hash와 다른 contract
+  snapshot identity다.
+- Immutable trusted version registry는 API version, OpenAPI document hash, calendar
+  operation id/path와 response parser contract version을 하나의 entry로 결합한다.
+  Coordinator와 builder는 caller-provided version string을 신뢰하지 않고 검증된 registry
+  entry를 전달받아 exact provenance를 구성한다.
+- Verifier는 artifact schema version으로 v1과 v2 검증 경로를 결정한다. Unknown schema,
+  registry에 없는 API version, document hash/operation/parser mismatch와 API version 누락은
+  artifact 생성 또는 검증 전에 fail-closed로 거부한다.
+
+따라서 version drift를 무시하거나 metadata만 `1.2.14`로 바꿔 기존 artifact를 재해석하는
+동작은 금지한다. Compatibility test와 version-aware evidence transition 중 하나라도
+없으면 coordinator는 raw response bytes를 evidence builder에 전달하지 않는다.
 
 ### Test-only network injection 계약
 
@@ -245,7 +265,8 @@ flowchart TD
     M --> A["Read-only account and holdings snapshot reader"]
     A --> NC["Calendar network acquisition contract"]
     NC --> V["OpenAPI calendar compatibility gate"]
-    V --> NT["Safe-disabled token issuer transport"]
+    V --> EV["Version-aware calendar evidence transition"]
+    EV --> NT["Safe-disabled token issuer transport"]
     NT --> CT["Calendar-only GET transport"]
     CT --> CC["Paper-only acquisition coordinator"]
     CC --> R["Live RiskEngine implementation with mock broker"]
@@ -255,7 +276,7 @@ flowchart TD
     P --> Q["Deployment gate"]
 ```
 
-후속 PR은 이 순서를 건너뛰면 안 된다. Calendar transport는 current OpenAPI compatibility gate를 먼저 통과해야 하고, token issuer와 calendar GET 책임을 서로 다른 PR로 유지한다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
+후속 PR은 이 순서를 건너뛰면 안 된다. Calendar transport는 current OpenAPI compatibility gate와 backward-compatible version-aware evidence transition을 먼저 통과해야 하고, token issuer와 calendar GET 책임을 서로 다른 PR로 유지한다. 특히 `POST /api/v1/orders` 구현은 token auth, read-only adapter, live Risk Engine, mock OrderRouter, threat model이 먼저 merge된 뒤에만 검토한다.
 
 ## 제안 계층
 
@@ -444,6 +465,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
 - test-only loopback HTTPS connector에서 canonical production URL, destination authority, hostname-only HTTP Host/SNI와 TLS 검증을 유지한 채 token/calendar redirect, timeout, abort와 response byte boundary를 검증하고 mock bytes를 official evidence로 표시하지 않는다.
 - coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
+- evidence verifier가 기존 v1/`1.2.13` artifact를 그대로 검증하고, v2가 registry의 exact API version/OpenAPI document hash/operation/parser contract를 기록하며 unknown 또는 mismatched version identity를 거부한다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
 - rate limit `429`와 `Retry-After`를 처리한다.
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
@@ -466,7 +488,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 6 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
-| 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, parser/evidence version gate와 regression test | network, metadata-only version bump |
+| 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
+| 9a | Version-aware calendar evidence transition | v1/`1.2.13` 보존, v2 registry-bound API/document/parser provenance와 verifier dispatch test | v1 rewrite, caller-provided version trust, network |
 | 10 | Token issuer network transport | exact token POST, finite limits, masked error와 test-only loopback HTTPS connector test | market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 test-only loopback HTTPS connector test | query 생략, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |

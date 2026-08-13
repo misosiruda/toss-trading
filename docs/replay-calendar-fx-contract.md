@@ -104,9 +104,20 @@ request provenance를 만들 수 없으므로 evidence artifact를 생성하지 
 
 2026-08-13의 official OpenAPI `latest`는 `1.2.14`지만 현재 response parser와 evidence
 contract는 검증된 `1.2.13` snapshot에 고정돼 있다. `1.2.14` calendar response의
-byte-level compatibility와 version transition test가 별도 PR에서 통과하기 전에는 actual
-response를 기존 evidence artifact로 조립하지 않는다. Metadata 상수만 바꾸거나
-historical completeness를 추정해 version drift를 우회할 수 없다.
+byte-level compatibility만으로 actual response handoff를 승인하지 않는다. 기존
+`official_broker_observed_calendar_evidence.v1` schema/builder/verifier와
+`source.apiVersion`은 `1.2.13` 의미를 그대로 보존한다.
+
+`1.2.14` bytes를 evidence builder에 전달하기 전에는 backward-compatible
+`official_broker_observed_calendar_evidence.v2` schema/builder/verifier가 별도 PR에서
+merge돼야 한다. V2 provenance는 immutable trusted version registry가 결합한 exact API
+version, official OpenAPI document SHA-256, calendar operation id/path와 response parser
+contract version을 기록한다. Coordinator는 임의의 caller-provided version string을 받지
+않고 검증된 registry entry만 builder에 전달한다.
+Verifier는 artifact schema version으로 v1/v2를 분기하며 unknown schema/API version,
+registry 누락과 document hash/operation/parser mismatch를 fail-closed로 거부한다. 기존 v1
+artifact를 rewrite하거나 metadata 상수만 `1.2.14`로 바꾸고 historical completeness를
+추정해 version drift를 우회할 수 없다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, exact response hash와 byte length, source/API
@@ -202,8 +213,8 @@ session 목록으로만 보존한다. Output source class는 `official_broker_ob
 이 parser 자체는 actual network transport를 호출하거나 provenance/hash/coverage를
 직접 검증하지 않는다. 해당 책임은 별도 evidence, replay adapter와 coverage probe
 contract가 담당한다. Calendar 전용 acquisition coordinator의 구현 계약은 승인됐지만
-OpenAPI compatibility gate, token issuer transport와 calendar GET transport 뒤의 별도
-Small PR로 남아 있다.
+OpenAPI compatibility gate, version-aware evidence transition, token issuer transport와
+calendar GET transport 뒤의 별도 Small PR로 남아 있다.
 
 ## Contract 목표
 
