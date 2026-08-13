@@ -113,6 +113,13 @@ integer여야 한다. Response cache-control은 canonical directive list 또는 
 `null`로 보존한다. Duplicate/missing/invalid cache metadata는 parser/evidence builder 전에
 거부한다.
 
+Initial calendar request와 유일한 retry는 각각 실제 사용한 token lease generation을
+보존한다. Initial refreshable `401`은 해당 generation만 compare-and-clear한 뒤 current/new
+lease로 한 번 retry한다. Retry도 refreshable `401`이면 retry generation을 compare-and-clear하고
+현재 호출은 auth failure로 종료한다. 이 final invalidation은 token 발급이나 세 번째 calendar
+attempt를 시작하지 않는다. Retry token이 current면 제거해 다음 caller의 재사용을 막고, 이미
+newer generation이 current이면 stale invalidation은 no-op으로 current token을 보존한다.
+
 Calendar GET request에는 `Range` 또는 `If-Range`를 보내지 않는다. Final response는 exact
 status `200`이고 raw `Content-Range`가 없어야 하며, `206 Partial Content`, 그 밖의 `2xx`와
 status `200`/`Content-Range` 조합은 body가 strict response parser를 통과할 JSON이어도

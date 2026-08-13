@@ -203,6 +203,11 @@ dial target, custom CA 또는 test connector를 받지 않고 runtime env/API에
 7. Invalidation이 current generation에 적용됐으면 single-flight로 새 token을 발급하고,
    이미 newer generation이 있으면 추가 발급 없이 current token을 사용해 정확히 1회만
    retry한다.
+8. Retry도 `401 invalid-token` 또는 expired-token 계열로 실패하면 retry request가 사용한
+   generation을 다시 compare-and-clear하고 해당 auth failure를 반환한다. 이 invalidation은
+   token 발급이나 세 번째 API attempt를 시작하지 않는다. 이미 더 새로운 generation이
+   current이면 no-op이지만 retry에 사용한 stale token은 cache에 남겨 다음 caller가 재사용하게
+   해서는 안 된다.
 
 주의:
 
@@ -212,6 +217,9 @@ dial target, custom CA 또는 test connector를 받지 않고 runtime env/API에
 - Generation은 process-local non-secret counter이며 token value, hash 또는 prefix를 identity로
   사용하지 않는다. Log/audit에는 raw generation을 요청 상관관계 식별자로 노출하지 않고
   stale invalidation 발생 여부 같은 bounded 상태만 기록한다.
+- Initial attempt와 retry는 각각 자신이 사용한 token lease generation을 보존한다. AuthClient의
+  compare-and-clear invalidation은 cache mutation만 수행하고 token issue 또는 network retry를
+  직접 시작하지 않는다. 따라서 retry failure 정리 뒤 다음 caller만 필요하면 새 token을 얻는다.
 - order mutation 요청은 auth failure 후 blind retry하지 않는다. retry 가능성은 OrderRouter idempotency 정책이 있는 PR에서 별도 판단한다.
 
 ## 동시성 및 운영 제약
@@ -289,6 +297,10 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
   하나에 합쳐지고 각 request는 최대 1회만 retry한다.
 - Token A를 사용한 staggered `401`에서 먼저 도착한 응답이 B를 발급한 뒤 늦은 A 응답이
   B를 지우거나 token C를 발급하지 않는다.
+- Token A 실패 뒤 token B로 수행한 유일한 retry도 refreshable `401`이면 B generation을
+  compare-and-clear한 뒤 현재 호출은 실패하고 세 번째 request/token issue를 수행하지 않는다.
+  이후 caller는 B를 재사용하지 않고 필요하면 C를 발급받는다. Retry failure 정리 전에 이미
+  C가 current이면 B invalidation은 C를 지우지 않는 no-op이어야 한다.
 - Unknown 또는 stale generation invalidation은 current cache를 변경하지 않고, generation
   identity가 token value/hash/log에 노출되지 않는다.
 - 400 `invalid_request`, 400 `unsupported_grant_type`, 401 `invalid_client`, 429 rate limit을 구분한다.
@@ -322,7 +334,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
-| 7a | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
+| 7a | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, no Range/Content-Range, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`와 monotonic response-delay corrected freshness | account header, broker mutation |
 | 9a | Version-aware calendar evidence consumers | response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |

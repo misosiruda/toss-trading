@@ -181,6 +181,11 @@ surface 승인이 아니다.
   failed generation과 current cached generation을 compare-and-clear하도록 client contract를
   강화한다. Token A의 늦은 `401`이 이미 발급된 token B를 지우거나 token C를 발급하는
   unconditional invalidation 경로가 남아 있으면 production transport를 연결하지 않는다.
+- Token B로 수행한 유일한 retry도 `401 invalid-token` 또는 expired-token 계열로 실패하면
+  retry lease의 B generation을 compare-and-clear한 뒤 auth failure를 반환한다. 이 정리는
+  현재 호출에서 token C 발급이나 세 번째 calendar request를 시작하지 않는다. B가 current면
+  제거해 다음 caller의 재사용을 막고, 이미 C가 current면 stale B invalidation은 C를 지우지
+  않는 no-op이어야 한다.
 - Token과 credential은 process memory 밖에 저장하지 않는다. Calendar exact response
   bytes는 evidence hash와 parser 입력을 위해 acquisition result의 memory에만 보존하며
   log, PR body 또는 public artifact에 기록하지 않는다. Durable raw-byte 저장은 별도
@@ -617,6 +622,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - read-only client의 staggered `401` test에서 token A의 늦은 실패가 current token B를
   invalidation하거나 token C를 발급하지 않고, 동일 generation reissue가 single-flight로
   합쳐지며 각 request가 최대 1회만 retry되는지 검증한다.
+- Token A 실패 뒤 B retry도 refreshable `401`인 회귀 test에서 B를 compare-and-clear하고
+  현재 호출은 두 request 뒤 실패하며 token C를 발급하지 않는지 검증한다. 다음 caller는 B를
+  재사용하지 않고 C를 얻어야 하며, concurrent C가 이미 current인 variant에서는 stale B
+  invalidation이 C를 지우지 않아야 한다.
 - coordinator가 disabled/invalid config, OpenAPI contract mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
 - coordinator public input이 retrieval/evaluation timestamp를 받지 않고, accepted complete
   body의 test-clock `completedAt`을 `retrievedAt`과 initial `evaluatedAt`에 exact bind하며
@@ -661,7 +670,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
-| 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
+| 9b | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
