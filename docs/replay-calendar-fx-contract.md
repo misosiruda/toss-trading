@@ -100,8 +100,10 @@ Token issue와 calendar GET의 각 network attempt는 socket inactivity timeout�
 request 시작부터 DNS/TCP/TLS, response header와 complete body 수신까지를 포함하는
 10,000ms 이하의 monotonic absolute deadline을 사용한다. Chunk 수신으로 deadline을
 연장하지 않으며, slow-drip을 포함해 deadline 안에 complete body를 받지 못하면 request와
-stream을 abort하고 partial bytes를 폐기한다. Token response도 calendar와 같이 exact status
-`200`만 parser/cache로 전달하며, valid JSON을 가진 다른 `2xx`를 허용하지 않는다.
+stream을 abort하고 partial bytes를 폐기한다. Token POST는 `Range`/`If-Range`를 보내지 않고
+token response도 calendar와 같이 exact status `200`이며 raw `Content-Range`가 없을 때만
+parser/cache로 전달한다. Valid JSON을 가진 다른 `2xx`와 status `200`/`Content-Range` 조합도
+허용하지 않는다.
 
 Initial calendar GET과 guarded `401` 뒤 retry는 exact
 `Cache-Control: no-cache, no-store, max-age=0`과 `Pragma: no-cache`를 보내고

@@ -152,8 +152,8 @@ surface 승인이 아니다.
 - Token POST와 calendar GET은 exact `Accept-Encoding: identity`를 전송하고 HTTP library의
   automatic compression advertisement와 response decompression을 비활성화한다. Caller,
   config 또는 retry path가 다른 `Accept-Encoding`을 주입할 수 없다.
-- Calendar GET request는 `Range`와 `If-Range` header를 보내지 않는다. Caller, config 또는
-  retry path가 이 header를 주입하면 socket 전송 전에 거부한다.
+- Token POST와 calendar GET request는 `Range`와 `If-Range` header를 보내지 않는다. Caller,
+  config 또는 retry path가 이 header를 주입하면 socket 전송 전에 거부한다.
 - Initial calendar GET과 guarded `401` 뒤 retry는 각각 exact
   `Cache-Control: no-cache, no-store, max-age=0`과 `Pragma: no-cache`를 전송한다.
   `If-None-Match`와 `If-Modified-Since`를 포함한 conditional request는 보내지 않는다.
@@ -164,9 +164,9 @@ surface 승인이 아니다.
   없어야 한다. `206 Partial Content`, 그 밖의 `2xx`와 status `200`의 `Content-Range`
   response는 body가 syntactically valid calendar JSON이어도 parser 또는 evidence builder에
   전달하지 않는다.
-- Token response도 status exact `200`만 허용한다. `201`, `202`, `204`, `206`을 포함한
-  그 밖의 `2xx`와 non-`2xx`는 body가 syntactically valid token JSON이어도 token parser나
-  cache에 전달하지 않는다.
+- Token response도 status exact `200`이고 raw `Content-Range` header가 없어야 한다. `201`,
+  `202`, `204`, `206`을 포함한 그 밖의 `2xx`, non-`2xx`와 status `200`/`Content-Range`
+  조합은 body가 syntactically valid token JSON이어도 token parser나 cache에 전달하지 않는다.
 - Token과 calendar response의 raw `Content-Encoding` header는 값이 `identity`여도
   허용하지 않는다. Transport는 raw header를 확인한 뒤 HTTP transfer framing이 제거되고
   content decoding은 수행되지 않은 exact payload bytes를 streaming으로 센다. Token
@@ -584,8 +584,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   10,000ms 이하이며, deadline보다 짧은 간격으로 body chunk를 계속 보내는 slow-drip
   response도 absolute deadline에 abort되고 partial bytes가 parser/cache/evidence builder에
   전달되지 않는다.
-- token response가 exact `200`일 때만 parser와 cache로 전달되며, valid token JSON을 가진
-  `201`, `202`, `204`, `206`과 그 밖의 non-`200` response를 거부한다.
+- token request가 `Range`/`If-Range`를 보내지 않고 response가 exact `200`이며 raw
+  `Content-Range`가 없을 때만 parser와 cache로 전달된다. Valid token JSON을 가진 `201`,
+  `202`, `204`, `206`, 그 밖의 non-`200`과 status `200`/`Content-Range` 조합을 거부한다.
 - calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, `Range`/`If-Range`, 임의 query/path와 redirect를 거부한다.
 - initial/retry calendar GET이 exact `Cache-Control: no-cache, no-store, max-age=0`과
   `Pragma: no-cache`를 보내고 conditional cache header를 보내지 않으며, caller/config/retry
@@ -643,7 +644,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache provenance와 verifier dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, compare-and-clear, staggered `401`과 single-flight regression test | network, token persistence, mutation retry |
-| 10 | Token issuer network transport | exact token POST, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
+| 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`, cache-adjusted freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |
