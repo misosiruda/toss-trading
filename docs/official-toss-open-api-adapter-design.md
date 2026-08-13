@@ -118,7 +118,7 @@ surface 승인이 아니다.
 | 책임 | 허용 request | 필수 제한 |
 | --- | --- | --- |
 | Token issuer transport | `POST https://openapi.tossinvest.com/oauth2/token` | `application/x-www-form-urlencoded`, `grant_type=client_credentials`, redirect 금지, credential/token masking |
-| Calendar read-only transport | `GET https://openapi.tossinvest.com/api/v1/market-calendar/KR` 또는 `/US` | optional `date` query만 허용, Bearer 외 credential header 금지, `X-Tossinvest-Account` 금지 |
+| Calendar read-only transport | `GET https://openapi.tossinvest.com/api/v1/market-calendar/KR` 또는 `/US` | canonical `date=YYYY-MM-DD` query를 exactly one으로 요구, Bearer 외 credential header 금지, `X-Tossinvest-Account` 금지 |
 
 공통 fail-closed 조건:
 
@@ -127,6 +127,11 @@ surface 승인이 아니다.
 - Base URL은 userinfo, path, query, fragment가 없는 exact HTTPS origin
   `https://openapi.tossinvest.com`만 허용한다. 임의 host, protocol-relative URL,
   backslash path와 caller-provided absolute URL은 거부한다.
+- Provider endpoint와 generic `TossOpenApiMarketDataAdapter`가 `date` 생략을 지원해도
+  evidence acquisition은 생략을 허용하지 않는다. Coordinator는 canonical
+  `date=YYYY-MM-DD`를 정확히 하나 전송하고 market, requested date와 effective query를
+  evidence builder 전에 exact bind한다. Query 누락, duplicate, unknown query 또는 값
+  mismatch는 response를 evidence로 조립하지 않고 거부한다.
 - Automatic redirect, cookie jar, client certificate와 credential-bearing proxy auth를
   사용하지 않는다. `Authorization`, `Content-Type`, `Accept` 외의 credential 또는
   account header를 임의 주입하지 않는다.
@@ -408,7 +413,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 
 - auth config parser가 secrets를 로그에 남기지 않고 missing secret을 fail-closed 처리한다.
 - token transport가 exact origin과 `/oauth2/token` POST만 허용하고 redirect, timeout, oversized 또는 non-JSON response를 거부한다.
-- calendar transport가 KR/US exact GET path와 optional `date`만 허용하고 account header, 임의 query/path와 redirect를 거부한다.
+- calendar transport가 KR/US exact GET path와 required canonical `date` exactly one만 허용하고 query 누락/duplicate/mismatch, account header, 임의 query/path와 redirect를 거부한다.
 - local mock server에서 token과 calendar response byte boundary를 검증하되 mock bytes를 official evidence로 표시하지 않는다.
 - coordinator가 disabled/invalid config, OpenAPI version mismatch, partial response와 schema mismatch에서 evidence를 만들지 않는다.
 - HTTP client가 OpenAPI fixture 기반 response/error envelope을 parsing한다.
@@ -435,7 +440,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
 | 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, parser/evidence version gate와 regression test | network, metadata-only version bump |
 | 10 | Token issuer network transport | exact token POST, finite limits, masked error와 local mock test | market/account/order request, external credential call |
-| 11 | Calendar GET network transport | KR/US allowlist, Bearer, exact bytes, finite limits와 local mock test | account/order/general market endpoint |
+| 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, exact bytes, finite limits와 local mock test | query 생략, account/order/general market endpoint |
 | 12 | Calendar acquisition coordinator | auth, calendar request, parser/evidence composition과 fail-closed test | raw-byte persistence, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |

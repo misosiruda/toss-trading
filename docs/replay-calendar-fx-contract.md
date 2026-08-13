@@ -67,7 +67,7 @@
 
 현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
-- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Strict response/evidence/replay adapter와 credential-free coverage probe contract는 분리된 synthetic/in-memory 입력으로 구현됐다. Calendar 전용 safe-disabled token/GET transport와 acquisition coordinator의 fail-closed 구현 계약은 승인됐지만 실제 network transport와 coordinator는 아직 없다.
+- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 generic `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Strict response/evidence/replay adapter와 credential-free coverage probe contract는 분리된 synthetic/in-memory 입력으로 구현됐다. Calendar 전용 safe-disabled token/GET transport와 acquisition coordinator의 fail-closed 구현 계약은 승인됐지만 실제 network transport와 coordinator는 아직 없다. Evidence acquisition은 generic adapter보다 엄격하게 canonical `date` query를 필수로 요구한다.
 - 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 `official_exchange` evidence를 만들 수 있다.
 - [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 `official_exchange`용 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual exchange source acquisition과 adapter 구현은 아직 수행하지 않았다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
@@ -95,6 +95,12 @@ calendar 전용 network allowlist를 따라야 한다. Exact token POST와 KR/US
 config, redirect, timeout, response-size/content-type 위반과 partial body는 evidence 생성
 전에 fail-closed 처리한다. Raw response bytes는 parser와 evidence hash 입력을 위해
 memory에서만 전달하고 public artifact나 log에 저장하지 않는다.
+
+Provider가 query 생략 시 기본 기준일을 선택하더라도 acquisition coordinator는 이
+동작을 사용하지 않는다. Canonical `date=YYYY-MM-DD`를 exactly one으로 전송하고
+effective query의 값이 requested date, evidence request와 일치하는지 response parsing
+전에 검증한다. 누락, duplicate, unknown query와 mismatch response는 deterministic
+request provenance를 만들 수 없으므로 evidence artifact를 생성하지 않는다.
 
 2026-08-13의 official OpenAPI `latest`는 `1.2.14`지만 현재 response parser와 evidence
 contract는 검증된 `1.2.13` snapshot에 고정돼 있다. `1.2.14` calendar response의
