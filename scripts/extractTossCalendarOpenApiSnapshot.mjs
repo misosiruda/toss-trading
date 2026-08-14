@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 const SOURCE_URL =
   "https://openapi.tossinvest.com/openapi-docs/latest/openapi.json";
@@ -38,6 +38,18 @@ const snapshot = {
   )
 };
 
-await writeFile(OUTPUT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`, {
-  flag: "wx"
-});
+const generatedBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+let existingBytes;
+try {
+  existingBytes = await readFile(OUTPUT_PATH);
+} catch (error) {
+  if (error?.code !== "ENOENT") {
+    throw error;
+  }
+}
+
+if (existingBytes === undefined) {
+  await writeFile(OUTPUT_PATH, generatedBytes, { flag: "wx" });
+} else if (!existingBytes.equals(generatedBytes)) {
+  throw new Error("committed calendar snapshot differs from verified extraction");
+}
