@@ -307,18 +307,23 @@ export function createTestOnlyTossOpenApiTokenIssuerNetworkTransport(
   connector: TestOnlyTossOpenApiTokenSocketConnector
 ): TossOpenApiTokenIssuer {
   assertTestOnlyConnector(connector);
+  const dialAddress = connector.dialAddress;
+  const dialPort = connector.dialPort;
+  const certificateAuthority = connector.certificateAuthority;
+  const deadlineMs =
+    connector.deadlineMs ?? TOSS_OPEN_API_TOKEN_TRANSPORT_DEADLINE_MS;
   const agent = new HttpsAgent({ keepAlive: false, maxCachedSessions: 0 });
   agent.createConnection = () =>
     tlsConnect({
-      host: connector.dialAddress,
-      port: connector.dialPort,
+      host: dialAddress,
+      port: dialPort,
       servername: TOSS_OPEN_API_HOSTNAME,
-      ca: connector.certificateAuthority,
+      ca: certificateAuthority,
       rejectUnauthorized: true,
       ALPNProtocols: ["http/1.1"]
     });
   return new TossOpenApiTokenIssuerNetworkTransport(config, {
-    deadlineMs: connector.deadlineMs ?? TOSS_OPEN_API_TOKEN_TRANSPORT_DEADLINE_MS,
+    deadlineMs,
     request: (options, callback) =>
       httpsRequest(
         {

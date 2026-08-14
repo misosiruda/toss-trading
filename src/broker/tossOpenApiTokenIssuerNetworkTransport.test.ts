@@ -301,6 +301,34 @@ test("test-only connector rejects non-loopback, invalid port and invalid deadlin
   }
 });
 
+test("test-only transport snapshots the validated loopback connector", async () => {
+  await withTokenServer(
+    (_request, response) => sendJson(response, { ok: true }),
+    async (port) => {
+      const connector = {
+        dialAddress: "127.0.0.1",
+        dialPort: port,
+        certificateAuthority: TEST_CA,
+        deadlineMs: 500
+      };
+      const transport =
+        createTestOnlyTossOpenApiTokenIssuerNetworkTransport(
+          readyConfig(),
+          connector
+        );
+
+      connector.dialAddress = "192.0.2.10";
+      connector.dialPort = 443;
+      connector.certificateAuthority = "attacker-controlled-ca";
+      connector.deadlineMs = 10_001;
+
+      assert.deepEqual(await transport.issueToken(canonicalRequest()), {
+        ok: true
+      });
+    }
+  );
+});
+
 test("token transport requires the test CA and production hostname certificate", async () => {
   await withTokenServer(
     (_request, response) => sendJson(response, {}),
