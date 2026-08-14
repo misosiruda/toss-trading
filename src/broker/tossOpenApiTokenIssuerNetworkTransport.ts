@@ -265,6 +265,12 @@ class TossOpenApiTokenIssuerNetworkTransport
           );
           return;
         }
+        try {
+          assertResponseTrailers(response);
+        } catch (error: unknown) {
+          finish(error);
+          return;
+        }
         if (performance.now() - startedAt > this.options.deadlineMs) {
           finish(
             new TossOpenApiTokenIssuerNetworkError(
@@ -405,6 +411,19 @@ function assertResponseHeaders(response: IncomingMessage): void {
         { responseByteLength: parsed }
       );
     }
+  }
+}
+
+function assertResponseTrailers(response: IncomingMessage): void {
+  if (readRawHeaderValues(response.rawTrailers, "content-range").length !== 0) {
+    throwInvalidHeaders(
+      "Toss Open API token response trailers contained Content-Range."
+    );
+  }
+  if (readRawHeaderValues(response.rawTrailers, "content-encoding").length !== 0) {
+    throwInvalidHeaders(
+      "Toss Open API token response trailers contained Content-Encoding."
+    );
   }
 }
 

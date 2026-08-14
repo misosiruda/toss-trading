@@ -386,6 +386,32 @@ test("token transport rejects Content-Range and every Content-Encoding value", a
   }
 });
 
+test("token transport rejects forbidden response trailers", async () => {
+  for (const [name, value] of [
+    ["Content-Range", "bytes 0-1/2"],
+    ["Content-Encoding", "identity"],
+    ["Content-Encoding", "gzip"]
+  ] as const) {
+    await withTokenServer(
+      (_request, response) => {
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+          Trailer: name
+        });
+        response.write("{}");
+        response.addTrailers({ [name]: value });
+        response.end();
+      },
+      async (port) => {
+        await expectTransportError(
+          () => createTransport(port).issueToken(canonicalRequest()),
+          "TOSS_OPEN_API_TOKEN_TRANSPORT_INVALID_HEADERS"
+        );
+      }
+    );
+  }
+});
+
 test("token transport requires a single JSON content type", async () => {
   for (const contentType of ["text/plain", "application/json; charset=latin1"]){
     await withTokenServer(
