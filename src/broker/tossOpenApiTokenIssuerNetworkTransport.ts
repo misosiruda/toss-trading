@@ -99,7 +99,11 @@ class TossOpenApiTokenIssuerNetworkTransport
     }
     if (
       this.config.status !== "ready" ||
-      this.config.baseUrl !== DEFAULT_TOSS_OPEN_API_BASE_URL
+      this.config.baseUrl !== DEFAULT_TOSS_OPEN_API_BASE_URL ||
+      typeof this.config.clientId !== "string" ||
+      this.config.clientId.trim().length === 0 ||
+      typeof this.config.clientSecret !== "string" ||
+      this.config.clientSecret.trim().length === 0
     ) {
       throw new TossOpenApiTokenIssuerNetworkError(
         "TOSS_OPEN_API_TOKEN_TRANSPORT_INVALID_CONFIG",

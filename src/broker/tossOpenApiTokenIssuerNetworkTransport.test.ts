@@ -210,6 +210,40 @@ test("token transport rejects disabled, invalid and noncanonical requests before
         "TOSS_OPEN_API_TOKEN_TRANSPORT_INVALID_CONFIG"
       );
 
+      const missingCredentialConfig = { ...readyConfig() };
+      delete missingCredentialConfig.clientId;
+      const missingCredential =
+        createTestOnlyTossOpenApiTokenIssuerNetworkTransport(
+          missingCredentialConfig,
+          {
+            dialAddress: "127.0.0.1",
+            dialPort: port,
+            certificateAuthority: TEST_CA
+          }
+        );
+      await expectTransportError(
+        () => missingCredential.issueToken(canonicalRequest()),
+        "TOSS_OPEN_API_TOKEN_TRANSPORT_INVALID_CONFIG"
+      );
+
+      const blankCredentialConfig = {
+        ...readyConfig(),
+        clientSecret: " "
+      };
+      const blankCredential =
+        createTestOnlyTossOpenApiTokenIssuerNetworkTransport(
+          blankCredentialConfig,
+          {
+            dialAddress: "127.0.0.1",
+            dialPort: port,
+            certificateAuthority: TEST_CA
+          }
+        );
+      await expectTransportError(
+        () => blankCredential.issueToken(canonicalRequest()),
+        "TOSS_OPEN_API_TOKEN_TRANSPORT_INVALID_CONFIG"
+      );
+
       const request = canonicalRequest();
       await expectTransportError(
         () =>
