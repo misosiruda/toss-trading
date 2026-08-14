@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 
 import { z } from "zod";
@@ -29,7 +30,10 @@ const rawResponseBytesSchema = z
 
 const compatibilityInputSchema =
   officialBrokerObservedCalendarResponseParserOptionsSchema
-    .safeExtend({ rawResponseBytes: rawResponseBytesSchema })
+    .safeExtend({
+      rawOpenApiDocumentBytes: rawResponseBytesSchema,
+      rawResponseBytes: rawResponseBytesSchema
+    })
     .strict();
 
 const operationSchema = z.discriminatedUnion("market", [
@@ -133,6 +137,7 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
   value: unknown
 ): OfficialTossOpenApiCalendarCompatibilityResult {
   const input = compatibilityInputSchema.parse(value);
+  verifyPinnedOpenApiDocument(input.rawOpenApiDocumentBytes);
   const rawResponse = parseRawResponseBytes(input.rawResponseBytes);
   const response = parseOfficialBrokerObservedCalendarResponse(rawResponse, {
     market: input.market,
@@ -163,20 +168,94 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
 }
 
 function parseRawResponseBytes(rawResponseBytes: Uint8Array): unknown {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(rawResponseBytes);
-  } catch {
-    throw new Error(
-      "calendar compatibility raw response bytes must be valid UTF-8"
-    );
+  return parseJsonBytes(rawResponseBytes, "raw response");
+}
+
+function verifyPinnedOpenApiDocument(rawDocumentBytes: Uint8Array): void {
+  const documentSha256 = `sha256:${createHash("sha256")
+    .update(rawDocumentBytes)
+    .digest("hex")}`;
+  if (documentSha256 !== OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_SHA256) {
+    throw new Error("calendar compatibility OpenAPI document hash mismatch");
   }
 
+  const document = pinnedOpenApiDocumentSchema.parse(
+    parseJsonBytes(rawDocumentBytes, "OpenAPI document")
+  );
+  const paths = document.paths as Record<
+    string,
+    {
+      get?: {
+        operationId?: string;
+        responses?: Record<
+          string,
+          {
+            content?: Record<
+              string,
+              {
+                schema?: {
+                  allOf?: Array<{
+                    properties?: { result?: { $ref?: string } };
+                  }>;
+                };
+                examples?: Record<string, unknown>;
+              }
+            >;
+          }
+        >;
+      };
+    }
+  >;
+  for (const operation of Object.values(OPERATION_BY_MARKET)) {
+    const get = paths[operation.path]?.get;
+    if (
+      get?.operationId !== operation.operationId ||
+      get.responses?.["200"]?.content?.["application/json"]?.schema?.allOf?.[1]
+        ?.properties?.result?.$ref !== operation.responseSchemaRef ||
+      Object.keys(
+        get.responses?.["200"]?.content?.["application/json"]?.examples ?? {}
+      ).length === 0
+    ) {
+      throw new Error(
+        `calendar compatibility OpenAPI operation binding mismatch: ${operation.market}`
+      );
+    }
+  }
+}
+
+const pinnedOpenApiDocumentSchema = z
+  .object({
+    openapi: z.literal(OFFICIAL_TOSS_OPEN_API_CALENDAR_OPENAPI_VERSION),
+    info: z
+      .object({
+        version: z.literal(
+          OFFICIAL_TOSS_OPEN_API_CALENDAR_API_CONTRACT_VERSION
+        )
+      })
+      .passthrough(),
+    servers: z
+      .array(
+        z
+          .object({
+            url: z.literal(OFFICIAL_TOSS_OPEN_API_CALENDAR_SERVER_ORIGIN)
+          })
+          .passthrough()
+      )
+      .min(1),
+    paths: z.record(z.string(), z.unknown())
+  })
+  .passthrough();
+
+function parseJsonBytes(rawBytes: Uint8Array, label: string): unknown {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(rawBytes);
+  } catch {
+    throw new Error(`calendar compatibility ${label} bytes must be valid UTF-8`);
+  }
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new Error(
-      "calendar compatibility raw response bytes must be valid JSON"
-    );
+    throw new Error(`calendar compatibility ${label} bytes must be valid JSON`);
   }
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { TextEncoder } from "node:util";
 
@@ -7,16 +8,53 @@ import {
   OFFICIAL_TOSS_OPEN_API_CALENDAR_COMPATIBILITY_SCHEMA_VERSION,
   OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_SHA256,
   officialTossOpenApiCalendarCompatibilityResultSchema,
-  verifyOfficialTossOpenApiCalendarCompatibility
+  verifyOfficialTossOpenApiCalendarCompatibility as verifyUntrustedCompatibility
 } from "./officialBrokerObservedCalendarOpenApiCompatibility.js";
 import { OFFICIAL_BROKER_OBSERVED_CALENDAR_RESPONSE_SCHEMA_VERSION } from "./officialBrokerObservedCalendarResponse.js";
+
+const PINNED_OPENAPI_BYTES = readFileSync(
+  "src/replay/officialTossOpenApi-1.2.14.json"
+);
+const PINNED_OPENAPI_DOCUMENT = JSON.parse(
+  PINNED_OPENAPI_BYTES.toString("utf8")
+) as {
+  paths: Record<
+    string,
+    {
+      get: {
+        responses: {
+          "200": {
+            content: {
+              "application/json": {
+                examples: Record<string, { value: unknown }>;
+              };
+            };
+          };
+        };
+      };
+    }
+  >;
+};
+
+function pinnedExample(market: "KR" | "US", name: string): unknown {
+  return PINNED_OPENAPI_DOCUMENT.paths[
+    `/api/v1/market-calendar/${market}`
+  ]!.get.responses["200"].content["application/json"].examples[name]!.value;
+}
+
+function verifyPinnedCompatibility(value: Record<string, unknown>) {
+  return verifyUntrustedCompatibility({
+    ...value,
+    rawOpenApiDocumentBytes: PINNED_OPENAPI_BYTES
+  });
+}
 
 const OPENAPI_EXAMPLE_CASES = [
   {
     name: "KR businessDay",
     market: "KR" as const,
     requestedDate: "2026-03-25",
-    response: krResponse("2026-03-24", "2026-03-25", "2026-03-26"),
+    response: pinnedExample("KR", "businessDay"),
     todayStatus: "open",
     todaySessionTypes: ["pre_market", "regular_market", "after_market"],
     operation: {
@@ -29,12 +67,7 @@ const OPENAPI_EXAMPLE_CASES = [
     name: "KR holidayToday",
     market: "KR" as const,
     requestedDate: "2026-05-05",
-    response: krResponse(
-      "2026-05-04",
-      "2026-05-05",
-      "2026-05-06",
-      null
-    ),
+    response: pinnedExample("KR", "holidayToday"),
     todayStatus: "closed",
     todaySessionTypes: [],
     operation: {
@@ -47,12 +80,7 @@ const OPENAPI_EXAMPLE_CASES = [
     name: "KR nxtPreMarketHoliday",
     market: "KR" as const,
     requestedDate: "2026-03-25",
-    response: krResponse(
-      "2026-03-24",
-      "2026-03-25",
-      "2026-03-26",
-      { ...krIntegrated("2026-03-25"), preMarket: null }
-    ),
+    response: pinnedExample("KR", "nxtPreMarketHoliday"),
     todayStatus: "open",
     todaySessionTypes: ["regular_market", "after_market"],
     operation: {
@@ -65,7 +93,7 @@ const OPENAPI_EXAMPLE_CASES = [
     name: "US businessDay",
     market: "US" as const,
     requestedDate: "2026-03-25",
-    response: usResponse("2026-03-24", "2026-03-25", "2026-03-26"),
+    response: pinnedExample("US", "businessDay"),
     todayStatus: "open",
     todaySessionTypes: [
       "day_market",
@@ -83,12 +111,7 @@ const OPENAPI_EXAMPLE_CASES = [
     name: "US holidayToday",
     market: "US" as const,
     requestedDate: "2026-07-03",
-    response: usResponse(
-      "2026-07-02",
-      "2026-07-03",
-      "2026-07-06",
-      true
-    ),
+    response: pinnedExample("US", "holidayToday"),
     todayStatus: "closed",
     todaySessionTypes: [],
     operation: {
@@ -101,7 +124,7 @@ const OPENAPI_EXAMPLE_CASES = [
 
 for (const fixture of OPENAPI_EXAMPLE_CASES) {
   test(`accepts OpenAPI 1.2.14 ${fixture.name} example-derived bytes`, () => {
-    const result = verifyOfficialTossOpenApiCalendarCompatibility({
+    const result = verifyPinnedCompatibility({
       market: fixture.market,
       requestedDate: fixture.requestedDate,
       rawResponseBytes: bytes(fixture.response)
@@ -153,6 +176,19 @@ for (const fixture of OPENAPI_EXAMPLE_CASES) {
   });
 }
 
+test("calendar compatibility gate rejects unverified OpenAPI document bytes", () => {
+  assert.throws(
+    () =>
+      verifyUntrustedCompatibility({
+        market: "KR",
+        requestedDate: "2026-03-25",
+        rawOpenApiDocumentBytes: bytes({ openapi: "3.1.0" }),
+        rawResponseBytes: bytes(krResponse("2026-03-24", "2026-03-25", "2026-03-26"))
+      }),
+    /document hash mismatch/
+  );
+});
+
 test("calendar compatibility gate rejects malformed byte inputs", () => {
   const base = {
     market: "KR",
@@ -161,7 +197,7 @@ test("calendar compatibility gate rejects malformed byte inputs", () => {
 
   assert.throws(
     () =>
-      verifyOfficialTossOpenApiCalendarCompatibility({
+      verifyPinnedCompatibility({
         ...base,
         rawResponseBytes: new Uint8Array()
       }),
@@ -169,7 +205,7 @@ test("calendar compatibility gate rejects malformed byte inputs", () => {
   );
   assert.throws(
     () =>
-      verifyOfficialTossOpenApiCalendarCompatibility({
+      verifyPinnedCompatibility({
         ...base,
         rawResponseBytes: new Uint8Array([0xc3, 0x28])
       }),
@@ -177,14 +213,14 @@ test("calendar compatibility gate rejects malformed byte inputs", () => {
   );
   assert.throws(
     () =>
-      verifyOfficialTossOpenApiCalendarCompatibility({
+      verifyPinnedCompatibility({
         ...base,
         rawResponseBytes: new TextEncoder().encode("{")
       }),
     /must be valid JSON/
   );
   assert.throws(() =>
-      verifyOfficialTossOpenApiCalendarCompatibility({
+      verifyPinnedCompatibility({
       ...base,
       rawResponseBytes: bytes(
         krResponse("2026-03-24", "2026-03-25", "2026-03-26")
@@ -203,7 +239,7 @@ test("calendar compatibility gate rejects schema and request binding mismatches"
   unknownField["unexpected"] = true;
 
   assert.throws(() =>
-    verifyOfficialTossOpenApiCalendarCompatibility({
+    verifyPinnedCompatibility({
       market: "KR",
       requestedDate: "2026-03-25",
       rawResponseBytes: bytes(unknownField)
@@ -211,7 +247,7 @@ test("calendar compatibility gate rejects schema and request binding mismatches"
   );
   assert.throws(
     () =>
-      verifyOfficialTossOpenApiCalendarCompatibility({
+      verifyPinnedCompatibility({
         market: "KR",
         requestedDate: "2026-03-24",
         rawResponseBytes: bytes(response)
@@ -219,7 +255,7 @@ test("calendar compatibility gate rejects schema and request binding mismatches"
     /requestedDate must match returned today date/
   );
   assert.throws(() =>
-    verifyOfficialTossOpenApiCalendarCompatibility({
+    verifyPinnedCompatibility({
       market: "US",
       requestedDate: "2026-03-25",
       rawResponseBytes: bytes(response)
@@ -228,7 +264,7 @@ test("calendar compatibility gate rejects schema and request binding mismatches"
 });
 
 test("calendar compatibility result rejects identity drift and evidence promotion", () => {
-  const result = verifyOfficialTossOpenApiCalendarCompatibility({
+  const result = verifyPinnedCompatibility({
     market: "KR",
     requestedDate: "2026-03-25",
     rawResponseBytes: bytes(

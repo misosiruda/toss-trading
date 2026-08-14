@@ -141,9 +141,10 @@ effective query의 값이 requested date, evidence request와 일치하는지 re
 request provenance를 만들 수 없으므로 evidence artifact를 생성하지 않는다.
 
 2026-08-14의 official OpenAPI `latest`는 `1.2.14`이며
-`officialBrokerObservedCalendarOpenApiCompatibility.ts`가 official example-derived raw
-bytes를 fatal UTF-8/JSON과 기존 strict response parser로 검증한다. Compatibility result는
-document SHA-256, KR/US operation과 parser contract identity를 고정하지만 evidence artifact를
+`officialBrokerObservedCalendarOpenApiCompatibility.ts`가 pinned OpenAPI document bytes의
+SHA-256과 calendar operation/schema binding을 먼저 검증하고 snapshot의 exact example
+value를 기존 strict response parser로 검증한다. Compatibility result는 document SHA-256,
+KR/US operation과 parser contract identity를 고정하지만 evidence artifact를
 만들지 않고 handoff를 `blocked_pending_version_aware_evidence`로 유지한다. 따라서
 byte-level compatibility만으로 actual response handoff를 승인하지 않는다. 기존
 `official_broker_observed_calendar_evidence.v1` schema/builder/verifier와
