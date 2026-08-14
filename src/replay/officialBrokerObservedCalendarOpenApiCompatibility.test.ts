@@ -268,9 +268,7 @@ test("calendar compatibility result rejects identity drift and evidence promotio
   const result = verifyPinnedCompatibility({
     market: "KR",
     requestedDate: "2026-03-25",
-    rawResponseBytes: bytes(
-      krResponse("2026-03-24", "2026-03-25", "2026-03-26")
-    )
+    rawResponseBytes: bytes(pinnedExample("KR", "businessDay"))
   });
 
   for (const tampered of [

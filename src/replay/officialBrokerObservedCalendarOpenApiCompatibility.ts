@@ -140,8 +140,12 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
   value: unknown
 ): OfficialTossOpenApiCalendarCompatibilityResult {
   const input = compatibilityInputSchema.parse(value);
-  verifyPinnedOpenApiDocument(input.rawOpenApiDocumentBytes);
   const rawResponse = parseRawResponseBytes(input.rawResponseBytes);
+  verifyPinnedOpenApiDocument(
+    input.rawOpenApiDocumentBytes,
+    input.market,
+    rawResponse
+  );
   const response = parseOfficialBrokerObservedCalendarResponse(rawResponse, {
     market: input.market,
     requestedDate: input.requestedDate
@@ -175,7 +179,11 @@ function parseRawResponseBytes(rawResponseBytes: Uint8Array): unknown {
   return parseJsonBytes(rawResponseBytes, "raw response");
 }
 
-function verifyPinnedOpenApiDocument(rawDocumentBytes: Uint8Array): void {
+function verifyPinnedOpenApiDocument(
+  rawDocumentBytes: Uint8Array,
+  market: "KR" | "US",
+  rawResponse: unknown
+): void {
   const documentSha256 = `sha256:${createHash("sha256")
     .update(rawDocumentBytes)
     .digest("hex")}`;
@@ -225,6 +233,26 @@ function verifyPinnedOpenApiDocument(rawDocumentBytes: Uint8Array): void {
       );
     }
   }
+
+  const operation = OPERATION_BY_MARKET[market];
+  const examples =
+    paths[operation.path]?.get?.responses?.["200"]?.content?.[
+      "application/json"
+    ]?.examples ?? {};
+  const matchesPinnedExample = Object.values(examples).some(
+    (example) =>
+      isExampleValue(example) &&
+      JSON.stringify(example.value) === JSON.stringify(rawResponse)
+  );
+  if (!matchesPinnedExample) {
+    throw new Error(
+      `calendar compatibility response must match a pinned ${market} example`
+    );
+  }
+}
+
+function isExampleValue(value: unknown): value is { value: unknown } {
+  return typeof value === "object" && value !== null && "value" in value;
 }
 
 const pinnedOpenApiDocumentSchema = z
