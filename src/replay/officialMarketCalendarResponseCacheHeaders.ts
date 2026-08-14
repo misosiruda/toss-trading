@@ -7,6 +7,12 @@ const rawResponseCacheHeadersSchema = z
   })
   .strict();
 
+const rawNetworkResponseCacheHeadersSchema = rawResponseCacheHeadersSchema
+  .safeExtend({
+    expiresHeaderValues: z.array(z.string())
+  })
+  .strict();
+
 const HTTP_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HTTP_MONTHS = [
   "Jan",
@@ -26,6 +32,11 @@ const HTTP_MONTHS = [
 export interface OfficialMarketCalendarResponseCacheHeaders {
   responseDate: string;
   responseAgeSeconds: number | null;
+}
+
+export interface OfficialMarketCalendarNetworkResponseCacheHeaders
+  extends OfficialMarketCalendarResponseCacheHeaders {
+  responseExpires: string | null;
 }
 
 export function parseOfficialMarketCalendarResponseCacheHeaders(
@@ -52,14 +63,38 @@ export function parseOfficialMarketCalendarResponseCacheHeaders(
   };
 }
 
-function parseStrictHttpDate(value: string): string {
+export function parseOfficialMarketCalendarNetworkResponseCacheHeaders(
+  value: unknown
+): OfficialMarketCalendarNetworkResponseCacheHeaders {
+  const headers = rawNetworkResponseCacheHeadersSchema.parse(value);
+  if (headers.expiresHeaderValues.length > 1) {
+    throw new Error(
+      "official calendar response must not contain duplicate Expires headers"
+    );
+  }
+  return {
+    ...parseOfficialMarketCalendarResponseCacheHeaders({
+      dateHeaderValues: headers.dateHeaderValues,
+      ageHeaderValues: headers.ageHeaderValues
+    }),
+    responseExpires:
+      headers.expiresHeaderValues.length === 0
+        ? null
+        : parseStrictHttpDate(headers.expiresHeaderValues[0]!, "Expires")
+  };
+}
+
+function parseStrictHttpDate(
+  value: string,
+  headerName: "Date" | "Expires" = "Date"
+): string {
   const match =
     /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat), (\d{2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) ([01]\d|2[0-3]):([0-5]\d):([0-5]\d) GMT$/.exec(
       value
     );
   if (match === null) {
     throw new Error(
-      "official calendar response Date must use canonical IMF-fixdate"
+      `official calendar response ${headerName} must use canonical IMF-fixdate`
     );
   }
 
@@ -76,7 +111,7 @@ function parseStrictHttpDate(value: string): string {
     HTTP_WEEKDAYS[timestamp.getUTCDay()] !== match[1]
   ) {
     throw new Error(
-      "official calendar response Date must represent an existing matching date"
+      `official calendar response ${headerName} must represent an existing matching date`
     );
   }
 

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseOfficialMarketCalendarResponseCacheHeaders } from "./officialMarketCalendarResponseCacheHeaders.js";
+import {
+  parseOfficialMarketCalendarNetworkResponseCacheHeaders,
+  parseOfficialMarketCalendarResponseCacheHeaders
+} from "./officialMarketCalendarResponseCacheHeaders.js";
 
 test("calendar response cache headers parse canonical Date and Age", () => {
   assert.deepEqual(
@@ -23,6 +26,60 @@ test("calendar response cache headers preserve absent Age as null", () => {
       ageHeaderValues: []
     }).responseAgeSeconds,
     null
+  );
+});
+
+test("network calendar cache headers preserve canonical Expires provenance", () => {
+  assert.deepEqual(
+    parseOfficialMarketCalendarNetworkResponseCacheHeaders({
+      dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
+      ageHeaderValues: [],
+      expiresHeaderValues: ["Tue, 01 Jul 2025 12:02:00 GMT"]
+    }),
+    {
+      responseDate: "2025-07-01T12:00:00Z",
+      responseAgeSeconds: null,
+      responseExpires: "2025-07-01T12:02:00Z"
+    }
+  );
+  assert.equal(
+    parseOfficialMarketCalendarNetworkResponseCacheHeaders({
+      dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
+      ageHeaderValues: [],
+      expiresHeaderValues: []
+    }).responseExpires,
+    null
+  );
+});
+
+test("network calendar cache headers reject duplicate or noncanonical Expires", () => {
+  for (const expiresHeaderValues of [
+    [
+      "Tue, 01 Jul 2025 12:02:00 GMT",
+      "Tue, 01 Jul 2025 12:03:00 GMT"
+    ],
+    ["2025-07-01T12:02:00Z"],
+    ["Mon, 01 Jul 2025 12:02:00 GMT"]
+  ]) {
+    assert.throws(() =>
+      parseOfficialMarketCalendarNetworkResponseCacheHeaders({
+        dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
+        ageHeaderValues: [],
+        expiresHeaderValues
+      })
+    );
+  }
+});
+
+test("legacy cache header parser remains strict and Expires-unaware", () => {
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarResponseCacheHeaders({
+        dateHeaderValues: ["Tue, 01 Jul 2025 12:00:00 GMT"],
+        ageHeaderValues: [],
+        expiresHeaderValues: []
+      }),
+    /Unrecognized key/
   );
 });
 
