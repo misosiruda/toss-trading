@@ -415,15 +415,17 @@ function assertResponseHeaders(response: IncomingMessage): void {
 }
 
 function assertResponseTrailers(response: IncomingMessage): void {
-  if (readRawHeaderValues(response.rawTrailers, "content-range").length !== 0) {
-    throwInvalidHeaders(
-      "Toss Open API token response trailers contained Content-Range."
-    );
-  }
-  if (readRawHeaderValues(response.rawTrailers, "content-encoding").length !== 0) {
-    throwInvalidHeaders(
-      "Toss Open API token response trailers contained Content-Encoding."
-    );
+  for (const name of [
+    "content-range",
+    "content-encoding",
+    "content-type",
+    "content-length"
+  ]) {
+    if (readRawHeaderValues(response.rawTrailers, name).length !== 0) {
+      throwInvalidHeaders(
+        `Toss Open API token response trailers contained forbidden ${name}.`
+      );
+    }
   }
 }
 

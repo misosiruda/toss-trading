@@ -390,7 +390,8 @@ test("token transport rejects forbidden response trailers", async () => {
   for (const [name, value] of [
     ["Content-Range", "bytes 0-1/2"],
     ["Content-Encoding", "identity"],
-    ["Content-Encoding", "gzip"]
+    ["Content-Encoding", "gzip"],
+    ["Content-Type", "text/plain"]
   ] as const) {
     await withTokenServer(
       (_request, response) => {
