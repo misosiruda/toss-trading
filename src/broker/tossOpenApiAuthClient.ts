@@ -32,6 +32,11 @@ export interface TossOpenApiIssuedToken {
   expiresAt: Date;
 }
 
+export interface TossOpenApiTokenLease {
+  token: TossOpenApiIssuedToken;
+  generation: number;
+}
+
 export interface TossOpenApiTokenIssuer {
   issueToken(
     request: TossOpenApiTokenIssueRequest
@@ -54,8 +59,9 @@ export class TossOpenApiAuthClientError extends Error {
 }
 
 export class TossOpenApiAuthClient {
-  private cachedToken: TossOpenApiIssuedToken | undefined;
-  private pendingIssue: Promise<TossOpenApiIssuedToken> | undefined;
+  private cachedLease: TossOpenApiTokenLease | undefined;
+  private pendingIssue: Promise<TossOpenApiTokenLease> | undefined;
+  private generation = 0;
 
   constructor(
     private readonly config: TossOpenApiAuthConfig,
@@ -64,41 +70,65 @@ export class TossOpenApiAuthClient {
   ) {}
 
   async getAccessToken(): Promise<string> {
-    const token = await this.getToken();
-    return token.accessToken;
+    const lease = await this.getTokenLease();
+    return lease.token.accessToken;
   }
 
   async getToken(): Promise<TossOpenApiIssuedToken> {
+    const lease = await this.getTokenLease();
+    return lease.token;
+  }
+
+  async getTokenLease(): Promise<TossOpenApiTokenLease> {
     this.assertReadyConfig();
 
     const now = this.now();
     if (
-      this.cachedToken !== undefined &&
-      this.isTokenUsable(this.cachedToken, now)
+      this.cachedLease !== undefined &&
+      this.isTokenUsable(this.cachedLease.token, now)
     ) {
-      return this.cachedToken;
+      return this.cachedLease;
     }
 
-    this.pendingIssue ??= this.issueAndCacheToken();
+    const pendingIssue = (this.pendingIssue ??= this.issueAndCacheToken());
     try {
-      return await this.pendingIssue;
+      return await pendingIssue;
     } finally {
-      this.pendingIssue = undefined;
+      if (this.pendingIssue === pendingIssue) {
+        this.pendingIssue = undefined;
+      }
     }
   }
 
-  clearToken(): void {
-    this.cachedToken = undefined;
+  invalidateTokenLease(generation: number): boolean {
+    if (this.cachedLease?.generation !== generation) {
+      return false;
+    }
+    this.cachedLease = undefined;
+    return true;
   }
 
-  private async issueAndCacheToken(): Promise<TossOpenApiIssuedToken> {
+  private async issueAndCacheToken(): Promise<TossOpenApiTokenLease> {
     const issuedAt = this.now();
     const response = await this.issuer.issueToken(
       buildTossOpenApiTokenIssueRequest(this.config)
     );
     const token = parseTossOpenApiTokenIssueResponse(response, issuedAt);
-    this.cachedToken = token;
-    return token;
+    const generation = this.nextGeneration();
+    const lease = Object.freeze({ token: Object.freeze(token), generation });
+    this.cachedLease = lease;
+    return lease;
+  }
+
+  private nextGeneration(): number {
+    if (this.generation === Number.MAX_SAFE_INTEGER) {
+      throw new TossOpenApiAuthClientError(
+        "TOSS_OPEN_API_INVALID_TOKEN_RESPONSE",
+        "Toss Open API token lease generation is exhausted."
+      );
+    }
+    this.generation += 1;
+    return this.generation;
   }
 
   private assertReadyConfig(): void {

@@ -133,18 +133,39 @@ test("auth client collapses concurrent token requests into one issue call", asyn
     now: () => new Date("2026-06-17T09:00:00+09:00")
   });
 
-  const first = client.getAccessToken();
-  const second = client.getAccessToken();
+  const first = client.getTokenLease();
+  const second = client.getTokenLease();
   release?.({
     access_token: "single-flight-token",
     token_type: "Bearer",
     expires_in: 3600
   });
 
-  assert.deepEqual(await Promise.all([first, second]), [
-    "single-flight-token",
-    "single-flight-token"
+  const [firstLease, secondLease] = await Promise.all([first, second]);
+  assert.strictEqual(firstLease, secondLease);
+  assert.equal(firstLease.token.accessToken, "single-flight-token");
+  assert.equal(firstLease.generation, 1);
+});
+
+test("auth client invalidates only the matching token lease generation", async () => {
+  const issuer = new FakeTokenIssuer([
+    { access_token: "first-token", token_type: "Bearer", expires_in: 3600 },
+    { access_token: "second-token", token_type: "Bearer", expires_in: 3600 }
   ]);
+  const client = new TossOpenApiAuthClient(readyConfig(), issuer, {
+    now: () => new Date("2026-06-17T09:00:00+09:00")
+  });
+
+  const first = await client.getTokenLease();
+  assert.equal(first.generation, 1);
+  assert.equal(client.invalidateTokenLease(first.generation), true);
+
+  const second = await client.getTokenLease();
+  assert.equal(second.generation, 2);
+  assert.equal(second.token.accessToken, "second-token");
+  assert.equal(client.invalidateTokenLease(first.generation), false);
+  assert.strictEqual(await client.getTokenLease(), second);
+  assert.equal(issuer.requests.length, 2);
 });
 
 test("invalid token response is rejected and not cached", async () => {

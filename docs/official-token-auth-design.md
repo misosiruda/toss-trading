@@ -114,12 +114,9 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `readTossOpenApiAuthConfig`는 env를 해석하되 token 발급 HTTP call을 수행하지 않는다.
 - `TOSS_OPEN_API_AUTH_ENABLED=true`에서 `client_id` 또는 `client_secret`이 누락되면 `status=invalid`로 fail-closed 처리한다.
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환한다.
-- `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache, single-flight를 검증한다.
-- `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping, 401 token failure 1회 guarded reissue를 검증한다.
-- 현재 `TossOpenApiReadOnlyHttpClient`는 실패 요청이 사용한 token identity를 전달하지 않고
-  `TossOpenApiAuthClient.clearToken()`이 current cache를 무조건 지운다. 따라서 token A를
-  사용한 늦은 `401`이 이미 발급된 token B를 지울 수 있으므로 generation-aware invalidation
-  hardening 전에는 production network transport가 이 reissue 경로에 의존할 수 없다.
+- `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 사용해 token issue request, response parsing, process memory cache와 generation별 single-flight lease를 검증한다. 성공한 issue마다 process-local generation을 증가시키고 matching generation만 compare-and-clear한다.
+- `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping과 refreshable `401`의 generation-aware 1회 guarded reissue를 검증한다. Initial과 retry attempt가 실제 사용한 lease generation을 별도로 보존하며 retry도 refreshable `401`이면 그 generation만 정리하고 세 번째 attempt를 만들지 않는다.
+- 동일 generation의 concurrent `401` reissue는 single-flight로 합쳐지며, 늦은 stale generation invalidation은 이미 current인 newer token을 지우거나 추가 token을 발급하지 않는다. Generation은 process-local 비교 identity일 뿐 token value/hash/log에는 포함하지 않는다.
 - 실제 network transport, official API 실제 호출, persistent token store, account/order adapter는 아직 구현하지 않았다.
 
 ## Calendar 전용 Token Issuer Transport 계약
@@ -342,7 +339,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 5 | Read-only market adapter | market endpoint mapping with mocked HTTP | account/order mutation |
 | 6 | Read-only account snapshot | account header handling, holdings masking | order mutation |
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
-| 7a | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
+| 7a | Token generation invalidation hardening | 구현됨: token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | exact `/oauth2/token` POST, no Range/Content-Range, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
 | 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap과 monotonic response-delay corrected freshness | account header, broker mutation |
 | 9a | Version-aware calendar evidence consumers | response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |

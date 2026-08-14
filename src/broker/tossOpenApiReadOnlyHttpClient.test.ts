@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { readTossOpenApiAuthConfig } from "../config/tossOpenApiAuthConfig.js";
 import {
+  TossOpenApiAuthClient,
+  type TossOpenApiTokenIssueRequest,
+  type TossOpenApiTokenIssueResponse,
+  type TossOpenApiTokenIssuer
+} from "./tossOpenApiAuthClient.js";
+import {
   buildTossOpenApiReadOnlyUrl,
   TossOpenApiReadOnlyHttpClient,
   TossOpenApiReadOnlyHttpClientError,
@@ -14,20 +20,30 @@ import {
 class FakeTokenProvider {
   callCount = 0;
   clearCount = 0;
+  private currentIndex = 0;
   private readonly tokens: string[];
 
   constructor(tokens: string | string[] = "local-access-token") {
     this.tokens = Array.isArray(tokens) ? [...tokens] : [tokens];
   }
 
-  async getAccessToken(): Promise<string> {
-    const token = this.tokens[Math.min(this.callCount, this.tokens.length - 1)];
+  async getTokenLease() {
+    const index = Math.min(this.currentIndex, this.tokens.length - 1);
+    const token = this.tokens[index];
     this.callCount += 1;
-    return token ?? "local-access-token";
+    return {
+      token: { accessToken: token ?? "local-access-token" },
+      generation: index + 1
+    };
   }
 
-  clearToken(): void {
+  invalidateTokenLease(generation: number): boolean {
     this.clearCount += 1;
+    if (generation !== this.currentIndex + 1) {
+      return false;
+    }
+    this.currentIndex = Math.min(this.currentIndex + 1, this.tokens.length - 1);
+    return true;
   }
 }
 
@@ -45,6 +61,42 @@ class FakeReadOnlyTransport implements TossOpenApiReadOnlyTransport {
     this.requests.push(request);
     return this.responses.shift() ?? { status: 200, body: { ok: true } };
   }
+}
+
+class SequenceTokenIssuer implements TossOpenApiTokenIssuer {
+  readonly requests: TossOpenApiTokenIssueRequest[] = [];
+
+  constructor(private readonly responses: TossOpenApiTokenIssueResponse[]) {}
+
+  async issueToken(
+    request: TossOpenApiTokenIssueRequest
+  ): Promise<TossOpenApiTokenIssueResponse> {
+    this.requests.push(request);
+    const response = this.responses.shift();
+    assert.ok(response, "unexpected token issue");
+    return response;
+  }
+}
+
+function tokenResponse(accessToken: string): TossOpenApiTokenIssueResponse {
+  return { access_token: accessToken, token_type: "Bearer", expires_in: 3600 };
+}
+
+function deferred(): {
+  promise: Promise<void>;
+  resolve: () => void;
+} {
+  let resolve: (() => void) | undefined;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return {
+    promise,
+    resolve: () => {
+      assert.ok(resolve);
+      resolve();
+    }
+  };
 }
 
 function readyConfig() {
@@ -231,8 +283,9 @@ test("read-only URL builder rejects non-https base URL", () => {
 test("read-only HTTP client maps authentication failures", async () => {
   const client = new TossOpenApiReadOnlyHttpClient(
     readyConfig(),
-    { getAccessToken: async () => "local-access-token" },
+    new FakeTokenProvider("local-access-token"),
     new FakeReadOnlyTransport([
+      { status: 401, body: { code: "invalid_token" } },
       { status: 401, body: { code: "invalid_token" } }
     ])
   );
@@ -293,7 +346,155 @@ test("read-only HTTP client returns auth failure after one token retry", async (
       error.responseCode === "invalid-token"
   );
   assert.equal(tokenProvider.callCount, 2);
-  assert.equal(tokenProvider.clearCount, 1);
+  assert.equal(tokenProvider.clearCount, 2);
+});
+
+test("staggered refreshable 401 responses preserve the newer token lease", async () => {
+  const issuer = new SequenceTokenIssuer([
+    tokenResponse("token-a"),
+    tokenResponse("token-b"),
+    tokenResponse("unexpected-token-c")
+  ]);
+  const authClient = new TossOpenApiAuthClient(readyConfig(), issuer, {
+    now: () => new Date("2026-06-17T09:00:00+09:00")
+  });
+  const lateTokenA = deferred();
+  const authorizations: string[] = [];
+  let tokenACount = 0;
+  const transport: TossOpenApiReadOnlyTransport = {
+    async request(request) {
+      authorizations.push(request.headers.Authorization);
+      if (request.headers.Authorization === "Bearer token-a") {
+        tokenACount += 1;
+        if (tokenACount === 2) {
+          await lateTokenA.promise;
+        }
+        return { status: 401, body: { error: { code: "expired-token" } } };
+      }
+      return { status: 200, body: { token: "b" } };
+    }
+  };
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    authClient,
+    transport
+  );
+
+  const first = client.getJson("/api/v1/prices");
+  const second = client.getJson("/api/v1/prices");
+  assert.deepEqual(await first, { token: "b" });
+  lateTokenA.resolve();
+  assert.deepEqual(await second, { token: "b" });
+
+  assert.equal(issuer.requests.length, 2);
+  assert.deepEqual(authorizations, [
+    "Bearer token-a",
+    "Bearer token-a",
+    "Bearer token-b",
+    "Bearer token-b"
+  ]);
+});
+
+test("a double refreshable 401 clears the retry lease without a third attempt", async () => {
+  const issuer = new SequenceTokenIssuer([
+    tokenResponse("token-a"),
+    tokenResponse("token-b"),
+    tokenResponse("token-c")
+  ]);
+  const authClient = new TossOpenApiAuthClient(readyConfig(), issuer, {
+    now: () => new Date("2026-06-17T09:00:00+09:00")
+  });
+  const authorizations: string[] = [];
+  const transport: TossOpenApiReadOnlyTransport = {
+    async request(request) {
+      authorizations.push(request.headers.Authorization);
+      if (request.headers.Authorization !== "Bearer token-c") {
+        return { status: 401, body: { error: { code: "invalid-token" } } };
+      }
+      return { status: 200, body: { token: "c" } };
+    }
+  };
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    authClient,
+    transport
+  );
+
+  await assert.rejects(
+    () => client.getJson("/api/v1/prices"),
+    (error) =>
+      error instanceof TossOpenApiReadOnlyHttpClientError &&
+      error.code === "TOSS_OPEN_API_READONLY_AUTH_FAILED"
+  );
+  assert.equal(issuer.requests.length, 2);
+  assert.deepEqual(authorizations, ["Bearer token-a", "Bearer token-b"]);
+
+  assert.deepEqual(await client.getJson("/api/v1/prices"), { token: "c" });
+  assert.equal(issuer.requests.length, 3);
+  assert.deepEqual(authorizations, [
+    "Bearer token-a",
+    "Bearer token-b",
+    "Bearer token-c"
+  ]);
+});
+
+test("a stale retry 401 cannot clear a concurrently issued current lease", async () => {
+  const issuer = new SequenceTokenIssuer([
+    tokenResponse("token-a"),
+    tokenResponse("token-b"),
+    tokenResponse("token-c"),
+    tokenResponse("unexpected-token-d")
+  ]);
+  const authClient = new TossOpenApiAuthClient(readyConfig(), issuer, {
+    now: () => new Date("2026-06-17T09:00:00+09:00")
+  });
+  const firstTokenBStarted = deferred();
+  const releaseFirstTokenB = deferred();
+  const authorizations: string[] = [];
+  let tokenBCount = 0;
+  const transport: TossOpenApiReadOnlyTransport = {
+    async request(request) {
+      authorizations.push(request.headers.Authorization);
+      if (request.headers.Authorization === "Bearer token-a") {
+        return { status: 401, body: { error: { code: "expired-token" } } };
+      }
+      if (request.headers.Authorization === "Bearer token-b") {
+        tokenBCount += 1;
+        if (tokenBCount === 1) {
+          firstTokenBStarted.resolve();
+          await releaseFirstTokenB.promise;
+        }
+        return { status: 401, body: { error: { code: "expired-token" } } };
+      }
+      return { status: 200, body: { token: "c" } };
+    }
+  };
+  const client = new TossOpenApiReadOnlyHttpClient(
+    readyConfig(),
+    authClient,
+    transport
+  );
+
+  const staleRetry = client.getJson("/api/v1/prices");
+  await firstTokenBStarted.promise;
+  assert.deepEqual(await client.getJson("/api/v1/prices"), { token: "c" });
+  releaseFirstTokenB.resolve();
+  await assert.rejects(
+    () => staleRetry,
+    (error) =>
+      error instanceof TossOpenApiReadOnlyHttpClientError &&
+      error.code === "TOSS_OPEN_API_READONLY_AUTH_FAILED"
+  );
+
+  assert.deepEqual(await client.getJson("/api/v1/prices"), { token: "c" });
+  assert.equal(issuer.requests.length, 3);
+  assert.deepEqual(authorizations, [
+    "Bearer token-a",
+    "Bearer token-b",
+    "Bearer token-b",
+    "Bearer token-c",
+    "Bearer token-c"
+  ]);
 });
 
 test("read-only HTTP client maps forbidden responses", async () => {

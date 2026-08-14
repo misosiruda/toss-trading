@@ -52,8 +52,11 @@ export interface TossOpenApiReadOnlyTransport {
 }
 
 export interface TossOpenApiBearerTokenProvider {
-  getAccessToken(): Promise<string>;
-  clearToken?(): void | Promise<void>;
+  getTokenLease(): Promise<{
+    token: { accessToken: string };
+    generation: number;
+  }>;
+  invalidateTokenLease(generation: number): boolean | Promise<boolean>;
 }
 
 export interface TossOpenApiReadOnlyHttpClientErrorOptions {
@@ -105,25 +108,35 @@ export class TossOpenApiReadOnlyHttpClient {
     const url = buildTossOpenApiReadOnlyUrl(this.config.baseUrl, input);
     const accountSeq = normalizeOptionalRequestAccountSeq(input.accountSeq);
     assertReadyAuthConfig(this.config);
-    const response = await this.sendGetRequest(url, accountSeq);
-    if (this.shouldRetryAfterTokenFailure(response)) {
-      await this.tokenProvider.clearToken?.();
-      return parseTossOpenApiReadOnlyHttpResponse(
-        await this.sendGetRequest(url, accountSeq)
-      );
+    const initial = await this.sendGetRequest(url, accountSeq);
+    if (this.shouldRetryAfterTokenFailure(initial.response)) {
+      await this.tokenProvider.invalidateTokenLease(initial.generation);
+      const retry = await this.sendGetRequest(url, accountSeq);
+      if (this.shouldRetryAfterTokenFailure(retry.response)) {
+        await this.tokenProvider.invalidateTokenLease(retry.generation);
+      }
+      return parseTossOpenApiReadOnlyHttpResponse(retry.response);
     }
 
-    return parseTossOpenApiReadOnlyHttpResponse(response);
+    return parseTossOpenApiReadOnlyHttpResponse(initial.response);
   }
 
   private async sendGetRequest(
     url: string,
     accountSeq: number | undefined
-  ): Promise<TossOpenApiReadOnlyHttpResponse> {
-    const accessToken = await this.tokenProvider.getAccessToken();
-    return this.transport.request(
-      buildTossOpenApiReadOnlyHttpRequest(url, accessToken, accountSeq)
+  ): Promise<{
+    response: TossOpenApiReadOnlyHttpResponse;
+    generation: number;
+  }> {
+    const lease = await this.tokenProvider.getTokenLease();
+    const response = await this.transport.request(
+      buildTossOpenApiReadOnlyHttpRequest(
+        url,
+        lease.token.accessToken,
+        accountSeq
+      )
     );
+    return { response, generation: lease.generation };
   }
 
   private shouldRetryAfterTokenFailure(
@@ -131,7 +144,6 @@ export class TossOpenApiReadOnlyHttpClient {
   ): boolean {
     return (
       response.status === 401 &&
-      this.tokenProvider.clearToken !== undefined &&
       isRefreshableTokenErrorCode(readErrorCode(response.body))
     );
   }
