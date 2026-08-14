@@ -1,21 +1,28 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 
-const SOURCE_URL =
-  "https://openapi.tossinvest.com/openapi-docs/latest/openapi.json";
 const SOURCE_SHA256 =
   "d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180";
+const MAX_SOURCE_BYTES = 1_000_000;
 const OUTPUT_PATH = "src/replay/officialTossCalendarOpenApi-1.2.14.json";
 const CALENDAR_PATHS = [
   "/api/v1/market-calendar/KR",
   "/api/v1/market-calendar/US"
 ];
 
-const response = await fetch(SOURCE_URL, { redirect: "error" });
-if (!response.ok) {
-  throw new Error(`OpenAPI fetch failed with status ${response.status}`);
+const [sourcePath, ...unexpectedArguments] = process.argv.slice(2);
+if (sourcePath === undefined || unexpectedArguments.length > 0) {
+  throw new Error(
+    "usage: node scripts/extractTossCalendarOpenApiSnapshot.mjs <pinned-openapi.json>"
+  );
 }
-const sourceBytes = new Uint8Array(await response.arrayBuffer());
+const sourceStats = await stat(sourcePath);
+if (!sourceStats.isFile() || sourceStats.size > MAX_SOURCE_BYTES) {
+  throw new Error(
+    "OpenAPI source must be a regular file no larger than 1000000 bytes"
+  );
+}
+const sourceBytes = await readFile(sourcePath);
 const sourceHash = createHash("sha256").update(sourceBytes).digest("hex");
 if (sourceHash !== SOURCE_SHA256) {
   throw new Error("OpenAPI source hash mismatch; refusing to extract");
