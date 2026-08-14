@@ -138,6 +138,7 @@ for (const fixture of OPENAPI_EXAMPLE_CASES) {
     assert.equal(result.sourceEvidenceClass, "official_broker_observed");
     assert.equal(result.replayEvidenceClass, "observed_session_only");
     assert.equal(result.compatibilityStatus, "compatible");
+    assert.equal(result.compatibilityScope, "pinned_document_examples_only");
     assert.equal(
       result.evidenceHandoffStatus,
       "blocked_pending_version_aware_evidence"

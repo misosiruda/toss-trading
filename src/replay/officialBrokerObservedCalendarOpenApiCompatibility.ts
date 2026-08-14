@@ -88,6 +88,7 @@ export const officialTossOpenApiCalendarCompatibilityResultSchema = z
     sourceEvidenceClass: z.literal("official_broker_observed"),
     replayEvidenceClass: z.literal("observed_session_only"),
     compatibilityStatus: z.literal("compatible"),
+    compatibilityScope: z.literal("pinned_document_examples_only"),
     evidenceHandoffStatus: z.literal(
       "blocked_pending_version_aware_evidence"
     ),
@@ -150,6 +151,7 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
     sourceEvidenceClass: "official_broker_observed",
     replayEvidenceClass: "observed_session_only",
     compatibilityStatus: "compatible",
+    compatibilityScope: "pinned_document_examples_only",
     evidenceHandoffStatus: "blocked_pending_version_aware_evidence",
     providerDeploymentVersion: "not_claimed",
     requestedDate: input.requestedDate,
