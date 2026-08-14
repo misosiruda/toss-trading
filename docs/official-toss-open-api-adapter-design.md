@@ -36,7 +36,9 @@
 | auth | OAuth 2.0 Client Credentials Grant |
 | account/order header | `X-Tossinvest-Account` |
 
-구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 현재 calendar response/evidence contract는 `1.2.13`에 고정돼 있으므로 `1.2.14` response compatibility와 version-aware evidence transition이 별도 PR에서 입증되기 전에는 network response를 evidence builder에 전달하지 않는다.
+구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 2026-08-14 재확인한 `1.2.14` document는 416,651 bytes, `sha256:d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180`이며 KR/US calendar path, operation id와 response schema reference가 아래 compatibility contract와 일치한다.
+
+`src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`는 이 document identity와 기존 strict response parser contract를 고정하고, non-empty raw bytes를 fatal UTF-8과 JSON으로 해석한 뒤 KR/US operation binding과 requested date를 검증한다. 회귀 테스트는 official OpenAPI `businessDay`, `holidayToday`, KR `nxtPreMarketHoliday` example에서 파생한 synthetic bytes를 사용하며 actual authenticated network response evidence를 주장하지 않는다. 결과는 `paper_only`, `official_broker_observed`, `observed_session_only`와 `evidenceHandoffStatus="blocked_pending_version_aware_evidence"`로 고정한다. 따라서 이 compatibility 결과만으로 network response를 v1 evidence builder에 전달하거나 `official_exchange`로 승격할 수 없고, version-aware v2 evidence transition은 계속 별도 선행 PR이다.
 
 ## 현재 공식 API 표면
 
@@ -282,10 +284,10 @@ surface 승인이 아니다.
 negative test 구현은 계속할 수 있다. 실제 호출을 실행하지 않은 PR은 그 사실을
 명시하며, mock 결과를 official response evidence로 기록하지 않는다.
 
-OpenAPI `1.2.14` calendar schema가 현재 `1.2.13` parser/evidence contract와
-호환된다는 byte-level fixture 검증이 merge되기 전에는 acquisition coordinator가 받은
-response를 evidence builder에 전달하지 않는다. Schema compatibility만으로 handoff를
-승인하지 않으며, 다음 backward-compatible evidence transition도 먼저 merge돼야 한다.
+OpenAPI `1.2.14` calendar schema가 현재 strict response parser와 호환된다는
+byte-level synthetic fixture gate는 구현됐다. 이 gate는 evidence artifact를 만들지 않고
+handoff status를 차단 상태로 고정한다. Schema compatibility만으로 handoff를 승인하지
+않으며, 다음 backward-compatible evidence transition도 먼저 merge돼야 한다.
 
 - `official_broker_observed_calendar_evidence.v1` schema, builder와 verifier는
   OpenAPI `1.2.13`에 계속 고정한다. 기존 v1 artifact를 rewrite하거나 v1의
@@ -707,7 +709,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 6 | Read-only market data adapter | mocked HTTP client, market endpoint read-only mapping | account/order mutation |
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
-| 9 | OpenAPI calendar compatibility | `1.2.14` response fixture, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
+| 9 | OpenAPI calendar compatibility | 구현됨: `1.2.14` example-derived response bytes, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
 | 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
