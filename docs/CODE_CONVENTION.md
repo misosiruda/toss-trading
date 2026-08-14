@@ -116,6 +116,7 @@ const options = {
 - Toss Open API token auth client boundary
 - token issue request contract 구성
 - process memory token cache와 single-flight 제어
+- calendar 전용 token issuer HTTPS transport와 finite response boundary
 - authenticated read-only HTTP request contract 구성
 - Bearer token injection과 HTTP status mapping
 - official market data endpoint path/query mapping
@@ -130,6 +131,8 @@ const options = {
 - injected transport 없이 직접 `fetch`, `http.request`, `https.request` 호출 추가
 
 `TossOpenApiAuthClient`는 injected `TossOpenApiTokenIssuer`를 통해 token issue를 추상화한다. 실제 HTTP transport를 추가할 때는 별도 PR에서 error/rate limit/masking 테스트를 함께 추가해야 한다.
+
+`tossOpenApiTokenIssuerNetworkTransport.ts`만 calendar token 발급을 위한 direct `https.request`를 소유할 수 있다. Production factory는 connector, dial target, custom CA와 deadline override를 받지 않고 canonical production origin/path만 사용한다. Test-only factory는 loopback IP와 synthetic CA로 제한하고 logical production URL, HTTP Host, TLS SNI, certificate와 hostname verification을 유지해야 한다. Exact `200`, no `Content-Range`/`Content-Encoding`, `Accept-Encoding: identity`, 256KiB payload cap, complete UTF-8 JSON과 10초 이하 monotonic absolute deadline을 통과하지 못한 response를 AuthClient parser에 전달해서는 안 된다.
 
 `TossOpenApiReadOnlyHttpClient`는 injected transport만 호출하며 `GET` request만 허용한다. `401 invalid-token` 또는 `401 expired-token` 계열은 request가 실제 사용한 process-local token lease generation만 compare-and-clear한 뒤 최대 1회 guarded reissue로 재시도한다. Retry도 같은 계열 `401`이면 retry generation만 정리하고 세 번째 request나 token issue를 시작하지 않는다. Stale generation invalidation은 current newer lease를 변경하지 않아야 하며 unconditional token clear, `POST`, `PATCH`, `PUT`, `DELETE` 또는 order/account mutation retry를 허용해서는 안 된다.
 
