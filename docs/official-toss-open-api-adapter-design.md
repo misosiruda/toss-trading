@@ -305,8 +305,11 @@ consumer migration 전에는 replay adapter 또는 coverage probe로 handoff하�
   `effectiveResponseAt`과 `staleAfter`도 필수로 결합한다.
 - Immutable trusted parser contract registry는 API contract version, OpenAPI document hash,
   calendar operation id/path와 response parser contract version을 하나의 entry로 결합한다.
-  Coordinator와 builder는 caller-provided version string을 신뢰하지 않고 검증된 registry
-  entry를 전달받아 exact parser provenance를 구성한다.
+  Coordinator와 builder는 caller-provided version string을 신뢰하지 않고 compatibility gate가
+  process-local로 생성한 결과에서 registry entry를 선택해 exact parser provenance를 구성한다.
+  Compatibility result의 pinned example response는 registry 검증용이고 actual network body와
+  equality를 요구하지 않는다. Network observation은 별도 requested date와 exact raw bytes를
+  strict response parser, response hash와 request/coverage binding으로 검증한다.
 - Verifier는 artifact schema version으로 v1과 v2 검증 경로를 결정한다. Unknown schema,
   registry에 없는 API contract version, document hash/operation/parser mismatch와 contract
   version 누락은 artifact 생성 또는 검증 전에 fail-closed로 거부한다. V2에 actual provider

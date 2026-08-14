@@ -228,6 +228,7 @@ const rawResponseBytesSchema = z
 const builderInputSchema = z
   .object({
     compatibilityResult: z.record(z.string(), z.unknown()),
+    requestedDate: calendarDateSchema,
     completedAt: canonicalUtcDateTimeSchema,
     responseDelayMilliseconds: z.number().int().nonnegative().max(10_000),
     responseCacheHeaders: z.record(z.string(), z.unknown()),
@@ -257,6 +258,7 @@ export type VersionedOfficialBrokerObservedCalendarEvidence =
 
 export interface CreateOfficialBrokerObservedCalendarEvidenceV2Input {
   compatibilityResult: unknown;
+  requestedDate: string;
   completedAt: string;
   responseDelayMilliseconds: number;
   responseCacheHeaders: unknown;
@@ -354,20 +356,15 @@ export function createOfficialBrokerObservedCalendarEvidenceV2(
   input: CreateOfficialBrokerObservedCalendarEvidenceV2Input
 ): OfficialBrokerObservedCalendarEvidenceV2 {
   const parsedInput = builderInputSchema.parse(input);
-  const { compatibilityResult, registryEntry } =
+  const { registryEntry } =
     resolveTrustedOfficialTossCalendarParserContract(
       input.compatibilityResult
     );
   const rawResponseBytes = parsedInput.rawResponseBytes;
   const response = parseNormalizedResponse(rawResponseBytes, {
     market: registryEntry.operation.market,
-    requestedDate: compatibilityResult.requestedDate
+    requestedDate: parsedInput.requestedDate
   });
-  if (!isDeepStrictEqual(response, compatibilityResult.response)) {
-    throw new Error(
-      "official calendar response bytes do not match verified compatibility result"
-    );
-  }
 
   const responseFreshness =
     createOfficialMarketCalendarNetworkResponseFreshnessFromHeaders({
@@ -389,10 +386,10 @@ export function createOfficialBrokerObservedCalendarEvidenceV2(
     sourceEvidenceClass: "official_broker_observed",
     replayEvidenceClass: "observed_session_only",
     market: registryEntry.operation.market,
-    requestedDate: compatibilityResult.requestedDate,
+    requestedDate: parsedInput.requestedDate,
     request: requestFor(
       registryEntry.operation,
-      compatibilityResult.requestedDate
+      parsedInput.requestedDate
     ),
     source: {
       publisher: "Toss Securities Open API",

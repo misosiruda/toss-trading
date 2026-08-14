@@ -167,7 +167,10 @@ completion, raw header에서 parse한 canonical `responseDate`, nullable
 `effectiveResponseAt`과 `staleAfter`를 기록한다. OpenAPI document identity는 bytes를 해석한 contract snapshot이지
 provider deployment version 관측 증거가 아니다. Coordinator는 임의의 caller-provided
 version/cache metadata/timestamp를 받지 않고 검증된 registry entry와 network observation만
-builder에 전달한다. `officialMarketCalendarResponseCacheHeaders.ts`의 network variant는 raw
+builder에 전달한다. Compatibility result의 pinned example body는 registry identity를 선택하는
+근거일 뿐 actual network response와 equality를 요구하지 않는다. Builder는 별도 requested
+date와 exact raw bytes를 strict parser, response hash, request/coverage binding으로 검증한다.
+`officialMarketCalendarResponseCacheHeaders.ts`의 network variant는 raw
 `Expires`를 nullable canonical provenance로 보존하고,
 `officialMarketCalendarNetworkResponseFreshness.ts`는 response delay, HTTP corrected age,
 response Cache-Control과 `Expires` expiry를 다시 계산해 recorded `effectiveResponseAt`과

@@ -220,29 +220,47 @@ test("v2 builder rejects caller contract claims and compatibility drift", () => 
   );
 });
 
-test("v2 binds exact response bytes to the compatibility result", () => {
+test("v2 separates parser compatibility from observed response equality", () => {
   const businessDayBytes = pinnedResponseBytes("businessDay");
-  const alternateBytes = pinnedResponseBytes("nxtPreMarketHoliday");
+  const observedBytes = nonPinnedResponseBytes();
   assert.throws(
     () =>
-      createOfficialBrokerObservedCalendarEvidenceV2({
-        ...builderInput(businessDayBytes),
-        rawResponseBytes: alternateBytes
+      verifyOfficialTossOpenApiCalendarCompatibility({
+        market: "KR",
+        requestedDate: "2026-03-25",
+        rawOpenApiDocumentBytes: PINNED_OPENAPI_BYTES,
+        rawResponseBytes: observedBytes
       }),
-    /do not match verified compatibility result/
+    /must match a pinned KR example/
   );
 
-  const evidence = createEvidence(businessDayBytes);
+  const evidence = createEvidence(observedBytes);
+  assert.equal(evidence.response.days[1].status, "open");
+  assert.deepEqual(
+    evidence.response.days[1].sessions.map(({ sessionType }) => sessionType),
+    ["regular_market", "after_market"]
+  );
+  assert.equal(
+    evidence.source.responseHash,
+    `sha256:${createHash("sha256").update(observedBytes).digest("hex")}`
+  );
   assert.throws(
     () =>
       verifyOfficialBrokerObservedCalendarEvidenceV2(evidence, {
         asOf: "2026-03-25T01:00:30.000Z",
         rawResponseBytes: Buffer.from(
-          JSON.stringify(JSON.parse(businessDayBytes.toString("utf8")), null, 2),
+          JSON.stringify(JSON.parse(observedBytes.toString("utf8")), null, 2),
           "utf8"
         )
       }),
     /byte length mismatch|response hash mismatch/
+  );
+
+  assert.throws(() =>
+    createOfficialBrokerObservedCalendarEvidenceV2({
+      ...builderInput(pinnedResponseBytes("holidayToday")),
+      requestedDate: "2026-03-25"
+    })
   );
 });
 
@@ -351,7 +369,8 @@ function builderInput(
   rawResponseBytes = pinnedResponseBytes("businessDay")
 ): CreateOfficialBrokerObservedCalendarEvidenceV2Input {
   return {
-    compatibilityResult: compatibility(rawResponseBytes),
+    compatibilityResult: compatibility(pinnedResponseBytes("businessDay")),
+    requestedDate: "2026-03-25",
     completedAt: "2026-03-25T01:00:10.000Z",
     responseDelayMilliseconds: 250,
     responseCacheHeaders: {
@@ -385,6 +404,29 @@ function pinnedResponseBytes(
   const value = PINNED_OPENAPI_DOCUMENT.paths[
     "/api/v1/market-calendar/KR"
   ]!.get.responses["200"].content["application/json"].examples[name]!.value;
+  return Buffer.from(JSON.stringify(value), "utf8");
+}
+
+function nonPinnedResponseBytes(): Buffer {
+  const value = structuredClone(
+    PINNED_OPENAPI_DOCUMENT.paths["/api/v1/market-calendar/KR"]!.get
+      .responses["200"].content["application/json"].examples.businessDay!
+      .value
+  ) as {
+    result: {
+      today: {
+        integrated: {
+          preMarket: unknown;
+          regularMarket: {
+            singlePriceAuctionStartTime: string;
+          };
+        };
+      };
+    };
+  };
+  value.result.today.integrated.preMarket = null;
+  value.result.today.integrated.regularMarket.singlePriceAuctionStartTime =
+    "2026-03-25T15:21:00+09:00";
   return Buffer.from(JSON.stringify(value), "utf8");
 }
 
