@@ -13,7 +13,7 @@ import {
 import { OFFICIAL_BROKER_OBSERVED_CALENDAR_RESPONSE_SCHEMA_VERSION } from "./officialBrokerObservedCalendarResponse.js";
 
 const PINNED_OPENAPI_BYTES = readFileSync(
-  "src/replay/officialTossOpenApi-1.2.14.json"
+  "src/replay/officialTossCalendarOpenApi-1.2.14.json"
 );
 const PINNED_OPENAPI_DOCUMENT = JSON.parse(
   PINNED_OPENAPI_BYTES.toString("utf8")
@@ -186,7 +186,7 @@ test("calendar compatibility gate rejects unverified OpenAPI document bytes", ()
         rawOpenApiDocumentBytes: bytes({ openapi: "3.1.0" }),
         rawResponseBytes: bytes(krResponse("2026-03-24", "2026-03-25", "2026-03-26"))
       }),
-    /document hash mismatch/
+    /snapshot hash mismatch/
   );
 });
 

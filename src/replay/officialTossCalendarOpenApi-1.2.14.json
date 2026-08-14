@@ -1,0 +1,457 @@
+{
+  "snapshotSchemaVersion": "official_toss_open_api_calendar_snapshot.v1",
+  "sourceDocumentSha256": "sha256:d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180",
+  "openapi": "3.1.0",
+  "info": {
+    "version": "1.2.14"
+  },
+  "servers": [
+    {
+      "url": "https://openapi.tossinvest.com"
+    }
+  ],
+  "paths": {
+    "/api/v1/market-calendar/KR": {
+      "get": {
+        "tags": [
+          "Market Info"
+        ],
+        "summary": "국내 장 운영 정보 조회",
+        "description": "국내 시장의 거래 가능 시간을 조회합니다. 통합 모드 (KRX+NXT) 기준이며, 특수장(시간외종가/시간외단일가)은 제외됩니다. 전일/당일/익일 3영업일 정보를 반환합니다. 모든 시간은 KST(+09:00) 기준.\n\n**Rate Limits Group**: `MARKET_INFO`\n",
+        "operationId": "getKrMarketCalendar",
+        "security": [
+          {
+            "oauth2ClientCredentials": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "조회 기준일 (YYYY-MM-DD)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-03-25"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "$ref": "#/components/schemas/KrMarketCalendarResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "businessDay": {
+                    "summary": "영업일 (KRX+NXT 정상 운영)",
+                    "value": {
+                      "result": {
+                        "today": {
+                          "date": "2026-03-25",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-03-25T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-25T08:50:00+09:00",
+                              "endTime": "2026-03-25T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-03-25T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-25T15:20:00+09:00",
+                              "endTime": "2026-03-25T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-25T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-25T15:40:00+09:00",
+                              "endTime": "2026-03-25T20:00:00+09:00"
+                            }
+                          }
+                        },
+                        "previousBusinessDay": {
+                          "date": "2026-03-24",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-03-24T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-24T08:50:00+09:00",
+                              "endTime": "2026-03-24T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-03-24T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-24T15:20:00+09:00",
+                              "endTime": "2026-03-24T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-24T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-24T15:40:00+09:00",
+                              "endTime": "2026-03-24T20:00:00+09:00"
+                            }
+                          }
+                        },
+                        "nextBusinessDay": {
+                          "date": "2026-03-26",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-03-26T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-26T08:50:00+09:00",
+                              "endTime": "2026-03-26T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-03-26T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-26T15:20:00+09:00",
+                              "endTime": "2026-03-26T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-26T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-26T15:40:00+09:00",
+                              "endTime": "2026-03-26T20:00:00+09:00"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "holidayToday": {
+                    "summary": "휴장일 (today 만 휴장, integrated null)",
+                    "value": {
+                      "result": {
+                        "today": {
+                          "date": "2026-05-05",
+                          "integrated": null
+                        },
+                        "previousBusinessDay": {
+                          "date": "2026-05-04",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-05-04T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-05-04T08:50:00+09:00",
+                              "endTime": "2026-05-04T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-05-04T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-05-04T15:20:00+09:00",
+                              "endTime": "2026-05-04T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-05-04T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-05-04T15:40:00+09:00",
+                              "endTime": "2026-05-04T20:00:00+09:00"
+                            }
+                          }
+                        },
+                        "nextBusinessDay": {
+                          "date": "2026-05-06",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-05-06T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-05-06T08:50:00+09:00",
+                              "endTime": "2026-05-06T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-05-06T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-05-06T15:20:00+09:00",
+                              "endTime": "2026-05-06T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-05-06T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-05-06T15:40:00+09:00",
+                              "endTime": "2026-05-06T20:00:00+09:00"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "nxtPreMarketHoliday": {
+                    "summary": "부분 휴장 (NXT 프리마켓만 휴장, 정규장·애프터마켓은 운영)",
+                    "value": {
+                      "result": {
+                        "today": {
+                          "date": "2026-03-25",
+                          "integrated": {
+                            "preMarket": null,
+                            "regularMarket": {
+                              "startTime": "2026-03-25T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-25T15:20:00+09:00",
+                              "endTime": "2026-03-25T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-25T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-25T15:40:00+09:00",
+                              "endTime": "2026-03-25T20:00:00+09:00"
+                            }
+                          }
+                        },
+                        "previousBusinessDay": {
+                          "date": "2026-03-24",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-03-24T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-24T08:50:00+09:00",
+                              "endTime": "2026-03-24T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-03-24T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-24T15:20:00+09:00",
+                              "endTime": "2026-03-24T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-24T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-24T15:40:00+09:00",
+                              "endTime": "2026-03-24T20:00:00+09:00"
+                            }
+                          }
+                        },
+                        "nextBusinessDay": {
+                          "date": "2026-03-26",
+                          "integrated": {
+                            "preMarket": {
+                              "startTime": "2026-03-26T08:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-26T08:50:00+09:00",
+                              "endTime": "2026-03-26T09:00:00+09:00"
+                            },
+                            "regularMarket": {
+                              "startTime": "2026-03-26T09:00:00+09:00",
+                              "singlePriceAuctionStartTime": "2026-03-26T15:20:00+09:00",
+                              "endTime": "2026-03-26T15:30:00+09:00"
+                            },
+                            "afterMarket": {
+                              "startTime": "2026-03-26T15:30:00+09:00",
+                              "singlePriceAuctionEndTime": "2026-03-26T15:40:00+09:00",
+                              "endTime": "2026-03-26T20:00:00+09:00"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unsupportedDate": {
+                    "summary": "지원하지 않는 조회 일자",
+                    "value": {
+                      "error": {
+                        "requestId": "01HXYZABCDEFG123456789",
+                        "code": "unsupported-date",
+                        "message": "요청한 조회 일자를 지원하지 않습니다.",
+                        "data": {
+                          "field": "date"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorMarketInfo"
+          }
+        }
+      }
+    },
+    "/api/v1/market-calendar/US": {
+      "get": {
+        "tags": [
+          "Market Info"
+        ],
+        "summary": "해외 장 운영 정보 조회",
+        "description": "미국 시장의 장 운영 시간을 조회합니다. 4 세션(`dayMarket`, `preMarket`, `regularMarket`, `afterMarket`) 별로 nullable. 휴장 시 4 세션 모두 null. 전일/당일/익일 3영업일 정보를 반환합니다. 모든 시간은 KST(+09:00) 기준.\n\n**Rate Limits Group**: `MARKET_INFO`\n",
+        "operationId": "getUsMarketCalendar",
+        "security": [
+          {
+            "oauth2ClientCredentials": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "조회 기준일 (YYYY-MM-DD, 미국 현지 날짜)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-03-25"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "$ref": "#/components/schemas/UsMarketCalendarResponse"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "businessDay": {
+                    "summary": "영업일 (데이마켓 포함, 4 세션 nested)",
+                    "value": {
+                      "result": {
+                        "today": {
+                          "date": "2026-03-25",
+                          "dayMarket": {
+                            "startTime": "2026-03-25T09:00:00+09:00",
+                            "endTime": "2026-03-25T16:50:00+09:00"
+                          },
+                          "preMarket": {
+                            "startTime": "2026-03-25T17:00:00+09:00",
+                            "endTime": "2026-03-25T22:30:00+09:00"
+                          },
+                          "regularMarket": {
+                            "startTime": "2026-03-25T22:30:00+09:00",
+                            "endTime": "2026-03-26T05:00:00+09:00"
+                          },
+                          "afterMarket": {
+                            "startTime": "2026-03-26T05:00:00+09:00",
+                            "endTime": "2026-03-26T07:00:00+09:00"
+                          }
+                        },
+                        "previousBusinessDay": {
+                          "date": "2026-03-24",
+                          "dayMarket": {
+                            "startTime": "2026-03-24T09:00:00+09:00",
+                            "endTime": "2026-03-24T16:50:00+09:00"
+                          },
+                          "preMarket": {
+                            "startTime": "2026-03-24T17:00:00+09:00",
+                            "endTime": "2026-03-24T22:30:00+09:00"
+                          },
+                          "regularMarket": {
+                            "startTime": "2026-03-24T22:30:00+09:00",
+                            "endTime": "2026-03-25T05:00:00+09:00"
+                          },
+                          "afterMarket": {
+                            "startTime": "2026-03-25T05:00:00+09:00",
+                            "endTime": "2026-03-25T07:00:00+09:00"
+                          }
+                        },
+                        "nextBusinessDay": {
+                          "date": "2026-03-26",
+                          "dayMarket": {
+                            "startTime": "2026-03-26T09:00:00+09:00",
+                            "endTime": "2026-03-26T16:50:00+09:00"
+                          },
+                          "preMarket": {
+                            "startTime": "2026-03-26T17:00:00+09:00",
+                            "endTime": "2026-03-26T22:30:00+09:00"
+                          },
+                          "regularMarket": {
+                            "startTime": "2026-03-26T22:30:00+09:00",
+                            "endTime": "2026-03-27T05:00:00+09:00"
+                          },
+                          "afterMarket": {
+                            "startTime": "2026-03-27T05:00:00+09:00",
+                            "endTime": "2026-03-27T07:00:00+09:00"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "holidayToday": {
+                    "summary": "휴장일 (today 만 휴장, 4 세션 모두 null)",
+                    "value": {
+                      "result": {
+                        "today": {
+                          "date": "2026-07-03",
+                          "dayMarket": null,
+                          "preMarket": null,
+                          "regularMarket": null,
+                          "afterMarket": null
+                        },
+                        "previousBusinessDay": {
+                          "date": "2026-07-02",
+                          "dayMarket": {
+                            "startTime": "2026-07-02T09:00:00+09:00",
+                            "endTime": "2026-07-02T16:50:00+09:00"
+                          },
+                          "preMarket": {
+                            "startTime": "2026-07-02T17:00:00+09:00",
+                            "endTime": "2026-07-02T22:30:00+09:00"
+                          },
+                          "regularMarket": {
+                            "startTime": "2026-07-02T22:30:00+09:00",
+                            "endTime": "2026-07-03T05:00:00+09:00"
+                          },
+                          "afterMarket": {
+                            "startTime": "2026-07-03T05:00:00+09:00",
+                            "endTime": "2026-07-03T07:00:00+09:00"
+                          }
+                        },
+                        "nextBusinessDay": {
+                          "date": "2026-07-06",
+                          "dayMarket": {
+                            "startTime": "2026-07-06T09:00:00+09:00",
+                            "endTime": "2026-07-06T16:50:00+09:00"
+                          },
+                          "preMarket": {
+                            "startTime": "2026-07-06T17:00:00+09:00",
+                            "endTime": "2026-07-06T22:30:00+09:00"
+                          },
+                          "regularMarket": {
+                            "startTime": "2026-07-06T22:30:00+09:00",
+                            "endTime": "2026-07-07T05:00:00+09:00"
+                          },
+                          "afterMarket": {
+                            "startTime": "2026-07-07T05:00:00+09:00",
+                            "endTime": "2026-07-07T07:00:00+09:00"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorMarketInfo"
+          }
+        }
+      }
+    }
+  }
+}

@@ -18,6 +18,8 @@ export const OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_URL =
   "https://openapi.tossinvest.com/openapi-docs/latest/openapi.json";
 export const OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_SHA256 =
   "sha256:d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180";
+export const OFFICIAL_TOSS_OPEN_API_CALENDAR_SNAPSHOT_SHA256 =
+  "sha256:a112d11d3933653f6cefb34b647ed6e6f763a55a1bf0266c7fc086fc02223e63";
 export const OFFICIAL_TOSS_OPEN_API_CALENDAR_SERVER_ORIGIN =
   "https://openapi.tossinvest.com";
 
@@ -177,8 +179,8 @@ function verifyPinnedOpenApiDocument(rawDocumentBytes: Uint8Array): void {
   const documentSha256 = `sha256:${createHash("sha256")
     .update(rawDocumentBytes)
     .digest("hex")}`;
-  if (documentSha256 !== OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_SHA256) {
-    throw new Error("calendar compatibility OpenAPI document hash mismatch");
+  if (documentSha256 !== OFFICIAL_TOSS_OPEN_API_CALENDAR_SNAPSHOT_SHA256) {
+    throw new Error("calendar compatibility OpenAPI snapshot hash mismatch");
   }
 
   const document = pinnedOpenApiDocumentSchema.parse(
@@ -227,6 +229,12 @@ function verifyPinnedOpenApiDocument(rawDocumentBytes: Uint8Array): void {
 
 const pinnedOpenApiDocumentSchema = z
   .object({
+    snapshotSchemaVersion: z.literal(
+      "official_toss_open_api_calendar_snapshot.v1"
+    ),
+    sourceDocumentSha256: z.literal(
+      OFFICIAL_TOSS_OPEN_API_CALENDAR_DOCUMENT_SHA256
+    ),
     openapi: z.literal(OFFICIAL_TOSS_OPEN_API_CALENDAR_OPENAPI_VERSION),
     info: z
       .object({
