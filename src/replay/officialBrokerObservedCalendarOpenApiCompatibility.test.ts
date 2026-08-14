@@ -190,6 +190,28 @@ test("calendar compatibility gate rejects unverified OpenAPI document bytes", ()
   );
 });
 
+test("calendar compatibility matches pinned examples independent of object order", () => {
+  const example = pinnedExample("KR", "businessDay") as {
+    result: Record<string, unknown>;
+  };
+  const reordered = {
+    result: {
+      previousBusinessDay: example.result.previousBusinessDay,
+      today: example.result.today,
+      nextBusinessDay: example.result.nextBusinessDay
+    }
+  };
+
+  assert.equal(
+    verifyPinnedCompatibility({
+      market: "KR",
+      requestedDate: "2026-03-25",
+      rawResponseBytes: bytes(reordered)
+    }).compatibilityStatus,
+    "compatible"
+  );
+});
+
 test("calendar compatibility gate rejects malformed byte inputs", () => {
   const base = {
     market: "KR",

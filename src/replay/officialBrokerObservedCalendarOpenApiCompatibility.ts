@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { TextDecoder } from "node:util";
+import { isDeepStrictEqual, TextDecoder } from "node:util";
 
 import { z } from "zod";
 
@@ -242,7 +242,7 @@ function verifyPinnedOpenApiDocument(
   const matchesPinnedExample = Object.values(examples).some(
     (example) =>
       isExampleValue(example) &&
-      JSON.stringify(example.value) === JSON.stringify(rawResponse)
+      isDeepStrictEqual(example.value, rawResponse)
   );
   if (!matchesPinnedExample) {
     throw new Error(
