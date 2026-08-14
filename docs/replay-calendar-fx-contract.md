@@ -147,17 +147,18 @@ operation/schema binding을 먼저 검증하고 snapshot의 exact example
 value를 기존 strict response parser로 검증한다. Compatibility result는 document SHA-256,
 KR/US operation과 parser contract identity를 고정하고 scope를
 `pinned_document_examples_only`로 제한한다. Component schema가 허용하는 모든 optional
-조합의 호환성을 주장하지 않으며 evidence artifact를
-만들지 않고 handoff를 `blocked_pending_version_aware_evidence`로 유지한다. 따라서
-byte-level compatibility만으로 actual response handoff를 승인하지 않는다. 기존
+조합의 호환성을 주장하지 않으며 compatibility gate 자체는 evidence artifact를
+만들지 않는다. V2 evidence transition 이후에도 consumer migration 전까지 handoff를
+`blocked_pending_version_aware_consumers`로 유지한다. 따라서 byte-level compatibility만으로
+actual response handoff를 승인하지 않는다. 기존
 `official_broker_observed_calendar_evidence.v1` schema/builder/verifier와
 legacy `source.apiVersion`은 `1.2.13` parser contract snapshot 의미를 그대로 보존한다.
 이 field는 synthetic-only v1 parser가 검증된 OpenAPI contract identity이며 actual network
 response를 제공한 provider deployment version 관측값이 아니다.
 
-`1.2.14` bytes를 evidence builder에 전달하기 전에는 backward-compatible
-`official_broker_observed_calendar_evidence.v2` schema/builder/verifier가 별도 PR에서
-merge돼야 한다. V2 provenance는 immutable trusted parser contract registry가 결합한 exact
+`src/replay/officialBrokerObservedCalendarEvidenceV2.ts`는 backward-compatible
+`official_broker_observed_calendar_evidence.v2` schema/builder/verifier와 v1/v2
+schema-version dispatch를 구현한다. V2 provenance는 immutable trusted parser contract registry가 결합한 exact
 `source.apiContractVersion="1.2.14"`, official OpenAPI document SHA-256, calendar operation
 id/path와 response parser contract version, cache request policy version, actual retrieval
 completion, raw header에서 parse한 canonical `responseDate`, nullable
@@ -166,7 +167,11 @@ completion, raw header에서 parse한 canonical `responseDate`, nullable
 `effectiveResponseAt`과 `staleAfter`를 기록한다. OpenAPI document identity는 bytes를 해석한 contract snapshot이지
 provider deployment version 관측 증거가 아니다. Coordinator는 임의의 caller-provided
 version/cache metadata/timestamp를 받지 않고 검증된 registry entry와 network observation만
-builder에 전달한다.
+builder에 전달한다. `officialMarketCalendarResponseCacheHeaders.ts`의 network variant는 raw
+`Expires`를 nullable canonical provenance로 보존하고,
+`officialMarketCalendarNetworkResponseFreshness.ts`는 response delay, HTTP corrected age,
+response Cache-Control과 `Expires` expiry를 다시 계산해 recorded `effectiveResponseAt`과
+`staleAfter`를 검증한다.
 V2 artifact만으로는 response hash와 normalized response를 재검증할 수 없다. Actual network
 observation은 v2 evidence, exact response bytes와 검증된 cache metadata를 함께 가진
 process-local ephemeral envelope 안에서만 verified 상태를 유지한다.

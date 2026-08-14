@@ -38,7 +38,7 @@
 
 구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 2026-08-14 재확인한 `1.2.14` document는 416,651 bytes, `sha256:d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180`이며 KR/US calendar path, operation id와 response schema reference가 아래 compatibility contract와 일치한다.
 
-`scripts/extractTossCalendarOpenApiSnapshot.mjs <pinned-openapi.json>`는 최대 1 MB의 explicit local source file만 받고 transient full source bytes의 SHA-256을 검증한 뒤 calendar path만 추출한다. Mutable `latest` URL을 script가 다시 fetch하지 않으므로 원본 bytes는 별도 read-only acquisition 단계에서 저장하고 hash를 확인한 뒤 전달해야 한다. `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`는 이 document identity와 기존 strict response parser contract를 고정하고, 추출된 `src/replay/officialTossCalendarOpenApi-1.2.14.json` bytes의 자체 SHA-256과 `sourceDocumentSha256`, metadata, KR/US operation binding과 response schema reference를 먼저 검증한다. 전체 OpenAPI 문서의 account/order/execution example은 저장하지 않는다. Compatibility result는 caller response가 해당 market의 pinned example value와 exact match할 때만 생성된다. 이 결과의 호환성 범위는 `compatibilityScope="pinned_document_examples_only"`이며 OpenAPI component schema가 허용하는 모든 optional/nullable 조합이나 actual authenticated network response evidence를 주장하지 않는다. 결과는 `paper_only`, `official_broker_observed`, `observed_session_only`와 `evidenceHandoffStatus="blocked_pending_version_aware_evidence"`로 고정한다. 따라서 이 compatibility 결과만으로 network response를 v1 evidence builder에 전달하거나 `official_exchange`로 승격할 수 없고, version-aware v2 evidence transition은 계속 별도 선행 PR이다.
+`scripts/extractTossCalendarOpenApiSnapshot.mjs <pinned-openapi.json>`는 최대 1 MB의 explicit local source file만 받고 transient full source bytes의 SHA-256을 검증한 뒤 calendar path만 추출한다. Mutable `latest` URL을 script가 다시 fetch하지 않으므로 원본 bytes는 별도 read-only acquisition 단계에서 저장하고 hash를 확인한 뒤 전달해야 한다. `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`는 이 document identity와 기존 strict response parser contract를 고정하고, 추출된 `src/replay/officialTossCalendarOpenApi-1.2.14.json` bytes의 자체 SHA-256과 `sourceDocumentSha256`, metadata, KR/US operation binding과 response schema reference를 먼저 검증한다. Pinned artifact는 `.gitattributes`에서 LF bytes로 고정하며 전체 OpenAPI 문서의 account/order/execution example은 저장하지 않는다. Compatibility result는 caller response가 해당 market의 pinned example value와 exact match할 때만 생성된다. 이 결과의 호환성 범위는 `compatibilityScope="pinned_document_examples_only"`이며 OpenAPI component schema가 허용하는 모든 optional/nullable 조합이나 actual authenticated network response evidence를 주장하지 않는다. Version-aware v2 evidence가 구현된 뒤에도 replay adapter와 coverage probe가 아직 v1 전용이므로 결과는 `paper_only`, `official_broker_observed`, `observed_session_only`와 `evidenceHandoffStatus="blocked_pending_version_aware_consumers"`로 고정한다. 따라서 이 compatibility 결과만으로 network response를 v1 evidence builder에 전달하거나 `official_exchange`로 승격할 수 없다.
 
 ## 현재 공식 API 표면
 
@@ -285,9 +285,9 @@ negative test 구현은 계속할 수 있다. 실제 호출을 실행하지 않�
 명시하며, mock 결과를 official response evidence로 기록하지 않는다.
 
 OpenAPI `1.2.14` calendar schema가 현재 strict response parser와 호환된다는
-byte-level synthetic fixture gate는 구현됐다. 이 gate는 evidence artifact를 만들지 않고
-handoff status를 차단 상태로 고정한다. Schema compatibility만으로 handoff를 승인하지
-않으며, 다음 backward-compatible evidence transition도 먼저 merge돼야 한다.
+byte-level synthetic fixture gate와 backward-compatible evidence transition은 구현됐다.
+Compatibility gate 자체는 evidence artifact를 만들지 않으며, v2 evidence도 version-aware
+consumer migration 전에는 replay adapter 또는 coverage probe로 handoff하지 않는다.
 
 - `official_broker_observed_calendar_evidence.v1` schema, builder와 verifier는
   OpenAPI `1.2.13`에 계속 고정한다. 기존 v1 artifact를 rewrite하거나 v1의
@@ -710,7 +710,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 7 | Read-only account snapshot | accounts/holdings reader, masking, source status | order mutation |
 | 8 | Calendar network acquisition contract | exact host/method/path, disabled default, limits, masking과 evidence 경계 | code, credential, external call |
 | 9 | OpenAPI calendar compatibility | 구현됨: `1.2.14` example-derived response bytes, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
-| 9a | Version-aware calendar evidence transition | v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
+| 9a | Version-aware calendar evidence transition | 구현됨: v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |

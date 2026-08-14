@@ -12,8 +12,8 @@ import {
 } from "./officialBrokerObservedCalendarOpenApiCompatibility.js";
 import { OFFICIAL_BROKER_OBSERVED_CALENDAR_RESPONSE_SCHEMA_VERSION } from "./officialBrokerObservedCalendarResponse.js";
 
-const PINNED_OPENAPI_BYTES = readFileSync(
-  "src/replay/officialTossCalendarOpenApi-1.2.14.json"
+const PINNED_OPENAPI_BYTES = canonicalPinnedSnapshotBytes(
+  readFileSync("src/replay/officialTossCalendarOpenApi-1.2.14.json")
 );
 const PINNED_OPENAPI_DOCUMENT = JSON.parse(
   PINNED_OPENAPI_BYTES.toString("utf8")
@@ -47,6 +47,10 @@ function verifyPinnedCompatibility(value: Record<string, unknown>) {
     ...value,
     rawOpenApiDocumentBytes: PINNED_OPENAPI_BYTES
   });
+}
+
+function canonicalPinnedSnapshotBytes(value: Buffer): Buffer {
+  return Buffer.from(value.toString("utf8").replaceAll("\r\n", "\n"), "utf8");
 }
 
 const OPENAPI_EXAMPLE_CASES = [
@@ -141,7 +145,7 @@ for (const fixture of OPENAPI_EXAMPLE_CASES) {
     assert.equal(result.compatibilityScope, "pinned_document_examples_only");
     assert.equal(
       result.evidenceHandoffStatus,
-      "blocked_pending_version_aware_evidence"
+      "blocked_pending_version_aware_consumers"
     );
     assert.equal(result.providerDeploymentVersion, "not_claimed");
     assert.equal(

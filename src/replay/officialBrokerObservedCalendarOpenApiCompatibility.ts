@@ -92,7 +92,7 @@ export const officialTossOpenApiCalendarCompatibilityResultSchema = z
     compatibilityStatus: z.literal("compatible"),
     compatibilityScope: z.literal("pinned_document_examples_only"),
     evidenceHandoffStatus: z.literal(
-      "blocked_pending_version_aware_evidence"
+      "blocked_pending_version_aware_consumers"
     ),
     providerDeploymentVersion: z.literal("not_claimed"),
     requestedDate: officialBrokerObservedCalendarResponseParserOptionsSchema.shape
@@ -118,6 +118,8 @@ export const officialTossOpenApiCalendarCompatibilityResultSchema = z
 export type OfficialTossOpenApiCalendarCompatibilityResult = z.infer<
   typeof officialTossOpenApiCalendarCompatibilityResultSchema
 >;
+
+const VERIFIED_COMPATIBILITY_RESULTS = new WeakSet<object>();
 
 const OPERATION_BY_MARKET = {
   KR: {
@@ -151,14 +153,14 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
     requestedDate: input.requestedDate
   });
 
-  return officialTossOpenApiCalendarCompatibilityResultSchema.parse({
+  const result = officialTossOpenApiCalendarCompatibilityResultSchema.parse({
     schemaVersion: OFFICIAL_TOSS_OPEN_API_CALENDAR_COMPATIBILITY_SCHEMA_VERSION,
     mode: "paper_only",
     sourceEvidenceClass: "official_broker_observed",
     replayEvidenceClass: "observed_session_only",
     compatibilityStatus: "compatible",
     compatibilityScope: "pinned_document_examples_only",
-    evidenceHandoffStatus: "blocked_pending_version_aware_evidence",
+    evidenceHandoffStatus: "blocked_pending_version_aware_consumers",
     providerDeploymentVersion: "not_claimed",
     requestedDate: input.requestedDate,
     apiContract: {
@@ -173,6 +175,24 @@ export function verifyOfficialTossOpenApiCalendarCompatibility(
     },
     response
   });
+  deepFreeze(result);
+  VERIFIED_COMPATIBILITY_RESULTS.add(result);
+  return result;
+}
+
+export function assertVerifiedOfficialTossOpenApiCalendarCompatibilityResult(
+  value: unknown
+): OfficialTossOpenApiCalendarCompatibilityResult {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !VERIFIED_COMPATIBILITY_RESULTS.has(value)
+  ) {
+    throw new Error(
+      "calendar compatibility result must be produced by the verified compatibility gate"
+    );
+  }
+  return officialTossOpenApiCalendarCompatibilityResultSchema.parse(value);
 }
 
 function parseRawResponseBytes(rawResponseBytes: Uint8Array): unknown {
@@ -296,4 +316,14 @@ function parseJsonBytes(rawBytes: Uint8Array, label: string): unknown {
   } catch {
     throw new Error(`calendar compatibility ${label} bytes must be valid JSON`);
   }
+}
+
+function deepFreeze(value: unknown): void {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return;
+  }
+  for (const child of Object.values(value)) {
+    deepFreeze(child);
+  }
+  Object.freeze(value);
 }
