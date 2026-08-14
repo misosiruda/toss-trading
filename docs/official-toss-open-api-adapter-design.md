@@ -1,6 +1,6 @@
 # Official Toss Open API Adapter Design
 
-> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, mocked token auth client, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지다. Calendar 전용 actual network transport와 acquisition coordinator는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, order adapter, live order routing, live trading enable 기능은 계속 구현하지 않는다.
+> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, generation-aware token auth client, calendar 전용 token issuer network transport, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지다. Calendar GET network transport와 acquisition coordinator는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, order adapter, live order routing, live trading enable 기능은 계속 구현하지 않는다.
 
 ## 목적
 
@@ -715,7 +715,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 9 | OpenAPI calendar compatibility | 구현됨: `1.2.14` example-derived response bytes, response parser compatibility gate와 regression test | network, evidence artifact transition, metadata-only version bump |
 | 9a | Version-aware calendar evidence transition | 구현됨: v1 legacy contract identity 보존, v2 `apiContractVersion`/document/parser/cache/response-delay provenance, network-bound corrected-age verifier와 dispatch test | provider deployment version 추정, v1 rewrite, caller-provided version trust, network |
 | 9b | Token generation invalidation hardening | 구현됨: token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
-| 10 | Token issuer network transport | exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
+| 10 | Token issuer network transport | 구현됨: exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | KR/US allowlist, required canonical date binding, Bearer, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 finite limits test | content decoding, query 생략, partial response, account/order/general market endpoint |
 | 11a | Version-aware replay consumer migration | replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증과 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |

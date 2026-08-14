@@ -288,6 +288,24 @@ flowchart TD
 - concurrent token request가 single-flight로 합쳐짐
 - 실제 HTTP transport, persistent token store, account/order adapter, live order gateway를 추가하지 않음
 
+### Official Toss Open API token issuer network transport 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiTokenIssuerNetworkTransport.ts`
+- `src/broker/tossOpenApiTokenIssuerNetworkTransport.test.ts`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+
+필수 확인:
+
+- production factory가 canonical `https://openapi.tossinvest.com/oauth2/token` 외 URL, dial target, custom CA 또는 test connector override를 받지 않음
+- disabled/invalid config와 noncanonical request는 DNS/socket 전송 전에 fail-closed
+- token POST가 exact form body, `Accept-Encoding: identity`, no `Range`/`If-Range`와 no caller credential header를 유지
+- response가 exact `200`, no `Content-Range`/`Content-Encoding`, single JSON content type, 256KiB cap, complete UTF-8 JSON과 10초 이하 absolute deadline을 통과한 뒤에만 AuthClient parser로 전달됨
+- test-only connector가 loopback IP와 synthetic CA에 한정되고 logical URL, Host, SNI와 hostname verification을 production identity로 유지
+- external credential call, Calendar GET, persistent token/raw response, account/order request와 automatic retry를 추가하지 않음
+
 ### Official Toss Open API read-only HTTP client 변경
 
 수정 후보:
