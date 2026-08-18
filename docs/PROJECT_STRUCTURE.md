@@ -306,6 +306,28 @@ flowchart TD
 - test-only connector가 loopback IP와 synthetic CA에 한정되고 logical URL, Host, SNI와 hostname verification을 production identity로 유지
 - external credential call, Calendar GET, persistent token/raw response, account/order request와 automatic retry를 추가하지 않음
 
+### Official Toss Open API Calendar GET network transport 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiCalendarNetworkTransport.ts`
+- `src/broker/tossOpenApiCalendarNetworkTransport.test.ts`
+- `src/replay/officialMarketCalendarNetworkResponseFreshness.ts`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+- `docs/replay-calendar-fx-contract.md`
+
+필수 확인:
+
+- production factory가 canonical `https://openapi.tossinvest.com/api/v1/market-calendar/{KR|US}?date=YYYY-MM-DD` 외 URL, query, dial target, custom CA, clock 또는 deadline override를 받지 않음
+- disabled/invalid config, malformed market/date와 invalid token lease는 DNS/socket 전송 전에 fail-closed
+- initial/retry GET이 Bearer 외 credential/account header를 보내지 않고 exact no-cache, `Accept-Encoding: identity`, no Range/conditional header를 유지
+- refreshable `401`만 사용한 generation을 compare-and-clear한 뒤 한 번 재시도하고 retry `401`은 retry generation만 정리하며 세 번째 attempt를 만들지 않음
+- final response가 exact `200`, complete JSON identity bytes, response trailer 없음, 1MiB cap과 10초 이하 final-attempt monotonic deadline을 통과함
+- raw `Date`/`Age`/`Expires`와 Cache-Control을 기존 network corrected-age verifier로 검증하고 response delay, hash, byte length와 exact bytes를 process-local observation에 결합함
+- test-only connector가 loopback IP, synthetic CA와 deterministic clock에 한정되고 logical URL, Host, SNI와 hostname verification을 production identity로 유지
+- external credential call, durable raw-byte persistence, replay consumer migration, acquisition coordinator, account/order request와 broker mutation을 추가하지 않음
+
 ### Official Toss Open API read-only HTTP client 변경
 
 수정 후보:

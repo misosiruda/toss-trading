@@ -1,6 +1,6 @@
 # Official Toss Open API Token Auth Design
 
-> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser, generation-aware `TossOpenApiAuthClient`, calendar acquisition 전용 token issuer network transport와 injected transport 기반 `TossOpenApiReadOnlyHttpClient`다. Calendar GET network transport는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, persistent token store, account/order network adapter, live trading 기능은 계속 구현하지 않는다.
+> 이 문서는 token auth 설계 문서다. 현재 runtime 구현 범위는 safe-disabled config parser, generation-aware `TossOpenApiAuthClient`, calendar acquisition 전용 token issuer와 Calendar GET network transport, injected transport 기반 `TossOpenApiReadOnlyHttpClient`다. Persistent token store, account/order network adapter, live trading 기능은 계속 구현하지 않는다.
 
 ## 목적
 
@@ -118,7 +118,8 @@ TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
 - `createTossOpenApiTokenIssuerNetworkTransport`는 production override 없이 canonical `openapi.tossinvest.com:443`의 exact token POST만 전송하고, exact status/header/identity payload/256KiB/absolute deadline/complete UTF-8 JSON 경계를 통과한 response만 AuthClient에 전달한다. Test-only factory는 loopback IP, ephemeral port와 synthetic CA만 받아 logical production URL, Host, SNI와 hostname verification을 유지한다.
 - `TossOpenApiReadOnlyHttpClient`는 injected transport를 사용해 Bearer injection, read-only method guard, HTTP status/error/rate limit mapping과 refreshable `401`의 generation-aware 1회 guarded reissue를 검증한다. Initial과 retry attempt가 실제 사용한 lease generation을 별도로 보존하며 retry도 refreshable `401`이면 그 generation만 정리하고 세 번째 attempt를 만들지 않는다.
 - 동일 generation의 concurrent `401` reissue는 single-flight로 합쳐지며, 늦은 stale generation invalidation은 이미 current인 newer token을 지우거나 추가 token을 발급하지 않는다. Generation은 process-local 비교 identity일 뿐 token value/hash/log에는 포함하지 않는다.
-- Calendar GET network transport, official API 실제 credential 호출, persistent token store, account/order adapter는 아직 구현하지 않았다. Token issuer network transport의 검증은 synthetic loopback HTTPS에 한정되며 external token 발급 성공을 주장하지 않는다.
+- `createTossOpenApiCalendarNetworkTransport`는 KR/US exact calendar GET과 canonical `date` 하나만 허용하고, generation lease Bearer, exact no-cache/identity request, complete raw-byte/1MiB/absolute-deadline boundary와 response cache corrected freshness를 검증한다. Test-only factory만 loopback IP, synthetic CA와 deterministic clock을 받으며 logical production URL, Host, SNI와 hostname verification을 유지한다.
+- Official API 실제 credential 호출, persistent token/raw-byte store, acquisition coordinator와 account/order adapter는 아직 구현하지 않았다. Token issuer와 Calendar GET network transport의 검증은 synthetic loopback HTTPS에 한정되며 external token 또는 calendar response 취득 성공을 주장하지 않는다.
 
 ## Calendar 전용 Token Issuer Transport 계약
 
@@ -342,7 +343,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 7 | Calendar acquisition contract | token/calendar exact network allowlist, disabled default, finite limits와 masking 정책 | code, credential, external call |
 | 7a | Token generation invalidation hardening | 구현됨: token lease generation, initial/retry compare-and-clear, staggered·double `401`과 single-flight regression test | network, token persistence, mutation retry |
 | 8 | Token issuer network transport | 구현됨: exact `/oauth2/token` POST, no Range/Content-Range, identity encoding, finite payload limits, test-only loopback HTTPS connector와 fail-closed tests | content decoding, account/order/general API request, external credential call |
-| 9 | Calendar GET network transport | token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap과 monotonic response-delay corrected freshness | account header, broker mutation |
+| 9 | Calendar GET network transport | 구현됨: token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap과 monotonic response-delay corrected freshness | account header, broker mutation, external credential call |
 | 9a | Version-aware calendar evidence consumers | response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
 | 9b | Ephemeral calendar acquisition lifecycle | v2 evidence/raw-byte process-local envelope와 detached output persistence 거부 | durable raw-byte store, workflow artifact persistence |
 | 10 | Calendar acquisition coordinator | token과 calendar response를 ephemeral paper-only observation boundary에 조립 | persistent token/raw bytes, stored report, replay 실행 |
