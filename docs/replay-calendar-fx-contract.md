@@ -201,12 +201,14 @@ dispatch와 raw-byte 검증을 반복하며, unknown schema, raw-byte 누락/불
 만들기 전에 거부한다. Existing v1 artifact/replay input/coverage report identity와 regression은
 그대로 보존한다. `officialBrokerObservedCalendarEphemeralObservation.ts`는 v2 evidence와
 exact bytes를 WeakMap-backed opaque handle로 결합하고 verified factory가 만든 handle만 1회
-소비하게 한다. Consumer scope는 consume 시점의 `asOf`와 exact bytes로 evidence를 다시
-검증하며 callback 종료, verifier/consumer 오류, stale/tamper, 명시적 disposal 또는 JSON export
-시도 뒤 bytes를 zeroize한다. Evidence object graph는 deep revocable read-only membrane이므로
-scope 안에서 얻은 top-level/nested reference도 종료 뒤 읽기와 serialization이 불가능하다.
-Scope는 chain 밖에서 재사용할 수 없고 callback은 detached evidence/replay input/coverage
-report를 포함한 어떤 output도 반환할 수 없다.
+소비하게 한다. Factory는 transferred caller byte view를 내부 copy와 분리하고 caller view를 즉시
+zeroize한다. Handle은 evidence/raw bytes를 노출하지 않으며 trusted process-local replay input 또는
+coverage report consumer capability만 내부 bytes를 사용할 수 있다. Consume 시점의 `asOf`와 exact
+bytes로 evidence를 다시 검증하고 callback 종료, verifier/consumer 오류, stale, 명시적 disposal 또는
+JSON export 시도 뒤 internal bytes를 zeroize한다. Derived replay input/report object graph는 deep
+revocable read-only membrane이므로 consumer callback에서 얻은 top-level/nested reference도 종료 뒤
+읽기와 serialization이 불가능하다. Handle 재사용, consumer identity 위조와
+handle/consumer/derived output 직렬화를 거부하며 derived callback은 어떤 output도 반환할 수 없다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,

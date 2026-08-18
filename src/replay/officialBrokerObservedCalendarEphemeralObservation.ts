@@ -3,20 +3,26 @@ import {
   verifyOfficialBrokerObservedCalendarEvidenceV2,
   type OfficialBrokerObservedCalendarEvidenceV2
 } from "./officialBrokerObservedCalendarEvidenceV2.js";
+import {
+  buildOfficialBrokerObservedCalendarCoverageProbeReport,
+  parseOfficialBrokerObservedCalendarCoverageProbePlan,
+  type OfficialBrokerObservedCalendarCoverageProbeReport
+} from "./officialBrokerObservedCalendarCoverageProbe.js";
+import {
+  buildOfficialBrokerObservedCalendarReplayInput,
+  type OfficialBrokerObservedCalendarReplayInput
+} from "./officialBrokerObservedCalendarReplayAdapter.js";
 
 declare const ephemeralObservationBrand: unique symbol;
-declare const ephemeralObservationScopeBrand: unique symbol;
+declare const ephemeralConsumerBrand: unique symbol;
 
 export interface OfficialBrokerObservedCalendarEphemeralObservation {
   readonly [ephemeralObservationBrand]: true;
   toJSON(): never;
 }
 
-export interface OfficialBrokerObservedCalendarEphemeralObservationScope {
-  readonly [ephemeralObservationScopeBrand]: true;
-  readonly evidence: OfficialBrokerObservedCalendarEvidenceV2;
-  readonly rawResponseBytes: Uint8Array;
-  readonly asOf: string;
+export interface OfficialBrokerObservedCalendarEphemeralConsumer {
+  readonly [ephemeralConsumerBrand]: true;
   toJSON(): never;
 }
 
@@ -27,19 +33,20 @@ export interface CreateOfficialBrokerObservedCalendarEphemeralObservationInput {
 
 export interface ConsumeOfficialBrokerObservedCalendarEphemeralObservationOptions {
   asOf: string;
-  consumer: (
-    scope: OfficialBrokerObservedCalendarEphemeralObservationScope
-  ) => void;
+  consumer: OfficialBrokerObservedCalendarEphemeralConsumer;
 }
 
-interface ReadyObservationState {
-  status: "ready";
-  evidence: OfficialBrokerObservedCalendarEvidenceV2;
-  rawResponseBytes: Uint8Array;
+export interface CreateOfficialBrokerObservedCalendarReplayInputEphemeralConsumerOptions {
+  use: (input: OfficialBrokerObservedCalendarReplayInput) => void;
 }
 
-interface ConsumingObservationState {
-  status: "consuming";
+export interface CreateOfficialBrokerObservedCalendarCoverageReportEphemeralConsumerOptions {
+  plan: unknown;
+  use: (report: OfficialBrokerObservedCalendarCoverageProbeReport) => void;
+}
+
+interface OwnedObservationState {
+  status: "ready" | "consuming";
   evidence: OfficialBrokerObservedCalendarEvidenceV2;
   rawResponseBytes: Uint8Array;
 }
@@ -48,33 +55,25 @@ interface DisposedObservationState {
   status: "disposed";
 }
 
-type ObservationState =
-  | ReadyObservationState
-  | ConsumingObservationState
-  | DisposedObservationState;
+type ObservationState = OwnedObservationState | DisposedObservationState;
 
-interface ActiveScopeState {
-  status: "active";
+interface VerifiedObservation {
   evidence: OfficialBrokerObservedCalendarEvidenceV2;
   rawResponseBytes: Uint8Array;
-  asOf: string;
-  revokeEvidence: () => void;
 }
 
-interface DisposedScopeState {
-  status: "disposed";
+interface ConsumerState {
+  execute: (observations: VerifiedObservation[], asOf: string) => void;
 }
-
-type ScopeState = ActiveScopeState | DisposedScopeState;
 
 const observationStates = new WeakMap<object, ObservationState>();
-const scopeStates = new WeakMap<object, ScopeState>();
-const activeScopesByObservation = new WeakMap<object, object>();
+const consumerStates = new WeakMap<object, ConsumerState>();
 
 export function createOfficialBrokerObservedCalendarEphemeralObservation(
   input: CreateOfficialBrokerObservedCalendarEphemeralObservationInput
 ): OfficialBrokerObservedCalendarEphemeralObservation {
-  assertOwnedRawResponseBytes(input.rawResponseBytes);
+  assertTransferredRawResponseBytes(input.rawResponseBytes);
+  const ownedRawResponseBytes = Uint8Array.from(input.rawResponseBytes);
 
   try {
     const parsedEvidence =
@@ -83,14 +82,11 @@ export function createOfficialBrokerObservedCalendarEphemeralObservation(
       parsedEvidence,
       {
         asOf: parsedEvidence.source.retrievedAt,
-        rawResponseBytes: input.rawResponseBytes
+        rawResponseBytes: ownedRawResponseBytes
       }
     );
-
     const observation = createOpaqueObject(() => {
-      disposeOfficialBrokerObservedCalendarEphemeralObservation(
-        observation as OfficialBrokerObservedCalendarEphemeralObservation
-      );
+      disposeObservationObject(observation);
       throw new Error(
         "official broker calendar ephemeral observation cannot be serialized or exported"
       );
@@ -98,167 +94,195 @@ export function createOfficialBrokerObservedCalendarEphemeralObservation(
     observationStates.set(observation, {
       status: "ready",
       evidence: deepFreeze(evidence),
-      rawResponseBytes: input.rawResponseBytes
+      rawResponseBytes: ownedRawResponseBytes
     });
     return observation as OfficialBrokerObservedCalendarEphemeralObservation;
   } catch (error) {
-    input.rawResponseBytes.fill(0);
+    ownedRawResponseBytes.fill(0);
     throw error;
+  } finally {
+    input.rawResponseBytes.fill(0);
   }
+}
+
+export function createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer(
+  options: CreateOfficialBrokerObservedCalendarReplayInputEphemeralConsumerOptions
+): OfficialBrokerObservedCalendarEphemeralConsumer {
+  assertUseCallback(options.use);
+  const use = options.use;
+  return createConsumerCapability((observations, asOf) => {
+    if (observations.length !== 1) {
+      throw new Error(
+        "official broker calendar replay input consumer requires exactly one observation"
+      );
+    }
+    const observation = observations[0]!;
+    const replayInput = buildOfficialBrokerObservedCalendarReplayInput({
+      evidence: observation.evidence,
+      asOf,
+      rawResponseBytes: observation.rawResponseBytes
+    });
+    useRevocableDerivedOutput(replayInput, use, "replay input");
+  });
+}
+
+export function createOfficialBrokerObservedCalendarCoverageReportEphemeralConsumer(
+  options: CreateOfficialBrokerObservedCalendarCoverageReportEphemeralConsumerOptions
+): OfficialBrokerObservedCalendarEphemeralConsumer {
+  assertUseCallback(options.use);
+  const use = options.use;
+  const plan = deepFreeze(
+    parseOfficialBrokerObservedCalendarCoverageProbePlan(options.plan)
+  );
+  return createConsumerCapability((observations, asOf) => {
+    const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
+      plan,
+      evaluatedAt: asOf,
+      observations: observations.map(({ evidence, rawResponseBytes }) => ({
+        status: "verified" as const,
+        requestedDate: evidence.requestedDate,
+        evidence,
+        rawResponseBytes
+      }))
+    });
+    useRevocableDerivedOutput(report, use, "coverage report");
+  });
 }
 
 export function consumeOfficialBrokerObservedCalendarEphemeralObservation(
   observation: OfficialBrokerObservedCalendarEphemeralObservation,
   options: ConsumeOfficialBrokerObservedCalendarEphemeralObservationOptions
 ): void {
-  const observationObject = assertOpaqueObject(observation);
-  const state = observationStates.get(observationObject);
-  if (state === undefined) {
+  consumeOfficialBrokerObservedCalendarEphemeralObservations(
+    [observation],
+    options
+  );
+}
+
+export function consumeOfficialBrokerObservedCalendarEphemeralObservations(
+  observations: readonly OfficialBrokerObservedCalendarEphemeralObservation[],
+  options: ConsumeOfficialBrokerObservedCalendarEphemeralObservationOptions
+): void {
+  if (!Array.isArray(observations) || observations.length === 0) {
     throw new Error(
-      "official broker calendar ephemeral observation must come from the process-local factory"
-    );
-  }
-  if (state.status !== "ready") {
-    throw new Error(
-      `official broker calendar ephemeral observation is ${state.status}`
+      "official broker calendar ephemeral consumption requires observations"
     );
   }
 
-  observationStates.set(observationObject, {
-    status: "consuming",
-    evidence: state.evidence,
-    rawResponseBytes: state.rawResponseBytes
-  });
-
-  let scopeObject: object | undefined;
-  let revokeEvidence: (() => void) | undefined;
+  const observationObjects: object[] = [];
+  const ownedStates: OwnedObservationState[] = [];
   try {
-    const verifiedEvidence =
-      verifyOfficialBrokerObservedCalendarEvidenceV2(state.evidence, {
-        asOf: options.asOf,
-        rawResponseBytes: state.rawResponseBytes
-      });
-    const evidenceCapability = createRevocableReadonlyMembrane(
-      verifiedEvidence
-    );
-    revokeEvidence = evidenceCapability.revoke;
-    scopeObject = createScope(
-      observation,
-      evidenceCapability.proxy,
-      state.rawResponseBytes,
-      options.asOf,
-      evidenceCapability.revoke
-    );
-    activeScopesByObservation.set(observationObject, scopeObject);
-    const output: unknown = options.consumer(
-      scopeObject as OfficialBrokerObservedCalendarEphemeralObservationScope
-    );
-    if (output !== undefined) {
-      suppressRejectedThenable(output);
+    const seen = new Set<object>();
+    for (const observation of observations) {
+      const observationObject = assertOpaqueObject(observation, "observation");
+      observationObjects.push(observationObject);
+      if (seen.has(observationObject)) {
+        throw new Error(
+          "official broker calendar ephemeral observation cannot be consumed twice in one chain"
+        );
+      }
+      seen.add(observationObject);
+      const state = observationStates.get(observationObject);
+      if (state === undefined) {
+        throw new Error(
+          "official broker calendar ephemeral observation must come from the process-local factory"
+        );
+      }
+      if (state.status !== "ready") {
+        throw new Error(
+          `official broker calendar ephemeral observation is ${state.status}`
+        );
+      }
+      ownedStates.push(state);
+    }
+
+    const consumerObject = assertOpaqueObject(options.consumer, "consumer");
+    const consumerState = consumerStates.get(consumerObject);
+    if (consumerState === undefined) {
       throw new Error(
-        "official broker calendar ephemeral consumer must not return detached output"
+        "official broker calendar ephemeral consumer must come from a trusted process-local factory"
       );
     }
-  } finally {
-    if (scopeObject !== undefined) {
-      disposeScope(scopeObject);
-    } else {
-      revokeEvidence?.();
+
+    for (let index = 0; index < observationObjects.length; index += 1) {
+      const state = ownedStates[index]!;
+      observationStates.set(observationObjects[index]!, {
+        status: "consuming",
+        evidence: state.evidence,
+        rawResponseBytes: state.rawResponseBytes
+      });
     }
-    activeScopesByObservation.delete(observationObject);
-    disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
+    const verifiedObservations = ownedStates.map((state) => ({
+      evidence: verifyOfficialBrokerObservedCalendarEvidenceV2(
+        state.evidence,
+        {
+          asOf: options.asOf,
+          rawResponseBytes: state.rawResponseBytes
+        }
+      ),
+      rawResponseBytes: state.rawResponseBytes
+    }));
+    consumerState.execute(verifiedObservations, options.asOf);
+  } finally {
+    for (const observationObject of observationObjects) {
+      disposeObservationObject(observationObject);
+    }
   }
 }
 
 export function disposeOfficialBrokerObservedCalendarEphemeralObservation(
   observation: OfficialBrokerObservedCalendarEphemeralObservation
 ): void {
-  const observationObject = assertOpaqueObject(observation);
-  const state = observationStates.get(observationObject);
-  if (state === undefined) {
+  const observationObject = assertOpaqueObject(observation, "observation");
+  if (!observationStates.has(observationObject)) {
     throw new Error(
       "official broker calendar ephemeral observation must come from the process-local factory"
     );
   }
-  if (state.status === "disposed") {
-    return;
+  disposeObservationObject(observationObject);
+}
+
+function createConsumerCapability(
+  execute: ConsumerState["execute"]
+): OfficialBrokerObservedCalendarEphemeralConsumer {
+  const consumer = createOpaqueObject(() => {
+    throw new Error(
+      "official broker calendar ephemeral consumer cannot be serialized or exported"
+    );
+  });
+  consumerStates.set(consumer, { execute });
+  return consumer as OfficialBrokerObservedCalendarEphemeralConsumer;
+}
+
+function useRevocableDerivedOutput<T extends object>(
+  output: T,
+  use: (value: T) => void,
+  label: string
+): void {
+  const capability = createRevocableReadonlyMembrane(output, label);
+  try {
+    const detachedOutput: unknown = use(capability.proxy);
+    if (detachedOutput !== undefined) {
+      suppressRejectedThenable(detachedOutput);
+      throw new Error(
+        `official broker calendar ephemeral ${label} consumer must not return detached output`
+      );
+    }
+  } finally {
+    capability.revoke();
   }
-  const activeScope = activeScopesByObservation.get(observationObject);
-  if (activeScope !== undefined) {
-    disposeScope(activeScope);
-    activeScopesByObservation.delete(observationObject);
+}
+
+function disposeObservationObject(observation: object): void {
+  const state = observationStates.get(observation);
+  if (state === undefined || state.status === "disposed") {
+    return;
   }
   try {
     state.rawResponseBytes.fill(0);
   } finally {
-    observationStates.set(observationObject, { status: "disposed" });
+    observationStates.set(observation, { status: "disposed" });
   }
-}
-
-function createScope(
-  observation: OfficialBrokerObservedCalendarEphemeralObservation,
-  evidence: OfficialBrokerObservedCalendarEvidenceV2,
-  rawResponseBytes: Uint8Array,
-  asOf: string,
-  revokeEvidence: () => void
-): object {
-  const scope = Object.create(null) as object;
-  Object.defineProperties(scope, {
-    evidence: {
-      enumerable: false,
-      configurable: false,
-      get: () => getActiveScopeState(scope).evidence
-    },
-    rawResponseBytes: {
-      enumerable: false,
-      configurable: false,
-      get: () => getActiveScopeState(scope).rawResponseBytes
-    },
-    asOf: {
-      enumerable: false,
-      configurable: false,
-      get: () => getActiveScopeState(scope).asOf
-    },
-    toJSON: {
-      enumerable: false,
-      configurable: false,
-      writable: false,
-      value: () => {
-        disposeScope(scope);
-        disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
-        throw new Error(
-          "official broker calendar ephemeral observation scope cannot be serialized or exported"
-        );
-      }
-    }
-  });
-  scopeStates.set(scope, {
-    status: "active",
-    evidence,
-    rawResponseBytes,
-    asOf,
-    revokeEvidence
-  });
-  return Object.freeze(scope);
-}
-
-function disposeScope(scope: object): void {
-  const state = scopeStates.get(scope);
-  if (state === undefined || state.status === "disposed") {
-    return;
-  }
-  state.revokeEvidence();
-  scopeStates.set(scope, { status: "disposed" });
-}
-
-function getActiveScopeState(scope: object): ActiveScopeState {
-  const state = scopeStates.get(scope);
-  if (state === undefined || state.status !== "active") {
-    throw new Error(
-      "official broker calendar ephemeral observation scope is disposed"
-    );
-  }
-  return state;
 }
 
 function createOpaqueObject(toJSON: () => never): object {
@@ -272,24 +296,32 @@ function createOpaqueObject(toJSON: () => never): object {
   return Object.freeze(value);
 }
 
-function assertOpaqueObject(value: unknown): object {
+function assertOpaqueObject(value: unknown, label: string): object {
   if (
     value === null ||
     (typeof value !== "object" && typeof value !== "function")
   ) {
     throw new Error(
-      "official broker calendar ephemeral observation handle is invalid"
+      `official broker calendar ephemeral ${label} handle is invalid`
     );
   }
   return value;
 }
 
-function assertOwnedRawResponseBytes(
+function assertTransferredRawResponseBytes(
   value: unknown
 ): asserts value is Uint8Array {
   if (!(value instanceof Uint8Array) || value.byteLength === 0) {
     throw new Error(
       "official broker calendar ephemeral raw response bytes must be a non-empty Uint8Array"
+    );
+  }
+}
+
+function assertUseCallback(value: unknown): void {
+  if (typeof value !== "function") {
+    throw new Error(
+      "official broker calendar ephemeral consumer requires a use callback"
     );
   }
 }
@@ -304,7 +336,10 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function createRevocableReadonlyMembrane<T extends object>(value: T): {
+function createRevocableReadonlyMembrane<T extends object>(
+  value: T,
+  label: string
+): {
   proxy: T;
   revoke: () => void;
 } {
@@ -324,7 +359,7 @@ function createRevocableReadonlyMembrane<T extends object>(value: T): {
         if (key === "toJSON") {
           return () => {
             throw new Error(
-              "official broker calendar ephemeral evidence cannot be serialized or exported"
+              `official broker calendar ephemeral ${label} cannot be serialized or exported`
             );
           };
         }
@@ -339,27 +374,27 @@ function createRevocableReadonlyMembrane<T extends object>(value: T): {
       },
       set: () => {
         throw new Error(
-          "official broker calendar ephemeral evidence is read-only"
+          `official broker calendar ephemeral ${label} is read-only`
         );
       },
       defineProperty: () => {
         throw new Error(
-          "official broker calendar ephemeral evidence is read-only"
+          `official broker calendar ephemeral ${label} is read-only`
         );
       },
       deleteProperty: () => {
         throw new Error(
-          "official broker calendar ephemeral evidence is read-only"
+          `official broker calendar ephemeral ${label} is read-only`
         );
       },
       setPrototypeOf: () => {
         throw new Error(
-          "official broker calendar ephemeral evidence is read-only"
+          `official broker calendar ephemeral ${label} is read-only`
         );
       },
       preventExtensions: () => {
         throw new Error(
-          "official broker calendar ephemeral evidence is read-only"
+          `official broker calendar ephemeral ${label} is read-only`
         );
       }
     });

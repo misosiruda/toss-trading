@@ -344,11 +344,12 @@ flowchart TD
 필수 확인:
 
 - actual network-derived v2 evidence와 exact bytes의 ownership을 verified process-local opaque handle에 함께 이전함
+- factory가 bytes를 내부 copy로 격리하고 transferred caller view를 즉시 zeroize하며 handle에서 evidence/raw bytes를 노출하지 않음
 - factory가 v2 schema, response hash/byte length, normalized response와 acquisition freshness를 검증하고 invalid input도 bytes를 zeroize함
-- handle을 한 번만 소비하고 consumer가 current `asOf`와 같은 exact bytes로 evidence를 다시 검증함
-- evidence object graph를 deep revocable read-only membrane으로 제공하고 scope 종료 뒤 retained nested reference도 사용할 수 없음
-- success, verifier/consumer failure, stale/tamper, explicit disposal과 JSON export 시도 뒤 owned bytes를 zeroize함
-- callback scope는 chain 밖에서 재사용할 수 없고 detached evidence, replay input, coverage report 또는 다른 output을 반환하지 않음
+- handle을 한 번만 소비하고 trusted replay/coverage consumer capability가 current `asOf`와 internal exact bytes로 evidence를 다시 검증함
+- derived replay input/report object graph를 deep revocable read-only membrane으로 제공하고 callback 종료 뒤 retained nested reference도 사용할 수 없음
+- success, verifier/consumer failure, stale, explicit disposal과 JSON export 시도 뒤 internal bytes를 zeroize함
+- handle은 재사용할 수 없고 consumer identity 위조와 handle/consumer/derived output 직렬화를 거부하며 callback은 다른 output을 반환하지 않음
 - durable raw-byte store, workflow artifact writer, CLI/MCP/API export, replay 실행과 acquisition coordinator를 추가하지 않음
 
 ### Official Toss Open API read-only HTTP client 변경

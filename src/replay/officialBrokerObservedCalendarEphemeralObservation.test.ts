@@ -6,16 +6,20 @@ import { createOfficialBrokerObservedCalendarEvidence } from "./officialBrokerOb
 import { createOfficialBrokerObservedCalendarEvidenceV2 } from "./officialBrokerObservedCalendarEvidenceV2.js";
 import {
   consumeOfficialBrokerObservedCalendarEphemeralObservation,
+  consumeOfficialBrokerObservedCalendarEphemeralObservations,
+  createOfficialBrokerObservedCalendarCoverageReportEphemeralConsumer,
   createOfficialBrokerObservedCalendarEphemeralObservation,
+  createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer,
   disposeOfficialBrokerObservedCalendarEphemeralObservation,
-  type OfficialBrokerObservedCalendarEphemeralObservationScope
+  type OfficialBrokerObservedCalendarEphemeralConsumer,
+  type OfficialBrokerObservedCalendarEphemeralObservation
 } from "./officialBrokerObservedCalendarEphemeralObservation.js";
 import { verifyOfficialTossOpenApiCalendarCompatibility } from "./officialBrokerObservedCalendarOpenApiCompatibility.js";
 import {
-  buildOfficialBrokerObservedCalendarCoverageProbeReport,
-  createOfficialBrokerObservedCalendarCoverageProbePlan
+  createOfficialBrokerObservedCalendarCoverageProbePlan,
+  type OfficialBrokerObservedCalendarCoverageProbeReport
 } from "./officialBrokerObservedCalendarCoverageProbe.js";
-import { buildOfficialBrokerObservedCalendarReplayInput } from "./officialBrokerObservedCalendarReplayAdapter.js";
+import type { OfficialBrokerObservedCalendarReplayInput } from "./officialBrokerObservedCalendarReplayAdapter.js";
 
 const PINNED_OPENAPI_BYTES = Buffer.from(
   readFileSync(
@@ -45,80 +49,123 @@ const PINNED_OPENAPI_DOCUMENT = JSON.parse(
   >;
 };
 
-test("consumes a network-derived v2 observation once and disposes owned bytes", () => {
-  const { observation, rawResponseBytes } = createObservation();
-  let retainedScope:
-    | OfficialBrokerObservedCalendarEphemeralObservationScope
-    | undefined;
+test("consumes replay input through a revocable capability", () => {
+  const { observation, transferredRawResponseBytes } = createObservation();
+  let retainedInput: OfficialBrokerObservedCalendarReplayInput | undefined;
   let retainedEvidence:
-    | OfficialBrokerObservedCalendarEphemeralObservationScope["evidence"]
+    | OfficialBrokerObservedCalendarReplayInput["evidence"]
     | undefined;
-  let retainedSource:
-    | OfficialBrokerObservedCalendarEphemeralObservationScope["evidence"]["source"]
-    | undefined;
-  let retainedBytes: Uint8Array | undefined;
+  const consumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: (input) => {
+        retainedInput = input;
+        retainedEvidence = input.evidence;
+        assert.equal(input.mode, "paper_only");
+        assert.equal(input.replayEvidenceClass, "observed_session_only");
+        assert.equal(
+          input.evidence.schemaVersion,
+          "official_broker_observed_calendar_evidence.v2"
+        );
+        assert.equal(
+          "rawResponseBytes" in input,
+          false
+        );
+      }
+    });
 
+  assertZeroed(transferredRawResponseBytes);
   consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
     asOf: "2026-03-25T01:00:30.000Z",
-    consumer: (scope) => {
-      retainedScope = scope;
-      retainedEvidence = scope.evidence;
-      retainedSource = scope.evidence.source;
-      retainedBytes = scope.rawResponseBytes;
-      assert.strictEqual(scope.rawResponseBytes, rawResponseBytes);
-      assert.equal(scope.asOf, "2026-03-25T01:00:30.000Z");
-      assert.equal(scope.evidence.mode, "paper_only");
-      assert.equal(
-        scope.evidence.replayEvidenceClass,
-        "observed_session_only"
-      );
-      assert.deepEqual(Object.keys(scope), []);
-
-      const replayInput = buildOfficialBrokerObservedCalendarReplayInput({
-        evidence: scope.evidence,
-        asOf: scope.asOf,
-        rawResponseBytes: scope.rawResponseBytes
-      });
-      assert.equal(replayInput.mode, "paper_only");
-      assert.equal(
-        replayInput.replayEvidenceClass,
-        "observed_session_only"
-      );
-    }
+    consumer
   });
 
-  assertZeroed(rawResponseBytes);
-  assertZeroed(retainedBytes);
-  assert.throws(() => retainedScope!.evidence, /scope is disposed/);
+  assert.throws(() => retainedInput!.mode, /revoked/);
   assert.throws(() => retainedEvidence!.mode, /revoked/);
-  assert.throws(() => retainedSource!.publisher, /revoked/);
-  assert.throws(() => JSON.stringify(retainedEvidence), /revoked/);
+  assert.throws(() => JSON.stringify(retainedInput), /revoked/);
   assert.throws(
     () =>
       consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
         asOf: "2026-03-25T01:00:30.000Z",
-        consumer: () => undefined
+        consumer
       }),
     /observation is disposed/
   );
 });
 
-test("disposes exact bytes when the consumer or freshness verification fails", () => {
+test("consumes coverage report through a revocable capability", () => {
+  const { observation } = createObservation();
+  let retainedReport:
+    | OfficialBrokerObservedCalendarCoverageProbeReport
+    | undefined;
+  let retainedPlan:
+    | OfficialBrokerObservedCalendarCoverageProbeReport["plan"]
+    | undefined;
+  const consumer =
+    createOfficialBrokerObservedCalendarCoverageReportEphemeralConsumer({
+      plan: oneDayPlan(),
+      use: (report) => {
+        retainedReport = report;
+        retainedPlan = report.plan;
+        assert.equal(report.mode, "paper_only");
+        assert.equal(report.status, "verified");
+        assert.equal(report.summary.verifiedDateCount, 1);
+        assert.equal(report.historicalCompletenessClaim, "not_claimed");
+        assert.equal(report.officialExchangeReadiness, "not_established");
+      }
+    });
+
+  consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
+    asOf: "2026-03-25T01:00:30.000Z",
+    consumer
+  });
+
+  assert.throws(() => retainedReport!.status, /revoked/);
+  assert.throws(() => retainedPlan!.market, /revoked/);
+  assert.throws(() => JSON.stringify(retainedReport), /revoked/);
+});
+
+test("keeps transferable response bytes behind the observation boundary", () => {
+  const { observation, transferredRawResponseBytes } = createObservation();
+  const transferred = structuredClone(transferredRawResponseBytes, {
+    transfer: [transferredRawResponseBytes.buffer]
+  });
+  let consumed = false;
+  const consumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: () => {
+        consumed = true;
+      }
+    });
+
+  assert.equal(transferredRawResponseBytes.byteLength, 0);
+  assertZeroed(transferred);
+  consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
+    asOf: "2026-03-25T01:00:30.000Z",
+    consumer
+  });
+  assert.equal(consumed, true);
+});
+
+test("disposes observations when verification or a trusted consumer fails", () => {
   const consumerFailure = createObservation();
+  const failingConsumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: () => {
+        throw new Error("synthetic consumer failure");
+      }
+    });
   assert.throws(
     () =>
       consumeOfficialBrokerObservedCalendarEphemeralObservation(
         consumerFailure.observation,
         {
           asOf: "2026-03-25T01:00:30.000Z",
-          consumer: () => {
-            throw new Error("synthetic consumer failure");
-          }
+          consumer: failingConsumer
         }
       ),
     /synthetic consumer failure/
   );
-  assertZeroed(consumerFailure.rawResponseBytes);
+  assertDisposed(consumerFailure.observation, failingConsumer);
 
   const stale = createObservation();
   assert.throws(
@@ -127,158 +174,100 @@ test("disposes exact bytes when the consumer or freshness verification fails", (
         stale.observation,
         {
           asOf: "2026-03-25T01:01:00.000Z",
-          consumer: () => undefined
+          consumer: failingConsumer
         }
       ),
     /stale/
   );
-  assertZeroed(stale.rawResponseBytes);
+  assertDisposed(stale.observation, failingConsumer);
 });
 
-test("rejects an asynchronous consumer before its scope can outlive the chain", async () => {
-  const { observation, rawResponseBytes } = createObservation();
-  let postAwaitScopeStatus = "not_checked";
-
+test("rejects returned and asynchronous derived outputs", async () => {
+  const returned = createObservation();
+  const returningConsumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: (input) => input
+    });
   assert.throws(
     () =>
-      consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
-        asOf: "2026-03-25T01:00:30.000Z",
-        consumer: async (scope) => {
-          const retainedEvidence = scope.evidence;
-          await Promise.resolve();
-          try {
-            void retainedEvidence.mode;
-            postAwaitScopeStatus = "active";
-          } catch {
-            postAwaitScopeStatus = "disposed";
-          }
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(
+        returned.observation,
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer: returningConsumer
         }
-      }),
+      ),
+    /must not return detached output/
+  );
+
+  const asynchronous = createObservation();
+  let postAwaitStatus = "not_checked";
+  const asyncConsumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: async (input) => {
+        const retainedInput = input;
+        await Promise.resolve();
+        try {
+          void retainedInput.mode;
+          postAwaitStatus = "active";
+        } catch {
+          postAwaitStatus = "revoked";
+        }
+      }
+    });
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(
+        asynchronous.observation,
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer: asyncConsumer
+        }
+      ),
     /must not return detached output/
   );
   await Promise.resolve();
-
-  assert.equal(postAwaitScopeStatus, "disposed");
-  assertZeroed(rawResponseBytes);
+  assert.equal(postAwaitStatus, "revoked");
 });
 
-test("fails closed when transferred exact bytes change before consumption", () => {
-  const { observation, rawResponseBytes } = createObservation();
-  rawResponseBytes[0] = rawResponseBytes[0]! ^ 1;
-
-  assert.throws(
-    () =>
-      consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
-        asOf: "2026-03-25T01:00:30.000Z",
-        consumer: () => undefined
-      }),
-    /response hash mismatch|Unexpected token|JSON/
-  );
-  assertZeroed(rawResponseBytes);
-});
-
-for (const detachedOutput of [
-  {
-    name: "v2 evidence",
-    build: (
-      scope: OfficialBrokerObservedCalendarEphemeralObservationScope
-    ) => scope.evidence
-  },
-  {
-    name: "replay input",
-    build: (
-      scope: OfficialBrokerObservedCalendarEphemeralObservationScope
-    ) =>
-      buildOfficialBrokerObservedCalendarReplayInput({
-        evidence: scope.evidence,
-        asOf: scope.asOf,
-        rawResponseBytes: scope.rawResponseBytes
-      })
-  },
-  {
-    name: "coverage report",
-    build: (
-      scope: OfficialBrokerObservedCalendarEphemeralObservationScope
-    ) =>
-      buildOfficialBrokerObservedCalendarCoverageProbeReport({
-        plan: createOfficialBrokerObservedCalendarCoverageProbePlan({
-          market: "KR",
-          rangeStartDate: "2026-03-25",
-          rangeEndDate: "2026-03-25"
-        }),
-        evaluatedAt: scope.asOf,
-        observations: [
-          {
-            status: "verified",
-            requestedDate: "2026-03-25",
-            evidence: scope.evidence,
-            rawResponseBytes: scope.rawResponseBytes
-          }
-        ]
-      })
-  }
-]) {
-  test(`rejects detached ${detachedOutput.name} output`, () => {
-    const { observation, rawResponseBytes } = createObservation();
-
-    assert.throws(
-      () =>
-        consumeOfficialBrokerObservedCalendarEphemeralObservation(
-          observation,
-          {
-            asOf: "2026-03-25T01:00:30.000Z",
-            consumer: (scope) => detachedOutput.build(scope)
-          }
-        ),
-      /must not return detached output/
-    );
-    assertZeroed(rawResponseBytes);
-  });
-}
-
-test("rejects observation and scope JSON export and disposes owned bytes", () => {
+test("rejects observation, consumer, and derived JSON export", () => {
   const direct = createObservation();
   assert.throws(
     () => JSON.stringify(direct.observation),
-    /cannot be serialized or exported/
+    /observation cannot be serialized or exported/
   );
-  assertZeroed(direct.rawResponseBytes);
 
-  const scoped = createObservation();
+  const consumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: () => undefined
+    });
+  assert.throws(
+    () => JSON.stringify(consumer),
+    /consumer cannot be serialized or exported/
+  );
+
+  const derived = createObservation();
+  const serializingConsumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: (input) => {
+        JSON.stringify(input);
+      }
+    });
   assert.throws(
     () =>
       consumeOfficialBrokerObservedCalendarEphemeralObservation(
-        scoped.observation,
+        derived.observation,
         {
           asOf: "2026-03-25T01:00:30.000Z",
-          consumer: (scope) => {
-            JSON.stringify(scope);
-          }
+          consumer: serializingConsumer
         }
       ),
-    /scope cannot be serialized or exported/
+    /replay input cannot be serialized or exported/
   );
-  assertZeroed(scoped.rawResponseBytes);
-
-  const evidence = createObservation();
-  assert.throws(
-    () =>
-      consumeOfficialBrokerObservedCalendarEphemeralObservation(
-        evidence.observation,
-        {
-          asOf: "2026-03-25T01:00:30.000Z",
-          consumer: (scope) => {
-            JSON.stringify(scope.evidence);
-          }
-        }
-      ),
-    /evidence cannot be serialized or exported/
-  );
-  assertZeroed(evidence.rawResponseBytes);
 });
 
-test("rejects legacy evidence and disposes transferred bytes", () => {
-  const rawResponseBytes = pinnedResponseBytes();
+test("rejects legacy evidence and zeroizes transferred bytes", () => {
+  const rawResponseBytes = Uint8Array.from(pinnedResponseBytes());
   const legacyEvidence = createOfficialBrokerObservedCalendarEvidence({
     market: "KR",
     requestedDate: "2026-03-25",
@@ -296,25 +285,66 @@ test("rejects legacy evidence and disposes transferred bytes", () => {
   assertZeroed(rawResponseBytes);
 });
 
-test("explicit disposal is idempotent and prevents later consumption", () => {
-  const { observation, rawResponseBytes } = createObservation();
-
-  disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
-  disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
-
-  assertZeroed(rawResponseBytes);
+test("rejects forged capabilities and duplicate batch observations", () => {
+  const forgedConsumerObservation = createObservation();
   assert.throws(
     () =>
-      consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
-        asOf: "2026-03-25T01:00:30.000Z",
-        consumer: () => undefined
-      }),
-    /observation is disposed/
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(
+        forgedConsumerObservation.observation,
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer: {} as OfficialBrokerObservedCalendarEphemeralConsumer
+        }
+      ),
+    /trusted process-local factory/
   );
+
+  const consumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: () => undefined
+    });
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(
+        {} as OfficialBrokerObservedCalendarEphemeralObservation,
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer
+        }
+      ),
+    /observation must come from the process-local factory/
+  );
+
+  const duplicate = createObservation();
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralObservations(
+        [duplicate.observation, duplicate.observation],
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer
+        }
+      ),
+    /cannot be consumed twice/
+  );
+  assertDisposed(duplicate.observation, consumer);
+});
+
+test("explicit disposal is idempotent and prevents later consumption", () => {
+  const { observation } = createObservation();
+  const consumer =
+    createOfficialBrokerObservedCalendarReplayInputEphemeralConsumer({
+      use: () => undefined
+    });
+
+  disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
+  disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
+
+  assertDisposed(observation, consumer);
 });
 
 function createObservation() {
-  const rawResponseBytes = pinnedResponseBytes();
+  const rawResponseBytes = Uint8Array.from(pinnedResponseBytes());
   const evidence = createOfficialBrokerObservedCalendarEvidenceV2({
     compatibilityResult: verifyOfficialTossOpenApiCalendarCompatibility({
       market: "KR",
@@ -336,13 +366,21 @@ function createObservation() {
     rawResponseBytes
   });
   return {
-    rawResponseBytes,
+    transferredRawResponseBytes: rawResponseBytes,
     observation:
       createOfficialBrokerObservedCalendarEphemeralObservation({
         evidence,
         rawResponseBytes
       })
   };
+}
+
+function oneDayPlan() {
+  return createOfficialBrokerObservedCalendarCoverageProbePlan({
+    market: "KR",
+    rangeStartDate: "2026-03-25",
+    rangeEndDate: "2026-03-25"
+  });
 }
 
 function pinnedResponseBytes(): Buffer {
@@ -353,7 +391,20 @@ function pinnedResponseBytes(): Buffer {
   return Buffer.from(JSON.stringify(value), "utf8");
 }
 
-function assertZeroed(value: Uint8Array | undefined): void {
-  assert.ok(value);
+function assertDisposed(
+  observation: OfficialBrokerObservedCalendarEphemeralObservation,
+  consumer: OfficialBrokerObservedCalendarEphemeralConsumer
+): void {
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
+        asOf: "2026-03-25T01:00:30.000Z",
+        consumer
+      }),
+    /observation is disposed/
+  );
+}
+
+function assertZeroed(value: Uint8Array): void {
   assert.equal(value.every((byte) => byte === 0), true);
 }
