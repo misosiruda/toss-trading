@@ -112,6 +112,25 @@ test("credential preflight rejects unsafe runtime boundaries and invalid attesta
   assert.equal(serialized.includes("access-token"), false);
 });
 
+test("credential preflight rejects every explicit trading flag except exact false", async () => {
+  for (const tradingEnabled of ["true ", "FALSE", "false ", "disabled", ""]) {
+    const result = await runTestOnlyTossOpenApiCredentialReadinessPreflight(
+      {
+        ...readyEnv(),
+        TRADING_ENABLED: tradingEnabled
+      },
+      async () => [{ address: "203.0.113.10", family: 4 }]
+    );
+
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.blockers, ["TRADING_ENABLED"]);
+    assert.equal(
+      result.checks.find(({ key }) => key === "trading_enabled")?.status,
+      "blocked"
+    );
+  }
+});
+
 function readyEnv(): NodeJS.ProcessEnv {
   return {
     BROKER_PROVIDER: "mock",

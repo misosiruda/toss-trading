@@ -395,7 +395,7 @@ flowchart TD
 
 - exact canonical host/base URL, safe auth summary, DNS family/count와 fixed token/calendar endpoint identity만 출력하고 noncanonical URL은 path까지 fixed placeholder로 치환함
 - client id/secret, resolved IP address, token, provider response와 raw bytes를 출력하거나 저장하지 않음
-- `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only` 경계를 벗어나면 fail-closed blocker를 기록함
+- `BROKER_PROVIDER=mock`, exact `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only` 경계를 벗어나면 fail-closed blocker를 기록하고 `TRADING_ENABLED`의 오타나 공백값도 허용하지 않음
 - outbound IP registration은 `TOSS_OPEN_API_OUTBOUND_IP_REGISTERED=true` owner attestation과 실제 egress 검증을 구분함
 - DNS lookup 외 HTTP request, token issue, calendar acquisition, account/order request 또는 provider response 검증을 수행하지 않음
 - `ready_for_external_verification`을 successful acquisition/evidence/completeness로 해석하지 않음

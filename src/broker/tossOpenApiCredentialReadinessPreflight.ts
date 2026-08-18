@@ -116,7 +116,8 @@ async function runPreflight(
       : "[noncanonical-url]"
   };
   const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
-  const tradingEnabled = env.TRADING_ENABLED === "true";
+  const tradingDisabled =
+    env.TRADING_ENABLED === undefined || env.TRADING_ENABLED === "false";
   const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "paper_only";
   const outboundIpRegistration = readOutboundIpRegistration(env);
   const host = await inspectOfficialHost(resolveHost);
@@ -136,7 +137,7 @@ async function runPreflight(
     checks,
     blockers,
     "trading_enabled",
-    !tradingEnabled,
+    tradingDisabled,
     "Live trading remains disabled.",
     "Credential preflight requires TRADING_ENABLED=false.",
     "TRADING_ENABLED"
