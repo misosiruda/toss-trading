@@ -156,17 +156,27 @@ function consumeVerifiedObservations(
   asOf: string,
   operation: (observations: VerifiedObservation[]) => void
 ): void {
-  if (!Array.isArray(observations) || observations.length === 0) {
+  if (!Array.isArray(observations)) {
+    throw new Error(
+      "official broker calendar ephemeral consumption requires observations"
+    );
+  }
+  const observationCount = observations.length;
+  if (observationCount === 0) {
     throw new Error(
       "official broker calendar ephemeral consumption requires observations"
     );
   }
 
-  const observationObjects: object[] = [];
-  const ownedStates: OwnedObservationState[] = [];
+  const collected = collectObservationInputs(observations, observationCount);
   try {
+    if (collected.hasReadError) {
+      throw collected.readError;
+    }
+    const observationObjects: object[] = [];
+    const ownedStates: OwnedObservationState[] = [];
     const seen = new Set<object>();
-    for (const observation of observations) {
+    for (const observation of collected.values) {
       const observationObject = assertObservationObject(observation);
       observationObjects.push(observationObject);
       if (seen.has(observationObject)) {
@@ -210,10 +220,55 @@ function consumeVerifiedObservations(
       }))
     );
   } finally {
-    for (const observationObject of observationObjects) {
+    for (const observationObject of collected.factoryOwnedObjects) {
       disposeObservationObject(observationObject);
     }
   }
+}
+
+function collectObservationInputs(
+  observations: readonly OfficialBrokerObservedCalendarEphemeralObservation[],
+  observationCount: number
+): {
+  values: unknown[];
+  factoryOwnedObjects: object[];
+  hasReadError: boolean;
+  readError: unknown;
+} {
+  const values: unknown[] = [];
+  const factoryOwnedObjects: object[] = [];
+  const seenFactoryOwnedObjects = new Set<object>();
+  let hasReadError = false;
+  let readError: unknown;
+
+  for (let index = 0; index < observationCount; index += 1) {
+    try {
+      const value: unknown = observations[index];
+      values.push(value);
+      if (
+        value !== null &&
+        (typeof value === "object" || typeof value === "function") &&
+        observationStates.has(value) &&
+        !seenFactoryOwnedObjects.has(value)
+      ) {
+        seenFactoryOwnedObjects.add(value);
+        factoryOwnedObjects.push(value);
+      }
+    } catch (error) {
+      values.push(undefined);
+      if (!hasReadError) {
+        hasReadError = true;
+        readError = error;
+      }
+    }
+  }
+
+  return {
+    values,
+    factoryOwnedObjects,
+    hasReadError,
+    readError
+  };
 }
 
 function disposeObservationObject(observation: object): void {

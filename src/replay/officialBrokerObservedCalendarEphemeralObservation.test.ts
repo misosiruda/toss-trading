@@ -171,23 +171,34 @@ test("rejects legacy evidence and zeroizes the accepted bytes", () => {
   assertZeroed(rawResponseBytes);
 });
 
-test("rejects forged and duplicate observations", () => {
+test("rejects forged and duplicate batches and disposes every valid handle", () => {
+  const afterForged = createObservation();
   assert.throws(
     () =>
-      consumeOfficialBrokerObservedCalendarEphemeralReplayInput(
-        {} as OfficialBrokerObservedCalendarEphemeralObservation,
+      consumeOfficialBrokerObservedCalendarEphemeralCoverageReport(
+        [
+          {} as OfficialBrokerObservedCalendarEphemeralObservation,
+          afterForged.observation
+        ],
         {
-          asOf: "2026-03-25T01:00:30.000Z"
+          asOf: "2026-03-25T01:00:30.000Z",
+          plan: oneDayPlan()
         }
       ),
     /observation must come from the process-local factory/
   );
+  assertDisposed(afterForged.observation);
 
   const duplicate = createObservation();
+  const afterDuplicate = createObservation();
   assert.throws(
     () =>
       consumeOfficialBrokerObservedCalendarEphemeralCoverageReport(
-        [duplicate.observation, duplicate.observation],
+        [
+          duplicate.observation,
+          duplicate.observation,
+          afterDuplicate.observation
+        ],
         {
           asOf: "2026-03-25T01:00:30.000Z",
           plan: oneDayPlan()
@@ -196,6 +207,7 @@ test("rejects forged and duplicate observations", () => {
     /cannot be consumed twice/
   );
   assertDisposed(duplicate.observation);
+  assertDisposed(afterDuplicate.observation);
 });
 
 test("explicit disposal is idempotent and prevents later consumption", () => {
