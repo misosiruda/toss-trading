@@ -133,7 +133,10 @@ clock-recovery가 끝날 때까지 no-send다.
 - Approval payload 또는 caller-controlled policy가 evaluation time을 선택하는 승인
 
 Approval verification이 unavailable, malformed, expired, already consumed 또는 current
-intent와 불일치하면 no-send로 종료한다.
+intent와 불일치하면 no-send로 종료한다. `approval_required`에서 approval이 만료된 경우에는
+authoritative clock evidence와 exact active/unconsumed approval 및 state/version CAS를 같은
+transaction에 commit한 `approval_expired` no-dispatch fence가 있어야 reservation/target fence를
+release할 수 있다.
 
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
@@ -347,6 +350,8 @@ reconciliation_pending
   - `approval_revoked`: winning revocation CAS와 current `revocationVersion`, 파생 permit fence
   - `binding_invalidated`: exact old/current binding mismatch와 old permit invalidation CAS
   - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS
+  - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact
+    active/unconsumed approval-required state/version CAS
   - `pre_permit_payload_changed`: 아직 permit이 생성되지 않은 approval-required state/version
   CAS contention/duplicate observation만으로는 이 record를 만들 수 없다. 다른 worker가
   permit을 consume했거나 first-byte 여부가 불명확하면 `acknowledgement_unknown`/blocked
@@ -418,8 +423,16 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   않고 target order와 resulting position/cash reconciliation까지 추적한다. Takeover가 있으면
   original operation outcome과 recovery cancel outcome을 모두 terminal reconcile한 뒤에만
   conservative old/replacement/current-target capacity envelope와 fence를 release한다.
-- Permit consume, expiry, rejection 또는 incident 종료 시 recovery gate는 자동으로 다시
-  disabled가 되며 kill switch는 active로 유지한다.
+- Recovery permit consume 자체는 gate-disable transition이 아니다. Arbiter는 permit consume과
+  `dispatch_attempted` commit 뒤에도 같은 dispatch/gate lock을 first network byte boundary까지
+  유지하며, exact consumed permit 외 다른 request는 허용하지 않는다. First byte를 실제로 넘은
+  뒤 `dispatch_won` evidence를 append하고 나서만 recovery gate를 disabled로 durable transition하고
+  epoch를 advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 해당 cause-specific
+  `noDispatchFence`와 gate disable을 같은 transaction에 commit한다. Crash나 socket 결과로 byte
+  boundary가 불명확하면 gate를 다시 열거나 permit을 재사용하지 않고 startup kill-active 상태의
+  `acknowledgement_unknown` reconciliation로 보낸다. 어떤 경우에도 자동 disable을 현재 recovery
+  dispatch보다 먼저 이긴 일반 `gate_disabled` cause로 재해석하지 않으며 kill switch는 active로
+  유지한다.
 
 이 recovery contract는 현재 cancel endpoint나 live mutation을 구현·활성화하지 않는다.
 
@@ -592,7 +605,9 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Concurrent worker 중 하나만 approval/state/dispatch permit CAS를 소비할 수 있음
 - [ ] Approval revoke와 dispatch가 직렬화되고 revoke가 이긴 reserved-unsent permit은 영구 fence됨
 - [ ] 모든 stopped-before-dispatch cause가 전용 durable no-dispatch evidence로 terminal 처리됨
+- [ ] Pre-permit approval expiry가 authoritative clock과 unconsumed approval/state CAS로 종료됨
 - [ ] Dispatch CAS loser가 다른 worker의 send 가능성을 no-dispatch로 오인하지 않음
+- [ ] Recovery gate disable이 dispatch first-byte winner 또는 cause-specific zero-byte fence 뒤에만 발생함
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
 - [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨

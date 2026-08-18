@@ -652,11 +652,19 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   같은 lock에서 증명하고 cause-specific durable `noDispatchFence`를 commit한 경우에만
   terminal candidate가 된다. Record는 exact intent/reservation/approval/permit version,
   epoch/snapshot, reason, tombstone/audit과 함께 gate-disable winning fence, approval-revocation
-  CAS/version, binding invalidation CAS, authoritative permit expiry/staleness 또는 pre-permit
-  payload-change state 중 해당 cause evidence를 포함한다. CAS loser/duplicate observation은
+  CAS/version, binding invalidation CAS, authoritative permit expiry/staleness, authoritative
+  approval expiry와 active/unconsumed approval-required state CAS 또는 pre-permit payload-change
+  state 중 해당 cause evidence를 포함한다. CAS loser/duplicate observation은
   no-dispatch 증거가 아니며 winner가 permit을 consume했거나 outcome이 불명확하면
   `acknowledgement_unknown`/blocked reconciliation로 보낸다. Evidence가 완성되기 전에는
   capacity나 target mutation fence를 release하지 않는다.
+- Cancel-recovery permit consume 자체는 recovery gate를 disable하지 않는다. Arbiter는 같은
+  dispatch/gate lock을 first network byte boundary까지 유지하고 exact consumed permit 외 요청을
+  거부한다. First byte 뒤 `dispatch_won` evidence를 append한 다음에만 gate를 disable하고 epoch를
+  advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 cause-specific
+  `noDispatchFence`와 disable을 원자적으로 commit한다. Boundary가 불명확한 crash/socket 결과는
+  startup kill-active `acknowledgement_unknown` reconciliation로 보내며 permit/gate를 재사용하지
+  않는다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
   broker correlation으로 reservation contribution을 broker order/position/cash contribution에
   atomic handoff한다. Effective snapshot은 logical order당 정확히 한 capacity source만
@@ -811,7 +819,9 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
 - owner approval revoke가 dispatch보다 먼저 이기면 reserved-unsent permit이 영구 fence되고 network write가 없다.
 - 모든 stopped-before-dispatch 원인이 전용 durable no-dispatch evidence 없이는 terminal/release되지 않는다.
+- pre-permit approval expiry는 authoritative clock과 active/unconsumed approval-required state CAS로 종료한다.
 - dispatch CAS loser는 concurrent winner의 send 가능성이 있으면 unknown reconciliation로 전이한다.
+- recovery gate는 first-byte dispatch winner 또는 cause-specific zero-byte fence 뒤에만 disable된다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
