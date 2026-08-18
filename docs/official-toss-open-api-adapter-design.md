@@ -516,8 +516,8 @@ sequenceDiagram
     Risk-->>Router: candidate OrderIntent and preliminary decision
     Router-->>Owner: typed market-order authorization request when required
     Owner->>Router: exact-bound marketOrderAuthorization
-    Router->>Router: serializable final risk/capacity/idempotency reservation
-    Router-->>Owner: preview with exact risk/reservation identity
+    Router->>Router: atomic final reservation, pending approvalRequest and approval_required
+    Router-->>Owner: typed request with id/generation/deadline, preview and exact binding
     Owner->>Router: exact-bound dispatchApproval
     Router->>Router: refresh exactly-once snapshot and revalidate risk/freshness binding
     Router->>Router: atomic approval consume, state transition and sole permit CAS
@@ -636,16 +636,18 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   release하지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
-  하나의 serializable durable transaction에서 commit한다. 이 transaction은 dispatch arbiter의
+  pending `approvalRequest` 생성 및 `approval_required` 전이와 하나의 serializable durable
+  transaction에서 commit한다. Request 없는 standalone final-reservation durable state는 없다.
+  이 transaction은 dispatch arbiter의
   current gate lock/epoch에서 exact enabled snapshot도 검증하며 kill-active/disabled/mismatched이면
   reservation, target fence나 approval request를 만들지 않는다. Reservation commit 직후 disable이
-  경쟁해 이기면 exact `final_risk_reserved`/`approval_required` state와 no-permit/no-dispatch를 CAS해
+  경쟁해 이기면 exact `approval_required` state, pending request와 no-permit/no-dispatch를 CAS해
   `gate_disabled` noDispatchFence와 tombstone을 commit하고 capacity/fence를 atomic release한다.
   Reservation lineage는 terminal reconciliation까지 보존하고 logical capacity는 아래 exactly-once
   source로 후속 risk evaluation에 포함한다.
-- Final transaction이 만든 exact risk/reservation identity로 backend-generated
-  `approvalRequestId`, monotonic generation, authoritative requested/deadline과 owner channel을
-  가진 durable pending request 및 `approval_required` 전이를 먼저 commit한다. 그 뒤 exact
+- Final transaction은 exact risk/reservation identity로 backend-generated `approvalRequestId`,
+  monotonic generation, authoritative requested/deadline과 owner channel을 가진 durable pending
+  request 및 `approval_required` 전이를 reservation과 함께 atomic commit한다. 그 뒤 exact
   request identity/generation/deadline, reservation/risk binding과 preview를 한 typed payload로
   owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
   뒤에만 dispatch permit을 발급한다.
@@ -892,6 +894,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - accountScopeRef는 ordinary account hash가 아닌 CSPRNG opaque encrypted mapping이며 key rotation에도 ref를 유지한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
 - approval request는 owner에게 제시되기 전에 durable commit되고 response가 request identity/generation/deadline에 exact bind된다.
+- final reservation, pending approval request와 approval_required 전이는 atomic이며 request 없는 durable reservation 상태가 없다.
 - pre-permit binding mismatch와 post-permit approval expiry는 각각 no-permit 또는 unconsumed-permit CAS로 안전 종료된다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.

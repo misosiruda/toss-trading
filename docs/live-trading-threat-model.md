@@ -139,9 +139,10 @@ authoritative clock evidence와 exact active/unconsumed approval 및 state/versi
 transaction에 commit한 `approval_expired` no-dispatch fence가 있어야 reservation/target fence를
 release할 수 있다.
 
-Final reservation을 owner에게 제시하기 전에 backend는 exact intent/reservation/risk binding,
-request generation, authoritative `requestedAt`/`requestExpiresAt`과 owner channel을 묶은 durable
-`approvalRequest`를 `pending`으로 만들고 `approval_required` 전이를 commit한다. Commit 뒤 owner에게
+Final reservation transaction은 exact intent/reservation/risk binding, request generation,
+authoritative `requestedAt`/`requestExpiresAt`과 owner channel을 묶은 durable `approvalRequest`
+`pending` 생성 및 `approval_required` 전이를 같은 serializable atomic commit에 포함한다.
+Standalone durable reservation state나 request 없는 crash-recovery gap은 허용하지 않는다. Commit 뒤 owner에게
 보내는 typed approval payload에는 exact `approvalRequestId`, generation, requested/expires time,
 intent/reservation/risk binding과 preview가 모두 포함돼야 하며, `dispatchApproval`은 이 request
 identity/generation/deadline에 exact bind되지 않으면 거부한다. 유효한 approval record가 한 번도 생성되지 않은
@@ -304,14 +305,10 @@ disabled
   -> dry_run_validated
 
 dry_run_validated
-  -> market_order_authorization_required | final_risk_reserved
+  -> market_order_authorization_required | approval_required(atomic reservation + pending request)
 
 market_order_authorization_required
-  -> final_risk_reserved
-
-final_risk_reserved
-  -> approval_required
-  -> stopped_before_dispatch(cause-specific noDispatchFence)
+  -> approval_required(atomic authorization consume + reservation + pending request)
 
 approval_required
   -> send_reserved
@@ -330,7 +327,7 @@ dispatch_permit_acquired
 restart(send_reserved | dispatch_permit_acquired)
   -> acknowledgement_unknown
 
-no_dispatch_fence(final_risk_reserved | approval_required | send_reserved)
+no_dispatch_fence(approval_required | send_reserved)
   -> stopped_before_dispatch
 
 dispatch_cas_loser(consumed | outcome_unknown)
@@ -383,16 +380,16 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed)
 - Type/runtime boundary는 `DryRunShadowRecord`나 shadow key를 gateway/dispatch permit 입력으로
   변환하지 못하게 한다. Shadow audit는 `simulation_only=true`와 synthetic correlation만
   남기고 raw account/order/execution identity를 받지 않는다.
-- `final_risk_reserved`는 portfolio/account capacity, idempotency와 tombstone transaction이
-  commit된 상태다. Market order이면 exact `marketOrderAuthorization`도 같은 transaction에서
-  먼저 consume돼야 한다. Backend는 transaction이 만든 exact risk/reservation identity로 durable
-  pending `approvalRequest`를 만들고 `approval_required` 전이를 commit한 뒤에만 request identity,
-  generation, deadline과 preview를 owner에게 제시한다.
+- 첫 durable post-validation 상태인 `approval_required`는 portfolio/account capacity,
+  idempotency/tombstone, target fence, pending `approvalRequest`와 state transition을 한 atomic
+  transaction에서 commit한 결과다. Market order이면 exact `marketOrderAuthorization` consume도
+  같은 transaction에 포함한다. Request 없는 `final_risk_reserved` 상태는 저장하거나 복구하지
+  않으며, commit 뒤에만 request identity, generation, deadline과 preview를 owner에게 제시한다.
 - Final risk/capacity/idempotency/target-fence transaction 자체가 dispatch arbiter의 current
   gate lock/epoch 아래 exact enabled snapshot을 검증하고 commit돼야 한다. Kill-active 또는
   false/invalid/mismatched gate에서는 reservation, target fence나 approval request를 새로 만들지
   않는다. Reservation transaction이 먼저 이긴 직후 disable이 경쟁하면 disable transaction이
-  해당 exact `final_risk_reserved`/`approval_required` state, reservation/fence와 permit/
+  해당 exact `approval_required` state, reservation/fence, pending request와 permit/
   `dispatch_attempted` 부재를 atomic CAS해 `gate_disabled` noDispatchFence와 permanent tombstone을
   commit한 뒤 capacity/fence를 release한다.
 - `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
@@ -459,7 +456,7 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed)
   hash를 보존한다. Gateway는 stale/mismatched epoch 또는 snapshot의 permit을 거부한다.
 - Gate disable이 final reservation 또는 dispatch보다 먼저 lock/epoch를 획득하면 새
   reservation/fence/approval request를 거부한다. 이미 reservation이 먼저 commit됐지만 first
-  byte 전인 `final_risk_reserved`, `approval_required`, `send_reserved` record는 disable transaction이
+  byte 전인 `approval_required`, `send_reserved` record는 disable transaction이
   exact state/version과 no-permit/no-dispatch 또는 unconsumed permit을 확인해
   `stopped_before_dispatch`/`gate_disabled` noDispatchFence로 atomic close하고 permanent tombstone을
   남긴 뒤 network write를 금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를
@@ -746,6 +743,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Disabled gate가 final reservation/fence/approval request를 막고 race loser를 atomic close함
+- [ ] Final reservation/pending approval request/approval_required가 한 transaction이며 request 없는 durable gap이 없음
 - [ ] Row 16 dry-run shadow가 live reservation/capacity/fence/permit/gateway와 분리되고 simulated unknown을 no-external-effect로 종료함
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
