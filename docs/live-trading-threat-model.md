@@ -288,6 +288,7 @@ send_reserved
   -> dispatch_permit_acquired
 
 dispatch_permit_acquired
+  -> dispatch_failed_zero_byte
   -> broker_rejected
   -> acknowledgement_unknown
   -> broker_accepted
@@ -313,7 +314,7 @@ open
 partially_filled
   -> partially_filled | filled | canceled | expired
 
-stopped_before_dispatch | broker_rejected | filled | canceled | expired
+stopped_before_dispatch | dispatch_failed_zero_byte | broker_rejected | filled | canceled | expired
   -> reconciliation_pending
 
 reconciliation_pending
@@ -363,6 +364,17 @@ reconciliation_pending
   reconciliation로 보낸다. Matching cause evidence가 완전한 record만
   no-external-mutation evidence로 `terminal_reconciled`를 허용하며, 하나라도 누락되거나
   불일치하면 terminal 처리하거나 capacity/target fence를 release하지 않는다.
+- `dispatch_failed_zero_byte`는 permit consume과 signed/checkpointed `dispatch_attempted`가 이미
+  존재하므로 `stopped_before_dispatch` 또는 `noDispatchFence`로 취급하지 않는다. Gateway transport가
+  exact permit/instance generation에서 mutation request write function과 kernel/TLS buffer handoff가
+  한 번도 시작되지 않았고 mutation request byte counter가 0임을 같은 dispatch lock에서 증명한
+  connect/TLS/pre-write failure만 별도 durable `zeroByteAttemptFence`로 commit할 수 있다. Record는
+  consumed permit/state version, signed `dispatch_attempted`, zero-byte transport proof, failure reason,
+  permanent tombstone과 externally checkpointed complete audit chain을 포함한다. Target operation은
+  read-only broker evidence로 exact target/version/state가 unchanged임도 확인한 뒤 mutation delta
+  reservation과 target fence를 atomic release한다. Write function이 호출됐거나 buffer handoff/byte
+  count가 불명확하면 이 state를 금지하고 `acknowledgement_unknown`으로 보낸다. Intent/permit은
+  zero-byte proof 뒤에도 재사용하지 않는다.
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
 - Dispatch arbiter는 kill-switch activation, `TRADING_ENABLED=false`, mutation flag false와
@@ -433,11 +445,12 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   유지하며, exact consumed permit 외 다른 request는 허용하지 않는다. First byte를 실제로 넘은
   뒤 `dispatch_won` evidence를 append하고 나서만 recovery gate를 disabled로 durable transition하고
   epoch를 advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 해당 cause-specific
-  `noDispatchFence`와 gate disable을 같은 transaction에 commit한다. Crash나 socket 결과로 byte
-  boundary가 불명확하면 gate를 다시 열거나 permit을 재사용하지 않고 startup kill-active 상태의
-  `acknowledgement_unknown` reconciliation로 보낸다. 어떤 경우에도 자동 disable을 현재 recovery
-  dispatch보다 먼저 이긴 일반 `gate_disabled` cause로 재해석하지 않으며 kill switch는 active로
-  유지한다.
+  `zeroByteAttemptFence`와 gate disable을 같은 transaction에 commit하고, target unchanged
+  reconciliation 뒤에만 recovery capacity/fence를 release한다. Crash나 socket 결과로 byte boundary가
+  불명확하면 gate를 다시 열거나 permit을 재사용하지 않고 startup kill-active 상태의
+  `acknowledgement_unknown` reconciliation로 보낸다. 어떤 경우에도 zero-byte post-attempt state를
+  pre-attempt `noDispatchFence`나 현재 recovery dispatch보다 먼저 이긴 일반 `gate_disabled` cause로
+  재해석하지 않으며 kill switch는 active로 유지한다.
 
 이 recovery contract는 현재 cancel endpoint나 live mutation을 구현·활성화하지 않는다.
 
@@ -640,7 +653,8 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] 모든 stopped-before-dispatch cause가 전용 durable no-dispatch evidence로 terminal 처리됨
 - [ ] Pre-permit approval expiry가 authoritative clock과 unconsumed approval/state CAS로 종료됨
 - [ ] Dispatch CAS loser가 다른 worker의 send 가능성을 no-dispatch로 오인하지 않음
-- [ ] Recovery gate disable이 dispatch first-byte winner 또는 cause-specific zero-byte fence 뒤에만 발생함
+- [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
+- [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
 - [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
