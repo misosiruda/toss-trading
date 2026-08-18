@@ -70,7 +70,7 @@ Trust boundary 원칙:
 | LT-02 | AI paper evidence가 live signal/intent로 승격 | 비결정론적 주문 생성 | paper/live schema 분리, promotion adapter 금지 grep/test, deterministic backend만 intent 생성 |
 | LT-03 | 환경 변수 오타, 공백, 대소문자 변형 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, safe default, multiple independent gates, invalid value fail-closed |
 | LT-04 | Malformed/stale intent, preview, risk snapshot 또는 policy | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, preview-intent hash binding, 모든 rule 재검증 |
-| LT-05 | Timeout, retry 또는 concurrent worker로 duplicate send | 중복 주문 | durable idempotency reservation, intent/order hash uniqueness, unknown result reconciliation 전 blind retry 금지 |
+| LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, intent/order hash uniqueness, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
 | LT-07 | Account header와 intent owner/context 혼합 | 다른 account에 mutation | account scope를 runtime config와 intent context에 exact bind, raw account input surface 금지 |
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
@@ -104,11 +104,18 @@ clock skew가 감지되면 approval, preview와 risk evidence를 모두 no-send�
 operator-visible reconciliation/clock-error 상태를 남긴다.
 
 마지막으로 authorization에 사용한 authoritative wall-clock timestamp는 durable
-high-water mark로 원자적으로 보존하고 감소시키지 않는다. Process startup/restart에서는
-독립적으로 인증된 time source를 다시 검증하고, 새 authoritative time이 허용 skew를
-고려한 durable high-water mark보다 과거가 아님을 확인하기 전까지 mutation path를
-fail-closed로 유지한다. Durable checkpoint가 없거나 손상됐거나 time source를 인증할 수
-없으면 approval을 재사용하지 않고 owner-visible clock-recovery가 끝날 때까지 no-send다.
+high-water mark로 보존하고 감소시키지 않는다. Approval verification과 send 직전 gate는
+각각 fresh authoritative time `T`를 읽고 기존 high-water mark와 비교한 뒤, `T`까지의
+floor advance를 durable store에 write-ahead로 commit해야 한다. 이 commit의 성공이
+확인되기 전에는 approval success, `send_reserved` 생성 또는 broker dispatch를 허용하지
+않으며, commit 실패는 no-send다. Authorization 또는 dispatch 뒤에 비동기로 저장하는
+방식은 허용하지 않는다.
+
+Process startup/restart에서는 독립적으로 인증된 time source를 다시 검증하고, 새
+authoritative time이 허용 skew를 고려한 durable high-water mark보다 과거가 아님을
+확인하기 전까지 mutation path를 fail-closed로 유지한다. Durable checkpoint가 없거나
+손상됐거나 time source를 인증할 수 없으면 approval을 재사용하지 않고 owner-visible
+clock-recovery가 끝날 때까지 no-send다.
 
 다음은 유효한 runtime approval이 아니다.
 
@@ -138,6 +145,9 @@ send_reserved
   -> acknowledgement_unknown
   -> broker_accepted
 
+restart(send_reserved)
+  -> acknowledgement_unknown
+
 acknowledgement_unknown
   -> reconciliation_pending
 
@@ -164,6 +174,10 @@ reconciliation_pending
 - `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
   `reconciliation_pending`으로 이동하며
   `send_reserved`로 되돌려 재전송하지 않는다.
+- Process가 `send_reserved`를 복구하면 실제 network dispatch 여부를 알 수 없다고
+  가정한다. 해당 record를 자동 resend하지 않고 즉시 `acknowledgement_unknown`과
+  `reconciliation_pending`으로 전이해 read-only order history/detail을 조회하며,
+  identity가 부족하면 owner-visible blocked state로 남긴다.
 - `broker_accepted`는 terminal 상태가 아니다. Accepted/open order와 partial fill은
   in-flight set에서 제거하지 않고 이후 fill, cancel 또는 expiry를 계속 추적한다.
 - `terminal_reconciled`는 broker order가 `broker_rejected`, `filled`, `canceled` 또는
@@ -179,8 +193,11 @@ reconciliation_pending
 
 - `orderIntentId`와 deterministic order hash는 backend가 생성한다.
 - Send 전에 idempotency reservation을 원자적으로 확보한다.
-- 같은 intent/hash의 open, acknowledged 또는 unknown record가 있으면 duplicate send를
-  거부한다.
+- 같은 intent/hash의 `send_reserved`, open, acknowledged, partially-filled,
+  terminal-unreconciled 또는 unknown record가 있으면 duplicate send를 거부한다. Recovered
+  reservation은 broker rejection/no-dispatch가 신뢰 가능한 read-only evidence로
+  확인되더라도 기존 intent를 자동 재전송하지 않고 owner-visible reconciliation 결과로
+  닫는다.
 - Broker idempotency contract는 구현 시점의 official OpenAPI document로 다시
   확인한다. 지원 여부를 추측하지 않는다.
 - Network timeout, connection reset, `5xx` 또는 malformed response에서 mutation을
