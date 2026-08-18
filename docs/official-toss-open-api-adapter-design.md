@@ -437,7 +437,8 @@ flowchart TD
     CT --> EC["Version-aware replay consumer migration"]
     EC --> EL["Ephemeral acquisition lifecycle boundary"]
     EL --> CC["Paper-only acquisition coordinator"]
-    CC --> R["Live RiskEngine implementation with mock broker"]
+    CC --> PF["Credential readiness preflight"]
+    PF --> R["Live RiskEngine implementation with mock broker"]
     R --> TM["Live trading threat model"]
     TM --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
@@ -723,7 +724,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 11a | Version-aware replay consumer migration | 구현됨: replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증, version별 freshness와 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation, 1회 소비와 unconditional zeroization test | durable raw-byte store, workflow artifact persistence, replay 실행 |
 | 12 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, exact market/date input, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral observation composition, loopback fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
-| 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
+| 13 | Credential-ready preflight | 구현됨: secret-free auth/config summary, exact host DNS family/count, fixed token/calendar allowlist, outbound-IP owner attestation와 paper-only boundary 진단 | HTTP token/calendar request, resolved IP/token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
 | 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
 | 16 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |

@@ -22,6 +22,7 @@ import {
 import {
   createTestOnlyTossOpenApiCalendarNetworkTransport,
   createTossOpenApiCalendarNetworkTransport,
+  TOSS_OPEN_API_CALENDAR_PATHS,
   type TestOnlyTossOpenApiCalendarSocketConnector,
   type TossOpenApiCalendarMarket,
   type TossOpenApiCalendarNetworkClient,
@@ -33,10 +34,6 @@ const PINNED_OPENAPI_SNAPSHOT_URL = new URL(
   "../../src/replay/officialTossCalendarOpenApi-1.2.14.json",
   import.meta.url
 );
-const CALENDAR_PATHS = {
-  KR: "/api/v1/market-calendar/KR",
-  US: "/api/v1/market-calendar/US"
-} as const;
 const PINNED_COMPATIBILITY_EXAMPLES = {
   KR: {
     requestedDate: "2026-03-25",
@@ -242,7 +239,7 @@ function verifyNetworkObservation(
   request: TossOpenApiCalendarAcquisitionRequest
 ): TossOpenApiCalendarNetworkObservation {
   try {
-    const expectedRequestUrl = `${DEFAULT_TOSS_OPEN_API_BASE_URL}${CALENDAR_PATHS[request.market]}?date=${request.date}`;
+    const expectedRequestUrl = `${DEFAULT_TOSS_OPEN_API_BASE_URL}${TOSS_OPEN_API_CALENDAR_PATHS[request.market]}?date=${request.date}`;
     if (
       value.market !== request.market ||
       value.date !== request.date ||
@@ -363,7 +360,7 @@ function readPinnedCompatibilityExample(
     >;
   };
   const value =
-    document.paths?.[CALENDAR_PATHS[market]]?.get?.responses?.["200"]
+    document.paths?.[TOSS_OPEN_API_CALENDAR_PATHS[market]]?.get?.responses?.["200"]
       ?.content?.["application/json"]?.examples?.[
       exampleSelection.exampleName
     ]?.value;

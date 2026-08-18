@@ -379,6 +379,28 @@ flowchart TD
 - success, compatibility/schema/freshness/lifecycle failure 모두 transport raw-byte view를 zeroize함
 - persistent token/raw-byte store, stored report, replay 실행, completeness claim, CLI/MCP/API output, account/order path와 broker mutation을 추가하지 않음
 
+### Official Toss Open API credential readiness preflight 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiCredentialReadinessPreflight.ts`
+- `src/broker/tossOpenApiCredentialReadinessPreflight.test.ts`
+- `src/cli/tossOpenApiCredentialReadinessPreflight.ts`
+- `src/config/tossOpenApiAuthConfig.ts`
+- `.env.example`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+
+필수 확인:
+
+- raw env 기준 exact canonical host/base URL, safe auth summary, DNS family/count와 fixed token/calendar endpoint identity만 출력하고 미설정 외 noncanonical URL은 path까지 fixed placeholder로 치환함
+- client id/secret, resolved IP address, token, provider response와 raw bytes를 출력하거나 저장하지 않음
+- exact `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only` 경계를 벗어나면 fail-closed blocker를 기록하고 명시된 값의 오타, 빈 값 또는 공백 변형도 허용하지 않음
+- outbound IP registration은 raw env의 exact `TOSS_OPEN_API_OUTBOUND_IP_REGISTERED=true|false`만 허용하고 owner attestation과 실제 egress 검증을 구분함
+- DNS lookup 외 HTTP request, token issue, calendar acquisition, account/order request 또는 provider response 검증을 수행하지 않음
+- `ready_for_external_verification`을 successful acquisition/evidence/completeness로 해석하지 않음
+- production DNS resolver는 exact `openapi.tossinvest.com`만 조회하고 resolver override는 test-only factory에만 노출함
+
 ### Official Toss Open API read-only HTTP client 변경
 
 수정 후보:

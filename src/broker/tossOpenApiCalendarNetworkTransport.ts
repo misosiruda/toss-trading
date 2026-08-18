@@ -32,10 +32,10 @@ export const TOSS_OPEN_API_CALENDAR_RESPONSE_MAX_BYTES = 1024 * 1024;
 
 const TOSS_OPEN_API_HOSTNAME = "openapi.tossinvest.com";
 const TOSS_OPEN_API_HTTPS_PORT = 443;
-const TOSS_OPEN_API_CALENDAR_PATHS = {
+export const TOSS_OPEN_API_CALENDAR_PATHS = Object.freeze({
   KR: "/api/v1/market-calendar/KR",
   US: "/api/v1/market-calendar/US"
-} as const;
+} as const);
 
 export type TossOpenApiCalendarMarket = keyof typeof TOSS_OPEN_API_CALENDAR_PATHS;
 
