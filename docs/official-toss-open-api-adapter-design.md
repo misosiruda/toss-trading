@@ -478,7 +478,7 @@ live order 또는 broker mutation을 승인하지 않는다.
 | `TossOpenApiAccountReader` | accounts, holdings read-only snapshot 조회와 masking | order mutation, portfolio mutation |
 | `TossOpenApiOrderInfoReader` | buying power, sellable quantity, commissions 조회 | 주문 생성 판단 |
 | `TossOpenApiOrderGateway` | create/modify/cancel order HTTP call | Risk Engine 우회, Codex/MCP 직접 호출 |
-| `OrderRouter` | portfolio/account-keyed final risk/capacity reservation, exact-bound runtime owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
+| `OrderRouter` | account-scoped operation-aware intent, target-version risk/capacity reservation, staged typed owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
 
 ## Runtime data flow
 
@@ -514,17 +514,21 @@ sequenceDiagram
 
     Strategy->>Risk: TradingSignal
     Risk-->>Router: candidate OrderIntent and preliminary decision
+    Router-->>Owner: typed market-order authorization request when required
+    Owner->>Router: exact-bound marketOrderAuthorization
     Router->>Router: serializable final risk/capacity/idempotency reservation
     Router-->>Owner: preview with exact risk/reservation identity
-    Owner->>Router: exact-bound typed approval
+    Owner->>Router: exact-bound dispatchApproval
     Router->>Router: refresh exactly-once snapshot and revalidate risk/freshness binding
     Router->>Router: atomic approval consume, state transition and sole permit CAS
-    Router->>Router: verify clock, risk binding, gate snapshot, fencing and permit
+    Router->>Router: verify account, clock, risk binding, gate snapshot, fencing and permit
+    Router->>Audit: write-ahead masked dispatch_attempted
+    Audit-->>Router: durable commit confirmed
     Router->>Gateway: create/modify/cancel request
     Gateway->>API: POST order endpoint
     API-->>Gateway: order response or error envelope
     Gateway-->>Router: broker result
-    Router->>Audit: masked order event
+    Router->>Audit: append acknowledgement/rejection/unknown
 ```
 
 Codex는 이 flow에 직접 참여하지 않는다. Codex는 MCP read-only tools로 audit, position, risk decision, order status를 조회하고 설명할 수 있을 뿐이다.
@@ -594,7 +598,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 
 로컬 정책은 다음을 기본으로 한다.
 
-- `OrderIntent`에는 backend-generated `intentId`와 deterministic order hash를 둔다.
+- Future mutation intent에는 backend-generated `intentId`, deterministic order hash,
+  non-reversible stable `accountScopeRef`, operation을 둔다. `modify`/`cancel`은 exact
+  `targetOrderRef`, target version/state hash와 remaining quantity도 포함한다.
+- Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
+  재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
+  contribution을 replacement terms로 atomic replace하며, cancel은 새 exposure/order slot을
+  추가하지 않는 target-version-specific policy로 평가한다. Target version mismatch 또는
+  partial fill 변화는 no-send와 fresh intent/approval을 요구한다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   하나의 serializable durable transaction에서 commit한다. Reservation lineage는 terminal
@@ -602,6 +613,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   evaluation에 포함한다.
 - Final transaction이 만든 exact risk/reservation identity를 preview로 owner에게 제시한
   뒤에만 runtime approval을 받고, approval verification 후 dispatch permit을 발급한다.
+- `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
+  `marketOrderAuthorization`을 intent/account/order projection/preview/policy/actor/expiry에
+  bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
+  `marketOrderApproved` evidence로 변환하며 caller boolean을 허용하지 않는다. 이후 exact
+  final risk/reservation에는 별도 `dispatchApproval`을 받는다.
 - Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
   dispatch permit 생성 직전에 fresh broker/local exactly-once effective snapshot으로 모든
   risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
@@ -609,7 +625,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
   no-dispatch로 닫고 새 identity/hash, final reservation/preview/approval을 요구한다.
 - Gateway도 bounded immediate-dispatch deadline 안에서 first network byte 전에 clock,
-  current risk binding과 permit을 재검증하고 durable one-time consume하며 concurrent
+  current account/risk binding과 permit을 재검증한다. Permit consume/state transition과
+  masked `dispatch_attempted` audit event를 같은 write-ahead durable commit으로 first byte
+  전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
   reconciliation한다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
@@ -627,6 +645,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   있으면 현재 상태나 새 approval 여부와 관계없이 중복 전송하지 않는다.
 - 이후 create/modify/cancel operation은 새 backend-generated identity/hash를 사용하고
   기존 approval/idempotency record를 승계하지 않는다.
+- Kill-active incident recovery는 normal create/modify gate를 열지 않고 exact reconciled
+  target/version/account에 bind된 one-time cancel-only permit만 별도 recovery epoch에서
+  허용한다. Cancel 결과와 position/cash reconciliation 전에는 target capacity를 release하지
+  않으며 current 문서가 실제 cancel endpoint 구현을 승인하지 않는다.
 - mutation 요청이 timeout된 경우에는 즉시 재전송하지 않고 order history/detail 조회로 상태를 먼저 확인한다.
 - 공식 API가 idempotency key를 지원하면 local `intentId`와 매핑한다.
 - 공식 API가 idempotency key를 지원하지 않으면 retry policy를 더 보수적으로 제한한다.
@@ -639,13 +661,17 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | --- | --- | --- |
 | API group, method, path template | 가능 | 가능 |
 | requestId, rate limit header | 가능 | 가능 |
-| account id | masked 또는 encrypted local store만 | 금지 |
+| stable accountScopeRef | non-reversible masked ref만 | masked ref만 |
+| raw account id | encrypted local mapping 검토 필요 | 금지 |
 | access token, client secret | 금지 | 금지 |
 | broker order id | masked 또는 encrypted local store만 | 금지 |
 | execution detail | encrypted local store 검토 필요 | 금지 |
 | normalized market quote | 가능 | 가능 |
 
 문서, fixture, PR body에는 real account data, token, order id, execution data를 넣지 않는다.
+Mutation dispatch는 permit consume과 masked `dispatch_attempted`를 first byte 전에 한 durable
+commit으로 기록하고, 이후 acknowledgement/rejection/unknown을 append한다. Pre-dispatch audit
+commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliation로 처리한다.
 
 ## 공식 API와 `tossinvest-cli` 관계
 
@@ -756,6 +782,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
+- market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
+- modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
+- intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
+- kill-active cancel-only recovery permit은 create/modify gate를 열지 않는다.
+- masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 

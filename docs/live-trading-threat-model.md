@@ -30,8 +30,8 @@ breach로 처리한다.
 | 자산 | 보호 기준 |
 | --- | --- |
 | Client credential와 access token | source, fixture, log, audit, PR body와 error output에 저장하거나 출력하지 않음 |
-| Account identity | runtime secret provider에서만 읽고 외부 output에는 masked reference만 사용 |
-| `OrderIntent`와 preview | backend-generated identity/hash, expiry와 exact payload binding 유지 |
+| Account identity | runtime secret provider에서만 읽고 intent/approval에는 non-reversible stable `accountScopeRef`, 외부 output에는 masked reference만 사용 |
+| Mutation intent와 preview | backend-generated identity/hash, `create`/`modify`/`cancel`, target version, expiry와 exact payload/account binding 유지 |
 | `RiskDecision`, risk snapshot과 capacity | current intent/snapshot/rules/freshness를 재검증하고 portfolio/account risk-capacity reservation을 보존 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
 | Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
@@ -72,13 +72,13 @@ Trust boundary 원칙:
 | LT-04 | Malformed/stale intent, preview, risk snapshot, policy 또는 delayed approval | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, dispatch 직전 current exactly-once snapshot으로 모든 rule 재검증, exact risk-binding mismatch 시 fresh approval |
 | LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent intent/hash tombstone, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
-| LT-07 | Account header와 intent owner/context 혼합 | 다른 account에 mutation | account scope를 runtime config와 intent context에 exact bind, raw account input surface 금지 |
+| LT-07 | Account header와 intent/approval/context 혼합 | 다른 account에 mutation | non-reversible stable `accountScopeRef`를 intent/reservation/risk/approval/permit/gateway에 exact bind, raw account input surface 금지 |
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
 | LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
-| LT-12 | Approval replay, concurrent consume, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
-| LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
+| LT-12 | Approval replay, concurrent consume, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
+| LT-13 | Audit omission, crash window 또는 log tampering | 사고 원인·주문 경로 추적 불가 | first-byte 전 masked write-ahead dispatch event, append-only result/unknown chain, request/intent/risk/approval correlation, crash completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
 | LT-15 | 서로 다른 concurrent intent가 같은 risk capacity를 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, exact reservation-scoped exclude-self/replace evaluation과 atomic lifecycle handoff |
 
@@ -88,11 +88,13 @@ Future runtime approval은 typed record로 설계하며 다음 identity에 exact
 
 - backend-generated `approvalId`
 - `orderIntentId`와 deterministic order hash
+- non-reversible stable `accountScopeRef`와 credential/config generation
 - preview identity/hash와 expiry
 - current `RiskDecision` identity와 risk snapshot reference
 - intent, policy revision, exact effective snapshot/capacity-source version, market-session
-  evidence와 gate epoch를 canonicalize한 `riskBindingHash`
+  evidence, `accountScopeRef`와 gate epoch를 canonicalize한 `riskBindingHash`
 - 허용 operation (`create`, `modify`, `cancel`) 한 종류
+- `modify`/`cancel`이면 exact `targetOrderRef`, target version/state hash와 remaining quantity
 - 허용 market/symbol/side/order type/quantity/limit price의 exact projection
 - 승인 actor와 검증된 owner channel
 - `approvedAt`, `expiresAt`, one-time consumption state
@@ -135,9 +137,9 @@ intent와 불일치하면 no-send로 종료한다.
 
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
-  risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인한다. 먼저 fresh
-  read-only broker/local evidence와 exact self reservation을 제외한 다른 모든 capacity
-  source의 exactly-once union으로 risk,
+risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인한다. 먼저 fresh
+read-only broker/local evidence와 exact self reservation을 제외한 다른 모든 capacity
+source의 exactly-once union으로 risk,
 freshness, market hours, sellable quantity, exposure, loss/budget과 open-order rule을 전부 다시
 평가한다. Resulting `riskBindingHash`가 owner approval에 bind된 값과 exact match하고 모든
 rule이 여전히 approved인 경우에만 approval을 one-time consumed로 바꾸면서
@@ -153,15 +155,72 @@ approval을 요구한다. 더 보수적인 새 decision이라도 identity가 달
 재사용하지 않는다.
 
 Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
-approval expiry, `riskBindingHash`, evidence freshness/market-session validity와 current
+`accountScopeRef`, approval expiry, `riskBindingHash`, evidence freshness/market-session validity와 current
 authoritative time을 재검증한다. Permit은 bounded immediate-dispatch deadline을 가지며 queue나
 delay 뒤 재사용하지 않는다. First network byte 전에 current binding이 달라지거나 deadline이
 지났으면 old intent를 no-dispatch로 닫고 새 intent/final reservation/fresh approval을
-요구하며, exact match일 때만 permit을 durable CAS로 one-time consume한다.
+요구하며, exact match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
+masked `dispatch_attempted` audit event는 같은 write-ahead durable commit으로 first network
+byte 전에 완료하며, audit commit 실패 시 network write를 금지한다.
 Duplicate/expired/stale permit 또는 CAS 실패는
 `stopped_before_dispatch`/blocked reconciliation로 전이하고 network write를 금지한다.
 Permit consume 뒤 crash/unknown은 재발급·재사용하지 않고 acknowledgement reconciliation로
 보낸다.
+
+## Operation-aware Intent와 Approval 단계
+
+Future mutation path는 현재 create-like `LiveOrderIntent`를 `modify`/`cancel`에 그대로
+재사용하지 않는다. Internal typed envelope은 최소 다음을 포함한다.
+
+- `operation`: `create`, `modify`, `cancel` 중 정확히 하나
+- backend-generated `orderIntentId`, deterministic hash와 reservation identity
+- secret provider가 account/config generation에서 만든 non-reversible stable
+  `accountScopeRef`
+- create/replace terms: market, symbol, side, order type, quantity, limit price
+- `modify`/`cancel`의 exact `targetOrderRef`, target version/state hash, remaining quantity와
+  last reconciled snapshot reference
+
+Gateway는 `accountScopeRef`를 raw account input으로 받지 않는다. Secret provider의 current
+credential/account mapping이 intent, reservation, approval, permit의 stable ref와 exact
+match하는지 확인해 account header를 내부에서 조립한다. Configured account나 generation이
+바뀌면 binding mismatch로 old intent를 no-dispatch 처리하고 새 intent/approval을 요구한다.
+
+Operation-specific final risk 규칙은 다음과 같다.
+
+- `create`: current candidate를 exactly-once effective snapshot에 한 번 적용한다.
+- `modify`: 같은 account/symbol/side의 exact target open-order contribution과 target에 귀속된
+  remaining capacity만 serializable replace-target view에서 제거한 뒤 replacement terms를 한
+  번 적용한다. Increase/decrease 전체에 current exposure, cash, sellable quantity, order-count와
+  market-hours rule을 다시 적용한다.
+- `cancel`: exact open target/version을 확인하고 new exposure/order slot을 추가하지 않는
+  cancel-specific policy로 평가한다. Cancel request가 성공하고 target의 remaining quantity와
+  position/cash가 reconciled될 때까지 기존 target capacity를 미리 release하지 않는다.
+- Target가 fill/partial fill/modify/cancel로 바뀌었거나 version/correlation이 ambiguous하면
+  replace/release하지 않고 no-send하며 fresh target snapshot, intent와 approvals를 요구한다.
+- Replace-self는 새 operation reservation에만 적용하고 replace-target은 exact target에만
+  적용한다. 두 exclusion scope를 하나의 serializable transaction에서 검증하며 caller가
+  임의 target/reservation을 제외하지 못한다.
+
+현재 `LiveRiskEngine`은 operation/target-order field가 없는 deterministic create-like module
+contract다. Future `OrderRouter`/gateway는 operation-aware deterministic risk contract와
+concurrency/partial-fill regression test가 별도로 구현되기 전까지 `modify`/`cancel`을 이
+engine의 create 평가로 우회하지 않는다.
+
+`marketOrderPolicy=requires_approval`은 두 typed approval 단계를 구분한다.
+
+1. Final risk reservation 전에 `marketOrderAuthorization`을 받는다. 이는 intent/hash,
+   `accountScopeRef`, exact market-order projection, preview, policy revision, actor와 expiry에
+   bind한다.
+2. Final risk transaction은 이 authorization을 linearizable one-time consume하고 trusted
+   adapter 내부에서만 `marketOrderApproved=true` evidence로 변환한다. API/MCP/caller가 raw
+   boolean을 제공하지 못한다.
+3. Final risk/capacity reservation 뒤에는 별도의 `dispatchApproval`을 exact
+   risk/reservation/`riskBindingHash`에 bind해 받는다.
+
+Market authorization 또는 final binding이 stale/mismatched이면 둘을 합치거나 재사용하지
+않고 새 intent와 필요한 approval 단계부터 다시 시작한다. Limit order는 별도 market-order
+authorization 없이 final risk reservation으로 진행하지만 `dispatchApproval`은 동일하게
+필요하다.
 
 ## Safe-Disabled State Machine
 
@@ -170,8 +229,17 @@ Future `OrderRouter`는 최소 다음 상태를 구분해야 한다.
 ```text
 disabled
   -> dry_run_validated
+
+dry_run_validated
+  -> market_order_authorization_required | final_risk_reserved
+
+market_order_authorization_required
   -> final_risk_reserved
+
+final_risk_reserved
   -> approval_required
+
+approval_required
   -> send_reserved
 
 send_reserved
@@ -211,7 +279,8 @@ reconciliation_pending
 - Default는 `disabled`다.
 - Row 16 dry-run은 `dry_run_validated` 밖으로 전이하지 않는다.
 - `final_risk_reserved`는 portfolio/account capacity, idempotency와 tombstone transaction이
-  commit된 상태이며, 이 transaction이 만든 exact risk/reservation identity를 owner에게
+  commit된 상태다. Market order이면 exact `marketOrderAuthorization`도 같은 transaction에서
+  먼저 consume돼야 하며, transaction이 만든 exact risk/reservation identity를 owner에게
   제시한 뒤에만 `approval_required`로 이동한다.
 - `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
   닫고 capacity를 atomic release한 뒤 새 preview, final risk/capacity reservation과
@@ -249,8 +318,9 @@ reconciliation_pending
   `stopped_before_dispatch`로 전이하고 permanent tombstone을 남긴 뒤 network write를
   금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를 넘으면 해당 record를
   in-flight로 audit하고 disable 뒤에도 terminal reconciliation까지 추적한다.
-- Kill switch가 active이거나 mutation gate 하나라도 false/invalid/mismatched이면
-  `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두 차단한다.
+- Kill switch가 active이거나 normal mutation gate 하나라도 false/invalid/mismatched이면
+  normal `create`/`modify`의 `send_reserved` 신규 진입과 dispatch permit 발급을 모두
+  차단한다. 아래 cancel-only recovery는 normal gate를 재활성화하지 않는 별도 예외다.
 - Exact mutation-gate snapshot과 global fencing epoch의 모든 enable/disable transition은
   완료를 응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는
   재사용하지 않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
@@ -265,6 +335,31 @@ reconciliation_pending
   Commit/acknowledgement 누락, instance set 불명확 또는 snapshot/epoch/generation
   mismatch는 kill-active로 남기며,
   surviving process가 가진 old/uncommitted permit은 gateway에서 영구 거부한다.
+
+### Cancel-only incident recovery
+
+Kill switch가 active인 동안 normal `create`와 `modify`는 계속 차단한다. 이미 broker에 open인
+order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gate로만 허용할 수 있다.
+
+- Recovery gate default는 disabled이며 general `TRADING_ENABLED`/mutation gate를 true로
+  바꾸지 않는다.
+- Read-only reconciliation으로 확인한 exact `accountScopeRef`, `targetOrderRef`, target
+  version/state hash와 remaining quantity 하나만 대상으로 한다.
+- Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
+  reservation, current snapshot, reason, expiry와 recovery fencing epoch에 exact bind한다.
+- Gate snapshot은 `normalCreate=false`, `normalModify=false`, exact cancel permit 하나만
+  포함해 write-ahead commit하며, gateway allowlist도 `operation=cancel`과 해당 target만
+  수락한다. Symbol, side, quantity, price 변경이나 새 order 생성은 거부한다.
+- Cancel-specific risk/freshness/target-version check, approval/permit CAS, account binding,
+  write-ahead audit, timeout unknown reconciliation과 permanent tombstone을 normal flow와
+  동일하게 적용한다.
+- Target가 이미 terminal이거나 partial fill/version/account가 달라졌으면 cancel을 보내지
+  않고 snapshot/approval을 새로 만든다. Cancel acknowledgement만으로 capacity를 release하지
+  않고 target order와 resulting position/cash reconciliation까지 추적한다.
+- Permit consume, expiry, rejection 또는 incident 종료 시 recovery gate는 자동으로 다시
+  disabled가 되며 kill switch는 active로 유지한다.
+
+이 recovery contract는 현재 cancel endpoint나 live mutation을 구현·활성화하지 않는다.
 
 ## Idempotency와 Retry
 
@@ -343,23 +438,30 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 
 1. intent created
 2. preview verified
-3. risk evaluated
-4. portfolio/account risk capacity와 idempotency/tombstone atomically reserved 또는 rejected
-5. owner approval received for exact risk/reservation binding
-6. current exactly-once snapshot과 모든 risk/freshness rule revalidated
-7. owner approval consumed, state transitioned and sole dispatch permit created atomically
-8. clock, risk binding, kill switch/config gate와 permit rechecked
-9. dispatch permit consumed once 또는 rejected before first byte
-10. broker send attempted
-11. broker acknowledgement/rejection/unknown recorded
-12. reconciliation completed 또는 blocked
+3. required market-order authorization consumed 또는 not-applicable recorded
+4. risk evaluated
+5. portfolio/account risk capacity와 idempotency/tombstone atomically reserved 또는 rejected
+6. dispatch owner approval received for exact risk/reservation binding
+7. current exactly-once snapshot과 모든 risk/freshness rule revalidated
+8. owner approval consumed, state transitioned and sole dispatch permit created atomically
+9. clock, risk/account binding, kill switch/config gate와 permit rechecked
+10. permit consumed and masked `dispatch_attempted` event write-ahead committed 또는 rejected
+11. broker network write attempted
+12. broker acknowledgement/rejection/unknown appended
+13. reconciliation completed 또는 blocked
 
-Audit에는 schema version, intent/risk/approval/capacity reservation reference,
+Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
+intent/risk/approval/capacity reservation reference,
 idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
 template, masked request correlation, state
 transition, timestamp와 reason code를 남긴다. Client secret,
 token, raw account id, raw broker order id, raw execution data와 request/response body는
 남기지 않는다.
+
+`dispatch_attempted` event는 permit consume/state transition과 같은 durable commit에 포함하고
+first network byte보다 먼저 완료한다. Commit 실패 시 send하지 않는다. Recovery에서 이
+event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측하지 않고
+`acknowledgement_unknown`으로 처리해 read-only reconciliation한다.
 
 ## Incident Stop과 Rollback
 
@@ -374,8 +476,10 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 5. Secret 노출 가능성이 있으면 token/client credential을 owner가 폐기·회전한다.
 6. Unsafe code/config는 revert하되 code rollback을 broker order rollback으로 간주하지
    않는다.
-7. Cancel/modify가 필요하면 별도 typed intent, current risk check와 explicit owner
-   approval을 거친다. 사고 대응이라는 이유로 raw cancel command를 허용하지 않는다.
+7. Open target cancel이 필요하면 normal gates를 재활성화하지 않고 위 cancel-only recovery
+   gate에서 exact target typed intent, current cancel-specific risk check와 explicit owner
+   approval을 거친다. Kill-active incident path에서 `modify`는 허용하지 않으며 raw cancel
+   command도 허용하지 않는다.
 8. Root cause, affected intent range, reconciliation result와 재발 방지 test를 기록한다.
 9. 재개는 fresh config/risk/approval evidence와 explicit owner decision 뒤에만 허용한다.
 
@@ -418,6 +522,10 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
 - [ ] Concurrent worker 중 하나만 approval/state/dispatch permit CAS를 소비할 수 있음
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
+- [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
+- [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
+- [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
+- [ ] Kill-active cancel-only recovery가 create/modify gate를 열지 않음
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
@@ -426,5 +534,6 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
 - [ ] Audit event chain과 masking이 test됨
+- [ ] Permit consume와 masked dispatch-attempt audit가 first byte 전에 write-ahead commit됨
 - [ ] Incident stop, reconciliation과 rollback runbook이 testable함
 - [ ] 실제 mutation 전 owner action과 명시적 승인 기록이 있음
