@@ -439,7 +439,7 @@ flowchart TD
     EL --> CC["Paper-only acquisition coordinator"]
     CC --> PF["Credential readiness preflight"]
     PF --> R["Implemented fail-closed Live RiskEngine"]
-    R --> TM["Live trading threat model"]
+    R --> TM["Implemented live trading threat model"]
     TM --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
     P --> Q["Deployment gate"]
@@ -460,6 +460,11 @@ exposure, allowlist, market-hours, duplicate/idempotency, cooldown, open-order,
 market-order와 preview gate를 `src/risk/liveRiskEngine.test.ts`에서 검증한다. 이 구현은
 broker gateway, `OrderRouter`, API/MCP/dashboard mutation surface에 연결되지 않으며
 live trading enablement를 뜻하지 않는다.
+
+Future order path의 attack surface, runtime approval, idempotency, secret/network,
+audit, incident rollback과 dry-run 진입 조건은
+[Live Trading Threat Model](live-trading-threat-model.md)을 기준으로 한다. 이 문서는
+live order 또는 broker mutation을 승인하지 않는다.
 
 ## 제안 계층
 
@@ -734,7 +739,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 12 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, exact market/date input, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral observation composition, loopback fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | 구현됨: secret-free auth/config summary, exact host DNS family/count, fixed token/calendar allowlist, outbound-IP owner attestation와 paper-only boundary 진단 | HTTP token/calendar request, resolved IP/token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | 구현됨: deterministic policy, fail-closed normalization/evaluation과 risk gate regression tests | broker gateway, `OrderRouter`, live enablement |
-| 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 15 | [Live trading threat model](live-trading-threat-model.md) | 구현됨: attack paths, runtime approval, idempotency, secrets/network, audit, incident rollback와 dry-run gate | live order 승인, implementation shortcut |
 | 16 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
 | 17 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
 | 18 | Deployment packaging | process isolation, config, monitoring | default live enable |

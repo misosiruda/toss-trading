@@ -89,6 +89,7 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
 - Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/official-token-auth-design.md)를 따릅니다.
+- `LiveRiskEngine`은 fail-closed module contract로 구현돼 있지만 broker gateway나 `OrderRouter`에 연결되지 않습니다. Future live order path의 attack surface와 owner gate는 [live trading threat model](docs/live-trading-threat-model.md)에 문서화돼 있으며, 이 문서는 live trading enablement를 승인하지 않습니다.
 - `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
