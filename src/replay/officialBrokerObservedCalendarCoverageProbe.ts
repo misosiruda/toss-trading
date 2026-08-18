@@ -3,12 +3,11 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
+import { OFFICIAL_BROKER_OBSERVED_CALENDAR_MAXIMUM_AGE_SECONDS } from "./officialBrokerObservedCalendarEvidence.js";
 import {
-  OFFICIAL_BROKER_OBSERVED_CALENDAR_MAXIMUM_AGE_SECONDS,
-  officialBrokerObservedCalendarEvidenceSchema,
-  verifyOfficialBrokerObservedCalendarEvidence,
-  type OfficialBrokerObservedCalendarEvidence
-} from "./officialBrokerObservedCalendarEvidence.js";
+  verifyVersionedOfficialBrokerObservedCalendarEvidence,
+  type VersionedOfficialBrokerObservedCalendarEvidence
+} from "./officialBrokerObservedCalendarEvidenceV2.js";
 import { brokerObservedCalendarEvidenceTransitionRejectionCodeSchema } from "./officialBrokerObservedCalendarEvidenceTransition.js";
 import { buildOfficialBrokerObservedCalendarReplayInput } from "./officialBrokerObservedCalendarReplayAdapter.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
@@ -376,7 +375,8 @@ function buildReportPayload(
     observationsByDate.set(observation.requestedDate, observation);
   }
 
-  const verifiedEvidence: OfficialBrokerObservedCalendarEvidence[] = [];
+  const verifiedEvidence: VersionedOfficialBrokerObservedCalendarEvidence[] =
+    [];
   const results = plan.requestedDates.map((requestedDate) => {
     const observation = observationsByDate.get(requestedDate);
     if (observation === undefined) {
@@ -397,7 +397,7 @@ function buildReportPayload(
       };
     }
 
-    const evidence = verifyOfficialBrokerObservedCalendarEvidence(
+    const evidence = verifyVersionedOfficialBrokerObservedCalendarEvidence(
       observation.evidence,
       {
         asOf: evaluatedAt,
@@ -483,7 +483,9 @@ function buildReportPayload(
   });
 }
 
-function verifiedResult(evidence: OfficialBrokerObservedCalendarEvidence) {
+function verifiedResult(
+  evidence: VersionedOfficialBrokerObservedCalendarEvidence
+) {
   return {
     requestedDate: evidence.requestedDate,
     status: "verified" as const,
@@ -501,13 +503,13 @@ function verifiedResult(evidence: OfficialBrokerObservedCalendarEvidence) {
 }
 
 function findReturnedDateConflicts(
-  evidenceItems: OfficialBrokerObservedCalendarEvidence[]
+  evidenceItems: VersionedOfficialBrokerObservedCalendarEvidence[]
 ) {
   const observationsByDate = new Map<
     string,
     Array<{
-      artifactHash: OfficialBrokerObservedCalendarEvidence["artifactHash"];
-      day: OfficialBrokerObservedCalendarEvidence["response"]["days"][number];
+      artifactHash: VersionedOfficialBrokerObservedCalendarEvidence["artifactHash"];
+      day: VersionedOfficialBrokerObservedCalendarEvidence["response"]["days"][number];
     }>
   >();
   for (const evidence of evidenceItems) {
@@ -539,7 +541,7 @@ function findReturnedDateConflicts(
 }
 
 function dayContent(
-  day: OfficialBrokerObservedCalendarEvidence["response"]["days"][number]
+  day: VersionedOfficialBrokerObservedCalendarEvidence["response"]["days"][number]
 ) {
   return {
     marketDate: day.marketDate,
@@ -707,13 +709,13 @@ function validateVerifiedResultMetadata(
       );
     }
     if (
-      Date.parse(verified.staleAfter) - Date.parse(verified.retrievedAt) !==
+      Date.parse(verified.staleAfter) - Date.parse(verified.retrievedAt) >
       OFFICIAL_BROKER_OBSERVED_CALENDAR_MAXIMUM_AGE_SECONDS * 1_000
     ) {
       issue(
         context,
         ["results", index, "staleAfter"],
-        "verified calendar coverage probe stale time must match evidence freshness policy"
+        "verified calendar coverage probe stale time must not exceed the maximum evidence freshness boundary"
       );
     }
     if (

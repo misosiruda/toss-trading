@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createOfficialBrokerObservedCalendarEvidence } from "./officialBrokerObservedCalendarEvidence.js";
+import { createOfficialBrokerObservedCalendarEvidenceV2 } from "./officialBrokerObservedCalendarEvidenceV2.js";
+import { verifyOfficialTossOpenApiCalendarCompatibility } from "./officialBrokerObservedCalendarOpenApiCompatibility.js";
 import {
   OFFICIAL_BROKER_OBSERVED_CALENDAR_REPLAY_INPUT_SCHEMA_VERSION,
   buildOfficialBrokerObservedCalendarReplayInput,
@@ -73,6 +76,32 @@ test("maps verified KR evidence to paper-only regular-session fixtures", () => {
       fixture
     }).status,
     "session_open"
+  );
+});
+
+test("dispatches v2 evidence through replay fixtures and exact-byte verification", () => {
+  const rawResponseBytes = krResponseBytes();
+  const evidence = createV2Evidence(rawResponseBytes);
+  const input = buildOfficialBrokerObservedCalendarReplayInput({
+    evidence,
+    asOf: "2026-03-25T01:00:30.000Z",
+    rawResponseBytes
+  });
+
+  assert.equal(
+    input.evidence.schemaVersion,
+    "official_broker_observed_calendar_evidence.v2"
+  );
+  assert.equal(input.calendarValidation.fixtures[1].sessionDate, "2026-03-25");
+  assert.equal(input.replayEvidenceClass, "observed_session_only");
+  assert.equal(input.transition.historicalCompletenessClaim, "not_claimed");
+  assert.throws(
+    () =>
+      verifyOfficialBrokerObservedCalendarReplayInput(input, {
+        asOf: "2026-03-25T01:00:30.000Z",
+        rawResponseBytes: Buffer.from(`${rawResponseBytes.toString("utf8")} `)
+      }),
+    /byte length mismatch|response hash mismatch/
   );
 });
 
@@ -239,6 +268,38 @@ function createEvidence(
     requestedDate: "2026-03-25",
     retrievedAt: "2026-03-25T01:00:00.000Z",
     evaluatedAt: "2026-03-25T12:00:00.000Z",
+    rawResponseBytes
+  });
+}
+
+function createV2Evidence(rawResponseBytes: Uint8Array) {
+  const pinnedOpenApiBytes = Buffer.from(
+    readFileSync("src/replay/officialTossCalendarOpenApi-1.2.14.json", "utf8").replaceAll("\r\n", "\n"),
+    "utf8"
+  );
+  const document = JSON.parse(pinnedOpenApiBytes.toString("utf8")) as {
+    paths: Record<string, { get: { responses: { "200": { content: { "application/json": { examples: Record<string, { value: unknown }> } } } } } }>;
+  };
+  const pinnedExampleBytes = Buffer.from(
+    JSON.stringify(document.paths["/api/v1/market-calendar/KR"]!.get.responses["200"].content["application/json"].examples.businessDay!.value),
+    "utf8"
+  );
+  return createOfficialBrokerObservedCalendarEvidenceV2({
+    compatibilityResult: verifyOfficialTossOpenApiCalendarCompatibility({
+      market: "KR",
+      requestedDate: "2026-03-25",
+      rawOpenApiDocumentBytes: pinnedOpenApiBytes,
+      rawResponseBytes: pinnedExampleBytes
+    }),
+    requestedDate: "2026-03-25",
+    completedAt: "2026-03-25T01:00:10.000Z",
+    responseDelayMilliseconds: 250,
+    responseCacheHeaders: {
+      dateHeaderValues: ["Wed, 25 Mar 2026 01:00:00 GMT"],
+      ageHeaderValues: ["5"],
+      expiresHeaderValues: []
+    },
+    responseCacheControl: { cacheControlHeaderValues: ["public, max-age=60"] },
     rawResponseBytes
   });
 }

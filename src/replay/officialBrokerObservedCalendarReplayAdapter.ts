@@ -3,11 +3,12 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
+import { officialBrokerObservedCalendarEvidenceSchema } from "./officialBrokerObservedCalendarEvidence.js";
 import {
-  officialBrokerObservedCalendarEvidenceSchema,
-  verifyOfficialBrokerObservedCalendarEvidence,
-  type OfficialBrokerObservedCalendarEvidence
-} from "./officialBrokerObservedCalendarEvidence.js";
+  officialBrokerObservedCalendarEvidenceV2Schema,
+  verifyVersionedOfficialBrokerObservedCalendarEvidence,
+  type VersionedOfficialBrokerObservedCalendarEvidence
+} from "./officialBrokerObservedCalendarEvidenceV2.js";
 import {
   BROKER_OBSERVED_CALENDAR_EVIDENCE_TRANSITION_SCHEMA_VERSION,
   brokerObservedCalendarEvidenceTransitionResultSchema,
@@ -107,7 +108,11 @@ const replayInputBaseSchema = z
     replayEvidenceClass: z.literal("observed_session_only"),
     evidenceArtifactHash: sha256HashSchema,
     transition: brokerObservedCalendarEvidenceTransitionResultSchema,
-    evidence: officialBrokerObservedCalendarEvidenceSchema,
+    evidence: z.discriminatedUnion("schemaVersion", [
+      // v1 remains accepted byte-for-byte; v2 adds trusted OpenAPI/network provenance.
+      officialBrokerObservedCalendarEvidenceSchema,
+      officialBrokerObservedCalendarEvidenceV2Schema
+    ]),
     calendarValidation: calendarValidationSchema
   })
   .strict();
@@ -137,10 +142,11 @@ export interface VerifyOfficialBrokerObservedCalendarReplayInputOptions {
 export function buildOfficialBrokerObservedCalendarReplayInput(
   options: BuildOfficialBrokerObservedCalendarReplayInputOptions
 ): OfficialBrokerObservedCalendarReplayInput {
-  const verifiedEvidence = verifyOfficialBrokerObservedCalendarEvidence(
-    options.evidence,
-    { asOf: options.asOf, rawResponseBytes: options.rawResponseBytes }
-  );
+  const verifiedEvidence =
+    verifyVersionedOfficialBrokerObservedCalendarEvidence(options.evidence, {
+      asOf: options.asOf,
+      rawResponseBytes: options.rawResponseBytes
+    });
   const transition = verifiedTransition();
 
   return verifyOfficialBrokerObservedCalendarReplayInput(
@@ -165,7 +171,7 @@ export function verifyOfficialBrokerObservedCalendarReplayInput(
 ): OfficialBrokerObservedCalendarReplayInput {
   const parsedOptions = verifierOptionsSchema.parse({ asOf: options.asOf });
   const input = officialBrokerObservedCalendarReplayInputSchema.parse(value);
-  verifyOfficialBrokerObservedCalendarEvidence(input.evidence, {
+  verifyVersionedOfficialBrokerObservedCalendarEvidence(input.evidence, {
     asOf: parsedOptions.asOf,
     rawResponseBytes: options.rawResponseBytes
   });
@@ -238,7 +244,7 @@ function verifiedTransition() {
 }
 
 function calendarValidationFor(
-  evidence: OfficialBrokerObservedCalendarEvidence
+  evidence: VersionedOfficialBrokerObservedCalendarEvidence
 ): HistoricalDataAvailabilityCalendarOptions {
   const identity = marketIdentity(evidence.market);
   return {
@@ -254,7 +260,7 @@ function calendarValidationFor(
 }
 
 function mapEvidenceToFixtures(
-  evidence: OfficialBrokerObservedCalendarEvidence
+  evidence: VersionedOfficialBrokerObservedCalendarEvidence
 ): [MarketCalendarFixture, MarketCalendarFixture, MarketCalendarFixture] {
   const fixtures = evidence.response.days.map((day) =>
     fixtureForDay(evidence, day)
@@ -271,8 +277,8 @@ function mapEvidenceToFixtures(
 }
 
 function fixtureForDay(
-  evidence: OfficialBrokerObservedCalendarEvidence,
-  day: OfficialBrokerObservedCalendarEvidence["response"]["days"][number]
+  evidence: VersionedOfficialBrokerObservedCalendarEvidence,
+  day: VersionedOfficialBrokerObservedCalendarEvidence["response"]["days"][number]
 ): MarketCalendarFixture {
   const identity = marketIdentity(evidence.market);
   const base = {
