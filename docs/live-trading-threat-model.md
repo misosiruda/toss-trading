@@ -99,16 +99,26 @@ Future runtime approval은 typed record로 설계하며 다음 identity에 exact
 - 허용 market/symbol/side/order type/quantity/limit price의 exact projection
 - trusted serializer schema/version과 canonical `transportRequestHash`
 - secret provider가 만든 `accountHeaderMac`과 MAC key generation
+- `modify`/`cancel`이면 opaque `targetOrderRef`, registered path template과 `targetRouteMac`/key generation
 - 승인 actor와 검증된 owner channel
 - `approvedAt`, `expiresAt`, one-time consumption state
 - human-readable reason과 masked audit reference
 
 Trusted serializer는 approval request를 commit하기 전에 immutable non-secret transport envelope을
-한 번 만들고, length-prefixed canonical `(schemaVersion, method, providerOriginId, exact path/query,
-contentType, accountScopeRef, credentialGeneration, exact body bytes)`에 domain-separated SHA-256을
-적용해 `transportRequestHash`를 만든다. Gateway는 bound method/path/query/content type/body
-bytes를 다시 serialize하거나 변경하지 못한다. Authorization token과 raw account header는 이
-hash에 넣지 않는다. 대신 secret provider는 raw account id를 보관하지 않는 전용 non-exportable
+한 번 만들고, length-prefixed canonical `(schemaVersion, method, providerOriginId,
+registeredPathTemplateId, opaque targetOrderRef, non-sensitive query, contentType, accountScopeRef,
+credentialGeneration, exact non-sensitive body bytes)`에 domain-separated SHA-256을 적용해
+`transportRequestHash`를 만든다. Gateway는 bound projection을 다시 serialize하거나 변경하지
+못한다. Create처럼 raw broker identity가 없는 exact registered path만 non-sensitive envelope에
+포함할 수 있다. `modify`/`cancel`의 raw broker order id가 들어간 materialized path/query bytes는
+durable envelope, approval, permit, audit에 저장하지 않는다. Encrypted target mapping은 opaque
+`targetOrderRef`로 raw order id를 process memory에 resolve하고, secret provider가 dedicated
+non-exportable target-route key로 domain/schema/provider/environment, template id, target ref,
+credential generation과 exact materialized route bytes를 HMAC-SHA-256한 `targetRouteMac`/key
+generation만 bind한다. Gateway는 first-byte lock에서 같은 route buffer를 late-materialize해
+MAC을 다시 계산·비교하며 buffer를 교체하지 않는다.
+
+Authorization token과 raw account header는 transport hash에 넣지 않는다. 대신 secret provider는 raw account id를 보관하지 않는 전용 non-exportable
 MAC key로 length-prefixed domain/schema/provider/environment/credential generation, exact header
 name과 exact header bytes에 HMAC-SHA-256을 적용한 `accountHeaderMac`을 만든다. MAC/key generation은
 reservation, approval request/record와 permit에 exact bind하고 raw header는 persist/log/output하지
@@ -157,7 +167,7 @@ authoritative `requestedAt`/`requestExpiresAt`과 owner channel을 묶은 durabl
 `pending` 생성 및 `approval_required` 전이를 같은 serializable atomic commit에 포함한다.
 Standalone durable reservation state나 request 없는 crash-recovery gap은 허용하지 않는다. Commit 뒤 owner에게
 보내는 typed approval payload에는 exact `approvalRequestId`, generation, requested/expires time,
-intent/reservation/risk binding, `transportRequestHash`, `accountHeaderMac`/key generation과 preview가 모두 포함돼야 하며, `dispatchApproval`은 이 request
+intent/reservation/risk binding, `transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation, preview가 모두 포함돼야 하며, `dispatchApproval`은 이 request
 identity/generation/deadline에 exact bind되지 않으면 거부한다. 유효한 approval record가 한 번도 생성되지 않은
 요청은 다음 reason만 `approval_not_issued` no-dispatch cause로 닫을 수 있다.
 
@@ -180,7 +190,7 @@ read-only broker/local evidence와 exact self reservation을 제외한 다른 �
 source의 exactly-once union으로 risk,
 freshness, market hours, sellable quantity, exposure, loss/budget과 open-order rule을 전부 다시
 평가한다. Resulting `riskBindingHash`가 owner approval에 bind된 값과 exact match하고 모든
-rule, immutable `transportRequestHash`와 `accountHeaderMac`/key generation이 여전히 exact match하는 경우에만 approval을 one-time consumed로 바꾸면서
+rule, immutable `transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation이 여전히 exact match하는 경우에만 approval을 one-time consumed로 바꾸면서
 `send_reserved`로 전이하고 unique `dispatchPermitId`를 정확히 하나 만든다. 두 worker가
 경쟁하면 하나만 성공하며 loser는 consumed/state/version mismatch로 no-send다.
 Consume/state/permit commit의 일부만 성공하는 상태는 허용하지 않는다.
@@ -211,19 +221,21 @@ old/current binding mismatch, active/unconsumed approval, permit/`dispatch_attem
 
 Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
 `accountScopeRef`, approval expiry/state/current `revocationVersion`, `riskBindingHash`,
-`transportRequestHash`, `accountHeaderMac`/key generation, evidence
+`transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation, evidence
 freshness/market-session validity와 current authoritative time을 재검증한다. Permit은 bounded
 immediate-dispatch deadline을 가지며 그 deadline은 approval expiry, evidence/session freshness
 deadline과 configured immediate window 중 최솟값이라 approval보다 오래 살아남지 않는다. Queue나
 delay 뒤 재사용하지 않는다. First network byte
 전에 approval이 revoked됐거나 current binding/version이 달라지거나 deadline이 지났으면 old
 intent를 cause-specific `noDispatchFence`로 닫고 새 intent/final reservation/fresh approval을
-요구한다. Gateway는 write에 사용할 exact immutable method/path/query/content-type/body bytes와
-current account binding으로 canonical hash를 다시 계산해 permit/approval hash와 constant-time
-compare한다. Secret provider가 first byte에 사용할 exact account header buffer로 MAC을 다시
+요구한다. Gateway는 write에 사용할 immutable non-sensitive method/template/query/content-type/body
+projection과 current account binding으로 canonical hash를 다시 계산해 permit/approval hash와
+constant-time compare한다. Modify/cancel은 exact late-materialized target route buffer의 MAC도
+permit과 비교한다. Secret provider가 first byte에 사용할 exact account header buffer로 MAC을 다시
 계산해 permit MAC과 constant-time compare하며 header buffer 생성부터 compare/write까지 같은
-lock에서 다른 buffer로 교체하지 못하게 한다. Transport 또는 account-header mismatch면 각각
-`transport_request_mismatch` 또는 `account_header_mismatch` noDispatchFence로 닫는다. 모든 값이 exact
+lock에서 다른 buffer로 교체하지 못하게 한다. Non-sensitive transport, target route 또는
+account-header mismatch면 각각 `transport_request_mismatch`, `target_route_mismatch` 또는
+`account_header_mismatch` noDispatchFence로 닫는다. 모든 값이 exact
 match할 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
 masked `dispatch_attempted` audit event는 같은 write-ahead durable commit으로 first network
 byte 전에 완료하며, audit commit 실패 시 network write를 금지한다.
@@ -404,7 +416,8 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   변환하지 못하게 한다. Shadow audit는 `simulation_only=true`와 synthetic correlation만
   남기고 raw account/order/execution identity를 받지 않는다.
 - 첫 durable post-validation 상태인 `approval_required`는 portfolio/account capacity,
-  idempotency/tombstone, target fence, immutable transport envelope/hash, `accountHeaderMac` binding,
+  idempotency/tombstone, target fence, immutable non-sensitive transport envelope/hash,
+  `targetRouteMac`/`accountHeaderMac` binding,
   pending `approvalRequest`와 state transition을 한 atomic
   transaction에서 commit한 결과다. Market order이면 exact `marketOrderAuthorization` consume도
   같은 transaction에 포함한다. Request 없는 `final_risk_reserved` 상태는 저장하거나 복구하지
@@ -424,7 +437,7 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   reservation과 approval request를 만들어야 한다.
 - `approval_required`에서 `send_reserved`로의 전이는 approval consume과 unique dispatch
   permit 생성을 current exactly-once snapshot의 same `riskBindingHash` 및 immutable
-  `transportRequestHash`, `accountHeaderMac`/key generation 재검증과 한
+  `transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation 재검증과 한
   versioned CAS로 commit한 경우에만 허용한다.
 - `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
   `reconciliation_pending`으로 이동하며
@@ -455,6 +468,9 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
     Permit deadline이 approval expiry보다 늦을 수 없으므로 post-permit approval expiry도 이 cause로 닫음
   - `transport_request_mismatch`: approved/permit hash, exact recomputed outbound hash,
     `send_reserved` state/version, unconsumed permit과 `dispatch_attempted` 부재 CAS
+  - `target_route_mismatch`: opaque target ref/template, permit의 MAC/key generation, exact
+    late-materialized target route bytes로 recompute한 MAC mismatch, `send_reserved`, unconsumed
+    permit과 `dispatch_attempted` 부재 CAS
   - `account_header_mismatch`: permit의 MAC/key generation, exact outbound header bytes로
     recompute한 MAC mismatch, `send_reserved`, unconsumed permit과 `dispatch_attempted` 부재 CAS
   - `recovery_target_changed`: same `recoveryLineageId`의 exact old/current target version/remaining
@@ -709,7 +725,7 @@ record와 새 pinned key/generation을 요구한다.
 Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
 intent/risk/approval/capacity reservation reference,
 idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
-template, `transportRequestHash`, account-header MAC key generation/match status, masked request correlation, state
+template, `transportRequestHash`, target-route/account-header MAC key generation/match status, masked request correlation, state
 transition, timestamp와 reason code를 남긴다. Client secret,
 token, raw account id, raw broker order id, raw execution data와 request/response body는
 남기지 않는다.
@@ -786,7 +802,8 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
-- [ ] Exact outbound method/path/query/body의 transportRequestHash가 approval/permit과 다르면 first byte 전에 차단됨
+- [ ] Exact outbound non-sensitive projection의 transportRequestHash가 approval/permit과 다르면 first byte 전에 차단됨
+- [ ] Modify/cancel raw broker order id는 opaque target ref와 late-materialized route MAC으로만 bind되고 저장되지 않음
 - [ ] Exact outbound account header bytes의 keyed MAC이 permit과 다르면 raw identity 저장 없이 first byte 전에 차단됨
 - [ ] Pre-permit binding mismatch와 post-permit approval expiry가 각각 exact no-dispatch CAS로 종료됨
 - [ ] Pre-permit payload 변경이 exact old/new binding mismatch와 request/approval/no-permit CAS로 종료됨
