@@ -77,7 +77,7 @@ Trust boundary 원칙:
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
 | LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
-| LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
+| LT-12 | Approval replay, concurrent consume, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
 | LT-15 | 서로 다른 concurrent intent가 같은 risk snapshot/capacity를 각각 통과하거나 broker-visible order와 reservation을 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk evaluation/reservation, durable correlation 기반 broker/reservation exactly-once union과 atomic lifecycle handoff |
@@ -130,6 +130,20 @@ clock-recovery가 끝날 때까지 no-send다.
 
 Approval verification이 unavailable, malformed, expired, already consumed 또는 current
 intent와 불일치하면 no-send로 종료한다.
+
+Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
+transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
+risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인하고 approval을
+one-time consumed로 바꾸면서 `send_reserved`로 전이하고 unique `dispatchPermitId`를 정확히
+하나 만든다. 두 worker가 경쟁하면 하나만 성공하며 loser는 consumed/state/version mismatch로
+no-send다. Consume/state/permit commit의 일부만 성공하는 상태는 허용하지 않는다.
+
+Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
+approval expiry와 current authoritative time을 재검증하고, first network byte 전에 permit을
+durable CAS로 one-time consume한다. Duplicate/expired/stale permit 또는 CAS 실패는
+`stopped_before_dispatch`/blocked reconciliation로 전이하고 network write를 금지한다.
+Permit consume 뒤 crash/unknown은 재발급·재사용하지 않고 acknowledgement reconciliation로
+보낸다.
 
 ## Safe-Disabled State Machine
 
@@ -184,6 +198,8 @@ reconciliation_pending
 - `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
   닫고 capacity를 atomic release한 뒤 새 preview, final risk/capacity reservation과
   approval을 만들어야 한다.
+- `approval_required`에서 `send_reserved`로의 전이는 approval consume과 unique dispatch
+  permit 생성을 한 versioned CAS로 commit한 경우에만 허용한다.
 - `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
   `reconciliation_pending`으로 이동하며
   `send_reserved`로 되돌려 재전송하지 않는다.
@@ -262,6 +278,8 @@ reconciliation_pending
   재전송하지 않고 owner-visible reconciliation 결과로 닫는다.
 - 이후 create/modify/cancel operation은 backend가 새 intent identity와 새 deterministic
   hash를 생성해야 하며, 이전 intent의 approval/idempotency record를 승계하지 않는다.
+- Approval/permit identity도 intent tombstone에 결합해 영구 보존하며 같은 approval 또는
+  permit의 concurrent/sequential replay를 상태와 무관하게 거부한다.
 - Capacity reservation record는 process restart와 broker acknowledgement 뒤에도 보존한다.
   Broker acknowledgement/fill이 나타나면 같은 serializable store에서 capacity source를
   reservation에서 correlated broker order/position/cash로 atomic handoff해 계산 공백이나
@@ -298,11 +316,12 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 2. preview verified
 3. risk evaluated
 4. portfolio/account risk capacity와 idempotency/tombstone atomically reserved 또는 rejected
-5. owner approval verified against exact risk/reservation identity
-6. kill switch/config gate rechecked
-7. dry-run result 또는 broker send attempted
-8. broker acknowledgement/rejection/unknown recorded
-9. reconciliation completed 또는 blocked
+5. owner approval consumed, state transitioned and sole dispatch permit created atomically
+6. clock, kill switch/config gate와 permit rechecked
+7. dispatch permit consumed once 또는 rejected before first byte
+8. broker send attempted
+9. broker acknowledgement/rejection/unknown recorded
+10. reconciliation completed 또는 blocked
 
 Audit에는 schema version, intent/risk/approval/capacity reservation reference,
 idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
@@ -366,6 +385,7 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Natural-language/MCP/dashboard direct order surface가 없음
 - [ ] Safe defaults와 invalid config가 fail-closed로 검증됨
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
+- [ ] Concurrent worker 중 하나만 approval/state/dispatch permit CAS를 소비할 수 있음
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨

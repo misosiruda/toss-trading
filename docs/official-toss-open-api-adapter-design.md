@@ -517,7 +517,8 @@ sequenceDiagram
     Router->>Router: serializable final risk/capacity/idempotency reservation
     Router-->>Owner: preview with exact risk/reservation identity
     Owner->>Router: exact-bound typed approval
-    Router->>Router: verify approval, clock, gate snapshot and fencing
+    Router->>Router: atomic approval consume, state transition and sole permit CAS
+    Router->>Router: verify clock, gate snapshot, fencing and permit
     Router->>Gateway: create/modify/cancel request
     Gateway->>API: POST order endpoint
     API-->>Gateway: order response or error envelope
@@ -600,6 +601,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   evaluation에 포함한다.
 - Final transaction이 만든 exact risk/reservation identity를 preview로 owner에게 제시한
   뒤에만 runtime approval을 받고, approval verification 후 dispatch permit을 발급한다.
+- Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
+  dispatch permit 생성은 한 linearizable versioned CAS로 commit한다. Gateway도 first
+  network byte 전에 permit을 durable one-time consume하며 concurrent worker/replay 중
+  하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이 reconciliation한다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
   broker correlation으로 reservation contribution을 broker order/position/cash contribution에
   atomic handoff한다. Effective snapshot은 logical order당 정확히 한 capacity source만
@@ -737,6 +742,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
 - acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
+- concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
