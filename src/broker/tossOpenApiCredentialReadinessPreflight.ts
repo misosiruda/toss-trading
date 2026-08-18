@@ -107,7 +107,8 @@ async function runPreflight(
 ): Promise<TossOpenApiCredentialReadinessPreflight> {
   const authConfig = readTossOpenApiAuthConfig(env);
   const canonicalBaseUrl =
-    authConfig.baseUrl === DEFAULT_TOSS_OPEN_API_BASE_URL;
+    env.TOSS_OPEN_API_BASE_URL === undefined ||
+    env.TOSS_OPEN_API_BASE_URL === DEFAULT_TOSS_OPEN_API_BASE_URL;
   const safeAuthSummary = summarizeTossOpenApiAuthConfig(authConfig);
   const auth: SafeTossOpenApiAuthConfigSummary = {
     ...safeAuthSummary,
@@ -115,10 +116,10 @@ async function runPreflight(
       ? DEFAULT_TOSS_OPEN_API_BASE_URL
       : "[noncanonical-url]"
   };
-  const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
+  const brokerProvider = env.BROKER_PROVIDER ?? "mock";
   const tradingDisabled =
     env.TRADING_ENABLED === undefined || env.TRADING_ENABLED === "false";
-  const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "paper_only";
+  const aiDecisionMode = env.AI_DECISION_MODE ?? "paper_only";
   const outboundIpRegistration = readOutboundIpRegistration(env);
   const host = await inspectOfficialHost(resolveHost);
   const blockers: TossOpenApiCredentialReadinessBlockerCode[] = [];
@@ -307,12 +308,12 @@ async function inspectOfficialHost(
 function readOutboundIpRegistration(
   env: NodeJS.ProcessEnv
 ): TossOpenApiCredentialReadinessPreflight["outboundIpRegistration"] {
-  const value = env[TOSS_OPEN_API_OUTBOUND_IP_REGISTRATION_ENV]?.trim();
+  const value = env[TOSS_OPEN_API_OUTBOUND_IP_REGISTRATION_ENV];
   return {
     status:
       value === "true"
         ? "attested"
-        : value === undefined || value === "" || value === "false"
+        : value === undefined || value === "false"
           ? "not_attested"
           : "invalid",
     source: TOSS_OPEN_API_OUTBOUND_IP_REGISTRATION_ENV,

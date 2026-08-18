@@ -131,6 +131,79 @@ test("credential preflight rejects every explicit trading flag except exact fals
   }
 });
 
+test("credential preflight rejects non-exact broker and AI mode values", async () => {
+  const cases: Array<{
+    key: "BROKER_PROVIDER" | "AI_DECISION_MODE";
+    value: string;
+    blocker: "BROKER_PROVIDER_NOT_MOCK" | "AI_DECISION_MODE_NOT_PAPER_ONLY";
+  }> = [
+    { key: "BROKER_PROVIDER", value: " mock ", blocker: "BROKER_PROVIDER_NOT_MOCK" },
+    { key: "BROKER_PROVIDER", value: "", blocker: "BROKER_PROVIDER_NOT_MOCK" },
+    {
+      key: "AI_DECISION_MODE",
+      value: " paper_only ",
+      blocker: "AI_DECISION_MODE_NOT_PAPER_ONLY"
+    },
+    {
+      key: "AI_DECISION_MODE",
+      value: "",
+      blocker: "AI_DECISION_MODE_NOT_PAPER_ONLY"
+    }
+  ];
+
+  for (const { key, value, blocker } of cases) {
+    const result = await runTestOnlyTossOpenApiCredentialReadinessPreflight(
+      {
+        ...readyEnv(),
+        [key]: value
+      },
+      async () => [{ address: "203.0.113.10", family: 4 }]
+    );
+
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.blockers, [blocker]);
+  }
+});
+
+test("credential preflight compares the raw base URL before config normalization", async () => {
+  for (const baseUrl of [
+    "",
+    "   ",
+    " https://openapi.tossinvest.com",
+    "https://openapi.tossinvest.com "
+  ]) {
+    const result = await runTestOnlyTossOpenApiCredentialReadinessPreflight(
+      {
+        ...readyEnv(),
+        TOSS_OPEN_API_BASE_URL: baseUrl
+      },
+      async () => [{ address: "203.0.113.10", family: 4 }]
+    );
+
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.blockers, ["NONCANONICAL_BASE_URL"]);
+    assert.equal(result.auth.baseUrl, "[noncanonical-url]");
+  }
+});
+
+test("credential preflight accepts only exact outbound IP attestation flags", async () => {
+  for (const outboundIpRegistered of [" true ", "false ", "TRUE", "yes", ""]) {
+    const result = await runTestOnlyTossOpenApiCredentialReadinessPreflight(
+      {
+        ...readyEnv(),
+        TOSS_OPEN_API_OUTBOUND_IP_REGISTERED: outboundIpRegistered
+      },
+      async () => [{ address: "203.0.113.10", family: 4 }]
+    );
+
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(result.blockers, [
+      "INVALID_OUTBOUND_IP_REGISTRATION_FLAG"
+    ]);
+    assert.equal(result.outboundIpRegistration.status, "invalid");
+  }
+});
+
 function readyEnv(): NodeJS.ProcessEnv {
   return {
     BROKER_PROVIDER: "mock",
