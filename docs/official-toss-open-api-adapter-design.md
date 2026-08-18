@@ -636,10 +636,16 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   binding이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
   commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
   no-dispatch로 닫고 새 identity/hash, final reservation/preview/approval을 요구한다.
+- Approval record는 monotonic `revocationVersion`과 `active | consumed | revoked` state를
+  보존한다. Verified owner revoke는 dispatch와 같은 linearizable lock/fencing epoch에서
+  write-ahead CAS하며, first network byte 전에 revoke가 이기면 approval version/epoch를
+  advance하고 그 approval의 모든 reserved-unsent permit을 영구 fence한다. Dispatch가 먼저
+  byte boundary를 넘으면 revoke는 `too_late_for_dispatch`를 반환하고 in-flight/unknown
+  reconciliation을 유지한다. Restart는 revocation state/version을 복구하기 전까지 no-send다.
 - Gateway도 bounded immediate-dispatch deadline 안에서 first network byte 전에 clock,
-  current account/risk binding과 permit을 재검증한다. Permit consume/state transition과
-  masked `dispatch_attempted` audit event를 같은 write-ahead durable commit으로 first byte
-  전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
+  current approval revocation state/version, account/risk binding과 permit을 재검증한다.
+  Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
+  write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
   reconciliation한다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
@@ -794,6 +800,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
 - acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
 - concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
+- owner approval revoke가 dispatch보다 먼저 이기면 reserved-unsent permit이 영구 fence되고 network write가 없다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.

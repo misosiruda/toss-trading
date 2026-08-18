@@ -77,7 +77,7 @@ Trust boundary 원칙:
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
 | LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
-| LT-12 | Approval replay, concurrent consume, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
+| LT-12 | Approval replay, concurrent consume, revocation race, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor/revocation-version binding, state/permit과 묶인 linearizable one-time consume/revoke, gateway permit CAS, owner channel 검증 |
 | LT-13 | Audit omission, crash window 또는 log tampering | 사고 원인·주문 경로 추적 불가 | first-byte 전 masked write-ahead dispatch event, append-only result/unknown chain, request/intent/risk/approval correlation, crash completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
 | LT-15 | Concurrent intent/target mutation이 같은 capacity/version을 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판과 conflicting modify/cancel | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, conservative modify capacity envelope, exclusive target-version mutation fence와 exact scoped replace evaluation |
@@ -147,6 +147,20 @@ rule이 여전히 approved인 경우에만 approval을 one-time consumed로 바�
 경쟁하면 하나만 성공하며 loser는 consumed/state/version mismatch로 no-send다.
 Consume/state/permit commit의 일부만 성공하는 상태는 허용하지 않는다.
 
+Owner approval revocation도 단순 flag update가 아니다. Approval record는 durable monotonic
+`revocationVersion`과 `active | consumed | revoked` state를 가지며, verified owner의 revoke는
+dispatch와 같은 linearizable lock/fencing epoch에서 write-ahead CAS한다. Revocation이 first
+network byte보다 먼저 lock을 획득하면 exact approval을 `revoked`로 전이하고 version/epoch를
+advance하며, 그 approval에서 파생된 모든 reserved-unsent permit을 영구 fence한다. 해당
+intent는 `stopped_before_dispatch`/no-dispatch reconciliation과 tombstone/audit evidence를
+남기며 network write를 금지한다. Process restart도 이 revocation version과 fenced permit을
+복구하기 전에는 dispatch하지 않는다.
+
+Dispatch가 먼저 lock을 획득해 first network byte boundary를 넘었다면 revoke 응답은
+`too_late_for_dispatch`를 명시하고 전송 취소를 주장하지 않는다. Intent는 in-flight/unknown
+reconciliation에 남기며, broker-open order 취소가 필요하면 normal approval revocation을
+재사용하지 않고 위 typed cancel-only recovery 절차를 거친다.
+
 Snapshot/version/capacity/market-session/policy가 달라졌거나 evidence가 stale/unavailable이면
 old approval을 dispatch에 사용하지 않는다. Existing reservation을 durable no-dispatch
 reconciliation로 닫고 capacity를 atomic handoff/release한 뒤 새 backend-generated intent
@@ -155,11 +169,12 @@ approval을 요구한다. 더 보수적인 새 decision이라도 identity가 달
 재사용하지 않는다.
 
 Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
-`accountScopeRef`, approval expiry, `riskBindingHash`, evidence freshness/market-session validity와 current
-authoritative time을 재검증한다. Permit은 bounded immediate-dispatch deadline을 가지며 queue나
-delay 뒤 재사용하지 않는다. First network byte 전에 current binding이 달라지거나 deadline이
-지났으면 old intent를 no-dispatch로 닫고 새 intent/final reservation/fresh approval을
-요구하며, exact match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
+`accountScopeRef`, approval expiry/state/current `revocationVersion`, `riskBindingHash`, evidence
+freshness/market-session validity와 current authoritative time을 재검증한다. Permit은 bounded
+immediate-dispatch deadline을 가지며 queue나 delay 뒤 재사용하지 않는다. First network byte
+전에 approval이 revoked됐거나 current binding/version이 달라지거나 deadline이 지났으면 old
+intent를 no-dispatch로 닫고 새 intent/final reservation/fresh approval을 요구하며, exact
+match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
 masked `dispatch_attempted` audit event는 같은 write-ahead durable commit으로 first network
 byte 전에 완료하며, audit commit 실패 시 network write를 금지한다.
 Duplicate/expired/stale permit 또는 CAS 실패는
@@ -481,7 +496,7 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 6. dispatch owner approval received for exact risk/reservation binding
 7. current exactly-once snapshot과 모든 risk/freshness rule revalidated
 8. owner approval consumed, state transitioned and sole dispatch permit created atomically
-9. clock, risk/account binding, kill switch/config gate와 permit rechecked
+9. approval revocation state/version, clock, risk/account binding, kill switch/config gate와 permit rechecked
 10. permit consumed and masked `dispatch_attempted` event write-ahead committed 또는 rejected
 11. broker network write attempted
 12. broker acknowledgement/rejection/unknown appended
@@ -558,6 +573,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Safe defaults와 invalid config가 fail-closed로 검증됨
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
 - [ ] Concurrent worker 중 하나만 approval/state/dispatch permit CAS를 소비할 수 있음
+- [ ] Approval revoke와 dispatch가 직렬화되고 revoke가 이긴 reserved-unsent permit은 영구 fence됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
 - [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
