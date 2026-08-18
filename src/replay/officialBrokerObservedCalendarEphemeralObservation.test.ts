@@ -143,6 +143,41 @@ test("disposes observations when verification or a fixed operation fails", () =>
   assertDisposed(invalidPlan.observation);
 });
 
+test("enters the disposal boundary before reading operation options", () => {
+  const missingOptions = createObservation();
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralReplayInput(
+        missingOptions.observation,
+        undefined as never
+      ),
+    /operation options are invalid/
+  );
+  assertDisposed(missingOptions.observation);
+
+  const first = createObservation();
+  const second = createObservation();
+  let asOfReadCount = 0;
+  const options = {
+    get asOf(): string {
+      asOfReadCount += 1;
+      throw new Error("synthetic asOf getter failure");
+    },
+    plan: oneDayPlan()
+  };
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralCoverageReport(
+        [first.observation, second.observation],
+        options
+      ),
+    /synthetic asOf getter failure/
+  );
+  assert.equal(asOfReadCount, 1);
+  assertDisposed(first.observation);
+  assertDisposed(second.observation);
+});
+
 test("rejects observation JSON export and disposes the handle", () => {
   const direct = createObservation();
   assert.throws(

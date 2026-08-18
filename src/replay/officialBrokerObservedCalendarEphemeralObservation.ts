@@ -47,6 +47,11 @@ interface VerifiedObservation {
   rawResponseBytes: Uint8Array;
 }
 
+interface PreparedObservationOperation {
+  asOf: string;
+  execute: (observations: VerifiedObservation[]) => void;
+}
+
 const observationStates = new WeakMap<object, ObservationState>();
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
 const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
@@ -103,18 +108,25 @@ export function consumeOfficialBrokerObservedCalendarEphemeralReplayInput(
   observation: OfficialBrokerObservedCalendarEphemeralObservation,
   options: ConsumeOfficialBrokerObservedCalendarEphemeralReplayInputOptions
 ): void {
-  consumeVerifiedObservations([observation], options.asOf, (observations) => {
-    if (observations.length !== 1) {
-      throw new Error(
-        "official broker calendar replay input operation requires exactly one observation"
-      );
-    }
-    const verifiedObservation = observations[0]!;
-    void buildOfficialBrokerObservedCalendarReplayInput({
-      evidence: verifiedObservation.evidence,
-      asOf: options.asOf,
-      rawResponseBytes: verifiedObservation.rawResponseBytes
-    });
+  consumeVerifiedObservations([observation], () => {
+    assertOptionsObject(options);
+    const asOf = options.asOf;
+    return {
+      asOf,
+      execute: (observations) => {
+        if (observations.length !== 1) {
+          throw new Error(
+            "official broker calendar replay input operation requires exactly one observation"
+          );
+        }
+        const verifiedObservation = observations[0]!;
+        void buildOfficialBrokerObservedCalendarReplayInput({
+          evidence: verifiedObservation.evidence,
+          asOf,
+          rawResponseBytes: verifiedObservation.rawResponseBytes
+        });
+      }
+    };
   });
 }
 
@@ -122,20 +134,27 @@ export function consumeOfficialBrokerObservedCalendarEphemeralCoverageReport(
   observations: readonly OfficialBrokerObservedCalendarEphemeralObservation[],
   options: ConsumeOfficialBrokerObservedCalendarEphemeralCoverageReportOptions
 ): void {
-  consumeVerifiedObservations(observations, options.asOf, (verified) => {
-    const plan = parseOfficialBrokerObservedCalendarCoverageProbePlan(
-      options.plan
-    );
-    void buildOfficialBrokerObservedCalendarCoverageProbeReport({
-      plan,
-      evaluatedAt: options.asOf,
-      observations: verified.map(({ evidence, rawResponseBytes }) => ({
-        status: "verified" as const,
-        requestedDate: evidence.requestedDate,
-        evidence,
-        rawResponseBytes
-      }))
-    });
+  consumeVerifiedObservations(observations, () => {
+    assertOptionsObject(options);
+    const asOf = options.asOf;
+    const planInput = options.plan;
+    return {
+      asOf,
+      execute: (verified) => {
+        const plan =
+          parseOfficialBrokerObservedCalendarCoverageProbePlan(planInput);
+        void buildOfficialBrokerObservedCalendarCoverageProbeReport({
+          plan,
+          evaluatedAt: asOf,
+          observations: verified.map(({ evidence, rawResponseBytes }) => ({
+            status: "verified" as const,
+            requestedDate: evidence.requestedDate,
+            evidence,
+            rawResponseBytes
+          }))
+        });
+      }
+    };
   });
 }
 
@@ -153,8 +172,7 @@ export function disposeOfficialBrokerObservedCalendarEphemeralObservation(
 
 function consumeVerifiedObservations(
   observations: readonly OfficialBrokerObservedCalendarEphemeralObservation[],
-  asOf: string,
-  operation: (observations: VerifiedObservation[]) => void
+  prepareOperation: () => PreparedObservationOperation
 ): void {
   if (!Array.isArray(observations)) {
     throw new Error(
@@ -199,6 +217,7 @@ function consumeVerifiedObservations(
       ownedStates.push(state);
     }
 
+    const operation = prepareOperation();
     for (let index = 0; index < observationObjects.length; index += 1) {
       const state = ownedStates[index]!;
       observationStates.set(observationObjects[index]!, {
@@ -207,12 +226,12 @@ function consumeVerifiedObservations(
         rawResponseBytes: state.rawResponseBytes
       });
     }
-    operation(
+    operation.execute(
       ownedStates.map((state) => ({
         evidence: verifyOfficialBrokerObservedCalendarEvidenceV2(
           state.evidence,
           {
-            asOf,
+            asOf: operation.asOf,
             rawResponseBytes: state.rawResponseBytes
           }
         ),
@@ -223,6 +242,14 @@ function consumeVerifiedObservations(
     for (const observationObject of collected.factoryOwnedObjects) {
       disposeObservationObject(observationObject);
     }
+  }
+}
+
+function assertOptionsObject(value: unknown): asserts value is object {
+  if (value === null || typeof value !== "object") {
+    throw new Error(
+      "official broker calendar ephemeral operation options are invalid"
+    );
   }
 }
 
