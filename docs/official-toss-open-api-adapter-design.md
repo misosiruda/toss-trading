@@ -643,10 +643,12 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   `gate_disabled` noDispatchFence와 tombstone을 commit하고 capacity/fence를 atomic release한다.
   Reservation lineage는 terminal reconciliation까지 보존하고 logical capacity는 아래 exactly-once
   source로 후속 risk evaluation에 포함한다.
-- Final transaction이 만든 exact risk/reservation identity를 preview로 owner에게 제시한
-  뒤에만 backend-generated `approvalRequestId`, monotonic generation과 authoritative request
-  deadline을 가진 durable pending request를 만들고 runtime approval을 받는다. Approval
-  verification 후에만 dispatch permit을 발급한다.
+- Final transaction이 만든 exact risk/reservation identity로 backend-generated
+  `approvalRequestId`, monotonic generation, authoritative requested/deadline과 owner channel을
+  가진 durable pending request 및 `approval_required` 전이를 먼저 commit한다. 그 뒤 exact
+  request identity/generation/deadline, reservation/risk binding과 preview를 한 typed payload로
+  owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
+  뒤에만 dispatch permit을 발급한다.
 - `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
   `marketOrderAuthorization`을 intent/account/order projection/preview/policy/actor/expiry에
   bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
@@ -657,7 +659,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
   binding이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
   commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
-  no-dispatch로 닫고 새 identity/hash, final reservation/preview/approval을 요구한다.
+  exact `approval_required` state/version, active/unconsumed approval, permit/dispatch 부재와
+  old/current mismatch를 한 CAS로 증명한 `pre_permit_binding_invalidated` noDispatchFence로 닫고
+  새 identity/hash, final reservation/preview/approval을 요구한다.
 - Approval record는 monotonic `revocationVersion`과 `active | consumed | revoked` state를
   보존한다. Verified owner revoke는 dispatch와 같은 linearizable lock/fencing epoch에서
   write-ahead CAS하며, first network byte 전에 revoke가 이기면 approval version/epoch를
@@ -666,6 +670,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   reconciliation을 유지한다. Restart는 revocation state/version을 복구하기 전까지 no-send다.
 - Gateway도 bounded immediate-dispatch deadline 안에서 first network byte 전에 clock,
   current approval revocation state/version, account/risk binding과 permit을 재검증한다.
+  Permit deadline은 approval expiry, evidence/session freshness deadline과 configured immediate
+  window 중 최솟값이며 approval보다 오래 살아남지 않는다. Approval이 permit 생성 뒤 만료되면
+  exact `send_reserved`/unconsumed permit을 `permit_expired_or_stale` noDispatchFence로 CAS한다.
   Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
   write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
@@ -674,8 +681,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   같은 lock에서 증명하고 cause-specific durable `noDispatchFence`를 commit한 경우에만
   terminal candidate가 된다. Record는 exact intent/reservation/approval/permit version,
   epoch/snapshot, reason, tombstone/audit과 함께 gate-disable winning fence, approval-revocation
-  CAS/version, binding invalidation CAS, authoritative permit expiry/staleness, authoritative
-  approval expiry와 active/unconsumed approval-required state CAS, approval-not-issued request
+  CAS/version, post-permit binding invalidation CAS, pre-permit binding mismatch와 no-permit CAS,
+  authoritative permit expiry/staleness, authoritative approval expiry와 active/unconsumed
+  approval-required state CAS, approval-not-issued request
   closure 또는 pre-permit payload-change state 중 해당 cause evidence를 포함한다.
   `approval_not_issued`는 exact pending request generation, valid approval/permit 부재와 typed owner
   decline, authoritative request expiry, allowlisted channel-unavailable 또는 malformed-response
@@ -883,6 +891,8 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - modify는 old capacity를 reconciliation까지 보존하고 stable target fence가 version lineage 전체의 concurrent modify/cancel을 차단한다.
 - accountScopeRef는 ordinary account hash가 아닌 CSPRNG opaque encrypted mapping이며 key rotation에도 ref를 유지한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
+- approval request는 owner에게 제시되기 전에 durable commit되고 response가 request identity/generation/deadline에 exact bind된다.
+- pre-permit binding mismatch와 post-permit approval expiry는 각각 no-permit 또는 unconsumed-permit CAS로 안전 종료된다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.

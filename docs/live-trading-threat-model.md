@@ -141,7 +141,10 @@ release할 수 있다.
 
 Final reservation을 owner에게 제시하기 전에 backend는 exact intent/reservation/risk binding,
 request generation, authoritative `requestedAt`/`requestExpiresAt`과 owner channel을 묶은 durable
-`approvalRequest`를 `pending`으로 만든다. 유효한 approval record가 한 번도 생성되지 않은
+`approvalRequest`를 `pending`으로 만들고 `approval_required` 전이를 commit한다. Commit 뒤 owner에게
+보내는 typed approval payload에는 exact `approvalRequestId`, generation, requested/expires time,
+intent/reservation/risk binding과 preview가 모두 포함돼야 하며, `dispatchApproval`은 이 request
+identity/generation/deadline에 exact bind되지 않으면 거부한다. 유효한 approval record가 한 번도 생성되지 않은
 요청은 다음 reason만 `approval_not_issued` no-dispatch cause로 닫을 수 있다.
 
 - `owner_declined`: verified owner channel의 typed decline가 exact request id/generation에 bind됨
@@ -188,11 +191,16 @@ reconciliation로 닫되 아래 cause-specific `noDispatchFence`를 같은 trans
 뒤에만 capacity를 atomic handoff/release한다. 이후 새 backend-generated intent identity/hash,
 final risk/capacity reservation, preview, `riskBindingHash`와 fresh owner approval을 요구한다.
 더 보수적인 새 decision이라도 identity가 달라졌다면 old approval을 재사용하지 않는다.
+Approval consume 전 revalidation에서 binding이 달라졌다면 exact `approval_required` state/version,
+old/current binding mismatch, active/unconsumed approval, permit/`dispatch_attempted` 부재를 한 CAS로
+검증한 `pre_permit_binding_invalidated` noDispatchFence로 닫는다.
 
 Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
 `accountScopeRef`, approval expiry/state/current `revocationVersion`, `riskBindingHash`, evidence
 freshness/market-session validity와 current authoritative time을 재검증한다. Permit은 bounded
-immediate-dispatch deadline을 가지며 queue나 delay 뒤 재사용하지 않는다. First network byte
+immediate-dispatch deadline을 가지며 그 deadline은 approval expiry, evidence/session freshness
+deadline과 configured immediate window 중 최솟값이라 approval보다 오래 살아남지 않는다. Queue나
+delay 뒤 재사용하지 않는다. First network byte
 전에 approval이 revoked됐거나 current binding/version이 달라지거나 deadline이 지났으면 old
 intent를 cause-specific `noDispatchFence`로 닫고 새 intent/final reservation/fresh approval을
 요구하며, exact match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
@@ -377,8 +385,9 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed)
   남기고 raw account/order/execution identity를 받지 않는다.
 - `final_risk_reserved`는 portfolio/account capacity, idempotency와 tombstone transaction이
   commit된 상태다. Market order이면 exact `marketOrderAuthorization`도 같은 transaction에서
-  먼저 consume돼야 하며, transaction이 만든 exact risk/reservation identity를 owner에게
-  제시한 뒤에만 `approval_required`로 이동한다.
+  먼저 consume돼야 한다. Backend는 transaction이 만든 exact risk/reservation identity로 durable
+  pending `approvalRequest`를 만들고 `approval_required` 전이를 commit한 뒤에만 request identity,
+  generation, deadline과 preview를 owner에게 제시한다.
 - Final risk/capacity/idempotency/target-fence transaction 자체가 dispatch arbiter의 current
   gate lock/epoch 아래 exact enabled snapshot을 검증하고 commit돼야 한다. Kill-active 또는
   false/invalid/mismatched gate에서는 reservation, target fence나 approval request를 새로 만들지
@@ -413,8 +422,12 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed)
   추가 evidence는 다음과 같다.
   - `gate_disabled`: disable transition이 dispatch보다 먼저 이긴 fencing epoch/snapshot
   - `approval_revoked`: winning revocation CAS와 current `revocationVersion`, 파생 permit fence
-  - `binding_invalidated`: exact old/current binding mismatch와 old permit invalidation CAS
-  - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS
+  - `binding_invalidated`: exact old/current binding mismatch와 `send_reserved`의 unconsumed old
+    permit invalidation CAS
+  - `pre_permit_binding_invalidated`: exact old/current binding mismatch, active/unconsumed approval,
+    permit/`dispatch_attempted` 부재와 exact `approval_required` state/version CAS
+  - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS.
+    Permit deadline이 approval expiry보다 늦을 수 없으므로 post-permit approval expiry도 이 cause로 닫음
   - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact
     active/unconsumed approval-required state/version CAS
   - `approval_not_issued`: exact pending approval-request generation, valid approval/permit 부재,
@@ -723,6 +736,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
+- [ ] Pre-permit binding mismatch와 post-permit approval expiry가 각각 exact no-dispatch CAS로 종료됨
 - [ ] accountScopeRef가 CSPRNG opaque mapping으로 발급되고 key rotation에도 stable하며 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
