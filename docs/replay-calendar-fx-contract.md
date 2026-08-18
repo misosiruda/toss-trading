@@ -379,7 +379,7 @@ session 목록으로만 보존한다. Output source class는 `official_broker_ob
 contract가 담당한다. OpenAPI compatibility gate와 version-aware evidence transition은
 synthetic/public contract 범위로 구현됐고 replay adapter/coverage probe consumer migration과
 ephemeral acquisition lifecycle boundary도 구현됐다. Acquisition coordinator는 production
-token/auth/calendar 고정 조립, pinned compatibility gate, v2 evidence와 opaque lifecycle handoff까지
+token/auth/calendar 고정 조립, pinned example 기반 parser registry 선택, actual-response v2 strict validation과 opaque lifecycle handoff까지
 구현됐으며 raw-byte persistence, stored report와 replay 실행은 포함하지 않는다.
 
 ## Contract 목표

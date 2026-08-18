@@ -375,7 +375,7 @@ flowchart TD
 - public input은 exact `market`/`date`만 받고 retrieval/evaluation timestamp, cache metadata, URL, contract version, evidence 또는 raw bytes를 받지 않음
 - disabled/invalid config와 malformed input이 token issue, DNS 또는 socket 전에 fail-closed 처리됨
 - network observation의 request URL, market/date, parsed body, response hash/byte length, completedAt/delay와 corrected freshness를 evidence 생성 전에 다시 검증함
-- pinned OpenAPI compatibility, v2 evidence와 ephemeral observation factory를 순서대로 통과한 opaque handle만 반환함
+- pinned example로 trusted parser registry contract를 선택하고 actual network bytes를 v2 strict parser와 ephemeral observation factory에 통과시킨 opaque handle만 반환함
 - success, compatibility/schema/freshness/lifecycle failure 모두 transport raw-byte view를 zeroize함
 - persistent token/raw-byte store, stored report, replay 실행, completeness claim, CLI/MCP/API output, account/order path와 broker mutation을 추가하지 않음
 

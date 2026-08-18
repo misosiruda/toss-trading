@@ -347,7 +347,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 9 | Calendar GET network transport | 구현됨: token consumer인 KR/US calendar GET allowlist, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap과 monotonic response-delay corrected freshness | account header, broker mutation, external credential call |
 | 9a | Version-aware calendar evidence consumers | 구현됨: response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
 | 9b | Ephemeral calendar acquisition lifecycle | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation과 unconditional zeroization | durable raw-byte store, workflow artifact persistence |
-| 10 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, pinned compatibility와 v2 ephemeral paper-only observation, loopback fail-closed test | persistent token/raw bytes, stored report, replay 실행 |
+| 10 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral paper-only observation, loopback fail-closed test | persistent token/raw bytes, stored report, replay 실행 |
 
 Calendar acquisition coordinator는 adapter design의 OpenAPI compatibility, version-aware
 evidence transition, version-aware replay consumer migration과 ephemeral lifecycle boundary를

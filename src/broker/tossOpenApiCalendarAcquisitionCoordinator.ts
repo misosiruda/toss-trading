@@ -37,6 +37,16 @@ const CALENDAR_PATHS = {
   KR: "/api/v1/market-calendar/KR",
   US: "/api/v1/market-calendar/US"
 } as const;
+const PINNED_COMPATIBILITY_EXAMPLES = {
+  KR: {
+    requestedDate: "2026-03-25",
+    exampleName: "businessDay"
+  },
+  US: {
+    requestedDate: "2026-03-25",
+    exampleName: "businessDay"
+  }
+} as const;
 
 export interface TossOpenApiCalendarAcquisitionRequest {
   market: TossOpenApiCalendarMarket;
@@ -99,11 +109,16 @@ class TossOpenApiCalendarAcquisitionCoordinator
         typeof verifyOfficialTossOpenApiCalendarCompatibility
       >;
       try {
+        const rawOpenApiDocumentBytes = readPinnedOpenApiSnapshotBytes();
+        const pinnedExample = readPinnedCompatibilityExample(
+          rawOpenApiDocumentBytes,
+          request.market
+        );
         compatibilityResult = verifyOfficialTossOpenApiCalendarCompatibility({
           market: request.market,
-          requestedDate: request.date,
-          rawOpenApiDocumentBytes: readPinnedOpenApiSnapshotBytes(),
-          rawResponseBytes
+          requestedDate: pinnedExample.requestedDate,
+          rawOpenApiDocumentBytes,
+          rawResponseBytes: pinnedExample.rawResponseBytes
         });
       } catch {
         throw new TossOpenApiCalendarAcquisitionError(
@@ -322,6 +337,43 @@ function readPinnedOpenApiSnapshotBytes(): Buffer {
     ),
     "utf8"
   );
+}
+
+function readPinnedCompatibilityExample(
+  rawOpenApiDocumentBytes: Uint8Array,
+  market: TossOpenApiCalendarMarket
+): { requestedDate: string; rawResponseBytes: Buffer } {
+  const exampleSelection = PINNED_COMPATIBILITY_EXAMPLES[market];
+  const document = parseJsonBytes(rawOpenApiDocumentBytes) as {
+    paths?: Record<
+      string,
+      {
+        get?: {
+          responses?: {
+            "200"?: {
+              content?: {
+                "application/json"?: {
+                  examples?: Record<string, { value?: unknown }>;
+                };
+              };
+            };
+          };
+        };
+      }
+    >;
+  };
+  const value =
+    document.paths?.[CALENDAR_PATHS[market]]?.get?.responses?.["200"]
+      ?.content?.["application/json"]?.examples?.[
+      exampleSelection.exampleName
+    ]?.value;
+  if (value === undefined) {
+    throw new Error("pinned calendar compatibility example is missing");
+  }
+  return {
+    requestedDate: exampleSelection.requestedDate,
+    rawResponseBytes: Buffer.from(JSON.stringify(value), "utf8")
+  };
 }
 
 function parseJsonBytes(value: Uint8Array): unknown {

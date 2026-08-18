@@ -106,6 +106,38 @@ test("acquires a pinned calendar response into an opaque one-shot observation", 
   );
 });
 
+test("uses a pinned example only for registry selection and accepts separate strict network bytes", async () => {
+  const token = tokenIssuer();
+  await withCalendarServer(
+    (request, response) => {
+      assertCalendarRequest(request, "2026-04-01");
+      sendResponse(
+        response,
+        unpinnedStrictKrResponseBytes(),
+        "Wed, 01 Apr 2026 01:00:00 GMT"
+      );
+    },
+    async (port) => {
+      const coordinator = createCoordinator(port, token.issuer, {
+        completedAt: "2026-04-01T01:00:10.000Z"
+      });
+      const observation = await coordinator.acquireCalendarObservation({
+        market: "KR",
+        date: "2026-04-01"
+      });
+
+      assert.equal(
+        consumeOfficialBrokerObservedCalendarEphemeralReplayInput(
+          observation,
+          { asOf: "2026-04-01T01:00:10.000Z" }
+        ),
+        undefined
+      );
+      assert.equal(token.issueCount, 1);
+    }
+  );
+});
+
 test("rejects caller metadata injection before token issue or calendar request", async () => {
   let requestCount = 0;
   const token = tokenIssuer();
@@ -131,7 +163,7 @@ test("rejects caller metadata injection before token issue or calendar request",
   );
 });
 
-test("fails closed when a network response is outside the pinned compatibility scope", async () => {
+test("fails closed when actual network bytes violate the strict response contract", async () => {
   const token = tokenIssuer();
   await withCalendarServer(
     (_request, response) => {
@@ -148,7 +180,7 @@ test("fails closed when a network response is outside the pinned compatibility s
             market: "KR",
             date: "2026-03-25"
           }),
-        "TOSS_OPEN_API_CALENDAR_ACQUISITION_COMPATIBILITY_REJECTED"
+        "TOSS_OPEN_API_CALENDAR_ACQUISITION_EVIDENCE_REJECTED"
       );
     }
   );
@@ -193,7 +225,11 @@ function readyConfig() {
   });
 }
 
-function createCoordinator(port: number, issuer: TossOpenApiTokenIssuer) {
+function createCoordinator(
+  port: number,
+  issuer: TossOpenApiTokenIssuer,
+  options: { completedAt?: string } = {}
+) {
   return createTestOnlyTossOpenApiCalendarAcquisitionCoordinator(
     readyConfig(),
     {
@@ -211,7 +247,8 @@ function createCoordinator(port: number, issuer: TossOpenApiTokenIssuer) {
           1_000_000n,
           1_250_000n
         ),
-        nowUtc: () => new Date("2026-03-25T01:00:10.000Z")
+        nowUtc: () =>
+          new Date(options.completedAt ?? "2026-03-25T01:00:10.000Z")
       }
     }
   );
@@ -261,11 +298,14 @@ async function withCalendarServer<T>(
   }
 }
 
-function assertCalendarRequest(request: IncomingMessage): void {
+function assertCalendarRequest(
+  request: IncomingMessage,
+  date = "2026-03-25"
+): void {
   assert.equal(request.method, "GET");
   assert.equal(
     request.url,
-    "/api/v1/market-calendar/KR?date=2026-03-25"
+    `/api/v1/market-calendar/KR?date=${date}`
   );
   assert.equal(request.headers.host, "openapi.tossinvest.com");
   assert.equal(
@@ -276,11 +316,15 @@ function assertCalendarRequest(request: IncomingMessage): void {
   assert.equal(request.headers["x-tossinvest-account"], undefined);
 }
 
-function sendResponse(response: ServerResponse, body: Buffer): void {
+function sendResponse(
+  response: ServerResponse,
+  body: Buffer,
+  dateHeader = "Wed, 25 Mar 2026 01:00:00 GMT"
+): void {
   response.writeHead(200, {
     "Content-Type": "application/json",
     "Cache-Control": "public, max-age=60",
-    Date: "Wed, 25 Mar 2026 01:00:00 GMT",
+    Date: dateHeader,
     Age: "5"
   });
   response.end(body);
@@ -292,6 +336,17 @@ function pinnedKrResponseBytes(): Buffer {
   ]!.get.responses["200"].content["application/json"].examples.businessDay!
     .value;
   return Buffer.from(JSON.stringify(value), "utf8");
+}
+
+function unpinnedStrictKrResponseBytes(): Buffer {
+  return Buffer.from(
+    pinnedKrResponseBytes()
+      .toString("utf8")
+      .replaceAll("2026-03-24", "2026-03-31")
+      .replaceAll("2026-03-25", "2026-04-01")
+      .replaceAll("2026-03-26", "2026-04-02"),
+    "utf8"
+  );
 }
 
 function sequenceClock(...values: bigint[]): () => bigint {
