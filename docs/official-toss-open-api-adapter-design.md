@@ -478,7 +478,7 @@ live order 또는 broker mutation을 승인하지 않는다.
 | `TossOpenApiAccountReader` | accounts, holdings read-only snapshot 조회와 masking | order mutation, portfolio mutation |
 | `TossOpenApiOrderInfoReader` | buying power, sellable quantity, commissions 조회 | 주문 생성 판단 |
 | `TossOpenApiOrderGateway` | create/modify/cancel order HTTP call | Risk Engine 우회, Codex/MCP 직접 호출 |
-| `OrderRouter` | approved `OrderIntent`만 gateway로 전달, idempotency, retry, execution tracking | natural language order 수신 |
+| `OrderRouter` | current risk-approved `OrderIntent`와 exact-bound runtime owner approval만 gateway로 전달, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
 
 ## Runtime data flow
 
@@ -506,6 +506,7 @@ sequenceDiagram
 sequenceDiagram
     participant Strategy as StrategyEngine
     participant Risk as RiskEngine
+    participant Owner as Runtime Owner Approval
     participant Router as OrderRouter
     participant Gateway as TossOpenApiOrderGateway
     participant API as Toss Open API
@@ -513,7 +514,8 @@ sequenceDiagram
 
     Strategy->>Risk: TradingSignal
     Risk-->>Router: approved OrderIntent
-    Router->>Router: local idempotency and duplicate check
+    Owner->>Router: exact-bound typed approval
+    Router->>Router: clock, fencing, permanent idempotency check
     Router->>Gateway: create/modify/cancel request
     Gateway->>API: POST order endpoint
     API-->>Gateway: order response or error envelope
@@ -589,7 +591,13 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 로컬 정책은 다음을 기본으로 한다.
 
 - `OrderIntent`에는 backend-generated `intentId`와 deterministic order hash를 둔다.
-- `OrderRouter`는 같은 `intentId` 또는 같은 order hash가 열린 상태이면 중복 전송하지 않는다.
+- 최초 reservation은 `intentId`와 order hash의 permanent tombstone을 write-ahead로 만들며,
+  rejected, stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는
+  재사용하지 않는다.
+- `OrderRouter`는 같은 `intentId` 또는 같은 order hash의 tombstone이 과거에 하나라도
+  있으면 현재 상태나 새 approval 여부와 관계없이 중복 전송하지 않는다.
+- 이후 create/modify/cancel operation은 새 backend-generated identity/hash를 사용하고
+  기존 approval/idempotency record를 승계하지 않는다.
 - mutation 요청이 timeout된 경우에는 즉시 재전송하지 않고 order history/detail 조회로 상태를 먼저 확인한다.
 - 공식 API가 idempotency key를 지원하면 local `intentId`와 매핑한다.
 - 공식 API가 idempotency key를 지원하지 않으면 retry policy를 더 보수적으로 제한한다.
@@ -713,7 +721,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - read-only market/account adapter는 mutation endpoint를 호출하지 않는다.
 - order gateway는 `TRADING_ENABLED=false` 또는 `ORDER_MUTATIONS_ENABLED=false`에서 실행되지 않는다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
-- duplicate order intent는 전송되지 않는다.
+- attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 

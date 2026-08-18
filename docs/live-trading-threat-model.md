@@ -35,7 +35,7 @@ breach로 처리한다.
 | `RiskDecision`과 risk snapshot | current intent, current snapshot, checked rules와 freshness를 재검증 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
 | Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
-| Kill switch와 mutation flags | fail-closed default, dispatch와 공유하는 fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
+| Kill switch와 mutation flags | fail-closed default, dispatch와 공유하는 durable monotonic fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
 | Order/execution audit | tamper-evident ordering과 masked metadata 보존 |
 
 ## Trust Boundary
@@ -76,7 +76,7 @@ Trust boundary 원칙:
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
-| LT-11 | Kill switch 변경과 in-flight send race | stop 이후 신규 주문 | dispatch와 activation의 shared lock/fencing epoch, activation이 이기면 reserved-unsent 차단, dispatch가 이기면 in-flight audit/reconciliation |
+| LT-11 | Kill switch 변경·재시작과 in-flight send race | stop 이후 신규 주문 | dispatch와 activation의 shared lock, durable monotonic fencing epoch, activation이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
@@ -187,9 +187,15 @@ reconciliation_pending
   identity가 부족하면 owner-visible blocked state로 남긴다.
 - `broker_accepted`는 terminal 상태가 아니다. Accepted/open order와 partial fill은
   in-flight set에서 제거하지 않고 이후 fill, cancel 또는 expiry를 계속 추적한다.
-- `terminal_reconciled`는 broker order가 `broker_rejected`, `filled`, `canceled` 또는
-  `expired`로 terminal이고, 체결로 생긴 position/cash state까지 read-only broker
-  evidence와 local ledger가 일치할 때만 허용한다.
+- Broker request가 dispatch된 record의 `terminal_reconciled`는 order가
+  `broker_rejected`, `filled`, `canceled` 또는 `expired`로 terminal이고, 체결로 생긴
+  position/cash state까지 read-only broker evidence와 local ledger가 일치할 때만
+  허용한다.
+- `stopped_before_dispatch`는 같은 dispatch/activation lock 안에서 activation이 첫 network
+  byte보다 먼저 이겼다는 durable fencing record, matching epoch, no-dispatch state,
+  permanent tombstone과 complete audit chain이 모두 commit된 경우에만 no-external-mutation
+  evidence로 `terminal_reconciled`를 허용한다. 하나라도 없거나 불일치하면 terminal로
+  만들지 않고 owner-visible blocked reconciliation에 남긴다.
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
 - Dispatch arbiter는 kill-switch activation과 broker socket write를 같은 linearizable
@@ -201,8 +207,14 @@ reconciliation_pending
   in-flight로 audit하고 activation 뒤에도 terminal reconciliation까지 추적한다.
 - Kill switch가 active이면 `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두
   차단한다.
-- Process restart는 durable reservation/reconciliation state와 authoritative-clock
-  high-water mark를 모두 검증하기 전에는 send를 재개하지 않는다.
+- Kill-switch active state와 global fencing epoch advance는 activation 완료를 응답하기
+  전에 write-ahead durable commit한다. Epoch는 감소, reset 또는 재사용하지 않으며 commit
+  실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
+- Process restart는 durable reservation/reconciliation state, authoritative-clock
+  high-water mark, kill-switch active state와 global fencing epoch를 모두 복구하고 arbiter와
+  gateway가 같은 값에 합의하기 전에는 send를 재개하지 않는다. Startup default는
+  kill-active이며, explicit owner restart decision은 기존 permit을 재사용하지 않고 더 큰 새
+  epoch에서만 mutation을 다시 허용할 수 있다.
 
 ## Idempotency와 Retry
 
