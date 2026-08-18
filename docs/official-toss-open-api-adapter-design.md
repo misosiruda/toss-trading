@@ -325,9 +325,9 @@ handoff하지 않는다.
   내부 copy로 격리한 뒤 caller view를 즉시 zeroize하고, handle은 evidence/raw bytes를 직접 노출하지
   않는다. Factory provenance, 1회 소비와 consume 시 exact-byte 재검증을 강제하고
   success/error/stale/serialization 뒤 internal bytes를 zeroize한다. Replay input과 coverage report는
-  trusted process-local consumer capability만 만들 수 있으며 deep revocable read-only membrane으로
-  전달돼 chain 종료 뒤 retained top-level/nested reference도 읽거나 직렬화할 수 없다. Handle,
-  consumer와 derived output의 JSON export 및 callback return value는 fail-closed 처리한다.
+  module-owned fixed non-exporting operation 안에서만 만들고 caller callback 또는 return value로
+  제공하지 않는다. Handle JSON export와 재사용은 fail-closed 처리하며 public consumer registration
+  surface를 두지 않는다.
   Durable content-addressed raw-byte store를
   도입하려면 response bytes의 confidentiality classification, hash-to-evidence atomic binding,
   file permission, retention/deletion, tamper detection과 restart readback을 정의한 별도 threat
@@ -721,7 +721,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 10 | Token issuer network transport | 구현됨: exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | 구현됨: KR/US allowlist, required canonical date binding, Bearer generation lease, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 1MiB limit test | content decoding, query 생략, partial response, account/order/general market endpoint, external credential call |
 | 11a | Version-aware replay consumer migration | 구현됨: replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증, version별 freshness와 v1 regression test | network, evidence 재작성, completeness claim |
-| 11b | Ephemeral acquisition lifecycle boundary | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, trusted replay/coverage consumer capability, revocable derived output, 1회 소비와 unconditional zeroization test | durable raw-byte store, workflow artifact persistence, replay 실행 |
+| 11b | Ephemeral acquisition lifecycle boundary | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation, 1회 소비와 unconditional zeroization test | durable raw-byte store, workflow artifact persistence, replay 실행 |
 | 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |

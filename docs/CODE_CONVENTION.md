@@ -234,7 +234,7 @@ const options = {
 
 - real-time trading loop 대체
 - replay 결과를 live signal/order로 연결
-- ephemeral calendar handle/scope와 derived output을 file, DB, workflow artifact, audit, CLI, MCP 또는 API response로 persist/export
+- ephemeral calendar handle과 fixed operation의 derived output을 file, DB, workflow artifact, audit, CLI, MCP 또는 API response로 persist/export
 - simulated time 이후 데이터를 packet에 포함
 
 `officialBrokerObservedCalendarEphemeralObservation.ts`는 verified factory가 만든 opaque handle만
@@ -242,11 +242,9 @@ const options = {
 제한한다. Factory는 bytes를 내부 copy로 격리한 뒤 transferred caller view를 즉시 zeroize하고
 handle에서 evidence/raw bytes를 직접 노출하지 않아야 한다. Consume 시 exact bytes와 freshness를
 다시 검증하고 성공/실패와 관계없이 internal bytes를 zeroize해야 한다. Replay input과 coverage
-report는 trusted process-local consumer capability만 만들며 deep revocable read-only membrane으로
-전달해 callback 종료 뒤 retained top-level/nested reference도 사용할 수 없어야 한다.
-Handle/consumer/derived output JSON export, handle 재사용, consumer identity 위조와 callback return
-value는 fail-closed로 거부한다. Durable raw-byte 저장 또는 replay 실행 책임을 이 module에
-추가해서는 안 된다.
+report는 module-owned fixed non-exporting operation 안에서만 만들고 caller callback 또는 return
+value로 제공하지 않아야 한다. Handle JSON export와 재사용은 fail-closed로 거부한다. Durable
+raw-byte 저장 또는 replay 실행 책임을 이 module에 추가해서는 안 된다.
 
 ### `src/workflows`
 

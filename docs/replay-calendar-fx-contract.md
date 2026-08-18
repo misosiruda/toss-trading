@@ -202,13 +202,12 @@ dispatch와 raw-byte 검증을 반복하며, unknown schema, raw-byte 누락/불
 그대로 보존한다. `officialBrokerObservedCalendarEphemeralObservation.ts`는 v2 evidence와
 exact bytes를 WeakMap-backed opaque handle로 결합하고 verified factory가 만든 handle만 1회
 소비하게 한다. Factory는 transferred caller byte view를 내부 copy와 분리하고 caller view를 즉시
-zeroize한다. Handle은 evidence/raw bytes를 노출하지 않으며 trusted process-local replay input 또는
-coverage report consumer capability만 내부 bytes를 사용할 수 있다. Consume 시점의 `asOf`와 exact
-bytes로 evidence를 다시 검증하고 callback 종료, verifier/consumer 오류, stale, 명시적 disposal 또는
-JSON export 시도 뒤 internal bytes를 zeroize한다. Derived replay input/report object graph는 deep
-revocable read-only membrane이므로 consumer callback에서 얻은 top-level/nested reference도 종료 뒤
-읽기와 serialization이 불가능하다. Handle 재사용, consumer identity 위조와
-handle/consumer/derived output 직렬화를 거부하며 derived callback은 어떤 output도 반환할 수 없다.
+zeroize한다. Handle은 evidence/raw bytes를 노출하지 않으며 module-owned fixed replay input 또는
+coverage report operation만 internal bytes를 사용할 수 있다. Consume 시점의 `asOf`와 exact bytes로
+evidence를 다시 검증하고 operation 종료, verifier/builder 오류, stale, 명시적 disposal 또는 JSON
+export 시도 뒤 internal bytes를 zeroize한다. Fixed operation은 derived replay input/report를 내부에서만
+만들고 caller callback 또는 return value로 제공하지 않는다. Handle 재사용과 직렬화를 거부하며
+public consumer registration surface를 두지 않는다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,
@@ -321,11 +320,11 @@ completion 시각만으로 freshness를 연장할 수 없다.
 
 Durable raw-byte threat model과 저장 계약이 merge되기 전에는 actual network-derived v2
 observation과 그 replay input/coverage report를 process 밖으로 persist/export하지 않는다.
-Coordinator는 ephemeral handle을 같은 process의 version-aware consumer에 직접 넘기고,
-consumer는 lifecycle scope 안에서 exact bytes로 evidence를 다시 검증한 뒤 성공/실패와
+Coordinator는 ephemeral handle을 같은 process의 fixed version-aware operation에 직접 넘기고,
+operation은 내부 exact bytes로 evidence를 다시 검증한 뒤 성공/실패와
 관계없이 chain 종료 시 bytes reference를 폐기한다. Detached v2 evidence, replay input 또는 report, process 재시작 뒤 남은
 artifact와 raw-byte 누락 입력은 unverifiable로 fail-closed 처리한다. JSON/file/DB/object store,
-workflow artifact writer, audit, CLI, MCP와 API response는 이 handle/scope 또는 derived output의
+workflow artifact writer, audit, CLI, MCP와 API response는 이 handle 또는 derived output의
 durable sink가 될 수 없다. 재사용하려면 acquisition을 다시 수행한다.
 
 현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1/v2로 dispatch해
