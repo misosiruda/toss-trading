@@ -328,6 +328,28 @@ flowchart TD
 - test-only connector가 loopback IP, synthetic CA와 deterministic clock에 한정되고 logical URL, Host, SNI와 hostname verification을 production identity로 유지
 - external credential call, durable raw-byte persistence, replay consumer migration, acquisition coordinator, account/order request와 broker mutation을 추가하지 않음
 
+### Official Toss Open API Calendar ephemeral lifecycle 변경
+
+수정 후보:
+
+- `src/replay/officialBrokerObservedCalendarEphemeralObservation.ts`
+- `src/replay/officialBrokerObservedCalendarEphemeralObservation.test.ts`
+- `src/replay/officialBrokerObservedCalendarEvidenceV2.ts`
+- `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`
+- `src/replay/officialBrokerObservedCalendarCoverageProbe.ts`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+- `docs/replay-calendar-fx-contract.md`
+
+필수 확인:
+
+- actual network-derived v2 evidence와 exact bytes의 ownership을 verified process-local opaque handle에 함께 이전함
+- factory가 v2 schema, response hash/byte length, normalized response와 acquisition freshness를 검증하고 invalid input도 bytes를 zeroize함
+- handle을 한 번만 소비하고 consumer가 current `asOf`와 같은 exact bytes로 evidence를 다시 검증함
+- success, verifier/consumer failure, stale/tamper, explicit disposal과 JSON export 시도 뒤 owned bytes를 zeroize함
+- callback scope는 chain 밖에서 재사용할 수 없고 detached evidence, replay input, coverage report 또는 다른 output을 반환하지 않음
+- durable raw-byte store, workflow artifact writer, CLI/MCP/API export, replay 실행과 acquisition coordinator를 추가하지 않음
+
 ### Official Toss Open API read-only HTTP client 변경
 
 수정 후보:

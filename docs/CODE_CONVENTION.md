@@ -228,12 +228,20 @@ const options = {
 - replay sampling
 - lookahead guard
 - historical replay runner
+- network-derived calendar v2 evidence/raw-byte process-local lifecycle
 
 금지:
 
 - real-time trading loop 대체
 - replay 결과를 live signal/order로 연결
+- ephemeral calendar handle/scope와 derived output을 file, DB, workflow artifact, audit, CLI, MCP 또는 API response로 persist/export
 - simulated time 이후 데이터를 packet에 포함
+
+`officialBrokerObservedCalendarEphemeralObservation.ts`는 verified factory가 만든 opaque handle만
+받고 v2 evidence와 exact raw response bytes의 ownership을 한 번의 synchronous consumer chain에
+제한한다. Consume 시 exact bytes와 freshness를 다시 검증하고 성공/실패와 관계없이 bytes를
+zeroize해야 한다. Handle/scope JSON export, scope 재사용과 callback return value는 fail-closed로
+거부한다. Durable raw-byte 저장 또는 replay 실행 책임을 이 module에 추가해서는 안 된다.
 
 ### `src/workflows`
 
