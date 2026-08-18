@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createOfficialBrokerObservedCalendarEvidence } from "./officialBrokerObservedCalendarEvidence.js";
+import { createOfficialBrokerObservedCalendarEvidenceV2 } from "./officialBrokerObservedCalendarEvidenceV2.js";
+import { verifyOfficialTossOpenApiCalendarCompatibility } from "./officialBrokerObservedCalendarOpenApiCompatibility.js";
 import {
   OFFICIAL_BROKER_OBSERVED_CALENDAR_COVERAGE_PROBE_PLAN_SCHEMA_VERSION,
   OFFICIAL_BROKER_OBSERVED_CALENDAR_COVERAGE_PROBE_POLICY,
@@ -116,6 +119,25 @@ test("reports verified planned-date coverage without historical completeness cla
       }, { observations }),
     /artifact hashes must be unique/
   );
+});
+
+test("accepts v2 observations without persisting raw response bytes", () => {
+  const plan = planFor("2026-03-25", "2026-03-25");
+  const rawResponseBytes = krResponseBytes("2026-03-25");
+  const report = buildOfficialBrokerObservedCalendarCoverageProbeReport({
+    plan,
+    evaluatedAt: "2026-03-25T01:00:30.000Z",
+    observations: [{
+      status: "verified",
+      requestedDate: "2026-03-25",
+      evidence: v2EvidenceFor(rawResponseBytes),
+      rawResponseBytes
+    }]
+  });
+
+  assert.equal(report.status, "verified");
+  assert.equal(report.results[0]?.status, "verified");
+  assert.doesNotMatch(JSON.stringify(report), /rawResponseBytes|apiContractVersion/);
 });
 
 test("reports rejected and missing dates as ambiguous and ineligible", () => {
@@ -478,6 +500,38 @@ function verifiedObservation(requestedDate: string) {
     evidence: evidenceFor(requestedDate, rawResponseBytes),
     rawResponseBytes
   };
+}
+
+function v2EvidenceFor(rawResponseBytes: Uint8Array) {
+  const pinnedOpenApiBytes = Buffer.from(
+    readFileSync("src/replay/officialTossCalendarOpenApi-1.2.14.json", "utf8").replaceAll("\r\n", "\n"),
+    "utf8"
+  );
+  const document = JSON.parse(pinnedOpenApiBytes.toString("utf8")) as {
+    paths: Record<string, { get: { responses: { "200": { content: { "application/json": { examples: Record<string, { value: unknown }> } } } } } }>;
+  };
+  const pinnedExampleBytes = Buffer.from(
+    JSON.stringify(document.paths["/api/v1/market-calendar/KR"]!.get.responses["200"].content["application/json"].examples.businessDay!.value),
+    "utf8"
+  );
+  return createOfficialBrokerObservedCalendarEvidenceV2({
+    compatibilityResult: verifyOfficialTossOpenApiCalendarCompatibility({
+      market: "KR",
+      requestedDate: "2026-03-25",
+      rawOpenApiDocumentBytes: pinnedOpenApiBytes,
+      rawResponseBytes: pinnedExampleBytes
+    }),
+    requestedDate: "2026-03-25",
+    completedAt: "2026-03-25T01:00:10.000Z",
+    responseDelayMilliseconds: 250,
+    responseCacheHeaders: {
+      dateHeaderValues: ["Wed, 25 Mar 2026 01:00:00 GMT"],
+      ageHeaderValues: ["5"],
+      expiresHeaderValues: []
+    },
+    responseCacheControl: { cacheControlHeaderValues: ["public, max-age=60"] },
+    rawResponseBytes
+  });
 }
 
 function evidenceFor(requestedDate: string, rawResponseBytes: Uint8Array) {

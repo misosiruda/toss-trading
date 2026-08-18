@@ -189,16 +189,16 @@ document hash/operation/parser mismatch와 provider deployment version claim을 
 거부한다. 기존 v1 artifact를 rewrite하거나 metadata 상수만 `1.2.14`로 바꾸고 historical
 completeness를 추정해 version drift를 우회할 수 없다.
 
-V2 evidence transition은 replay consumer migration을 포함한 선행 chain으로 취급한다.
-현재 `officialBrokerObservedCalendarReplayAdapter.ts`의 embedded evidence schema와 verifier,
-`officialBrokerObservedCalendarCoverageProbe.ts`의 verified evidence collection은 v1 contract에
-고정돼 있다. 별도 Small PR에서 두 consumer가 shared schema-version dispatcher를 사용하고
-v1/v2 각각의 exact raw response bytes와 `asOf`를 version별 verifier에 다시 전달해야 한다.
-Replay input과 coverage report를 다시 읽을 때도 같은 dispatch와 raw-byte 검증을 반복하며,
-unknown schema, raw-byte 누락/불일치, registry mismatch 또는 version별 normalized response
-mismatch는 `observed_session_only` input과 coverage result를 만들기 전에 거부한다. Existing
-v1 artifact/replay input/coverage report regression을 보존하고 이 migration이 merge되기
-전에는 coordinator가 v2 evidence를 consumer에 전달하지 않는다.
+V2 evidence transition과 version-aware replay consumer migration은 구현됐다.
+`officialBrokerObservedCalendarReplayAdapter.ts`의 embedded evidence schema와 verifier,
+`officialBrokerObservedCalendarCoverageProbe.ts`의 verified evidence collection은 shared
+schema-version dispatcher로 v1/v2를 구분하고 각각의 exact raw response bytes와 `asOf`를
+version별 verifier에 다시 전달한다. Replay input과 coverage report를 다시 읽을 때도 같은
+dispatch와 raw-byte 검증을 반복하며, unknown schema, raw-byte 누락/불일치, registry mismatch
+또는 version별 normalized response mismatch는 `observed_session_only` input과 coverage result를
+만들기 전에 거부한다. Existing v1 artifact/replay input/coverage report identity와 regression은
+그대로 보존한다. 다음 단계인 ephemeral lifecycle boundary가 merge되기 전에는 coordinator가
+network-derived v2 evidence를 consumer에 전달하지 않는다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,
@@ -318,8 +318,8 @@ artifact와 raw-byte 누락 입력은 unverifiable로 fail-closed 처리한다. 
 workflow artifact writer, audit, CLI, MCP와 API response는 이 envelope 또는 derived output의
 durable sink가 될 수 없다. 재사용하려면 acquisition을 다시 수행한다.
 
-현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1 검증된 evidence와 exact
-raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
+현재 `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`는 v1/v2로 dispatch해
+검증된 evidence와 exact raw response bytes를 `asOf` 시점에 다시 확인한 뒤 기존 paper-only
 `calendarValidation` 입력으로 변환한다. Market별 rule은 KR/`KRX`/`Asia/Seoul` 또는
 US/`NYSE`/`America/New_York` 하나이고 fixture는 response가 반환한 세 date에만
 생성한다. Open day는 regular session이 정확히 하나일 때만 기존 단일-session
@@ -333,9 +333,9 @@ holiday/archive completeness claim이 아니다. Adapter output은 계속
 `src/replay/officialBrokerObservedCalendarCoverageProbe.ts`는 credential 없이 생성할
 수 있는 `every_calendar_date.v1` plan과 evidence 기반 report를 제공한다. Plan은 최대
 10,000일 범위의 모든 calendar date를 빠짐없이 canonical order로 요청하도록
-고정한다. Report builder는 각 verified observation의 evidence, exact raw bytes와
-고정 86,400초 freshness를 다시 검증하고 replay adapter의 regular-session/timezone 경계까지
-통과시킨다. 변환 불가능한 evidence, rejected observation과 관찰되지 않은 plan
+고정한다. Report builder는 각 verified observation의 schema version, exact raw bytes와
+version별 freshness를 다시 검증하고 공통 최대 86,400초 경계를 넘지 않게 제한한 뒤
+replay adapter의 regular-session/timezone 경계까지 통과시킨다. 변환 불가능한 evidence, rejected observation과 관찰되지 않은 plan
 date를 별도로 기록한다. 서로 다른 evidence가 겹쳐 반환한 같은 market date의 status/session이
 다르면 returned-date conflict로 판정한다. 모든 plan date가 verified이고 conflict가
 0일 때만 `coverageStatus="verified"`와 observed replay `eligible`을 기록한다. 이는
