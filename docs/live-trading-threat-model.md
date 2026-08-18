@@ -163,22 +163,26 @@ reconciliation에 남기며, broker-open order 취소가 필요하면 normal app
 
 Snapshot/version/capacity/market-session/policy가 달라졌거나 evidence가 stale/unavailable이면
 old approval을 dispatch에 사용하지 않는다. Existing reservation을 durable no-dispatch
-reconciliation로 닫고 capacity를 atomic handoff/release한 뒤 새 backend-generated intent
-identity/hash, final risk/capacity reservation, preview, `riskBindingHash`와 fresh owner
-approval을 요구한다. 더 보수적인 새 decision이라도 identity가 달라졌다면 old approval을
-재사용하지 않는다.
+reconciliation로 닫되 아래 cause-specific `noDispatchFence`를 같은 transaction에 commit한
+뒤에만 capacity를 atomic handoff/release한다. 이후 새 backend-generated intent identity/hash,
+final risk/capacity reservation, preview, `riskBindingHash`와 fresh owner approval을 요구한다.
+더 보수적인 새 decision이라도 identity가 달라졌다면 old approval을 재사용하지 않는다.
 
 Gateway는 같은 dispatch/gate lock 안에서 permit identity, reservation, epoch/snapshot,
 `accountScopeRef`, approval expiry/state/current `revocationVersion`, `riskBindingHash`, evidence
 freshness/market-session validity와 current authoritative time을 재검증한다. Permit은 bounded
 immediate-dispatch deadline을 가지며 queue나 delay 뒤 재사용하지 않는다. First network byte
 전에 approval이 revoked됐거나 current binding/version이 달라지거나 deadline이 지났으면 old
-intent를 no-dispatch로 닫고 새 intent/final reservation/fresh approval을 요구하며, exact
-match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
+intent를 cause-specific `noDispatchFence`로 닫고 새 intent/final reservation/fresh approval을
+요구하며, exact match일 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
 masked `dispatch_attempted` audit event는 같은 write-ahead durable commit으로 first network
 byte 전에 완료하며, audit commit 실패 시 network write를 금지한다.
-Duplicate/expired/stale permit 또는 CAS 실패는
-`stopped_before_dispatch`/blocked reconciliation로 전이하고 network write를 금지한다.
+Duplicate/expired/stale permit은 arbiter가 그 permit이 unconsumed이고 `dispatch_attempted`가
+없음을 같은 lock에서 증명해 cause-specific fence를 commit한 경우에만
+`stopped_before_dispatch`로 전이한다. CAS loser는 실패 자체를 no-dispatch 증거로 사용하지
+않는다. Winner가 durable no-dispatch state인 것을 exact version으로 읽은 경우에만 그 state를
+따르고, winner가 permit을 consume했거나 outcome이 불명확하면 `acknowledgement_unknown`/
+blocked reconciliation로 전이한다.
 Permit consume 뒤 crash/unknown은 재발급·재사용하지 않고 acknowledgement reconciliation로
 보낸다.
 
@@ -270,9 +274,10 @@ final_risk_reserved
 
 approval_required
   -> send_reserved
+  -> stopped_before_dispatch(cause-specific noDispatchFence)
 
 send_reserved
-  -> stopped_before_dispatch
+  -> stopped_before_dispatch(cause-specific noDispatchFence)
   -> dispatch_permit_acquired
 
 dispatch_permit_acquired
@@ -283,8 +288,11 @@ dispatch_permit_acquired
 restart(send_reserved | dispatch_permit_acquired)
   -> acknowledgement_unknown
 
-mutation_gate_disable(send_reserved)
+no_dispatch_fence(approval_required | send_reserved)
   -> stopped_before_dispatch
+
+dispatch_cas_loser(consumed | outcome_unknown)
+  -> acknowledgement_unknown
 
 acknowledgement_unknown
   -> reconciliation_pending
@@ -330,12 +338,21 @@ reconciliation_pending
   `broker_rejected`, `filled`, `canceled` 또는 `expired`로 terminal이고, 체결로 생긴
   position/cash state까지 read-only broker evidence와 local ledger가 일치할 때만
   허용한다.
-- `stopped_before_dispatch`는 같은 dispatch/gate-transition lock 안에서 disable이 첫
-  network byte보다 먼저 이겼다는 durable fencing record, matching epoch/snapshot,
-  no-dispatch state,
-  permanent tombstone과 complete audit chain이 모두 commit된 경우에만 no-external-mutation
-  evidence로 `terminal_reconciled`를 허용한다. 하나라도 없거나 불일치하면 terminal로
-  만들지 않고 owner-visible blocked reconciliation에 남긴다.
+- `stopped_before_dispatch`는 같은 dispatch/gate-transition lock 안에서 first network byte와
+  `dispatch_attempted` commit이 모두 없음을 증명하고 cause-specific durable
+  `noDispatchFence`를 commit한 경우에만 허용한다. 공통 record에는 exact intent/reservation/
+  approval/permit state와 version, current epoch/snapshot, reason code, permanent tombstone과
+  complete audit chain이 포함돼야 한다. Cause별 추가 evidence는 다음과 같다.
+  - `gate_disabled`: disable transition이 dispatch보다 먼저 이긴 fencing epoch/snapshot
+  - `approval_revoked`: winning revocation CAS와 current `revocationVersion`, 파생 permit fence
+  - `binding_invalidated`: exact old/current binding mismatch와 old permit invalidation CAS
+  - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS
+  - `pre_permit_payload_changed`: 아직 permit이 생성되지 않은 approval-required state/version
+  CAS contention/duplicate observation만으로는 이 record를 만들 수 없다. 다른 worker가
+  permit을 consume했거나 first-byte 여부가 불명확하면 `acknowledgement_unknown`/blocked
+  reconciliation로 보낸다. Matching cause evidence가 완전한 record만
+  no-external-mutation evidence로 `terminal_reconciled`를 허용하며, 하나라도 누락되거나
+  불일치하면 terminal 처리하거나 capacity/target fence를 release하지 않는다.
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
 - Dispatch arbiter는 kill-switch activation, `TRADING_ENABLED=false`, mutation flag false와
@@ -574,6 +591,8 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
 - [ ] Concurrent worker 중 하나만 approval/state/dispatch permit CAS를 소비할 수 있음
 - [ ] Approval revoke와 dispatch가 직렬화되고 revoke가 이긴 reserved-unsent permit은 영구 fence됨
+- [ ] 모든 stopped-before-dispatch cause가 전용 durable no-dispatch evidence로 terminal 처리됨
+- [ ] Dispatch CAS loser가 다른 worker의 send 가능성을 no-dispatch로 오인하지 않음
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
 - [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
