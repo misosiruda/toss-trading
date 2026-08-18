@@ -478,7 +478,7 @@ live order 또는 broker mutation을 승인하지 않는다.
 | `TossOpenApiAccountReader` | accounts, holdings read-only snapshot 조회와 masking | order mutation, portfolio mutation |
 | `TossOpenApiOrderInfoReader` | buying power, sellable quantity, commissions 조회 | 주문 생성 판단 |
 | `TossOpenApiOrderGateway` | create/modify/cancel order HTTP call | Risk Engine 우회, Codex/MCP 직접 호출 |
-| `OrderRouter` | account-scoped operation-aware intent, target-version risk/capacity reservation, staged typed owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
+| `OrderRouter` | account-scoped operation-aware intent, target-version risk/capacity reservation, version-lineage target fence, staged typed owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
 
 ## Runtime data flow
 
@@ -608,11 +608,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   않으면 conservative union을 reserve한다. Cancel은 새 exposure/order slot을 추가하지 않는
   target-version-specific policy로 평가한다. Target version mismatch 또는 partial fill 변화는
   no-send와 fresh intent/approval을 요구한다.
-- Modify/cancel final transaction은 exact `(accountScopeRef, targetOrderRef, targetVersion)`의
-  exclusive durable mutation fence를 claim한다. Active fence가 있으면 다른 operation을
-  reserve/approve하지 않고, terminal/no-dispatch reconciliation 뒤에만 release한다. Modify
-  result가 ambiguous/rejected이면 old capacity와 fence를 유지하고, exact reconciled new target로
-  handoff된 뒤에만 obsolete capacity를 release한다.
+- Modify/cancel final transaction은 stable `(accountScopeRef, targetOrderRef)` key의 exclusive
+  durable mutation fence를 claim하고 exact claimed/current version과 monotonic generation을
+  내부 record에 둔다. Active fence는 target의 모든 version에서 다른 operation을
+  reserve/approve하지 않는다. Broker reconciliation이 v1에서 v2 같은 version change를 확인하면
+  capacity handoff, version lineage와 fence generation을 한 transaction에서 atomic migrate하되
+  fence ownership은 terminal/no-dispatch reconciliation까지 유지하고 v2를 새 mutation에
+  eligible하게 만들지 않는다. Modify result가 ambiguous/rejected이면 old capacity와 fence를
+  유지하고, exact reconciled new target로 handoff된 뒤에만 obsolete capacity를 release한다.
 - Kill-active cancel recovery는 verified owner approval과 exact current broker-open target이
   있을 때 active fence를 `recovery_cancel_takeover` generation으로 atomic CAS할 수 있다.
   Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
@@ -826,7 +829,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
-- modify는 old capacity를 reconciliation까지 보존하고 target-version fence가 concurrent modify/cancel을 차단한다.
+- modify는 old capacity를 reconciliation까지 보존하고 stable target fence가 version lineage 전체의 concurrent modify/cancel을 차단한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
