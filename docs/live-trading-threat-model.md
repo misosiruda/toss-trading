@@ -207,14 +207,19 @@ reconciliation_pending
   in-flight로 audit하고 activation 뒤에도 terminal reconciliation까지 추적한다.
 - Kill switch가 active이면 `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두
   차단한다.
-- Kill-switch active state와 global fencing epoch advance는 activation 완료를 응답하기
-  전에 write-ahead durable commit한다. Epoch는 감소, reset 또는 재사용하지 않으며 commit
-  실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
+- Kill-switch state와 global fencing epoch의 모든 transition은 activation/deactivation 완료를
+  응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는 재사용하지
+  않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
 - Process restart는 durable reservation/reconciliation state, authoritative-clock
   high-water mark, kill-switch active state와 global fencing epoch를 모두 복구하고 arbiter와
   gateway가 같은 값에 합의하기 전에는 send를 재개하지 않는다. Startup default는
-  kill-active이며, explicit owner restart decision은 기존 permit을 재사용하지 않고 더 큰 새
-  epoch에서만 mutation을 다시 허용할 수 있다.
+  kill-active다.
+- Explicit owner restart decision은 `kill-active E`에서 `inactive E+1`로의 transition과 새
+  instance generation을 먼저 durable commit해야 한다. 등록된 모든 mutation-capable
+  arbiter/gateway instance가 committed state, `E+1`과 generation을 다시 읽어
+  acknowledgement한 뒤에만 post-restart dispatch permit을 발급한다. Commit/acknowledgement
+  누락, instance set 불명확 또는 state/epoch/generation mismatch는 kill-active로 남기며,
+  surviving process가 가진 old/uncommitted permit은 gateway에서 영구 거부한다.
 
 ## Idempotency와 Retry
 
