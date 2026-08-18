@@ -245,6 +245,12 @@ Duplicate/expired/stale permit은 arbiter가 그 permit이 unconsumed이고 `dis
 않는다. Winner가 durable no-dispatch state인 것을 exact version으로 읽은 경우에만 그 state를
 따르고, winner가 permit을 consume했거나 outcome이 불명확하면 `acknowledgement_unknown`/
 blocked reconciliation로 전이한다.
+Restart recovery도 먼저 exclusive dispatch/gate recovery lock을 획득하고 fencing epoch를
+advance해 stale worker를 차단한다. Recovered durable high-water mark까지 externally checkpointed된
+complete audit chain과 exact `send_reserved` state/version에서 sole permit이 unconsumed이고
+`dispatch_attempted`가 없음을 함께 증명하면 atomic `restart_unconsumed_permit`
+noDispatchFence와 permanent tombstone으로 닫는다. Permit consume/attempt가 존재하거나 audit,
+lock ownership 또는 state가 불명확하면 이 cause를 금지하고 unknown reconciliation로 보낸다.
 Permit consume 뒤 crash/unknown은 재발급·재사용하지 않고 acknowledgement reconciliation로
 보낸다.
 
@@ -356,7 +362,13 @@ dispatch_permit_acquired
   -> acknowledgement_unknown
   -> broker_accepted
 
-restart(send_reserved | dispatch_permit_acquired)
+restart(send_reserved, sole permit unconsumed, no dispatch_attempted)
+  -> stopped_before_dispatch(restart_unconsumed_permit noDispatchFence)
+
+restart(send_reserved, consumed | attempted | ambiguous)
+  -> acknowledgement_unknown
+
+restart(dispatch_permit_acquired)
   -> acknowledgement_unknown
 
 no_dispatch_fence(approval_required | send_reserved)
@@ -439,13 +451,18 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   permit 생성을 current exactly-once snapshot의 same `riskBindingHash` 및 immutable
   `transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation 재검증과 한
   versioned CAS로 commit한 경우에만 허용한다.
-- `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
+- Permit consume 또는 dispatch attempt 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
   `reconciliation_pending`으로 이동하며
   `send_reserved`로 되돌려 재전송하지 않는다.
-- Process가 `send_reserved`를 복구하면 실제 network dispatch 여부를 알 수 없다고
-  가정한다. 해당 record를 자동 resend하지 않고 즉시 `acknowledgement_unknown`과
-  `reconciliation_pending`으로 전이해 read-only order history/detail을 조회하며,
-  identity가 부족하면 owner-visible blocked state로 남긴다.
+- Process가 `send_reserved`를 복구하면 exclusive recovery lock과 새 fencing epoch에서 exact
+  state/version, sole permit의 unconsumed 상태, `dispatch_attempted` 부재와 recovered durable
+  high-water mark까지 externally checkpointed된 complete audit chain을 한 CAS로 검증한다. 모두
+  일치하면 first-byte invariant상
+  전송이 불가능했던 `restart_unconsumed_permit` noDispatchFence와 permanent tombstone을 commit한
+  뒤 own capacity reservation/target fence를 release할 수 있다. Permit이 consumed이거나
+  `dispatch_attempted`가 존재하거나 어느 evidence든 불명확하면 자동 resend하지 않고 즉시
+  `acknowledgement_unknown`/`reconciliation_pending`으로 전이해 read-only order history/detail을
+  조회하며, identity가 부족하면 owner-visible blocked state로 남긴다.
 - `broker_accepted`는 terminal 상태가 아니다. Accepted/open order와 partial fill은
   in-flight set에서 제거하지 않고 이후 fill, cancel 또는 expiry를 계속 추적한다.
 - Broker request가 dispatch된 record의 `terminal_reconciled`는 order가
@@ -466,6 +483,9 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
     permit/`dispatch_attempted` 부재와 exact `approval_required` state/version CAS
   - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS.
     Permit deadline이 approval expiry보다 늦을 수 없으므로 post-permit approval expiry도 이 cause로 닫음
+  - `restart_unconsumed_permit`: exclusive startup recovery lock과 advanced fencing epoch, exact
+    `send_reserved` state/version, sole unconsumed permit, recovered durable high-water mark까지
+    externally checkpointed된 complete audit chain의 `dispatch_attempted` 부재를 한 CAS로 commit
   - `transport_request_mismatch`: approved/permit hash, exact recomputed outbound hash,
     `send_reserved` state/version, unconsumed permit과 `dispatch_attempted` 부재 CAS
   - `target_route_mismatch`: opaque target ref/template, permit의 MAC/key generation, exact
@@ -731,9 +751,11 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 남기지 않는다.
 
 `dispatch_attempted` event는 permit consume/state transition과 같은 durable commit에 포함하고
-first network byte보다 먼저 완료한다. Commit 실패 시 send하지 않는다. Recovery에서 이
-event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측하지 않고
-`acknowledgement_unknown`으로 처리해 read-only reconciliation한다.
+first network byte보다 먼저 완료한다. Commit 실패 시 send하지 않는다. Recovery에서 verified
+complete audit chain에 이 event가 있고 broker result event가 없으면 실제 byte 전송 여부를
+추측하지 않고 `acknowledgement_unknown`으로 처리해 read-only reconciliation한다. 반대로
+exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, 이 event 부재가 모두
+증명된 경우에만 위 `restart_unconsumed_permit` noDispatchFence로 닫는다.
 
 ## Incident Stop과 Rollback
 
@@ -799,6 +821,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Pre-permit approval expiry가 authoritative clock과 unconsumed approval/state CAS로 종료됨
 - [ ] Approval 미발급 요청이 decline/timeout/channel failure별 request-generation tombstone으로 종료됨
 - [ ] Dispatch CAS loser가 다른 worker의 send 가능성을 no-dispatch로 오인하지 않음
+- [ ] Restart된 send_reserved의 sole permit이 unconsumed이고 dispatch_attempted가 없으면 전용 no-dispatch CAS로 종료됨
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함

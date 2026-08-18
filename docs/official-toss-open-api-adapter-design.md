@@ -720,6 +720,15 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
   reconciliation한다.
+- Startup recovery arbiter는 먼저 exclusive dispatch/gate recovery lock을 획득하고 fencing epoch를
+  advance해 stale worker를 차단한다. Recovered durable high-water mark까지 externally checkpointed된
+  complete audit chain과 exact `send_reserved` state/version에서 sole permit이 unconsumed이고
+  `dispatch_attempted`가 없으면,
+  first-byte invariant상 전송되지 않은 `restart_unconsumed_permit` noDispatchFence와 permanent
+  tombstone을 한 CAS로 commit한 뒤 own capacity reservation/target fence를 release할 수 있다.
+  Permit consume/attempt가 존재하거나 audit, lock ownership 또는 state가 불명확하면 이 cause를
+  금지하고 `acknowledgement_unknown`/blocked reconciliation로 보낸다. 어떤 경우에도 recovered
+  permit을 resend하지 않는다.
 - `stopped_before_dispatch`는 arbiter가 first network byte와 `dispatch_attempted`가 없음을
   같은 lock에서 증명하고 cause-specific durable `noDispatchFence`를 commit한 경우에만
   terminal candidate가 된다. Record는 exact intent/reservation/approval/permit version,
@@ -727,7 +736,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   CAS/version, post-permit binding invalidation CAS, pre-permit binding mismatch와 no-permit CAS,
   authoritative permit expiry/staleness, authoritative approval expiry와 active/unconsumed
   approval-required state CAS, exact outbound transport-hash/target-route-MAC/account-header-MAC
-  mismatch CAS,
+  mismatch CAS, exclusive startup recovery lock/advanced epoch에서 exact `send_reserved`와 sole
+  unconsumed permit/complete audit chain의 attempt 부재를 묶은 restart CAS,
   same-lineage recovery-target mismatch와 old unconsumed permit CAS, approval-not-issued request
   closure 또는 exact old/new binding mismatch와 request/approval/no-permit을 묶은 pre-permit
   payload-change CAS 중 해당 cause evidence를 포함한다.
@@ -800,7 +810,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 문서, fixture, PR body에는 real account data, token, order id, execution data를 넣지 않는다.
 Mutation dispatch는 permit consume과 masked `dispatch_attempted`를 first byte 전에 한 durable
 commit으로 기록하고, 이후 acknowledgement/rejection/unknown을 append한다. Pre-dispatch audit
-commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliation로 처리한다.
+commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliation로 처리한다. Restart가
+exact `send_reserved`, sole unconsumed permit과 complete audit chain의 attempt 부재를 exclusive
+recovery lock에서 증명한 경우만 `restart_unconsumed_permit` no-dispatch로 닫는다.
 
 Audit event는 canonical masked serialization, immutable stream id, monotonic sequence,
 `previousEventHash`와 domain-separated SHA-256 `eventHash`로 연결한다. Mutation runtime과
@@ -932,6 +944,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - pre-permit approval expiry는 authoritative clock과 active/unconsumed approval-required state CAS로 종료한다.
 - approval이 발급되지 않은 decline/timeout/channel-failure request는 exact generation tombstone CAS로 종료한다.
 - dispatch CAS loser는 concurrent winner의 send 가능성이 있으면 unknown reconciliation로 전이한다.
+- restart된 send_reserved의 sole permit이 unconsumed이고 dispatch_attempted가 없으면 전용 no-dispatch CAS로 종료한다.
 - recovery gate는 first-byte dispatch winner 또는 zeroByteAttemptFence 뒤에만 disable된다.
 - signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
