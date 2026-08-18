@@ -352,6 +352,33 @@ flowchart TD
 - handle 재사용과 직렬화를 거부하고 public consumer registration 또는 derived output export surface를 만들지 않음
 - durable raw-byte store, workflow artifact writer, CLI/MCP/API export, replay 실행과 acquisition coordinator를 추가하지 않음
 
+### Official Toss Open API Calendar acquisition coordinator 변경
+
+수정 후보:
+
+- `src/broker/tossOpenApiCalendarAcquisitionCoordinator.ts`
+- `src/broker/tossOpenApiCalendarAcquisitionCoordinator.test.ts`
+- `src/broker/tossOpenApiTokenIssuerNetworkTransport.ts`
+- `src/broker/tossOpenApiAuthClient.ts`
+- `src/broker/tossOpenApiCalendarNetworkTransport.ts`
+- `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`
+- `src/replay/officialBrokerObservedCalendarEvidenceV2.ts`
+- `src/replay/officialBrokerObservedCalendarEphemeralObservation.ts`
+- `docs/official-token-auth-design.md`
+- `docs/official-toss-open-api-adapter-design.md`
+- `docs/replay-calendar-fx-contract.md`
+
+필수 확인:
+
+- production factory가 token issuer, generation-aware auth client와 calendar transport를 내부에서 고정 조립하고 connector/client/clock override를 받지 않음
+- test-only factory도 arbitrary calendar client를 받지 않고 loopback connector와 injected token issuer만 사용함
+- public input은 exact `market`/`date`만 받고 retrieval/evaluation timestamp, cache metadata, URL, contract version, evidence 또는 raw bytes를 받지 않음
+- disabled/invalid config와 malformed input이 token issue, DNS 또는 socket 전에 fail-closed 처리됨
+- network observation의 request URL, market/date, parsed body, response hash/byte length, completedAt/delay와 corrected freshness를 evidence 생성 전에 다시 검증함
+- pinned OpenAPI compatibility, v2 evidence와 ephemeral observation factory를 순서대로 통과한 opaque handle만 반환함
+- success, compatibility/schema/freshness/lifecycle failure 모두 transport raw-byte view를 zeroize함
+- persistent token/raw-byte store, stored report, replay 실행, completeness claim, CLI/MCP/API output, account/order path와 broker mutation을 추가하지 않음
+
 ### Official Toss Open API read-only HTTP client 변경
 
 수정 후보:

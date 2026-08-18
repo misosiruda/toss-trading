@@ -67,7 +67,7 @@
 
 현재 RH2 calendar/FX runtime contract와 별도로 statistical readiness에 남은 gap은 다음과 같다.
 
-- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 generic `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Strict response/evidence/replay adapter와 credential-free coverage probe contract는 분리된 synthetic/in-memory 입력으로 구현됐다. Calendar 전용 safe-disabled token issuer와 Calendar GET network transport는 synthetic loopback HTTPS 범위로 구현됐고, acquisition coordinator는 아직 구현하지 않았다. Evidence acquisition transport는 generic adapter보다 엄격하게 canonical `date` query를 필수로 요구한다.
+- Official Toss Open API `/api/v1/market-calendar/{KR|US}`는 primary operational/observed broker calendar source로 승인됐고, 현재 generic `TossOpenApiMarketDataAdapter`는 injected read-only client에 path와 optional `date` query를 전달한다. Strict response/evidence/replay adapter와 credential-free coverage probe contract는 분리된 synthetic/in-memory 입력으로 구현됐다. Calendar 전용 safe-disabled token issuer, Calendar GET network transport와 paper-only acquisition coordinator는 synthetic loopback HTTPS 범위로 구현됐다. Coordinator와 evidence acquisition transport는 generic adapter보다 엄격하게 canonical `date` query를 필수로 요구한다.
 - 실제 KRX/NYSE official source document를 확보하고 publisher, URL, retrieval time, stale policy와 source document hash를 기록해야 `official_exchange` evidence를 만들 수 있다.
 - [Official Market Calendar Source Acquisition 계획](official-market-calendar-source-acquisition-plan.md)은 `official_exchange`용 official entry point, raw byte 보존, multi-document collection manifest, date-effective regular-session regime, provenance metadata, full coverage와 fail-closed acceptance 기준을 고정한다. 현재 v1은 exchange별 단일 source와 단일 regular session만 표현하므로 contract revision, actual exchange source acquisition과 adapter 구현은 아직 수행하지 않았다.
 - `official_market_calendar_evidence.v1` artifact writer는 구현됐지만 official source document를 읽어 payload를 생성하는 ingestion path는 아직 없다.
@@ -378,8 +378,9 @@ session 목록으로만 보존한다. Output source class는 `official_broker_ob
 직접 검증하지 않는다. 해당 책임은 별도 evidence, replay adapter와 coverage probe
 contract가 담당한다. OpenAPI compatibility gate와 version-aware evidence transition은
 synthetic/public contract 범위로 구현됐고 replay adapter/coverage probe consumer migration과
-ephemeral acquisition lifecycle boundary도 구현됐다. Acquisition coordinator는 다음 별도
-Small PR로 남아 있다.
+ephemeral acquisition lifecycle boundary도 구현됐다. Acquisition coordinator는 production
+token/auth/calendar 고정 조립, pinned compatibility gate, v2 evidence와 opaque lifecycle handoff까지
+구현됐으며 raw-byte persistence, stored report와 replay 실행은 포함하지 않는다.
 
 ## Contract 목표
 

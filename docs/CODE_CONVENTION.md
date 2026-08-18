@@ -118,6 +118,7 @@ const options = {
 - process memory token cache와 single-flight 제어
 - calendar 전용 token issuer HTTPS transport와 finite response boundary
 - calendar 전용 GET HTTPS transport와 ephemeral raw-byte observation boundary
+- calendar auth/network/evidence/lifecycle을 고정 조립하는 paper-only acquisition coordinator
 - authenticated read-only HTTP request contract 구성
 - Bearer token injection과 HTTP status mapping
 - official market data endpoint path/query mapping
@@ -136,6 +137,8 @@ const options = {
 `tossOpenApiTokenIssuerNetworkTransport.ts`만 calendar token 발급을 위한 direct `https.request`를 소유할 수 있다. Production factory는 connector, dial target, custom CA와 deadline override를 받지 않고 canonical production origin/path만 사용한다. Test-only factory는 loopback IP와 synthetic CA로 제한하고 logical production URL, HTTP Host, TLS SNI, certificate와 hostname verification을 유지해야 한다. Exact `200`, no `Content-Range`/`Content-Encoding`, `Accept-Encoding: identity`, 256KiB payload cap, complete UTF-8 JSON과 10초 이하 monotonic absolute deadline을 통과하지 못한 response를 AuthClient parser에 전달해서는 안 된다.
 
 `tossOpenApiCalendarNetworkTransport.ts`만 evidence acquisition용 KR/US calendar direct `https.request`를 소유할 수 있다. Production factory는 exact canonical `date` request와 token provider만 받고 dial target, custom CA, clock과 deadline override를 노출하지 않는다. Initial/retry는 exact no-cache와 identity header를 유지하며 refreshable `401`만 generation별 compare-and-clear 뒤 한 번 재시도한다. Final response가 exact `200`, response trailer 없음, complete identity UTF-8 JSON, 1MiB 이하 raw bytes, canonical cache headers와 monotonic corrected freshness를 모두 통과하기 전에는 observation을 반환하지 않는다. Raw bytes는 process memory 밖에 저장하거나 log/API/MCP/dashboard output으로 노출하지 않는다.
+
+`tossOpenApiCalendarAcquisitionCoordinator.ts`의 production factory는 token issuer, `TossOpenApiAuthClient`, calendar network transport와 v2 ephemeral lifecycle을 내부에서 고정 조립한다. Public acquisition input은 exact `market`/`date`만 받고 timestamp, cache metadata, contract version, URL 또는 raw bytes override를 받지 않는다. Network observation의 request identity, parsed body, hash/byte length와 corrected freshness를 다시 검증한 뒤에만 pinned compatibility gate, v2 evidence builder와 opaque observation factory를 순서대로 호출한다. 성공/실패와 관계없이 transport raw-byte view를 zeroize하고 opaque handle 외 evidence/raw/derived output을 반환하지 않는다. Test-only factory도 arbitrary network client를 받지 않고 loopback calendar connector와 injected token issuer만 받을 수 있다.
 
 `TossOpenApiReadOnlyHttpClient`는 injected transport만 호출하며 `GET` request만 허용한다. `401 invalid-token` 또는 `401 expired-token` 계열은 request가 실제 사용한 process-local token lease generation만 compare-and-clear한 뒤 최대 1회 guarded reissue로 재시도한다. Retry도 같은 계열 `401`이면 retry generation만 정리하고 세 번째 request나 token issue를 시작하지 않는다. Stale generation invalidation은 current newer lease를 변경하지 않아야 하며 unconditional token clear, `POST`, `PATCH`, `PUT`, `DELETE` 또는 order/account mutation retry를 허용해서는 안 된다.
 
