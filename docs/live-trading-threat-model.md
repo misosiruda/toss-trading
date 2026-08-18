@@ -30,7 +30,7 @@ breach로 처리한다.
 | 자산 | 보호 기준 |
 | --- | --- |
 | Client credential와 access token | source, fixture, log, audit, PR body와 error output에 저장하거나 출력하지 않음 |
-| Account identity | runtime secret provider에서만 읽고 intent/approval에는 non-reversible stable `accountScopeRef`, 외부 output에는 masked reference만 사용 |
+| Account identity | runtime secret provider에서만 읽고 intent/approval에는 CSPRNG으로 발급한 opaque stable `accountScopeRef`, 외부 output에는 masked reference만 사용 |
 | Mutation intent와 preview | backend-generated identity/hash, `create`/`modify`/`cancel`, target version, expiry와 exact payload/account binding 유지 |
 | `RiskDecision`, risk snapshot과 capacity | current intent/snapshot/rules/freshness를 재검증하고 portfolio/account risk-capacity reservation을 보존 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
@@ -72,7 +72,7 @@ Trust boundary 원칙:
 | LT-04 | Malformed/stale intent, preview, risk snapshot, policy 또는 delayed approval | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, dispatch 직전 current exactly-once snapshot으로 모든 rule 재검증, exact risk-binding mismatch 시 fresh approval |
 | LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent intent/hash tombstone, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
-| LT-07 | Account header와 intent/approval/context 혼합 | 다른 account에 mutation | non-reversible stable `accountScopeRef`를 intent/reservation/risk/approval/permit/gateway에 exact bind, raw account input surface 금지 |
+| LT-07 | Account header와 intent/approval/context 혼합 또는 low-entropy account hash 열거 | 다른 account에 mutation 또는 account identity 복구 | CSPRNG opaque `accountScopeRef`와 versioned encrypted mapping을 intent/reservation/risk/approval/permit/gateway에 exact bind, ordinary hash와 raw account input surface 금지 |
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
@@ -214,11 +214,18 @@ Future mutation path는 현재 create-like `LiveOrderIntent`를 `modify`/`cancel
 
 - `operation`: `create`, `modify`, `cancel` 중 정확히 하나
 - backend-generated `orderIntentId`, deterministic hash와 reservation identity
-- secret provider가 account/config generation에서 만든 non-reversible stable
-  `accountScopeRef`
+- secret provider가 canonical provider/environment/account identity마다 CSPRNG으로 한 번
+  발급한 최소 128-bit opaque stable `accountScopeRef`와 별도 credential/config generation
 - create/replace terms: market, symbol, side, order type, quantity, limit price
 - `modify`/`cancel`의 exact `targetOrderRef`, target version/state hash, remaining quantity와
   last reconciled snapshot reference
+
+`accountScopeRef`는 account number처럼 열거 가능한 low-entropy identity의 일반 hash나
+truncated hash로 만들지 않는다. Secret provider는 CSPRNG opaque ref와 raw identity 사이의
+mapping만 authenticated encryption으로 보관한다. Mapping encryption key rotation은 ref를
+바꾸지 않는 versioned atomic re-encryption으로 수행하고, 새 ciphertext 검증 전에는 old key를
+폐기하지 않는다. Old/new mapping이 누락·충돌하거나 rotation이 불완전하면 mutation을
+fail-closed한다. Credential/config rotation은 별도 monotonic generation을 올린다.
 
 Gateway는 `accountScopeRef`를 raw account input으로 받지 않는다. Secret provider의 current
 credential/account mapping이 intent, reservation, approval, permit의 stable ref와 exact
@@ -689,7 +696,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
-- [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
+- [ ] accountScopeRef가 CSPRNG opaque mapping으로 발급되고 key rotation에도 stable하며 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
 - [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨

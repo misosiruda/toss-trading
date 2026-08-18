@@ -599,8 +599,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 로컬 정책은 다음을 기본으로 한다.
 
 - Future mutation intent에는 backend-generated `intentId`, deterministic order hash,
-  non-reversible stable `accountScopeRef`, operation을 둔다. `modify`/`cancel`은 exact
+  CSPRNG으로 발급한 최소 128-bit opaque stable `accountScopeRef`, 별도 credential/config
+  generation과 operation을 둔다. `modify`/`cancel`은 exact
   `targetOrderRef`, target version/state hash와 remaining quantity도 포함한다.
+- `accountScopeRef`는 low-entropy account identity의 ordinary/truncated hash로 만들지 않는다.
+  Secret provider는 canonical provider/environment/account identity마다 opaque ref를 한 번
+  발급하고 raw identity mapping을 authenticated encryption으로만 보관한다. Mapping encryption
+  key rotation은 ref를 유지하는 versioned atomic re-encryption이며 새 ciphertext 검증 전 old
+  key를 폐기하지 않는다. Mapping 누락·충돌 또는 incomplete rotation은 mutation을 fail-closed한다.
 - Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
   재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
   terms를 replacement로 평가하되 reconciliation 전 old capacity를 해제하지 않는다. 각 risk
@@ -720,7 +726,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | --- | --- | --- |
 | API group, method, path template | 가능 | 가능 |
 | requestId, rate limit header | 가능 | 가능 |
-| stable accountScopeRef | non-reversible masked ref만 | masked ref만 |
+| stable accountScopeRef | CSPRNG opaque masked ref만 | masked ref만 |
 | raw account id | encrypted local mapping 검토 필요 | 금지 |
 | access token, client secret | 금지 | 금지 |
 | broker order id | masked 또는 encrypted local store만 | 금지 |
@@ -867,6 +873,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
 - modify는 old capacity를 reconciliation까지 보존하고 stable target fence가 version lineage 전체의 concurrent modify/cancel을 차단한다.
+- accountScopeRef는 ordinary account hash가 아닌 CSPRNG opaque encrypted mapping이며 key rotation에도 ref를 유지한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
