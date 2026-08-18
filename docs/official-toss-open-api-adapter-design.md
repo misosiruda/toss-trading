@@ -38,7 +38,7 @@
 
 구현 PR을 시작하기 전에는 위 OpenAPI JSON을 다시 받아 endpoint, schema, auth, error, rate limit 변경 여부를 확인해야 한다. 이 문서의 endpoint 목록은 방향을 잡기 위한 snapshot이며, 구현 source of truth는 항상 OpenAPI JSON이다. 2026-08-14 재확인한 `1.2.14` document는 416,651 bytes, `sha256:d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180`이며 KR/US calendar path, operation id와 response schema reference가 아래 compatibility contract와 일치한다.
 
-`scripts/extractTossCalendarOpenApiSnapshot.mjs <pinned-openapi.json>`는 최대 1 MB의 explicit local source file만 받고 transient full source bytes의 SHA-256을 검증한 뒤 calendar path만 추출한다. Mutable `latest` URL을 script가 다시 fetch하지 않으므로 원본 bytes는 별도 read-only acquisition 단계에서 저장하고 hash를 확인한 뒤 전달해야 한다. `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`는 이 document identity와 기존 strict response parser contract를 고정하고, 추출된 `src/replay/officialTossCalendarOpenApi-1.2.14.json` bytes의 자체 SHA-256과 `sourceDocumentSha256`, metadata, KR/US operation binding과 response schema reference를 먼저 검증한다. Pinned artifact는 `.gitattributes`에서 LF bytes로 고정하며 전체 OpenAPI 문서의 account/order/execution example은 저장하지 않는다. Compatibility result는 caller response가 해당 market의 pinned example value와 exact match할 때만 생성된다. 이 결과의 호환성 범위는 `compatibilityScope="pinned_document_examples_only"`이며 OpenAPI component schema가 허용하는 모든 optional/nullable 조합이나 actual authenticated network response evidence를 주장하지 않는다. Version-aware v2 evidence와 replay consumer migration이 구현됐지만 ephemeral lifecycle boundary 전이므로 결과는 `paper_only`, `official_broker_observed`, `observed_session_only`와 `evidenceHandoffStatus="blocked_pending_version_aware_consumers"`로 고정한다. 따라서 이 compatibility 결과만으로 network response를 v1 evidence builder에 전달하거나 `official_exchange`로 승격할 수 없다.
+`scripts/extractTossCalendarOpenApiSnapshot.mjs <pinned-openapi.json>`는 최대 1 MB의 explicit local source file만 받고 transient full source bytes의 SHA-256을 검증한 뒤 calendar path만 추출한다. Mutable `latest` URL을 script가 다시 fetch하지 않으므로 원본 bytes는 별도 read-only acquisition 단계에서 저장하고 hash를 확인한 뒤 전달해야 한다. `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`는 이 document identity와 기존 strict response parser contract를 고정하고, 추출된 `src/replay/officialTossCalendarOpenApi-1.2.14.json` bytes의 자체 SHA-256과 `sourceDocumentSha256`, metadata, KR/US operation binding과 response schema reference를 먼저 검증한다. Pinned artifact는 `.gitattributes`에서 LF bytes로 고정하며 전체 OpenAPI 문서의 account/order/execution example은 저장하지 않는다. Compatibility result는 caller response가 해당 market의 pinned example value와 exact match할 때만 생성된다. 이 결과의 호환성 범위는 `compatibilityScope="pinned_document_examples_only"`이며 OpenAPI component schema가 허용하는 모든 optional/nullable 조합이나 actual authenticated network response evidence를 주장하지 않는다. Version-aware v2 evidence, replay consumer migration과 ephemeral lifecycle boundary가 구현된 뒤에도 compatibility result 자체는 handoff authority가 아니므로 `paper_only`, `official_broker_observed`, `observed_session_only`와 legacy `evidenceHandoffStatus="blocked_pending_version_aware_consumers"`를 유지한다. Actual network-derived v2 handoff authority는 process-local lifecycle factory provenance에서만 생기며, 이 compatibility 결과만으로 network response를 v1 evidence builder에 전달하거나 `official_exchange`로 승격할 수 없다.
 
 ## 현재 공식 API 표면
 
@@ -287,7 +287,8 @@ negative test 구현은 계속할 수 있다. 실제 호출을 실행하지 않�
 OpenAPI `1.2.14` calendar schema가 현재 strict response parser와 호환된다는
 byte-level synthetic fixture gate와 backward-compatible evidence transition은 구현됐다.
 Compatibility gate 자체는 evidence artifact를 만들지 않으며, v2 evidence도 version-aware
-consumer migration 전에는 replay adapter 또는 coverage probe로 handoff하지 않는다.
+consumer와 ephemeral lifecycle handle을 통과하지 않고 replay adapter 또는 coverage probe로
+handoff하지 않는다.
 
 - `official_broker_observed_calendar_evidence.v1` schema, builder와 verifier는
   OpenAPI `1.2.13`에 계속 고정한다. 기존 v1 artifact를 rewrite하거나 v1의
@@ -314,21 +315,23 @@ consumer migration 전에는 replay adapter 또는 coverage probe로 handoff하�
   registry에 없는 API contract version, document hash/operation/parser mismatch와 contract
   version 누락은 artifact 생성 또는 검증 전에 fail-closed로 거부한다. V2에 actual provider
   version을 주장하는 unknown field를 추가하는 것도 strict schema에서 거부한다.
-- Evidence transition은 schema/builder/verifier 추가만으로 완료되지 않는다. 현재 v1 schema와
-  verifier에 고정된 `officialBrokerObservedCalendarReplayAdapter.ts`와
-  `officialBrokerObservedCalendarCoverageProbe.ts`도 별도 consumer-migration PR에서 v1/v2
-  schema-version dispatch를 사용해야 한다. 두 consumer는 version별 verifier에 같은 exact raw
-  response bytes와 `asOf`를 전달해 response hash, byte length, normalized response와 freshness를
-  다시 검증하고 unknown schema, raw-byte 누락/불일치와 registry mismatch를 fail-closed로
-  거부한다. Existing v1 replay input과 coverage report 검증은 그대로 통과해야 하며, 이
-  migration이 merge되기 전에는 coordinator가 v2 evidence를 replay adapter 또는 coverage
-  probe에 전달하지 않는다.
-- Consumer migration 뒤 별도 ephemeral lifecycle boundary가 network-derived v2 evidence와
-  exact bytes를 하나의 process-local envelope로 결합하고 detached evidence, replay input,
-  coverage report의 persistence/export를 거부해야 한다. Durable content-addressed raw-byte store를
+- Replay adapter와 coverage probe의 consumer migration은 v1/v2 schema-version dispatch를
+  사용한다. 두 consumer는 version별 verifier에 같은 exact raw response bytes와 `asOf`를 전달해
+  response hash, byte length, normalized response와 freshness를 다시 검증하고 unknown schema,
+  raw-byte 누락/불일치와 registry mismatch를 fail-closed로 거부한다. Existing v1 replay input과
+  coverage report 검증도 그대로 통과한다.
+- `officialBrokerObservedCalendarEphemeralObservation.ts`는 network-derived v2 evidence와
+  exact bytes의 ownership을 하나의 process-local opaque handle로 이전한다. Factory는 exact bytes를
+  내부 copy로 격리한 뒤 caller view를 즉시 zeroize하고, handle은 evidence/raw bytes를 직접 노출하지
+  않는다. Factory provenance, 1회 소비와 consume 시 exact-byte 재검증을 강제하고
+  success/error/stale/serialization 뒤 internal bytes를 zeroize한다. Replay input과 coverage report는
+  module-owned fixed non-exporting operation 안에서만 만들고 caller callback 또는 return value로
+  제공하지 않는다. Handle JSON export와 재사용은 fail-closed 처리하며 public consumer registration
+  surface를 두지 않는다.
+  Durable content-addressed raw-byte store를
   도입하려면 response bytes의 confidentiality classification, hash-to-evidence atomic binding,
   file permission, retention/deletion, tamper detection과 restart readback을 정의한 별도 threat
-  model과 저장 계약이 먼저 merge돼야 한다. 이 prerequisite 전에는 coordinator를 구현하지 않는다.
+  model과 저장 계약이 먼저 merge돼야 한다.
 
 Calendar URL과 official OpenAPI `latest` document는 versioned immutable identifier가 아니므로
 registry 선택만으로 response가 `1.2.14` deployment에서 제공됐다고 주장할 수 없다. Provider가
@@ -718,7 +721,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 10 | Token issuer network transport | 구현됨: exact token POST, no Range/Content-Range, identity encoding, finite payload limits, masked error와 test-only loopback HTTPS connector test | content decoding, market/account/order request, external credential call |
 | 11 | Calendar GET network transport | 구현됨: KR/US allowlist, required canonical date binding, Bearer generation lease, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 1MiB limit test | content decoding, query 생략, partial response, account/order/general market endpoint, external credential call |
 | 11a | Version-aware replay consumer migration | 구현됨: replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증, version별 freshness와 v1 regression test | network, evidence 재작성, completeness claim |
-| 11b | Ephemeral acquisition lifecycle boundary | v2 evidence/raw-byte process-local envelope, detached output persistence/export 거부와 disposal test | durable raw-byte store, workflow artifact persistence, replay 실행 |
+| 11b | Ephemeral acquisition lifecycle boundary | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation, 1회 소비와 unconditional zeroization test | durable raw-byte store, workflow artifact persistence, replay 실행 |
 | 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
