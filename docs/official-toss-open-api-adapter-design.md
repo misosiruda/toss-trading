@@ -513,9 +513,11 @@ sequenceDiagram
     participant Audit as AuditLogger
 
     Strategy->>Risk: TradingSignal
-    Risk-->>Router: approved OrderIntent
-    Owner->>Router: exact-bound typed approval
+    Risk-->>Router: candidate OrderIntent and preliminary decision
     Router->>Router: serializable final risk/capacity/idempotency reservation
+    Router-->>Owner: preview with exact risk/reservation identity
+    Owner->>Router: exact-bound typed approval
+    Router->>Router: verify approval, clock, gate snapshot and fencing
     Router->>Gateway: create/modify/cancel request
     Gateway->>API: POST order endpoint
     API-->>Gateway: order response or error envelope
@@ -593,8 +595,15 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - `OrderIntent`에는 backend-generated `intentId`와 deterministic order hash를 둔다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
-  하나의 serializable durable transaction에서 commit한다. Active reservation은 terminal
-  reconciliation까지 후속 risk evaluation에 포함한다.
+  하나의 serializable durable transaction에서 commit한다. Reservation lineage는 terminal
+  reconciliation까지 보존하고 logical capacity는 아래 exactly-once source로 후속 risk
+  evaluation에 포함한다.
+- Final transaction이 만든 exact risk/reservation identity를 preview로 owner에게 제시한
+  뒤에만 runtime approval을 받고, approval verification 후 dispatch permit을 발급한다.
+- Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
+  broker correlation으로 reservation contribution을 broker order/position/cash contribution에
+  atomic handoff한다. Effective snapshot은 logical order당 정확히 한 capacity source만
+  포함하며 ambiguous/missing correlation은 새 risk approval/send를 fail-closed로 차단한다.
 - 최초 reservation은 `intentId`와 order hash의 permanent tombstone을 write-ahead로 만들며,
   rejected, stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는
   재사용하지 않는다.
@@ -727,6 +736,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
 - attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
+- acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 

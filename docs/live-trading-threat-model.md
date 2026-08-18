@@ -80,7 +80,7 @@ Trust boundary 원칙:
 | LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
-| LT-15 | 서로 다른 concurrent intent가 같은 risk snapshot/capacity를 각각 통과 | open-order, exposure, cash 또는 sellable quantity 한도 초과 | portfolio/account-keyed serializable final risk evaluation과 durable capacity reservation을 한 transaction으로 commit, 후속 snapshot에 active reservation 포함 |
+| LT-15 | 서로 다른 concurrent intent가 같은 risk snapshot/capacity를 각각 통과하거나 broker-visible order와 reservation을 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk evaluation/reservation, durable correlation 기반 broker/reservation exactly-once union과 atomic lifecycle handoff |
 
 ## Runtime Approval Contract
 
@@ -138,6 +138,7 @@ Future `OrderRouter`는 최소 다음 상태를 구분해야 한다.
 ```text
 disabled
   -> dry_run_validated
+  -> final_risk_reserved
   -> approval_required
   -> send_reserved
 
@@ -177,8 +178,12 @@ reconciliation_pending
 
 - Default는 `disabled`다.
 - Row 16 dry-run은 `dry_run_validated` 밖으로 전이하지 않는다.
-- `approval_required` 이후 payload가 바뀌면 새 preview, risk decision과 approval이
-  필요하다.
+- `final_risk_reserved`는 portfolio/account capacity, idempotency와 tombstone transaction이
+  commit된 상태이며, 이 transaction이 만든 exact risk/reservation identity를 owner에게
+  제시한 뒤에만 `approval_required`로 이동한다.
+- `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
+  닫고 capacity를 atomic release한 뒤 새 preview, final risk/capacity reservation과
+  approval을 만들어야 한다.
 - `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
   `reconciliation_pending`으로 이동하며
   `send_reserved`로 되돌려 재전송하지 않는다.
@@ -230,9 +235,17 @@ reconciliation_pending
 
 - `orderIntentId`와 deterministic order hash는 backend가 생성한다.
 - Final risk evaluation은 portfolio/account를 key로 한 serializable transaction에서 current
-  broker/local snapshot과 모든 active capacity reservation을 함께 읽는다. Open-order slot,
-  buy notional/exposure/cash, pending sell quantity와 적용되는 risk budget을 차감한 effective
-  snapshot으로 모든 limit을 다시 평가한다.
+  broker/local snapshot과 모든 active capacity reservation을 exactly-once union으로 읽는다.
+  Open-order slot, buy notional/exposure/cash, pending sell quantity와 적용되는 risk budget을
+  차감한 effective snapshot으로 모든 limit을 다시 평가한다.
+- Exactly-once union은 internal durable `reservationId`/`orderIntentId`/broker correlation을
+  사용한다. 아직 broker-visible하지 않은 logical order는 reservation contribution만,
+  acknowledged/open order는 broker open-order contribution만, partial fill은 broker가 확인한
+  filled position/cash와 remaining open quantity만 반영한다. Reservation/tombstone record는
+  lineage를 위해 남겨도 같은 capacity를 다시 합산하지 않는다.
+- Broker snapshot에서 correlation이 missing, duplicate, ambiguous 또는 reservation state와
+  불일치하면 보수적으로 이중 계산해 계속 진행하지 않고 snapshot reconciliation을
+  owner-visible blocked로 만들며 새로운 final risk approval/send를 금지한다.
 - Approved final `RiskDecision`, affected capacity reservation, idempotency reservation과
   intent/hash tombstone을 같은 durable transaction에서 commit한다. 하나라도 충돌하거나
   commit에 실패하면 전부 rollback하고 no-send하며, approval은 이 transaction이 생성한
@@ -249,11 +262,13 @@ reconciliation_pending
   재전송하지 않고 owner-visible reconciliation 결과로 닫는다.
 - 이후 create/modify/cancel operation은 backend가 새 intent identity와 새 deterministic
   hash를 생성해야 하며, 이전 intent의 approval/idempotency record를 승계하지 않는다.
-- Active capacity reservation은 process restart와 broker acknowledgement 뒤에도 보존하고
-  모든 후속 final risk evaluation에 포함한다. Broker order/position/cash가 terminal
+- Capacity reservation record는 process restart와 broker acknowledgement 뒤에도 보존한다.
+  Broker acknowledgement/fill이 나타나면 같은 serializable store에서 capacity source를
+  reservation에서 correlated broker order/position/cash로 atomic handoff해 계산 공백이나
+  이중 계산을 만들지 않는다. Logical capacity는 broker order/position/cash가 terminal
   reconciliation되거나 `stopped_before_dispatch`의 durable no-dispatch evidence가 완성된
-  뒤에만 같은 serializable store에서 release한다. Approval expiry/취소도 no-dispatch
-  evidence와 tombstone을 보존한 atomic transition 없이는 capacity를 release하지 않는다.
+  뒤에만 release한다. Approval expiry/취소도 no-dispatch evidence와 tombstone을 보존한
+  atomic transition 없이는 capacity를 release하지 않는다.
 - Broker idempotency contract는 구현 시점의 official OpenAPI document로 다시
   확인한다. 지원 여부를 추측하지 않는다.
 - Network timeout, connection reset, `5xx` 또는 malformed response에서 mutation을
@@ -289,8 +304,9 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 8. broker acknowledgement/rejection/unknown recorded
 9. reconciliation completed 또는 blocked
 
-Audit에는 schema version, intent/risk/approval reference, idempotency tombstone,
-kill-switch fencing epoch, method/path template, masked request correlation, state
+Audit에는 schema version, intent/risk/approval/capacity reservation reference,
+idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
+template, masked request correlation, state
 transition, timestamp와 reason code를 남긴다. Client secret,
 token, raw account id, raw broker order id, raw execution data와 request/response body는
 남기지 않는다.
@@ -352,6 +368,7 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
+- [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
 - [ ] Timeout/unknown result의 blind retry가 없음
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
