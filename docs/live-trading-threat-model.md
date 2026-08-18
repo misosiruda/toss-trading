@@ -76,7 +76,7 @@ Trust boundary 원칙:
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
-| LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
+| LT-11 | Kill switch/mutation flag 변경·재시작과 final reservation/in-flight send race | disable 이후 capacity/fence/approval request 생성 또는 신규 주문 | final-risk reservation, approval request, dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reservation 전 거부하거나 reserved-unsent atomic no-dispatch closure, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, concurrent consume, revocation race, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor/revocation-version binding, state/permit과 묶인 linearizable one-time consume/revoke, gateway permit CAS, owner channel 검증 |
 | LT-13 | Audit omission, crash window 또는 log deletion/rewrite/reordering | 사고 원인·주문 경로 추적 불가와 altered dispatch history 신뢰 | first-byte 전 masked write-ahead dispatch event, canonical hash chain, runtime과 분리된 signed append-only checkpoint, startup/pre-dispatch fail-closed verification, request/intent/risk/approval correlation, crash/tamper recovery test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
@@ -296,6 +296,7 @@ market_order_authorization_required
 
 final_risk_reserved
   -> approval_required
+  -> stopped_before_dispatch(cause-specific noDispatchFence)
 
 approval_required
   -> send_reserved
@@ -314,7 +315,7 @@ dispatch_permit_acquired
 restart(send_reserved | dispatch_permit_acquired)
   -> acknowledgement_unknown
 
-no_dispatch_fence(approval_required | send_reserved)
+no_dispatch_fence(final_risk_reserved | approval_required | send_reserved)
   -> stopped_before_dispatch
 
 dispatch_cas_loser(consumed | outcome_unknown)
@@ -345,6 +346,13 @@ reconciliation_pending
   commit된 상태다. Market order이면 exact `marketOrderAuthorization`도 같은 transaction에서
   먼저 consume돼야 하며, transaction이 만든 exact risk/reservation identity를 owner에게
   제시한 뒤에만 `approval_required`로 이동한다.
+- Final risk/capacity/idempotency/target-fence transaction 자체가 dispatch arbiter의 current
+  gate lock/epoch 아래 exact enabled snapshot을 검증하고 commit돼야 한다. Kill-active 또는
+  false/invalid/mismatched gate에서는 reservation, target fence나 approval request를 새로 만들지
+  않는다. Reservation transaction이 먼저 이긴 직후 disable이 경쟁하면 disable transaction이
+  해당 exact `final_risk_reserved`/`approval_required` state, reservation/fence와 permit/
+  `dispatch_attempted` 부재를 atomic CAS해 `gate_disabled` noDispatchFence와 permanent tombstone을
+  commit한 뒤 capacity/fence를 release한다.
 - `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
   닫고 capacity를 atomic release한 뒤 새 preview, final risk/capacity reservation과
   approval을 만들어야 한다.
@@ -403,14 +411,17 @@ reconciliation_pending
   lock/fencing epoch로 직렬화한다. Worker가 runtime 환경 변수를 독립적으로 읽어 gate를
   바꾸지 못하게 하고, reservation/permit은 current epoch와 exact normalized gate-snapshot
   hash를 보존한다. Gateway는 stale/mismatched epoch 또는 snapshot의 permit을 거부한다.
-- Gate disable이 dispatch보다 먼저 lock/epoch를 획득하면 기존 reserved-unsent record를
-  `stopped_before_dispatch`로 전이하고 permanent tombstone을 남긴 뒤 network write를
-  금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를 넘으면 해당 record를
-  in-flight로 audit하고 disable 뒤에도 terminal reconciliation까지 추적한다.
+- Gate disable이 final reservation 또는 dispatch보다 먼저 lock/epoch를 획득하면 새
+  reservation/fence/approval request를 거부한다. 이미 reservation이 먼저 commit됐지만 first
+  byte 전인 `final_risk_reserved`, `approval_required`, `send_reserved` record는 disable transaction이
+  exact state/version과 no-permit/no-dispatch 또는 unconsumed permit을 확인해
+  `stopped_before_dispatch`/`gate_disabled` noDispatchFence로 atomic close하고 permanent tombstone을
+  남긴 뒤 network write를 금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를
+  넘으면 해당 record를 in-flight로 audit하고 disable 뒤에도 terminal reconciliation까지 추적한다.
 - Kill switch가 active이거나 normal mutation gate 하나라도 false/invalid/mismatched이면
-  normal `create`/`modify`/`cancel`의 `send_reserved` 신규 진입과 dispatch permit 발급을
-  모두 차단한다. 아래 typed cancel-only recovery transition만 normal gate를
-  재활성화하지 않는 별도 예외다.
+  normal `create`/`modify`/`cancel`의 final risk/capacity reservation, target fence, approval
+  request, `send_reserved` 신규 진입과 dispatch permit 발급을 모두 차단한다. 아래 typed
+  cancel-only recovery transition만 normal gate를 재활성화하지 않는 별도 예외다.
 - Exact mutation-gate snapshot과 global fencing epoch의 모든 enable/disable transition은
   완료를 응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는
   재사용하지 않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
@@ -686,6 +697,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
+- [ ] Disabled gate가 final reservation/fence/approval request를 막고 race loser를 atomic close함
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
 - [ ] Pre-dispatch revalidation이 exact current reservation만 exclude-self/replace하고 다른 capacity를 유지함
