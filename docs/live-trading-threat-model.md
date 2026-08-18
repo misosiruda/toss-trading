@@ -69,7 +69,7 @@ Trust boundary 원칙:
 | LT-01 | Natural-language/MCP/dashboard command가 order path로 직접 진입 | Risk/approval 우회 주문 | mutation route/tool 부재 test, typed internal `OrderIntent`만 허용, Codex는 read-only |
 | LT-02 | AI paper evidence가 live signal/intent로 승격 | 비결정론적 주문 생성 | paper/live schema 분리, promotion adapter 금지 grep/test, deterministic backend만 intent 생성 |
 | LT-03 | 환경 변수 오타, 공백, 대소문자 변형 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, safe default, multiple independent gates, invalid value fail-closed |
-| LT-04 | Malformed/stale intent, preview, risk snapshot 또는 policy | 잘못된 risk approval | strict normalization, freshness/expiry, preview-intent hash binding, 모든 rule 재검증 |
+| LT-04 | Malformed/stale intent, preview, risk snapshot 또는 policy | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, preview-intent hash binding, 모든 rule 재검증 |
 | LT-05 | Timeout, retry 또는 concurrent worker로 duplicate send | 중복 주문 | durable idempotency reservation, intent/order hash uniqueness, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
 | LT-07 | Account header와 intent owner/context 혼합 | 다른 account에 mutation | account scope를 runtime config와 intent context에 exact bind, raw account input surface 금지 |
@@ -95,6 +95,14 @@ Future runtime approval은 typed record로 설계하며 다음 identity에 exact
 - `approvedAt`, `expiresAt`, one-time consumption state
 - human-readable reason과 masked audit reference
 
+Expiry 검증 시각은 future `OrderRouter`가 소유한 authoritative clock에서만 얻는다.
+Approval payload, API/MCP/CLI input 또는 caller가 주입한 policy 값으로 evaluation time을
+선택하지 않는다. 현재 deterministic risk test seam인 `LiveRiskPolicy.now`는 runtime
+mutation authorization clock으로 전달하거나 재사용하지 않는다. Clock source를 읽을 수
+없거나 마지막 검증 시각보다 뒤로 이동했거나 허용 범위를 넘는 wall-clock/monotonic
+clock skew가 감지되면 approval, preview와 risk evidence를 모두 no-send로 처리하고
+operator-visible reconciliation/clock-error 상태를 남긴다.
+
 다음은 유효한 runtime approval이 아니다.
 
 - Codex가 자연어로 생성한 동의
@@ -103,6 +111,7 @@ Future runtime approval은 typed record로 설계하며 다음 identity에 exact
 - Risk Engine의 `approved=true`만 존재하는 상태
 - 오래된 preview, intent 또는 risk snapshot에 대한 승인
 - symbol/quantity/price/operation 범위를 재사용하거나 확대한 승인
+- Approval payload 또는 caller-controlled policy가 evaluation time을 선택하는 승인
 
 Approval verification이 unavailable, malformed, expired, already consumed 또는 current
 intent와 불일치하면 no-send로 종료한다.
@@ -116,7 +125,28 @@ disabled
   -> dry_run_validated
   -> approval_required
   -> send_reserved
-  -> broker_acknowledged | unknown_reconciliation | rejected
+
+send_reserved
+  -> broker_rejected
+  -> acknowledgement_unknown
+  -> broker_accepted
+
+acknowledgement_unknown
+  -> reconciliation_pending
+
+broker_accepted
+  -> open
+
+open
+  -> partially_filled | filled | canceled | expired
+
+partially_filled
+  -> partially_filled | filled | canceled | expired
+
+broker_rejected | filled | canceled | expired
+  -> reconciliation_pending
+
+reconciliation_pending
   -> terminal_reconciled
 ```
 
@@ -124,8 +154,16 @@ disabled
 - Row 16 dry-run은 `dry_run_validated` 밖으로 전이하지 않는다.
 - `approval_required` 이후 payload가 바뀌면 새 preview, risk decision과 approval이
   필요하다.
-- `send_reserved` 뒤 timeout/disconnect는 `unknown_reconciliation`으로 이동하며
+- `send_reserved` 뒤 timeout/disconnect는 `acknowledgement_unknown`을 거쳐
+  `reconciliation_pending`으로 이동하며
   `send_reserved`로 되돌려 재전송하지 않는다.
+- `broker_accepted`는 terminal 상태가 아니다. Accepted/open order와 partial fill은
+  in-flight set에서 제거하지 않고 이후 fill, cancel 또는 expiry를 계속 추적한다.
+- `terminal_reconciled`는 broker order가 `broker_rejected`, `filled`, `canceled` 또는
+  `expired`로 terminal이고, 체결로 생긴 position/cash state까지 read-only broker
+  evidence와 local ledger가 일치할 때만 허용한다.
+- Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
+  reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
 - Kill switch가 active이면 `send_reserved` 신규 진입을 차단한다.
 - Process restart는 durable reservation/reconciliation state 없이 send를 재개하지
   않는다.
