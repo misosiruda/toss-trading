@@ -1,6 +1,6 @@
 # Official Toss Open API Adapter Design
 
-> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, generation-aware token auth client, calendar 전용 token issuer와 Calendar GET network transport, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지다. Acquisition coordinator는 아래 fail-closed 계약에 한해 후속 구현을 허용하지만 아직 구현하지 않았으며, order adapter, live order routing, live trading enable 기능은 계속 구현하지 않는다.
+> 이 문서는 official Toss Open API adapter의 안전 경계 설계 문서다. 현재 구현은 safe-disabled token auth config, generation-aware token auth client, calendar 전용 token issuer와 Calendar GET network transport, paper-only calendar acquisition coordinator, injected transport 기반 read-only HTTP client, read-only market data adapter, masked read-only account snapshot reader까지다. Order adapter, live order routing, live trading enable 기능은 계속 구현하지 않는다.
 
 ## 목적
 
@@ -722,7 +722,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 11 | Calendar GET network transport | 구현됨: KR/US allowlist, required canonical date binding, Bearer generation lease, identity encoding, exact no-cache request, raw `Date`/`Age`/`Expires`, response cache directive/expiry cap, monotonic response delay와 corrected freshness, exact `200`, no Range/Content-Range, exact payload bytes와 1MiB limit test | content decoding, query 생략, partial response, account/order/general market endpoint, external credential call |
 | 11a | Version-aware replay consumer migration | 구현됨: replay adapter와 coverage probe의 v1/v2 schema dispatch, exact raw-byte 재검증, version별 freshness와 v1 regression test | network, evidence 재작성, completeness claim |
 | 11b | Ephemeral acquisition lifecycle boundary | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation, 1회 소비와 unconditional zeroization test | durable raw-byte store, workflow artifact persistence, replay 실행 |
-| 12 | Calendar acquisition coordinator | auth, calendar request, ephemeral observation composition과 fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
+| 12 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, exact market/date input, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral observation composition, loopback fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | secret value 없는 readiness, host/IP/config 진단 | token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | deterministic policy, fixtures, fail-closed tests | broker gateway |
 | 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
