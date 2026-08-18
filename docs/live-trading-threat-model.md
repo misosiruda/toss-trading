@@ -34,8 +34,8 @@ breach로 처리한다.
 | `OrderIntent`와 preview | backend-generated identity/hash, expiry와 exact payload binding 유지 |
 | `RiskDecision`과 risk snapshot | current intent, current snapshot, checked rules와 freshness를 재검증 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
-| Idempotency state | send 전 reservation, broker 결과와 reconciliation 상태를 보존 |
-| Kill switch와 mutation flags | fail-closed default, 변경 주체/시각/사유 audit 필수 |
+| Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
+| Kill switch와 mutation flags | fail-closed default, dispatch와 공유하는 fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
 | Order/execution audit | tamper-evident ordering과 masked metadata 보존 |
 
 ## Trust Boundary
@@ -70,13 +70,13 @@ Trust boundary 원칙:
 | LT-02 | AI paper evidence가 live signal/intent로 승격 | 비결정론적 주문 생성 | paper/live schema 분리, promotion adapter 금지 grep/test, deterministic backend만 intent 생성 |
 | LT-03 | 환경 변수 오타, 공백, 대소문자 변형 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, safe default, multiple independent gates, invalid value fail-closed |
 | LT-04 | Malformed/stale intent, preview, risk snapshot 또는 policy | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, preview-intent hash binding, 모든 rule 재검증 |
-| LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, intent/order hash uniqueness, unknown result reconciliation 전 blind retry 금지 |
+| LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent intent/hash tombstone, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
 | LT-07 | Account header와 intent owner/context 혼합 | 다른 account에 mutation | account scope를 runtime config와 intent context에 exact bind, raw account input surface 금지 |
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
-| LT-11 | Kill switch 변경과 in-flight send race | stop 이후 신규 주문 | send 직전 atomic gate 재확인, activation 뒤 신규 reservation 차단, in-flight 목록 audit/reconciliation |
+| LT-11 | Kill switch 변경과 in-flight send race | stop 이후 신규 주문 | dispatch와 activation의 shared lock/fencing epoch, activation이 이기면 reserved-unsent 차단, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
@@ -141,12 +141,19 @@ disabled
   -> send_reserved
 
 send_reserved
+  -> stopped_before_dispatch
+  -> dispatch_permit_acquired
+
+dispatch_permit_acquired
   -> broker_rejected
   -> acknowledgement_unknown
   -> broker_accepted
 
-restart(send_reserved)
+restart(send_reserved | dispatch_permit_acquired)
   -> acknowledgement_unknown
+
+kill_switch_activation(send_reserved)
+  -> stopped_before_dispatch
 
 acknowledgement_unknown
   -> reconciliation_pending
@@ -160,7 +167,7 @@ open
 partially_filled
   -> partially_filled | filled | canceled | expired
 
-broker_rejected | filled | canceled | expired
+stopped_before_dispatch | broker_rejected | filled | canceled | expired
   -> reconciliation_pending
 
 reconciliation_pending
@@ -185,7 +192,15 @@ reconciliation_pending
   evidence와 local ledger가 일치할 때만 허용한다.
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
-- Kill switch가 active이면 `send_reserved` 신규 진입을 차단한다.
+- Dispatch arbiter는 kill-switch activation과 broker socket write를 같은 linearizable
+  lock/fencing epoch로 직렬화한다. Reservation은 current epoch를 보존하며, gateway는 stale
+  epoch의 dispatch permit을 거부한다.
+- Activation이 dispatch보다 먼저 lock/epoch를 획득하면 기존 reserved-unsent record를
+  `stopped_before_dispatch`로 전이하고 permanent tombstone을 남긴 뒤 network write를
+  금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를 넘으면 해당 record를
+  in-flight로 audit하고 activation 뒤에도 terminal reconciliation까지 추적한다.
+- Kill switch가 active이면 `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두
+  차단한다.
 - Process restart는 durable reservation/reconciliation state와 authoritative-clock
   high-water mark를 모두 검증하기 전에는 send를 재개하지 않는다.
 
@@ -193,11 +208,15 @@ reconciliation_pending
 
 - `orderIntentId`와 deterministic order hash는 backend가 생성한다.
 - Send 전에 idempotency reservation을 원자적으로 확보한다.
-- 같은 intent/hash의 `send_reserved`, open, acknowledged, partially-filled,
-  terminal-unreconciled 또는 unknown record가 있으면 duplicate send를 거부한다. Recovered
-  reservation은 broker rejection/no-dispatch가 신뢰 가능한 read-only evidence로
-  확인되더라도 기존 intent를 자동 재전송하지 않고 owner-visible reconciliation 결과로
-  닫는다.
+- 최초 reservation은 `orderIntentId`와 deterministic order hash의 permanent tombstone을
+  함께 만들며, rejected, stopped-before-dispatch 또는 `terminal_reconciled` 뒤에도 삭제,
+  만료 또는 재사용하지 않는다.
+- 같은 intent/hash의 과거 tombstone이 하나라도 있으면 현재 상태와 새 approval 여부에
+  관계없이 duplicate send를 거부한다. Recovered reservation은 broker rejection/no-
+  dispatch가 신뢰 가능한 read-only evidence로 확인되더라도 기존 intent를 자동
+  재전송하지 않고 owner-visible reconciliation 결과로 닫는다.
+- 이후 create/modify/cancel operation은 backend가 새 intent identity와 새 deterministic
+  hash를 생성해야 하며, 이전 intent의 approval/idempotency record를 승계하지 않는다.
 - Broker idempotency contract는 구현 시점의 official OpenAPI document로 다시
   확인한다. 지원 여부를 추측하지 않는다.
 - Network timeout, connection reset, `5xx` 또는 malformed response에서 mutation을
@@ -233,8 +252,9 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 8. broker acknowledgement/rejection/unknown recorded
 9. reconciliation completed 또는 blocked
 
-Audit에는 schema version, intent/risk/approval reference, method/path template, masked
-request correlation, state transition, timestamp와 reason code를 남긴다. Client secret,
+Audit에는 schema version, intent/risk/approval reference, idempotency tombstone,
+kill-switch fencing epoch, method/path template, masked request correlation, state
+transition, timestamp와 reason code를 남긴다. Client secret,
 token, raw account id, raw broker order id, raw execution data와 request/response body는
 남기지 않는다.
 
@@ -244,7 +264,8 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 다음 순서로 처리한다.
 
 1. Kill switch를 activate하고 mutation enable flag를 false로 되돌린다.
-2. 신규 intent reservation과 broker send를 차단한다.
+2. Shared dispatch lock/fencing epoch를 advance해 신규 reservation/permit을 차단하고,
+   activation이 이긴 reserved-unsent request를 `stopped_before_dispatch`로 fence한다.
 3. In-flight/unknown intent 목록과 마지막 안전 audit checkpoint를 보존한다.
 4. Read-only order history/detail과 position reconciliation으로 external state를 확인한다.
 5. Secret 노출 가능성이 있으면 token/client credential을 owner가 폐기·회전한다.
@@ -292,6 +313,7 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Natural-language/MCP/dashboard direct order surface가 없음
 - [ ] Safe defaults와 invalid config가 fail-closed로 검증됨
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
+- [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Timeout/unknown result의 blind retry가 없음
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
