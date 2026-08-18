@@ -80,7 +80,7 @@ Trust boundary 원칙:
 | LT-12 | Approval replay, concurrent consume, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
-| LT-15 | 서로 다른 concurrent intent가 같은 risk snapshot/capacity를 각각 통과하거나 broker-visible order와 reservation을 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk evaluation/reservation, durable correlation 기반 broker/reservation exactly-once union과 atomic lifecycle handoff |
+| LT-15 | 서로 다른 concurrent intent가 같은 risk capacity를 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, exact reservation-scoped exclude-self/replace evaluation과 atomic lifecycle handoff |
 
 ## Runtime Approval Contract
 
@@ -135,8 +135,9 @@ intent와 불일치하면 no-send로 종료한다.
 
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
-risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인한다. 먼저 fresh
-read-only broker/local evidence와 모든 capacity source의 exactly-once union으로 risk,
+  risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인한다. 먼저 fresh
+  read-only broker/local evidence와 exact self reservation을 제외한 다른 모든 capacity
+  source의 exactly-once union으로 risk,
 freshness, market hours, sellable quantity, exposure, loss/budget과 open-order rule을 전부 다시
 평가한다. Resulting `riskBindingHash`가 owner approval에 bind된 값과 exact match하고 모든
 rule이 여전히 approved인 경우에만 approval을 one-time consumed로 바꾸면서
@@ -277,6 +278,16 @@ reconciliation_pending
   acknowledged/open order는 broker open-order contribution만, partial fill은 broker가 확인한
   filled position/cash와 remaining open quantity만 반영한다. Reservation/tombstone record는
   lineage를 위해 남겨도 같은 capacity를 다시 합산하지 않는다.
+- Initial final evaluation은 candidate intent를 snapshot에 한 번 적용한 뒤 exact capacity를
+  reserve한다. 이후 같은 intent의 pre-dispatch revalidation은 caller input이 아닌 durable
+  current `reservationId`로 자기 reservation contribution과 duplicate/idempotency marker만
+  원자적으로 제외하고 candidate intent를 같은 자리에 한 번 다시 적용하는 replace-self
+  view를 사용한다. 모든 다른 reservation/tombstone/broker contribution은 그대로 유지한다.
+- Replace-self는 reservation state/version, intent/hash, reserved capacity projection과
+  approval binding이 모두 exact match하고 아직 broker-visible correlation이 없는 경우에만
+  허용한다. 다른 reservation, terminal tombstone 또는 caller-provided identity를 제외할 수
+  없으며, recomputed capacity가 held capacity와 다르거나 self가 이미 broker-visible이면
+  no-send reconciliation과 fresh intent/approval을 요구한다.
 - Broker snapshot에서 correlation이 missing, duplicate, ambiguous 또는 reservation state와
   불일치하면 보수적으로 이중 계산해 계속 진행하지 않고 snapshot reconciliation을
   owner-visible blocked로 만들며 새로운 final risk approval/send를 금지한다.
@@ -410,6 +421,7 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
+- [ ] Pre-dispatch revalidation이 exact current reservation만 exclude-self/replace하고 다른 capacity를 유지함
 - [ ] Timeout/unknown result의 blind retry가 없음
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨

@@ -616,6 +616,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   broker correlation으로 reservation contribution을 broker order/position/cash contribution에
   atomic handoff한다. Effective snapshot은 logical order당 정확히 한 capacity source만
   포함하며 ambiguous/missing correlation은 새 risk approval/send를 fail-closed로 차단한다.
+- Pre-dispatch revalidation은 durable current `reservationId`에 한해 자기 capacity와 duplicate
+  marker를 snapshot에서 원자적으로 제외하고 candidate intent를 한 번 다시 적용한다.
+  다른 reservation/tombstone은 유지하며, self state/version/intent/hash/capacity projection이
+  다르거나 이미 broker-visible이면 replace하지 않고 no-send reconciliation한다.
 - 최초 reservation은 `intentId`와 order hash의 permanent tombstone을 write-ahead로 만들며,
   rejected, stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는
   재사용하지 않는다.
@@ -751,6 +755,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
 - concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
+- pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
