@@ -595,15 +595,28 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   read-only evidence에서 같은 account/target이 여전히 open이지만 partial fill, version/state hash
   또는 remaining quantity가 바뀌면 stale recovery cancel을 보내거나 fence를 release하지 않는다.
   먼저 exact old recovery intent/state/version, unconsumed permit, first-byte/`dispatch_attempted`
-  부재와 target mismatch evidence를 `recovery_target_changed` no-dispatch fence로 commit해야 한다. Old permit이
-  consumed/attempted/unknown이면 rebind하지 않고 blocked reconciliation에 남긴다.
-- Old recovery attempt의 no-dispatch가 증명된 경우 같은 recovery lock/epoch에서 fence ownership을
+  부재와 target mismatch evidence를 `recovery_target_changed` no-dispatch fence로 commit해야 한다.
+  Prior permit이 이미 consumed/attempted이면 이 pre-dispatch cause를 사용하지 않고 exact definitive
+  broker rejection 또는 `zeroByteAttemptFence`처럼 complete audit chain이 terminal no-effect를
+  증명해야 한다. Consumed/attempted outcome이 unknown 또는 ambiguous이면 rebind하지 않고 blocked
+  reconciliation에 남긴다.
+- Old recovery attempt의 no-dispatch 또는 terminal no-effect가 증명된 경우 같은 recovery lock/epoch에서 fence ownership을
   유지한 채 generation을 증가시키고 old/new target version, old attempt tombstone/history,
   original operation reconciliation과 conservative filled/remaining capacity envelope를 보존하는
   `recovery_rebind_pending_approval` CAS를 수행한다. 이 CAS는 fresh backend-generated recovery
   intent와 pending approval request를 새 generation/current snapshot에 bind한다. Fresh owner
   approval과 cancel-specific risk revalidation 뒤에만 새 sole permit을 만들며 모든 old permit은
   영구 fence한다. Repeated version change도 동일 lineage/generation 규칙을 반복한다.
+- Target이 같은 version/state/remaining quantity로 여전히 open이고 prior recovery cancel이 exact
+  broker rejection, `zeroByteAttemptFence`, `restart_unconsumed_permit` 또는 다른 cause-specific
+  pre-dispatch noDispatchFence로 terminal/proven no-effect인 경우에도 target fence를 release하지 않고
+  같은 `recoveryLineageId`에서 `recovery_retry_pending_approval` CAS를 허용한다. Transaction은 prior
+  attempt의 terminal/no-effect evidence와 complete audit chain, unchanged current target, exact
+  original-operation reconciliation state를 검증하고 fence ownership, inherited conservative
+  capacity envelope, original/prior-attempt history를 보존한 채 generation을 증가시킨다. 새
+  backend-generated recovery intent와 pending request, fresh owner approval, cancel-specific risk
+  revalidation 뒤에만 새 sole permit을 만들며 모든 prior permit은 영구 fence한다. Rejection이
+  definitive하지 않거나 prior attempt/outcome/target이 ambiguous하면 retry를 만들지 않는다.
 - Target가 이미 terminal이면 새 cancel을 만들지 않고 reconciliation만 진행한다. Account/target
   lineage가 달라졌거나 state가 ambiguous하면 rebind/cancel하지 않고 owner-visible blocked state로
   남긴다. Cancel acknowledgement만으로 capacity를 release하지 않고 target order와 resulting
@@ -849,6 +862,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Takeover cancel의 zeroByteAttemptFence가 ambiguous original lineage capacity/fence를 release하지 않음
+- [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐
 - [ ] Recovery target version/partial fill 변경이 same-lineage fence rebind와 fresh approval로만 이어짐
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Disabled gate가 final reservation/fence/approval request를 막고 race loser를 atomic close함

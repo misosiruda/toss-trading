@@ -638,12 +638,21 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
   release하지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
-  exact old recovery state, unconsumed permit과 no-dispatch를 먼저 durable fence한다. 같은
+  exact old recovery state와 pre-dispatch unconsumed-permit no-dispatch 또는 definitive broker
+  rejection/`zeroByteAttemptFence`의 terminal no-effect를 먼저 durable하게 증명한다. 같은
   `recoveryLineageId` 안에서 fence ownership/capacity/history를 유지하고 generation을 증가시키며
   current target snapshot, fresh recovery intent/pending request로
   `recovery_rebind_pending_approval`을 atomic CAS한다. Fresh owner approval/risk revalidation 뒤에만
-  새 sole permit을 만들고 old permit은 영구 fence한다. Old attempt가 consumed/attempted/unknown,
-  account/target lineage mismatch 또는 ambiguous이면 rebind하지 않고 blocked reconciliation에 남긴다.
+  새 sole permit을 만들고 old permit은 영구 fence한다. Consumed/attempted outcome의 no-effect가
+  proven되지 않았거나 unknown, account/target lineage mismatch 또는 ambiguous이면 rebind하지 않고
+  blocked reconciliation에 남긴다.
+- Target이 같은 version/state/remaining quantity로 open인 경우 prior recovery cancel의 definitive
+  broker rejection, `zeroByteAttemptFence`, `restart_unconsumed_permit` 또는 pre-dispatch
+  noDispatchFence가 complete audit chain으로 no-effect를 증명해야만 same-lineage
+  `recovery_retry_pending_approval` CAS를 허용한다. Fence ownership, inherited conservative capacity,
+  original/prior-attempt history를 유지하고 generation, fresh backend intent/pending request와 owner
+  approval/risk revalidation을 새로 만든 뒤 sole permit 하나만 발급한다. Ambiguous outcome은 retry하지
+  않고 blocked reconciliation에 남긴다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   pending `approvalRequest` 생성 및 `approval_required` 전이와 하나의 serializable durable
@@ -772,7 +781,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   current recovery cancel의 no-effect만 확인한다. Takeover가 없고 다른 unresolved lineage가 없을
   때만 attempt-local capacity/fence를 release한다. Takeover lineage에서는 이 proof가 superseded
   original modify/cancel outcome을 종료하지 않으므로 original operation과 external state가 terminal
-  reconcile될 때까지 conservative capacity envelope와 stable target fence를 유지한다. Boundary가
+  reconcile될 때까지 conservative capacity envelope와 stable target fence를 유지한다. Target이
+  unchanged open이면 current attempt를 재사용하지 않고 위 same-lineage
+  `recovery_retry_pending_approval`과 fresh owner approval로만 새 cancel을 시도할 수 있다. Boundary가
   불명확한 crash/socket 결과는 startup kill-active
   `acknowledgement_unknown` reconciliation로 보내며 permit/gate를 재사용하지 않는다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
@@ -973,7 +984,8 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
-- recovery target partial fill/version 변경은 old permit의 proven no-dispatch 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
+- proven no-effect recovery cancel은 unchanged target에서 same-lineage fresh approval retry만 허용한다.
+- recovery target partial fill/version 변경은 prior attempt의 proven no-dispatch/terminal no-effect 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
