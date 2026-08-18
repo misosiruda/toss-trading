@@ -573,24 +573,29 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Read-only reconciliation으로 확인한 exact `accountScopeRef`, `targetOrderRef`, target
   version/state hash와 remaining quantity 하나만 대상으로 한다.
 - Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
-  reservation, current snapshot, reason, expiry와 recovery fencing epoch에 exact bind한다.
+  reservation, current snapshot, reason, expiry와 recovery fencing epoch에 exact bind한다. Takeover
+  transaction은 이 approval을 active/unconsumed 상태로 보존하고 final risk transaction만 consume한다.
 - Normal modify/cancel fence가 이미 target을 점유하면 recovery transaction은 kill-active,
   exact current broker-open account/target/version과 unconsumed owner recovery approval을
   확인한 뒤 fence를 `recovery_cancel_takeover` generation으로 atomic CAS한다. Original
   operation은 `superseded_pending_reconciliation`로 남기고 tombstone, permit history,
   unknown/result reconciliation과 capacity envelope를 삭제하거나 terminal 처리하지 않는다.
 - Takeover CAS는 recovery epoch를 advance해 original operation의 unconsumed dispatch permit을
-  영구 fence하고 cancel permit을 정확히 하나 만든다. Original request가 이미 first byte를
+  영구 fence하고 `recovery_takeover_pending_final_risk`로 전이할 뿐 dispatch-capable cancel permit을
+  만들지 않는다. Original request가 이미 first byte를
   넘었거나 outcome이 ambiguous여도 current read-only broker evidence가 exact open target을
   확인한 경우에만 cancel을 보낼 수 있으며, target state/version을 확인할 수 없으면 raw/blind
   cancel 대신 owner-visible blocked reconciliation로 남긴다.
-- Gate snapshot은 `normalCreate=false`, `normalModify=false`, `normalCancel=false`와 exact
-  recovery-cancel permit 하나만 포함해 write-ahead commit하며, gateway allowlist도 typed
-  `operation=recovery_cancel`과 해당 target만 수락한다. Normal `operation=cancel`, symbol,
-  side, quantity, price 변경이나 새 order 생성은 거부한다.
-- Cancel-specific risk/freshness/target-version check, approval/permit CAS, account binding,
-  write-ahead audit, timeout unknown reconciliation과 permanent tombstone을 normal flow와
-  동일하게 적용한다.
+- Takeover gate snapshot은 `normalCreate=false`, `normalModify=false`, `normalCancel=false`,
+  `recoveryCancelDispatch=false`와 no-permit을 write-ahead commit하며 gateway allowlist도 비어 있다.
+  Final transaction은 fresh current target/account evidence, cancel-specific risk/freshness와 all-rule
+  final Risk Engine approval, recovery gate/epoch, account/transport binding을 재검증하고 exact
+  `cancelRecoveryApproval`을 one-time consume하면서 state transition, sole recovery permit 생성과
+  그 permit 하나만 허용하는 gateway snapshot/allowlist를 한 linearizable CAS로 commit한다. 이
+  transaction 전에는 typed `operation=recovery_cancel`도 dispatch할 수 없다. Normal
+  `operation=cancel`, symbol, side, quantity, price 변경이나 새 order 생성은 항상 거부한다.
+- Write-ahead audit, timeout unknown reconciliation과 permanent tombstone은 normal flow와 동일하게
+  적용한다.
 - Takeover fence는 stable `recoveryLineageId`와 account/target lineage를 보존한다. Dispatch 전
   read-only evidence에서 같은 account/target이 여전히 open이지만 partial fill, version/state hash
   또는 remaining quantity가 바뀌면 stale recovery cancel을 보내거나 fence를 release하지 않는다.
@@ -627,8 +632,12 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   `dispatch_attempted` commit 뒤에도 같은 dispatch/gate lock을 first network byte boundary까지
   유지하며, exact consumed permit 외 다른 request는 허용하지 않는다. First byte를 실제로 넘은
   뒤 `dispatch_won` evidence를 append하고 나서만 recovery gate를 disabled로 durable transition하고
-  epoch를 advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 해당 cause-specific
-  `zeroByteAttemptFence`와 gate disable을 같은 transaction에 commit하고, target unchanged
+  epoch를 advance한다. Permit consume 전 expiry/staleness는 authoritative clock/freshness evidence,
+  exact unconsumed permit/state와 `dispatch_attempted` 부재를 `permit_expired_or_stale`
+  noDispatchFence, recovery gate disable과 epoch advance로 한 CAS에 commit한다. 이 pre-attempt cause에
+  `zeroByteAttemptFence`를 사용하지 않는다. Permit consume과 signed `dispatch_attempted` 뒤 실제
+  connect/TLS/pre-write failure의 zero-byte proof만 `zeroByteAttemptFence`와 gate disable을 같은
+  transaction에 commit하고, target unchanged
   reconciliation로 current recovery cancel attempt가 broker에 영향 없었음만 확인한다. Takeover가
   없고 다른 unresolved lineage가 없는 경우에만 attempt-local recovery capacity/fence를 release할 수
   있다. `recovery_cancel_takeover`이면 zero-byte cancel이 superseded original modify/cancel의
@@ -861,7 +870,9 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Stable account/target mutation fence가 version lineage 전체의 concurrent modify/cancel을 terminal까지 차단함
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
+- [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
 - [ ] Takeover cancel의 zeroByteAttemptFence가 ambiguous original lineage capacity/fence를 release하지 않음
+- [ ] Recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale CAS로 종료됨
 - [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐
 - [ ] Recovery target version/partial fill 변경이 same-lineage fence rebind와 fresh approval로만 이어짐
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨

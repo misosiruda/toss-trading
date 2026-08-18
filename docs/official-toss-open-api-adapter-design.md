@@ -636,7 +636,12 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   있을 때 active fence를 `recovery_cancel_takeover` generation으로 atomic CAS할 수 있다.
   Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
   original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
-  release하지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
+  release하지 않는다. Takeover CAS는 `recovery_takeover_pending_final_risk`로만 전이하고 permit이나
+  gateway allowlist를 만들지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
+- Fresh target/account evidence와 cancel-specific risk/freshness의 all-rule final Risk Engine
+  revalidation이 통과한 transaction만 active owner recovery approval을 one-time consume하면서 state,
+  sole recovery permit과 그 permit 하나의 gateway allowlist를 atomic commit한다. 이 final transaction
+  전 recovery dispatch surface는 disabled/no-permit이다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
   exact old recovery state와 pre-dispatch unconsumed-permit no-dispatch 또는 definitive broker
   rejection/`zeroByteAttemptFence`의 terminal no-effect를 먼저 durable하게 증명한다. 같은
@@ -776,7 +781,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Cancel-recovery permit consume 자체는 recovery gate를 disable하지 않는다. Arbiter는 같은
   dispatch/gate lock을 first network byte boundary까지 유지하고 exact consumed permit 외 요청을
   거부한다. First byte 뒤 `dispatch_won` evidence를 append한 다음에만 gate를 disable하고 epoch를
-  advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 post-attempt
+  advance한다. Pre-consume expiry/staleness는 authoritative deadline/freshness, exact unconsumed
+  permit/state와 `dispatch_attempted` 부재를 `permit_expired_or_stale` noDispatchFence, gate disable과
+  epoch advance로 atomic commit하며 `zeroByteAttemptFence`를 사용하지 않는다. Permit consume과
+  signed `dispatch_attempted` 뒤 실제 connect/TLS/pre-write zero-byte failure만 post-attempt
   `zeroByteAttemptFence`와 disable을 원자적으로 commit하고 unchanged target reconciliation로
   current recovery cancel의 no-effect만 확인한다. Takeover가 없고 다른 unresolved lineage가 없을
   때만 attempt-local capacity/fence를 release한다. Takeover lineage에서는 이 proof가 superseded
@@ -983,7 +991,9 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - pre-permit payload 변경은 exact old/new binding mismatch와 request/approval/no-permit CAS 없이는 release되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
+- cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
+- recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale no-dispatch CAS로 종료한다.
 - proven no-effect recovery cancel은 unchanged target에서 same-lineage fresh approval retry만 허용한다.
 - recovery target partial fill/version 변경은 prior attempt의 proven no-dispatch/terminal no-effect 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
