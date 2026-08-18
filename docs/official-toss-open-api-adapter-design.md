@@ -516,12 +516,12 @@ sequenceDiagram
     Risk-->>Router: candidate OrderIntent and preliminary decision
     Router-->>Owner: typed market-order authorization request when required
     Owner->>Router: exact-bound marketOrderAuthorization
-    Router->>Router: atomic final reservation, pending approvalRequest and approval_required
-    Router-->>Owner: typed request with id/generation/deadline, preview and exact binding
+    Router->>Router: serialize immutable projection/hash and atomically reserve with pending request
+    Router-->>Owner: typed request with id/generation/deadline, preview, risk and transport hash
     Owner->>Router: exact-bound dispatchApproval
     Router->>Router: refresh exactly-once snapshot and revalidate risk/freshness binding
     Router->>Router: atomic approval consume, state transition and sole permit CAS
-    Router->>Router: verify account, clock, risk binding, gate snapshot, fencing and permit
+    Router->>Router: recompute exact outbound hash and verify account, clock, bindings, gates and permit
     Router->>Audit: write-ahead masked dispatch_attempted
     Audit-->>Router: durable commit confirmed
     Router->>Gateway: create/modify/cancel request
@@ -614,6 +614,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   account/portfolio capacity, target fence, approval, permit, broker identity, reconciliation
   queue 또는 gateway 입력과 type/runtime 수준에서 호환되지 않으며 audit는
   `simulation_only=true`와 synthetic correlation만 기록한다.
+  최초 shadow reservation은 permanent `(scenarioId, syntheticIntentHash)` tombstone을 atomic
+  commit하며 `shadow_reconciled_no_external_effect` 뒤에도 같은 synthetic intent를 거부한다.
 - Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
   재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
   terms를 replacement로 평가하되 reconciliation 전 old capacity를 해제하지 않는다. 각 risk
@@ -647,8 +649,12 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   source로 후속 risk evaluation에 포함한다.
 - Final transaction은 exact risk/reservation identity로 backend-generated `approvalRequestId`,
   monotonic generation, authoritative requested/deadline과 owner channel을 가진 durable pending
-  request 및 `approval_required` 전이를 reservation과 함께 atomic commit한다. 그 뒤 exact
-  request identity/generation/deadline, reservation/risk binding과 preview를 한 typed payload로
+  request 및 `approval_required` 전이를 reservation과 함께 atomic commit한다. Trusted serializer는
+  그 전에 immutable non-secret transport envelope을 만들고 length-prefixed canonical
+  `(schemaVersion, method, providerOriginId, path/query, contentType, accountScopeRef,
+  credentialGeneration, exact body bytes)`의 domain-separated SHA-256 `transportRequestHash`도
+  같은 record에 bind한다. 그 뒤 exact request identity/generation/deadline,
+  reservation/risk/transport binding과 preview를 한 typed payload로
   owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
   뒤에만 dispatch permit을 발급한다.
 - `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
@@ -659,7 +665,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
   dispatch permit 생성 직전에 fresh broker/local exactly-once effective snapshot으로 모든
   risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
-  binding이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
+  binding 및 immutable `transportRequestHash`가 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
   commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
   exact `approval_required` state/version, active/unconsumed approval, permit/dispatch 부재와
   old/current mismatch를 한 CAS로 증명한 `pre_permit_binding_invalidated` noDispatchFence로 닫고
@@ -675,6 +681,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   Permit deadline은 approval expiry, evidence/session freshness deadline과 configured immediate
   window 중 최솟값이며 approval보다 오래 살아남지 않는다. Approval이 permit 생성 뒤 만료되면
   exact `send_reserved`/unconsumed permit을 `permit_expired_or_stale` noDispatchFence로 CAS한다.
+  Gateway는 exact outbound method/path/query/content-type/body bytes와 current account binding의
+  canonical hash를 다시 계산해 approval/permit hash와 constant-time compare한다. Authorization
+  token과 raw account header는 hash에서 제외하지만 current credential generation/account scope로
+  별도 검증한다. Mismatch는 unconsumed permit과 no-dispatch를 CAS한
+  `transport_request_mismatch` noDispatchFence이며 first network byte를 금지한다.
   Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
   write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
@@ -685,7 +696,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   epoch/snapshot, reason, tombstone/audit과 함께 gate-disable winning fence, approval-revocation
   CAS/version, post-permit binding invalidation CAS, pre-permit binding mismatch와 no-permit CAS,
   authoritative permit expiry/staleness, authoritative approval expiry와 active/unconsumed
-  approval-required state CAS, approval-not-issued request
+  approval-required state CAS, exact outbound transport-hash mismatch CAS, approval-not-issued request
   closure 또는 pre-permit payload-change state 중 해당 cause evidence를 포함한다.
   `approval_not_issued`는 exact pending request generation, valid approval/permit 부재와 typed owner
   decline, authoritative request expiry, allowlisted channel-unavailable 또는 malformed-response
@@ -874,6 +885,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - order gateway는 `TRADING_ENABLED=false` 또는 `ORDER_MUTATIONS_ENABLED=false`에서 실행되지 않는다.
 - disabled gate에서는 final risk reservation, target fence와 approval request도 생성되지 않고 race-loser reservation은 atomic no-dispatch closure된다.
 - Row 16 dry-run reservation/timeout/unknown 검증은 isolated shadow state로만 수행되고 live capacity, permit, gateway 또는 reconciliation queue에 닿지 않는다.
+- Row 16 shadow tombstone은 no-external-effect terminal 뒤에도 동일 synthetic intent의 중복 reservation을 차단한다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
 - attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
@@ -887,6 +899,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - recovery gate는 first-byte dispatch winner 또는 zeroByteAttemptFence 뒤에만 disable된다.
 - signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
+- canonical transportRequestHash가 approval/permit과 exact outbound method/path/query/body에서 일치하지 않으면 first byte 전에 차단한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
