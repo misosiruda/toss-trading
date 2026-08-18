@@ -333,8 +333,9 @@ reconciliation_pending
   금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를 넘으면 해당 record를
   in-flight로 audit하고 disable 뒤에도 terminal reconciliation까지 추적한다.
 - Kill switch가 active이거나 normal mutation gate 하나라도 false/invalid/mismatched이면
-  normal `create`/`modify`의 `send_reserved` 신규 진입과 dispatch permit 발급을 모두
-  차단한다. 아래 cancel-only recovery는 normal gate를 재활성화하지 않는 별도 예외다.
+  normal `create`/`modify`/`cancel`의 `send_reserved` 신규 진입과 dispatch permit 발급을
+  모두 차단한다. 아래 typed cancel-only recovery transition만 normal gate를
+  재활성화하지 않는 별도 예외다.
 - Exact mutation-gate snapshot과 global fencing epoch의 모든 enable/disable transition은
   완료를 응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는
   재사용하지 않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
@@ -352,8 +353,10 @@ reconciliation_pending
 
 ### Cancel-only incident recovery
 
-Kill switch가 active인 동안 normal `create`와 `modify`는 계속 차단한다. 이미 broker에 open인
-order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gate로만 허용할 수 있다.
+Kill switch가 active인 동안 normal `create`, `modify`, `cancel`은 계속 차단한다. 이미 broker에
+open인 order를 중단하기 위한 future cancel은 별도의 typed cancel-only recovery transition과
+gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recovery permit으로 승격하거나
+재사용하지 않는다.
 
 - Recovery gate default는 disabled이며 general `TRADING_ENABLED`/mutation gate를 true로
   바꾸지 않는다.
@@ -371,9 +374,10 @@ order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gat
   넘었거나 outcome이 ambiguous여도 current read-only broker evidence가 exact open target을
   확인한 경우에만 cancel을 보낼 수 있으며, target state/version을 확인할 수 없으면 raw/blind
   cancel 대신 owner-visible blocked reconciliation로 남긴다.
-- Gate snapshot은 `normalCreate=false`, `normalModify=false`, exact cancel permit 하나만
-  포함해 write-ahead commit하며, gateway allowlist도 `operation=cancel`과 해당 target만
-  수락한다. Symbol, side, quantity, price 변경이나 새 order 생성은 거부한다.
+- Gate snapshot은 `normalCreate=false`, `normalModify=false`, `normalCancel=false`와 exact
+  recovery-cancel permit 하나만 포함해 write-ahead commit하며, gateway allowlist도 typed
+  `operation=recovery_cancel`과 해당 target만 수락한다. Normal `operation=cancel`, symbol,
+  side, quantity, price 변경이나 새 order 생성은 거부한다.
 - Cancel-specific risk/freshness/target-version check, approval/permit CAS, account binding,
   write-ahead audit, timeout unknown reconciliation과 permanent tombstone을 normal flow와
   동일하게 적용한다.
@@ -560,7 +564,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
 - [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨
 - [ ] Exact account/target/version mutation fence가 concurrent modify/cancel을 terminal까지 차단함
-- [ ] Kill-active cancel-only recovery가 create/modify gate를 열지 않음
+- [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨

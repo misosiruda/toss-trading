@@ -657,10 +657,12 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   있으면 현재 상태나 새 approval 여부와 관계없이 중복 전송하지 않는다.
 - 이후 create/modify/cancel operation은 새 backend-generated identity/hash를 사용하고
   기존 approval/idempotency record를 승계하지 않는다.
-- Kill-active incident recovery는 normal create/modify gate를 열지 않고 exact reconciled
-  target/version/account에 bind된 one-time cancel-only permit만 별도 recovery epoch에서
-  허용한다. Cancel 결과와 position/cash reconciliation 전에는 target capacity를 release하지
-  않으며 current 문서가 실제 cancel endpoint 구현을 승인하지 않는다.
+- Kill-active incident recovery는 normal create/modify/cancel gate와 permit을 모두 차단하고,
+  exact reconciled target/version/account에 bind된 typed one-time `recovery_cancel` permit만
+  별도 recovery epoch에서 허용한다. Normal cancel intent/approval/permit은 이 recovery
+  transition으로 승격하거나 재사용하지 않는다. Cancel 결과와 position/cash reconciliation
+  전에는 target capacity를 release하지 않으며 current 문서가 실제 cancel endpoint 구현을
+  승인하지 않는다.
 - mutation 요청이 timeout된 경우에는 즉시 재전송하지 않고 order history/detail 조회로 상태를 먼저 확인한다.
 - 공식 API가 idempotency key를 지원하면 local `intentId`와 매핑한다.
 - 공식 API가 idempotency key를 지원하지 않으면 retry policy를 더 보수적으로 제한한다.
@@ -798,7 +800,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
 - modify는 old capacity를 reconciliation까지 보존하고 target-version fence가 concurrent modify/cancel을 차단한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
-- kill-active cancel-only recovery permit은 create/modify gate를 열지 않는다.
+- kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
