@@ -16,7 +16,7 @@ official Toss Open API adapter를 구현하기 전에 OAuth2 Client Credentials 
 
 ## 공식 문서 기준
 
-이 문서는 2026-08-13 확인 기준으로 다음 official source를 참고했다.
+이 문서는 2026-08-18 재확인 기준으로 다음 official source를 참고했다. Current OpenAPI document는 계속 `3.1.0`, API contract version은 `1.2.14`, server origin은 `https://openapi.tossinvest.com`이며 token endpoint의 허용되지 않은 IP `403 access_denied` 계약을 유지한다.
 
 - Auth Markdown: https://openapi.tossinvest.com/openapi-docs/latest/api-reference/Apis/AuthApi.md
 - OpenAPI JSON source of truth: https://openapi.tossinvest.com/openapi-docs/latest/openapi.json
@@ -97,11 +97,13 @@ TOSS_OPEN_API_AUTH_ENABLED=false
 TOSS_OPEN_API_BASE_URL=https://openapi.tossinvest.com
 TOSS_OPEN_API_CLIENT_ID=<local secret only>
 TOSS_OPEN_API_CLIENT_SECRET=<local secret only>
+TOSS_OPEN_API_OUTBOUND_IP_REGISTERED=false
 ```
 
 원칙:
 
 - repository에는 placeholder만 둘 수 있으며 real credential은 commit하지 않는다.
+- `TOSS_OPEN_API_OUTBOUND_IP_REGISTERED`는 secret이나 실제 IP 값이 아니라 owner attestation이다. `true`여도 current egress IP 또는 Toss WTS 등록 상태가 network로 검증됐다고 주장하지 않는다.
 - `.env`와 `.env.*`는 Git에서 제외된 상태를 유지한다.
 - `client_id`, `client_secret`, `access_token`은 source, test fixture, docs, audit log, PR body에 원문으로 쓰지 않는다.
 - 실패 메시지를 저장할 때 provider response body를 그대로 남기지 않고 token-like string과 credential-like string을 masking한다.
@@ -348,6 +350,7 @@ client당 유효 token이 1개라는 제약 때문에 token auth는 단순 cache
 | 9a | Version-aware calendar evidence consumers | 구현됨: response-delay-aware v2 provenance, replay adapter와 coverage probe의 v1/v2 dispatch와 exact raw-byte 재검증 | network, evidence 재작성, completeness claim |
 | 9b | Ephemeral calendar acquisition lifecycle | 구현됨: v2 evidence/raw-byte process-local opaque handle, transferable bytes 격리, fixed non-exporting replay/coverage operation과 unconditional zeroization | durable raw-byte store, workflow artifact persistence |
 | 10 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral paper-only observation, loopback fail-closed test | persistent token/raw bytes, stored report, replay 실행 |
+| 11 | Credential readiness preflight | 구현됨: secret-free auth/config summary, exact host DNS family/count, fixed endpoint allowlist와 outbound-IP owner attestation 진단 | token/calendar HTTP request, resolved IP/token/response 출력, successful external evidence claim |
 
 Calendar acquisition coordinator는 adapter design의 OpenAPI compatibility, version-aware
 evidence transition, version-aware replay consumer migration과 ephemeral lifecycle boundary를
@@ -355,6 +358,8 @@ evidence transition, version-aware replay consumer migration과 ephemeral lifecy
 response cache provenance가 없는 v1 builder에 actual network response를 전달하지 않는다.
 Durable raw-byte 저장 계약 전에는 network-derived v2 evidence, replay input과 coverage report를
 process 밖에 저장하거나 export하지 않는다.
+
+Credential readiness preflight는 DNS lookup 외 HTTP request를 만들지 않는다. `ready_for_external_verification`은 local config, safe runtime boundary, official host resolution과 owner attestation이 다음 수동 external 검증을 시도할 조건을 충족했다는 뜻일 뿐이며 token 발급, calendar response, current outbound IP 또는 broker evidence를 검증했다는 뜻이 아니다.
 
 order gateway 구현은 live Risk Engine, threat model, dry-run OrderRouter가 merge된 뒤에만 검토한다.
 

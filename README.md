@@ -55,6 +55,7 @@
 - `TOSSINVEST_CLI_ENABLED=false`
 - `TOSSINVEST_CLI_READ_ONLY=true`
 - `TOSS_OPEN_API_AUTH_ENABLED=false`
+- `TOSS_OPEN_API_OUTBOUND_IP_REGISTERED=false`
 - `AI_DECISION_PROVIDER=codex_cli`
 - `AI_DECISION_MODE=paper_only`
 - `AI_DECISION_ENABLED=false`
@@ -87,7 +88,7 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 ## Current Status
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
-- 실제 Toss Securities Open API network transport와 order adapter는 구현하지 않았습니다. 현재는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md), [official token auth 설계](docs/official-token-auth-design.md), safe-disabled token auth config parser, injected issuer 기반 mocked token auth client, injected transport 기반 authenticated read-only HTTP client, mocked HTTP client 기반 read-only market data adapter, masked read-only account snapshot reader만 존재합니다.
+- Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/official-token-auth-design.md)를 따릅니다.
 - `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
@@ -95,6 +96,14 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 - daily paper report CLI는 local virtual state를 요약하고 투자 조언/성과 보장 문구를 포함하지 않습니다.
 - 실거래 기능은 비활성화 상태를 기본으로 전제합니다.
 - 현재 문서에는 real account data, real API keys, real brokerage credentials가 없습니다.
+
+## Toss Open API Credential Preflight
+
+다음 명령은 exact official host DNS, safe auth config summary, fixed token/calendar endpoint identity와 outbound-IP 등록 owner attestation을 진단합니다. DNS lookup 외 HTTP request를 만들지 않고 credential/token/resolved IP/provider response를 출력하지 않습니다. `ready_for_external_verification`은 external token/calendar 검증을 시도할 local 조건만 충족했다는 뜻이며 성공 evidence가 아닙니다.
+
+```powershell
+npm run toss:calendar:credential-preflight
+```
 
 ## Paper-only Demo
 
