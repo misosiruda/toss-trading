@@ -203,8 +203,10 @@ dispatch와 raw-byte 검증을 반복하며, unknown schema, raw-byte 누락/불
 exact bytes를 WeakMap-backed opaque handle로 결합하고 verified factory가 만든 handle만 1회
 소비하게 한다. Consumer scope는 consume 시점의 `asOf`와 exact bytes로 evidence를 다시
 검증하며 callback 종료, verifier/consumer 오류, stale/tamper, 명시적 disposal 또는 JSON export
-시도 뒤 bytes를 zeroize한다. Scope는 chain 밖에서 재사용할 수 없고 callback은 detached
-evidence/replay input/coverage report를 포함한 어떤 output도 반환할 수 없다.
+시도 뒤 bytes를 zeroize한다. Evidence object graph는 deep revocable read-only membrane이므로
+scope 안에서 얻은 top-level/nested reference도 종료 뒤 읽기와 serialization이 불가능하다.
+Scope는 chain 밖에서 재사용할 수 없고 callback은 detached evidence/replay input/coverage
+report를 포함한 어떤 output도 반환할 수 없다.
 
 Future `official_broker_observed` contract는 최소한 request path/query, requested
 date, market, retrieval timestamp, accepted identity payload의 exact hash와 byte length,

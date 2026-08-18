@@ -58,6 +58,7 @@ interface ActiveScopeState {
   evidence: OfficialBrokerObservedCalendarEvidenceV2;
   rawResponseBytes: Uint8Array;
   asOf: string;
+  revokeEvidence: () => void;
 }
 
 interface DisposedScopeState {
@@ -68,6 +69,7 @@ type ScopeState = ActiveScopeState | DisposedScopeState;
 
 const observationStates = new WeakMap<object, ObservationState>();
 const scopeStates = new WeakMap<object, ScopeState>();
+const activeScopesByObservation = new WeakMap<object, object>();
 
 export function createOfficialBrokerObservedCalendarEphemeralObservation(
   input: CreateOfficialBrokerObservedCalendarEphemeralObservationInput
@@ -129,19 +131,25 @@ export function consumeOfficialBrokerObservedCalendarEphemeralObservation(
   });
 
   let scopeObject: object | undefined;
+  let revokeEvidence: (() => void) | undefined;
   try {
-    const evidence = deepFreeze(
+    const verifiedEvidence =
       verifyOfficialBrokerObservedCalendarEvidenceV2(state.evidence, {
         asOf: options.asOf,
         rawResponseBytes: state.rawResponseBytes
-      })
+      });
+    const evidenceCapability = createRevocableReadonlyMembrane(
+      verifiedEvidence
     );
+    revokeEvidence = evidenceCapability.revoke;
     scopeObject = createScope(
       observation,
-      evidence,
+      evidenceCapability.proxy,
       state.rawResponseBytes,
-      options.asOf
+      options.asOf,
+      evidenceCapability.revoke
     );
+    activeScopesByObservation.set(observationObject, scopeObject);
     const output: unknown = options.consumer(
       scopeObject as OfficialBrokerObservedCalendarEphemeralObservationScope
     );
@@ -153,8 +161,11 @@ export function consumeOfficialBrokerObservedCalendarEphemeralObservation(
     }
   } finally {
     if (scopeObject !== undefined) {
-      scopeStates.set(scopeObject, { status: "disposed" });
+      disposeScope(scopeObject);
+    } else {
+      revokeEvidence?.();
     }
+    activeScopesByObservation.delete(observationObject);
     disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
   }
 }
@@ -172,6 +183,11 @@ export function disposeOfficialBrokerObservedCalendarEphemeralObservation(
   if (state.status === "disposed") {
     return;
   }
+  const activeScope = activeScopesByObservation.get(observationObject);
+  if (activeScope !== undefined) {
+    disposeScope(activeScope);
+    activeScopesByObservation.delete(observationObject);
+  }
   try {
     state.rawResponseBytes.fill(0);
   } finally {
@@ -183,7 +199,8 @@ function createScope(
   observation: OfficialBrokerObservedCalendarEphemeralObservation,
   evidence: OfficialBrokerObservedCalendarEvidenceV2,
   rawResponseBytes: Uint8Array,
-  asOf: string
+  asOf: string,
+  revokeEvidence: () => void
 ): object {
   const scope = Object.create(null) as object;
   Object.defineProperties(scope, {
@@ -207,6 +224,7 @@ function createScope(
       configurable: false,
       writable: false,
       value: () => {
+        disposeScope(scope);
         disposeOfficialBrokerObservedCalendarEphemeralObservation(observation);
         throw new Error(
           "official broker calendar ephemeral observation scope cannot be serialized or exported"
@@ -218,9 +236,19 @@ function createScope(
     status: "active",
     evidence,
     rawResponseBytes,
-    asOf
+    asOf,
+    revokeEvidence
   });
   return Object.freeze(scope);
+}
+
+function disposeScope(scope: object): void {
+  const state = scopeStates.get(scope);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  state.revokeEvidence();
+  scopeStates.set(scope, { status: "disposed" });
 }
 
 function getActiveScopeState(scope: object): ActiveScopeState {
@@ -274,6 +302,82 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value);
   }
   return value;
+}
+
+function createRevocableReadonlyMembrane<T extends object>(value: T): {
+  proxy: T;
+  revoke: () => void;
+} {
+  const proxies = new WeakMap<object, object>();
+  const revokers: Array<() => void> = [];
+
+  const wrap = (candidate: unknown): unknown => {
+    if (candidate === null || typeof candidate !== "object") {
+      return candidate;
+    }
+    const existing = proxies.get(candidate);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const { proxy, revoke } = Proxy.revocable(candidate, {
+      get: (target, key, receiver) => {
+        if (key === "toJSON") {
+          return () => {
+            throw new Error(
+              "official broker calendar ephemeral evidence cannot be serialized or exported"
+            );
+          };
+        }
+        return wrap(Reflect.get(target, key, receiver));
+      },
+      getOwnPropertyDescriptor: (target, key) => {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (descriptor === undefined || !("value" in descriptor)) {
+          return descriptor;
+        }
+        return { ...descriptor, value: wrap(descriptor.value) };
+      },
+      set: () => {
+        throw new Error(
+          "official broker calendar ephemeral evidence is read-only"
+        );
+      },
+      defineProperty: () => {
+        throw new Error(
+          "official broker calendar ephemeral evidence is read-only"
+        );
+      },
+      deleteProperty: () => {
+        throw new Error(
+          "official broker calendar ephemeral evidence is read-only"
+        );
+      },
+      setPrototypeOf: () => {
+        throw new Error(
+          "official broker calendar ephemeral evidence is read-only"
+        );
+      },
+      preventExtensions: () => {
+        throw new Error(
+          "official broker calendar ephemeral evidence is read-only"
+        );
+      }
+    });
+    proxies.set(candidate, proxy);
+    revokers.push(revoke);
+    return proxy;
+  };
+
+  const proxy = wrap(value) as T;
+  return {
+    proxy,
+    revoke: () => {
+      for (let index = revokers.length - 1; index >= 0; index -= 1) {
+        revokers[index]!();
+      }
+      revokers.length = 0;
+    }
+  };
 }
 
 function suppressRejectedThenable(value: unknown): void {

@@ -50,12 +50,20 @@ test("consumes a network-derived v2 observation once and disposes owned bytes", 
   let retainedScope:
     | OfficialBrokerObservedCalendarEphemeralObservationScope
     | undefined;
+  let retainedEvidence:
+    | OfficialBrokerObservedCalendarEphemeralObservationScope["evidence"]
+    | undefined;
+  let retainedSource:
+    | OfficialBrokerObservedCalendarEphemeralObservationScope["evidence"]["source"]
+    | undefined;
   let retainedBytes: Uint8Array | undefined;
 
   consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
     asOf: "2026-03-25T01:00:30.000Z",
     consumer: (scope) => {
       retainedScope = scope;
+      retainedEvidence = scope.evidence;
+      retainedSource = scope.evidence.source;
       retainedBytes = scope.rawResponseBytes;
       assert.strictEqual(scope.rawResponseBytes, rawResponseBytes);
       assert.equal(scope.asOf, "2026-03-25T01:00:30.000Z");
@@ -82,6 +90,9 @@ test("consumes a network-derived v2 observation once and disposes owned bytes", 
   assertZeroed(rawResponseBytes);
   assertZeroed(retainedBytes);
   assert.throws(() => retainedScope!.evidence, /scope is disposed/);
+  assert.throws(() => retainedEvidence!.mode, /revoked/);
+  assert.throws(() => retainedSource!.publisher, /revoked/);
+  assert.throws(() => JSON.stringify(retainedEvidence), /revoked/);
   assert.throws(
     () =>
       consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
@@ -133,9 +144,10 @@ test("rejects an asynchronous consumer before its scope can outlive the chain", 
       consumeOfficialBrokerObservedCalendarEphemeralObservation(observation, {
         asOf: "2026-03-25T01:00:30.000Z",
         consumer: async (scope) => {
+          const retainedEvidence = scope.evidence;
           await Promise.resolve();
           try {
-            void scope.evidence;
+            void retainedEvidence.mode;
             postAwaitScopeStatus = "active";
           } catch {
             postAwaitScopeStatus = "disposed";
@@ -247,6 +259,22 @@ test("rejects observation and scope JSON export and disposes owned bytes", () =>
     /scope cannot be serialized or exported/
   );
   assertZeroed(scoped.rawResponseBytes);
+
+  const evidence = createObservation();
+  assert.throws(
+    () =>
+      consumeOfficialBrokerObservedCalendarEphemeralObservation(
+        evidence.observation,
+        {
+          asOf: "2026-03-25T01:00:30.000Z",
+          consumer: (scope) => {
+            JSON.stringify(scope.evidence);
+          }
+        }
+      ),
+    /evidence cannot be serialized or exported/
+  );
+  assertZeroed(evidence.rawResponseBytes);
 });
 
 test("rejects legacy evidence and disposes transferred bytes", () => {

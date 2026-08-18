@@ -240,8 +240,10 @@ const options = {
 `officialBrokerObservedCalendarEphemeralObservation.ts`는 verified factory가 만든 opaque handle만
 받고 v2 evidence와 exact raw response bytes의 ownership을 한 번의 synchronous consumer chain에
 제한한다. Consume 시 exact bytes와 freshness를 다시 검증하고 성공/실패와 관계없이 bytes를
-zeroize해야 한다. Handle/scope JSON export, scope 재사용과 callback return value는 fail-closed로
-거부한다. Durable raw-byte 저장 또는 replay 실행 책임을 이 module에 추가해서는 안 된다.
+zeroize해야 한다. Evidence object graph는 deep revocable read-only membrane으로 제공해 scope
+종료 뒤 retained top-level/nested reference도 사용할 수 없어야 한다. Handle/scope/evidence JSON
+export, scope 재사용과 callback return value는 fail-closed로 거부한다. Durable raw-byte 저장 또는
+replay 실행 책임을 이 module에 추가해서는 안 된다.
 
 ### `src/workflows`
 
