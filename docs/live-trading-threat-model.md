@@ -417,8 +417,11 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   `dispatch_attempted` 부재를 atomic CAS해 `gate_disabled` noDispatchFence와 permanent tombstone을
   commit한 뒤 capacity/fence를 release한다.
 - `approval_required` 이후 payload가 바뀌면 기존 intent를 no-dispatch reconciliation로
-  닫고 capacity를 atomic release한 뒤 새 preview, final risk/capacity reservation과
-  approval을 만들어야 한다.
+  닫는다. Exact stored intent/order/preview/transport/account binding hash와 normalized new
+  payload hash의 mismatch, pending request 또는 active/unconsumed approval의 exact
+  id/generation/state, permit/`dispatch_attempted` 부재를 `pre_permit_payload_changed` CAS로
+  commit한 뒤에만 capacity를 atomic release하고 새 intent, preview, final risk/capacity
+  reservation과 approval request를 만들어야 한다.
 - `approval_required`에서 `send_reserved`로의 전이는 approval consume과 unique dispatch
   permit 생성을 current exactly-once snapshot의 same `riskBindingHash` 및 immutable
   `transportRequestHash`, `accountHeaderMac`/key generation 재검증과 한
@@ -461,7 +464,10 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   - `approval_not_issued`: exact pending approval-request generation, valid approval/permit 부재,
     typed owner decline 또는 authoritative request expiry/channel failure/malformed evidence와
     permanent request tombstone을 한 CAS로 commit
-  - `pre_permit_payload_changed`: 아직 permit이 생성되지 않은 approval-required state/version
+  - `pre_permit_payload_changed`: exact immutable old intent/order/preview/transport/account binding
+    hash와 normalized new payload hash mismatch, exact `approval_required` state/version,
+    pending request 또는 active/unconsumed approval id/generation/state, permit/`dispatch_attempted`
+    부재와 closed request/approval 및 permanent intent tombstone을 한 CAS로 commit
   CAS contention/duplicate observation만으로는 이 record를 만들 수 없다. 다른 worker가
   permit을 consume했거나 first-byte 여부가 불명확하면 `acknowledgement_unknown`/blocked
   reconciliation로 보낸다. Matching cause evidence가 완전한 record만
@@ -783,6 +789,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Exact outbound method/path/query/body의 transportRequestHash가 approval/permit과 다르면 first byte 전에 차단됨
 - [ ] Exact outbound account header bytes의 keyed MAC이 permit과 다르면 raw identity 저장 없이 first byte 전에 차단됨
 - [ ] Pre-permit binding mismatch와 post-permit approval expiry가 각각 exact no-dispatch CAS로 종료됨
+- [ ] Pre-permit payload 변경이 exact old/new binding mismatch와 request/approval/no-permit CAS로 종료됨
 - [ ] accountScopeRef가 CSPRNG opaque mapping으로 발급되고 key rotation에도 stable하며 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함

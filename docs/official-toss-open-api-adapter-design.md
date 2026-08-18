@@ -680,6 +680,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   exact `approval_required` state/version, active/unconsumed approval, permit/dispatch 부재와
   old/current mismatch를 한 CAS로 증명한 `pre_permit_binding_invalidated` noDispatchFence로 닫고
   새 identity/hash, final reservation/preview/approval을 요구한다.
+- `approval_required`에서 payload 변경이 감지되면 exact immutable old
+  intent/order/preview/transport/account binding hash와 normalized new payload hash mismatch,
+  pending request 또는 active/unconsumed approval id/generation/state, permit/dispatch 부재를
+  `pre_permit_payload_changed` CAS로 검증한다. 같은 CAS가 request/approval closure와 permanent
+  intent tombstone을 commit한 뒤에만 capacity/fence를 release하고 fresh intent/request를 만든다.
 - Approval record는 monotonic `revocationVersion`과 `active | consumed | revoked` state를
   보존한다. Verified owner revoke는 dispatch와 같은 linearizable lock/fencing epoch에서
   write-ahead CAS하며, first network byte 전에 revoke가 이기면 approval version/epoch를
@@ -710,7 +715,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   authoritative permit expiry/staleness, authoritative approval expiry와 active/unconsumed
   approval-required state CAS, exact outbound transport-hash/account-header-MAC mismatch CAS,
   same-lineage recovery-target mismatch와 old unconsumed permit CAS, approval-not-issued request
-  closure 또는 pre-permit payload-change state 중 해당 cause evidence를 포함한다.
+  closure 또는 exact old/new binding mismatch와 request/approval/no-permit을 묶은 pre-permit
+  payload-change CAS 중 해당 cause evidence를 포함한다.
   `approval_not_issued`는 exact pending request generation, valid approval/permit 부재와 typed owner
   decline, authoritative request expiry, allowlisted channel-unavailable 또는 malformed-response
   evidence를 request tombstone과 한 CAS로 commit한다. Delayed response는 closed generation으로
@@ -925,6 +931,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - approval request는 owner에게 제시되기 전에 durable commit되고 response가 request identity/generation/deadline에 exact bind된다.
 - final reservation, pending approval request와 approval_required 전이는 atomic이며 request 없는 durable reservation 상태가 없다.
 - pre-permit binding mismatch와 post-permit approval expiry는 각각 no-permit 또는 unconsumed-permit CAS로 안전 종료된다.
+- pre-permit payload 변경은 exact old/new binding mismatch와 request/approval/no-permit CAS 없이는 release되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - recovery target partial fill/version 변경은 old permit의 proven no-dispatch 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
