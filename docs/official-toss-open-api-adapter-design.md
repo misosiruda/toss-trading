@@ -521,11 +521,12 @@ sequenceDiagram
     Owner->>Router: exact-bound dispatchApproval
     Router->>Router: refresh exactly-once snapshot and revalidate risk/freshness binding
     Router->>Router: atomic approval consume, state transition and sole permit CAS
-    Router->>Router: recompute transport/target-route/account bindings; verify clock, gates and permit
-    Router->>Audit: write-ahead masked dispatch_attempted
-    Audit-->>Router: durable commit confirmed
-    Router->>Gateway: create/modify/cancel request
-    Gateway->>API: POST order endpoint
+    Router->>Router: acquire shared dispatch/gate lock; recompute bindings and verify sole permit
+    Router->>Audit: atomic CAS consumes permit/state and appends masked dispatch_attempted
+    Audit-->>Router: combined durable commit confirmed
+    Router->>Gateway: lock-held request with exact consumed permit
+    Gateway->>API: POST first network byte under the same lock
+    Gateway->>Gateway: release lock after first-byte boundary
     API-->>Gateway: order response or error envelope
     Gateway-->>Router: broker result
     Router->>Audit: append acknowledgement/rejection/unknown
