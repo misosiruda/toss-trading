@@ -103,6 +103,13 @@ mutation authorization clock으로 전달하거나 재사용하지 않는다. Cl
 clock skew가 감지되면 approval, preview와 risk evidence를 모두 no-send로 처리하고
 operator-visible reconciliation/clock-error 상태를 남긴다.
 
+마지막으로 authorization에 사용한 authoritative wall-clock timestamp는 durable
+high-water mark로 원자적으로 보존하고 감소시키지 않는다. Process startup/restart에서는
+독립적으로 인증된 time source를 다시 검증하고, 새 authoritative time이 허용 skew를
+고려한 durable high-water mark보다 과거가 아님을 확인하기 전까지 mutation path를
+fail-closed로 유지한다. Durable checkpoint가 없거나 손상됐거나 time source를 인증할 수
+없으면 approval을 재사용하지 않고 owner-visible clock-recovery가 끝날 때까지 no-send다.
+
 다음은 유효한 runtime approval이 아니다.
 
 - Codex가 자연어로 생성한 동의
@@ -165,8 +172,8 @@ reconciliation_pending
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
 - Kill switch가 active이면 `send_reserved` 신규 진입을 차단한다.
-- Process restart는 durable reservation/reconciliation state 없이 send를 재개하지
-  않는다.
+- Process restart는 durable reservation/reconciliation state와 authoritative-clock
+  high-water mark를 모두 검증하기 전에는 send를 재개하지 않는다.
 
 ## Idempotency와 Retry
 
