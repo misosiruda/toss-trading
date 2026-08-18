@@ -78,7 +78,7 @@ Trust boundary 원칙:
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
 | LT-11 | Kill switch/mutation flag 변경·재시작과 final reservation/in-flight send race | disable 이후 capacity/fence/approval request 생성 또는 신규 주문 | final-risk reservation, approval request, dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reservation 전 거부하거나 reserved-unsent atomic no-dispatch closure, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, concurrent consume, revocation race, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor/revocation-version binding, state/permit과 묶인 linearizable one-time consume/revoke, gateway permit CAS, owner channel 검증 |
-| LT-13 | Audit omission, crash window 또는 log deletion/rewrite/reordering | 사고 원인·주문 경로 추적 불가와 altered dispatch history 신뢰 | first-byte 전 masked write-ahead dispatch event, canonical hash chain, runtime과 분리된 signed append-only checkpoint, startup/pre-dispatch fail-closed verification, request/intent/risk/approval correlation, crash/tamper recovery test |
+| LT-13 | Audit omission, crash window 또는 log deletion/rewrite/reordering | 사고 원인·주문 경로 추적 불가와 altered dispatch history 신뢰 | first-byte 전 masked write-ahead dispatch event, canonical hash chain, runtime과 분리된 signed append-only canonical-payload WORM archive, hash-only prefix discard 금지, startup/pre-dispatch fail-closed verification, request/intent/risk/approval correlation, crash/tamper recovery test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
 | LT-15 | Concurrent intent/target mutation이 같은 capacity나 target의 다른 version을 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판과 conflicting modify/cancel | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, conservative modify capacity envelope, version-lineage 전체의 exclusive target mutation fence와 exact scoped replace evaluation |
 
@@ -756,23 +756,33 @@ SHA-256 `eventHash`로 연결한다. Sequence gap, duplicate, previous-hash mism
 값은 canonical payload나 hash input에 넣지 않는다.
 
 Local mutation runtime과 delete/rewrite 권한을 공유하지 않는 별도 checkpoint boundary가 각
-security-critical event의 `(auditStreamId, sequence, eventHash, checkpoint generation, keyId)`를
-append-only/WORM store에 기록하고 independent signing key로 서명한다. Runtime은 pinned public
+security-critical event의 `(auditStreamId, sequence, exact canonical masked event bytes, eventHash,
+checkpoint generation, keyId)`를 append-only/WORM store에 기록하고 independent signing key로
+서명한다. Hash/sequence anchor만 저장하지 않으며 archived canonical payload에서 event hash와 전체
+prefix chain을 다시 계산할 수 있어야 한다. Runtime은 pinned public
 verification key만 가지며 checkpoint 삭제, sequence rewind, 기존 hash 교체 또는 signer key를
 수행할 수 없다. `dispatch_attempted`의 signed checkpoint acknowledgement는 first network byte
 전에 필요하고, acknowledgement/rejection/unknown 및 terminal reconciliation checkpoint도 해당
 state를 authoritative하게 사용하거나 capacity/fence를 release하기 전에 필요하다. Checkpoint가
 unavailable하거나 signature/store append가 실패하면 no-send/no-terminal이다.
 
-Startup과 각 dispatch lock 진입 시 local chain을 genesis 또는 마지막 retained signed checkpoint부터
-head까지 재계산하고, 외부 checkpoint의 최신 sequence/hash/generation이 local head와 일치하며
+Local canonical event payload prefix는 signed checkpoint 존재만으로 삭제할 수 없다. Future runtime
+default retention은 automatic deletion 없음이다. Prefix discard가 도입되려면 independent boundary가
+discard 대상 모든 exact payload bytes를 WORM archive에서 readback해 genesis부터 sequence/hash chain을
+재계산하고, archive object identity, covered sequence range, retention deadline과 verification result를
+담은 signed retention manifest를 먼저 commit해야 한다. Payload 하나라도 누락되거나 manifest/retention
+deadline이 불명확하면 local prefix를 보존한다. Hash tuple/checkpoint만 있는 상태는 discard 권한이나
+복구 anchor가 아니다.
+
+Startup과 각 dispatch lock 진입 시 local payload와 WORM archived payload를 합쳐 반드시 genesis부터
+head까지 chain을 재계산하고, 외부 checkpoint의 최신 sequence/hash/generation이 local head와 일치하며
 regress하지 않았는지 검증한다. Missing/deleted/reordered/rewritten event, invalid signature, unknown
-key, checkpoint rollback/fork 또는 local/external head mismatch가 하나라도 있으면 kill switch를
+key, archived payload/retention-manifest gap, checkpoint rollback/fork 또는 local/external head mismatch가 하나라도 있으면 kill switch를
 active로 유지하고 모든 mutation을 fail-closed로 차단한다. 손상 chain을 truncate, reseed 또는
 자동 복구하지 않고 원본 local bytes와 external checkpoint를 보존해 owner-visible integrity
 incident로 만든 뒤 read-only broker reconciliation을 수행한다. Verified owner가 원인과 external
 state를 확인하고 새 stream generation의 signed genesis를 승인한 경우에만 재개하며 old stream과
-checkpoint는 immutable evidence로 유지한다. Signing-key rotation도 old key로 서명된 continuity
+canonical payload archive/checkpoint/retention manifest는 immutable evidence로 유지한다. Signing-key rotation도 old key로 서명된 continuity
 record와 새 pinned key/generation을 요구한다.
 
 Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
@@ -887,6 +897,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
 - [ ] Canonical audit hash chain, external signed checkpoint, tamper/fork/rollback fail-closed와 masking이 test됨
+- [ ] WORM boundary가 canonical event payload를 보존하고 hash-only checkpoint로 local prefix를 삭제하지 않음
 - [ ] Permit consume와 masked dispatch-attempt audit가 first byte 전에 write-ahead commit됨
 - [ ] Incident stop, reconciliation과 rollback runbook이 testable함
 - [ ] 실제 mutation 전 owner action과 명시적 승인 기록이 있음

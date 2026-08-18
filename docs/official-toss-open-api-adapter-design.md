@@ -845,17 +845,24 @@ recovery lock에서 증명한 경우만 `restart_unconsumed_permit` no-dispatch�
 Audit event는 canonical masked serialization, immutable stream id, monotonic sequence,
 `previousEventHash`와 domain-separated SHA-256 `eventHash`로 연결한다. Mutation runtime과
 delete/rewrite 권한을 공유하지 않는 independent signer/append-only WORM checkpoint boundary가
-각 security-critical `(stream, sequence, hash, generation, keyId)`를 서명한다. Runtime은 pinned
+각 security-critical `(stream, sequence, exact canonical masked event bytes, hash, generation,
+keyId)`를 보관하고 서명한다. Hash/sequence anchor만 남기지 않으며 archived payload로 genesis부터
+chain을 재계산할 수 있어야 한다. Runtime은 pinned
 public verification key만 가지며 `dispatch_attempted`의 signed checkpoint acknowledgement가
 first byte 전에 없으면 send하지 않는다. Result/unknown/terminal checkpoint도 해당 state 신뢰나
 capacity/fence release 전에 필요하다.
 
-Startup과 dispatch lock 진입 시 local chain과 latest signed external checkpoint를 재계산·대조한다.
-Sequence gap, hash/signature mismatch, deletion/reordering/rewrite, checkpoint rollback/fork 또는
+Local event prefix는 checkpoint tuple만으로 삭제하지 않으며 future default는 automatic deletion
+없음이다. Prefix discard를 도입하려면 independent boundary가 모든 covered canonical payload를 WORM
+archive에서 readback해 genesis chain을 검증하고 archive objects/range/retention deadline을 signed
+retention manifest로 먼저 commit해야 한다. Startup과 dispatch lock 진입 시 local+archived payload로
+genesis부터 latest signed external checkpoint까지 재계산·대조한다. Sequence/payload gap,
+hash/signature mismatch, deletion/reordering/rewrite, retention-manifest gap, checkpoint rollback/fork 또는
 unknown key는 kill-active/no-send/no-terminal이다. Runtime은 chain을 truncate/reseed하지 않고
 원본 evidence를 보존해 owner-visible integrity incident와 read-only broker reconciliation로
 전이한다. Verified owner의 원인 확인과 signed new-generation genesis 없이는 재개하지 않으며,
-key rotation도 old-key continuity record와 새 pinned key를 요구한다.
+old canonical payload archive/checkpoint/retention manifest를 유지하고 key rotation도 old-key continuity
+record와 새 pinned key를 요구한다.
 
 ## 공식 API와 `tossinvest-cli` 관계
 
@@ -998,6 +1005,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - recovery target partial fill/version 변경은 prior attempt의 proven no-dispatch/terminal no-effect 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
+- WORM boundary는 canonical event payload를 보존하며 hash-only checkpoint로 local prefix를 삭제하지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
