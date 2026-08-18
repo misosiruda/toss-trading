@@ -106,7 +106,15 @@ async function runPreflight(
   resolveHost: TestOnlyTossOpenApiHostResolver
 ): Promise<TossOpenApiCredentialReadinessPreflight> {
   const authConfig = readTossOpenApiAuthConfig(env);
-  const auth = summarizeTossOpenApiAuthConfig(authConfig);
+  const canonicalBaseUrl =
+    authConfig.baseUrl === DEFAULT_TOSS_OPEN_API_BASE_URL;
+  const safeAuthSummary = summarizeTossOpenApiAuthConfig(authConfig);
+  const auth: SafeTossOpenApiAuthConfigSummary = {
+    ...safeAuthSummary,
+    baseUrl: canonicalBaseUrl
+      ? DEFAULT_TOSS_OPEN_API_BASE_URL
+      : "[noncanonical-url]"
+  };
   const brokerProvider = env.BROKER_PROVIDER?.trim() || "mock";
   const tradingEnabled = env.TRADING_ENABLED === "true";
   const aiDecisionMode = env.AI_DECISION_MODE?.trim() || "paper_only";
@@ -169,7 +177,7 @@ async function runPreflight(
     checks,
     blockers,
     "canonical_base_url",
-    authConfig.baseUrl === DEFAULT_TOSS_OPEN_API_BASE_URL,
+    canonicalBaseUrl,
     "Official API base URL matches the canonical origin.",
     "Official API base URL must match the canonical origin exactly.",
     "NONCANONICAL_BASE_URL"

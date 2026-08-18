@@ -88,7 +88,7 @@ test("credential preflight rejects unsafe runtime boundaries and invalid attesta
       TRADING_ENABLED: "true",
       AI_DECISION_MODE: "live",
       TOSS_OPEN_API_BASE_URL:
-        "https://url-user:url-secret@openapi.tossinvest.com?token=url-token#frag",
+        "https://url-user:url-secret@openapi.tossinvest.com/access-token?token=url-token#frag",
       TOSS_OPEN_API_OUTBOUND_IP_REGISTERED: "yes"
     },
     async () => [{ address: "not-an-ip", family: 4 }]
@@ -104,11 +104,12 @@ test("credential preflight rejects unsafe runtime boundaries and invalid attesta
     "OFFICIAL_HOST_DNS_UNRESOLVED",
     "INVALID_OUTBOUND_IP_REGISTRATION_FLAG"
   ]);
-  assert.equal(result.auth.baseUrl, "https://openapi.tossinvest.com");
+  assert.equal(result.auth.baseUrl, "[noncanonical-url]");
   assert.equal(serialized.includes("url-user"), false);
   assert.equal(serialized.includes("url-secret"), false);
   assert.equal(serialized.includes("url-token"), false);
   assert.equal(serialized.includes("frag"), false);
+  assert.equal(serialized.includes("access-token"), false);
 });
 
 function readyEnv(): NodeJS.ProcessEnv {
