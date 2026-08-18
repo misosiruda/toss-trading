@@ -87,6 +87,7 @@ Trust boundary 원칙:
 Future runtime approval은 typed record로 설계하며 다음 identity에 exact bind해야 한다.
 
 - backend-generated `approvalId`
+- backend-generated `approvalRequestId`와 monotonic request generation
 - `orderIntentId`와 deterministic order hash
 - non-reversible stable `accountScopeRef`와 credential/config generation
 - preview identity/hash와 expiry
@@ -137,6 +138,23 @@ intent와 불일치하면 no-send로 종료한다. `approval_required`에서 app
 authoritative clock evidence와 exact active/unconsumed approval 및 state/version CAS를 같은
 transaction에 commit한 `approval_expired` no-dispatch fence가 있어야 reservation/target fence를
 release할 수 있다.
+
+Final reservation을 owner에게 제시하기 전에 backend는 exact intent/reservation/risk binding,
+request generation, authoritative `requestedAt`/`requestExpiresAt`과 owner channel을 묶은 durable
+`approvalRequest`를 `pending`으로 만든다. 유효한 approval record가 한 번도 생성되지 않은
+요청은 다음 reason만 `approval_not_issued` no-dispatch cause로 닫을 수 있다.
+
+- `owner_declined`: verified owner channel의 typed decline가 exact request id/generation에 bind됨
+- `approval_request_expired`: authoritative clock이 request deadline을 넘음
+- `approval_channel_unavailable`: allowlisted channel transport가 request/response 실패를 확정함
+- `approval_response_malformed`: strict parser가 exact request에 대한 response를 거부함
+
+Closure transaction은 exact `approval_required` state/version과 pending request generation, current
+reservation/target fence, valid approval record 부재, permit/`dispatch_attempted` 부재를 한 CAS로
+검증하고 request를 permanently `closed`로 바꾸며 request id/generation tombstone과 reason/audit를
+commit한다. 이후 delayed approval/decline은 tombstone mismatch로 거부하며 새 시도는 새
+intent/reservation/request generation을 요구한다. Approval record 존재 여부나 channel delivery가
+불명확하면 `approval_not_issued`를 추정하지 않고 owner-visible blocked reconciliation에 남긴다.
 
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
@@ -358,6 +376,9 @@ reconciliation_pending
   - `permit_expired_or_stale`: authoritative deadline/freshness evidence와 unconsumed permit CAS
   - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact
     active/unconsumed approval-required state/version CAS
+  - `approval_not_issued`: exact pending approval-request generation, valid approval/permit 부재,
+    typed owner decline 또는 authoritative request expiry/channel failure/malformed evidence와
+    permanent request tombstone을 한 CAS로 commit
   - `pre_permit_payload_changed`: 아직 permit이 생성되지 않은 approval-required state/version
   CAS contention/duplicate observation만으로는 이 record를 만들 수 없다. 다른 worker가
   permit을 consume했거나 first-byte 여부가 불명확하면 `acknowledgement_unknown`/blocked
@@ -652,6 +673,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Approval revoke와 dispatch가 직렬화되고 revoke가 이긴 reserved-unsent permit은 영구 fence됨
 - [ ] 모든 stopped-before-dispatch cause가 전용 durable no-dispatch evidence로 terminal 처리됨
 - [ ] Pre-permit approval expiry가 authoritative clock과 unconsumed approval/state CAS로 종료됨
+- [ ] Approval 미발급 요청이 decline/timeout/channel failure별 request-generation tombstone으로 종료됨
 - [ ] Dispatch CAS loser가 다른 worker의 send 가능성을 no-dispatch로 오인하지 않음
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨

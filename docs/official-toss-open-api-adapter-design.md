@@ -627,7 +627,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   reconciliation까지 보존하고 logical capacity는 아래 exactly-once source로 후속 risk
   evaluation에 포함한다.
 - Final transaction이 만든 exact risk/reservation identity를 preview로 owner에게 제시한
-  뒤에만 runtime approval을 받고, approval verification 후 dispatch permit을 발급한다.
+  뒤에만 backend-generated `approvalRequestId`, monotonic generation과 authoritative request
+  deadline을 가진 durable pending request를 만들고 runtime approval을 받는다. Approval
+  verification 후에만 dispatch permit을 발급한다.
 - `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
   `marketOrderAuthorization`을 intent/account/order projection/preview/policy/actor/expiry에
   bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
@@ -656,8 +658,13 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   terminal candidate가 된다. Record는 exact intent/reservation/approval/permit version,
   epoch/snapshot, reason, tombstone/audit과 함께 gate-disable winning fence, approval-revocation
   CAS/version, binding invalidation CAS, authoritative permit expiry/staleness, authoritative
-  approval expiry와 active/unconsumed approval-required state CAS 또는 pre-permit payload-change
-  state 중 해당 cause evidence를 포함한다. CAS loser/duplicate observation은
+  approval expiry와 active/unconsumed approval-required state CAS, approval-not-issued request
+  closure 또는 pre-permit payload-change state 중 해당 cause evidence를 포함한다.
+  `approval_not_issued`는 exact pending request generation, valid approval/permit 부재와 typed owner
+  decline, authoritative request expiry, allowlisted channel-unavailable 또는 malformed-response
+  evidence를 request tombstone과 한 CAS로 commit한다. Delayed response는 closed generation으로
+  거부하고 새 시도는 새 intent/reservation/request를 요구한다. Approval 존재 여부가 불명확하면
+  blocked reconciliation에 남긴다. CAS loser/duplicate observation은
   no-dispatch 증거가 아니며 winner가 permit을 consume했거나 outcome이 불명확하면
   `acknowledgement_unknown`/blocked reconciliation로 보낸다. Evidence가 완성되기 전에는
   capacity나 target mutation fence를 release하지 않는다.
@@ -846,6 +853,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - owner approval revoke가 dispatch보다 먼저 이기면 reserved-unsent permit이 영구 fence되고 network write가 없다.
 - 모든 stopped-before-dispatch 원인이 전용 durable no-dispatch evidence 없이는 terminal/release되지 않는다.
 - pre-permit approval expiry는 authoritative clock과 active/unconsumed approval-required state CAS로 종료한다.
+- approval이 발급되지 않은 decline/timeout/channel-failure request는 exact generation tombstone CAS로 종료한다.
 - dispatch CAS loser는 concurrent winner의 send 가능성이 있으면 unknown reconciliation로 전이한다.
 - recovery gate는 first-byte dispatch winner 또는 zeroByteAttemptFence 뒤에만 disable된다.
 - signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
