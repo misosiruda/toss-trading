@@ -725,7 +725,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   complete audit chain과 exact `send_reserved` state/version에서 sole permit이 unconsumed이고
   `dispatch_attempted`가 없으면,
   first-byte invariant상 전송되지 않은 `restart_unconsumed_permit` noDispatchFence와 permanent
-  tombstone을 한 CAS로 commit한 뒤 own capacity reservation/target fence를 release할 수 있다.
+  tombstone을 한 CAS로 commit해 current attempt를 닫는다. Attempt-local capacity/fence release는
+  lineage rules를 따르며, `recovery_cancel_takeover`이면 superseded original operation이 ambiguous한
+  동안 inherited conservative capacity envelope와 target lineage fence를 유지한다.
   Permit consume/attempt가 존재하거나 audit, lock ownership 또는 state가 불명확하면 이 cause를
   금지하고 `acknowledgement_unknown`/blocked reconciliation로 보낸다. 어떤 경우에도 recovered
   permit을 resend하지 않는다.
@@ -756,15 +758,21 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   write function과 kernel/TLS buffer handoff가 시작되지 않았고 request-byte counter가 0임을 같은
   lock에서 증명한 connect/TLS/pre-write failure만 `dispatch_failed_zero_byte`와 durable
   `zeroByteAttemptFence`로 commit한다. Target operation은 exact unchanged broker target/version
-  readback 뒤에만 mutation delta capacity와 target fence를 release한다. Write invocation, buffer
+  readback 뒤에만 mutation delta capacity와 target fence를 release한다. 단,
+  `recovery_cancel_takeover` lineage에서는 current recovery attempt만 닫고 superseded original
+  operation이 terminal 또는 proven no-dispatch일 때까지 inherited capacity/fence를 유지한다. Write invocation, buffer
   handoff 또는 byte count가 불명확하면 `acknowledgement_unknown`이며 intent/permit을 재사용하지
   않는다.
 - Cancel-recovery permit consume 자체는 recovery gate를 disable하지 않는다. Arbiter는 같은
   dispatch/gate lock을 first network byte boundary까지 유지하고 exact consumed permit 외 요청을
   거부한다. First byte 뒤 `dispatch_won` evidence를 append한 다음에만 gate를 disable하고 epoch를
   advance한다. Confirmed zero-byte rejection/expiry/incident 종료는 post-attempt
-  `zeroByteAttemptFence`와 disable을 원자적으로 commit하고 unchanged target reconciliation 뒤에만
-  release한다. Boundary가 불명확한 crash/socket 결과는 startup kill-active
+  `zeroByteAttemptFence`와 disable을 원자적으로 commit하고 unchanged target reconciliation로
+  current recovery cancel의 no-effect만 확인한다. Takeover가 없고 다른 unresolved lineage가 없을
+  때만 attempt-local capacity/fence를 release한다. Takeover lineage에서는 이 proof가 superseded
+  original modify/cancel outcome을 종료하지 않으므로 original operation과 external state가 terminal
+  reconcile될 때까지 conservative capacity envelope와 stable target fence를 유지한다. Boundary가
+  불명확한 crash/socket 결과는 startup kill-active
   `acknowledgement_unknown` reconciliation로 보내며 permit/gate를 재사용하지 않는다.
 - Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
   broker correlation으로 reservation contribution을 broker order/position/cash contribution에
@@ -963,6 +971,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - pre-permit payload 변경은 exact old/new binding mismatch와 request/approval/no-permit CAS 없이는 release되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
+- takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
 - recovery target partial fill/version 변경은 old permit의 proven no-dispatch 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
