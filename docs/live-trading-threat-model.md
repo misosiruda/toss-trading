@@ -78,7 +78,7 @@ Trust boundary 원칙:
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
 | LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, concurrent consume, revocation race, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor/revocation-version binding, state/permit과 묶인 linearizable one-time consume/revoke, gateway permit CAS, owner channel 검증 |
-| LT-13 | Audit omission, crash window 또는 log tampering | 사고 원인·주문 경로 추적 불가 | first-byte 전 masked write-ahead dispatch event, append-only result/unknown chain, request/intent/risk/approval correlation, crash completeness test |
+| LT-13 | Audit omission, crash window 또는 log deletion/rewrite/reordering | 사고 원인·주문 경로 추적 불가와 altered dispatch history 신뢰 | first-byte 전 masked write-ahead dispatch event, canonical hash chain, runtime과 분리된 signed append-only checkpoint, startup/pre-dispatch fail-closed verification, request/intent/risk/approval correlation, crash/tamper recovery test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
 | LT-15 | Concurrent intent/target mutation이 같은 capacity나 target의 다른 version을 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판과 conflicting modify/cancel | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, conservative modify capacity envelope, version-lineage 전체의 exclusive target mutation fence와 exact scoped replace evaluation |
 
@@ -349,7 +349,8 @@ reconciliation_pending
   `dispatch_attempted` commit이 모두 없음을 증명하고 cause-specific durable
   `noDispatchFence`를 commit한 경우에만 허용한다. 공통 record에는 exact intent/reservation/
   approval/permit state와 version, current epoch/snapshot, reason code, permanent tombstone과
-  complete audit chain이 포함돼야 한다. Cause별 추가 evidence는 다음과 같다.
+  externally checkpointed hash chain으로 검증된 complete audit chain이 포함돼야 한다. Cause별
+  추가 evidence는 다음과 같다.
   - `gate_disabled`: disable transition이 dispatch보다 먼저 이긴 fencing epoch/snapshot
   - `approval_revoked`: winning revocation CAS와 current `revocationVersion`, 파생 permit fence
   - `binding_invalidated`: exact old/current binding mismatch와 old permit invalidation CAS
@@ -538,6 +539,32 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 12. broker acknowledgement/rejection/unknown appended
 13. reconciliation completed 또는 blocked
 
+각 event는 canonical masked serialization을 사용해 immutable `auditStreamId`, monotonic
+`sequence`, `previousEventHash`, event type/state version과 payload hash를 domain-separated
+SHA-256 `eventHash`로 연결한다. Sequence gap, duplicate, previous-hash mismatch, schema가 허용하지
+않은 field 또는 canonicalization mismatch는 chain failure다. Raw secret/account/order/execution
+값은 canonical payload나 hash input에 넣지 않는다.
+
+Local mutation runtime과 delete/rewrite 권한을 공유하지 않는 별도 checkpoint boundary가 각
+security-critical event의 `(auditStreamId, sequence, eventHash, checkpoint generation, keyId)`를
+append-only/WORM store에 기록하고 independent signing key로 서명한다. Runtime은 pinned public
+verification key만 가지며 checkpoint 삭제, sequence rewind, 기존 hash 교체 또는 signer key를
+수행할 수 없다. `dispatch_attempted`의 signed checkpoint acknowledgement는 first network byte
+전에 필요하고, acknowledgement/rejection/unknown 및 terminal reconciliation checkpoint도 해당
+state를 authoritative하게 사용하거나 capacity/fence를 release하기 전에 필요하다. Checkpoint가
+unavailable하거나 signature/store append가 실패하면 no-send/no-terminal이다.
+
+Startup과 각 dispatch lock 진입 시 local chain을 genesis 또는 마지막 retained signed checkpoint부터
+head까지 재계산하고, 외부 checkpoint의 최신 sequence/hash/generation이 local head와 일치하며
+regress하지 않았는지 검증한다. Missing/deleted/reordered/rewritten event, invalid signature, unknown
+key, checkpoint rollback/fork 또는 local/external head mismatch가 하나라도 있으면 kill switch를
+active로 유지하고 모든 mutation을 fail-closed로 차단한다. 손상 chain을 truncate, reseed 또는
+자동 복구하지 않고 원본 local bytes와 external checkpoint를 보존해 owner-visible integrity
+incident로 만든 뒤 read-only broker reconciliation을 수행한다. Verified owner가 원인과 external
+state를 확인하고 새 stream generation의 signed genesis를 승인한 경우에만 재개하며 old stream과
+checkpoint는 immutable evidence로 유지한다. Signing-key rotation도 old key로 서명된 continuity
+record와 새 pinned key/generation을 요구한다.
+
 Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
 intent/risk/approval/capacity reservation reference,
 idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
@@ -629,7 +656,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Timeout/unknown result의 blind retry가 없음
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
-- [ ] Audit event chain과 masking이 test됨
+- [ ] Canonical audit hash chain, external signed checkpoint, tamper/fork/rollback fail-closed와 masking이 test됨
 - [ ] Permit consume와 masked dispatch-attempt audit가 first byte 전에 write-ahead commit됨
 - [ ] Incident stop, reconciliation과 rollback runbook이 testable함
 - [ ] 실제 mutation 전 owner action과 명시적 승인 기록이 있음

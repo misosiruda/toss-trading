@@ -713,6 +713,21 @@ Mutation dispatch는 permit consume과 masked `dispatch_attempted`를 first byte
 commit으로 기록하고, 이후 acknowledgement/rejection/unknown을 append한다. Pre-dispatch audit
 commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliation로 처리한다.
 
+Audit event는 canonical masked serialization, immutable stream id, monotonic sequence,
+`previousEventHash`와 domain-separated SHA-256 `eventHash`로 연결한다. Mutation runtime과
+delete/rewrite 권한을 공유하지 않는 independent signer/append-only WORM checkpoint boundary가
+각 security-critical `(stream, sequence, hash, generation, keyId)`를 서명한다. Runtime은 pinned
+public verification key만 가지며 `dispatch_attempted`의 signed checkpoint acknowledgement가
+first byte 전에 없으면 send하지 않는다. Result/unknown/terminal checkpoint도 해당 state 신뢰나
+capacity/fence release 전에 필요하다.
+
+Startup과 dispatch lock 진입 시 local chain과 latest signed external checkpoint를 재계산·대조한다.
+Sequence gap, hash/signature mismatch, deletion/reordering/rewrite, checkpoint rollback/fork 또는
+unknown key는 kill-active/no-send/no-terminal이다. Runtime은 chain을 truncate/reseed하지 않고
+원본 evidence를 보존해 owner-visible integrity incident와 read-only broker reconciliation로
+전이한다. Verified owner의 원인 확인과 signed new-generation genesis 없이는 재개하지 않으며,
+key rotation도 old-key continuity record와 새 pinned key를 요구한다.
+
 ## 공식 API와 `tossinvest-cli` 관계
 
 - official Toss Open API는 production broker adapter의 primary source 후보다.
@@ -834,6 +849,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
+- canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
