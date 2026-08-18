@@ -603,9 +603,16 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   `targetOrderRef`, target version/state hash와 remaining quantity도 포함한다.
 - Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
   재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
-  contribution을 replacement terms로 atomic replace하며, cancel은 새 exposure/order slot을
-  추가하지 않는 target-version-specific policy로 평가한다. Target version mismatch 또는
-  partial fill 변화는 no-send와 fresh intent/approval을 요구한다.
+  terms를 replacement로 평가하되 reconciliation 전 old capacity를 해제하지 않는다. 각 risk
+  dimension에서 old/replacement max를 보존하고 endpoint atomic-replace semantics가 확인되지
+  않으면 conservative union을 reserve한다. Cancel은 새 exposure/order slot을 추가하지 않는
+  target-version-specific policy로 평가한다. Target version mismatch 또는 partial fill 변화는
+  no-send와 fresh intent/approval을 요구한다.
+- Modify/cancel final transaction은 exact `(accountScopeRef, targetOrderRef, targetVersion)`의
+  exclusive durable mutation fence를 claim한다. Active fence가 있으면 다른 operation을
+  reserve/approve하지 않고, terminal/no-dispatch reconciliation 뒤에만 release한다. Modify
+  result가 ambiguous/rejected이면 old capacity와 fence를 유지하고, exact reconciled new target로
+  handoff된 뒤에만 obsolete capacity를 release한다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   하나의 serializable durable transaction에서 commit한다. Reservation lineage는 terminal
@@ -784,6 +791,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
+- modify는 old capacity를 reconciliation까지 보존하고 target-version fence가 concurrent modify/cancel을 차단한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
 - kill-active cancel-only recovery permit은 create/modify gate를 열지 않는다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.

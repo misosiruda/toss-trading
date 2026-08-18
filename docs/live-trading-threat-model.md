@@ -80,7 +80,7 @@ Trust boundary 원칙:
 | LT-12 | Approval replay, concurrent consume, market-order boolean 우회, scope 확대 또는 forged actor | 승인되지 않거나 중복된 주문 | typed staged approval identity/hash/expiry/scope/actor binding, state/permit과 묶인 linearizable one-time consume, gateway permit CAS, owner channel 검증 |
 | LT-13 | Audit omission, crash window 또는 log tampering | 사고 원인·주문 경로 추적 불가 | first-byte 전 masked write-ahead dispatch event, append-only result/unknown chain, request/intent/risk/approval correlation, crash completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
-| LT-15 | 서로 다른 concurrent intent가 같은 risk capacity를 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판 | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, exact reservation-scoped exclude-self/replace evaluation과 atomic lifecycle handoff |
+| LT-15 | Concurrent intent/target mutation이 같은 capacity/version을 각각 통과하거나 broker/reservation/self를 이중 계산 | open-order, exposure, cash 또는 sellable quantity 한도 오판과 conflicting modify/cancel | portfolio/account-keyed serializable final risk reservation, broker/reservation exactly-once union, conservative modify capacity envelope, exclusive target-version mutation fence와 exact scoped replace evaluation |
 
 ## Runtime Approval Contract
 
@@ -188,10 +188,13 @@ match하는지 확인해 account header를 내부에서 조립한다. Configured
 Operation-specific final risk 규칙은 다음과 같다.
 
 - `create`: current candidate를 exactly-once effective snapshot에 한 번 적용한다.
-- `modify`: 같은 account/symbol/side의 exact target open-order contribution과 target에 귀속된
-  remaining capacity만 serializable replace-target view에서 제거한 뒤 replacement terms를 한
-  번 적용한다. Increase/decrease 전체에 current exposure, cash, sellable quantity, order-count와
-  market-hours rule을 다시 적용한다.
+- `modify`: 같은 account/symbol/side의 exact target open-order contribution을 replace-target
+  view에서 새 terms로 한 번 평가하되 broker reconciliation 전에는 old remaining capacity를
+  해제하지 않는다. Capacity store는 각 risk dimension에서 old contribution과 replacement의
+  component-wise maximum을 보존하고, official endpoint가 original/replacement 동시 생존을
+  배제한다고 확인할 수 없으면 둘의 conservative union을 reserve한다. Increase/decrease
+  전체에 current exposure, cash, sellable quantity, order-count와 market-hours rule을 다시
+  적용한다.
 - `cancel`: exact open target/version을 확인하고 new exposure/order slot을 추가하지 않는
   cancel-specific policy로 평가한다. Cancel request가 성공하고 target의 remaining quantity와
   position/cash가 reconciled될 때까지 기존 target capacity를 미리 release하지 않는다.
@@ -200,6 +203,16 @@ Operation-specific final risk 규칙은 다음과 같다.
 - Replace-self는 새 operation reservation에만 적용하고 replace-target은 exact target에만
   적용한다. 두 exclusion scope를 하나의 serializable transaction에서 검증하며 caller가
   임의 target/reservation을 제외하지 못한다.
+- Final transaction은 `(accountScopeRef, targetOrderRef, targetVersion)`에 exclusive durable
+  mutation fence를 원자적으로 claim한다. 같은 target version을 참조하는 다른
+  `modify`/`cancel`은 operation/actor가 달라도 거부하며, dispatch lock 획득 순서와 무관하게
+  첫 operation이 terminal reconciliation되거나 durable no-dispatch로 증명되기 전에는 새
+  target mutation을 reserve/approve하지 않는다.
+- Modify acknowledgement/rejection/unknown만으로 old capacity나 target fence를 release하지
+  않는다. Read-only broker reconciliation이 exact new target version/remaining terms와
+  position/cash를 확인한 transaction에서 capacity source를 old+delta envelope에서 new target로
+  atomic handoff한다. Rejected/ambiguous 결과는 old capacity와 fence를 유지한다. Fence가
+  종료된 뒤에도 old target-version operation tombstone은 보존해 delayed replay를 차단한다.
 
 현재 `LiveRiskEngine`은 operation/target-order field가 없는 deterministic create-like module
 contract다. Future `OrderRouter`/gateway는 operation-aware deterministic risk contract와
@@ -383,6 +396,13 @@ order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gat
   허용한다. 다른 reservation, terminal tombstone 또는 caller-provided identity를 제외할 수
   없으며, recomputed capacity가 held capacity와 다르거나 self가 이미 broker-visible이면
   no-send reconciliation과 fresh intent/approval을 요구한다.
+- Modify reservation은 old broker target contribution을 snapshot에서 즉시 제거하지 않는다.
+  Effective capacity는 old contribution과 replacement 증가분을 exactly once 결합한
+  conservative max/union envelope를 사용하고, broker-reconciled new target로 atomic handoff될
+  때만 obsolete old capacity를 release한다.
+- `modify`/`cancel` final transaction은 exact account/target/version의 exclusive mutation fence도
+  idempotency/risk reservation과 함께 commit한다. Active fence가 있으면 다른 intent는
+  no-send하며 target terminal/no-dispatch reconciliation 전에는 fence를 release하지 않는다.
 - Broker snapshot에서 correlation이 missing, duplicate, ambiguous 또는 reservation state와
   불일치하면 보수적으로 이중 계산해 계속 진행하지 않고 snapshot reconciliation을
   owner-visible blocked로 만들며 새로운 final risk approval/send를 금지한다.
@@ -525,6 +545,8 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] accountScopeRef가 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
+- [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨
+- [ ] Exact account/target/version mutation fence가 concurrent modify/cancel을 terminal까지 차단함
 - [ ] Kill-active cancel-only recovery가 create/modify gate를 열지 않음
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
