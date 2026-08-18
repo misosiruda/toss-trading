@@ -207,7 +207,8 @@ Operation-specific final risk 규칙은 다음과 같다.
   mutation fence를 원자적으로 claim한다. 같은 target version을 참조하는 다른
   `modify`/`cancel`은 operation/actor가 달라도 거부하며, dispatch lock 획득 순서와 무관하게
   첫 operation이 terminal reconciliation되거나 durable no-dispatch로 증명되기 전에는 새
-  target mutation을 reserve/approve하지 않는다.
+  target mutation을 reserve/approve하지 않는다. 유일한 예외는 아래 kill-active
+  owner-approved cancel-recovery takeover다.
 - Modify acknowledgement/rejection/unknown만으로 old capacity나 target fence를 release하지
   않는다. Read-only broker reconciliation이 exact new target version/remaining terms와
   position/cash를 확인한 transaction에서 capacity source를 old+delta envelope에서 new target로
@@ -360,6 +361,16 @@ order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gat
   version/state hash와 remaining quantity 하나만 대상으로 한다.
 - Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
   reservation, current snapshot, reason, expiry와 recovery fencing epoch에 exact bind한다.
+- Normal modify/cancel fence가 이미 target을 점유하면 recovery transaction은 kill-active,
+  exact current broker-open account/target/version과 unconsumed owner recovery approval을
+  확인한 뒤 fence를 `recovery_cancel_takeover` generation으로 atomic CAS한다. Original
+  operation은 `superseded_pending_reconciliation`로 남기고 tombstone, permit history,
+  unknown/result reconciliation과 capacity envelope를 삭제하거나 terminal 처리하지 않는다.
+- Takeover CAS는 recovery epoch를 advance해 original operation의 unconsumed dispatch permit을
+  영구 fence하고 cancel permit을 정확히 하나 만든다. Original request가 이미 first byte를
+  넘었거나 outcome이 ambiguous여도 current read-only broker evidence가 exact open target을
+  확인한 경우에만 cancel을 보낼 수 있으며, target state/version을 확인할 수 없으면 raw/blind
+  cancel 대신 owner-visible blocked reconciliation로 남긴다.
 - Gate snapshot은 `normalCreate=false`, `normalModify=false`, exact cancel permit 하나만
   포함해 write-ahead commit하며, gateway allowlist도 `operation=cancel`과 해당 target만
   수락한다. Symbol, side, quantity, price 변경이나 새 order 생성은 거부한다.
@@ -368,7 +379,9 @@ order를 중단하기 위한 future cancel은 별도의 cancel-only recovery gat
   동일하게 적용한다.
 - Target가 이미 terminal이거나 partial fill/version/account가 달라졌으면 cancel을 보내지
   않고 snapshot/approval을 새로 만든다. Cancel acknowledgement만으로 capacity를 release하지
-  않고 target order와 resulting position/cash reconciliation까지 추적한다.
+  않고 target order와 resulting position/cash reconciliation까지 추적한다. Takeover가 있으면
+  original operation outcome과 recovery cancel outcome을 모두 terminal reconcile한 뒤에만
+  conservative old/replacement/current-target capacity envelope와 fence를 release한다.
 - Permit consume, expiry, rejection 또는 incident 종료 시 recovery gate는 자동으로 다시
   disabled가 되며 kill switch는 active로 유지한다.
 
@@ -548,6 +561,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨
 - [ ] Exact account/target/version mutation fence가 concurrent modify/cancel을 terminal까지 차단함
 - [ ] Kill-active cancel-only recovery가 create/modify gate를 열지 않음
+- [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨

@@ -613,6 +613,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   reserve/approve하지 않고, terminal/no-dispatch reconciliation 뒤에만 release한다. Modify
   result가 ambiguous/rejected이면 old capacity와 fence를 유지하고, exact reconciled new target로
   handoff된 뒤에만 obsolete capacity를 release한다.
+- Kill-active cancel recovery는 verified owner approval과 exact current broker-open target이
+  있을 때 active fence를 `recovery_cancel_takeover` generation으로 atomic CAS할 수 있다.
+  Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
+  original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
+  release하지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   하나의 serializable durable transaction에서 commit한다. Reservation lineage는 terminal
@@ -794,6 +799,7 @@ commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliati
 - modify는 old capacity를 reconciliation까지 보존하고 target-version fence가 concurrent modify/cancel을 차단한다.
 - intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
 - kill-active cancel-only recovery permit은 create/modify gate를 열지 않는다.
+- cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
