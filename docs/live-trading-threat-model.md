@@ -35,7 +35,7 @@ breach로 처리한다.
 | `RiskDecision`과 risk snapshot | current intent, current snapshot, checked rules와 freshness를 재검증 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
 | Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
-| Kill switch와 mutation flags | fail-closed default, dispatch와 공유하는 durable monotonic fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
+| Kill switch와 mutation flags | fail-closed default, exact normalized gate snapshot, dispatch와 공유하는 durable monotonic fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
 | Order/execution audit | tamper-evident ordering과 masked metadata 보존 |
 
 ## Trust Boundary
@@ -68,7 +68,7 @@ Trust boundary 원칙:
 | --- | --- | --- | --- |
 | LT-01 | Natural-language/MCP/dashboard command가 order path로 직접 진입 | Risk/approval 우회 주문 | mutation route/tool 부재 test, typed internal `OrderIntent`만 허용, Codex는 read-only |
 | LT-02 | AI paper evidence가 live signal/intent로 승격 | 비결정론적 주문 생성 | paper/live schema 분리, promotion adapter 금지 grep/test, deterministic backend만 intent 생성 |
-| LT-03 | 환경 변수 오타, 공백, 대소문자 변형 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, safe default, multiple independent gates, invalid value fail-closed |
+| LT-03 | 환경 변수 오타, 공백, 대소문자 변형, stale worker 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, durable normalized gate-snapshot hash/epoch, safe default, multiple independent gates, invalid/mismatched value fail-closed |
 | LT-04 | Malformed/stale intent, preview, risk snapshot 또는 policy | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, preview-intent hash binding, 모든 rule 재검증 |
 | LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent intent/hash tombstone, unknown result reconciliation 전 blind retry 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
@@ -76,7 +76,7 @@ Trust boundary 원칙:
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
 | LT-09 | Partial/oversized/encoded response 또는 status confusion | 잘못된 order state 기록 | exact status contract, finite body/deadline, complete framing, content encoding/redirect/range fail-closed |
 | LT-10 | Broker `5xx`, disconnect 또는 ambiguous acknowledgement | local/broker state divergence | `unknown_reconciliation` 상태, order history/detail 조회, 자동 재전송 금지 |
-| LT-11 | Kill switch 변경·재시작과 in-flight send race | stop 이후 신규 주문 | dispatch와 activation의 shared lock, durable monotonic fencing epoch, activation이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
+| LT-11 | Kill switch/mutation flag 변경·재시작과 in-flight send race | disable 이후 신규 주문 | dispatch와 모든 gate-disable transition의 shared lock, durable monotonic fencing epoch, disable이 이기면 reserved-unsent 차단, restart 시 arbiter/gateway gate snapshot/epoch 합의, dispatch가 이기면 in-flight audit/reconciliation |
 | LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
@@ -152,7 +152,7 @@ dispatch_permit_acquired
 restart(send_reserved | dispatch_permit_acquired)
   -> acknowledgement_unknown
 
-kill_switch_activation(send_reserved)
+mutation_gate_disable(send_reserved)
   -> stopped_before_dispatch
 
 acknowledgement_unknown
@@ -191,34 +191,38 @@ reconciliation_pending
   `broker_rejected`, `filled`, `canceled` 또는 `expired`로 terminal이고, 체결로 생긴
   position/cash state까지 read-only broker evidence와 local ledger가 일치할 때만
   허용한다.
-- `stopped_before_dispatch`는 같은 dispatch/activation lock 안에서 activation이 첫 network
-  byte보다 먼저 이겼다는 durable fencing record, matching epoch, no-dispatch state,
+- `stopped_before_dispatch`는 같은 dispatch/gate-transition lock 안에서 disable이 첫
+  network byte보다 먼저 이겼다는 durable fencing record, matching epoch/snapshot,
+  no-dispatch state,
   permanent tombstone과 complete audit chain이 모두 commit된 경우에만 no-external-mutation
   evidence로 `terminal_reconciled`를 허용한다. 하나라도 없거나 불일치하면 terminal로
   만들지 않고 owner-visible blocked reconciliation에 남긴다.
 - Partial fill 뒤 cancel/expiry가 발생해도 이미 체결된 수량의 position/cash
   reconciliation이 끝나기 전에는 terminal로 전이하지 않는다.
-- Dispatch arbiter는 kill-switch activation과 broker socket write를 같은 linearizable
-  lock/fencing epoch로 직렬화한다. Reservation은 current epoch를 보존하며, gateway는 stale
-  epoch의 dispatch permit을 거부한다.
-- Activation이 dispatch보다 먼저 lock/epoch를 획득하면 기존 reserved-unsent record를
+- Dispatch arbiter는 kill-switch activation, `TRADING_ENABLED=false`, mutation flag false와
+  그 밖의 모든 gate-disable transition을 broker socket write와 같은 linearizable
+  lock/fencing epoch로 직렬화한다. Worker가 runtime 환경 변수를 독립적으로 읽어 gate를
+  바꾸지 못하게 하고, reservation/permit은 current epoch와 exact normalized gate-snapshot
+  hash를 보존한다. Gateway는 stale/mismatched epoch 또는 snapshot의 permit을 거부한다.
+- Gate disable이 dispatch보다 먼저 lock/epoch를 획득하면 기존 reserved-unsent record를
   `stopped_before_dispatch`로 전이하고 permanent tombstone을 남긴 뒤 network write를
   금지한다. Dispatch가 먼저 획득해 첫 network byte write boundary를 넘으면 해당 record를
-  in-flight로 audit하고 activation 뒤에도 terminal reconciliation까지 추적한다.
-- Kill switch가 active이면 `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두
-  차단한다.
-- Kill-switch state와 global fencing epoch의 모든 transition은 activation/deactivation 완료를
-  응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는 재사용하지
-  않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
+  in-flight로 audit하고 disable 뒤에도 terminal reconciliation까지 추적한다.
+- Kill switch가 active이거나 mutation gate 하나라도 false/invalid/mismatched이면
+  `send_reserved` 신규 진입과 새 dispatch permit 발급을 모두 차단한다.
+- Exact mutation-gate snapshot과 global fencing epoch의 모든 enable/disable transition은
+  완료를 응답하기 전에 write-ahead durable commit한다. Epoch는 감소, reset 또는
+  재사용하지 않으며 commit 실패 시 arbiter와 gateway를 모두 fail-closed로 유지한다.
 - Process restart는 durable reservation/reconciliation state, authoritative-clock
-  high-water mark, kill-switch active state와 global fencing epoch를 모두 복구하고 arbiter와
-  gateway가 같은 값에 합의하기 전에는 send를 재개하지 않는다. Startup default는
-  kill-active다.
-- Explicit owner restart decision은 `kill-active E`에서 `inactive E+1`로의 transition과 새
-  instance generation을 먼저 durable commit해야 한다. 등록된 모든 mutation-capable
-  arbiter/gateway instance가 committed state, `E+1`과 generation을 다시 읽어
-  acknowledgement한 뒤에만 post-restart dispatch permit을 발급한다. Commit/acknowledgement
-  누락, instance set 불명확 또는 state/epoch/generation mismatch는 kill-active로 남기며,
+  high-water mark, exact mutation-gate snapshot과 global fencing epoch를 모두 복구하고
+  arbiter와 gateway가 같은 값에 합의하기 전에는 send를 재개하지 않는다. Startup
+  default는 kill-active이며 모든 mutation flag는 false다.
+- Explicit owner restart decision은 `disabled E`에서 exact enabled snapshot `E+1`로의
+  transition과 새 instance generation을 먼저 durable commit해야 한다. 등록된 모든
+  mutation-capable arbiter/gateway instance가 committed snapshot, `E+1`과 generation을
+  다시 읽어 acknowledgement한 뒤에만 post-restart dispatch permit을 발급한다.
+  Commit/acknowledgement 누락, instance set 불명확 또는 snapshot/epoch/generation
+  mismatch는 kill-active로 남기며,
   surviving process가 가진 old/uncommitted permit은 gateway에서 영구 거부한다.
 
 ## Idempotency와 Retry
