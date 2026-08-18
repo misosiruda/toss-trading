@@ -32,7 +32,7 @@ breach로 처리한다.
 | Client credential와 access token | source, fixture, log, audit, PR body와 error output에 저장하거나 출력하지 않음 |
 | Account identity | runtime secret provider에서만 읽고 외부 output에는 masked reference만 사용 |
 | `OrderIntent`와 preview | backend-generated identity/hash, expiry와 exact payload binding 유지 |
-| `RiskDecision`과 risk snapshot | current intent, current snapshot, checked rules와 freshness를 재검증 |
+| `RiskDecision`, risk snapshot과 capacity | current intent/snapshot/rules/freshness를 재검증하고 portfolio/account risk-capacity reservation을 보존 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
 | Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
 | Kill switch와 mutation flags | fail-closed default, exact normalized gate snapshot, dispatch와 공유하는 durable monotonic fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
@@ -80,6 +80,7 @@ Trust boundary 원칙:
 | LT-12 | Approval replay, scope 확대 또는 forged actor | 승인되지 않은 주문 | approval identity/hash/expiry/scope/actor binding, one-time consume, owner channel 검증 |
 | LT-13 | Audit omission 또는 log tampering | 사고 원인·주문 경로 추적 불가 | append-only event chain, request/intent/risk/approval correlation, mutation 전후 event completeness test |
 | LT-14 | Rollback이 in-flight order를 잊거나 자동 cancel을 오작동 | 미확인 position/order mutation | code rollback과 broker reconciliation 분리, unknown state 보존, explicit cancel policy와 owner approval |
+| LT-15 | 서로 다른 concurrent intent가 같은 risk snapshot/capacity를 각각 통과 | open-order, exposure, cash 또는 sellable quantity 한도 초과 | portfolio/account-keyed serializable final risk evaluation과 durable capacity reservation을 한 transaction으로 commit, 후속 snapshot에 active reservation 포함 |
 
 ## Runtime Approval Contract
 
@@ -228,7 +229,17 @@ reconciliation_pending
 ## Idempotency와 Retry
 
 - `orderIntentId`와 deterministic order hash는 backend가 생성한다.
-- Send 전에 idempotency reservation을 원자적으로 확보한다.
+- Final risk evaluation은 portfolio/account를 key로 한 serializable transaction에서 current
+  broker/local snapshot과 모든 active capacity reservation을 함께 읽는다. Open-order slot,
+  buy notional/exposure/cash, pending sell quantity와 적용되는 risk budget을 차감한 effective
+  snapshot으로 모든 limit을 다시 평가한다.
+- Approved final `RiskDecision`, affected capacity reservation, idempotency reservation과
+  intent/hash tombstone을 같은 durable transaction에서 commit한다. 하나라도 충돌하거나
+  commit에 실패하면 전부 rollback하고 no-send하며, approval은 이 transaction이 생성한
+  exact risk/reservation identity에 bind해야 한다.
+- 현재 `LiveRiskEngine`의 caller-provided snapshot은 deterministic module/test contract일
+  뿐 shared capacity reservation이 아니다. Future `OrderRouter`는 stale snapshot을 그대로
+  재사용하거나 서로 다른 worker에서 독립적으로 reserve하지 않는다.
 - 최초 reservation은 `orderIntentId`와 deterministic order hash의 permanent tombstone을
   함께 만들며, rejected, stopped-before-dispatch 또는 `terminal_reconciled` 뒤에도 삭제,
   만료 또는 재사용하지 않는다.
@@ -238,6 +249,11 @@ reconciliation_pending
   재전송하지 않고 owner-visible reconciliation 결과로 닫는다.
 - 이후 create/modify/cancel operation은 backend가 새 intent identity와 새 deterministic
   hash를 생성해야 하며, 이전 intent의 approval/idempotency record를 승계하지 않는다.
+- Active capacity reservation은 process restart와 broker acknowledgement 뒤에도 보존하고
+  모든 후속 final risk evaluation에 포함한다. Broker order/position/cash가 terminal
+  reconciliation되거나 `stopped_before_dispatch`의 durable no-dispatch evidence가 완성된
+  뒤에만 같은 serializable store에서 release한다. Approval expiry/취소도 no-dispatch
+  evidence와 tombstone을 보존한 atomic transition 없이는 capacity를 release하지 않는다.
 - Broker idempotency contract는 구현 시점의 official OpenAPI document로 다시
   확인한다. 지원 여부를 추측하지 않는다.
 - Network timeout, connection reset, `5xx` 또는 malformed response에서 mutation을
@@ -266,8 +282,8 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 1. intent created
 2. preview verified
 3. risk evaluated
-4. owner approval verified
-5. idempotency reservation acquired 또는 duplicate rejected
+4. portfolio/account risk capacity와 idempotency/tombstone atomically reserved 또는 rejected
+5. owner approval verified against exact risk/reservation identity
 6. kill switch/config gate rechecked
 7. dry-run result 또는 broker send attempted
 8. broker acknowledgement/rejection/unknown recorded
@@ -335,6 +351,7 @@ token, raw account id, raw broker order id, raw execution data와 request/respon
 - [ ] Safe defaults와 invalid config가 fail-closed로 검증됨
 - [ ] Risk, preview, approval, idempotency와 kill-switch gate가 send 직전에 재검증됨
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
+- [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Timeout/unknown result의 blind retry가 없음
 - [ ] Secret/account/order/execution raw identity가 output에 없음
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨

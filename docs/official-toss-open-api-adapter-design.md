@@ -478,7 +478,7 @@ live order 또는 broker mutation을 승인하지 않는다.
 | `TossOpenApiAccountReader` | accounts, holdings read-only snapshot 조회와 masking | order mutation, portfolio mutation |
 | `TossOpenApiOrderInfoReader` | buying power, sellable quantity, commissions 조회 | 주문 생성 판단 |
 | `TossOpenApiOrderGateway` | create/modify/cancel order HTTP call | Risk Engine 우회, Codex/MCP 직접 호출 |
-| `OrderRouter` | current risk-approved `OrderIntent`와 exact-bound runtime owner approval만 gateway로 전달, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
+| `OrderRouter` | portfolio/account-keyed final risk/capacity reservation, exact-bound runtime owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
 
 ## Runtime data flow
 
@@ -515,7 +515,7 @@ sequenceDiagram
     Strategy->>Risk: TradingSignal
     Risk-->>Router: approved OrderIntent
     Owner->>Router: exact-bound typed approval
-    Router->>Router: clock, fencing, permanent idempotency check
+    Router->>Router: serializable final risk/capacity/idempotency reservation
     Router->>Gateway: create/modify/cancel request
     Gateway->>API: POST order endpoint
     API-->>Gateway: order response or error envelope
@@ -591,6 +591,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 로컬 정책은 다음을 기본으로 한다.
 
 - `OrderIntent`에는 backend-generated `intentId`와 deterministic order hash를 둔다.
+- 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
+  current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
+  하나의 serializable durable transaction에서 commit한다. Active reservation은 terminal
+  reconciliation까지 후속 risk evaluation에 포함한다.
 - 최초 reservation은 `intentId`와 order hash의 permanent tombstone을 write-ahead로 만들며,
   rejected, stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는
   재사용하지 않는다.
@@ -722,6 +726,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - order gateway는 `TRADING_ENABLED=false` 또는 `ORDER_MUTATIONS_ENABLED=false`에서 실행되지 않는다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
 - attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
+- concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
