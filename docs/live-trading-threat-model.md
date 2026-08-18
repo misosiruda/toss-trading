@@ -348,7 +348,33 @@ reconciliation_pending
 ```
 
 - Default는 `disabled`다.
-- Row 16 dry-run은 `dry_run_validated` 밖으로 전이하지 않는다.
+- Row 16 dry-run의 live intent는 `dry_run_validated` 밖으로 전이하지 않는다. Idempotency와
+  failure semantics 검증은 live state/reservation store가 아닌 아래 isolated
+  `DryRunShadowRecord`에서만 수행한다.
+
+```text
+shadow_created
+  -> shadow_reserved
+
+shadow_reserved
+  -> shadow_completed | shadow_timeout_unknown
+
+shadow_timeout_unknown
+  -> shadow_reconciled_no_external_effect
+
+duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed)
+  -> shadow_duplicate_rejected
+```
+
+- Shadow store는 별도 namespace와 synthetic scenario/intent key를 사용하고 live
+  idempotency tombstone, portfolio/account capacity, target fence, approval request, permit,
+  broker order/execution identity를 생성·조회·변경하지 않는다.
+- `shadow_timeout_unknown`은 injected deterministic fault에 대한 simulation label일 뿐이며
+  network attempt나 broker-side unknown을 주장하지 않는다. Shadow reconciliation은 항상
+  `shadow_reconciled_no_external_effect`로 닫히며 live reconciliation queue에 들어가지 않는다.
+- Type/runtime boundary는 `DryRunShadowRecord`나 shadow key를 gateway/dispatch permit 입력으로
+  변환하지 못하게 한다. Shadow audit는 `simulation_only=true`와 synthetic correlation만
+  남기고 raw account/order/execution identity를 받지 않는다.
 - `final_risk_reserved`는 portfolio/account capacity, idempotency와 tombstone transaction이
   commit된 상태다. Market order이면 exact `marketOrderAuthorization`도 같은 transaction에서
   먼저 consume돼야 하며, transaction이 만든 exact risk/reservation identity를 owner에게
@@ -660,7 +686,8 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - dry-run result만 반환하고 broker order identity/execution을 생성하지 않음
 - `LiveRiskEngine` reject 시 router를 호출하지 않음
 - approval contract는 synthetic owner approval fixture로만 검증
-- idempotency reservation, duplicate/timeout/unknown state를 deterministic test로 검증
+- isolated shadow idempotency reservation, duplicate reject, simulated timeout/unknown과
+  `shadow_reconciled_no_external_effect`를 deterministic test로 검증
 - MCP/API/dashboard mutation route/tool을 추가하지 않음
 - natural-language order와 Codex paper evidence promotion을 compile/runtime boundary로 차단
 - audit output에 secret/account/order/execution raw identity가 없음을 검증
@@ -705,6 +732,7 @@ event 뒤 broker result event가 없으면 실제 byte 전송 여부를 추측�
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
 - [ ] Disabled gate가 final reservation/fence/approval request를 막고 race loser를 atomic close함
+- [ ] Row 16 dry-run shadow가 live reservation/capacity/fence/permit/gateway와 분리되고 simulated unknown을 no-external-effect로 종료함
 - [ ] Concurrent intent의 final risk evaluation/capacity reservation이 serializable하고 reconciliation까지 보존됨
 - [ ] Broker-visible order/partial fill과 capacity reservation이 correlation 기반 exactly-once handoff됨
 - [ ] Pre-dispatch revalidation이 exact current reservation만 exclude-self/replace하고 다른 capacity를 유지함

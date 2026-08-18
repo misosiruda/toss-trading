@@ -607,6 +607,13 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   발급하고 raw identity mapping을 authenticated encryption으로만 보관한다. Mapping encryption
   key rotation은 ref를 유지하는 versioned atomic re-encryption이며 새 ciphertext 검증 전 old
   key를 폐기하지 않는다. Mapping 누락·충돌 또는 incomplete rotation은 mutation을 fail-closed한다.
+- Row 16 dry-run의 live intent는 `dry_run_validated`에 머문다. Idempotency reservation,
+  duplicate reject와 timeout/unknown test는 별도 namespace의 `DryRunShadowRecord`에서만
+  `shadow_created -> shadow_reserved -> shadow_completed | shadow_timeout_unknown ->
+  shadow_reconciled_no_external_effect`로 진행한다. Shadow key/state는 live idempotency,
+  account/portfolio capacity, target fence, approval, permit, broker identity, reconciliation
+  queue 또는 gateway 입력과 type/runtime 수준에서 호환되지 않으며 audit는
+  `simulation_only=true`와 synthetic correlation만 기록한다.
 - Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
   재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
   terms를 replacement로 평가하되 reconciliation 전 old capacity를 해제하지 않는다. 각 risk
@@ -856,6 +863,7 @@ key rotation도 old-key continuity record와 새 pinned key를 요구한다.
 - read-only market/account adapter는 mutation endpoint를 호출하지 않는다.
 - order gateway는 `TRADING_ENABLED=false` 또는 `ORDER_MUTATIONS_ENABLED=false`에서 실행되지 않는다.
 - disabled gate에서는 final risk reservation, target fence와 approval request도 생성되지 않고 race-loser reservation은 atomic no-dispatch closure된다.
+- Row 16 dry-run reservation/timeout/unknown 검증은 isolated shadow state로만 수행되고 live capacity, permit, gateway 또는 reconciliation queue에 닿지 않는다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
 - attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
