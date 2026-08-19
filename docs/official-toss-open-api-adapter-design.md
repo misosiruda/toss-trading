@@ -687,6 +687,12 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   fence/capacity/history를 release하지 않는다. Target order와 그 체결 결과의 position/cash가 exact
   read-only broker evidence 및 local ledger와 reconciled된 뒤에만 `terminal_reconciled` CAS가 resource를
   release한다.
+- Final risk 뒤 sole recovery permit이 생성된 `send_reserved`에서 target이 first byte 전에 terminal이
+  되면 exact recovery state/version, account/target lineage/version/state, sole permit identity의
+  unconsumed 상태와 no-`dispatch_attempted`/no-first-byte를 한 CAS로 검증한다. 같은 transaction은 permit을
+  `recovery_target_terminal_post_permit`으로 영구 fence하고 gateway allowlist를 비우며 recovery epoch를
+  advance한 뒤 `recovery_terminal_pending_reconciliation`으로 전이한다. Consumed/attempted permit 또는
+  ambiguous terminal evidence는 no-dispatch로 추정하지 않고 blocked reconciliation에 남긴다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
   recovery `*_pending_approval`에서는 exact state/version과 pending request generation, valid
   approval/permit 부재, empty gateway allowlist와 complete audit chain에서 exact current recovery
@@ -1107,6 +1113,7 @@ record와 새 pinned key를 요구한다.
 - cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.
 - cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
 - 모든 cancel-recovery pending-approval/final-risk state는 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 inherited lineage resource를 유지한다.
+- cancel-recovery send_reserved는 first byte 전 exact terminal target과 sole unconsumed permit/no-attempt를 한 CAS로 증명해 permit을 fence하고 inherited lineage resource를 reconciliation까지 유지한다.
 - recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
 - closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
 - recovery init approval retry는 fence-free target을 재요구하지 않고 same-lineage owned fence/capacity/history를 유지한다.

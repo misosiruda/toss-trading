@@ -227,6 +227,15 @@ rebind/retry/request/approval/permit은 만들지 않으며 delayed owner respon
 거부한다. Target terminal evidence나 identity가 ambiguous하면 이 전이를 추정하지 않고 blocked
 reconciliation에 남긴다.
 
+Final risk가 sole recovery permit을 만든 뒤 first byte 전 target이 terminal이 되면 exact current
+recovery `send_reserved` state/version, account/target lineage/version/state, sole permit identity의
+unconsumed 상태와 `dispatch_attempted`/first-byte 부재를 한 CAS로 검증한다. 같은 transaction은 permit을
+`recovery_target_terminal_post_permit`으로 영구 fence하고 gateway allowlist를 비우며 recovery epoch를
+advance한 뒤 `recovery_terminal_pending_reconciliation`으로 전이한다. Approval/request의 consumed/closed
+history와 original/prior attempt history는 보존하고 새 cancel, rebind, retry, request, approval 또는
+permit을 만들지 않는다. Permit이 consumed/attempted이거나 terminal evidence가 ambiguous하면 이
+no-dispatch 전이를 추정하지 않고 `acknowledgement_unknown`/blocked reconciliation에 남긴다.
+
 `recovery_terminal_pending_reconciliation`은 cancel acknowledgement나 target terminal 관찰만으로
 inherited resource를 release하지 않는다. Exact target order와 그 체결로 생긴 position/cash가 read-only
 broker evidence 및 local ledger와 reconcile될 때까지 stable target fence, conservative capacity envelope,
@@ -421,6 +430,9 @@ approval_required
 send_reserved
   -> stopped_before_dispatch(cause-specific noDispatchFence)
   -> dispatch_permit_acquired
+
+send_reserved(recovery_cancel)
+  -> recovery_terminal_pending_reconciliation(exact target-terminal CAS + sole unconsumed permit fence + no attempt)
 
 kill_active_reconciled_open_target(no active mutation/recovery fence)
   -> recovery_init_pending_approval(atomic target fence + capacity envelope + pending request, no permit)
@@ -803,12 +815,14 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Target이 이미 terminal이면 모든 pending-approval/final-risk state에서 exact current
   request/approval generation을 `recovery_target_terminal`로 닫고
   `recovery_terminal_pending_reconciliation`으로 전이한다. 새 cancel, rebind, retry, request, approval
-  또는 permit은 만들지 않는다. Account/target lineage가 달라졌거나 state가 ambiguous하면
-  rebind/cancel하지 않고 owner-visible blocked state로 남긴다. Cancel acknowledgement만으로 capacity를
-  release하지 않고 target order와 resulting position/cash reconciliation까지 추적한다. Takeover가
-  있으면 original operation과 모든 recovery attempt가 terminal 또는 proven no-dispatch이고 external
-  state가 reconciled된 뒤에만 conservative old/replacement/current-target capacity envelope와 fence를
-  release한다.
+  또는 permit은 만들지 않는다. Sole permit이 이미 생성된 recovery `send_reserved`에서는 exact
+  terminal target, unconsumed permit과 no-attempt를 한 CAS로 증명해 permit/allowlist를 영구 fence하고
+  같은 reconciliation state로 전이한다. Account/target lineage가 달라졌거나 state가 ambiguous하거나
+  permit이 consumed/attempted이면 rebind/cancel/no-dispatch를 추정하지 않고 owner-visible blocked
+  state로 남긴다. Cancel acknowledgement만으로 capacity를 release하지 않고 target order와 resulting
+  position/cash reconciliation까지 추적한다. Takeover가 있으면 original operation과 모든 recovery
+  attempt가 terminal 또는 proven no-dispatch이고 external state가 reconciled된 뒤에만 conservative
+  old/replacement/current-target capacity envelope와 fence를 release한다.
 - Recovery permit consume 자체는 gate-disable transition이 아니다. Arbiter는 permit consume과
   `dispatch_attempted` commit 뒤에도 같은 dispatch/gate lock을 first network byte boundary까지
   유지하며, exact consumed permit 외 다른 request는 허용하지 않는다. First byte를 실제로 넘은
@@ -1090,6 +1104,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Recovery approval의 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume/permit이 허용됨
 - [ ] Recovery pending-approval/final-risk target 변경이 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 fresh approval rebind됨
 - [ ] 모든 recovery approval/final-risk 대기 상태가 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 lineage resource를 유지함
+- [ ] Recovery send_reserved가 first byte 전 terminal target을 확인하면 sole unconsumed permit을 fence하고 lineage resource를 reconciliation까지 유지함
 - [ ] Recovery approval decline/expiry/malformed/revoke가 current request generation만 닫고 prior attempt history와 inherited fence/capacity를 유지함
 - [ ] Closed recovery approval은 verified owner retry와 fresh target evidence로만 새 request generation을 만듦
 - [ ] Recovery init approval retry가 fence-free를 재요구하지 않고 same-lineage owned fence/capacity/history를 유지함
