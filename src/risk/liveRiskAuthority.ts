@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 
 import {
   LiveRiskEngine,
+  type LiveOpenOrder,
   type LiveOrderIntent,
   type LiveOrderPreviewRef,
   type LiveRiskDecision,
   type LiveRiskInput,
   type LiveRiskPolicy,
+  type LiveRiskPosition,
   type LiveRiskSnapshot
 } from "./liveRiskEngine.js";
 import {
@@ -88,21 +90,69 @@ const PREVIEW_REQUIRED_KEYS = [
   "expiresAt"
 ] as const;
 const APPROVAL_OPTIONAL_KEYS = ["marketOrderApproved"] as const;
+const SNAPSHOT_REQUIRED_KEYS = [
+  "riskSnapshotRef",
+  "capturedAt",
+  "dailyLossKrw",
+  "positions",
+  "openOrders",
+  "marketSessions"
+] as const;
+const POSITION_REQUIRED_KEYS = [
+  "market",
+  "symbol",
+  "quantity",
+  "averagePriceKrw"
+] as const;
+const POSITION_OPTIONAL_KEYS = ["marketValueKrw"] as const;
+const OPEN_ORDER_REQUIRED_KEYS = [
+  "orderIntentId",
+  "idempotencyKey",
+  "market",
+  "symbol",
+  "side"
+] as const;
+const OPEN_ORDER_OPTIONAL_KEYS = [
+  "signalId",
+  "estimatedGrossAmountKrw",
+  "quantity"
+] as const;
+const POLICY_OPTIONAL_KEYS = [
+  "killSwitch",
+  "maxOrderAmountKrw",
+  "maxDailyLossKrw",
+  "maxSymbolExposureKrw",
+  "maxMarketExposureKrw",
+  "maxTotalExposureKrw",
+  "maxSnapshotAgeMs",
+  "allowedSymbols",
+  "allowedMarkets",
+  "requireMarketOpen",
+  "maxOpenOrders",
+  "marketOrderPolicy",
+  "requirePreview",
+  "cooldownEntries",
+  "now"
+] as const;
+const COOLDOWN_REQUIRED_KEYS = ["symbol", "activeUntil"] as const;
+const COOLDOWN_OPTIONAL_KEYS = ["market", "side", "reason"] as const;
 
 export function evaluateLiveRiskAuthority(
   input: EvaluateLiveRiskAuthorityInput
 ): LiveRiskAuthorityEvaluation {
-  assertDataRecord(input, ["intent", "snapshot", "policy"], [
-    "intent",
-    "snapshot"
-  ]);
-  const intent = createFrozenLiveOrderIntent(input.intent);
+  const root = materializeDataRecord(
+    input,
+    ["intent", "snapshot", "policy"],
+    ["intent", "snapshot"]
+  );
+  const intent = createFrozenLiveOrderIntent(root.intent);
+  const snapshot = createFrozenLiveRiskSnapshot(root.snapshot);
   const engineInput: LiveRiskInput = {
     intent,
-    snapshot: input.snapshot
+    snapshot
   };
-  if (Object.hasOwn(input, "policy")) {
-    engineInput.policy = input.policy;
+  if (Object.hasOwn(root, "policy")) {
+    engineInput.policy = createFrozenLiveRiskPolicyInput(root.policy);
   }
 
   const evaluatedIntentHash = createLiveOrderIntentHash(intent);
@@ -147,51 +197,51 @@ export function verifyLiveRiskAuthority(
 }
 
 function createFrozenLiveOrderIntent(value: unknown): FrozenLiveOrderIntent {
-  assertDataRecord(
+  const record = materializeDataRecord(
     value,
     [...INTENT_REQUIRED_KEYS, ...INTENT_OPTIONAL_KEYS],
     INTENT_REQUIRED_KEYS
   );
-  assertNonEmptyString(value.orderIntentId, "orderIntentId");
-  assertNonEmptyString(value.signalId, "signalId");
-  assertNonEmptyString(value.idempotencyKey, "idempotencyKey");
-  if (value.market !== "KR" && value.market !== "US") {
+  assertNonEmptyString(record.orderIntentId, "orderIntentId");
+  assertNonEmptyString(record.signalId, "signalId");
+  assertNonEmptyString(record.idempotencyKey, "idempotencyKey");
+  if (record.market !== "KR" && record.market !== "US") {
     throw new Error("live order intent market must be KR or US");
   }
-  assertNonEmptyString(value.symbol, "symbol");
-  if (value.side !== "BUY" && value.side !== "SELL") {
+  assertNonEmptyString(record.symbol, "symbol");
+  if (record.side !== "BUY" && record.side !== "SELL") {
     throw new Error("live order intent side must be BUY or SELL");
   }
-  if (value.orderType !== "LIMIT" && value.orderType !== "MARKET") {
+  if (record.orderType !== "LIMIT" && record.orderType !== "MARKET") {
     throw new Error("live order intent orderType must be LIMIT or MARKET");
   }
-  assertPositiveFiniteNumber(value.quantity, "quantity");
+  assertPositiveFiniteNumber(record.quantity, "quantity");
   assertPositiveFiniteNumber(
-    value.estimatedGrossAmountKrw,
+    record.estimatedGrossAmountKrw,
     "estimatedGrossAmountKrw"
   );
-  assertTimestamp(value.createdAt, "createdAt");
-  assertTimestamp(value.expiresAt, "expiresAt");
+  assertTimestamp(record.createdAt, "createdAt");
+  assertTimestamp(record.expiresAt, "expiresAt");
 
   const intent: LiveOrderIntent = {
-    orderIntentId: value.orderIntentId,
-    signalId: value.signalId,
-    idempotencyKey: value.idempotencyKey,
-    market: value.market,
-    symbol: value.symbol,
-    side: value.side,
-    orderType: value.orderType,
-    quantity: value.quantity,
-    estimatedGrossAmountKrw: value.estimatedGrossAmountKrw,
-    createdAt: value.createdAt,
-    expiresAt: value.expiresAt
+    orderIntentId: record.orderIntentId,
+    signalId: record.signalId,
+    idempotencyKey: record.idempotencyKey,
+    market: record.market,
+    symbol: record.symbol,
+    side: record.side,
+    orderType: record.orderType,
+    quantity: record.quantity,
+    estimatedGrossAmountKrw: record.estimatedGrossAmountKrw,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt
   };
 
-  if (Object.hasOwn(value, "preview")) {
-    intent.preview = clonePreview(value.preview);
+  if (Object.hasOwn(record, "preview")) {
+    intent.preview = clonePreview(record.preview);
   }
-  if (Object.hasOwn(value, "approvals")) {
-    intent.approvals = cloneApprovals(value.approvals);
+  if (Object.hasOwn(record, "approvals")) {
+    intent.approvals = cloneApprovals(record.approvals);
   }
 
   return deepFreeze(intent) as FrozenLiveOrderIntent;
@@ -201,19 +251,23 @@ function clonePreview(value: unknown): LiveOrderPreviewRef | undefined {
   if (value === undefined) {
     return undefined;
   }
-  assertDataRecord(value, PREVIEW_REQUIRED_KEYS, PREVIEW_REQUIRED_KEYS);
-  assertNonEmptyString(value.previewId, "preview.previewId");
-  assertNonEmptyString(value.orderIntentId, "preview.orderIntentId");
+  const record = materializeDataRecord(
+    value,
+    PREVIEW_REQUIRED_KEYS,
+    PREVIEW_REQUIRED_KEYS
+  );
+  assertNonEmptyString(record.previewId, "preview.previewId");
+  assertNonEmptyString(record.orderIntentId, "preview.orderIntentId");
   assertPositiveFiniteNumber(
-    value.estimatedGrossAmountKrw,
+    record.estimatedGrossAmountKrw,
     "preview.estimatedGrossAmountKrw"
   );
-  assertTimestamp(value.expiresAt, "preview.expiresAt");
+  assertTimestamp(record.expiresAt, "preview.expiresAt");
   return {
-    previewId: value.previewId,
-    orderIntentId: value.orderIntentId,
-    estimatedGrossAmountKrw: value.estimatedGrossAmountKrw,
-    expiresAt: value.expiresAt
+    previewId: record.previewId,
+    orderIntentId: record.orderIntentId,
+    estimatedGrossAmountKrw: record.estimatedGrossAmountKrw,
+    expiresAt: record.expiresAt
   };
 }
 
@@ -223,20 +277,322 @@ function cloneApprovals(
   if (value === undefined) {
     return undefined;
   }
-  assertDataRecord(value, APPROVAL_OPTIONAL_KEYS, []);
+  const record = materializeDataRecord(value, APPROVAL_OPTIONAL_KEYS, []);
   const approvals: NonNullable<LiveOrderIntent["approvals"]> = {};
-  if (Object.hasOwn(value, "marketOrderApproved")) {
+  if (Object.hasOwn(record, "marketOrderApproved")) {
     if (
-      value.marketOrderApproved !== undefined &&
-      typeof value.marketOrderApproved !== "boolean"
+      record.marketOrderApproved !== undefined &&
+      typeof record.marketOrderApproved !== "boolean"
     ) {
       throw new Error(
         "live order intent approvals.marketOrderApproved must be boolean or undefined"
       );
     }
-    approvals.marketOrderApproved = value.marketOrderApproved;
+    approvals.marketOrderApproved = record.marketOrderApproved;
   }
   return approvals;
+}
+
+function createFrozenLiveRiskSnapshot(value: unknown): LiveRiskSnapshot {
+  const record = materializeDataRecord(
+    value,
+    SNAPSHOT_REQUIRED_KEYS,
+    SNAPSHOT_REQUIRED_KEYS
+  );
+  assertNonEmptyString(record.riskSnapshotRef, "snapshot.riskSnapshotRef");
+  assertTimestamp(record.capturedAt, "snapshot.capturedAt");
+  assertNonNegativeFiniteNumber(
+    record.dailyLossKrw,
+    "snapshot.dailyLossKrw"
+  );
+  const positions = materializeDataArray(
+    record.positions,
+    "snapshot.positions"
+  ).map(cloneRiskPosition);
+  const openOrders = materializeDataArray(
+    record.openOrders,
+    "snapshot.openOrders"
+  ).map(cloneOpenOrder);
+  const marketSessions = cloneMarketSessions(record.marketSessions);
+
+  return deepFreeze({
+    riskSnapshotRef: record.riskSnapshotRef,
+    capturedAt: record.capturedAt,
+    dailyLossKrw: record.dailyLossKrw,
+    positions,
+    openOrders,
+    marketSessions
+  });
+}
+
+function cloneRiskPosition(value: unknown): LiveRiskPosition {
+  const record = materializeDataRecord(
+    value,
+    [...POSITION_REQUIRED_KEYS, ...POSITION_OPTIONAL_KEYS],
+    POSITION_REQUIRED_KEYS
+  );
+  assertMarket(record.market, "snapshot.positions.market");
+  assertNonEmptyString(record.symbol, "snapshot.positions.symbol");
+  assertNonNegativeFiniteNumber(
+    record.quantity,
+    "snapshot.positions.quantity"
+  );
+  assertNonNegativeFiniteNumber(
+    record.averagePriceKrw,
+    "snapshot.positions.averagePriceKrw"
+  );
+  const position: LiveRiskPosition = {
+    market: record.market,
+    symbol: record.symbol,
+    quantity: record.quantity,
+    averagePriceKrw: record.averagePriceKrw
+  };
+  if (Object.hasOwn(record, "marketValueKrw")) {
+    if (record.marketValueKrw !== undefined) {
+      assertNonNegativeFiniteNumber(
+        record.marketValueKrw,
+        "snapshot.positions.marketValueKrw"
+      );
+    }
+    position.marketValueKrw = record.marketValueKrw;
+  }
+  return position;
+}
+
+function cloneOpenOrder(value: unknown): LiveOpenOrder {
+  const record = materializeDataRecord(
+    value,
+    [...OPEN_ORDER_REQUIRED_KEYS, ...OPEN_ORDER_OPTIONAL_KEYS],
+    OPEN_ORDER_REQUIRED_KEYS
+  );
+  assertNonEmptyString(record.orderIntentId, "snapshot.openOrders.orderIntentId");
+  assertNonEmptyString(record.idempotencyKey, "snapshot.openOrders.idempotencyKey");
+  assertMarket(record.market, "snapshot.openOrders.market");
+  assertNonEmptyString(record.symbol, "snapshot.openOrders.symbol");
+  assertOrderSide(record.side, "snapshot.openOrders.side");
+  if (record.signalId !== undefined) {
+    assertNonEmptyString(record.signalId, "snapshot.openOrders.signalId");
+  }
+  if (record.estimatedGrossAmountKrw !== undefined) {
+    assertPositiveFiniteNumber(
+      record.estimatedGrossAmountKrw,
+      "snapshot.openOrders.estimatedGrossAmountKrw"
+    );
+  }
+  if (record.quantity !== undefined) {
+    assertPositiveFiniteNumber(
+      record.quantity,
+      "snapshot.openOrders.quantity"
+    );
+  }
+  if (
+    (record.side === "BUY" && record.estimatedGrossAmountKrw === undefined) ||
+    (record.side === "SELL" && record.quantity === undefined)
+  ) {
+    throw new Error(
+      "live risk snapshot open order requires side-specific amount or quantity"
+    );
+  }
+
+  const openOrder: LiveOpenOrder = {
+    orderIntentId: record.orderIntentId,
+    idempotencyKey: record.idempotencyKey,
+    market: record.market,
+    symbol: record.symbol,
+    side: record.side
+  };
+  if (Object.hasOwn(record, "signalId")) {
+    openOrder.signalId = record.signalId;
+  }
+  if (Object.hasOwn(record, "estimatedGrossAmountKrw")) {
+    openOrder.estimatedGrossAmountKrw = record.estimatedGrossAmountKrw;
+  }
+  if (Object.hasOwn(record, "quantity")) {
+    openOrder.quantity = record.quantity;
+  }
+  return openOrder;
+}
+
+function cloneMarketSessions(
+  value: unknown
+): LiveRiskSnapshot["marketSessions"] {
+  const record = materializeDataRecord(value, ["KR", "US"], []);
+  const sessions: LiveRiskSnapshot["marketSessions"] = {};
+  for (const market of ["KR", "US"] as const) {
+    if (!Object.hasOwn(record, market)) {
+      continue;
+    }
+    const status = record[market];
+    if (status !== "open" && status !== "closed") {
+      throw new Error(
+        "live risk snapshot market session must be open or closed"
+      );
+    }
+    sessions[market] = status;
+  }
+  return sessions;
+}
+
+function createFrozenLiveRiskPolicyInput(
+  value: unknown
+): Partial<LiveRiskPolicy> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const record = materializeDataRecord(value, POLICY_OPTIONAL_KEYS, []);
+  const policy: Partial<LiveRiskPolicy> = {};
+
+  for (const key of [
+    "killSwitch",
+    "requireMarketOpen",
+    "requirePreview"
+  ] as const) {
+    if (!Object.hasOwn(record, key)) {
+      continue;
+    }
+    const fieldValue = record[key];
+    if (fieldValue !== undefined && typeof fieldValue !== "boolean") {
+      throw new Error(`live risk policy ${key} must be boolean or undefined`);
+    }
+    if (fieldValue !== undefined) {
+      policy[key] = fieldValue;
+    }
+  }
+
+  for (const key of [
+    "maxOrderAmountKrw",
+    "maxDailyLossKrw",
+    "maxSymbolExposureKrw",
+    "maxMarketExposureKrw",
+    "maxTotalExposureKrw",
+    "maxSnapshotAgeMs"
+  ] as const) {
+    if (!Object.hasOwn(record, key)) {
+      continue;
+    }
+    const fieldValue = record[key];
+    if (fieldValue !== undefined) {
+      assertNonNegativeFiniteNumber(fieldValue, `policy.${key}`);
+      policy[key] = fieldValue;
+    }
+  }
+
+  if (Object.hasOwn(record, "maxOpenOrders")) {
+    const maxOpenOrders = record.maxOpenOrders;
+    if (
+      maxOpenOrders !== undefined &&
+      (!Number.isInteger(maxOpenOrders) ||
+        typeof maxOpenOrders !== "number" ||
+        maxOpenOrders < 0)
+    ) {
+      throw new Error(
+        "live risk policy maxOpenOrders must be a non-negative integer"
+      );
+    }
+    if (maxOpenOrders !== undefined) {
+      policy.maxOpenOrders = maxOpenOrders;
+    }
+  }
+
+  if (Object.hasOwn(record, "marketOrderPolicy")) {
+    const marketOrderPolicy = record.marketOrderPolicy;
+    if (
+      marketOrderPolicy !== undefined &&
+      marketOrderPolicy !== "disabled" &&
+      marketOrderPolicy !== "requires_approval" &&
+      marketOrderPolicy !== "allowed"
+    ) {
+      throw new Error("live risk policy marketOrderPolicy is invalid");
+    }
+    if (marketOrderPolicy !== undefined) {
+      policy.marketOrderPolicy = marketOrderPolicy;
+    }
+  }
+
+  if (
+    Object.hasOwn(record, "allowedSymbols") &&
+    record.allowedSymbols !== undefined
+  ) {
+    const allowedSymbols = materializeDataArray(
+      record.allowedSymbols,
+      "policy.allowedSymbols"
+    );
+    for (const symbol of allowedSymbols) {
+      assertNonEmptyString(symbol, "policy.allowedSymbols entry");
+    }
+    policy.allowedSymbols = allowedSymbols as string[];
+  }
+
+  if (
+    Object.hasOwn(record, "allowedMarkets") &&
+    record.allowedMarkets !== undefined
+  ) {
+    const allowedMarkets = materializeDataArray(
+      record.allowedMarkets,
+      "policy.allowedMarkets"
+    );
+    for (const market of allowedMarkets) {
+      assertMarket(market, "policy.allowedMarkets entry");
+    }
+    policy.allowedMarkets = allowedMarkets as Array<"KR" | "US">;
+  }
+
+  if (
+    Object.hasOwn(record, "cooldownEntries") &&
+    record.cooldownEntries !== undefined
+  ) {
+    const cooldownEntries = materializeDataArray(
+      record.cooldownEntries,
+      "policy.cooldownEntries"
+    ).map(cloneCooldownEntry);
+    policy.cooldownEntries = cooldownEntries;
+  }
+
+  if (Object.hasOwn(record, "now")) {
+    if (record.now !== undefined) {
+      const time = readNativeDateTime(record.now);
+      policy.now = new Date(time);
+    }
+  }
+
+  return deepFreeze(policy);
+}
+
+function cloneCooldownEntry(
+  value: unknown
+): NonNullable<LiveRiskPolicy["cooldownEntries"]>[number] {
+  const record = materializeDataRecord(
+    value,
+    [...COOLDOWN_REQUIRED_KEYS, ...COOLDOWN_OPTIONAL_KEYS],
+    COOLDOWN_REQUIRED_KEYS
+  );
+  assertNonEmptyString(record.symbol, "policy.cooldownEntries.symbol");
+  assertTimestamp(record.activeUntil, "policy.cooldownEntries.activeUntil");
+  if (record.market !== undefined) {
+    assertMarket(record.market, "policy.cooldownEntries.market");
+  }
+  if (record.side !== undefined) {
+    assertOrderSide(record.side, "policy.cooldownEntries.side");
+  }
+  if (record.reason !== undefined && typeof record.reason !== "string") {
+    throw new Error(
+      "live risk policy cooldownEntries.reason must be string or undefined"
+    );
+  }
+  const entry: NonNullable<LiveRiskPolicy["cooldownEntries"]>[number] = {
+    symbol: record.symbol,
+    activeUntil: record.activeUntil
+  };
+  if (Object.hasOwn(record, "market")) {
+    entry.market = record.market;
+  }
+  if (Object.hasOwn(record, "side")) {
+    entry.side = record.side;
+  }
+  if (Object.hasOwn(record, "reason")) {
+    entry.reason = record.reason;
+  }
+  return entry;
 }
 
 function createLiveOrderIntentHash(intent: FrozenLiveOrderIntent): string {
@@ -379,11 +735,11 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function assertDataRecord(
+function materializeDataRecord(
   value: unknown,
   allowedKeys: readonly string[],
   requiredKeys: readonly string[]
-): asserts value is Record<string, unknown> {
+): Record<string, unknown> {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -404,6 +760,7 @@ function assertDataRecord(
   if (requiredKeys.some((key) => !Object.hasOwn(value, key))) {
     throw new Error("live risk authority input is missing required fields");
   }
+  const snapshot: Record<string, unknown> = {};
   for (const key of ownKeys as string[]) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (
@@ -413,7 +770,60 @@ function assertDataRecord(
     ) {
       throw new Error("live risk authority input must use enumerable data fields");
     }
+    Object.defineProperty(snapshot, key, {
+      value: descriptor.value,
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
   }
+  return snapshot;
+}
+
+function materializeDataArray(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new Error(`live risk authority ${field} must be a plain array`);
+  }
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  const length = lengthDescriptor?.value;
+  if (
+    lengthDescriptor === undefined ||
+    !("value" in lengthDescriptor) ||
+    typeof length !== "number" ||
+    !Number.isSafeInteger(length) ||
+    length < 0
+  ) {
+    throw new Error(`live risk authority ${field} has invalid length`);
+  }
+  const ownKeys = Reflect.ownKeys(value);
+  if (
+    ownKeys.length !== length + 1 ||
+    ownKeys.some(
+      (key) =>
+        typeof key !== "string" ||
+        (key !== "length" && !/^(0|[1-9][0-9]*)$/.test(key))
+    )
+  ) {
+    throw new Error(
+      `live risk authority ${field} must be dense and contain no extra fields`
+    );
+  }
+
+  const snapshot: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      throw new Error(
+        `live risk authority ${field} must use enumerable data entries`
+      );
+    }
+    snapshot.push(descriptor.value);
+  }
+  return snapshot;
 }
 
 function assertNonEmptyString(
@@ -432,6 +842,50 @@ function assertPositiveFiniteNumber(
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new Error(`live order intent ${field} must be positive and finite`);
   }
+}
+
+function assertNonNegativeFiniteNumber(
+  value: unknown,
+  field: string
+): asserts value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `live risk authority ${field} must be non-negative and finite`
+    );
+  }
+}
+
+function assertMarket(
+  value: unknown,
+  field: string
+): asserts value is "KR" | "US" {
+  if (value !== "KR" && value !== "US") {
+    throw new Error(`live risk authority ${field} must be KR or US`);
+  }
+}
+
+function assertOrderSide(
+  value: unknown,
+  field: string
+): asserts value is "BUY" | "SELL" {
+  if (value !== "BUY" && value !== "SELL") {
+    throw new Error(`live risk authority ${field} must be BUY or SELL`);
+  }
+}
+
+function readNativeDateTime(value: unknown): number {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Object.getPrototypeOf(value) !== Date.prototype
+  ) {
+    throw new Error("live risk policy now must be a native Date");
+  }
+  const time = Date.prototype.getTime.call(value);
+  if (!Number.isFinite(time)) {
+    throw new Error("live risk policy now must be a valid Date");
+  }
+  return time;
 }
 
 function assertTimestamp(value: unknown, field: string): asserts value is string {

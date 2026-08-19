@@ -218,6 +218,78 @@ test("live risk authority rejects non-data and shape-loose intents before evalua
   );
 });
 
+test("live risk authority snapshots risk state and policy without proxy rereads", () => {
+  let positionReads = 0;
+  let policyReads = 0;
+  const position = new Proxy(
+    {
+      market: "KR" as const,
+      symbol: "005930",
+      quantity: 1,
+      averagePriceKrw: 10_000,
+      marketValueKrw: 10_000
+    },
+    {
+      get(target, property, receiver) {
+        positionReads += 1;
+        return Reflect.get(target, property, receiver);
+      }
+    }
+  );
+  const policy = new Proxy(approvingPolicy(), {
+    get(target, property, receiver) {
+      policyReads += 1;
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  const snapshot = {
+    ...baseSnapshot(),
+    positions: [position]
+  };
+
+  const evaluation = evaluateLiveRiskAuthority({
+    intent: baseIntent(),
+    snapshot,
+    policy
+  });
+
+  assert.equal(evaluation.decision.approved, true);
+  assert.equal(positionReads, 0);
+  assert.equal(policyReads, 0);
+});
+
+test("live risk authority rejects accessor-backed risk state and policy", () => {
+  const snapshot = baseSnapshot();
+  Object.defineProperty(snapshot, "dailyLossKrw", {
+    enumerable: true,
+    get: () => 0
+  });
+  const policy = approvingPolicy();
+  Object.defineProperty(policy, "killSwitch", {
+    enumerable: true,
+    get: () => false
+  });
+
+  assert.throws(
+    () =>
+      evaluateLiveRiskAuthority({
+        intent: baseIntent(),
+        snapshot,
+        policy: approvingPolicy()
+      }),
+    /enumerable data fields/
+  );
+  assert.throws(
+    () =>
+      evaluateLiveRiskAuthority({
+        intent: baseIntent(),
+        snapshot: baseSnapshot(),
+        policy
+      }),
+    /enumerable data fields/
+  );
+});
+
 test("live risk authority cannot be serialized", () => {
   const evaluation = evaluateLiveRiskAuthority({
     intent: baseIntent(),
