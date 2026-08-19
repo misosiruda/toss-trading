@@ -54,7 +54,7 @@ export type OfficialMarketCalendarSourceParserContractDefinition = z.infer<
   typeof officialMarketCalendarSourceParserContractDefinitionSchema
 >;
 
-const sourceParserContractRegistryEntrySchema = z
+export const officialMarketCalendarSourceParserContractRegistryEntrySchema = z
   .object({
     parserContractVersion: identifierSchema,
     parserContractDefinition:
@@ -64,7 +64,7 @@ const sourceParserContractRegistryEntrySchema = z
   .strict();
 
 export type OfficialMarketCalendarSourceParserContractRegistryEntry = z.infer<
-  typeof sourceParserContractRegistryEntrySchema
+  typeof officialMarketCalendarSourceParserContractRegistryEntrySchema
 >;
 
 export function parseOfficialMarketCalendarSourceParserContractDefinition(
@@ -84,7 +84,8 @@ export function createOfficialMarketCalendarSourceParserContractHash(
 export function parseOfficialMarketCalendarSourceParserContractRegistryEntry(
   value: unknown
 ): OfficialMarketCalendarSourceParserContractRegistryEntry {
-  const entry = sourceParserContractRegistryEntrySchema.parse(value);
+  const entry =
+    officialMarketCalendarSourceParserContractRegistryEntrySchema.parse(value);
   if (
     entry.parserContractHash !==
     createOfficialMarketCalendarSourceParserContractHash(
