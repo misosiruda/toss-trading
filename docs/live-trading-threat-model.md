@@ -13,9 +13,9 @@ review가 필요하다.
 
 - `BROKER_PROVIDER=mock`
 - `TRADING_ENABLED=false`
-- order mutation config/parser 자체가 아직 없으며, future 도입 시
-  `TOSS_OPEN_API_ORDER_MUTATIONS_ENABLED=false`와 `TOSS_OPEN_API_DRY_RUN=true`를
-  safe default로 요구
+- ambient environment를 읽는 order mutation config/parser는 없으며, internal dry-run router는
+  injected typed config의 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`,
+  `TOSS_OPEN_API_ORDER_MUTATIONS_ENABLED=false`, `TOSS_OPEN_API_DRY_RUN=true`만 exact 허용
 - enabled MCP/API/dashboard `place_order` surface 없음
 - Codex CLI `virtual_decision`은 paper-only이며 live `TradingSignal` 또는
   `OrderIntent`로 승격되지 않음
@@ -1114,10 +1114,9 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 8. Root cause, affected intent range, reconciliation result와 재발 방지 test를 기록한다.
 9. 재개는 fresh config/risk/approval evidence와 explicit owner decision 뒤에만 허용한다.
 
-## Row 16 Dry-Run 진입 조건
+## Row 16 Dry-Run 구현 경계
 
-이 문서가 merge돼도 dry-run `OrderRouter` 구현이 자동 승인되는 것은 아니다. 별도 구현
-범위가 승인되면 첫 PR은 다음 경계를 모두 만족해야 한다.
+구현된 internal dry-run `OrderRouter`는 다음 경계를 모두 만족해야 한다.
 
 - mock broker만 사용하고 official order endpoint network call을 만들지 않음
 - `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, mutation disabled를 exact 검증
@@ -1131,6 +1130,13 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - audit output에 secret/account/order/execution raw identity가 없음을 검증
 - `git diff --check`, `npm run check`, focused risk/router/security test와 current-head
   review를 통과
+
+현재 구현은 exact safe config를 검증하고 approved `LiveRiskAuthority`의 동일 frozen intent,
+`evaluatedIntentHash`와 opaque scenario binding에 묶인 module-owned synthetic owner approval
+fixture를 한 번만 소비한 뒤 isolated shadow reservation에서 종료한다. Config, authority,
+approval 또는 shadow state가 counterfeit, stale, mismatched이면 fail-closed하며 실패 뒤 approval을
+live approval이나 permit으로 재사용할 수 없다. 반환 audit는 `simulationOnly=true`,
+`externalEffect=none`이고 broker order/execution identity를 만들지 않는다.
 
 ## 실제 Gateway 전 Owner Gate
 
