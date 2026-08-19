@@ -30,7 +30,9 @@ export const officialMarketCalendarSourceArchiveBindingSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    const expectedPath = archivePathFromHash(value.sourceDocumentHash);
+    const expectedPath = createOfficialMarketCalendarSourceArchivePath(
+      value.sourceDocumentHash
+    );
     if (value.archivePath !== expectedPath) {
       context.addIssue({
         code: "custom",
@@ -113,7 +115,9 @@ export function resolveOfficialMarketCalendarSourceArchiveBindings(
   });
 }
 
-function archivePathFromHash(sourceDocumentHash: string): string {
+export function createOfficialMarketCalendarSourceArchivePath(
+  sourceDocumentHash: string
+): string {
   return `sources/sha256/${sourceDocumentHash.slice("sha256:".length)}.bin`;
 }
 
