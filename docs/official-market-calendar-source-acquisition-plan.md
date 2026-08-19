@@ -242,7 +242,15 @@ acquisition부터 result까지 전체 chain을 다시 생성한다. Collection d
 projected document를 immutable projection hash에 결합하고 metadata/source-document hash,
 actual evidence roles, regular session hours, schedule/applicability claim은 caller 입력 없이
 final metadata에서만 파생한다. Stored parse는 exact source bytes와 registries로 전체 chain을
-다시 생성하며 collection aggregate assembly는 별도 후속 단계이다.
+다시 생성하며 collection aggregate 결합은 별도 assembly 모듈이 담당한다.
+
+`officialMarketCalendarSourceCollectionAssembly.ts`는 canonical collection plan과 verified
+document projection 목록을 결합해 source collection payload와 `collectionHash`를 생성한다.
+Plan은 documents/collectionHash를 직접 공급할 수 없고 projection document ID와
+per-document exact byte map은 unique canonical exact coverage여야 한다. 모든 projection을
+bytes와 registries로 다시 연 뒤 existing collection strict schema를 적용하며 exchange,
+full projection 목록과 source collection은 immutable assembly hash에 결합한다. Production
+source-specific parser와 filesystem publication은 별도 후속 단계이다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
