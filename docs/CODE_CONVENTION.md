@@ -188,11 +188,12 @@ const options = {
 - natural language, Codex paper evidence 또는 raw provider payload를 `LiveOrderIntent`로 변환
 - API/MCP/dashboard/CLI/package entrypoint에 mutation surface 추가
 
-`src/order`는 pure deterministic module로 유지한다. 첫 runtime PR에서 `src/workflows`는 risk
-평가 전에 strict-validated `LiveOrderIntent`를 deep-copy/deep-freeze하고 그 exact snapshot을
-`LiveRiskEngine`과 future router에 함께 전달한다. Risk module은 public constructor/factory 없이
-module-private path에서만 deep-frozen opaque `LiveRiskAuthority`를 mint하고 module-owned `WeakSet`
-brand로 진위를 확인한다. Rejected authority의 readonly decision을 approved로 바꿀 수 없어야 한다.
+`src/order`는 pure deterministic module로 유지한다. 구현된 `liveRiskAuthority` 경계는 risk 평가 전에
+strict-validated `LiveOrderIntent`를 deep-copy/deep-freeze하고 그 exact snapshot을
+`LiveRiskEngine`에 전달한다. 후속 `src/workflows`와 router도 이 동일 snapshot만 handoff해야 한다.
+Risk module은 public constructor/factory 없이 engine evaluation이 포함된 module-private mint path에서만
+deep-frozen opaque `LiveRiskAuthority`를 만들고 module-owned `WeakSet` brand로 진위를 확인한다.
+Rejected authority의 readonly decision을 approved로 바꿀 수 없어야 한다.
 Authority의 domain-separated `evaluatedIntentHash`는 schema version, optional-field presence와 exact raw
 value를 보존한 snapshot 전체를 length-prefixed canonical form으로 hash한다. Raw `symbol`과
 RiskEngine이 사용하는 normalized symbol projection도 서로 다른 field로 모두 bind한다.

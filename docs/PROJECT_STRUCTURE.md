@@ -36,7 +36,7 @@ toss-trading/
 | `src/market/` | market packet, historical packet, packet hash 생성 | Codex CLI나 broker API 호출 금지 |
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
 | `src/paper/` | virtual decision validation, risk, order, ledger, allocation policy | live `TradingSignal`/`OrderIntent`로 연결 금지 |
-| `src/risk/` | live order intent용 deterministic RiskEngine | broker gateway, OrderRouter, MCP mutation surface 연결 금지 |
+| `src/risk/` | live order intent용 deterministic RiskEngine과 opaque authority handoff | broker gateway, OrderRouter, MCP mutation surface 연결 금지 |
 | `src/order/` | future row 16의 internal mock-only dry-run state machine과 shadow idempotency contract | broker/network I/O, live mutation, API/MCP/dashboard 연결 금지 |
 | `src/replay/` | simulated clock, replay runner, sampling, lookahead guard | 실시간 trading loop로 사용 금지 |
 | `src/workflows/` | CLI/API가 호출하는 유스케이스 orchestration | 순수 정책을 중복 구현하지 않음 |
@@ -172,6 +172,8 @@ flowchart TD
 
 수정 후보:
 
+- `src/risk/liveRiskAuthority.ts` (구현됨: frozen intent와 opaque authority)
+- `src/risk/liveRiskAuthority.test.ts` (구현됨: 위조·변조·재구성 차단 회귀 테스트)
 - `src/order/dryRunOrderRouter.ts` (후속 구현)
 - `src/order/dryRunOrderRouter.test.ts` (후속 구현)
 - `docs/live-trading-threat-model.md`
@@ -185,9 +187,9 @@ flowchart TD
   typed input으로 검증하고 하나라도 다르면 fail-closed함
 - caller가 만든 자연어, Codex paper evidence 또는 raw broker payload를 intent로 변환하지
   않음
-- 첫 runtime PR은 workflow가 risk 평가 전에 strict-validated `LiveOrderIntent`를
-  deep-copy/deep-freeze하고, 그 exact snapshot을 `LiveRiskEngine`과 router handoff에 함께
-  사용하도록 해야 함
+- 구현된 risk authority 경계는 risk 평가 전에 strict-validated `LiveOrderIntent`를
+  deep-copy/deep-freeze하고 그 exact snapshot을 `LiveRiskEngine`에 전달함. 후속 workflow와
+  router도 평가 결과가 소유한 동일 snapshot만 handoff해야 함
 - Risk module은 descriptive plain object를 handoff authority로 받지 않고, module-private
   mint path와 runtime-owned `WeakSet` brand를 통과한 deep-frozen opaque
   `LiveRiskAuthority`만 생성해야 함. Public constructor/factory 또는 caller-supplied approval

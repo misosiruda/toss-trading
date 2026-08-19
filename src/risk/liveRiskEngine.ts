@@ -175,8 +175,9 @@ function normalizeLiveRiskEvaluationInput(
   const rawIntent = inputRecord?.intent;
   const rawSnapshot = inputRecord?.snapshot;
   const initialRejectCodes: LiveRiskRejectCode[] = [];
+  const hasValidIntent = isLiveOrderIntentInput(rawIntent);
 
-  if (!isLiveOrderIntentInput(rawIntent)) {
+  if (!hasValidIntent) {
     appendLiveRiskRejectCode(initialRejectCodes, "INVALID_ORDER_INTENT");
   }
   if (!isLiveRiskSnapshotInput(rawSnapshot)) {
@@ -184,7 +185,7 @@ function normalizeLiveRiskEvaluationInput(
   }
 
   return {
-    intent: createSafeOrderIntent(rawIntent),
+    intent: hasValidIntent ? rawIntent : createSafeOrderIntent(rawIntent),
     snapshot: createSafeRiskSnapshot(rawSnapshot),
     policy: inputRecord?.policy,
     initialRejectCodes
