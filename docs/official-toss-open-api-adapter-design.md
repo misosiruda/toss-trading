@@ -676,6 +676,17 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   부재를 뜻한다. Prior generation의 signed attempt/no-effect/terminal evidence는 삭제하지 않고
   보존한다. `recovery_retry_pending_approval`은 proven prior attempt를 전제로 하며 prior outcome이
   ambiguous하면 생성하지 않는다.
+- Recovery init/takeover/rebind/retry의 모든 `*_pending_approval`과 `*_pending_final_risk`는 target이
+  먼저 terminal이 되면 exact account/target lineage/version/state, recovery state/version, current
+  request/approval generation, no-permit/empty-allowlist/current-generation no-attempt를 한 CAS로
+  검증한다. 같은 transaction은 current request와 존재하는 active approval을
+  `recovery_target_terminal`로 permanently close하고 `recovery_terminal_pending_reconciliation`으로
+  전이한다. 새 rebind/retry/request/approval/permit은 만들지 않으며 delayed response는 거부한다.
+  Terminal/identity evidence가 ambiguous하면 blocked reconciliation을 유지한다.
+- `recovery_terminal_pending_reconciliation`은 target order terminal 관찰만으로 inherited lineage
+  fence/capacity/history를 release하지 않는다. Target order와 그 체결 결과의 position/cash가 exact
+  read-only broker evidence 및 local ledger와 reconciled된 뒤에만 `terminal_reconciled` CAS가 resource를
+  release한다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
   recovery `*_pending_approval`에서는 exact state/version과 pending request generation, valid
   approval/permit 부재, empty gateway allowlist와 complete audit chain에서 exact current recovery
@@ -714,9 +725,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Recovery approval closure 뒤 자동 재요청은 금지한다. Verified owner의 typed
   `recoveryApprovalRetry`가 exact closed generation/reason과 fresh current target evidence에 bind된
   경우에만 generation을 증가시키고 같은 phase의 fresh pending request를 atomic commit한다. Target이
-  달라졌으면 `recovery_rebind_pending_approval`, terminal이면 reconciliation으로만 이동하며, 새
-  approval/permit을 transition 자체에서 만들지 않고 gateway allowlist를 비워 둔다. Evidence가
-  ambiguous하면 blocked로 유지한다.
+  달라졌으면 `recovery_rebind_pending_approval`, terminal이면 exact target-terminal CAS로 current
+  request/approval을 닫고 `recovery_terminal_pending_reconciliation`으로만 이동한다. 새 approval/permit을
+  transition 자체에서 만들지 않고 gateway allowlist를 비워 둔다. Evidence가 ambiguous하면 blocked로
+  유지한다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   pending `approvalRequest` 생성 및 `approval_required` 전이와 하나의 serializable durable
@@ -1092,6 +1104,7 @@ record와 새 pinned key를 요구한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
 - cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.
 - cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
+- 모든 cancel-recovery pending-approval/final-risk state는 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 inherited lineage resource를 유지한다.
 - recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
 - closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
