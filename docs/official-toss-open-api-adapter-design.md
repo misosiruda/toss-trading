@@ -972,14 +972,30 @@ capacity/fence release 전에 필요하다.
 Local event prefix는 checkpoint tuple만으로 삭제하지 않으며 future default는 automatic deletion
 없음이다. Prefix discard를 도입하려면 independent boundary가 모든 covered canonical payload를 WORM
 archive에서 readback해 genesis chain을 검증하고 archive objects/range/retention deadline을 signed
-retention manifest로 먼저 commit해야 한다. Startup과 dispatch lock 진입 시 local+archived payload로
-genesis부터 latest signed external checkpoint까지 재계산·대조한다. Sequence/payload gap,
-hash/signature mismatch, deletion/reordering/rewrite, retention-manifest gap, checkpoint rollback/fork 또는
-unknown key는 kill-active/no-send/no-terminal이다. Runtime은 chain을 truncate/reseed하지 않고
-원본 evidence를 보존해 owner-visible integrity incident와 read-only broker reconciliation로
-전이한다. Verified owner의 원인 확인과 signed new-generation genesis 없이는 재개하지 않으며,
-old canonical payload archive/checkpoint/retention manifest를 유지하고 key rotation도 old-key continuity
-record와 새 pinned key를 요구한다.
+retention manifest로 먼저 commit해야 한다. Startup/restart는 mutation-disabled 상태에서 dispatch lock
+밖의 local+archived payload를 genesis부터 captured head까지 재계산한다. Independent boundary는 exact
+stream/generation, covered range/object identity, retention-manifest hash, verified head와 verification
+generation을 signed `auditVerificationManifest`로 atomic publish하며 runtime은 pinned key로 검증한
+durable `verifiedAuditHead` 뒤에만 mutation을 enable한다. Prefix discard, key rotation과 new-generation
+genesis 전에도 full replay가 필요하다.
+
+Dispatch lock은 전체 archive를 replay하지 않는다. Fresh signed verification manifest의 base head와
+current independently checkpointed head가 exact sequence/previous-hash extension이고 rollback/fork가
+없음을 signed incremental checkpoint/manifest로 검증한다. Independent boundary는 각 security-critical
+canonical payload를 WORM에 append하면서 previous verified head에서 current head로의 object identity,
+generation/key-bound extension을 서명한다. `dispatch_attempted` append 뒤 새 signed current-head
+acknowledgement가 같은 lock에서 검증돼야 first byte를 허용한다. Incremental manifest는 archived payload를
+대체하거나 prefix 삭제 권한이 아니다.
+
+Background verifier는 immutable captured head를 dispatch lock 밖에서 genesis replay하고 성공 manifest만
+atomic publish한다. Repository-controlled freshness/sequence-lag bound 초과, sequence/payload gap,
+hash/signature mismatch, deletion/reordering/rewrite, retention-manifest gap, checkpoint rollback/fork,
+local/external head mismatch 또는 unknown key는 kill-active/no-send/no-terminal이다. Runtime은 chain을
+truncate/reseed하지 않고 원본 evidence를 보존해 owner-visible integrity incident와 read-only broker
+reconciliation로 전이한다. Verified owner의 원인 확인과 signed new-generation genesis 없이는 재개하지
+않으며, old canonical payload archive/checkpoint/retention manifest를 유지하고 key rotation도 old-key
+continuity record와 새 pinned key를 요구한다. 다른 절의 `complete audit chain`은 fresh signed full-replay
+manifest와 그 base 이후 current head까지의 exact signed incremental extension을 의미한다.
 
 ## 공식 API와 `tossinvest-cli` 관계
 
@@ -1135,6 +1151,7 @@ record와 새 pinned key를 요구한다.
 - masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
 - canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
 - WORM boundary는 canonical event payload를 보존하며 hash-only checkpoint로 local prefix를 삭제하지 않는다.
+- startup/background full genesis replay와 dispatch-lock bounded incremental checkpoint 검증을 분리한다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 

@@ -1019,16 +1019,39 @@ discard 대상 모든 exact payload bytes를 WORM archive에서 readback해 gene
 deadline이 불명확하면 local prefix를 보존한다. Hash tuple/checkpoint만 있는 상태는 discard 권한이나
 복구 anchor가 아니다.
 
-Startup과 각 dispatch lock 진입 시 local payload와 WORM archived payload를 합쳐 반드시 genesis부터
-head까지 chain을 재계산하고, 외부 checkpoint의 최신 sequence/hash/generation이 local head와 일치하며
-regress하지 않았는지 검증한다. Missing/deleted/reordered/rewritten event, invalid signature, unknown
-key, archived payload/retention-manifest gap, checkpoint rollback/fork 또는 local/external head mismatch가 하나라도 있으면 kill switch를
-active로 유지하고 모든 mutation을 fail-closed로 차단한다. 손상 chain을 truncate, reseed 또는
-자동 복구하지 않고 원본 local bytes와 external checkpoint를 보존해 owner-visible integrity
-incident로 만든 뒤 read-only broker reconciliation을 수행한다. Verified owner가 원인과 external
-state를 확인하고 새 stream generation의 signed genesis를 승인한 경우에만 재개하며 old stream과
-canonical payload archive/checkpoint/retention manifest는 immutable evidence로 유지한다. Signing-key rotation도 old key로 서명된 continuity
-record와 새 pinned key/generation을 요구한다.
+Startup/restart에서는 mutation gate를 disabled로 유지한 채 dispatch lock 밖에서 local payload와 WORM
+archived payload를 합쳐 genesis부터 captured head까지 chain을 재계산한다. Independent boundary는 검증한
+exact stream/generation, genesis/head sequence와 hash, covered WORM object/range identity,
+retention-manifest hash, verification generation과 signer key를 묶은 signed
+`auditVerificationManifest`를 atomic publish한다. Runtime은 pinned public key로 manifest와 captured
+head를 검증하고 durable `verifiedAuditHead`를 advance한 뒤에만 mutation arbiter를 enable할 수 있다.
+Prefix discard, signer/key rotation 또는 새 stream generation 전에도 동일한 full replay가 필요하다.
+
+각 dispatch lock은 archive 전체를 read하거나 genesis replay를 반복하지 않는다. Fresh signed
+`auditVerificationManifest`의 stream/generation/base head와 현재 independently checkpointed audit head가
+일치하고, current head가 base를 exact sequence/previous-hash로 단조 확장하며 rollback/fork가 없음을
+signed incremental checkpoint/manifest로 검증한다. Security-critical event마다 independent boundary가
+exact canonical payload를 WORM에 append하고 `(previous verified sequence/hash -> current sequence/hash,
+object identity, generation, keyId)` extension을 서명하므로 hot path는 bounded current extension과
+head signature만 확인한다. `dispatch_attempted` append 뒤 새 signed head acknowledgement를 같은 lock에서
+검증해야 first byte를 허용한다. 이 incremental manifest는 payload retention을 대체하거나 local/archive
+prefix 삭제 권한으로 사용할 수 없다.
+
+별도 background integrity verifier는 immutable captured archive head를 dispatch lock 밖에서 genesis부터
+주기적으로 재계산하고 성공한 manifest만 atomic publish한다. Repository-controlled 최대 verification
+age/sequence lag를 넘었거나 background/full replay가 gap, invalid signature, unknown key,
+deleted/reordered/rewritten payload, retention-manifest mismatch, checkpoint rollback/fork 또는
+local/external head mismatch를 찾으면 gate arbiter가 kill-active/no-send/no-terminal을 atomic commit한다.
+손상 chain을 truncate, reseed 또는 자동 복구하지 않고 원본 local bytes와 external checkpoint를 보존해
+owner-visible integrity incident로 만든 뒤 read-only broker reconciliation을 수행한다. Verified owner가
+원인과 external state를 확인하고 새 stream generation의 signed genesis를 승인한 경우에만 재개하며 old
+stream과 canonical payload archive/checkpoint/retention manifest는 immutable evidence로 유지한다.
+Signing-key rotation도 old key로 서명된 continuity record와 새 pinned key/generation을 요구한다.
+
+이 문서의 다른 절에서 `complete audit chain` 검증은 매 dispatch마다 genesis replay한다는 뜻이 아니다.
+Startup/full replay가 publish한 fresh signed `auditVerificationManifest`와 그 verified head 이후의 exact
+signed incremental extension이 current durable head까지 끊김없이 이어진다는 뜻이다. Manifest freshness,
+base/head identity 또는 extension evidence가 불명확하면 complete로 간주하지 않는다.
 
 Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
 masked `logicalRequestId`/`operationFingerprint`, intent generation/risk/approval/capacity reservation reference,
@@ -1157,6 +1180,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Exact host/path/method/TLS/deadline/body/status boundary가 검증됨
 - [ ] Canonical audit hash chain, external signed checkpoint, tamper/fork/rollback fail-closed와 masking이 test됨
 - [ ] WORM boundary가 canonical event payload를 보존하고 hash-only checkpoint로 local prefix를 삭제하지 않음
+- [ ] Startup/background full genesis replay와 dispatch-lock bounded incremental checkpoint 검증이 분리됨
 - [ ] Permit consume와 masked dispatch-attempt audit가 first byte 전에 write-ahead commit됨
 - [ ] Incident stop, reconciliation과 rollback runbook이 testable함
 - [ ] 실제 mutation 전 owner action과 명시적 승인 기록이 있음
