@@ -176,6 +176,8 @@ function normalizeLiveRiskEvaluationInput(
   const rawSnapshot = inputRecord?.snapshot;
   const initialRejectCodes: LiveRiskRejectCode[] = [];
   const hasValidIntent = isLiveOrderIntentInput(rawIntent);
+  const hasStableFrozenIntent =
+    hasValidIntent && isDeepFrozenPlainData(rawIntent);
 
   if (!hasValidIntent) {
     appendLiveRiskRejectCode(initialRejectCodes, "INVALID_ORDER_INTENT");
@@ -185,7 +187,7 @@ function normalizeLiveRiskEvaluationInput(
   }
 
   return {
-    intent: hasValidIntent ? rawIntent : createSafeOrderIntent(rawIntent),
+    intent: hasStableFrozenIntent ? rawIntent : createSafeOrderIntent(rawIntent),
     snapshot: createSafeRiskSnapshot(rawSnapshot),
     policy: inputRecord?.policy,
     initialRejectCodes
@@ -913,6 +915,45 @@ function isLiveMarketSessionStatus(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isDeepFrozenPlainData(
+  value: unknown,
+  visited: WeakSet<object> = new WeakSet<object>()
+): boolean {
+  if (typeof value !== "object" || value === null) {
+    return true;
+  }
+  if (
+    Array.isArray(value) ||
+    (Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null) ||
+    !Object.isFrozen(value)
+  ) {
+    return false;
+  }
+  if (visited.has(value)) {
+    return true;
+  }
+  visited.add(value);
+
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      return false;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true ||
+      descriptor.writable !== false ||
+      descriptor.configurable !== false ||
+      !isDeepFrozenPlainData(descriptor.value, visited)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function openOrderExposureKrw(openOrder: LiveOpenOrder): number {
