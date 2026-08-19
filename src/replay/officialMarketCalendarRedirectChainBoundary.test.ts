@@ -21,6 +21,13 @@ import {
   parseOfficialMarketCalendarSourceDocumentMetadata
 } from "./officialMarketCalendarSourceDocumentMetadata.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_SOURCE_COLLECTION_SCHEMA_VERSION
+} from "./officialMarketCalendarSourceCollection.js";
+import {
+  createOfficialMarketCalendarSourceCollectionAssembly,
+  parseOfficialMarketCalendarSourceCollectionAssembly
+} from "./officialMarketCalendarSourceCollectionAssembly.js";
+import {
   createOfficialMarketCalendarSourceCollectionDocumentProjection,
   parseOfficialMarketCalendarSourceCollectionDocumentProjection
 } from "./officialMarketCalendarSourceCollectionDocumentProjection.js";
@@ -1647,6 +1654,91 @@ test("calendar source collection document projection rejects field and byte tamp
   );
 });
 
+test("calendar source collection assembly binds verified projections to collection hash", () => {
+  const fixture = sourceCollectionAssemblyFixture();
+  const assembly = createOfficialMarketCalendarSourceCollectionAssembly(
+    {
+      collectionPlan: fixture.collectionPlan,
+      documentProjections: [fixture.projection]
+    },
+    fixture.options
+  );
+
+  assert.equal(assembly.sourceCollection.exchange, "KRX");
+  assert.deepEqual(
+    assembly.sourceCollection.documents,
+    [fixture.projection.collectionDocument]
+  );
+  assert.match(assembly.sourceCollection.collectionHash, /^sha256:[a-f0-9]{64}$/);
+  assert.match(assembly.assemblyHash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceCollectionAssembly(
+      assembly,
+      fixture.options
+    ),
+    assembly
+  );
+});
+
+test("calendar source collection assembly rejects plan, byte and projection divergence", () => {
+  const fixture = sourceCollectionAssemblyFixture();
+  const create = (
+    collectionPlan: Record<string, unknown> = fixture.collectionPlan,
+    options: {
+      sourceBytesByDocumentId: Record<string, Uint8Array>;
+      freshnessPolicyRegistry: unknown;
+      parserContractRegistry: unknown;
+    } = fixture.options
+  ) =>
+    createOfficialMarketCalendarSourceCollectionAssembly(
+      { collectionPlan, documentProjections: [fixture.projection] },
+      options
+    );
+
+  assert.throws(
+    () => create({ ...fixture.collectionPlan, documents: [] }),
+    /must not supply documents/
+  );
+  const { schemaVersion: _schemaVersion, ...unversionedPlan } =
+    fixture.collectionPlan;
+  assert.throws(
+    () => create(unversionedPlan),
+    /schemaVersion/
+  );
+  assert.throws(
+    () =>
+      create(fixture.collectionPlan, {
+        ...fixture.options,
+        sourceBytesByDocumentId: {
+          ...fixture.options.sourceBytesByDocumentId,
+          extra: new Uint8Array([1])
+        }
+      }),
+    /must exactly cover projected documents/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...fixture.collectionPlan,
+        exchange: "NYSE",
+        requiredExceptionCoverageRoles: {
+          contractVersion: "nyse_exception_coverage.v1",
+          roles: fixture.collectionPlan.requiredExceptionCoverageRoles.roles
+        }
+      }),
+    /must match collection exchange/
+  );
+  const assembly = create();
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceCollectionAssembly(
+        { ...assembly, assemblyHash: hash("f") },
+        fixture.options
+      ),
+    /does not match verified projections/
+  );
+});
+
 function chain(
   overrides: Partial<{
     cacheRequests: ReturnType<typeof cacheRequest>[];
@@ -1886,6 +1978,142 @@ function sourceParserOutput() {
   };
 }
 
+function sourceCollectionAssemblyFixture() {
+  const documentId = "krx.calendar.collection-assembly";
+  const coverageSelector = {
+    evidenceRoles: [
+      "holiday_rows",
+      "holiday_schedule",
+      "session_hours",
+      "session_hours_exception_schedule",
+      "special_closure",
+      "special_closure_schedule"
+    ] as const,
+    rowCoverageStartDate: "2026-01-01",
+    rowCoverageEndDate: "2026-12-31",
+    scheduleCoverageIntervals: [
+      {
+        coverageRole: "holiday_schedule" as const,
+        startDate: "2026-01-01",
+        endDate: "2026-12-31"
+      },
+      {
+        coverageRole: "session_hours_exception_schedule" as const,
+        startDate: "2026-01-01",
+        endDate: "2026-12-31"
+      },
+      {
+        coverageRole: "special_closure_schedule" as const,
+        startDate: "2026-01-01",
+        endDate: "2026-12-31"
+      }
+    ],
+    applicabilityStartDate: "2026-01-01",
+    applicabilityEndDate: "2026-12-31"
+  };
+  const freshness = policyExpiry({ coverageSelector });
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const envelope = createOfficialMarketCalendarSourceDocumentEnvelope(
+    {
+      documentId,
+      sourceBytes,
+      acquisitionBoundary: {
+        redirectChainBoundary: chain({ freshnessPolicyExpiry: freshness }),
+        freshnessPolicySelectorMetadata: policySelectorMetadata(freshness)
+      }
+    },
+    policyRegistry(freshness)
+  );
+  const acquisition = createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
+    { sourceDocumentEnvelope: envelope },
+    { sourceBytes, freshnessPolicyRegistry: policyRegistry(freshness) }
+  );
+  const parserContractEntry = sourceParserContractEntry();
+  const parserOptions = {
+    sourceBytes,
+    freshnessPolicyRegistry: policyRegistry(freshness),
+    parserContractRegistry: [parserContractEntry]
+  };
+  const binding = bindOfficialMarketCalendarSourceParserInput(
+    { sourceDocumentAcquisitionMetadata: acquisition, parserContractEntry },
+    parserOptions
+  );
+  const parserOutput = {
+    schemaVersion: "calendar_parser_output.v1",
+    parsedRows: [
+      {
+        exchangeDate: "2026-01-01",
+        evidenceRoles: ["holiday_rows", "session_hours", "special_closure"],
+        fields: { label: "first" }
+      },
+      {
+        exchangeDate: "2026-12-31",
+        evidenceRoles: ["holiday_rows", "session_hours", "special_closure"],
+        fields: { label: "last" }
+      }
+    ],
+    regularSessionHours: { openLocalTime: "09:00", closeLocalTime: "15:30" },
+    scheduleCoverageIntervals: coverageSelector.scheduleCoverageIntervals,
+    applicabilityStartDate: "2026-01-01",
+    applicabilityEndDate: "2026-12-31"
+  };
+  const result = createOfficialMarketCalendarSourceParserResult(
+    { parserInputBinding: binding.parserInputBinding, parserOutput },
+    parserOptions
+  );
+  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+    { sourceParserResult: result },
+    parserOptions
+  );
+  const projection = createOfficialMarketCalendarSourceCollectionDocumentProjection(
+    { sourceDocumentMetadata: metadata },
+    parserOptions
+  );
+  const intervalRoles = coverageSelector.scheduleCoverageIntervals.map(
+    ({ coverageRole }) => ({
+      coverageRole,
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      documentIds: [documentId]
+    })
+  );
+  return {
+    projection,
+    options: {
+      sourceBytesByDocumentId: { [documentId]: sourceBytes },
+      freshnessPolicyRegistry: policyRegistry(freshness),
+      parserContractRegistry: [parserContractEntry]
+    },
+    collectionPlan: {
+      schemaVersion: OFFICIAL_MARKET_CALENDAR_SOURCE_COLLECTION_SCHEMA_VERSION,
+      collectionId: "krx.collection.2026",
+      exchange: "KRX",
+      coverageStartDate: "2026-01-01",
+      coverageEndDate: "2026-12-31",
+      requiredExceptionCoverageRoles: {
+        contractVersion: "krx_exception_coverage.v1",
+        roles: [
+          "holiday_schedule",
+          "session_hours_exception_schedule",
+          "special_closure_schedule"
+        ]
+      },
+      exceptionScheduleIntervals: intervalRoles,
+      regularSessionRegimes: [
+        {
+          regimeId: "krx.regular.2026",
+          effectiveStartDate: "2026-01-01",
+          effectiveEndDate: "2026-12-31",
+          openLocalTime: "09:00",
+          closeLocalTime: "15:30",
+          documentIds: [documentId]
+        }
+      ],
+      regularSessionSupersessions: []
+    }
+  };
+}
+
 function policyExpiry(
   overrides: Partial<{
     exchange: "KRX" | "NYSE";
@@ -1895,6 +2123,28 @@ function policyExpiry(
     requestedUrl: string;
     requestBodyContentType: string | null;
     requestBodyHash: string | null;
+    coverageSelector: {
+      evidenceRoles: readonly (
+        | "holiday_rows"
+        | "holiday_schedule"
+        | "session_hours"
+        | "session_hours_exception_schedule"
+        | "special_closure"
+        | "special_closure_schedule"
+      )[];
+      rowCoverageStartDate: string | null;
+      rowCoverageEndDate: string | null;
+      scheduleCoverageIntervals: readonly {
+        coverageRole:
+          | "holiday_schedule"
+          | "session_hours_exception_schedule"
+          | "special_closure_schedule";
+        startDate: string;
+        endDate: string;
+      }[];
+      applicabilityStartDate: string | null;
+      applicabilityEndDate: string | null;
+    };
   }> = {}
 ) {
   const definition = {
@@ -1917,7 +2167,7 @@ function policyExpiry(
       representationHeaders: overrides.representationHeaders ?? {},
       parserContractVersion: "krx_calendar_pdf.v1"
     },
-    coverageSelector: {
+    coverageSelector: overrides.coverageSelector ?? {
       evidenceRoles: ["holiday_rows", "holiday_schedule"] as const,
       rowCoverageStartDate: "2026-01-01",
       rowCoverageEndDate: "2026-12-31",

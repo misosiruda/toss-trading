@@ -287,6 +287,16 @@ export function createOfficialMarketCalendarSourceCollectionHash(
   return createReplayResearchHash(sourceCollectionBaseSchema.parse(value));
 }
 
+export function createOfficialMarketCalendarSourceCollection(
+  value: unknown
+): OfficialMarketCalendarSourceCollection {
+  const payload = sourceCollectionBaseSchema.parse(value);
+  return parseOfficialMarketCalendarSourceCollection({
+    ...payload,
+    collectionHash: createOfficialMarketCalendarSourceCollectionHash(payload)
+  });
+}
+
 export function parseOfficialMarketCalendarSourceCollection(
   value: unknown
 ): OfficialMarketCalendarSourceCollection {
