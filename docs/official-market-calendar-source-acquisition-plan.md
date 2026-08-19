@@ -252,6 +252,16 @@ bytes와 registries로 다시 연 뒤 existing collection strict schema를 적�
 full projection 목록과 source collection은 immutable assembly hash에 결합한다. Production
 source-specific parser와 filesystem publication은 별도 후속 단계이다.
 
+`officialMarketCalendarEvidenceArtifactV2.ts`는 KRX/NYSE collection assembly를 canonical
+순서로 다시 열고 complete session set, open-session provenance와 session-hours exception을
+`official_market_calendar_evidence.v2` payload에 결합한다. Full projection이 final document
+metadata와 nested acquisition/parser provenance를 보존하고 `sourceArchiveBindings`의
+composite ref, package-relative path, source hash와 length는 caller 입력 없이 metadata에서
+파생한다. Artifact 생성 시 모든 source에 `retrievedAt <= generatedAt < staleAfter`를
+적용하고 stored parse는 exact bytes와 registry로 전체 payload/hash를 재생성한다.
+Filesystem package writer, durability sync, coordinator activation/recovery와 reader-time
+freshness gate는 별도 후속 단계이다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name

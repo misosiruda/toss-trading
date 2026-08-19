@@ -24,6 +24,10 @@ import {
   OFFICIAL_MARKET_CALENDAR_SOURCE_COLLECTION_SCHEMA_VERSION
 } from "./officialMarketCalendarSourceCollection.js";
 import {
+  createOfficialMarketCalendarEvidenceArtifactV2,
+  parseOfficialMarketCalendarEvidenceArtifactV2
+} from "./officialMarketCalendarEvidenceArtifactV2.js";
+import {
   createOfficialMarketCalendarSourceCollectionAssembly,
   parseOfficialMarketCalendarSourceCollectionAssembly
 } from "./officialMarketCalendarSourceCollectionAssembly.js";
@@ -1739,6 +1743,97 @@ test("calendar source collection assembly rejects plan, byte and projection dive
   );
 });
 
+test("calendar evidence v2 binds collection assemblies, sessions and archive refs", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+
+  assert.equal(artifact.schemaVersion, "official_market_calendar_evidence.v2");
+  assert.equal(artifact.mode, "paper_only");
+  assert.deepEqual(
+    artifact.sourceCollectionAssemblies.map(
+      ({ sourceCollection }) => sourceCollection.exchange
+    ),
+    ["KRX", "NYSE"]
+  );
+  assert.equal(artifact.sourceArchiveBindings.length, 2);
+  assert.match(artifact.artifactHash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(
+    parseOfficialMarketCalendarEvidenceArtifactV2(
+      artifact,
+      fixture.options
+    ),
+    artifact
+  );
+});
+
+test("calendar evidence v2 rejects freshness, coverage and artifact divergence", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarEvidenceArtifactV2(
+        { ...fixture.input, generatedAt: "2025-07-01T12:00:09.000Z" },
+        fixture.options
+      ),
+    /not yet retrieved/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarEvidenceArtifactV2(
+        { ...fixture.input, generatedAt: "2025-07-02T12:00:00.000Z" },
+        fixture.options
+      ),
+    /stale at generatedAt/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarEvidenceArtifactV2(
+        { ...fixture.input, sourceArchiveBindings: [] },
+        fixture.options
+      ),
+    /Unrecognized key/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarEvidenceArtifactV2(
+        {
+          ...fixture.input,
+          sourceCollectionAssemblies: [
+            fixture.input.sourceCollectionAssemblies[1],
+            fixture.input.sourceCollectionAssemblies[0]
+          ]
+        },
+        fixture.options
+      ),
+    /canonical KRX then NYSE order/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarEvidenceArtifactV2(
+        {
+          ...fixture.input,
+          sessionProvenances: fixture.input.sessionProvenances.slice(0, 1)
+        },
+        fixture.options
+      ),
+    /exactly cover open sessions/
+  );
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarEvidenceArtifactV2(
+        { ...artifact, artifactHash: hash("f") },
+        fixture.options
+      ),
+    /does not match verified source evidence/
+  );
+});
+
 function chain(
   overrides: Partial<{
     cacheRequests: ReturnType<typeof cacheRequest>[];
@@ -1893,6 +1988,7 @@ function chain(
 
 function sourceParserContractEntry(
   overrides: Partial<{
+    exchange: "KRX" | "NYSE";
     parserContractVersion: string;
     acceptedContentTypes: string[];
   }> = {}
@@ -1900,7 +1996,7 @@ function sourceParserContractEntry(
   const parserContractDefinition = {
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_SOURCE_PARSER_CONTRACT_DEFINITION_SCHEMA_VERSION,
-    exchange: "KRX" as const,
+    exchange: overrides.exchange ?? ("KRX" as const),
     acceptedContentTypes: overrides.acceptedContentTypes ?? ["application/pdf"],
     acceptedContentEncodings: [null] as null[],
     parserOutputSchemaVersion: "calendar_parser_output.v1"
@@ -1978,8 +2074,22 @@ function sourceParserOutput() {
   };
 }
 
-function sourceCollectionAssemblyFixture() {
-  const documentId = "krx.calendar.collection-assembly";
+function sourceCollectionAssemblyFixture(
+  overrides: Partial<{
+    exchange: "KRX" | "NYSE";
+    coverageStartDate: string;
+    coverageEndDate: string;
+  }> = {}
+) {
+  const exchange = overrides.exchange ?? "KRX";
+  const exchangeKey = exchange.toLowerCase();
+  const coverageStartDate = overrides.coverageStartDate ?? "2026-01-01";
+  const coverageEndDate = overrides.coverageEndDate ?? "2026-12-31";
+  const isKrx = exchange === "KRX";
+  const documentId = `${exchangeKey}.calendar.collection-assembly`;
+  const parserContractVersion = `${exchangeKey}_calendar_pdf.v1`;
+  const requestedUrl = isKrx ? KRX_REQUESTED_URL : NYSE_REQUESTED_URL;
+  const redirectedUrl = isKrx ? KRX_REDIRECTED_URL : NYSE_REDIRECTED_URL;
   const coverageSelector = {
     evidenceRoles: [
       "holiday_rows",
@@ -1989,36 +2099,84 @@ function sourceCollectionAssemblyFixture() {
       "special_closure",
       "special_closure_schedule"
     ] as const,
-    rowCoverageStartDate: "2026-01-01",
-    rowCoverageEndDate: "2026-12-31",
+    rowCoverageStartDate: coverageStartDate,
+    rowCoverageEndDate: coverageEndDate,
     scheduleCoverageIntervals: [
       {
         coverageRole: "holiday_schedule" as const,
-        startDate: "2026-01-01",
-        endDate: "2026-12-31"
+        startDate: coverageStartDate,
+        endDate: coverageEndDate
       },
       {
         coverageRole: "session_hours_exception_schedule" as const,
-        startDate: "2026-01-01",
-        endDate: "2026-12-31"
+        startDate: coverageStartDate,
+        endDate: coverageEndDate
       },
       {
         coverageRole: "special_closure_schedule" as const,
-        startDate: "2026-01-01",
-        endDate: "2026-12-31"
+        startDate: coverageStartDate,
+        endDate: coverageEndDate
       }
     ],
-    applicabilityStartDate: "2026-01-01",
-    applicabilityEndDate: "2026-12-31"
+    applicabilityStartDate: coverageStartDate,
+    applicabilityEndDate: coverageEndDate
   };
-  const freshness = policyExpiry({ coverageSelector });
-  const sourceBytes = new Uint8Array(100).fill(65);
+  const freshness = policyExpiry({
+    exchange,
+    requestMethod: isKrx ? "POST" : "GET",
+    requestedUrl,
+    requestBodyContentType: isKrx
+      ? "application/x-www-form-urlencoded"
+      : null,
+    requestBodyHash: isKrx ? hash("a") : null,
+    parserContractVersion,
+    freshnessPolicyVersion: `${exchangeKey}_calendar_annual.v1`,
+    coverageSelector
+  });
+  const sourceBytes = new Uint8Array(100).fill(isKrx ? 65 : 66);
+  const redirectChainBoundary = chain({
+    exchange,
+    effectiveRequestUrls: [requestedUrl, redirectedUrl],
+    domainUrls: [requestedUrl, redirectedUrl],
+    freshnessPolicyExpiry: freshness,
+    requestHeaderPolicyVersion: isKrx
+      ? OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_MARKET_CLOSING_HOLIDAY
+      : OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.NYSE_TRADE_HOURS_CALENDARS,
+    headerNameRequests: isKrx
+      ? [
+          headerNameRequest({
+            requestHeaderNames: ["cache-control", "content-type", "pragma"]
+          }),
+          headerNameRequest()
+        ]
+      : [headerNameRequest(), headerNameRequest()],
+    redirectHops: [
+      {
+        responseUrl: requestedUrl,
+        locationHeaderValues: ["?download=1"],
+        nextEffectiveRequestUrl: redirectedUrl
+      }
+    ],
+    transitions: [
+      isKrx
+        ? methodTransition()
+        : {
+            responseStatus: 302,
+            requestMethod: "GET",
+            requestBodyContentType: null,
+            requestBodyHash: null,
+            nextRequestMethod: "GET",
+            nextRequestBodyContentType: null,
+            nextRequestBodyHash: null
+          }
+    ]
+  });
   const envelope = createOfficialMarketCalendarSourceDocumentEnvelope(
     {
       documentId,
       sourceBytes,
       acquisitionBoundary: {
-        redirectChainBoundary: chain({ freshnessPolicyExpiry: freshness }),
+        redirectChainBoundary,
         freshnessPolicySelectorMetadata: policySelectorMetadata(freshness)
       }
     },
@@ -2028,7 +2186,10 @@ function sourceCollectionAssemblyFixture() {
     { sourceDocumentEnvelope: envelope },
     { sourceBytes, freshnessPolicyRegistry: policyRegistry(freshness) }
   );
-  const parserContractEntry = sourceParserContractEntry();
+  const parserContractEntry = sourceParserContractEntry({
+    exchange,
+    parserContractVersion
+  });
   const parserOptions = {
     sourceBytes,
     freshnessPolicyRegistry: policyRegistry(freshness),
@@ -2038,24 +2199,36 @@ function sourceCollectionAssemblyFixture() {
     { sourceDocumentAcquisitionMetadata: acquisition, parserContractEntry },
     parserOptions
   );
+  const parsedRows = [
+    {
+      exchangeDate: coverageStartDate,
+      evidenceRoles: ["holiday_rows", "session_hours", "special_closure"],
+      fields: { label: "first" }
+    },
+    ...(coverageEndDate === coverageStartDate
+      ? []
+      : [
+          {
+            exchangeDate: coverageEndDate,
+            evidenceRoles: [
+              "holiday_rows",
+              "session_hours",
+              "special_closure"
+            ],
+            fields: { label: "last" }
+          }
+        ])
+  ];
+  const regularSessionHours = isKrx
+    ? { openLocalTime: "09:00", closeLocalTime: "15:30" }
+    : { openLocalTime: "09:30", closeLocalTime: "16:00" };
   const parserOutput = {
     schemaVersion: "calendar_parser_output.v1",
-    parsedRows: [
-      {
-        exchangeDate: "2026-01-01",
-        evidenceRoles: ["holiday_rows", "session_hours", "special_closure"],
-        fields: { label: "first" }
-      },
-      {
-        exchangeDate: "2026-12-31",
-        evidenceRoles: ["holiday_rows", "session_hours", "special_closure"],
-        fields: { label: "last" }
-      }
-    ],
-    regularSessionHours: { openLocalTime: "09:00", closeLocalTime: "15:30" },
+    parsedRows,
+    regularSessionHours,
     scheduleCoverageIntervals: coverageSelector.scheduleCoverageIntervals,
-    applicabilityStartDate: "2026-01-01",
-    applicabilityEndDate: "2026-12-31"
+    applicabilityStartDate: coverageStartDate,
+    applicabilityEndDate: coverageEndDate
   };
   const result = createOfficialMarketCalendarSourceParserResult(
     { parserInputBinding: binding.parserInputBinding, parserOutput },
@@ -2072,8 +2245,8 @@ function sourceCollectionAssemblyFixture() {
   const intervalRoles = coverageSelector.scheduleCoverageIntervals.map(
     ({ coverageRole }) => ({
       coverageRole,
-      startDate: "2026-01-01",
-      endDate: "2026-12-31",
+      startDate: coverageStartDate,
+      endDate: coverageEndDate,
       documentIds: [documentId]
     })
   );
@@ -2086,12 +2259,12 @@ function sourceCollectionAssemblyFixture() {
     },
     collectionPlan: {
       schemaVersion: OFFICIAL_MARKET_CALENDAR_SOURCE_COLLECTION_SCHEMA_VERSION,
-      collectionId: "krx.collection.2026",
-      exchange: "KRX",
-      coverageStartDate: "2026-01-01",
-      coverageEndDate: "2026-12-31",
+      collectionId: `${exchangeKey}.collection.2026`,
+      exchange,
+      coverageStartDate,
+      coverageEndDate,
       requiredExceptionCoverageRoles: {
-        contractVersion: "krx_exception_coverage.v1",
+        contractVersion: `${exchangeKey}_exception_coverage.v1`,
         roles: [
           "holiday_schedule",
           "session_hours_exception_schedule",
@@ -2101,11 +2274,10 @@ function sourceCollectionAssemblyFixture() {
       exceptionScheduleIntervals: intervalRoles,
       regularSessionRegimes: [
         {
-          regimeId: "krx.regular.2026",
-          effectiveStartDate: "2026-01-01",
-          effectiveEndDate: "2026-12-31",
-          openLocalTime: "09:00",
-          closeLocalTime: "15:30",
+          regimeId: `${exchangeKey}.regular.2026`,
+          effectiveStartDate: coverageStartDate,
+          effectiveEndDate: coverageEndDate,
+          ...regularSessionHours,
           documentIds: [documentId]
         }
       ],
@@ -2114,9 +2286,143 @@ function sourceCollectionAssemblyFixture() {
   };
 }
 
+function evidenceArtifactV2Fixture() {
+  const coverageStartDate = "2026-01-02";
+  const coverageEndDate = coverageStartDate;
+  const krx = sourceCollectionAssemblyFixture({
+    exchange: "KRX",
+    coverageStartDate,
+    coverageEndDate
+  });
+  const nyse = sourceCollectionAssemblyFixture({
+    exchange: "NYSE",
+    coverageStartDate,
+    coverageEndDate
+  });
+  const krxAssembly = createOfficialMarketCalendarSourceCollectionAssembly(
+    {
+      collectionPlan: krx.collectionPlan,
+      documentProjections: [krx.projection]
+    },
+    krx.options
+  );
+  const nyseAssembly = createOfficialMarketCalendarSourceCollectionAssembly(
+    {
+      collectionPlan: nyse.collectionPlan,
+      documentProjections: [nyse.projection]
+    },
+    nyse.options
+  );
+  const krxCollection = krxAssembly.sourceCollection;
+  const nyseCollection = nyseAssembly.sourceCollection;
+  const krxRef = {
+    exchange: "KRX" as const,
+    collectionId: krxCollection.collectionId,
+    documentId: krxCollection.documents[0]!.documentId
+  };
+  const nyseRef = {
+    exchange: "NYSE" as const,
+    collectionId: nyseCollection.collectionId,
+    documentId: nyseCollection.documents[0]!.documentId
+  };
+  const sessionProvenances = [
+    {
+      schemaVersion: "official_market_calendar_session_provenance.v1",
+      sessionId: "krx.2026-01-02",
+      exchange: "KRX" as const,
+      sessionDate: coverageStartDate,
+      sourceDocumentRefs: [krxRef],
+      regularSessionRegimeId: krxCollection.regularSessionRegimes[0]!.regimeId
+    },
+    {
+      schemaVersion: "official_market_calendar_session_provenance.v1",
+      sessionId: "nyse.2026-01-02",
+      exchange: "NYSE" as const,
+      sessionDate: coverageStartDate,
+      sourceDocumentRefs: [nyseRef],
+      regularSessionRegimeId: nyseCollection.regularSessionRegimes[0]!.regimeId
+    }
+  ];
+  const sessionSet = {
+    schemaVersion: "official_market_calendar_session_set.v1",
+    coverage: {
+      startDate: coverageStartDate,
+      endDate: coverageEndDate,
+      exchanges: ["KRX", "NYSE"] as const
+    },
+    sourceCollections: [
+      {
+        exchange: "KRX" as const,
+        collectionId: krxCollection.collectionId,
+        collectionHash: krxCollection.collectionHash
+      },
+      {
+        exchange: "NYSE" as const,
+        collectionId: nyseCollection.collectionId,
+        collectionHash: nyseCollection.collectionHash
+      }
+    ] as const,
+    openSessions: [
+      {
+        schemaVersion: "official_market_calendar_open_session.v1",
+        sessionId: "krx.2026-01-02",
+        exchange: "KRX" as const,
+        sessionDate: coverageStartDate,
+        sessionType: "regular" as const,
+        openLocalTime: "09:00",
+        closeLocalTime: "15:30",
+        sourceDocumentRefs: [krxRef],
+        regularSessionRegimeId:
+          krxCollection.regularSessionRegimes[0]!.regimeId,
+        sessionHoursExceptionId: null
+      },
+      {
+        schemaVersion: "official_market_calendar_open_session.v1",
+        sessionId: "nyse.2026-01-02",
+        exchange: "NYSE" as const,
+        sessionDate: coverageStartDate,
+        sessionType: "regular" as const,
+        openLocalTime: "09:30",
+        closeLocalTime: "16:00",
+        sourceDocumentRefs: [nyseRef],
+        regularSessionRegimeId:
+          nyseCollection.regularSessionRegimes[0]!.regimeId,
+        sessionHoursExceptionId: null
+      }
+    ],
+    sourceBackedClosures: [],
+    weekendSessions: []
+  };
+  return {
+    input: {
+      generatedAt: "2025-07-01T12:00:11.000Z",
+      sourceCollectionAssemblies: [krxAssembly, nyseAssembly] as const,
+      sessionSet,
+      sessionProvenances,
+      sessionHoursExceptions: []
+    },
+    options: {
+      sourceBytesByExchange: {
+        KRX: krx.options.sourceBytesByDocumentId,
+        NYSE: nyse.options.sourceBytesByDocumentId
+      },
+      freshnessPolicyRegistry: [
+        ...krx.options.freshnessPolicyRegistry,
+        ...nyse.options.freshnessPolicyRegistry
+      ],
+      parserContractRegistry: [
+        ...krx.options.parserContractRegistry,
+        ...nyse.options.parserContractRegistry
+      ]
+    }
+  };
+}
+
 function policyExpiry(
   overrides: Partial<{
     exchange: "KRX" | "NYSE";
+    freshnessPolicyVersion: string;
+    parserContractVersion: string;
     requestMethod: "GET" | "POST";
     requestParameters: Record<string, unknown>;
     representationHeaders: Record<string, unknown>;
@@ -2165,7 +2471,8 @@ function policyExpiry(
           ? hash("a")
           : overrides.requestBodyHash,
       representationHeaders: overrides.representationHeaders ?? {},
-      parserContractVersion: "krx_calendar_pdf.v1"
+      parserContractVersion:
+        overrides.parserContractVersion ?? "krx_calendar_pdf.v1"
     },
     coverageSelector: overrides.coverageSelector ?? {
       evidenceRoles: ["holiday_rows", "holiday_schedule"] as const,
@@ -2188,7 +2495,8 @@ function policyExpiry(
   };
   return {
     freshnessPolicyEntry: {
-      freshnessPolicyVersion: "krx_calendar_annual.v1",
+      freshnessPolicyVersion:
+        overrides.freshnessPolicyVersion ?? "krx_calendar_annual.v1",
       freshnessPolicyDefinition: definition,
       freshnessPolicyHash:
         createOfficialMarketCalendarFreshnessPolicyHash(definition)
