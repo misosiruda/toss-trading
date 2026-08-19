@@ -1006,9 +1006,11 @@ Mutation-capable future flow는 최소 다음 event를 순서대로 기록해야
 8. owner approval consumed, state transitioned and sole dispatch permit created atomically
 9. approval revocation state/version, clock, risk/account/transport binding, kill switch/config gate와 permit rechecked
 10. exact outbound transport hash matched, permit consumed and masked `dispatch_attempted` event write-ahead committed 또는 rejected
-11. broker network write attempted
-12. broker acknowledgement/rejection/unknown appended
-13. reconciliation completed 또는 blocked
+11. exact canonical `dispatch_attempted` event가 independent WORM boundary에 append되고 signed checkpoint acknowledgement verified
+12. 같은 first-byte lock에서 fresh authoritative time/high-water mark와 deadline/gate/revocation/snapshot/risk/account/transport binding 최종 재검증 또는 proven zero-byte signed closure
+13. broker network write attempted
+14. broker acknowledgement/rejection/unknown appended
+15. reconciliation completed 또는 blocked
 
 각 event는 canonical masked serialization을 사용해 immutable `auditStreamId`, monotonic
 `sequence`, `previousEventHash`, event type/state version과 payload hash를 domain-separated
