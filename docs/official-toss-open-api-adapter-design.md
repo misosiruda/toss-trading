@@ -650,12 +650,16 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   `recovery_init_pending_approval`, fresh pending approval request와 empty gateway allowlist를 atomic
   commit한다. Approval/permit은 만들지 않으며 ambiguous evidence는 blocked reconciliation로 남긴다.
   Target이 terminal이면 cancel 없이 resulting position/cash까지 reconcile한 뒤에만 resource를 release한다.
-- Kill-active cancel recovery는 verified owner approval과 exact current broker-open target이
-  있을 때 active fence를 `recovery_cancel_takeover` generation으로 atomic CAS할 수 있다.
+- Kill-active cancel recovery는 exact current broker-open target, complete audit/reconciliation history,
+  recovery request/permit 부재가 확인될 때 active fence를 `recovery_cancel_takeover` generation으로
+  atomic CAS할 수 있다.
   Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
   original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
-  release하지 않는다. Takeover CAS는 `recovery_takeover_pending_final_risk`로만 전이하고 permit이나
-  gateway allowlist를 만들지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
+  release하지 않는다. 같은 takeover CAS가 `recovery_takeover_pending_approval`, exact request
+  identity/generation/deadline, masked preview, target/reservation/snapshot/proposed risk binding과 empty
+  gateway allowlist를 commit한다. Approval/permit은 만들지 않으며, owner에게 request를 제시한 뒤 exact
+  bound response만 active approval과 `recovery_takeover_pending_final_risk`를 만든다. Target
+  state/version이나 history가 불명확하면 takeover/cancel을 보내지 않는다.
 - `cancelRecoveryApproval`은 exact current snapshot identity/version과 approved `riskBindingHash`에
   bind된다. Fresh target/account evidence와 cancel-specific risk/freshness의 all-rule final Risk
   Engine revalidation이 통과한 뒤에도 recomputed hash를 approved hash와 constant-time exact
@@ -1084,6 +1088,7 @@ record와 새 pinned key를 요구한다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - active mutation fence가 없는 reconciled open target도 atomic recovery_init fence/capacity/request를 통해서만 cancel-only recovery에 진입한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
+- cancel-recovery takeover는 durable pending request를 owner에게 제시한 뒤에만 exact-bound approval을 수락한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
 - cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.
 - cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.

@@ -406,6 +406,9 @@ send_reserved
 kill_active_reconciled_open_target(no active mutation/recovery fence)
   -> recovery_init_pending_approval(atomic target fence + capacity envelope + pending request, no permit)
 
+kill_active_active_normal_mutation_fence(exact reconciled open target)
+  -> recovery_takeover_pending_approval(atomic fence takeover + pending request, no permit)
+
 recovery_init_pending_approval
   -> recovery_init_pending_final_risk(valid fresh approval, no permit)
   -> recovery_rebind_pending_approval(recovery_target_changed pending-request closure)
@@ -689,16 +692,22 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   release한다.
 - Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
   reservation, current snapshot identity/version과 exact approved `riskBindingHash`, reason, expiry와
-  recovery fencing epoch에 exact bind한다. Takeover
-  transaction은 이 approval을 active/unconsumed 상태로 보존하고 final risk transaction만 consume한다.
+  recovery fencing epoch 및 durable recovery request identity/generation/deadline에 exact bind한다.
+  Backend는 owner에게 approval을 제시하기 전에 request identity/generation, deadline, masked preview,
+  target/reservation/snapshot과 proposed `riskBindingHash`를 durable commit해야 한다. Verified response만
+  corresponding `*_pending_approval`에서 `*_pending_final_risk`로 전이하며 approval은
+  active/unconsumed로 보존되고 final risk transaction만 consume한다.
 - Normal modify/cancel fence가 이미 target을 점유하면 recovery transaction은 kill-active,
-  exact current broker-open account/target/version과 unconsumed owner recovery approval을
-  확인한 뒤 fence를 `recovery_cancel_takeover` generation으로 atomic CAS한다. Original
+  exact current broker-open account/target/version, complete audit/reconciliation history와 recovery
+  request/permit 부재를 확인한 뒤 fence를 `recovery_cancel_takeover` generation으로 atomic CAS한다. Original
   operation은 `superseded_pending_reconciliation`로 남기고 tombstone, permit history,
   unknown/result reconciliation과 capacity envelope를 삭제하거나 terminal 처리하지 않는다.
 - Takeover CAS는 recovery epoch를 advance해 original operation의 unconsumed dispatch permit을
-  영구 fence하고 `recovery_takeover_pending_final_risk`로 전이할 뿐 dispatch-capable cancel permit을
-  만들지 않는다. Original request가 이미 first byte를
+  영구 fence한다. 같은 transaction에서 `recovery_takeover_pending_approval`, exact request
+  identity/generation/deadline, masked preview, target/reservation/snapshot/proposed risk binding과 empty
+  gateway allowlist를 commit하며 approval 또는 dispatch-capable cancel permit을 만들지 않는다.
+  Owner response를 request에 exact bind해 검증한 뒤에만
+  `recovery_takeover_pending_final_risk`로 전이한다. Original request가 이미 first byte를
   넘었거나 outcome이 ambiguous여도 current read-only broker evidence가 exact open target을
   확인한 경우에만 cancel을 보낼 수 있으며, target state/version을 확인할 수 없으면 raw/blind
   cancel 대신 owner-visible blocked reconciliation로 남긴다.
@@ -1045,6 +1054,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Active mutation fence가 없는 reconciled open target도 atomic recovery_init fence/capacity/request로 진입함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
+- [ ] Recovery takeover가 pending request를 durable commit한 뒤에만 owner approval을 수락함
 - [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
 - [ ] Recovery approval의 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume/permit이 허용됨
 - [ ] Recovery pending-approval/final-risk target 변경이 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 fresh approval rebind됨
