@@ -599,10 +599,20 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 
 로컬 정책은 다음을 기본으로 한다.
 
-- Future mutation intent에는 backend-generated `intentId`, deterministic order hash,
+- Future mutation intent에는 최초 typed request에서 한 번 생성하고 retry/restart/approval
+  generation을 통과해 유지하는 backend-generated CSPRNG `logicalRequestId`, generation별
+  `intentId`, deterministic order hash,
   CSPRNG으로 발급한 최소 128-bit opaque stable `accountScopeRef`, 별도 credential/config
   generation과 operation을 둔다. `modify`/`cancel`은 exact
   `targetOrderRef`, target version/state hash와 remaining quantity도 포함한다.
+- Caller가 선택할 수 없는 canonical `operationFingerprint`는 create의 account scope,
+  instrument, side, quantity, order type, limit/trigger terms와 time-in-force를 포함하고,
+  modify/cancel은 stable target lineage와 requested mutation terms를 포함한다. Raw account/order
+  identity는 fingerprint 입력이나 output에 포함하지 않는다.
+- Initial reservation은 `(accountScopeRef, operationFingerprint)` unresolved equivalence fence와
+  monotonic equivalence generation을 같은 serializable transaction에서 claim한다. Concurrent
+  equivalent create의 CAS loser는 winner lineage의 alias/blocked result를 따르며 새 identity,
+  reservation 또는 approval request를 만들 수 없다.
 - `accountScopeRef`는 low-entropy account identity의 ordinary/truncated hash로 만들지 않는다.
   Secret provider는 canonical provider/environment/account identity마다 opaque ref를 한 번
   발급하고 raw identity mapping을 authenticated encryption으로만 보관한다. Mapping encryption
@@ -802,13 +812,22 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   marker를 snapshot에서 원자적으로 제외하고 candidate intent를 한 번 다시 적용한다.
   다른 reservation/tombstone은 유지하며, self state/version/intent/hash/capacity projection이
   다르거나 이미 broker-visible이면 replace하지 않고 no-send reconciliation한다.
-- 최초 reservation은 `intentId`와 order hash의 permanent tombstone을 write-ahead로 만들며,
-  rejected, stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는
-  재사용하지 않는다.
-- `OrderRouter`는 같은 `intentId` 또는 같은 order hash의 tombstone이 과거에 하나라도
-  있으면 현재 상태나 새 approval 여부와 관계없이 중복 전송하지 않는다.
-- 이후 create/modify/cancel operation은 새 backend-generated identity/hash를 사용하고
-  기존 approval/idempotency record를 승계하지 않는다.
+- 최초 reservation은 `logicalRequestId`, `operationFingerprint`, `intentId`, attempt generation과
+  order hash를 연결한 permanent lineage tombstone을 write-ahead로 만들며 rejected,
+  stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는 재사용하지 않는다.
+- `OrderRouter`는 reconnect/retry/restart와 fresh approval generation에서도 같은
+  `logicalRequestId`를 유지한다. 기존 lineage가 unknown/reconciliation pending/blocked 또는
+  broker-visible인 동안 같은 logical id나 equivalent `operationFingerprint`인 create는 caller가
+  새 identity/hash를 제출해도 기존 record의 alias로 처리하고 새 reservation/approval/permit/send를
+  만들지 않는다.
+- Equivalent create를 새 logical operation으로 분류하려면 prior broker outcome과 capacity
+  handoff/terminal state가 exact read-only evidence로 reconciliation되어야 한다. 그 뒤 verified
+  owner의 one-time `newOperationApproval`이 old logical request/fingerprint, evidence hash와 explicit
+  new-operation reason에 bind된 경우에만 backend가 새 `logicalRequestId`와 successor equivalence
+  generation을 같은 CAS에서 발급한다. 둘 중 하나라도 없거나 equivalence가 불명확하면 blocked
+  reconciliation에 남긴다.
+- Genuinely new create/modify/cancel operation은 fresh intent/risk reservation/approval/permit을
+  사용하며 기존 approval, permit 또는 attempt identity를 승계하지 않는다.
 - Kill-active incident recovery는 normal create/modify/cancel gate와 permit을 모두 차단하고,
   exact reconciled target/version/account에 bind된 typed one-time `recovery_cancel` permit만
   별도 recovery epoch에서 허용한다. Normal cancel intent/approval/permit은 이 recovery
@@ -816,7 +835,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   전에는 target capacity를 release하지 않으며 current 문서가 실제 cancel endpoint 구현을
   승인하지 않는다.
 - mutation 요청이 timeout된 경우에는 즉시 재전송하지 않고 order history/detail 조회로 상태를 먼저 확인한다.
-- 공식 API가 idempotency key를 지원하면 local `intentId`와 매핑한다.
+- 공식 API가 idempotency key를 지원하면 stable local `logicalRequestId`와 매핑하고 attempt마다
+  새 broker key로 바꾸지 않는다.
 - 공식 API가 idempotency key를 지원하지 않으면 retry policy를 더 보수적으로 제한한다.
 
 ## Audit와 masking
@@ -970,7 +990,8 @@ record와 새 pinned key를 요구한다.
 - Row 16 dry-run reservation/timeout/unknown 검증은 isolated shadow state로만 수행되고 live capacity, permit, gateway 또는 reconciliation queue에 닿지 않는다.
 - Row 16 shadow tombstone은 no-external-effect terminal 뒤에도 동일 synthetic intent의 중복 reservation을 차단한다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
-- attempted order intent/hash의 permanent tombstone은 terminal 뒤에도 중복 전송을 차단한다.
+- permanent logical-request lineage tombstone은 terminal 뒤에도 동일 request replay를 차단한다.
+- timeout/unknown create의 equivalent resubmission은 새 identity/hash로 우회할 수 없고 prior reconciliation과 one-time owner approval 뒤에만 새 logical operation이 된다.
 - concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
 - acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
 - concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.

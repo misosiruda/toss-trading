@@ -34,7 +34,7 @@ breach로 처리한다.
 | Mutation intent와 preview | backend-generated identity/hash, `create`/`modify`/`cancel`, target version, expiry와 exact payload/account binding 유지 |
 | `RiskDecision`, risk snapshot과 capacity | current intent/snapshot/rules/freshness를 재검증하고 portfolio/account risk-capacity reservation을 보존 |
 | Runtime owner approval | intent/preview/risk identity에 결합하고 만료·1회 사용·취소 가능하게 설계 |
-| Idempotency state | send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
+| Idempotency state | stable logical-request identity, send 전 reservation, broker 결과, reconciliation 상태와 permanent intent/hash tombstone을 보존 |
 | Kill switch와 mutation flags | fail-closed default, exact normalized gate snapshot, dispatch와 공유하는 durable monotonic fencing epoch/lock, 변경 주체/시각/사유 audit 필수 |
 | Order/execution audit | tamper-evident ordering과 masked metadata 보존 |
 
@@ -70,7 +70,7 @@ Trust boundary 원칙:
 | LT-02 | AI paper evidence가 live signal/intent로 승격 | 비결정론적 주문 생성 | paper/live schema 분리, promotion adapter 금지 grep/test, deterministic backend만 intent 생성 |
 | LT-03 | 환경 변수 오타, 공백, 대소문자 변형, stale worker 또는 flag 하나로 enable | 의도하지 않은 live mode | raw exact config validation, durable normalized gate-snapshot hash/epoch, safe default, multiple independent gates, invalid/mismatched value fail-closed |
 | LT-04 | Malformed/stale intent, preview, risk snapshot, policy 또는 delayed approval | 잘못된 risk approval | strict normalization, router-owned authoritative clock 기반 freshness/expiry, clock rollback/skew fail-closed, dispatch 직전 current exactly-once snapshot으로 모든 rule 재검증, exact risk-binding mismatch 시 fresh approval |
-| LT-05 | Timeout, crash, retry 또는 concurrent worker로 duplicate send | 중복 주문 | write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent intent/hash tombstone, unknown result reconciliation 전 blind retry 금지 |
+| LT-05 | Timeout, crash, retry, equivalent request 재분류 또는 concurrent worker로 duplicate send | 중복 주문 | stable logical-request identity와 semantic fingerprint, write-ahead durable idempotency reservation, recovered `send_reserved` 강제 reconciliation, permanent lineage tombstone, unknown result reconciliation 전 blind retry/새 operation 분류 금지 |
 | LT-06 | Token, client secret, account/order/execution identity 노출 | 계정 탈취와 개인정보 노출 | secret provider 격리, header/body logging 금지, structured masking test, raw provider error 차단 |
 | LT-07 | Account header와 intent/approval/context 혼합 또는 low-entropy account hash 열거 | 다른 account에 mutation 또는 account identity 복구 | CSPRNG opaque `accountScopeRef`와 versioned encrypted mapping을 intent/reservation/risk/approval/permit/gateway에 exact bind, ordinary hash와 raw account input surface 금지 |
 | LT-08 | Arbitrary URL/method, redirect, proxy 또는 TLS downgrade | SSRF, credential exfiltration | exact origin/path/method allowlist, redirect 금지, platform trust/hostname 검증, proxy credential 금지 |
@@ -653,7 +653,19 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 
 ## Idempotency와 Retry
 
-- `orderIntentId`와 deterministic order hash는 backend가 생성한다.
+- 최초 typed mutation request에서 backend가 CSPRNG `logicalRequestId`를 한 번 생성하고,
+  검증/approval 재발급 generation별 `orderIntentId`와 deterministic order hash를 모두 이
+  stable identity에 bind한다. Retry, reconnect, process restart와 owner approval 재요청은
+  `logicalRequestId`를 바꾸지 않는다.
+- Backend는 caller가 선택할 수 없는 canonical `operationFingerprint`도 유지한다. Create는
+  `accountScopeRef`, instrument, side, quantity, order type, limit/trigger terms와 time-in-force 등
+  broker-visible semantic fields를, modify/cancel은 stable target lineage와 requested mutation
+  terms를 포함한다. Credential/raw account/order identity는 fingerprint 입력이나 output으로
+  노출하지 않는다.
+- Initial reservation transaction은 `(accountScopeRef, operationFingerprint)`의 unresolved
+  equivalence fence와 monotonic equivalence generation도 원자적으로 claim한다. 따라서 서로 다른
+  caller request id로 동시에 제출된 equivalent create 중 하나만 lineage owner가 될 수 있고,
+  CAS loser는 새 identity를 만들지 않고 winning lineage의 alias/blocked result를 따른다.
 - Final risk evaluation은 portfolio/account를 key로 한 serializable transaction에서 current
   broker/local snapshot과 모든 active capacity reservation을 exactly-once union으로 읽는다.
   Open-order slot, buy notional/exposure/cash, pending sell quantity와 적용되는 risk budget을
@@ -692,15 +704,24 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - 현재 `LiveRiskEngine`의 caller-provided snapshot은 deterministic module/test contract일
   뿐 shared capacity reservation이 아니다. Future `OrderRouter`는 stale snapshot을 그대로
   재사용하거나 서로 다른 worker에서 독립적으로 reserve하지 않는다.
-- 최초 reservation은 `orderIntentId`와 deterministic order hash의 permanent tombstone을
-  함께 만들며, rejected, stopped-before-dispatch 또는 `terminal_reconciled` 뒤에도 삭제,
-  만료 또는 재사용하지 않는다.
-- 같은 intent/hash의 과거 tombstone이 하나라도 있으면 현재 상태와 새 approval 여부에
-  관계없이 duplicate send를 거부한다. Recovered reservation은 broker rejection/no-
-  dispatch가 신뢰 가능한 read-only evidence로 확인되더라도 기존 intent를 자동
+- 최초 reservation은 `logicalRequestId`, `operationFingerprint`, `orderIntentId`, generation과
+  deterministic order hash를 연결한 permanent lineage tombstone을 함께 만든다. Rejected,
+  stopped-before-dispatch 또는 `terminal_reconciled` 뒤에도 삭제, 만료 또는 재사용하지 않는다.
+- 같은 logical request의 reconnect/retry/approval 재요청은 기존 lineage의 새 attempt
+  generation일 뿐 새 operation이 아니다. 기존 lineage가 `acknowledgement_unknown`,
+  reconciliation pending/blocked 또는 broker-visible일 때 동일 `logicalRequestId`나 같은
+  `operationFingerprint`로 들어온 create는 caller가 새 identity/hash를 제출해도 기존 record의
+  alias로 처리하고 새 reservation, approval request, permit 또는 network send를 만들지 않는다.
+- Equivalent create를 genuinely new operation으로 분류하려면 먼저 이전 lineage의 broker
+  outcome과 capacity handoff/terminal 상태를 exact read-only evidence로 reconciliation해야 한다.
+  그 뒤 verified owner의 one-time `newOperationApproval`이 old logical request/fingerprint,
+  reconciliation evidence hash와 explicit new-operation reason에 bind된 경우에만 backend가 새
+  `logicalRequestId`와 successor equivalence generation을 같은 CAS에서 발급할 수 있다. Approval과
+  reconciliation 중 하나라도 없거나 equivalence 판정이 불명확하면 owner-visible blocked로 유지한다.
+- 새 logical operation은 fresh intent/risk reservation/approval/permit을 사용하고 이전
+  approval, permit 또는 attempt identity를 승계하지 않는다. Recovered reservation은 broker
+  rejection/no-dispatch가 신뢰 가능한 read-only evidence로 확인되더라도 기존 intent를 자동
   재전송하지 않고 owner-visible reconciliation 결과로 닫는다.
-- 이후 create/modify/cancel operation은 backend가 새 intent identity와 새 deterministic
-  hash를 생성해야 하며, 이전 intent의 approval/idempotency record를 승계하지 않는다.
 - Approval/permit identity도 intent tombstone에 결합해 영구 보존하며 같은 approval 또는
   permit의 concurrent/sequential replay를 상태와 무관하게 거부한다.
 - Capacity reservation record는 process restart와 broker acknowledgement 뒤에도 보존한다.
@@ -786,7 +807,7 @@ canonical payload archive/checkpoint/retention manifest는 immutable evidence로
 record와 새 pinned key/generation을 요구한다.
 
 Audit에는 schema version, operation, masked stable `accountScopeRef`, target order/version,
-intent/risk/approval/capacity reservation reference,
+masked `logicalRequestId`/`operationFingerprint`, intent generation/risk/approval/capacity reservation reference,
 idempotency tombstone, capacity source/handoff, kill-switch fencing epoch, method/path
 template, `transportRequestHash`, target-route/account-header MAC key generation/match status, masked request correlation, state
 transition, timestamp와 reason code를 남긴다. Client secret,
@@ -886,6 +907,8 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐
 - [ ] Recovery target version/partial fill 변경이 same-lineage fence rebind와 fresh approval로만 이어짐
 - [ ] Dispatch/kill-switch fencing과 permanent intent/hash tombstone이 검증됨
+- [ ] Timeout/unknown create의 retry가 stable logicalRequestId를 유지하고 equivalent 새 identity/hash로 tombstone을 우회하지 못함
+- [ ] Equivalent create의 new-operation 분류가 prior reconciliation과 one-time owner approval을 모두 요구함
 - [ ] Disabled gate가 final reservation/fence/approval request를 막고 race loser를 atomic close함
 - [ ] Final reservation/pending approval request/approval_required가 한 transaction이며 request 없는 durable gap이 없음
 - [ ] Row 16 dry-run shadow가 live reservation/capacity/fence/permit/gateway와 분리되고 simulated unknown을 no-external-effect로 종료함
