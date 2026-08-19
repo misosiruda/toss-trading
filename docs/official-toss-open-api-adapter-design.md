@@ -652,11 +652,17 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   revalidation이 통과한 transaction만 active owner recovery approval을 one-time consume하면서 state,
   sole recovery permit과 그 permit 하나의 gateway allowlist를 atomic commit한다. 이 final transaction
   전 recovery dispatch surface는 disabled/no-permit이다.
+- Recovery pre-permit CAS의 attempt 부재는 complete audit chain 전체가 아니라 exact current
+  recovery intent/request/approval generation과 permit identity에 bind된 `dispatch_attempted`의
+  부재를 뜻한다. Prior generation의 signed attempt/no-effect/terminal evidence는 삭제하지 않고
+  보존한다. `recovery_retry_pending_approval`은 proven prior attempt를 전제로 하며 prior outcome이
+  ambiguous하면 생성하지 않는다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
   recovery `*_pending_approval`에서는 exact state/version과 pending request generation, valid
-  approval/permit 부재, empty gateway allowlist와 complete audit chain의 `dispatch_attempted` 부재를,
+  approval/permit 부재, empty gateway allowlist와 complete audit chain에서 exact current recovery
+  generation의 `dispatch_attempted` 부재를,
   `*_pending_final_risk`에서는 exact state/version, active/unconsumed old recovery approval,
-  no-permit/empty-allowlist/no-attempt를 target mismatch와 한 CAS로 검증한다. 이 pre-permit
+  no-permit/empty-allowlist/current-generation no-attempt를 target mismatch와 한 CAS로 검증한다. 이 pre-permit
   `recovery_target_changed` CAS는 old request 또는 approval/request를 permanently close하고 fence/capacity/history를
   유지한 채 generation, fresh recovery intent/pending request와
   `recovery_rebind_pending_approval`을 함께 commit한다. Rebind 전후 gateway는 disabled/no-permit다.
@@ -678,9 +684,11 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   않고 blocked reconciliation에 남긴다.
 - Recovery takeover/rebind/retry의 pending approval에서 typed owner decline, authoritative request
   expiry, allowlisted channel failure 또는 malformed response가 확정되면 exact state/version,
-  request generation, valid approval/permit/`dispatch_attempted` 부재와 empty gateway allowlist를
+  request generation, valid approval/permit과 exact current recovery generation의
+  `dispatch_attempted` 부재, empty gateway allowlist를
   `recovery_approval_not_issued` CAS로 닫는다. Fresh approval이 만들어진 뒤 final risk 전
-  expiry/revoke/binding invalidation은 exact active approval과 no-permit/no-attempt를 각각
+  expiry/revoke/binding invalidation은 exact active approval과 no-permit/current-generation
+  no-attempt를 각각
   `recovery_approval_expired`/`recovery_approval_revoked`/`recovery_approval_invalidated`로 닫는다.
   모든 closure는 request/approval tombstone을 남긴 `recovery_approval_closed`이며 inherited
   lineage fence, conservative capacity와 original/prior history를 release하지 않는다.
@@ -801,8 +809,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   mismatch CAS, exclusive startup recovery lock/advanced epoch에서 exact `send_reserved`와 sole
   unconsumed permit/complete audit chain의 attempt 부재를 묶은 restart CAS,
   same-lineage recovery-target mismatch와 old unconsumed permit CAS 또는 exact recovery
-  pending-request/no-approval/no-permit/empty-allowlist/attempt 부재 CAS 또는
-  pending-final-risk/active old approval/no-permit/empty-allowlist/attempt 부재 CAS,
+  pending-request/no-approval/no-permit/empty-allowlist/current-generation attempt 부재 CAS 또는
+  pending-final-risk/active old approval/no-permit/empty-allowlist/current-generation attempt 부재 CAS,
   approval-not-issued request
   closure 또는 exact old/new binding mismatch와 request/approval/no-permit을 묶은 pre-permit
   payload-change CAS 중 해당 cause evidence를 포함한다.
@@ -1061,8 +1069,8 @@ record와 새 pinned key를 요구한다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
-- cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
-- recovery approval decline/expiry/malformed/revoke closure는 request/approval generation만 닫고 inherited fence/capacity를 유지한다.
+- cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
+- recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
 - closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
 - recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale no-dispatch CAS로 종료한다.
