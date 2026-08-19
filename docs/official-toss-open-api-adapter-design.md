@@ -780,10 +780,20 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
   뒤에만 dispatch permit을 발급한다.
 - `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
-  `marketOrderAuthorization`을 intent/account/order projection/preview/policy/actor/expiry에
-  bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
+  `marketOrderAuthorizationRequest` identity/generation/deadline과 owner channel을 pending으로 atomic
+  commit한 뒤 owner에게 제시한다. Exact-bound typed `marketOrderAuthorization`을
+  intent/account/order projection/preview/policy/actor/expiry에 bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
   `marketOrderApproved` evidence로 변환하며 caller boolean을 허용하지 않는다. 이후 exact
   final risk/reservation에는 별도 `dispatchApproval`을 받는다.
+- Preliminary request의 typed owner decline, authoritative request expiry, allowlisted channel failure 또는
+  malformed response는 exact `market_order_authorization_required` state/version, pending request
+  generation, valid authorization과 final reservation/dispatch request/permit/attempt 부재를 한 CAS로
+  검증해 `market_order_authorization_not_issued` noDispatchFence와 permanent request tombstone으로
+  닫는다. Valid authorization 뒤 final risk 전 expiry/revoke/binding invalidation은 exact active/unconsumed
+  authorization과 같은 no-final-reservation/no-permit evidence를
+  `market_order_authorization_closed` noDispatchFence 및 authorization/request tombstone으로 닫는다.
+  Delayed response와 closed authorization은 재사용하지 않으며 retry는 fresh backend intent/request를
+  요구한다. Ambiguous evidence는 blocked로 남긴다.
 - Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
   dispatch permit 생성 직전에 fresh broker/local exactly-once effective snapshot으로 모든
   risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
@@ -1097,6 +1107,7 @@ record와 새 pinned key를 요구한다.
 - exact outbound account header bytes의 keyed MAC이 permit binding과 다르면 raw account를 저장하지 않고 first byte 전에 차단한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
 - market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
+- market-order authorization 실패/만료/revoke/binding invalidation은 exact request/authorization tombstone과 no-final-reservation/no-permit CAS로 종료한다.
 - modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
 - modify는 old capacity를 reconciliation까지 보존하고 stable target fence가 version lineage 전체의 concurrent modify/cancel을 차단한다.
 - accountScopeRef는 ordinary account hash가 아닌 CSPRNG opaque encrypted mapping이며 key rotation에도 ref를 유지한다.

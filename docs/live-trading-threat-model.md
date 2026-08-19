@@ -395,7 +395,9 @@ engine의 create 평가로 우회하지 않는다.
 
 `marketOrderPolicy=requires_approval`은 두 typed approval 단계를 구분한다.
 
-1. Final risk reservation 전에 `marketOrderAuthorization`을 받는다. 이는 intent/hash,
+1. Final risk reservation 전에 `marketOrderAuthorizationRequest`를 pending으로 durable commit한 뒤
+   `marketOrderAuthorization`을 받는다. Request는 backend-generated identity/generation,
+   authoritative requested/expires time과 owner channel을 가지며 authorization은 intent/hash,
    `accountScopeRef`, exact market-order projection, preview, policy revision, actor와 expiry에
    bind한다.
 2. Final risk transaction은 이 authorization을 linearizable one-time consume하고 trusted
@@ -408,6 +410,24 @@ Market authorization 또는 final binding이 stale/mismatched이면 둘을 합�
 않고 새 intent와 필요한 approval 단계부터 다시 시작한다. Limit order는 별도 market-order
 authorization 없이 final risk reservation으로 진행하지만 `dispatchApproval`은 동일하게
 필요하다.
+
+`dry_run_validated -> market_order_authorization_required` transition은 exact intent/account/order
+projection/preview/policy binding, request identity/generation/deadline과 owner channel, valid
+authorization 부재, final risk reservation/dispatch approval request/permit/`dispatch_attempted` 부재를
+한 atomic commit으로 저장한다. Commit 뒤에만 request를 owner에게 제시하며 response는 exact request
+identity/generation/deadline에 bind한다. Typed owner decline, authoritative request expiry, allowlisted
+channel failure 또는 malformed response가 확정되면 같은 evidence를 한 CAS로 검증하고
+`market_order_authorization_not_issued` noDispatchFence, permanent request tombstone과 reason을 commit한다.
+Delayed response는 closed generation mismatch로 거부한다.
+
+Valid authorization이 생성된 뒤 final risk transaction 전에 authoritative expiry, verified revoke 또는
+binding invalidation이 확정되면 exact `market_order_authorization_required` state/version,
+active/unconsumed authorization identity/generation/state와 final reservation/request/permit/attempt 부재를
+한 CAS로 검증해 `market_order_authorization_closed` noDispatchFence와 permanent authorization/request
+tombstone을 commit한다. 어느 evidence든 ambiguous하면 terminal을 추정하지 않고 owner-visible blocked
+state로 남긴다. 두 closure 모두 capacity나 target fence를 만들거나 release하지 않으며 retry는 closed
+request/authorization을 재사용하지 않고 새 backend-generated intent와 fresh authorization request를
+요구한다.
 
 ## Safe-Disabled State Machine
 
@@ -422,6 +442,8 @@ dry_run_validated
 
 market_order_authorization_required
   -> approval_required(atomic authorization consume + reservation + pending request)
+  -> stopped_before_dispatch(market_order_authorization_not_issued exact request tombstone)
+  -> stopped_before_dispatch(market_order_authorization_closed exact authorization/request tombstone)
 
 approval_required
   -> send_reserved
@@ -649,6 +671,13 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
     state/version과 pending request generation, valid approval/permit 부재, typed owner decline 또는
     authoritative request expiry/channel failure/malformed evidence와 permanent request tombstone을
     한 CAS로 commit. Recovery variant는 lineage resource를 유지
+  - `market_order_authorization_not_issued`: exact `market_order_authorization_required` state/version,
+    pending authorization-request generation, valid authorization과 final reservation/dispatch approval
+    request/permit/attempt 부재, typed decline 또는 authoritative request expiry/channel failure/malformed
+    evidence와 permanent request tombstone을 한 CAS로 commit
+  - `market_order_authorization_closed`: exact active/unconsumed market authorization identity/generation/
+    state, authoritative expiry 또는 verified revoke/binding invalidation, final reservation/dispatch
+    approval request/permit/attempt 부재와 permanent authorization/request tombstone을 한 CAS로 commit
   - `pre_permit_payload_changed`: exact immutable old intent/order/preview/transport/account binding
     hash와 normalized new payload hash mismatch, exact `approval_required` state/version,
     pending request 또는 active/unconsumed approval id/generation/state, permit/`dispatch_attempted`
@@ -1093,6 +1122,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Pre-permit payload 변경이 exact old/new binding mismatch와 request/approval/no-permit CAS로 종료됨
 - [ ] accountScopeRef가 CSPRNG opaque mapping으로 발급되고 key rotation에도 stable하며 intent/reservation/approval/permit/gateway에서 exact match함
 - [ ] Market order의 typed pre-risk authorization과 final dispatch approval이 분리됨
+- [ ] Market-order authorization decline/expiry/channel-failure/malformed/revoke/binding-invalidated가 exact request/authorization tombstone CAS로 종료됨
 - [ ] Modify/cancel이 exact target version 기반 operation-specific replace/release rule을 사용함
 - [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨
 - [ ] Stable account/target mutation fence가 version lineage 전체의 concurrent modify/cancel을 terminal까지 차단함
