@@ -1117,6 +1117,14 @@ test("calendar source document metadata derives acquisition and policy fields fr
   assert.equal(metadata.requestMethod, "POST");
   assert.equal(metadata.requestedUrl, KRX_REQUESTED_URL);
   assert.equal(metadata.finalUrl, KRX_REDIRECTED_URL);
+  assert.equal(
+    metadata.cacheRequestPolicyVersion,
+    OFFICIAL_MARKET_CALENDAR_CACHE_REQUEST_POLICY_VERSION
+  );
+  assert.deepEqual(
+    metadata.redirectChain,
+    sourceDocumentEnvelope.acquisitionBoundary.redirectChainBoundary
+  );
   assert.equal(metadata.retrievedAt, "2025-07-01T12:00:10.000Z");
   assert.equal(metadata.staleAfter, "2025-07-02T12:00:00.000Z");
   assert.equal(metadata.contentType, "application/pdf");
@@ -1173,6 +1181,22 @@ test("calendar source document metadata rejects derived-field and byte tamper", 
   );
   assert.throws(
     () => parse({ ...metadata, contentType: "text/plain" }),
+    /does not match verified envelope/
+  );
+  assert.throws(
+    () =>
+      parse({
+        ...metadata,
+        redirectChain: { ...metadata.redirectChain, unverifiedHop: {} }
+      }),
+    /does not match verified envelope/
+  );
+  assert.throws(
+    () =>
+      parse({
+        ...metadata,
+        cacheRequestPolicyVersion: "caller-cache-policy.v1"
+      }),
     /does not match verified envelope/
   );
   assert.throws(

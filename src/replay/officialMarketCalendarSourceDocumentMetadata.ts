@@ -63,7 +63,9 @@ const sourceDocumentMetadataPayloadSchema = z
     representationHeaders: z.record(z.string(), z.unknown()),
     finalUrl: z.string().min(1),
     redirectPolicyVersion: identifierSchema,
+    redirectChain: z.record(z.string(), z.unknown()),
     retrievedAt: z.string().min(1),
+    cacheRequestPolicyVersion: identifierSchema,
     responseDate: z.string().min(1),
     responseAgeSeconds: z.number().int().nonnegative().nullable(),
     responseCacheControl: z.array(z.string()).nullable(),
@@ -143,6 +145,8 @@ export function createOfficialMarketCalendarSourceDocumentMetadata(
   const policy = verified.freshnessPolicySelectorBinding.freshnessPolicyEntry;
   const selector = verified.freshnessPolicySelectorBinding.selectorMetadata;
   const transfer = finalResponse.transferCompletion;
+  const cacheRequestPolicyVersion =
+    redirect.cacheRequestPolicies[0]!.cacheRequestPolicyVersion;
   const payload = sourceDocumentMetadataPayloadSchema.parse({
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_METADATA_SCHEMA_VERSION,
@@ -160,7 +164,10 @@ export function createOfficialMarketCalendarSourceDocumentMetadata(
     representationHeaders: initialRepresentation.representationHeaders,
     finalUrl: redirect.httpsUrlBoundary.finalUrl,
     redirectPolicyVersion: redirect.redirectClientPolicy.redirectPolicyVersion,
+    redirectChain:
+      sourceDocumentEnvelope.acquisitionBoundary.redirectChainBoundary,
     retrievedAt: freshness.retrievedAt,
+    cacheRequestPolicyVersion,
     responseDate: freshness.responseDate,
     responseAgeSeconds: freshness.responseAgeSeconds,
     responseCacheControl: finalResponse.responseCacheControl.responseCacheControl,
