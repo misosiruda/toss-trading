@@ -179,6 +179,14 @@ Final response의 representation metadata는
 이 boundary는 final-response verifier의 필수 child이며 decode, parser selection 또는
 parser-contract별 representation allowlist는 수행하지 않는다.
 
+`officialMarketCalendarSourceDocumentMetadata.ts`는 verified envelope 하나만 입력받아
+request/final-response/cache/freshness/representation/transfer field와 registry-bound
+coverage/parser selector를 재구성한다. `publisher`는 verified exchange의 canonical
+identity인 `KRX` 또는 `NYSE`로 파생하고 full envelope를 metadata hash에 포함해 raw
+redirect/acquisition boundary를 보존한다. Stored parse는 exact source bytes와 freshness
+policy registry로 전체 metadata를 다시 생성한다. 이 aggregate 자체는 parser를
+실행하거나 parsed row/session-hours 값을 collection document로 승격하지 않는다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name

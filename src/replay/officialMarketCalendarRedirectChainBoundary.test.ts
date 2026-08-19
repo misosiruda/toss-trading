@@ -16,6 +16,10 @@ import {
   createOfficialMarketCalendarSourceDocumentEnvelope,
   parseOfficialMarketCalendarSourceDocumentEnvelope
 } from "./officialMarketCalendarSourceDocumentEnvelope.js";
+import {
+  createOfficialMarketCalendarSourceDocumentMetadata,
+  parseOfficialMarketCalendarSourceDocumentMetadata
+} from "./officialMarketCalendarSourceDocumentMetadata.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
@@ -1081,6 +1085,112 @@ test("calendar source document envelope keeps unverified metadata and shape-loos
       createOfficialMarketCalendarSourceDocumentEnvelope(
         { ...base, credential: "not-allowed" },
         policyRegistry()
+      ),
+    /Unrecognized key/
+  );
+});
+
+test("calendar source document metadata derives acquisition and policy fields from the verified envelope", () => {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const sourceDocumentEnvelope =
+    createOfficialMarketCalendarSourceDocumentEnvelope(
+      {
+        documentId: "krx.calendar.metadata",
+        sourceBytes,
+        acquisitionBoundary: {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        }
+      },
+      policyRegistry()
+    );
+  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+    { sourceDocumentEnvelope },
+    {
+      freshnessPolicyRegistry: policyRegistry(),
+      sourceBytes
+    }
+  );
+
+  assert.equal(metadata.exchange, "KRX");
+  assert.equal(metadata.publisher, "KRX");
+  assert.equal(metadata.requestMethod, "POST");
+  assert.equal(metadata.requestedUrl, KRX_REQUESTED_URL);
+  assert.equal(metadata.finalUrl, KRX_REDIRECTED_URL);
+  assert.equal(metadata.retrievedAt, "2025-07-01T12:00:10.000Z");
+  assert.equal(metadata.staleAfter, "2025-07-02T12:00:00.000Z");
+  assert.equal(metadata.contentType, "application/pdf");
+  assert.equal(metadata.contentEncoding, null);
+  assert.equal(metadata.contentLength, 100);
+  assert.equal(metadata.sourceDocumentHash, sourceDocumentEnvelope.sourceDocumentHash);
+  assert.deepEqual(metadata.evidenceRoles, [
+    "holiday_rows",
+    "holiday_schedule"
+  ]);
+  assert.equal(metadata.parserContractVersion, "krx_calendar_pdf.v1");
+  assert.match(metadata.metadataHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(Object.isFrozen(metadata), true);
+  assert.equal(Object.isFrozen(metadata.sourceDocumentEnvelope), true);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceDocumentMetadata(metadata, {
+      freshnessPolicyRegistry: policyRegistry(),
+      sourceBytes
+    }),
+    metadata
+  );
+});
+
+test("calendar source document metadata rejects derived-field and byte tamper", () => {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const sourceDocumentEnvelope =
+    createOfficialMarketCalendarSourceDocumentEnvelope(
+      {
+        documentId: "krx.calendar.metadata-tamper",
+        sourceBytes,
+        acquisitionBoundary: {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        }
+      },
+      policyRegistry()
+    );
+  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+    { sourceDocumentEnvelope },
+    {
+      freshnessPolicyRegistry: policyRegistry(),
+      sourceBytes
+    }
+  );
+  const parse = (value: unknown, bytes: Uint8Array = sourceBytes) =>
+    parseOfficialMarketCalendarSourceDocumentMetadata(value, {
+      freshnessPolicyRegistry: policyRegistry(),
+      sourceBytes: bytes
+    });
+
+  assert.throws(
+    () => parse({ ...metadata, publisher: "NYSE" }),
+    /does not match verified envelope/
+  );
+  assert.throws(
+    () => parse({ ...metadata, contentType: "text/plain" }),
+    /does not match verified envelope/
+  );
+  assert.throws(
+    () => parse({ ...metadata, metadataHash: hash("f") }),
+    /does not match verified envelope/
+  );
+  assert.throws(
+    () => parse(metadata, new Uint8Array(100).fill(66)),
+    /bytes do not match the envelope/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarSourceDocumentMetadata(
+        { sourceDocumentEnvelope, publisher: "caller" },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes
+        }
       ),
     /Unrecognized key/
   );
