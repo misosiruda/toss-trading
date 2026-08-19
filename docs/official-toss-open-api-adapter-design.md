@@ -653,8 +653,15 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   sole recovery permit과 그 permit 하나의 gateway allowlist를 atomic commit한다. 이 final transaction
   전 recovery dispatch surface는 disabled/no-permit이다.
 - Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
-  exact old recovery state와 pre-dispatch unconsumed-permit no-dispatch 또는 definitive broker
-  rejection/`zeroByteAttemptFence`의 terminal no-effect를 먼저 durable하게 증명한다. 같은
+  final-risk 전 exact `recovery_takeover_pending_final_risk` state/version, active/unconsumed old
+  `cancelRecoveryApproval`, recovery permit 부재, empty gateway allowlist, complete audit chain의
+  `dispatch_attempted` 부재와 target mismatch를 한 CAS로 검증한다. 이 pre-permit
+  `recovery_target_changed` CAS는 old approval/request를 permanently close하고 fence/capacity/history를
+  유지한 채 generation, fresh recovery intent/pending request와
+  `recovery_rebind_pending_approval`을 함께 commit한다. Rebind 전후 gateway는 disabled/no-permit다.
+  Final-risk 뒤에는 exact old recovery state와 sole unconsumed permit/attempt 부재의 post-permit
+  no-dispatch 또는 definitive broker rejection/`zeroByteAttemptFence`의 terminal no-effect를 먼저
+  durable하게 증명한다. 같은
   `recoveryLineageId` 안에서 fence ownership/capacity/history를 유지하고 generation을 증가시키며
   current target snapshot, fresh recovery intent/pending request로
   `recovery_rebind_pending_approval`을 atomic CAS한다. Fresh owner approval/risk revalidation 뒤에만
@@ -778,7 +785,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   approval-required state CAS, exact outbound transport-hash/target-route-MAC/account-header-MAC
   mismatch CAS, exclusive startup recovery lock/advanced epoch에서 exact `send_reserved`와 sole
   unconsumed permit/complete audit chain의 attempt 부재를 묶은 restart CAS,
-  same-lineage recovery-target mismatch와 old unconsumed permit CAS, approval-not-issued request
+  same-lineage recovery-target mismatch와 old unconsumed permit CAS 또는 exact
+  `recovery_takeover_pending_final_risk`/active old approval/no-permit/empty-allowlist/attempt 부재 CAS,
+  approval-not-issued request
   closure 또는 exact old/new binding mismatch와 request/approval/no-permit을 묶은 pre-permit
   payload-change CAS 중 해당 cause evidence를 포함한다.
   `approval_not_issued`는 exact pending request generation, valid approval/permit 부재와 typed owner
@@ -1034,6 +1043,7 @@ record와 새 pinned key를 요구한다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
+- cancel-recovery pending-final-risk target 변경은 no-permit/empty-allowlist/attempt 부재 CAS로 old approval을 닫고 same-lineage fresh approval rebind만 허용한다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
 - recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale no-dispatch CAS로 종료한다.
 - proven no-effect recovery cancel은 unchanged target에서 same-lineage fresh approval retry만 허용한다.

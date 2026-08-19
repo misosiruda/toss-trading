@@ -370,6 +370,13 @@ send_reserved
   -> stopped_before_dispatch(cause-specific noDispatchFence)
   -> dispatch_permit_acquired
 
+recovery_takeover_pending_final_risk
+  -> send_reserved(atomic final risk + approval consume + sole recovery permit)
+  -> recovery_rebind_pending_approval(recovery_target_changed pre-permit noDispatchFence)
+
+recovery_rebind_pending_approval
+  -> send_reserved(atomic final risk + fresh approval consume + sole recovery permit)
+
 dispatch_permit_acquired
   -> dispatch_failed_zero_byte
   -> broker_rejected
@@ -514,7 +521,12 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   - `account_header_mismatch`: permit의 MAC/key generation, exact outbound header bytes로
     recompute한 MAC mismatch, `send_reserved`, unconsumed permit과 `dispatch_attempted` 부재 CAS
   - `recovery_target_changed`: same `recoveryLineageId`의 exact old/current target version/remaining
-    mismatch, old recovery state/version, unconsumed permit과 `dispatch_attempted` 부재 CAS
+    mismatch와 다음 두 evidence variant 중 정확히 하나를 CAS. Post-permit variant는 old
+    `send_reserved` recovery state/version, sole unconsumed permit과 `dispatch_attempted` 부재를
+    요구한다. Pre-permit takeover variant는 exact `recovery_takeover_pending_final_risk`
+    state/version, active/unconsumed old `cancelRecoveryApproval`, recovery permit 부재, empty gateway
+    allowlist와 externally checkpointed complete audit chain의 `dispatch_attempted` 부재를 요구하며
+    old approval/request를 같은 transaction에서 permanently close한다.
   - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact
     active/unconsumed approval-required state/version CAS
   - `approval_not_issued`: exact pending approval-request generation, valid approval/permit 부재,
@@ -616,8 +628,17 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Takeover fence는 stable `recoveryLineageId`와 account/target lineage를 보존한다. Dispatch 전
   read-only evidence에서 같은 account/target이 여전히 open이지만 partial fill, version/state hash
   또는 remaining quantity가 바뀌면 stale recovery cancel을 보내거나 fence를 release하지 않는다.
-  먼저 exact old recovery intent/state/version, unconsumed permit, first-byte/`dispatch_attempted`
-  부재와 target mismatch evidence를 `recovery_target_changed` no-dispatch fence로 commit해야 한다.
+  Final-risk 전 `recovery_takeover_pending_final_risk`이면 exact old recovery intent/state/version,
+  active/unconsumed old `cancelRecoveryApproval`, recovery permit 부재, empty gateway allowlist,
+  complete audit chain의 `dispatch_attempted` 부재와 target mismatch를 한 CAS로 검증한다. 이 CAS는
+  old approval/request를 permanently close하고 `recovery_target_changed` pre-permit noDispatchFence를
+  남기면서 fence/capacity/original history를 유지한 채 generation을 올려 바로
+  `recovery_rebind_pending_approval`과 fresh intent/pending request를 commit한다. 따라서 no-permit
+  takeover도 stale target에 묶여 정지하지 않으며, CAS 전후 recovery dispatch surface는 계속
+  disabled/no-permit/empty allowlist다.
+- Final-risk 뒤 sole recovery permit이 생긴 상태라면 exact old recovery intent/state/version,
+  unconsumed permit, first-byte/`dispatch_attempted` 부재와 target mismatch evidence를
+  `recovery_target_changed` post-permit no-dispatch fence로 먼저 commit해야 한다.
   Prior permit이 이미 consumed/attempted이면 이 pre-dispatch cause를 사용하지 않고 exact definitive
   broker rejection 또는 `zeroByteAttemptFence`처럼 complete audit chain이 terminal no-effect를
   증명해야 한다. Consumed/attempted outcome이 unknown 또는 ambiguous이면 rebind하지 않고 blocked
@@ -921,6 +942,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
+- [ ] Takeover pending-final-risk target 변경이 no-permit/empty-allowlist/attempt 부재 CAS로 fresh approval rebind됨
 - [ ] Takeover cancel의 zeroByteAttemptFence가 ambiguous original lineage capacity/fence를 release하지 않음
 - [ ] Recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale CAS로 종료됨
 - [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐
