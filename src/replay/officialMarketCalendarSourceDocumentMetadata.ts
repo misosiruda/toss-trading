@@ -164,8 +164,7 @@ export function createOfficialMarketCalendarSourceDocumentMetadata(
     representationHeaders: initialRepresentation.representationHeaders,
     finalUrl: redirect.httpsUrlBoundary.finalUrl,
     redirectPolicyVersion: redirect.redirectClientPolicy.redirectPolicyVersion,
-    redirectChain:
-      sourceDocumentEnvelope.acquisitionBoundary.redirectChainBoundary,
+    redirectChain: redirect,
     retrievedAt: freshness.retrievedAt,
     cacheRequestPolicyVersion,
     responseDate: freshness.responseDate,

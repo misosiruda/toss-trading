@@ -127,7 +127,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header를 canonical safe-ASCII field value로 보존한 object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
-| `redirectChain` | 최초 요청부터 final response까지의 verified composite redirect-chain boundary. 각 child array가 hop 순서의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names, safe representation/cache header values와 response 관찰을 보존하며 metadata open 시 전체 boundary를 다시 검증 |
+| `redirectChain` | 최초 요청부터 final response까지 verifier가 정규화한 composite redirect-chain projection. 각 child array가 hop 순서의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names, safe representation/cache header values와 response 관찰을 보존하며 metadata open 시 전체 boundary를 다시 검증 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `cacheRequestPolicyVersion` | Revalidation/bypass request와 response cache metadata 검증 policy version |
 | `responseDate` | Final response의 strict HTTP `Date` timestamp |
@@ -183,8 +183,8 @@ parser-contract별 representation allowlist는 수행하지 않는다.
 request/final-response/cache/freshness/representation/transfer field와 registry-bound
 coverage/parser selector를 재구성한다. `publisher`는 verified exchange의 canonical
 identity인 `KRX` 또는 `NYSE`로 파생하고 full envelope를 metadata hash에 포함해 raw
-redirect/acquisition boundary를 보존한다. Top-level `redirectChain`은 이 verified
-composite boundary를 그대로 노출하고 `cacheRequestPolicyVersion`은 verified initial
+redirect/acquisition boundary를 보존한다. Top-level `redirectChain`은 raw input이 아닌
+verifier가 정규화한 composite projection을 노출하고 `cacheRequestPolicyVersion`은 verified initial
 cache request policy에서 파생한다. Stored parse는 exact source bytes와 freshness
 policy registry로 전체 metadata를 다시 생성한다. 이 aggregate 자체는 parser를
 실행하거나 parsed row/session-hours 값을 collection document로 승격하지 않는다.

@@ -1123,7 +1123,7 @@ test("calendar source document metadata derives acquisition and policy fields fr
   );
   assert.deepEqual(
     metadata.redirectChain,
-    sourceDocumentEnvelope.acquisitionBoundary.redirectChainBoundary
+    verifyOfficialMarketCalendarRedirectChainBoundary(chain())
   );
   assert.equal(metadata.retrievedAt, "2025-07-01T12:00:10.000Z");
   assert.equal(metadata.staleAfter, "2025-07-02T12:00:00.000Z");
