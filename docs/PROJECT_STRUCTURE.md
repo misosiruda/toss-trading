@@ -176,8 +176,8 @@ flowchart TD
 - `src/risk/liveRiskAuthority.test.ts` (구현됨: 위조·변조·재구성 차단 회귀 테스트)
 - `src/order/dryRunShadowState.ts` (구현됨: isolated reservation, permanent tombstone와 audit)
 - `src/order/dryRunShadowState.test.ts` (구현됨: duplicate/timeout/reconciliation 상태 전이 테스트)
-- `src/order/dryRunOrderRouter.ts` (후속 구현)
-- `src/order/dryRunOrderRouter.test.ts` (후속 구현)
+- `src/order/dryRunOrderRouter.ts` (구현됨: exact safe config, opaque synthetic approval와 shadow reservation 연결)
+- `src/order/dryRunOrderRouter.test.ts` (구현됨: gate/authority/approval/duplicate/masking 회귀 테스트)
 - `docs/live-trading-threat-model.md`
 - `docs/official-toss-open-api-adapter-design.md`
 - `docs/PROJECT_STRUCTURE.md`
@@ -210,14 +210,18 @@ flowchart TD
 - 구현된 shadow state는 synthetic scenario/hash tuple만 받고 isolated permanent tombstone을 최초
   reservation과 함께 생성하며 simulated terminal 뒤에도 같은 identity 재예약을 거부함. Scenario
   input은 opaque ref로 저장하고 immutable state handle은 single-use로 소비해 stale branch reservation을
-  차단함. 후속 router의 synthetic owner approval fixture는 아직 미구현임
+  차단함
+- 구현된 router는 네 safe config field를 exact data value로 검증하고, 승인된 exact risk authority,
+  동일 frozen intent와 opaque scenario binding에 묶인 module-owned synthetic owner approval fixture를
+  한 번만 소비함. Counterfeit, stale, mismatched approval은 shadow reservation 전에 fail-closed함
 - 결과는 `dry_run_validated` 또는 `shadow_reconciled_no_external_effect` 같은 paper-only
   상태로 끝나며 broker order/execution identity를 만들지 않음
 - `src/order`는 `src/broker`, `src/api`, `src/mcp`, `src/cli`, `src/ai`, `src/paper`,
   `src/storage`를 import하지 않고 network, filesystem, process 또는 environment I/O를 하지 않음
 - Local Operations API, MCP, dashboard, CLI와 package entrypoint에 mutation route/tool/command를
   추가하지 않음
-- 이 문서 경계만으로 runtime 구현, official order POST 또는 live enablement가 승인되지 않음
+- 이 internal dry-run 구현은 official order POST, broker gateway, runtime owner approval channel 또는
+  live enablement를 승인하지 않음
 
 ### Market packet 또는 candidate 생성 변경
 

@@ -202,7 +202,12 @@ frozen state, approved result와 router 직전 recomputed snapshot hash를 함�
 caller-constructed object, missing/mismatched hash 또는 평가 뒤 재구성·정규화한 intent는 handoff
 authority가 아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow
 state와 synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를
-받을 수 없다. 구현된 `dryRunShadowState`는 module-owned immutable state에서 synthetic
+받을 수 없다. 구현된 `dryRunOrderRouter`는 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`,
+`TOSS_OPEN_API_ORDER_MUTATIONS_ENABLED=false`, `TOSS_OPEN_API_DRY_RUN=true`를 unknown field나
+normalization 없이 exact 검증한다. Synthetic owner approval fixture는 module-owned brand와 active
+state를 사용하고 approved authority의 exact frozen intent, `evaluatedIntentHash`와 opaque scenario
+binding에 묶여 한 번만 소비된다. Counterfeit, stale 또는 binding mismatch는 fail-closed하며 실제
+owner approval이나 live permit으로 승격할 수 없다. 구현된 `dryRunShadowState`는 module-owned immutable state에서 synthetic
 `(scenarioId, syntheticIntentHash)` reservation과 permanent tombstone을 함께 만들고 duplicate를 모든
 terminal state 이후에도 거부한다. Timeout은 injected simulation label이며
 `shadow_reconciled_no_external_effect`로만 닫고 모든 audit는 `simulationOnly=true`,
