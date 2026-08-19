@@ -173,8 +173,8 @@ const options = {
 책임:
 
 - official adapter roadmap row 16의 internal mock-only dry-run state machine
-- typed `LiveOrderIntent`, full canonical evaluated-intent hash를 가진 approved
-  `LiveRiskDecision`과 synthetic owner approval binding 검증
+- typed `LiveOrderIntent`, risk module이 mint한 deep-frozen opaque `LiveRiskAuthority`와
+  synthetic owner approval binding 검증
 - live idempotency/capacity store와 분리된 deterministic shadow reservation과 permanent tombstone
 - masked paper-only audit record와 `dry_run_validated` /
   `shadow_reconciled_no_external_effect` 결과 생성
@@ -190,16 +190,19 @@ const options = {
 
 `src/order`는 pure deterministic module로 유지한다. 첫 runtime PR에서 `src/workflows`는 risk
 평가 전에 strict-validated `LiveOrderIntent`를 deep-copy/deep-freeze하고 그 exact snapshot을
-`LiveRiskEngine`과 future router에 함께 전달한다. `LiveRiskDecision`의 domain-separated
-`evaluatedIntentHash`는 schema version, optional-field presence와 exact raw value를 보존한 snapshot
-전체를 length-prefixed canonical form으로 hash해야 한다. Raw `symbol`과 RiskEngine이 사용하는
-normalized symbol projection도 서로 다른 field로 모두 bind한다. Router handoff 직전에 같은 frozen
-snapshot hash를 다시 계산하며, decision이 approved가 아니거나 hash가 없거나 mismatch면 router를
-호출하지 않는다. 현재 ID-only decision 또는 평가 뒤 재구성·정규화한 intent는 handoff authority가
-아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow state와
-synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를 받을 수
-없다. 이 계층의 존재는 row 17 official gateway, live order 또는 `TRADING_ENABLED=true`를 허용하지
-않는다.
+`LiveRiskEngine`과 future router에 함께 전달한다. Risk module은 public constructor/factory 없이
+module-private path에서만 deep-frozen opaque `LiveRiskAuthority`를 mint하고 module-owned `WeakSet`
+brand로 진위를 확인한다. Rejected authority의 readonly decision을 approved로 바꿀 수 없어야 한다.
+Authority의 domain-separated `evaluatedIntentHash`는 schema version, optional-field presence와 exact raw
+value를 보존한 snapshot 전체를 length-prefixed canonical form으로 hash한다. Raw `symbol`과
+RiskEngine이 사용하는 normalized symbol projection도 서로 다른 field로 모두 bind한다.
+`src/order`의 유일한 risk runtime import는 narrow `verifyLiveRiskAuthority()`이며, module-owned brand,
+frozen state, approved result와 router 직전 recomputed snapshot hash를 함께 검증한다. Plain decision,
+caller-constructed object, missing/mismatched hash 또는 평가 뒤 재구성·정규화한 intent는 handoff
+authority가 아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow
+state와 synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를
+받을 수 없다. 이 계층의 존재는 row 17 official gateway, live order 또는
+`TRADING_ENABLED=true`를 허용하지 않는다.
 
 ### `src/collectors`
 
@@ -361,7 +364,7 @@ api/mcp -> storage
 api -> reports
 workflows -> market/replay/paper/risk/order/ai/reports/storage
 market/replay/paper/risk/order/ai/reports/storage -> domain
-order -> risk (type-only contract import only)
+order -> risk (opaque authority verifier only)
 tests -> 대상 module
 ```
 
