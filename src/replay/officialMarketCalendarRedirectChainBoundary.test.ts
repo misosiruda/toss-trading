@@ -28,6 +28,10 @@ import {
   parseOfficialMarketCalendarEvidenceArtifactV2
 } from "./officialMarketCalendarEvidenceArtifactV2.js";
 import {
+  createOfficialMarketCalendarPublicationPackagePlan,
+  parseOfficialMarketCalendarPublicationPackagePlan
+} from "./officialMarketCalendarPublicationPackagePlan.js";
+import {
   createOfficialMarketCalendarSourceCollectionAssembly,
   parseOfficialMarketCalendarSourceCollectionAssembly
 } from "./officialMarketCalendarSourceCollectionAssembly.js";
@@ -1831,6 +1835,65 @@ test("calendar evidence v2 rejects freshness, coverage and artifact divergence",
         fixture.options
       ),
     /does not match verified source evidence/
+  );
+});
+
+test("calendar publication package plan binds artifact bytes and exact sidecars", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  const sidecars = artifact.sourceArchiveBindings
+    .map(({ archivePath, sourceDocumentRef }) => ({
+      archivePath,
+      bytes:
+        fixture.options.sourceBytesByExchange[sourceDocumentRef.exchange][
+          sourceDocumentRef.documentId
+        ]
+    }))
+    .sort((left, right) =>
+      left.archivePath < right.archivePath ? -1 : 1
+    );
+  const prepared = createOfficialMarketCalendarPublicationPackagePlan(
+    { artifact, sidecars },
+    fixture.options
+  );
+
+  assert.equal(prepared.plan.packagePath, prepared.plan.publicationRecord.packagePath);
+  assert.equal(prepared.plan.artifactFile.contentLength, prepared.artifactBytes.byteLength);
+  assert.equal(prepared.plan.sourceArchiveFiles.length, 2);
+  assert.match(prepared.plan.planHash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(
+    parseOfficialMarketCalendarPublicationPackagePlan(
+      prepared.plan,
+      { sidecars },
+      fixture.options
+    ).plan,
+    prepared.plan
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarPublicationPackagePlan(
+        {
+          artifact,
+          sidecars: [
+            { ...sidecars[0], bytes: new Uint8Array(100).fill(90) },
+            sidecars[1]
+          ]
+        },
+        fixture.options
+      ),
+    /sidecar hash mismatch/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarPublicationPackagePlan(
+        { ...prepared.plan, planHash: hash("f") },
+        { sidecars },
+        fixture.options
+      ),
+    /does not match verified artifact and sidecars/
   );
 });
 

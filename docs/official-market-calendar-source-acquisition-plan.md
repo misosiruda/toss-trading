@@ -262,6 +262,13 @@ composite ref, package-relative path, source hash와 length는 caller 입력 없
 Filesystem package writer, durability sync, coordinator activation/recovery와 reader-time
 freshness gate는 별도 후속 단계이다.
 
+`officialMarketCalendarPublicationPackagePlan.ts`는 verified v2 artifact와 canonical exact
+sidecar set을 다시 검증해 canonical `artifact.json` bytes의 hash/length, source archive
+file descriptor, hash-derived package path와 publication record/path를 하나의 immutable
+plan hash에 결합한다. Plan field는 caller가 공급하지 않으며 stored parse도 artifact와
+sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory/file sync,
+atomic no-replace publication과 coordinator activation은 후속 단계이다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
