@@ -439,7 +439,7 @@ flowchart TD
     EL --> CC["Paper-only acquisition coordinator"]
     CC --> PF["Credential readiness preflight"]
     PF --> R["Implemented fail-closed Live RiskEngine"]
-    R --> TM["Live trading threat model"]
+    R --> TM["Implemented live trading threat model"]
     TM --> O["OrderRouter with dry-run broker gateway"]
     O --> P["Official order gateway behind explicit trading gates"]
     P --> Q["Deployment gate"]
@@ -461,6 +461,11 @@ market-order와 preview gate를 `src/risk/liveRiskEngine.test.ts`에서 검증�
 broker gateway, `OrderRouter`, API/MCP/dashboard mutation surface에 연결되지 않으며
 live trading enablement를 뜻하지 않는다.
 
+Future order path의 attack surface, runtime approval, idempotency, secret/network,
+audit, incident rollback과 dry-run 진입 조건은
+[Live Trading Threat Model](live-trading-threat-model.md)을 기준으로 한다. 이 문서는
+live order 또는 broker mutation을 승인하지 않는다.
+
 ## 제안 계층
 
 후속 구현에서 `src/broker/` 또는 동등한 broker integration layer를 도입할 수 있다. 실제 코드 도입 전에는 `docs/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`를 먼저 갱신한다.
@@ -473,7 +478,7 @@ live trading enablement를 뜻하지 않는다.
 | `TossOpenApiAccountReader` | accounts, holdings read-only snapshot 조회와 masking | order mutation, portfolio mutation |
 | `TossOpenApiOrderInfoReader` | buying power, sellable quantity, commissions 조회 | 주문 생성 판단 |
 | `TossOpenApiOrderGateway` | create/modify/cancel order HTTP call | Risk Engine 우회, Codex/MCP 직접 호출 |
-| `OrderRouter` | approved `OrderIntent`만 gateway로 전달, idempotency, retry, execution tracking | natural language order 수신 |
+| `OrderRouter` | account-scoped operation-aware intent, target-version risk/capacity reservation, version-lineage target fence, staged typed owner approval, permanent idempotency tombstone, retry, execution tracking | natural language order 수신 |
 
 ## Runtime data flow
 
@@ -501,19 +506,41 @@ sequenceDiagram
 sequenceDiagram
     participant Strategy as StrategyEngine
     participant Risk as RiskEngine
+    participant Owner as Runtime Owner Approval
     participant Router as OrderRouter
     participant Gateway as TossOpenApiOrderGateway
     participant API as Toss Open API
     participant Audit as AuditLogger
+    participant WORM as Independent WORM Checkpoint
 
     Strategy->>Risk: TradingSignal
-    Risk-->>Router: approved OrderIntent
-    Router->>Router: local idempotency and duplicate check
-    Router->>Gateway: create/modify/cancel request
-    Gateway->>API: POST order endpoint
-    API-->>Gateway: order response or error envelope
-    Gateway-->>Router: broker result
-    Router->>Audit: masked order event
+    Risk-->>Router: candidate OrderIntent and preliminary decision
+    Router->>Router: atomically commit pending market-order authorization request when required
+    Router-->>Owner: typed market-order authorization request when required
+    Owner->>Router: exact-bound marketOrderAuthorization
+    Router->>Router: serialize immutable projection/hash and atomically reserve with pending request
+    Router-->>Owner: typed request with id/generation/deadline, preview, risk and transport hash
+    Owner->>Router: exact-bound dispatchApproval
+    Router->>Router: refresh exactly-once snapshot and revalidate risk/freshness binding
+    Router->>Router: atomic approval consume, state transition and sole permit CAS
+    Router->>Router: acquire shared dispatch/gate lock; recompute bindings and verify sole permit
+    Router->>Audit: atomic CAS consumes permit/state and appends masked dispatch_attempted
+    Audit-->>Router: combined durable commit confirmed
+    Router->>WORM: append exact canonical event and request signed checkpoint
+    WORM-->>Router: signed dispatch-attempt checkpoint acknowledgement
+    Router->>Router: fresh authoritative time/high-water mark and all deadline/gate/bindings revalidated
+    alt final revalidation passes
+        Router->>Gateway: lock-held request with exact consumed permit
+        Gateway->>API: POST first network byte under the same lock
+        Gateway->>Gateway: release lock after first-byte boundary
+        API-->>Gateway: order response or error envelope
+        Gateway-->>Router: broker result
+        Router->>Audit: append acknowledgement/rejection/unknown
+    else final revalidation fails with proven zero byte
+        Router->>Audit: append post_checkpoint_revalidation_failed_zero_byte closure
+        Router->>WORM: append closure and request signed checkpoint
+        WORM-->>Router: signed zero-byte closure acknowledgement
+    end
 ```
 
 Codex는 이 flow에 직접 참여하지 않는다. Codex는 MCP read-only tools로 audit, position, risk decision, order status를 조회하고 설명할 수 있을 뿐이다.
@@ -583,10 +610,350 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 
 로컬 정책은 다음을 기본으로 한다.
 
-- `OrderIntent`에는 backend-generated `intentId`와 deterministic order hash를 둔다.
-- `OrderRouter`는 같은 `intentId` 또는 같은 order hash가 열린 상태이면 중복 전송하지 않는다.
+- Future mutation intent에는 최초 typed request에서 한 번 생성하고 retry/restart/approval
+  generation을 통과해 유지하는 backend-generated CSPRNG `logicalRequestId`, generation별
+  `intentId`, deterministic order hash,
+  CSPRNG으로 발급한 최소 128-bit opaque stable `accountScopeRef`, 별도 credential/config
+  generation과 operation을 둔다. `modify`/`cancel`은 exact
+  `targetOrderRef`, target version/state hash와 remaining quantity도 포함한다.
+- Caller가 선택할 수 없는 canonical `operationFingerprint`는 create의 account scope,
+  instrument, side, quantity, order type, limit/trigger terms와 time-in-force를 포함하고,
+  modify/cancel은 stable target lineage와 requested mutation terms를 포함한다. Raw account/order
+  identity는 fingerprint 입력이나 output에 포함하지 않는다.
+- Initial reservation은 `(accountScopeRef, operationFingerprint)` unresolved equivalence fence와
+  monotonic equivalence generation을 같은 serializable transaction에서 claim한다. Concurrent
+  equivalent create의 CAS loser는 winner lineage의 alias/blocked result를 따르며 새 identity,
+  reservation 또는 approval request를 만들 수 없다.
+- `accountScopeRef`는 low-entropy account identity의 ordinary/truncated hash로 만들지 않는다.
+  Secret provider는 canonical provider/environment/account identity마다 opaque ref를 한 번
+  발급하고 raw identity mapping을 authenticated encryption으로만 보관한다. Mapping encryption
+  key rotation은 ref를 유지하는 versioned atomic re-encryption이며 새 ciphertext 검증 전 old
+  key를 폐기하지 않는다. Mapping 누락·충돌 또는 incomplete rotation은 mutation을 fail-closed한다.
+- Row 16 dry-run의 live intent는 `dry_run_validated`에 머문다. Idempotency reservation,
+  duplicate reject와 timeout/unknown test는 별도 namespace의 `DryRunShadowRecord`에서만
+  `shadow_created -> shadow_reserved -> shadow_completed | shadow_timeout_unknown ->
+  shadow_reconciled_no_external_effect`로 진행한다. Shadow key/state는 live idempotency,
+  account/portfolio capacity, target fence, approval, permit, broker identity, reconciliation
+  queue 또는 gateway 입력과 type/runtime 수준에서 호환되지 않으며 audit는
+  `simulation_only=true`와 synthetic correlation만 기록한다.
+  최초 shadow reservation은 permanent `(scenarioId, syntheticIntentHash)` tombstone을 atomic
+  commit하며 `shadow_reconciled_no_external_effect` 뒤에도 같은 synthetic intent를 거부한다.
+- Current create-like `LiveRiskEngine`의 caller boolean이나 snapshot을 `modify`/`cancel`에
+  재사용하지 않는다. Create는 candidate를 한 번 추가하고, modify는 exact target remaining
+  terms를 replacement로 평가하되 reconciliation 전 old capacity를 해제하지 않는다. 각 risk
+  dimension에서 old/replacement max를 보존하고 endpoint atomic-replace semantics가 확인되지
+  않으면 conservative union을 reserve한다. Cancel은 새 exposure/order slot을 추가하지 않는
+  target-version-specific policy로 평가한다. Target version mismatch 또는 partial fill 변화는
+  no-send와 fresh intent/approval을 요구한다.
+- Modify/cancel final transaction은 stable `(accountScopeRef, targetOrderRef)` key의 exclusive
+  durable mutation fence를 claim하고 exact claimed/current version과 monotonic generation을
+  내부 record에 둔다. Active fence는 target의 모든 version에서 다른 operation을
+  reserve/approve하지 않는다. Broker reconciliation이 v1에서 v2 같은 version change를 확인하면
+  capacity handoff, version lineage와 fence generation을 한 transaction에서 atomic migrate하되
+  fence ownership은 terminal/no-dispatch reconciliation까지 유지하고 v2를 새 mutation에
+  eligible하게 만들지 않는다. Modify result가 ambiguous/rejected이면 old capacity와 fence를
+  유지하고, exact reconciled new target로 handoff된 뒤에만 obsolete capacity를 release한다.
+- Kill-active에서 exact reconciled open target에 active normal mutation/recovery fence가 없으면 exclusive
+  recovery lock의 serializable initializer가 stable account/target lineage, current
+  version/state/remaining, complete reconciled history와 conflicting unresolved operation/fence 부재를
+  한 CAS로 검증한다. Fresh `recoveryLineageId`와 target-lineage exclusive fence를 claim하고 observed
+  target contribution을 double-add/release하지 않는 conservative `recoveryCapacityEnvelope`,
+  `recovery_init_pending_approval`, fresh pending approval request와 empty gateway allowlist를 atomic
+  commit한다. Approval/permit은 만들지 않으며 ambiguous evidence는 blocked reconciliation로 남긴다.
+  Target이 terminal이면 cancel 없이 resulting position/cash까지 reconcile한 뒤에만 resource를 release한다.
+- Kill-active cancel recovery는 exact current broker-open target, complete audit/reconciliation history,
+  recovery request/permit 부재가 확인될 때 active fence를 `recovery_cancel_takeover` generation으로
+  atomic CAS할 수 있다.
+  Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
+  original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
+  release하지 않는다. 같은 takeover CAS가 `recovery_takeover_pending_approval`, exact request
+  identity/generation/deadline, masked preview, target/reservation/snapshot/proposed risk binding과 empty
+  gateway allowlist를 commit한다. Approval/permit은 만들지 않으며, owner에게 request를 제시한 뒤 exact
+  bound response만 active approval과 `recovery_takeover_pending_final_risk`를 만든다. Target
+  state/version이나 history가 불명확하면 takeover/cancel을 보내지 않는다.
+- `cancelRecoveryApproval`은 exact current snapshot identity/version과 approved `riskBindingHash`에
+  bind된다. Fresh target/account evidence와 cancel-specific risk/freshness의 all-rule final Risk
+  Engine revalidation이 통과한 뒤에도 recomputed hash를 approved hash와 constant-time exact
+  compare한다. Mismatch면 old approval을 consume하거나 permit을 만들지 않고 exact current
+  `*_pending_final_risk`/active approval/no-permit/empty-allowlist/current-generation no-attempt CAS로
+  `recovery_approval_invalidated`/`recovery_approval_closed`에 닫는다. Inherited
+  fence/capacity/history를 유지하며 verified owner `recoveryApprovalRetry`만 fresh snapshot/hash에
+  bind된 새 request/approval generation을 만들 수 있다. Exact hash까지 일치한 transaction만 active
+  owner recovery approval을 one-time consume하면서 state,
+  sole recovery permit과 그 permit 하나의 gateway allowlist를 atomic commit한다. 이 final transaction
+  전 recovery dispatch surface는 disabled/no-permit이다.
+- Recovery pre-permit CAS의 attempt 부재는 complete audit chain 전체가 아니라 exact current
+  recovery intent/request/approval generation과 permit identity에 bind된 `dispatch_attempted`의
+  부재를 뜻한다. Prior generation의 signed attempt/no-effect/terminal evidence는 삭제하지 않고
+  보존한다. `recovery_retry_pending_approval`은 proven prior attempt를 전제로 하며 prior outcome이
+  ambiguous하면 생성하지 않는다.
+- Recovery init/takeover/rebind/retry의 모든 `*_pending_approval`과 `*_pending_final_risk`는 target이
+  먼저 terminal이 되면 exact account/target lineage/version/state, recovery state/version, current
+  request/approval generation, no-permit/empty-allowlist/current-generation no-attempt를 한 CAS로
+  검증한다. 같은 transaction은 current request와 존재하는 active approval을
+  `recovery_target_terminal`로 permanently close하고 `recovery_terminal_pending_reconciliation`으로
+  전이한다. 새 rebind/retry/request/approval/permit은 만들지 않으며 delayed response는 거부한다.
+  Terminal/identity evidence가 ambiguous하면 blocked reconciliation을 유지한다.
+- `recovery_terminal_pending_reconciliation`은 target order terminal 관찰만으로 inherited lineage
+  fence/capacity/history를 release하지 않는다. Target order와 그 체결 결과의 position/cash가 exact
+  read-only broker evidence 및 local ledger와 reconciled된 뒤에만 `terminal_reconciled` CAS가 resource를
+  release한다.
+- Final risk 뒤 sole recovery permit이 생성된 `send_reserved`에서 target이 first byte 전에 terminal이
+  되면 exact recovery state/version, account/target lineage/version/state, sole permit identity의
+  unconsumed 상태와 no-`dispatch_attempted`/no-first-byte를 한 CAS로 검증한다. 같은 transaction은 permit을
+  `recovery_target_terminal_post_permit`으로 영구 fence하고 gateway allowlist를 비우며 recovery epoch를
+  advance한 뒤 `recovery_terminal_pending_reconciliation`으로 전이한다. Consumed/attempted permit 또는
+  ambiguous terminal evidence는 no-dispatch로 추정하지 않고 blocked reconciliation에 남긴다.
+- Takeover 뒤 같은 account/target이 open인 채 partial fill/version/remaining quantity가 바뀌면
+  recovery `*_pending_approval`에서는 exact state/version과 pending request generation, valid
+  approval/permit 부재, empty gateway allowlist와 complete audit chain에서 exact current recovery
+  generation의 `dispatch_attempted` 부재를,
+  `*_pending_final_risk`에서는 exact state/version, active/unconsumed old recovery approval,
+  no-permit/empty-allowlist/current-generation no-attempt를 target mismatch와 한 CAS로 검증한다. 이 pre-permit
+  `recovery_target_changed` CAS는 old request 또는 approval/request를 permanently close하고 fence/capacity/history를
+  유지한 채 generation, fresh recovery intent/pending request와
+  `recovery_rebind_pending_approval`을 함께 commit한다. Rebind 전후 gateway는 disabled/no-permit다.
+  Final-risk 뒤에는 exact old recovery state와 sole unconsumed permit/attempt 부재의 post-permit
+  no-dispatch 또는 definitive broker rejection/`zeroByteAttemptFence`의 terminal no-effect를 먼저
+  durable하게 증명한다. 같은
+  `recoveryLineageId` 안에서 fence ownership/capacity/history를 유지하고 generation을 증가시키며
+  current target snapshot, fresh recovery intent/pending request로
+  `recovery_rebind_pending_approval`을 atomic CAS한다. Fresh owner approval/risk revalidation 뒤에만
+  새 sole permit을 만들고 old permit은 영구 fence한다. Consumed/attempted outcome의 no-effect가
+  proven되지 않았거나 unknown, account/target lineage mismatch 또는 ambiguous이면 rebind하지 않고
+  blocked reconciliation에 남긴다.
+- Target이 같은 version/state/remaining quantity로 open인 경우 prior recovery cancel의 definitive
+  broker rejection, `zeroByteAttemptFence`, `restart_unconsumed_permit` 또는 pre-dispatch
+  noDispatchFence가 complete audit chain으로 no-effect를 증명해야만 same-lineage
+  `recovery_retry_pending_approval` CAS를 허용한다. Fence ownership, inherited conservative capacity,
+  original/prior-attempt history를 유지하고 generation, fresh backend intent/pending request와 owner
+  approval/risk revalidation을 새로 만든 뒤 sole permit 하나만 발급한다. Ambiguous outcome은 retry하지
+  않고 blocked reconciliation에 남긴다.
+- Recovery init/takeover/rebind/retry의 pending approval에서 typed owner decline, authoritative request
+  expiry, allowlisted channel failure 또는 malformed response가 확정되면 exact state/version,
+  request generation, valid approval/permit과 exact current recovery generation의
+  `dispatch_attempted` 부재, empty gateway allowlist를
+  `recovery_approval_not_issued` CAS로 닫는다. Fresh approval이 만들어진 뒤 final risk 전
+  expiry/revoke/binding invalidation은 exact active approval과 no-permit/current-generation
+  no-attempt를 각각
+  `recovery_approval_expired`/`recovery_approval_revoked`/`recovery_approval_invalidated`로 닫는다.
+  모든 closure는 request/approval tombstone을 남긴 `recovery_approval_closed`이며 inherited
+  lineage fence, conservative capacity와 original/prior history를 release하지 않는다.
+- Recovery approval closure 뒤 자동 재요청은 금지한다. Verified owner의 typed
+  `recoveryApprovalRetry`가 exact closed generation/reason과 fresh current target evidence에 bind된
+  경우에만 generation을 증가시키고 같은 phase의 fresh pending request를 atomic commit한다. Target이
+  달라졌으면 `recovery_rebind_pending_approval`, terminal이면 exact target-terminal CAS로 current
+  request/approval을 닫고 `recovery_terminal_pending_reconciliation`으로만 이동한다. 새 approval/permit을
+  transition 자체에서 만들지 않고 gateway allowlist를 비워 둔다. Init retry는 fence-free target을
+  재요구하지 않고 exact unchanged target과 current `recoveryLineageId`가 소유한 exclusive
+  fence/capacity/history를 검증·유지하면서 fresh request generation만 만든다. Evidence가 ambiguous하면
+  blocked로 유지한다.
+- 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
+  current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
+  pending `approvalRequest` 생성 및 `approval_required` 전이와 하나의 serializable durable
+  transaction에서 commit한다. Request 없는 standalone final-reservation durable state는 없다.
+  이 transaction은 dispatch arbiter의
+  current gate lock/epoch에서 exact enabled snapshot도 검증하며 kill-active/disabled/mismatched이면
+  reservation, target fence나 approval request를 만들지 않는다. Reservation commit 직후 disable이
+  경쟁해 이기면 exact `approval_required` state, pending request와 no-permit/no-dispatch를 CAS해
+  `gate_disabled` noDispatchFence와 tombstone을 commit하고 capacity/fence를 atomic release한다.
+  Reservation lineage는 terminal reconciliation까지 보존하고 logical capacity는 아래 exactly-once
+  source로 후속 risk evaluation에 포함한다.
+- Final transaction은 exact risk/reservation identity로 backend-generated `approvalRequestId`,
+  monotonic generation, authoritative requested/deadline과 owner channel을 가진 durable pending
+  request 및 `approval_required` 전이를 reservation과 함께 atomic commit한다. Trusted serializer는
+  그 전에 immutable non-secret transport envelope을 만들고 length-prefixed canonical
+  `(schemaVersion, method, providerOriginId, registeredPathTemplateId, opaque targetOrderRef,
+  non-sensitive query, semanticHeaderBindings, accountScopeRef, credentialGeneration, exact non-sensitive body
+  bytes)`의 domain-separated SHA-256 `transportRequestHash`도 같은 record에 bind한다. Create처럼
+  raw broker identity가 없는 exact registered path만 envelope에 저장한다. Modify/cancel은
+  encrypted target mapping으로 opaque `targetOrderRef`를 raw broker order id에 process-local
+  resolve하고, dedicated non-exportable target-route key가 domain/schema/provider/environment,
+  template id, target ref, credential generation과 exact late-materialized route bytes를
+  HMAC-SHA-256한 `targetRouteMac`/key generation만 reservation, approval과 permit에 bind한다. Raw
+  broker order id와 그 값을 포함한 path/query는 persist/log/output하지 않는다. Endpoint registry는
+  모든 outbound header를 `semantic_exact`, `semantic_mac`, `credential_only`,
+  `fixed_transport_only` 중 하나로 schema-versioned 분류하며 unknown/unclassified header와 허용되지
+  않은 duplicate를 socket 전에 거부한다. `Content-Type`과 official idempotency key 등 broker
+  behavior를 바꾸는 모든 header는 lower-case canonical name/ordered occurrence와 exact outbound
+  value bytes를 `semanticHeaderBindings`에 넣는다. 원문 persistence가 금지된 value는 dedicated
+  non-exportable key가 domain/schema/provider/environment/logical request와 exact name/value bytes를
+  HMAC-SHA-256한 MAC/key generation을 대신 넣는다. 이 tagged list 전체가 `transportRequestHash`에
+  포함되며 registry/version 또는 MAC generation 변경은 fresh transport hash/approval을 요구한다.
+  Authorization token은 `credential_only`로 raw value를 제외하되 exact credential generation을
+  bind한다. Raw account header value는 제외하고 secret provider의
+  dedicated non-exportable key로 domain/schema/provider/environment/credential generation, exact
+  header name/bytes를 HMAC-SHA-256한 `accountHeaderMac`/key generation을 reservation, approval과
+  permit에 bind한다. 같은 MAC/key generation을 `semantic_mac` tagged entry로
+  `semanticHeaderBindings`/`transportRequestHash`에도 포함하고 raw identifier는 persist/log/output하지 않는다. 그 뒤 exact request
+  identity/generation/deadline, reservation/risk/transport/target-route/account-header binding과
+  preview를 한 typed payload로
+  owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
+  뒤에만 dispatch permit을 발급한다.
+- `marketOrderPolicy=requires_approval`이면 final transaction 전에 typed
+  `marketOrderAuthorizationRequest` identity/generation/deadline과 owner channel을 pending으로 atomic
+  commit한 뒤 owner에게 제시한다. Exact-bound typed `marketOrderAuthorization`을
+  intent/account/order projection/preview/policy/actor/expiry에 bind해 받는다. Final transaction만 이를 one-time consume해 trusted internal
+  `marketOrderApproved` evidence로 변환하며 caller boolean을 허용하지 않는다. 이후 exact
+  final risk/reservation에는 별도 `dispatchApproval`을 받는다.
+- Preliminary request의 typed owner decline, authoritative request expiry, allowlisted channel failure 또는
+  malformed response는 exact `market_order_authorization_required` state/version, pending request
+  generation, valid authorization과 final reservation/dispatch request/permit/attempt 부재를 한 CAS로
+  검증해 `market_order_authorization_not_issued` noDispatchFence와 permanent request tombstone으로
+  닫는다. Valid authorization 뒤 final risk 전 expiry/revoke/binding invalidation은 exact active/unconsumed
+  authorization과 같은 no-final-reservation/no-permit evidence를
+  `market_order_authorization_closed` noDispatchFence 및 authorization/request tombstone으로 닫는다.
+  Delayed response와 closed authorization은 재사용하지 않으며 retry는 fresh backend intent/request를
+  요구한다. Ambiguous evidence는 blocked로 남긴다.
+- Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
+  dispatch permit 생성 직전에 fresh broker/local exactly-once effective snapshot으로 모든
+  risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
+  binding, immutable `transportRequestHash`, semantic-header bindings/MAC generation,
+  `targetRouteMac`, `accountHeaderMac`과 각 key generation이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
+  commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
+  exact `approval_required` state/version, active/unconsumed approval, permit/dispatch 부재와
+  old/current mismatch를 한 CAS로 증명한 `pre_permit_binding_invalidated` noDispatchFence로 닫고
+  새 identity/hash, final reservation/preview/approval을 요구한다.
+- `approval_required`에서 payload 변경이 감지되면 exact immutable old
+  intent/order/preview/transport/account binding hash와 normalized new payload hash mismatch,
+  pending request 또는 active/unconsumed approval id/generation/state, permit/dispatch 부재를
+  `pre_permit_payload_changed` CAS로 검증한다. 같은 CAS가 request/approval closure와 permanent
+  intent tombstone을 commit한 뒤에만 capacity/fence를 release하고 fresh intent/request를 만든다.
+- Approval record는 monotonic `revocationVersion`과 `active | consumed | revoked` state를
+  보존한다. Verified owner revoke는 dispatch와 같은 linearizable lock/fencing epoch에서
+  write-ahead CAS하며, first network byte 전에 revoke가 이기면 approval version/epoch를
+  advance하고 그 approval의 모든 reserved-unsent permit을 영구 fence한다. Dispatch가 먼저
+  byte boundary를 넘으면 revoke는 `too_late_for_dispatch`를 반환하고 in-flight/unknown
+  reconciliation을 유지한다. Restart는 revocation state/version을 복구하기 전까지 no-send다.
+- Gateway도 bounded immediate-dispatch deadline 안에서 first network byte 전에 clock,
+  current approval revocation state/version, account/risk binding과 permit을 재검증한다.
+  Permit deadline은 approval expiry, evidence/session freshness deadline과 configured immediate
+  window 중 최솟값이며 approval보다 오래 살아남지 않는다. Approval이 permit 생성 뒤 만료되면
+  exact `send_reserved`/unconsumed permit을 `permit_expired_or_stale` noDispatchFence로 CAS한다.
+  Gateway는 exact outbound non-sensitive method/template/query/body projection, semantic-header
+  exact/MAC list와 current account binding의 canonical hash를 다시 계산해 approval/permit hash와 constant-time
+  compare한다. Modify/cancel은 first-byte lock에서 exact target route buffer를 late-materialize하고
+  같은 buffer로 `targetRouteMac`을 다시 계산해 permit MAC/key generation과 constant-time
+  compare한다. Raw broker order id와 materialized path/query는 durable state에 쓰지 않으며 compare와
+  network write 사이에 route buffer 교체를 금지한다. Semantic header도 비교한 immutable buffer를
+  그대로 write하고 compare와 first byte 사이 교체를 금지한다. Authorization token은 raw value를
+  transport hash에서 제외하되 credential generation을 bind한다. Raw account header는 first byte에 쓸
+  exact account header buffer로 current-key MAC을 다시 계산해 permit MAC/key generation과
+  constant-time compare하고 같은 lock에서 buffer 교체를 금지한다. MAC rotation은 new generation과
+  fresh approval을 요구한다. Transport/semantic-header/target-route/account-header mismatch는
+  unconsumed permit과 no-dispatch를 CAS한 `transport_request_mismatch`/
+  `semantic_header_mismatch`/`target_route_mismatch`/`account_header_mismatch` noDispatchFence이며
+  first network byte를 금지한다.
+  Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
+  write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
+  worker/replay 중 하나만 성공한다. Signed checkpoint acknowledgement 뒤에도 같은 first-byte lock에서
+  fresh authoritative time/high-water mark와 approval/evidence/session/immediate deadline, gate epoch,
+  revocation version, snapshot/risk/account/transport binding을 exact 재검증한다. 통과하면 immutable
+  buffer를 즉시 write한다. 실패하면 exact consumed permit/state/checkpoint head와 no-write/no-buffer-handoff/
+  zero-byte proof를 `post_checkpoint_revalidation_failed_zero_byte` `zeroByteAttemptFence`로 commit하고
+  closure checkpoint acknowledgement까지 확인한다. Closure checkpoint 실패나 ambiguous byte boundary는
+  blocked reconciliation이며 permit을 재사용하지 않는다. Consume 뒤 crash/unknown도 permit 재사용 없이
+  reconciliation한다.
+- Startup recovery arbiter는 먼저 exclusive dispatch/gate recovery lock을 획득하고 fencing epoch를
+  advance해 stale worker를 차단한다. Recovered durable high-water mark까지 externally checkpointed된
+  complete audit chain과 exact `send_reserved` state/version에서 sole permit이 unconsumed이고
+  `dispatch_attempted`가 없으면,
+  first-byte invariant상 전송되지 않은 `restart_unconsumed_permit` noDispatchFence와 permanent
+  tombstone을 한 CAS로 commit해 current attempt를 닫는다. Attempt-local capacity/fence release는
+  lineage rules를 따르며, `recovery_cancel_takeover`이면 superseded original operation이 ambiguous한
+  동안 inherited conservative capacity envelope와 target lineage fence를 유지한다.
+  Permit consume/attempt가 존재하거나 audit, lock ownership 또는 state가 불명확하면 이 cause를
+  금지하고 `acknowledgement_unknown`/blocked reconciliation로 보낸다. 어떤 경우에도 recovered
+  permit을 resend하지 않는다.
+- `stopped_before_dispatch`는 arbiter가 first network byte와 `dispatch_attempted`가 없음을
+  같은 lock에서 증명하고 cause-specific durable `noDispatchFence`를 commit한 경우에만
+  terminal candidate가 된다. Record는 exact intent/reservation/approval/permit version,
+  epoch/snapshot, reason, tombstone/audit과 함께 gate-disable winning fence, approval-revocation
+  CAS/version, post-permit binding invalidation CAS, pre-permit binding mismatch와 no-permit CAS,
+  authoritative permit expiry/staleness, authoritative approval expiry와 active/unconsumed
+  approval-required state CAS, exact outbound transport-hash/target-route-MAC/account-header-MAC
+  mismatch CAS, exclusive startup recovery lock/advanced epoch에서 exact `send_reserved`와 sole
+  unconsumed permit/complete audit chain의 attempt 부재를 묶은 restart CAS,
+  same-lineage recovery-target mismatch와 old unconsumed permit CAS 또는 exact recovery
+  pending-request/no-approval/no-permit/empty-allowlist/current-generation attempt 부재 CAS 또는
+  pending-final-risk/active old approval/no-permit/empty-allowlist/current-generation attempt 부재 CAS,
+  approval-not-issued request
+  closure 또는 exact old/new binding mismatch와 request/approval/no-permit을 묶은 pre-permit
+  payload-change CAS 중 해당 cause evidence를 포함한다.
+  `approval_not_issued`는 exact normal `approval_required` 또는 recovery pending-approval state와
+  pending request generation, valid approval/permit 부재 및 typed owner decline, authoritative request
+  expiry, allowlisted channel-unavailable 또는 malformed-response evidence를 request tombstone과 한
+  CAS로 commit한다. Delayed response는 closed generation으로 거부한다. Normal flow는 새
+  intent/reservation/request를 요구하고 recovery flow는 inherited fence/capacity를 유지한 채 verified
+  owner retry가 있을 때만 fresh request generation을 만든다. Approval 존재 여부가 불명확하면
+  blocked reconciliation에 남긴다. CAS loser/duplicate observation은
+  no-dispatch 증거가 아니며 winner가 permit을 consume했거나 outcome이 불명확하면
+  `acknowledgement_unknown`/blocked reconciliation로 보낸다. Evidence가 완성되기 전에는
+  capacity나 target mutation fence를 release하지 않는다.
+  Recovery-target-change cause는 old attempt만 no-dispatch로 닫고 lineage fence/capacity를
+  release하지 않으며 `recovery_rebind_pending_approval`에만 인계한다.
+- Permit consume과 signed `dispatch_attempted` 뒤의 confirmed zero-byte failure는 pre-attempt
+  `noDispatchFence`를 사용하지 않는다. Exact transport instance/generation에서 mutation request
+  write function과 kernel/TLS buffer handoff가 시작되지 않았고 request-byte counter가 0임을 같은
+  lock에서 증명한 connect/TLS/pre-write failure 또는 signed acknowledgement 뒤 final time/binding
+  revalidation failure만 `dispatch_failed_zero_byte`와 cause-specific durable `zeroByteAttemptFence`로
+  commit한다. Post-checkpoint cause는 exact signed head, committed clock high-water mark와 failed
+  deadline/binding reason을 포함한다. Target operation은 exact unchanged broker target/version
+  readback 뒤에만 mutation delta capacity와 target fence를 release한다. 단,
+  `recovery_cancel_takeover` lineage에서는 current recovery attempt만 닫고 superseded original
+  operation이 terminal 또는 proven no-dispatch일 때까지 inherited capacity/fence를 유지한다. Write invocation, buffer
+  handoff 또는 byte count가 불명확하면 `acknowledgement_unknown`이며 intent/permit을 재사용하지
+  않는다.
+- Cancel-recovery permit consume 자체는 recovery gate를 disable하지 않는다. Arbiter는 같은
+  dispatch/gate lock을 first network byte boundary까지 유지하고 exact consumed permit 외 요청을
+  거부한다. First byte 뒤 `dispatch_won` evidence를 append한 다음에만 gate를 disable하고 epoch를
+  advance한다. Pre-consume expiry/staleness는 authoritative deadline/freshness, exact unconsumed
+  permit/state와 `dispatch_attempted` 부재를 `permit_expired_or_stale` noDispatchFence, gate disable과
+  epoch advance로 atomic commit하며 `zeroByteAttemptFence`를 사용하지 않는다. Permit consume과
+  signed `dispatch_attempted` 뒤 실제 connect/TLS/pre-write failure 또는 post-checkpoint final
+  revalidation failure의 exact zero-byte proof만 post-attempt cause-specific `zeroByteAttemptFence`와
+  disable을 원자적으로 commit하고 unchanged target reconciliation로
+  current recovery cancel의 no-effect만 확인한다. Takeover가 없고 다른 unresolved lineage가 없을
+  때만 attempt-local capacity/fence를 release한다. Takeover lineage에서는 이 proof가 superseded
+  original modify/cancel outcome을 종료하지 않으므로 original operation과 external state가 terminal
+  reconcile될 때까지 conservative capacity envelope와 stable target fence를 유지한다. Target이
+  unchanged open이면 current attempt를 재사용하지 않고 위 same-lineage
+  `recovery_retry_pending_approval`과 fresh owner approval로만 새 cancel을 시도할 수 있다. Boundary가
+  불명확한 crash/socket 결과는 startup kill-active
+  `acknowledgement_unknown` reconciliation로 보내며 permit/gate를 재사용하지 않는다.
+- Broker acknowledgement/open/partial fill이 snapshot에 나타나면 durable intent/reservation/
+  broker correlation으로 reservation contribution을 broker order/position/cash contribution에
+  atomic handoff한다. Effective snapshot은 logical order당 정확히 한 capacity source만
+  포함하며 ambiguous/missing correlation은 새 risk approval/send를 fail-closed로 차단한다.
+- Pre-dispatch revalidation은 durable current `reservationId`에 한해 자기 capacity와 duplicate
+  marker를 snapshot에서 원자적으로 제외하고 candidate intent를 한 번 다시 적용한다.
+  다른 reservation/tombstone은 유지하며, self state/version/intent/hash/capacity projection이
+  다르거나 이미 broker-visible이면 replace하지 않고 no-send reconciliation한다.
+- 최초 reservation은 `logicalRequestId`, `operationFingerprint`, `intentId`, attempt generation과
+  order hash를 연결한 permanent lineage tombstone을 write-ahead로 만들며 rejected,
+  stopped-before-dispatch 또는 terminal reconciliation 뒤에도 삭제, 만료 또는 재사용하지 않는다.
+- `OrderRouter`는 reconnect/retry/restart와 fresh approval generation에서도 같은
+  `logicalRequestId`를 유지한다. 기존 lineage가 unknown/reconciliation pending/blocked 또는
+  broker-visible인 동안 같은 logical id나 equivalent `operationFingerprint`인 create는 caller가
+  새 identity/hash를 제출해도 기존 record의 alias로 처리하고 새 reservation/approval/permit/send를
+  만들지 않는다.
+- Equivalent create를 새 logical operation으로 분류하려면 prior broker outcome과 capacity
+  handoff/terminal state가 exact read-only evidence로 reconciliation되어야 한다. 그 뒤 verified
+  owner의 one-time `newOperationApproval`이 old logical request/fingerprint, evidence hash와 explicit
+  new-operation reason에 bind된 경우에만 backend가 새 `logicalRequestId`와 successor equivalence
+  generation을 같은 CAS에서 발급한다. 둘 중 하나라도 없거나 equivalence가 불명확하면 blocked
+  reconciliation에 남긴다.
+- Genuinely new create/modify/cancel operation은 fresh intent/risk reservation/approval/permit을
+  사용하며 기존 approval, permit 또는 attempt identity를 승계하지 않는다.
+- Kill-active incident recovery는 normal create/modify/cancel gate와 permit을 모두 차단하고,
+  exact reconciled target/version/account에 bind된 typed one-time `recovery_cancel` permit만
+  별도 recovery epoch에서 허용한다. Normal cancel intent/approval/permit은 이 recovery
+  transition으로 승격하거나 재사용하지 않는다. Cancel 결과와 position/cash reconciliation
+  전에는 target capacity를 release하지 않으며 current 문서가 실제 cancel endpoint 구현을
+  승인하지 않는다.
 - mutation 요청이 timeout된 경우에는 즉시 재전송하지 않고 order history/detail 조회로 상태를 먼저 확인한다.
-- 공식 API가 idempotency key를 지원하면 local `intentId`와 매핑한다.
+- 공식 API가 idempotency key를 지원하면 stable local `logicalRequestId`와 매핑하고 attempt마다
+  새 broker key로 바꾸지 않는다.
 - 공식 API가 idempotency key를 지원하지 않으면 retry policy를 더 보수적으로 제한한다.
 
 ## Audit와 masking
@@ -597,13 +964,64 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | --- | --- | --- |
 | API group, method, path template | 가능 | 가능 |
 | requestId, rate limit header | 가능 | 가능 |
-| account id | masked 또는 encrypted local store만 | 금지 |
+| stable accountScopeRef | CSPRNG opaque masked ref만 | masked ref만 |
+| raw account id | encrypted local mapping 검토 필요 | 금지 |
 | access token, client secret | 금지 | 금지 |
-| broker order id | masked 또는 encrypted local store만 | 금지 |
+| broker order id | authenticated encrypted target mapping만 | 금지 |
+| materialized target path/query | 금지, targetRouteMac만 저장 | 금지 |
 | execution detail | encrypted local store 검토 필요 | 금지 |
 | normalized market quote | 가능 | 가능 |
 
 문서, fixture, PR body에는 real account data, token, order id, execution data를 넣지 않는다.
+Mutation dispatch는 permit consume과 masked `dispatch_attempted`를 first byte 전에 한 durable
+commit으로 기록하고, 이후 acknowledgement/rejection/unknown을 append한다. Pre-dispatch audit
+commit 실패는 no-send이며 attempt만 남은 restart는 unknown reconciliation로 처리한다. Restart가
+exact `send_reserved`, sole unconsumed permit과 complete audit chain의 attempt 부재를 exclusive
+recovery lock에서 증명한 경우만 `restart_unconsumed_permit` no-dispatch로 닫는다.
+
+Audit event는 canonical masked serialization, immutable stream id, monotonic sequence,
+`previousEventHash`와 domain-separated SHA-256 `eventHash`로 연결한다. Mutation runtime과
+delete/rewrite 권한을 공유하지 않는 independent signer/append-only WORM checkpoint boundary가
+각 security-critical `(stream, sequence, exact canonical masked event bytes, hash, generation,
+keyId)`를 보관하고 서명한다. Hash/sequence anchor만 남기지 않으며 archived payload로 genesis부터
+chain을 재계산할 수 있어야 한다. Runtime은 pinned
+public verification key만 가지며 `dispatch_attempted`의 signed checkpoint acknowledgement가
+first byte 전에 없으면 send하지 않는다. Result/unknown/terminal checkpoint도 해당 state 신뢰나
+capacity/fence release 전에 필요하다.
+
+Signed dispatch-attempt acknowledgement가 돌아온 뒤에도 같은 first-byte lock에서 fresh authoritative
+time/high-water mark와 deadline/gate/revocation/snapshot/risk/account/transport binding을 다시 검증한다.
+실패하면 exact consumed permit/checkpoint head와 zero-write proof를 signed
+`post_checkpoint_revalidation_failed_zero_byte` closure로 남긴 경우에만 terminal candidate가 되며,
+ambiguous byte boundary나 closure checkpoint 실패는 blocked reconciliation이다.
+
+Local event prefix는 checkpoint tuple만으로 삭제하지 않으며 future default는 automatic deletion
+없음이다. Prefix discard를 도입하려면 independent boundary가 모든 covered canonical payload를 WORM
+archive에서 readback해 genesis chain을 검증하고 archive objects/range/retention deadline을 signed
+retention manifest로 먼저 commit해야 한다. Startup/restart는 mutation-disabled 상태에서 dispatch lock
+밖의 local+archived payload를 genesis부터 captured head까지 재계산한다. Independent boundary는 exact
+stream/generation, covered range/object identity, retention-manifest hash, verified head와 verification
+generation을 signed `auditVerificationManifest`로 atomic publish하며 runtime은 pinned key로 검증한
+durable `verifiedAuditHead` 뒤에만 mutation을 enable한다. Prefix discard, key rotation과 new-generation
+genesis 전에도 full replay가 필요하다.
+
+Dispatch lock은 전체 archive를 replay하지 않는다. Fresh signed verification manifest의 base head와
+current independently checkpointed head가 exact sequence/previous-hash extension이고 rollback/fork가
+없음을 signed incremental checkpoint/manifest로 검증한다. Independent boundary는 각 security-critical
+canonical payload를 WORM에 append하면서 previous verified head에서 current head로의 object identity,
+generation/key-bound extension을 서명한다. `dispatch_attempted` append 뒤 새 signed current-head
+acknowledgement가 같은 lock에서 검증돼야 first byte를 허용한다. Incremental manifest는 archived payload를
+대체하거나 prefix 삭제 권한이 아니다.
+
+Background verifier는 immutable captured head를 dispatch lock 밖에서 genesis replay하고 성공 manifest만
+atomic publish한다. Repository-controlled freshness/sequence-lag bound 초과, sequence/payload gap,
+hash/signature mismatch, deletion/reordering/rewrite, retention-manifest gap, checkpoint rollback/fork,
+local/external head mismatch 또는 unknown key는 kill-active/no-send/no-terminal이다. Runtime은 chain을
+truncate/reseed하지 않고 원본 evidence를 보존해 owner-visible integrity incident와 read-only broker
+reconciliation로 전이한다. Verified owner의 원인 확인과 signed new-generation genesis 없이는 재개하지
+않으며, old canonical payload archive/checkpoint/retention manifest를 유지하고 key rotation도 old-key
+continuity record와 새 pinned key를 요구한다. 다른 절의 `complete audit chain`은 fresh signed full-replay
+manifest와 그 base 이후 current head까지의 exact signed incremental extension을 의미한다.
 
 ## 공식 API와 `tossinvest-cli` 관계
 
@@ -707,8 +1125,60 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - account header가 필요한 endpoint에서 누락 시 fail-closed 처리한다.
 - read-only market/account adapter는 mutation endpoint를 호출하지 않는다.
 - order gateway는 `TRADING_ENABLED=false` 또는 `ORDER_MUTATIONS_ENABLED=false`에서 실행되지 않는다.
+- disabled gate에서는 final risk reservation, target fence와 approval request도 생성되지 않고 race-loser reservation은 atomic no-dispatch closure된다.
+- Row 16 dry-run reservation/timeout/unknown 검증은 isolated shadow state로만 수행되고 live capacity, permit, gateway 또는 reconciliation queue에 닿지 않는다.
+- Row 16 shadow tombstone은 no-external-effect terminal 뒤에도 동일 synthetic intent의 중복 reservation을 차단한다.
 - Risk Engine reject가 있으면 `OrderRouter`가 broker gateway를 호출하지 않는다.
-- duplicate order intent는 전송되지 않는다.
+- permanent logical-request lineage tombstone은 terminal 뒤에도 동일 request replay를 차단한다.
+- timeout/unknown create의 equivalent resubmission은 새 identity/hash로 우회할 수 없고 prior reconciliation과 one-time owner approval 뒤에만 새 logical operation이 된다.
+- concurrent distinct intent는 shared portfolio/account risk capacity를 atomic reserve하지 못하면 전송되지 않는다.
+- acknowledged/open/partial-filled order와 active reservation은 durable correlation으로 exactly once만 capacity에 반영된다.
+- concurrent worker가 같은 approval/intent를 재개해도 approval/state/sole-permit CAS는 하나만 성공한다.
+- owner approval revoke가 dispatch보다 먼저 이기면 reserved-unsent permit이 영구 fence되고 network write가 없다.
+- 모든 stopped-before-dispatch 원인이 전용 durable no-dispatch evidence 없이는 terminal/release되지 않는다.
+- pre-permit approval expiry는 authoritative clock과 active/unconsumed approval-required state CAS로 종료한다.
+- approval이 발급되지 않은 decline/timeout/channel-failure request는 exact generation tombstone CAS로 종료한다.
+- dispatch CAS loser는 concurrent winner의 send 가능성이 있으면 unknown reconciliation로 전이한다.
+- restart된 send_reserved의 sole permit이 unconsumed이고 dispatch_attempted가 없으면 전용 no-dispatch CAS로 종료한다.
+- recovery gate는 first-byte dispatch winner 또는 zeroByteAttemptFence 뒤에만 disable된다.
+- signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
+- signed checkpoint acknowledgement 뒤 time/binding을 재검증하고 실패하면 consumed-permit zero-byte closure로 종료한다.
+- delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
+- canonical transportRequestHash가 approval/permit과 exact outbound non-sensitive projection에서 일치하지 않으면 first byte 전에 차단한다.
+- 모든 allowlisted semantic header는 exact bytes 또는 keyed MAC으로 transportRequestHash에 bind되고 unknown/unclassified header는 first byte 전에 차단된다.
+- modify/cancel raw broker order id는 opaque target ref로만 durable하게 참조하고 exact late-materialized route의 keyed MAC이 permit과 다르면 저장 없이 first byte 전에 차단한다.
+- exact outbound account header bytes의 keyed MAC이 permit binding과 다르면 raw account를 저장하지 않고 first byte 전에 차단한다.
+- pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
+- market order는 typed pre-risk authorization을 final risk transaction이 consume하고 별도 dispatch approval을 요구한다.
+- market-order authorization 실패/만료/revoke/binding invalidation은 exact request/authorization tombstone과 no-final-reservation/no-permit CAS로 종료한다.
+- modify/cancel은 exact target order/version과 operation-specific replace/release risk semantics를 사용한다.
+- modify는 old capacity를 reconciliation까지 보존하고 stable target fence가 version lineage 전체의 concurrent modify/cancel을 차단한다.
+- accountScopeRef는 ordinary account hash가 아닌 CSPRNG opaque encrypted mapping이며 key rotation에도 ref를 유지한다.
+- intent/reservation/approval/permit/gateway accountScopeRef가 mismatch이면 전송되지 않는다.
+- approval request는 owner에게 제시되기 전에 durable commit되고 response가 request identity/generation/deadline에 exact bind된다.
+- final reservation, pending approval request와 approval_required 전이는 atomic이며 request 없는 durable reservation 상태가 없다.
+- pre-permit binding mismatch와 post-permit approval expiry는 각각 no-permit 또는 unconsumed-permit CAS로 안전 종료된다.
+- pre-permit payload 변경은 exact old/new binding mismatch와 request/approval/no-permit CAS 없이는 release되지 않는다.
+- kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
+- active mutation fence가 없는 reconciled open target도 atomic recovery_init fence/capacity/request를 통해서만 cancel-only recovery에 진입한다.
+- cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
+- cancel-recovery takeover는 durable pending request를 owner에게 제시한 뒤에만 exact-bound approval을 수락한다.
+- cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
+- cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.
+- cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
+- 모든 cancel-recovery pending-approval/final-risk state는 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 inherited lineage resource를 유지한다.
+- cancel-recovery send_reserved는 first byte 전 exact terminal target과 sole unconsumed permit/no-attempt를 한 CAS로 증명해 permit을 fence하고 inherited lineage resource를 reconciliation까지 유지한다.
+- recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
+- closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
+- recovery init approval retry는 fence-free target을 재요구하지 않고 same-lineage owned fence/capacity/history를 유지한다.
+- takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
+- recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale no-dispatch CAS로 종료한다.
+- proven no-effect recovery cancel은 unchanged target에서 same-lineage fresh approval retry만 허용한다.
+- recovery target partial fill/version 변경은 prior attempt의 proven no-dispatch/terminal no-effect 뒤 same-lineage fence rebind와 fresh approval만 허용한다.
+- masked dispatch_attempted event가 first network byte 전에 durable commit되지 않으면 전송되지 않는다.
+- canonical audit hash chain과 external signed checkpoint가 불일치하면 mutation/terminal release가 fail-closed다.
+- WORM boundary는 canonical event payload를 보존하며 hash-only checkpoint로 local prefix를 삭제하지 않는다.
+- startup/background full genesis replay와 dispatch-lock bounded incremental checkpoint 검증을 분리한다.
 - MCP enabled tool 목록에 live order tool이 추가되지 않는다.
 - dashboard/API에 mutation endpoint가 추가되지 않는다.
 
@@ -734,7 +1204,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 | 12 | Calendar acquisition coordinator | 구현됨: production token/auth/calendar 고정 조립, exact market/date input, pinned example 기반 parser registry 선택과 actual-response v2 strict validation, ephemeral observation composition, loopback fail-closed test | raw-byte persistence, stored report, replay 실행, completeness claim |
 | 13 | Credential-ready preflight | 구현됨: secret-free auth/config summary, exact host DNS family/count, fixed token/calendar allowlist, outbound-IP owner attestation와 paper-only boundary 진단 | HTTP token/calendar request, resolved IP/token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | 구현됨: deterministic policy, fail-closed normalization/evaluation과 risk gate regression tests | broker gateway, `OrderRouter`, live enablement |
-| 15 | Live trading threat model | attack paths, secrets, approval, rollback | implementation shortcut |
+| 15 | [Live trading threat model](live-trading-threat-model.md) | 구현됨: attack paths, runtime approval, idempotency, secrets/network, audit, incident rollback와 dry-run gate | live order 승인, implementation shortcut |
 | 16 | Live OrderRouter dry-run | local idempotency, mock broker, audit | official order POST |
 | 17 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
 | 18 | Deployment packaging | process isolation, config, monitoring | default live enable |

@@ -172,6 +172,10 @@
 - mock demo만으로 프로젝트를 설명 가능
 - financial advice로 오해될 표현이 없음
 
+Live order path의 threat model은
+[live-trading-threat-model.md](live-trading-threat-model.md)에 별도 문서화되어 있다.
+이 문서는 future gate를 정의하지만 live trading 또는 broker mutation을 승인하지 않는다.
+
 ## Milestone 10: Research Hardening
 
 목표:
