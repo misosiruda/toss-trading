@@ -37,7 +37,7 @@ toss-trading/
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
 | `src/paper/` | virtual decision validation, risk, order, ledger, allocation policy | live `TradingSignal`/`OrderIntent`로 연결 금지 |
 | `src/risk/` | live order intent용 deterministic RiskEngine과 opaque authority handoff | broker gateway, OrderRouter, MCP mutation surface 연결 금지 |
-| `src/order/` | future row 16의 internal mock-only dry-run state machine과 shadow idempotency contract | broker/network I/O, live mutation, API/MCP/dashboard 연결 금지 |
+| `src/order/` | row 16의 internal mock-only dry-run state와 shadow idempotency contract | broker/network I/O, live mutation, API/MCP/dashboard 연결 금지 |
 | `src/replay/` | simulated clock, replay runner, sampling, lookahead guard | 실시간 trading loop로 사용 금지 |
 | `src/workflows/` | CLI/API가 호출하는 유스케이스 orchestration | 순수 정책을 중복 구현하지 않음 |
 | `src/storage/` | JSON/JSONL file store, storage path mapping | trading 판단을 하지 않음 |
@@ -174,6 +174,8 @@ flowchart TD
 
 - `src/risk/liveRiskAuthority.ts` (구현됨: frozen intent와 opaque authority)
 - `src/risk/liveRiskAuthority.test.ts` (구현됨: 위조·변조·재구성 차단 회귀 테스트)
+- `src/order/dryRunShadowState.ts` (구현됨: isolated reservation, permanent tombstone와 audit)
+- `src/order/dryRunShadowState.test.ts` (구현됨: duplicate/timeout/reconciliation 상태 전이 테스트)
 - `src/order/dryRunOrderRouter.ts` (후속 구현)
 - `src/order/dryRunOrderRouter.test.ts` (후속 구현)
 - `docs/live-trading-threat-model.md`
@@ -205,8 +207,9 @@ flowchart TD
   intent는 router handoff authority가 아님
 - `LiveRiskEngine` reject 뒤에는 router가 호출되지 않으며 router 자체가 risk engine,
   sizing 또는 allocation 책임을 복제하지 않음
-- synthetic owner approval fixture와 isolated shadow idempotency/tombstone state만 사용하고,
-  simulated terminal 뒤에도 같은 synthetic identity 재예약을 거부함
+- 구현된 shadow state는 synthetic scenario/hash tuple만 받고 isolated permanent tombstone을 최초
+  reservation과 함께 생성하며 simulated terminal 뒤에도 같은 identity 재예약을 거부함. 후속
+  router의 synthetic owner approval fixture는 아직 미구현임
 - 결과는 `dry_run_validated` 또는 `shadow_reconciled_no_external_effect` 같은 paper-only
   상태로 끝나며 broker order/execution identity를 만들지 않음
 - `src/order`는 `src/broker`, `src/api`, `src/mcp`, `src/cli`, `src/ai`, `src/paper`,
