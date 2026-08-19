@@ -432,6 +432,11 @@ selection을 소유하며 process-local `verifiedPublicationSet`에 포함된
 filesystem path 또는 publication record scan으로 package를 직접 여는 reader
 surface는 금지한다.
 
+현재 `officialMarketCalendarPublicationRecord.ts`는 record schema와 canonical hash,
+artifact hash에서 파생되는 immutable package/record path를 strict 검증한다. 이 contract는
+filesystem writer, directory/file sync, atomic no-replace publication,
+`PublicationCoordinator` activation 또는 recovery를 수행하지 않는다.
+
 Coordinator는 writer와 reader 사이에 exclusive publication state lock을
 사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에
 추가한다. 어떤 sync failure에서도 추가하지 않으므로 rename 후 record가 보여도
