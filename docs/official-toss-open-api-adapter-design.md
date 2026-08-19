@@ -835,7 +835,13 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   first network byte를 금지한다.
   Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
   write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
-  worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
+  worker/replay 중 하나만 성공한다. Signed checkpoint acknowledgement 뒤에도 같은 first-byte lock에서
+  fresh authoritative time/high-water mark와 approval/evidence/session/immediate deadline, gate epoch,
+  revocation version, snapshot/risk/account/transport binding을 exact 재검증한다. 통과하면 immutable
+  buffer를 즉시 write한다. 실패하면 exact consumed permit/state/checkpoint head와 no-write/no-buffer-handoff/
+  zero-byte proof를 `post_checkpoint_revalidation_failed_zero_byte` `zeroByteAttemptFence`로 commit하고
+  closure checkpoint acknowledgement까지 확인한다. Closure checkpoint 실패나 ambiguous byte boundary는
+  blocked reconciliation이며 permit을 재사용하지 않는다. Consume 뒤 crash/unknown도 permit 재사용 없이
   reconciliation한다.
 - Startup recovery arbiter는 먼저 exclusive dispatch/gate recovery lock을 획득하고 fencing epoch를
   advance해 stale worker를 차단한다. Recovered durable high-water mark까지 externally checkpointed된
@@ -878,8 +884,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Permit consume과 signed `dispatch_attempted` 뒤의 confirmed zero-byte failure는 pre-attempt
   `noDispatchFence`를 사용하지 않는다. Exact transport instance/generation에서 mutation request
   write function과 kernel/TLS buffer handoff가 시작되지 않았고 request-byte counter가 0임을 같은
-  lock에서 증명한 connect/TLS/pre-write failure만 `dispatch_failed_zero_byte`와 durable
-  `zeroByteAttemptFence`로 commit한다. Target operation은 exact unchanged broker target/version
+  lock에서 증명한 connect/TLS/pre-write failure 또는 signed acknowledgement 뒤 final time/binding
+  revalidation failure만 `dispatch_failed_zero_byte`와 cause-specific durable `zeroByteAttemptFence`로
+  commit한다. Post-checkpoint cause는 exact signed head, committed clock high-water mark와 failed
+  deadline/binding reason을 포함한다. Target operation은 exact unchanged broker target/version
   readback 뒤에만 mutation delta capacity와 target fence를 release한다. 단,
   `recovery_cancel_takeover` lineage에서는 current recovery attempt만 닫고 superseded original
   operation이 terminal 또는 proven no-dispatch일 때까지 inherited capacity/fence를 유지한다. Write invocation, buffer
@@ -891,8 +899,9 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   advance한다. Pre-consume expiry/staleness는 authoritative deadline/freshness, exact unconsumed
   permit/state와 `dispatch_attempted` 부재를 `permit_expired_or_stale` noDispatchFence, gate disable과
   epoch advance로 atomic commit하며 `zeroByteAttemptFence`를 사용하지 않는다. Permit consume과
-  signed `dispatch_attempted` 뒤 실제 connect/TLS/pre-write zero-byte failure만 post-attempt
-  `zeroByteAttemptFence`와 disable을 원자적으로 commit하고 unchanged target reconciliation로
+  signed `dispatch_attempted` 뒤 실제 connect/TLS/pre-write failure 또는 post-checkpoint final
+  revalidation failure의 exact zero-byte proof만 post-attempt cause-specific `zeroByteAttemptFence`와
+  disable을 원자적으로 commit하고 unchanged target reconciliation로
   current recovery cancel의 no-effect만 확인한다. Takeover가 없고 다른 unresolved lineage가 없을
   때만 attempt-local capacity/fence를 release한다. Takeover lineage에서는 이 proof가 superseded
   original modify/cancel outcome을 종료하지 않으므로 original operation과 external state가 terminal
@@ -968,6 +977,12 @@ chain을 재계산할 수 있어야 한다. Runtime은 pinned
 public verification key만 가지며 `dispatch_attempted`의 signed checkpoint acknowledgement가
 first byte 전에 없으면 send하지 않는다. Result/unknown/terminal checkpoint도 해당 state 신뢰나
 capacity/fence release 전에 필요하다.
+
+Signed dispatch-attempt acknowledgement가 돌아온 뒤에도 같은 first-byte lock에서 fresh authoritative
+time/high-water mark와 deadline/gate/revocation/snapshot/risk/account/transport binding을 다시 검증한다.
+실패하면 exact consumed permit/checkpoint head와 zero-write proof를 signed
+`post_checkpoint_revalidation_failed_zero_byte` closure로 남긴 경우에만 terminal candidate가 되며,
+ambiguous byte boundary나 closure checkpoint 실패는 blocked reconciliation이다.
 
 Local event prefix는 checkpoint tuple만으로 삭제하지 않으며 future default는 automatic deletion
 없음이다. Prefix discard를 도입하려면 independent boundary가 모든 covered canonical payload를 WORM
@@ -1116,6 +1131,7 @@ manifest와 그 base 이후 current head까지의 exact signed incremental exten
 - restart된 send_reserved의 sole permit이 unconsumed이고 dispatch_attempted가 없으면 전용 no-dispatch CAS로 종료한다.
 - recovery gate는 first-byte dispatch winner 또는 zeroByteAttemptFence 뒤에만 disable된다.
 - signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
+- signed checkpoint acknowledgement 뒤 time/binding을 재검증하고 실패하면 consumed-permit zero-byte closure로 종료한다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
 - canonical transportRequestHash가 approval/permit과 exact outbound non-sensitive projection에서 일치하지 않으면 first byte 전에 차단한다.
 - 모든 allowlisted semantic header는 exact bytes 또는 keyed MAC으로 transportRequestHash에 bind되고 unknown/unclassified header는 first byte 전에 차단된다.

@@ -313,7 +313,20 @@ lock에서 다른 buffer로 교체하지 못하게 한다. Transport projection,
 `target_route_mismatch` 또는 `account_header_mismatch` noDispatchFence로 닫는다. 모든 값이 exact
 match할 때만 permit을 durable CAS로 one-time consume한다. Permit consume과
 masked `dispatch_attempted` audit event는 같은 write-ahead durable commit으로 first network
-byte 전에 완료하며, audit commit 실패 시 network write를 금지한다.
+byte 전에 완료하며, audit commit 실패 시 network write를 금지한다. Signed checkpoint
+acknowledgement가 돌아온 뒤에도 같은 first-byte lock을 유지한 채 fresh authoritative time을 읽어 durable
+clock high-water mark를 advance하고, approval/evidence/session/immediate-dispatch deadline, gate epoch,
+revocation version, current snapshot과 risk/account/transport binding을 마지막으로 exact 재검증한다.
+Acknowledgement 전 검증 결과만으로 first byte를 허용하지 않는다.
+
+Post-checkpoint revalidation이 통과하면 그 immutable buffer를 즉시 write한다. 실패하면 permit과
+`dispatch_attempted`가 이미 consumed/committed된 상태이므로 unconsumed-permit `noDispatchFence`로
+재해석하지 않는다. 같은 lock이 mutation write function과 kernel/TLS buffer handoff 미호출, exact
+request-byte counter 0을 증명한 경우에만 consumed permit/state, signed checkpoint head, fresh time과
+실패한 deadline/binding reason을 `post_checkpoint_revalidation_failed_zero_byte` durable
+`zeroByteAttemptFence`로 commit하고 그 closure의 signed checkpoint acknowledgement까지 확인한다.
+Closure checkpoint가 실패하거나 byte boundary가 ambiguous하면 terminal/release하지 않고
+`acknowledgement_unknown`/blocked reconciliation로 보낸다.
 Duplicate/expired/stale permit은 arbiter가 그 permit이 unconsumed이고 `dispatch_attempted`가
 없음을 같은 lock에서 증명해 cause-specific fence를 commit한 경우에만
 `stopped_before_dispatch`로 전이한다. CAS loser는 실패 자체를 no-dispatch 증거로 사용하지
@@ -510,7 +523,7 @@ recovery_terminal_pending_reconciliation
   -> terminal_reconciled(exact target order and resulting position/cash reconciled; release lineage resources)
 
 dispatch_permit_acquired
-  -> dispatch_failed_zero_byte
+  -> dispatch_failed_zero_byte(transport pre-write failure | post-checkpoint revalidation failure)
   -> broker_rejected
   -> acknowledgement_unknown
   -> broker_accepted
@@ -690,12 +703,15 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   `recovery_target_changed`는 old recovery attempt만 no-dispatch로 닫고 lineage fence/capacity를
   release하지 않으며, 아래 same-lineage `recovery_rebind_pending_approval`에만 인계할 수 있다.
 - `dispatch_failed_zero_byte`는 permit consume과 signed/checkpointed `dispatch_attempted`가 이미
-  존재하므로 `stopped_before_dispatch` 또는 `noDispatchFence`로 취급하지 않는다. Gateway transport가
-  exact permit/instance generation에서 mutation request write function과 kernel/TLS buffer handoff가
-  한 번도 시작되지 않았고 mutation request byte counter가 0임을 같은 dispatch lock에서 증명한
-  connect/TLS/pre-write failure만 별도 durable `zeroByteAttemptFence`로 commit할 수 있다. Record는
-  consumed permit/state version, signed `dispatch_attempted`, zero-byte transport proof, failure reason,
-  permanent tombstone과 externally checkpointed complete audit chain을 포함한다. Target operation은
+  존재하므로 `stopped_before_dispatch` 또는 `noDispatchFence`로 취급하지 않는다. Exact permit/instance
+  generation에서 mutation request write function과 kernel/TLS buffer handoff가 한 번도 시작되지 않았고
+  mutation request byte counter가 0임을 같은 dispatch lock에서 증명한 경우에만 durable
+  `zeroByteAttemptFence`를 commit할 수 있다. 허용 cause는 connect/TLS/pre-write transport failure와,
+  signed dispatch-attempt checkpoint acknowledgement 뒤 fresh authoritative-time/binding 재검증 실패인
+  `post_checkpoint_revalidation_failed_zero_byte`뿐이다. 후자는 exact signed checkpoint head, committed
+  clock high-water mark, expired deadline 또는 mismatched gate/revocation/snapshot/risk/account/transport
+  binding을 함께 기록한다. Record는 consumed permit/state version, signed `dispatch_attempted`, zero-byte
+  proof, failure reason, permanent tombstone과 externally checkpointed complete audit chain을 포함한다. Target operation은
   read-only broker evidence로 exact target/version/state가 unchanged임도 확인한 뒤 mutation delta
   reservation과 target fence를 atomic release한다. 단, `recovery_cancel_takeover` lineage에서는 이
   proof가 current recovery cancel attempt만 종료하며 superseded original operation의 outcome을
@@ -860,8 +876,8 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   exact unconsumed permit/state와 `dispatch_attempted` 부재를 `permit_expired_or_stale`
   noDispatchFence, recovery gate disable과 epoch advance로 한 CAS에 commit한다. 이 pre-attempt cause에
   `zeroByteAttemptFence`를 사용하지 않는다. Permit consume과 signed `dispatch_attempted` 뒤 실제
-  connect/TLS/pre-write failure의 zero-byte proof만 `zeroByteAttemptFence`와 gate disable을 같은
-  transaction에 commit하고, target unchanged
+  connect/TLS/pre-write failure 또는 post-checkpoint final revalidation failure의 exact zero-byte proof만
+  cause-specific `zeroByteAttemptFence`와 gate disable을 같은 transaction에 commit하고, target unchanged
   reconciliation로 current recovery cancel attempt가 broker에 영향 없었음만 확인한다. Takeover가
   없고 다른 unresolved lineage가 없는 경우에만 attempt-local recovery capacity/fence를 release할 수
   있다. `recovery_cancel_takeover`이면 zero-byte cancel이 superseded original modify/cancel의
@@ -1011,6 +1027,13 @@ verification key만 가지며 checkpoint 삭제, sequence rewind, 기존 hash �
 state를 authoritative하게 사용하거나 capacity/fence를 release하기 전에 필요하다. Checkpoint가
 unavailable하거나 signature/store append가 실패하면 no-send/no-terminal이다.
 
+Signed `dispatch_attempted` acknowledgement 자체는 send authorization이 아니다. Ack 뒤 같은
+first-byte lock에서 fresh authoritative time/high-water mark와 deadline/gate/revocation/snapshot 및 모든
+risk/account/transport binding을 다시 검증한다. 실패 시 exact consumed permit/checkpoint head와
+zero-write/buffer-handoff proof를 signed `post_checkpoint_revalidation_failed_zero_byte` closure로 남긴
+경우에만 `dispatch_failed_zero_byte`로 전이하며, closure checkpoint 실패나 ambiguous byte boundary는
+blocked reconciliation이다.
+
 Local canonical event payload prefix는 signed checkpoint 존재만으로 삭제할 수 없다. Future runtime
 default retention은 automatic deletion 없음이다. Prefix discard가 도입되려면 independent boundary가
 discard 대상 모든 exact payload bytes를 WORM archive에서 readback해 genesis부터 sequence/hash chain을
@@ -1136,6 +1159,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Restart된 send_reserved의 sole permit이 unconsumed이고 dispatch_attempted가 없으면 전용 no-dispatch CAS로 종료됨
 - [ ] Recovery gate disable이 dispatch first-byte winner 또는 zeroByteAttemptFence 뒤에만 발생함
 - [ ] Signed dispatch-attempt 뒤 confirmed zero-byte failure가 별도 zeroByteAttemptFence로 종료됨
+- [ ] Signed checkpoint acknowledgement 뒤 authoritative time/binding을 재검증하고 실패 시 consumed-permit zero-byte closure로 종료됨
 - [ ] Dispatch 직전 current effective snapshot의 riskBindingHash가 달라지면 fresh approval을 요구함
 - [ ] Exact outbound non-sensitive projection의 transportRequestHash가 approval/permit과 다르면 first byte 전에 차단됨
 - [ ] 모든 allowlisted semantic header가 exact bytes 또는 keyed MAC으로 transportRequestHash에 bind되고 unclassified header가 차단됨
