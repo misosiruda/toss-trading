@@ -179,15 +179,19 @@ Final response의 representation metadata는
 이 boundary는 final-response verifier의 필수 child이며 decode, parser selection 또는
 parser-contract별 representation allowlist는 수행하지 않는다.
 
-`officialMarketCalendarSourceDocumentMetadata.ts`는 verified envelope 하나만 입력받아
+`officialMarketCalendarSourceDocumentAcquisitionMetadata.ts`는 verified envelope 하나만 입력받아
 request/final-response/cache/freshness/representation/transfer field와 registry-bound
-coverage/parser selector를 재구성한다. `publisher`는 verified exchange의 canonical
-identity인 `KRX` 또는 `NYSE`로 파생하고 full envelope를 metadata hash에 포함해 raw
+expected coverage/parser selector를 재구성한다. `publisher`는 verified exchange의 canonical
+identity인 `KRX` 또는 `NYSE`로 파생하고 full envelope를 acquisition metadata hash에 포함해 raw
 redirect/acquisition boundary를 보존한다. Top-level `redirectChain`은 raw input이 아닌
 verifier가 정규화한 composite projection을 노출하고 `cacheRequestPolicyVersion`은 verified initial
 cache request policy에서 파생한다. Stored parse는 exact source bytes와 freshness
-policy registry로 전체 metadata를 다시 생성한다. 이 aggregate 자체는 parser를
-실행하거나 parsed row/session-hours 값을 collection document로 승격하지 않는다.
+policy registry로 전체 aggregate를 다시 생성한다. Registry selector는
+`expectedEvidenceRoles`, expected row/schedule/applicability coverage와
+`expectedParserContractVersion`으로만 기록하고 `parserResultBound=false`를 강제한다.
+따라서 이 pre-parser aggregate는 final `metadata.json`이 아니며 actual `evidenceRoles`,
+row coverage, parsed session-hours와 `metadataHash`는 verified parser result 결합 전에는
+생성하지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에

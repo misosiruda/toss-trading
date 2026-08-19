@@ -17,9 +17,9 @@ import {
   parseOfficialMarketCalendarSourceDocumentEnvelope
 } from "./officialMarketCalendarSourceDocumentEnvelope.js";
 import {
-  createOfficialMarketCalendarSourceDocumentMetadata,
-  parseOfficialMarketCalendarSourceDocumentMetadata
-} from "./officialMarketCalendarSourceDocumentMetadata.js";
+  createOfficialMarketCalendarSourceDocumentAcquisitionMetadata,
+  parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata
+} from "./officialMarketCalendarSourceDocumentAcquisitionMetadata.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
@@ -1090,7 +1090,7 @@ test("calendar source document envelope keeps unverified metadata and shape-loos
   );
 });
 
-test("calendar source document metadata derives acquisition and policy fields from the verified envelope", () => {
+test("calendar source document acquisition metadata keeps policy coverage as expected selectors", () => {
   const sourceBytes = new Uint8Array(100).fill(65);
   const sourceDocumentEnvelope =
     createOfficialMarketCalendarSourceDocumentEnvelope(
@@ -1104,7 +1104,7 @@ test("calendar source document metadata derives acquisition and policy fields fr
       },
       policyRegistry()
     );
-  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+  const metadata = createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
     { sourceDocumentEnvelope },
     {
       freshnessPolicyRegistry: policyRegistry(),
@@ -1131,16 +1131,23 @@ test("calendar source document metadata derives acquisition and policy fields fr
   assert.equal(metadata.contentEncoding, null);
   assert.equal(metadata.contentLength, 100);
   assert.equal(metadata.sourceDocumentHash, sourceDocumentEnvelope.sourceDocumentHash);
-  assert.deepEqual(metadata.evidenceRoles, [
+  assert.deepEqual(metadata.expectedEvidenceRoles, [
     "holiday_rows",
     "holiday_schedule"
   ]);
-  assert.equal(metadata.parserContractVersion, "krx_calendar_pdf.v1");
-  assert.match(metadata.metadataHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(
+    metadata.expectedParserContractVersion,
+    "krx_calendar_pdf.v1"
+  );
+  assert.equal(metadata.parserResultBound, false);
+  assert.equal("evidenceRoles" in metadata, false);
+  assert.equal("rowCoverageStartDate" in metadata, false);
+  assert.equal("metadataHash" in metadata, false);
+  assert.match(metadata.acquisitionMetadataHash, /^sha256:[a-f0-9]{64}$/);
   assert.equal(Object.isFrozen(metadata), true);
   assert.equal(Object.isFrozen(metadata.sourceDocumentEnvelope), true);
   assert.deepEqual(
-    parseOfficialMarketCalendarSourceDocumentMetadata(metadata, {
+    parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata(metadata, {
       freshnessPolicyRegistry: policyRegistry(),
       sourceBytes
     }),
@@ -1148,7 +1155,7 @@ test("calendar source document metadata derives acquisition and policy fields fr
   );
 });
 
-test("calendar source document metadata rejects derived-field and byte tamper", () => {
+test("calendar source document acquisition metadata rejects derived-field and byte tamper", () => {
   const sourceBytes = new Uint8Array(100).fill(65);
   const sourceDocumentEnvelope =
     createOfficialMarketCalendarSourceDocumentEnvelope(
@@ -1162,7 +1169,7 @@ test("calendar source document metadata rejects derived-field and byte tamper", 
       },
       policyRegistry()
     );
-  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+  const metadata = createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
     { sourceDocumentEnvelope },
     {
       freshnessPolicyRegistry: policyRegistry(),
@@ -1170,7 +1177,7 @@ test("calendar source document metadata rejects derived-field and byte tamper", 
     }
   );
   const parse = (value: unknown, bytes: Uint8Array = sourceBytes) =>
-    parseOfficialMarketCalendarSourceDocumentMetadata(value, {
+    parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata(value, {
       freshnessPolicyRegistry: policyRegistry(),
       sourceBytes: bytes
     });
@@ -1200,7 +1207,7 @@ test("calendar source document metadata rejects derived-field and byte tamper", 
     /does not match verified envelope/
   );
   assert.throws(
-    () => parse({ ...metadata, metadataHash: hash("f") }),
+    () => parse({ ...metadata, acquisitionMetadataHash: hash("f") }),
     /does not match verified envelope/
   );
   assert.throws(
@@ -1209,7 +1216,7 @@ test("calendar source document metadata rejects derived-field and byte tamper", 
   );
   assert.throws(
     () =>
-      createOfficialMarketCalendarSourceDocumentMetadata(
+      createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
         { sourceDocumentEnvelope, publisher: "caller" },
         {
           freshnessPolicyRegistry: policyRegistry(),

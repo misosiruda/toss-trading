@@ -11,8 +11,8 @@ import {
 } from "./officialMarketCalendarSourceDocumentEnvelope.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 
-export const OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_METADATA_SCHEMA_VERSION =
-  "official_market_calendar_source_document_metadata.v1";
+export const OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_ACQUISITION_METADATA_SCHEMA_VERSION =
+  "official_market_calendar_source_document_acquisition_metadata.v1";
 
 const identifierSchema = z
   .string()
@@ -38,16 +38,16 @@ const scheduleCoverageIntervalSchema = z
   })
   .strict();
 
-const createSourceDocumentMetadataInputSchema = z
+const createSourceDocumentAcquisitionMetadataInputSchema = z
   .object({
     sourceDocumentEnvelope: officialMarketCalendarSourceDocumentEnvelopeSchema
   })
   .strict();
 
-const sourceDocumentMetadataPayloadSchema = z
+const sourceDocumentAcquisitionMetadataPayloadSchema = z
   .object({
     schemaVersion: z.literal(
-      OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_METADATA_SCHEMA_VERSION
+      OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_ACQUISITION_METADATA_SCHEMA_VERSION
     ),
     documentId: identifierSchema,
     exchange: z.enum(["KRX", "NYSE"]),
@@ -89,39 +89,41 @@ const sourceDocumentMetadataPayloadSchema = z
     transferCompleted: z.literal(true),
     contentLength: contentLengthSchema,
     sourceDocumentHash: sha256HashSchema,
-    evidenceRoles: z.array(z.enum(OFFICIAL_CALENDAR_SOURCE_EVIDENCE_ROLES)),
-    rowCoverageStartDate: dateSchema.nullable(),
-    rowCoverageEndDate: dateSchema.nullable(),
-    scheduleCoverageIntervals: z.array(scheduleCoverageIntervalSchema),
-    applicabilityStartDate: dateSchema.nullable(),
-    applicabilityEndDate: dateSchema.nullable(),
-    parserContractVersion: identifierSchema
+    expectedEvidenceRoles: z.array(
+      z.enum(OFFICIAL_CALENDAR_SOURCE_EVIDENCE_ROLES)
+    ),
+    expectedRowCoverageStartDate: dateSchema.nullable(),
+    expectedRowCoverageEndDate: dateSchema.nullable(),
+    expectedScheduleCoverageIntervals: z.array(scheduleCoverageIntervalSchema),
+    expectedApplicabilityStartDate: dateSchema.nullable(),
+    expectedApplicabilityEndDate: dateSchema.nullable(),
+    expectedParserContractVersion: identifierSchema,
+    parserResultBound: z.literal(false)
   })
   .strict();
 
-export const officialMarketCalendarSourceDocumentMetadataSchema =
-  sourceDocumentMetadataPayloadSchema
-    .safeExtend({ metadataHash: sha256HashSchema })
+export const officialMarketCalendarSourceDocumentAcquisitionMetadataSchema =
+  sourceDocumentAcquisitionMetadataPayloadSchema
+    .safeExtend({ acquisitionMetadataHash: sha256HashSchema })
     .strict();
 
-export type OfficialMarketCalendarSourceDocumentMetadata = z.infer<
-  typeof officialMarketCalendarSourceDocumentMetadataSchema
+export type OfficialMarketCalendarSourceDocumentAcquisitionMetadata = z.infer<
+  typeof officialMarketCalendarSourceDocumentAcquisitionMetadataSchema
 >;
 
-export type OfficialMarketCalendarSourceDocumentMetadataPayload = z.infer<
-  typeof sourceDocumentMetadataPayloadSchema
->;
+export type OfficialMarketCalendarSourceDocumentAcquisitionMetadataPayload =
+  z.infer<typeof sourceDocumentAcquisitionMetadataPayloadSchema>;
 
-interface SourceDocumentMetadataOptions {
+interface SourceDocumentAcquisitionMetadataOptions {
   freshnessPolicyRegistry: unknown;
   sourceBytes: unknown;
 }
 
-export function createOfficialMarketCalendarSourceDocumentMetadata(
+export function createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
   input: unknown,
-  options: SourceDocumentMetadataOptions
-): OfficialMarketCalendarSourceDocumentMetadata {
-  const parsed = createSourceDocumentMetadataInputSchema.parse(input);
+  options: SourceDocumentAcquisitionMetadataOptions
+): OfficialMarketCalendarSourceDocumentAcquisitionMetadata {
+  const parsed = createSourceDocumentAcquisitionMetadataInputSchema.parse(input);
   const sourceDocumentEnvelope =
     parseOfficialMarketCalendarSourceDocumentEnvelope(
       parsed.sourceDocumentEnvelope,
@@ -147,9 +149,9 @@ export function createOfficialMarketCalendarSourceDocumentMetadata(
   const transfer = finalResponse.transferCompletion;
   const cacheRequestPolicyVersion =
     redirect.cacheRequestPolicies[0]!.cacheRequestPolicyVersion;
-  const payload = sourceDocumentMetadataPayloadSchema.parse({
+  const payload = sourceDocumentAcquisitionMetadataPayloadSchema.parse({
     schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_METADATA_SCHEMA_VERSION,
+      OFFICIAL_MARKET_CALENDAR_SOURCE_DOCUMENT_ACQUISITION_METADATA_SCHEMA_VERSION,
     documentId: sourceDocumentEnvelope.documentId,
     exchange: sourceDocumentEnvelope.exchange,
     publisher: sourceDocumentEnvelope.exchange,
@@ -185,41 +187,46 @@ export function createOfficialMarketCalendarSourceDocumentMetadata(
     transferCompleted: transfer.transferCompleted,
     contentLength: sourceDocumentEnvelope.contentLength,
     sourceDocumentHash: sourceDocumentEnvelope.sourceDocumentHash,
-    evidenceRoles: selector.evidenceRoles,
-    rowCoverageStartDate: selector.rowCoverageStartDate,
-    rowCoverageEndDate: selector.rowCoverageEndDate,
-    scheduleCoverageIntervals: selector.scheduleCoverageIntervals,
-    applicabilityStartDate: selector.applicabilityStartDate,
-    applicabilityEndDate: selector.applicabilityEndDate,
-    parserContractVersion: selector.parserContractVersion
+    expectedEvidenceRoles: selector.evidenceRoles,
+    expectedRowCoverageStartDate: selector.rowCoverageStartDate,
+    expectedRowCoverageEndDate: selector.rowCoverageEndDate,
+    expectedScheduleCoverageIntervals: selector.scheduleCoverageIntervals,
+    expectedApplicabilityStartDate: selector.applicabilityStartDate,
+    expectedApplicabilityEndDate: selector.applicabilityEndDate,
+    expectedParserContractVersion: selector.parserContractVersion,
+    parserResultBound: false
   });
   return deepFreeze({
     ...payload,
-    metadataHash: createOfficialMarketCalendarSourceDocumentMetadataHash(payload)
+    acquisitionMetadataHash:
+      createOfficialMarketCalendarSourceDocumentAcquisitionMetadataHash(payload)
   });
 }
 
-export function parseOfficialMarketCalendarSourceDocumentMetadata(
+export function parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
   value: unknown,
-  options: SourceDocumentMetadataOptions
-): OfficialMarketCalendarSourceDocumentMetadata {
-  const metadata = officialMarketCalendarSourceDocumentMetadataSchema.parse(value);
-  const expected = createOfficialMarketCalendarSourceDocumentMetadata(
+  options: SourceDocumentAcquisitionMetadataOptions
+): OfficialMarketCalendarSourceDocumentAcquisitionMetadata {
+  const metadata =
+    officialMarketCalendarSourceDocumentAcquisitionMetadataSchema.parse(value);
+  const expected = createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
     { sourceDocumentEnvelope: metadata.sourceDocumentEnvelope },
     options
   );
   if (!isDeepStrictEqual(metadata, expected)) {
     throw new Error(
-      "official market calendar source document metadata does not match verified envelope"
+      "official market calendar source document acquisition metadata does not match verified envelope"
     );
   }
   return deepFreeze(metadata);
 }
 
-export function createOfficialMarketCalendarSourceDocumentMetadataHash(
-  value: OfficialMarketCalendarSourceDocumentMetadataPayload
+export function createOfficialMarketCalendarSourceDocumentAcquisitionMetadataHash(
+  value: OfficialMarketCalendarSourceDocumentAcquisitionMetadataPayload
 ): Sha256Hash {
-  return createReplayResearchHash(sourceDocumentMetadataPayloadSchema.parse(value));
+  return createReplayResearchHash(
+    sourceDocumentAcquisitionMetadataPayloadSchema.parse(value)
+  );
 }
 
 function deepFreeze<T>(value: T): T {
