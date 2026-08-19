@@ -196,6 +196,29 @@ commit한다. 이후 delayed approval/decline은 tombstone mismatch로 거부하
 intent/reservation/request generation을 요구한다. Approval record 존재 여부나 channel delivery가
 불명확하면 `approval_not_issued`를 추정하지 않고 owner-visible blocked reconciliation에 남긴다.
 
+Cancel-only recovery의 approval 실패는 normal `approval_required` closure처럼 inherited resource를
+release하지 않는다. `recovery_takeover_pending_approval`, `recovery_rebind_pending_approval`과
+`recovery_retry_pending_approval`에서 valid approval이 아직 만들어지지 않았다면 위 네 가지
+typed reason만 `recovery_approval_not_issued`로 닫는다. Valid approval 뒤의 corresponding
+`*_pending_final_risk` state에서 approval이 authoritative expiry, verified revoke 또는 exact binding
+invalidation로 unusable해지면 각각 `recovery_approval_expired`, `recovery_approval_revoked` 또는
+`recovery_approval_invalidated`로 닫는다. 각 closure CAS는 exact recovery state/version,
+request/approval generation과 state, current target evidence, recovery permit 부재, empty gateway
+allowlist, complete audit chain의 `dispatch_attempted` 부재를 검증하고 request/approval tombstone과
+reason을 commit한다. `recoveryLineageId`, original/prior attempt history, exclusive target fence와
+inherited conservative capacity envelope는 그대로 유지하며 terminal/release로 취급하지 않는다.
+
+Recovery closure는 tagged `recovery_approval_closed` state로 전이한다. Delayed response나 old
+approval은 closed generation mismatch로 거부한다. 자동 재요청은 금지하며, verified owner의 새 typed
+`recoveryApprovalRetry`가 exact closed generation/reason과 fresh current target evidence에 bind된
+경우에만 같은 recovery lock/epoch에서 generation을 증가시키고 fresh pending request를 atomic
+commit한다. Target이 unchanged open이면 prior phase에 맞는
+`recovery_takeover_pending_approval`, `recovery_rebind_pending_approval` 또는
+`recovery_retry_pending_approval`로 돌아가고, target이 달라졌으면 same-lineage
+`recovery_rebind_pending_approval`로만 이동한다. 이 transition은 approval/permit을 만들지 않고
+gateway allowlist를 비워 둔다. Target이 terminal이면 새 request 없이 reconciliation으로 가며,
+target/approval evidence가 ambiguous하면 owner-visible blocked로 남긴다.
+
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
 risk/capacity/idempotency reservation, current gate snapshot/epoch를 확인한다. 먼저 fresh
@@ -373,9 +396,33 @@ send_reserved
 recovery_takeover_pending_final_risk
   -> send_reserved(atomic final risk + approval consume + sole recovery permit)
   -> recovery_rebind_pending_approval(recovery_target_changed pre-permit noDispatchFence)
+  -> recovery_approval_closed(expired | revoked | binding invalidated)
+
+recovery_takeover_pending_approval
+  -> recovery_takeover_pending_final_risk(valid fresh approval, no permit)
+  -> recovery_rebind_pending_approval(recovery_target_changed pending-request closure)
+  -> recovery_approval_closed(declined | request expired | channel unavailable | malformed)
 
 recovery_rebind_pending_approval
+  -> recovery_rebind_pending_final_risk(valid fresh approval, no permit)
+  -> recovery_rebind_pending_approval(new generation after recovery_target_changed pending-request closure)
+  -> recovery_approval_closed(declined | request expired | channel unavailable | malformed)
+
+recovery_retry_pending_approval
+  -> recovery_retry_pending_final_risk(valid fresh approval, no permit)
+  -> recovery_rebind_pending_approval(recovery_target_changed pending-request closure)
+  -> recovery_approval_closed(declined | request expired | channel unavailable | malformed)
+
+recovery_rebind_pending_final_risk | recovery_retry_pending_final_risk
   -> send_reserved(atomic final risk + fresh approval consume + sole recovery permit)
+  -> recovery_rebind_pending_approval(recovery_target_changed pre-permit noDispatchFence)
+  -> recovery_approval_closed(expired | revoked | binding invalidated)
+
+recovery_approval_closed
+  -> recovery_takeover_pending_approval(verified owner retry + fresh unchanged target evidence)
+  -> recovery_rebind_pending_approval(verified owner retry + fresh changed/rebind target evidence)
+  -> recovery_retry_pending_approval(verified owner retry + fresh unchanged target evidence)
+  -> reconciliation_pending(target terminal)
 
 dispatch_permit_acquired
   -> dispatch_failed_zero_byte
@@ -521,17 +568,22 @@ duplicate(shadow_reserved | shadow_timeout_unknown | shadow_completed | shadow_r
   - `account_header_mismatch`: permit의 MAC/key generation, exact outbound header bytes로
     recompute한 MAC mismatch, `send_reserved`, unconsumed permit과 `dispatch_attempted` 부재 CAS
   - `recovery_target_changed`: same `recoveryLineageId`의 exact old/current target version/remaining
-    mismatch와 다음 두 evidence variant 중 정확히 하나를 CAS. Post-permit variant는 old
+    mismatch와 다음 세 evidence variant 중 정확히 하나를 CAS. Pending-request variant는 exact
+    recovery `*_pending_approval` state/version과 pending request generation, valid approval/permit
+    부재, empty gateway allowlist와 complete audit chain의 `dispatch_attempted` 부재를 요구하며 old
+    request를 close한다. Pending-final-risk variant는 exact recovery `*_pending_final_risk`
+    state/version, active/unconsumed old recovery approval, permit 부재, empty gateway allowlist와
+    `dispatch_attempted` 부재를 요구하며 old approval/request를 close한다. Post-permit variant는 old
     `send_reserved` recovery state/version, sole unconsumed permit과 `dispatch_attempted` 부재를
-    요구한다. Pre-permit takeover variant는 exact `recovery_takeover_pending_final_risk`
-    state/version, active/unconsumed old `cancelRecoveryApproval`, recovery permit 부재, empty gateway
-    allowlist와 externally checkpointed complete audit chain의 `dispatch_attempted` 부재를 요구하며
-    old approval/request를 같은 transaction에서 permanently close한다.
-  - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact
-    active/unconsumed approval-required state/version CAS
-  - `approval_not_issued`: exact pending approval-request generation, valid approval/permit 부재,
-    typed owner decline 또는 authoritative request expiry/channel failure/malformed evidence와
-    permanent request tombstone을 한 CAS로 commit
+    요구한다. 두 pre-permit variant의 closure와 fresh
+    `recovery_rebind_pending_approval`/request generation은 fence/capacity를 유지한 같은 CAS다.
+  - `approval_expired`: authoritative expiry evidence와 아직 permit이 없는 exact active/unconsumed
+    normal `approval_required` 또는 recovery `*_pending_final_risk` state/version CAS. Recovery
+    variant는 inherited fence/capacity를 release하지 않고 `recovery_approval_closed`로 전이
+  - `approval_not_issued`: exact normal `approval_required` 또는 recovery `*_pending_approval`
+    state/version과 pending request generation, valid approval/permit 부재, typed owner decline 또는
+    authoritative request expiry/channel failure/malformed evidence와 permanent request tombstone을
+    한 CAS로 commit. Recovery variant는 lineage resource를 유지
   - `pre_permit_payload_changed`: exact immutable old intent/order/preview/transport/account binding
     hash와 normalized new payload hash mismatch, exact `approval_required` state/version,
     pending request 또는 active/unconsumed approval id/generation/state, permit/`dispatch_attempted`
@@ -628,13 +680,15 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Takeover fence는 stable `recoveryLineageId`와 account/target lineage를 보존한다. Dispatch 전
   read-only evidence에서 같은 account/target이 여전히 open이지만 partial fill, version/state hash
   또는 remaining quantity가 바뀌면 stale recovery cancel을 보내거나 fence를 release하지 않는다.
-  Final-risk 전 `recovery_takeover_pending_final_risk`이면 exact old recovery intent/state/version,
-  active/unconsumed old `cancelRecoveryApproval`, recovery permit 부재, empty gateway allowlist,
-  complete audit chain의 `dispatch_attempted` 부재와 target mismatch를 한 CAS로 검증한다. 이 CAS는
-  old approval/request를 permanently close하고 `recovery_target_changed` pre-permit noDispatchFence를
-  남기면서 fence/capacity/original history를 유지한 채 generation을 올려 바로
+  Recovery `*_pending_approval`이면 exact old state/version과 pending request generation, valid
+  approval/permit 부재, empty gateway allowlist, complete audit chain의 `dispatch_attempted` 부재와
+  target mismatch를 한 CAS로 검증한다. `*_pending_final_risk`이면 exact old state/version,
+  active/unconsumed old recovery approval, permit 부재, empty allowlist, attempt 부재와 mismatch를
+  검증한다. 각 CAS는 old request 또는 approval/request를 permanently close하고
+  `recovery_target_changed` pre-permit noDispatchFence를 남기면서 fence/capacity/original history를
+  유지한 채 generation을 올려 바로
   `recovery_rebind_pending_approval`과 fresh intent/pending request를 commit한다. 따라서 no-permit
-  takeover도 stale target에 묶여 정지하지 않으며, CAS 전후 recovery dispatch surface는 계속
+  recovery phase도 stale target에 묶여 정지하지 않으며, CAS 전후 recovery dispatch surface는 계속
   disabled/no-permit/empty allowlist다.
 - Final-risk 뒤 sole recovery permit이 생긴 상태라면 exact old recovery intent/state/version,
   unconsumed permit, first-byte/`dispatch_attempted` 부재와 target mismatch evidence를
@@ -660,6 +714,12 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   backend-generated recovery intent와 pending request, fresh owner approval, cancel-specific risk
   revalidation 뒤에만 새 sole permit을 만들며 모든 prior permit은 영구 fence한다. Rejection이
   definitive하지 않거나 prior attempt/outcome/target이 ambiguous하면 retry를 만들지 않는다.
+- `recovery_rebind_pending_approval` 또는 `recovery_retry_pending_approval`의 decline, request expiry,
+  channel failure와 malformed response는 exact pending generation/no-approval/no-permit/attempt 부재를
+  `recovery_approval_not_issued`로 닫는다. Fresh approval 뒤 final-risk 전 expiry/revoke/binding
+  invalidation도 exact active approval/no-permit/empty-allowlist/attempt 부재 CAS로
+  `recovery_approval_closed`에 보낸다. 어떤 closure도 inherited fence/capacity를 release하지 않으며,
+  위 verified owner `recoveryApprovalRetry`와 fresh target evidence로만 새 request generation을 만든다.
 - Target가 이미 terminal이면 새 cancel을 만들지 않고 reconciliation만 진행한다. Account/target
   lineage가 달라졌거나 state가 ambiguous하면 rebind/cancel하지 않고 owner-visible blocked state로
   남긴다. Cancel acknowledgement만으로 capacity를 release하지 않고 target order와 resulting
@@ -942,7 +1002,9 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
-- [ ] Takeover pending-final-risk target 변경이 no-permit/empty-allowlist/attempt 부재 CAS로 fresh approval rebind됨
+- [ ] Recovery pending-approval/final-risk target 변경이 no-permit/empty-allowlist/attempt 부재 CAS로 fresh approval rebind됨
+- [ ] Recovery approval decline/expiry/malformed/revoke가 request generation만 닫고 inherited fence/capacity를 유지함
+- [ ] Closed recovery approval은 verified owner retry와 fresh target evidence로만 새 request generation을 만듦
 - [ ] Takeover cancel의 zeroByteAttemptFence가 ambiguous original lineage capacity/fence를 release하지 않음
 - [ ] Recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale CAS로 종료됨
 - [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐
