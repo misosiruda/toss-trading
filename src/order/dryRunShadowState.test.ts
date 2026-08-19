@@ -38,6 +38,11 @@ test("dry-run shadow reservation creates an immutable permanent tombstone", () =
   assert.equal(snapshot.tombstones[0]?.permanent, true);
   assert.equal(snapshot.audit[0]?.simulationOnly, true);
   assert.equal(snapshot.audit[0]?.externalEffect, "none");
+  assert.match(
+    snapshot.records[0]?.scenarioId ?? "",
+    /^scenario:sha256:[a-f0-9]{64}$/
+  );
+  assert.equal(snapshot.records[0]?.scenarioId.includes("timeout_001"), false);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.records), true);
   assert.equal(Object.isFrozen(snapshot.records[0]), true);
@@ -47,12 +52,28 @@ test("dry-run shadow reservation creates an immutable permanent tombstone", () =
 test("dry-run shadow duplicate is rejected in every record state", () => {
   const reserved = reserveDryRunShadow(createDryRunShadowState(), identity());
   const reservedDuplicate = reserveDryRunShadow(reserved.state, identity());
-  const completed = completeDryRunShadow(reserved.state, identity());
+  const completedBase = reserveDryRunShadow(
+    createDryRunShadowState(),
+    identity()
+  );
+  const completed = completeDryRunShadow(completedBase.state, identity());
   const completedDuplicate = reserveDryRunShadow(completed.state, identity());
-  const timeout = markDryRunShadowTimeoutUnknown(reserved.state, identity());
+  const timeoutBase = reserveDryRunShadow(
+    createDryRunShadowState(),
+    identity()
+  );
+  const timeout = markDryRunShadowTimeoutUnknown(timeoutBase.state, identity());
   const timeoutDuplicate = reserveDryRunShadow(timeout.state, identity());
+  const reconciledBase = reserveDryRunShadow(
+    createDryRunShadowState(),
+    identity()
+  );
+  const reconciledTimeout = markDryRunShadowTimeoutUnknown(
+    reconciledBase.state,
+    identity()
+  );
   const reconciled = reconcileDryRunShadowNoExternalEffect(
-    timeout.state,
+    reconciledTimeout.state,
     identity()
   );
   const reconciledDuplicate = reserveDryRunShadow(
@@ -73,6 +94,16 @@ test("dry-run shadow duplicate is rejected in every record state", () => {
     assert.equal(snapshot.tombstones.length, 1);
     assert.equal(snapshot.audit.at(-1)?.externalEffect, "none");
   }
+});
+
+test("dry-run shadow state handles are single-use across branching retries", () => {
+  const initial = createDryRunShadowState();
+  reserveDryRunShadow(initial, identity());
+
+  assert.throws(
+    () => reserveDryRunShadow(initial, identity()),
+    /isolated shadow module/
+  );
 });
 
 test("dry-run shadow timeout reconciles only to no external effect", () => {
@@ -103,8 +134,15 @@ test("dry-run shadow timeout reconciles only to no external effect", () => {
 
 test("dry-run shadow rejects invalid or out-of-order transitions", () => {
   const initial = createDryRunShadowState();
-  const reserved = reserveDryRunShadow(initial, identity());
-  const completed = completeDryRunShadow(reserved.state, identity());
+  const reserved = reserveDryRunShadow(
+    createDryRunShadowState(),
+    identity()
+  );
+  const completedBase = reserveDryRunShadow(
+    createDryRunShadowState(),
+    identity()
+  );
+  const completed = completeDryRunShadow(completedBase.state, identity());
 
   assert.throws(
     () => completeDryRunShadow(initial, identity()),
@@ -155,6 +193,17 @@ test("dry-run shadow identity requires strict synthetic data fields", () => {
         extra: true
       } as DryRunShadowIdentity),
     /unknown fields/
+  );
+
+  const accountLike = reserveDryRunShadow(createDryRunShadowState(), {
+    ...identity(),
+    scenarioId: "scenario_1234-5678-901234"
+  });
+  assert.equal(
+    JSON.stringify(inspectDryRunShadowState(accountLike.state)).includes(
+      "1234-5678-901234"
+    ),
+    false
   );
 });
 

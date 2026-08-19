@@ -71,6 +71,7 @@ interface OwnedDryRunShadowState {
 }
 
 const STATE_BRANDS = new WeakSet<object>();
+const ACTIVE_STATES = new WeakSet<object>();
 const STATE_VALUES = new WeakMap<object, OwnedDryRunShadowState>();
 const SYNTHETIC_SCENARIO_ID_PATTERN =
   /^scenario_[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -115,6 +116,7 @@ export function reserveDryRunShadow(
       tombstones: [...owned.snapshot.tombstones],
       audit: [...owned.snapshot.audit, auditEvent]
     });
+    consumeState(state);
     return Object.freeze({
       state: nextState,
       outcome: "shadow_duplicate_rejected",
@@ -153,6 +155,7 @@ export function reserveDryRunShadow(
     tombstones: [...owned.snapshot.tombstones, tombstoneEntry],
     audit: [...owned.snapshot.audit, auditEvent]
   });
+  consumeState(state);
   return Object.freeze({
     state: nextState,
     outcome: "shadow_reserved",
@@ -243,6 +246,7 @@ function transitionRecord(
     tombstones: [...owned.snapshot.tombstones],
     audit: [...owned.snapshot.audit, auditEvent]
   });
+  consumeState(state);
   return Object.freeze({
     state: nextState,
     outcome: nextStatus,
@@ -264,6 +268,7 @@ function mintState(snapshot: DryRunShadowSnapshot): DryRunShadowState {
     }
   }) as DryRunShadowState;
   STATE_BRANDS.add(state);
+  ACTIVE_STATES.add(state);
   STATE_VALUES.set(state, Object.freeze({ snapshot: frozenSnapshot }));
   return state;
 }
@@ -273,7 +278,8 @@ function requireOwnedState(value: unknown): OwnedDryRunShadowState {
     typeof value !== "object" ||
     value === null ||
     !Object.isFrozen(value) ||
-    !STATE_BRANDS.has(value)
+    !STATE_BRANDS.has(value) ||
+    !ACTIVE_STATES.has(value)
   ) {
     throw new Error(
       "dry-run shadow state must be created by the isolated shadow module"
@@ -285,6 +291,12 @@ function requireOwnedState(value: unknown): OwnedDryRunShadowState {
   }
   assertSnapshotConsistency(owned.snapshot);
   return owned;
+}
+
+function consumeState(value: unknown): void {
+  if (typeof value !== "object" || value === null || !ACTIVE_STATES.delete(value)) {
+    throw new Error("dry-run shadow state handle is stale or already consumed");
+  }
 }
 
 function parseIdentity(value: unknown): DryRunShadowIdentity {
@@ -310,7 +322,7 @@ function parseIdentity(value: unknown): DryRunShadowIdentity {
     );
   }
   return Object.freeze({
-    scenarioId: record.scenarioId,
+    scenarioId: createScenarioRef(record.scenarioId),
     syntheticIntentHash: record.syntheticIntentHash
   });
 }
@@ -365,6 +377,13 @@ function createShadowKey(identity: DryRunShadowIdentity): string {
     .digest("hex")}`;
 }
 
+function createScenarioRef(scenarioId: string): string {
+  return `scenario:sha256:${createHash("sha256")
+    .update("toss-trading/dry-run-shadow-scenario/v1")
+    .update(lengthPrefix(scenarioId))
+    .digest("hex")}`;
+}
+
 function lengthPrefix(value: string): string {
   return `${Buffer.byteLength(value, "utf8")}:${value}`;
 }
@@ -409,18 +428,36 @@ function nextSequence(snapshot: DryRunShadowSnapshot): number {
 }
 
 function assertSnapshotConsistency(snapshot: DryRunShadowSnapshot): void {
-  if (
-    snapshot.records.length !== snapshot.tombstones.length ||
-    snapshot.records.some((record) => {
-      const tombstone = findTombstone(snapshot, record);
-      return tombstone === undefined || tombstone.shadowKey !== record.shadowKey;
-    }) ||
-    snapshot.tombstones.some(
-      (entry) => findRecord(snapshot, entry)?.shadowKey !== entry.shadowKey
-    )
-  ) {
+  const records = new Map<string, string>();
+  const tombstones = new Map<string, string>();
+  for (const record of snapshot.records) {
+    const key = identityIndexKey(record);
+    if (records.has(key)) {
+      throw new Error("dry-run shadow snapshot has duplicate records");
+    }
+    records.set(key, record.shadowKey);
+  }
+  for (const tombstone of snapshot.tombstones) {
+    const key = identityIndexKey(tombstone);
+    if (tombstones.has(key)) {
+      throw new Error("dry-run shadow snapshot has duplicate tombstones");
+    }
+    tombstones.set(key, tombstone.shadowKey);
+  }
+  if (records.size !== tombstones.size) {
     throw new Error("dry-run shadow snapshot is inconsistent");
   }
+  for (const [key, shadowKey] of records) {
+    if (tombstones.get(key) !== shadowKey) {
+      throw new Error("dry-run shadow snapshot is inconsistent");
+    }
+  }
+}
+
+function identityIndexKey(identity: DryRunShadowIdentity): string {
+  return `${lengthPrefix(identity.scenarioId)}${lengthPrefix(
+    identity.syntheticIntentHash
+  )}`;
 }
 
 function freezeRecord(record: DryRunShadowRecord): DryRunShadowRecord {
