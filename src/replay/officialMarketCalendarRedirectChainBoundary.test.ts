@@ -28,6 +28,10 @@ import {
   bindOfficialMarketCalendarSourceParserInput,
   openOfficialMarketCalendarSourceParserInputBinding
 } from "./officialMarketCalendarSourceParserInputBinding.js";
+import {
+  createOfficialMarketCalendarSourceParserResult,
+  parseOfficialMarketCalendarSourceParserResult
+} from "./officialMarketCalendarSourceParserResult.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
@@ -1352,6 +1356,140 @@ test("calendar source parser input rejects selector, representation and byte mis
   );
 });
 
+test("calendar source parser result derives canonical claims from parsed output", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.parser-result");
+  const parserOutput = sourceParserOutput();
+  const result = createOfficialMarketCalendarSourceParserResult(
+    { parserInputBinding: fixture.bound.parserInputBinding, parserOutput },
+    fixture.options
+  );
+
+  assert.deepEqual(result.evidenceRoles, [
+    "holiday_rows",
+    "holiday_schedule"
+  ]);
+  assert.equal(result.rowCoverageStartDate, "2026-01-01");
+  assert.equal(result.rowCoverageEndDate, "2026-12-31");
+  assert.equal(result.parserResultBound, true);
+  assert.match(result.parserOutputHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(Object.isFrozen(result), true);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceParserResult(result, fixture.options),
+    result
+  );
+});
+
+test("calendar source parser result rejects noncanonical rows and selector mismatch", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.parser-result-invalid");
+  const create = (parserOutput: unknown) =>
+    createOfficialMarketCalendarSourceParserResult(
+      { parserInputBinding: fixture.bound.parserInputBinding, parserOutput },
+      fixture.options
+    );
+
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        parsedRows: [
+          sourceParserOutput().parsedRows[1],
+          sourceParserOutput().parsedRows[0]
+        ]
+      }),
+    /unique ascending exchange dates/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        parsedRows: [sourceParserOutput().parsedRows[0]]
+      }),
+    /claims do not match acquisition selector/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        schemaVersion: "calendar_parser_output.v2"
+      }),
+    /does not match parser contract/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        parsedRows: [
+          {
+            ...sourceParserOutput().parsedRows[0],
+            fields: { z: "last", a: "first" }
+          },
+          sourceParserOutput().parsedRows[1]
+        ]
+      }),
+    /canonical key order/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        parsedRows: [
+          {
+            ...sourceParserOutput().parsedRows[0],
+            evidenceRoles: ["session_hours"]
+          },
+          sourceParserOutput().parsedRows[1]
+        ]
+      }),
+    /require parsed regular session hours/
+  );
+  assert.throws(
+    () =>
+      create({
+        ...sourceParserOutput(),
+        scheduleCoverageIntervals: [
+          {
+            coverageRole: "holiday_schedule",
+            startDate: "2026-01-01",
+            endDate: "2026-06-30"
+          },
+          {
+            coverageRole: "holiday_schedule",
+            startDate: "2026-07-01",
+            endDate: "2026-12-31"
+          }
+        ]
+      }),
+    /same-role schedule coverage intervals must be merged/
+  );
+});
+
+test("calendar source parser result rejects stored result and source byte tamper", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.parser-result-tamper");
+  const result = createOfficialMarketCalendarSourceParserResult(
+    {
+      parserInputBinding: fixture.bound.parserInputBinding,
+      parserOutput: sourceParserOutput()
+    },
+    fixture.options
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceParserResult(
+        { ...result, rowCoverageEndDate: "2026-12-30" },
+        fixture.options
+      ),
+    /does not match verified parser input/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceParserResult(result, {
+        ...fixture.options,
+        sourceBytes: new Uint8Array(100).fill(66)
+      }),
+    /bytes do not match the envelope/
+  );
+});
+
 function chain(
   overrides: Partial<{
     cacheRequests: ReturnType<typeof cacheRequest>[];
@@ -1526,6 +1664,68 @@ function sourceParserContractEntry(
       createOfficialMarketCalendarSourceParserContractHash(
         parserContractDefinition
       )
+  };
+}
+
+function sourceParserInputFixture(documentId: string) {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const sourceDocumentEnvelope =
+    createOfficialMarketCalendarSourceDocumentEnvelope(
+      {
+        documentId,
+        sourceBytes,
+        acquisitionBoundary: {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        }
+      },
+      policyRegistry()
+    );
+  const sourceDocumentAcquisitionMetadata =
+    createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
+      { sourceDocumentEnvelope },
+      { freshnessPolicyRegistry: policyRegistry(), sourceBytes }
+    );
+  const parserContractEntry = sourceParserContractEntry();
+  const options = {
+    sourceBytes,
+    freshnessPolicyRegistry: policyRegistry(),
+    parserContractRegistry: [parserContractEntry]
+  };
+  return {
+    options,
+    bound: bindOfficialMarketCalendarSourceParserInput(
+      { sourceDocumentAcquisitionMetadata, parserContractEntry },
+      options
+    )
+  };
+}
+
+function sourceParserOutput() {
+  return {
+    schemaVersion: "calendar_parser_output.v1",
+    parsedRows: [
+      {
+        exchangeDate: "2026-01-01",
+        evidenceRoles: ["holiday_rows"],
+        fields: { label: "New Year" }
+      },
+      {
+        exchangeDate: "2026-12-31",
+        evidenceRoles: ["holiday_rows"],
+        fields: { label: "Year End" }
+      }
+    ],
+    regularSessionHours: null,
+    scheduleCoverageIntervals: [
+      {
+        coverageRole: "holiday_schedule",
+        startDate: "2026-01-01",
+        endDate: "2026-12-31"
+      }
+    ],
+    applicabilityStartDate: null,
+    applicabilityEndDate: null
   };
 }
 
