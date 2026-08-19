@@ -12,6 +12,10 @@ import {
 import { OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS } from "./officialMarketCalendarRequestHeaderPolicyRegistry.js";
 import { verifyOfficialMarketCalendarRedirectChainBoundary as verifyOfficialMarketCalendarRedirectChainBoundaryWithRegistry } from "./officialMarketCalendarRedirectChainBoundary.js";
 import { OFFICIAL_MARKET_CALENDAR_REDIRECT_POLICY_VERSION } from "./officialMarketCalendarRedirectClientPolicy.js";
+import {
+  createOfficialMarketCalendarSourceDocumentEnvelope,
+  parseOfficialMarketCalendarSourceDocumentEnvelope
+} from "./officialMarketCalendarSourceDocumentEnvelope.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
@@ -906,6 +910,173 @@ test("calendar redirect chain boundary preserves child fail-closed validation", 
         chain({ finalCacheControlHeaderValues: ["max-age =60"] })
       ),
     /valid directive syntax/
+  );
+});
+
+test("calendar source document envelope binds exact bytes to verified acquisition", () => {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const envelope = createOfficialMarketCalendarSourceDocumentEnvelope(
+    {
+      documentId: "krx.calendar.2026",
+      sourceBytes,
+      acquisitionBoundary: {
+        redirectChainBoundary: chain(),
+        freshnessPolicySelectorMetadata: policySelectorMetadata()
+      }
+    },
+    policyRegistry()
+  );
+
+  assert.equal(envelope.exchange, "KRX");
+  assert.equal(envelope.contentLength, 100);
+  assert.match(envelope.sourceDocumentHash, /^sha256:[a-f0-9]{64}$/);
+  assert.match(envelope.envelopeHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal("sourceBytes" in envelope, false);
+  assert.equal(Object.isFrozen(envelope), true);
+  assert.equal(Object.isFrozen(envelope.acquisitionBoundary), true);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceDocumentEnvelope(
+      envelope,
+      {
+        freshnessPolicyRegistry: policyRegistry(),
+        sourceBytes
+      }
+    ),
+    envelope
+  );
+
+  const sourceDocumentHash = envelope.sourceDocumentHash;
+  sourceBytes.fill(66);
+  assert.equal(envelope.sourceDocumentHash, sourceDocumentHash);
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(envelope, {
+        freshnessPolicyRegistry: policyRegistry(),
+        sourceBytes
+      }),
+    /bytes do not match the envelope/
+  );
+});
+
+test("calendar source document envelope rejects byte length mismatch", () => {
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarSourceDocumentEnvelope(
+        {
+          documentId: "krx.calendar.truncated",
+          sourceBytes: new Uint8Array(99),
+          acquisitionBoundary: {
+            redirectChainBoundary: chain(),
+            freshnessPolicySelectorMetadata: policySelectorMetadata()
+          }
+        },
+        policyRegistry()
+      ),
+    /length must match verified transfer completion/
+  );
+});
+
+test("calendar source document envelope rejects envelope and boundary tamper", () => {
+  const envelope = createOfficialMarketCalendarSourceDocumentEnvelope(
+    {
+      documentId: "krx.calendar.tamper",
+      sourceBytes: new Uint8Array(100),
+      acquisitionBoundary: {
+        redirectChainBoundary: chain(),
+        freshnessPolicySelectorMetadata: policySelectorMetadata()
+      }
+    },
+    policyRegistry()
+  );
+
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...envelope, envelopeHash: hash("f") },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes: new Uint8Array(100)
+        }
+      ),
+    /envelope hash mismatch/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...envelope, sourceDocumentHash: hash("e") },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes: new Uint8Array(100)
+        }
+      ),
+    /bytes do not match the envelope/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...envelope, exchange: "NYSE" },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes: new Uint8Array(100)
+        }
+      ),
+    /exchange must match acquisition boundary/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...envelope, contentLength: 99 },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes: new Uint8Array(100)
+        }
+      ),
+    /length must match acquisition boundary/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentEnvelope(
+        {
+          ...envelope,
+          acquisitionBoundary: {
+            ...envelope.acquisitionBoundary,
+            currentTime: "2025-07-01T12:00:00.000Z"
+          }
+        },
+        {
+          freshnessPolicyRegistry: policyRegistry(),
+          sourceBytes: new Uint8Array(100)
+        }
+      ),
+    /Unrecognized key/
+  );
+});
+
+test("calendar source document envelope keeps unverified metadata and shape-loose input closed", () => {
+  const base = {
+    documentId: "krx.calendar.strict",
+    sourceBytes: new Uint8Array(100),
+    acquisitionBoundary: {
+      redirectChainBoundary: chain(),
+      freshnessPolicySelectorMetadata: policySelectorMetadata()
+    }
+  };
+
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...base, contentEncoding: null },
+        policyRegistry()
+      ),
+    /Unrecognized key/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarSourceDocumentEnvelope(
+        { ...base, credential: "not-allowed" },
+        policyRegistry()
+      ),
+    /Unrecognized key/
   );
 });
 

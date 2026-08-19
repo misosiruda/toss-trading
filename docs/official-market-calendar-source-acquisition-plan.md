@@ -165,6 +165,13 @@ request를 관찰 가능하게 기록한다. 301/302/303 이후 POST가 GET으�
 body/header가 제거되면 변경된 실제 method, `null` body hash와 effective
 headers를 다음 entry에 기록하며 최초 요청 정보에서 추론하지 않는다.
 
+현재 `officialMarketCalendarSourceDocumentEnvelope.ts`는 verified acquisition
+freshness/redirect boundary, exact source bytes와 document identity를 immutable
+pre-metadata envelope로 결합한다. Creation과 stored parse 모두 transfer content length와
+exact byte length/hash를 다시 검증하고 raw bytes 또는 caller-supplied publisher/content
+metadata를 output에 포함하지 않는다. 이 envelope는 source parser 결과를 collection
+document metadata로 승격하거나 filesystem package를 publish하지 않는다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
