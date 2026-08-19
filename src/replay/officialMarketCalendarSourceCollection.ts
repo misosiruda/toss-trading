@@ -87,7 +87,7 @@ const documentScheduleCoverageIntervalSchema = z
     }
   });
 
-const documentSchema = z
+export const officialMarketCalendarSourceCollectionDocumentSchema = z
   .object({
     documentId: identifierSchema,
     metadataHash: sha256HashSchema,
@@ -248,7 +248,7 @@ const sourceCollectionBaseSchema = z
     exchange: exchangeSchema,
     coverageStartDate: calendarDateSchema,
     coverageEndDate: calendarDateSchema,
-    documents: z.array(documentSchema).min(1),
+    documents: z.array(officialMarketCalendarSourceCollectionDocumentSchema).min(1),
     requiredExceptionCoverageRoles: z
       .object({
         contractVersion: identifierSchema,
@@ -276,6 +276,9 @@ export type OfficialMarketCalendarSourceCollectionPayload = z.infer<
 >;
 export type OfficialMarketCalendarSourceCollection = z.infer<
   typeof officialMarketCalendarSourceCollectionSchema
+>;
+export type OfficialMarketCalendarSourceCollectionDocument = z.infer<
+  typeof officialMarketCalendarSourceCollectionDocumentSchema
 >;
 
 export function createOfficialMarketCalendarSourceCollectionHash(
