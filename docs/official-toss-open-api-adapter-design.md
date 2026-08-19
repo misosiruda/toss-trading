@@ -642,6 +642,14 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   fence ownership은 terminal/no-dispatch reconciliation까지 유지하고 v2를 새 mutation에
   eligible하게 만들지 않는다. Modify result가 ambiguous/rejected이면 old capacity와 fence를
   유지하고, exact reconciled new target로 handoff된 뒤에만 obsolete capacity를 release한다.
+- Kill-active에서 exact reconciled open target에 active normal mutation/recovery fence가 없으면 exclusive
+  recovery lock의 serializable initializer가 stable account/target lineage, current
+  version/state/remaining, complete reconciled history와 conflicting unresolved operation/fence 부재를
+  한 CAS로 검증한다. Fresh `recoveryLineageId`와 target-lineage exclusive fence를 claim하고 observed
+  target contribution을 double-add/release하지 않는 conservative `recoveryCapacityEnvelope`,
+  `recovery_init_pending_approval`, fresh pending approval request와 empty gateway allowlist를 atomic
+  commit한다. Approval/permit은 만들지 않으며 ambiguous evidence는 blocked reconciliation로 남긴다.
+  Target이 terminal이면 cancel 없이 resulting position/cash까지 reconcile한 뒤에만 resource를 release한다.
 - Kill-active cancel recovery는 verified owner approval과 exact current broker-open target이
   있을 때 active fence를 `recovery_cancel_takeover` generation으로 atomic CAS할 수 있다.
   Original operation은 superseded-pending-reconciliation으로 보존하고 stale permit을 fence하며,
@@ -689,7 +697,7 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   original/prior-attempt history를 유지하고 generation, fresh backend intent/pending request와 owner
   approval/risk revalidation을 새로 만든 뒤 sole permit 하나만 발급한다. Ambiguous outcome은 retry하지
   않고 blocked reconciliation에 남긴다.
-- Recovery takeover/rebind/retry의 pending approval에서 typed owner decline, authoritative request
+- Recovery init/takeover/rebind/retry의 pending approval에서 typed owner decline, authoritative request
   expiry, allowlisted channel failure 또는 malformed response가 확정되면 exact state/version,
   request generation, valid approval/permit과 exact current recovery generation의
   `dispatch_attempted` 부재, empty gateway allowlist를
@@ -1074,6 +1082,7 @@ record와 새 pinned key를 요구한다.
 - pre-permit binding mismatch와 post-permit approval expiry는 각각 no-permit 또는 unconsumed-permit CAS로 안전 종료된다.
 - pre-permit payload 변경은 exact old/new binding mismatch와 request/approval/no-permit CAS 없이는 release되지 않는다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
+- active mutation fence가 없는 reconciled open target도 atomic recovery_init fence/capacity/request를 통해서만 cancel-only recovery에 진입한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
 - cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.

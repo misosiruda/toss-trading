@@ -198,7 +198,8 @@ intent/reservation/request generation을 요구한다. Approval record 존재 �
 
 Cancel-only recovery의 approval 실패는 normal `approval_required` closure처럼 inherited resource를
 release하지 않는다. `recovery_takeover_pending_approval`, `recovery_rebind_pending_approval`과
-`recovery_retry_pending_approval`에서 valid approval이 아직 만들어지지 않았다면 위 네 가지
+`recovery_retry_pending_approval`, `recovery_init_pending_approval`에서 valid approval이 아직
+만들어지지 않았다면 위 네 가지
 typed reason만 `recovery_approval_not_issued`로 닫는다. Valid approval 뒤의 corresponding
 `*_pending_final_risk` state에서 approval이 authoritative expiry, verified revoke 또는 exact binding
 invalidation로 unusable해지면 각각 `recovery_approval_expired`, `recovery_approval_revoked` 또는
@@ -221,7 +222,8 @@ approval은 closed generation mismatch로 거부한다. 자동 재요청은 금�
 `recoveryApprovalRetry`가 exact closed generation/reason과 fresh current target evidence에 bind된
 경우에만 같은 recovery lock/epoch에서 generation을 증가시키고 fresh pending request를 atomic
 commit한다. Target이 unchanged open이면 prior phase에 맞는
-`recovery_takeover_pending_approval`, `recovery_rebind_pending_approval` 또는
+`recovery_init_pending_approval`, `recovery_takeover_pending_approval`,
+`recovery_rebind_pending_approval` 또는
 `recovery_retry_pending_approval`로 돌아가고, target이 달라졌으면 same-lineage
 `recovery_rebind_pending_approval`로만 이동한다. 이 transition은 approval/permit을 만들지 않고
 gateway allowlist를 비워 둔다. Target이 terminal이면 새 request 없이 reconciliation으로 가며,
@@ -401,7 +403,16 @@ send_reserved
   -> stopped_before_dispatch(cause-specific noDispatchFence)
   -> dispatch_permit_acquired
 
-recovery_takeover_pending_final_risk
+kill_active_reconciled_open_target(no active mutation/recovery fence)
+  -> recovery_init_pending_approval(atomic target fence + capacity envelope + pending request, no permit)
+
+recovery_init_pending_approval
+  -> recovery_init_pending_final_risk(valid fresh approval, no permit)
+  -> recovery_rebind_pending_approval(recovery_target_changed pending-request closure)
+  -> recovery_approval_closed(declined | request expired | channel unavailable | malformed)
+  -> reconciliation_pending(target terminal)
+
+recovery_init_pending_final_risk | recovery_takeover_pending_final_risk
   -> send_reserved(atomic final risk + approval consume + sole recovery permit)
   -> recovery_rebind_pending_approval(recovery_target_changed pre-permit noDispatchFence)
   -> recovery_approval_closed(expired | revoked | binding invalidated)
@@ -427,6 +438,7 @@ recovery_rebind_pending_final_risk | recovery_retry_pending_final_risk
   -> recovery_approval_closed(expired | revoked | binding invalidated)
 
 recovery_approval_closed
+  -> recovery_init_pending_approval(verified owner retry + fresh unchanged fence-free target evidence)
   -> recovery_takeover_pending_approval(verified owner retry + fresh unchanged target evidence)
   -> recovery_rebind_pending_approval(verified owner retry + fresh changed/rebind target evidence)
   -> recovery_retry_pending_approval(verified owner retry + fresh unchanged target evidence)
@@ -663,6 +675,18 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
   바꾸지 않는다.
 - Read-only reconciliation으로 확인한 exact `accountScopeRef`, `targetOrderRef`, target
   version/state hash와 remaining quantity 하나만 대상으로 한다.
+- Exact reconciled open target에 active normal mutation fence나 recovery fence가 없을 때도 cancel-only
+  recovery를 시작할 수 있다. Exclusive recovery lock의 serializable initializer는 kill-active state,
+  stable account/target lineage, exact current open version/state/remaining, complete reconciled history와
+  conflicting unresolved operation/fence 부재를 한 CAS로 검증한다. Evidence가 하나라도 ambiguous하면
+  initializer를 만들지 않고 owner-visible blocked reconciliation로 남긴다.
+- Fence-free initializer는 fresh `recoveryLineageId`와 stable target-lineage exclusive fence를 claim하고,
+  observed target의 exposure/order-slot/remaining contribution을 double-add하거나 release하지 않은 채
+  conservative `recoveryCapacityEnvelope`로 hold한다. 같은 transaction에서
+  `recovery_init_pending_approval`, fresh pending approval request와 empty gateway allowlist를 commit한다.
+  Approval, dispatch permit 또는 mutation-capable gateway state는 만들지 않는다. Target이 terminal로
+  바뀌면 새 cancel 없이 order와 resulting position/cash reconciliation 뒤에만 fence/capacity를
+  release한다.
 - Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
   reservation, current snapshot identity/version과 exact approved `riskBindingHash`, reason, expiry와
   recovery fencing epoch에 exact bind한다. Takeover
@@ -1019,6 +1043,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Modify old capacity가 reconciliation 전 보존되고 conservative max/union으로 reserve됨
 - [ ] Stable account/target mutation fence가 version lineage 전체의 concurrent modify/cancel을 terminal까지 차단함
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
+- [ ] Active mutation fence가 없는 reconciled open target도 atomic recovery_init fence/capacity/request로 진입함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
 - [ ] Recovery approval의 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume/permit이 허용됨
