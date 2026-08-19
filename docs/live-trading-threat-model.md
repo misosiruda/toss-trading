@@ -242,8 +242,11 @@ commit한다. Target이 unchanged open이면 prior phase에 맞는
 `recovery_rebind_pending_approval` 또는
 `recovery_retry_pending_approval`로 돌아가고, target이 달라졌으면 same-lineage
 `recovery_rebind_pending_approval`로만 이동한다. 이 transition은 approval/permit을 만들지 않고
-gateway allowlist를 비워 둔다. Target이 terminal이면 새 request 없이 reconciliation으로 가며,
-target/approval evidence가 ambiguous하면 owner-visible blocked로 남긴다.
+gateway allowlist를 비워 둔다. Init retry도 fence-free 상태를 다시 요구하지 않으며 exact unchanged
+target과 current `recoveryLineageId`가 이미 소유한 exclusive fence/capacity/history를 한 CAS로
+검증·유지하면서 fresh request generation만 만든다. Target이 terminal이면 새 request 없이
+reconciliation으로 가며, target/approval/fence evidence가 ambiguous하면 owner-visible blocked로
+남긴다.
 
 Approval consume은 단순 read-then-write가 아니다. Future `OrderRouter`는 한 linearizable
 transaction/CAS에서 `approval_required` current state, unconsumed approval, exact
@@ -462,7 +465,7 @@ recovery_rebind_pending_final_risk | recovery_retry_pending_final_risk
   -> recovery_terminal_pending_reconciliation(exact target-terminal CAS + approval/request closure)
 
 recovery_approval_closed
-  -> recovery_init_pending_approval(verified owner retry + fresh unchanged fence-free target evidence)
+  -> recovery_init_pending_approval(verified owner retry + fresh unchanged target evidence + same lineage-owned fence)
   -> recovery_takeover_pending_approval(verified owner retry + fresh unchanged target evidence)
   -> recovery_rebind_pending_approval(verified owner retry + fresh changed/rebind target evidence)
   -> recovery_retry_pending_approval(verified owner retry + fresh unchanged target evidence)
@@ -1089,6 +1092,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] 모든 recovery approval/final-risk 대기 상태가 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 lineage resource를 유지함
 - [ ] Recovery approval decline/expiry/malformed/revoke가 current request generation만 닫고 prior attempt history와 inherited fence/capacity를 유지함
 - [ ] Closed recovery approval은 verified owner retry와 fresh target evidence로만 새 request generation을 만듦
+- [ ] Recovery init approval retry가 fence-free를 재요구하지 않고 same-lineage owned fence/capacity/history를 유지함
 - [ ] Takeover cancel의 zeroByteAttemptFence가 ambiguous original lineage capacity/fence를 release하지 않음
 - [ ] Recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale CAS로 종료됨
 - [ ] Proven no-effect recovery cancel이 unchanged target에서 same-lineage fresh approval retry로만 이어짐

@@ -727,8 +727,10 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   경우에만 generation을 증가시키고 같은 phase의 fresh pending request를 atomic commit한다. Target이
   달라졌으면 `recovery_rebind_pending_approval`, terminal이면 exact target-terminal CAS로 current
   request/approval을 닫고 `recovery_terminal_pending_reconciliation`으로만 이동한다. 새 approval/permit을
-  transition 자체에서 만들지 않고 gateway allowlist를 비워 둔다. Evidence가 ambiguous하면 blocked로
-  유지한다.
+  transition 자체에서 만들지 않고 gateway allowlist를 비워 둔다. Init retry는 fence-free target을
+  재요구하지 않고 exact unchanged target과 current `recoveryLineageId`가 소유한 exclusive
+  fence/capacity/history를 검증·유지하면서 fresh request generation만 만든다. Evidence가 ambiguous하면
+  blocked로 유지한다.
 - 서로 다른 intent도 같은 portfolio/account capacity를 경쟁하므로 final risk evaluation은
   current snapshot과 모든 active reservation을 읽고, risk capacity/idempotency/tombstone을
   pending `approvalRequest` 생성 및 `approval_required` 전이와 하나의 serializable durable
@@ -1107,6 +1109,7 @@ record와 새 pinned key를 요구한다.
 - 모든 cancel-recovery pending-approval/final-risk state는 exact target-terminal CAS로 current request/approval을 닫고 position/cash reconciliation 전까지 inherited lineage resource를 유지한다.
 - recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
 - closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
+- recovery init approval retry는 fence-free target을 재요구하지 않고 same-lineage owned fence/capacity/history를 유지한다.
 - takeover cancel의 zeroByteAttemptFence는 ambiguous original lineage capacity/fence를 release하지 않는다.
 - recovery permit pre-attempt expiry는 zeroByteAttemptFence가 아닌 permit_expired_or_stale no-dispatch CAS로 종료한다.
 - proven no-effect recovery cancel은 unchanged target에서 same-lineage fresh approval retry만 허용한다.
