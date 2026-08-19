@@ -202,7 +202,14 @@ frozen state, approved result와 router 직전 recomputed snapshot hash를 함�
 caller-constructed object, missing/mismatched hash 또는 평가 뒤 재구성·정규화한 intent는 handoff
 authority가 아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow
 state와 synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를
-받을 수 없다. 이 계층의 존재는 row 17 official gateway, live order 또는
+받을 수 없다. 구현된 `dryRunShadowState`는 module-owned immutable state에서 synthetic
+`(scenarioId, syntheticIntentHash)` reservation과 permanent tombstone을 함께 만들고 duplicate를 모든
+terminal state 이후에도 거부한다. Timeout은 injected simulation label이며
+`shadow_reconciled_no_external_effect`로만 닫고 모든 audit는 `simulationOnly=true`,
+`externalEffect=none`을 유지한다. Caller의 scenario string은 저장 전에 domain-separated opaque
+reference로 바꾸며 raw value를 record/audit에 남기지 않는다. 각 immutable state handle은 다음
+transition에서 한 번만 소비할 수 있고 stale branch/retry는 거부한다. 이 계층의 존재는 row 17
+official gateway, live order 또는
 `TRADING_ENABLED=true`를 허용하지 않는다.
 
 ### `src/collectors`
