@@ -127,7 +127,7 @@ file이다. Browser에서 복사한 표, screenshot OCR, 검색 engine snippet�
 | `representationHeaders` | `Accept`, locale 등 response representation에 영향을 주는 allowlisted header를 canonical safe-ASCII field value로 보존한 object |
 | `finalUrl` | redirect 이후 실제 응답 URL |
 | `redirectPolicyVersion` | Redirect follow와 method/body/header 전환 규칙의 version |
-| `redirectChain` | 최초 요청부터 final response까지 각 hop의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names와 safe representation/cache header values, negotiated response protocol version, response status, `Location`, `Content-Range`, `Date`, `Age`와 response cache-control 값 또는 부재를 순서대로 기록 |
+| `redirectChain` | 최초 요청부터 final response까지 verifier가 정규화한 composite redirect-chain projection. 각 child array가 hop 순서의 URL, 실제 전송 method, canonical parameters, body content type/hash, effective request header names, safe representation/cache header values와 response 관찰을 보존하며 metadata open 시 전체 boundary를 다시 검증 |
 | `retrievedAt` | explicit timezone offset을 포함한 실제 retrieval 시각 |
 | `cacheRequestPolicyVersion` | Revalidation/bypass request와 response cache metadata 검증 policy version |
 | `responseDate` | Final response의 strict HTTP `Date` timestamp |
@@ -178,6 +178,20 @@ Final response의 representation metadata는
 정규화하고 `Content-Encoding`은 absent 또는 single `gzip`/`deflate`/`br`만 허용한다.
 이 boundary는 final-response verifier의 필수 child이며 decode, parser selection 또는
 parser-contract별 representation allowlist는 수행하지 않는다.
+
+`officialMarketCalendarSourceDocumentAcquisitionMetadata.ts`는 verified envelope 하나만 입력받아
+request/final-response/cache/freshness/representation/transfer field와 registry-bound
+expected coverage/parser selector를 재구성한다. `publisher`는 verified exchange의 canonical
+identity인 `KRX` 또는 `NYSE`로 파생하고 full envelope를 acquisition metadata hash에 포함해 raw
+redirect/acquisition boundary를 보존한다. Top-level `redirectChain`은 raw input이 아닌
+verifier가 정규화한 composite projection을 노출하고 `cacheRequestPolicyVersion`은 verified initial
+cache request policy에서 파생한다. Stored parse는 exact source bytes와 freshness
+policy registry로 전체 aggregate를 다시 생성한다. Registry selector는
+`expectedEvidenceRoles`, expected row/schedule/applicability coverage와
+`expectedParserContractVersion`으로만 기록하고 `parserResultBound=false`를 강제한다.
+따라서 이 pre-parser aggregate는 final `metadata.json`이 아니며 actual `evidenceRoles`,
+row coverage, parsed session-hours와 `metadataHash`는 verified parser result 결합 전에는
+생성하지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
