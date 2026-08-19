@@ -1205,7 +1205,7 @@ manifest와 그 base 이후 current head까지의 exact signed incremental exten
 | 13 | Credential-ready preflight | 구현됨: secret-free auth/config summary, exact host DNS family/count, fixed token/calendar allowlist, outbound-IP owner attestation와 paper-only boundary 진단 | HTTP token/calendar request, resolved IP/token/response 출력, successful external evidence claim |
 | 14 | Live RiskEngine implementation | 구현됨: deterministic policy, fail-closed normalization/evaluation과 risk gate regression tests | broker gateway, `OrderRouter`, live enablement |
 | 15 | [Live trading threat model](live-trading-threat-model.md) | 구현됨: attack paths, runtime approval, idempotency, secrets/network, audit, incident rollback와 dry-run gate | live order 승인, implementation shortcut |
-| 16 | Live OrderRouter dry-run | architecture boundary 문서화 완료, runtime 미구현: full canonical `evaluatedIntentHash` handoff, internal pure mock-only state machine, isolated shadow idempotency/tombstone, masked audit | ID-only risk decision handoff, official order POST, broker/network I/O, API/MCP/dashboard/CLI mutation surface |
+| 16 | Live OrderRouter dry-run | architecture boundary 문서화 완료, runtime 미구현: pre-risk deep-frozen exact intent snapshot과 raw/normalized projection의 full canonical `evaluatedIntentHash` handoff, internal pure mock-only state machine, isolated shadow idempotency/tombstone, masked audit | ID-only 또는 post-risk reconstructed intent handoff, official order POST, broker/network I/O, API/MCP/dashboard/CLI mutation surface |
 | 17 | Official order gateway behind gates | create/modify/cancel under explicit gates | MCP direct order tool |
 | 18 | Deployment packaging | process isolation, config, monitoring | default live enable |
 

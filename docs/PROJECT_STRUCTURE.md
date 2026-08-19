@@ -185,14 +185,16 @@ flowchart TD
   typed input으로 검증하고 하나라도 다르면 fail-closed함
 - caller가 만든 자연어, Codex paper evidence 또는 raw broker payload를 intent로 변환하지
   않음
-- 첫 runtime PR은 `LiveRiskDecision`에 domain-separated canonical
-  `evaluatedIntentHash`를 추가해야 함. Hash input은 schema version과 risk가 읽은
-  `orderIntentId`, `signalId`, `idempotencyKey`, market, normalized symbol, side,
-  order type, quantity, estimated gross amount, created/expiry timestamp, 전체 preview와
-  market-order approval projection을 length-prefix해 포함함
-- router handoff 직전에 immutable `LiveOrderIntent` projection을 다시 canonicalize해
-  `evaluatedIntentHash`와 비교하고, decision이 approved가 아니거나 hash가 없거나 다르면
-  fail-closed함. 현재 ID-only `LiveRiskDecision`은 router handoff authority가 아님
+- 첫 runtime PR은 workflow가 risk 평가 전에 strict-validated `LiveOrderIntent`를
+  deep-copy/deep-freeze하고, 그 exact snapshot을 `LiveRiskEngine`과 router handoff에 함께
+  사용하도록 해야 함
+- `LiveRiskDecision`에는 domain-separated canonical `evaluatedIntentHash`를 추가해야 함.
+  Hash input은 schema version, optional-field presence와 exact raw string/number/boolean 값을
+  보존한 frozen snapshot 전체를 length-prefix해 포함하며, raw `symbol`과 RiskEngine이 실제
+  사용하는 normalized symbol projection을 서로 다른 field로 모두 bind함
+- router handoff 직전에 동일 frozen snapshot을 다시 canonicalize해 `evaluatedIntentHash`와
+  비교하고, decision이 approved가 아니거나 hash가 없거나 다르면 fail-closed함. 현재 ID-only
+  `LiveRiskDecision` 또는 새로 재구성·정규화한 intent는 router handoff authority가 아님
 - `LiveRiskEngine` reject 뒤에는 router가 호출되지 않으며 router 자체가 risk engine,
   sizing 또는 allocation 책임을 복제하지 않음
 - synthetic owner approval fixture와 isolated shadow idempotency/tombstone state만 사용하고,

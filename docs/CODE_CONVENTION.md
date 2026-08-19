@@ -188,15 +188,18 @@ const options = {
 - natural language, Codex paper evidence 또는 raw provider payload를 `LiveOrderIntent`로 변환
 - API/MCP/dashboard/CLI/package entrypoint에 mutation surface 추가
 
-`src/order`는 pure deterministic module로 유지한다. 첫 runtime PR은 `LiveRiskDecision`에
-domain-separated `evaluatedIntentHash`를 추가하고, validated immutable intent projection의
-schema version과 risk가 읽는 모든 field를 length-prefixed canonical form으로 hash해야 한다.
-`src/workflows`는 `LiveRiskEngine` 평가 뒤 router handoff 직전에 같은 projection hash를 다시
-계산한다. Decision이 approved가 아니거나 hash가 없거나 mismatch면 router를 호출하지 않는다.
-현재 `orderIntentId`/`signalId`만 가진 decision은 handoff authority가 아니다. `src/order`가 risk
-rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow state와 synthetic approval은
-injected typed value로만 받고 live store나 broker transport adapter를 받을 수 없다. 이 계층의
-존재는 row 17 official gateway, live order 또는 `TRADING_ENABLED=true`를 허용하지 않는다.
+`src/order`는 pure deterministic module로 유지한다. 첫 runtime PR에서 `src/workflows`는 risk
+평가 전에 strict-validated `LiveOrderIntent`를 deep-copy/deep-freeze하고 그 exact snapshot을
+`LiveRiskEngine`과 future router에 함께 전달한다. `LiveRiskDecision`의 domain-separated
+`evaluatedIntentHash`는 schema version, optional-field presence와 exact raw value를 보존한 snapshot
+전체를 length-prefixed canonical form으로 hash해야 한다. Raw `symbol`과 RiskEngine이 사용하는
+normalized symbol projection도 서로 다른 field로 모두 bind한다. Router handoff 직전에 같은 frozen
+snapshot hash를 다시 계산하며, decision이 approved가 아니거나 hash가 없거나 mismatch면 router를
+호출하지 않는다. 현재 ID-only decision 또는 평가 뒤 재구성·정규화한 intent는 handoff authority가
+아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow state와
+synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를 받을 수
+없다. 이 계층의 존재는 row 17 official gateway, live order 또는 `TRADING_ENABLED=true`를 허용하지
+않는다.
 
 ### `src/collectors`
 
