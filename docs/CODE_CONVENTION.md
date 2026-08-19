@@ -173,7 +173,8 @@ const options = {
 책임:
 
 - official adapter roadmap row 16의 internal mock-only dry-run state machine
-- typed `LiveOrderIntent`, exact approved `LiveRiskDecision`과 synthetic owner approval binding 검증
+- typed `LiveOrderIntent`, full canonical evaluated-intent hash를 가진 approved
+  `LiveRiskDecision`과 synthetic owner approval binding 검증
 - live idempotency/capacity store와 분리된 deterministic shadow reservation과 permanent tombstone
 - masked paper-only audit record와 `dry_run_validated` /
   `shadow_reconciled_no_external_effect` 결과 생성
@@ -187,12 +188,15 @@ const options = {
 - natural language, Codex paper evidence 또는 raw provider payload를 `LiveOrderIntent`로 변환
 - API/MCP/dashboard/CLI/package entrypoint에 mutation surface 추가
 
-`src/order`는 pure deterministic module로 유지한다. `src/workflows`가 먼저
-`LiveRiskEngine`을 평가하고 approved decision과 immutable intent의 identity가 exact match할
-때만 future dry-run router를 호출한다. `src/order`가 risk rule, sizing 또는 allocation을
-재구현해서는 안 된다. Shadow state와 synthetic approval은 injected typed value로만 받고
-live store나 broker transport adapter를 받을 수 없다. 이 계층의 존재는 row 17 official
-gateway, live order 또는 `TRADING_ENABLED=true`를 허용하지 않는다.
+`src/order`는 pure deterministic module로 유지한다. 첫 runtime PR은 `LiveRiskDecision`에
+domain-separated `evaluatedIntentHash`를 추가하고, validated immutable intent projection의
+schema version과 risk가 읽는 모든 field를 length-prefixed canonical form으로 hash해야 한다.
+`src/workflows`는 `LiveRiskEngine` 평가 뒤 router handoff 직전에 같은 projection hash를 다시
+계산한다. Decision이 approved가 아니거나 hash가 없거나 mismatch면 router를 호출하지 않는다.
+현재 `orderIntentId`/`signalId`만 가진 decision은 handoff authority가 아니다. `src/order`가 risk
+rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow state와 synthetic approval은
+injected typed value로만 받고 live store나 broker transport adapter를 받을 수 없다. 이 계층의
+존재는 row 17 official gateway, live order 또는 `TRADING_ENABLED=true`를 허용하지 않는다.
 
 ### `src/collectors`
 
