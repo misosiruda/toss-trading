@@ -217,7 +217,16 @@ exchange, content type/encoding, source hash/length를 decoded representation bo
 decoded byte hash/length는 immutable parser-input binding hash에 포함한다. Stored open은
 freshness registry와 exact encoded bytes로 acquisition부터 decode까지 전체 chain을 다시
 검증하며 decoded bytes는 process-local parser input으로만 반환한다. Parser 실행과 verified
-result 결합은 후속 단계이다.
+result 결합은 별도 parser-result contract가 담당하고 production parser 실행은 후속 단계이다.
+
+`officialMarketCalendarSourceParserResult.ts`는 parser-specific adapter output을 strict
+canonical contract로 받고 parser-input binding과 결합한다. Parsed row는 unique ascending
+exchange-date와 canonical evidence role/field ordering을 가져야 하며 row coverage는 실제
+첫/마지막 row에서 파생한다. Evidence roles는 row roles, parsed regular session hours와
+schedule coverage role에서 파생하고 acquisition metadata의 expected coverage selector와
+exact match해야 한다. Parser output/result hash는 full input binding과 함께 고정하며 stored
+parse는 acquisition부터 parser input까지 다시 연다. Production source-specific parser와
+final document metadata 승격은 별도 후속 단계이다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
