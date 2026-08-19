@@ -193,6 +193,14 @@ policy registry로 전체 aggregate를 다시 생성한다. Registry selector는
 row coverage, parsed session-hours와 `metadataHash`는 verified parser result 결합 전에는
 생성하지 않는다.
 
+Parser identity는 `officialMarketCalendarSourceParserContract.ts`의 immutable strict
+definition/registry로 별도 관리한다. Definition은 exchange, canonical parameter-free
+accepted content type 목록, absent를 `null`로 포함할 수 있는 canonical accepted content
+encoding 목록과 parser output schema version만 가진다. Registry entry는 definition hash를
+검증하며 duplicate/unregistered version과 recorded mismatch를 거부한다. Executable path,
+parser code 또는 raw command는 contract 입력이 아니다. 실제 KRX/NYSE source format과
+representation을 확인하기 전에는 production parser entry를 등록하지 않는다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
