@@ -208,8 +208,9 @@ flowchart TD
 - `LiveRiskEngine` reject 뒤에는 router가 호출되지 않으며 router 자체가 risk engine,
   sizing 또는 allocation 책임을 복제하지 않음
 - 구현된 shadow state는 synthetic scenario/hash tuple만 받고 isolated permanent tombstone을 최초
-  reservation과 함께 생성하며 simulated terminal 뒤에도 같은 identity 재예약을 거부함. 후속
-  router의 synthetic owner approval fixture는 아직 미구현임
+  reservation과 함께 생성하며 simulated terminal 뒤에도 같은 identity 재예약을 거부함. Scenario
+  input은 opaque ref로 저장하고 immutable state handle은 single-use로 소비해 stale branch reservation을
+  차단함. 후속 router의 synthetic owner approval fixture는 아직 미구현임
 - 결과는 `dry_run_validated` 또는 `shadow_reconciled_no_external_effect` 같은 paper-only
   상태로 끝나며 broker order/execution identity를 만들지 않음
 - `src/order`는 `src/broker`, `src/api`, `src/mcp`, `src/cli`, `src/ai`, `src/paper`,
