@@ -207,7 +207,17 @@ br encoding을 명시적으로 decode한다. Encoded/decoded byte length와 hash
 entry, versioned 64 MiB expansion limit을 immutable boundary에 결합하고 stored open도 exact
 encoded bytes로 전체 boundary를 다시 생성한다. Decoded bytes는 metadata에 저장하지 않고
 process-local parser input으로만 반환한다. 이 pure representation boundary를 verified
-acquisition metadata와 결합하고 parser result를 생성하는 단계는 별도 후속 경계이다.
+acquisition metadata와 결합하는 책임은 별도 parser-input binding이 담당하며 parser
+result 생성은 후속 경계이다.
+
+`officialMarketCalendarSourceParserInputBinding.ts`는 verified acquisition metadata의
+expected parser version과 registry-resolved contract를 exact match하고 acquisition의
+exchange, content type/encoding, source hash/length를 decoded representation boundary와
+결합한다. Full acquisition metadata, decode boundary, parser output schema identity와
+decoded byte hash/length는 immutable parser-input binding hash에 포함한다. Stored open은
+freshness registry와 exact encoded bytes로 acquisition부터 decode까지 전체 chain을 다시
+검증하며 decoded bytes는 process-local parser input으로만 반환한다. Parser 실행과 verified
+result 결합은 후속 단계이다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에

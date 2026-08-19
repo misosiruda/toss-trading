@@ -20,6 +20,14 @@ import {
   createOfficialMarketCalendarSourceDocumentAcquisitionMetadata,
   parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata
 } from "./officialMarketCalendarSourceDocumentAcquisitionMetadata.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_SOURCE_PARSER_CONTRACT_DEFINITION_SCHEMA_VERSION,
+  createOfficialMarketCalendarSourceParserContractHash
+} from "./officialMarketCalendarSourceParserContract.js";
+import {
+  bindOfficialMarketCalendarSourceParserInput,
+  openOfficialMarketCalendarSourceParserInputBinding
+} from "./officialMarketCalendarSourceParserInputBinding.js";
 import { OFFICIAL_MARKET_CALENDAR_TLS_CLIENT_POLICY_VERSION } from "./officialMarketCalendarTlsClientPolicy.js";
 
 interface MethodTransition {
@@ -1227,6 +1235,123 @@ test("calendar source document acquisition metadata rejects derived-field and by
   );
 });
 
+test("calendar source parser input binds verified acquisition to decoded bytes", () => {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const sourceDocumentEnvelope =
+    createOfficialMarketCalendarSourceDocumentEnvelope(
+      {
+        documentId: "krx.calendar.parser-input",
+        sourceBytes,
+        acquisitionBoundary: {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        }
+      },
+      policyRegistry()
+    );
+  const sourceDocumentAcquisitionMetadata =
+    createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
+      { sourceDocumentEnvelope },
+      { freshnessPolicyRegistry: policyRegistry(), sourceBytes }
+    );
+  const parserContractEntry = sourceParserContractEntry();
+  const options = {
+    sourceBytes,
+    freshnessPolicyRegistry: policyRegistry(),
+    parserContractRegistry: [parserContractEntry]
+  };
+  const bound = bindOfficialMarketCalendarSourceParserInput(
+    { sourceDocumentAcquisitionMetadata, parserContractEntry },
+    options
+  );
+
+  assert.equal(bound.parserInputBinding.documentId, "krx.calendar.parser-input");
+  assert.equal(bound.parserInputBinding.exchange, "KRX");
+  assert.equal(
+    bound.parserInputBinding.sourceDocumentHash,
+    sourceDocumentAcquisitionMetadata.sourceDocumentHash
+  );
+  assert.equal(
+    bound.parserInputBinding.parserOutputSchemaVersion,
+    "calendar_parser_output.v1"
+  );
+  assert.equal(bound.parserInputBinding.parserResultBound, false);
+  assert.deepEqual(bound.decodedBytes, sourceBytes);
+  assert.equal(Object.isFrozen(bound.parserInputBinding), true);
+  assert.deepEqual(
+    openOfficialMarketCalendarSourceParserInputBinding(
+      bound.parserInputBinding,
+      options
+    ),
+    bound
+  );
+});
+
+test("calendar source parser input rejects selector, representation and byte mismatch", () => {
+  const sourceBytes = new Uint8Array(100).fill(65);
+  const sourceDocumentEnvelope =
+    createOfficialMarketCalendarSourceDocumentEnvelope(
+      {
+        documentId: "krx.calendar.parser-input-mismatch",
+        sourceBytes,
+        acquisitionBoundary: {
+          redirectChainBoundary: chain(),
+          freshnessPolicySelectorMetadata: policySelectorMetadata()
+        }
+      },
+      policyRegistry()
+    );
+  const sourceDocumentAcquisitionMetadata =
+    createOfficialMarketCalendarSourceDocumentAcquisitionMetadata(
+      { sourceDocumentEnvelope },
+      { freshnessPolicyRegistry: policyRegistry(), sourceBytes }
+    );
+  const parserContractEntry = sourceParserContractEntry();
+  const bind = (entry: ReturnType<typeof sourceParserContractEntry>) =>
+    bindOfficialMarketCalendarSourceParserInput(
+      { sourceDocumentAcquisitionMetadata, parserContractEntry: entry },
+      {
+        sourceBytes,
+        freshnessPolicyRegistry: policyRegistry(),
+        parserContractRegistry: [entry]
+      }
+    );
+
+  assert.throws(
+    () => bind(sourceParserContractEntry({ parserContractVersion: "other.v1" })),
+    /does not match acquisition selector/
+  );
+  assert.throws(
+    () => bind(sourceParserContractEntry({ acceptedContentTypes: ["text/csv"] })),
+    /content type is not accepted/
+  );
+  const bound = bind(parserContractEntry);
+  assert.throws(
+    () =>
+      openOfficialMarketCalendarSourceParserInputBinding(
+        { ...bound.parserInputBinding, decodedContentLength: 101 },
+        {
+          sourceBytes,
+          freshnessPolicyRegistry: policyRegistry(),
+          parserContractRegistry: [parserContractEntry]
+        }
+      ),
+    /does not match verified acquisition/
+  );
+  assert.throws(
+    () =>
+      openOfficialMarketCalendarSourceParserInputBinding(
+        bound.parserInputBinding,
+        {
+          sourceBytes: new Uint8Array(100).fill(66),
+          freshnessPolicyRegistry: policyRegistry(),
+          parserContractRegistry: [parserContractEntry]
+        }
+      ),
+    /bytes do not match the envelope/
+  );
+});
+
 function chain(
   overrides: Partial<{
     cacheRequests: ReturnType<typeof cacheRequest>[];
@@ -1376,6 +1501,31 @@ function chain(
       insecureTlsBypassEnabled: overrides.insecureTlsBypassEnabled ?? false,
       clientCertificateConfigured: false
     }
+  };
+}
+
+function sourceParserContractEntry(
+  overrides: Partial<{
+    parserContractVersion: string;
+    acceptedContentTypes: string[];
+  }> = {}
+) {
+  const parserContractDefinition = {
+    schemaVersion:
+      OFFICIAL_MARKET_CALENDAR_SOURCE_PARSER_CONTRACT_DEFINITION_SCHEMA_VERSION,
+    exchange: "KRX" as const,
+    acceptedContentTypes: overrides.acceptedContentTypes ?? ["application/pdf"],
+    acceptedContentEncodings: [null] as null[],
+    parserOutputSchemaVersion: "calendar_parser_output.v1"
+  };
+  return {
+    parserContractVersion:
+      overrides.parserContractVersion ?? "krx_calendar_pdf.v1",
+    parserContractDefinition,
+    parserContractHash:
+      createOfficialMarketCalendarSourceParserContractHash(
+        parserContractDefinition
+      )
   };
 }
 
