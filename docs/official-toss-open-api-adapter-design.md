@@ -684,18 +684,28 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   request 및 `approval_required` 전이를 reservation과 함께 atomic commit한다. Trusted serializer는
   그 전에 immutable non-secret transport envelope을 만들고 length-prefixed canonical
   `(schemaVersion, method, providerOriginId, registeredPathTemplateId, opaque targetOrderRef,
-  non-sensitive query, contentType, accountScopeRef, credentialGeneration, exact non-sensitive body
+  non-sensitive query, semanticHeaderBindings, accountScopeRef, credentialGeneration, exact non-sensitive body
   bytes)`의 domain-separated SHA-256 `transportRequestHash`도 같은 record에 bind한다. Create처럼
   raw broker identity가 없는 exact registered path만 envelope에 저장한다. Modify/cancel은
   encrypted target mapping으로 opaque `targetOrderRef`를 raw broker order id에 process-local
   resolve하고, dedicated non-exportable target-route key가 domain/schema/provider/environment,
   template id, target ref, credential generation과 exact late-materialized route bytes를
   HMAC-SHA-256한 `targetRouteMac`/key generation만 reservation, approval과 permit에 bind한다. Raw
-  broker order id와 그 값을 포함한 path/query는 persist/log/output하지 않는다. Raw account
-  header는 transport hash에 넣지 않는 대신 secret provider의
+  broker order id와 그 값을 포함한 path/query는 persist/log/output하지 않는다. Endpoint registry는
+  모든 outbound header를 `semantic_exact`, `semantic_mac`, `credential_only`,
+  `fixed_transport_only` 중 하나로 schema-versioned 분류하며 unknown/unclassified header와 허용되지
+  않은 duplicate를 socket 전에 거부한다. `Content-Type`과 official idempotency key 등 broker
+  behavior를 바꾸는 모든 header는 lower-case canonical name/ordered occurrence와 exact outbound
+  value bytes를 `semanticHeaderBindings`에 넣는다. 원문 persistence가 금지된 value는 dedicated
+  non-exportable key가 domain/schema/provider/environment/logical request와 exact name/value bytes를
+  HMAC-SHA-256한 MAC/key generation을 대신 넣는다. 이 tagged list 전체가 `transportRequestHash`에
+  포함되며 registry/version 또는 MAC generation 변경은 fresh transport hash/approval을 요구한다.
+  Authorization token은 `credential_only`로 raw value를 제외하되 exact credential generation을
+  bind한다. Raw account header value는 제외하고 secret provider의
   dedicated non-exportable key로 domain/schema/provider/environment/credential generation, exact
   header name/bytes를 HMAC-SHA-256한 `accountHeaderMac`/key generation을 reservation, approval과
-  permit에 bind하고 raw identifier는 persist/log/output하지 않는다. 그 뒤 exact request
+  permit에 bind한다. 같은 MAC/key generation을 `semantic_mac` tagged entry로
+  `semanticHeaderBindings`/`transportRequestHash`에도 포함하고 raw identifier는 persist/log/output하지 않는다. 그 뒤 exact request
   identity/generation/deadline, reservation/risk/transport/target-route/account-header binding과
   preview를 한 typed payload로
   owner에게 제시한다. Runtime `dispatchApproval`이 이 request fields에 exact bind되고 검증된
@@ -708,7 +718,8 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
 - Approval consume, `approval_required`에서 `send_reserved`로의 state transition과 unique
   dispatch permit 생성 직전에 fresh broker/local exactly-once effective snapshot으로 모든
   risk/freshness/market-session rule을 다시 평가한다. Approval의 `riskBindingHash`와 current
-  binding, immutable `transportRequestHash`, `targetRouteMac`, `accountHeaderMac`과 각 key generation이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
+  binding, immutable `transportRequestHash`, semantic-header bindings/MAC generation,
+  `targetRouteMac`, `accountHeaderMac`과 각 key generation이 exact match할 때만 한 linearizable versioned CAS로 approval/state/permit을
   commit한다. Snapshot, capacity source, policy 또는 session이 달라지면 old intent를
   exact `approval_required` state/version, active/unconsumed approval, permit/dispatch 부재와
   old/current mismatch를 한 CAS로 증명한 `pre_permit_binding_invalidated` noDispatchFence로 닫고
@@ -729,18 +740,20 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   Permit deadline은 approval expiry, evidence/session freshness deadline과 configured immediate
   window 중 최솟값이며 approval보다 오래 살아남지 않는다. Approval이 permit 생성 뒤 만료되면
   exact `send_reserved`/unconsumed permit을 `permit_expired_or_stale` noDispatchFence로 CAS한다.
-  Gateway는 exact outbound non-sensitive method/template/query/content-type/body projection과
-  current account binding의 canonical hash를 다시 계산해 approval/permit hash와 constant-time
+  Gateway는 exact outbound non-sensitive method/template/query/body projection, semantic-header
+  exact/MAC list와 current account binding의 canonical hash를 다시 계산해 approval/permit hash와 constant-time
   compare한다. Modify/cancel은 first-byte lock에서 exact target route buffer를 late-materialize하고
   같은 buffer로 `targetRouteMac`을 다시 계산해 permit MAC/key generation과 constant-time
   compare한다. Raw broker order id와 materialized path/query는 durable state에 쓰지 않으며 compare와
-  network write 사이에 route buffer 교체를 금지한다. Authorization token과 raw account header는
-  transport hash에서 제외한다. Secret provider는 first byte에 쓸
+  network write 사이에 route buffer 교체를 금지한다. Semantic header도 비교한 immutable buffer를
+  그대로 write하고 compare와 first byte 사이 교체를 금지한다. Authorization token은 raw value를
+  transport hash에서 제외하되 credential generation을 bind한다. Raw account header는 first byte에 쓸
   exact account header buffer로 current-key MAC을 다시 계산해 permit MAC/key generation과
   constant-time compare하고 같은 lock에서 buffer 교체를 금지한다. MAC rotation은 new generation과
-  fresh approval을 요구한다. Transport/target-route/header mismatch는 unconsumed permit과
-  no-dispatch를 CAS한 `transport_request_mismatch`/`target_route_mismatch`/
-  `account_header_mismatch` noDispatchFence이며 first network byte를 금지한다.
+  fresh approval을 요구한다. Transport/semantic-header/target-route/account-header mismatch는
+  unconsumed permit과 no-dispatch를 CAS한 `transport_request_mismatch`/
+  `semantic_header_mismatch`/`target_route_mismatch`/`account_header_mismatch` noDispatchFence이며
+  first network byte를 금지한다.
   Permit consume/state transition과 masked `dispatch_attempted` audit event를 같은
   write-ahead durable commit으로 first byte 전에 완료하고, commit 실패 시 send하지 않는다. Concurrent
   worker/replay 중 하나만 성공한다. Consume 뒤 crash/unknown은 permit 재사용 없이
@@ -1005,6 +1018,7 @@ record와 새 pinned key를 요구한다.
 - signed dispatch-attempt 뒤 confirmed zero-byte failure는 별도 zeroByteAttemptFence로 종료된다.
 - delayed approval 뒤 current effective snapshot/riskBindingHash가 달라지면 dispatch하지 않고 fresh approval을 요구한다.
 - canonical transportRequestHash가 approval/permit과 exact outbound non-sensitive projection에서 일치하지 않으면 first byte 전에 차단한다.
+- 모든 allowlisted semantic header는 exact bytes 또는 keyed MAC으로 transportRequestHash에 bind되고 unknown/unclassified header는 first byte 전에 차단된다.
 - modify/cancel raw broker order id는 opaque target ref로만 durable하게 참조하고 exact late-materialized route의 keyed MAC이 permit과 다르면 저장 없이 first byte 전에 차단한다.
 - exact outbound account header bytes의 keyed MAC이 permit binding과 다르면 raw account를 저장하지 않고 first byte 전에 차단한다.
 - pre-dispatch revalidation은 exact current reservation만 exclude-self/replace해 자기 capacity를 이중 계산하지 않는다.
