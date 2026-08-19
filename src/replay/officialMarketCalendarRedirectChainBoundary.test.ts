@@ -21,6 +21,10 @@ import {
   parseOfficialMarketCalendarSourceDocumentMetadata
 } from "./officialMarketCalendarSourceDocumentMetadata.js";
 import {
+  createOfficialMarketCalendarSourceCollectionDocumentProjection,
+  parseOfficialMarketCalendarSourceCollectionDocumentProjection
+} from "./officialMarketCalendarSourceCollectionDocumentProjection.js";
+import {
   createOfficialMarketCalendarSourceDocumentAcquisitionMetadata,
   parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata
 } from "./officialMarketCalendarSourceDocumentAcquisitionMetadata.js";
@@ -1554,6 +1558,91 @@ test("calendar source document metadata rejects projection and byte tamper", () 
         ...fixture.options,
         sourceBytes: new Uint8Array(100).fill(66)
       }),
+    /bytes do not match the envelope/
+  );
+});
+
+test("calendar source collection document projection preserves final metadata identity", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.collection-projection");
+  const sourceParserResult = createOfficialMarketCalendarSourceParserResult(
+    {
+      parserInputBinding: fixture.bound.parserInputBinding,
+      parserOutput: sourceParserOutput()
+    },
+    fixture.options
+  );
+  const sourceDocumentMetadata =
+    createOfficialMarketCalendarSourceDocumentMetadata(
+      { sourceParserResult },
+      fixture.options
+    );
+  const projection =
+    createOfficialMarketCalendarSourceCollectionDocumentProjection(
+      { sourceDocumentMetadata },
+      fixture.options
+    );
+
+  assert.equal(projection.exchange, "KRX");
+  assert.equal(
+    projection.collectionDocument.metadataHash,
+    sourceDocumentMetadata.metadataHash
+  );
+  assert.equal(
+    projection.collectionDocument.sourceDocumentHash,
+    sourceDocumentMetadata.sourceDocumentHash
+  );
+  assert.match(projection.projectionHash, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceCollectionDocumentProjection(
+      projection,
+      fixture.options
+    ),
+    projection
+  );
+});
+
+test("calendar source collection document projection rejects field and byte tamper", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.collection-projection-tamper");
+  const sourceParserResult = createOfficialMarketCalendarSourceParserResult(
+    {
+      parserInputBinding: fixture.bound.parserInputBinding,
+      parserOutput: sourceParserOutput()
+    },
+    fixture.options
+  );
+  const sourceDocumentMetadata =
+    createOfficialMarketCalendarSourceDocumentMetadata(
+      { sourceParserResult },
+      fixture.options
+    );
+  const projection =
+    createOfficialMarketCalendarSourceCollectionDocumentProjection(
+      { sourceDocumentMetadata },
+      fixture.options
+    );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceCollectionDocumentProjection(
+        {
+          ...projection,
+          collectionDocument: {
+            ...projection.collectionDocument,
+            metadataHash: hash("f")
+          }
+        },
+        fixture.options
+      ),
+    /does not match verified metadata/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceCollectionDocumentProjection(
+        projection,
+        {
+          ...fixture.options,
+          sourceBytes: new Uint8Array(100).fill(66)
+        }
+      ),
     /bytes do not match the envelope/
   );
 });

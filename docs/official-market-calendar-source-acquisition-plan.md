@@ -234,8 +234,15 @@ expected selector는 flat final projection에서 제거하고 actual evidence/ro
 applicability/session-hours claim을 노출한다. Full acquisition metadata와 parser result는
 nested provenance로 보존하며 request/freshness/representation field, parser hashes와 함께
 `metadataHash`에 결합한다. Stored parse는 exact source bytes와 freshness/parser registry로
-acquisition부터 result까지 전체 chain을 다시 생성한다. Collection document projection과
-production source-specific parser는 별도 후속 단계이다.
+acquisition부터 result까지 전체 chain을 다시 생성한다. Collection document projection은
+별도 projection 모듈이 담당하며 production source-specific parser는 후속 단계이다.
+
+`officialMarketCalendarSourceCollectionDocumentProjection.ts`는 final document metadata를
+기존 source collection document strict schema로 projection한다. Exchange, full metadata와
+projected document를 immutable projection hash에 결합하고 metadata/source-document hash,
+actual evidence roles, regular session hours, schedule/applicability claim은 caller 입력 없이
+final metadata에서만 파생한다. Stored parse는 exact source bytes와 registries로 전체 chain을
+다시 생성하며 collection aggregate assembly는 별도 후속 단계이다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
