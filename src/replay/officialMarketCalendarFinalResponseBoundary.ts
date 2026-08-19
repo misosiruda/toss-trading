@@ -10,6 +10,10 @@ import {
   parseOfficialMarketCalendarResponseCacheControl
 } from "./officialMarketCalendarResponseCacheControl.js";
 import {
+  type OfficialMarketCalendarResponseRepresentationHeaders,
+  parseOfficialMarketCalendarResponseRepresentationHeaders
+} from "./officialMarketCalendarResponseRepresentationHeaders.js";
+import {
   type ResolvedOfficialMarketCalendarResponseFreshness,
   resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders
 } from "./officialMarketCalendarResponseFreshness.js";
@@ -31,6 +35,7 @@ const finalResponseBoundarySchema = z
     contentRange: z.null(),
     responseCacheHeaders: z.record(z.string(), z.unknown()),
     responseCacheControl: z.record(z.string(), z.unknown()),
+    responseRepresentationHeaders: z.record(z.string(), z.unknown()),
     responseFreshness: z.record(z.string(), z.unknown()),
     freshnessPolicyExpiry: z.record(z.string(), z.unknown()),
     transferCompletion: z.record(z.string(), z.unknown())
@@ -47,6 +52,7 @@ export interface OfficialMarketCalendarFinalResponseBoundary {
   contentRange: null;
   responseCacheHeaders: OfficialMarketCalendarResponseCacheHeaders;
   responseCacheControl: OfficialMarketCalendarResponseCacheControl;
+  responseRepresentationHeaders: OfficialMarketCalendarResponseRepresentationHeaders;
   responseFreshness: ResolvedOfficialMarketCalendarResponseFreshness;
   freshnessPolicyExpiry: ResolvedOfficialMarketCalendarFreshnessPolicyExpiry;
   transferCompletion: OfficialMarketCalendarTransferCompletion;
@@ -64,6 +70,10 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
     parseOfficialMarketCalendarResponseCacheControl(
       rawBoundary.responseCacheControl
     );
+  const responseRepresentationHeaders =
+    parseOfficialMarketCalendarResponseRepresentationHeaders(
+      rawBoundary.responseRepresentationHeaders
+    );
   const responseFreshness =
     resolveOfficialMarketCalendarResponseFreshnessFromCacheHeaders(
       rawBoundary.responseFreshness,
@@ -73,6 +83,7 @@ export function verifyOfficialMarketCalendarFinalResponseBoundary(
     ...rawBoundary,
     responseCacheHeaders,
     responseCacheControl,
+    responseRepresentationHeaders,
     responseFreshness,
     freshnessPolicyExpiry:
       resolveOfficialMarketCalendarFreshnessPolicyExpiryFromRegistryAndResponseFreshness(

@@ -52,6 +52,12 @@ test("calendar redirect chain boundary accepts aligned hop contracts", () => {
         responseCacheControl: {
           responseCacheControl: null
         },
+        responseRepresentationHeaders: {
+          contentTypeHeaderValues: ["application/pdf"],
+          contentEncodingHeaderValues: [],
+          contentType: "application/pdf",
+          contentEncoding: null
+        },
         responseFreshness: {
           freshness: {
             retrievedAt: "2025-07-01T12:00:10.000Z",
@@ -1157,6 +1163,10 @@ function chain(
       responseCacheControl: {
         cacheControlHeaderValues:
           overrides.finalCacheControlHeaderValues ?? []
+      },
+      responseRepresentationHeaders: {
+        contentTypeHeaderValues: ["application/pdf"],
+        contentEncodingHeaderValues: []
       },
       responseFreshness: {
         retrievedAt: "2025-07-01T12:00:10.000Z",
