@@ -642,6 +642,24 @@ test("live risk engine rejects malformed enum and identity intent fields", () =>
   assert.ok(decision.rejectCodes.includes("INVALID_ORDER_INTENT"));
 });
 
+test("live risk engine materializes mutable direct intent inputs before rules", () => {
+  const intent = baseIntent();
+  let symbolReads = 0;
+  Object.defineProperty(intent, "symbol", {
+    enumerable: true,
+    configurable: true,
+    get: () => {
+      symbolReads += 1;
+      return "005930";
+    }
+  });
+
+  const decision = evaluate({ intent });
+
+  assert.equal(decision.approved, true);
+  assert.equal(symbolReads, 2);
+});
+
 test("live risk engine rejects malformed live order previews", () => {
   const decision = evaluate({
     intent: baseIntent({
