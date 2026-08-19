@@ -17,6 +17,10 @@ import {
   parseOfficialMarketCalendarSourceDocumentEnvelope
 } from "./officialMarketCalendarSourceDocumentEnvelope.js";
 import {
+  createOfficialMarketCalendarSourceDocumentMetadata,
+  parseOfficialMarketCalendarSourceDocumentMetadata
+} from "./officialMarketCalendarSourceDocumentMetadata.js";
+import {
   createOfficialMarketCalendarSourceDocumentAcquisitionMetadata,
   parseOfficialMarketCalendarSourceDocumentAcquisitionMetadata
 } from "./officialMarketCalendarSourceDocumentAcquisitionMetadata.js";
@@ -1483,6 +1487,70 @@ test("calendar source parser result rejects stored result and source byte tamper
   assert.throws(
     () =>
       parseOfficialMarketCalendarSourceParserResult(result, {
+        ...fixture.options,
+        sourceBytes: new Uint8Array(100).fill(66)
+      }),
+    /bytes do not match the envelope/
+  );
+});
+
+test("calendar source document metadata promotes verified parser result", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.final-metadata");
+  const sourceParserResult = createOfficialMarketCalendarSourceParserResult(
+    {
+      parserInputBinding: fixture.bound.parserInputBinding,
+      parserOutput: sourceParserOutput()
+    },
+    fixture.options
+  );
+  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+    { sourceParserResult },
+    fixture.options
+  );
+
+  assert.equal(metadata.documentId, "krx.calendar.final-metadata");
+  assert.equal(metadata.publisher, "KRX");
+  assert.equal(metadata.parserResultBound, true);
+  assert.deepEqual(metadata.evidenceRoles, [
+    "holiday_rows",
+    "holiday_schedule"
+  ]);
+  assert.equal(metadata.rowCoverageStartDate, "2026-01-01");
+  assert.equal(metadata.rowCoverageEndDate, "2026-12-31");
+  assert.equal(metadata.parserResultHash, sourceParserResult.parserResultHash);
+  assert.match(metadata.metadataHash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal("expectedEvidenceRoles" in metadata, false);
+  assert.equal(Object.isFrozen(metadata), true);
+  assert.deepEqual(
+    parseOfficialMarketCalendarSourceDocumentMetadata(metadata, fixture.options),
+    metadata
+  );
+});
+
+test("calendar source document metadata rejects projection and byte tamper", () => {
+  const fixture = sourceParserInputFixture("krx.calendar.final-metadata-tamper");
+  const sourceParserResult = createOfficialMarketCalendarSourceParserResult(
+    {
+      parserInputBinding: fixture.bound.parserInputBinding,
+      parserOutput: sourceParserOutput()
+    },
+    fixture.options
+  );
+  const metadata = createOfficialMarketCalendarSourceDocumentMetadata(
+    { sourceParserResult },
+    fixture.options
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentMetadata(
+        { ...metadata, publisher: "NYSE" },
+        fixture.options
+      ),
+    /does not match verified parser result/
+  );
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarSourceDocumentMetadata(metadata, {
         ...fixture.options,
         sourceBytes: new Uint8Array(100).fill(66)
       }),

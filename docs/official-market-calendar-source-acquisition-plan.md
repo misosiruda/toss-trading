@@ -226,7 +226,16 @@ exchange-date와 canonical evidence role/field ordering을 가져야 하며 row 
 schedule coverage role에서 파생하고 acquisition metadata의 expected coverage selector와
 exact match해야 한다. Parser output/result hash는 full input binding과 함께 고정하며 stored
 parse는 acquisition부터 parser input까지 다시 연다. Production source-specific parser와
-final document metadata 승격은 별도 후속 단계이다.
+final document metadata 승격은 각각 별도 adapter와 metadata 모듈이 담당한다.
+
+`officialMarketCalendarSourceDocumentMetadata.ts`는 verified parser result를 final
+`official_market_calendar_source_document_metadata.v1` aggregate로 승격한다. Pre-parser
+expected selector는 flat final projection에서 제거하고 actual evidence/row/schedule/
+applicability/session-hours claim을 노출한다. Full acquisition metadata와 parser result는
+nested provenance로 보존하며 request/freshness/representation field, parser hashes와 함께
+`metadataHash`에 결합한다. Stored parse는 exact source bytes와 freshness/parser registry로
+acquisition부터 result까지 전체 chain을 다시 생성한다. Collection document projection과
+production source-specific parser는 별도 후속 단계이다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -471,10 +480,12 @@ Revised exclusive writer는 다음 immutable package를 publish해야 한다.
         └── <artifact-sha256-hex>.json
 ```
 
-Accepted acquisition metadata는 publish 과정에서 변경하지 않는다.
-`metadataHash`는 `archivePath`가 없는 canonical acquisition metadata만
-식별하고 `collectionHash`도 이 metadata hash와 source document hash로
-계산한다. Revised artifact는 `artifactHash`를 제외한 canonical artifact
+Accepted acquisition metadata와 verified parser result는 final document metadata의
+nested provenance로 publish 과정에서 변경하지 않는다. `metadataHash`는 자기 hash와
+`archivePath`가 없는 canonical final document metadata payload 전체를 식별하고
+`collectionHash`도 이 metadata hash와 source document hash로 계산한다. Pre-parser
+`acquisitionMetadataHash`는 acquisition boundary만 식별하며 collection document
+identity로 사용하지 않는다. Revised artifact는 `artifactHash`를 제외한 canonical artifact
 payload의 SHA-256인 `artifactHash`를 가지며 package directory 이름의
 `<artifact-sha256-hex>`와 정확히 일치해야 한다.
 
@@ -925,7 +936,7 @@ date-effective regular-session regime과 session-level document provenance를
 - Unqualified `documentId`, duplicate/unknown composite ref 또는 ref와
   collection metadata identity mismatch reject
 - identical source bytes의 shared sidecar binding 허용
-- acquisition `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
+- final document `metadataHash`/`collectionHash`와 artifact archive binding hash 분리
 - freshness/source 변경 artifact의 distinct hash directory 공존
 - freshness policy version/hash 또는 derived `staleAfter` 변경 시 distinct
   canonical artifact hash와 재계산 mismatch reject
