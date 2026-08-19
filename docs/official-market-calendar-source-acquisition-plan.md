@@ -172,6 +172,13 @@ exact byte length/hash를 다시 검증하고 raw bytes 또는 caller-supplied p
 metadata를 output에 포함하지 않는다. 이 envelope는 source parser 결과를 collection
 document metadata로 승격하거나 filesystem package를 publish하지 않는다.
 
+Final response의 representation metadata는
+`officialMarketCalendarResponseRepresentationHeaders.ts`가 raw header value에서
+검증한다. `Content-Type`은 single parameter-free media type으로 canonical lowercase
+정규화하고 `Content-Encoding`은 absent 또는 single `gzip`/`deflate`/`br`만 허용한다.
+이 boundary는 final-response verifier의 필수 child이며 decode, parser selection 또는
+parser-contract별 representation allowlist는 수행하지 않는다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name

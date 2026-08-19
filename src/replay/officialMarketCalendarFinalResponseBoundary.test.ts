@@ -19,6 +19,12 @@ test("calendar final response boundary accepts exact 200 without Content-Range",
       responseCacheControl: {
         responseCacheControl: null
       },
+      responseRepresentationHeaders: {
+        contentTypeHeaderValues: ["application/pdf"],
+        contentEncodingHeaderValues: [],
+        contentType: "application/pdf",
+        contentEncoding: null
+      },
       responseFreshness: {
         freshness: {
           retrievedAt: "2025-07-01T12:00:30.000Z",
@@ -140,6 +146,44 @@ test("calendar final response boundary binds nested Cache-Control", () => {
   );
 });
 
+test("calendar final response boundary binds nested representation headers", () => {
+  assert.deepEqual(
+    verifyOfficialMarketCalendarFinalResponseBoundary(
+      boundary({
+        responseRepresentationHeaders: {
+          contentTypeHeaderValues: ["Application/PDF"],
+          contentEncodingHeaderValues: ["GZip"]
+        }
+      })
+    ).responseRepresentationHeaders,
+    {
+      contentTypeHeaderValues: ["Application/PDF"],
+      contentEncodingHeaderValues: ["GZip"],
+      contentType: "application/pdf",
+      contentEncoding: "gzip"
+    }
+  );
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarFinalResponseBoundary(
+        boundary({
+          responseRepresentationHeaders: {
+            contentTypeHeaderValues: [],
+            contentEncodingHeaderValues: []
+          }
+        })
+      ),
+    /exactly one Content-Type/
+  );
+  const {
+    responseRepresentationHeaders: _responseRepresentationHeaders,
+    ...missing
+  } = boundary();
+  assert.throws(() =>
+    verifyOfficialMarketCalendarFinalResponseBoundary(missing)
+  );
+});
+
 test("calendar final response boundary derives freshness from nested cache headers", () => {
   assert.throws(
     () =>
@@ -243,6 +287,10 @@ function boundary(
     responseCacheControl: {
       cacheControlHeaderValues: string[];
     };
+    responseRepresentationHeaders: {
+      contentTypeHeaderValues: string[];
+      contentEncodingHeaderValues: string[];
+    };
     responseFreshness: ReturnType<typeof responseFreshness>;
     freshnessPolicyExpiry: ReturnType<typeof policyExpiry>;
     transferCompletion: ReturnType<typeof completion>;
@@ -257,6 +305,10 @@ function boundary(
     responseCacheHeaders: responseCacheHeaders(),
     responseCacheControl: {
       cacheControlHeaderValues: []
+    },
+    responseRepresentationHeaders: {
+      contentTypeHeaderValues: ["application/pdf"],
+      contentEncodingHeaderValues: []
     },
     responseFreshness: responseFreshness(),
     freshnessPolicyExpiry: policyExpiry(),
