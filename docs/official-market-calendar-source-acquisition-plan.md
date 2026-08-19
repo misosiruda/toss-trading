@@ -201,6 +201,14 @@ encoding 목록과 parser output schema version만 가진다. Registry entry는 
 parser code 또는 raw command는 contract 입력이 아니다. 실제 KRX/NYSE source format과
 representation을 확인하기 전에는 production parser entry를 등록하지 않는다.
 
+`officialMarketCalendarSourceRepresentationDecodeBoundary.ts`는 registry에서 exact
+resolve한 parser contract의 representation allowlist를 적용한 뒤 absent, gzip, deflate,
+br encoding을 명시적으로 decode한다. Encoded/decoded byte length와 hash, parser contract
+entry, versioned 64 MiB expansion limit을 immutable boundary에 결합하고 stored open도 exact
+encoded bytes로 전체 boundary를 다시 생성한다. Decoded bytes는 metadata에 저장하지 않고
+process-local parser input으로만 반환한다. 이 pure representation boundary를 verified
+acquisition metadata와 결합하고 parser result를 생성하는 단계는 별도 후속 경계이다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
