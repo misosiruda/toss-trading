@@ -168,6 +168,42 @@ const options = {
 
 `LiveRiskEngine`은 이미 구조화된 live order intent와 risk snapshot만 입력으로 받아야 한다. 자연어 주문, Codex paper decision, raw broker response를 직접 해석해서는 안 된다. 기본 policy는 fail-closed여야 하며, 신규 rule이나 reject code를 추가하면 테스트와 문서를 함께 갱신한다.
 
+### `src/order`
+
+책임:
+
+- official adapter roadmap row 16의 internal mock-only dry-run state machine
+- typed `LiveOrderIntent`, risk module이 mint한 deep-frozen opaque `LiveRiskAuthority`와
+  synthetic owner approval binding 검증
+- live idempotency/capacity store와 분리된 deterministic shadow reservation과 permanent tombstone
+- masked paper-only audit record와 `dry_run_validated` /
+  `shadow_reconciled_no_external_effect` 결과 생성
+
+금지:
+
+- `src/broker` import, official order endpoint 또는 어떤 network transport 호출
+- filesystem, process, environment, clock 또는 random source 직접 접근
+- live reservation, capacity, approval, permit, gateway 또는 reconciliation queue 공유
+- broker order ID, execution ID, raw account identity 생성·저장·출력
+- natural language, Codex paper evidence 또는 raw provider payload를 `LiveOrderIntent`로 변환
+- API/MCP/dashboard/CLI/package entrypoint에 mutation surface 추가
+
+`src/order`는 pure deterministic module로 유지한다. 첫 runtime PR에서 `src/workflows`는 risk
+평가 전에 strict-validated `LiveOrderIntent`를 deep-copy/deep-freeze하고 그 exact snapshot을
+`LiveRiskEngine`과 future router에 함께 전달한다. Risk module은 public constructor/factory 없이
+module-private path에서만 deep-frozen opaque `LiveRiskAuthority`를 mint하고 module-owned `WeakSet`
+brand로 진위를 확인한다. Rejected authority의 readonly decision을 approved로 바꿀 수 없어야 한다.
+Authority의 domain-separated `evaluatedIntentHash`는 schema version, optional-field presence와 exact raw
+value를 보존한 snapshot 전체를 length-prefixed canonical form으로 hash한다. Raw `symbol`과
+RiskEngine이 사용하는 normalized symbol projection도 서로 다른 field로 모두 bind한다.
+`src/order`의 유일한 risk runtime import는 narrow `verifyLiveRiskAuthority()`이며, module-owned brand,
+frozen state, approved result와 router 직전 recomputed snapshot hash를 함께 검증한다. Plain decision,
+caller-constructed object, missing/mismatched hash 또는 평가 뒤 재구성·정규화한 intent는 handoff
+authority가 아니다. `src/order`가 risk rule, sizing 또는 allocation을 재구현해서는 안 된다. Shadow
+state와 synthetic approval은 injected typed value로만 받고 live store나 broker transport adapter를
+받을 수 없다. 이 계층의 존재는 row 17 official gateway, live order 또는
+`TRADING_ENABLED=true`를 허용하지 않는다.
+
 ### `src/collectors`
 
 책임:
@@ -326,8 +362,9 @@ cli -> workflows
 cli -> config
 api/mcp -> storage
 api -> reports
-workflows -> market/replay/paper/ai/reports/storage
-market/replay/paper/ai/reports/storage -> domain
+workflows -> market/replay/paper/risk/order/ai/reports/storage
+market/replay/paper/risk/order/ai/reports/storage -> domain
+order -> risk (opaque authority verifier only)
 tests -> 대상 module
 ```
 
@@ -339,6 +376,7 @@ paper -> api/mcp
 api/mcp -> workflows that execute replay or AI decisions
 collectors -> paper/order/risk mutation
 ai -> storage mutation or paper order execution
+order -> broker/api/mcp/cli/ai/paper/storage
 ```
 
 예외가 필요하면 먼저 문서에 이유를 적고, 더 작은 adapter나 DTO로 경계를 줄인다.
@@ -420,6 +458,7 @@ npm test
 - raw `tossctl` command 실행 tool 추가
 - raw `codex exec` 실행 tool 추가
 - Codex CLI output을 live `TradingSignal`/`OrderIntent`로 연결
+- `src/order`에서 broker/network I/O 또는 enabled mutation entrypoint 연결
 - 투자 성과, 수익률 보장, 종목 추천으로 읽히는 표현 추가
 
 ## Review Checklist

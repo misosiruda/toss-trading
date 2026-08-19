@@ -37,6 +37,7 @@ toss-trading/
 | `src/ai/` | Codex CLI decision provider, prompt, failure summary | paper-only `VirtualDecision`만 생성 |
 | `src/paper/` | virtual decision validation, risk, order, ledger, allocation policy | live `TradingSignal`/`OrderIntent`로 연결 금지 |
 | `src/risk/` | live order intent용 deterministic RiskEngine | broker gateway, OrderRouter, MCP mutation surface 연결 금지 |
+| `src/order/` | future row 16의 internal mock-only dry-run state machine과 shadow idempotency contract | broker/network I/O, live mutation, API/MCP/dashboard 연결 금지 |
 | `src/replay/` | simulated clock, replay runner, sampling, lookahead guard | 실시간 trading loop로 사용 금지 |
 | `src/workflows/` | CLI/API가 호출하는 유스케이스 orchestration | 순수 정책을 중복 구현하지 않음 |
 | `src/storage/` | JSON/JSONL file store, storage path mapping | trading 판단을 하지 않음 |
@@ -63,6 +64,7 @@ flowchart TD
     Workflows --> Replay["src/replay"]
     Workflows --> Paper["src/paper"]
     Workflows --> Risk["src/risk"]
+    Workflows --> Order["src/order"]
     Workflows --> AI["src/ai"]
     Workflows --> Reports
     Workflows --> Storage
@@ -70,6 +72,8 @@ flowchart TD
     Replay --> Domain
     Paper --> Domain
     Risk --> Domain
+    Order --> Domain
+    Order -->|"opaque authority verification only"| Risk
     AI --> Domain
     Storage --> Domain
     Reports --> Domain
@@ -79,6 +83,9 @@ flowchart TD
 
 - `src/domain`은 가장 안쪽 contract 계층이다. 외부 I/O 계층을 import하지 않는다.
 - `src/paper`는 paper-only execution 계층이다. live order path를 만들지 않는다.
+- `src/order`는 row 16 전용 internal dry-run 계층이다. `src/workflows`가 먼저
+  `LiveRiskEngine`을 통과시킨 typed input만 받고 mock/shadow state에서 종료하며,
+  broker transport나 enabled entrypoint를 소유하지 않는다.
 - `src/api`와 `src/mcp`는 운영 조회 surface다. batch/replay/AI 실행을 직접 시작하지 않는다.
 - `src/workflows`는 orchestration 계층이다. CLI와 low-level module 사이의 연결을 맡는다.
 
@@ -156,8 +163,55 @@ flowchart TD
 - risk snapshot freshness와 duplicate position row 기반 aggregate exposure/sellable quantity가 테스트되는지 확인
 - kill switch, max order amount, max daily loss, exposure, allowlist, market hours, duplicate, cooldown, open order count, market order policy, stale signal, preview requirement가 테스트되는지 확인
 - `RiskDecision`은 `orderIntentId`, `signalId`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 남기는지 확인
-- broker gateway, `OrderRouter`, Local Operations API/MCP/dashboard mutation surface를 추가하지 않음
+- `src/risk`에 broker gateway 또는 `OrderRouter`를 추가하거나 import하지 않음
+- row 16 dry-run은 별도 `src/order` 경계에만 두고 Local Operations API/MCP/dashboard
+  mutation surface와 연결하지 않음
 - Codex CLI `virtual_decision`을 live order intent로 승격하지 않음
+
+### Live OrderRouter dry-run 경계 변경
+
+수정 후보:
+
+- `src/order/dryRunOrderRouter.ts` (후속 구현)
+- `src/order/dryRunOrderRouter.test.ts` (후속 구현)
+- `docs/live-trading-threat-model.md`
+- `docs/official-toss-open-api-adapter-design.md`
+- `docs/PROJECT_STRUCTURE.md`
+- `docs/CODE_CONVENTION.md`
+
+필수 확인:
+
+- 첫 구현은 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false`, mutation disabled를 exact
+  typed input으로 검증하고 하나라도 다르면 fail-closed함
+- caller가 만든 자연어, Codex paper evidence 또는 raw broker payload를 intent로 변환하지
+  않음
+- 첫 runtime PR은 workflow가 risk 평가 전에 strict-validated `LiveOrderIntent`를
+  deep-copy/deep-freeze하고, 그 exact snapshot을 `LiveRiskEngine`과 router handoff에 함께
+  사용하도록 해야 함
+- Risk module은 descriptive plain object를 handoff authority로 받지 않고, module-private
+  mint path와 runtime-owned `WeakSet` brand를 통과한 deep-frozen opaque
+  `LiveRiskAuthority`만 생성해야 함. Public constructor/factory 또는 caller-supplied approval
+  flag를 허용하지 않으며 rejected authority는 approved authority로 바뀔 수 없음
+- Opaque authority 내부의 readonly decision에는 domain-separated canonical
+  `evaluatedIntentHash`를 추가해야 함.
+  Hash input은 schema version, optional-field presence와 exact raw string/number/boolean 값을
+  보존한 frozen snapshot 전체를 length-prefix해 포함하며, raw `symbol`과 RiskEngine이 실제
+  사용하는 normalized symbol projection을 서로 다른 field로 모두 bind함
+- `src/order`는 risk module의 narrow `verifyLiveRiskAuthority()`만 runtime import해 module-owned
+  brand, frozen state, approved result와 recomputed intent hash를 함께 검증함. 하나라도 다르면
+  fail-closed하며 plain `LiveRiskDecision`, caller-constructed object 또는 새로 재구성·정규화한
+  intent는 router handoff authority가 아님
+- `LiveRiskEngine` reject 뒤에는 router가 호출되지 않으며 router 자체가 risk engine,
+  sizing 또는 allocation 책임을 복제하지 않음
+- synthetic owner approval fixture와 isolated shadow idempotency/tombstone state만 사용하고,
+  simulated terminal 뒤에도 같은 synthetic identity 재예약을 거부함
+- 결과는 `dry_run_validated` 또는 `shadow_reconciled_no_external_effect` 같은 paper-only
+  상태로 끝나며 broker order/execution identity를 만들지 않음
+- `src/order`는 `src/broker`, `src/api`, `src/mcp`, `src/cli`, `src/ai`, `src/paper`,
+  `src/storage`를 import하지 않고 network, filesystem, process 또는 environment I/O를 하지 않음
+- Local Operations API, MCP, dashboard, CLI와 package entrypoint에 mutation route/tool/command를
+  추가하지 않음
+- 이 문서 경계만으로 runtime 구현, official order POST 또는 live enablement가 승인되지 않음
 
 ### Market packet 또는 candidate 생성 변경
 
