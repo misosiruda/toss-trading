@@ -664,7 +664,8 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Read-only reconciliation으로 확인한 exact `accountScopeRef`, `targetOrderRef`, target
   version/state hash와 remaining quantity 하나만 대상으로 한다.
 - Verified owner가 발급한 one-time `cancelRecoveryApproval`을 cancel intent, target,
-  reservation, current snapshot, reason, expiry와 recovery fencing epoch에 exact bind한다. Takeover
+  reservation, current snapshot identity/version과 exact approved `riskBindingHash`, reason, expiry와
+  recovery fencing epoch에 exact bind한다. Takeover
   transaction은 이 approval을 active/unconsumed 상태로 보존하고 final risk transaction만 consume한다.
 - Normal modify/cancel fence가 이미 target을 점유하면 recovery transaction은 kill-active,
   exact current broker-open account/target/version과 unconsumed owner recovery approval을
@@ -680,7 +681,14 @@ gate로만 허용할 수 있다. Normal cancel intent/approval/permit은 recover
 - Takeover gate snapshot은 `normalCreate=false`, `normalModify=false`, `normalCancel=false`,
   `recoveryCancelDispatch=false`와 no-permit을 write-ahead commit하며 gateway allowlist도 비어 있다.
   Final transaction은 fresh current target/account evidence, cancel-specific risk/freshness와 all-rule
-  final Risk Engine approval, recovery gate/epoch, account/transport binding을 재검증하고 exact
+  final Risk Engine approval, recovery gate/epoch, account/transport binding을 재검증하고 recomputed
+  `riskBindingHash`를 `cancelRecoveryApproval`의 approved hash와 constant-time exact compare한다. 모든
+  risk rule이 계속 통과해도 hash가 다르면 old approval을 consume하거나 permit을 만들지 않는다.
+  Exact current `*_pending_final_risk` state/version, active/unconsumed approval, no-permit,
+  empty allowlist와 current-generation no-attempt CAS로 old approval/request를
+  `recovery_approval_invalidated`/`recovery_approval_closed`에 닫고 inherited fence/capacity/history를
+  유지한다. 위 verified owner `recoveryApprovalRetry`만 fresh snapshot과 새 `riskBindingHash`에 bind된
+  request/approval generation을 다시 만들 수 있다. Hash가 exact match할 때만
   `cancelRecoveryApproval`을 one-time consume하면서 state transition, sole recovery permit 생성과
   그 permit 하나만 허용하는 gateway snapshot/allowlist를 한 linearizable CAS로 commit한다. 이
   transaction 전에는 typed `operation=recovery_cancel`도 dispatch할 수 없다. Normal
@@ -1013,6 +1021,7 @@ exclusive recovery lock에서 exact `send_reserved`와 sole unconsumed permit, �
 - [ ] Kill-active가 normal create/modify/cancel을 막고 typed cancel-only recovery만 허용함
 - [ ] Cancel recovery takeover가 original fence/outcome/capacity를 보존하고 stale permit을 차단함
 - [ ] Takeover는 final Risk Engine 재검증/approval consume transaction 전 dispatch permit을 만들지 않음
+- [ ] Recovery approval의 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume/permit이 허용됨
 - [ ] Recovery pending-approval/final-risk target 변경이 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 fresh approval rebind됨
 - [ ] Recovery approval decline/expiry/malformed/revoke가 current request generation만 닫고 prior attempt history와 inherited fence/capacity를 유지함
 - [ ] Closed recovery approval은 verified owner retry와 fresh target evidence로만 새 request generation을 만듦

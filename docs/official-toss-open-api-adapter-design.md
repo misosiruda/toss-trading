@@ -648,8 +648,15 @@ OpenAPI snapshot에서 order idempotency key 계약은 이 문서에서 확정�
   original/cancel outcome과 conservative capacity envelope를 모두 terminal reconcile할 때까지
   release하지 않는다. Takeover CAS는 `recovery_takeover_pending_final_risk`로만 전이하고 permit이나
   gateway allowlist를 만들지 않는다. Target state/version이 불명확하면 takeover/cancel을 보내지 않는다.
-- Fresh target/account evidence와 cancel-specific risk/freshness의 all-rule final Risk Engine
-  revalidation이 통과한 transaction만 active owner recovery approval을 one-time consume하면서 state,
+- `cancelRecoveryApproval`은 exact current snapshot identity/version과 approved `riskBindingHash`에
+  bind된다. Fresh target/account evidence와 cancel-specific risk/freshness의 all-rule final Risk
+  Engine revalidation이 통과한 뒤에도 recomputed hash를 approved hash와 constant-time exact
+  compare한다. Mismatch면 old approval을 consume하거나 permit을 만들지 않고 exact current
+  `*_pending_final_risk`/active approval/no-permit/empty-allowlist/current-generation no-attempt CAS로
+  `recovery_approval_invalidated`/`recovery_approval_closed`에 닫는다. Inherited
+  fence/capacity/history를 유지하며 verified owner `recoveryApprovalRetry`만 fresh snapshot/hash에
+  bind된 새 request/approval generation을 만들 수 있다. Exact hash까지 일치한 transaction만 active
+  owner recovery approval을 one-time consume하면서 state,
   sole recovery permit과 그 permit 하나의 gateway allowlist를 atomic commit한다. 이 final transaction
   전 recovery dispatch surface는 disabled/no-permit이다.
 - Recovery pre-permit CAS의 attempt 부재는 complete audit chain 전체가 아니라 exact current
@@ -1069,6 +1076,7 @@ record와 새 pinned key를 요구한다.
 - kill-active는 normal create/modify/cancel permit을 모두 막고 typed cancel-only recovery만 허용한다.
 - cancel-recovery fence takeover는 original operation reconciliation/capacity를 보존하고 stale permit을 차단한다.
 - cancel-recovery takeover는 final Risk Engine revalidation/owner approval consume 전 permit을 만들지 않는다.
+- cancel-recovery approval은 approved riskBindingHash와 fresh final-risk hash가 exact match할 때만 consume되고 permit을 만든다.
 - cancel-recovery pending-approval/final-risk target 변경은 no-permit/empty-allowlist/current-generation attempt 부재 CAS로 old request/approval을 닫고 same-lineage fresh approval rebind만 허용한다.
 - recovery approval decline/expiry/malformed/revoke closure는 current request/approval generation만 닫고 prior attempt history와 inherited fence/capacity를 유지한다.
 - closed recovery approval은 verified owner retry와 fresh target evidence로만 same-lineage request generation을 다시 만든다.
