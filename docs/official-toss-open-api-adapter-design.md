@@ -511,9 +511,11 @@ sequenceDiagram
     participant Gateway as TossOpenApiOrderGateway
     participant API as Toss Open API
     participant Audit as AuditLogger
+    participant WORM as Independent WORM Checkpoint
 
     Strategy->>Risk: TradingSignal
     Risk-->>Router: candidate OrderIntent and preliminary decision
+    Router->>Router: atomically commit pending market-order authorization request when required
     Router-->>Owner: typed market-order authorization request when required
     Owner->>Router: exact-bound marketOrderAuthorization
     Router->>Router: serialize immutable projection/hash and atomically reserve with pending request
@@ -524,12 +526,21 @@ sequenceDiagram
     Router->>Router: acquire shared dispatch/gate lock; recompute bindings and verify sole permit
     Router->>Audit: atomic CAS consumes permit/state and appends masked dispatch_attempted
     Audit-->>Router: combined durable commit confirmed
-    Router->>Gateway: lock-held request with exact consumed permit
-    Gateway->>API: POST first network byte under the same lock
-    Gateway->>Gateway: release lock after first-byte boundary
-    API-->>Gateway: order response or error envelope
-    Gateway-->>Router: broker result
-    Router->>Audit: append acknowledgement/rejection/unknown
+    Router->>WORM: append exact canonical event and request signed checkpoint
+    WORM-->>Router: signed dispatch-attempt checkpoint acknowledgement
+    Router->>Router: fresh authoritative time/high-water mark and all deadline/gate/bindings revalidated
+    alt final revalidation passes
+        Router->>Gateway: lock-held request with exact consumed permit
+        Gateway->>API: POST first network byte under the same lock
+        Gateway->>Gateway: release lock after first-byte boundary
+        API-->>Gateway: order response or error envelope
+        Gateway-->>Router: broker result
+        Router->>Audit: append acknowledgement/rejection/unknown
+    else final revalidation fails with proven zero byte
+        Router->>Audit: append post_checkpoint_revalidation_failed_zero_byte closure
+        Router->>WORM: append closure and request signed checkpoint
+        WORM-->>Router: signed zero-byte closure acknowledgement
+    end
 ```
 
 Codex는 이 flow에 직접 참여하지 않는다. Codex는 MCP read-only tools로 audit, position, risk decision, order status를 조회하고 설명할 수 있을 뿐이다.
