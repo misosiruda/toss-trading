@@ -32,6 +32,7 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordTableParagraphProper
   tableStreamName: "0Table" | "1Table";
   paragraphs: readonly VerifiedOfficialMarketCalendarKrxLegacyWordTableParagraphProperty[];
   supportedSprms: readonly [0x2416, 0x2417, 0x6649, 0x664a, 0x244b, 0x244c];
+  paragraphStyleBindingStatus: "default_style_only";
   supportedTablePropertySemanticsStatus: "verified";
   tableTextMarkSemanticsStatus: "not_verified";
   tableRowCellBoundaryStatus: "not_verified";
@@ -72,13 +73,16 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
 ): VerifiedOfficialMarketCalendarKrxLegacyWordTableParagraphProperties {
   const grpPrls = verifyOfficialMarketCalendarKrxLegacyWordGrpPrls(input);
   const paragraphs = grpPrls.groups.map((group) => {
+    if (group.istd !== null && group.istd !== 0) {
+      throw invalidTableParagraphProperties();
+    }
     let inTable = false;
     let tableDepth = 0;
     let isTtp = false;
     let isInnerTableCell = false;
     let isInnerTtp = false;
     let interpretedPrlCount = 0;
-    let hasExplicitTableDepth = false;
+    let hasAbsoluteTableDepth = false;
 
     for (const prl of group.prls) {
       if (
@@ -104,15 +108,17 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
           if (tableDepth < 0) {
             throw invalidTableParagraphProperties();
           }
-          hasExplicitTableDepth = true;
+          hasAbsoluteTableDepth = true;
           interpretedPrlCount += 1;
           break;
         case SPRM_P_DTAP:
+          if (!hasAbsoluteTableDepth) {
+            throw invalidTableParagraphProperties();
+          }
           tableDepth += readInt32(prl.operandBytes);
           if (tableDepth < 0 || !Number.isSafeInteger(tableDepth)) {
             throw invalidTableParagraphProperties();
           }
-          hasExplicitTableDepth = true;
           interpretedPrlCount += 1;
           break;
         case SPRM_PF_INNER_TABLE_CELL:
@@ -126,7 +132,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
       }
     }
 
-    if (grpPrls.nFib === 0x00c1 && !hasExplicitTableDepth && inTable) {
+    if (grpPrls.nFib === 0x00c1 && !hasAbsoluteTableDepth && inTable) {
       tableDepth = 1;
     }
 
@@ -179,6 +185,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
     tableStreamName: grpPrls.tableStreamName,
     paragraphs: Object.freeze(paragraphs),
     supportedSprms: SUPPORTED_SPRMS,
+    paragraphStyleBindingStatus: "default_style_only",
     supportedTablePropertySemanticsStatus: "verified",
     tableTextMarkSemanticsStatus: "not_verified",
     tableRowCellBoundaryStatus: "not_verified",

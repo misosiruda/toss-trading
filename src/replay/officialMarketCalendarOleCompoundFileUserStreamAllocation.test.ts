@@ -1186,7 +1186,7 @@ test("official calendar KRX legacy Word table paragraph properties verify member
       {
         pageIndex: 0,
         paragraphIndex: 0,
-        istd: 0x1234,
+        istd: 0,
         inTable: true,
         tableDepth: 2,
         isTtp: false,
@@ -1216,7 +1216,7 @@ test("official calendar KRX legacy Word table paragraph properties verify member
       {
         pageIndex: 1,
         paragraphIndex: 0,
-        istd: 0x5678,
+        istd: 0,
         inTable: true,
         tableDepth: 1,
         isTtp: true,
@@ -1230,6 +1230,7 @@ test("official calendar KRX legacy Word table paragraph properties verify member
       }
     ]
   );
+  assert.equal(result.paragraphStyleBindingStatus, "default_style_only");
   assert.equal(result.supportedTablePropertySemanticsStatus, "verified");
   assert.equal(result.tableTextMarkSemanticsStatus, "not_verified");
   assert.equal(result.tableRowCellBoundaryStatus, "not_verified");
@@ -1243,6 +1244,12 @@ test("official calendar KRX legacy Word table paragraph properties verify member
 test("official calendar KRX legacy Word table paragraph properties infer Word97 depth one", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidPapxFkpFixture(bytes);
+  configureDefaultStyleSecondPapxGroup(bytes);
+  setPapxGrpPrl(
+    bytes,
+    1024 + 40,
+    tablePropertyGroup([[0x2416, [1]]])
+  );
 
   const result =
     verifyOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(bytes);
@@ -1274,6 +1281,7 @@ test("official calendar KRX legacy Word table paragraph properties reject unsupp
   for (const unsupportedPrl of unsupportedPrls) {
     const bytes = compoundFileWithUserStreams(3);
     configureValidPapxFkpFixture(bytes);
+    configureDefaultStyleSecondPapxGroup(bytes);
     setPapxGrpPrl(
       bytes,
       1024 + 40,
@@ -1323,6 +1331,34 @@ test("official calendar KRX legacy Word table paragraph properties reject invali
     const bytes = compoundFileWithUserStreams(3);
     configureValidPapxFkpFixture(bytes);
     configureWord2000Fib(bytes);
+    configureDefaultStyleSecondPapxGroup(bytes);
+    setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
+    assertTableParagraphPropertiesCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_PARAGRAPH_PROPERTIES_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word table paragraph properties reject unresolved style state", () => {
+  const invalidGroups = [
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(1)]
+      ],
+      1
+    ),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x664a, int32Bytes(1)]
+    ])
+  ];
+  for (const groupBytes of invalidGroups) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureValidPapxFkpFixture(bytes);
+    configureWord2000Fib(bytes);
+    configureDefaultStyleSecondPapxGroup(bytes);
     setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
     assertTableParagraphPropertiesCode(
       bytes,
@@ -2220,19 +2256,16 @@ function configureValidTableParagraphPropertiesFixture(bytes: Uint8Array): void 
       [0x664a, int32Bytes(-1)],
       [0x244b, [1]],
       [0x2405, [1]]
-    ])
+    ], 0)
   );
   setPapxGrpPrl(
     bytes,
     1536 + 40,
-    tablePropertyGroup(
-      [
-        [0x2416, [1]],
-        [0x6649, int32Bytes(1)],
-        [0x2417, [1]]
-      ],
-      0x5678
-    )
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(1)],
+      [0x2417, [1]]
+    ], 0)
   );
 }
 
@@ -2245,9 +2278,13 @@ function configureWord2000Fib(bytes: Uint8Array): void {
   });
 }
 
+function configureDefaultStyleSecondPapxGroup(bytes: Uint8Array): void {
+  setPapxGrpPrl(bytes, 1536 + 40, [0, 0]);
+}
+
 function tablePropertyGroup(
   prls: readonly (readonly [number, readonly number[]])[],
-  istd = 0x1234
+  istd = 0
 ): number[] {
   const groupBytes = [istd & 0xff, (istd >>> 8) & 0xff];
   for (const [sprm, operandBytes] of prls) {
