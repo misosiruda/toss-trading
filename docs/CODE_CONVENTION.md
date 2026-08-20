@@ -342,6 +342,21 @@ post/wire/response policy에 결합한다. `Set-Cookie`는 count만 허용하고
 request replay를 금지한다. Policy resolver 자체에는 HTTP I/O, raw wire-body 접근 또는
 accepted acquisition 승격을 추가하지 않는다.
 
+KRX holiday data fixed network consumer는
+`officialMarketCalendarKrxOtpEphemeralBody.ts`가 소유한 opaque wire-body handle만 한 번
+소비한다. Production factory는 registered URL, platform trust, production hostname/SNI와
+10초 deadline을 고정하고 dial target, custom CA 또는 deadline override를 노출하지 않는다.
+Test-only factory는 loopback dial과 synthetic CA만 허용하되 production `Host`, SNI와
+certificate hostname 검증을 유지한다. Request body는 request `finish`, network failure 또는
+deadline 중 먼저 도달한 경계에서 zeroize하고 handle 재사용을 거부한다.
+
+Response는 allocation 전에 exact single canonical `Content-Length`, HTTP/1.1 200과 금지
+header를 검사하고 declared length 크기의 bounded buffer 하나만 사용한다. Partial/aborted,
+overflow, trailer, metadata/body 검증 실패는 buffer를 zeroize한 뒤 fail-closed로 종료한다.
+`Set-Cookie`는 raw value를 복사하거나 반환하지 않고 raw header name count만 metadata
+verifier에 전달한다. 성공해도 process-local ephemeral response handle만 반환하며 durable
+reuse와 accepted acquisition은 false다.
+
 `officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 raw `Set-Cookie` value를
 받거나 저장하지 않고 count만 검증한다. Request isolation은 automatic redirect/cookie
 jar disabled와 outbound Cookie count 0을 strict하게 요구한다. `no-store`, `no-cache`,

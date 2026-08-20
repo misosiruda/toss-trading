@@ -1,4 +1,22 @@
+import type { ClientRequest, IncomingMessage } from "node:http";
+import {
+  Agent as HttpsAgent,
+  request as httpsRequest,
+  type RequestOptions
+} from "node:https";
+import { isIP } from "node:net";
+import { connect as tlsConnect } from "node:tls";
+
 import { verifyOfficialMarketCalendarKrxOtpResponseBody } from "./officialMarketCalendarKrxOtpResponseBody.js";
+import {
+  createOfficialMarketCalendarKrxHolidayDataEphemeralResponse,
+  disposeOfficialMarketCalendarKrxHolidayDataEphemeralResponse,
+  type OfficialMarketCalendarKrxHolidayDataEphemeralResponse
+} from "./officialMarketCalendarKrxHolidayDataEphemeralResponse.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_NETWORK_POLICY_VERSION,
+  resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy
+} from "./officialMarketCalendarKrxHolidayDataPostNetworkPolicy.js";
 import {
   OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_POLICY_VERSION,
   resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostPolicy
@@ -13,6 +31,7 @@ import {
   resolveRegisteredOfficialMarketCalendarKrxHolidayTargetYearPolicy,
   type OfficialMarketCalendarKrxHolidayTargetYear
 } from "./officialMarketCalendarKrxHolidayTargetYear.js";
+import { verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata } from "./officialMarketCalendarKrxHolidayDataResponseMetadata.js";
 
 declare const krxOtpEphemeralBodyBrand: unique symbol;
 declare const krxHolidayDataPostParametersBrand: unique symbol;
@@ -35,6 +54,37 @@ export interface OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters {
 export interface OfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody {
   readonly [krxHolidayDataPostWireBodyBrand]: true;
   toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxHolidayDataNetworkConsumer {
+  consume(
+    handle: OfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody
+  ): Promise<OfficialMarketCalendarKrxHolidayDataEphemeralResponse>;
+}
+
+export interface TestOnlyOfficialMarketCalendarKrxHolidayDataSocketConnector {
+  dialAddress: string;
+  dialPort: number;
+  certificateAuthority: string;
+  deadlineMs?: number;
+}
+
+export type OfficialMarketCalendarKrxHolidayDataNetworkErrorCode =
+  | "KRX_HOLIDAY_DATA_NETWORK_INVALID_CONFIG"
+  | "KRX_HOLIDAY_DATA_NETWORK_FAILURE"
+  | "KRX_HOLIDAY_DATA_NETWORK_DEADLINE_EXCEEDED"
+  | "KRX_HOLIDAY_DATA_NETWORK_RESPONSE_REJECTED"
+  | "KRX_HOLIDAY_DATA_NETWORK_RESPONSE_TOO_LARGE"
+  | "KRX_HOLIDAY_DATA_NETWORK_INCOMPLETE_RESPONSE";
+
+export class OfficialMarketCalendarKrxHolidayDataNetworkError extends Error {
+  constructor(
+    readonly code: OfficialMarketCalendarKrxHolidayDataNetworkErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "OfficialMarketCalendarKrxHolidayDataNetworkError";
+  }
 }
 
 interface ReadyBodyState {
@@ -66,6 +116,7 @@ interface ReadyWireBodyState {
   status: "ready";
   bodyBytes: Uint8Array;
   requestContentType: "application/x-www-form-urlencoded; charset=UTF-8";
+  targetYear: OfficialMarketCalendarKrxHolidayTargetYear;
 }
 
 interface DisposedWireBodyState {
@@ -77,6 +128,14 @@ type WireBodyState = ReadyWireBodyState | DisposedWireBodyState;
 const bodyStates = new WeakMap<object, BodyState>();
 const postParametersStates = new WeakMap<object, PostParametersState>();
 const wireBodyStates = new WeakMap<object, WireBodyState>();
+type HttpsRequest = (
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void
+) => ClientRequest;
+interface NetworkConsumerOptions {
+  deadlineMs: number;
+  request: HttpsRequest;
+}
 const typedArrayPrototype = Object.getPrototypeOf(
   Uint8Array.prototype
 ) as object;
@@ -247,7 +306,8 @@ export function consumeOfficialMarketCalendarKrxHolidayDataPostParametersToWireB
     wireBodyStates.set(wireBodyHandle, {
       status: "ready",
       bodyBytes,
-      requestContentType: wirePolicy.requestContentType
+      requestContentType: wirePolicy.requestContentType,
+      targetYear: state.targetYear
     });
     transferred = true;
     return wireBodyHandle as OfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody;
@@ -269,6 +329,470 @@ export function disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody
     );
   }
   disposeWireBodyObject(handleObject);
+}
+
+export function createOfficialMarketCalendarKrxHolidayDataNetworkConsumer(): OfficialMarketCalendarKrxHolidayDataNetworkConsumer {
+  const policy =
+    resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_NETWORK_POLICY_VERSION
+    );
+  return createNetworkConsumer({
+    deadlineMs: policy.networkLimits.absoluteDeadlineMilliseconds,
+    request: httpsRequest
+  });
+}
+
+export function createTestOnlyOfficialMarketCalendarKrxHolidayDataNetworkConsumer(
+  connector: TestOnlyOfficialMarketCalendarKrxHolidayDataSocketConnector
+): OfficialMarketCalendarKrxHolidayDataNetworkConsumer {
+  const normalizedConnector = normalizeTestOnlyNetworkConnector(connector);
+  const policy =
+    resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_NETWORK_POLICY_VERSION
+    );
+  const dialAddress = normalizedConnector.dialAddress;
+  const dialPort = normalizedConnector.dialPort;
+  const certificateAuthority = normalizedConnector.certificateAuthority;
+  const agent = new HttpsAgent({ keepAlive: false, maxCachedSessions: 0 });
+  agent.createConnection = () =>
+    tlsConnect({
+      host: dialAddress,
+      port: dialPort,
+      servername: policy.transportDerivedRequestHeaderValues.host,
+      ca: certificateAuthority,
+      rejectUnauthorized: true,
+      ALPNProtocols: ["http/1.1"]
+    });
+  return createNetworkConsumer({
+    deadlineMs:
+      normalizedConnector.deadlineMs ??
+      policy.networkLimits.absoluteDeadlineMilliseconds,
+    request: (options, callback) =>
+      httpsRequest({ ...options, agent }, callback)
+  });
+}
+
+function createNetworkConsumer(
+  options: NetworkConsumerOptions
+): OfficialMarketCalendarKrxHolidayDataNetworkConsumer {
+  return Object.freeze({
+    consume: (
+      handle: OfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody
+    ) => consumeWireBodyOverNetwork(handle, options)
+  });
+}
+
+async function consumeWireBodyOverNetwork(
+  handle: OfficialMarketCalendarKrxHolidayDataPostEphemeralWireBody,
+  options: NetworkConsumerOptions
+): Promise<OfficialMarketCalendarKrxHolidayDataEphemeralResponse> {
+  const handleObject = assertHandleObject(handle);
+  const state = wireBodyStates.get(handleObject);
+  if (state === undefined) {
+    throw new Error(
+      "KRX holiday data POST wire body must come from the fixed byte encoder"
+    );
+  }
+  if (state.status !== "ready") {
+    throw new Error("KRX holiday data POST wire body has already been consumed");
+  }
+
+  wireBodyStates.set(handleObject, { status: "disposed" });
+  try {
+    return await executeNetworkRequest(state, options);
+  } finally {
+    zeroizeBytes(state.bodyBytes);
+  }
+}
+
+function executeNetworkRequest(
+  state: ReadyWireBodyState,
+  options: NetworkConsumerOptions
+): Promise<OfficialMarketCalendarKrxHolidayDataEphemeralResponse> {
+  const policy =
+    resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_NETWORK_POLICY_VERSION
+    );
+  if (
+    state.requestContentType !== policy.fixedRequestHeaderValues.contentType ||
+    state.bodyBytes.byteLength === 0 ||
+    state.bodyBytes.byteLength > policy.networkLimits.maximumRequestBodyByteLength
+  ) {
+    throw responseRejected();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let clientRequest: ClientRequest | undefined;
+    let responseStarted = false;
+    let requestBodyCleared = false;
+    const clearRequestBody = (): void => {
+      if (!requestBodyCleared) {
+        requestBodyCleared = true;
+        zeroizeBytes(state.bodyBytes);
+      }
+    };
+    const finish = (
+      error: unknown,
+      value?: OfficialMarketCalendarKrxHolidayDataEphemeralResponse
+    ): void => {
+      if (settled) {
+        if (value !== undefined) {
+          disposeOfficialMarketCalendarKrxHolidayDataEphemeralResponse(value);
+        }
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      clearRequestBody();
+      if (error === undefined) {
+        resolve(value!);
+      } else {
+        reject(error);
+      }
+    };
+    const timer = setTimeout(() => {
+      finish(
+        new OfficialMarketCalendarKrxHolidayDataNetworkError(
+          "KRX_HOLIDAY_DATA_NETWORK_DEADLINE_EXCEEDED",
+          "KRX holiday data network deadline was exceeded."
+        )
+      );
+      clientRequest?.destroy();
+    }, options.deadlineMs);
+
+    try {
+      clientRequest = options.request(
+        buildHolidayDataRequestOptions(policy, state.bodyBytes.byteLength),
+        (response) => {
+          responseStarted = true;
+          readNetworkResponse(response, policy, state.targetYear).then(
+            (value) => finish(undefined, value),
+            (error: unknown) => finish(error)
+          );
+        }
+      );
+      clientRequest.once("finish", clearRequestBody);
+      clientRequest.once("error", () => {
+        finish(
+          responseStarted
+            ? incompleteResponse()
+            : new OfficialMarketCalendarKrxHolidayDataNetworkError(
+                "KRX_HOLIDAY_DATA_NETWORK_FAILURE",
+                "KRX holiday data network request failed."
+              )
+        );
+      });
+      clientRequest.end(state.bodyBytes);
+    } catch {
+      finish(
+        responseStarted
+          ? incompleteResponse()
+          : new OfficialMarketCalendarKrxHolidayDataNetworkError(
+              "KRX_HOLIDAY_DATA_NETWORK_FAILURE",
+              "KRX holiday data network request failed."
+            )
+      );
+    }
+  });
+}
+
+function buildHolidayDataRequestOptions(
+  policy: ReturnType<
+    typeof resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy
+  >,
+  bodyByteLength: number
+): RequestOptions {
+  const requestedUrl = new URL(policy.sourceSelector.requestedUrl);
+  return {
+    protocol: "https:",
+    hostname: requestedUrl.hostname,
+    port: 443,
+    servername: requestedUrl.hostname,
+    method: "POST",
+    path: `${requestedUrl.pathname}${requestedUrl.search}`,
+    agent: false,
+    rejectUnauthorized: true,
+    headers: {
+      Accept: policy.fixedRequestHeaderValues.accept,
+      "Cache-Control": policy.fixedRequestHeaderValues.cacheControl,
+      "Content-Length": String(bodyByteLength),
+      "Content-Type": policy.fixedRequestHeaderValues.contentType,
+      Pragma: policy.fixedRequestHeaderValues.pragma
+    }
+  };
+}
+
+async function readNetworkResponse(
+  response: IncomingMessage,
+  policy: ReturnType<
+    typeof resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy
+  >,
+  targetYear: OfficialMarketCalendarKrxHolidayTargetYear
+): Promise<OfficialMarketCalendarKrxHolidayDataEphemeralResponse> {
+  let declaredContentLength: number;
+  try {
+    declaredContentLength = assertResponseHeaderBoundary(response, policy);
+  } catch (error) {
+    response.destroy();
+    throw error;
+  }
+  const responseBytes = new Uint8Array(declaredContentLength);
+  let responseByteLength = 0;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (
+      error: unknown,
+      value?: OfficialMarketCalendarKrxHolidayDataEphemeralResponse
+    ): void => {
+      if (settled) {
+        if (value !== undefined) {
+          disposeOfficialMarketCalendarKrxHolidayDataEphemeralResponse(value);
+        }
+        return;
+      }
+      settled = true;
+      if (error === undefined) {
+        resolve(value!);
+      } else {
+        zeroizeBytes(responseBytes);
+        reject(error);
+      }
+    };
+    response.on("data", (chunk: Buffer) => {
+      if (settled) {
+        zeroizeBytes(chunk);
+        return;
+      }
+      try {
+        if (responseByteLength + chunk.byteLength > declaredContentLength) {
+          finish(responseTooLarge());
+          response.destroy();
+          return;
+        }
+        Uint8Array.prototype.set.call(responseBytes, chunk, responseByteLength);
+        responseByteLength += chunk.byteLength;
+      } finally {
+        zeroizeBytes(chunk);
+      }
+    });
+    response.once("aborted", () => finish(incompleteResponse()));
+    response.once("error", () => finish(incompleteResponse()));
+    response.once("end", () => {
+      if (
+        !response.complete ||
+        responseByteLength !== declaredContentLength ||
+        response.rawTrailers.length !== 0 ||
+        Object.keys(response.trailers).length !== 0
+      ) {
+        finish(incompleteResponse());
+        return;
+      }
+      try {
+        const metadata =
+          verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata({
+            requestIsolation: {
+              automaticRedirectFollow: false,
+              cookieJarEnabled: false,
+              requestCookieHeaderCount: 0
+            },
+            responseUrl: policy.sourceSelector.requestedUrl,
+            httpStatus: response.statusCode,
+            redirectLocationHeaderValues: readRawHeaderValues(
+              response.rawHeaders,
+              "location"
+            ),
+            contentTypeHeaderValues: readRawHeaderValues(
+              response.rawHeaders,
+              "content-type"
+            ),
+            contentEncodingHeaderValues: readRawHeaderValues(
+              response.rawHeaders,
+              "content-encoding"
+            ),
+            transferEncodingHeaderValues: readRawHeaderValues(
+              response.rawHeaders,
+              "transfer-encoding"
+            ),
+            pragmaHeaderValues: readRawHeaderValues(
+              response.rawHeaders,
+              "pragma"
+            ),
+            setCookieHeaderCount: countRawHeaders(
+              response.rawHeaders,
+              "set-cookie"
+            ),
+            responseCacheHeaders: {
+              dateHeaderValues: readRawHeaderValues(response.rawHeaders, "date"),
+              ageHeaderValues: readRawHeaderValues(response.rawHeaders, "age"),
+              expiresHeaderValues: readRawHeaderValues(
+                response.rawHeaders,
+                "expires"
+              )
+            },
+            responseCacheControl: {
+              cacheControlHeaderValues: readRawHeaderValues(
+                response.rawHeaders,
+                "cache-control"
+              )
+            },
+            transferCompletion: {
+              httpProtocolVersion: "http_1_1",
+              transferFraming: "content_length",
+              transferCompleted: true,
+              declaredContentLength,
+              contentLength: responseByteLength
+            }
+          });
+        const result =
+          createOfficialMarketCalendarKrxHolidayDataEphemeralResponse({
+            rawResponseBytes: responseBytes,
+            responseMetadata: metadata,
+            targetYear
+          });
+        finish(undefined, result);
+      } catch {
+        finish(responseRejected());
+      }
+    });
+  });
+}
+
+function assertResponseHeaderBoundary(
+  response: IncomingMessage,
+  policy: ReturnType<
+    typeof resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy
+  >
+): number {
+  if (
+    response.statusCode !== policy.responseBoundary.requiredStatus ||
+    response.httpVersion !== "1.1"
+  ) {
+    throw responseRejected();
+  }
+  for (const name of [
+    "location",
+    "content-encoding",
+    "transfer-encoding",
+    "content-range",
+    "trailer"
+  ]) {
+    if (countRawHeaders(response.rawHeaders, name) !== 0) {
+      throw responseRejected();
+    }
+  }
+  const contentLengths = readRawHeaderValues(
+    response.rawHeaders,
+    "content-length"
+  );
+  if (contentLengths.length !== 1) {
+    throw responseRejected();
+  }
+  const rawContentLength = contentLengths[0] ?? "";
+  if (!/^[1-9]\d*$/.test(rawContentLength)) {
+    throw responseRejected();
+  }
+  const contentLength = Number(rawContentLength);
+  if (
+    !Number.isSafeInteger(contentLength) ||
+    contentLength > policy.networkLimits.maximumResponseBodyByteLength
+  ) {
+    throw responseTooLarge();
+  }
+  return contentLength;
+}
+
+function readRawHeaderValues(rawHeaders: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === name) {
+      values.push(rawHeaders[index + 1] ?? "");
+    }
+  }
+  return values;
+}
+
+function countRawHeaders(rawHeaders: string[], name: string): number {
+  let count = 0;
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === name) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function responseRejected(): OfficialMarketCalendarKrxHolidayDataNetworkError {
+  return new OfficialMarketCalendarKrxHolidayDataNetworkError(
+    "KRX_HOLIDAY_DATA_NETWORK_RESPONSE_REJECTED",
+    "KRX holiday data response was rejected."
+  );
+}
+
+function responseTooLarge(): OfficialMarketCalendarKrxHolidayDataNetworkError {
+  return new OfficialMarketCalendarKrxHolidayDataNetworkError(
+    "KRX_HOLIDAY_DATA_NETWORK_RESPONSE_TOO_LARGE",
+    "KRX holiday data response exceeded the byte limit."
+  );
+}
+
+function incompleteResponse(): OfficialMarketCalendarKrxHolidayDataNetworkError {
+  return new OfficialMarketCalendarKrxHolidayDataNetworkError(
+    "KRX_HOLIDAY_DATA_NETWORK_INCOMPLETE_RESPONSE",
+    "KRX holiday data response was incomplete."
+  );
+}
+
+function normalizeTestOnlyNetworkConnector(
+  connector: TestOnlyOfficialMarketCalendarKrxHolidayDataSocketConnector
+): Readonly<TestOnlyOfficialMarketCalendarKrxHolidayDataSocketConnector> {
+  const maximumDeadline =
+    resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostNetworkPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_NETWORK_POLICY_VERSION
+    ).networkLimits.absoluteDeadlineMilliseconds;
+  if (connector === null || typeof connector !== "object") {
+    throwInvalidNetworkConnector();
+  }
+  let normalized: TestOnlyOfficialMarketCalendarKrxHolidayDataSocketConnector;
+  try {
+    const deadlineMs = connector.deadlineMs;
+    normalized = {
+      dialAddress: connector.dialAddress,
+      dialPort: connector.dialPort,
+      certificateAuthority: connector.certificateAuthority,
+      ...(deadlineMs === undefined ? {} : { deadlineMs })
+    };
+  } catch {
+    throwInvalidNetworkConnector();
+  }
+  if (
+    typeof normalized.dialAddress !== "string" ||
+    !isLoopbackIp(normalized.dialAddress) ||
+    !Number.isInteger(normalized.dialPort) ||
+    normalized.dialPort < 1 ||
+    normalized.dialPort > 65_535 ||
+    typeof normalized.certificateAuthority !== "string" ||
+    normalized.certificateAuthority.trim().length === 0 ||
+    (normalized.deadlineMs !== undefined &&
+      (!Number.isInteger(normalized.deadlineMs) ||
+        normalized.deadlineMs < 1 ||
+        normalized.deadlineMs > maximumDeadline))
+  ) {
+    throwInvalidNetworkConnector();
+  }
+  return Object.freeze(normalized);
+}
+
+function throwInvalidNetworkConnector(): never {
+  throw new OfficialMarketCalendarKrxHolidayDataNetworkError(
+    "KRX_HOLIDAY_DATA_NETWORK_INVALID_CONFIG",
+    "KRX holiday data test-only network connector is invalid."
+  );
+}
+
+function isLoopbackIp(value: string): boolean {
+  return isIP(value) !== 0 && (value === "127.0.0.1" || value === "::1");
 }
 
 function disposeBodyObject(handle: object): void {
