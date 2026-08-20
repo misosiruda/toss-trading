@@ -1,16 +1,5 @@
-import { basename, dirname, isAbsolute, join } from "node:path";
-import {
-  link,
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  realpath,
-  rename,
-  rmdir,
-  unlink,
-  writeFile
-} from "node:fs/promises";
+import { isAbsolute } from "node:path";
+import { open, realpath } from "node:fs/promises";
 
 import { z } from "zod";
 
@@ -31,32 +20,25 @@ const preflightPayloadSchema = z
     status: z.literal("unsupported"),
     capabilities: z
       .object({
-        exclusiveStagingFileCreate: z.boolean(),
-        fileDurabilitySync: z.boolean(),
+        exclusiveStagingFileCreate: z.literal(false),
+        fileDurabilitySync: z.literal(false),
         directoryDurabilitySync: z.boolean(),
-        atomicNoReplaceFilePublish: z.boolean(),
+        atomicNoReplaceFilePublish: z.literal(false),
         atomicNoReplaceDirectoryPublish: z.literal(false)
       })
       .strict(),
     observations: z
       .object({
-        existingFileExclusiveCreate: z.enum([
-          "collision_rejected",
-          "unexpectedly_opened",
-          "probe_failed"
-        ]),
+        existingFileExclusiveCreate: z.literal(
+          "not_probed_safe_cleanup_unavailable"
+        ),
+        fileSync: z.literal("not_probed_safe_cleanup_unavailable"),
         directorySync: z.enum(["synced", "unsupported", "probe_failed"]),
-        freshFileHardLink: z.enum(["linked", "probe_failed"]),
-        existingFileHardLink: z.enum([
-          "collision_rejected",
-          "unexpectedly_linked",
-          "probe_failed"
-        ]),
-        existingDirectoryRename: z.enum([
-          "collision_rejected",
-          "destination_replaced",
-          "probe_failed"
-        ])
+        freshFileHardLink: z.literal("not_probed_safe_cleanup_unavailable"),
+        existingFileHardLink: z.literal("not_probed_safe_cleanup_unavailable"),
+        existingDirectoryRename: z.literal(
+          "not_probed_safe_cleanup_unavailable"
+        )
       })
       .strict(),
     blockers: z.array(z.enum([
@@ -64,7 +46,8 @@ const preflightPayloadSchema = z
       "directory_durability_sync_unavailable",
       "exclusive_staging_file_create_unavailable",
       "file_durability_sync_unavailable",
-      "atomic_no_replace_file_publish_unavailable"
+      "atomic_no_replace_file_publish_unavailable",
+      "safe_mutation_probe_cleanup_unavailable"
     ]))
   })
   .strict()
@@ -109,15 +92,16 @@ const preflightPayloadSchema = z
         });
       }
     }
+    if (!value.blockers.includes("safe_mutation_probe_cleanup_unavailable")) {
+      context.addIssue({
+        code: "custom",
+        path: ["blockers"],
+        message: "publication filesystem safe mutation probe blocker is required"
+      });
+    }
     if (
-      value.capabilities.exclusiveStagingFileCreate !==
-        (value.observations.existingFileExclusiveCreate ===
-          "collision_rejected") ||
       value.capabilities.directoryDurabilitySync !==
-        (value.observations.directorySync === "synced") ||
-      value.capabilities.atomicNoReplaceFilePublish !==
-        (value.observations.freshFileHardLink === "linked" &&
-          value.observations.existingFileHardLink === "collision_rejected")
+      (value.observations.directorySync === "synced")
     ) {
       context.addIssue({
         code: "custom",
@@ -144,73 +128,47 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
     throw new Error("publication filesystem preflight root must be absolute");
   }
   const publicationRoot = await realpath(input.publicationRoot);
-  const prefix = ".toss-calendar-publication-preflight-";
-  const probeRoot = await mkdtemp(join(publicationRoot, prefix));
-  const probeRootIdentity = await readProbeRootIdentity(probeRoot);
-  try {
-    const filePath = join(probeRoot, "exclusive-file");
-    const exclusiveStagingFileCreate = await probeExclusiveFile(filePath);
-    const fileDurabilitySync = await probeFileSync(join(probeRoot, "sync-file"));
-    const directorySync = await probeDirectorySync(publicationRoot);
-    const hardLink = await probeFileHardLink(probeRoot);
-    const directoryRename = await probeExistingDirectoryRename(probeRoot);
-    const blockers: OfficialMarketCalendarPublicationFilesystemPreflightPayload["blockers"] = [
-      "atomic_no_replace_directory_publish_unavailable"
-    ];
-    if (directorySync !== "synced") {
-      blockers.push("directory_durability_sync_unavailable");
-    }
-    if (exclusiveStagingFileCreate !== "collision_rejected") {
-      blockers.push("exclusive_staging_file_create_unavailable");
-    }
-    if (!fileDurabilitySync) {
-      blockers.push("file_durability_sync_unavailable");
-    }
-    if (
-      hardLink.freshFileHardLink !== "linked" ||
-      hardLink.existingFileHardLink !== "collision_rejected"
-    ) {
-      blockers.push("atomic_no_replace_file_publish_unavailable");
-    }
-    blockers.sort();
-    const payload = preflightPayloadSchema.parse({
-      schemaVersion:
-        OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
-      implementationId: "node_fs_promises.v1",
-      platform: process.platform,
-      publicationRootIdentityHash: createReplayResearchHash(publicationRoot),
-      status: "unsupported",
-      capabilities: {
-        exclusiveStagingFileCreate:
-          exclusiveStagingFileCreate === "collision_rejected",
-        fileDurabilitySync,
-        directoryDurabilitySync: directorySync === "synced",
-        atomicNoReplaceFilePublish:
-          hardLink.freshFileHardLink === "linked" &&
-          hardLink.existingFileHardLink === "collision_rejected",
-        atomicNoReplaceDirectoryPublish: false
-      },
-      observations: {
-        existingFileExclusiveCreate: exclusiveStagingFileCreate,
-        directorySync,
-        ...hardLink,
-        existingDirectoryRename: directoryRename
-      },
-      blockers
-    });
-    return deepFreeze({
-      ...payload,
-      preflightHash:
-        createOfficialMarketCalendarPublicationFilesystemPreflightHash(payload)
-    });
-  } finally {
-    await removeVerifiedProbeRoot(
-      probeRoot,
-      publicationRoot,
-      prefix,
-      probeRootIdentity
-    );
+  const directorySync = await probeDirectorySync(publicationRoot);
+  const blockers: OfficialMarketCalendarPublicationFilesystemPreflightPayload["blockers"] = [
+    "atomic_no_replace_directory_publish_unavailable",
+    "atomic_no_replace_file_publish_unavailable",
+    "exclusive_staging_file_create_unavailable",
+    "file_durability_sync_unavailable",
+    "safe_mutation_probe_cleanup_unavailable"
+  ];
+  if (directorySync !== "synced") {
+    blockers.push("directory_durability_sync_unavailable");
   }
+  blockers.sort();
+  const payload = preflightPayloadSchema.parse({
+    schemaVersion:
+      OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
+    implementationId: "node_fs_promises.v1",
+    platform: process.platform,
+    publicationRootIdentityHash: createReplayResearchHash(publicationRoot),
+    status: "unsupported",
+    capabilities: {
+      exclusiveStagingFileCreate: false,
+      fileDurabilitySync: false,
+      directoryDurabilitySync: directorySync === "synced",
+      atomicNoReplaceFilePublish: false,
+      atomicNoReplaceDirectoryPublish: false
+    },
+    observations: {
+      existingFileExclusiveCreate: "not_probed_safe_cleanup_unavailable",
+      fileSync: "not_probed_safe_cleanup_unavailable",
+      directorySync,
+      freshFileHardLink: "not_probed_safe_cleanup_unavailable",
+      existingFileHardLink: "not_probed_safe_cleanup_unavailable",
+      existingDirectoryRename: "not_probed_safe_cleanup_unavailable"
+    },
+    blockers
+  });
+  return deepFreeze({
+    ...payload,
+    preflightHash:
+      createOfficialMarketCalendarPublicationFilesystemPreflightHash(payload)
+  });
 }
 
 export function parseOfficialMarketCalendarPublicationFilesystemPreflight(
@@ -242,38 +200,6 @@ export function createOfficialMarketCalendarPublicationFilesystemPreflightHash(
   return createReplayResearchHash(preflightPayloadSchema.parse(value));
 }
 
-async function probeExclusiveFile(path: string) {
-  try {
-    await writeFile(path, "existing", { flag: "wx" });
-  } catch {
-    return "probe_failed" as const;
-  }
-  try {
-    const handle = await open(path, "wx");
-    await handle.close();
-    return "unexpectedly_opened" as const;
-  } catch (error) {
-    return isNodeError(error) && error.code === "EEXIST"
-      ? "collision_rejected" as const
-      : "probe_failed" as const;
-  }
-}
-
-async function probeFileSync(path: string): Promise<boolean> {
-  try {
-    const handle = await open(path, "wx");
-    try {
-      await handle.writeFile("sync");
-      await handle.sync();
-      return true;
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    return false;
-  }
-}
-
 async function probeDirectorySync(path: string) {
   try {
     const handle = await open(path, "r");
@@ -287,144 +213,6 @@ async function probeDirectorySync(path: string) {
     return isNodeError(error) && error.code === "EPERM"
       ? "unsupported" as const
       : "probe_failed" as const;
-  }
-}
-
-async function probeFileHardLink(root: string) {
-  const source = join(root, "link-source");
-  const freshDestination = join(root, "link-fresh-destination");
-  const destination = join(root, "link-destination");
-  try {
-    await writeFile(source, "source", { flag: "wx" });
-    await writeFile(destination, "destination", { flag: "wx" });
-  } catch {
-    return {
-      freshFileHardLink: "probe_failed" as const,
-      existingFileHardLink: "probe_failed" as const
-    };
-  }
-  try {
-    await link(source, freshDestination);
-  } catch {
-    return {
-      freshFileHardLink: "probe_failed" as const,
-      existingFileHardLink: "probe_failed" as const
-    };
-  }
-  try {
-    await link(source, destination);
-    return {
-      freshFileHardLink: "linked" as const,
-      existingFileHardLink: "unexpectedly_linked" as const
-    };
-  } catch (error) {
-    return {
-      freshFileHardLink: "linked" as const,
-      existingFileHardLink:
-        isNodeError(error) && error.code === "EEXIST"
-          ? "collision_rejected" as const
-          : "probe_failed" as const
-    };
-  }
-}
-
-async function probeExistingDirectoryRename(root: string) {
-  const source = join(root, "rename-source");
-  const destination = join(root, "rename-destination");
-  try {
-    await mkdir(source);
-    await mkdir(destination);
-  } catch {
-    return "probe_failed" as const;
-  }
-  try {
-    await rename(source, destination);
-    return "destination_replaced" as const;
-  } catch (error) {
-    return isNodeError(error) && ["EEXIST", "ENOTEMPTY", "EPERM"].includes(error.code ?? "")
-      ? "collision_rejected" as const
-      : "probe_failed" as const;
-  }
-}
-
-async function removeVerifiedProbeRoot(
-  root: string,
-  publicationRoot: string,
-  prefix: string,
-  expectedIdentity: ProbeRootIdentity
-): Promise<void> {
-  const resolvedPublicationRoot = await realpath(publicationRoot);
-  if (
-    dirname(root) !== resolvedPublicationRoot ||
-    !basename(root).startsWith(prefix)
-  ) {
-    throw new Error("publication preflight cleanup root escaped the publication root");
-  }
-  const files = [
-    "exclusive-file",
-    "sync-file",
-    "link-source",
-    "link-fresh-destination",
-    "link-destination"
-  ];
-  for (const file of files) {
-    await assertProbeRootIdentity(root, expectedIdentity);
-    await unlinkIfPresent(join(root, file));
-  }
-  for (const directory of ["rename-source", "rename-destination"]) {
-    await assertProbeRootIdentity(root, expectedIdentity);
-    await rmdirIfPresent(join(root, directory));
-  }
-  await assertProbeRootIdentity(root, expectedIdentity);
-  await rmdir(root);
-}
-
-interface ProbeRootIdentity {
-  device: number;
-  inode: number;
-}
-
-async function readProbeRootIdentity(root: string): Promise<ProbeRootIdentity> {
-  const stats = await lstat(root);
-  if (!stats.isDirectory() || stats.isSymbolicLink()) {
-    throw new Error("publication preflight cleanup root must remain a directory entry");
-  }
-  return {
-    device: stats.dev,
-    inode: stats.ino
-  };
-}
-
-async function assertProbeRootIdentity(
-  root: string,
-  expectedIdentity: ProbeRootIdentity
-): Promise<void> {
-  const currentIdentity = await readProbeRootIdentity(root);
-  if (
-    currentIdentity.device !== expectedIdentity.device ||
-    currentIdentity.inode !== expectedIdentity.inode
-  ) {
-    throw new Error("publication preflight cleanup root identity changed");
-  }
-}
-
-async function unlinkIfPresent(path: string): Promise<void> {
-  try {
-    await unlink(path);
-  } catch (error) {
-    if (!isNodeError(error) || error.code !== "ENOENT") {
-      throw error;
-    }
-  }
-}
-
-async function rmdirIfPresent(path: string): Promise<void> {
-  try {
-    await rmdir(path);
-  } catch (error) {
-    if (!isNodeError(error) || error.code !== "ENOENT") {
-      throw error;
-    }
   }
 }
 

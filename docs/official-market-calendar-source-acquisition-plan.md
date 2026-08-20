@@ -269,21 +269,18 @@ plan hash에 결합한다. Plan field는 caller가 공급하지 않으며 stored
 sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory/file sync,
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
-`officialMarketCalendarPublicationFilesystemPreflight.ts`는 현재 Node filesystem runtime의
-exclusive file create, file/directory durability sync, fresh hard-link 생성,
-existing-file hard-link collision과 existing directory rename 동작을 exact absolute
-publication root 내부의 writer-owned temporary
-namespace에서 관찰하되 directory sync는 publication root handle 자체에 수행하고
-root realpath identity를 hash에 결합한다. 반환 contract는
-nested capability, observation과 blocker까지 deep-freeze한다. Probe root 생성 뒤
-개별 probe의 setup 또는 operation 실패는 `probe_failed` observation과 대응
-blocker로 보존한다. 그러나
-`node:fs/promises.rename()`은 atomic no-replace directory contract를 제공하지 않으므로
-built-in implementation은 모든 platform에서 `unsupported`이며
-`atomic_no_replace_directory_publish_unavailable` blocker를 반드시 남긴다. Windows의
+`officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
+root의 realpath identity를 hash에 결합하고 mutation 없이 publication root handle의
+directory durability sync만 관찰한다. Built-in Node API는 verified directory entry에
+cleanup mutation을 결합하는 primitive와 atomic no-replace directory publish contract를
+제공하지 않는다. 따라서 exclusive create, file sync, hard-link와 directory rename
+mutation probe는 실행하지 않고 `not_probed_safe_cleanup_unavailable` observation과
+`safe_mutation_probe_cleanup_unavailable` blocker로 보존한다. 관련 capability는 모두
+false이며 built-in implementation은 모든 platform에서 `unsupported`이다. Windows의
 directory sync `EPERM`도 성공으로 축소하지 않는다. Capability, observation과 blocker는
-서로 일치해야 하고 canonical preflight hash에 결합된다. 실제 writer enablement에는
-별도 검증된 no-replace directory primitive가 선행되어야 한다.
+서로 일치해야 하고 canonical preflight hash에 결합되며 반환 contract 전체를
+deep-freeze한다. 실제 writer enablement에는 별도 검증된 handle-bound cleanup과
+no-replace directory primitive가 선행되어야 한다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -648,13 +645,9 @@ POSIX sync failure는 성공으로 축소하지 않는다. Windows에서 directo
 테스트를 명시하고 POSIX durability 완료로 주장하지 않는다. Package publish
 이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
 publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
-Preflight cleanup은 생성 직후 기록한 writer-owned probe directory entry의
-device/inode identity를 각 mutation 전에 `lstat`으로 재검증하고 symlink
-replacement를 거부한다. Cleanup path의 `realpath` target과 재귀 삭제는 사용하지
-않으며 고정된 probe file만 `unlink`, 알려진 빈 directory와 root만 `rmdir`한다.
-교체되거나 예상 외 entry를 포함한 directory는 삭제하지 않고 fail-safe로 남긴다.
-Probe setup mutation은 순차 실행하고 cleanup manifest는 probe root의 direct
-child entry만 포함해 pending mutation과 intermediate symlink traversal을 남기지 않는다.
+Built-in preflight는 verified directory entry에 cleanup을 원자적으로 결합할 수 없으므로
+temporary namespace, probe file 또는 probe directory를 만들지 않는다. 따라서 cleanup
+path mutation, pending setup mutation과 intermediate symlink traversal도 발생하지 않는다.
 Artifact는 누락 sidecar, conflicting archive path reuse, hash/path 불일치 또는
 unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
