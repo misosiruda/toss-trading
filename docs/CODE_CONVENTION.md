@@ -348,6 +348,13 @@ Raw JSON member name은 escape decoding 후 object depth별 duplicate를 거부�
 Owned bytes는 성공·실패와 무관하게 zeroize하며 raw body와 row value를 결과에서
 제외한다. Shape validation만으로 durable evidence나 accepted acquisition을 만들지 않는다.
 
+`officialMarketCalendarKrxHolidayDataRowPolicy.ts`는 registered response metadata/body와
+target-year policy version에 결합한 field/sequence semantics만 정의한다. Source field
+의미는 selector 전체 target year의 비민감 observation으로 확인하고, English holiday
+name처럼 실제 empty가 관찰된 field를 임의로 required로 강화하지 않는다. Semantic
+policy 등록만으로 raw row retention, archive completeness 또는 accepted acquisition을
+주장하지 않는다.
+
 ### `src/workflows`
 
 책임:

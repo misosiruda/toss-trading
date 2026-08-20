@@ -237,6 +237,22 @@ body를 반환하지 않는다. 반환값은 구조 요약뿐이며 durable reus
 acquisition을 계속 false로 유지한다. 날짜 의미, 중복 날짜, holiday type과 publication
 evidence 변환은 이 shape boundary의 책임이 아니다.
 
+### KRX Holiday Data Row Semantics Policy
+
+2026-08-20 cookie jar disabled/redirect manual read-only 재관찰은 selector가 제공하는
+2016부터 2026까지 11개 연도를 각각 새 OTP로 조회했다. 각 응답은 13~19개 row였고
+모든 연도에서 `calnd_dd`가 requested year의 canonical date, `calnd_dd_dy`가 같은
+date, `dy_tp_cd`가 해당 Gregorian weekday code였다. Row는 date strict ascending,
+duplicate date 0이었으며 Korean holiday name은 non-empty/trimmed였다. English holiday
+name은 trimmed였지만 2026 응답에 empty value 1건이 있어 optional-empty가 필요하다.
+Raw OTP, cookie와 response row value는 기록하지 않았다.
+
+`officialMarketCalendarKrxHolidayDataRowPolicy.ts`는 이 전 연도 observation을 metadata,
+body shape와 target-year policy version에 결합한다. Date/year/calendar-day/weekday/name과
+row order/duplicate rejection 의미를 immutable policy로 등록하되 raw row consumer나
+durable artifact를 만들지 않는다. Observation은 KRX archive completeness를 증명하지
+않으며 `historicalCompletenessClaim`, durable reuse와 accepted acquisition은 false다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
