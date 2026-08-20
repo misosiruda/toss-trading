@@ -314,6 +314,15 @@ bytes를 zeroize한다. Test-only consumer만 synthetic verifier를 snapshot해 
 성공 ownership transfer를 검증한다. 새 handle도 parser operation이나 durable sink를 노출하지
 않으므로 candidate-only 경계는 유지된다.
 
+`officialMarketCalendarOleCompoundFileHeader.ts`는 Microsoft [MS-CFB] Compound File Header
+명세의 fixed signature/CLSID/version/byte-order/sector-shift/mini-stream-cutoff와 header DIFAT
+entry를 synthetic bytes에서 fail-closed로 검증한다. Version 3/4 sector size, version 3
+directory-sector count, chain 시작점과 file sector 범위도 대조한다. 결과는
+`structureStatus=header_only_not_verified`를 유지하며 FAT chain, directory entry, stream 또는
+Word table semantics를 검증하지 않는다. Identity-verified KRX handle과의 wiring도 아직
+수행하지 않았다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/05060311-bfce-4b12-874d-71fd4ce63aea
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
