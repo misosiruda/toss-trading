@@ -187,6 +187,20 @@ export를 제공하지 않는다. Explicit disposal과 JSON export 거부 시 ra
 zeroize하며 disposal은 idempotent하다. 아직 header/body encoding과 fixed network
 consumer가 없으므로 이 handle은 wire request나 acquisition capability가 아니다.
 
+### KRX Holiday Data POST Wire Encoding Policy
+
+2026-08-20 cookie/redirect-disabled read-only observation에서 exact official endpoint는
+`application/x-www-form-urlencoded; charset=UTF-8` body를
+`search_bas_yy`, `gridTp`, `pagePath`, `code` 순서로 받아 HTTP 200을 반환했다.
+Non-unreserved ASCII는 uppercase percent triplet으로 encoding했고 raw OTP는 string으로
+변환하지 않았다.
+
+`officialMarketCalendarKrxHolidayDataPostWirePolicy.ts`는 이 재현 encoding과
+1,024-byte local fail-closed request-body 상한을
+`krx_holiday_data_post_wire_encoding.v1`로 고정한다. 이 상한은 provider limit 주장이
+아니며 local safety limit다. Policy만으로 encoder, request body, transport 또는 accepted
+acquisition이 생성되지는 않는다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
