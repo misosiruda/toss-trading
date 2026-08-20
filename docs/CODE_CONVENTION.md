@@ -322,6 +322,12 @@ cookie 또는 HTTP execution을 포함해서는 안 되며 기존 OTP GET parame
 현재 연도 추론을 하지 않는다. Official selector가 변경되면 observation date와 policy
 version을 함께 갱신하고, 기존 version의 의미를 변경해서는 안 된다.
 
+`officialMarketCalendarKrxHolidayDataPostWirePolicy.ts`는 successful read-only observation의
+exact content type, parameter order와 byte-level component encoding을 versioned immutable
+policy로 고정한다. Local maximum body byte length를 provider limit처럼 표현하지 않는다.
+Raw OTP string conversion, encoder callback, HTTP execution 또는 response acceptance를 이
+policy module에 추가해서는 안 된다.
+
 ### `src/workflows`
 
 책임:
