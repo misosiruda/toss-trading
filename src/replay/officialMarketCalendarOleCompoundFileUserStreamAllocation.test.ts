@@ -45,6 +45,11 @@ import {
   decodeOfficialMarketCalendarKrxLegacyWordText
 } from "./officialMarketCalendarKrxLegacyWordTextDecoding.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_MAIN_DOCUMENT_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordMainDocumentError,
+  verifyOfficialMarketCalendarKrxLegacyWordMainDocument
+} from "./officialMarketCalendarKrxLegacyWordMainDocument.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -1170,6 +1175,102 @@ test("official calendar KRX legacy Word text decodes an empty document", () => {
   assert.deepEqual(result.pieces, []);
 });
 
+test("official calendar KRX legacy Word main document verifies its paragraph mark", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 2], [{ flags: 0, fcCompressed: 920 }]);
+  configureDocumentCounts(bytes, [2, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 924);
+  writeWordUint16(bytes, 920, 0x0041);
+  writeWordUint16(bytes, 922, 0x000d);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordMainDocument(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_MAIN_DOCUMENT_SCHEMA_VERSION
+  );
+  assert.equal(result.mainDocumentCpStart, 0);
+  assert.equal(result.mainDocumentCpEnd, 2);
+  assert.equal(result.mainDocumentCharacterCount, 2);
+  assert.equal(result.mainDocumentText, "A\r");
+  assert.equal(result.mainDocumentParagraphMarkVerified, true);
+  assert.equal(result.hasSubdocuments, false);
+  assert.equal(result.finalCp, 2);
+  assert.equal(result.terminalGuardCp, null);
+  assert.equal(result.terminalGuardStatus, "not_applicable");
+  assert.equal(result.mainDocumentVerified, true);
+  assert.equal(result.subdocumentProjectionStatus, "not_projected");
+  assert.equal(result.tableSemanticsStatus, "not_parsed");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+});
+
+test("official calendar KRX legacy Word main document verifies a subdocument terminal guard", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 4], [{ flags: 0, fcCompressed: 920 }]);
+  configureDocumentCounts(bytes, [2, 1, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 928);
+  [0x0041, 0x000d, 0x0042, 0x000d].forEach((value, index) => {
+    writeWordUint16(bytes, 920 + index * 2, value);
+  });
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordMainDocument(bytes);
+  assert.equal(result.mainDocumentText, "A\r");
+  assert.equal(result.hasSubdocuments, true);
+  assert.equal(result.finalCp, 4);
+  assert.equal(result.terminalGuardCp, 3);
+  assert.equal(result.terminalGuardStatus, "verified_paragraph_mark");
+});
+
+test("official calendar KRX legacy Word main document rejects missing paragraph boundaries", () => {
+  const invalidValues = [
+    { counts: [0, 0, 0, 0, 0, 0, 0], codeUnits: [] },
+    { counts: [2, 0, 0, 0, 0, 0, 0], codeUnits: [0x0041, 0x0042] },
+    {
+      counts: [2, 1, 0, 0, 0, 0, 0],
+      codeUnits: [0x0041, 0x000d, 0x0042, 0x0043]
+    }
+  ];
+  for (const value of invalidValues) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configurePlcPcd(
+      bytes,
+      value.codeUnits.length === 0 ? [0] : [0, value.codeUnits.length],
+      value.codeUnits.length === 0 ? [] : [{ flags: 0, fcCompressed: 920 }]
+    );
+    configureDocumentCounts(bytes, value.counts);
+    writeWordUint32(bytes, 64, 920 + value.codeUnits.length * 2);
+    value.codeUnits.forEach((codeUnit, index) => {
+      writeWordUint16(bytes, 920 + index * 2, codeUnit);
+    });
+
+    assertMainDocumentCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_MAIN_DOCUMENT_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -1592,6 +1693,18 @@ function assertTextRangeCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordTextRanges(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordTextRangesError &&
+      error.code === code
+  );
+}
+
+function assertMainDocumentCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordMainDocumentError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordMainDocument(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordMainDocumentError &&
       error.code === code
   );
 }
