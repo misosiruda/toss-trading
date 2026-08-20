@@ -90,11 +90,12 @@ historical coverage 또는 readiness 통과를 주장하지 않는다. 등록 �
 필요하면 기존 version을 변경하지 않고 별도 검토와 새 version 등록 전까지
 acquisition을 거부한다.
 
-OTP policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
-`User-Agent` field value, request-parameter policy의 HTTP client wiring,
-process-local OTP의 수명과 one-time consumption, raw code 비직렬화, 후속 data
-POST provenance는 아직 구현하거나 검증하지 않았다. 따라서 이 policy만으로 OTP
-발급, source acquisition 또는 publication readiness를 통과했다고 판단하지 않는다.
+OTP header-name policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
+value는 아래 별도 header-value policy가 담당한다. Header/parameter value policy의
+HTTP client wiring, process-local OTP의 수명과 one-time consumption, raw code
+비직렬화, 후속 data POST provenance는 아직 구현하거나 검증하지 않았다. 따라서
+이 policy들만으로 OTP 발급, source acquisition 또는 publication readiness를
+통과했다고 판단하지 않는다.
 
 ### Request Parameter Policy 사전 등록
 
@@ -106,10 +107,25 @@ Allowed parameter name은 현재 `bld`, `name`뿐이며 `code`, OTP/token,
 authorization, cookie와 미등록 이름은 fail-closed로 거부한다.
 
 이 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
-contract일 뿐이다. Exact `User-Agent` value, HTTP client wiring, OTP response
-bytes/shape/freshness, raw code의 process-local one-time lifecycle과 후속 data POST는
-여전히 구현하지 않는다. 따라서 registry 등록만으로 OTP 발급이나 accepted
-acquisition을 주장하지 않는다.
+contract일 뿐이다. HTTP client wiring, OTP response bytes/shape/freshness, raw
+code의 process-local one-time lifecycle과 후속 data POST는 여전히 구현하지
+않는다. 따라서 registry 등록만으로 OTP 발급이나 accepted acquisition을 주장하지
+않는다.
+
+### Request Header Value Policy 사전 등록
+
+KRX form OTP request의 fixed non-representation header value는
+`krx_form_otp_request_header_values.v1`로 별도 등록한다. 이 version은 같은 KRX
+OTP GET URL, `krx_form_otp_request_headers.v1`,
+`krx_form_otp_request_parameters.v1`과 exact `user-agent: Mozilla/5.0`을 결합한다.
+2026-08-20 read-only observation에서 해당 최소 User-Agent가 cookie 없이 OTP-shaped
+response를 반환한 조건을 재현하기 위한 값이며 KRX의 영구 public API contract라고
+주장하지 않는다.
+
+Fixed-value name은 현재 `user-agent`만 허용하고 authorization, cookie 또는 다른
+header category는 이 policy에 넣을 수 없다. 실제 request header 관찰 wiring과 OTP
+response 검증이 없으므로 이 등록만으로 external verification 또는 acquisition
+성공을 주장하지 않는다.
 
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
