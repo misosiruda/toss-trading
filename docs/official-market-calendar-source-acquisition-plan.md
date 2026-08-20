@@ -306,6 +306,14 @@ hash와 signature 검증 사실을 기록하지만 `parserStatus=not_verified`�
 구조나 Word table semantics 검증을 대신하지 않으며 opaque network response consumer와도
 아직 연결되지 않는다.
 
+`officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`의 fixed response consumer는
+network consumer가 만든 opaque response handle만 exact 한 번 consume하고 내부 document
+bytes를 production identity verifier에 전달한다. Length/hash/signature 검증 성공 시 bytes와
+identity를 getter/callback 없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는
+bytes를 zeroize한다. Test-only consumer만 synthetic verifier를 snapshot해 loopback fixture의
+성공 ownership transfer를 검증한다. 새 handle도 parser operation이나 durable sink를 노출하지
+않으므로 candidate-only 경계는 유지된다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday

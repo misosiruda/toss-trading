@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -10,11 +11,18 @@ import {
   OfficialMarketCalendarKrxLegacyDownloadAcquisitionError
 } from "./officialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.js";
 import {
+  consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
+  consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
+  disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
+import {
+  createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier,
+  OfficialMarketCalendarKrxLegacyDocumentIdentityError
+} from "./officialMarketCalendarKrxLegacyDocumentIdentity.js";
 import {
   KRX_LEGACY_DOWNLOAD_TEST_CA,
   KRX_LEGACY_DOWNLOAD_TEST_SERVER_OPTIONS
@@ -59,6 +67,93 @@ test("KRX legacy coordinator composes OTP through opaque document response", asy
         responseHandle
       );
     }
+  );
+});
+
+test("KRX legacy response transfers only through document identity verification", async () => {
+  const documentBytes = syntheticOleDocument();
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const coordinator = createCoordinatorForPort(port);
+      const responseHandle = await coordinator.acquire({ fileName: FILE_NAME });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+
+      const verifiedHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      assert.equal(Object.isFrozen(verifiedHandle), true);
+      assert.deepEqual(Object.keys(verifiedHandle), []);
+      assert.throws(
+        () =>
+          consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+            responseHandle,
+            verifier
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(verifiedHandle),
+        /cannot be serialized or exported/
+      );
+      disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument(
+        verifiedHandle
+      );
+
+      const productionResponse = await coordinator.acquire({
+        fileName: FILE_NAME
+      });
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+            productionResponse
+          ),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarKrxLegacyDocumentIdentityError &&
+          error.code === "KRX_LEGACY_DOCUMENT_IDENTITY_HASH_MISMATCH"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+            productionResponse
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy identity response consumer rejects forged handles and verifier config", () => {
+  assert.throws(
+    () =>
+      consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+        {} as never
+      ),
+    /must be ready/
+  );
+  assert.throws(
+    () =>
+      consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+        {} as never,
+        null as never
+      ),
+    /test-only identity verifier is invalid/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed response consumer/
   );
 });
 
@@ -229,6 +324,34 @@ function createOtpHandle(
   });
 }
 
+function createCoordinatorForPort(port: number) {
+  return createTestOnlyOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator(
+    {
+      otpConsumer: {
+        async acquire(fileName) {
+          return createOtpHandle(fileName);
+        }
+      },
+      downloadConsumer:
+        createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer({
+          dialAddress: "127.0.0.1",
+          dialPort: port,
+          certificateAuthority: KRX_LEGACY_DOWNLOAD_TEST_CA,
+          deadlineMs: 1_000
+        })
+    }
+  );
+}
+
+function syntheticOleDocument(): Uint8Array {
+  const bytes = Uint8Array.from(
+    { length: FILE_LENGTH },
+    (_, index) => (index * 31 + 17) % 256
+  );
+  bytes.set(Buffer.from("d0cf11e0a1b11ae1", "hex"), 0);
+  return bytes;
+}
+
 function canonicalOtpBytes(): Uint8Array {
   const decoded = Uint8Array.from(
     { length: 224 },
@@ -261,7 +384,10 @@ async function withDownloadServer<T>(
   }
 }
 
-function sendValidResponse(response: ServerResponse): void {
+function sendValidResponse(
+  response: ServerResponse,
+  body: Uint8Array = new Uint8Array(FILE_LENGTH)
+): void {
   response.writeHead(200, {
     "Content-Length": String(FILE_LENGTH),
     "Content-Type": "application/octet-stream",
@@ -271,7 +397,7 @@ function sendValidResponse(response: ServerResponse): void {
     Date: "Thu, 20 Aug 2026 00:00:00 GMT",
     Expires: "Thu, 20 Aug 2026 00:00:00 GMT"
   });
-  response.end(Buffer.alloc(FILE_LENGTH));
+  response.end(body);
 }
 
 async function rejected(
