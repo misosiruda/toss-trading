@@ -21,8 +21,9 @@ import {
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION =
   "krx_holiday_data_response_metadata.v1";
+export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH =
+  1_000_000;
 
-const MAXIMUM_BODY_BYTE_LENGTH = 1_000_000;
 const EXPECTED_CACHE_CONTROL = ["max-age=0", "no-cache", "no-store"] as const;
 const DURABLE_REJECTION_REASONS = [
   "cache_control_max_age_zero",
@@ -31,6 +32,7 @@ const DURABLE_REJECTION_REASONS = [
   "expires_not_after_response_date",
   "response_sets_cookie"
 ] as const;
+const verifiedResponseMetadataInstances = new WeakSet<object>();
 
 const headerValueSchema = z
   .string()
@@ -196,33 +198,52 @@ export function verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata(
   }
   if (
     transferCompletion.contentLength === 0 ||
-    transferCompletion.contentLength > MAXIMUM_BODY_BYTE_LENGTH
+    transferCompletion.contentLength >
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH
   ) {
     throw new Error(
       "KRX holiday data response body length exceeds the local validation boundary"
     );
   }
 
-  return Object.freeze({
-    responseMetadataVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION,
-    requestIsolation: Object.freeze({ ...input.requestIsolation }),
-    responseUrl: input.responseUrl,
-    httpStatus: 200 as const,
-    contentType: "text/html; charset=UTF-8" as const,
-    responseCacheHeaders: Object.freeze({ ...responseCacheHeaders }),
-    responseCacheControl: Object.freeze({
-      responseCacheControl: Object.freeze([
-        ...EXPECTED_CACHE_CONTROL
-      ]) as unknown as string[]
-    }),
-    transferCompletion: Object.freeze({ ...transferCompletion }),
-    setCookieHeaderCount: input.setCookieHeaderCount,
-    bodyValidationEligible: true as const,
-    durableEvidenceReusable: false as const,
-    acceptedAcquisition: false as const,
-    durableRejectionReasons: Object.freeze([
-      ...DURABLE_REJECTION_REASONS
-    ]) as typeof DURABLE_REJECTION_REASONS
-  });
+  const verifiedMetadata: OfficialMarketCalendarKrxHolidayDataResponseMetadata =
+    Object.freeze({
+      responseMetadataVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION,
+      requestIsolation: Object.freeze({ ...input.requestIsolation }),
+      responseUrl: input.responseUrl,
+      httpStatus: 200 as const,
+      contentType: "text/html; charset=UTF-8" as const,
+      responseCacheHeaders: Object.freeze({ ...responseCacheHeaders }),
+      responseCacheControl: Object.freeze({
+        responseCacheControl: Object.freeze([
+          ...EXPECTED_CACHE_CONTROL
+        ]) as unknown as string[]
+      }),
+      transferCompletion: Object.freeze({ ...transferCompletion }),
+      setCookieHeaderCount: input.setCookieHeaderCount,
+      bodyValidationEligible: true as const,
+      durableEvidenceReusable: false as const,
+      acceptedAcquisition: false as const,
+      durableRejectionReasons: Object.freeze([
+        ...DURABLE_REJECTION_REASONS
+      ]) as typeof DURABLE_REJECTION_REASONS
+    });
+  verifiedResponseMetadataInstances.add(verifiedMetadata);
+  return verifiedMetadata;
+}
+
+export function requireProcessLocalOfficialMarketCalendarKrxHolidayDataResponseMetadata(
+  value: unknown
+): OfficialMarketCalendarKrxHolidayDataResponseMetadata {
+  if (
+    value === null ||
+    (typeof value !== "object" && typeof value !== "function") ||
+    !verifiedResponseMetadataInstances.has(value as object)
+  ) {
+    throw new Error(
+      "KRX holiday data response metadata must come from the process-local verifier"
+    );
+  }
+  return value as OfficialMarketCalendarKrxHolidayDataResponseMetadata;
 }

@@ -361,6 +361,16 @@ callback이나 row getter를 제공하지 않는다. Output은 count와 validati
 weekday, name과 sequence policy를 모두 통과해도 observed row scope를 historical
 completeness로 확대하거나 durable/accepted 상태로 승격하지 않는다.
 
+KRX holiday response ownership은 1MiB 상한을 internal allocation 전에 적용하고 caller byte
+view를 즉시 zeroize하는 process-local opaque handle로만 유지한다. Factory는 full response
+metadata verifier가 같은 process에서 만든 객체만 받고 caller가 재구성한 projection을
+거부한다. Handle은 raw metadata object, row getter, callback, enumerable field,
+JSON export를 제공하지 않고 fixed semantic consumer를 한 번만 허용한다. Factory,
+consumer, explicit disposal의 모든 실패 경로는 owned bytes를 unconditional zeroize해야
+하며 consumer가 실패해도 handle 재사용을 허용하지 않는다. 다른 agent가 copy 중
+mutate할 수 있는 `SharedArrayBuffer` backing view는 realm-independent intrinsic brand
+check로 판별해 ownership input으로 허용하지 않는다.
+
 ### `src/workflows`
 
 책임:

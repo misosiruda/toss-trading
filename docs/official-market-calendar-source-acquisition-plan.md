@@ -260,6 +260,19 @@ rejection을 검증한다. English name empty count, row count와 boolean verifi
 반환하고 row value는 모듈 밖으로 내보내지 않는다. Owned body bytes는 기존 body
 boundary와 동일하게 unconditional zeroize하며 결과는 observed rows 범위만 설명한다.
 
+`officialMarketCalendarKrxHolidayDataEphemeralResponse.ts`는 transport가 넘길 caller
+`Uint8Array` ownership을 즉시 process-local opaque handle로 이전한다. Factory는 1MiB
+상한을 internal allocation과 metadata getter 접근 전에 적용하고 caller view를 성공·실패와
+무관하게 zeroize한다. Full response metadata verifier가 같은 process에서 만든 객체만
+허용해 caller-reconstructed projection의 transport 검증 우회를 차단하고, body shape를
+검증한 뒤 raw metadata input을 보관하지 않고 exact content length와 fail-closed flag만
+새 immutable projection으로 만든다. Handle은 JSON export/getter/callback/enumerable
+field가 없으며 fixed semantic consumer 또는 explicit disposal만 허용한다. Consumer는
+성공·실패 모두 한 번만
+실행되고 internal response bytes를 unconditional zeroize한 뒤 summary만 반환한다.
+Exclusive transfer를 보장할 수 없는 `SharedArrayBuffer` backing view는 다른 `vm` realm에서
+생성된 경우도 intrinsic brand check로 판별해 거부한다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
