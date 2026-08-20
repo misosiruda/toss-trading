@@ -92,10 +92,11 @@ acquisition을 거부한다.
 
 OTP header-name policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
 value는 아래 별도 header-value policy가 담당한다. Header/parameter value policy의
-HTTP client wiring, process-local OTP의 수명과 one-time consumption, raw code
-비직렬화, 후속 data POST provenance는 아직 구현하거나 검증하지 않았다. 따라서
-이 policy들만으로 OTP 발급, source acquisition 또는 publication readiness를
-통과했다고 판단하지 않는다.
+HTTP client wiring과 process-local OTP 수명은 후속 dedicated network/ephemeral
+consumer가 담당한다. 현재 fixed OTP GET, one-time consumption, raw code 비직렬화와
+후속 data POST wiring은 아래 별도 모듈로 구현됐지만, 이 policy들 자체만으로 OTP
+발급, accepted source acquisition 또는 publication readiness를 통과했다고 판단하지
+않는다.
 
 ### Request Parameter Policy 사전 등록
 
@@ -107,10 +108,10 @@ Allowed parameter name은 현재 `bld`, `name`뿐이며 `code`, OTP/token,
 authorization, cookie와 미등록 이름은 fail-closed로 거부한다.
 
 이 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
-contract일 뿐이다. HTTP client wiring, OTP response bytes/shape/freshness, raw
-code의 process-local one-time lifecycle과 후속 data POST는 여전히 구현하지
-않는다. 따라서 registry 등록만으로 OTP 발급이나 accepted acquisition을 주장하지
-않는다.
+contract일 뿐이다. HTTP client wiring, OTP response bytes/shape, raw code의
+process-local one-time lifecycle과 후속 data POST는 dedicated OTP/data consumer와
+coordinator가 별도로 구현한다. Registry 등록만으로 해당 실행 결과나 accepted
+acquisition을 주장하지 않는다.
 
 ### Request Header Value Policy 사전 등록
 
@@ -163,8 +164,9 @@ copy는 성공/실패와 관계없이 zeroize하며 caller byte view의 ownershi
 반환값은 encoding과 encoded/decoded length만 포함하는 non-secret frozen shape이며 raw
 body hash나 token을 포함하지 않는다. 이 body-only contract는 status, final URL,
 response header, transfer completion, freshness 또는 network provenance를 증명하지
-않는다. Opaque one-shot ownership handle과 fixed data-POST consumer가 구현되기 전에는
-raw OTP를 durable metadata, log, API, MCP, CLI 또는 artifact에 넣지 않는다.
+않는다. Dedicated opaque one-shot ownership handle과 fixed data-POST consumer가 이
+후속 lifecycle을 구현하지만 raw OTP를 durable metadata, log, API, MCP, CLI 또는
+artifact에 넣지 않는 경계는 그대로 유지한다.
 
 `officialMarketCalendarKrxOtpEphemeralBody.ts`는 body-shape 검증을 통과할 raw response
 bytes의 ownership을 process-local opaque handle로 이전하는 첫 lifecycle 단계를
@@ -173,9 +175,9 @@ bytes의 ownership을 process-local opaque handle로 이전하는 첫 lifecycle 
 non-enumerable `toJSON`만 가지며 raw bytes 또는 non-secret shape도 노출하지 않는다.
 
 JSON export 시도는 handle을 dispose한 뒤 거부하고, 명시적 disposal은 internal bytes를
-zeroize하며 idempotent하다. Factory가 만들지 않은 forged handle은 거부한다. 아직
-status/header/framing/freshness가 검증된 network factory와 fixed data-POST consumer가
-없으므로 이 handle은 acquisition capability나 accepted evidence가 아니다. Callback,
+zeroize하며 idempotent하다. Factory가 만들지 않은 forged handle은 거부한다. Dedicated
+network factory와 fixed data-POST consumer는 이 handle을 process-local lifecycle에서만
+사용한다. 이 wiring도 durable reuse 또는 accepted evidence로 승격하지 않으며 callback,
 raw-byte getter, serialization 또는 durable sink를 추가하지 않는다.
 
 ### KRX Holiday Data POST Static Policy
@@ -209,8 +211,9 @@ OTP ownership을 종료하고 bytes를 zeroize한다.
 
 POST-parameter handle은 raw OTP/year getter, callback, enumerable property 또는 JSON
 export를 제공하지 않는다. Explicit disposal과 JSON export 거부 시 raw OTP bytes를
-zeroize하며 disposal은 idempotent하다. 아직 header/body encoding과 fixed network
-consumer가 없으므로 이 handle은 wire request나 acquisition capability가 아니다.
+zeroize하며 disposal은 idempotent하다. Dedicated fixed encoder와 network consumer만
+이 handle을 후속 wire request로 이동하며, handle 자체는 acquisition capability나
+accepted evidence가 아니다.
 
 ### KRX Holiday Data POST Wire Encoding Policy
 
@@ -234,8 +237,8 @@ percent triplet으로 encoding한다. Raw OTP를 string으로 변환하지 않�
 성공 시 original raw OTP와 workspace를 zeroize하고 encoded bytes ownership을 새 opaque
 wire-body handle로 이전한다. 실패 시 raw OTP, workspace와 생성된 partial/final body를
 zeroize한다. Wire-body handle도 getter/callback/JSON export를 제공하지 않으며 explicit
-disposal이 encoded body bytes를 지운다. Fixed network consumer가 없으므로 아직 HTTP
-request나 accepted acquisition이 아니다.
+disposal이 encoded body bytes를 지운다. Fixed network consumer가 이 handle을 정확히 한
+번 HTTP request에 사용하지만 durable reuse 또는 accepted acquisition으로 승격하지 않는다.
 
 ### KRX Holiday Data POST Network Policy
 
