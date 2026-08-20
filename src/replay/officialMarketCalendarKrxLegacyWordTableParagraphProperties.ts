@@ -78,6 +78,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
     let isInnerTableCell = false;
     let isInnerTtp = false;
     let interpretedPrlCount = 0;
+    let hasExplicitTableDepth = false;
 
     for (const prl of group.prls) {
       switch (prl.sprm) {
@@ -94,6 +95,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
           if (tableDepth < 0) {
             throw invalidTableParagraphProperties();
           }
+          hasExplicitTableDepth = true;
           interpretedPrlCount += 1;
           break;
         case SPRM_P_DTAP:
@@ -101,6 +103,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
           if (tableDepth < 0 || !Number.isSafeInteger(tableDepth)) {
             throw invalidTableParagraphProperties();
           }
+          hasExplicitTableDepth = true;
           interpretedPrlCount += 1;
           break;
         case SPRM_PF_INNER_TABLE_CELL:
@@ -112,6 +115,10 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
           interpretedPrlCount += 1;
           break;
       }
+    }
+
+    if (grpPrls.nFib === 0x00c1 && !hasExplicitTableDepth && inTable) {
+      tableDepth = 1;
     }
 
     const markerCount =

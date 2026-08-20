@@ -1240,10 +1240,33 @@ test("official calendar KRX legacy Word table paragraph properties verify member
   assert.equal(Object.isFrozen(result.supportedSprms), true);
 });
 
+test("official calendar KRX legacy Word table paragraph properties infer Word97 depth one", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidPapxFkpFixture(bytes);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(bytes);
+  assert.deepEqual(
+    {
+      nFib: result.nFib,
+      inTable: result.paragraphs[0]!.inTable,
+      tableDepth: result.paragraphs[0]!.tableDepth,
+      tableRole: result.paragraphs[0]!.tableRole,
+      interpretedPrlCount: result.paragraphs[0]!.interpretedPrlCount
+    },
+    {
+      nFib: 0x00c1,
+      inTable: true,
+      tableDepth: 1,
+      tableRole: "table_paragraph",
+      interpretedPrlCount: 1
+    }
+  );
+});
+
 test("official calendar KRX legacy Word table paragraph properties reject invalid semantics", () => {
   const invalidGroups = [
     tablePropertyGroup([[0x2416, [2]]]),
-    tablePropertyGroup([[0x2416, [1]]]),
     tablePropertyGroup([[0x6649, int32Bytes(1)]]),
     tablePropertyGroup([
       [0x2416, [1]],
