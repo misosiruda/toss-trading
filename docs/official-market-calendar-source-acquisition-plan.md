@@ -27,6 +27,31 @@ readiness 통과를 주장하지 않는다.
 없다. KRX dynamic request를 추측하거나 NYSE의 현재 규칙을 과거 기간에
 소급 적용하지 않는다.
 
+### 2026-08-20 read-only request discovery
+
+2026-08-20에 official domain의 현재 HTML과 client JavaScript를 credential 없이
+읽어 다음 request surface를 추가로 확인했다. 이 확인은 response body와 hop별
+metadata를 acquisition package에 보존한 실행이 아니므로 accepted source evidence,
+historical coverage 또는 freshness 증거로 사용하지 않는다.
+
+| Exchange | 확인된 현재 surface | 여전히 닫힌 경계 |
+| --- | --- | --- |
+| KRX | Holiday page form은 `POST /contents/GLB/99/GLB99000001.jspx`, `data-bld=GLB/05/0501/0501110000/glb0501110000_01`, `search_bas_yy`, `gridTp=KRX`, `pagePath`를 노출한다. Current selector는 2016부터 2026까지다. | 2013부터 2015까지의 official row source가 노출되지 않는다. OTP request/response와 data POST의 exact hop, header, cache, framing 및 cookie-free 동작을 아직 accepted acquisition으로 검증하지 않았다. |
+| KRX | Page JavaScript는 `GET /contents/COM/GenerateOTP.jspx`에 `name=form`과 exact `bld`를 보내 동적 `code`를 받은 뒤 form payload에 결합한다. Download도 별도 OTP를 사용한다. | 동적 code를 provenance에 안전하게 결합하는 contract, token 성격과 보존 정책, download response format은 미확정이다. Raw code를 secret-free metadata라고 가정하지 않는다. |
+| NYSE | `GET https://www.nyse.com/trade/hours-calendars`의 current server-rendered HTML은 2026, 2027, 2028 holiday table, early-close 각주, core session 09:30~16:00 ET와 official `https://www.nyse.com/publicdocs/Trading_Days.pdf` link를 포함한다. | 2013부터 2025까지의 first-party archive는 현재 page에서 확인되지 않는다. Current HTML/PDF를 과거 규칙에 소급하지 않으며 parser contract와 exact bytes acquisition은 아직 등록하지 않는다. |
+
+KRX 관찰에서 dynamic OTP가 확인됐으므로 direct data POST URL과 form field만으로
+request contract가 완성됐다고 주장하지 않는다. Production acquisition client는
+OTP 발급 request도 official-domain ancillary request로 명시적으로 관찰하고,
+opaque redirect/cookie/credential state 없이 exact effective request chain을 증명할
+수 있어야 한다. 이 조건을 만족하기 전에는 OTP code를 획득하거나 holiday data
+POST를 production evidence path에서 실행하지 않는다.
+
+NYSE current page는 target interval 중 2026-01-01부터 2026-05-31 일부를 직접
+뒷받침할 가능성이 있지만, current page의 schedule coverage claim, parser format,
+retrieval freshness와 exact source bytes를 모두 검증하기 전에는 artifact에 포함하지
+않는다. 2013부터 2025까지의 gap은 current page나 third-party calendar로 채우지 않는다.
+
 이 미확인 상태는 `official_exchange` 승격 blocker다. Official Toss Open API
 `GET /api/v1/market-calendar/{KR|US}`는 별도의 primary operational/observed broker
 calendar source이며 `official_broker_observed` class로 관리한다. Toss response는
