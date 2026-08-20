@@ -388,6 +388,22 @@ allocation은 아직 검증하지 않으며 opaque lifecycle에도 연결하지 
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/60fe8611-66c3-496b-b70d-a504c94c9ace
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/026fde6e-143d-41bf-a7da-c08b2130d50e
 
+`officialMarketCalendarOleCompoundFileDirectoryTree.ts`는 verified directory entry array의
+root hierarchy부터 각 storage의 child sibling tree를 iterative하게 추적한다. 각 child-tree
+root의 black color, 연속 red node 부재, 이름의 strict global ordering과 sibling uniqueness를
+검증하고 root/unallocated reference, sibling/containment cycle, 둘 이상의 parent tree가 같은
+entry를 소유하는 경우와 root에서 도달할 수 없는 allocated entry를 fail-closed로 거부한다.
+이름 정렬은 Directory Entry Name Length를 먼저 비교하고 같은 길이는 UTF-16 code unit별
+Unicode simple uppercase binary value를 비교한다. Surrogate code unit은 변환하지 않는다.
+런타임 Unicode/locale 차이를 제거하기 위해 `officialMarketCalendarOleUnicodeSimpleUppercase.ts`가
+Unicode 17.0.0 `UnicodeData.txt`의 BMP `Simple_Uppercase_Mapping` 1,198개와 source SHA-256
+`2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c`를 고정한다.
+결과는 fixed entry projection을 유지하면서 `directoryTreeVerified=true`,
+`treeStatus=verified`를 반환한다. Mini FAT entry, root mini stream, user stream allocation과
+opaque lifecycle 연결은 아직 검증하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/d30e462c-5f8a-435b-9c4c-cc0b9ea89956
+https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
