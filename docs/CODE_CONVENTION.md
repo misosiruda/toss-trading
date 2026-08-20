@@ -334,6 +334,13 @@ policy maximum 크기의 zeroized workspace에 직접 encoding해야 한다. Raw
 OTP와 workspace ownership을 종료하고, encoded bytes는 getter/callback 없는 새 opaque
 handle에만 이전한다. Fixed network consumer 전에는 wire bytes를 외부로 반환하지 않는다.
 
+`officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 raw `Set-Cookie` value를
+받거나 저장하지 않고 count만 검증한다. Request isolation은 automatic redirect/cookie
+jar disabled와 outbound Cookie count 0을 strict하게 요구한다. `no-store`, `no-cache`,
+zero max-age, immediate expiry 또는 response cookie가 관찰된 version은 body validation eligibility와 durable
+evidence reuse를 분리하고 accepted acquisition을 false로 유지한다. Generic freshness나
+publication acceptance policy를 완화해서는 안 된다.
+
 ### `src/workflows`
 
 책임:
