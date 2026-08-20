@@ -62,12 +62,15 @@ first-party archive 또는 historical completeness를 대신하지 않는다.
 ### Request Header Policy 사전 등록
 
 확인된 entry point는 다음 immutable request-header policy version으로 사전
-등록한다. KRX policy는 fixed known-safe set인 `accept`, `accept-language`,
-`cache-control`, `content-type`, `pragma`만 허용하고 NYSE policy는 `accept`,
-`cache-control`, `pragma`만 허용한다.
+등록한다. 기존 KRX source policy는 fixed known-safe set인 `accept`,
+`accept-language`, `cache-control`, `content-type`, `pragma`만 허용하고 NYSE
+policy는 `accept`, `cache-control`, `pragma`만 허용한다. KRX OTP endpoint는
+별도 version에서만 `accept`, `cache-control`, `pragma`, `user-agent`를 허용한다.
+기존 version의 allowed-name set은 변경하지 않는다.
 
 | Exchange | `requestHeaderPolicyVersion` | Official entry point |
 | --- | --- | --- |
+| KRX | `krx_form_otp_request_headers.v1` | `https://global.krx.co.kr/contents/COM/GenerateOTP.jspx` |
 | KRX | `krx_market_closing_holiday_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/05/0501/0501110000/GLB0501110000.jsp` |
 | KRX | `krx_regular_session_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp` |
 | KRX | `krx_2016_session_extension_brochure_request_headers.v1` | `https://global.krx.co.kr/contents/GLB/01/0107/0107010000/20170630_eng_brochure.pdf` |
@@ -86,6 +89,12 @@ value로 중복 기록하면 거부한다. 사전 등록과 redirect-chain 결�
 historical coverage 또는 readiness 통과를 주장하지 않는다. 등록 밖 header가
 필요하면 기존 version을 변경하지 않고 별도 검토와 새 version 등록 전까지
 acquisition을 거부한다.
+
+OTP policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
+`User-Agent` field value, `name`/`bld` query contract, process-local OTP의
+수명과 one-time consumption, raw code 비직렬화, 후속 data POST provenance는
+아직 구현하거나 검증하지 않았다. 따라서 이 policy만으로 OTP 발급, source
+acquisition 또는 publication readiness를 통과했다고 판단하지 않는다.
 
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인

@@ -6,6 +6,7 @@ import {
 } from "./officialMarketCalendarRequestHeaderPolicy.js";
 
 export const OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS = {
+  KRX_FORM_OTP: "krx_form_otp_request_headers.v1",
   KRX_MARKET_CLOSING_HOLIDAY:
     "krx_market_closing_holiday_request_headers.v1",
   KRX_REGULAR_SESSION: "krx_regular_session_request_headers.v1",
@@ -16,6 +17,25 @@ export const OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS = {
 } as const;
 
 const REQUEST_HEADER_POLICY_REGISTRY_INPUT = [
+  {
+    requestHeaderPolicyVersion:
+      OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_FORM_OTP,
+    requestHeaderPolicyDefinition: {
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_DEFINITION_VERSION,
+      sourceSelector: {
+        exchange: "KRX",
+        requestedUrl:
+          "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx"
+      },
+      allowedHeaderNames: [
+        "accept",
+        "cache-control",
+        "pragma",
+        "user-agent"
+      ]
+    }
+  },
   {
     requestHeaderPolicyVersion:
       OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_MARKET_CLOSING_HOLIDAY,

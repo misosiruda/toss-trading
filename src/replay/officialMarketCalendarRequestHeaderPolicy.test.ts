@@ -11,6 +11,16 @@ import {
 
 test("calendar request header policy accepts canonical source definitions", () => {
   const krxDefinition = policyDefinition();
+  const krxOtpDefinition = policyDefinition({
+    requestedUrl:
+      "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx",
+    allowedHeaderNames: [
+      "accept",
+      "cache-control",
+      "pragma",
+      "user-agent"
+    ]
+  });
   const nyseDefinition = policyDefinition({
     exchange: "NYSE",
     requestedUrl: "https://www.nyse.com/trade/hours-calendars",
@@ -20,6 +30,12 @@ test("calendar request header policy accepts canonical source definitions", () =
   assert.deepEqual(
     parseOfficialMarketCalendarRequestHeaderPolicyDefinition(krxDefinition),
     krxDefinition
+  );
+  assert.deepEqual(
+    parseOfficialMarketCalendarRequestHeaderPolicyDefinition(
+      krxOtpDefinition
+    ),
+    krxOtpDefinition
   );
   assert.deepEqual(
     parseOfficialMarketCalendarRequestHeaderPolicyDefinition(nyseDefinition),
