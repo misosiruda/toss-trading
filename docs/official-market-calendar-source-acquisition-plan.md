@@ -92,10 +92,11 @@ acquisition을 거부한다.
 
 OTP header-name policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
 value는 아래 별도 header-value policy가 담당한다. Header/parameter value policy의
-HTTP client wiring, process-local OTP의 수명과 one-time consumption, raw code
-비직렬화, 후속 data POST provenance는 아직 구현하거나 검증하지 않았다. 따라서
-이 policy들만으로 OTP 발급, source acquisition 또는 publication readiness를
-통과했다고 판단하지 않는다.
+HTTP client wiring과 process-local OTP 수명은 후속 dedicated network/ephemeral
+consumer가 담당한다. 현재 fixed OTP GET, one-time consumption, raw code 비직렬화와
+후속 data POST wiring은 아래 별도 모듈로 구현됐지만, 이 policy들 자체만으로 OTP
+발급, accepted source acquisition 또는 publication readiness를 통과했다고 판단하지
+않는다.
 
 ### Request Parameter Policy 사전 등록
 
@@ -107,10 +108,10 @@ Allowed parameter name은 현재 `bld`, `name`뿐이며 `code`, OTP/token,
 authorization, cookie와 미등록 이름은 fail-closed로 거부한다.
 
 이 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
-contract일 뿐이다. HTTP client wiring, OTP response bytes/shape/freshness, raw
-code의 process-local one-time lifecycle과 후속 data POST는 여전히 구현하지
-않는다. 따라서 registry 등록만으로 OTP 발급이나 accepted acquisition을 주장하지
-않는다.
+contract일 뿐이다. HTTP client wiring, OTP response bytes/shape, raw code의
+process-local one-time lifecycle과 후속 data POST는 dedicated OTP/data consumer와
+coordinator가 별도로 구현한다. Registry 등록만으로 해당 실행 결과나 accepted
+acquisition을 주장하지 않는다.
 
 ### Request Header Value Policy 사전 등록
 
