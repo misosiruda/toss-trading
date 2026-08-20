@@ -101,6 +101,16 @@ const preflightPayloadSchema = z
       });
     }
     if (
+      value.observations.directorySync === "unsupported" &&
+      value.platform !== "win32"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["observations", "directorySync"],
+        message: "unsupported directory sync is reserved for Windows"
+      });
+    }
+    if (
       value.capabilities.directoryDurabilitySync !==
       (value.observations.directorySync === "synced")
     ) {

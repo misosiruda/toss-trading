@@ -286,6 +286,8 @@ directory sync `EPERM`은 Windows에서만 `unsupported` compatibility observati
 서로 일치해야 하고 canonical preflight hash에 결합되며 반환 contract 전체를
 deep-freeze한다. 실제 writer enablement에는 별도 검증된 handle-bound cleanup과
 no-replace directory primitive가 선행되어야 한다.
+Stored contract도 `directorySync: unsupported`이면 `platform: win32`를 요구해
+runtime producer의 compatibility 경계를 그대로 재검증한다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에

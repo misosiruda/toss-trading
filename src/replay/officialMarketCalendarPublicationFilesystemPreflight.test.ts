@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   assertOfficialMarketCalendarPublicationFilesystemSupported,
+  createOfficialMarketCalendarPublicationFilesystemPreflightHash,
   inspectOfficialMarketCalendarPublicationFilesystem,
   parseOfficialMarketCalendarPublicationFilesystemPreflight
 } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
@@ -99,6 +100,34 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
         }
       }),
     /expected false|blockers must match capabilities|observations must match capabilities/
+  );
+  const { preflightHash: _preflightHash, ...payload } = preflight;
+  const nonWindowsUnsupportedPayload = {
+    ...payload,
+    platform: "linux",
+    capabilities: {
+      ...payload.capabilities,
+      directoryDurabilitySync: false
+    },
+    observations: {
+      ...payload.observations,
+      directorySync: "unsupported" as const
+    },
+    blockers: [...new Set([
+      ...payload.blockers,
+      "directory_durability_sync_unavailable" as const
+    ])].sort()
+  };
+  assert.throws(
+    () =>
+      parseOfficialMarketCalendarPublicationFilesystemPreflight({
+        ...nonWindowsUnsupportedPayload,
+        preflightHash:
+          createOfficialMarketCalendarPublicationFilesystemPreflightHash(
+            nonWindowsUnsupportedPayload
+          )
+      }),
+    /unsupported directory sync is reserved for Windows/
   );
 });
 
