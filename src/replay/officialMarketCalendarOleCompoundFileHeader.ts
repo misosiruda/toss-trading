@@ -100,6 +100,7 @@ export function verifyOfficialMarketCalendarOleCompoundFileHeader(
     miniSectorShift !== 6 ||
     !hasZeroBytes(input, 34, 6) ||
     (majorVersion === 3 && directorySectorCount !== 0) ||
+    (majorVersion === 4 && !hasZeroBytes(input, 512, 4096 - 512)) ||
     miniStreamCutoffSize !== 4096 ||
     fatSectorCount < 1
   ) {
@@ -116,10 +117,20 @@ export function verifyOfficialMarketCalendarOleCompoundFileHeader(
     Math.max(0, fatSectorCount - HEADER_DIFAT_ENTRY_COUNT) /
       (sectorSize / 4 - 1)
   );
+  const declaredDirectorySectorCount =
+    majorVersion === 3 ? 1 : directorySectorCount;
   if (
     fatSectorCount > fileSectorCount ||
+    fatSectorCount * (sectorSize / 4) < fileSectorCount ||
+    declaredDirectorySectorCount < 1 ||
+    declaredDirectorySectorCount > fileSectorCount ||
     miniFatSectorCount > fileSectorCount ||
     difatSectorCount > fileSectorCount ||
+    fatSectorCount +
+      declaredDirectorySectorCount +
+      miniFatSectorCount +
+      difatSectorCount >
+      fileSectorCount ||
     difatSectorCount !== expectedDifatSectorCount ||
     !isFileSector(firstDirectorySector, fileSectorCount) ||
     !hasConsistentChainStart(

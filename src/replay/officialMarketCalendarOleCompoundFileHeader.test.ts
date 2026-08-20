@@ -62,11 +62,21 @@ test("official calendar OLE header rejects signature and fixed-field mutations",
     mutate(bytes);
     assertCode(bytes, "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_FIELDS");
   }
+
+  const version4Padding = canonicalCompoundFile(4);
+  version4Padding[512] = 1;
+  assertCode(version4Padding, "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_FIELDS");
 });
 
 test("official calendar OLE header rejects inconsistent sector layout", () => {
   const difatCollision = canonicalCompoundFile(3, 120, 110);
   writeUint32(difatCollision, 68, 0);
+  const impossibleDirectoryCount = canonicalCompoundFile(4);
+  writeUint32(impossibleDirectoryCount, 40, 0xffffffff);
+  const impossibleAggregate = canonicalCompoundFile(4);
+  writeUint32(impossibleAggregate, 40, 2);
+  writeUint32(impossibleAggregate, 60, 2);
+  writeUint32(impossibleAggregate, 64, 1);
   const cases = [
     canonicalCompoundFile(3).slice(0, -1),
     mutated((bytes) => writeUint32(bytes, 48, 9)),
@@ -91,7 +101,10 @@ test("official calendar OLE header rejects inconsistent sector layout", () => {
       writeUint32(bytes, 60, 1);
       writeUint32(bytes, 64, 1);
     }),
-    difatCollision
+    difatCollision,
+    impossibleDirectoryCount,
+    impossibleAggregate,
+    canonicalCompoundFile(3, 129, 1)
   ];
   for (const bytes of cases) {
     assertCode(bytes, "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_SECTOR_LAYOUT");

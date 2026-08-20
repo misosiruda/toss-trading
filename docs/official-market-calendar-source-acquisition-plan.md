@@ -319,7 +319,9 @@ bytes를 zeroize한다. Test-only consumer만 synthetic verifier를 snapshot해 
 entry를 synthetic bytes에서 fail-closed로 검증한다. Version 3/4 sector size, version 3
 directory-sector count, chain count/시작점/file sector 범위와 declared sector-role 충돌도
 대조한다. Byte view의 own property shadow를 신뢰하지 않고 intrinsic buffer/offset/length를
-한 번 snapshot해 전체 DataView 검증에 사용한다. 결과는
+한 번 snapshot해 전체 DataView 검증에 사용한다. Version 4 header-sector zero padding,
+FAT entry capacity와 FAT/DIFAT/mini FAT/directory declared sector 총합도 file sector count에
+결합한다. 결과는
 `structureStatus=header_only_not_verified`를 유지하며 FAT chain, directory entry, stream 또는
 Word table semantics를 검증하지 않는다. Identity-verified KRX handle과의 wiring도 아직
 수행하지 않았다. 명세 기준:
