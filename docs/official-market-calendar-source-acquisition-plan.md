@@ -357,6 +357,18 @@ Directory/mini FAT/stream chain의 cycle, shared-sector, expected length와 실�
 검증하지 않으며 opaque lifecycle에도 연결하지 않았다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/30e1013a-a0ff-4404-9ccf-d75d835ff404
 
+`officialMarketCalendarOleCompoundFileSystemChains.ts`는 verified FAT에서 header가 지정한
+directory와 mini FAT의 standard sector chain을 추적한다. 각 next pointer는 actual file
+sector 또는 마지막 `ENDOFCHAIN`이어야 하며 cycle과 두 system chain 사이의 sector reuse를
+거부한다. Version 4 directory chain은 header의 declared directory-sector count와 exact
+match해야 하고, mini FAT chain은 모든 version에서 declared mini FAT sector count 및
+zero-count `ENDOFCHAIN` 시작점과 일치해야 한다. Version 3은 directory-sector count field를
+사용하지 않으므로 non-empty chain과 valid termination만 검증한다. 결과는 두 chain의 sector
+location만 immutable하게 반환하며 directory entry, mini FAT allocation entry, root mini
+stream과 user stream은 검증하지 않고 opaque lifecycle에도 연결하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/a94d7445-c4be-49cd-b6b9-2f4abc663817
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
