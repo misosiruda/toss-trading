@@ -315,6 +315,11 @@ Raw `code`, target year value, optional UI navigation parameter, header/body enc
 cookie 또는 HTTP execution을 포함해서는 안 되며 기존 OTP GET parameter allowlist를
 확장하는 근거로 사용하지 않는다.
 
+`officialMarketCalendarKrxHolidayTargetYear.ts`는 versioned official-page observation에
+포함된 `search_bas_yy` exact string만 parse한다. Number coercion, trim, 범위 확장 또는
+현재 연도 추론을 하지 않는다. Official selector가 변경되면 observation date와 policy
+version을 함께 갱신하고, 기존 version의 의미를 변경해서는 안 된다.
+
 ### `src/workflows`
 
 책임:
