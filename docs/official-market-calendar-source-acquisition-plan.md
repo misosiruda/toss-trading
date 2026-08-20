@@ -457,6 +457,22 @@ durable evidence writer에도 연결하지 않았으므로 raw stream copy는 �
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
 
+`officialMarketCalendarKrxLegacyWordBinaryFileStreams.ts`는 root storage의 direct child
+namespace에서 exact `WordDocument` stream과 `FibBase.fWhichTblStm`이 선택한 `0Table` 또는
+`1Table` stream을 결합한다. `WordDocument` offset 0의 32-byte `FibBase`에서
+`wIdent=0xA5EC`, `fExtChar`, `nFibBack`, `pnNext`, `lKey`, `envr`, `fMac`과 reserved field의
+명세상 필수 조건을 검증하고 두 필수 stream의 0x7FFFFFFF-byte 상한을 적용한다. 두 table stream이
+모두 존재하면 선택되지 않은 stream은 size를 포함해 명세대로 무시한다. `fEncrypted` content는 후속
+parser가 지원하지 않으므로 fail-closed로 거부하고, `fEncrypted=0`일 때 `fObfuscated`는 명세대로
+무시한다. WordDocument와 selected Table의 size 상한은 각 byte projection 전에 root directory
+metadata에서 검사한다. Byte 19의 undefined bit와 `reserved5`/`reserved6`도 명세가
+`MUST be ignored`로 규정하므로 nonzero 값을 거부하지 않는다. 결과는 caller-owned WordDocument/Table bytes와
+base version/selector만 반환하며 variable-length FIB의 effective `nFib`, CLX/text/table semantics,
+opaque lifecycle과 source role/coverage는 아직 검증하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/d7fae142-670d-4cd5-869a-708366984a71
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/26fb6c06-4e5c-4778-ab4e-edbf26a545bb
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/44f62054-d911-4989-946c-a42100c26a15
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
