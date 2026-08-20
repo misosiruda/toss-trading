@@ -167,6 +167,15 @@ body encoding, cookie 또는 OTP consumption을 추정해 추가하지 않는다
 policy는 HTTP request body, one-shot consumer, acquisition capability 또는 accepted
 evidence가 아니다.
 
+`officialMarketCalendarKrxHolidayTargetYear.ts`는 같은 2026-08-20 official page의
+`search_bas_yy` selector가 노출한 exact string value `2026`부터 `2016`까지를
+descending canonical tuple로 등록한다. Parser는 이 목록의 exact string만 허용하며
+숫자 coercion, whitespace 보정, 범위 밖 과거/미래 연도를 거부한다.
+
+이 policy는 provider가 지원하는 영구 연도 범위를 주장하지 않는다. Selector가
+변경되면 observation과 policy version을 함께 갱신해야 한다. Target year 검증만으로
+OTP consumption, HTTP request 또는 accepted acquisition이 성립하지 않는다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
