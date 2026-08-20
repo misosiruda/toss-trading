@@ -369,6 +369,20 @@ stream과 user stream은 검증하지 않고 opaque lifecycle에도 연결하지
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/a94d7445-c4be-49cd-b6b9-2f4abc663817
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
 
+`officialMarketCalendarOleCompoundFileDirectoryEntries.ts`는 verified directory-sector chain을
+chain 순서의 fixed 128-byte entry array로 투영한다. Allocated entry의 UTF-16LE
+null-terminated name, byte length, 금지 문자, object type, color와 actual entry-array 범위의
+sibling/child stream ID를 검증한다. Stream은 child `NOSTREAM`, zero CLSID 및 creation/modified
+time을, storage는 zero starting sector/size를 강제한다. Unallocated entry는 세 pointer만
+`NOSTREAM`이고 나머지는 모두 zero여야 한다. Stream ID 0은 exact `Root Entry` root storage,
+zero creation time과 sibling 부재를 만족해야 하고 다른 위치의 root type은 거부한다.
+Version 3 stream size는 호환성 권고대로 low DWORD를 effective value로 사용하고 version 4는
+full 64-bit unsigned value를 decimal string으로 보존한다. 결과는 모든 entry를 immutable하게
+반환하지만 red-black tree, sibling name ordering/uniqueness, root mini stream과 stream
+allocation은 아직 검증하지 않으며 opaque lifecycle에도 연결하지 않았다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/60fe8611-66c3-496b-b70d-a504c94c9ace
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/026fde6e-143d-41bf-a7da-c08b2130d50e
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
