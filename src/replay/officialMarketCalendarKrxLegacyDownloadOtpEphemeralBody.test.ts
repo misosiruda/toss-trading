@@ -51,6 +51,23 @@ test("KRX legacy OTP factory reads the transferred view once", () => {
   disposeOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(handle);
 });
 
+test("KRX legacy OTP factory zeroizes bytes when file-name access throws", () => {
+  const rawResponseBytes = canonicalOtpBytes();
+  const input = {
+    rawResponseBytes,
+    get requestedFileName(): unknown {
+      throw new Error("synthetic file-name accessor failure");
+    }
+  } satisfies CreateOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBodyInput;
+
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(input),
+    /synthetic file-name accessor failure/
+  );
+  assertZeroed(rawResponseBytes);
+});
+
 test("KRX legacy OTP factory zeroizes rejected transferred bytes", () => {
   for (const rawResponseBytes of [
     new Uint8Array(299),

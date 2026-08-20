@@ -71,7 +71,13 @@ export function createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(
   input: CreateOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBodyInput
 ): OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   const transferredRawResponseBytes = input.rawResponseBytes;
-  const requestedFileName = input.requestedFileName;
+  let requestedFileName: unknown;
+  try {
+    requestedFileName = input.requestedFileName;
+  } catch (error) {
+    zeroizeBytes(transferredRawResponseBytes);
+    throw error;
+  }
   let byteLength: number;
   try {
     byteLength = readTransferredByteLength(transferredRawResponseBytes);
