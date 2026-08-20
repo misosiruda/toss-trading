@@ -230,7 +230,17 @@ test("official calendar OLE user stream bytes exclude trailing allocation bytes"
   fillFileSectorRange(bytes, 3, 0, 64, 0x71);
   fillFileSectorRange(bytes, 3, 64, 64, 0x72);
   fillFileSectorRange(bytes, 3, 128, 64, 0x73);
+  class EmptySpecies extends Uint8Array {
+    constructor() {
+      super(0);
+    }
+  }
   Object.defineProperty(bytes, "byteLength", { value: 1 });
+  Object.defineProperty(bytes, "byteOffset", { value: 999 });
+  Object.defineProperty(bytes, "buffer", { value: new ArrayBuffer(0) });
+  Object.defineProperty(bytes, "constructor", {
+    value: { [Symbol.species]: EmptySpecies }
+  });
 
   const result = projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
     bytes

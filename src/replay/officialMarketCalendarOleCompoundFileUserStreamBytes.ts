@@ -40,7 +40,6 @@ export class OfficialMarketCalendarOleCompoundFileUserStreamBytesError extends E
   }
 }
 
-const uint8ArraySubarray = Uint8Array.prototype.subarray;
 const uint8ArraySet = Uint8Array.prototype.set;
 const typedArrayPrototype = Object.getPrototypeOf(
   Uint8Array.prototype
@@ -48,6 +47,14 @@ const typedArrayPrototype = Object.getPrototypeOf(
 const typedArrayByteLengthGetter = Object.getOwnPropertyDescriptor(
   typedArrayPrototype,
   "byteLength"
+)?.get;
+const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "buffer"
+)?.get;
+const typedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset"
 )?.get;
 
 export function projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
@@ -156,22 +163,22 @@ function copyRange(
   targetOffset: number,
   byteLength: number
 ): void {
-  const sourceByteLength = intrinsicByteLength(source);
+  const sourceView = intrinsicByteView(source);
   if (
     !Number.isSafeInteger(sourceOffset) ||
     !Number.isSafeInteger(byteLength) ||
     !Number.isSafeInteger(sourceOffset + byteLength) ||
     sourceOffset < 0 ||
     byteLength < 0 ||
-    sourceOffset + byteLength > sourceByteLength
+    sourceOffset + byteLength > sourceView.byteLength
   ) {
     throw projectionError();
   }
   try {
-    const sourceRange = uint8ArraySubarray.call(
-      source,
-      sourceOffset,
-      sourceOffset + byteLength
+    const sourceRange = new Uint8Array(
+      sourceView.buffer,
+      sourceView.byteOffset + sourceOffset,
+      byteLength
     );
     uint8ArraySet.call(target, sourceRange, targetOffset);
   } catch {
@@ -179,12 +186,24 @@ function copyRange(
   }
 }
 
-function intrinsicByteLength(source: Uint8Array): number {
-  if (typedArrayByteLengthGetter === undefined) {
+function intrinsicByteView(source: Uint8Array): {
+  buffer: ArrayBuffer;
+  byteLength: number;
+  byteOffset: number;
+} {
+  if (
+    typedArrayByteLengthGetter === undefined ||
+    typedArrayBufferGetter === undefined ||
+    typedArrayByteOffsetGetter === undefined
+  ) {
     throw projectionError();
   }
   try {
-    return typedArrayByteLengthGetter.call(source) as number;
+    return {
+      buffer: typedArrayBufferGetter.call(source) as ArrayBuffer,
+      byteLength: typedArrayByteLengthGetter.call(source) as number,
+      byteOffset: typedArrayByteOffsetGetter.call(source) as number
+    };
   } catch {
     throw projectionError();
   }
