@@ -42,6 +42,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordGrpPrls
 } from "./officialMarketCalendarKrxLegacyWordGrpPrl.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TABLE_PARAGRAPH_PROPERTIES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError,
+  verifyOfficialMarketCalendarKrxLegacyWordTableParagraphProperties
+} from "./officialMarketCalendarKrxLegacyWordTableParagraphProperties.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordClxError,
   verifyOfficialMarketCalendarKrxLegacyWordClx
@@ -1148,6 +1153,135 @@ test("official calendar KRX legacy Word GrpPrl rejects incomplete Sprm framing",
   }
 });
 
+test("official calendar KRX legacy Word table paragraph properties verify membership and marks", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidTableParagraphPropertiesFixture(bytes);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TABLE_PARAGRAPH_PROPERTIES_SCHEMA_VERSION
+  );
+  assert.deepEqual(result.supportedSprms, [
+    0x2416, 0x2417, 0x6649, 0x664a, 0x244b, 0x244c
+  ]);
+  assert.deepEqual(
+    result.paragraphs.map((paragraph) => ({
+      pageIndex: paragraph.pageIndex,
+      paragraphIndex: paragraph.paragraphIndex,
+      istd: paragraph.istd,
+      inTable: paragraph.inTable,
+      tableDepth: paragraph.tableDepth,
+      isTtp: paragraph.isTtp,
+      isInnerTableCell: paragraph.isInnerTableCell,
+      isInnerTtp: paragraph.isInnerTtp,
+      tableRole: paragraph.tableRole,
+      interpretedPrlCount: paragraph.interpretedPrlCount,
+      uninterpretedPrlCount: paragraph.uninterpretedPrlCount,
+      propertiesStatus: paragraph.propertiesStatus,
+      textMarkValidationStatus: paragraph.textMarkValidationStatus
+    })),
+    [
+      {
+        pageIndex: 0,
+        paragraphIndex: 0,
+        istd: 0x1234,
+        inTable: true,
+        tableDepth: 2,
+        isTtp: false,
+        isInnerTableCell: true,
+        isInnerTtp: false,
+        tableRole: "nested_cell_mark_candidate",
+        interpretedPrlCount: 5,
+        uninterpretedPrlCount: 1,
+        propertiesStatus: "supported_table_properties_verified",
+        textMarkValidationStatus: "pending_text_binding"
+      },
+      {
+        pageIndex: 0,
+        paragraphIndex: 1,
+        istd: null,
+        inTable: false,
+        tableDepth: 0,
+        isTtp: false,
+        isInnerTableCell: false,
+        isInnerTtp: false,
+        tableRole: "not_in_table",
+        interpretedPrlCount: 0,
+        uninterpretedPrlCount: 0,
+        propertiesStatus: "default",
+        textMarkValidationStatus: "not_applicable"
+      },
+      {
+        pageIndex: 1,
+        paragraphIndex: 0,
+        istd: 0x5678,
+        inTable: true,
+        tableDepth: 1,
+        isTtp: true,
+        isInnerTableCell: false,
+        isInnerTtp: false,
+        tableRole: "depth_1_ttp_candidate",
+        interpretedPrlCount: 3,
+        uninterpretedPrlCount: 0,
+        propertiesStatus: "supported_table_properties_verified",
+        textMarkValidationStatus: "pending_text_binding"
+      }
+    ]
+  );
+  assert.equal(result.supportedTablePropertySemanticsStatus, "verified");
+  assert.equal(result.tableTextMarkSemanticsStatus, "not_verified");
+  assert.equal(result.tableRowCellBoundaryStatus, "not_verified");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.paragraphs), true);
+  assert.equal(Object.isFrozen(result.paragraphs[0]), true);
+  assert.equal(Object.isFrozen(result.supportedSprms), true);
+});
+
+test("official calendar KRX legacy Word table paragraph properties reject invalid semantics", () => {
+  const invalidGroups = [
+    tablePropertyGroup([[0x2416, [2]]]),
+    tablePropertyGroup([[0x2416, [1]]]),
+    tablePropertyGroup([[0x6649, int32Bytes(1)]]),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(-1)]
+    ]),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(0)],
+      [0x664a, int32Bytes(-1)]
+    ]),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(2)],
+      [0x2417, [1]]
+    ]),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(1)],
+      [0x244b, [1]]
+    ]),
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(2)],
+      [0x244b, [1]],
+      [0x244c, [1]]
+    ])
+  ];
+  for (const groupBytes of invalidGroups) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureValidPapxFkpFixture(bytes);
+    setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
+    assertTableParagraphPropertiesCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_PARAGRAPH_PROPERTIES_INVALID"
+    );
+  }
+});
+
 test("official calendar KRX legacy Word CLX verifies Prc and Pcdt framing", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureWordRootStreams(bytes, "1Table");
@@ -2024,6 +2158,51 @@ function configureValidGrpPrlFixture(bytes: Uint8Array): void {
   setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
 }
 
+function configureValidTableParagraphPropertiesFixture(bytes: Uint8Array): void {
+  configureValidPapxFkpFixture(bytes);
+  setPapxGrpPrl(
+    bytes,
+    1024 + 40,
+    tablePropertyGroup([
+      [0x2416, [1]],
+      [0x6649, int32Bytes(1)],
+      [0x664a, int32Bytes(2)],
+      [0x664a, int32Bytes(-1)],
+      [0x244b, [1]],
+      [0x2405, [1]]
+    ])
+  );
+  setPapxGrpPrl(
+    bytes,
+    1536 + 40,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(1)],
+        [0x2417, [1]]
+      ],
+      0x5678
+    )
+  );
+}
+
+function tablePropertyGroup(
+  prls: readonly (readonly [number, readonly number[]])[],
+  istd = 0x1234
+): number[] {
+  const groupBytes = [istd & 0xff, (istd >>> 8) & 0xff];
+  for (const [sprm, operandBytes] of prls) {
+    appendPrlBytes(groupBytes, sprm, operandBytes);
+  }
+  return groupBytes;
+}
+
+function int32Bytes(value: number): number[] {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setInt32(0, value, true);
+  return [...bytes];
+}
+
 function appendPrlBytes(
   destination: number[],
   sprm: number,
@@ -2446,6 +2625,19 @@ function assertGrpPrlCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordGrpPrls(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordGrpPrlError &&
+      error.code === code
+  );
+}
+
+function assertTableParagraphPropertiesCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(bytes),
+    (error: unknown) =>
+      error instanceof
+        OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError &&
       error.code === code
   );
 }
