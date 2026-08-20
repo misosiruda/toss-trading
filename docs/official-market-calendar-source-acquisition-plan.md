@@ -649,8 +649,10 @@ POSIX sync failure는 성공으로 축소하지 않는다. Windows에서 directo
 이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
 publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
 Preflight cleanup은 생성 직후 기록한 writer-owned probe directory entry의
-device/inode identity를 `lstat`으로 재검증하고 symlink replacement를 거부한다.
-Cleanup path의 `realpath` target을 재귀 삭제 대상으로 사용하지 않는다.
+device/inode identity를 각 mutation 전에 `lstat`으로 재검증하고 symlink
+replacement를 거부한다. Cleanup path의 `realpath` target과 재귀 삭제는 사용하지
+않으며 고정된 probe file만 `unlink`, 알려진 빈 directory와 root만 `rmdir`한다.
+교체되거나 예상 외 entry를 포함한 directory는 삭제하지 않고 fail-safe로 남긴다.
 Artifact는 누락 sidecar, conflicting archive path reuse, hash/path 불일치 또는
 unreferenced sidecar가 있으면 fail-closed로 거부한다.
 

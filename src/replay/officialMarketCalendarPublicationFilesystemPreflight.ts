@@ -7,7 +7,8 @@ import {
   open,
   realpath,
   rename,
-  rm,
+  rmdir,
+  unlink,
   writeFile
 } from "node:fs/promises";
 
@@ -361,14 +362,25 @@ async function removeVerifiedProbeRoot(
   ) {
     throw new Error("publication preflight cleanup root escaped the publication root");
   }
-  const currentIdentity = await readProbeRootIdentity(root);
-  if (
-    currentIdentity.device !== expectedIdentity.device ||
-    currentIdentity.inode !== expectedIdentity.inode
-  ) {
-    throw new Error("publication preflight cleanup root identity changed");
+  const files = [
+    "exclusive-file",
+    "sync-file",
+    "link-source",
+    "link-fresh-destination",
+    "link-destination",
+    join("rename-source", "marker"),
+    join("rename-destination", "marker")
+  ];
+  for (const file of files) {
+    await assertProbeRootIdentity(root, expectedIdentity);
+    await unlinkIfPresent(join(root, file));
   }
-  await rm(root, { recursive: true, force: false });
+  for (const directory of ["rename-source", "rename-destination"]) {
+    await assertProbeRootIdentity(root, expectedIdentity);
+    await rmdirIfPresent(join(root, directory));
+  }
+  await assertProbeRootIdentity(root, expectedIdentity);
+  await rmdir(root);
 }
 
 interface ProbeRootIdentity {
@@ -385,6 +397,39 @@ async function readProbeRootIdentity(root: string): Promise<ProbeRootIdentity> {
     device: stats.dev,
     inode: stats.ino
   };
+}
+
+async function assertProbeRootIdentity(
+  root: string,
+  expectedIdentity: ProbeRootIdentity
+): Promise<void> {
+  const currentIdentity = await readProbeRootIdentity(root);
+  if (
+    currentIdentity.device !== expectedIdentity.device ||
+    currentIdentity.inode !== expectedIdentity.inode
+  ) {
+    throw new Error("publication preflight cleanup root identity changed");
+  }
+}
+
+async function unlinkIfPresent(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+async function rmdirIfPresent(path: string): Promise<void> {
+  try {
+    await rmdir(path);
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
