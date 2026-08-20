@@ -245,6 +245,21 @@ canonical final data sextet의 unused 2-bit zero 규칙을 반영한 최악의 �
 실행하지 않으며 encoded body도 future opaque process-local handle 밖으로 노출하거나
 durable하게 보존할 수 없다.
 
+`officialMarketCalendarKrxLegacyDownloadPostNetworkPolicy.ts`는 global calendar host의
+기존 broad allowlist를 완화하지 않고 exact `https://file.krx.co.kr/download.jspx`만 전용
+`krx_file_download_host.v1` boundary로 등록한다. Request는 HTTP/1.1 `Connection: close`,
+cookie/redirect/credential/connection reuse disabled, 10초 absolute deadline을 사용한다.
+Application header는 exact `accept`, `cache-control`, `content-length`, `content-type`,
+`origin`, `pragma`, `referer`, `user-agent`이고 Content-Length는 wire-body bytes에서만
+파생한다.
+
+Response는 exact `200`, `application/octet-stream`, 등록 document별 Content-Length와
+`attachment; filename=<registered file name>`, no-store/no-cache, `Expires == Date`,
+Set-Cookie 0을 요구한다. Redirect, Age, Content-Encoding, Transfer-Encoding, Content-Range와
+trailers를 거부하고 최대 response는 등록 문서 중 가장 큰 252,928 bytes로 제한한다. 이
+policy는 raw document retention을 등록하지 않으며 durable reuse와 accepted acquisition을
+계속 금지한다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
