@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_BODY_VERSION } from "./officialMarketCalendarKrxHolidayDataResponseBody.js";
 import { OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION } from "./officialMarketCalendarKrxHolidayDataResponseMetadata.js";
 import { OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_TARGET_YEAR_POLICY_VERSION } from "./officialMarketCalendarKrxHolidayTargetYear.js";
 
@@ -34,7 +33,7 @@ export const officialMarketCalendarKrxHolidayDataRowPolicyDefinitionSchema = z
           OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION
         ),
         responseBodyVersion: z.literal(
-          OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_BODY_VERSION
+          "krx_holiday_data_response_body.v1"
         ),
         targetYearPolicyVersion: z.literal(
           OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_TARGET_YEAR_POLICY_VERSION
@@ -117,7 +116,7 @@ const REGISTERED_POLICY_INPUT = {
     responseMetadataVersion:
       OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION,
     responseBodyVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_BODY_VERSION,
+      "krx_holiday_data_response_body.v1",
     targetYearPolicyVersion:
       OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_TARGET_YEAR_POLICY_VERSION
   },
