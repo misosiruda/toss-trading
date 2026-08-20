@@ -27,12 +27,17 @@ import {
   type TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier,
   type VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity
 } from "./officialMarketCalendarKrxLegacyDocumentIdentity.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileHeader,
+  type VerifiedOfficialMarketCalendarOleCompoundFileHeader
+} from "./officialMarketCalendarOleCompoundFileHeader.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
 declare const krxLegacyDownloadPostEphemeralWireBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralResponseBrand: unique symbol;
 declare const krxLegacyDownloadIdentityVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadOleHeaderVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -61,6 +66,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse {
 
 export interface OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument {
   readonly [krxLegacyDownloadIdentityVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument {
+  readonly [krxLegacyDownloadOleHeaderVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -138,10 +148,20 @@ interface ReadyIdentityVerifiedDocumentState {
   identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
 }
 
+interface ReadyOleHeaderVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
   | ReadyIdentityVerifiedDocumentState
+  | DisposedState;
+type OleHeaderVerifiedDocumentState =
+  | ReadyOleHeaderVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -151,6 +171,10 @@ const responseStates = new WeakMap<object, ResponseState>();
 const identityVerifiedDocumentStates = new WeakMap<
   object,
   IdentityVerifiedDocumentState
+>();
+const oleHeaderVerifiedDocumentStates = new WeakMap<
+  object,
+  OleHeaderVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -423,6 +447,61 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDo
     );
   }
   disposeIdentityVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = identityVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy identity-verified document must be ready and come from the fixed response consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const oleHeader = verifyOfficialMarketCalendarOleCompoundFileHeader(
+      state.rawDocumentBytes
+    );
+    if (
+      oleHeader.headerVerified !== true ||
+      oleHeader.structureStatus !== "header_only_not_verified"
+    ) {
+      throw new Error("KRX legacy OLE header result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeOleHeaderVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy OLE-header-verified document cannot be serialized or exported"
+      );
+    });
+    oleHeaderVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader
+    });
+    identityVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeIdentityVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!oleHeaderVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy OLE-header-verified document must come from the fixed header consumer"
+    );
+  }
+  disposeOleHeaderVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1152,6 +1231,18 @@ function disposeIdentityVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     identityVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeOleHeaderVerifiedDocumentObject(handle: object): void {
+  const state = oleHeaderVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    oleHeaderVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
