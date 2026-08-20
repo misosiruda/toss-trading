@@ -209,6 +209,14 @@ Base64였고 decoded length는 224 bytes, padding은 1개였다. Response는 exa
 acquisition을 계속 금지한다. 실제 OTP network consumer와 ephemeral ownership은 아직
 구현하지 않는다.
 
+`officialMarketCalendarKrxLegacyDownloadOtpResponseBody.ts`는 이 network policy에
+고정된 exact 300-byte body만 byte-level canonical Base64로 검증한다. 마지막 `=` 1개와
+직전 sextet의 unused 2 bit가 zero인지 확인해 decoded length 224를 구조적으로 고정한다.
+검증용 owned copy는 성공·실패와 관계없이 zeroize하며 caller bytes의 ownership은 바꾸지
+않는다. 반환되는 frozen shape에는 encoding과 길이만 있고 raw OTP, decoded bytes 또는
+hash는 없다. 이 body-only 검증은 HTTP metadata, transfer completion, one-shot ownership,
+download authorization이나 accepted acquisition을 증명하지 않는다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
