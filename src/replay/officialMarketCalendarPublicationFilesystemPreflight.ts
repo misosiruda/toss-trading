@@ -233,7 +233,9 @@ async function probeDirectorySync(path: string) {
     observation = "synced";
   } catch (error) {
     observation =
-      isNodeError(error) && error.code === "EPERM"
+      process.platform === "win32" &&
+      isNodeError(error) &&
+      error.code === "EPERM"
         ? "unsupported"
         : "probe_failed";
   }

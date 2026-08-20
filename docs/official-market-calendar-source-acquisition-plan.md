@@ -281,7 +281,8 @@ cleanup mutation을 결합하는 primitive와 atomic no-replace directory publis
 mutation probe는 실행하지 않고 `not_probed_safe_cleanup_unavailable` observation과
 `safe_mutation_probe_cleanup_unavailable` blocker로 보존한다. 관련 capability는 모두
 false이며 built-in implementation은 모든 platform에서 `unsupported`이다. Windows의
-directory sync `EPERM`도 성공으로 축소하지 않는다. Capability, observation과 blocker는
+directory sync `EPERM`은 Windows에서만 `unsupported` compatibility observation으로
+기록하고 다른 platform에서는 `probe_failed`로 보존한다. Capability, observation과 blocker는
 서로 일치해야 하고 canonical preflight hash에 결합되며 반환 contract 전체를
 deep-freeze한다. 실제 writer enablement에는 별도 검증된 handle-bound cleanup과
 no-replace directory primitive가 선행되어야 한다.
