@@ -102,6 +102,26 @@ test("official calendar OLE directory entries use version-aware stream size", ()
     oversizedVersion3,
     "OFFICIAL_CALENDAR_OLE_DIRECTORY_ENTRIES_INVALID_ENTRY"
   );
+
+  const oversizedRootMiniStream = compoundFileWithDirectory(3);
+  setEntryUint32(oversizedRootMiniStream, 0, 120, 0x80000001);
+  assertCode(
+    oversizedRootMiniStream,
+    "OFFICIAL_CALENDAR_OLE_DIRECTORY_ENTRIES_INVALID_ENTRY"
+  );
+});
+
+test("official calendar OLE directory entries preserve parser compatibility", () => {
+  const bytes = compoundFileWithDirectory(3);
+  setEntryUint32(bytes, 2, 96, 7);
+  const storageOffset = entryOffset(bytes, 1);
+  new DataView(bytes.buffer).setUint16(storageOffset + 62, 0x1234, true);
+
+  const result = verifyOfficialMarketCalendarOleCompoundFileDirectoryEntries(
+    bytes
+  );
+  assert.equal(result.entries[1]?.name, "Storage");
+  assert.equal(result.entries[2]?.objectType, "stream");
 });
 
 test("official calendar OLE directory entries reject invalid root", () => {
