@@ -602,6 +602,15 @@ membership은 변경하지 않는다. Explicit `asOf` 요청은 시간 순서가
 한다. 검증된 handle은 해당 explicit `asOf`에만 결합되며 후속 replay는 새 open과
 freshness 검증을 수행해야 한다.
 
+현재 `officialMarketCalendarPublicationReaderFreshness.ts`는 verified artifact를
+입력으로 받는 순수 reader-time decision 계약을 제공한다. 모든 archive binding의
+document를 canonical 순서로 재평가하고, 거부 시 필요한 audit event payload와
+`membershipAction: unchanged`를 반환하며, 승인 시에만 exact `artifactHash`, `asOf`,
+전체 `SourceDocumentRef`에 결합된 handle identity를 생성한다. 이 계약은 filesystem
+package 검증, process-local verified set membership 확인, audit 저장 또는 실제 read
+handle open을 수행하지 않으며, 해당 책임은 후속 `PublicationCoordinator` 통합에
+남아 있다.
+
 Package-relative path는 revised artifact의 별도
 `sourceArchiveBindings`에 둔다. 각 binding은 `exchange`, `collectionId`,
 `documentId`로 구성한 `SourceDocumentRef`, `archivePath`, `sourceDocumentHash`와
