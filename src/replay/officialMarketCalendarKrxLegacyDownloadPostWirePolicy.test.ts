@@ -22,6 +22,14 @@ test("KRX legacy download wire policy binds the registered POST source", () => {
     policy.parameterValueSource,
     "bound_process_local_otp_parameter_handle_only"
   );
+  assert.equal(
+    policy.otpNetworkPolicyVersion,
+    "krx_legacy_download_otp_network_request.v1"
+  );
+  assert.equal(
+    policy.otpResponseBodyVersion,
+    "official_market_calendar_krx_legacy_download_otp_response_body.v1"
+  );
 });
 
 test("KRX legacy download wire policy fixes byte encoding", () => {
@@ -43,6 +51,7 @@ test("KRX legacy download wire policy fixes exact local limits", () => {
 
   assert.deepEqual(policy.wireLimits, {
     exactRawOtpByteLength: 300,
+    exactDecodedOtpByteLength: 224,
     parameterNameAndEqualsByteLength: 5,
     minimumRequestBodyByteLength: 307,
     maximumRequestBodyByteLength: 903
@@ -59,6 +68,10 @@ test("KRX legacy download wire policy rejects unsafe drift", () => {
   const policy = validPolicy();
   for (const value of [
     { ...policy, parameterOrder: ["file_nm", "code"] },
+    {
+      ...policy,
+      otpNetworkPolicyVersion: "krx_form_otp_network_request.v1"
+    },
     {
       ...policy,
       encodingBoundary: {

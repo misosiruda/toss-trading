@@ -233,9 +233,11 @@ acquisition은 계속 금지한다.
 `officialMarketCalendarKrxLegacyDownloadPostWirePolicy.ts`는 source policy의 exact
 `POST https://file.krx.co.kr/download.jspx`, `application/x-www-form-urlencoded`과 단일
 `code` parameter를 결합한다. `code`는 generic request-parameter allowlist에 추가하지 않고
-bound process-local OTP parameter handle만 공급할 수 있다. Encoder contract는 raw OTP를
-string으로 materialize하지 않고 ASCII bytes를 직접 순회하며 RFC 3986 unreserved byte만
-literal로 보존하고 `+`, `/`, `=`를 각각 uppercase `%2B`, `%2F`, `%3D`로 encoding한다.
+bound process-local OTP parameter handle만 공급할 수 있다. Wire definition은 exact OTP
+network policy와 body-verifier version을 기록하고 resolver에서 canonical Base64, encoded
+300 bytes, decoded 224 bytes와 single padding을 다시 대조한다. Encoder contract는 raw
+OTP를 string으로 materialize하지 않고 ASCII bytes를 직접 순회하며 RFC 3986 unreserved
+byte만 literal로 보존하고 `+`, `/`, `=`를 각각 uppercase `%2B`, `%2F`, `%3D`로 encoding한다.
 
 Exact 300-byte Base64 input에 `code=` 5 bytes를 더한 encoded body는 최소 307 bytes,
 canonical final data sextet의 unused 2-bit zero 규칙을 반영한 최악의 경우 903 bytes로

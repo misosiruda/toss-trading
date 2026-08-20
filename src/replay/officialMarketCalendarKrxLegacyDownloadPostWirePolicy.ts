@@ -6,6 +6,11 @@ import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION,
   resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy
 } from "./officialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_NETWORK_POLICY_VERSION,
+  resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy
+} from "./officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy.js";
+import { OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_RESPONSE_BODY_VERSION } from "./officialMarketCalendarKrxLegacyDownloadOtpResponseBody.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_POST_WIRE_POLICY_DEFINITION_VERSION =
   "official_market_calendar_krx_legacy_download_post_wire_policy_definition.v1";
@@ -25,6 +30,12 @@ export const officialMarketCalendarKrxLegacyDownloadPostWirePolicyDefinitionSche
       ),
       sourcePolicyVersion: z.literal(
         OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION
+      ),
+      otpNetworkPolicyVersion: z.literal(
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_NETWORK_POLICY_VERSION
+      ),
+      otpResponseBodyVersion: z.literal(
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_RESPONSE_BODY_VERSION
       ),
       sourceSelector: z
         .object({
@@ -55,6 +66,7 @@ export const officialMarketCalendarKrxLegacyDownloadPostWirePolicyDefinitionSche
       wireLimits: z
         .object({
           exactRawOtpByteLength: z.literal(300),
+          exactDecodedOtpByteLength: z.literal(224),
           parameterNameAndEqualsByteLength: z.literal(5),
           minimumRequestBodyByteLength: z.literal(307),
           maximumRequestBodyByteLength: z.literal(903)
@@ -86,6 +98,10 @@ const REGISTERED_POLICY_INPUT = {
     OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_POST_WIRE_POLICY_VERSION,
   sourcePolicyVersion:
     OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION,
+  otpNetworkPolicyVersion:
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_NETWORK_POLICY_VERSION,
+  otpResponseBodyVersion:
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_RESPONSE_BODY_VERSION,
   sourceSelector: {
     exchange: "KRX",
     marketScope: "derivatives",
@@ -106,6 +122,7 @@ const REGISTERED_POLICY_INPUT = {
   },
   wireLimits: {
     exactRawOtpByteLength: 300,
+    exactDecodedOtpByteLength: 224,
     parameterNameAndEqualsByteLength: 5,
     minimumRequestBodyByteLength: 307,
     maximumRequestBodyByteLength: 903
@@ -140,6 +157,10 @@ export function resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadPostWire
     resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy(
       definition.sourcePolicyVersion
     );
+  const otpNetworkPolicy =
+    resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy(
+      definition.otpNetworkPolicyVersion
+    );
 
   if (
     !isDeepStrictEqual(definition.sourceSelector, {
@@ -153,7 +174,14 @@ export function resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadPostWire
     !isDeepStrictEqual(
       definition.parameterOrder,
       sourcePolicy.downloadRequest.dynamicParameterNames
-    )
+    ) ||
+    otpNetworkPolicy.otpBodyBoundary.requiredAsciiByteLength !==
+      definition.wireLimits.exactRawOtpByteLength ||
+    otpNetworkPolicy.otpBodyBoundary.requiredDecodedByteLength !==
+      definition.wireLimits.exactDecodedOtpByteLength ||
+    otpNetworkPolicy.otpBodyBoundary.requiredEncoding !==
+      "canonical_base64" ||
+    otpNetworkPolicy.otpBodyBoundary.requiredPaddingCharacterCount !== 1
   ) {
     throw new Error(
       "KRX legacy download POST wire policy must match the registered source policy"
