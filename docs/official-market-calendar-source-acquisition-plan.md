@@ -335,6 +335,17 @@ Standalone verifier override나 raw-byte access는 노출하지 않는다. 새 h
 stream/Word parser operation 또는 durable sink를 제공하지 않으므로 header-only candidate
 경계는 유지된다.
 
+`officialMarketCalendarOleCompoundFileDifat.ts`는 standalone synthetic byte boundary에서
+header의 첫 109개 FAT sector location과 DIFAT sector chain을 결합한다. 각 DIFAT sector는
+`sectorSize / 4 - 1`개의 FAT location과 마지막 next-DIFAT pointer로 해석하고, 선언된 chain
+길이·순서, 마지막 `ENDOFCHAIN`, FAT/DIFAT location의 file sector 범위·유일성, 사용하지 않는
+entry의 `FREESECT`, directory/mini FAT와의 sector-role 충돌을 fail-closed로 검증한다. 결과는
+location 목록만 immutable하게 반환하고 `fatStructureStatus=locations_only_not_verified`를
+유지한다. FAT entry의 `FATSECT`/`DIFSECT` marker와 stream chain, directory, Word table
+semantics는 검증하지 않으며 identity-verified opaque handle에도 아직 연결하지 않았다.
+명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/0afa4e43-b18f-432a-9917-4f276eca7a73
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
