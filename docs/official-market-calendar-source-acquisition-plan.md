@@ -494,6 +494,18 @@ semantics는 아직 해석하지 않고 source role도 candidate로 유지한다
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0c9df81f-98d0-454e-ad84-b612cd05b1a4
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 
+`officialMarketCalendarKrxLegacyWordClx.ts`는 bounded CLX copy를 `Prc*`와 마지막 `Pcdt`로
+framing한다. 각 `Prc`는 `clxt=0x01`, signed `cbGrpprl`의 non-negative/`0x3FA2` 상한과 CLX
+범위를 검증하고, 마지막 `Pcdt`는 `clxt=0x02`, exact `lcb` consumption 및 `PlcPcd` byte length가
+`12n+4` 형태인지 확인한다. 결과는 Prc byte/count, Pcdt offset, inferred piece descriptor count와
+독립 `PlcPcd` byte copy를 반환한다. `GrpPrl`, CP ordering/uniqueness, Pcd/FcCompressed와 text는
+아직 해석하지 않고 source role도 candidate로 유지한다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/bad26767-b575-44d3-9da3-96378d56ce14
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/473fd992-c824-4655-8880-3186bd432f80
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9316ddeb-3441-4840-a501-85225ba32b35
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a649fcc5-7868-4245-be12-04eea89d916b
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
