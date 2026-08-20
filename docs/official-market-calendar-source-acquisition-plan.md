@@ -273,6 +273,8 @@ atomic no-replace publication과 coordinator activation은 후속 단계이다.
 root의 realpath identity를 hash에 결합하고 mutation 없이 platform이 제공하는
 `O_DIRECTORY | O_NONBLOCK` read-only flags로 publication root handle을 연다. 같은
 handle의 `stat()`으로 directory인지 검증한 뒤 durability sync만 관찰한다.
+Handle `stat()` 또는 `close()` I/O 실패는 `probe_failed`로 기록하되 실제
+non-directory handle은 입력 오류로 명시적으로 거부한다.
 Built-in Node API는 verified directory entry에
 cleanup mutation을 결합하는 primitive와 atomic no-replace directory publish contract를
 제공하지 않는다. 따라서 exclusive create, file sync, hard-link와 directory rename

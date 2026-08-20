@@ -216,21 +216,38 @@ async function probeDirectorySync(path: string) {
     }
     return "probe_failed" as const;
   }
+  let stats;
   try {
-    const stats = await handle.stat();
-    if (!stats.isDirectory()) {
-      throw new Error("publication filesystem preflight root must be a directory");
-    }
-    try {
-      await handle.sync();
-      return "synced" as const;
-    } catch (error) {
-      return isNodeError(error) && error.code === "EPERM"
-        ? "unsupported" as const
-        : "probe_failed" as const;
-    }
-  } finally {
+    stats = await handle.stat();
+  } catch {
+    await closeProbeHandle(handle);
+    return "probe_failed" as const;
+  }
+  if (!stats.isDirectory()) {
+    await closeProbeHandle(handle);
+    throw new Error("publication filesystem preflight root must be a directory");
+  }
+  let observation: "synced" | "unsupported" | "probe_failed";
+  try {
+    await handle.sync();
+    observation = "synced";
+  } catch (error) {
+    observation =
+      isNodeError(error) && error.code === "EPERM"
+        ? "unsupported"
+        : "probe_failed";
+  }
+  return (await closeProbeHandle(handle)) ? observation : "probe_failed";
+}
+
+async function closeProbeHandle(
+  handle: Awaited<ReturnType<typeof open>>
+): Promise<boolean> {
+  try {
     await handle.close();
+    return true;
+  } catch {
+    return false;
   }
 }
 
