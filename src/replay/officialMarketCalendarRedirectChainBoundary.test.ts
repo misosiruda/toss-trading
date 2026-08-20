@@ -24,9 +24,16 @@ import {
   OFFICIAL_MARKET_CALENDAR_SOURCE_COLLECTION_SCHEMA_VERSION
 } from "./officialMarketCalendarSourceCollection.js";
 import {
+  createOfficialMarketCalendarEvidenceArtifactV2Hash,
   createOfficialMarketCalendarEvidenceArtifactV2,
   parseOfficialMarketCalendarEvidenceArtifactV2
 } from "./officialMarketCalendarEvidenceArtifactV2.js";
+import {
+  createOfficialMarketCalendarPublicationReaderFreshnessHash,
+  evaluateOfficialMarketCalendarPublicationReaderFreshness,
+  parseOfficialMarketCalendarPublicationReaderFreshness,
+  requireOfficialMarketCalendarPublicationReaderHandle
+} from "./officialMarketCalendarPublicationReaderFreshness.js";
 import {
   createOfficialMarketCalendarPublicationPackagePlan,
   parseOfficialMarketCalendarPublicationPackagePlan
@@ -1835,6 +1842,172 @@ test("calendar evidence v2 rejects freshness, coverage and artifact divergence",
         fixture.options
       ),
     /does not match verified source evidence/
+  );
+});
+
+test("calendar publication reader binds an accepted handle to the exact asOf", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  const decision = evaluateOfficialMarketCalendarPublicationReaderFreshness({
+    artifact,
+    asOf: "2025-07-01T21:00:10.000+09:00"
+  });
+
+  assert.equal(decision.status, "accepted");
+  assert.deepEqual(
+    decision.documentEvaluations.map(({ status }) => status),
+    ["fresh", "fresh"]
+  );
+  assert.deepEqual(decision.requiredAuditEvents, []);
+  assert.equal(decision.membershipAction, "unchanged");
+  assert.equal(decision.handleBinding?.asOf, decision.asOf);
+  assert.equal(decision.handleBinding?.artifactHash, artifact.artifactHash);
+  assert.deepEqual(
+    parseOfficialMarketCalendarPublicationReaderFreshness(decision),
+    decision
+  );
+  assert.deepEqual(
+    requireOfficialMarketCalendarPublicationReaderHandle(decision),
+    decision.handleBinding
+  );
+  assert.ok(Object.isFrozen(decision));
+  assert.ok(Object.isFrozen(decision.documentEvaluations[0]));
+});
+
+test("calendar publication reader rejects future and stale boundaries without changing membership", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  const future = evaluateOfficialMarketCalendarPublicationReaderFreshness({
+    artifact,
+    asOf: "2025-07-01T12:00:09.999Z"
+  });
+  const stale = evaluateOfficialMarketCalendarPublicationReaderFreshness({
+    artifact,
+    asOf: "2025-07-02T12:00:00.000Z"
+  });
+
+  assert.equal(future.status, "rejected");
+  assert.deepEqual(future.requiredAuditEvents, [
+    {
+      eventType: "source_not_yet_retrieved",
+      artifactHash: artifact.artifactHash,
+      asOf: future.asOf,
+      sourceDocumentRefs: future.documentEvaluations.map(
+        ({ sourceDocumentRef }) => sourceDocumentRef
+      )
+    }
+  ]);
+  assert.equal(stale.status, "rejected");
+  assert.deepEqual(stale.requiredAuditEvents, [
+    {
+      eventType: "publication_freshness_rejected",
+      artifactHash: artifact.artifactHash,
+      asOf: stale.asOf,
+      sourceDocumentRefs: stale.documentEvaluations.map(
+        ({ sourceDocumentRef }) => sourceDocumentRef
+      )
+    }
+  ]);
+  for (const decision of [future, stale]) {
+    assert.equal(decision.membershipAction, "unchanged");
+    assert.equal(decision.handleBinding, null);
+    assert.throws(
+      () => requireOfficialMarketCalendarPublicationReaderHandle(decision),
+      /freshness rejected/
+    );
+  }
+});
+
+test("calendar publication reader decisions are stateless across out-of-order asOf requests", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  const validInput = {
+    artifact,
+    asOf: "2025-07-01T12:00:10.000Z"
+  };
+  const before = evaluateOfficialMarketCalendarPublicationReaderFreshness(
+    validInput
+  );
+  evaluateOfficialMarketCalendarPublicationReaderFreshness({
+    artifact,
+    asOf: "2025-07-02T12:00:00.000Z"
+  });
+  const after = evaluateOfficialMarketCalendarPublicationReaderFreshness(
+    validInput
+  );
+
+  assert.deepEqual(after, before);
+  assert.equal(after.status, "accepted");
+});
+
+test("calendar publication reader rejects offsets, artifact membership and decision tampering", () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationReaderFreshness({
+        artifact,
+        asOf: "2025-07-01T12:00:10.000"
+      }),
+    /explicit timezone offset/
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationReaderFreshness({
+        artifact: { ...artifact, artifactHash: hash("f") },
+        asOf: "2025-07-01T12:00:10.000Z"
+      }),
+    /artifact hash mismatch/
+  );
+
+  const membershipTamper = structuredClone(artifact);
+  membershipTamper.sourceArchiveBindings.pop();
+  const {
+    artifactHash: _membershipTamperHash,
+    ...membershipTamperPayload
+  } = membershipTamper;
+  membershipTamper.artifactHash =
+    createOfficialMarketCalendarEvidenceArtifactV2Hash(
+      membershipTamperPayload
+    );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationReaderFreshness({
+        artifact: membershipTamper,
+        asOf: "2025-07-01T12:00:10.000Z"
+      }),
+    /must exactly match archive bindings/
+  );
+
+  const decision = evaluateOfficialMarketCalendarPublicationReaderFreshness({
+    artifact,
+    asOf: "2025-07-01T12:00:10.000Z"
+  });
+  const decisionTamper = structuredClone(decision);
+  decisionTamper.asOf = "2025-07-01T12:00:11.000Z";
+  const { decisionHash: _decisionHash, ...decisionPayload } = decisionTamper;
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarPublicationReaderFreshnessHash(
+        decisionPayload
+      ),
+    /handle must bind the exact artifact, asOf and sources/
+  );
+  assert.throws(
+    () => parseOfficialMarketCalendarPublicationReaderFreshness(decisionTamper),
+    /handle must bind the exact artifact, asOf and sources/
   );
 });
 
