@@ -146,7 +146,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
     const filePath = join(probeRoot, "exclusive-file");
     const exclusiveStagingFileCreate = await probeExclusiveFile(filePath);
     const fileDurabilitySync = await probeFileSync(join(probeRoot, "sync-file"));
-    const directorySync = await probeDirectorySync(probeRoot);
+    const directorySync = await probeDirectorySync(publicationRoot);
     const hardLink = await probeExistingFileHardLink(probeRoot);
     const directoryRename = await probeExistingDirectoryRename(probeRoot);
     const blockers: OfficialMarketCalendarPublicationFilesystemPreflightPayload["blockers"] = [

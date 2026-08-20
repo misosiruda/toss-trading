@@ -272,7 +272,8 @@ atomic no-replace publication과 coordinator activation은 후속 단계이다.
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 현재 Node filesystem runtime의
 exclusive file create, file/directory durability sync, hard-link collision과 existing
 directory rename 동작을 exact absolute publication root 내부의 writer-owned temporary
-namespace에서 관찰하고 root realpath identity를 hash에 결합한다. 반환 contract는
+namespace에서 관찰하되 directory sync는 publication root handle 자체에 수행하고
+root realpath identity를 hash에 결합한다. 반환 contract는
 nested capability, observation과 blocker까지 deep-freeze한다. 그러나
 `node:fs/promises.rename()`은 atomic no-replace directory contract를 제공하지 않으므로
 built-in implementation은 모든 platform에서 `unsupported`이며
