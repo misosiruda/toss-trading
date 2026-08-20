@@ -15,6 +15,7 @@ export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
 
 export interface CreateOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBodyInput {
   rawResponseBytes: Uint8Array;
+  requestedFileName: unknown;
 }
 
 export interface OfficialMarketCalendarKrxLegacyDownloadEphemeralParameters {
@@ -29,6 +30,7 @@ type LegacyFileName = LegacyDocument["fileName"];
 interface ReadyBodyState {
   status: "ready";
   rawResponseBytes: Uint8Array;
+  fileName: LegacyFileName;
 }
 
 interface ReadyParametersState {
@@ -69,6 +71,7 @@ export function createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(
   input: CreateOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBodyInput
 ): OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   const transferredRawResponseBytes = input.rawResponseBytes;
+  const requestedFileName = input.requestedFileName;
   let byteLength: number;
   try {
     byteLength = readTransferredByteLength(transferredRawResponseBytes);
@@ -90,6 +93,7 @@ export function createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(
     verifyOfficialMarketCalendarKrxLegacyDownloadOtpResponseBody(
       ownedRawResponseBytes
     );
+    const fileName = resolveRegisteredFileName(requestedFileName);
 
     const handle = createOpaqueHandle(() => {
       disposeBodyObject(handle);
@@ -99,7 +103,8 @@ export function createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(
     });
     bodyStates.set(handle, {
       status: "ready",
-      rawResponseBytes: ownedRawResponseBytes
+      rawResponseBytes: ownedRawResponseBytes,
+      fileName
     });
     return handle as OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody;
   } catch (error) {
@@ -115,8 +120,7 @@ export function createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(
 }
 
 export function consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-  handle: OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
-  fileName: unknown
+  handle: OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 ): OfficialMarketCalendarKrxLegacyDownloadEphemeralParameters {
   const handleObject = assertHandleObject(handle);
   const state = bodyStates.get(handleObject);
@@ -134,18 +138,7 @@ export function consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
   bodyStates.set(handleObject, { status: "disposed" });
   let transferred = false;
   try {
-    const sourcePolicy =
-      resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy(
-        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION
-      );
-    const document = sourcePolicy.documents.find(
-      (candidate) => candidate.fileName === fileName
-    );
-    if (document === undefined) {
-      throw new Error(
-        "KRX legacy download OTP target must be a registered document file name"
-      );
-    }
+    const fileName = resolveRegisteredFileName(state.fileName);
 
     const parameterHandle = createOpaqueHandle(() => {
       disposeParametersObject(parameterHandle);
@@ -156,7 +149,7 @@ export function consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
     parameterStates.set(parameterHandle, {
       status: "ready",
       rawOtpBytes: state.rawResponseBytes,
-      fileName: document.fileName
+      fileName
     });
     transferred = true;
     return parameterHandle as OfficialMarketCalendarKrxLegacyDownloadEphemeralParameters;
@@ -213,6 +206,22 @@ function disposeParametersObject(handle: object): void {
   } finally {
     parameterStates.set(handle, { status: "disposed" });
   }
+}
+
+function resolveRegisteredFileName(value: unknown): LegacyFileName {
+  const sourcePolicy =
+    resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION
+    );
+  const document = sourcePolicy.documents.find(
+    (candidate) => candidate.fileName === value
+  );
+  if (document === undefined) {
+    throw new Error(
+      "KRX legacy download OTP target must be a registered document file name"
+    );
+  }
+  return document.fileName;
 }
 
 function createOpaqueHandle(toJSON: () => never): object {

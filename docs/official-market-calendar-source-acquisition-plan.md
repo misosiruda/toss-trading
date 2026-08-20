@@ -217,17 +217,18 @@ acquisition을 계속 금지한다. 실제 OTP network consumer와 ephemeral own
 hash는 없다. 이 body-only 검증은 HTTP metadata, transfer completion, one-shot ownership,
 download authorization이나 accepted acquisition을 증명하지 않는다.
 
-`officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`는 검증 대상 raw OTP bytes의
-ownership을 process-local opaque handle로 이전한다. Factory는 caller view를 exact 한 번만
-읽고 internal copy를 만든 직후 caller bytes를 zeroize하며, invalid body, detached view와
-`SharedArrayBuffer` backing을 거부한다. Explicit disposal과 JSON export 거부는 internal
-bytes를 zeroize하고 handle을 idempotent하게 닫는다.
+`officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`는 검증 대상 raw OTP bytes와
+OTP GET에 사용한 registered `file_nm`을 함께 process-local opaque handle로 이전한다.
+Factory는 두 input field를 exact 한 번만 읽고 internal copy를 만든 직후 caller bytes를
+zeroize하며, invalid body/file name, detached view와 `SharedArrayBuffer` backing을 거부한다.
+Explicit disposal과 JSON export 거부는 internal bytes를 zeroize하고 handle을 idempotent하게
+닫는다.
 
-Fixed consumer는 이 OTP handle을 source policy에 등록된 2013~2015 file name 하나와 결합해
-opaque download-parameter handle로 exact 한 번만 이전한다. Invalid file name도 기존 OTP
-ownership을 종료하고 bytes를 zeroize한다. 두 handle 모두 getter, callback, enumerable
-field나 serialization surface를 제공하지 않는다. Wire encoding과 network consumer는 아직
-구현하지 않았으며 durable reuse와 accepted acquisition은 계속 금지한다.
+Fixed consumer는 caller에게 새 file name을 받지 않고 OTP handle에 이미 결합된 2013~2015
+file identity와 bytes를 opaque download-parameter handle로 exact 한 번만 이전한다. 두
+handle 모두 getter, callback, enumerable field나 serialization surface를 제공하지 않는다.
+Wire encoding과 network consumer는 아직 구현하지 않았으며 durable reuse와 accepted
+acquisition은 계속 금지한다.
 
 ### KRX Holiday Data POST Static Policy
 

@@ -15,7 +15,8 @@ test("KRX legacy OTP handle takes ownership and zeroizes the caller view", () =>
   const rawResponseBytes = canonicalOtpBytes();
   const handle =
     createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
-      rawResponseBytes
+      rawResponseBytes,
+      requestedFileName: "E_Trading_Calendar2013.doc"
     });
 
   assertZeroed(rawResponseBytes);
@@ -27,16 +28,24 @@ test("KRX legacy OTP factory reads the transferred view once", () => {
   const rawResponseBytes = canonicalOtpBytes();
   const decoyBytes = canonicalOtpBytes();
   let readCount = 0;
+  let fileNameReadCount = 0;
   const input = {
     get rawResponseBytes() {
       readCount += 1;
       return readCount === 1 ? rawResponseBytes : decoyBytes;
+    },
+    get requestedFileName() {
+      fileNameReadCount += 1;
+      return fileNameReadCount === 1
+        ? "E_Trading_Calendar2013.doc"
+        : "E_Trading_Calendar2014.doc";
     }
   } satisfies CreateOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBodyInput;
 
   const handle =
     createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(input);
   assert.equal(readCount, 1);
+  assert.equal(fileNameReadCount, 1);
   assertZeroed(rawResponseBytes);
   assert.equal(decoyBytes.some((byte) => byte !== 0), true);
   disposeOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(handle);
@@ -49,7 +58,8 @@ test("KRX legacy OTP factory zeroizes rejected transferred bytes", () => {
   ]) {
     assert.throws(() =>
       createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
-        rawResponseBytes
+        rawResponseBytes,
+        requestedFileName: "E_Trading_Calendar2013.doc"
       })
     );
     assertZeroed(rawResponseBytes);
@@ -61,7 +71,8 @@ test("KRX legacy OTP factory rejects detached and shared backing", () => {
   void structuredClone(detached, { transfer: [detached.buffer] });
   assert.throws(() =>
     createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
-      rawResponseBytes: detached
+      rawResponseBytes: detached,
+      requestedFileName: "E_Trading_Calendar2013.doc"
     })
   );
 
@@ -71,7 +82,8 @@ test("KRX legacy OTP factory rejects detached and shared backing", () => {
     assert.throws(
       () =>
         createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
-          rawResponseBytes: shared
+          rawResponseBytes: shared,
+          requestedFileName: "E_Trading_Calendar2013.doc"
         }),
       /must not use shared backing memory/
     );
@@ -88,8 +100,7 @@ test("KRX legacy OTP handle rejects JSON export and disposes", () => {
   assert.throws(
     () =>
       consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        handle,
-        "E_Trading_Calendar2013.doc"
+        handle
       ),
     /already been consumed/
   );
@@ -116,8 +127,7 @@ test("KRX legacy OTP handle rejects forged and invalid handles", () => {
     );
     assert.throws(() =>
       consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        handle as OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
-        "E_Trading_Calendar2013.doc"
+        handle as OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
       )
     );
   }
@@ -129,11 +139,10 @@ test("KRX legacy OTP consumer creates opaque parameters for each registered file
     "E_Trading_Calendar2014.doc",
     "E_Trading_Calendar2015.doc"
   ]) {
-    const otpHandle = createOtpHandle();
+    const otpHandle = createOtpHandle(fileName);
     const parameters =
       consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        otpHandle,
-        fileName
+        otpHandle
       );
     assertOpaqueHandle(parameters);
     disposeOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(otpHandle);
@@ -147,39 +156,29 @@ test("KRX legacy OTP consumer rejects reuse after transfer", () => {
   const otpHandle = createOtpHandle();
   const parameters =
     consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-      otpHandle,
-      "E_Trading_Calendar2013.doc"
+      otpHandle
     );
   assert.throws(
     () =>
       consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        otpHandle,
-        "E_Trading_Calendar2013.doc"
+        otpHandle
       ),
     /already been consumed/
   );
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralParameters(parameters);
 });
 
-test("KRX legacy OTP consumer closes ownership on invalid file", () => {
-  const otpHandle = createOtpHandle();
+test("KRX legacy OTP factory rejects an unregistered request file", () => {
+  const rawResponseBytes = canonicalOtpBytes();
   assert.throws(
     () =>
-      consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        otpHandle,
-        "E_Trading_Calendar2016.doc"
-      ),
+      createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
+        rawResponseBytes,
+        requestedFileName: "E_Trading_Calendar2016.doc"
+      }),
     /registered document file name/
   );
-  assert.throws(
-    () =>
-      consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-        otpHandle,
-        "E_Trading_Calendar2013.doc"
-      ),
-    /already been consumed/
-  );
-  disposeOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody(otpHandle);
+  assertZeroed(rawResponseBytes);
 });
 
 test("KRX legacy download parameters reject JSON export and dispose", () => {
@@ -212,16 +211,18 @@ test("KRX legacy download parameters reject forged handles", () => {
   }
 });
 
-function createOtpHandle(): OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
+function createOtpHandle(
+  requestedFileName: unknown = "E_Trading_Calendar2013.doc"
+): OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   return createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody({
-    rawResponseBytes: canonicalOtpBytes()
+    rawResponseBytes: canonicalOtpBytes(),
+    requestedFileName
   });
 }
 
 function createParameters(): OfficialMarketCalendarKrxLegacyDownloadEphemeralParameters {
   return consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument(
-    createOtpHandle(),
-    "E_Trading_Calendar2015.doc"
+    createOtpHandle("E_Trading_Calendar2015.doc")
   );
 }
 
