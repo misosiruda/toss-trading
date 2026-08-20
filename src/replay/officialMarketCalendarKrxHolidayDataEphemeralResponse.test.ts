@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TextEncoder } from "node:util";
+import { runInNewContext } from "node:vm";
 
 import {
   consumeOfficialMarketCalendarKrxHolidayDataEphemeralResponse,
@@ -195,6 +196,27 @@ test("KRX holiday ephemeral response rejects non-typed and detached inputs", () 
 test("KRX holiday ephemeral response rejects shared backing memory", () => {
   const source = semanticBytes();
   const sharedBytes = new Uint8Array(new SharedArrayBuffer(source.byteLength));
+  sharedBytes.set(source);
+
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarKrxHolidayDataEphemeralResponse({
+        rawResponseBytes: sharedBytes,
+        responseMetadata: verifiedMetadata(sharedBytes.byteLength),
+        targetYear: "2026"
+      }),
+    /must not use shared backing memory/
+  );
+  assertZeroed(sharedBytes);
+});
+
+test("KRX holiday ephemeral response rejects cross-realm shared backing memory", () => {
+  const source = semanticBytes();
+  const foreignSharedBuffer = runInNewContext(
+    "new SharedArrayBuffer(byteLength)",
+    { byteLength: source.byteLength }
+  ) as SharedArrayBuffer;
+  const sharedBytes = new Uint8Array(foreignSharedBuffer);
   sharedBytes.set(source);
 
   assert.throws(

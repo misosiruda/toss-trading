@@ -270,7 +270,8 @@ boundary와 동일하게 unconditional zeroize하며 결과는 observed rows 범
 field가 없으며 fixed semantic consumer 또는 explicit disposal만 허용한다. Consumer는
 성공·실패 모두 한 번만
 실행되고 internal response bytes를 unconditional zeroize한 뒤 summary만 반환한다.
-Exclusive transfer를 보장할 수 없는 `SharedArrayBuffer` backing view는 거부한다.
+Exclusive transfer를 보장할 수 없는 `SharedArrayBuffer` backing view는 다른 `vm` realm에서
+생성된 경우도 intrinsic brand check로 판별해 거부한다.
 
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인

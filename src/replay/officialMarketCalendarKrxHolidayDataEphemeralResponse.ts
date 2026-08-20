@@ -56,6 +56,13 @@ const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
   typedArrayPrototype,
   "buffer"
 )?.get;
+const sharedArrayBufferByteLengthGetter =
+  typeof SharedArrayBuffer === "undefined"
+    ? undefined
+    : Object.getOwnPropertyDescriptor(
+        SharedArrayBuffer.prototype,
+        "byteLength"
+      )?.get;
 
 export function createOfficialMarketCalendarKrxHolidayDataEphemeralResponse(
   input: CreateOfficialMarketCalendarKrxHolidayDataEphemeralResponseInput
@@ -211,10 +218,7 @@ function readTransferredByteLength(value: unknown): number {
   }
   try {
     const buffer = typedArrayBufferGetter.call(value) as ArrayBufferLike;
-    if (
-      typeof SharedArrayBuffer !== "undefined" &&
-      buffer instanceof SharedArrayBuffer
-    ) {
+    if (hasSharedArrayBufferBacking(buffer)) {
       throw new Error(
         "KRX holiday data ephemeral response bytes must not use shared backing memory"
       );
@@ -246,6 +250,18 @@ function readTransferredByteLength(value: unknown): number {
     throw new Error(
       "KRX holiday data ephemeral response bytes must be attached and non-empty"
     );
+  }
+}
+
+function hasSharedArrayBufferBacking(buffer: ArrayBufferLike): boolean {
+  if (sharedArrayBufferByteLengthGetter === undefined) {
+    return false;
+  }
+  try {
+    sharedArrayBufferByteLengthGetter.call(buffer);
+    return true;
+  } catch {
+    return false;
   }
 }
 

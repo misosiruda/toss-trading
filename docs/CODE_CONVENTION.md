@@ -368,7 +368,8 @@ metadata verifier가 같은 process에서 만든 객체만 받고 caller가 재�
 JSON export를 제공하지 않고 fixed semantic consumer를 한 번만 허용한다. Factory,
 consumer, explicit disposal의 모든 실패 경로는 owned bytes를 unconditional zeroize해야
 하며 consumer가 실패해도 handle 재사용을 허용하지 않는다. 다른 agent가 copy 중
-mutate할 수 있는 `SharedArrayBuffer` backing view는 ownership input으로 허용하지 않는다.
+mutate할 수 있는 `SharedArrayBuffer` backing view는 realm-independent intrinsic brand
+check로 판별해 ownership input으로 허용하지 않는다.
 
 ### `src/workflows`
 
