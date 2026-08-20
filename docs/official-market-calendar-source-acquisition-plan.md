@@ -227,8 +227,9 @@ Explicit disposal과 JSON export 거부는 internal bytes를 zeroize하고 handl
 Fixed consumer는 caller에게 새 file name을 받지 않고 OTP handle에 이미 결합된 2013~2015
 file identity와 bytes를 opaque download-parameter handle로 exact 한 번만 이전한다. 두
 handle 모두 getter, callback, enumerable field나 serialization surface를 제공하지 않는다.
-Wire encoding과 network consumer는 아직 구현하지 않았으며 durable reuse와 accepted
-acquisition은 계속 금지한다.
+Download-parameter handle을 직접 consume하는 fixed wire encoder와 download POST network
+consumer는 구현됐지만 legacy OTP GET network consumer는 아직 구현하지 않았다. Durable
+reuse와 accepted acquisition은 계속 금지한다.
 
 `officialMarketCalendarKrxLegacyDownloadPostWirePolicy.ts`는 source policy의 exact
 `POST https://file.krx.co.kr/download.jspx`, `application/x-www-form-urlencoded`과 단일
@@ -259,6 +260,23 @@ Set-Cookie 0을 요구한다. Redirect, Age, Content-Encoding, Transfer-Encoding
 trailers를 거부하고 최대 response는 등록 문서 중 가장 큰 252,928 bytes로 제한한다. 이
 policy는 raw document retention을 등록하지 않으며 durable reuse와 accepted acquisition을
 계속 금지한다.
+
+`officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`의 fixed encoder는 bound
+download-parameter handle을 exact 한 번만 consume하고 raw OTP를 string으로 만들지 않은 채
+ASCII bytes를 직접 uppercase percent encoding한다. Parameter bytes는 성공·실패 모두
+zeroize되고 encoded wire body는 getter/serialization이 없는 새 opaque handle로만 이동한다.
+
+Download network consumer는 exact request header와 `Content-Length`를 구성하고 production
+factory에 dial/CA/deadline override를 노출하지 않는다. Test-only connector는 loopback IP,
+synthetic CA, 최대 10초 deadline만 허용하고 TLS SNI/인증서는 계속 `file.krx.co.kr`로
+검증한다. Response는 policy의 status/header/framing, 등록 document별 filename/content length와
+transfer completion을 통과한 경우에만 process-local opaque response handle로 이전된다.
+Request body와 response bytes는 failure/disposal/JSON export에서 zeroize된다.
+
+이번 transport는 document content hash, OLE signature, table semantics와 market-role/coverage를
+검증하지 않는다. 따라서 opaque response는 parser 전 candidate일 뿐 durable sidecar,
+accepted evidence 또는 historical completeness 근거가 아니다. Checked-in TLS material과
+response body는 synthetic fixture이며 실제 KRX OTP 또는 document bytes를 포함하지 않는다.
 
 ### KRX Holiday Data POST Static Policy
 
