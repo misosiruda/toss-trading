@@ -59,8 +59,18 @@ const responseMetadataInputSchema = z
     transferEncodingHeaderValues: headerValuesSchema,
     pragmaHeaderValues: headerValuesSchema,
     setCookieHeaderCount: z.number().int().nonnegative().max(100),
-    responseCacheHeaders: z.record(z.string(), z.unknown()),
-    responseCacheControl: z.record(z.string(), z.unknown()),
+    responseCacheHeaders: z
+      .object({
+        dateHeaderValues: headerValuesSchema,
+        ageHeaderValues: headerValuesSchema,
+        expiresHeaderValues: headerValuesSchema
+      })
+      .strict(),
+    responseCacheControl: z
+      .object({
+        cacheControlHeaderValues: headerValuesSchema
+      })
+      .strict(),
     transferCompletion: z.record(z.string(), z.unknown())
   })
   .strict();

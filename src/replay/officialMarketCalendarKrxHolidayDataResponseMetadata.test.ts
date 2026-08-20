@@ -158,7 +158,35 @@ test("KRX holiday response metadata bounds external header values", () => {
   for (const value of [
     { ...base, pragmaHeaderValues: ["x".repeat(8_193)] },
     { ...base, pragmaHeaderValues: Array.from({ length: 17 }, () => "x") },
-    { ...base, pragmaHeaderValues: ["no-cache\nset-cookie: raw"] }
+    { ...base, pragmaHeaderValues: ["no-cache\nset-cookie: raw"] },
+    {
+      ...base,
+      responseCacheControl: {
+        cacheControlHeaderValues: [
+          "no-store, no-cache, max-age=0" + " ".repeat(8_193)
+        ]
+      }
+    },
+    {
+      ...base,
+      responseCacheControl: {
+        cacheControlHeaderValues: Array.from({ length: 17 }, () => "no-store")
+      }
+    },
+    {
+      ...base,
+      responseCacheHeaders: {
+        ...base.responseCacheHeaders,
+        dateHeaderValues: ["x".repeat(8_193)]
+      }
+    },
+    {
+      ...base,
+      responseCacheHeaders: {
+        ...base.responseCacheHeaders,
+        ageHeaderValues: Array.from({ length: 17 }, () => "0")
+      }
+    }
   ]) {
     assert.throws(() =>
       verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata(value)
