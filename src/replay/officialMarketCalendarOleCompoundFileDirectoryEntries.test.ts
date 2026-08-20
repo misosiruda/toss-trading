@@ -116,10 +116,12 @@ test("official calendar OLE directory entries preserve parser compatibility", ()
   setEntryUint32(bytes, 2, 96, 7);
   const storageOffset = entryOffset(bytes, 1);
   new DataView(bytes.buffer).setUint16(storageOffset + 62, 0x1234, true);
+  new DataView(bytes.buffer).setUint8(entryOffset(bytes, 0) + 67, 0);
 
   const result = verifyOfficialMarketCalendarOleCompoundFileDirectoryEntries(
     bytes
   );
+  assert.equal(result.entries[0]?.color, "red");
   assert.equal(result.entries[1]?.name, "Storage");
   assert.equal(result.entries[2]?.objectType, "stream");
 });
