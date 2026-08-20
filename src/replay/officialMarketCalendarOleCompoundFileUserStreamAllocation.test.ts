@@ -41,6 +41,10 @@ import {
   projectOfficialMarketCalendarKrxLegacyWordTextBytes
 } from "./officialMarketCalendarKrxLegacyWordTextBytes.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_DECODING_SCHEMA_VERSION,
+  decodeOfficialMarketCalendarKrxLegacyWordText
+} from "./officialMarketCalendarKrxLegacyWordTextDecoding.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -1035,6 +1039,134 @@ test("official calendar KRX legacy Word text bytes project an empty piece array"
   writeWordUint32(bytes, 64, 900);
 
   const result = projectOfficialMarketCalendarKrxLegacyWordTextBytes(bytes);
+  assert.deepEqual(result.pieces, []);
+});
+
+test("official calendar KRX legacy Word text decodes UTF-16LE and compressed pieces", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 2, 5], [
+    { flags: 0, fcCompressed: 920 },
+    { flags: 0, fcCompressed: 0x4000076c }
+  ]);
+  configureDocumentCounts(bytes, [5, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 953);
+  [0x3d, 0xd8, 0x00, 0xde].forEach((value, index) => {
+    writeWordByte(bytes, 920 + index, value);
+  });
+  [0x41, 0x82, 0x9f].forEach((value, index) => {
+    writeWordByte(bytes, 950 + index, value);
+  });
+
+  const result = decodeOfficialMarketCalendarKrxLegacyWordText(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_DECODING_SCHEMA_VERSION
+  );
+  assert.equal(result.finalCp, 5);
+  assert.equal(result.text, "\ud83d\ude00A\u201a\u0178");
+  assert.equal(result.decodedCodeUnitCount, 5);
+  assert.deepEqual(
+    result.pieces.map((piece) => ({
+      index: piece.index,
+      text: piece.text,
+      decodedCodeUnitCount: piece.decodedCodeUnitCount
+    })),
+    [
+      { index: 0, text: "\ud83d\ude00", decodedCodeUnitCount: 2 },
+      { index: 1, text: "A\u201a\u0178", decodedCodeUnitCount: 3 }
+    ]
+  );
+  assert.equal(result.textDecoded, true);
+  assert.equal(result.tableSemanticsStatus, "not_parsed");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.pieces), true);
+  assert.equal(Object.isFrozen(result.pieces[0]), true);
+});
+
+test("official calendar KRX legacy Word text applies every compressed Unicode mapping", () => {
+  const compressedBytes = [
+    0x80,
+    0x82,
+    0x83,
+    0x84,
+    0x85,
+    0x86,
+    0x87,
+    0x88,
+    0x89,
+    0x8a,
+    0x8b,
+    0x8c,
+    0x91,
+    0x92,
+    0x93,
+    0x94,
+    0x95,
+    0x96,
+    0x97,
+    0x98,
+    0x99,
+    0x9a,
+    0x9b,
+    0x9c,
+    0x9f
+  ];
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(
+    bytes,
+    [0, compressedBytes.length],
+    [{ flags: 0, fcCompressed: 0x4000076c }]
+  );
+  configureDocumentCounts(
+    bytes,
+    [compressedBytes.length, 0, 0, 0, 0, 0, 0]
+  );
+  writeWordUint32(bytes, 64, 950 + compressedBytes.length);
+  compressedBytes.forEach((value, index) => {
+    writeWordByte(bytes, 950 + index, value);
+  });
+
+  const result = decodeOfficialMarketCalendarKrxLegacyWordText(bytes);
+  assert.equal(
+    result.text,
+    "\u0080\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152" +
+      "\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u0178"
+  );
+  assert.equal(result.decodedCodeUnitCount, compressedBytes.length);
+});
+
+test("official calendar KRX legacy Word text decodes an empty document", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0], []);
+  configureDocumentCounts(bytes, [0, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 900);
+
+  const result = decodeOfficialMarketCalendarKrxLegacyWordText(bytes);
+  assert.equal(result.finalCp, 0);
+  assert.equal(result.text, "");
+  assert.equal(result.decodedCodeUnitCount, 0);
   assert.deepEqual(result.pieces, []);
 });
 
