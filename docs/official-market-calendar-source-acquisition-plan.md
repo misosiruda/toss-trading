@@ -431,6 +431,20 @@ https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/026fde6e-14
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/b089deda-be20-4b4a-aad5-fbe68bb19672
 
+`officialMarketCalendarOleCompoundFileUserStreamAllocation.ts`는 verified directory tree,
+root mini stream, mini FAT entry array와 FAT를 결합해 ordinary stream의 allocation chain을
+검증한다. Stream size가 zero이면 allocation이 없는 empty stream으로 처리하고 명세가 별도 값을
+강제하지 않는 starting sector는 해석하지 않는다. Non-empty stream은 4,096-byte cutoff 미만이면
+mini FAT, 이상이면 standard FAT를 사용하고, chain capacity가 declared stream size 이상인지
+version별 sector size로 계산한다. Invalid start/termination, cycle, stream 간 sector 중복,
+FAT/DIFAT/directory/mini FAT/root mini stream system sector 재사용과 실제 root mini stream 안의
+unowned non-free mini FAT entry를 fail-closed로 거부한다. 결과는 stream별 allocation kind와 sector
+locations를 immutable하게 반환하지만 stream bytes와 FAT의 모든 orphan allocation은 아직 검증하지
+않으며 opaque lifecycle에도 연결하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/b37413bb-f3ef-4adc-b18e-29bddd62c26e
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/b089deda-be20-4b4a-aad5-fbe68bb19672
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
