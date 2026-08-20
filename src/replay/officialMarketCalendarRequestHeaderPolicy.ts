@@ -14,7 +14,8 @@ const KNOWN_SAFE_HEADER_NAMES = new Set([
   "accept-language",
   "cache-control",
   "content-type",
-  "pragma"
+  "pragma",
+  "user-agent"
 ]);
 
 const lowercaseHeaderNameSchema = z
