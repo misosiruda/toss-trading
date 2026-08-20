@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -109,4 +109,20 @@ test("calendar publication filesystem preflight requires an absolute existing ro
     }),
     /root must be absolute/
   );
+});
+
+test("calendar publication filesystem preflight rejects a regular-file root", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "calendar-publication-file-root-test-"));
+  const fileRoot = join(testRoot, "publication-root.json");
+  try {
+    await writeFile(fileRoot, "{}", { flag: "wx" });
+    await assert.rejects(
+      inspectOfficialMarketCalendarPublicationFilesystem({
+        publicationRoot: fileRoot
+      }),
+      /root must be a directory/
+    );
+  } finally {
+    await rm(testRoot, { recursive: true });
+  }
 });

@@ -201,18 +201,27 @@ export function createOfficialMarketCalendarPublicationFilesystemPreflightHash(
 }
 
 async function probeDirectorySync(path: string) {
+  let handle;
   try {
-    const handle = await open(path, "r");
+    handle = await open(path, "r");
+  } catch {
+    return "probe_failed" as const;
+  }
+  try {
+    const stats = await handle.stat();
+    if (!stats.isDirectory()) {
+      throw new Error("publication filesystem preflight root must be a directory");
+    }
     try {
       await handle.sync();
       return "synced" as const;
-    } finally {
-      await handle.close();
+    } catch (error) {
+      return isNodeError(error) && error.code === "EPERM"
+        ? "unsupported" as const
+        : "probe_failed" as const;
     }
-  } catch (error) {
-    return isNodeError(error) && error.code === "EPERM"
-      ? "unsupported" as const
-      : "probe_failed" as const;
+  } finally {
+    await handle.close();
   }
 }
 
