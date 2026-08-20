@@ -327,6 +327,14 @@ Word table semantics를 검증하지 않는다. Identity-verified KRX handle과�
 수행하지 않았다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/05060311-bfce-4b12-874d-71fd4ce63aea
 
+`officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`의 fixed OLE-header consumer는
+identity-verified opaque handle을 exact 한 번 consume하고 같은 private document bytes를
+MS-CFB header verifier에 전달한다. 성공 시 identity/header result와 bytes를 getter/callback
+없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는 bytes를 zeroize한다.
+Standalone verifier override나 raw-byte access는 노출하지 않는다. 새 handle도 FAT/directory/
+stream/Word parser operation 또는 durable sink를 제공하지 않으므로 header-only candidate
+경계는 유지된다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday

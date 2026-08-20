@@ -12,11 +12,13 @@ import {
 } from "./officialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.js";
 import {
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -101,12 +103,25 @@ test("KRX legacy response transfers only through document identity verification"
           ),
         /must be ready/
       );
+      const oleHeaderVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          verifiedHandle
+        );
+      assert.equal(Object.isFrozen(oleHeaderVerifiedHandle), true);
+      assert.deepEqual(Object.keys(oleHeaderVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(verifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+            verifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(oleHeaderVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument(
-        verifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument(
+        oleHeaderVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -154,6 +169,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed response consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed header consumer/
   );
 });
 
@@ -344,11 +366,25 @@ function createCoordinatorForPort(port: number) {
 }
 
 function syntheticOleDocument(): Uint8Array {
-  const bytes = Uint8Array.from(
-    { length: FILE_LENGTH },
-    (_, index) => (index * 31 + 17) % 256
-  );
+  const bytes = new Uint8Array(FILE_LENGTH);
   bytes.set(Buffer.from("d0cf11e0a1b11ae1", "hex"), 0);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(24, 62, true);
+  view.setUint16(26, 3, true);
+  view.setUint16(28, 0xfffe, true);
+  view.setUint16(30, 9, true);
+  view.setUint16(32, 6, true);
+  view.setUint32(40, 0, true);
+  view.setUint32(44, 3, true);
+  view.setUint32(48, 3, true);
+  view.setUint32(56, 4096, true);
+  view.setUint32(60, 0xfffffffe, true);
+  view.setUint32(64, 0, true);
+  view.setUint32(68, 0xfffffffe, true);
+  view.setUint32(72, 0, true);
+  for (let index = 0; index < 109; index += 1) {
+    view.setUint32(76 + index * 4, index < 3 ? index : 0xffffffff, true);
+  }
   return bytes;
 }
 
