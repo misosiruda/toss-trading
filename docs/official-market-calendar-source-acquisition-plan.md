@@ -288,6 +288,15 @@ header count 2와 forbidden representation/range/trailer 부재를 검증한다.
 보존하거나 download POST에 replay하지 않으며 invalid Base64와 incomplete transfer는 opaque
 OTP handle을 만들지 않는다.
 
+`officialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.ts`는 exact registered
+`fileName` request를 network 전에 검증하고 fixed OTP GET → filename-bound parameters →
+opaque wire body → fixed document POST를 하나의 process-local lifecycle로 조립한다. Production
+factory는 dependency/connector override를 노출하지 않고, test-only factory는 제한된 두
+consumer method를 snapshot한다. OTP, body composition과 document transport 실패는 provider
+detail 없는 stage error로 변환하며 모든 중간 handle은 `finally`에서 dispose한다. 성공한
+opaque document response의 ownership만 caller에게 이전하며 parser/durable sink로 자동 연결하지
+않는다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
