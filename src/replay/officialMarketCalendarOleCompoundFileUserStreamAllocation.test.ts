@@ -12,6 +12,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordFib
 } from "./officialMarketCalendarKrxLegacyWordFib.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordClxReferenceError,
+  verifyOfficialMarketCalendarKrxLegacyWordClxReference
+} from "./officialMarketCalendarKrxLegacyWordClxReference.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -490,6 +495,66 @@ test("official calendar KRX legacy Word FIB rejects version/count drift", () => 
   }
 });
 
+test("official calendar KRX legacy Word CLX reference projects every supported version", () => {
+  const definitions = [
+    { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 },
+    { nFib: 0x00d9, version: "Word2000", cbRgFcLcb: 0x006c, cswNew: 2 },
+    { nFib: 0x0101, version: "Word2002", cbRgFcLcb: 0x0088, cswNew: 2 },
+    { nFib: 0x010c, version: "Word2003", cbRgFcLcb: 0x00a4, cswNew: 2 },
+    { nFib: 0x0112, version: "Word2007", cbRgFcLcb: 0x00b7, cswNew: 5 }
+  ] as const;
+  for (const definition of definitions) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, definition);
+    configureClxReference(bytes, 7, 11, 0x6a);
+
+    const result = verifyOfficialMarketCalendarKrxLegacyWordClxReference(bytes);
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_SCHEMA_VERSION
+    );
+    assert.equal(result.nFib, definition.nFib);
+    assert.equal(result.version, definition.version);
+    assert.equal(result.tableStreamName, "1Table");
+    assert.equal(result.fcClx, 7);
+    assert.equal(result.lcbClx, 11);
+    assert.deepEqual(result.clxBytes, new Uint8Array(11).fill(0x6a));
+    assert.equal(result.clxReferenceVerified, true);
+    assert.equal(result.clxParserStatus, "reference_only_not_parsed");
+    assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+    assert.equal(Object.isFrozen(result), true);
+
+    fillFileSectorRange(bytes, 3, 7, 11, 0x7b);
+    assert.deepEqual(result.clxBytes, new Uint8Array(11).fill(0x6a));
+  }
+});
+
+test("official calendar KRX legacy Word CLX reference rejects empty or out-of-bounds ranges", () => {
+  const invalidReferences = [
+    { offset: 0, size: 0 },
+    { offset: 64, size: 1 },
+    { offset: 63, size: 2 },
+    { offset: 0xffffffff, size: 1 }
+  ];
+  for (const reference of invalidReferences) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configureClxReference(bytes, reference.offset, reference.size, 0);
+
+    assertClxReferenceCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -596,6 +661,19 @@ function configureVariableFib(
   if (definition.cswNew !== 0) {
     writeWordUint16(bytes, cswNewOffset + 2, definition.nFib);
     writeWordUint16(bytes, 10, 0x12f0);
+  }
+}
+
+function configureClxReference(
+  bytes: Uint8Array,
+  offset: number,
+  size: number,
+  value: number
+): void {
+  writeWordUint32(bytes, 154 + 33 * 8, offset);
+  writeWordUint32(bytes, 154 + 33 * 8 + 4, size);
+  if (offset + size <= 64) {
+    fillFileSectorRange(bytes, 3, offset, size, value);
   }
 }
 
@@ -768,6 +846,18 @@ function assertFibCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordFib(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordFibError &&
+      error.code === code
+  );
+}
+
+function assertClxReferenceCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordClxReferenceError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordClxReference(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordClxReferenceError &&
       error.code === code
   );
 }
