@@ -346,6 +346,17 @@ semantics는 검증하지 않으며 identity-verified opaque handle에도 아직
 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/0afa4e43-b18f-432a-9917-4f276eca7a73
 
+`officialMarketCalendarOleCompoundFileFat.ts`는 verified DIFAT location 순서의 FAT sector를
+하나의 32-bit allocation table로 펼친다. 실제 file sector마다 regular next-sector 또는
+`DIFSECT`/`FATSECT`/`ENDOFCHAIN`/`FREESECT`만 허용하고, DIFAT가 지정한 FAT sector의
+entry는 exact `FATSECT`, DIFAT chain sector의 entry는 exact `DIFSECT`인지 검증한다.
+지정되지 않은 sector의 stray FAT/DIFAT marker와 actual file sector count를 넘어가는 FAT
+entry의 non-`FREESECT` 값은 fail-closed로 거부한다. 결과는 actual file sector 범위의 FAT
+entry만 immutable하게 반환하고 `chainStatus=markers_only_chains_not_verified`를 유지한다.
+Directory/mini FAT/stream chain의 cycle, shared-sector, expected length와 실제 bytes는 아직
+검증하지 않으며 opaque lifecycle에도 연결하지 않았다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/30e1013a-a0ff-4404-9ccf-d75d835ff404
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
