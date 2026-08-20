@@ -212,6 +212,27 @@ zeroize한다. Wire-body handle도 getter/callback/JSON export를 제공하지 �
 disposal이 encoded body bytes를 지운다. Fixed network consumer가 없으므로 아직 HTTP
 request나 accepted acquisition이 아니다.
 
+### KRX Holiday Data POST Network Policy
+
+2026-08-20 cookie/redirect-disabled read-only Node observation에서 successful data POST의
+application-controlled canonical header name은 `accept`, `cache-control`, `content-length`,
+`content-type`, `pragma`였다. Fixed value는 각각 `*/*`, `no-cache`, wire policy content type,
+`no-cache`이고 `Content-Length`는 exact encoded wire-body byte length에서만 파생한다.
+Transport-managed `Host`는 requested URL authority, `Connection`은 `close`로 고정한다. Cookie,
+Authorization과 Proxy-Authorization은 전송하지 않았다.
+
+`officialMarketCalendarKrxHolidayDataPostNetworkPolicy.ts`는 이 request와 existing
+post/wire policy identity를 결합하고 automatic redirect follow/cookie jar disabled,
+credential header count 0, 10,000ms absolute deadline, 1,024-byte request 및 1,000,000-byte
+response cap과 connection reuse disabled를 immutable v1 definition으로 등록한다. Response는 HTTP/1.1 200 exact
+content-length framing만 허용하고 Location, Content-Encoding, Transfer-Encoding,
+Content-Range와 trailer를 거부한다. Response `Set-Cookie`는 raw value 없이 count만 기록하고
+다음 request에 replay하지 않는다.
+
+이 policy는 HTTP request를 실행하거나 opaque wire-body bytes를 노출하지 않는다. Raw
+response는 process-local only, durable reuse와 accepted acquisition은 false로 고정한다.
+Fixed network consumer와 cancellation/partial-body zeroization test는 후속 구현이다.
+
 ### KRX Holiday Data Response Metadata Boundary
 
 2026-08-20 재관찰에서 cookie jar와 redirect follow를 비활성화한 client의 data POST
