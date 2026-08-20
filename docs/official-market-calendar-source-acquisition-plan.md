@@ -253,6 +253,13 @@ row order/duplicate rejection 의미를 immutable policy로 등록하되 raw row
 durable artifact를 만들지 않는다. Observation은 KRX archive completeness를 증명하지
 않으며 `historicalCompletenessClaim`, durable reuse와 accepted acquisition은 false다.
 
+`verifyOfficialMarketCalendarKrxHolidayDataResponseSemantics`는 fixed row policy를
+private body parser에 적용한다. Target year canonical date, date/calendar-day equality,
+Gregorian weekday code, trimmed/control-free holiday name과 strict ascending/duplicate
+rejection을 검증한다. English name empty count, row count와 boolean verification summary만
+반환하고 row value는 모듈 밖으로 내보내지 않는다. Owned body bytes는 기존 body
+boundary와 동일하게 unconditional zeroize하며 결과는 observed rows 범위만 설명한다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted

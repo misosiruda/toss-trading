@@ -182,8 +182,8 @@ function validBody() {
       validRow(),
       {
         calnd_dd: "2026-02-16",
-        dy_tp_cd: "1",
-        calnd_dd_dy: "2026-02-16(Mon)",
+        dy_tp_cd: "MON",
+        calnd_dd_dy: "2026-02-16",
         kr_dy_tp: "설날",
         holdy_eng_nm: "Lunar New Year's Day"
       }
@@ -194,8 +194,8 @@ function validBody() {
 function validRow() {
   return {
     calnd_dd: "2026-01-01",
-    dy_tp_cd: "1",
-    calnd_dd_dy: "2026-01-01(Thu)",
+    dy_tp_cd: "THU",
+    calnd_dd_dy: "2026-01-01",
     kr_dy_tp: "신정",
     holdy_eng_nm: "New Year's Day"
   };

@@ -355,6 +355,12 @@ name처럼 실제 empty가 관찰된 field를 임의로 required로 강화하지
 policy 등록만으로 raw row retention, archive completeness 또는 accepted acquisition을
 주장하지 않는다.
 
+KRX holiday row semantic consumer는 body module의 private parsed row만 사용하고 public
+callback이나 row getter를 제공하지 않는다. Output은 count와 validation boolean만
+포함하고 date/name/code 목록을 반환하지 않는다. Target year, date/calendar-day,
+weekday, name과 sequence policy를 모두 통과해도 observed row scope를 historical
+completeness로 확대하거나 durable/accepted 상태로 승격하지 않는다.
+
 ### `src/workflows`
 
 책임:
