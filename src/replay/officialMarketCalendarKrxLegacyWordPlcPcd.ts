@@ -57,7 +57,11 @@ export function verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(
 
   for (let index = 0; index < cpCount; index += 1) {
     const cp = readInt32(bytes, index * CP_SIZE);
-    if (cp < 0 || (index > 0 && cp <= characterPositions[index - 1]!)) {
+    if (
+      cp < 0 ||
+      (index === 0 && cp !== 0) ||
+      (index > 0 && cp <= characterPositions[index - 1]!)
+    ) {
       throw invalidPlcPcd();
     }
     characterPositions.push(cp);

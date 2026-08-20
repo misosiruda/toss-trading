@@ -715,6 +715,7 @@ test("official calendar KRX legacy Word PlcPcd accepts one nonnegative CP withou
 test("official calendar KRX legacy Word PlcPcd rejects invalid CPs and fixed bits", () => {
   const invalidValues = [
     { cps: [-1], pieces: [] },
+    { cps: [1], pieces: [] },
     { cps: [0, 0], pieces: [{ flags: 0, fcCompressed: 0 }] },
     { cps: [1, 0], pieces: [{ flags: 0, fcCompressed: 0 }] },
     { cps: [0, 1], pieces: [{ flags: 0x0004, fcCompressed: 0 }] },

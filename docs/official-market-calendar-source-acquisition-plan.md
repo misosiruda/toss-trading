@@ -507,7 +507,8 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9316ddeb-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a649fcc5-7868-4245-be12-04eea89d916b
 
 `officialMarketCalendarKrxLegacyWordPlcPcd.ts`는 framed `PlcPcd`를 `n+1`개의 signed CP와
-`n`개의 8-byte `Pcd`로 분할한다. 모든 CP가 non-negative strict ascending인지 확인하고,
+`n`개의 8-byte `Pcd`로 분할한다. 첫 CP가 Main Document의 시작인 0이고 전체 CP가
+non-negative strict ascending인지 확인하고,
 `Pcd.fDirty=0`과 `FcCompressed.r1=0`을 적용한 뒤 CP range, `fNoParaLast`, 30-bit `fc`와
 `fCompressed`를 immutable descriptor로 반환한다. Undefined `Pcd.fR1`/`fR2`는 명세대로
 무시하고 `prm`, FibRgLw document total, WordDocument text byte range와 decoding은 아직
