@@ -91,10 +91,25 @@ historical coverage 또는 readiness 통과를 주장하지 않는다. 등록 �
 acquisition을 거부한다.
 
 OTP policy 등록은 허용 가능한 header name의 상한만 고정한다. Exact
-`User-Agent` field value, `name`/`bld` query contract, process-local OTP의
-수명과 one-time consumption, raw code 비직렬화, 후속 data POST provenance는
-아직 구현하거나 검증하지 않았다. 따라서 이 policy만으로 OTP 발급, source
-acquisition 또는 publication readiness를 통과했다고 판단하지 않는다.
+`User-Agent` field value, request-parameter policy의 HTTP client wiring,
+process-local OTP의 수명과 one-time consumption, raw code 비직렬화, 후속 data
+POST provenance는 아직 구현하거나 검증하지 않았다. 따라서 이 policy만으로 OTP
+발급, source acquisition 또는 publication readiness를 통과했다고 판단하지 않는다.
+
+### Request Parameter Policy 사전 등록
+
+KRX form OTP request는 `krx_form_otp_request_parameters.v1`로 별도 등록한다.
+이 version은 `GET https://global.krx.co.kr/contents/COM/GenerateOTP.jspx`,
+`krx_form_otp_request_headers.v1`과 canonical fixed parameter
+`bld=GLB/05/0501/0501110000/glb0501110000_01`, `name=form`을 exact 결합한다.
+Allowed parameter name은 현재 `bld`, `name`뿐이며 `code`, OTP/token,
+authorization, cookie와 미등록 이름은 fail-closed로 거부한다.
+
+이 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
+contract일 뿐이다. Exact `User-Agent` value, HTTP client wiring, OTP response
+bytes/shape/freshness, raw code의 process-local one-time lifecycle과 후속 data POST는
+여전히 구현하지 않는다. 따라서 registry 등록만으로 OTP 발급이나 accepted
+acquisition을 주장하지 않는다.
 
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
