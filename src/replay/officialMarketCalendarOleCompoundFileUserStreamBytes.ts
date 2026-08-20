@@ -86,6 +86,31 @@ export function projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
   });
 }
 
+export function projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
+  input: Uint8Array,
+  streamId: number
+): ProjectedOfficialMarketCalendarOleUserStreamBytes {
+  if (!Number.isSafeInteger(streamId) || streamId < 1) {
+    throw projectionError();
+  }
+  const allocation =
+    verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation(input);
+  const stream = allocation.streams.find(
+    (candidate) => candidate.streamId === streamId
+  );
+  if (stream === undefined) {
+    throw projectionError();
+  }
+  const rootMiniStream =
+    verifyOfficialMarketCalendarOleCompoundFileRootMiniStream(input);
+  return projectStream(
+    input,
+    stream,
+    allocation.sectorSize,
+    rootMiniStream.rootMiniStreamSectorLocations
+  );
+}
+
 function projectStream(
   input: Uint8Array,
   stream: VerifiedOfficialMarketCalendarOleUserStreamAllocation,

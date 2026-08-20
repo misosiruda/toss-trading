@@ -1,8 +1,9 @@
 import { verifyOfficialMarketCalendarOleCompoundFileDirectoryTree } from "./officialMarketCalendarOleCompoundFileDirectoryTree.js";
 import {
-  projectOfficialMarketCalendarOleCompoundFileUserStreamBytes,
+  projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId,
   type ProjectedOfficialMarketCalendarOleUserStreamBytes
 } from "./officialMarketCalendarOleCompoundFileUserStreamBytes.js";
+import type { VerifiedOfficialMarketCalendarOleDirectoryEntry } from "./officialMarketCalendarOleCompoundFileDirectoryEntries.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_BINARY_FILE_STREAMS_SCHEMA_VERSION =
   "official_market_calendar_krx_legacy_word_binary_file_streams.v1";
@@ -51,20 +52,48 @@ export function verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(
 ): VerifiedOfficialMarketCalendarKrxLegacyWordBinaryFileStreams {
   const directoryTree =
     verifyOfficialMarketCalendarOleCompoundFileDirectoryTree(input);
-  const projected =
-    projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(input);
   const rootStreamIds = readRootStreamIds(directoryTree.entries);
-  const rootStreams = projected.streams.filter((stream) =>
-    rootStreamIds.has(stream.streamId)
+  const wordDocumentEntry = findRequiredRootStreamEntry(
+    directoryTree.entries,
+    rootStreamIds,
+    "WordDocument"
   );
-  const wordDocument = findRequiredStream(rootStreams, "WordDocument");
-  verifyMaximumSize(wordDocument);
+  verifyMaximumSize(wordDocumentEntry);
+  const zeroTableEntry = findOptionalRootStreamEntry(
+    directoryTree.entries,
+    rootStreamIds,
+    "0Table"
+  );
+  const oneTableEntry = findOptionalRootStreamEntry(
+    directoryTree.entries,
+    rootStreamIds,
+    "1Table"
+  );
+  for (const tableEntry of [zeroTableEntry, oneTableEntry]) {
+    if (tableEntry !== undefined) {
+      verifyMaximumSize(tableEntry);
+    }
+  }
+  const wordDocument =
+    projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
+      input,
+      wordDocumentEntry.streamId
+    );
   const fibBase = verifyFibBase(wordDocument.bytes);
   const tableStreamName = fibBase.fWhichTblStm === 1 ? "1Table" : "0Table";
   const ignoredTableStreamName = tableStreamName === "1Table" ? "0Table" : "1Table";
-  const tableStream = findRequiredStream(rootStreams, tableStreamName);
-  verifyMaximumSize(tableStream);
-  const ignoredTable = findOptionalStream(rootStreams, ignoredTableStreamName);
+  const tableStreamEntry =
+    tableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
+  if (tableStreamEntry === undefined) {
+    throw missingStream();
+  }
+  const tableStream =
+    projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
+      input,
+      tableStreamEntry.streamId
+    );
+  const ignoredTable =
+    ignoredTableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
 
   return Object.freeze({
     schemaVersion:
@@ -117,26 +146,33 @@ function readRootStreamIds(
   return streamIds;
 }
 
-function findRequiredStream(
-  streams: readonly ProjectedOfficialMarketCalendarOleUserStreamBytes[],
+function findRequiredRootStreamEntry(
+  entries: readonly VerifiedOfficialMarketCalendarOleDirectoryEntry[],
+  rootStreamIds: ReadonlySet<number>,
   name: string
-): ProjectedOfficialMarketCalendarOleUserStreamBytes {
-  const stream = findOptionalStream(streams, name);
-  if (stream === undefined) {
+): VerifiedOfficialMarketCalendarOleDirectoryEntry {
+  const entry = findOptionalRootStreamEntry(entries, rootStreamIds, name);
+  if (entry === undefined) {
     throw missingStream();
   }
-  return stream;
+  return entry;
 }
 
-function findOptionalStream(
-  streams: readonly ProjectedOfficialMarketCalendarOleUserStreamBytes[],
+function findOptionalRootStreamEntry(
+  entries: readonly VerifiedOfficialMarketCalendarOleDirectoryEntry[],
+  rootStreamIds: ReadonlySet<number>,
   name: string
-): ProjectedOfficialMarketCalendarOleUserStreamBytes | undefined {
-  return streams.find((stream) => stream.name === name);
+): VerifiedOfficialMarketCalendarOleDirectoryEntry | undefined {
+  return entries.find(
+    (entry) =>
+      rootStreamIds.has(entry.streamId) &&
+      entry.objectType === "stream" &&
+      entry.name === name
+  );
 }
 
 function verifyMaximumSize(
-  stream: ProjectedOfficialMarketCalendarOleUserStreamBytes
+  stream: Pick<ProjectedOfficialMarketCalendarOleUserStreamBytes, "streamSize">
 ): void {
   if (BigInt(stream.streamSize) > BigInt(WORD_STREAM_MAXIMUM_SIZE)) {
     throw wordError(

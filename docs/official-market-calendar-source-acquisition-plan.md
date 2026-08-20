@@ -463,7 +463,9 @@ namespace에서 exact `WordDocument` stream과 `FibBase.fWhichTblStm`이 선택�
 `wIdent=0xA5EC`, `fExtChar`, `nFibBack`, `pnNext`, `lKey`, `envr`, `fMac`과 reserved field의
 명세상 필수 조건을 검증하고 두 필수 stream의 0x7FFFFFFF-byte 상한을 적용한다. 두 table stream이
 모두 존재하면 선택되지 않은 stream은 명세대로 무시한다. Encrypted/obfuscated content는 후속
-parser가 지원하지 않으므로 fail-closed로 거부한다. 결과는 caller-owned WordDocument/Table bytes와
+parser가 지원하지 않으므로 fail-closed로 거부한다. Size 상한은 byte projection 전에 root directory
+metadata에서 검사한다. Byte 19의 undefined bit와 `reserved5`/`reserved6`는 명세가 `MUST be ignored`로
+규정하므로 nonzero 값을 거부하지 않는다. 결과는 caller-owned WordDocument/Table bytes와
 base version/selector만 반환하며 variable-length FIB의 effective `nFib`, CLX/text/table semantics,
 opaque lifecycle과 source role/coverage는 아직 검증하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/d7fae142-670d-4cd5-869a-708366984a71
