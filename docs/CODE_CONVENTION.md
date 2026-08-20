@@ -341,6 +341,12 @@ zero max-age, immediate expiry 또는 response cookie가 관찰된 version은 bo
 evidence reuse를 분리하고 accepted acquisition을 false로 유지한다. Generic freshness나
 publication acceptance policy를 완화해서는 안 된다.
 
+`officialMarketCalendarKrxHolidayDataResponseBody.ts`는 metadata의 verified content
+length와 attached `Uint8Array` 길이를 exact match하고 owned copy만 decode한다. External
+JSON은 BOM 없는 strict UTF-8, bounded array/string과 strict object key를 요구한다.
+Owned bytes는 성공·실패와 무관하게 zeroize하며 raw body와 row value를 결과에서
+제외한다. Shape validation만으로 durable evidence나 accepted acquisition을 만들지 않는다.
+
 ### `src/workflows`
 
 책임:
