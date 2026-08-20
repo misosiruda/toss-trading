@@ -336,6 +336,19 @@ field가 없으며 fixed semantic consumer 또는 explicit disposal만 허용한
 Exclusive transfer를 보장할 수 없는 `SharedArrayBuffer` backing view는 다른 `vm` realm에서
 생성된 경우도 intrinsic brand check로 판별해 거부한다.
 
+`createOfficialMarketCalendarKrxAcquisitionCoordinator`는 exact canonical `targetYear`를
+network I/O 전에 검증하고 fixed OTP GET → opaque POST parameter → opaque wire body → fixed
+holiday data POST → semantic response consume을 하나의 process-local lifecycle로 조립한다.
+Production factory에는 dial/CA/deadline/dependency override가 없으며 test-only factory는
+이미 제한된 두 consumer interface method만 snapshot한다.
+
+Coordinator는 OTP, request-body, holiday-data transport와 semantic stage 실패를 raw
+provider detail 없는 structured error로 변환하고, 성공·실패 모두에서 보유했던 opaque
+handle을 `finally`로 dispose한다. 결과는 raw row/date/name 없이 기존 frozen semantic
+summary만 반환하므로 `historicalCompletenessClaim: not_claimed`, durable reuse와
+`acceptedAcquisition: false` 경계를 바꾸지 않는다. Publication evidence 변환이나
+filesystem write는 이 coordinator의 책임이 아니다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
