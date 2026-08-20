@@ -1,6 +1,7 @@
-import { isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import {
   link,
+  lstat,
   mkdir,
   mkdtemp,
   open,
@@ -144,6 +145,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
   const publicationRoot = await realpath(input.publicationRoot);
   const prefix = ".toss-calendar-publication-preflight-";
   const probeRoot = await mkdtemp(join(publicationRoot, prefix));
+  const probeRootIdentity = await readProbeRootIdentity(probeRoot);
   try {
     const filePath = join(probeRoot, "exclusive-file");
     const exclusiveStagingFileCreate = await probeExclusiveFile(filePath);
@@ -201,7 +203,12 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
         createOfficialMarketCalendarPublicationFilesystemPreflightHash(payload)
     });
   } finally {
-    await removeVerifiedProbeRoot(probeRoot, publicationRoot, prefix);
+    await removeVerifiedProbeRoot(
+      probeRoot,
+      publicationRoot,
+      prefix,
+      probeRootIdentity
+    );
   }
 }
 
@@ -344,22 +351,40 @@ async function probeExistingDirectoryRename(root: string) {
 async function removeVerifiedProbeRoot(
   root: string,
   publicationRoot: string,
-  prefix: string
+  prefix: string,
+  expectedIdentity: ProbeRootIdentity
 ): Promise<void> {
-  const [resolvedPublicationRoot, resolvedRoot] = await Promise.all([
-    realpath(publicationRoot),
-    realpath(root)
-  ]);
-  const relativeRoot = relative(resolvedPublicationRoot, resolvedRoot);
+  const resolvedPublicationRoot = await realpath(publicationRoot);
   if (
-    isAbsolute(relativeRoot) ||
-    relativeRoot === ".." ||
-    relativeRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
-    !relativeRoot.startsWith(prefix)
+    dirname(root) !== resolvedPublicationRoot ||
+    !basename(root).startsWith(prefix)
   ) {
     throw new Error("publication preflight cleanup root escaped the publication root");
   }
-  await rm(resolvedRoot, { recursive: true, force: false });
+  const currentIdentity = await readProbeRootIdentity(root);
+  if (
+    currentIdentity.device !== expectedIdentity.device ||
+    currentIdentity.inode !== expectedIdentity.inode
+  ) {
+    throw new Error("publication preflight cleanup root identity changed");
+  }
+  await rm(root, { recursive: true, force: false });
+}
+
+interface ProbeRootIdentity {
+  device: number;
+  inode: number;
+}
+
+async function readProbeRootIdentity(root: string): Promise<ProbeRootIdentity> {
+  const stats = await lstat(root);
+  if (!stats.isDirectory() || stats.isSymbolicLink()) {
+    throw new Error("publication preflight cleanup root must remain a directory entry");
+  }
+  return {
+    device: stats.dev,
+    inode: stats.ino
+  };
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
