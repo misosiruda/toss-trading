@@ -140,8 +140,19 @@ HTTP/1.1 200과 exact `Content-Length: 216`, `Content-Type: text/html;charset=UT
 `krx_form_otp_request_headers.v1`, parameter/value policy와 결합한다. Redirect/cookie jar,
 credential header, connection reuse를 금지하고 10초 deadline과 1,024-byte local response
 cap을 고정한다. Policy 자체는 HTTP I/O를 수행하지 않으며 raw OTP process-local only,
-durable reuse와 accepted acquisition false를 유지한다. Fixed HTTPS consumer는 후속
-구현이다.
+durable reuse와 accepted acquisition false를 유지한다.
+
+`createOfficialMarketCalendarKrxOtpNetworkConsumer`는 caller input 없이 registered query와
+headers만 전송하는 production fixed HTTPS consumer다. Platform trust와 production
+`global.krx.co.kr` Host/SNI, connection reuse disabled와 10초 absolute deadline을 고정하고
+dial/CA/deadline override를 노출하지 않는다. Loopback test factory만 synthetic CA와 더
+짧은 deadline을 받으며 같은 certificate hostname 검증을 유지한다.
+
+Consumer는 response allocation 전에 HTTP/1.1 200, exact 216-byte content-length, raw-wire
+content type, cache/expiry와 positive `Set-Cookie` name count를 검증한다. Complete body는
+bounded buffer에서 기존 OTP shape verifier를 거쳐 opaque handle로 이전하고, 각 source
+chunk와 실패한 buffer를 zeroize한다. Raw OTP와 cookie value는 log/API/MCP/artifact에
+노출하지 않으며 accepted acquisition과 durable reuse는 계속 false다.
 
 2026-08-20 read-only 관찰에서 OTP response body는 whitespace 없는 216-byte canonical
 base64였고 exact `==` padding을 제거해 decode하면 160 bytes였다.

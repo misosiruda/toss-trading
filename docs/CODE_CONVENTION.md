@@ -350,6 +350,15 @@ content-length, raw-wire content type, immediate-expiry/no-store cache와 positi
 `Set-Cookie` count를 고정하되 cookie value retention/replay를 금지한다. Resolver에는 HTTP
 I/O나 raw OTP 접근을 추가하지 않고 durable reuse와 accepted acquisition을 false로 둔다.
 
+`officialMarketCalendarKrxOtpNetworkConsumer.ts`는 input 없는 production factory에서
+registered OTP GET만 실행하고 raw response를 opaque OTP handle로 직접 이전한다. Production
+factory는 dial target, custom CA 또는 deadline override를 노출하지 않는다. Test-only
+factory는 loopback dial과 synthetic CA, 10초 이하 deadline만 허용하고 production
+Host/SNI/certificate hostname을 유지한다. Response allocation 전에 exact 216-byte
+content-length와 observed headers를 검증하고 partial/aborted/overflow/trailer/body-shape
+실패 시 모든 owned chunk/buffer를 zeroize한다. Raw OTP/cookie value를 반환하거나 저장하지
+않고 `Set-Cookie`는 name count만 검사한다.
+
 KRX holiday data fixed network consumer는
 `officialMarketCalendarKrxOtpEphemeralBody.ts`가 소유한 opaque wire-body handle만 한 번
 소비한다. Production factory는 registered URL, platform trust, production hostname/SNI와
