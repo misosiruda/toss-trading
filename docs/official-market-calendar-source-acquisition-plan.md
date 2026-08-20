@@ -176,6 +176,17 @@ descending canonical tuple로 등록한다. Parser는 이 목록의 exact string
 변경되면 observation과 policy version을 함께 갱신해야 한다. Target year 검증만으로
 OTP consumption, HTTP request 또는 accepted acquisition이 성립하지 않는다.
 
+`consumeOfficialMarketCalendarKrxOtpForHolidayDataPost`는 factory-owned OTP handle을
+exact target year와 결합하는 fixed one-shot ownership transfer다. 성공하면 OTP bytes와
+validated year는 새 process-local opaque POST-parameter handle의 module-private state로
+이동하고 원래 OTP handle은 재사용할 수 없다. Invalid year 또는 transfer 실패도 원래
+OTP ownership을 종료하고 bytes를 zeroize한다.
+
+POST-parameter handle은 raw OTP/year getter, callback, enumerable property 또는 JSON
+export를 제공하지 않는다. Explicit disposal과 JSON export 거부 시 raw OTP bytes를
+zeroize하며 disposal은 idempotent하다. 아직 header/body encoding과 fixed network
+consumer가 없으므로 이 handle은 wire request나 acquisition capability가 아니다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted

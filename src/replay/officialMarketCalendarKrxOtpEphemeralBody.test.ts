@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  consumeOfficialMarketCalendarKrxOtpForHolidayDataPost,
   createOfficialMarketCalendarKrxOtpEphemeralBody,
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters,
   disposeOfficialMarketCalendarKrxOtpEphemeralBody,
   type CreateOfficialMarketCalendarKrxOtpEphemeralBodyInput,
+  type OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters,
   type OfficialMarketCalendarKrxOtpEphemeralBody
 } from "./officialMarketCalendarKrxOtpEphemeralBody.js";
 
@@ -102,6 +105,114 @@ test("KRX OTP ephemeral body rejects non-typed and detached inputs", () => {
       rawResponseBytes: detached
     })
   );
+});
+
+test("KRX OTP fixed consumer creates opaque holiday data POST parameters", () => {
+  const otpHandle = createOfficialMarketCalendarKrxOtpEphemeralBody({
+    rawResponseBytes: canonicalOtpBytes()
+  });
+
+  const postParameters =
+    consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2026");
+
+  assert.equal(Object.isFrozen(postParameters), true);
+  assert.equal(Object.getPrototypeOf(postParameters), null);
+  assert.deepEqual(Object.keys(postParameters), []);
+  assert.deepEqual(Object.getOwnPropertyNames(postParameters), ["toJSON"]);
+  disposeOfficialMarketCalendarKrxOtpEphemeralBody(otpHandle);
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+    postParameters
+  );
+});
+
+test("KRX OTP fixed consumer rejects reuse after successful transfer", () => {
+  const otpHandle = createOfficialMarketCalendarKrxOtpEphemeralBody({
+    rawResponseBytes: canonicalOtpBytes()
+  });
+  const postParameters =
+    consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2025");
+
+  assert.throws(
+    () =>
+      consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2025"),
+    /already been consumed/
+  );
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+    postParameters
+  );
+});
+
+test("KRX OTP fixed consumer consumes and clears ownership on invalid year", () => {
+  const otpHandle = createOfficialMarketCalendarKrxOtpEphemeralBody({
+    rawResponseBytes: canonicalOtpBytes()
+  });
+
+  assert.throws(() =>
+    consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2027")
+  );
+  assert.throws(
+    () =>
+      consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2026"),
+    /already been consumed/
+  );
+  disposeOfficialMarketCalendarKrxOtpEphemeralBody(otpHandle);
+});
+
+test("KRX holiday data POST parameters reject JSON export and dispose", () => {
+  const otpHandle = createOfficialMarketCalendarKrxOtpEphemeralBody({
+    rawResponseBytes: canonicalOtpBytes()
+  });
+  const postParameters =
+    consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2016");
+
+  assert.throws(
+    () => JSON.stringify(postParameters),
+    /cannot be serialized or exported/
+  );
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+    postParameters
+  );
+});
+
+test("KRX holiday data POST parameter disposal is idempotent", () => {
+  const otpHandle = createOfficialMarketCalendarKrxOtpEphemeralBody({
+    rawResponseBytes: canonicalOtpBytes()
+  });
+  const postParameters =
+    consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(otpHandle, "2024");
+
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+    postParameters
+  );
+  disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+    postParameters
+  );
+});
+
+test("KRX holiday data POST parameters reject forged handles", () => {
+  for (const handle of [
+    {},
+    Object.freeze(Object.create(null)),
+    null,
+    "handle"
+  ]) {
+    assert.throws(() =>
+      disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+        handle as OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters
+      )
+    );
+  }
+});
+
+test("KRX OTP fixed consumer rejects forged OTP handles", () => {
+  for (const handle of [{}, Object.freeze(Object.create(null)), null, "handle"]) {
+    assert.throws(() =>
+      consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(
+        handle as OfficialMarketCalendarKrxOtpEphemeralBody,
+        "2026"
+      )
+    );
+  }
 });
 
 function canonicalOtpBytes(): Uint8Array {
