@@ -270,8 +270,9 @@ sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
-root의 realpath identity를 hash에 결합하고 mutation 없이 publication root handle의
-`stat()`으로 directory인지 검증한 뒤 같은 handle의 durability sync만 관찰한다.
+root의 realpath identity를 hash에 결합하고 mutation 없이 platform이 제공하는
+`O_DIRECTORY | O_NONBLOCK` read-only flags로 publication root handle을 연다. 같은
+handle의 `stat()`으로 directory인지 검증한 뒤 durability sync만 관찰한다.
 Built-in Node API는 verified directory entry에
 cleanup mutation을 결합하는 primitive와 atomic no-replace directory publish contract를
 제공하지 않는다. 따라서 exclusive create, file sync, hard-link와 directory rename

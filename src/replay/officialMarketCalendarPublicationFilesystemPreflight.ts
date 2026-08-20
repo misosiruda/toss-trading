@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 
 import { z } from "zod";
@@ -203,8 +204,16 @@ export function createOfficialMarketCalendarPublicationFilesystemPreflightHash(
 async function probeDirectorySync(path: string) {
   let handle;
   try {
-    handle = await open(path, "r");
-  } catch {
+    handle = await open(
+      path,
+      constants.O_RDONLY |
+        (constants.O_DIRECTORY ?? 0) |
+        (constants.O_NONBLOCK ?? 0)
+    );
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOTDIR") {
+      throw new Error("publication filesystem preflight root must be a directory");
+    }
     return "probe_failed" as const;
   }
   try {
