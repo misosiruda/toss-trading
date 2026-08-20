@@ -308,6 +308,13 @@ bytes, token string/hash 또는 body shape를 노출하지 않고 JSON export를
 data-POST consumer가 추가되기 전에는 raw getter, callback, serialization, durable sink 또는
 acquisition capability를 이 module에 추가해서는 안 된다.
 
+`officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 KRX holiday data POST의
+token-free static contract만 소유한다. Official source page, exact method/target,
+`gridTp`, `pagePath`와 value-free dynamic slot name을 strict immutable policy로 고정한다.
+Raw `code`, target year value, optional UI navigation parameter, header/body encoding,
+cookie 또는 HTTP execution을 포함해서는 안 되며 기존 OTP GET parameter allowlist를
+확장하는 근거로 사용하지 않는다.
+
 ### `src/workflows`
 
 책임:
