@@ -485,6 +485,15 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9aeaa2e7-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a4876d81-6ff1-485e-8655-75266ec84c07
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fe661052-9c88-4ae1-aec4-44799b2b4777
 
+`officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
+`FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
+declared bytes 안에 non-empty CLX range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
+`clxBytes`는 source document와 backing memory를 공유하지 않는 copy다. 모든 지원 FIB version이
+정확히 하나의 `FibRgFcLcb97`을 포함한다는 명세만 사용하며 `Clx`, `Prc`, `Pcdt`, `PlcPcd`와 text
+semantics는 아직 해석하지 않고 source role도 candidate로 유지한다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0c9df81f-98d0-454e-ad84-b612cd05b1a4
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
