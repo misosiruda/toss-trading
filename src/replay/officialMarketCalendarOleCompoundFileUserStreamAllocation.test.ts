@@ -17,6 +17,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordClxReference
 } from "./officialMarketCalendarKrxLegacyWordClxReference.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError,
+  verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference
+} from "./officialMarketCalendarKrxLegacyWordPlcBtePapxReference.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordClxError,
   verifyOfficialMarketCalendarKrxLegacyWordClx
@@ -584,6 +589,81 @@ test("official calendar KRX legacy Word CLX reference rejects empty or out-of-bo
     assertClxReferenceCode(
       bytes,
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word PlcBtePapx reference projects every supported version", () => {
+  const definitions = [
+    { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 },
+    { nFib: 0x00d9, version: "Word2000", cbRgFcLcb: 0x006c, cswNew: 2 },
+    { nFib: 0x0101, version: "Word2002", cbRgFcLcb: 0x0088, cswNew: 2 },
+    { nFib: 0x010c, version: "Word2003", cbRgFcLcb: 0x00a4, cswNew: 2 },
+    { nFib: 0x0112, version: "Word2007", cbRgFcLcb: 0x00b7, cswNew: 5 }
+  ] as const;
+  for (const definition of definitions) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, definition);
+    configurePlcBtePapxReference(bytes, 20, 12, 0x4a);
+
+    const result =
+      verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference(bytes);
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_SCHEMA_VERSION
+    );
+    assert.equal(result.nFib, definition.nFib);
+    assert.equal(result.version, definition.version);
+    assert.equal(result.tableStreamName, "1Table");
+    assert.equal(result.fcPlcfBtePapx, 20);
+    assert.equal(result.lcbPlcfBtePapx, 12);
+    assert.deepEqual(
+      result.plcBtePapxBytes,
+      new Uint8Array(12).fill(0x4a)
+    );
+    assert.equal(result.bytesOwnership, "caller_owned_copy");
+    assert.equal(result.plcBtePapxReferenceVerified, true);
+    assert.equal(result.plcBtePapxFramingStatus, "not_parsed");
+    assert.equal(result.papxFkpStatus, "not_parsed");
+    assert.equal(result.paragraphPropertiesStatus, "not_parsed");
+    assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+    assert.equal(Object.isFrozen(result), true);
+
+    fillFileSectorRange(bytes, 3, 20, 12, 0x7b);
+    assert.deepEqual(
+      result.plcBtePapxBytes,
+      new Uint8Array(12).fill(0x4a)
+    );
+  }
+});
+
+test("official calendar KRX legacy Word PlcBtePapx reference rejects invalid ranges", () => {
+  const invalidReferences = [
+    { offset: 0, size: 8 },
+    { offset: 20, size: 0 },
+    { offset: 63, size: 2 },
+    { offset: 0xffffffff, size: 1 }
+  ];
+  for (const reference of invalidReferences) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configurePlcBtePapxReference(
+      bytes,
+      reference.offset,
+      reference.size,
+      0
+    );
+
+    assertPlcBtePapxReferenceCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_INVALID"
     );
   }
 });
@@ -1393,6 +1473,19 @@ function configureClxReference(
   }
 }
 
+function configurePlcBtePapxReference(
+  bytes: Uint8Array,
+  offset: number,
+  size: number,
+  value: number
+): void {
+  writeWordUint32(bytes, 154 + 13 * 8, offset);
+  writeWordUint32(bytes, 154 + 13 * 8 + 4, size);
+  if (offset + size <= 64) {
+    fillFileSectorRange(bytes, 3, offset, size, value);
+  }
+}
+
 function configureClxFraming(
   bytes: Uint8Array,
   prcSizes: readonly number[],
@@ -1645,6 +1738,19 @@ function assertClxReferenceCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordClxReference(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordClxReferenceError &&
+      error.code === code
+  );
+}
+
+function assertPlcBtePapxReferenceCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference(bytes),
+    (error: unknown) =>
+      error instanceof
+        OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError &&
       error.code === code
   );
 }
