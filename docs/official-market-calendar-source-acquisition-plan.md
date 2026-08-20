@@ -180,6 +180,23 @@ network factory와 fixed data-POST consumer는 이 handle을 process-local lifec
 사용한다. 이 wiring도 durable reuse 또는 accepted evidence로 승격하지 않으며 callback,
 raw-byte getter, serialization 또는 durable sink를 추가하지 않는다.
 
+### KRX Legacy Derivatives Trading Calendar Source Candidate
+
+2026-08-20 read-only 재조사에서 KRX Global의 derivatives market calendar page는
+2004~2024 yearly `.doc`와 2025 `.pdf` download selector를 노출하며 2021 항목은
+보이지 않았다.
+기존 holiday-data selector 밖인 2013~2015의 exact file name을 공식 page JavaScript의
+`fileDown` OTP flow로 요청한 결과, cookie jar/redirect/credential 없이 각기 다른 OLE
+Compound `.doc` file이 반환됐다. Raw OTP와 문서 bytes는 보존하지 않았다.
+
+`officialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy.ts`는 source page,
+download OTP의 fixed `name`/`filetype`/`url`, dynamic `file_nm`, file-server POST의
+process-local `code`, successful observation의 Origin/Referer와 2013~2015 file name,
+content length, SHA-256, OLE signature, observed title/holiday-line count를 immutable v1
+candidate policy로 고정한다. 이 문서는 derivatives market scope이며 legacy Word table용
+parser와 role/coverage 검증은 아직 구현하지 않았다. 따라서 KRX 전체 market holiday
+completeness, durable evidence reuse와 accepted acquisition은 계속 주장하지 않는다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
