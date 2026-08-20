@@ -7,6 +7,8 @@ import {
 
 export const OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS = {
   KRX_FORM_OTP: "krx_form_otp_request_headers.v1",
+  KRX_LEGACY_DOWNLOAD_OTP:
+    "krx_legacy_download_otp_request_headers.v1",
   KRX_MARKET_CLOSING_HOLIDAY:
     "krx_market_closing_holiday_request_headers.v1",
   KRX_REGULAR_SESSION: "krx_regular_session_request_headers.v1",
@@ -32,6 +34,26 @@ const REQUEST_HEADER_POLICY_REGISTRY_INPUT = [
         "accept",
         "cache-control",
         "pragma",
+        "user-agent"
+      ]
+    }
+  },
+  {
+    requestHeaderPolicyVersion:
+      OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP,
+    requestHeaderPolicyDefinition: {
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_DEFINITION_VERSION,
+      sourceSelector: {
+        exchange: "KRX",
+        requestedUrl:
+          "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx"
+      },
+      allowedHeaderNames: [
+        "accept",
+        "cache-control",
+        "pragma",
+        "referer",
         "user-agent"
       ]
     }

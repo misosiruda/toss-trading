@@ -7,25 +7,40 @@ import {
   resolveRegisteredOfficialMarketCalendarRequestParameterPolicy
 } from "./officialMarketCalendarRequestParameterPolicyRegistry.js";
 
-const EXPECTED_POLICY = {
-  version: "krx_form_otp_request_parameters.v1",
+const EXPECTED_POLICIES = [
+  {
+    version: "krx_form_otp_request_parameters.v1",
+    requestHeaderPolicyVersion: "krx_form_otp_request_headers.v1",
+    requestParameters: {
+      bld: "GLB/05/0501/0501110000/glb0501110000_01",
+      name: "form"
+    }
+  },
+  ...["2013", "2014", "2015"].map((year) => ({
+    version: `krx_legacy_download_otp_${year}_request_parameters.v1`,
+    requestHeaderPolicyVersion:
+      "krx_legacy_download_otp_request_headers.v1",
+    requestParameters: {
+      file_nm: `E_Trading_Calendar${year}.doc`,
+      filetype: "att",
+      name: "fileDown",
+      url: "MKD/01/0110/01100303/mkd01100303_DN"
+    }
+  }))
+].map((policy) => ({
+  ...policy,
   exchange: "KRX",
   requestMethod: "GET",
   requestedUrl:
-    "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx",
-  requestHeaderPolicyVersion: "krx_form_otp_request_headers.v1",
-  requestParameters: {
-    bld: "GLB/05/0501/0501110000/glb0501110000_01",
-    name: "form"
-  }
-} as const;
+    "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx"
+}));
 
 test("calendar request parameter policy registry contains the exact KRX OTP request", () => {
   const registry = getOfficialMarketCalendarRequestParameterPolicyRegistry();
 
   assert.deepEqual(
     Object.values(OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS),
-    [EXPECTED_POLICY.version]
+    EXPECTED_POLICIES.map((policy) => policy.version)
   );
   assert.deepEqual(
     registry.map((entry) => ({
@@ -41,20 +56,21 @@ test("calendar request parameter policy registry contains the exact KRX OTP requ
       requestParameters:
         entry.requestParameterPolicyDefinition.requestParameters
     })),
-    [EXPECTED_POLICY]
+    EXPECTED_POLICIES
   );
 });
 
 test("calendar request parameter policy registry resolves only the registered version", () => {
-  const resolved =
-    resolveRegisteredOfficialMarketCalendarRequestParameterPolicy(
-      EXPECTED_POLICY.version
+  for (const expected of EXPECTED_POLICIES) {
+    const resolved =
+      resolveRegisteredOfficialMarketCalendarRequestParameterPolicy(
+        expected.version
+      );
+    assert.deepEqual(
+      resolved.requestParameterPolicyDefinition.requestParameters,
+      expected.requestParameters
     );
-
-  assert.deepEqual(
-    resolved.requestParameterPolicyDefinition.requestParameters,
-    EXPECTED_POLICY.requestParameters
-  );
+  }
   assert.throws(
     () =>
       resolveRegisteredOfficialMarketCalendarRequestParameterPolicy(
@@ -71,9 +87,9 @@ test("calendar request parameter policy registry returns detached parsed entries
   firstRead.splice(0);
 
   const secondRead = getOfficialMarketCalendarRequestParameterPolicyRegistry();
-  assert.equal(secondRead.length, 1);
+  assert.equal(secondRead.length, EXPECTED_POLICIES.length);
   assert.deepEqual(
     secondRead[0]?.requestParameterPolicyDefinition.requestParameters,
-    EXPECTED_POLICY.requestParameters
+    EXPECTED_POLICIES[0]?.requestParameters
   );
 });

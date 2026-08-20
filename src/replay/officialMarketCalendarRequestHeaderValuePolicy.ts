@@ -7,7 +7,7 @@ import { resolveRegisteredOfficialMarketCalendarRequestParameterPolicy } from ".
 export const OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_DEFINITION_VERSION =
   "official_market_calendar_request_header_value_policy_definition.v1";
 
-const KNOWN_FIXED_VALUE_HEADER_NAMES = new Set(["user-agent"]);
+const KNOWN_FIXED_VALUE_HEADER_NAMES = new Set(["referer", "user-agent"]);
 const lowercaseHeaderNameSchema = z
   .string()
   .regex(
