@@ -120,6 +120,24 @@ test("KRX holiday response body requires exact row keys and string values", () =
   }
 });
 
+test("KRX holiday response body rejects duplicate decoded JSON member names", () => {
+  for (const text of [
+    `{"block1":[],"block1":[${JSON.stringify(validRow())}]}`,
+    `{"block1":[{"calnd_dd":"first","calnd_dd":"second","dy_tp_cd":"1","calnd_dd_dy":"date","kr_dy_tp":"holiday","holdy_eng_nm":"holiday"}]}`,
+    `{"block1":[],"\\u0062lock1":[${JSON.stringify(validRow())}]}`
+  ]) {
+    const bytes = new TextEncoder().encode(text);
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarKrxHolidayDataResponseBody(
+          bytes,
+          verifiedMetadata(bytes.byteLength)
+        ),
+      /must not contain duplicate JSON member names/
+    );
+  }
+});
+
 test("KRX holiday response body bounds every external row string", () => {
   assertInvalidBody({
     block1: [{ ...validRow(), holdy_eng_nm: "x".repeat(8_193) }]

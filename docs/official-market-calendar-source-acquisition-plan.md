@@ -231,7 +231,8 @@ disabled이고 request Cookie header count가 0임을 strict하게 기록해야 
 `contentLength`와 caller body byte length를 결합한 뒤 BOM 없는 strict UTF-8 JSON만
 검증한다. Top-level은 exact `block1` 하나이고 row는 최대 1,000개, 각 row는 관찰된
 `calnd_dd`, `dy_tp_cd`, `calnd_dd_dy`, `kr_dy_tp`, `holdy_eng_nm` string field만
-허용한다. Validator는 owned byte copy를 unconditional zeroize하고 row value나 raw
+허용한다. Raw JSON token scan은 escape decoding 후 같은 이름이 되는 duplicate member를
+object depth별로 거부한다. Validator는 owned byte copy를 unconditional zeroize하고 row value나 raw
 body를 반환하지 않는다. 반환값은 구조 요약뿐이며 durable reuse와 accepted
 acquisition을 계속 false로 유지한다. 날짜 의미, 중복 날짜, holiday type과 publication
 evidence 변환은 이 shape boundary의 책임이 아니다.

@@ -10,6 +10,7 @@ export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_BODY_VERSION =
 const MAXIMUM_BODY_BYTE_LENGTH = 1_000_000;
 const MAXIMUM_ROW_COUNT = 1_000;
 const MAXIMUM_ROW_VALUE_LENGTH = 8_192;
+const MAXIMUM_JSON_NESTING_DEPTH = 16;
 const UTF8_BOM = [0xef, 0xbb, 0xbf] as const;
 const ROW_KEYS = [
   "calnd_dd",
@@ -110,6 +111,7 @@ export function verifyOfficialMarketCalendarKrxHolidayDataResponseBody(
     } catch {
       throw new Error("KRX holiday data response body must be valid JSON");
     }
+    assertNoDuplicateJsonMemberNames(text);
     const body = responseBodySchema.parse(parsed);
 
     return Object.freeze({
@@ -163,4 +165,139 @@ function hasUtf8Bom(bytes: Uint8Array): boolean {
     bytes.byteLength >= UTF8_BOM.length &&
     UTF8_BOM.every((byte, index) => bytes[index] === byte)
   );
+}
+
+function assertNoDuplicateJsonMemberNames(text: string): void {
+  const finalIndex = skipJsonWhitespace(text, scanJsonValue(text, 0, 0));
+  if (finalIndex !== text.length) {
+    throw new Error("KRX holiday data response body must be valid JSON");
+  }
+}
+
+function scanJsonValue(text: string, startIndex: number, depth: number): number {
+  if (depth > MAXIMUM_JSON_NESTING_DEPTH) {
+    throw new Error(
+      "KRX holiday data response body exceeds the JSON nesting boundary"
+    );
+  }
+  const index = skipJsonWhitespace(text, startIndex);
+  const character = text[index];
+  if (character === "{") {
+    return scanJsonObject(text, index, depth);
+  }
+  if (character === "[") {
+    return scanJsonArray(text, index, depth);
+  }
+  if (character === '"') {
+    return scanJsonString(text, index).nextIndex;
+  }
+  for (const literal of ["true", "false", "null"] as const) {
+    if (text.startsWith(literal, index)) {
+      return index + literal.length;
+    }
+  }
+  const numberPattern = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  numberPattern.lastIndex = index;
+  const number = numberPattern.exec(text);
+  if (number !== null) {
+    return numberPattern.lastIndex;
+  }
+  throw new Error("KRX holiday data response body must be valid JSON");
+}
+
+function scanJsonObject(text: string, startIndex: number, depth: number): number {
+  let index = skipJsonWhitespace(text, startIndex + 1);
+  if (text[index] === "}") {
+    return index + 1;
+  }
+
+  const memberNames = new Set<string>();
+  while (index < text.length) {
+    if (text[index] !== '"') {
+      throw new Error("KRX holiday data response body must be valid JSON");
+    }
+    const key = scanJsonString(text, index);
+    if (memberNames.has(key.value)) {
+      throw new Error(
+        "KRX holiday data response body must not contain duplicate JSON member names"
+      );
+    }
+    memberNames.add(key.value);
+
+    index = skipJsonWhitespace(text, key.nextIndex);
+    if (text[index] !== ":") {
+      throw new Error("KRX holiday data response body must be valid JSON");
+    }
+    index = skipJsonWhitespace(
+      text,
+      scanJsonValue(text, index + 1, depth + 1)
+    );
+    if (text[index] === "}") {
+      return index + 1;
+    }
+    if (text[index] !== ",") {
+      throw new Error("KRX holiday data response body must be valid JSON");
+    }
+    index = skipJsonWhitespace(text, index + 1);
+  }
+  throw new Error("KRX holiday data response body must be valid JSON");
+}
+
+function scanJsonArray(text: string, startIndex: number, depth: number): number {
+  let index = skipJsonWhitespace(text, startIndex + 1);
+  if (text[index] === "]") {
+    return index + 1;
+  }
+  while (index < text.length) {
+    index = skipJsonWhitespace(text, scanJsonValue(text, index, depth + 1));
+    if (text[index] === "]") {
+      return index + 1;
+    }
+    if (text[index] !== ",") {
+      throw new Error("KRX holiday data response body must be valid JSON");
+    }
+    index = skipJsonWhitespace(text, index + 1);
+  }
+  throw new Error("KRX holiday data response body must be valid JSON");
+}
+
+function scanJsonString(
+  text: string,
+  startIndex: number
+): { value: string; nextIndex: number } {
+  let index = startIndex + 1;
+  while (index < text.length) {
+    if (text[index] === '"') {
+      const nextIndex = index + 1;
+      let value: unknown;
+      try {
+        value = JSON.parse(text.slice(startIndex, nextIndex)) as unknown;
+      } catch {
+        throw new Error("KRX holiday data response body must be valid JSON");
+      }
+      if (typeof value !== "string") {
+        throw new Error("KRX holiday data response body must be valid JSON");
+      }
+      return { value, nextIndex };
+    }
+    if (text[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  throw new Error("KRX holiday data response body must be valid JSON");
+}
+
+function skipJsonWhitespace(text: string, startIndex: number): number {
+  let index = startIndex;
+  while (
+    text[index] === " " ||
+    text[index] === "\t" ||
+    text[index] === "\r" ||
+    text[index] === "\n"
+  ) {
+    index += 1;
+  }
+  return index;
 }
