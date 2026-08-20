@@ -46,6 +46,15 @@ test("KRX holiday response metadata fixes representation and framing headers", (
   for (const value of [
     { ...base, contentTypeHeaderValues: ["application/json"] },
     { ...base, contentTypeHeaderValues: [] },
+    { ...base, contentTypeHeaderValues: ["text/html;  charset=UTF-8"] },
+    { ...base, contentTypeHeaderValues: ["text/html;charset=utf-8"] },
+    {
+      ...base,
+      contentTypeHeaderValues: [
+        "text/html;charset=UTF-8",
+        "text/html; charset=UTF-8"
+      ]
+    },
     { ...base, contentEncodingHeaderValues: ["gzip"] },
     { ...base, transferEncodingHeaderValues: ["chunked"] },
     { ...base, pragmaHeaderValues: [] }
@@ -53,6 +62,19 @@ test("KRX holiday response metadata fixes representation and framing headers", (
     assert.throws(() =>
       verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata(value)
     );
+  }
+});
+
+test("KRX holiday response metadata accepts only observed content-type OWS variants", () => {
+  for (const contentType of [
+    "text/html;charset=UTF-8",
+    "text/html; charset=UTF-8"
+  ]) {
+    const metadata = verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata({
+      ...observedMetadata(),
+      contentTypeHeaderValues: [contentType]
+    });
+    assert.equal(metadata.contentType, "text/html; charset=UTF-8");
   }
 });
 
@@ -205,7 +227,7 @@ function observedMetadata() {
       "https://global.krx.co.kr/contents/GLB/99/GLB99000001.jspx",
     httpStatus: 200,
     redirectLocationHeaderValues: [],
-    contentTypeHeaderValues: ["text/html; charset=UTF-8"],
+    contentTypeHeaderValues: ["text/html;charset=UTF-8"],
     contentEncodingHeaderValues: [],
     transferEncodingHeaderValues: [],
     pragmaHeaderValues: ["no-cache"],

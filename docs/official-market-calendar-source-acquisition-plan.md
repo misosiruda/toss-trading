@@ -215,10 +215,14 @@ request나 accepted acquisition이 아니다.
 ### KRX Holiday Data Response Metadata Boundary
 
 2026-08-20 재관찰에서 cookie jar와 redirect follow를 비활성화한 client의 data POST
-response는 HTTP/1.1 200, exact `Content-Length`,
-`Content-Type: text/html; charset=UTF-8`, `Cache-Control: no-store, no-cache,
+response는 HTTP/1.1 200, exact `Content-Length`, Node raw-wire
+`Content-Type: text/html;charset=UTF-8`, `Cache-Control: no-store, no-cache,
 max-age=0`, `Pragma: no-cache`를 반환했다. `Expires`는 `Date`와 같았고 response에는
 두 개의 `Set-Cookie` header가 있었으나 raw cookie value는 기록하지 않았다.
+
+이전 client observation은 같은 media type을 `text/html; charset=UTF-8`로
+정규화했다. Metadata boundary는 두 exact 표현만 받고 canonical output은 space 포함
+형태로 고정하며 다른 OWS/case/duplicate 변형은 허용하지 않는다.
 
 `officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 이 metadata에서 complete
 bounded body validation 진입만 허용한다. Input은 automatic redirect follow/cookie jar가

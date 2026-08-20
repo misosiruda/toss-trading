@@ -25,6 +25,10 @@ export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYT
   1_000_000;
 
 const EXPECTED_CACHE_CONTROL = ["max-age=0", "no-cache", "no-store"] as const;
+const OBSERVED_CONTENT_TYPE_HEADER_VALUES = [
+  ["text/html;charset=UTF-8"],
+  ["text/html; charset=UTF-8"]
+] as const;
 const DURABLE_REJECTION_REASONS = [
   "cache_control_max_age_zero",
   "cache_control_no_cache",
@@ -125,12 +129,12 @@ export function verifyOfficialMarketCalendarKrxHolidayDataResponseMetadata(
     );
   }
   if (
-    !isDeepStrictEqual(input.contentTypeHeaderValues, [
-      "text/html; charset=UTF-8"
-    ])
+    !OBSERVED_CONTENT_TYPE_HEADER_VALUES.some((observed) =>
+      isDeepStrictEqual(input.contentTypeHeaderValues, observed)
+    )
   ) {
     throw new Error(
-      "KRX holiday data response Content-Type must match the observed value"
+      "KRX holiday data response Content-Type must match an observed raw-wire value"
     );
   }
   if (input.contentEncodingHeaderValues.length !== 0) {
