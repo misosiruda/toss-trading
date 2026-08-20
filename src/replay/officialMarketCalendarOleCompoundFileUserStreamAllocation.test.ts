@@ -37,6 +37,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPapxFkp
 } from "./officialMarketCalendarKrxLegacyWordPapxFkp.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_GRPPRL_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordGrpPrlError,
+  verifyOfficialMarketCalendarKrxLegacyWordGrpPrls
+} from "./officialMarketCalendarKrxLegacyWordGrpPrl.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordClxError,
   verifyOfficialMarketCalendarKrxLegacyWordClx
@@ -935,7 +940,7 @@ test("official calendar KRX legacy Word PapxFkp verifies rgfc, BxPap, and PapxIn
             cbPrime: null,
             grpprlAndIstdByteOffset: 41,
             grpprlAndIstdByteLength: 5,
-            grpprlAndIstdBytes: [0x34, 0x12, 0xaa, 0xbb, 0xcc],
+            grpprlAndIstdBytes: [0x34, 0x12, 0x16, 0x24, 0x01],
             propertiesStatus: "framing_verified",
             reservedBytesStatus: "ignored",
             bytesOwnership: "caller_owned_copy"
@@ -1032,6 +1037,113 @@ test("official calendar KRX legacy Word PapxFkp rejects invalid internal framing
     assertPapxFkpCode(
       bytes,
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word GrpPrl verifies istd and Sprm operand framing", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidGrpPrlFixture(bytes);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordGrpPrls(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_GRPPRL_SCHEMA_VERSION
+  );
+  assert.equal(result.groups.length, 3);
+  assert.deepEqual(
+    result.groups.map((group) => ({
+      pageIndex: group.pageIndex,
+      paragraphIndex: group.paragraphIndex,
+      istd: group.istd,
+      propertiesStatus: group.propertiesStatus,
+      prls: group.prls.map((prl) => ({
+        sprm: prl.sprm,
+        ispmd: prl.ispmd,
+        fSpec: prl.fSpec,
+        sgc: prl.sgc,
+        spra: prl.spra,
+        operandByteLength: prl.operandByteLength,
+        operandBytes: [...prl.operandBytes],
+        operandLengthKind: prl.operandLengthKind,
+        bytesOwnership: prl.bytesOwnership
+      }))
+    })),
+    [
+      {
+        pageIndex: 0,
+        paragraphIndex: 0,
+        istd: 0x1234,
+        propertiesStatus: "framing_verified",
+        prls: [
+          prlSummary(0x0401, 0, 1, [0x10], "fixed"),
+          prlSummary(0x2402, 1, 1, [0x11], "fixed"),
+          prlSummary(0x4403, 2, 1, [0x12, 0x13], "fixed"),
+          prlSummary(0x6404, 3, 1, [0x14, 0x15, 0x16, 0x17], "fixed"),
+          prlSummary(0x8405, 4, 1, [0x18, 0x19], "fixed"),
+          prlSummary(0xa406, 5, 1, [0x1a, 0x1b], "fixed"),
+          prlSummary(0xe407, 7, 1, [0x1c, 0x1d, 0x1e], "fixed"),
+          prlSummary(0xc408, 6, 1, [2, 0x20, 0x21], "one_byte_prefix"),
+          prlSummary(
+            0xd608,
+            6,
+            5,
+            [2, 0, 0],
+            "t_def_table_two_byte_prefix"
+          ),
+          prlSummary(0xc615, 6, 1, [2, 0, 0], "one_byte_prefix")
+        ]
+      },
+      {
+        pageIndex: 0,
+        paragraphIndex: 1,
+        istd: null,
+        propertiesStatus: "default",
+        prls: []
+      },
+      {
+        pageIndex: 1,
+        paragraphIndex: 0,
+        istd: 0x5678,
+        propertiesStatus: "framing_verified",
+        prls: []
+      }
+    ]
+  );
+  assert.equal(result.grpprlAndIstdFramingVerified, true);
+  assert.equal(result.sprmFramingVerified, true);
+  assert.equal(result.tDefTableLengthStatus, "supported");
+  assert.equal(result.pChgTabs255Status, "rejected_unsupported");
+  assert.equal(result.sprmSemanticsStatus, "not_verified");
+  assert.equal(result.tableSemanticsStatus, "not_verified");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.groups), true);
+  assert.equal(Object.isFrozen(result.groups[0]!.prls), true);
+  assert.equal(Object.isFrozen(result.groups[0]!.prls[0]), true);
+
+  writeWordByte(bytes, 1024 + 46, 0xff);
+  assert.equal(result.groups[0]!.prls[0]!.operandBytes[0], 0x10);
+});
+
+test("official calendar KRX legacy Word GrpPrl rejects incomplete Sprm framing", () => {
+  const invalidGroups = [
+    [0x34, 0x12, 0x01],
+    [0x34, 0x12, 0x01, 0x20, 0x10],
+    [0x34, 0x12, 0x04, 0x64, 0x10],
+    [0x34, 0x12, 0x08, 0xc4, 5],
+    [0x34, 0x12, 0x08, 0xd6, 1, 0, 0],
+    [0x34, 0x12, 0x08, 0xd6, 10, 0, 0],
+    [0x34, 0x12, 0x15, 0xc6, 1, 0],
+    [0x34, 0x12, 0x15, 0xc6, 0xff, 0]
+  ];
+  for (const groupBytes of invalidGroups) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureValidPapxFkpFixture(bytes);
+    setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
+    assertGrpPrlCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_GRPPRL_INVALID"
     );
   }
 });
@@ -1884,7 +1996,7 @@ function configureValidPapxFkpFixture(bytes: Uint8Array): void {
     papx: [
       {
         offset: 40,
-        bytes: [3, 0x34, 0x12, 0xaa, 0xbb, 0xcc]
+        bytes: [3, 0x34, 0x12, 0x16, 0x24, 0x01]
       }
     ]
   });
@@ -1893,6 +2005,67 @@ function configureValidPapxFkpFixture(bytes: Uint8Array): void {
     bxPap: [{ bOffset: 20, reservedValue: 0x5c }],
     papx: [{ offset: 40, bytes: [0, 1, 0x78, 0x56] }]
   });
+}
+
+function configureValidGrpPrlFixture(bytes: Uint8Array): void {
+  configureValidPapxFkpFixture(bytes);
+  const groupBytes = [0x34, 0x12];
+  appendPrlBytes(groupBytes, 0x0401, [0x10]);
+  appendPrlBytes(groupBytes, 0x2402, [0x11]);
+  appendPrlBytes(groupBytes, 0x4403, [0x12, 0x13]);
+  appendPrlBytes(groupBytes, 0x6404, [0x14, 0x15, 0x16, 0x17]);
+  appendPrlBytes(groupBytes, 0x8405, [0x18, 0x19]);
+  appendPrlBytes(groupBytes, 0xa406, [0x1a, 0x1b]);
+  appendPrlBytes(groupBytes, 0xe407, [0x1c, 0x1d, 0x1e]);
+  appendPrlBytes(groupBytes, 0xc408, [2, 0x20, 0x21]);
+  appendPrlBytes(groupBytes, 0xd608, [2, 0, 0]);
+  appendPrlBytes(groupBytes, 0xc615, [2, 0, 0]);
+  assert.equal(groupBytes.length, 46);
+  setPapxGrpPrl(bytes, 1024 + 40, groupBytes);
+}
+
+function appendPrlBytes(
+  destination: number[],
+  sprm: number,
+  operandBytes: readonly number[]
+): void {
+  destination.push(sprm & 0xff, (sprm >>> 8) & 0xff, ...operandBytes);
+}
+
+function setPapxGrpPrl(
+  bytes: Uint8Array,
+  papxWordOffset: number,
+  groupBytes: readonly number[]
+): void {
+  assert.ok(groupBytes.length >= 2);
+  const papxBytes =
+    groupBytes.length % 2 === 0
+      ? [0, groupBytes.length / 2, ...groupBytes]
+      : [(groupBytes.length + 1) / 2, ...groupBytes];
+  setWordRange(bytes, papxWordOffset, Uint8Array.from(papxBytes));
+}
+
+function prlSummary(
+  sprm: number,
+  spra: number,
+  sgc: number,
+  operandBytes: readonly number[],
+  operandLengthKind:
+    | "fixed"
+    | "one_byte_prefix"
+    | "t_def_table_two_byte_prefix"
+): object {
+  return {
+    sprm,
+    ispmd: sprm & 0x01ff,
+    fSpec: (sprm & 0x0200) !== 0,
+    sgc,
+    spra,
+    operandByteLength: operandBytes.length,
+    operandBytes,
+    operandLengthKind,
+    bytesOwnership: "caller_owned_copy"
+  };
 }
 
 function configurePapxFkpPage(
@@ -2261,6 +2434,18 @@ function assertPapxFkpCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordPapxFkp(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordPapxFkpError &&
+      error.code === code
+  );
+}
+
+function assertGrpPrlCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordGrpPrlError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordGrpPrls(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordGrpPrlError &&
       error.code === code
   );
 }
