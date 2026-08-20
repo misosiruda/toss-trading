@@ -355,6 +355,17 @@ test("official calendar KRX legacy Word streams ignore undefined FibBase fields"
   assert.equal(result.tableStreamName, "1Table");
 });
 
+test("official calendar KRX legacy Word streams ignore fObfuscated when unencrypted", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  writeWordUint16(bytes, 10, 0x9200);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(bytes);
+  assert.equal(result.protectionStatus, "unencrypted");
+  assert.equal(result.tableStreamName, "1Table");
+});
+
 test("official calendar KRX legacy Word streams reject unsupported encryption", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureWordRootStreams(bytes, "1Table");
@@ -368,15 +379,13 @@ test("official calendar KRX legacy Word streams reject unsupported encryption", 
 });
 
 test("official calendar KRX legacy Word streams reject size limits before projection", () => {
-  for (const streamId of [1, 2]) {
-    const bytes = compoundFileWithUserStreams(3);
-    configureWordRootStreams(bytes, "1Table");
-    setStreamUint32(bytes, streamId, 120, 0x80000000);
-    assertWordCode(
-      bytes,
-      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STREAM_SIZE"
-    );
-  }
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  setStreamUint32(bytes, 1, 120, 0x80000000);
+  assertWordCode(
+    bytes,
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STREAM_SIZE"
+  );
 });
 
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {

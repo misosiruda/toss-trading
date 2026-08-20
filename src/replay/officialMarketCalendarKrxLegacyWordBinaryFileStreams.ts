@@ -69,11 +69,6 @@ export function verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(
     rootStreamIds,
     "1Table"
   );
-  for (const tableEntry of [zeroTableEntry, oneTableEntry]) {
-    if (tableEntry !== undefined) {
-      verifyMaximumSize(tableEntry);
-    }
-  }
   const wordDocument =
     projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
       input,
@@ -87,6 +82,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(
   if (tableStreamEntry === undefined) {
     throw missingStream();
   }
+  verifyMaximumSize(tableStreamEntry);
   const tableStream =
     projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
       input,
