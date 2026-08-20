@@ -129,6 +129,20 @@ response 검증이 없으므로 이 등록만으로 external verification 또는
 
 ### KRX OTP Response Body Shape
 
+2026-08-20 cookie/redirect-disabled Node 재관찰에서 fixed KRX form OTP GET은
+application-controlled header `accept`, `cache-control`, `pragma`, `user-agent`만 사용했고
+HTTP/1.1 200과 exact `Content-Length: 216`, `Content-Type: text/html;charset=UTF-8`을
+반환했다. `Cache-Control`은 `max-age=0, no-cache, no-store`, `Pragma`는 `no-cache`,
+`Expires`는 `Date`와 같았고 response `Set-Cookie`는 2개였다. Raw OTP와 cookie value는
+기록하지 않았다.
+
+`officialMarketCalendarKrxOtpNetworkPolicy.ts`는 이 wire boundary를 기존
+`krx_form_otp_request_headers.v1`, parameter/value policy와 결합한다. Redirect/cookie jar,
+credential header, connection reuse를 금지하고 10초 deadline과 1,024-byte local response
+cap을 고정한다. Policy 자체는 HTTP I/O를 수행하지 않으며 raw OTP process-local only,
+durable reuse와 accepted acquisition false를 유지한다. Fixed HTTPS consumer는 후속
+구현이다.
+
 2026-08-20 read-only 관찰에서 OTP response body는 whitespace 없는 216-byte canonical
 base64였고 exact `==` padding을 제거해 decode하면 160 bytes였다.
 `officialMarketCalendarKrxOtpResponseBody.ts`는 string 또는 decoded token copy를 만들지

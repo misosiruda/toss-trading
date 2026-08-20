@@ -342,6 +342,14 @@ post/wire/response policy에 결합한다. `Set-Cookie`는 count만 허용하고
 request replay를 금지한다. Policy resolver 자체에는 HTTP I/O, raw wire-body 접근 또는
 accepted acquisition 승격을 추가하지 않는다.
 
+`officialMarketCalendarKrxOtpNetworkPolicy.ts`는 KRX form OTP GET의 registered
+header-name/parameter/header-value policy와 2026-08-20 read-only wire observation을 exact
+결합한다. Application header는 `accept`, `cache-control`, `pragma`, `user-agent`만,
+query는 `bld`, `name` fixed value만 허용한다. Response는 HTTP/1.1 200, exact 216-byte
+content-length, raw-wire content type, immediate-expiry/no-store cache와 positive
+`Set-Cookie` count를 고정하되 cookie value retention/replay를 금지한다. Resolver에는 HTTP
+I/O나 raw OTP 접근을 추가하지 않고 durable reuse와 accepted acquisition을 false로 둔다.
+
 KRX holiday data fixed network consumer는
 `officialMarketCalendarKrxOtpEphemeralBody.ts`가 소유한 opaque wire-body handle만 한 번
 소비한다. Production factory는 registered URL, platform trust, production hostname/SNI와
