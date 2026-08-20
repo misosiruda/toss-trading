@@ -334,6 +334,14 @@ policy maximum 크기의 zeroized workspace에 직접 encoding해야 한다. Raw
 OTP와 workspace ownership을 종료하고, encoded bytes는 getter/callback 없는 새 opaque
 handle에만 이전한다. Fixed network consumer 전에는 wire bytes를 외부로 반환하지 않는다.
 
+`officialMarketCalendarKrxHolidayDataPostNetworkPolicy.ts`는 observed data POST의 exact
+application-controlled header name/value, URL-derived `Host`, `Connection: close`,
+body-derived `Content-Length`, cookie/redirect/credential-free isolation과 connection reuse 금지,
+10초 absolute deadline, request/response byte cap과 fail-closed response gate를 기존
+post/wire/response policy에 결합한다. `Set-Cookie`는 count만 허용하고 value retention이나
+request replay를 금지한다. Policy resolver 자체에는 HTTP I/O, raw wire-body 접근 또는
+accepted acquisition 승격을 추가하지 않는다.
+
 `officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 raw `Set-Cookie` value를
 받거나 저장하지 않고 count만 검증한다. Request isolation은 automatic redirect/cookie
 jar disabled와 outbound Cookie count 0을 strict하게 요구한다. `no-store`, `no-cache`,
