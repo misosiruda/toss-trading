@@ -517,6 +517,15 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/1caae71f-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/498993c9-0a2d-47aa-8ada-fed27616e275
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
 
+`officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서
+`ccpText`, `ccpFtn`, `ccpHdd`, `ccpAtn`, `ccpEdn`, `ccpTxbx`, `ccpHdrTxbx`를 signed
+non-negative count로 읽고 `reserved3=0`을 요구한다. 모든 subdocument count가 0이면 final CP가
+`ccpText`, 하나라도 nonzero이면 일곱 count의 합에 guard CP 1을 더한 값인지 verified PlcPcd와
+대조한다. 계산 결과는 CP 상한 `0x7FFFFFFE`를 넘을 수 없다. WordDocument text byte range와
+decoding은 아직 검증하지 않고 source role도 candidate로 유지한다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/37713d3c-a0c8-40f5-821f-bc9622c7de48
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/1caae71f-35c4-49d7-adf0-af5fc766331c
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
