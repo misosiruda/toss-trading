@@ -374,6 +374,15 @@ overflow, trailer, metadata/body 검증 실패는 buffer를 zeroize한 뒤 fail-
 verifier에 전달한다. 성공해도 process-local ephemeral response handle만 반환하며 durable
 reuse와 accepted acquisition은 false다.
 
+`officialMarketCalendarKrxAcquisitionCoordinator.ts`는 exact `targetYear` request만 받고
+OTP fixed GET, one-shot POST parameter/wire encoding, holiday data fixed POST와 semantic
+response consumer를 순서대로 조립한다. Production factory는 dependency override를
+노출하지 않고 test-only factory도 process-local opaque handle consumer만 주입받는다.
+각 단계 실패는 raw OTP/response detail 없이 stage-specific error로 축약하며 `finally`에서
+아직 남은 모든 handle을 idempotent하게 dispose한다. 반환은 row value 없는 frozen semantic
+summary뿐이고 historical completeness, durable evidence reuse와 accepted acquisition은
+계속 false다.
+
 `officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 raw `Set-Cookie` value를
 받거나 저장하지 않고 count만 검증한다. Request isolation은 automatic redirect/cookie
 jar disabled와 outbound Cookie count 0을 strict하게 요구한다. `no-store`, `no-cache`,
