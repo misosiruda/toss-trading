@@ -153,6 +153,20 @@ status/header/framing/freshness가 검증된 network factory와 fixed data-POST 
 없으므로 이 handle은 acquisition capability나 accepted evidence가 아니다. Callback,
 raw-byte getter, serialization 또는 durable sink를 추가하지 않는다.
 
+### KRX Holiday Data POST Static Policy
+
+`officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
+page가 노출한 form contract 중 token-free 정적 부분만
+`krx_holiday_data_post_static_request.v1`로 등록한다. Source page, exact `POST`
+target, `gridTp=KRX`, exact `pagePath`를 고정하고, 값이 아직 결합되지 않은 dynamic
+slot은 canonical order의 `code`, `search_bas_yy`만 허용한다.
+
+`code` 값은 이 policy에 저장하지 않으며 기존 OTP GET parameter policy의 known-safe
+name 상한도 완화하지 않는다. `pageFirstCall`, navigation/pagination field, header,
+body encoding, cookie 또는 OTP consumption을 추정해 추가하지 않는다. 따라서 이
+policy는 HTTP request body, one-shot consumer, acquisition capability 또는 accepted
+evidence가 아니다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
