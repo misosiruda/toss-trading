@@ -228,8 +228,9 @@ Fixed consumer는 caller에게 새 file name을 받지 않고 OTP handle에 이�
 file identity와 bytes를 opaque download-parameter handle로 exact 한 번만 이전한다. 두
 handle 모두 getter, callback, enumerable field나 serialization surface를 제공하지 않는다.
 Download-parameter handle을 직접 consume하는 fixed wire encoder와 download POST network
-consumer는 구현됐지만 legacy OTP GET network consumer는 아직 구현하지 않았다. Durable
-reuse와 accepted acquisition은 계속 금지한다.
+consumer도 구현됐다. Dedicated legacy OTP GET consumer는 registered file name을 network 전
+검증하고 exact query/header/response boundary를 적용한 뒤 OTP bytes와 같은 file identity를
+기존 opaque lifecycle로 이전한다. Durable reuse와 accepted acquisition은 계속 금지한다.
 
 `officialMarketCalendarKrxLegacyDownloadPostWirePolicy.ts`는 source policy의 exact
 `POST https://file.krx.co.kr/download.jspx`, `application/x-www-form-urlencoded`과 단일
@@ -277,6 +278,15 @@ Request body와 response bytes는 failure/disposal/JSON export에서 zeroize된�
 검증하지 않는다. 따라서 opaque response는 parser 전 candidate일 뿐 durable sidecar,
 accepted evidence 또는 historical completeness 근거가 아니다. Checked-in TLS material과
 response body는 synthetic fixture이며 실제 KRX OTP 또는 document bytes를 포함하지 않는다.
+
+`officialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer.ts`는 production factory에
+dial/CA/deadline override를 두지 않고 exact `fileDown` GET을 실행한다. Test-only connector는
+loopback IP와 synthetic `global.krx.co.kr` certificate만 허용한다. Registered `file_nm`을
+network 전에 선택하고 canonical parameter order, fixed header, HTTP/1.1 connection close를
+적용한다. Response는 exact 300-byte Content-Length/type/cache, `Expires == Date`, Set-Cookie
+header count 2와 forbidden representation/range/trailer 부재를 검증한다. Cookie value는
+보존하거나 download POST에 replay하지 않으며 invalid Base64와 incomplete transfer는 opaque
+OTP handle을 만들지 않는다.
 
 ### KRX Holiday Data POST Static Policy
 
