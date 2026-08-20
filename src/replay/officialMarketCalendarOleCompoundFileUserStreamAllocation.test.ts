@@ -17,6 +17,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordClxReference
 } from "./officialMarketCalendarKrxLegacyWordClxReference.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordClxError,
+  verifyOfficialMarketCalendarKrxLegacyWordClx
+} from "./officialMarketCalendarKrxLegacyWordClx.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -555,6 +560,88 @@ test("official calendar KRX legacy Word CLX reference rejects empty or out-of-bo
   }
 });
 
+test("official calendar KRX legacy Word CLX verifies Prc and Pcdt framing", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configureClxFraming(bytes, [0, 3], 16);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordClx(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION
+  );
+  assert.equal(result.nFib, 0x00c1);
+  assert.equal(result.tableStreamName, "1Table");
+  assert.equal(result.fcClx, 4);
+  assert.equal(result.lcbClx, 30);
+  assert.equal(result.prcCount, 2);
+  assert.equal(result.prcByteLength, 9);
+  assert.equal(result.pcdtOffset, 9);
+  assert.equal(result.plcPcdByteLength, 16);
+  assert.equal(result.pieceDescriptorCount, 1);
+  assert.deepEqual(result.plcPcdBytes, new Uint8Array(16).fill(0x55));
+  assert.equal(result.clxFramingVerified, true);
+  assert.equal(result.plcPcdStatus, "framing_only_entries_not_parsed");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+
+  fillFileSectorRange(bytes, 3, 4 + 14, 16, 0x77);
+  assert.deepEqual(result.plcPcdBytes, new Uint8Array(16).fill(0x55));
+});
+
+test("official calendar KRX legacy Word CLX accepts empty Prc and empty piece array framing", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configureClxFraming(bytes, [], 4);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordClx(bytes);
+  assert.equal(result.prcCount, 0);
+  assert.equal(result.pcdtOffset, 0);
+  assert.equal(result.pieceDescriptorCount, 0);
+});
+
+test("official calendar KRX legacy Word CLX rejects invalid framing", () => {
+  const invalidClxValues = [
+    Uint8Array.from([0]),
+    Uint8Array.from([1]),
+    Uint8Array.from([1, 0xff, 0xff]),
+    Uint8Array.from([1, 0xa3, 0x3f]),
+    Uint8Array.from([1, 2, 0, 0x11]),
+    Uint8Array.from([2]),
+    Uint8Array.from([2, 5, 0, 0, 0, 0, 0, 0, 0, 0]),
+    Uint8Array.from([2, 4, 0, 0, 0, 0, 0, 0, 0, 0]),
+    Uint8Array.from([2, 16, 0, 0, 0, ...new Uint8Array(15)])
+  ];
+  for (const clxBytes of invalidClxValues) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configureRawClx(bytes, clxBytes);
+
+    assertClxCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_CLX_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -675,6 +762,36 @@ function configureClxReference(
   if (offset + size <= 64) {
     fillFileSectorRange(bytes, 3, offset, size, value);
   }
+}
+
+function configureClxFraming(
+  bytes: Uint8Array,
+  prcSizes: readonly number[],
+  plcPcdByteLength: number
+): void {
+  const values: number[] = [];
+  for (const prcSize of prcSizes) {
+    values.push(1, prcSize & 0xff, (prcSize >>> 8) & 0xff);
+    values.push(...new Uint8Array(prcSize).fill(0x33));
+  }
+  values.push(
+    2,
+    plcPcdByteLength & 0xff,
+    (plcPcdByteLength >>> 8) & 0xff,
+    (plcPcdByteLength >>> 16) & 0xff,
+    (plcPcdByteLength >>> 24) & 0xff
+  );
+  values.push(...new Uint8Array(plcPcdByteLength).fill(0x55));
+  configureRawClx(bytes, Uint8Array.from(values));
+}
+
+function configureRawClx(bytes: Uint8Array, clxBytes: Uint8Array): void {
+  const tableOffset = 4;
+  configureClxReference(bytes, tableOffset, clxBytes.length, 0);
+  bytes.set(
+    clxBytes,
+    (3 + 1) * readSectorSize(bytes) + tableOffset
+  );
 }
 
 function initializeStreamEntry(
@@ -858,6 +975,18 @@ function assertClxReferenceCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordClxReference(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordClxReferenceError &&
+      error.code === code
+  );
+}
+
+function assertClxCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordClxError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordClx(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordClxError &&
       error.code === code
   );
 }
