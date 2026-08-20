@@ -27,6 +27,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapx
 } from "./officialMarketCalendarKrxLegacyWordPlcBtePapx.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_REFERENCES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError,
+  verifyOfficialMarketCalendarKrxLegacyWordPapxFkpReferences
+} from "./officialMarketCalendarKrxLegacyWordPapxFkpReferences.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordClxError,
   verifyOfficialMarketCalendarKrxLegacyWordClx
@@ -762,6 +767,110 @@ test("official calendar KRX legacy Word PlcBtePapx rejects invalid framing", () 
     assertPlcBtePapxCode(
       bytes,
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word PapxFkp references project 512-byte pages", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configureRawPlcBtePapx(
+    bytes,
+    createPlcBtePapxBytes([920, 950, 1000], [2, 3])
+  );
+  writeWordUint32(bytes, 64, 2048);
+  fillWordRange(bytes, 1024, 512, 0x2a);
+  fillWordRange(bytes, 1536, 512, 0x3b);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordPapxFkpReferences(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_REFERENCES_SCHEMA_VERSION
+  );
+  assert.equal(result.cbMac, 2048);
+  assert.deepEqual(
+    result.references.map((reference) => ({
+      index: reference.index,
+      fcStart: reference.fcStart,
+      fcEnd: reference.fcEnd,
+      pn: reference.pn,
+      fkpByteOffset: reference.fkpByteOffset,
+      fkpByteLength: reference.fkpByteLength,
+      firstByte: reference.fkpBytes[0],
+      lastByte: reference.fkpBytes[511],
+      bytesOwnership: reference.bytesOwnership
+    })),
+    [
+      {
+        index: 0,
+        fcStart: 920,
+        fcEnd: 950,
+        pn: 2,
+        fkpByteOffset: 1024,
+        fkpByteLength: 512,
+        firstByte: 0x2a,
+        lastByte: 0x2a,
+        bytesOwnership: "caller_owned_copy"
+      },
+      {
+        index: 1,
+        fcStart: 950,
+        fcEnd: 1000,
+        pn: 3,
+        fkpByteOffset: 1536,
+        fkpByteLength: 512,
+        firstByte: 0x3b,
+        lastByte: 0x3b,
+        bytesOwnership: "caller_owned_copy"
+      }
+    ]
+  );
+  assert.equal(result.papxFkpReferencesVerified, true);
+  assert.equal(result.papxFkpFramingStatus, "not_parsed");
+  assert.equal(result.papxStatus, "not_parsed");
+  assert.equal(result.paragraphPropertiesStatus, "not_parsed");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.references), true);
+  assert.equal(Object.isFrozen(result.references[0]), true);
+
+  fillWordRange(bytes, 1024, 512, 0x7c);
+  assert.equal(result.references[0]!.fkpBytes[0], 0x2a);
+});
+
+test("official calendar KRX legacy Word PapxFkp references reject invalid pages and FCs", () => {
+  const invalidValues = [
+    { fileOffsets: [920], pns: [], cbMac: 2048 },
+    { fileOffsets: [920, 950], pns: [1], cbMac: 2048 },
+    { fileOffsets: [920, 950], pns: [3], cbMac: 2047 },
+    { fileOffsets: [920, 2100], pns: [2], cbMac: 2048 },
+    { fileOffsets: [920, 950], pns: [2], cbMac: 4097 }
+  ];
+  for (const value of invalidValues) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configureRawPlcBtePapx(
+      bytes,
+      createPlcBtePapxBytes(value.fileOffsets, value.pns)
+    );
+    writeWordUint32(bytes, 64, value.cbMac);
+
+    assertPapxFkpReferencesCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_REFERENCE_INVALID"
     );
   }
 });
@@ -1592,6 +1701,23 @@ function configureRawPlcBtePapx(
   bytes.set(plcBtePapxBytes, (3 + 1) * readSectorSize(bytes) + 20);
 }
 
+function createPlcBtePapxBytes(
+  fileOffsets: readonly number[],
+  pns: readonly number[]
+): Uint8Array {
+  assert.equal(fileOffsets.length, pns.length + 1);
+  const bytes = new Uint8Array(fileOffsets.length * 4 + pns.length * 4);
+  const view = new DataView(bytes.buffer);
+  fileOffsets.forEach((fileOffset, index) => {
+    view.setUint32(index * 4, fileOffset, true);
+  });
+  const pnOffset = fileOffsets.length * 4;
+  pns.forEach((pn, index) => {
+    view.setUint32(pnOffset + index * 4, pn, true);
+  });
+  return bytes;
+}
+
 function configureClxFraming(
   bytes: Uint8Array,
   prcSizes: readonly number[],
@@ -1764,6 +1890,16 @@ function fillFileSectorRange(
   );
 }
 
+function fillWordRange(
+  bytes: Uint8Array,
+  offset: number,
+  byteLength: number,
+  value: number
+): void {
+  const start = (4 + 1) * readSectorSize(bytes) + offset;
+  bytes.fill(value, start, start + byteLength);
+}
+
 function writeWordByte(bytes: Uint8Array, offset: number, value: number): void {
   bytes[(4 + 1) * readSectorSize(bytes) + offset] = value;
 }
@@ -1869,6 +2005,18 @@ function assertPlcBtePapxCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapx(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordPlcBtePapxError &&
+      error.code === code
+  );
+}
+
+function assertPapxFkpReferencesCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordPapxFkpReferences(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError &&
       error.code === code
   );
 }
