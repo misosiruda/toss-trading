@@ -2107,8 +2107,9 @@ test("calendar publication activation preflight blocks mutation and verified-set
   const decision =
     evaluateOfficialMarketCalendarPublicationActivationPreflight({
       packagePlan: plan,
+      sidecars,
       filesystemPreflight
-    });
+    }, fixture.options);
 
   assert.equal(decision.status, "blocked");
   assert.equal(decision.artifactHash, artifact.artifactHash);
@@ -2135,20 +2136,34 @@ test("calendar publication activation preflight blocks mutation and verified-set
     () =>
       evaluateOfficialMarketCalendarPublicationActivationPreflight({
         packagePlan: { ...plan, planHash: hash("f") },
+        sidecars,
         filesystemPreflight
-      }),
-    /package plan hash mismatch/
+      }, fixture.options),
+    /does not match verified artifact and sidecars/
   );
   assert.throws(
     () =>
       evaluateOfficialMarketCalendarPublicationActivationPreflight({
         packagePlan: plan,
+        sidecars,
         filesystemPreflight: {
           ...filesystemPreflight,
           preflightHash: hash("f")
         }
-      }),
+      }, fixture.options),
     /filesystem preflight hash mismatch/
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationActivationPreflight({
+        packagePlan: plan,
+        sidecars: [
+          { ...sidecars[0], bytes: new Uint8Array(100).fill(90) },
+          sidecars[1]
+        ],
+        filesystemPreflight
+      }, fixture.options),
+    /sidecar hash mismatch/
   );
 });
 

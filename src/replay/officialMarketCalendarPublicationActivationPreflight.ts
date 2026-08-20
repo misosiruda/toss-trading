@@ -6,8 +6,7 @@ import {
   parseOfficialMarketCalendarPublicationFilesystemPreflight
 } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 import {
-  createOfficialMarketCalendarPublicationPackagePlanHash,
-  officialMarketCalendarPublicationPackagePlanSchema
+  parseOfficialMarketCalendarPublicationPackagePlan
 } from "./officialMarketCalendarPublicationPackagePlan.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 
@@ -60,26 +59,30 @@ export type OfficialMarketCalendarPublicationActivationPreflight = z.infer<
 export type OfficialMarketCalendarPublicationActivationPreflightPayload =
   z.infer<typeof activationPreflightPayloadSchema>;
 
+interface ActivationPreflightOptions {
+  sourceBytesByExchange: unknown;
+  freshnessPolicyRegistry: unknown;
+  parserContractRegistry: unknown;
+}
+
 export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
-  input: unknown
+  input: unknown,
+  options: ActivationPreflightOptions
 ): OfficialMarketCalendarPublicationActivationPreflight {
   const parsed = z
     .object({
-      packagePlan: officialMarketCalendarPublicationPackagePlanSchema,
+      packagePlan: z.unknown(),
+      sidecars: z.array(z.unknown()),
       filesystemPreflight:
         officialMarketCalendarPublicationFilesystemPreflightSchema
     })
     .strict()
     .parse(input);
-  const { planHash, ...planPayload } = parsed.packagePlan;
-  if (
-    planHash !==
-    createOfficialMarketCalendarPublicationPackagePlanHash(planPayload)
-  ) {
-    throw new Error(
-      "official calendar publication activation package plan hash mismatch"
-    );
-  }
+  const packagePlan = parseOfficialMarketCalendarPublicationPackagePlan(
+    parsed.packagePlan,
+    { sidecars: parsed.sidecars },
+    options
+  ).plan;
   const filesystemPreflight =
     parseOfficialMarketCalendarPublicationFilesystemPreflight(
       parsed.filesystemPreflight
@@ -88,8 +91,8 @@ export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION,
     operation: "publish_and_activate",
-    artifactHash: parsed.packagePlan.artifact.artifactHash,
-    packagePlanHash: planHash,
+    artifactHash: packagePlan.artifact.artifactHash,
+    packagePlanHash: packagePlan.planHash,
     filesystemPreflightHash: filesystemPreflight.preflightHash,
     publicationRootIdentityHash:
       filesystemPreflight.publicationRootIdentityHash,
