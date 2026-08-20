@@ -1007,6 +1007,8 @@ test("official calendar KRX legacy Word PapxFkp rejects invalid internal framing
     (bytes) => writeWordByte(bytes, 1024 + 511, 0x1e),
     (bytes) => writeWordUint32(bytes, 1024 + 4, 920),
     (bytes) => writeWordUint32(bytes, 1024 + 8, 2049),
+    (bytes) => writeWordUint32(bytes, 1024, 919),
+    (bytes) => writeWordUint32(bytes, 1024 + 8, 999),
     (bytes) => writeWordByte(bytes, 1024 + 12, 10),
     (bytes) => writeWordByte(bytes, 1024 + 12, 0xff),
     (bytes) => writeWordByte(bytes, 1024 + 40, 1),

@@ -93,6 +93,12 @@ export function verifyOfficialMarketCalendarKrxLegacyWordPapxFkp(
       }
       rgfc.push(fc);
     }
+    if (
+      rgfc[0] !== reference.fcStart ||
+      rgfc[rgfc.length - 1] !== reference.fcEnd
+    ) {
+      throw invalidPapxFkp();
+    }
     const paragraphs: VerifiedOfficialMarketCalendarKrxLegacyWordPapxInFkp[] = [];
     for (let index = 0; index < cpara; index += 1) {
       const bOffset = bytes[bxPapByteOffset + index * BX_PAP_BYTE_LENGTH]!;
