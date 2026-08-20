@@ -231,7 +231,20 @@ Content-Range와 trailer를 거부한다. Response `Set-Cookie`는 raw value 없
 
 이 policy는 HTTP request를 실행하거나 opaque wire-body bytes를 노출하지 않는다. Raw
 response는 process-local only, durable reuse와 accepted acquisition은 false로 고정한다.
-Fixed network consumer와 cancellation/partial-body zeroization test는 후속 구현이다.
+
+`createOfficialMarketCalendarKrxHolidayDataNetworkConsumer`는 opaque wire-body handle을
+exactly once 소비하는 production fixed HTTPS consumer다. Registered URL과 header, platform
+trust, `global.krx.co.kr` hostname/SNI, connection reuse disabled와 10초 absolute deadline을
+고정하며 caller가 dial target, CA, cookie, credential, redirect 또는 deadline을 주입할 수
+없다. Loopback integration test factory만 synthetic CA와 더 짧은 deadline을 받으며 같은
+production Host/SNI/certificate hostname 검증을 유지한다.
+
+Consumer는 request `finish`, failure와 deadline에서 encoded request bytes를 zeroize한다.
+Response allocation 전에 exact HTTP/1.1 200, single canonical `Content-Length`, 1,000,000-byte
+상한과 forbidden header를 검사하고 partial/aborted/overflow/trailer를 거부한다. Raw
+`Set-Cookie` value는 별도 collection에 복사하지 않고 name count만 metadata verifier에
+전달한다. Complete body는 기존 metadata/body verifier를 통과한 뒤 process-local opaque
+ephemeral response handle로 이전하며 durable reuse와 accepted acquisition은 계속 false다.
 
 ### KRX Holiday Data Response Metadata Boundary
 
