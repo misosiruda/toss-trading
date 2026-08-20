@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { verifyOfficialMarketCalendarAcquisitionFreshnessPolicyBoundary } from "./officialMarketCalendarAcquisitionFreshnessPolicyBoundary.js";
@@ -34,6 +35,14 @@ import {
   parseOfficialMarketCalendarPublicationReaderFreshness,
   requireOfficialMarketCalendarPublicationReaderHandle
 } from "./officialMarketCalendarPublicationReaderFreshness.js";
+import {
+  assertOfficialMarketCalendarPublicationActivationPermitted,
+  evaluateOfficialMarketCalendarPublicationActivationPreflight,
+  parseOfficialMarketCalendarPublicationActivationPreflight
+} from "./officialMarketCalendarPublicationActivationPreflight.js";
+import {
+  inspectOfficialMarketCalendarPublicationFilesystem
+} from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 import {
   createOfficialMarketCalendarPublicationPackagePlan,
   parseOfficialMarketCalendarPublicationPackagePlan
@@ -2067,6 +2076,94 @@ test("calendar publication package plan binds artifact bytes and exact sidecars"
         fixture.options
       ),
     /does not match verified artifact and sidecars/
+  );
+});
+
+test("calendar publication activation preflight blocks mutation and verified-set changes", async () => {
+  const fixture = evidenceArtifactV2Fixture();
+  const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+    fixture.input,
+    fixture.options
+  );
+  const sidecars = artifact.sourceArchiveBindings
+    .map(({ archivePath, sourceDocumentRef }) => ({
+      archivePath,
+      bytes:
+        fixture.options.sourceBytesByExchange[sourceDocumentRef.exchange][
+          sourceDocumentRef.documentId
+        ]
+    }))
+    .sort((left, right) =>
+      left.archivePath < right.archivePath ? -1 : 1
+    );
+  const { plan } = createOfficialMarketCalendarPublicationPackagePlan(
+    { artifact, sidecars },
+    fixture.options
+  );
+  const filesystemPreflight =
+    await inspectOfficialMarketCalendarPublicationFilesystem({
+      publicationRoot: tmpdir()
+    });
+  const decision =
+    evaluateOfficialMarketCalendarPublicationActivationPreflight({
+      packagePlan: plan,
+      sidecars,
+      filesystemPreflight
+    }, fixture.options);
+
+  assert.equal(decision.status, "blocked");
+  assert.equal(decision.artifactHash, artifact.artifactHash);
+  assert.equal(decision.packagePlanHash, plan.planHash);
+  assert.equal(
+    decision.filesystemPreflightHash,
+    filesystemPreflight.preflightHash
+  );
+  assert.deepEqual(decision.blockers, filesystemPreflight.blockers);
+  assert.equal(decision.filesystemMutationAction, "none");
+  assert.equal(decision.verifiedSetAction, "unchanged");
+  assert.ok(Object.isFrozen(decision));
+  assert.ok(Object.isFrozen(decision.blockers));
+  assert.deepEqual(
+    parseOfficialMarketCalendarPublicationActivationPreflight(decision),
+    decision
+  );
+  assert.throws(
+    () =>
+      assertOfficialMarketCalendarPublicationActivationPermitted(decision),
+    /publication activation is blocked/
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationActivationPreflight({
+        packagePlan: { ...plan, planHash: hash("f") },
+        sidecars,
+        filesystemPreflight
+      }, fixture.options),
+    /does not match verified artifact and sidecars/
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationActivationPreflight({
+        packagePlan: plan,
+        sidecars,
+        filesystemPreflight: {
+          ...filesystemPreflight,
+          preflightHash: hash("f")
+        }
+      }, fixture.options),
+    /filesystem preflight hash mismatch/
+  );
+  assert.throws(
+    () =>
+      evaluateOfficialMarketCalendarPublicationActivationPreflight({
+        packagePlan: plan,
+        sidecars: [
+          { ...sidecars[0], bytes: new Uint8Array(100).fill(90) },
+          sidecars[1]
+        ],
+        filesystemPreflight
+      }, fixture.options),
+    /sidecar hash mismatch/
   );
 });
 

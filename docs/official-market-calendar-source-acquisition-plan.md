@@ -289,6 +289,15 @@ no-replace directory primitive가 선행되어야 한다.
 Stored contract도 `directorySync: unsupported`이면 `platform: win32`를 요구해
 runtime producer의 compatibility 경계를 그대로 재검증한다.
 
+`officialMarketCalendarPublicationActivationPreflight.ts`는 verified package plan과
+filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
+결합한다. 현재 built-in filesystem implementation은 항상 `blocked`이며 exact
+artifact/plan/preflight/root identity와 canonical blocker를 decision hash에 포함한다.
+이 상태에서는 `filesystemMutationAction: none`, `verifiedSetAction: unchanged`만
+허용하므로 writer 또는 coordinator가 unsupported preflight를 성공으로 축소할 수 없다.
+별도 검증된 filesystem implementation이 도입되기 전에는 activation permit을 만들지
+않으며 실제 write, recovery와 verified-set 갱신은 수행하지 않는다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
