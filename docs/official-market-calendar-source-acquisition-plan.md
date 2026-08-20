@@ -297,6 +297,15 @@ detail 없는 stage error로 변환하며 모든 중간 handle은 `finally`에�
 opaque document response의 ownership만 caller에게 이전하며 parser/durable sink로 자동 연결하지
 않는다.
 
+`officialMarketCalendarKrxLegacyDocumentIdentity.ts`는 candidate document의 registered
+`fileName`, exact byte length, SHA-256와 8-byte OLE Compound File signature를 하나의
+fail-closed identity boundary에서 검증한다. Production verifier는 source policy override를
+받지 않고, test-only verifier만 snapshot된 synthetic expectation을 사용한다. 성공 결과는
+hash와 signature 검증 사실을 기록하지만 `parserStatus=not_verified`와
+`sourceRoleStatus=candidate_not_accepted`를 유지한다. Signature 확인은 OLE container 전체
+구조나 Word table semantics 검증을 대신하지 않으며 opaque network response consumer와도
+아직 연결되지 않는다.
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
