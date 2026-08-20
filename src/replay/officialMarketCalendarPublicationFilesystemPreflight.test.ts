@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
@@ -8,10 +9,15 @@ import {
 } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 
 test("calendar publication filesystem preflight keeps Node directory publish disabled", async () => {
-  const preflight = await inspectOfficialMarketCalendarPublicationFilesystem();
+  const preflight = await inspectOfficialMarketCalendarPublicationFilesystem({
+    publicationRoot: tmpdir()
+  });
 
   assert.equal(preflight.status, "unsupported");
   assert.equal(preflight.capabilities.atomicNoReplaceDirectoryPublish, false);
+  assert.equal(Object.isFrozen(preflight.capabilities), true);
+  assert.equal(Object.isFrozen(preflight.observations), true);
+  assert.equal(Object.isFrozen(preflight.blockers), true);
   assert.ok(
     preflight.blockers.includes(
       "atomic_no_replace_directory_publish_unavailable"
@@ -28,7 +34,9 @@ test("calendar publication filesystem preflight keeps Node directory publish dis
 });
 
 test("calendar publication filesystem preflight rejects tamper", async () => {
-  const preflight = await inspectOfficialMarketCalendarPublicationFilesystem();
+  const preflight = await inspectOfficialMarketCalendarPublicationFilesystem({
+    publicationRoot: tmpdir()
+  });
 
   assert.throws(
     () =>
@@ -57,5 +65,14 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
         }
       }),
     /blockers must match capabilities|observations must match capabilities/
+  );
+});
+
+test("calendar publication filesystem preflight requires an absolute existing root", async () => {
+  await assert.rejects(
+    inspectOfficialMarketCalendarPublicationFilesystem({
+      publicationRoot: "relative-publication-root"
+    }),
+    /root must be absolute/
   );
 });

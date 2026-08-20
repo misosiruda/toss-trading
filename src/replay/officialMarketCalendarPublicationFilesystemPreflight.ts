@@ -1,5 +1,4 @@
 import { isAbsolute, join, relative } from "node:path";
-import { tmpdir } from "node:os";
 import {
   link,
   mkdir,
@@ -26,6 +25,7 @@ const preflightPayloadSchema = z
     ),
     implementationId: z.literal("node_fs_promises.v1"),
     platform: z.string().regex(/^[a-z0-9_]+$/),
+    publicationRootIdentityHash: sha256HashSchema,
     status: z.literal("unsupported"),
     capabilities: z
       .object({
@@ -133,11 +133,15 @@ export type OfficialMarketCalendarPublicationFilesystemPreflightPayload = z.infe
   typeof preflightPayloadSchema
 >;
 
-export async function inspectOfficialMarketCalendarPublicationFilesystem(): Promise<
-  OfficialMarketCalendarPublicationFilesystemPreflight
-> {
-  const prefix = "toss-calendar-publication-preflight-";
-  const probeRoot = await mkdtemp(join(tmpdir(), prefix));
+export async function inspectOfficialMarketCalendarPublicationFilesystem(input: {
+  publicationRoot: string;
+}): Promise<OfficialMarketCalendarPublicationFilesystemPreflight> {
+  if (!isAbsolute(input.publicationRoot)) {
+    throw new Error("publication filesystem preflight root must be absolute");
+  }
+  const publicationRoot = await realpath(input.publicationRoot);
+  const prefix = ".toss-calendar-publication-preflight-";
+  const probeRoot = await mkdtemp(join(publicationRoot, prefix));
   try {
     const filePath = join(probeRoot, "exclusive-file");
     const exclusiveStagingFileCreate = await probeExclusiveFile(filePath);
@@ -166,6 +170,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(): Prom
         OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
       implementationId: "node_fs_promises.v1",
       platform: process.platform,
+      publicationRootIdentityHash: createReplayResearchHash(publicationRoot),
       status: "unsupported",
       capabilities: {
         exclusiveStagingFileCreate:
@@ -183,13 +188,13 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(): Prom
       },
       blockers
     });
-    return Object.freeze({
+    return deepFreeze({
       ...payload,
       preflightHash:
         createOfficialMarketCalendarPublicationFilesystemPreflightHash(payload)
     });
   } finally {
-    await removeVerifiedProbeRoot(probeRoot, prefix);
+    await removeVerifiedProbeRoot(probeRoot, publicationRoot, prefix);
   }
 }
 
@@ -204,7 +209,7 @@ export function parseOfficialMarketCalendarPublicationFilesystemPreflight(
   ) {
     throw new Error("official calendar publication filesystem preflight hash mismatch");
   }
-  return Object.freeze(parsed);
+  return deepFreeze(parsed);
 }
 
 export function assertOfficialMarketCalendarPublicationFilesystemSupported(
@@ -298,23 +303,37 @@ async function probeExistingDirectoryRename(root: string) {
   }
 }
 
-async function removeVerifiedProbeRoot(root: string, prefix: string): Promise<void> {
-  const [resolvedTemp, resolvedRoot] = await Promise.all([
-    realpath(tmpdir()),
+async function removeVerifiedProbeRoot(
+  root: string,
+  publicationRoot: string,
+  prefix: string
+): Promise<void> {
+  const [resolvedPublicationRoot, resolvedRoot] = await Promise.all([
+    realpath(publicationRoot),
     realpath(root)
   ]);
-  const relativeRoot = relative(resolvedTemp, resolvedRoot);
+  const relativeRoot = relative(resolvedPublicationRoot, resolvedRoot);
   if (
     isAbsolute(relativeRoot) ||
     relativeRoot === ".." ||
     relativeRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
     !relativeRoot.startsWith(prefix)
   ) {
-    throw new Error("publication preflight cleanup root escaped the system temp directory");
+    throw new Error("publication preflight cleanup root escaped the publication root");
   }
   await rm(resolvedRoot, { recursive: true, force: false });
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) {
+    deepFreeze(child);
+  }
+  return Object.freeze(value);
 }
