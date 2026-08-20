@@ -141,6 +141,18 @@ response header, transfer completion, freshness 또는 network provenance를 증
 않는다. Opaque one-shot ownership handle과 fixed data-POST consumer가 구현되기 전에는
 raw OTP를 durable metadata, log, API, MCP, CLI 또는 artifact에 넣지 않는다.
 
+`officialMarketCalendarKrxOtpEphemeralBody.ts`는 body-shape 검증을 통과할 raw response
+bytes의 ownership을 process-local opaque handle로 이전하는 첫 lifecycle 단계를
+구현한다. Factory는 caller view를 internal copy와 분리한 직후 zeroize하고, 검증 실패
+시에도 caller/internal bytes를 모두 zeroize한다. Handle은 frozen null-prototype object와
+non-enumerable `toJSON`만 가지며 raw bytes 또는 non-secret shape도 노출하지 않는다.
+
+JSON export 시도는 handle을 dispose한 뒤 거부하고, 명시적 disposal은 internal bytes를
+zeroize하며 idempotent하다. Factory가 만들지 않은 forged handle은 거부한다. 아직
+status/header/framing/freshness가 검증된 network factory와 fixed data-POST consumer가
+없으므로 이 handle은 acquisition capability나 accepted evidence가 아니다. Callback,
+raw-byte getter, serialization 또는 durable sink를 추가하지 않는다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted

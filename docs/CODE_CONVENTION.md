@@ -300,6 +300,14 @@ report는 module-owned fixed non-exporting operation 안에서만 만들고 call
 value로 제공하지 않아야 한다. Handle JSON export와 재사용은 fail-closed로 거부한다. Durable
 raw-byte 저장 또는 replay 실행 책임을 이 module에 추가해서는 안 된다.
 
+`officialMarketCalendarKrxOtpEphemeralBody.ts`는 KRX OTP body-shape-valid bytes를
+process-local opaque handle로 이전하는 ownership boundary다. Factory는 caller byte view를
+내부 copy와 분리한 즉시 zeroize하고 실패 시 모든 owned copy를 지워야 한다. Handle은 raw
+bytes, token string/hash 또는 body shape를 노출하지 않고 JSON export를 disposal 뒤 거부해야
+하며 forged handle을 받지 않는다. Network provenance가 검증된 factory와 fixed one-shot
+data-POST consumer가 추가되기 전에는 raw getter, callback, serialization, durable sink 또는
+acquisition capability를 이 module에 추가해서는 안 된다.
+
 ### `src/workflows`
 
 책임:
