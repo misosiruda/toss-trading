@@ -235,7 +235,11 @@ export function createOfficialMarketCalendarPublicationFilesystemPreflightHash(
 }
 
 async function probeExclusiveFile(path: string) {
-  await writeFile(path, "existing", { flag: "wx" });
+  try {
+    await writeFile(path, "existing", { flag: "wx" });
+  } catch {
+    return "probe_failed" as const;
+  }
   try {
     const handle = await open(path, "wx");
     await handle.close();
@@ -282,10 +286,17 @@ async function probeFileHardLink(root: string) {
   const source = join(root, "link-source");
   const freshDestination = join(root, "link-fresh-destination");
   const destination = join(root, "link-destination");
-  await Promise.all([
-    writeFile(source, "source", { flag: "wx" }),
-    writeFile(destination, "destination", { flag: "wx" })
-  ]);
+  try {
+    await Promise.all([
+      writeFile(source, "source", { flag: "wx" }),
+      writeFile(destination, "destination", { flag: "wx" })
+    ]);
+  } catch {
+    return {
+      freshFileHardLink: "probe_failed" as const,
+      existingFileHardLink: "probe_failed" as const
+    };
+  }
   try {
     await link(source, freshDestination);
   } catch {
@@ -314,8 +325,12 @@ async function probeFileHardLink(root: string) {
 async function probeExistingDirectoryRename(root: string) {
   const source = join(root, "rename-source");
   const destination = join(root, "rename-destination");
-  await Promise.all([mkdir(source), mkdir(destination)]);
-  await writeFile(join(source, "marker"), "source", { flag: "wx" });
+  try {
+    await Promise.all([mkdir(source), mkdir(destination)]);
+    await writeFile(join(source, "marker"), "source", { flag: "wx" });
+  } catch {
+    return "probe_failed" as const;
+  }
   try {
     await rename(source, destination);
     return "destination_replaced" as const;

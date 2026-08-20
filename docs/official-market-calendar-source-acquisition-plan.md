@@ -270,12 +270,14 @@ sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 현재 Node filesystem runtime의
-exclusive file create, file/directory durability sync, fresh hard-link 생성과 existing-file
-hard-link collision, existing
-directory rename 동작을 exact absolute publication root 내부의 writer-owned temporary
+exclusive file create, file/directory durability sync, fresh hard-link 생성,
+existing-file hard-link collision과 existing directory rename 동작을 exact absolute
+publication root 내부의 writer-owned temporary
 namespace에서 관찰하되 directory sync는 publication root handle 자체에 수행하고
 root realpath identity를 hash에 결합한다. 반환 contract는
-nested capability, observation과 blocker까지 deep-freeze한다. 그러나
+nested capability, observation과 blocker까지 deep-freeze한다. Probe root 생성 뒤
+개별 probe의 setup 또는 operation 실패는 `probe_failed` observation과 대응
+blocker로 보존한다. 그러나
 `node:fs/promises.rename()`은 atomic no-replace directory contract를 제공하지 않으므로
 built-in implementation은 모든 platform에서 `unsupported`이며
 `atomic_no_replace_directory_publish_unavailable` blocker를 반드시 남긴다. Windows의
