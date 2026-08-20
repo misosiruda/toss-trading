@@ -7,6 +7,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams
 } from "./officialMarketCalendarKrxLegacyWordBinaryFileStreams.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_FIB_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordFibError,
+  verifyOfficialMarketCalendarKrxLegacyWordFib
+} from "./officialMarketCalendarKrxLegacyWordFib.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -388,6 +393,103 @@ test("official calendar KRX legacy Word streams reject size limits before projec
   );
 });
 
+test("official calendar KRX legacy Word FIB resolves every supported version", () => {
+  const definitions = [
+    { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 },
+    { nFib: 0x00d9, version: "Word2000", cbRgFcLcb: 0x006c, cswNew: 2 },
+    { nFib: 0x0101, version: "Word2002", cbRgFcLcb: 0x0088, cswNew: 2 },
+    { nFib: 0x010c, version: "Word2003", cbRgFcLcb: 0x00a4, cswNew: 2 },
+    { nFib: 0x0112, version: "Word2007", cbRgFcLcb: 0x00b7, cswNew: 5 }
+  ] as const;
+  for (const definition of definitions) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, definition);
+
+    const result = verifyOfficialMarketCalendarKrxLegacyWordFib(bytes);
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_FIB_SCHEMA_VERSION
+    );
+    assert.equal(result.nFib, definition.nFib);
+    assert.equal(result.version, definition.version);
+    assert.equal(result.csw, 0x000e);
+    assert.equal(result.cslw, 0x0016);
+    assert.equal(result.cbRgFcLcb, definition.cbRgFcLcb);
+    assert.equal(result.cswNew, definition.cswNew);
+    assert.equal(
+      result.fibByteLength,
+      156 + definition.cbRgFcLcb * 8 + definition.cswNew * 2
+    );
+    assert.equal(result.fibStructureVerified, true);
+    assert.equal(result.fibFieldStatus, "count_sections_only_not_parsed");
+    assert.equal(result.clxStatus, "not_parsed");
+  }
+});
+
+test("official calendar KRX legacy Word FIB rejects invalid count structure", () => {
+  const mutations: Array<(bytes: Uint8Array) => void> = [
+    (bytes) => writeWordUint16(bytes, 32, 13),
+    (bytes) => writeWordUint16(bytes, 62, 21),
+    (bytes) => writeWordUint16(bytes, 152, 0xffff)
+  ];
+  for (const mutate of mutations) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    mutate(bytes);
+    assertFibCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_FIB_STRUCTURE_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word FIB rejects version/count drift", () => {
+  const mutations: Array<(bytes: Uint8Array) => void> = [
+    (bytes) => writeWordUint16(bytes, 152, 0x006c),
+    (bytes) => writeWordUint16(bytes, 898, 2),
+    (bytes) => {
+      configureVariableFib(bytes, {
+        nFib: 0x00d9,
+        version: "Word2000",
+        cbRgFcLcb: 0x006c,
+        cswNew: 2
+      });
+      writeWordUint16(bytes, 1020, 0x9999);
+    },
+    (bytes) => {
+      configureVariableFib(bytes, {
+        nFib: 0x00d9,
+        version: "Word2000",
+        cbRgFcLcb: 0x006c,
+        cswNew: 2
+      });
+      writeWordUint16(bytes, 10, 0x1200);
+    }
+  ];
+  for (const mutate of mutations) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    mutate(bytes);
+    assertFibCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_FIB_VERSION_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -475,6 +577,26 @@ function configureWordRootStreams(
   writeWordByte(bytes, 19, 0);
   writeWordUint16(bytes, 20, 0);
   writeWordUint16(bytes, 22, 0);
+}
+
+function configureVariableFib(
+  bytes: Uint8Array,
+  definition: {
+    nFib: number;
+    version: string;
+    cbRgFcLcb: number;
+    cswNew: number;
+  }
+): void {
+  writeWordUint16(bytes, 32, 0x000e);
+  writeWordUint16(bytes, 62, 0x0016);
+  writeWordUint16(bytes, 152, definition.cbRgFcLcb);
+  const cswNewOffset = 154 + definition.cbRgFcLcb * 8;
+  writeWordUint16(bytes, cswNewOffset, definition.cswNew);
+  if (definition.cswNew !== 0) {
+    writeWordUint16(bytes, cswNewOffset + 2, definition.nFib);
+    writeWordUint16(bytes, 10, 0x12f0);
+  }
 }
 
 function initializeStreamEntry(
@@ -634,6 +756,18 @@ function assertWordCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError &&
+      error.code === code
+  );
+}
+
+function assertFibCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordFibError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordFib(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordFibError &&
       error.code === code
   );
 }
