@@ -6,6 +6,10 @@ import {
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
 } from "./officialMarketCalendarOleCompoundFileUserStreamAllocation.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_BYTES_SCHEMA_VERSION,
+  projectOfficialMarketCalendarOleCompoundFileUserStreamBytes
+} from "./officialMarketCalendarOleCompoundFileUserStreamBytes.js";
 
 const FATSECT = 0xfffffffd;
 const ENDOFCHAIN = 0xfffffffe;
@@ -65,6 +69,9 @@ test("official calendar OLE user streams ignore empty stream starting sectors", 
   );
   assert.equal(result.streams[1]?.allocation, "empty");
   assert.deepEqual(result.streams[1]?.sectorLocations, []);
+  const projected =
+    projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(bytes);
+  assert.equal(projected.streams[1]?.bytes.length, 0);
 });
 
 test("official calendar OLE user streams allow overallocated valid chains", () => {
@@ -145,6 +152,94 @@ test("official calendar OLE user streams reject unowned mini FAT entries", () =>
     bytes,
     "OFFICIAL_CALENDAR_OLE_USER_STREAM_UNOWNED_MINI_FAT_ENTRY"
   );
+});
+
+test("official calendar OLE user stream bytes project owned v3 and v4 copies", () => {
+  for (const majorVersion of [3, 4] as const) {
+    const bytes = compoundFileWithUserStreams(majorVersion);
+    const sectorSize = readSectorSize(bytes);
+    const largeSectorCount = 4096 / sectorSize;
+    for (let index = 0; index < largeSectorCount; index += 1) {
+      fillFileSector(bytes, 4 + index, 0x31 + index);
+    }
+    fillFileSectorRange(bytes, 3, 0, 64, 0x42);
+
+    const result = projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
+      bytes
+    );
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_BYTES_SCHEMA_VERSION
+    );
+    assert.equal(result.sectorSize, sectorSize);
+    assert.equal(result.streamBytesProjected, true);
+    assert.equal(result.trailingAllocationBytesStatus, "excluded");
+    assert.equal(result.wordDocumentStatus, "not_parsed");
+    assert.equal(result.streams[0]?.bytes.length, 4096);
+    assert.equal(result.streams[0]?.bytes[0], 0x31);
+    assert.equal(
+      result.streams[0]?.bytes[4095],
+      0x31 + largeSectorCount - 1
+    );
+    if (largeSectorCount > 1) {
+      assert.equal(result.streams[0]?.bytes[sectorSize], 0x32);
+    }
+    assert.equal(result.streams[1]?.bytes.length, 64);
+    assert.equal(result.streams[1]?.bytes.every((byte) => byte === 0x42), true);
+    assert.equal(result.streams[0]?.bytesOwnership, "caller_owned_copy");
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.streams), true);
+    assert.equal(Object.isFrozen(result.streams[0]), true);
+
+    bytes[(4 + 1) * sectorSize] = 0x99;
+    assert.equal(result.streams[0]?.bytes[0], 0x31);
+    result.streams[0]!.bytes[0] = 0x77;
+    assert.equal(bytes[(4 + 1) * sectorSize], 0x99);
+  }
+});
+
+test("official calendar OLE user stream bytes map fragmented root mini stream sectors", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  setRootUint32(bytes, 120, 576);
+  setStreamUint32(bytes, 2, 116, 7);
+  setStreamUint32(bytes, 2, 120, 80);
+  writeFatEntry(bytes, 3, 12);
+  writeFatEntry(bytes, 12, ENDOFCHAIN);
+  writeMiniFatEntry(bytes, 0, FREESECT);
+  writeMiniFatEntry(bytes, 7, 8);
+  writeMiniFatEntry(bytes, 8, ENDOFCHAIN);
+  fillFileSectorRange(bytes, 3, 448, 64, 0x51);
+  fillFileSectorRange(bytes, 12, 0, 16, 0x62);
+
+  const result = projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
+    bytes
+  );
+  assert.deepEqual(Array.from(result.streams[1]!.bytes), [
+    ...new Array<number>(64).fill(0x51),
+    ...new Array<number>(16).fill(0x62)
+  ]);
+});
+
+test("official calendar OLE user stream bytes exclude trailing allocation bytes", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  setRootUint32(bytes, 120, 192);
+  setStreamUint32(bytes, 2, 120, 65);
+  writeMiniFatEntry(bytes, 0, 1);
+  writeMiniFatEntry(bytes, 1, 2);
+  writeMiniFatEntry(bytes, 2, ENDOFCHAIN);
+  fillFileSectorRange(bytes, 3, 0, 64, 0x71);
+  fillFileSectorRange(bytes, 3, 64, 64, 0x72);
+  fillFileSectorRange(bytes, 3, 128, 64, 0x73);
+  Object.defineProperty(bytes, "byteLength", { value: 1 });
+
+  const result = projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
+    bytes
+  );
+  assert.equal(result.streams[1]?.bytes.length, 65);
+  assert.equal(result.streams[1]?.bytes[0], 0x71);
+  assert.equal(result.streams[1]?.bytes[63], 0x71);
+  assert.equal(result.streams[1]?.bytes[64], 0x72);
+  assert.equal(result.streams[1]?.bytes.includes(0x73), false);
 });
 
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
@@ -287,6 +382,29 @@ function writeMiniFatEntry(bytes: Uint8Array, index: number, value: number): voi
     sectorSize * 3 + index * 4,
     value,
     true
+  );
+}
+
+function fillFileSector(
+  bytes: Uint8Array,
+  sector: number,
+  value: number
+): void {
+  fillFileSectorRange(bytes, sector, 0, readSectorSize(bytes), value);
+}
+
+function fillFileSectorRange(
+  bytes: Uint8Array,
+  sector: number,
+  withinSectorOffset: number,
+  byteLength: number,
+  value: number
+): void {
+  const sectorSize = readSectorSize(bytes);
+  bytes.fill(
+    value,
+    (sector + 1) * sectorSize + withinSectorOffset,
+    (sector + 1) * sectorSize + withinSectorOffset + byteLength
   );
 }
 
