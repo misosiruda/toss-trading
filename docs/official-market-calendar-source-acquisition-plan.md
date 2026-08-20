@@ -393,6 +393,8 @@ root hierarchy부터 각 storage의 child sibling tree를 iterative하게 추적
 root의 black color, 연속 red node 부재, 이름의 strict global ordering과 sibling uniqueness를
 검증하고 root/unallocated reference, sibling/containment cycle, 둘 이상의 parent tree가 같은
 entry를 소유하는 경우와 root에서 도달할 수 없는 allocated entry를 fail-closed로 거부한다.
+MS-CFB는 모든 node를 black으로 둔 일반 binary tree를 명시적으로 허용하므로 일반적인
+red-black tree의 equal black-height 조건은 추가하지 않으며, 비균형 all-black tree도 허용한다.
 이름 정렬은 Directory Entry Name Length를 먼저 비교하고 같은 길이는 UTF-16 code unit별
 Unicode simple uppercase binary value를 비교한다. Surrogate code unit은 변환하지 않는다.
 런타임 Unicode/locale 차이를 제거하기 위해 `officialMarketCalendarOleUnicodeSimpleUppercase.ts`가

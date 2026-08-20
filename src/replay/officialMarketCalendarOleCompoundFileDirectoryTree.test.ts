@@ -63,6 +63,20 @@ test("official calendar OLE directory tree requires black child-tree roots", () 
   );
 });
 
+test("official calendar OLE directory tree allows unequal all-black branch depth", () => {
+  const bytes = compoundFileWithDirectoryTree();
+  writeEntryName(bytes, 1, "B");
+  writeEntryName(bytes, 2, "A");
+  setEntryUint32(bytes, 1, 76, NOSTREAM);
+  setEntryUint32(bytes, 1, 68, 2);
+
+  assert.equal(
+    verifyOfficialMarketCalendarOleCompoundFileDirectoryTree(bytes)
+      .directoryTreeVerified,
+    true
+  );
+});
+
 test("official calendar OLE directory tree rejects consecutive red nodes", () => {
   const bytes = compoundFileWithDirectoryTree();
   configureThreeNodeSiblingTree(bytes, "C", "B", "A");
