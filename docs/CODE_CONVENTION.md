@@ -304,8 +304,10 @@ raw-byte 저장 또는 replay 실행 책임을 이 module에 추가해서는 안
 process-local opaque handle로 이전하는 ownership boundary다. Factory는 caller byte view를
 내부 copy와 분리한 즉시 zeroize하고 실패 시 모든 owned copy를 지워야 한다. Handle은 raw
 bytes, token string/hash 또는 body shape를 노출하지 않고 JSON export를 disposal 뒤 거부해야
-하며 forged handle을 받지 않는다. Network provenance가 검증된 factory와 fixed one-shot
-data-POST consumer가 추가되기 전에는 raw getter, callback, serialization, durable sink 또는
+하며 forged handle을 받지 않는다. Fixed one-shot data-POST parameter consumer는 registered
+static policy와 exact target year만 결합하고 원래 OTP handle ownership을 성공/실패 모두
+종료해야 한다. 새 opaque handle도 raw getter, callback, serialization 또는 durable sink를
+제공하지 않는다. Network provenance factory와 fixed wire consumer가 추가되기 전에는
 acquisition capability를 이 module에 추가해서는 안 된다.
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 KRX holiday data POST의

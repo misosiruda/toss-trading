@@ -1,6 +1,17 @@
 import { verifyOfficialMarketCalendarKrxOtpResponseBody } from "./officialMarketCalendarKrxOtpResponseBody.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_POLICY_VERSION,
+  resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostPolicy
+} from "./officialMarketCalendarKrxHolidayDataPostPolicy.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_TARGET_YEAR_POLICY_VERSION,
+  parseOfficialMarketCalendarKrxHolidayTargetYear,
+  resolveRegisteredOfficialMarketCalendarKrxHolidayTargetYearPolicy,
+  type OfficialMarketCalendarKrxHolidayTargetYear
+} from "./officialMarketCalendarKrxHolidayTargetYear.js";
 
 declare const krxOtpEphemeralBodyBrand: unique symbol;
+declare const krxHolidayDataPostParametersBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxOtpEphemeralBody {
   readonly [krxOtpEphemeralBodyBrand]: true;
@@ -9,6 +20,11 @@ export interface OfficialMarketCalendarKrxOtpEphemeralBody {
 
 export interface CreateOfficialMarketCalendarKrxOtpEphemeralBodyInput {
   rawResponseBytes: Uint8Array;
+}
+
+export interface OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters {
+  readonly [krxHolidayDataPostParametersBrand]: true;
+  toJSON(): never;
 }
 
 interface ReadyBodyState {
@@ -22,7 +38,22 @@ interface DisposedBodyState {
 
 type BodyState = ReadyBodyState | DisposedBodyState;
 
+interface ReadyPostParametersState {
+  status: "ready";
+  rawOtpBytes: Uint8Array;
+  targetYear: OfficialMarketCalendarKrxHolidayTargetYear;
+}
+
+interface DisposedPostParametersState {
+  status: "disposed";
+}
+
+type PostParametersState =
+  | ReadyPostParametersState
+  | DisposedPostParametersState;
+
 const bodyStates = new WeakMap<object, BodyState>();
+const postParametersStates = new WeakMap<object, PostParametersState>();
 const typedArrayPrototype = Object.getPrototypeOf(
   Uint8Array.prototype
 ) as object;
@@ -84,6 +115,64 @@ export function disposeOfficialMarketCalendarKrxOtpEphemeralBody(
   disposeBodyObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxOtpForHolidayDataPost(
+  handle: OfficialMarketCalendarKrxOtpEphemeralBody,
+  targetYear: unknown
+): OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters {
+  const handleObject = assertHandleObject(handle);
+  const state = bodyStates.get(handleObject);
+  if (state === undefined) {
+    throw new Error(
+      "KRX OTP ephemeral body must come from the process-local factory"
+    );
+  }
+  if (state.status !== "ready") {
+    throw new Error("KRX OTP ephemeral body has already been consumed");
+  }
+
+  bodyStates.set(handleObject, { status: "disposed" });
+  let transferred = false;
+  try {
+    resolveRegisteredOfficialMarketCalendarKrxHolidayDataPostPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_POST_POLICY_VERSION
+    );
+    resolveRegisteredOfficialMarketCalendarKrxHolidayTargetYearPolicy(
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_TARGET_YEAR_POLICY_VERSION
+    );
+    const parsedTargetYear =
+      parseOfficialMarketCalendarKrxHolidayTargetYear(targetYear);
+    const postParametersHandle = createOpaqueHandle(() => {
+      disposePostParametersObject(postParametersHandle);
+      throw new Error(
+        "KRX holiday data POST parameters cannot be serialized or exported"
+      );
+    });
+    postParametersStates.set(postParametersHandle, {
+      status: "ready",
+      rawOtpBytes: state.rawResponseBytes,
+      targetYear: parsedTargetYear
+    });
+    transferred = true;
+    return postParametersHandle as OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters;
+  } finally {
+    if (!transferred) {
+      zeroizeBytes(state.rawResponseBytes);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxHolidayDataPostEphemeralParameters(
+  handle: OfficialMarketCalendarKrxHolidayDataPostEphemeralParameters
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!postParametersStates.has(handleObject)) {
+    throw new Error(
+      "KRX holiday data POST parameters must come from the fixed process-local consumer"
+    );
+  }
+  disposePostParametersObject(handleObject);
+}
+
 function disposeBodyObject(handle: object): void {
   const state = bodyStates.get(handle);
   if (state === undefined || state.status === "disposed") {
@@ -93,6 +182,18 @@ function disposeBodyObject(handle: object): void {
     zeroizeBytes(state.rawResponseBytes);
   } finally {
     bodyStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposePostParametersObject(handle: object): void {
+  const state = postParametersStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawOtpBytes);
+  } finally {
+    postParametersStates.set(handle, { status: "disposed" });
   }
 }
 
