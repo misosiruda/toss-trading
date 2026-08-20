@@ -212,6 +212,21 @@ zeroize한다. Wire-body handle도 getter/callback/JSON export를 제공하지 �
 disposal이 encoded body bytes를 지운다. Fixed network consumer가 없으므로 아직 HTTP
 request나 accepted acquisition이 아니다.
 
+### KRX Holiday Data Response Metadata Boundary
+
+2026-08-20 재관찰에서 cookie jar와 redirect follow를 비활성화한 client의 data POST
+response는 HTTP/1.1 200, exact `Content-Length`,
+`Content-Type: text/html; charset=UTF-8`, `Cache-Control: no-store, no-cache,
+max-age=0`, `Pragma: no-cache`를 반환했다. `Expires`는 `Date`와 같았고 response에는
+두 개의 `Set-Cookie` header가 있었으나 raw cookie value는 기록하지 않았다.
+
+`officialMarketCalendarKrxHolidayDataResponseMetadata.ts`는 이 metadata에서 complete
+bounded body validation 진입만 허용한다. Input은 automatic redirect follow/cookie jar가
+disabled이고 request Cookie header count가 0임을 strict하게 기록해야 한다. `no-store`,
+`no-cache`, `max-age=0`, immediate expiry와 response cookie presence 때문에 `durableEvidenceReusable`과
+`acceptedAcquisition`은 반드시 false다. Generic reusable-evidence freshness policy를
+완화하거나 이 response를 publication evidence로 승격하지 않는다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
