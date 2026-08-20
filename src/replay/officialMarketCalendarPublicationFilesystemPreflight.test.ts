@@ -15,6 +15,13 @@ test("calendar publication filesystem preflight keeps Node directory publish dis
 
   assert.equal(preflight.status, "unsupported");
   assert.equal(preflight.capabilities.atomicNoReplaceDirectoryPublish, false);
+  if (preflight.capabilities.atomicNoReplaceFilePublish) {
+    assert.equal(preflight.observations.freshFileHardLink, "linked");
+    assert.equal(
+      preflight.observations.existingFileHardLink,
+      "collision_rejected"
+    );
+  }
   assert.equal(Object.isFrozen(preflight.capabilities), true);
   assert.equal(Object.isFrozen(preflight.observations), true);
   assert.equal(Object.isFrozen(preflight.blockers), true);

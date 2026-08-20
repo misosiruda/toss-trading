@@ -270,7 +270,8 @@ sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 현재 Node filesystem runtime의
-exclusive file create, file/directory durability sync, hard-link collision과 existing
+exclusive file create, file/directory durability sync, fresh hard-link 생성과 existing-file
+hard-link collision, existing
 directory rename 동작을 exact absolute publication root 내부의 writer-owned temporary
 namespace에서 관찰하되 directory sync는 publication root handle 자체에 수행하고
 root realpath identity를 hash에 결합한다. 반환 contract는

@@ -44,6 +44,7 @@ const preflightPayloadSchema = z
           "probe_failed"
         ]),
         directorySync: z.enum(["synced", "unsupported", "probe_failed"]),
+        freshFileHardLink: z.enum(["linked", "probe_failed"]),
         existingFileHardLink: z.enum([
           "collision_rejected",
           "unexpectedly_linked",
@@ -113,7 +114,8 @@ const preflightPayloadSchema = z
       value.capabilities.directoryDurabilitySync !==
         (value.observations.directorySync === "synced") ||
       value.capabilities.atomicNoReplaceFilePublish !==
-        (value.observations.existingFileHardLink === "collision_rejected")
+        (value.observations.freshFileHardLink === "linked" &&
+          value.observations.existingFileHardLink === "collision_rejected")
     ) {
       context.addIssue({
         code: "custom",
@@ -147,7 +149,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
     const exclusiveStagingFileCreate = await probeExclusiveFile(filePath);
     const fileDurabilitySync = await probeFileSync(join(probeRoot, "sync-file"));
     const directorySync = await probeDirectorySync(publicationRoot);
-    const hardLink = await probeExistingFileHardLink(probeRoot);
+    const hardLink = await probeFileHardLink(probeRoot);
     const directoryRename = await probeExistingDirectoryRename(probeRoot);
     const blockers: OfficialMarketCalendarPublicationFilesystemPreflightPayload["blockers"] = [
       "atomic_no_replace_directory_publish_unavailable"
@@ -161,7 +163,10 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
     if (!fileDurabilitySync) {
       blockers.push("file_durability_sync_unavailable");
     }
-    if (hardLink !== "collision_rejected") {
+    if (
+      hardLink.freshFileHardLink !== "linked" ||
+      hardLink.existingFileHardLink !== "collision_rejected"
+    ) {
       blockers.push("atomic_no_replace_file_publish_unavailable");
     }
     blockers.sort();
@@ -177,13 +182,15 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
           exclusiveStagingFileCreate === "collision_rejected",
         fileDurabilitySync,
         directoryDurabilitySync: directorySync === "synced",
-        atomicNoReplaceFilePublish: hardLink === "collision_rejected",
+        atomicNoReplaceFilePublish:
+          hardLink.freshFileHardLink === "linked" &&
+          hardLink.existingFileHardLink === "collision_rejected",
         atomicNoReplaceDirectoryPublish: false
       },
       observations: {
         existingFileExclusiveCreate: exclusiveStagingFileCreate,
         directorySync,
-        existingFileHardLink: hardLink,
+        ...hardLink,
         existingDirectoryRename: directoryRename
       },
       blockers
@@ -271,20 +278,36 @@ async function probeDirectorySync(path: string) {
   }
 }
 
-async function probeExistingFileHardLink(root: string) {
+async function probeFileHardLink(root: string) {
   const source = join(root, "link-source");
+  const freshDestination = join(root, "link-fresh-destination");
   const destination = join(root, "link-destination");
   await Promise.all([
     writeFile(source, "source", { flag: "wx" }),
     writeFile(destination, "destination", { flag: "wx" })
   ]);
   try {
+    await link(source, freshDestination);
+  } catch {
+    return {
+      freshFileHardLink: "probe_failed" as const,
+      existingFileHardLink: "probe_failed" as const
+    };
+  }
+  try {
     await link(source, destination);
-    return "unexpectedly_linked" as const;
+    return {
+      freshFileHardLink: "linked" as const,
+      existingFileHardLink: "unexpectedly_linked" as const
+    };
   } catch (error) {
-    return isNodeError(error) && error.code === "EEXIST"
-      ? "collision_rejected" as const
-      : "probe_failed" as const;
+    return {
+      freshFileHardLink: "linked" as const,
+      existingFileHardLink:
+        isNodeError(error) && error.code === "EEXIST"
+          ? "collision_rejected" as const
+          : "probe_failed" as const
+    };
   }
 }
 
