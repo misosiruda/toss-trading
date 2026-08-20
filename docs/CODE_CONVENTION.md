@@ -339,7 +339,10 @@ handle에만 이전한다. Fixed network consumer 전에는 wire bytes를 외부
 jar disabled와 outbound Cookie count 0을 strict하게 요구한다. `no-store`, `no-cache`,
 zero max-age, immediate expiry 또는 response cookie가 관찰된 version은 body validation eligibility와 durable
 evidence reuse를 분리하고 accepted acquisition을 false로 유지한다. Generic freshness나
-publication acceptance policy를 완화해서는 안 된다.
+publication acceptance policy를 완화해서는 안 된다. Raw `Content-Type`은 Node wire
+observation의 `text/html;charset=UTF-8`과 이전 client-normalized
+`text/html; charset=UTF-8`만 허용하고 output은 후자로 canonicalize한다. 그 밖의 OWS,
+case 또는 duplicate 변형을 일반화해 허용하지 않는다.
 
 `officialMarketCalendarKrxHolidayDataResponseBody.ts`는 metadata의 verified content
 length와 attached `Uint8Array` 길이를 exact match하고 owned copy만 decode한다. External
