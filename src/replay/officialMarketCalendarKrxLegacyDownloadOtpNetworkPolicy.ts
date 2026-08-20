@@ -6,6 +6,18 @@ import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION,
   resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy
 } from "./officialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS,
+  resolveRegisteredOfficialMarketCalendarRequestHeaderPolicy
+} from "./officialMarketCalendarRequestHeaderPolicyRegistry.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS,
+  resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy
+} from "./officialMarketCalendarRequestHeaderValuePolicyRegistry.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS,
+  resolveRegisteredOfficialMarketCalendarRequestParameterPolicy
+} from "./officialMarketCalendarRequestParameterPolicyRegistry.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_NETWORK_POLICY_DEFINITION_VERSION =
   "official_market_calendar_krx_legacy_download_otp_network_policy_definition.v1";
@@ -30,6 +42,35 @@ export const officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicyDefinitionSc
       sourcePolicyVersion: z.literal(
         OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION
       ),
+      requestHeaderPolicyVersion: z.literal(
+        OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP
+      ),
+      requestParameterPolicyVersions: z
+        .tuple([
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2013
+          ),
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2014
+          ),
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2015
+          )
+        ])
+        .readonly(),
+      requestHeaderValuePolicyVersions: z
+        .tuple([
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2013
+          ),
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2014
+          ),
+          z.literal(
+            OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2015
+          )
+        ])
+        .readonly(),
       sourceSelector: z
         .object({
           exchange: z.literal("KRX"),
@@ -169,6 +210,18 @@ const REGISTERED_POLICY_INPUT = {
     OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOWNLOAD_OTP_NETWORK_POLICY_VERSION,
   sourcePolicyVersion:
     OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DERIVATIVES_CALENDAR_SOURCE_POLICY_VERSION,
+  requestHeaderPolicyVersion:
+    OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP,
+  requestParameterPolicyVersions: [
+    OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2013,
+    OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2014,
+    OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2015
+  ],
+  requestHeaderValuePolicyVersions: [
+    OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2013,
+    OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2014,
+    OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS.KRX_LEGACY_DOWNLOAD_OTP_2015
+  ],
   sourceSelector: {
     exchange: "KRX",
     marketScope: "derivatives",
@@ -273,6 +326,37 @@ export function resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadOtpNetwo
     resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy(
       definition.sourcePolicyVersion
     );
+  const headerPolicy =
+    resolveRegisteredOfficialMarketCalendarRequestHeaderPolicy(
+      definition.requestHeaderPolicyVersion
+    ).requestHeaderPolicyDefinition;
+  const parameterPolicies = definition.requestParameterPolicyVersions.map(
+    (version) =>
+      resolveRegisteredOfficialMarketCalendarRequestParameterPolicy(version)
+        .requestParameterPolicyDefinition
+  );
+  const headerValuePolicies =
+    definition.requestHeaderValuePolicyVersions.map(
+      (version) =>
+        resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy(version)
+          .requestHeaderValuePolicyDefinition
+    );
+  const expectedRequestSelector = {
+    exchange: definition.sourceSelector.exchange,
+    requestMethod: definition.sourceSelector.requestMethod,
+    requestedUrl: definition.sourceSelector.requestedUrl,
+    requestHeaderPolicyVersion: definition.requestHeaderPolicyVersion
+  };
+  const expectedParameterPolicies = sourcePolicy.documents.map((document) => ({
+    file_nm: document.fileName,
+    filetype: definition.fixedRequestParameters.filetype,
+    name: definition.fixedRequestParameters.name,
+    url: definition.fixedRequestParameters.url
+  }));
+  const expectedFixedHeaderValues = {
+    referer: definition.fixedRequestHeaderValues.referer,
+    "user-agent": definition.fixedRequestHeaderValues.userAgent
+  };
 
   if (
     definition.sourceSelector.exchange !== sourcePolicy.observation.exchange ||
@@ -292,6 +376,31 @@ export function resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadOtpNetwo
     !isDeepStrictEqual(
       definition.dynamicRequestParameterBinding.allowedValues,
       sourcePolicy.documents.map((document) => document.fileName)
+    ) ||
+    !isDeepStrictEqual(
+      definition.applicationRequestHeaderNames,
+      headerPolicy.allowedHeaderNames
+    ) ||
+    !isDeepStrictEqual(headerPolicy.sourceSelector, {
+      exchange: definition.sourceSelector.exchange,
+      requestedUrl: definition.sourceSelector.requestedUrl
+    }) ||
+    parameterPolicies.some(
+      (policy, index) =>
+        !isDeepStrictEqual(policy.sourceSelector, expectedRequestSelector) ||
+        !isDeepStrictEqual(
+          policy.requestParameters,
+          expectedParameterPolicies[index]
+        )
+    ) ||
+    headerValuePolicies.some(
+      (policy, index) =>
+        !isDeepStrictEqual(policy.sourceSelector, {
+          ...expectedRequestSelector,
+          requestParameterPolicyVersion:
+            definition.requestParameterPolicyVersions[index]
+        }) ||
+        !isDeepStrictEqual(policy.fixedHeaderValues, expectedFixedHeaderValues)
     )
   ) {
     throw new Error(

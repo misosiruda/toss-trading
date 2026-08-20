@@ -198,8 +198,9 @@ parser와 role/coverage 검증은 아직 구현하지 않았다. 따라서 KRX �
 completeness, durable evidence reuse와 accepted acquisition은 계속 주장하지 않는다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy.ts`는 이 candidate policy의
-2013~2015 file name만 `file_nm`으로 허용하고 exact `fileDown` GET parameter, source-page
-Referer, fixed request header와 HTTP/1.1 `Connection: close`를 결합한다. 2026-08-20
+2013~2015 file name만 `file_nm`으로 허용한다. 전용 request-header policy와 연도별 exact
+parameter/header-value policy를 registry에 선등록하고, exact `fileDown` GET parameter,
+source-page Referer, fixed request header와 HTTP/1.1 `Connection: close`를 결합한다. 2026-08-20
 cookie/redirect/credential-disabled 관찰에서 OTP response는 exact 300 ASCII bytes의 canonical
 Base64였고 decoded length는 224 bytes, padding은 1개였다. Response는 exact `200`,
 `Content-Length: 300`, `text/html; charset=UTF-8`, no-store/no-cache, `Expires == Date`와

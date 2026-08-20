@@ -10,7 +10,13 @@ import { resolveRegisteredOfficialMarketCalendarRequestHeaderPolicy } from "./of
 export const OFFICIAL_MARKET_CALENDAR_REQUEST_PARAMETER_POLICY_DEFINITION_VERSION =
   "official_market_calendar_request_parameter_policy_definition.v1";
 
-const KNOWN_SAFE_PARAMETER_NAMES = new Set(["bld", "name"]);
+const KNOWN_SAFE_PARAMETER_NAMES = new Set([
+  "bld",
+  "file_nm",
+  "filetype",
+  "name",
+  "url"
+]);
 const parameterNameSchema = z
   .string()
   .regex(

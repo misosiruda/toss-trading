@@ -7,23 +7,39 @@ import {
   resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy
 } from "./officialMarketCalendarRequestHeaderValuePolicyRegistry.js";
 
-const EXPECTED_POLICY = {
-  version: "krx_form_otp_request_header_values.v1",
+const EXPECTED_POLICIES = [
+  {
+    version: "krx_form_otp_request_header_values.v1",
+    requestHeaderPolicyVersion: "krx_form_otp_request_headers.v1",
+    requestParameterPolicyVersion: "krx_form_otp_request_parameters.v1",
+    fixedHeaderValues: { "user-agent": "Mozilla/5.0" }
+  },
+  ...["2013", "2014", "2015"].map((year) => ({
+    version: `krx_legacy_download_otp_${year}_request_header_values.v1`,
+    requestHeaderPolicyVersion:
+      "krx_legacy_download_otp_request_headers.v1",
+    requestParameterPolicyVersion:
+      `krx_legacy_download_otp_${year}_request_parameters.v1`,
+    fixedHeaderValues: {
+      referer:
+        "https://global.krx.co.kr/contents/GLB/05/0501/0501060000/GLB0501060000T3.jsp",
+      "user-agent": "Mozilla/5.0"
+    }
+  }))
+].map((policy) => ({
+  ...policy,
   exchange: "KRX",
   requestMethod: "GET",
   requestedUrl:
-    "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx",
-  requestHeaderPolicyVersion: "krx_form_otp_request_headers.v1",
-  requestParameterPolicyVersion: "krx_form_otp_request_parameters.v1",
-  fixedHeaderValues: { "user-agent": "Mozilla/5.0" }
-} as const;
+    "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx"
+}));
 
 test("calendar request header value policy registry contains the exact OTP User-Agent", () => {
   const registry = getOfficialMarketCalendarRequestHeaderValuePolicyRegistry();
 
   assert.deepEqual(
     Object.values(OFFICIAL_MARKET_CALENDAR_REQUEST_HEADER_VALUE_POLICY_VERSIONS),
-    [EXPECTED_POLICY.version]
+    EXPECTED_POLICIES.map((policy) => policy.version)
   );
   assert.deepEqual(
     registry.map((entry) => ({
@@ -42,20 +58,21 @@ test("calendar request header value policy registry contains the exact OTP User-
       fixedHeaderValues:
         entry.requestHeaderValuePolicyDefinition.fixedHeaderValues
     })),
-    [EXPECTED_POLICY]
+    EXPECTED_POLICIES
   );
 });
 
 test("calendar request header value policy registry resolves only its exact version", () => {
-  const resolved =
-    resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy(
-      EXPECTED_POLICY.version
+  for (const expected of EXPECTED_POLICIES) {
+    const resolved =
+      resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy(
+        expected.version
+      );
+    assert.deepEqual(
+      resolved.requestHeaderValuePolicyDefinition.fixedHeaderValues,
+      expected.fixedHeaderValues
     );
-
-  assert.deepEqual(
-    resolved.requestHeaderValuePolicyDefinition.fixedHeaderValues,
-    EXPECTED_POLICY.fixedHeaderValues
-  );
+  }
   assert.throws(
     () =>
       resolveRegisteredOfficialMarketCalendarRequestHeaderValuePolicy(
@@ -73,9 +90,9 @@ test("calendar request header value policy registry returns detached entries", (
   firstRead.splice(0);
 
   const secondRead = getOfficialMarketCalendarRequestHeaderValuePolicyRegistry();
-  assert.equal(secondRead.length, 1);
+  assert.equal(secondRead.length, EXPECTED_POLICIES.length);
   assert.deepEqual(
     secondRead[0]?.requestHeaderValuePolicyDefinition.fixedHeaderValues,
-    EXPECTED_POLICY.fixedHeaderValues
+    EXPECTED_POLICIES[0]?.fixedHeaderValues
   );
 });

@@ -21,6 +21,19 @@ const EXPECTED_POLICIES = [
     ]
   },
   {
+    version: "krx_legacy_download_otp_request_headers.v1",
+    exchange: "KRX",
+    requestedUrl:
+      "https://global.krx.co.kr/contents/COM/GenerateOTP.jspx",
+    allowedHeaderNames: [
+      "accept",
+      "cache-control",
+      "pragma",
+      "referer",
+      "user-agent"
+    ]
+  },
+  {
     version: "krx_market_closing_holiday_request_headers.v1",
     exchange: "KRX",
     requestedUrl:

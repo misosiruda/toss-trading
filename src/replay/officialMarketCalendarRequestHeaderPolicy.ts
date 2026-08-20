@@ -15,6 +15,7 @@ const KNOWN_SAFE_HEADER_NAMES = new Set([
   "cache-control",
   "content-type",
   "pragma",
+  "referer",
   "user-agent"
 ]);
 

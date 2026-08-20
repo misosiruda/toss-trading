@@ -27,6 +27,20 @@ test("KRX legacy download OTP network policy binds the registered document reque
     "E_Trading_Calendar2014.doc",
     "E_Trading_Calendar2015.doc"
   ]);
+  assert.equal(
+    policy.requestHeaderPolicyVersion,
+    "krx_legacy_download_otp_request_headers.v1"
+  );
+  assert.deepEqual(policy.requestParameterPolicyVersions, [
+    "krx_legacy_download_otp_2013_request_parameters.v1",
+    "krx_legacy_download_otp_2014_request_parameters.v1",
+    "krx_legacy_download_otp_2015_request_parameters.v1"
+  ]);
+  assert.deepEqual(policy.requestHeaderValuePolicyVersions, [
+    "krx_legacy_download_otp_2013_request_header_values.v1",
+    "krx_legacy_download_otp_2014_request_header_values.v1",
+    "krx_legacy_download_otp_2015_request_header_values.v1"
+  ]);
   assert.equal(Object.isFrozen(policy), true);
   assert.equal(Object.isFrozen(policy.dynamicRequestParameterBinding), true);
   assert.equal(
@@ -78,6 +92,10 @@ test("KRX legacy download OTP network policy rejects unsafe drift", () => {
   const policy = validPolicy();
 
   for (const value of [
+    {
+      ...policy,
+      requestHeaderPolicyVersion: "krx_form_otp_request_headers.v1"
+    },
     {
       ...policy,
       dynamicRequestParameterBinding: {
