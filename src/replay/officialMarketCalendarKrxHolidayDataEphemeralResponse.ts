@@ -4,6 +4,10 @@ import {
   type OfficialMarketCalendarKrxHolidayDataResponseSemantics
 } from "./officialMarketCalendarKrxHolidayDataResponseBody.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH,
+  requireProcessLocalOfficialMarketCalendarKrxHolidayDataResponseMetadata
+} from "./officialMarketCalendarKrxHolidayDataResponseMetadata.js";
+import {
   parseOfficialMarketCalendarKrxHolidayTargetYear,
   type OfficialMarketCalendarKrxHolidayTargetYear
 } from "./officialMarketCalendarKrxHolidayTargetYear.js";
@@ -76,7 +80,10 @@ export function createOfficialMarketCalendarKrxHolidayDataEphemeralResponse(
     zeroizeBytes(transferredRawResponseBytes);
     transferredBytesZeroized = true;
 
-    const responseMetadataInput = input.responseMetadata;
+    const responseMetadataInput =
+      requireProcessLocalOfficialMarketCalendarKrxHolidayDataResponseMetadata(
+        input.responseMetadata
+      );
     const targetYearInput = input.targetYear;
     const bodyShape = verifyOfficialMarketCalendarKrxHolidayDataResponseBody(
       ownedRawResponseBytes,
@@ -218,11 +225,21 @@ function readTransferredByteLength(value: unknown): number {
         "KRX holiday data ephemeral response bytes must be attached and non-empty"
       );
     }
+    if (
+      byteLength >
+      OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH
+    ) {
+      throw new Error(
+        "KRX holiday data ephemeral response bytes exceed the local validation boundary"
+      );
+    }
     return byteLength;
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.message.includes("attached") || error.message.includes("shared"))
+      (error.message.includes("attached") ||
+        error.message.includes("shared") ||
+        error.message.includes("validation boundary"))
     ) {
       throw error;
     }

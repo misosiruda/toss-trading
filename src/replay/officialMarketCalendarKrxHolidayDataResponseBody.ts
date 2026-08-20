@@ -6,7 +6,10 @@ import {
   OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_ROW_POLICY_VERSION,
   resolveRegisteredOfficialMarketCalendarKrxHolidayDataRowPolicy
 } from "./officialMarketCalendarKrxHolidayDataRowPolicy.js";
-import { OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION } from "./officialMarketCalendarKrxHolidayDataResponseMetadata.js";
+import {
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH,
+  OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_METADATA_VERSION
+} from "./officialMarketCalendarKrxHolidayDataResponseMetadata.js";
 import {
   parseOfficialMarketCalendarKrxHolidayTargetYear,
   type OfficialMarketCalendarKrxHolidayTargetYear
@@ -17,7 +20,6 @@ export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_BODY_VERSION =
 export const OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_RESPONSE_SEMANTICS_VERSION =
   "krx_holiday_data_response_semantics.v1";
 
-const MAXIMUM_BODY_BYTE_LENGTH = 1_000_000;
 const MAXIMUM_ROW_COUNT = 1_000;
 const MAXIMUM_ROW_VALUE_LENGTH = 8_192;
 const MAXIMUM_JSON_NESTING_DEPTH = 16;
@@ -41,7 +43,9 @@ const responseMetadataBindingSchema = z
           .number()
           .int()
           .min(1)
-          .max(MAXIMUM_BODY_BYTE_LENGTH)
+          .max(
+            OFFICIAL_MARKET_CALENDAR_KRX_HOLIDAY_DATA_MAXIMUM_RESPONSE_BODY_BYTE_LENGTH
+          )
       }),
     bodyValidationEligible: z.literal(true),
     durableEvidenceReusable: z.literal(false),

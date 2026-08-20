@@ -209,6 +209,42 @@ test("KRX holiday ephemeral response rejects shared backing memory", () => {
   assertZeroed(sharedBytes);
 });
 
+test("KRX holiday ephemeral response rejects oversized bytes before copying", () => {
+  const rawResponseBytes = new Uint8Array(1_000_001).fill(1);
+  let metadataRead = false;
+
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarKrxHolidayDataEphemeralResponse({
+        rawResponseBytes,
+        get responseMetadata() {
+          metadataRead = true;
+          return {};
+        },
+        targetYear: "2026"
+      }),
+    /exceed the local validation boundary/
+  );
+  assert.equal(metadataRead, false);
+  assertZeroed(rawResponseBytes);
+});
+
+test("KRX holiday ephemeral response rejects forged metadata projections", () => {
+  const rawResponseBytes = semanticBytes();
+  const verified = verifiedMetadata(rawResponseBytes.byteLength);
+
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarKrxHolidayDataEphemeralResponse({
+        rawResponseBytes,
+        responseMetadata: { ...verified },
+        targetYear: "2026"
+      }),
+    /must come from the process-local verifier/
+  );
+  assertZeroed(rawResponseBytes);
+});
+
 function createResponse(rawResponseBytes: Uint8Array) {
   return createOfficialMarketCalendarKrxHolidayDataEphemeralResponse({
     rawResponseBytes,
