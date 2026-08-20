@@ -65,6 +65,8 @@ test("official calendar OLE header rejects signature and fixed-field mutations",
 });
 
 test("official calendar OLE header rejects inconsistent sector layout", () => {
+  const difatCollision = canonicalCompoundFile(3, 120, 110);
+  writeUint32(difatCollision, 68, 0);
   const cases = [
     canonicalCompoundFile(3).slice(0, -1),
     mutated((bytes) => writeUint32(bytes, 48, 9)),
@@ -72,7 +74,24 @@ test("official calendar OLE header rejects inconsistent sector layout", () => {
     mutated((bytes) => writeUint32(bytes, 68, 0)),
     mutated((bytes) => writeUint32(bytes, 76, 9)),
     mutated((bytes) => writeUint32(bytes, 80, 0)),
-    mutated((bytes) => writeUint32(bytes, 48, 0))
+    mutated((bytes) => writeUint32(bytes, 48, 0)),
+    mutated((bytes) => {
+      writeUint32(bytes, 60, 2);
+      writeUint32(bytes, 64, 0xffffffff);
+    }),
+    mutated((bytes) => {
+      writeUint32(bytes, 68, 2);
+      writeUint32(bytes, 72, 0xffffffff);
+    }),
+    mutated((bytes) => {
+      writeUint32(bytes, 60, 0);
+      writeUint32(bytes, 64, 1);
+    }),
+    mutated((bytes) => {
+      writeUint32(bytes, 60, 1);
+      writeUint32(bytes, 64, 1);
+    }),
+    difatCollision
   ];
   for (const bytes of cases) {
     assertCode(bytes, "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_SECTOR_LAYOUT");
@@ -99,9 +118,29 @@ test("official calendar OLE header rejects unsafe byte views", () => {
   }
 });
 
-function canonicalCompoundFile(majorVersion: 3 | 4): Uint8Array {
+test("official calendar OLE header ignores shadowed byte-view properties", () => {
+  const alternate = canonicalCompoundFile(3);
+  const shadowed = new Uint8Array(alternate.byteLength);
+  shadowed.set(alternate.subarray(0, 8), 0);
+  Object.defineProperties(shadowed, {
+    buffer: { value: alternate.buffer },
+    byteOffset: { value: alternate.byteOffset },
+    byteLength: { value: alternate.byteLength }
+  });
+
+  assertCode(shadowed, "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_FIELDS");
+});
+
+function canonicalCompoundFile(
+  majorVersion: 3 | 4,
+  fileSectorCount = 3,
+  fatSectorCount = 1
+): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
-  const bytes = new Uint8Array(sectorSize * 4);
+  const bytes = new Uint8Array(sectorSize * (fileSectorCount + 1));
+  const difatSectorCount = Math.ceil(
+    Math.max(0, fatSectorCount - 109) / (sectorSize / 4 - 1)
+  );
   bytes.set(
     Uint8Array.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
     0
@@ -112,15 +151,19 @@ function canonicalCompoundFile(majorVersion: 3 | 4): Uint8Array {
   writeUint16(bytes, 30, majorVersion === 3 ? 9 : 12);
   writeUint16(bytes, 32, 6);
   writeUint32(bytes, 40, majorVersion === 3 ? 0 : 1);
-  writeUint32(bytes, 44, 1);
-  writeUint32(bytes, 48, 1);
+  writeUint32(bytes, 44, fatSectorCount);
+  writeUint32(bytes, 48, difatSectorCount === 0 ? 1 : 110);
   writeUint32(bytes, 56, 4096);
   writeUint32(bytes, 60, 0xfffffffe);
   writeUint32(bytes, 64, 0);
-  writeUint32(bytes, 68, 0xfffffffe);
-  writeUint32(bytes, 72, 0);
+  writeUint32(bytes, 68, difatSectorCount === 0 ? 0xfffffffe : 109);
+  writeUint32(bytes, 72, difatSectorCount);
   for (let index = 0; index < 109; index += 1) {
-    writeUint32(bytes, 76 + index * 4, index === 0 ? 0 : 0xffffffff);
+    writeUint32(
+      bytes,
+      76 + index * 4,
+      index < Math.min(fatSectorCount, 109) ? index : 0xffffffff
+    );
   }
   return bytes;
 }

@@ -54,6 +54,10 @@ const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
   typedArrayPrototype,
   "buffer"
 )?.get;
+const typedArrayByteOffsetGetter = Object.getOwnPropertyDescriptor(
+  typedArrayPrototype,
+  "byteOffset"
+)?.get;
 const sharedArrayBufferByteLengthGetter =
   typeof SharedArrayBuffer === "undefined"
     ? undefined
@@ -65,14 +69,14 @@ const sharedArrayBufferByteLengthGetter =
 export function verifyOfficialMarketCalendarOleCompoundFileHeader(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarOleCompoundFileHeader {
-  const byteLength = readByteLength(input);
+  const byteView = readByteView(input);
+  const { byteLength, view } = byteView;
   if (!hasBytes(input, 0, HEADER_SIGNATURE)) {
     throw headerError(
       "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_SIGNATURE",
       "Official calendar OLE compound file signature is invalid."
     );
   }
-  const view = new DataView(input.buffer, input.byteOffset, byteLength);
   const majorVersion = view.getUint16(26, true);
   const minorVersion = view.getUint16(24, true);
   const sectorShift = view.getUint16(30, true);
@@ -108,8 +112,15 @@ export function verifyOfficialMarketCalendarOleCompoundFileHeader(
     throw layoutError();
   }
   const fileSectorCount = byteLength / sectorSize - 1;
+  const expectedDifatSectorCount = Math.ceil(
+    Math.max(0, fatSectorCount - HEADER_DIFAT_ENTRY_COUNT) /
+      (sectorSize / 4 - 1)
+  );
   if (
     fatSectorCount > fileSectorCount ||
+    miniFatSectorCount > fileSectorCount ||
+    difatSectorCount > fileSectorCount ||
+    difatSectorCount !== expectedDifatSectorCount ||
     !isFileSector(firstDirectorySector, fileSectorCount) ||
     !hasConsistentChainStart(
       firstMiniFatSector,
@@ -122,11 +133,21 @@ export function verifyOfficialMarketCalendarOleCompoundFileHeader(
     throw layoutError();
   }
   const headerFatSectors = verifyHeaderDifat(
-    input,
+    view,
     fatSectorCount,
     fileSectorCount
   );
-  if (headerFatSectors.has(firstDirectorySector)) {
+  const declaredChainStarts = [firstDirectorySector];
+  if (miniFatSectorCount > 0) {
+    declaredChainStarts.push(firstMiniFatSector);
+  }
+  if (difatSectorCount > 0) {
+    declaredChainStarts.push(firstDifatSector);
+  }
+  if (
+    new Set(declaredChainStarts).size !== declaredChainStarts.length ||
+    declaredChainStarts.some((sector) => headerFatSectors.has(sector))
+  ) {
     throw layoutError();
   }
 
@@ -149,11 +170,10 @@ export function verifyOfficialMarketCalendarOleCompoundFileHeader(
 }
 
 function verifyHeaderDifat(
-  input: Uint8Array,
+  view: DataView,
   fatSectorCount: number,
   fileSectorCount: number
 ): ReadonlySet<number> {
-  const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
   const headerFatCount = Math.min(fatSectorCount, HEADER_DIFAT_ENTRY_COUNT);
   const seen = new Set<number>();
   for (let index = 0; index < HEADER_DIFAT_ENTRY_COUNT; index += 1) {
@@ -170,24 +190,32 @@ function verifyHeaderDifat(
   return seen;
 }
 
-function readByteLength(value: unknown): number {
+function readByteView(value: unknown): Readonly<{
+  byteLength: number;
+  view: DataView;
+}> {
   try {
     if (
       Object.getPrototypeOf(value) !== Uint8Array.prototype ||
       typedArrayByteLengthGetter === undefined ||
-      typedArrayBufferGetter === undefined
+      typedArrayBufferGetter === undefined ||
+      typedArrayByteOffsetGetter === undefined
     ) {
       throw new Error("invalid byte view");
     }
     const byteLength = typedArrayByteLengthGetter.call(value) as number;
     const buffer = typedArrayBufferGetter.call(value) as ArrayBufferLike;
+    const byteOffset = typedArrayByteOffsetGetter.call(value) as number;
     if (
       byteLength < HEADER_BYTE_LENGTH ||
       hasSharedArrayBufferBacking(buffer)
     ) {
       throw new Error("invalid byte view backing");
     }
-    return byteLength;
+    return Object.freeze({
+      byteLength,
+      view: new DataView(buffer as ArrayBuffer, byteOffset, byteLength)
+    });
   } catch {
     throw headerError(
       "OFFICIAL_CALENDAR_OLE_HEADER_INVALID_INPUT",
