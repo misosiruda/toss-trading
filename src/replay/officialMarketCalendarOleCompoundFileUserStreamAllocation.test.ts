@@ -32,6 +32,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts
 } from "./officialMarketCalendarKrxLegacyWordDocumentCounts.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordTextRangesError,
+  verifyOfficialMarketCalendarKrxLegacyWordTextRanges
+} from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -840,6 +845,114 @@ test("official calendar KRX legacy Word document counts reject invalid totals", 
   }
 });
 
+test("official calendar KRX legacy Word text ranges verify compressed and uncompressed pieces", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 3, 7], [
+    { flags: 0, fcCompressed: 920 },
+    { flags: 0, fcCompressed: 0x4000076c }
+  ]);
+  configureDocumentCounts(bytes, [7, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 954);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordTextRanges(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGES_SCHEMA_VERSION
+  );
+  assert.equal(result.cbMac, 954);
+  assert.deepEqual(result.ranges, [
+    {
+      index: 0,
+      cpStart: 0,
+      cpEnd: 3,
+      characterCount: 3,
+      encoding: "unicode_16le",
+      byteStart: 920,
+      byteLength: 6,
+      byteEnd: 926
+    },
+    {
+      index: 1,
+      cpStart: 3,
+      cpEnd: 7,
+      characterCount: 4,
+      encoding: "compressed_8bit",
+      byteStart: 950,
+      byteLength: 4,
+      byteEnd: 954
+    }
+  ]);
+  assert.equal(result.textRangesVerified, true);
+  assert.equal(result.textProjectionStatus, "not_projected");
+  assert.equal(result.textDecodingStatus, "not_decoded");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.ranges), true);
+  assert.equal(Object.isFrozen(result.ranges[0]), true);
+});
+
+test("official calendar KRX legacy Word text ranges reject invalid cbMac", () => {
+  for (const cbMac of [899, 4097]) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configurePlcPcd(bytes, [0, 1], [{ flags: 0, fcCompressed: 920 }]);
+    configureDocumentCounts(bytes, [1, 0, 0, 0, 0, 0, 0]);
+    writeWordUint32(bytes, 64, cbMac);
+
+    assertTextRangeCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGE_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word text ranges reject out-of-bound piece bytes", () => {
+  const invalidValues = [
+    { characterCount: 1, fcCompressed: 899, cbMac: 1000 },
+    { characterCount: 2, fcCompressed: 920, cbMac: 923 },
+    { characterCount: 1, fcCompressed: 0x4000076d, cbMac: 1000 },
+    { characterCount: 2, fcCompressed: 0x4000076c, cbMac: 951 }
+  ];
+  for (const value of invalidValues) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    configurePlcPcd(
+      bytes,
+      [0, value.characterCount],
+      [{ flags: 0, fcCompressed: value.fcCompressed }]
+    );
+    configureDocumentCounts(
+      bytes,
+      [value.characterCount, 0, 0, 0, 0, 0, 0]
+    );
+    writeWordUint32(bytes, 64, value.cbMac);
+
+    assertTextRangeCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGE_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -1250,6 +1363,18 @@ function assertDocumentCountsCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordDocumentCountsError &&
+      error.code === code
+  );
+}
+
+function assertTextRangeCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordTextRangesError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordTextRanges(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordTextRangesError &&
       error.code === code
   );
 }
