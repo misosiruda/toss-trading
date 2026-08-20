@@ -81,6 +81,15 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableParagraphPropertie
     let hasExplicitTableDepth = false;
 
     for (const prl of group.prls) {
+      if (
+        grpPrls.nFib === 0x00c1 &&
+        (prl.sprm === SPRM_P_ITAP ||
+          prl.sprm === SPRM_P_DTAP ||
+          prl.sprm === SPRM_PF_INNER_TABLE_CELL ||
+          prl.sprm === SPRM_PF_INNER_TTP)
+      ) {
+        throw invalidTableParagraphProperties();
+      }
       switch (prl.sprm) {
         case SPRM_PF_IN_TABLE:
           inTable = readBool8(prl.operandBytes);
