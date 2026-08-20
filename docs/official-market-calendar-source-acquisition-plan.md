@@ -201,6 +201,17 @@ Non-unreserved ASCII는 uppercase percent triplet으로 encoding했고 raw OTP�
 아니며 local safety limit다. Policy만으로 encoder, request body, transport 또는 accepted
 acquisition이 생성되지는 않는다.
 
+`consumeOfficialMarketCalendarKrxHolidayDataPostParametersToWireBody`는 opaque
+POST-parameter handle을 fixed byte encoder로 한 번만 소비한다. 1,024-byte zeroized
+workspace에 policy order대로 field를 기록하고 unreserved ASCII 외 byte를 uppercase
+percent triplet으로 encoding한다. Raw OTP를 string으로 변환하지 않는다.
+
+성공 시 original raw OTP와 workspace를 zeroize하고 encoded bytes ownership을 새 opaque
+wire-body handle로 이전한다. 실패 시 raw OTP, workspace와 생성된 partial/final body를
+zeroize한다. Wire-body handle도 getter/callback/JSON export를 제공하지 않으며 explicit
+disposal이 encoded body bytes를 지운다. Fixed network consumer가 없으므로 아직 HTTP
+request나 accepted acquisition이 아니다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted

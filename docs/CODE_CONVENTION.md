@@ -328,6 +328,12 @@ policy로 고정한다. Local maximum body byte length를 provider limit처럼 �
 Raw OTP string conversion, encoder callback, HTTP execution 또는 response acceptance를 이
 policy module에 추가해서는 안 된다.
 
+KRX holiday POST fixed byte encoder는 opaque parameter handle을 one-shot으로 소비하고
+policy maximum 크기의 zeroized workspace에 직접 encoding해야 한다. Raw OTP를 string,
+`Buffer` 또는 enumerable collection으로 복사하지 않는다. Success/failure 모두 original
+OTP와 workspace ownership을 종료하고, encoded bytes는 getter/callback 없는 새 opaque
+handle에만 이전한다. Fixed network consumer 전에는 wire bytes를 외부로 반환하지 않는다.
+
 ### `src/workflows`
 
 책임:
