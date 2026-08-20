@@ -127,6 +127,20 @@ header category는 이 policy에 넣을 수 없다. 실제 request header 관찰
 response 검증이 없으므로 이 등록만으로 external verification 또는 acquisition
 성공을 주장하지 않는다.
 
+### KRX OTP Response Body Shape
+
+2026-08-20 read-only 관찰에서 OTP response body는 whitespace 없는 216-byte canonical
+base64였고 exact `==` padding을 제거해 decode하면 160 bytes였다.
+`officialMarketCalendarKrxOtpResponseBody.ts`는 string 또는 decoded token copy를 만들지
+않고 byte-level alphabet, exact padding과 unused padding bit를 검증한다. 검증용 내부
+copy는 성공/실패와 관계없이 zeroize하며 caller byte view의 ownership은 변경하지 않는다.
+
+반환값은 encoding과 encoded/decoded length만 포함하는 non-secret frozen shape이며 raw
+body hash나 token을 포함하지 않는다. 이 body-only contract는 status, final URL,
+response header, transfer completion, freshness 또는 network provenance를 증명하지
+않는다. Opaque one-shot ownership handle과 fixed data-POST consumer가 구현되기 전에는
+raw OTP를 durable metadata, log, API, MCP, CLI 또는 artifact에 넣지 않는다.
+
 Recorded `accept` value는 non-empty canonical media-range list여야 한다. 각
 media range는 `type/subtype`, `type/*` 또는 `*/*`이고 parameter는 명시적인
 `name=value` pair여야 한다. Media range별 `q` weight는 최대 하나이며 unquoted
