@@ -295,10 +295,8 @@ async function probeFileHardLink(root: string) {
   const freshDestination = join(root, "link-fresh-destination");
   const destination = join(root, "link-destination");
   try {
-    await Promise.all([
-      writeFile(source, "source", { flag: "wx" }),
-      writeFile(destination, "destination", { flag: "wx" })
-    ]);
+    await writeFile(source, "source", { flag: "wx" });
+    await writeFile(destination, "destination", { flag: "wx" });
   } catch {
     return {
       freshFileHardLink: "probe_failed" as const,
@@ -334,8 +332,8 @@ async function probeExistingDirectoryRename(root: string) {
   const source = join(root, "rename-source");
   const destination = join(root, "rename-destination");
   try {
-    await Promise.all([mkdir(source), mkdir(destination)]);
-    await writeFile(join(source, "marker"), "source", { flag: "wx" });
+    await mkdir(source);
+    await mkdir(destination);
   } catch {
     return "probe_failed" as const;
   }
@@ -367,9 +365,7 @@ async function removeVerifiedProbeRoot(
     "sync-file",
     "link-source",
     "link-fresh-destination",
-    "link-destination",
-    join("rename-source", "marker"),
-    join("rename-destination", "marker")
+    "link-destination"
   ];
   for (const file of files) {
     await assertProbeRootIdentity(root, expectedIdentity);

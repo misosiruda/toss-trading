@@ -653,6 +653,8 @@ device/inode identity를 각 mutation 전에 `lstat`으로 재검증하고 symli
 replacement를 거부한다. Cleanup path의 `realpath` target과 재귀 삭제는 사용하지
 않으며 고정된 probe file만 `unlink`, 알려진 빈 directory와 root만 `rmdir`한다.
 교체되거나 예상 외 entry를 포함한 directory는 삭제하지 않고 fail-safe로 남긴다.
+Probe setup mutation은 순차 실행하고 cleanup manifest는 probe root의 direct
+child entry만 포함해 pending mutation과 intermediate symlink traversal을 남기지 않는다.
 Artifact는 누락 sidecar, conflicting archive path reuse, hash/path 불일치 또는
 unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
