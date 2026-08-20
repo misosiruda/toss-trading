@@ -406,6 +406,17 @@ opaque lifecycle 연결은 아직 검증하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/d30e462c-5f8a-435b-9c4c-cc0b9ea89956
 https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt
 
+`officialMarketCalendarOleCompoundFileMiniFatEntries.ts`는 verified mini FAT standard-sector
+chain이 가리키는 sector를 chain 순서의 32-bit little-endian allocator entry array로 투영한다.
+각 entry는 declared mini FAT sector capacity 안의 mini-sector pointer, `ENDOFCHAIN` 또는
+`FREESECT`만 허용하고 reserved value와 `DIFSECT`/`FATSECT`, capacity 밖 pointer를
+fail-closed로 거부한다. Mini FAT가 없는 valid file은 empty immutable array로 반환한다.
+결과는 `miniFatEntriesVerified=true`를 반환하지만 entry chain의 cycle/reuse, root mini stream
+actual capacity, directory stream size 및 user stream allocation은 아직 검증하지 않으며 opaque
+lifecycle에도 연결하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
