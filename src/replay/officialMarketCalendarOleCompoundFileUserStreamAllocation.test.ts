@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_BINARY_FILE_STREAMS_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError,
+  verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams
+} from "./officialMarketCalendarKrxLegacyWordBinaryFileStreams.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -252,6 +257,103 @@ test("official calendar OLE user stream bytes exclude trailing allocation bytes"
   assert.equal(result.streams[1]?.bytes.includes(0x73), false);
 });
 
+test("official calendar KRX legacy Word streams verify FibBase and table selection", () => {
+  for (const tableStreamName of ["0Table", "1Table"] as const) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, tableStreamName);
+    fillFileSectorRange(bytes, 3, 0, 64, 0x52);
+
+    const result =
+      verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(bytes);
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_BINARY_FILE_STREAMS_SCHEMA_VERSION
+    );
+    assert.equal(result.wordDocumentStreamId, 1);
+    assert.equal(result.tableStreamId, 2);
+    assert.equal(result.tableStreamName, tableStreamName);
+    assert.equal(result.fWhichTblStm, tableStreamName === "1Table" ? 1 : 0);
+    assert.equal(result.nFibBase, 0x00c1);
+    assert.equal(result.fibBaseVerified, true);
+    assert.equal(result.protectionStatus, "unencrypted");
+    assert.equal(result.wordTableParserStatus, "not_parsed");
+    assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+    assert.equal(result.wordDocumentBytes[0], 0xec);
+    assert.equal(result.tableStreamBytes.every((byte) => byte === 0x52), true);
+    assert.equal(Object.isFrozen(result), true);
+  }
+});
+
+test("official calendar KRX legacy Word streams ignore the unselected table", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  initializeStreamEntry(bytes, 3, "0Table", 64, 1);
+  setRootUint32(bytes, 120, 128);
+  setStreamUint32(bytes, 1, 68, 2);
+  setStreamUint32(bytes, 1, 72, NOSTREAM);
+  setStreamUint32(bytes, 2, 68, 3);
+  setStreamUint32(bytes, 2, 72, NOSTREAM);
+  writeMiniFatEntry(bytes, 1, ENDOFCHAIN);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(bytes);
+  assert.equal(result.tableStreamName, "1Table");
+  assert.equal(result.ignoredTableStreamName, "0Table");
+  assert.equal(result.tableStreamId, 2);
+});
+
+test("official calendar KRX legacy Word streams require root-level roles", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  initializeAllocatedEntry(bytes, 2, "Box", 1);
+  setStreamUint32(bytes, 2, 68, NOSTREAM);
+  setStreamUint32(bytes, 2, 72, NOSTREAM);
+  setStreamUint32(bytes, 2, 76, 3);
+  initializeStreamEntry(bytes, 3, "1Table", 64, 0);
+  setStreamUint32(bytes, 1, 68, 2);
+  setStreamUint32(bytes, 1, 72, NOSTREAM);
+
+  assertWordCode(
+    bytes,
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STREAM_MISSING"
+  );
+});
+
+test("official calendar KRX legacy Word streams reject invalid FibBase fields", () => {
+  const mutations: Array<(bytes: Uint8Array) => void> = [
+    (bytes) => writeWordUint16(bytes, 0, 0),
+    (bytes) => writeWordUint16(bytes, 10, 0x0200),
+    (bytes) => writeWordUint16(bytes, 12, 0),
+    (bytes) => writeWordUint32(bytes, 14, 1),
+    (bytes) => writeWordByte(bytes, 18, 1),
+    (bytes) => writeWordByte(bytes, 19, 1),
+    (bytes) => writeWordUint16(bytes, 20, 1),
+    (bytes) => writeWordUint16(bytes, 22, 1),
+    (bytes) => writeWordUint16(bytes, 8, 1)
+  ];
+  for (const mutate of mutations) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    mutate(bytes);
+    assertWordCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_FIB_BASE_INVALID"
+    );
+  }
+});
+
+test("official calendar KRX legacy Word streams reject unsupported encryption", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  writeWordUint16(bytes, 10, 0x1300);
+  writeWordUint32(bytes, 14, 16);
+
+  assertWordCode(
+    bytes,
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PROTECTION_UNSUPPORTED"
+  );
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -315,6 +417,30 @@ function initializeRootEntry(bytes: Uint8Array): void {
   setRootUint32(bytes, 76, 1);
   setRootUint32(bytes, 116, 3);
   setRootUint32(bytes, 120, 64);
+}
+
+function configureWordRootStreams(
+  bytes: Uint8Array,
+  tableStreamName: "0Table" | "1Table"
+): void {
+  writeEntryName(bytes, 1, "WordDocument");
+  writeEntryName(bytes, 2, tableStreamName);
+  setStreamUint32(bytes, 1, 68, 2);
+  setStreamUint32(bytes, 1, 72, NOSTREAM);
+  writeWordUint16(bytes, 0, 0xa5ec);
+  writeWordUint16(bytes, 2, 0x00c1);
+  writeWordUint16(bytes, 8, 0);
+  writeWordUint16(
+    bytes,
+    10,
+    0x1000 | (tableStreamName === "1Table" ? 0x0200 : 0)
+  );
+  writeWordUint16(bytes, 12, 0x00bf);
+  writeWordUint32(bytes, 14, 0);
+  writeWordByte(bytes, 18, 0);
+  writeWordByte(bytes, 19, 0);
+  writeWordUint16(bytes, 20, 0);
+  writeWordUint16(bytes, 22, 0);
 }
 
 function initializeStreamEntry(
@@ -418,6 +544,34 @@ function fillFileSectorRange(
   );
 }
 
+function writeWordByte(bytes: Uint8Array, offset: number, value: number): void {
+  bytes[(4 + 1) * readSectorSize(bytes) + offset] = value;
+}
+
+function writeWordUint16(
+  bytes: Uint8Array,
+  offset: number,
+  value: number
+): void {
+  new DataView(bytes.buffer).setUint16(
+    (4 + 1) * readSectorSize(bytes) + offset,
+    value,
+    true
+  );
+}
+
+function writeWordUint32(
+  bytes: Uint8Array,
+  offset: number,
+  value: number
+): void {
+  new DataView(bytes.buffer).setUint32(
+    (4 + 1) * readSectorSize(bytes) + offset,
+    value,
+    true
+  );
+}
+
 function directoryEntryOffset(bytes: Uint8Array, streamId: number): number {
   return readSectorSize(bytes) * 2 + streamId * 128;
 }
@@ -434,6 +588,18 @@ function assertCode(
     () => verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarOleCompoundFileUserStreamAllocationError &&
+      error.code === code
+  );
+}
+
+function assertWordCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError &&
       error.code === code
   );
 }
