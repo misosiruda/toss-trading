@@ -269,6 +269,16 @@ plan hash에 결합한다. Plan field는 caller가 공급하지 않으며 stored
 sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory/file sync,
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
+`officialMarketCalendarPublicationFilesystemPreflight.ts`는 현재 Node filesystem runtime의
+exclusive file create, file/directory durability sync, hard-link collision과 existing
+directory rename 동작을 writer-owned temporary namespace에서 관찰한다. 그러나
+`node:fs/promises.rename()`은 atomic no-replace directory contract를 제공하지 않으므로
+built-in implementation은 모든 platform에서 `unsupported`이며
+`atomic_no_replace_directory_publish_unavailable` blocker를 반드시 남긴다. Windows의
+directory sync `EPERM`도 성공으로 축소하지 않는다. Capability, observation과 blocker는
+서로 일치해야 하고 canonical preflight hash에 결합된다. 실제 writer enablement에는
+별도 검증된 no-replace directory primitive가 선행되어야 한다.
+
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
 versioned strict header-name allowlist와 대조하고 실제 lowercase header name
