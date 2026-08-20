@@ -37,6 +37,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordTextRanges
 } from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_BYTES_SCHEMA_VERSION,
+  projectOfficialMarketCalendarKrxLegacyWordTextBytes
+} from "./officialMarketCalendarKrxLegacyWordTextBytes.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -951,6 +955,87 @@ test("official calendar KRX legacy Word text ranges reject out-of-bound piece by
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGE_INVALID"
     );
   }
+});
+
+test("official calendar KRX legacy Word text bytes project caller-owned piece copies", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 3, 7], [
+    { flags: 0, fcCompressed: 920 },
+    { flags: 0, fcCompressed: 0x4000076c }
+  ]);
+  configureDocumentCounts(bytes, [7, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 954);
+  [0x41, 0, 0x42, 0, 0x43, 0].forEach((value, index) => {
+    writeWordByte(bytes, 920 + index, value);
+  });
+  [0x44, 0x45, 0x46, 0x47].forEach((value, index) => {
+    writeWordByte(bytes, 950 + index, value);
+  });
+
+  const result = projectOfficialMarketCalendarKrxLegacyWordTextBytes(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_BYTES_SCHEMA_VERSION
+  );
+  assert.equal(result.cbMac, 954);
+  assert.deepEqual(
+    result.pieces.map((piece) => ({
+      index: piece.index,
+      encoding: piece.encoding,
+      bytes: [...piece.bytes],
+      bytesOwnership: piece.bytesOwnership
+    })),
+    [
+      {
+        index: 0,
+        encoding: "unicode_16le",
+        bytes: [0x41, 0, 0x42, 0, 0x43, 0],
+        bytesOwnership: "caller_owned_copy"
+      },
+      {
+        index: 1,
+        encoding: "compressed_8bit",
+        bytes: [0x44, 0x45, 0x46, 0x47],
+        bytesOwnership: "caller_owned_copy"
+      }
+    ]
+  );
+  assert.equal(result.textBytesProjected, true);
+  assert.equal(result.textDecodingStatus, "not_decoded");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.pieces), true);
+  assert.equal(Object.isFrozen(result.pieces[0]), true);
+
+  writeWordByte(bytes, 920, 0xff);
+  assert.equal(result.pieces[0]!.bytes[0], 0x41);
+  result.pieces[0]!.bytes[0] = 0xee;
+  const repeated = projectOfficialMarketCalendarKrxLegacyWordTextBytes(bytes);
+  assert.equal(repeated.pieces[0]!.bytes[0], 0xff);
+});
+
+test("official calendar KRX legacy Word text bytes project an empty piece array", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0], []);
+  configureDocumentCounts(bytes, [0, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 900);
+
+  const result = projectOfficialMarketCalendarKrxLegacyWordTextBytes(bytes);
+  assert.deepEqual(result.pieces, []);
 });
 
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
