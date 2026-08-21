@@ -621,6 +621,12 @@ decoding은 아직 검증하지 않고 source role도 candidate로 유지한다.
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/37713d3c-a0c8-40f5-821f-bc9622c7de48
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/1caae71f-35c4-49d7-adf0-af5fc766331c
 
+`officialMarketCalendarKrxLegacyWordTextRanges.ts`는 `cbMac` 안에서 각 PlcPcd piece의
+compressed/uncompressed physical byte range를 검증한다. Fixed consumer는
+word-document-counts-verified handle을 한 번만 소비하고 이전 CP range와 새 byte-range projection을
+교차 확인해 새 opaque handle로 ownership을 이전한다. text bytes 자체의 projection/decoding과 source
+role은 아직 승인하지 않으며 실패·dispose에서는 이전 private byte ownership 전체를 zeroize한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX

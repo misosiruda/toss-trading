@@ -47,6 +47,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTextRanges(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges {
   const fib = verifyOfficialMarketCalendarKrxLegacyWordFib(input);
+  try {
   verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts(input);
   const plcPcd = verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(input);
   const cbMac = readUint32(fib.wordDocumentBytes, CB_MAC_OFFSET);
@@ -94,6 +95,18 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTextRanges(
     textDecodingStatus: "not_decoded",
     sourceRoleStatus: "candidate_not_accepted"
   });
+  } finally {
+    zeroizeBytes(fib.wordDocumentBytes);
+    zeroizeBytes(fib.tableStreamBytes);
+  }
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function readUint32(bytes: Uint8Array, offset: number): number {
