@@ -674,6 +674,12 @@ caller-owned `grpprlAndIstdBytes` projection을 교차 확인한다. GrpPrl sema
 table property 적용은 아직 수행하지 않으며 실패·dispose에서 operand와 모든 이전 private byte copy를
 zeroize한다.
 
+`officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`의 MS-DOC 2.4.2 piece-aware 결과도 fixed
+consumer로 연결한다. word-grpprl-verified handle을 한 번만 소비해 main-document CP 범위, contiguous
+paragraph coverage, terminal PAPX identity와 mark 검증 상태를 교차 확인하고 새 opaque handle로
+ownership을 이전한다. Direct paragraph/table property는 아직 적용하지 않으며 실패·dispose에서 모든
+이전 private byte ownership을 정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX

@@ -136,6 +136,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordGrpPrls,
   type VerifiedOfficialMarketCalendarKrxLegacyWordGrpPrls
 } from "./officialMarketCalendarKrxLegacyWordGrpPrl.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordParagraphBoundaries
+} from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -169,6 +173,7 @@ declare const krxLegacyDownloadWordPlcBtePapxVerifiedDocumentBrand: unique symbo
 declare const krxLegacyDownloadWordPapxFkpReferencesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPapxFkpVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordGrpPrlVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordParagraphBoundariesVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -329,6 +334,10 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocum
 }
 export interface OfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument {
   readonly [krxLegacyDownloadWordGrpPrlVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+export interface OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument {
+  readonly [krxLegacyDownloadWordParagraphBoundariesVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -598,6 +607,9 @@ interface ReadyWordPapxFkpVerifiedDocumentState extends ReadyWordPapxFkpReferenc
 interface ReadyWordGrpPrlVerifiedDocumentState extends ReadyWordPapxFkpVerifiedDocumentState {
   grpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordGrpPrls;
 }
+interface ReadyWordParagraphBoundariesVerifiedDocumentState extends ReadyWordGrpPrlVerifiedDocumentState {
+  paragraphBoundaries: VerifiedOfficialMarketCalendarKrxLegacyWordParagraphBoundaries;
+}
 
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
@@ -682,6 +694,9 @@ type WordPapxFkpVerifiedDocumentState =
   | DisposedState;
 type WordGrpPrlVerifiedDocumentState =
   | ReadyWordGrpPrlVerifiedDocumentState
+  | DisposedState;
+type WordParagraphBoundariesVerifiedDocumentState =
+  | ReadyWordParagraphBoundariesVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -799,6 +814,10 @@ const wordPapxFkpVerifiedDocumentStates = new WeakMap<
 const wordGrpPrlVerifiedDocumentStates = new WeakMap<
   object,
   WordGrpPrlVerifiedDocumentState
+>();
+const wordParagraphBoundariesVerifiedDocumentStates = new WeakMap<
+  object,
+  WordParagraphBoundariesVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2777,6 +2796,52 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerified
   disposeWordGrpPrlVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordGrpPrlVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") throw new Error("KRX legacy word-grpprl-verified document must be ready and come from the fixed Word GrpPrl consumer");
+  let transferred = false;
+  try {
+    const paragraphBoundaries = verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries(state.rawDocumentBytes);
+    if (
+      paragraphBoundaries.nFib !== state.mainDocument.nFib ||
+      paragraphBoundaries.tableStreamName !== state.mainDocument.tableStreamName ||
+      paragraphBoundaries.mainDocumentCpStart !== state.mainDocument.mainDocumentCpStart ||
+      paragraphBoundaries.mainDocumentCpEnd !== state.mainDocument.mainDocumentCpEnd ||
+      paragraphBoundaries.paragraphs.length === 0 ||
+      paragraphBoundaries.paragraphs[0]?.cpStart !== 0 ||
+      paragraphBoundaries.paragraphs.at(-1)?.cpEnd !== state.mainDocument.mainDocumentCpEnd ||
+      paragraphBoundaries.paragraphs.some((paragraph, index) => paragraph.index !== index || paragraph.cpEnd - paragraph.cpStart !== paragraph.characterCount || (index > 0 && paragraph.cpStart !== paragraphBoundaries.paragraphs[index - 1]?.cpEnd)) ||
+      paragraphBoundaries.paragraphBoundaryAlgorithm !== "ms_doc_2_4_2_piece_aware" ||
+      paragraphBoundaries.paragraphBoundaryMarksVerified !== true ||
+      paragraphBoundaries.pcdPrmStatus !== "not_applied_not_required_for_boundaries" ||
+      paragraphBoundaries.tablePropertyBindingStatus !== "terminal_papx_identified_properties_not_applied" ||
+      paragraphBoundaries.tableRowCellBoundaryStatus !== "not_verified" ||
+      paragraphBoundaries.sourceRoleStatus !== "candidate_not_accepted"
+    ) throw new Error("KRX legacy Word paragraph boundaries result is invalid");
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordParagraphBoundariesVerifiedDocumentObject(verifiedHandle);
+      throw new Error("KRX legacy word-paragraph-boundaries-verified document cannot be serialized or exported");
+    });
+    wordParagraphBoundariesVerifiedDocumentStates.set(verifiedHandle, { ...state, paragraphBoundaries });
+    wordGrpPrlVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordGrpPrlVerifiedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordParagraphBoundariesVerifiedDocumentStates.has(handleObject)) throw new Error("KRX legacy word-paragraph-boundaries-verified document must come from the fixed Word paragraph boundaries consumer");
+  disposeWordParagraphBoundariesVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3966,6 +4031,28 @@ function zeroizeGrpPrlBytes(
 ): void {
   for (const group of grpPrls.groups) {
     for (const prl of group.prls) zeroizeBytes(prl.operandBytes);
+  }
+}
+
+function disposeWordParagraphBoundariesVerifiedDocumentObject(handle: object): void {
+  const state = wordParagraphBoundariesVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeGrpPrlBytes(state.grpPrls);
+    zeroizePapxFkpBytes(state.papxFkp);
+    zeroizePapxFkpReferenceBytes(state.papxFkpReferences);
+    zeroizeBytes(state.plcBtePapxReference.plcBtePapxBytes);
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordParagraphBoundariesVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
