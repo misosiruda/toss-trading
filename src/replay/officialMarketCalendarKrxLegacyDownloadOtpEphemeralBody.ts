@@ -72,6 +72,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams,
   type VerifiedOfficialMarketCalendarKrxLegacyWordBinaryFileStreams
 } from "./officialMarketCalendarKrxLegacyWordBinaryFileStreams.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordFib,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordFib
+} from "./officialMarketCalendarKrxLegacyWordFib.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -89,6 +93,7 @@ declare const krxLegacyDownloadRootMiniStreamVerifiedDocumentBrand: unique symbo
 declare const krxLegacyDownloadUserStreamAllocationVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadUserStreamBytesProjectedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordStreamsVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordFibVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -172,6 +177,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjected
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifiedDocument {
   readonly [krxLegacyDownloadWordStreamsVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordFibVerifiedDocument {
+  readonly [krxLegacyDownloadWordFibVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -381,6 +391,10 @@ interface ReadyWordStreamsVerifiedDocumentState {
   wordStreams: VerifiedOfficialMarketCalendarKrxLegacyWordBinaryFileStreams;
 }
 
+interface ReadyWordFibVerifiedDocumentState extends ReadyWordStreamsVerifiedDocumentState {
+  wordFib: VerifiedOfficialMarketCalendarKrxLegacyWordFib;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -416,6 +430,9 @@ type UserStreamBytesProjectedDocumentState =
   | DisposedState;
 type WordStreamsVerifiedDocumentState =
   | ReadyWordStreamsVerifiedDocumentState
+  | DisposedState;
+type WordFibVerifiedDocumentState =
+  | ReadyWordFibVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -469,6 +486,10 @@ const userStreamBytesProjectedDocumentStates = new WeakMap<
 const wordStreamsVerifiedDocumentStates = new WeakMap<
   object,
   WordStreamsVerifiedDocumentState
+>();
+const wordFibVerifiedDocumentStates = new WeakMap<
+  object,
+  WordFibVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -1516,6 +1537,77 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifie
   disposeWordStreamsVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordStreamsVerifiedDocumentToWordFibVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordFibVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordStreamsVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-streams-verified document must be ready and come from the fixed Word stream consumer"
+    );
+  }
+  let wordFib: VerifiedOfficialMarketCalendarKrxLegacyWordFib | undefined;
+  let transferred = false;
+  try {
+    wordFib = verifyOfficialMarketCalendarKrxLegacyWordFib(
+      state.rawDocumentBytes
+    );
+    if (
+      wordFib.nFibBase !== state.wordStreams.nFibBase ||
+      wordFib.tableStreamName !== state.wordStreams.tableStreamName ||
+      !sameByteSequence(
+        wordFib.wordDocumentBytes,
+        state.wordStreams.wordDocumentBytes
+      ) ||
+      !sameByteSequence(
+        wordFib.tableStreamBytes,
+        state.wordStreams.tableStreamBytes
+      ) ||
+      wordFib.fibStructureVerified !== true ||
+      wordFib.fibFieldStatus !== "count_sections_only_not_parsed" ||
+      wordFib.clxStatus !== "not_parsed" ||
+      wordFib.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word FIB verification result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordFibVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-fib-verified document cannot be serialized or exported"
+      );
+    });
+    wordFibVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      wordFib
+    });
+    wordStreamsVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordFibVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      if (wordFib !== undefined) {
+        zeroizeWordFibBytes(wordFib);
+      }
+      disposeWordStreamsVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordFibVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordFibVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordFibVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-fib-verified document must come from the fixed Word FIB consumer"
+    );
+  }
+  disposeWordFibVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -2389,6 +2481,30 @@ function disposeWordStreamsVerifiedDocumentObject(handle: object): void {
       status: "disposed"
     });
   }
+}
+
+function disposeWordFibVerifiedDocumentObject(handle: object): void {
+  const state = wordFibVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordFibVerifiedDocumentStates.set(handle, {
+      status: "disposed"
+    });
+  }
+}
+
+function zeroizeWordFibBytes(
+  wordFib: VerifiedOfficialMarketCalendarKrxLegacyWordFib
+): void {
+  zeroizeBytes(wordFib.wordDocumentBytes);
+  zeroizeBytes(wordFib.tableStreamBytes);
 }
 
 function zeroizeWordStreamBytes(
