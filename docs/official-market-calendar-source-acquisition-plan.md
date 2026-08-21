@@ -668,6 +668,12 @@ word-papx-fkp-references-verified handle을 한 번만 소비해 page identity, 
 caller-owned `grpprlAndIstdBytes` projection을 교차 확인한다. GrpPrl semantics는 아직 해석하지 않으며
 실패·dispose에서 page copy와 PapxInFkp copy를 포함한 private byte ownership 전체를 zeroize한다.
 
+`officialMarketCalendarKrxLegacyWordGrpPrl.ts`는 각 PapxInFkp의 `istd`와 shared `Prl` operand framing을
+검증하고 default paragraph도 빈 group으로 보존한다. Fixed consumer는 word-papx-fkp-verified handle을
+한 번만 소비해 paragraph/group count와 caller-owned operand copy를 교차 확인한다. Sprm semantics와
+table property 적용은 아직 수행하지 않으며 실패·dispose에서 operand와 모든 이전 private byte copy를
+zeroize한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
