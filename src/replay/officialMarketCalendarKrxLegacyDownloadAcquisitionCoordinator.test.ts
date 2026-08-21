@@ -595,6 +595,33 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         fixedConsumerTitle
       );
 
+      const authorityForgedResponse = await coordinator.acquire({
+        fileName: FILE_NAME
+      });
+      assert.throws(
+        () =>
+          consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+            authorityForgedResponse,
+            {
+              verify(input) {
+                return {
+                  ...verifier.verify(input),
+                  identityVerificationAuthority: "registered_source_policy"
+                };
+              }
+            }
+          ),
+        /identity result did not match the network response/
+      );
+      assert.throws(
+        () =>
+          consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+            authorityForgedResponse,
+            verifier
+          ),
+        /must be ready/
+      );
+
       const coordinatorTitle = await createCoordinatorForPort(
         port,
         verifier
@@ -607,7 +634,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v1",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v2",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -615,6 +642,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           structuralSourceRowCount: 0,
           structuralSourceCellCount: 0,
           titleBindingVerified: true,
+          identityVerificationAuthority: "test_only_expectation",
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
           sourceRoleStatus: "candidate_not_accepted",
@@ -637,7 +665,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ).acquireWordCandidateSummary({ fileName: FILE_NAME }),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v1",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v2",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -645,6 +673,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           structuralSourceRowCount: 0,
           structuralSourceCellCount: 0,
           titleBindingVerified: true,
+          identityVerificationAuthority: "test_only_expectation",
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
           sourceRoleStatus: "candidate_not_accepted",

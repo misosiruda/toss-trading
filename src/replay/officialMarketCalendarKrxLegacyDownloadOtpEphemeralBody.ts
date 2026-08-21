@@ -23,6 +23,7 @@ import {
   resolveRegisteredOfficialMarketCalendarKrxLegacyDownloadPostWirePolicy
 } from "./officialMarketCalendarKrxLegacyDownloadPostWirePolicy.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOCUMENT_IDENTITY_SCHEMA_VERSION,
   verifyOfficialMarketCalendarKrxLegacyDocumentIdentity,
   type TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier,
   type VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity
@@ -162,7 +163,7 @@ import {
 } from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_word_candidate_summary.v1";
+  "official_market_calendar_krx_legacy_word_candidate_summary.v2";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -398,6 +399,7 @@ export interface OfficialMarketCalendarKrxLegacyWordCandidateSummary {
   structuralSourceRowCount: number;
   structuralSourceCellCount: number;
   titleBindingVerified: true;
+  identityVerificationAuthority: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["identityVerificationAuthority"];
   columnSemanticsStatus: "not_interpreted";
   holidaySemanticsStatus: "not_interpreted";
   sourceRoleStatus: "candidate_not_accepted";
@@ -1165,7 +1167,8 @@ export function consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentity
 ): OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument {
   return transferResponseToIdentityVerifiedDocument(
     handle,
-    verifyOfficialMarketCalendarKrxLegacyDocumentIdentity
+    verifyOfficialMarketCalendarKrxLegacyDocumentIdentity,
+    "registered_source_policy"
   );
 }
 
@@ -1189,8 +1192,10 @@ export function consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseTo
   } catch {
     throw new Error("KRX legacy document test-only identity verifier is invalid");
   }
-  return transferResponseToIdentityVerifiedDocument(handle, (input) =>
-    verify.call(verifier, input)
+  return transferResponseToIdentityVerifiedDocument(
+    handle,
+    (input) => verify.call(verifier, input),
+    "test_only_expectation"
   );
 }
 
@@ -3239,6 +3244,8 @@ export function consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedD
       structuralSourceRowCount: state.sourceRows.rows.length,
       structuralSourceCellCount,
       titleBindingVerified: true,
+      identityVerificationAuthority:
+        state.identity.identityVerificationAuthority,
       columnSemanticsStatus: "not_interpreted",
       holidaySemanticsStatus: "not_interpreted",
       sourceRoleStatus: "candidate_not_accepted",
@@ -3423,7 +3430,8 @@ function transferResponseToIdentityVerifiedDocument(
   verify: (input: {
     fileName: LegacyFileName;
     rawDocumentBytes: Uint8Array;
-  }) => VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity
+  }) => VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity,
+  expectedIdentityVerificationAuthority: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["identityVerificationAuthority"]
 ): OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument {
   const handleObject = assertHandleObject(handle);
   const state = responseStates.get(handleObject);
@@ -3439,9 +3447,13 @@ function transferResponseToIdentityVerifiedDocument(
       rawDocumentBytes: state.rawResponseBytes
     });
     if (
+      identity.schemaVersion !==
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOCUMENT_IDENTITY_SCHEMA_VERSION ||
       identity.fileName !== state.fileName ||
       identity.contentLength !== state.contentLength ||
       identity.identityVerified !== true ||
+      identity.identityVerificationAuthority !==
+        expectedIdentityVerificationAuthority ||
       identity.parserStatus !== "not_verified" ||
       identity.sourceRoleStatus !== "candidate_not_accepted"
     ) {

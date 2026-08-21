@@ -7,7 +7,7 @@ import {
 } from "./officialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_DOCUMENT_IDENTITY_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_document_identity.v1";
+  "official_market_calendar_krx_legacy_document_identity.v2";
 
 type LegacyDocument =
   OfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicyDefinition["documents"][number];
@@ -27,6 +27,9 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity {
   containerFormat: "ole_compound_file_signature_only";
   oleCompoundFileSignature: LegacyDocument["oleCompoundFileSignature"];
   identityVerified: true;
+  identityVerificationAuthority:
+    | "registered_source_policy"
+    | "test_only_expectation";
   parserStatus: "not_verified";
   sourceRoleStatus: "candidate_not_accepted";
 }
@@ -94,7 +97,11 @@ export function verifyOfficialMarketCalendarKrxLegacyDocumentIdentity(
 ): VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity {
   const parsed = parseInput(input);
   const document = resolveRegisteredDocument(parsed.fileName);
-  return verifyAgainstExpectation(parsed.rawDocumentBytes, document);
+  return verifyAgainstExpectation(
+    parsed.rawDocumentBytes,
+    document,
+    "registered_source_policy"
+  );
 }
 
 export function createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier(
@@ -110,14 +117,19 @@ export function createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVer
           "KRX legacy document identity input is invalid."
         );
       }
-      return verifyAgainstExpectation(parsed.rawDocumentBytes, snapshot);
+      return verifyAgainstExpectation(
+        parsed.rawDocumentBytes,
+        snapshot,
+        "test_only_expectation"
+      );
     }
   });
 }
 
 function verifyAgainstExpectation(
   rawDocumentBytes: Uint8Array,
-  expected: DocumentIdentityExpectation
+  expected: DocumentIdentityExpectation,
+  identityVerificationAuthority: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["identityVerificationAuthority"]
 ): VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity {
   const contentLength = readByteLength(rawDocumentBytes);
   if (contentLength !== expected.contentLength) {
@@ -151,6 +163,7 @@ function verifyAgainstExpectation(
     containerFormat: "ole_compound_file_signature_only",
     oleCompoundFileSignature: expected.oleCompoundFileSignature,
     identityVerified: true,
+    identityVerificationAuthority,
     parserStatus: "not_verified",
     sourceRoleStatus: "candidate_not_accepted"
   });

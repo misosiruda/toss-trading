@@ -32,6 +32,7 @@ test("KRX legacy document identity verifies exact synthetic bytes with test-only
     containerFormat: "ole_compound_file_signature_only",
     oleCompoundFileSignature: OLE_SIGNATURE,
     identityVerified: true,
+    identityVerificationAuthority: "test_only_expectation",
     parserStatus: "not_verified",
     sourceRoleStatus: "candidate_not_accepted"
   });
