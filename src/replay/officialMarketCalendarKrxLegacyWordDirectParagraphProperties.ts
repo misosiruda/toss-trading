@@ -47,7 +47,8 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphPrope
 }
 
 export type OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesErrorCode =
-  "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID";
+  | "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID"
+  | "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED";
 
 export class OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError extends Error {
   constructor(
@@ -94,6 +95,9 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
       boundary.markCp >= terminalPiece.cpEnd
     ) {
       throw invalidDirectParagraphProperties();
+    }
+    if (group.istd !== null && group.istd !== 0) {
+      throw unsupportedDirectParagraphStyle();
     }
 
     const pcdModifiers = resolveTerminalPcdParagraphModifiers(
@@ -250,5 +254,12 @@ function invalidDirectParagraphProperties(): OfficialMarketCalendarKrxLegacyWord
   return new OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError(
     "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID",
     "Official calendar KRX legacy Word direct paragraph properties are invalid."
+  );
+}
+
+function unsupportedDirectParagraphStyle(): OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError {
+  return new OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError(
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED",
+    "Official calendar KRX legacy Word direct paragraph style is unsupported."
   );
 }

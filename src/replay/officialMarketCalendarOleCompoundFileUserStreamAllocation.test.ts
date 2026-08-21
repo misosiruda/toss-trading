@@ -2725,6 +2725,43 @@ test("official calendar KRX legacy Word direct paragraph properties reject inval
   );
 });
 
+test("official calendar KRX legacy Word direct paragraph properties identify unsupported non-default style", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 930, 951, 953],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 30, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(
+    bytes,
+    2048 + 60,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x2417, [1]]
+      ],
+      1
+    )
+  );
+
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(
+        bytes
+      ),
+    (error: unknown) =>
+      error instanceof
+        OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError &&
+      error.code ===
+        "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED"
+  );
+});
+
 test("official calendar KRX legacy Word table text marks classify depth-one cells and TTP", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidDepthOneTableTextMarksFixture(bytes, 0x0007);
