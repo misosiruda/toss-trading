@@ -413,8 +413,12 @@ Unicode simple uppercase binary value를 비교한다. Surrogate code unit은 �
 Unicode 17.0.0 `UnicodeData.txt`의 BMP `Simple_Uppercase_Mapping` 1,198개와 source SHA-256
 `2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c`를 고정한다.
 결과는 fixed entry projection을 유지하면서 `directoryTreeVerified=true`,
-`treeStatus=verified`를 반환한다. Mini FAT entry, root mini stream, user stream allocation과
-opaque lifecycle 연결은 아직 검증하지 않는다. 명세 기준:
+`treeStatus=verified`를 반환한다. Fixed consumer는 directory-entries-verified handle을 exact 한
+번 consume하고 같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와
+directory-tree result 및 bytes ownership을 getter/callback 없는 새 opaque handle로 이전하며,
+실패·dispose·JSON export에서는 bytes를 zeroize한다. Mini FAT entry, root mini stream과 user
+stream allocation은 아직 검증하지 않으며 새 opaque handle도 durable sink나 parser operation을
+노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/d30e462c-5f8a-435b-9c4c-cc0b9ea89956
 https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt
 

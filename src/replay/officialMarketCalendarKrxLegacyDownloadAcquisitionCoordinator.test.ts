@@ -11,6 +11,7 @@ import {
   OfficialMarketCalendarKrxLegacyDownloadAcquisitionError
 } from "./officialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.js";
 import {
+  consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument,
@@ -22,6 +23,7 @@ import {
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument,
@@ -39,6 +41,7 @@ import {
 } from "./officialMarketCalendarKrxLegacyDownloadNetworkTestFixture.js";
 import { OfficialMarketCalendarOleCompoundFileDifatError } from "./officialMarketCalendarOleCompoundFileDifat.js";
 import { OfficialMarketCalendarOleCompoundFileDirectoryEntriesError } from "./officialMarketCalendarOleCompoundFileDirectoryEntries.js";
+import { OfficialMarketCalendarOleCompoundFileDirectoryTreeError } from "./officialMarketCalendarOleCompoundFileDirectoryTree.js";
 import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketCalendarOleCompoundFileFat.js";
 import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 
@@ -180,12 +183,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const directoryTreeVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+          directoryEntriesVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(directoryTreeVerifiedHandle), true);
+      assert.deepEqual(Object.keys(directoryTreeVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(directoryEntriesVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+            directoryEntriesVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(directoryTreeVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument(
-        directoryEntriesVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerifiedDocument(
+        directoryTreeVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -268,6 +284,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed directory entries consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed directory tree consumer/
   );
 });
 
@@ -485,6 +508,70 @@ test("KRX legacy directory entries consumer closes ownership when entry verifica
         () =>
           consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
             systemChainsHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy directory tree consumer closes ownership when tree verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  new DataView(documentBytes.buffer).setUint32(2124, 1, true);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+      const fatHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatHandle
+        );
+      const systemChainsHandle =
+        consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+          fatHandle
+        );
+      const directoryEntriesHandle =
+        consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+          systemChainsHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+            directoryEntriesHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarOleCompoundFileDirectoryTreeError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_DIRECTORY_TREE_INVALID_NODE"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+            directoryEntriesHandle
           ),
         /must be ready/
       );
