@@ -95,6 +95,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries
 } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError,
+  verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties
+} from "./officialMarketCalendarKrxLegacyWordDirectParagraphProperties.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -2460,6 +2465,191 @@ test("official calendar KRX legacy Word paragraph boundaries reject invalid FC a
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_BOUNDARY_INVALID"
     );
   }
+});
+
+test("official calendar KRX legacy Word direct paragraph properties use terminal Prm0", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+  configurePlcPcd(bytes, [0, 2, 5], [
+    { flags: 1, fcCompressed: 920, prm: 0x0132 },
+    { flags: 0, fcCompressed: 0x4000076c, prm: 0x0130 }
+  ]);
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 930, 951, 953],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 30, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(
+    bytes,
+    2048 + 60,
+    tablePropertyGroup(
+      [
+        [0x2417, [1]],
+        [0x2405, [1]]
+      ],
+      0
+    )
+  );
+  const boundaries =
+    verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries(bytes);
+  assert.equal(boundaries.paragraphs[0]!.startPieceIndex, 0);
+  assert.equal(boundaries.paragraphs[0]!.endPieceIndex, 1);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(bytes);
+
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_SCHEMA_VERSION
+  );
+  assert.deepEqual(
+    result.paragraphs.map((paragraph) => ({
+      index: paragraph.index,
+      terminalPcdPieceIndex: paragraph.terminalPcdPieceIndex,
+      terminalPcdPrmKind: paragraph.terminalPcdPrmKind,
+      terminalPcdRawPrm: paragraph.terminalPcdRawPrm,
+      papxPrlCount: paragraph.papxPrlCount,
+      appendedPcdParagraphPrlCount:
+        paragraph.appendedPcdParagraphPrlCount,
+      directParagraphPrlCount: paragraph.directParagraphPrlCount,
+      inTable: paragraph.inTable,
+      tableDepth: paragraph.tableDepth,
+      isTtp: paragraph.isTtp,
+      tableRole: paragraph.tableRole,
+      propertiesStatus: paragraph.propertiesStatus
+    })),
+    [
+      {
+        index: 0,
+        terminalPcdPieceIndex: 1,
+        terminalPcdPrmKind: "prm0",
+        terminalPcdRawPrm: 0x0130,
+        papxPrlCount: 2,
+        appendedPcdParagraphPrlCount: 1,
+        directParagraphPrlCount: 3,
+        inTable: true,
+        tableDepth: 1,
+        isTtp: true,
+        tableRole: "depth_1_ttp_candidate",
+        propertiesStatus: "papx_and_terminal_pcd_applied"
+      },
+      {
+        index: 1,
+        terminalPcdPieceIndex: 1,
+        terminalPcdPrmKind: "prm0",
+        terminalPcdRawPrm: 0x0130,
+        papxPrlCount: 0,
+        appendedPcdParagraphPrlCount: 1,
+        directParagraphPrlCount: 1,
+        inTable: true,
+        tableDepth: 1,
+        isTtp: false,
+        tableRole: "table_paragraph",
+        propertiesStatus: "papx_and_terminal_pcd_applied"
+      }
+    ]
+  );
+  assert.equal(
+    result.directParagraphFormattingAlgorithm,
+    "ms_doc_2_4_6_1_terminal_pcd"
+  );
+  assert.equal(result.papxThenTerminalPcdOrderVerified, true);
+  assert.equal(result.prm0ParagraphSelectionVerified, true);
+  assert.equal(result.prm1ParagraphSelectionVerified, true);
+  assert.equal(result.tableTextMarkSemanticsStatus, "not_verified");
+  assert.equal(result.tableRowCellBoundaryStatus, "not_verified");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.paragraphs), true);
+  assert.equal(Object.isFrozen(result.paragraphs[0]), true);
+});
+
+test("official calendar KRX legacy Word direct paragraph properties select Prm1 paragraph Sprms", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+  const grpprl: number[] = [];
+  appendPrlBytes(grpprl, 0x2416, [1]);
+  appendPrlBytes(grpprl, 0x2417, [1]);
+  appendPrlBytes(grpprl, 0x0801, [1]);
+  configurePlcPcd(
+    bytes,
+    [0, 2, 5],
+    [
+      { flags: 1, fcCompressed: 920 },
+      { flags: 0, fcCompressed: 0x4000076c, prm: 1 }
+    ],
+    [grpprl]
+  );
+  configureRawPlcBtePapx(
+    bytes,
+    createPlcBtePapxBytes([920, 953], [4]),
+    52
+  );
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(bytes);
+
+  assert.deepEqual(
+    result.paragraphs.map((paragraph) => ({
+      terminalPcdPrmKind: paragraph.terminalPcdPrmKind,
+      appendedPcdParagraphPrlCount:
+        paragraph.appendedPcdParagraphPrlCount,
+      ignoredPcdNonParagraphPrlCount:
+        paragraph.ignoredPcdNonParagraphPrlCount,
+      directParagraphPrlCount: paragraph.directParagraphPrlCount,
+      interpretedPrlCount: paragraph.interpretedPrlCount,
+      uninterpretedPrlCount: paragraph.uninterpretedPrlCount,
+      tableRole: paragraph.tableRole,
+      textMarkValidationStatus: paragraph.textMarkValidationStatus
+    })),
+    [
+      {
+        terminalPcdPrmKind: "prm1",
+        appendedPcdParagraphPrlCount: 2,
+        ignoredPcdNonParagraphPrlCount: 1,
+        directParagraphPrlCount: 2,
+        interpretedPrlCount: 2,
+        uninterpretedPrlCount: 0,
+        tableRole: "depth_1_ttp_candidate",
+        textMarkValidationStatus: "pending_text_binding"
+      },
+      {
+        terminalPcdPrmKind: "prm1",
+        appendedPcdParagraphPrlCount: 2,
+        ignoredPcdNonParagraphPrlCount: 1,
+        directParagraphPrlCount: 2,
+        interpretedPrlCount: 2,
+        uninterpretedPrlCount: 0,
+        tableRole: "depth_1_ttp_candidate",
+        textMarkValidationStatus: "pending_text_binding"
+      }
+    ]
+  );
+});
+
+test("official calendar KRX legacy Word direct paragraph properties reject invalid merged semantics", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+  configurePlcPcd(bytes, [0, 2, 5], [
+    { flags: 1, fcCompressed: 920 },
+    { flags: 0, fcCompressed: 0x4000076c, prm: 0x0132 }
+  ]);
+
+  assert.throws(
+    () =>
+      verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(
+        bytes
+      ),
+    (error: unknown) =>
+      error instanceof
+        OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError &&
+      error.code ===
+        "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID"
+  );
 });
 
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
