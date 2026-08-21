@@ -36,6 +36,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordTextDecodedDocumentToWordMainDocumentVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -65,6 +66,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -94,6 +96,7 @@ import { OfficialMarketCalendarKrxLegacyWordTextRangesError } from "./officialMa
 import { OfficialMarketCalendarKrxLegacyWordMainDocumentError } from "./officialMarketCalendarKrxLegacyWordMainDocument.js";
 import { OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError } from "./officialMarketCalendarKrxLegacyWordPlcBtePapxReference.js";
 import { OfficialMarketCalendarKrxLegacyWordPlcBtePapxError } from "./officialMarketCalendarKrxLegacyWordPlcBtePapx.js";
+import { OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError } from "./officialMarketCalendarKrxLegacyWordPapxFkpReferences.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -142,8 +145,8 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
   configureSyntheticWordStreams(documentBytes);
   configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
   configureSyntheticWordDocumentCounts(documentBytes, 1);
-  configureSyntheticWordTextRange(documentBytes, 922);
-  configureSyntheticWordPlcBtePapxReference(documentBytes);
+  configureSyntheticWordTextRange(documentBytes, 1536);
+  configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -485,13 +488,16 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordPapxFkpReferencesVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(wordPlcBtePapxVerifiedHandle);
+      assert.equal(Object.isFrozen(wordPapxFkpReferencesVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordPapxFkpReferencesVerifiedHandle), []);
+      assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(wordPlcBtePapxVerifiedHandle), /must be ready/);
       assert.throws(
-        () => JSON.stringify(wordPlcBtePapxVerifiedHandle),
+        () => JSON.stringify(wordPapxFkpReferencesVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument(
-        wordPlcBtePapxVerifiedHandle
-      );
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument(wordPapxFkpReferencesVerifiedHandle);
 
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
@@ -683,6 +689,7 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
     () => disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument({} as never),
     /must come from the fixed Word PlcBtePapx consumer/
   );
+  assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument({} as never), /must come from the fixed Word PapxFkp references consumer/);
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
@@ -1524,6 +1531,21 @@ test("KRX legacy Word PlcBtePapx consumer closes ownership for invalid framing",
   );
 });
 
+test("KRX legacy Word PapxFkp references consumer closes ownership without descriptors", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 922);
+  configureSyntheticWordPlcBtePapxReference(documentBytes);
+  await withDownloadServer((response) => sendValidResponse(response, documentBytes), async (port) => {
+    const reference = await acquireWordPlcBtePapxReferenceVerifiedHandle(port, documentBytes);
+    const plc = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(reference);
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(plc), (error: unknown) => error instanceof OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError && error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_REFERENCE_INVALID");
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(plc), /must be ready/);
+  });
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -2015,6 +2037,10 @@ function configureSyntheticWordPlcBtePapxReference(
   view.setUint32(wordOffset + 154 + 13 * 8 + 4, byteLength, true);
   if (tableOffset + 4 <= 4096) {
     view.setUint32(tableStreamOffset + tableOffset, 920, true);
+    if (byteLength >= 12) {
+      view.setUint32(tableStreamOffset + tableOffset + 4, 922, true);
+      view.setUint32(tableStreamOffset + tableOffset + 8, 2, true);
+    }
   }
 }
 
