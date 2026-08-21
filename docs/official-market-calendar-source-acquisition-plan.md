@@ -551,6 +551,13 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/51f9dd62-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0e246123-e907-4ad1-9dfc-558512e2b052
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/8ff6f5f0-ee65-48e3-ab1e-f15deeb24355
 
+`officialMarketCalendarKrxLegacyWordStdfBase.ts`는 non-empty STD의 10-byte `StdfBase`에서
+`sti`, `stk`, `istdBase`, `cupx`, `istdNext`, `bchUpe`를 투영한다. Style type, fixed-index `sti`,
+LPStd size equality, non-empty next/base reference와 inheritance cycle을 fail-closed로 검증한다.
+`StdfPost2000OrNone`, style name, UPX와 `cupx` semantics는 아직 파싱하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/df0f4654-071d-442f-8563-752d7e0285ef
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9cc628d4-c325-4622-9724-c2215fe65cb6
+
 `officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
 `FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
 declared bytes 안에 non-empty CLX range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
