@@ -64,6 +64,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation,
   type VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation
 } from "./officialMarketCalendarOleCompoundFileUserStreamAllocation.js";
+import {
+  projectOfficialMarketCalendarOleCompoundFileUserStreamBytes,
+  type ProjectedOfficialMarketCalendarOleCompoundFileUserStreamBytes
+} from "./officialMarketCalendarOleCompoundFileUserStreamBytes.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -79,6 +83,7 @@ declare const krxLegacyDownloadDirectoryTreeVerifiedDocumentBrand: unique symbol
 declare const krxLegacyDownloadMiniFatEntriesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadRootMiniStreamVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadUserStreamAllocationVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadUserStreamBytesProjectedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -152,6 +157,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDo
 
 export interface OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument {
   readonly [krxLegacyDownloadUserStreamAllocationVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument {
+  readonly [krxLegacyDownloadUserStreamBytesProjectedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -328,6 +338,22 @@ interface ReadyUserStreamAllocationVerifiedDocumentState {
   userStreamAllocation: VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation;
 }
 
+interface ReadyUserStreamBytesProjectedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+  systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
+  directoryEntries: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryEntries;
+  directoryTree: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryTree;
+  miniFatEntries: VerifiedOfficialMarketCalendarOleCompoundFileMiniFatEntries;
+  rootMiniStream: VerifiedOfficialMarketCalendarOleCompoundFileRootMiniStream;
+  userStreamAllocation: VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation;
+  userStreamBytes: ProjectedOfficialMarketCalendarOleCompoundFileUserStreamBytes;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -357,6 +383,9 @@ type RootMiniStreamVerifiedDocumentState =
   | DisposedState;
 type UserStreamAllocationVerifiedDocumentState =
   | ReadyUserStreamAllocationVerifiedDocumentState
+  | DisposedState;
+type UserStreamBytesProjectedDocumentState =
+  | ReadyUserStreamBytesProjectedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -402,6 +431,10 @@ const rootMiniStreamVerifiedDocumentStates = new WeakMap<
 const userStreamAllocationVerifiedDocumentStates = new WeakMap<
   object,
   UserStreamAllocationVerifiedDocumentState
+>();
+const userStreamBytesProjectedDocumentStates = new WeakMap<
+  object,
+  UserStreamBytesProjectedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -1289,6 +1322,88 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocati
   disposeUserStreamAllocationVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = userStreamAllocationVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy user-stream-allocation-verified document must be ready and come from the fixed user stream allocation consumer"
+    );
+  }
+  let userStreamBytes:
+    | ProjectedOfficialMarketCalendarOleCompoundFileUserStreamBytes
+    | undefined;
+  let transferred = false;
+  try {
+    userStreamBytes =
+      projectOfficialMarketCalendarOleCompoundFileUserStreamBytes(
+        state.rawDocumentBytes
+      );
+    if (
+      userStreamBytes.majorVersion !== state.userStreamAllocation.majorVersion ||
+      userStreamBytes.sectorSize !== state.userStreamAllocation.sectorSize ||
+      userStreamBytes.miniSectorSize !==
+        state.userStreamAllocation.miniSectorSize ||
+      !sameProjectedUserStreamSequence(
+        userStreamBytes,
+        state.userStreamAllocation
+      ) ||
+      userStreamBytes.streamBytesProjected !== true ||
+      userStreamBytes.trailingAllocationBytesStatus !== "excluded" ||
+      userStreamBytes.wordDocumentStatus !== "not_parsed"
+    ) {
+      throw new Error("KRX legacy OLE user stream byte projection is invalid");
+    }
+    const projectedHandle = createOpaqueHandle(() => {
+      disposeUserStreamBytesProjectedDocumentObject(projectedHandle);
+      throw new Error(
+        "KRX legacy user-stream-bytes-projected document cannot be serialized or exported"
+      );
+    });
+    userStreamBytesProjectedDocumentStates.set(projectedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat: state.fat,
+      systemChains: state.systemChains,
+      directoryEntries: state.directoryEntries,
+      directoryTree: state.directoryTree,
+      miniFatEntries: state.miniFatEntries,
+      rootMiniStream: state.rootMiniStream,
+      userStreamAllocation: state.userStreamAllocation,
+      userStreamBytes
+    });
+    userStreamAllocationVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return projectedHandle as OfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument;
+  } finally {
+    if (!transferred) {
+      if (userStreamBytes !== undefined) {
+        zeroizeProjectedUserStreamBytes(userStreamBytes);
+      }
+      disposeUserStreamAllocationVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!userStreamBytesProjectedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy user-stream-bytes-projected document must come from the fixed user stream bytes consumer"
+    );
+  }
+  disposeUserStreamBytesProjectedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -2131,6 +2246,50 @@ function disposeUserStreamAllocationVerifiedDocumentObject(
       status: "disposed"
     });
   }
+}
+
+function disposeUserStreamBytesProjectedDocumentObject(handle: object): void {
+  const state = userStreamBytesProjectedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    userStreamBytesProjectedDocumentStates.set(handle, {
+      status: "disposed"
+    });
+  }
+}
+
+function zeroizeProjectedUserStreamBytes(
+  projection: ProjectedOfficialMarketCalendarOleCompoundFileUserStreamBytes
+): void {
+  for (const stream of projection.streams) {
+    zeroizeBytes(stream.bytes);
+  }
+}
+
+function sameProjectedUserStreamSequence(
+  projection: ProjectedOfficialMarketCalendarOleCompoundFileUserStreamBytes,
+  allocation: VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation
+): boolean {
+  return (
+    projection.streams.length === allocation.streams.length &&
+    projection.streams.every((stream, index) => {
+      const allocatedStream = allocation.streams[index];
+      return (
+        allocatedStream !== undefined &&
+        stream.streamId === allocatedStream.streamId &&
+        stream.name === allocatedStream.name &&
+        stream.streamSize === allocatedStream.streamSize &&
+        stream.allocation === allocatedStream.allocation &&
+        stream.bytesOwnership === "caller_owned_copy" &&
+        BigInt(stream.bytes.length) === BigInt(allocatedStream.streamSize)
+      );
+    })
+  );
 }
 
 function sameUserStreamIdentitySequence(
