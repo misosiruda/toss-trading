@@ -744,11 +744,18 @@ cell/TTP mark `0x0007`, section mark `0x000C`, paragraph mark `0x000D` 중 하�
 `Pcd.Prm`이나 PAPX property를 이 boundary 결과 자체에는 적용하지 않는다. 후속 direct paragraph
 property verifier, table text mark verifier와 table row grouping verifier가 terminal PAPX, terminal
 `Pcd.Prm`, code unit 역할, depth별 row/cell CP range와 terminal mark를 제외한 structural cell text를
-결합하지만 column semantics와 source role은 계속 미검증 candidate다. 명세 기준:
+결합하지만 column semantics와 source role은 계속 미검증 candidate다. Direct verifier는
+non-default `istd`를 별도 unsupported error code로 fail-closed 분류하며 style sheet를 해석하거나
+default style로 강등하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-sg/openspecs/office_file_formats/ms-doc/30461a5b-e3ad-44cd-a3fe-038f86639b13
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-7760-4fdb-af88-0146de2feb4c
+
+2026-08-21 credential-free read-only production coordinator로 registered 2013 document를 다시
+확인한 결과 network/identity와 direct paragraph 전 단계는 통과했지만 non-default style에서
+`OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED`로 중단됐다. OTP와 raw
+document bytes는 저장하거나 출력하지 않았으며 이 관찰은 accepted acquisition/evidence가 아니다.
 
 ### KRX Holiday Data POST Static Policy
 
