@@ -307,7 +307,9 @@ sink나 accepted evidence를 만들지 않는다.
 `fileName`, exact byte length, SHA-256와 8-byte OLE Compound File signature를 하나의
 fail-closed identity boundary에서 검증한다. Production verifier는 source policy override를
 받지 않고, test-only verifier만 snapshot된 synthetic expectation을 사용한다. 성공 결과는
-hash와 signature 검증 사실을 기록하지만 `parserStatus=not_verified`와
+v2 `identityVerificationAuthority`로 `registered_source_policy`와
+`test_only_expectation`을 구분하고 hash와 signature 검증 사실을 기록하지만
+`parserStatus=not_verified`와
 `sourceRoleStatus=candidate_not_accepted`를 유지한다. Signature 확인은 OLE container 전체
 구조나 Word table semantics 검증을 대신하지 않는다. Fixed response consumer와 coordinator의
 verified acquisition method가 이 identity를 후속 OLE/Word/title opaque lifecycle의 첫 단계로
@@ -625,6 +627,8 @@ ephemeral network response부터 이 title-verified opaque handle까지 등록�
 모든 OLE/Word 단계를 순서대로 한 번씩 소비한다. Terminal candidate-summary consumer는
 이 handle을 exact 한 번 소비하고 raw document를 zeroize한 뒤 file/year, Word version/Table
 stream, structural row/cell count와 미해석/미승인 상태만 frozen summary로 반환한다.
+Summary v2도 identity verification authority를 보존해 synthetic test expectation을 production
+registered source policy 검증으로 오인할 수 없게 한다.
 Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
 title 검증과 terminal 소비를 한 호출로 연결하고 caller에게 opaque/raw handle을 반환하지 않는다.
 Structural row 수를 registered `observedHolidayLineCount`와 동일하다고 가정하지 않는다.
