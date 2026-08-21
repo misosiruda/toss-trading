@@ -8,18 +8,21 @@ import {
   consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument,
   consumeOfficialMarketCalendarKrxLegacyDownloadParametersToWireBody,
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralParameters,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   disposeOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   disposeOfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadEphemeralParameters,
   type OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   type OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   type OfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody,
-  type OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument
+  type OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument,
+  type OfficialMarketCalendarKrxLegacyWordCandidateSummary
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
   createOfficialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer,
@@ -42,6 +45,9 @@ export interface OfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator {
   acquireWordDocumentTitle(
     request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
   ): Promise<OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument>;
+  acquireWordCandidateSummary(
+    request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
+  ): Promise<OfficialMarketCalendarKrxLegacyWordCandidateSummary>;
 }
 
 export interface TestOnlyOfficialMarketCalendarKrxLegacyDownloadAcquisitionDependencies {
@@ -106,8 +112,41 @@ function createCoordinator(
     ) => acquireDocument(request, operations),
     acquireWordDocumentTitle: (
       request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
-    ) => acquireWordDocumentTitle(request, operations)
+    ) => acquireWordDocumentTitle(request, operations),
+    acquireWordCandidateSummary: (
+      request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
+    ) => acquireWordCandidateSummary(request, operations)
   });
+}
+
+async function acquireWordCandidateSummary(
+  request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest,
+  operations: AcquisitionOperations
+): Promise<OfficialMarketCalendarKrxLegacyWordCandidateSummary> {
+  let titleHandle:
+    | OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument
+    | undefined;
+  try {
+    titleHandle = await acquireWordDocumentTitle(request, operations);
+    try {
+      const result =
+        consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary(
+          titleHandle
+        );
+      titleHandle = undefined;
+      return result;
+    } catch {
+      throw acquisitionError(
+        "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED",
+        "KRX legacy document verification was rejected."
+      );
+    }
+  } finally {
+    safeDispose(
+      titleHandle,
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument
+    );
+  }
 }
 
 async function acquireWordDocumentTitle(
