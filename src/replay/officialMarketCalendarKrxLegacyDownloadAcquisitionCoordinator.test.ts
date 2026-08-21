@@ -43,6 +43,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordTableTextMarksVerifiedDocumentToWordTableRowGroupingVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -79,6 +80,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupingVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -535,11 +537,15 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       assert.equal(Object.isFrozen(wordTableRowGroupingVerifiedHandle), true);
       assert.deepEqual(Object.keys(wordTableRowGroupingVerifiedHandle), []);
       assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordTableTextMarksVerifiedDocumentToWordTableRowGroupingVerifiedDocument(wordTableTextMarksVerifiedHandle), /must be ready/);
+      const wordSourceRowsVerifiedHandle = consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument(wordTableRowGroupingVerifiedHandle);
+      assert.equal(Object.isFrozen(wordSourceRowsVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordSourceRowsVerifiedHandle), []);
+      assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument(wordTableRowGroupingVerifiedHandle), /must be ready/);
       assert.throws(
-        () => JSON.stringify(wordTableRowGroupingVerifiedHandle),
+        () => JSON.stringify(wordSourceRowsVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupingVerifiedDocument(wordTableRowGroupingVerifiedHandle);
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument(wordSourceRowsVerifiedHandle);
 
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
@@ -738,6 +744,7 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument({} as never), /must come from the fixed Word direct paragraph properties consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifiedDocument({} as never), /must come from the fixed Word table text marks consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupingVerifiedDocument({} as never), /must come from the fixed Word table row grouping consumer/);
+  assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument({} as never), /must come from the fixed Word source rows consumer/);
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
