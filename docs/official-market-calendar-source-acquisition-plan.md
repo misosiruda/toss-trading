@@ -622,6 +622,8 @@ ephemeral network response부터 이 title-verified opaque handle까지 등록�
 모든 OLE/Word 단계를 순서대로 한 번씩 소비한다. Terminal candidate-summary consumer는
 이 handle을 exact 한 번 소비하고 raw document를 zeroize한 뒤 file/year, Word version/Table
 stream, structural row/cell count와 미해석/미승인 상태만 frozen summary로 반환한다.
+Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
+title 검증과 terminal 소비를 한 호출로 연결하고 caller에게 opaque/raw handle을 반환하지 않는다.
 Structural row 수를 registered `observedHolidayLineCount`와 동일하다고 가정하지 않는다.
 
 `officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서

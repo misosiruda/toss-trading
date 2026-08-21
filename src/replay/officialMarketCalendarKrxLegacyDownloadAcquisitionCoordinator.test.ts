@@ -630,6 +630,29 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         /must be ready/
       );
 
+      assert.deepEqual(
+        await createCoordinatorForPort(
+          port,
+          verifier
+        ).acquireWordCandidateSummary({ fileName: FILE_NAME }),
+        {
+          schemaVersion:
+            "official_market_calendar_krx_legacy_word_candidate_summary.v1",
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          nFib: 0x00c1,
+          tableStreamName: "1Table",
+          structuralSourceRowCount: 0,
+          structuralSourceCellCount: 0,
+          titleBindingVerified: true,
+          columnSemanticsStatus: "not_interpreted",
+          holidaySemanticsStatus: "not_interpreted",
+          sourceRoleStatus: "candidate_not_accepted",
+          durableEvidenceReuse: false,
+          acceptedAcquisition: false
+        }
+      );
+
       const serializationTitle = await createCoordinatorForPort(
         port,
         verifier
@@ -663,6 +686,14 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       );
       await assert.rejects(
         () => coordinator.acquireWordDocumentTitle({ fileName: FILE_NAME }),
+        (error: unknown) =>
+          hasCode(
+            error,
+            "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED"
+          )
+      );
+      await assert.rejects(
+        () => coordinator.acquireWordCandidateSummary({ fileName: FILE_NAME }),
         (error: unknown) =>
           hasCode(
             error,
@@ -2039,7 +2070,8 @@ test("KRX legacy coordinator validates and snapshots test dependencies", async (
   assert.equal(Object.isFrozen(production), true);
   assert.deepEqual(Object.keys(production), [
     "acquire",
-    "acquireWordDocumentTitle"
+    "acquireWordDocumentTitle",
+    "acquireWordCandidateSummary"
   ]);
   assert.equal(
     createOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.length,
