@@ -64,7 +64,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordStsh(
     );
     if (
       cbStshi < STSHIF_BYTE_LENGTH ||
-      styleDefinitionsOffset % 2 !== 0
+      (reference.fcStshf + styleDefinitionsOffset) % 2 !== 0
     ) {
       throw invalidStsh();
     }

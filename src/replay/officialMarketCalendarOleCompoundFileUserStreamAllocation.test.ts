@@ -848,6 +848,20 @@ test("official calendar KRX legacy Word STSH rejects invalid headers and LPStd f
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSH_INVALID"
     );
   }
+
+  const oddTableOffset = compoundFileWithUserStreams(3);
+  configureWordRootStreams(oddTableOffset, "1Table");
+  configureVariableFib(oddTableOffset, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configureRawStsh(oddTableOffset, buildStshBytes(), 3);
+  assertStshCode(
+    oddTableOffset,
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSH_INVALID"
+  );
 });
 
 test("official calendar KRX legacy Word PlcBtePapx reference projects every supported version", () => {
