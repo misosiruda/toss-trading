@@ -13,11 +13,13 @@ import {
 import {
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
@@ -29,6 +31,7 @@ import {
   KRX_LEGACY_DOWNLOAD_TEST_CA,
   KRX_LEGACY_DOWNLOAD_TEST_SERVER_OPTIONS
 } from "./officialMarketCalendarKrxLegacyDownloadNetworkTestFixture.js";
+import { OfficialMarketCalendarOleCompoundFileDifatError } from "./officialMarketCalendarOleCompoundFileDifat.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -116,12 +119,25 @@ test("KRX legacy response transfers only through document identity verification"
           ),
         /must be ready/
       );
+      const difatVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          oleHeaderVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(difatVerifiedHandle), true);
+      assert.deepEqual(Object.keys(difatVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(oleHeaderVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+            oleHeaderVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(difatVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument(
-        oleHeaderVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument(
+        difatVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -176,6 +192,67 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed header consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed DIFAT consumer/
+  );
+});
+
+test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  const view = new DataView(documentBytes.buffer);
+  view.setUint32(44, 110, true);
+  view.setUint32(48, 110, true);
+  view.setUint32(68, 109, true);
+  view.setUint32(72, 1, true);
+  for (let index = 0; index < 109; index += 1) {
+    view.setUint32(76 + index * 4, index, true);
+  }
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+            headerHandle
+          ),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarOleCompoundFileDifatError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_DIFAT_INVALID_FAT_LOCATION"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+            headerHandle
+          ),
+        /must be ready/
+      );
+    }
   );
 });
 

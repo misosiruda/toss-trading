@@ -31,6 +31,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileHeader,
   type VerifiedOfficialMarketCalendarOleCompoundFileHeader
 } from "./officialMarketCalendarOleCompoundFileHeader.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileDifat,
+  type VerifiedOfficialMarketCalendarOleCompoundFileDifat
+} from "./officialMarketCalendarOleCompoundFileDifat.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -38,6 +42,7 @@ declare const krxLegacyDownloadPostEphemeralWireBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralResponseBrand: unique symbol;
 declare const krxLegacyDownloadIdentityVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadOleHeaderVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadDifatVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -71,6 +76,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument {
   readonly [krxLegacyDownloadOleHeaderVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument {
+  readonly [krxLegacyDownloadDifatVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -155,6 +165,14 @@ interface ReadyOleHeaderVerifiedDocumentState {
   oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
 }
 
+interface ReadyDifatVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -162,6 +180,9 @@ type IdentityVerifiedDocumentState =
   | DisposedState;
 type OleHeaderVerifiedDocumentState =
   | ReadyOleHeaderVerifiedDocumentState
+  | DisposedState;
+type DifatVerifiedDocumentState =
+  | ReadyDifatVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -175,6 +196,10 @@ const identityVerifiedDocumentStates = new WeakMap<
 const oleHeaderVerifiedDocumentStates = new WeakMap<
   object,
   OleHeaderVerifiedDocumentState
+>();
+const difatVerifiedDocumentStates = new WeakMap<
+  object,
+  DifatVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -502,6 +527,65 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedD
     );
   }
   disposeOleHeaderVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = oleHeaderVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy OLE-header-verified document must be ready and come from the fixed header consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const difat = verifyOfficialMarketCalendarOleCompoundFileDifat(
+      state.rawDocumentBytes
+    );
+    if (
+      difat.majorVersion !== state.oleHeader.majorVersion ||
+      difat.sectorSize !== state.oleHeader.sectorSize ||
+      difat.fileSectorCount !== state.oleHeader.fileSectorCount ||
+      difat.difatVerified !== true ||
+      difat.fatStructureStatus !== "locations_only_not_verified"
+    ) {
+      throw new Error("KRX legacy OLE DIFAT result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeDifatVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy DIFAT-verified document cannot be serialized or exported"
+      );
+    });
+    difatVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat
+    });
+    oleHeaderVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeOleHeaderVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!difatVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy DIFAT-verified document must come from the fixed DIFAT consumer"
+    );
+  }
+  disposeDifatVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1243,6 +1327,18 @@ function disposeOleHeaderVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     oleHeaderVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeDifatVerifiedDocumentObject(handle: object): void {
+  const state = difatVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    difatVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
