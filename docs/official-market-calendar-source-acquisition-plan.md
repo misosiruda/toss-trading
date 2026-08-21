@@ -107,10 +107,10 @@ KRX form OTP request는 `krx_form_otp_request_parameters.v1`로 별도 등록한
 Allowed parameter name은 현재 `bld`, `name`뿐이며 `code`, OTP/token,
 authorization, cookie와 미등록 이름은 fail-closed로 거부한다.
 
-이 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
-contract일 뿐이다. HTTP client wiring, OTP response bytes/shape, raw code의
-process-local one-time lifecycle과 후속 data POST는 dedicated OTP/data consumer와
-coordinator가 별도로 구현한다. Registry 등록만으로 해당 실행 결과나 accepted
+이 generic 정책은 query parameter를 URL과 분리해 secret-free canonical object로 검증하는
+contract일 뿐이다. Dedicated OTP/data network policy, consumer와 coordinator가 registered
+parameter를 fixed HTTP request, OTP response bytes/shape, raw code의 process-local one-time
+lifecycle과 후속 data POST에 결합한다. Registry 등록만으로 해당 실행 결과나 accepted
 acquisition을 주장하지 않는다.
 
 ### Request Header Value Policy 사전 등록
@@ -124,9 +124,9 @@ response를 반환한 조건을 재현하기 위한 값이며 KRX의 영구 publ
 주장하지 않는다.
 
 Fixed-value name은 현재 `user-agent`만 허용하고 authorization, cookie 또는 다른
-header category는 이 policy에 넣을 수 없다. 실제 request header 관찰 wiring과 OTP
-response 검증이 없으므로 이 등록만으로 external verification 또는 acquisition
-성공을 주장하지 않는다.
+header category는 이 policy에 넣을 수 없다. Dedicated OTP network policy와 consumer가
+registered value를 fixed request와 bounded response 검증에 결합하지만, 이 등록만으로
+external verification 또는 accepted acquisition 성공을 주장하지 않는다.
 
 ### KRX OTP Response Body Shape
 
@@ -194,8 +194,10 @@ download OTP의 fixed `name`/`filetype`/`url`, dynamic `file_nm`, file-server PO
 process-local `code`, successful observation의 Origin/Referer와 2013~2015 file name,
 content length, SHA-256, OLE signature, observed title/holiday-line count를 immutable v1
 candidate policy로 고정한다. 이 문서는 derivatives market scope이며 legacy Word table용
-parser와 role/coverage 검증은 아직 구현하지 않았다. 따라서 KRX 전체 market holiday
-completeness, durable evidence reuse와 accepted acquisition은 계속 주장하지 않는다.
+parser는 registered title을 exact paragraph에 결합하는 fixed opaque lifecycle까지 구현됐다.
+Structural cell의 column/date/holiday semantics, evidence role/coverage 검증은 아직 구현하지
+않았다. 따라서 KRX 전체 market holiday completeness, durable evidence reuse와 accepted
+acquisition은 계속 주장하지 않는다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy.ts`는 이 candidate policy의
 2013~2015 file name만 `file_nm`으로 허용한다. 전용 request-header policy와 연도별 exact
@@ -205,9 +207,9 @@ cookie/redirect/credential-disabled 관찰에서 OTP response는 exact 300 ASCII
 Base64였고 decoded length는 224 bytes, padding은 1개였다. Response는 exact `200`,
 `Content-Length: 300`, `text/html; charset=UTF-8`, no-store/no-cache, `Expires == Date`와
 2개의 `Set-Cookie` header를 반환했다. Cookie value는 보존하거나 후속 request에 replay하지
-않는다. 이 정책은 raw OTP를 process-local로만 취급하며 durable evidence reuse와 accepted
-acquisition을 계속 금지한다. 실제 OTP network consumer와 ephemeral ownership은 아직
-구현하지 않는다.
+않는다. 전용 network consumer와 ephemeral ownership lifecycle은 이 registered policy를
+실제 fixed GET request, bounded response 검증과 one-shot opaque handle에 결합한다. Raw OTP는
+process-local로만 취급하며 durable evidence reuse와 accepted acquisition을 계속 금지한다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpResponseBody.ts`는 이 network policy에
 고정된 exact 300-byte body만 byte-level canonical Base64로 검증한다. 마지막 `=` 1개와
@@ -612,7 +614,9 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/61b635c3-
 연도별 `observedDocumentTitle`을 decoded main-document의 exact paragraph 하나와 결합한다.
 부분 문자열, 다른 paragraph text에 포함된 제목, 누락 또는 중복 title paragraph는
 fail-closed로 거부한다. 이 경계는 column/date/holiday semantics를 해석하지 않고
-source role을 candidate로 유지한다.
+source role을 candidate로 유지한다. Fixed production/test-only response consumer는
+ephemeral network response부터 이 title-verified opaque handle까지 등록된 identity와
+모든 OLE/Word 단계를 순서대로 한 번씩 소비한다.
 
 `officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서
 main/subdocument character count를 읽고 PlcPcd final CP와 합계를 대조한다. Fixed consumer는
