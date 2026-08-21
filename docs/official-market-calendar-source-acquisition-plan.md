@@ -427,9 +427,12 @@ chain이 가리키는 sector를 chain 순서의 32-bit little-endian allocator e
 각 entry는 declared mini FAT sector capacity 안의 mini-sector pointer, `ENDOFCHAIN` 또는
 `FREESECT`만 허용하고 reserved value와 `DIFSECT`/`FATSECT`, capacity 밖 pointer를
 fail-closed로 거부한다. Mini FAT가 없는 valid file은 empty immutable array로 반환한다.
-결과는 `miniFatEntriesVerified=true`를 반환하지만 entry chain의 cycle/reuse, root mini stream
-actual capacity, directory stream size 및 user stream allocation은 아직 검증하지 않으며 opaque
-lifecycle에도 연결하지 않는다. 명세 기준:
+결과는 `miniFatEntriesVerified=true`를 반환한다. Fixed consumer는 directory-tree-verified handle을
+exact 한 번 consume하고 같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와
+mini FAT entry result 및 bytes ownership을 getter/callback 없는 새 opaque handle로 이전하며,
+실패·dispose·JSON export에서는 bytes를 zeroize한다. Entry chain의 cycle/reuse, root mini stream
+actual capacity, directory stream size 및 user stream allocation은 아직 검증하지 않으며 새 opaque
+handle도 durable sink나 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
 
