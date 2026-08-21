@@ -638,6 +638,12 @@ mapping을 code unit 단위로 적용한다. Fixed consumer는 word-text-bytes-p
 ownership을 이전한다. Decoder 내부 projection bytes와 lifecycle의 이전 text piece copy는 종료 시
 zeroize하며 table semantics와 source role은 아직 승인하지 않는다.
 
+`officialMarketCalendarKrxLegacyWordMainDocument.ts`는 `ccpText` 범위의 마지막 code unit이 paragraph
+mark이고 subdocument가 있으면 terminal guard도 paragraph mark인지 확인한다. Fixed consumer는
+word-text-decoded handle을 한 번만 소비해 final CP, main-document range와 decoded text projection을
+교차 확인하고 새 opaque handle로 ownership을 이전한다. Subdocument projection, table semantics와
+source role은 아직 승인하지 않으며 실패·dispose에서 private byte ownership 전체를 정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX

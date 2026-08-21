@@ -112,6 +112,10 @@ import {
   decodeOfficialMarketCalendarKrxLegacyWordText,
   type DecodedOfficialMarketCalendarKrxLegacyWordText
 } from "./officialMarketCalendarKrxLegacyWordTextDecoding.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordMainDocument,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordMainDocument
+} from "./officialMarketCalendarKrxLegacyWordMainDocument.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -139,6 +143,7 @@ declare const krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand: unique s
 declare const krxLegacyDownloadWordTextRangesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordTextBytesProjectedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordTextDecodedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordMainDocumentVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -272,6 +277,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDo
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordTextDecodedDocument {
   readonly [krxLegacyDownloadWordTextDecodedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument {
+  readonly [krxLegacyDownloadWordMainDocumentVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -521,6 +531,10 @@ interface ReadyWordTextDecodedDocumentState extends ReadyWordTextBytesProjectedD
   decodedText: DecodedOfficialMarketCalendarKrxLegacyWordText;
 }
 
+interface ReadyWordMainDocumentVerifiedDocumentState extends ReadyWordTextDecodedDocumentState {
+  mainDocument: VerifiedOfficialMarketCalendarKrxLegacyWordMainDocument;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -586,6 +600,9 @@ type WordTextBytesProjectedDocumentState =
   | DisposedState;
 type WordTextDecodedDocumentState =
   | ReadyWordTextDecodedDocumentState
+  | DisposedState;
+type WordMainDocumentVerifiedDocumentState =
+  | ReadyWordMainDocumentVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -679,6 +696,10 @@ const wordTextBytesProjectedDocumentStates = new WeakMap<
 const wordTextDecodedDocumentStates = new WeakMap<
   object,
   WordTextDecodedDocumentState
+>();
+const wordMainDocumentVerifiedDocumentStates = new WeakMap<
+  object,
+  WordMainDocumentVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2337,6 +2358,49 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordTextDecodedDoc
   disposeWordTextDecodedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordTextDecodedDocumentToWordMainDocumentVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordTextDecodedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordTextDecodedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error("KRX legacy word-text-decoded document must be ready and come from the fixed Word text decoding consumer");
+  }
+  let transferred = false;
+  try {
+    const mainDocument = verifyOfficialMarketCalendarKrxLegacyWordMainDocument(state.rawDocumentBytes);
+    if (
+      mainDocument.nFib !== state.decodedText.nFib ||
+      mainDocument.tableStreamName !== state.decodedText.tableStreamName ||
+      mainDocument.finalCp !== state.decodedText.finalCp ||
+      mainDocument.mainDocumentCpEnd !== state.documentCounts.ccpText ||
+      mainDocument.mainDocumentText !== state.decodedText.text.slice(0, state.documentCounts.ccpText) ||
+      mainDocument.mainDocumentVerified !== true ||
+      mainDocument.sourceRoleStatus !== "candidate_not_accepted"
+    ) throw new Error("KRX legacy Word main document result is invalid");
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordMainDocumentVerifiedDocumentObject(verifiedHandle);
+      throw new Error("KRX legacy word-main-document-verified document cannot be serialized or exported");
+    });
+    wordMainDocumentVerifiedDocumentStates.set(verifiedHandle, { ...state, mainDocument });
+    wordTextDecodedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordTextDecodedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordMainDocumentVerifiedDocumentStates.has(handleObject)) {
+    throw new Error("KRX legacy word-main-document-verified document must come from the fixed Word main document consumer");
+  }
+  disposeWordMainDocumentVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3381,6 +3445,24 @@ function disposeWordTextDecodedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     wordTextDecodedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeWordMainDocumentVerifiedDocumentObject(handle: object): void {
+  const state = wordMainDocumentVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordMainDocumentVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
