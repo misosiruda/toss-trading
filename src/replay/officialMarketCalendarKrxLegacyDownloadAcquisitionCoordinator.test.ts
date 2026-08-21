@@ -594,6 +594,20 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         fixedConsumerTitle
       );
 
+      const coordinatorTitle = await createCoordinatorForPort(
+        port,
+        verifier
+      ).acquireWordDocumentTitle({ fileName: FILE_NAME });
+      assert.equal(Object.isFrozen(coordinatorTitle), true);
+      assert.deepEqual(Object.keys(coordinatorTitle), []);
+      assert.throws(
+        () => JSON.stringify(coordinatorTitle),
+        /cannot be serialized or exported/
+      );
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument(
+        coordinatorTitle
+      );
+
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
       });
@@ -612,6 +626,14 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
             productionResponse
           ),
         /must be ready/
+      );
+      await assert.rejects(
+        () => coordinator.acquireWordDocumentTitle({ fileName: FILE_NAME }),
+        (error: unknown) =>
+          hasCode(
+            error,
+            "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED"
+          )
       );
     }
   );
@@ -1834,6 +1856,18 @@ test("KRX legacy Word document title consumer closes ownership when the register
           ),
         /must be ready/
       );
+      await assert.rejects(
+        () =>
+          createCoordinatorForPort(
+            port,
+            verifier
+          ).acquireWordDocumentTitle({ fileName: FILE_NAME }),
+        (error: unknown) =>
+          hasCode(
+            error,
+            "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED"
+          )
+      );
     }
   );
 });
@@ -1941,7 +1975,16 @@ test("KRX legacy coordinator maps each stage without provider detail", async () 
 });
 
 test("KRX legacy coordinator validates and snapshots test dependencies", async () => {
-  for (const dependencies of [null, {}, { otpConsumer: {}, downloadConsumer: {} }]) {
+  for (const dependencies of [
+    null,
+    {},
+    { otpConsumer: {}, downloadConsumer: {} },
+    {
+      otpConsumer: { async acquire() {} },
+      downloadConsumer: { async consume() {} },
+      documentIdentityVerifier: {}
+    }
+  ]) {
     assert.throws(
       () =>
         createTestOnlyOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator(
@@ -1953,7 +1996,10 @@ test("KRX legacy coordinator validates and snapshots test dependencies", async (
   const production =
     createOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator();
   assert.equal(Object.isFrozen(production), true);
-  assert.deepEqual(Object.keys(production), ["acquire"]);
+  assert.deepEqual(Object.keys(production), [
+    "acquire",
+    "acquireWordDocumentTitle"
+  ]);
   assert.equal(
     createOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.length,
     0
@@ -2005,7 +2051,12 @@ function createOtpHandle(
   });
 }
 
-function createCoordinatorForPort(port: number) {
+function createCoordinatorForPort(
+  port: number,
+  documentIdentityVerifier?: ReturnType<
+    typeof createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier
+  >
+) {
   return createTestOnlyOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator(
     {
       otpConsumer: {
@@ -2019,7 +2070,10 @@ function createCoordinatorForPort(port: number) {
           dialPort: port,
           certificateAuthority: KRX_LEGACY_DOWNLOAD_TEST_CA,
           deadlineMs: 1_000
-        })
+        }),
+      ...(documentIdentityVerifier === undefined
+        ? {}
+        : { documentIdentityVerifier })
     }
   );
 }

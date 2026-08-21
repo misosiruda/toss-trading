@@ -7,6 +7,8 @@ import {
 import {
   consumeOfficialMarketCalendarKrxLegacyDownloadOtpForDocument,
   consumeOfficialMarketCalendarKrxLegacyDownloadParametersToWireBody,
+  consumeOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
+  consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralParameters,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
@@ -16,12 +18,14 @@ import {
   type OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
   type OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
-  type OfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody
+  type OfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody,
+  type OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
   createOfficialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer,
   type OfficialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer
 } from "./officialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer.js";
+import type { TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier } from "./officialMarketCalendarKrxLegacyDocumentIdentity.js";
 
 type LegacyFileName = ReturnType<
   typeof resolveRegisteredOfficialMarketCalendarKrxLegacyDerivativesCalendarSourcePolicy
@@ -35,11 +39,15 @@ export interface OfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator {
   acquire(
     request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
   ): Promise<OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse>;
+  acquireWordDocumentTitle(
+    request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
+  ): Promise<OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument>;
 }
 
 export interface TestOnlyOfficialMarketCalendarKrxLegacyDownloadAcquisitionDependencies {
   otpConsumer: OfficialMarketCalendarKrxLegacyDownloadOtpNetworkConsumer;
   downloadConsumer: OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer;
+  documentIdentityVerifier?: TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier;
 }
 
 export type OfficialMarketCalendarKrxLegacyDownloadAcquisitionErrorCode =
@@ -47,7 +55,8 @@ export type OfficialMarketCalendarKrxLegacyDownloadAcquisitionErrorCode =
   | "KRX_LEGACY_DOWNLOAD_ACQUISITION_INVALID_REQUEST"
   | "KRX_LEGACY_DOWNLOAD_ACQUISITION_OTP_REJECTED"
   | "KRX_LEGACY_DOWNLOAD_ACQUISITION_REQUEST_BODY_REJECTED"
-  | "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_REJECTED";
+  | "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_REJECTED"
+  | "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED";
 
 export class OfficialMarketCalendarKrxLegacyDownloadAcquisitionError extends Error {
   constructor(
@@ -66,6 +75,9 @@ interface AcquisitionOperations {
   consumeDownload(
     handle: OfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody
   ): Promise<OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse>;
+  consumeWordDocumentTitle(
+    handle: OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse
+  ): OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument;
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator(): OfficialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator {
@@ -91,8 +103,38 @@ function createCoordinator(
   return Object.freeze({
     acquire: (
       request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
-    ) => acquireDocument(request, operations)
+    ) => acquireDocument(request, operations),
+    acquireWordDocumentTitle: (
+      request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest
+    ) => acquireWordDocumentTitle(request, operations)
   });
+}
+
+async function acquireWordDocumentTitle(
+  request: OfficialMarketCalendarKrxLegacyDownloadAcquisitionRequest,
+  operations: AcquisitionOperations
+): Promise<OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument> {
+  let responseHandle:
+    | OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse
+    | undefined;
+  try {
+    responseHandle = await acquireDocument(request, operations);
+    try {
+      const result = operations.consumeWordDocumentTitle(responseHandle);
+      responseHandle = undefined;
+      return result;
+    } catch {
+      throw acquisitionError(
+        "KRX_LEGACY_DOWNLOAD_ACQUISITION_DOCUMENT_VERIFICATION_REJECTED",
+        "KRX legacy document verification was rejected."
+      );
+    }
+  } finally {
+    safeDispose(
+      responseHandle,
+      disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse
+    );
+  }
 }
 
 async function acquireDocument(
@@ -209,6 +251,7 @@ function snapshotOperations(
     }
     const otpConsumer = value.otpConsumer;
     const downloadConsumer = value.downloadConsumer;
+    const documentIdentityVerifier = value.documentIdentityVerifier;
     const acquireOtp = otpConsumer?.acquire;
     const consumeDownload = downloadConsumer?.consume;
     if (
@@ -217,12 +260,17 @@ function snapshotOperations(
     ) {
       throw new Error("invalid dependency methods");
     }
+    const consumeWordDocumentTitle =
+      documentIdentityVerifier === undefined
+        ? consumeOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument
+        : snapshotTestIdentityConsumer(documentIdentityVerifier);
     return Object.freeze({
       acquireOtp: (fileName: LegacyFileName) =>
         acquireOtp.call(otpConsumer, fileName),
       consumeDownload: (
         handle: OfficialMarketCalendarKrxLegacyDownloadPostEphemeralWireBody
-      ) => consumeDownload.call(downloadConsumer, handle)
+      ) => consumeDownload.call(downloadConsumer, handle),
+      consumeWordDocumentTitle
     });
   } catch {
     throw acquisitionError(
@@ -230,6 +278,26 @@ function snapshotOperations(
       "KRX legacy download test-only dependencies are invalid."
     );
   }
+}
+
+function snapshotTestIdentityConsumer(
+  verifier: TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier
+): AcquisitionOperations["consumeWordDocumentTitle"] {
+  if (verifier === null || typeof verifier !== "object" || Array.isArray(verifier)) {
+    throw new Error("invalid identity verifier");
+  }
+  const verify = verifier.verify;
+  if (typeof verify !== "function") {
+    throw new Error("invalid identity verifier method");
+  }
+  const snapshot = Object.freeze({
+    verify: (input: Parameters<typeof verify>[0]) => verify.call(verifier, input)
+  });
+  return (handle) =>
+    consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument(
+      handle,
+      snapshot
+    );
 }
 
 function safeDispose<T>(
