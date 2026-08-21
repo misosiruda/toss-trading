@@ -110,6 +110,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping
 } from "./officialMarketCalendarKrxLegacyWordTableRowGrouping.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_SOURCE_ROWS_SCHEMA_VERSION,
+  verifyOfficialMarketCalendarKrxLegacyWordSourceRows
+} from "./officialMarketCalendarKrxLegacyWordSourceRows.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -2874,6 +2878,84 @@ test("official calendar KRX legacy Word table row grouping bounds depth before a
       error instanceof OfficialMarketCalendarKrxLegacyWordTableRowGroupingError &&
       error.code ===
         "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_ROW_GROUPING_INVALID"
+  );
+});
+
+test("official calendar KRX legacy Word source rows remove only the depth-one terminal mark", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidDepthOneTableTextMarksFixture(bytes, 0x0007);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordSourceRows(bytes);
+
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_SOURCE_ROWS_SCHEMA_VERSION
+  );
+  assert.deepEqual(result.rows[0]!.cells[0], {
+    index: 0,
+    cpStart: 0,
+    cpEnd: 2,
+    contentCpEnd: 1,
+    paragraphIndices: [0],
+    terminalParagraphIndex: 0,
+    terminalRole: "depth_1_cell_mark",
+    rawText: "A\u0007",
+    contentText: "A"
+  });
+  assert.equal(result.sourceRowProjectionStatus, "structural_text_projected");
+  assert.equal(
+    result.terminalMarkHandling,
+    "removed_from_content_preserved_in_raw"
+  );
+  assert.equal(result.internalControlCodeHandling, "preserved");
+  assert.equal(result.columnSemanticsStatus, "not_interpreted");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.rows[0]!.cells[0]), true);
+});
+
+test("official calendar KRX legacy Word source rows preserve nested control codes and project nested cells", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidNestedAndOuterTableRowsFixture(bytes);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordSourceRows(bytes);
+
+  assert.deepEqual(
+    result.rows.map((row) => ({
+      tableDepth: row.tableDepth,
+      cells: row.cells.map((cell) => ({
+        rawText: cell.rawText,
+        contentText: cell.contentText,
+        terminalRole: cell.terminalRole
+      }))
+    })),
+    [
+      {
+        tableDepth: 1,
+        cells: [
+          {
+            rawText: "A\rB\rC\u0007",
+            contentText: "A\rB\rC",
+            terminalRole: "depth_1_cell_mark"
+          }
+        ]
+      },
+      {
+        tableDepth: 2,
+        cells: [
+          {
+            rawText: "A\r",
+            contentText: "A",
+            terminalRole: "nested_cell_mark"
+          },
+          {
+            rawText: "B\r",
+            contentText: "B",
+            terminalRole: "nested_ttp_mark"
+          }
+        ]
+      }
+    ]
   );
 });
 
