@@ -532,6 +532,14 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9aeaa2e7-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a4876d81-6ff1-485e-8655-75266ec84c07
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fe661052-9c88-4ae1-aec4-44799b2b4777
 
+`officialMarketCalendarKrxLegacyWordStshfReference.ts`는 verified variable FIB의
+`FibRgFcLcb97`에서 0-based pair index 1인 `fcStshf`/`lcbStshf`를 읽고 selected Table stream의
+declared bytes 안에 non-empty style sheet range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
+`stshfBytes`는 source document와 backing memory를 공유하지 않는 copy다. 이 경계는 STSH 구조,
+STD/UPX framing, base style inheritance와 paragraph property semantics를 아직 해석하지 않으므로
+non-default `istd` 장벽을 해결하거나 source를 acceptance하지 않는다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0c9df81f-98d0-454e-ad84-b612cd05b1a4
+
 `officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
 `FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
 declared bytes 안에 non-empty CLX range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
