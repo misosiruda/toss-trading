@@ -82,63 +82,85 @@ const SUPPORTED_SIMPLE_ISPRM_SET = new Set(SUPPORTED_SIMPLE_ISPRMS);
 export function verifyOfficialMarketCalendarKrxLegacyWordPcdPrms(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms {
-  const clx = verifyOfficialMarketCalendarKrxLegacyWordClx(input);
-  const clxReference =
-    verifyOfficialMarketCalendarKrxLegacyWordClxReference(input);
-  const plcPcd = verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(input);
-  const prcs = parsePrcs(clxReference.clxBytes, clx.pcdtOffset);
-  if (
-    plcPcd.pieces.length !== clx.pieceDescriptorCount ||
-    clx.plcPcdBytes.length !==
-      (plcPcd.pieces.length + 1) * 4 +
-        plcPcd.pieces.length * PCD_BYTE_LENGTH
-  ) {
-    throw invalidPcdPrm();
-  }
-  const pcdByteOffset = (plcPcd.pieces.length + 1) * 4;
-  const pieces = plcPcd.pieces.map((piece) => {
-    const rawPrm = readUint16(
-      clx.plcPcdBytes,
-      pcdByteOffset + piece.index * PCD_BYTE_LENGTH + PCD_PRM_BYTE_OFFSET
+  let clx: ReturnType<typeof verifyOfficialMarketCalendarKrxLegacyWordClx> | undefined;
+  let clxReference:
+    | ReturnType<typeof verifyOfficialMarketCalendarKrxLegacyWordClxReference>
+    | undefined;
+  let prcs: VerifiedOfficialMarketCalendarKrxLegacyWordPrc[] | undefined;
+  let retainedPrcBytes = false;
+  try {
+    const verifiedClx = verifyOfficialMarketCalendarKrxLegacyWordClx(input);
+    clx = verifiedClx;
+    const verifiedClxReference =
+      verifyOfficialMarketCalendarKrxLegacyWordClxReference(input);
+    clxReference = verifiedClxReference;
+    const plcPcd = verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(input);
+    const verifiedPrcs = parsePrcs(
+      verifiedClxReference.clxBytes,
+      verifiedClx.pcdtOffset
     );
-    if ((rawPrm & 0x0001) === 0) {
-      return parsePrm0(piece, rawPrm);
-    }
-    const prcIndex = rawPrm >>> 1;
-    const prc = prcs[prcIndex];
-    if (prc === undefined) {
+    prcs = verifiedPrcs;
+    if (
+      plcPcd.pieces.length !== verifiedClx.pieceDescriptorCount ||
+      verifiedClx.plcPcdBytes.length !==
+        (plcPcd.pieces.length + 1) * 4 +
+          plcPcd.pieces.length * PCD_BYTE_LENGTH
+    ) {
       throw invalidPcdPrm();
     }
-    return Object.freeze({
-      index: piece.index,
-      cpStart: piece.cpStart,
-      cpEnd: piece.cpEnd,
-      rawPrm,
-      kind: "prm1" as const,
-      hasEffect: prc.grpprlByteLength > 0,
-      isprm: null,
-      val: null,
-      simplePropertyGroup: null,
-      simpleTableSprm: null,
-      prcIndex
+    const pcdByteOffset = (plcPcd.pieces.length + 1) * 4;
+    const pieces = plcPcd.pieces.map((piece) => {
+      const rawPrm = readUint16(
+        verifiedClx.plcPcdBytes,
+        pcdByteOffset + piece.index * PCD_BYTE_LENGTH + PCD_PRM_BYTE_OFFSET
+      );
+      if ((rawPrm & 0x0001) === 0) {
+        return parsePrm0(piece, rawPrm);
+      }
+      const prcIndex = rawPrm >>> 1;
+      const prc = verifiedPrcs[prcIndex];
+      if (prc === undefined) {
+        throw invalidPcdPrm();
+      }
+      return Object.freeze({
+        index: piece.index,
+        cpStart: piece.cpStart,
+        cpEnd: piece.cpEnd,
+        rawPrm,
+        kind: "prm1" as const,
+        hasEffect: prc.grpprlByteLength > 0,
+        isprm: null,
+        val: null,
+        simplePropertyGroup: null,
+        simpleTableSprm: null,
+        prcIndex
+      });
     });
-  });
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PCD_PRM_SCHEMA_VERSION,
-    nFib: plcPcd.nFib,
-    tableStreamName: plcPcd.tableStreamName,
-    prcs: Object.freeze(prcs),
-    pieces: Object.freeze(pieces),
-    supportedSimpleIsprms: SUPPORTED_SIMPLE_ISPRMS,
-    prm0AllowlistVerified: true,
-    prm1PrcReferencesVerified: true,
-    prcGrpprlFramingVerified: true,
-    prcGrpprlSemanticsStatus: "not_parsed",
-    tablePropertyApplicationStatus: "not_applied",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+    const result = Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PCD_PRM_SCHEMA_VERSION,
+      nFib: plcPcd.nFib,
+      tableStreamName: plcPcd.tableStreamName,
+      prcs: Object.freeze(verifiedPrcs),
+      pieces: Object.freeze(pieces),
+      supportedSimpleIsprms: SUPPORTED_SIMPLE_ISPRMS,
+      prm0AllowlistVerified: true as const,
+      prm1PrcReferencesVerified: true as const,
+      prcGrpprlFramingVerified: true as const,
+      prcGrpprlSemanticsStatus: "not_parsed" as const,
+      tablePropertyApplicationStatus: "not_applied" as const,
+      sourceRoleStatus: "candidate_not_accepted" as const
+    });
+    retainedPrcBytes = true;
+    return result;
+  } finally {
+    if (clx !== undefined) zeroizeBytes(clx.plcPcdBytes);
+    if (clxReference !== undefined) zeroizeBytes(clxReference.clxBytes);
+    if (!retainedPrcBytes && prcs !== undefined) {
+      for (const prc of prcs) zeroizeBytes(prc.grpprlBytes);
+    }
+  }
 }
 
 function parsePrcs(
@@ -146,42 +168,47 @@ function parsePrcs(
   pcdtOffset: number
 ): VerifiedOfficialMarketCalendarKrxLegacyWordPrc[] {
   const prcs: VerifiedOfficialMarketCalendarKrxLegacyWordPrc[] = [];
-  let clxByteOffset = 0;
-  while (clxByteOffset < pcdtOffset) {
-    if (bytes[clxByteOffset] !== PRC_MARKER) {
+  try {
+    let clxByteOffset = 0;
+    while (clxByteOffset < pcdtOffset) {
+      if (bytes[clxByteOffset] !== PRC_MARKER) {
+        throw invalidPcdPrm();
+      }
+      const grpprlByteLength = readInt16(bytes, clxByteOffset + 1);
+      const grpprlByteOffset = clxByteOffset + PRC_HEADER_BYTE_LENGTH;
+      const grpprlByteEnd = grpprlByteOffset + grpprlByteLength;
+      if (
+        grpprlByteLength < 0 ||
+        grpprlByteLength > MAXIMUM_GRPPRL_BYTE_LENGTH ||
+        !Number.isSafeInteger(grpprlByteEnd) ||
+        grpprlByteEnd > pcdtOffset
+      ) {
+        throw invalidPcdPrm();
+      }
+      const grpprlBytes = new Uint8Array(grpprlByteLength);
+      for (let index = 0; index < grpprlByteLength; index += 1) {
+        grpprlBytes[index] = bytes[grpprlByteOffset + index]!;
+      }
+      prcs.push(
+        Object.freeze({
+          index: prcs.length,
+          clxByteOffset,
+          grpprlByteOffset,
+          grpprlByteLength,
+          grpprlBytes,
+          bytesOwnership: "caller_owned_copy"
+        })
+      );
+      clxByteOffset = grpprlByteEnd;
+    }
+    if (clxByteOffset !== pcdtOffset) {
       throw invalidPcdPrm();
     }
-    const grpprlByteLength = readInt16(bytes, clxByteOffset + 1);
-    const grpprlByteOffset = clxByteOffset + PRC_HEADER_BYTE_LENGTH;
-    const grpprlByteEnd = grpprlByteOffset + grpprlByteLength;
-    if (
-      grpprlByteLength < 0 ||
-      grpprlByteLength > MAXIMUM_GRPPRL_BYTE_LENGTH ||
-      !Number.isSafeInteger(grpprlByteEnd) ||
-      grpprlByteEnd > pcdtOffset
-    ) {
-      throw invalidPcdPrm();
-    }
-    const grpprlBytes = new Uint8Array(grpprlByteLength);
-    for (let index = 0; index < grpprlByteLength; index += 1) {
-      grpprlBytes[index] = bytes[grpprlByteOffset + index]!;
-    }
-    prcs.push(
-      Object.freeze({
-        index: prcs.length,
-        clxByteOffset,
-        grpprlByteOffset,
-        grpprlByteLength,
-        grpprlBytes,
-        bytesOwnership: "caller_owned_copy"
-      })
-    );
-    clxByteOffset = grpprlByteEnd;
+    return prcs;
+  } catch (error) {
+    for (const prc of prcs) zeroizeBytes(prc.grpprlBytes);
+    throw error;
   }
-  if (clxByteOffset !== pcdtOffset) {
-    throw invalidPcdPrm();
-  }
-  return prcs;
 }
 
 function parsePrm0(
@@ -229,6 +256,14 @@ function readUint16(bytes: Uint8Array, offset: number): number {
     throw invalidPcdPrm();
   }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidPcdPrm(): OfficialMarketCalendarKrxLegacyWordPcdPrmError {

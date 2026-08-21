@@ -88,6 +88,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPlcPcd,
   type VerifiedOfficialMarketCalendarKrxLegacyWordPlcPcd
 } from "./officialMarketCalendarKrxLegacyWordPlcPcd.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordPcdPrms,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms
+} from "./officialMarketCalendarKrxLegacyWordPcdPrm.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -109,6 +113,7 @@ declare const krxLegacyDownloadWordFibVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordClxReferenceVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordClxVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPlcPcdVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -212,6 +217,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordClxVerifiedDocument 
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerifiedDocument {
   readonly [krxLegacyDownloadWordPlcPcdVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument {
+  readonly [krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -437,6 +447,10 @@ interface ReadyWordPlcPcdVerifiedDocumentState extends ReadyWordClxVerifiedDocum
   plcPcd: VerifiedOfficialMarketCalendarKrxLegacyWordPlcPcd;
 }
 
+interface ReadyWordPcdPrmVerifiedDocumentState extends ReadyWordPlcPcdVerifiedDocumentState {
+  pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -484,6 +498,9 @@ type WordClxVerifiedDocumentState =
   | DisposedState;
 type WordPlcPcdVerifiedDocumentState =
   | ReadyWordPlcPcdVerifiedDocumentState
+  | DisposedState;
+type WordPcdPrmVerifiedDocumentState =
+  | ReadyWordPcdPrmVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -553,6 +570,10 @@ const wordClxVerifiedDocumentStates = new WeakMap<
 const wordPlcPcdVerifiedDocumentStates = new WeakMap<
   object,
   WordPlcPcdVerifiedDocumentState
+>();
+const wordPcdPrmVerifiedDocumentStates = new WeakMap<
+  object,
+  WordPcdPrmVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -1865,6 +1886,69 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerified
   disposeWordPlcPcdVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordPlcPcdVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-plc-pcd-verified document must be ready and come from the fixed Word PlcPcd consumer"
+    );
+  }
+  let pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms | undefined;
+  let transferred = false;
+  try {
+    pcdPrms = verifyOfficialMarketCalendarKrxLegacyWordPcdPrms(
+      state.rawDocumentBytes
+    );
+    if (
+      pcdPrms.nFib !== state.plcPcd.nFib ||
+      pcdPrms.tableStreamName !== state.plcPcd.tableStreamName ||
+      pcdPrms.pieces.length !== state.plcPcd.pieces.length ||
+      !samePcdPrmRanges(state.plcPcd, pcdPrms) ||
+      pcdPrms.prm0AllowlistVerified !== true ||
+      pcdPrms.prm1PrcReferencesVerified !== true ||
+      pcdPrms.prcGrpprlFramingVerified !== true ||
+      pcdPrms.prcGrpprlSemanticsStatus !== "not_parsed" ||
+      pcdPrms.tablePropertyApplicationStatus !== "not_applied" ||
+      pcdPrms.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word Pcd Prm verification result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordPcdPrmVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-pcd-prm-verified document cannot be serialized or exported"
+      );
+    });
+    wordPcdPrmVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      pcdPrms
+    });
+    wordPlcPcdVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      if (pcdPrms !== undefined) zeroizePcdPrmBytes(pcdPrms);
+      disposeWordPlcPcdVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordPcdPrmVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-pcd-prm-verified document must come from the fixed Word Pcd Prm consumer"
+    );
+  }
+  disposeWordPcdPrmVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -2805,6 +2889,45 @@ function disposeWordPlcPcdVerifiedDocumentObject(handle: object): void {
   } finally {
     wordPlcPcdVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
+}
+
+function disposeWordPcdPrmVerifiedDocumentObject(handle: object): void {
+  const state = wordPcdPrmVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordPcdPrmVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function samePcdPrmRanges(
+  plcPcd: VerifiedOfficialMarketCalendarKrxLegacyWordPlcPcd,
+  pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms
+): boolean {
+  return pcdPrms.pieces.every((piece, index) => {
+    const plcPiece = plcPcd.pieces[index];
+    return (
+      plcPiece !== undefined &&
+      piece.index === plcPiece.index &&
+      piece.cpStart === plcPiece.cpStart &&
+      piece.cpEnd === plcPiece.cpEnd
+    );
+  });
+}
+
+function zeroizePcdPrmBytes(
+  pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms
+): void {
+  for (const prc of pcdPrms.prcs) zeroizeBytes(prc.grpprlBytes);
 }
 
 function samePlcPcdRanges(

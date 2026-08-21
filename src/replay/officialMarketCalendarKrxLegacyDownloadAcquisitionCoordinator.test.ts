@@ -27,6 +27,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordFibVerifiedDocumentToWordClxReferenceVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordClxReferenceVerifiedDocumentToWordClxVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordClxVerifiedDocumentToWordPlcPcdVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -47,6 +48,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordClxReferenceVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordClxVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -69,6 +71,7 @@ import { OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError } from "./off
 import { OfficialMarketCalendarKrxLegacyWordFibError } from "./officialMarketCalendarKrxLegacyWordFib.js";
 import { OfficialMarketCalendarKrxLegacyWordClxReferenceError } from "./officialMarketCalendarKrxLegacyWordClxReference.js";
 import { OfficialMarketCalendarKrxLegacyWordPlcPcdError } from "./officialMarketCalendarKrxLegacyWordPlcPcd.js";
+import { OfficialMarketCalendarKrxLegacyWordPcdPrmError } from "./officialMarketCalendarKrxLegacyWordPcdPrm.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -115,6 +118,7 @@ test("KRX legacy coordinator composes OTP through opaque document response", asy
 test("KRX legacy response transfers only through the fixed verification lifecycle", async () => {
   const documentBytes = syntheticOleDocument();
   configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPcdPrm(documentBytes, 0);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -339,12 +343,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordPcdPrmVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+          wordPlcPcdVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(wordPcdPrmVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordPcdPrmVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(wordPlcPcdVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+            wordPlcPcdVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(wordPcdPrmVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerifiedDocument(
-        wordPlcPcdVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument(
+        wordPcdPrmVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -497,6 +514,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed Word PlcPcd consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed Word Pcd Prm consumer/
   );
 });
 
@@ -1133,6 +1157,38 @@ test("KRX legacy Word PlcPcd consumer closes ownership when the first CP is inva
   );
 });
 
+test("KRX legacy Word Pcd Prm consumer closes ownership for an unsupported simple modifier", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPcdPrm(documentBytes, 2);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const wordClxHandle = await acquireWordClxVerifiedHandle(port, documentBytes);
+      const wordPlcPcdHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordClxVerifiedDocumentToWordPlcPcdVerifiedDocument(
+          wordClxHandle
+        );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+            wordPlcPcdHandle
+          ),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarKrxLegacyWordPcdPrmError &&
+          error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PCD_PRM_INVALID"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+            wordPlcPcdHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -1538,6 +1594,28 @@ function configureSyntheticWordStreams(bytes: Uint8Array): void {
   view.setUint32(wordOffset + 154 + 33 * 8 + 4, 9, true);
   const clxOffset = (12 + 1) * 512 + 7;
   bytes.set(Uint8Array.from([2, 4, 0, 0, 0, 0, 0, 0, 0]), clxOffset);
+}
+
+function configureSyntheticWordPcdPrm(
+  bytes: Uint8Array,
+  rawPrm: number
+): void {
+  const wordOffset = (4 + 1) * 512;
+  const clxOffset = (12 + 1) * 512 + 7;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setUint32(wordOffset + 154 + 33 * 8 + 4, 21, true);
+  bytes.set(
+    Uint8Array.from([
+      2,
+      16, 0, 0, 0,
+      0, 0, 0, 0,
+      1, 0, 0, 0,
+      0, 0,
+      0, 0, 0, 0,
+      rawPrm & 0xff, (rawPrm >>> 8) & 0xff
+    ]),
+    clxOffset
+  );
 }
 
 async function acquireWordClxVerifiedHandle(
