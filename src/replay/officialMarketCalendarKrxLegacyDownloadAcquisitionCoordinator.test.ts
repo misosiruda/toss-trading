@@ -13,6 +13,7 @@ import {
 import {
   consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
@@ -23,6 +24,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -35,6 +37,7 @@ import {
 } from "./officialMarketCalendarKrxLegacyDownloadNetworkTestFixture.js";
 import { OfficialMarketCalendarOleCompoundFileDifatError } from "./officialMarketCalendarOleCompoundFileDifat.js";
 import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketCalendarOleCompoundFileFat.js";
+import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -148,12 +151,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const systemChainsVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+          fatVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(systemChainsVerifiedHandle), true);
+      assert.deepEqual(Object.keys(systemChainsVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(fatVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+            fatVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(systemChainsVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument(
-        fatVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument(
+        systemChainsVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -222,6 +238,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed FAT consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed system chains consumer/
   );
 });
 
@@ -323,6 +346,62 @@ test("KRX legacy FAT consumer closes ownership when marker verification fails", 
         () =>
           consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
             difatHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy system chains consumer closes ownership when chain verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  new DataView(documentBytes.buffer).setUint32(524, 0xffffffff, true);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+      const fatHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+            fatHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarOleCompoundFileSystemChainsError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_SYSTEM_CHAINS_INVALID_CHAIN"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+            fatHandle
           ),
         /must be ready/
       );
