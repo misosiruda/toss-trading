@@ -46,6 +46,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordClx(
 ): VerifiedOfficialMarketCalendarKrxLegacyWordClx {
   const reference =
     verifyOfficialMarketCalendarKrxLegacyWordClxReference(input);
+  try {
   const bytes = reference.clxBytes;
   let offset = 0;
   let prcCount = 0;
@@ -96,6 +97,9 @@ export function verifyOfficialMarketCalendarKrxLegacyWordClx(
     plcPcdStatus: "framing_only_entries_not_parsed",
     sourceRoleStatus: "candidate_not_accepted"
   });
+  } finally {
+    zeroizeBytes(reference.clxBytes);
+  }
 }
 
 function advance(offset: number, byteLength: number, limit: number): number {
@@ -128,6 +132,14 @@ function readUint32(bytes: Uint8Array, offset: number): number {
     (bytes[offset + 2]! << 16) |
     (bytes[offset + 3]! << 24)
   ) >>> 0;
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidClx(): OfficialMarketCalendarKrxLegacyWordClxError {

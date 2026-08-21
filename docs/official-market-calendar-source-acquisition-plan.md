@@ -539,8 +539,12 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-
 framing한다. 각 `Prc`는 `clxt=0x01`, signed `cbGrpprl`의 non-negative/`0x3FA2` 상한과 CLX
 범위를 검증하고, 마지막 `Pcdt`는 `clxt=0x02`, exact `lcb` consumption 및 `PlcPcd` byte length가
 `12n+4` 형태인지 확인한다. 결과는 Prc byte/count, Pcdt offset, inferred piece descriptor count와
-독립 `PlcPcd` byte copy를 반환한다. `GrpPrl`, CP ordering/uniqueness, Pcd/FcCompressed와 text는
-아직 해석하지 않고 source role도 candidate로 유지한다. 명세 기준:
+독립 `PlcPcd` byte copy를 반환한다. Fixed consumer는 word-clx-reference-verified handle을 exact 한
+번 consume하고 같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와 framed
+`PlcPcd` copy ownership을 getter/callback 없는 새 opaque handle로 이전하며, 실패·dispose·JSON
+export에서는 raw document와 모든 이전 copy 및 `PlcPcd` copy를 zeroize한다. `GrpPrl`, CP
+ordering/uniqueness, Pcd/FcCompressed와 text는 아직 해석하지 않고 source role도 candidate로
+유지하며 새 opaque handle도 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/bad26767-b575-44d3-9da3-96378d56ce14
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/473fd992-c824-4655-8880-3186bd432f80
