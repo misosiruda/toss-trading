@@ -45,6 +45,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordTableTextMarksVerifiedDocumentToWordTableRowGroupingVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordSourceRowsVerifiedDocumentToWordDocumentTitleVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary,
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument,
@@ -600,12 +601,45 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       ).acquireWordDocumentTitle({ fileName: FILE_NAME });
       assert.equal(Object.isFrozen(coordinatorTitle), true);
       assert.deepEqual(Object.keys(coordinatorTitle), []);
+      assert.deepEqual(
+        consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary(
+          coordinatorTitle
+        ),
+        {
+          schemaVersion:
+            "official_market_calendar_krx_legacy_word_candidate_summary.v1",
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          nFib: 0x00c1,
+          tableStreamName: "1Table",
+          structuralSourceRowCount: 0,
+          structuralSourceCellCount: 0,
+          titleBindingVerified: true,
+          columnSemanticsStatus: "not_interpreted",
+          holidaySemanticsStatus: "not_interpreted",
+          sourceRoleStatus: "candidate_not_accepted",
+          durableEvidenceReuse: false,
+          acceptedAcquisition: false
+        }
+      );
       assert.throws(
-        () => JSON.stringify(coordinatorTitle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary(
+            coordinatorTitle
+          ),
+        /must be ready/
+      );
+
+      const serializationTitle = await createCoordinatorForPort(
+        port,
+        verifier
+      ).acquireWordDocumentTitle({ fileName: FILE_NAME });
+      assert.throws(
+        () => JSON.stringify(serializationTitle),
         /cannot be serialized or exported/
       );
       disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument(
-        coordinatorTitle
+        serializationTitle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -640,6 +674,13 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
 });
 
 test("KRX legacy identity response consumer rejects forged handles and verifier config", () => {
+  assert.throws(
+    () =>
+      consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary(
+        {} as never
+      ),
+    /must be ready/
+  );
   assert.throws(
     () =>
       consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(

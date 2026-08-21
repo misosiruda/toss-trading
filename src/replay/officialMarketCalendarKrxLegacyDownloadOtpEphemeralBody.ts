@@ -161,6 +161,9 @@ import {
   type VerifiedOfficialMarketCalendarKrxLegacyWordDocumentTitle
 } from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
 
+export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION =
+  "official_market_calendar_krx_legacy_word_candidate_summary.v1";
+
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
 declare const krxLegacyDownloadPostEphemeralWireBodyBrand: unique symbol;
@@ -384,6 +387,22 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDo
 export interface OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument {
   readonly [krxLegacyDownloadWordDocumentTitleVerifiedDocumentBrand]: true;
   toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyWordCandidateSummary {
+  schemaVersion: typeof OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION;
+  fileName: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["fileName"];
+  targetYear: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["targetYear"];
+  nFib: VerifiedOfficialMarketCalendarKrxLegacyWordDocumentTitle["nFib"];
+  tableStreamName: VerifiedOfficialMarketCalendarKrxLegacyWordDocumentTitle["tableStreamName"];
+  structuralSourceRowCount: number;
+  structuralSourceCellCount: number;
+  titleBindingVerified: true;
+  columnSemanticsStatus: "not_interpreted";
+  holidaySemanticsStatus: "not_interpreted";
+  sourceRoleStatus: "candidate_not_accepted";
+  durableEvidenceReuse: false;
+  acceptedAcquisition: false;
 }
 
 export interface OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -3173,6 +3192,62 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleV
   const handleObject = assertHandleObject(handle);
   if (!wordDocumentTitleVerifiedDocumentStates.has(handleObject)) throw new Error("KRX legacy word-document-title-verified document must come from the fixed Word document title consumer");
   disposeWordDocumentTitleVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedDocumentToCandidateSummary(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument
+): OfficialMarketCalendarKrxLegacyWordCandidateSummary {
+  const handleObject = assertHandleObject(handle);
+  const state = wordDocumentTitleVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-document-title-verified document must be ready and come from the fixed Word document title consumer"
+    );
+  }
+  try {
+    if (
+      state.documentTitle.fileName !== state.identity.fileName ||
+      state.documentTitle.targetYear !== state.identity.targetYear ||
+      state.documentTitle.nFib !== state.sourceRows.nFib ||
+      state.documentTitle.tableStreamName !== state.sourceRows.tableStreamName ||
+      state.documentTitle.titleBindingVerified !== true ||
+      state.documentTitle.titleOccurrenceCount !== 1 ||
+      state.sourceRows.sourceRowProjectionStatus !==
+        "structural_text_projected" ||
+      state.sourceRows.columnSemanticsStatus !== "not_interpreted" ||
+      state.sourceRows.sourceRoleStatus !== "candidate_not_accepted" ||
+      state.documentTitle.columnSemanticsStatus !== "not_interpreted" ||
+      state.documentTitle.holidaySemanticsStatus !== "not_interpreted" ||
+      state.documentTitle.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word candidate summary input is invalid");
+    }
+    const structuralSourceCellCount = state.sourceRows.rows.reduce(
+      (count, row) => count + row.cells.length,
+      0
+    );
+    if (!Number.isSafeInteger(structuralSourceCellCount)) {
+      throw new Error("KRX legacy Word candidate summary count is invalid");
+    }
+    return Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION,
+      fileName: state.identity.fileName,
+      targetYear: state.identity.targetYear,
+      nFib: state.documentTitle.nFib,
+      tableStreamName: state.documentTitle.tableStreamName,
+      structuralSourceRowCount: state.sourceRows.rows.length,
+      structuralSourceCellCount,
+      titleBindingVerified: true,
+      columnSemanticsStatus: "not_interpreted",
+      holidaySemanticsStatus: "not_interpreted",
+      sourceRoleStatus: "candidate_not_accepted",
+      durableEvidenceReuse: false,
+      acceptedAcquisition: false
+    });
+  } finally {
+    disposeWordDocumentTitleVerifiedDocumentObject(handleObject);
+  }
 }
 
 function consumeIdentityVerifiedDocumentToWordDocumentTitleVerifiedDocument(

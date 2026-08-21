@@ -619,7 +619,10 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/61b635c3-
 fail-closed로 거부한다. 이 경계는 column/date/holiday semantics를 해석하지 않고
 source role을 candidate로 유지한다. Fixed production/test-only response consumer는
 ephemeral network response부터 이 title-verified opaque handle까지 등록된 identity와
-모든 OLE/Word 단계를 순서대로 한 번씩 소비한다.
+모든 OLE/Word 단계를 순서대로 한 번씩 소비한다. Terminal candidate-summary consumer는
+이 handle을 exact 한 번 소비하고 raw document를 zeroize한 뒤 file/year, Word version/Table
+stream, structural row/cell count와 미해석/미승인 상태만 frozen summary로 반환한다.
+Structural row 수를 registered `observedHolidayLineCount`와 동일하다고 가정하지 않는다.
 
 `officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서
 main/subdocument character count를 읽고 PlcPcd final CP와 합계를 대조한다. Fixed consumer는
