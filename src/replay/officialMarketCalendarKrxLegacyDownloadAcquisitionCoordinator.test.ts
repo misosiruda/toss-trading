@@ -30,6 +30,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPcdPrmVerifiedDocumentToWordPrcGrpPrlVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPrcGrpPrlVerifiedDocumentToWordDocumentCountsVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -53,6 +54,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -78,6 +80,7 @@ import { OfficialMarketCalendarKrxLegacyWordPlcPcdError } from "./officialMarket
 import { OfficialMarketCalendarKrxLegacyWordPcdPrmError } from "./officialMarketCalendarKrxLegacyWordPcdPrm.js";
 import { OfficialMarketCalendarKrxLegacyWordPrcGrpPrlError } from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
 import { OfficialMarketCalendarKrxLegacyWordDocumentCountsError } from "./officialMarketCalendarKrxLegacyWordDocumentCounts.js";
+import { OfficialMarketCalendarKrxLegacyWordTextRangesError } from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -126,6 +129,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
   configureSyntheticWordStreams(documentBytes);
   configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
   configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 922);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -389,12 +393,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordTextRangesVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(
+          wordDocumentCountsVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(wordTextRangesVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordTextRangesVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(wordDocumentCountsVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(
+            wordDocumentCountsVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(wordTextRangesVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument(
-        wordDocumentCountsVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument(
+        wordTextRangesVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -562,6 +579,10 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(
     () => disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument({} as never),
     /must come from the fixed Word document counts consumer/
+  );
+  assert.throws(
+    () => disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument({} as never),
+    /must come from the fixed Word text ranges consumer/
   );
 });
 
@@ -1282,6 +1303,34 @@ test("KRX legacy Word document counts consumer closes ownership for a final CP m
   );
 });
 
+test("KRX legacy Word text ranges consumer closes ownership when cbMac excludes a piece", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 921);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const clx = await acquireWordClxVerifiedHandle(port, documentBytes);
+      const plc = consumeOfficialMarketCalendarKrxLegacyWordClxVerifiedDocumentToWordPlcPcdVerifiedDocument(clx);
+      const prm = consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(plc);
+      const prc = consumeOfficialMarketCalendarKrxLegacyWordPcdPrmVerifiedDocumentToWordPrcGrpPrlVerifiedDocument(prm);
+      const counts = consumeOfficialMarketCalendarKrxLegacyWordPrcGrpPrlVerifiedDocumentToWordDocumentCountsVerifiedDocument(prc);
+      assert.throws(
+        () => consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(counts),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarKrxLegacyWordTextRangesError &&
+          error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TEXT_RANGE_INVALID"
+      );
+      assert.throws(
+        () => consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(counts),
+        /must be ready/
+      );
+    }
+  );
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -1728,7 +1777,7 @@ function configureSyntheticWordPrcGrpPrl(
       0, 0, 0, 0,
       1, 0, 0, 0,
       0, 0,
-      0, 0, 0, 0,
+      0x98, 0x03, 0, 0,
       1, 0
     ]),
     clxOffset
@@ -1745,6 +1794,18 @@ function configureSyntheticWordDocumentCounts(
   for (const offset of [80, 84, 88, 92, 96, 100, 104]) {
     view.setUint32(wordOffset + offset, 0, true);
   }
+}
+
+function configureSyntheticWordTextRange(
+  bytes: Uint8Array,
+  cbMac: number
+): void {
+  const wordOffset = (4 + 1) * 512;
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(
+    wordOffset + 64,
+    cbMac,
+    true
+  );
 }
 
 async function acquireWordClxVerifiedHandle(

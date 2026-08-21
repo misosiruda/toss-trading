@@ -100,6 +100,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts,
   type VerifiedOfficialMarketCalendarKrxLegacyWordDocumentCounts
 } from "./officialMarketCalendarKrxLegacyWordDocumentCounts.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordTextRanges,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges
+} from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -124,6 +128,7 @@ declare const krxLegacyDownloadWordPlcPcdVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordTextRangesVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -242,6 +247,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDoc
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument {
   readonly [krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument {
+  readonly [krxLegacyDownloadWordTextRangesVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -479,6 +489,10 @@ interface ReadyWordDocumentCountsVerifiedDocumentState extends ReadyWordPrcGrpPr
   documentCounts: VerifiedOfficialMarketCalendarKrxLegacyWordDocumentCounts;
 }
 
+interface ReadyWordTextRangesVerifiedDocumentState extends ReadyWordDocumentCountsVerifiedDocumentState {
+  textRanges: VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -535,6 +549,9 @@ type WordPrcGrpPrlVerifiedDocumentState =
   | DisposedState;
 type WordDocumentCountsVerifiedDocumentState =
   | ReadyWordDocumentCountsVerifiedDocumentState
+  | DisposedState;
+type WordTextRangesVerifiedDocumentState =
+  | ReadyWordTextRangesVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -616,6 +633,10 @@ const wordPrcGrpPrlVerifiedDocumentStates = new WeakMap<
 const wordDocumentCountsVerifiedDocumentStates = new WeakMap<
   object,
   WordDocumentCountsVerifiedDocumentState
+>();
+const wordTextRangesVerifiedDocumentStates = new WeakMap<
+  object,
+  WordTextRangesVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2111,6 +2132,63 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCounts
   disposeWordDocumentCountsVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordDocumentCountsVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-document-counts-verified document must be ready and come from the fixed Word document counts consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const textRanges = verifyOfficialMarketCalendarKrxLegacyWordTextRanges(
+      state.rawDocumentBytes
+    );
+    if (
+      textRanges.nFib !== state.plcPcd.nFib ||
+      textRanges.tableStreamName !== state.plcPcd.tableStreamName ||
+      textRanges.ranges.length !== state.plcPcd.pieces.length ||
+      !sameTextRangeProjection(state.plcPcd, textRanges) ||
+      textRanges.textRangesVerified !== true ||
+      textRanges.textProjectionStatus !== "not_projected" ||
+      textRanges.textDecodingStatus !== "not_decoded" ||
+      textRanges.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word text ranges result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordTextRangesVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-text-ranges-verified document cannot be serialized or exported"
+      );
+    });
+    wordTextRangesVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      textRanges
+    });
+    wordDocumentCountsVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordDocumentCountsVerifiedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordTextRangesVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-text-ranges-verified document must come from the fixed Word text ranges consumer"
+    );
+  }
+  disposeWordTextRangesVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3103,6 +3181,37 @@ function disposeWordDocumentCountsVerifiedDocumentObject(handle: object): void {
   } finally {
     wordDocumentCountsVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
+}
+
+function disposeWordTextRangesVerifiedDocumentObject(handle: object): void {
+  const state = wordTextRangesVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordTextRangesVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function sameTextRangeProjection(
+  plcPcd: VerifiedOfficialMarketCalendarKrxLegacyWordPlcPcd,
+  textRanges: VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges
+): boolean {
+  return textRanges.ranges.every((range, index) => {
+    const piece = plcPcd.pieces[index];
+    return piece !== undefined &&
+      range.index === piece.index &&
+      range.cpStart === piece.cpStart &&
+      range.cpEnd === piece.cpEnd &&
+      range.characterCount === piece.characterCount;
+  });
 }
 
 function samePcdPrmProjection(
