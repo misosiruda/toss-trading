@@ -527,7 +527,11 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fe661052-
 declared bytes 안에 non-empty CLX range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
 `clxBytes`는 source document와 backing memory를 공유하지 않는 copy다. 모든 지원 FIB version이
 정확히 하나의 `FibRgFcLcb97`을 포함한다는 명세만 사용하며 `Clx`, `Prc`, `Pcdt`, `PlcPcd`와 text
-semantics는 아직 해석하지 않고 source role도 candidate로 유지한다. 명세 기준:
+semantics는 아직 해석하지 않는다. Fixed consumer는 word-fib-verified handle을 exact 한 번 consume하고
+같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와 bounded CLX copy ownership을
+getter/callback 없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는 raw document와
+모든 이전 Word/stream copy 및 CLX copy를 zeroize한다. Source role은 candidate로 유지하고 새 opaque
+handle도 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0c9df81f-98d0-454e-ad84-b612cd05b1a4
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 

@@ -41,34 +41,39 @@ export function verifyOfficialMarketCalendarKrxLegacyWordClxReference(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordClxReference {
   const fib = verifyOfficialMarketCalendarKrxLegacyWordFib(input);
-  const fcClx = readUint32(fib.wordDocumentBytes, CLX_FC_OFFSET);
-  const lcbClx = readUint32(fib.wordDocumentBytes, CLX_FC_OFFSET + 4);
-  const clxEnd = fcClx + lcbClx;
-  if (
-    lcbClx === 0 ||
-    !Number.isSafeInteger(clxEnd) ||
-    clxEnd > fib.tableStreamBytes.length
-  ) {
-    throw invalidClxReference();
-  }
-  const clxBytes = new Uint8Array(lcbClx);
-  for (let index = 0; index < lcbClx; index += 1) {
-    clxBytes[index] = fib.tableStreamBytes[fcClx + index]!;
-  }
+  try {
+    const fcClx = readUint32(fib.wordDocumentBytes, CLX_FC_OFFSET);
+    const lcbClx = readUint32(fib.wordDocumentBytes, CLX_FC_OFFSET + 4);
+    const clxEnd = fcClx + lcbClx;
+    if (
+      lcbClx === 0 ||
+      !Number.isSafeInteger(clxEnd) ||
+      clxEnd > fib.tableStreamBytes.length
+    ) {
+      throw invalidClxReference();
+    }
+    const clxBytes = new Uint8Array(lcbClx);
+    for (let index = 0; index < lcbClx; index += 1) {
+      clxBytes[index] = fib.tableStreamBytes[fcClx + index]!;
+    }
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_SCHEMA_VERSION,
-    nFib: fib.nFib,
-    version: fib.version,
-    tableStreamName: fib.tableStreamName,
-    fcClx,
-    lcbClx,
-    clxBytes,
-    clxReferenceVerified: true,
-    clxParserStatus: "reference_only_not_parsed",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+    return Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CLX_REFERENCE_SCHEMA_VERSION,
+      nFib: fib.nFib,
+      version: fib.version,
+      tableStreamName: fib.tableStreamName,
+      fcClx,
+      lcbClx,
+      clxBytes,
+      clxReferenceVerified: true,
+      clxParserStatus: "reference_only_not_parsed",
+      sourceRoleStatus: "candidate_not_accepted"
+    });
+  } finally {
+    zeroizeBytes(fib.wordDocumentBytes);
+    zeroizeBytes(fib.tableStreamBytes);
+  }
 }
 
 function readUint32(bytes: Uint8Array, offset: number): number {
@@ -81,6 +86,14 @@ function readUint32(bytes: Uint8Array, offset: number): number {
     (bytes[offset + 2]! << 16) |
     (bytes[offset + 3]! << 24)
   ) >>> 0;
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidClxReference(): OfficialMarketCalendarKrxLegacyWordClxReferenceError {
