@@ -11,6 +11,7 @@ import {
   OfficialMarketCalendarKrxLegacyDownloadAcquisitionError
 } from "./officialMarketCalendarKrxLegacyDownloadAcquisitionCoordinator.js";
 import {
+  consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
@@ -18,6 +19,7 @@ import {
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
+  disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument,
@@ -32,6 +34,7 @@ import {
   KRX_LEGACY_DOWNLOAD_TEST_SERVER_OPTIONS
 } from "./officialMarketCalendarKrxLegacyDownloadNetworkTestFixture.js";
 import { OfficialMarketCalendarOleCompoundFileDifatError } from "./officialMarketCalendarOleCompoundFileDifat.js";
+import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketCalendarOleCompoundFileFat.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -75,7 +78,7 @@ test("KRX legacy coordinator composes OTP through opaque document response", asy
   );
 });
 
-test("KRX legacy response transfers only through document identity verification", async () => {
+test("KRX legacy response transfers only through the fixed verification lifecycle", async () => {
   const documentBytes = syntheticOleDocument();
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
@@ -132,12 +135,25 @@ test("KRX legacy response transfers only through document identity verification"
           ),
         /must be ready/
       );
+      const fatVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(fatVerifiedHandle), true);
+      assert.deepEqual(Object.keys(fatVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(difatVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+            difatVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(fatVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument(
-        difatVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument(
+        fatVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -200,6 +216,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
       ),
     /must come from the fixed DIFAT consumer/
   );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed FAT consumer/
+  );
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
@@ -249,6 +272,57 @@ test("KRX legacy DIFAT consumer closes ownership when structure verification fai
         () =>
           consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
             headerHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy FAT consumer closes ownership when marker verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  new DataView(documentBytes.buffer).setUint32(512, 0xffffffff, true);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+            difatHandle
+          ),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarOleCompoundFileFatError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_FAT_INVALID_SECTOR_MARKER"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+            difatHandle
           ),
         /must be ready/
       );
@@ -462,6 +536,11 @@ function syntheticOleDocument(): Uint8Array {
   for (let index = 0; index < 109; index += 1) {
     view.setUint32(76 + index * 4, index < 3 ? index : 0xffffffff, true);
   }
+  bytes.fill(0xff, 512, 2048);
+  view.setUint32(512, 0xfffffffd, true);
+  view.setUint32(516, 0xfffffffd, true);
+  view.setUint32(520, 0xfffffffd, true);
+  view.setUint32(524, 0xfffffffe, true);
   return bytes;
 }
 

@@ -35,6 +35,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileDifat,
   type VerifiedOfficialMarketCalendarOleCompoundFileDifat
 } from "./officialMarketCalendarOleCompoundFileDifat.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileFat,
+  type VerifiedOfficialMarketCalendarOleCompoundFileFat
+} from "./officialMarketCalendarOleCompoundFileFat.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -43,6 +47,7 @@ declare const krxLegacyDownloadEphemeralResponseBrand: unique symbol;
 declare const krxLegacyDownloadIdentityVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadOleHeaderVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadDifatVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadFatVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -81,6 +86,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocumen
 
 export interface OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument {
   readonly [krxLegacyDownloadDifatVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument {
+  readonly [krxLegacyDownloadFatVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -173,6 +183,15 @@ interface ReadyDifatVerifiedDocumentState {
   difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
 }
 
+interface ReadyFatVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -184,6 +203,7 @@ type OleHeaderVerifiedDocumentState =
 type DifatVerifiedDocumentState =
   | ReadyDifatVerifiedDocumentState
   | DisposedState;
+type FatVerifiedDocumentState = ReadyFatVerifiedDocumentState | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
 const parameterStates = new WeakMap<object, ParametersState>();
@@ -200,6 +220,10 @@ const oleHeaderVerifiedDocumentStates = new WeakMap<
 const difatVerifiedDocumentStates = new WeakMap<
   object,
   DifatVerifiedDocumentState
+>();
+const fatVerifiedDocumentStates = new WeakMap<
+  object,
+  FatVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -586,6 +610,73 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocum
     );
   }
   disposeDifatVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = difatVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy DIFAT-verified document must be ready and come from the fixed DIFAT consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const fat = verifyOfficialMarketCalendarOleCompoundFileFat(
+      state.rawDocumentBytes
+    );
+    if (
+      fat.majorVersion !== state.difat.majorVersion ||
+      fat.sectorSize !== state.difat.sectorSize ||
+      fat.fileSectorCount !== state.difat.fileSectorCount ||
+      fat.fatSectorCount !== state.difat.fatSectorCount ||
+      fat.difatSectorCount !== state.difat.difatSectorCount ||
+      !sameNumberSequence(fat.fatSectorLocations, state.difat.fatSectorLocations) ||
+      !sameNumberSequence(
+        fat.difatSectorLocations,
+        state.difat.difatSectorLocations
+      ) ||
+      fat.fatVerified !== true ||
+      fat.chainStatus !== "markers_only_chains_not_verified"
+    ) {
+      throw new Error("KRX legacy OLE FAT result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeFatVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy FAT-verified document cannot be serialized or exported"
+      );
+    });
+    fatVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat
+    });
+    difatVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeDifatVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!fatVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy FAT-verified document must come from the fixed FAT consumer"
+    );
+  }
+  disposeFatVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1340,6 +1431,28 @@ function disposeDifatVerifiedDocumentObject(handle: object): void {
   } finally {
     difatVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
+}
+
+function disposeFatVerifiedDocumentObject(handle: object): void {
+  const state = fatVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    fatVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function sameNumberSequence(
+  left: readonly number[],
+  right: readonly number[]
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function resolveRegisteredFileName(value: unknown): LegacyFileName {

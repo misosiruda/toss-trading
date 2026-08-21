@@ -356,8 +356,11 @@ entry는 exact `FATSECT`, DIFAT chain sector의 entry는 exact `DIFSECT`인지 �
 지정되지 않은 sector의 stray FAT/DIFAT marker와 actual file sector count를 넘어가는 FAT
 entry의 non-`FREESECT` 값은 fail-closed로 거부한다. 결과는 actual file sector 범위의 FAT
 entry만 immutable하게 반환하고 `chainStatus=markers_only_chains_not_verified`를 유지한다.
-Directory/mini FAT/stream chain의 cycle, shared-sector, expected length와 실제 bytes는 아직
-검증하지 않으며 opaque lifecycle에도 연결하지 않았다. 명세 기준:
+Fixed consumer는 DIFAT-verified handle을 exact 한 번 consume하고 같은 private bytes를 verifier에
+전달한다. 성공 시 identity/header/DIFAT/FAT result와 bytes ownership을 getter/callback 없는 새
+opaque handle로 이전하며, 실패·dispose·JSON export에서는 bytes를 zeroize한다. Directory/mini
+FAT/stream chain의 cycle, shared-sector, expected length와 실제 bytes는 아직 검증하지 않으며 새
+opaque handle도 durable sink나 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/30e1013a-a0ff-4404-9ccf-d75d835ff404
 
 `officialMarketCalendarOleCompoundFileSystemChains.ts`는 verified FAT에서 header가 지정한
