@@ -62,12 +62,14 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableTextMarks(
     throw invalidTableTextMark();
   }
 
-  const paragraphs = directProperties.paragraphs.map((paragraph) => {
+  const paragraphs: VerifiedOfficialMarketCalendarKrxLegacyWordTableTextMark[] = [];
+  for (const paragraph of directProperties.paragraphs) {
     const classification = classifyTableTextMark(
       paragraph,
-      mainDocument.mainDocumentText
+      mainDocument.mainDocumentText,
+      paragraphs.at(-1)
     );
-    return Object.freeze({
+    paragraphs.push(Object.freeze({
       index: paragraph.index,
       cpStart: paragraph.cpStart,
       cpEnd: paragraph.cpEnd,
@@ -75,8 +77,8 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableTextMarks(
       markCodeUnit: paragraph.markCodeUnit,
       tableDepth: paragraph.tableDepth,
       ...classification
-    });
-  });
+    }));
+  }
 
   return Object.freeze({
     schemaVersion:
@@ -96,7 +98,10 @@ function classifyTableTextMark(
   paragraph: (ReturnType<
     typeof verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties
   >)["paragraphs"][number],
-  text: string
+  text: string,
+  previousParagraph:
+    | VerifiedOfficialMarketCalendarKrxLegacyWordTableTextMark
+    | undefined
 ): Pick<
   VerifiedOfficialMarketCalendarKrxLegacyWordTableTextMark,
   "resolvedRole" | "tableBoundaryRole" | "precedingCellMarkStatus"
@@ -136,7 +141,9 @@ function classifyTableTextMark(
       if (
         paragraph.markCodeUnit !== 0x0007 ||
         paragraph.markCp <= 0 ||
-        text.charCodeAt(paragraph.markCp - 1) !== 0x0007
+        text.charCodeAt(paragraph.markCp - 1) !== 0x0007 ||
+        previousParagraph?.resolvedRole !== "depth_1_cell_mark" ||
+        previousParagraph.markCp !== paragraph.markCp - 1
       ) {
         throw invalidTableTextMark();
       }

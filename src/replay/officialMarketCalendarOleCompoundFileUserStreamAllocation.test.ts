@@ -2737,7 +2737,8 @@ test("official calendar KRX legacy Word table text marks reject invalid role bin
       writeWordByte(bytes, 950, 0x0007);
     },
     (bytes: Uint8Array) =>
-      configureValidDepthOneTableTextMarksFixture(bytes, 0x000d)
+      configureValidDepthOneTableTextMarksFixture(bytes, 0x000d),
+    configureConsecutiveDepthOneTtpMarksFixture
   ];
   for (const configure of invalidFixtures) {
     const bytes = compoundFileWithUserStreams(3);
@@ -2935,6 +2936,62 @@ function configureValidParagraphBoundariesFixture(
     ],
     papx: []
   });
+}
+
+function configureConsecutiveDepthOneTtpMarksFixture(bytes: Uint8Array): void {
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 4, 6], [
+    { flags: 0, fcCompressed: 920, prm: 0x0130 },
+    { flags: 0, fcCompressed: 928 }
+  ]);
+  configureDocumentCounts(bytes, [6, 0, 0, 0, 0, 0, 0]);
+  configureRawPlcBtePapx(
+    bytes,
+    createPlcBtePapxBytes([920, 932], [4]),
+    40
+  );
+  writeWordUint32(bytes, 64, 2560);
+  [0x0041, 0x0007, 0x0007, 0x0007, 0x005a, 0x000d].forEach(
+    (value, index) => writeWordUint16(bytes, 920 + index * 2, value)
+  );
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 924, 926, 928, 932],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 40, reservedValue: 0 },
+      { bOffset: 50, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(
+    bytes,
+    2048 + 80,
+    tablePropertyGroup(
+      [
+        [0x2417, [1]],
+        [0x2405, [1]]
+      ],
+      0
+    )
+  );
+  setPapxGrpPrl(
+    bytes,
+    2048 + 100,
+    tablePropertyGroup(
+      [
+        [0x2417, [1]],
+        [0x2405, [1]]
+      ],
+      0
+    )
+  );
 }
 
 function configureValidDepthOneTableTextMarksFixture(
