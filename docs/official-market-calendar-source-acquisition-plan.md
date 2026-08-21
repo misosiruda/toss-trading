@@ -650,6 +650,12 @@ word-main-document-verified handle을 한 번만 소비해 FIB/table stream iden
 확인하고 새 opaque handle로 ownership을 이전한다. PlcBtePapx framing, PAPX FKP와 paragraph property는
 아직 해석하지 않으며 실패·dispose에서 reference copy와 이전 private byte ownership 전체를 zeroize한다.
 
+`officialMarketCalendarKrxLegacyWordPlcBtePapx.ts`는 reference bytes를 ordered FC 경계와
+`PnFkpPapx` descriptor로 framing하고 각 page number를 512-byte FKP offset으로 투영한다. Fixed consumer는
+word-plc-bte-papx-reference-verified handle을 한 번만 소비해 reference identity, FC/entry count와 parser
+status를 교차 확인한 뒤 새 opaque handle로 ownership을 이전한다. FKP reference allocation과 PAPX page는
+아직 검증하지 않으며 실패·dispose에서 reference copy를 포함한 private byte ownership 전체를 정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX

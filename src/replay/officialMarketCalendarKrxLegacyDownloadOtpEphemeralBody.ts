@@ -120,6 +120,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference,
   type VerifiedOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference
 } from "./officialMarketCalendarKrxLegacyWordPlcBtePapxReference.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapx,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordPlcBtePapx
+} from "./officialMarketCalendarKrxLegacyWordPlcBtePapx.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -149,6 +153,7 @@ declare const krxLegacyDownloadWordTextBytesProjectedDocumentBrand: unique symbo
 declare const krxLegacyDownloadWordTextDecodedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordMainDocumentVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordPlcBtePapxVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -292,6 +297,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerified
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument {
   readonly [krxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument {
+  readonly [krxLegacyDownloadWordPlcBtePapxVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -549,6 +559,10 @@ interface ReadyWordPlcBtePapxReferenceVerifiedDocumentState extends ReadyWordMai
   plcBtePapxReference: VerifiedOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference;
 }
 
+interface ReadyWordPlcBtePapxVerifiedDocumentState extends ReadyWordPlcBtePapxReferenceVerifiedDocumentState {
+  plcBtePapx: VerifiedOfficialMarketCalendarKrxLegacyWordPlcBtePapx;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -620,6 +634,9 @@ type WordMainDocumentVerifiedDocumentState =
   | DisposedState;
 type WordPlcBtePapxReferenceVerifiedDocumentState =
   | ReadyWordPlcBtePapxReferenceVerifiedDocumentState
+  | DisposedState;
+type WordPlcBtePapxVerifiedDocumentState =
+  | ReadyWordPlcBtePapxVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -721,6 +738,10 @@ const wordMainDocumentVerifiedDocumentStates = new WeakMap<
 const wordPlcBtePapxReferenceVerifiedDocumentStates = new WeakMap<
   object,
   WordPlcBtePapxReferenceVerifiedDocumentState
+>();
+const wordPlcBtePapxVerifiedDocumentStates = new WeakMap<
+  object,
+  WordPlcBtePapxVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2486,6 +2507,64 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxRefe
   disposeWordPlcBtePapxReferenceVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordPlcBtePapxReferenceVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error("KRX legacy word-plc-bte-papx-reference-verified document must be ready and come from the fixed Word PlcBtePapx reference consumer");
+  }
+  let transferred = false;
+  try {
+    const plcBtePapx = verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapx(
+      state.rawDocumentBytes
+    );
+    if (
+      plcBtePapx.nFib !== state.plcBtePapxReference.nFib ||
+      plcBtePapx.tableStreamName !== state.plcBtePapxReference.tableStreamName ||
+      plcBtePapx.fcPlcfBtePapx !== state.plcBtePapxReference.fcPlcfBtePapx ||
+      plcBtePapx.lcbPlcfBtePapx !== state.plcBtePapxReference.lcbPlcfBtePapx ||
+      plcBtePapx.fileOffsets.length !== plcBtePapx.entries.length + 1 ||
+      plcBtePapx.plcBtePapxFramingVerified !== true ||
+      plcBtePapx.pnFkpPapxDescriptorsVerified !== true ||
+      plcBtePapx.fkpReferencesStatus !== "not_verified" ||
+      plcBtePapx.papxFkpStatus !== "not_parsed" ||
+      plcBtePapx.paragraphPropertiesStatus !== "not_parsed" ||
+      plcBtePapx.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word PlcBtePapx result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordPlcBtePapxVerifiedDocumentObject(verifiedHandle);
+      throw new Error("KRX legacy word-plc-bte-papx-verified document cannot be serialized or exported");
+    });
+    wordPlcBtePapxVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      plcBtePapx
+    });
+    wordPlcBtePapxReferenceVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeWordPlcBtePapxReferenceVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordPlcBtePapxVerifiedDocumentStates.has(handleObject)) {
+    throw new Error("KRX legacy word-plc-bte-papx-verified document must come from the fixed Word PlcBtePapx consumer");
+  }
+  disposeWordPlcBtePapxVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3571,6 +3650,25 @@ function disposeWordPlcBtePapxReferenceVerifiedDocumentObject(
     wordPlcBtePapxReferenceVerifiedDocumentStates.set(handle, {
       status: "disposed"
     });
+  }
+}
+
+function disposeWordPlcBtePapxVerifiedDocumentObject(handle: object): void {
+  const state = wordPlcBtePapxVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeBytes(state.plcBtePapxReference.plcBtePapxBytes);
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordPlcBtePapxVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
