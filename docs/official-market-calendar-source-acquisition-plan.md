@@ -540,8 +540,11 @@ mark인지 검증한다. `officialMarketCalendarKrxLegacyWordTableRowGrouping.ts
 관리해 depth 1의 cell mark+TTP와 nested cell/TTP를 row/cell CP range로 묶고, depth 하강 전 닫히지
 않은 nested row와 non-table 경계까지 남은 open row를 거부한다. Nested row가 outer cell 안에 포함되는
 CP range도 보존한다. 입력 paragraph 수를 넘는 table depth는 depth별 row state를 할당하기 전에
-거부해 resource usage를 입력 크기에 묶는다. Cell text를 source column으로 투영하지 않았으므로
-source role은 미검증 candidate다. 명세 기준:
+거부해 resource usage를 입력 크기에 묶는다. `officialMarketCalendarKrxLegacyWordSourceRows.ts`는
+각 cell CP range를 main-document text에 다시 결합하고 terminal table mark 한 code unit만 content에서
+제외한다. Raw text에는 terminal mark를 보존하고 cell 내부 paragraph/nested control code는 정규화하지
+않는다. 구조적 source row text까지만 투영했으며 column 의미와 날짜/휴장 semantics를 해석하지
+않았으므로 source role은 미검증 candidate다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
@@ -566,8 +569,8 @@ cell/TTP mark `0x0007`, section mark `0x000C`, paragraph mark `0x000D` 중 하�
 검증한다. 결과는 paragraph CP range와 terminal PAPX page/paragraph/FC identity를 결합하지만
 `Pcd.Prm`이나 PAPX property를 이 boundary 결과 자체에는 적용하지 않는다. 후속 direct paragraph
 property verifier, table text mark verifier와 table row grouping verifier가 terminal PAPX, terminal
-`Pcd.Prm`, code unit 역할 및 depth별 row/cell CP range를 결합하지만 source row projection과 source
-role은 계속 미검증 candidate다. 명세 기준:
+`Pcd.Prm`, code unit 역할, depth별 row/cell CP range와 terminal mark를 제외한 structural cell text를
+결합하지만 column semantics와 source role은 계속 미검증 candidate다. 명세 기준:
 https://learn.microsoft.com/en-sg/openspecs/office_file_formats/ms-doc/30461a5b-e3ad-44cd-a3fe-038f86639b13
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
