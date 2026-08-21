@@ -105,6 +105,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordTableTextMarks
 } from "./officialMarketCalendarKrxLegacyWordTableTextMarks.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TABLE_ROW_GROUPING_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordTableRowGroupingError,
+  verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping
+} from "./officialMarketCalendarKrxLegacyWordTableRowGrouping.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -2753,6 +2758,100 @@ test("official calendar KRX legacy Word table text marks reject invalid role bin
   }
 });
 
+test("official calendar KRX legacy Word table row grouping closes depth-one cells and rows", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidDepthOneTableTextMarksFixture(bytes, 0x0007);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping(bytes);
+
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TABLE_ROW_GROUPING_SCHEMA_VERSION
+  );
+  assert.deepEqual(result.rows, [
+    {
+      index: 0,
+      tableDepth: 1,
+      cpStart: 0,
+      cpEnd: 3,
+      cells: [
+        {
+          index: 0,
+          cpStart: 0,
+          cpEnd: 2,
+          paragraphIndices: [0],
+          terminalParagraphIndex: 0,
+          terminalRole: "depth_1_cell_mark"
+        }
+      ],
+      rowTerminatorParagraphIndex: 1,
+      rowTerminatorRole: "depth_1_ttp_mark"
+    }
+  ]);
+  assert.equal(result.tableRowCellBoundaryStatus, "grouped");
+  assert.equal(result.nestedRowBoundaryStatus, "grouped");
+  assert.equal(result.sourceRowProjectionStatus, "not_projected");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.rows), true);
+  assert.equal(Object.isFrozen(result.rows[0]!.cells), true);
+});
+
+test("official calendar KRX legacy Word table row grouping preserves nested rows inside outer cells", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidNestedAndOuterTableRowsFixture(bytes);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping(bytes);
+
+  assert.deepEqual(
+    result.rows.map((row) => ({
+      index: row.index,
+      tableDepth: row.tableDepth,
+      cpStart: row.cpStart,
+      cpEnd: row.cpEnd,
+      cellRanges: row.cells.map((cell) => [cell.cpStart, cell.cpEnd]),
+      paragraphIndices: row.cells.map((cell) => cell.paragraphIndices),
+      terminator: row.rowTerminatorRole
+    })),
+    [
+      {
+        index: 0,
+        tableDepth: 1,
+        cpStart: 0,
+        cpEnd: 7,
+        cellRanges: [[0, 6]],
+        paragraphIndices: [[0, 1, 2]],
+        terminator: "depth_1_ttp_mark"
+      },
+      {
+        index: 1,
+        tableDepth: 2,
+        cpStart: 0,
+        cpEnd: 4,
+        cellRanges: [
+          [0, 2],
+          [2, 4]
+        ],
+        paragraphIndices: [[0], [1]],
+        terminator: "nested_ttp_mark"
+      }
+    ]
+  );
+});
+
+test("official calendar KRX legacy Word table row grouping rejects an unclosed nested row", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidNestedTableTextMarkFixture(bytes, 0x244b);
+
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordTableRowGroupingError &&
+      error.code ===
+        "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_ROW_GROUPING_INVALID"
+  );
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -2988,6 +3087,91 @@ function configureConsecutiveDepthOneTtpMarksFixture(bytes: Uint8Array): void {
       [
         [0x2417, [1]],
         [0x2405, [1]]
+      ],
+      0
+    )
+  );
+}
+
+function configureValidNestedAndOuterTableRowsFixture(bytes: Uint8Array): void {
+  configureWordRootStreams(bytes, "1Table");
+  configureWord2000Fib(bytes);
+  configurePlcPcd(bytes, [0, 7, 9], [
+    { flags: 0, fcCompressed: 1100, prm: 0x0130 },
+    { flags: 0, fcCompressed: 1114 }
+  ]);
+  configureDocumentCounts(bytes, [9, 0, 0, 0, 0, 0, 0]);
+  configureRawPlcBtePapx(
+    bytes,
+    createPlcBtePapxBytes([1100, 1118], [4]),
+    40
+  );
+  writeWordUint32(bytes, 64, 2560);
+  [
+    0x0041,
+    0x000d,
+    0x0042,
+    0x000d,
+    0x0043,
+    0x0007,
+    0x0007,
+    0x005a,
+    0x000d
+  ].forEach((value, index) => writeWordUint16(bytes, 1100 + index * 2, value));
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [1100, 1104, 1108, 1112, 1114, 1118],
+    bxPap: [
+      { bOffset: 50, reservedValue: 0 },
+      { bOffset: 60, reservedValue: 0 },
+      { bOffset: 70, reservedValue: 0 },
+      { bOffset: 80, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(
+    bytes,
+    2048 + 100,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(2)],
+        [0x244b, [1]]
+      ],
+      0
+    )
+  );
+  setPapxGrpPrl(
+    bytes,
+    2048 + 120,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(2)],
+        [0x244c, [1]]
+      ],
+      0
+    )
+  );
+  setPapxGrpPrl(
+    bytes,
+    2048 + 140,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(1)]
+      ],
+      0
+    )
+  );
+  setPapxGrpPrl(
+    bytes,
+    2048 + 160,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(1)],
+        [0x2417, [1]]
       ],
       0
     )
