@@ -85,6 +85,10 @@ export function verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping(
       continue;
     }
 
+    if (paragraph.tableDepth > marks.paragraphs.length) {
+      throw invalidTableRowGrouping();
+    }
+
     for (const depth of openRows.keys()) {
       if (depth > paragraph.tableDepth) {
         throw invalidTableRowGrouping();

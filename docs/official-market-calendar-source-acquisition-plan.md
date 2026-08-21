@@ -539,8 +539,9 @@ ordinary/non-table paragraph/section 역할을 분류한다. Depth-1 TTP는 직�
 mark인지 검증한다. `officialMarketCalendarKrxLegacyWordTableRowGrouping.ts`는 depth별 open row를
 관리해 depth 1의 cell mark+TTP와 nested cell/TTP를 row/cell CP range로 묶고, depth 하강 전 닫히지
 않은 nested row와 non-table 경계까지 남은 open row를 거부한다. Nested row가 outer cell 안에 포함되는
-CP range도 보존하지만 cell text를 source column으로 투영하지 않았으므로 source role은 미검증
-candidate다. 명세 기준:
+CP range도 보존한다. 입력 paragraph 수를 넘는 table depth는 depth별 row state를 할당하기 전에
+거부해 resource usage를 입력 크기에 묶는다. Cell text를 source column으로 투영하지 않았으므로
+source role은 미검증 candidate다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2

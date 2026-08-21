@@ -2852,6 +2852,31 @@ test("official calendar KRX legacy Word table row grouping rejects an unclosed n
   );
 });
 
+test("official calendar KRX legacy Word table row grouping bounds depth before allocating rows", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidNestedTableTextMarkFixture(bytes, 0x244c);
+  setPapxGrpPrl(
+    bytes,
+    2048 + 40,
+    tablePropertyGroup(
+      [
+        [0x2416, [1]],
+        [0x6649, int32Bytes(0x7fffffff)],
+        [0x244c, [1]]
+      ],
+      0
+    )
+  );
+
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordTableRowGroupingError &&
+      error.code ===
+        "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_ROW_GROUPING_INVALID"
+  );
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
