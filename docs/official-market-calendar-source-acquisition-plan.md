@@ -477,9 +477,12 @@ root mini stream sector chain을 사용해 ordinary stream bytes를 declared str
 stream은 `miniSector * 64` logical offset을 fragmented root mini stream의 standard sector
 location으로 다시 매핑한다. Overallocated chain의 trailing bytes는 결과에서 제외하고 각 stream은
 원본 document backing memory와 공유하지 않는 caller-owned `Uint8Array` copy로 반환한다. 이
-standalone projection은 WordDocument/table semantics를 해석하지 않고 production opaque lifecycle과
-durable evidence writer에도 연결하지 않았으므로 raw stream copy는 후속 fixed parser 범위 밖에서
-보존하면 안 된다. 명세 기준:
+projection은 WordDocument/table semantics를 해석하지 않는다. Fixed consumer는
+user-stream-allocation-verified handle을 exact 한 번 consume하고 같은 private bytes로 projection을
+수행한다. 성공 시 이전 verified result, projected stream copy 및 bytes ownership을 getter/callback
+없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는 raw document와 모든 projected
+stream copy를 zeroize한다. Word stream parser와 durable evidence writer에는 아직 연결하지 않았고
+새 opaque handle도 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
 

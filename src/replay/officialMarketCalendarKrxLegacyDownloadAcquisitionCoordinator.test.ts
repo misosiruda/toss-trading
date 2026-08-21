@@ -21,6 +21,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -35,6 +36,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -98,6 +100,7 @@ test("KRX legacy coordinator composes OTP through opaque document response", asy
 
 test("KRX legacy response transfers only through the fixed verification lifecycle", async () => {
   const documentBytes = syntheticOleDocument();
+  configureSyntheticFatUserStream(documentBytes);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -244,12 +247,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const userStreamBytesProjectedHandle =
+        consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument(
+          userStreamAllocationVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(userStreamBytesProjectedHandle), true);
+      assert.deepEqual(Object.keys(userStreamBytesProjectedHandle), []);
       assert.throws(
-        () => JSON.stringify(userStreamAllocationVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument(
+            userStreamAllocationVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(userStreamBytesProjectedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument(
-        userStreamAllocationVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument(
+        userStreamBytesProjectedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -360,6 +376,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed user stream allocation consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument(
+        {} as never
+      ),
+    /must come from the fixed user stream bytes consumer/
   );
 });
 
@@ -1108,6 +1131,39 @@ function initializeSyntheticDirectorySector(bytes: Uint8Array): void {
     view.setUint32(entryOffset + 68, 0xffffffff, true);
     view.setUint32(entryOffset + 72, 0xffffffff, true);
     view.setUint32(entryOffset + 76, 0xffffffff, true);
+  }
+}
+
+function configureSyntheticFatUserStream(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer);
+  const rootOffset = 2048;
+  const streamOffset = rootOffset + 128;
+  const streamName = "Payload";
+  view.setUint32(rootOffset + 76, 1, true);
+  bytes.fill(0, streamOffset, streamOffset + 128);
+  for (let index = 0; index < streamName.length; index += 1) {
+    view.setUint16(
+      streamOffset + index * 2,
+      streamName.charCodeAt(index),
+      true
+    );
+  }
+  view.setUint16(streamOffset + streamName.length * 2, 0, true);
+  view.setUint16(streamOffset + 64, (streamName.length + 1) * 2, true);
+  view.setUint8(streamOffset + 66, 2);
+  view.setUint8(streamOffset + 67, 1);
+  view.setUint32(streamOffset + 68, 0xffffffff, true);
+  view.setUint32(streamOffset + 72, 0xffffffff, true);
+  view.setUint32(streamOffset + 76, 0xffffffff, true);
+  view.setUint32(streamOffset + 116, 4, true);
+  view.setUint32(streamOffset + 120, 4096, true);
+  for (let sector = 4; sector <= 11; sector += 1) {
+    view.setUint32(
+      512 + sector * 4,
+      sector === 11 ? 0xfffffffe : sector + 1,
+      true
+    );
+    bytes.fill(0x5a, (sector + 1) * 512, (sector + 2) * 512);
   }
 }
 
