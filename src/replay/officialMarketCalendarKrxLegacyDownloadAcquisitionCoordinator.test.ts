@@ -41,6 +41,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordPapxFkpVerifiedDocumentToWordGrpPrlVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -75,6 +76,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -109,6 +111,7 @@ import { OfficialMarketCalendarKrxLegacyWordPapxFkpError } from "./officialMarke
 import { OfficialMarketCalendarKrxLegacyWordGrpPrlError } from "./officialMarketCalendarKrxLegacyWordGrpPrl.js";
 import { OfficialMarketCalendarKrxLegacyWordParagraphBoundariesError } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
 import { OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError } from "./officialMarketCalendarKrxLegacyWordDirectParagraphProperties.js";
+import { OfficialMarketCalendarKrxLegacyWordTableTextMarksError } from "./officialMarketCalendarKrxLegacyWordTableTextMarks.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -521,11 +524,15 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       assert.equal(Object.isFrozen(wordDirectParagraphPropertiesVerifiedHandle), true);
       assert.deepEqual(Object.keys(wordDirectParagraphPropertiesVerifiedHandle), []);
       assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(wordParagraphBoundariesVerifiedHandle), /must be ready/);
+      const wordTableTextMarksVerifiedHandle = consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument(wordDirectParagraphPropertiesVerifiedHandle);
+      assert.equal(Object.isFrozen(wordTableTextMarksVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordTableTextMarksVerifiedHandle), []);
+      assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument(wordDirectParagraphPropertiesVerifiedHandle), /must be ready/);
       assert.throws(
-        () => JSON.stringify(wordDirectParagraphPropertiesVerifiedHandle),
+        () => JSON.stringify(wordTableTextMarksVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument(wordDirectParagraphPropertiesVerifiedHandle);
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifiedDocument(wordTableTextMarksVerifiedHandle);
 
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
@@ -722,6 +729,7 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument({} as never), /must come from the fixed Word GrpPrl consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument({} as never), /must come from the fixed Word paragraph boundaries consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument({} as never), /must come from the fixed Word direct paragraph properties consumer/);
+  assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifiedDocument({} as never), /must come from the fixed Word table text marks consumer/);
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
@@ -1654,6 +1662,29 @@ test("KRX legacy Word direct paragraph properties consumer closes ownership for 
     const boundaries = consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(groups);
     assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(boundaries), (error: unknown) => error instanceof OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError && error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID");
     assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(boundaries), /must be ready/);
+  });
+});
+
+test("KRX legacy Word table text marks consumer closes ownership for a depth-one TTP paragraph mark", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1], 0x0130);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 1536);
+  configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
+  const fkpOffset = (4 + 1) * 512 + 1024;
+  documentBytes[fkpOffset + 8] = 20;
+  documentBytes.set([3, 0, 0, 0x17, 0x24, 1], fkpOffset + 40);
+  await withDownloadServer((response) => sendValidResponse(response, documentBytes), async (port) => {
+    const reference = await acquireWordPlcBtePapxReferenceVerifiedHandle(port, documentBytes);
+    const plc = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(reference);
+    const fkpReferences = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(plc);
+    const fkp = consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(fkpReferences);
+    const groups = consumeOfficialMarketCalendarKrxLegacyWordPapxFkpVerifiedDocumentToWordGrpPrlVerifiedDocument(fkp);
+    const boundaries = consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(groups);
+    const properties = consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(boundaries);
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument(properties), (error: unknown) => error instanceof OfficialMarketCalendarKrxLegacyWordTableTextMarksError && error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_TABLE_TEXT_MARK_INVALID");
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument(properties), /must be ready/);
   });
 });
 

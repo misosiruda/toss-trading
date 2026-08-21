@@ -686,6 +686,12 @@ paragraph identity, MS-DOC 2.4.6.1 적용 순서와 Prm0/Prm1 선택 상태를 �
 ownership을 이전한다. Text mark와 table row/cell semantics는 아직 승인하지 않으며 실패·dispose에서
 모든 이전 private byte ownership을 정리한다.
 
+`officialMarketCalendarKrxLegacyWordTableTextMarks.ts`의 non-table, depth-1, nested cell/TTP mark 분류도
+fixed consumer로 연결한다. word-direct-paragraph-properties-verified handle을 한 번만 소비해 paragraph
+identity와 depth-1/nested/preceding-cell 검증 상태를 교차 확인하고 새 opaque handle로 ownership을
+이전한다. Row/cell grouping과 source row text는 아직 생성하지 않으며 실패·dispose에서 모든 이전
+private byte ownership을 정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
