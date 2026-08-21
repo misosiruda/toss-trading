@@ -80,6 +80,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordMainDocument
 } from "./officialMarketCalendarKrxLegacyWordMainDocument.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_BOUNDARIES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordParagraphBoundariesError,
+  verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries
+} from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -2050,6 +2055,105 @@ test("official calendar KRX legacy Word main document rejects missing paragraph 
   }
 });
 
+test("official calendar KRX legacy Word paragraph boundaries map PAPX FCs across pieces", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries(bytes);
+
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_BOUNDARIES_SCHEMA_VERSION
+  );
+  assert.equal(result.mainDocumentCpStart, 0);
+  assert.equal(result.mainDocumentCpEnd, 5);
+  assert.deepEqual(result.paragraphs, [
+    {
+      index: 0,
+      cpStart: 0,
+      cpEnd: 3,
+      characterCount: 3,
+      markCp: 2,
+      markCodeUnit: 0x000d,
+      markKind: "paragraph_mark",
+      startPieceIndex: 0,
+      endPieceIndex: 1,
+      spansMultiplePieces: true,
+      terminalPapxPageIndex: 0,
+      terminalPapxParagraphIndex: 1,
+      terminalPapxFcStart: 930,
+      terminalPapxFcEnd: 951
+    },
+    {
+      index: 1,
+      cpStart: 3,
+      cpEnd: 5,
+      characterCount: 2,
+      markCp: 4,
+      markCodeUnit: 0x000d,
+      markKind: "paragraph_mark",
+      startPieceIndex: 1,
+      endPieceIndex: 1,
+      spansMultiplePieces: false,
+      terminalPapxPageIndex: 0,
+      terminalPapxParagraphIndex: 2,
+      terminalPapxFcStart: 951,
+      terminalPapxFcEnd: 953
+    }
+  ]);
+  assert.equal(
+    result.paragraphBoundaryAlgorithm,
+    "ms_doc_2_4_2_piece_aware"
+  );
+  assert.equal(result.paragraphBoundaryMarksVerified, true);
+  assert.equal(result.pcdPrmStatus, "not_applied_not_required_for_boundaries");
+  assert.equal(
+    result.tablePropertyBindingStatus,
+    "terminal_papx_identified_properties_not_applied"
+  );
+  assert.equal(result.tableRowCellBoundaryStatus, "not_verified");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.paragraphs), true);
+  assert.equal(Object.isFrozen(result.paragraphs[0]), true);
+});
+
+test("official calendar KRX legacy Word paragraph boundaries accept cell and section marks", () => {
+  const expectedMarks = [
+    { codeUnit: 0x0007, kind: "cell_or_ttp_mark" },
+    { codeUnit: 0x000c, kind: "section_mark" }
+  ] as const;
+  for (const expected of expectedMarks) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureValidParagraphBoundariesFixture(bytes);
+    writeWordByte(bytes, 950, expected.codeUnit);
+
+    const result =
+      verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries(bytes);
+    assert.equal(result.paragraphs[0]!.markCodeUnit, expected.codeUnit);
+    assert.equal(result.paragraphs[0]!.markKind, expected.kind);
+  }
+});
+
+test("official calendar KRX legacy Word paragraph boundaries reject invalid FC and mark semantics", () => {
+  const invalidFixtures = [
+    (bytes: Uint8Array) => writeWordUint32(bytes, 2048 + 4, 923),
+    (bytes: Uint8Array) => writeWordByte(bytes, 950, 0x41),
+    (bytes: Uint8Array) =>
+      configureValidParagraphBoundariesFixture(bytes, { secondPieceFlags: 1 })
+  ];
+  for (const mutate of invalidFixtures) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureValidParagraphBoundariesFixture(bytes);
+    mutate(bytes);
+    assertParagraphBoundariesCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_BOUNDARY_INVALID"
+    );
+  }
+});
+
 function compoundFileWithUserStreams(majorVersion: 3 | 4): Uint8Array {
   const sectorSize = majorVersion === 3 ? 512 : 4096;
   const bytes = new Uint8Array(sectorSize * 14);
@@ -2187,10 +2291,52 @@ function configurePlcBtePapxReference(
 
 function configureRawPlcBtePapx(
   bytes: Uint8Array,
-  plcBtePapxBytes: Uint8Array
+  plcBtePapxBytes: Uint8Array,
+  tableOffset = 20
 ): void {
-  configurePlcBtePapxReference(bytes, 20, plcBtePapxBytes.length, 0);
-  bytes.set(plcBtePapxBytes, (3 + 1) * readSectorSize(bytes) + 20);
+  configurePlcBtePapxReference(bytes, tableOffset, plcBtePapxBytes.length, 0);
+  bytes.set(plcBtePapxBytes, (3 + 1) * readSectorSize(bytes) + tableOffset);
+}
+
+function configureValidParagraphBoundariesFixture(
+  bytes: Uint8Array,
+  options: { secondPieceFlags?: number } = {}
+): void {
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, 2, 5], [
+    { flags: 1, fcCompressed: 920 },
+    {
+      flags: options.secondPieceFlags ?? 0,
+      fcCompressed: 0x4000076c
+    }
+  ]);
+  configureDocumentCounts(bytes, [5, 0, 0, 0, 0, 0, 0]);
+  configureRawPlcBtePapx(
+    bytes,
+    createPlcBtePapxBytes([920, 953], [4]),
+    40
+  );
+  writeWordUint32(bytes, 64, 2560);
+  writeWordUint16(bytes, 920, 0x0041);
+  writeWordUint16(bytes, 922, 0x0042);
+  [0x0d, 0x43, 0x0d].forEach((value, index) => {
+    writeWordByte(bytes, 950 + index, value);
+  });
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 930, 951, 953],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
 }
 
 function configureValidPapxFkpFixture(bytes: Uint8Array): void {
@@ -2794,6 +2940,19 @@ function assertMainDocumentCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordMainDocument(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordMainDocumentError &&
+      error.code === code
+  );
+}
+
+function assertParagraphBoundariesCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordParagraphBoundariesError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries(bytes),
+    (error: unknown) =>
+      error instanceof
+        OfficialMarketCalendarKrxLegacyWordParagraphBoundariesError &&
       error.code === code
   );
 }

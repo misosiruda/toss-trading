@@ -526,6 +526,20 @@ decoding은 아직 검증하지 않고 source role도 candidate로 유지한다.
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/37713d3c-a0c8-40f5-821f-bc9622c7de48
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/1caae71f-35c4-49d7-adf0-af5fc766331c
 
+`officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
+`ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
+compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
+`fcLim`이 현재 piece의 byte end를 넘으면 다음 piece에서 탐색을 계속한다. `fcLim`이 piece 안에
+들어온 경우에만 CP end를 계산하며 UTF-16LE FC 정렬, `Pcd.fNoParaLast`, terminal code unit이
+cell/TTP mark `0x0007`, section mark `0x000C`, paragraph mark `0x000D` 중 하나인지 fail-closed로
+검증한다. 결과는 paragraph CP range와 terminal PAPX page/paragraph/FC identity를 결합하지만
+`Pcd.Prm`이나 PAPX property를 적용하지 않는다. 따라서 cell/TTP 역할, table row/cell boundary와
+source role은 계속 미검증 candidate다. 명세 기준:
+https://learn.microsoft.com/en-sg/openspecs/office_file_formats/ms-doc/30461a5b-e3ad-44cd-a3fe-038f86639b13
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-7760-4fdb-af88-0146de2feb4c
+
 ### KRX Holiday Data POST Static Policy
 
 `officialMarketCalendarKrxHolidayDataPostPolicy.ts`는 2026-08-20 KRX official holiday
