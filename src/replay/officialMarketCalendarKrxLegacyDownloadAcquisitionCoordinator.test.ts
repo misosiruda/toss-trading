@@ -37,6 +37,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -67,6 +68,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -97,6 +99,7 @@ import { OfficialMarketCalendarKrxLegacyWordMainDocumentError } from "./official
 import { OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError } from "./officialMarketCalendarKrxLegacyWordPlcBtePapxReference.js";
 import { OfficialMarketCalendarKrxLegacyWordPlcBtePapxError } from "./officialMarketCalendarKrxLegacyWordPlcBtePapx.js";
 import { OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError } from "./officialMarketCalendarKrxLegacyWordPapxFkpReferences.js";
+import { OfficialMarketCalendarKrxLegacyWordPapxFkpError } from "./officialMarketCalendarKrxLegacyWordPapxFkp.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -493,11 +496,15 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       assert.equal(Object.isFrozen(wordPapxFkpReferencesVerifiedHandle), true);
       assert.deepEqual(Object.keys(wordPapxFkpReferencesVerifiedHandle), []);
       assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(wordPlcBtePapxVerifiedHandle), /must be ready/);
+      const wordPapxFkpVerifiedHandle = consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(wordPapxFkpReferencesVerifiedHandle);
+      assert.equal(Object.isFrozen(wordPapxFkpVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordPapxFkpVerifiedHandle), []);
+      assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(wordPapxFkpReferencesVerifiedHandle), /must be ready/);
       assert.throws(
-        () => JSON.stringify(wordPapxFkpReferencesVerifiedHandle),
+        () => JSON.stringify(wordPapxFkpVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument(wordPapxFkpReferencesVerifiedHandle);
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocument(wordPapxFkpVerifiedHandle);
 
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
@@ -690,6 +697,7 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
     /must come from the fixed Word PlcBtePapx consumer/
   );
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpReferencesVerifiedDocument({} as never), /must come from the fixed Word PapxFkp references consumer/);
+  assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocument({} as never), /must come from the fixed Word PapxFkp consumer/);
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
@@ -1546,6 +1554,23 @@ test("KRX legacy Word PapxFkp references consumer closes ownership without descr
   });
 });
 
+test("KRX legacy Word PapxFkp consumer closes ownership for invalid cpara", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 1536);
+  configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
+  documentBytes[(4 + 1) * 512 + 1024 + 511] = 0;
+  await withDownloadServer((response) => sendValidResponse(response, documentBytes), async (port) => {
+    const reference = await acquireWordPlcBtePapxReferenceVerifiedHandle(port, documentBytes);
+    const plc = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(reference);
+    const fkpReferences = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(plc);
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(fkpReferences), (error: unknown) => error instanceof OfficialMarketCalendarKrxLegacyWordPapxFkpError && error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PAPX_FKP_INVALID");
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(fkpReferences), /must be ready/);
+  });
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -2040,6 +2065,11 @@ function configureSyntheticWordPlcBtePapxReference(
     if (byteLength >= 12) {
       view.setUint32(tableStreamOffset + tableOffset + 4, 922, true);
       view.setUint32(tableStreamOffset + tableOffset + 8, 2, true);
+      const fkpByteOffset = wordOffset + 1024;
+      bytes.fill(0, fkpByteOffset, fkpByteOffset + 512);
+      view.setUint32(fkpByteOffset, 920, true);
+      view.setUint32(fkpByteOffset + 4, 922, true);
+      view.setUint8(fkpByteOffset + 511, 1);
     }
   }
 }

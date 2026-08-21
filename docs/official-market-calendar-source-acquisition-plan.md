@@ -662,6 +662,12 @@ word-plc-bte-papx-verified handle을 한 번만 소비해 descriptor count, `cbM
 교차 확인한다. PAPX FKP framing은 아직 해석하지 않으며 실패·dispose에서 모든 page copy와 이전
 private byte ownership을 zeroize한다.
 
+`officialMarketCalendarKrxLegacyWordPapxFkp.ts`는 FKP page의 `cpara`, ordered `rgfc`, 13-byte
+`BX.PAP`와 optional `PapxInFkp` byte framing을 검증한다. Fixed consumer는
+word-papx-fkp-references-verified handle을 한 번만 소비해 page identity, paragraph count와
+caller-owned `grpprlAndIstdBytes` projection을 교차 확인한다. GrpPrl semantics는 아직 해석하지 않으며
+실패·dispose에서 page copy와 PapxInFkp copy를 포함한 private byte ownership 전체를 zeroize한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
