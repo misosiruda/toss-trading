@@ -69,47 +69,64 @@ export function verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(
     rootStreamIds,
     "1Table"
   );
-  const wordDocument =
-    projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
-      input,
-      wordDocumentEntry.streamId
-    );
-  const fibBase = verifyFibBase(wordDocument.bytes);
-  const tableStreamName = fibBase.fWhichTblStm === 1 ? "1Table" : "0Table";
-  const ignoredTableStreamName = tableStreamName === "1Table" ? "0Table" : "1Table";
-  const tableStreamEntry =
-    tableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
-  if (tableStreamEntry === undefined) {
-    throw missingStream();
+  let wordDocument: ProjectedOfficialMarketCalendarOleUserStreamBytes | undefined;
+  let tableStream: ProjectedOfficialMarketCalendarOleUserStreamBytes | undefined;
+  let returned = false;
+  try {
+    wordDocument =
+      projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
+        input,
+        wordDocumentEntry.streamId
+      );
+    const fibBase = verifyFibBase(wordDocument.bytes);
+    const tableStreamName = fibBase.fWhichTblStm === 1 ? "1Table" : "0Table";
+    const ignoredTableStreamName =
+      tableStreamName === "1Table" ? "0Table" : "1Table";
+    const tableStreamEntry =
+      tableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
+    if (tableStreamEntry === undefined) {
+      throw missingStream();
+    }
+    verifyMaximumSize(tableStreamEntry);
+    tableStream =
+      projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
+        input,
+        tableStreamEntry.streamId
+      );
+    const ignoredTable =
+      ignoredTableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
+    const result = Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_BINARY_FILE_STREAMS_SCHEMA_VERSION,
+      wordDocumentStreamId: wordDocument.streamId,
+      wordDocumentSize: wordDocument.streamSize,
+      wordDocumentBytes: wordDocument.bytes,
+      tableStreamId: tableStream.streamId,
+      tableStreamName,
+      tableStreamSize: tableStream.streamSize,
+      tableStreamBytes: tableStream.bytes,
+      ignoredTableStreamName:
+        ignoredTable === undefined ? null : ignoredTableStreamName,
+      nFibBase: fibBase.nFibBase,
+      fWhichTblStm: fibBase.fWhichTblStm,
+      fibBaseVerified: true as const,
+      fibStatus: "base_only_effective_version_not_resolved" as const,
+      protectionStatus: "unencrypted" as const,
+      wordTableParserStatus: "not_parsed" as const,
+      sourceRoleStatus: "candidate_not_accepted" as const
+    });
+    returned = true;
+    return result;
+  } finally {
+    if (!returned) {
+      if (wordDocument !== undefined) {
+        zeroizeBytes(wordDocument.bytes);
+      }
+      if (tableStream !== undefined) {
+        zeroizeBytes(tableStream.bytes);
+      }
+    }
   }
-  verifyMaximumSize(tableStreamEntry);
-  const tableStream =
-    projectOfficialMarketCalendarOleCompoundFileUserStreamBytesByStreamId(
-      input,
-      tableStreamEntry.streamId
-    );
-  const ignoredTable =
-    ignoredTableStreamName === "1Table" ? oneTableEntry : zeroTableEntry;
-
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_BINARY_FILE_STREAMS_SCHEMA_VERSION,
-    wordDocumentStreamId: wordDocument.streamId,
-    wordDocumentSize: wordDocument.streamSize,
-    wordDocumentBytes: wordDocument.bytes,
-    tableStreamId: tableStream.streamId,
-    tableStreamName,
-    tableStreamSize: tableStream.streamSize,
-    tableStreamBytes: tableStream.bytes,
-    ignoredTableStreamName: ignoredTable === undefined ? null : ignoredTableStreamName,
-    nFibBase: fibBase.nFibBase,
-    fWhichTblStm: fibBase.fWhichTblStm,
-    fibBaseVerified: true,
-    fibStatus: "base_only_effective_version_not_resolved",
-    protectionStatus: "unencrypted",
-    wordTableParserStatus: "not_parsed",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
 }
 
 function readRootStreamIds(
@@ -235,6 +252,14 @@ function readUint32(bytes: Uint8Array, offset: number): number {
     (bytes[offset + 2]! << 16) |
     (bytes[offset + 3]! << 24)
   ) >>> 0;
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function missingStream(): OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError {

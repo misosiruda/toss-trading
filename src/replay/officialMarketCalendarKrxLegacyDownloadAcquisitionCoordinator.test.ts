@@ -22,6 +22,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument,
+  consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -37,6 +38,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -55,6 +57,7 @@ import { OfficialMarketCalendarOleCompoundFileMiniFatEntriesError } from "./offi
 import { OfficialMarketCalendarOleCompoundFileRootMiniStreamError } from "./officialMarketCalendarOleCompoundFileRootMiniStream.js";
 import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 import { OfficialMarketCalendarOleCompoundFileUserStreamAllocationError } from "./officialMarketCalendarOleCompoundFileUserStreamAllocation.js";
+import { OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError } from "./officialMarketCalendarKrxLegacyWordBinaryFileStreams.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -100,7 +103,7 @@ test("KRX legacy coordinator composes OTP through opaque document response", asy
 
 test("KRX legacy response transfers only through the fixed verification lifecycle", async () => {
   const documentBytes = syntheticOleDocument();
-  configureSyntheticFatUserStream(documentBytes);
+  configureSyntheticWordStreams(documentBytes);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -260,12 +263,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordStreamsVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument(
+          userStreamBytesProjectedHandle
+        );
+      assert.equal(Object.isFrozen(wordStreamsVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordStreamsVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(userStreamBytesProjectedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument(
+            userStreamBytesProjectedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(wordStreamsVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamBytesProjectedDocument(
-        userStreamBytesProjectedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifiedDocument(
+        wordStreamsVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -383,6 +399,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed user stream bytes consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordStreamsVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed Word stream consumer/
   );
 });
 
@@ -892,6 +915,36 @@ test("KRX legacy user stream allocation consumer closes ownership when allocatio
   );
 });
 
+test("KRX legacy Word stream consumer closes ownership when required streams are missing", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticFatUserStream(documentBytes);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const userStreamBytesHandle =
+        await acquireUserStreamBytesProjectedHandle(port, documentBytes);
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument(
+            userStreamBytesHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarKrxLegacyWordBinaryFileStreamsError &&
+          error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STREAM_MISSING"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument(
+            userStreamBytesHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -1107,6 +1160,67 @@ function syntheticOleDocument(): Uint8Array {
   return bytes;
 }
 
+async function acquireUserStreamBytesProjectedHandle(
+  port: number,
+  documentBytes: Uint8Array
+) {
+  const responseHandle = await createCoordinatorForPort(port).acquire({
+    fileName: FILE_NAME
+  });
+  const verifier =
+    createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+      fileName: FILE_NAME,
+      targetYear: "2013",
+      contentLength: documentBytes.byteLength,
+      sha256: createHash("sha256").update(documentBytes).digest("hex"),
+      oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+    });
+  const identityHandle =
+    consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+      responseHandle,
+      verifier
+    );
+  const headerHandle =
+    consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+      identityHandle
+    );
+  const difatHandle =
+    consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+      headerHandle
+    );
+  const fatHandle =
+    consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+      difatHandle
+    );
+  const systemChainsHandle =
+    consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+      fatHandle
+    );
+  const directoryEntriesHandle =
+    consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+      systemChainsHandle
+    );
+  const directoryTreeHandle =
+    consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+      directoryEntriesHandle
+    );
+  const miniFatEntriesHandle =
+    consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
+      directoryTreeHandle
+    );
+  const rootMiniStreamHandle =
+    consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+      miniFatEntriesHandle
+    );
+  const userStreamAllocationHandle =
+    consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+      rootMiniStreamHandle
+    );
+  return consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument(
+    userStreamAllocationHandle
+  );
+}
+
 function initializeSyntheticDirectorySector(bytes: Uint8Array): void {
   const view = new DataView(bytes.buffer);
   const directoryOffset = 2048;
@@ -1165,6 +1279,57 @@ function configureSyntheticFatUserStream(bytes: Uint8Array): void {
     );
     bytes.fill(0x5a, (sector + 1) * 512, (sector + 2) * 512);
   }
+}
+
+function configureSyntheticWordStreams(bytes: Uint8Array): void {
+  configureSyntheticFatUserStream(bytes);
+  const view = new DataView(bytes.buffer);
+  const wordEntryOffset = 2048 + 128;
+  const tableEntryOffset = wordEntryOffset + 128;
+  writeSyntheticDirectoryName(bytes, wordEntryOffset, "WordDocument");
+  view.setUint32(wordEntryOffset + 68, 2, true);
+  bytes.fill(0, tableEntryOffset, tableEntryOffset + 128);
+  writeSyntheticDirectoryName(bytes, tableEntryOffset, "1Table");
+  view.setUint8(tableEntryOffset + 66, 2);
+  view.setUint8(tableEntryOffset + 67, 0);
+  view.setUint32(tableEntryOffset + 68, 0xffffffff, true);
+  view.setUint32(tableEntryOffset + 72, 0xffffffff, true);
+  view.setUint32(tableEntryOffset + 76, 0xffffffff, true);
+  view.setUint32(tableEntryOffset + 116, 12, true);
+  view.setUint32(tableEntryOffset + 120, 4096, true);
+  for (let sector = 12; sector <= 19; sector += 1) {
+    view.setUint32(
+      512 + sector * 4,
+      sector === 19 ? 0xfffffffe : sector + 1,
+      true
+    );
+    bytes.fill(0x33, (sector + 1) * 512, (sector + 2) * 512);
+  }
+  const wordOffset = (4 + 1) * 512;
+  view.setUint16(wordOffset, 0xa5ec, true);
+  view.setUint16(wordOffset + 2, 0x00c1, true);
+  view.setUint16(wordOffset + 8, 0, true);
+  view.setUint16(wordOffset + 10, 0x1200, true);
+  view.setUint16(wordOffset + 12, 0x00bf, true);
+  view.setUint32(wordOffset + 14, 0, true);
+  view.setUint8(wordOffset + 18, 0);
+  view.setUint8(wordOffset + 19, 0);
+  view.setUint16(wordOffset + 20, 0, true);
+  view.setUint16(wordOffset + 22, 0, true);
+}
+
+function writeSyntheticDirectoryName(
+  bytes: Uint8Array,
+  entryOffset: number,
+  name: string
+): void {
+  const view = new DataView(bytes.buffer);
+  bytes.fill(0, entryOffset, entryOffset + 64);
+  for (let index = 0; index < name.length; index += 1) {
+    view.setUint16(entryOffset + index * 2, name.charCodeAt(index), true);
+  }
+  view.setUint16(entryOffset + name.length * 2, 0, true);
+  view.setUint16(entryOffset + 64, (name.length + 1) * 2, true);
 }
 
 function configureSyntheticInvalidUserStream(bytes: Uint8Array): void {

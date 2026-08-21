@@ -496,8 +496,12 @@ parser가 지원하지 않으므로 fail-closed로 거부하고, `fEncrypted=0`�
 무시한다. WordDocument와 selected Table의 size 상한은 각 byte projection 전에 root directory
 metadata에서 검사한다. Byte 19의 undefined bit와 `reserved5`/`reserved6`도 명세가
 `MUST be ignored`로 규정하므로 nonzero 값을 거부하지 않는다. 결과는 caller-owned WordDocument/Table bytes와
-base version/selector만 반환하며 variable-length FIB의 effective `nFib`, CLX/text/table semantics,
-opaque lifecycle과 source role/coverage는 아직 검증하지 않는다. 명세 기준:
+base version/selector만 반환한다. Fixed consumer는 user-stream-bytes-projected handle을 exact 한 번
+consume하고 같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와 selected Word
+stream result 및 모든 byte-copy ownership을 getter/callback 없는 새 opaque handle로 이전하며,
+실패·dispose·JSON export에서는 raw document, 이전 projected stream copy와 selected Word stream copy를
+zeroize한다. Variable-length FIB의 effective `nFib`, CLX/text/table semantics와 source role/coverage는
+아직 검증하지 않고 새 opaque handle도 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/d7fae142-670d-4cd5-869a-708366984a71
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/26fb6c06-4e5c-4778-ab4e-edbf26a545bb
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/44f62054-d911-4989-946c-a42100c26a15
