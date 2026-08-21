@@ -19,6 +19,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
@@ -33,6 +34,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -50,6 +52,7 @@ import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketC
 import { OfficialMarketCalendarOleCompoundFileMiniFatEntriesError } from "./officialMarketCalendarOleCompoundFileMiniFatEntries.js";
 import { OfficialMarketCalendarOleCompoundFileRootMiniStreamError } from "./officialMarketCalendarOleCompoundFileRootMiniStream.js";
 import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
+import { OfficialMarketCalendarOleCompoundFileUserStreamAllocationError } from "./officialMarketCalendarOleCompoundFileUserStreamAllocation.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -228,12 +231,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const userStreamAllocationVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+          rootMiniStreamVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(userStreamAllocationVerifiedHandle), true);
+      assert.deepEqual(Object.keys(userStreamAllocationVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(rootMiniStreamVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+            rootMiniStreamVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(userStreamAllocationVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument(
-        rootMiniStreamVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument(
+        userStreamAllocationVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -337,6 +353,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed root mini stream consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed user stream allocation consumer/
   );
 });
 
@@ -770,6 +793,82 @@ test("KRX legacy root mini stream consumer closes ownership when root allocation
   );
 });
 
+test("KRX legacy user stream allocation consumer closes ownership when allocation verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticInvalidUserStream(documentBytes);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+      const fatHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatHandle
+        );
+      const systemChainsHandle =
+        consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+          fatHandle
+        );
+      const directoryEntriesHandle =
+        consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+          systemChainsHandle
+        );
+      const directoryTreeHandle =
+        consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+          directoryEntriesHandle
+        );
+      const miniFatEntriesHandle =
+        consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
+          directoryTreeHandle
+        );
+      const rootMiniStreamHandle =
+        consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+          miniFatEntriesHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+            rootMiniStreamHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarOleCompoundFileUserStreamAllocationError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_USER_STREAM_INVALID_START"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+            rootMiniStreamHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -1010,6 +1109,31 @@ function initializeSyntheticDirectorySector(bytes: Uint8Array): void {
     view.setUint32(entryOffset + 72, 0xffffffff, true);
     view.setUint32(entryOffset + 76, 0xffffffff, true);
   }
+}
+
+function configureSyntheticInvalidUserStream(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer);
+  const rootOffset = 2048;
+  const streamOffset = rootOffset + 128;
+  const streamName = "Small";
+  view.setUint32(rootOffset + 76, 1, true);
+  bytes.fill(0, streamOffset, streamOffset + 128);
+  for (let index = 0; index < streamName.length; index += 1) {
+    view.setUint16(
+      streamOffset + index * 2,
+      streamName.charCodeAt(index),
+      true
+    );
+  }
+  view.setUint16(streamOffset + streamName.length * 2, 0, true);
+  view.setUint16(streamOffset + 64, (streamName.length + 1) * 2, true);
+  view.setUint8(streamOffset + 66, 2);
+  view.setUint8(streamOffset + 67, 1);
+  view.setUint32(streamOffset + 68, 0xffffffff, true);
+  view.setUint32(streamOffset + 72, 0xffffffff, true);
+  view.setUint32(streamOffset + 76, 0xffffffff, true);
+  view.setUint32(streamOffset + 116, 0xfffffffe, true);
+  view.setUint32(streamOffset + 120, 1, true);
 }
 
 function canonicalOtpBytes(): Uint8Array {

@@ -60,6 +60,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileRootMiniStream,
   type VerifiedOfficialMarketCalendarOleCompoundFileRootMiniStream
 } from "./officialMarketCalendarOleCompoundFileRootMiniStream.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation,
+  type VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation
+} from "./officialMarketCalendarOleCompoundFileUserStreamAllocation.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -74,6 +78,7 @@ declare const krxLegacyDownloadDirectoryEntriesVerifiedDocumentBrand: unique sym
 declare const krxLegacyDownloadDirectoryTreeVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadMiniFatEntriesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadRootMiniStreamVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadUserStreamAllocationVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -142,6 +147,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDo
 
 export interface OfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument {
   readonly [krxLegacyDownloadRootMiniStreamVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument {
+  readonly [krxLegacyDownloadUserStreamAllocationVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -303,6 +313,21 @@ interface ReadyRootMiniStreamVerifiedDocumentState {
   rootMiniStream: VerifiedOfficialMarketCalendarOleCompoundFileRootMiniStream;
 }
 
+interface ReadyUserStreamAllocationVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+  systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
+  directoryEntries: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryEntries;
+  directoryTree: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryTree;
+  miniFatEntries: VerifiedOfficialMarketCalendarOleCompoundFileMiniFatEntries;
+  rootMiniStream: VerifiedOfficialMarketCalendarOleCompoundFileRootMiniStream;
+  userStreamAllocation: VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -329,6 +354,9 @@ type MiniFatEntriesVerifiedDocumentState =
   | DisposedState;
 type RootMiniStreamVerifiedDocumentState =
   | ReadyRootMiniStreamVerifiedDocumentState
+  | DisposedState;
+type UserStreamAllocationVerifiedDocumentState =
+  | ReadyUserStreamAllocationVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -370,6 +398,10 @@ const miniFatEntriesVerifiedDocumentStates = new WeakMap<
 const rootMiniStreamVerifiedDocumentStates = new WeakMap<
   object,
   RootMiniStreamVerifiedDocumentState
+>();
+const userStreamAllocationVerifiedDocumentStates = new WeakMap<
+  object,
+  UserStreamAllocationVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -1177,6 +1209,84 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVeri
     );
   }
   disposeRootMiniStreamVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = rootMiniStreamVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy root-mini-stream-verified document must be ready and come from the fixed root mini stream consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const userStreamAllocation =
+      verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation(
+        state.rawDocumentBytes
+      );
+    const directoryStreams = state.directoryTree.entries.filter(
+      (entry) => entry.objectType === "stream"
+    );
+    if (
+      userStreamAllocation.majorVersion !== state.fat.majorVersion ||
+      userStreamAllocation.sectorSize !== state.fat.sectorSize ||
+      userStreamAllocation.miniSectorSize !==
+        state.rootMiniStream.miniSectorSize ||
+      !sameUserStreamIdentitySequence(
+        userStreamAllocation.streams,
+        directoryStreams
+      ) ||
+      userStreamAllocation.userStreamAllocationVerified !== true ||
+      userStreamAllocation.miniFatOwnershipVerified !== true ||
+      userStreamAllocation.streamBytesStatus !== "not_verified"
+    ) {
+      throw new Error("KRX legacy OLE user stream allocation result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeUserStreamAllocationVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy user-stream-allocation-verified document cannot be serialized or exported"
+      );
+    });
+    userStreamAllocationVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat: state.fat,
+      systemChains: state.systemChains,
+      directoryEntries: state.directoryEntries,
+      directoryTree: state.directoryTree,
+      miniFatEntries: state.miniFatEntries,
+      rootMiniStream: state.rootMiniStream,
+      userStreamAllocation
+    });
+    rootMiniStreamVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeRootMiniStreamVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadUserStreamAllocationVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!userStreamAllocationVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy user-stream-allocation-verified document must come from the fixed user stream allocation consumer"
+    );
+  }
+  disposeUserStreamAllocationVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -2005,6 +2115,40 @@ function disposeRootMiniStreamVerifiedDocumentObject(handle: object): void {
   } finally {
     rootMiniStreamVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
+}
+
+function disposeUserStreamAllocationVerifiedDocumentObject(
+  handle: object
+): void {
+  const state = userStreamAllocationVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    userStreamAllocationVerifiedDocumentStates.set(handle, {
+      status: "disposed"
+    });
+  }
+}
+
+function sameUserStreamIdentitySequence(
+  streams: VerifiedOfficialMarketCalendarOleCompoundFileUserStreamAllocation["streams"],
+  directoryEntries: readonly VerifiedOfficialMarketCalendarOleDirectoryEntry[]
+): boolean {
+  return (
+    streams.length === directoryEntries.length &&
+    streams.every((stream, index) => {
+      const entry = directoryEntries[index];
+      return (
+        entry !== undefined &&
+        stream.streamId === entry.streamId &&
+        stream.name === entry.name &&
+        stream.streamSize === entry.streamSize
+      );
+    })
+  );
 }
 
 function sameDirectoryEntrySequence(

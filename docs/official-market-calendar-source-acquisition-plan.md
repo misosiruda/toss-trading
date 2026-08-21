@@ -462,8 +462,11 @@ mini FAT, 이상이면 standard FAT를 사용하고, chain capacity가 declared 
 version별 sector size로 계산한다. Invalid start/termination, cycle, stream 간 sector 중복,
 FAT/DIFAT/directory/mini FAT/root mini stream system sector 재사용과 실제 root mini stream 안의
 unowned non-free mini FAT entry를 fail-closed로 거부한다. 결과는 stream별 allocation kind와 sector
-locations를 immutable하게 반환하지만 stream bytes와 FAT의 모든 orphan allocation은 아직 검증하지
-않으며 opaque lifecycle에도 연결하지 않는다. 명세 기준:
+locations를 immutable하게 반환한다. Fixed consumer는 root-mini-stream-verified handle을 exact 한 번
+consume하고 같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와 user-stream
+allocation result 및 bytes ownership을 getter/callback 없는 새 opaque handle로 이전하며,
+실패·dispose·JSON export에서는 bytes를 zeroize한다. Stream bytes와 FAT의 모든 orphan allocation은
+아직 검증하지 않으며 새 opaque handle도 durable sink나 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/b37413bb-f3ef-4adc-b18e-29bddd62c26e
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/b089deda-be20-4b4a-aad5-fbe68bb19672
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/9d33df18-7aee-4065-9121-4eabe41c29d4
