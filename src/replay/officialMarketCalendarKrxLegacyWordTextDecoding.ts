@@ -96,6 +96,16 @@ export function decodeOfficialMarketCalendarKrxLegacyWordText(
       throw error;
     }
     throw invalidDecoding();
+  } finally {
+    for (const piece of projected.pieces) zeroizeBytes(piece.bytes);
+  }
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
   }
 }
 

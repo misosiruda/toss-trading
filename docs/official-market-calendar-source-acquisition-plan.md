@@ -632,6 +632,12 @@ caller-owned copy를 만든다. Fixed consumer는 word-text-ranges-verified hand
 range identity와 copy length를 교차 확인해 새 opaque handle로 ownership을 이전한다. 성공·실패·dispose
 경로에서 생성된 text piece copy를 zeroize하며 decoding과 source role은 아직 승인하지 않는다.
 
+`officialMarketCalendarKrxLegacyWordTextDecoding.ts`는 UTF-16LE와 MS-DOC compressed 8-bit
+mapping을 code unit 단위로 적용한다. Fixed consumer는 word-text-bytes-projected handle을 한 번만
+소비해 decoded piece count, final CP와 전체 code unit count를 교차 확인하고 새 opaque handle로
+ownership을 이전한다. Decoder 내부 projection bytes와 lifecycle의 이전 text piece copy는 종료 시
+zeroize하며 table semantics와 source role은 아직 승인하지 않는다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
