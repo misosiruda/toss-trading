@@ -39,6 +39,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileFat,
   type VerifiedOfficialMarketCalendarOleCompoundFileFat
 } from "./officialMarketCalendarOleCompoundFileFat.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileSystemChains,
+  type VerifiedOfficialMarketCalendarOleCompoundFileSystemChains
+} from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -48,6 +52,7 @@ declare const krxLegacyDownloadIdentityVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadOleHeaderVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadDifatVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadFatVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadSystemChainsVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -91,6 +96,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument {
 
 export interface OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument {
   readonly [krxLegacyDownloadFatVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument {
+  readonly [krxLegacyDownloadSystemChainsVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -192,6 +202,16 @@ interface ReadyFatVerifiedDocumentState {
   fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
 }
 
+interface ReadySystemChainsVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+  systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -204,6 +224,9 @@ type DifatVerifiedDocumentState =
   | ReadyDifatVerifiedDocumentState
   | DisposedState;
 type FatVerifiedDocumentState = ReadyFatVerifiedDocumentState | DisposedState;
+type SystemChainsVerifiedDocumentState =
+  | ReadySystemChainsVerifiedDocumentState
+  | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
 const parameterStates = new WeakMap<object, ParametersState>();
@@ -224,6 +247,10 @@ const difatVerifiedDocumentStates = new WeakMap<
 const fatVerifiedDocumentStates = new WeakMap<
   object,
   FatVerifiedDocumentState
+>();
+const systemChainsVerifiedDocumentStates = new WeakMap<
+  object,
+  SystemChainsVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -677,6 +704,69 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocumen
     );
   }
   disposeFatVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = fatVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy FAT-verified document must be ready and come from the fixed FAT consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const systemChains =
+      verifyOfficialMarketCalendarOleCompoundFileSystemChains(
+        state.rawDocumentBytes
+      );
+    if (
+      systemChains.majorVersion !== state.fat.majorVersion ||
+      systemChains.sectorSize !== state.fat.sectorSize ||
+      systemChains.fileSectorCount !== state.fat.fileSectorCount ||
+      systemChains.systemChainsVerified !== true ||
+      systemChains.directoryEntryStatus !== "not_verified" ||
+      systemChains.miniFatEntryStatus !== "not_verified"
+    ) {
+      throw new Error("KRX legacy OLE system chains result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeSystemChainsVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy system-chains-verified document cannot be serialized or exported"
+      );
+    });
+    systemChainsVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat: state.fat,
+      systemChains
+    });
+    fatVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeFatVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!systemChainsVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy system-chains-verified document must come from the fixed system chains consumer"
+    );
+  }
+  disposeSystemChainsVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1442,6 +1532,18 @@ function disposeFatVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     fatVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeSystemChainsVerifiedDocumentObject(handle: object): void {
+  const state = systemChainsVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    systemChainsVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
