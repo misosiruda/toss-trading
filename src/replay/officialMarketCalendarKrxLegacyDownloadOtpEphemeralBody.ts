@@ -152,6 +152,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordTableRowGrouping,
   type VerifiedOfficialMarketCalendarKrxLegacyWordTableRowGrouping
 } from "./officialMarketCalendarKrxLegacyWordTableRowGrouping.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordSourceRows,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordSourceRows
+} from "./officialMarketCalendarKrxLegacyWordSourceRows.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -189,6 +193,7 @@ declare const krxLegacyDownloadWordParagraphBoundariesVerifiedDocumentBrand: uni
 declare const krxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordTableTextMarksVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordTableRowGroupingVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordSourceRowsVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -365,6 +370,10 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordTableTextMarksVerifi
 }
 export interface OfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupingVerifiedDocument {
   readonly [krxLegacyDownloadWordTableRowGroupingVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+export interface OfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument {
+  readonly [krxLegacyDownloadWordSourceRowsVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -646,6 +655,9 @@ interface ReadyWordTableTextMarksVerifiedDocumentState extends ReadyWordDirectPa
 interface ReadyWordTableRowGroupingVerifiedDocumentState extends ReadyWordTableTextMarksVerifiedDocumentState {
   tableRowGrouping: VerifiedOfficialMarketCalendarKrxLegacyWordTableRowGrouping;
 }
+interface ReadyWordSourceRowsVerifiedDocumentState extends ReadyWordTableRowGroupingVerifiedDocumentState {
+  sourceRows: VerifiedOfficialMarketCalendarKrxLegacyWordSourceRows;
+}
 
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
@@ -742,6 +754,9 @@ type WordTableTextMarksVerifiedDocumentState =
   | DisposedState;
 type WordTableRowGroupingVerifiedDocumentState =
   | ReadyWordTableRowGroupingVerifiedDocumentState
+  | DisposedState;
+type WordSourceRowsVerifiedDocumentState =
+  | ReadyWordSourceRowsVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -875,6 +890,10 @@ const wordTableTextMarksVerifiedDocumentStates = new WeakMap<
 const wordTableRowGroupingVerifiedDocumentStates = new WeakMap<
   object,
   WordTableRowGroupingVerifiedDocumentState
+>();
+const wordSourceRowsVerifiedDocumentStates = new WeakMap<
+  object,
+  WordSourceRowsVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -3022,6 +3041,47 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupi
   disposeWordTableRowGroupingVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordTableRowGroupingVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordTableRowGroupingVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") throw new Error("KRX legacy word-table-row-grouping-verified document must be ready and come from the fixed Word table row grouping consumer");
+  let transferred = false;
+  try {
+    const sourceRows = verifyOfficialMarketCalendarKrxLegacyWordSourceRows(state.rawDocumentBytes);
+    if (
+      sourceRows.nFib !== state.tableRowGrouping.nFib ||
+      sourceRows.tableStreamName !== state.tableRowGrouping.tableStreamName ||
+      sourceRows.rows.length !== state.tableRowGrouping.rows.length ||
+      sourceRows.rows.some((row, index) => row.index !== state.tableRowGrouping.rows[index]?.index || row.cpStart !== state.tableRowGrouping.rows[index]?.cpStart || row.cpEnd !== state.tableRowGrouping.rows[index]?.cpEnd || row.cells.length !== state.tableRowGrouping.rows[index]?.cells.length) ||
+      sourceRows.sourceRowProjectionStatus !== "structural_text_projected" ||
+      sourceRows.terminalMarkHandling !== "removed_from_content_preserved_in_raw" ||
+      sourceRows.internalControlCodeHandling !== "preserved" ||
+      sourceRows.columnSemanticsStatus !== "not_interpreted" ||
+      sourceRows.sourceRoleStatus !== "candidate_not_accepted"
+    ) throw new Error("KRX legacy Word source rows result is invalid");
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordSourceRowsVerifiedDocumentObject(verifiedHandle);
+      throw new Error("KRX legacy word-source-rows-verified document cannot be serialized or exported");
+    });
+    wordSourceRowsVerifiedDocumentStates.set(verifiedHandle, { ...state, sourceRows });
+    wordTableRowGroupingVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordTableRowGroupingVerifiedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordSourceRowsVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordSourceRowsVerifiedDocumentStates.has(handleObject)) throw new Error("KRX legacy word-source-rows-verified document must come from the fixed Word source rows consumer");
+  disposeWordSourceRowsVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -4299,6 +4359,28 @@ function disposeWordTableRowGroupingVerifiedDocumentObject(handle: object): void
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     wordTableRowGroupingVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeWordSourceRowsVerifiedDocumentObject(handle: object): void {
+  const state = wordSourceRowsVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeGrpPrlBytes(state.grpPrls);
+    zeroizePapxFkpBytes(state.papxFkp);
+    zeroizePapxFkpReferenceBytes(state.papxFkpReferences);
+    zeroizeBytes(state.plcBtePapxReference.plcBtePapxBytes);
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordSourceRowsVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 

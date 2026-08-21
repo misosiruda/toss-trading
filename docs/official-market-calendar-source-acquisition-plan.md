@@ -697,6 +697,12 @@ private byte ownership을 정리한다.
 non-empty CP range와 grouped status를 교차 확인하고 새 opaque handle로 ownership을 이전한다. Source row
 text는 아직 투영하지 않으며 실패·dispose에서 모든 이전 private byte ownership을 정리한다.
 
+`officialMarketCalendarKrxLegacyWordSourceRows.ts`의 grouped cell CP range와 main-document text 결합도
+fixed consumer로 연결한다. word-table-row-grouping-verified handle을 한 번만 소비해 row identity와 cell
+count, terminal mark 제거/preservation policy와 structural projection status를 교차 확인한다. Column/date
+semantics와 source acceptance는 아직 수행하지 않으며 실패·dispose에서 모든 이전 private byte ownership을
+정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
