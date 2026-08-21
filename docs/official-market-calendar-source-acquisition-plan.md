@@ -609,6 +609,10 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/473fd992-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/61b635c3-2c44-4155-bf17-fec281b30c71
 
 `officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서
+main/subdocument character count를 읽고 PlcPcd final CP와 합계를 대조한다. Fixed consumer는
+word-prc-grpprl-verified handle을 한 번만 소비해 같은 private document를 재검증하고 이전 final CP와
+결과를 교차 확인한 뒤 새 opaque handle로 ownership을 이전한다. 실패·dispose 경로에서는 이전
+`GrpPrl`/operand를 포함한 모든 byte copy를 zeroize하며 text range와 source role은 아직 승인하지 않는다.
 `ccpText`, `ccpFtn`, `ccpHdd`, `ccpAtn`, `ccpEdn`, `ccpTxbx`, `ccpHdrTxbx`를 signed
 non-negative count로 읽고 `reserved3=0`을 요구한다. 모든 subdocument count가 0이면 final CP가
 `ccpText`, 하나라도 nonzero이면 일곱 count의 합에 guard CP 1을 더한 값인지 verified PlcPcd와

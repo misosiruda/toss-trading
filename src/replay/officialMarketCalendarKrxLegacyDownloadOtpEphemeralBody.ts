@@ -96,6 +96,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls,
   type VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
 } from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordDocumentCounts
+} from "./officialMarketCalendarKrxLegacyWordDocumentCounts.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -119,6 +123,7 @@ declare const krxLegacyDownloadWordClxVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPlcPcdVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -232,6 +237,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocume
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument {
   readonly [krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument {
+  readonly [krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -465,6 +475,10 @@ interface ReadyWordPrcGrpPrlVerifiedDocumentState extends ReadyWordPcdPrmVerifie
   prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls;
 }
 
+interface ReadyWordDocumentCountsVerifiedDocumentState extends ReadyWordPrcGrpPrlVerifiedDocumentState {
+  documentCounts: VerifiedOfficialMarketCalendarKrxLegacyWordDocumentCounts;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -518,6 +532,9 @@ type WordPcdPrmVerifiedDocumentState =
   | DisposedState;
 type WordPrcGrpPrlVerifiedDocumentState =
   | ReadyWordPrcGrpPrlVerifiedDocumentState
+  | DisposedState;
+type WordDocumentCountsVerifiedDocumentState =
+  | ReadyWordDocumentCountsVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -595,6 +612,10 @@ const wordPcdPrmVerifiedDocumentStates = new WeakMap<
 const wordPrcGrpPrlVerifiedDocumentStates = new WeakMap<
   object,
   WordPrcGrpPrlVerifiedDocumentState
+>();
+const wordDocumentCountsVerifiedDocumentStates = new WeakMap<
+  object,
+  WordDocumentCountsVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2034,6 +2055,62 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerif
   disposeWordPrcGrpPrlVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordPrcGrpPrlVerifiedDocumentToWordDocumentCountsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordPrcGrpPrlVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-prc-grpprl-verified document must be ready and come from the fixed Word Prc GrpPrl consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const documentCounts =
+      verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts(
+        state.rawDocumentBytes
+      );
+    const finalCp = state.plcPcd.characterPositions.at(-1);
+    if (
+      finalCp === undefined ||
+      documentCounts.finalCp !== finalCp ||
+      documentCounts.documentCountsVerified !== true ||
+      documentCounts.textRangeStatus !== "not_verified" ||
+      documentCounts.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word document counts result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordDocumentCountsVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-document-counts-verified document cannot be serialized or exported"
+      );
+    });
+    wordDocumentCountsVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      documentCounts
+    });
+    wordPrcGrpPrlVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordPrcGrpPrlVerifiedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordDocumentCountsVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-document-counts-verified document must come from the fixed Word document counts consumer"
+    );
+  }
+  disposeWordDocumentCountsVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3008,6 +3085,23 @@ function disposeWordPrcGrpPrlVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     wordPrcGrpPrlVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeWordDocumentCountsVerifiedDocumentObject(handle: object): void {
+  const state = wordDocumentCountsVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordDocumentCountsVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 

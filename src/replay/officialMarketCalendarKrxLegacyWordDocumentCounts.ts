@@ -41,54 +41,68 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordDocumentCounts {
   const fib = verifyOfficialMarketCalendarKrxLegacyWordFib(input);
-  const plcPcd = verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(input);
-  const counts = COUNT_OFFSETS.map((offset) =>
-    readInt32(fib.wordDocumentBytes, offset)
-  );
-  if (
-    counts.some((count) => count < 0) ||
-    readUint32(fib.wordDocumentBytes, RESERVED3_OFFSET) !== 0
-  ) {
-    throw invalidCounts();
-  }
-  const [
-    ccpText,
-    ccpFtn,
-    ccpHdd,
-    ccpAtn,
-    ccpEdn,
-    ccpTxbx,
-    ccpHdrTxbx
-  ] = counts as [number, number, number, number, number, number, number];
-  const subdocumentTotal =
-    ccpFtn + ccpHdd + ccpAtn + ccpEdn + ccpTxbx + ccpHdrTxbx;
-  const hasSubdocuments = subdocumentTotal !== 0;
-  const expectedFinalCp = ccpText + subdocumentTotal + (hasSubdocuments ? 1 : 0);
-  const finalCp = plcPcd.characterPositions.at(-1)!;
-  if (
-    !Number.isSafeInteger(expectedFinalCp) ||
-    expectedFinalCp > MAXIMUM_CP ||
-    finalCp !== expectedFinalCp
-  ) {
-    throw invalidCounts();
-  }
+  try {
+    const plcPcd = verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(input);
+    const counts = COUNT_OFFSETS.map((offset) =>
+      readInt32(fib.wordDocumentBytes, offset)
+    );
+    if (
+      counts.some((count) => count < 0) ||
+      readUint32(fib.wordDocumentBytes, RESERVED3_OFFSET) !== 0
+    ) {
+      throw invalidCounts();
+    }
+    const [
+      ccpText,
+      ccpFtn,
+      ccpHdd,
+      ccpAtn,
+      ccpEdn,
+      ccpTxbx,
+      ccpHdrTxbx
+    ] = counts as [number, number, number, number, number, number, number];
+    const subdocumentTotal =
+      ccpFtn + ccpHdd + ccpAtn + ccpEdn + ccpTxbx + ccpHdrTxbx;
+    const hasSubdocuments = subdocumentTotal !== 0;
+    const expectedFinalCp =
+      ccpText + subdocumentTotal + (hasSubdocuments ? 1 : 0);
+    const finalCp = plcPcd.characterPositions.at(-1)!;
+    if (
+      !Number.isSafeInteger(expectedFinalCp) ||
+      expectedFinalCp > MAXIMUM_CP ||
+      finalCp !== expectedFinalCp
+    ) {
+      throw invalidCounts();
+    }
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_COUNTS_SCHEMA_VERSION,
-    ccpText,
-    ccpFtn,
-    ccpHdd,
-    ccpAtn,
-    ccpEdn,
-    ccpTxbx,
-    ccpHdrTxbx,
-    hasSubdocuments,
-    finalCp,
-    documentCountsVerified: true,
-    textRangeStatus: "not_verified",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+    return Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_COUNTS_SCHEMA_VERSION,
+      ccpText,
+      ccpFtn,
+      ccpHdd,
+      ccpAtn,
+      ccpEdn,
+      ccpTxbx,
+      ccpHdrTxbx,
+      hasSubdocuments,
+      finalCp,
+      documentCountsVerified: true,
+      textRangeStatus: "not_verified",
+      sourceRoleStatus: "candidate_not_accepted"
+    });
+  } finally {
+    zeroizeBytes(fib.wordDocumentBytes);
+    zeroizeBytes(fib.tableStreamBytes);
+  }
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function readInt32(bytes: Uint8Array, offset: number): number {
