@@ -52,6 +52,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileDirectoryTree,
   type VerifiedOfficialMarketCalendarOleCompoundFileDirectoryTree
 } from "./officialMarketCalendarOleCompoundFileDirectoryTree.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileMiniFatEntries,
+  type VerifiedOfficialMarketCalendarOleCompoundFileMiniFatEntries
+} from "./officialMarketCalendarOleCompoundFileMiniFatEntries.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -64,6 +68,7 @@ declare const krxLegacyDownloadFatVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadSystemChainsVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadDirectoryEntriesVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadDirectoryTreeVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadMiniFatEntriesVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -122,6 +127,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerified
 
 export interface OfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerifiedDocument {
   readonly [krxLegacyDownloadDirectoryTreeVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument {
+  readonly [krxLegacyDownloadMiniFatEntriesVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -256,6 +266,19 @@ interface ReadyDirectoryTreeVerifiedDocumentState {
   directoryTree: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryTree;
 }
 
+interface ReadyMiniFatEntriesVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+  systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
+  directoryEntries: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryEntries;
+  directoryTree: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryTree;
+  miniFatEntries: VerifiedOfficialMarketCalendarOleCompoundFileMiniFatEntries;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -276,6 +299,9 @@ type DirectoryEntriesVerifiedDocumentState =
   | DisposedState;
 type DirectoryTreeVerifiedDocumentState =
   | ReadyDirectoryTreeVerifiedDocumentState
+  | DisposedState;
+type MiniFatEntriesVerifiedDocumentState =
+  | ReadyMiniFatEntriesVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -309,6 +335,10 @@ const directoryEntriesVerifiedDocumentStates = new WeakMap<
 const directoryTreeVerifiedDocumentStates = new WeakMap<
   object,
   DirectoryTreeVerifiedDocumentState
+>();
+const miniFatEntriesVerifiedDocumentStates = new WeakMap<
+  object,
+  MiniFatEntriesVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -969,6 +999,78 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerif
     );
   }
   disposeDirectoryTreeVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadDirectoryTreeVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = directoryTreeVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy directory-tree-verified document must be ready and come from the fixed directory tree consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const miniFatEntries =
+      verifyOfficialMarketCalendarOleCompoundFileMiniFatEntries(
+        state.rawDocumentBytes
+      );
+    if (
+      miniFatEntries.majorVersion !== state.systemChains.majorVersion ||
+      miniFatEntries.sectorSize !== state.systemChains.sectorSize ||
+      miniFatEntries.miniSectorSize !== 64 ||
+      !sameNumberSequence(
+        miniFatEntries.miniFatSectorLocations,
+        state.systemChains.miniFatSectorLocations
+      ) ||
+      miniFatEntries.miniFatEntriesVerified !== true ||
+      miniFatEntries.streamChainStatus !== "not_verified" ||
+      miniFatEntries.miniStreamStatus !== "not_verified"
+    ) {
+      throw new Error("KRX legacy OLE mini FAT entries result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeMiniFatEntriesVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy mini-FAT-entries-verified document cannot be serialized or exported"
+      );
+    });
+    miniFatEntriesVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat: state.fat,
+      systemChains: state.systemChains,
+      directoryEntries: state.directoryEntries,
+      directoryTree: state.directoryTree,
+      miniFatEntries
+    });
+    directoryTreeVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeDirectoryTreeVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!miniFatEntriesVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy mini-FAT-entries-verified document must come from the fixed mini FAT entries consumer"
+    );
+  }
+  disposeMiniFatEntriesVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1772,6 +1874,18 @@ function disposeDirectoryTreeVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     directoryTreeVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeMiniFatEntriesVerifiedDocumentObject(handle: object): void {
+  const state = miniFatEntriesVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    miniFatEntriesVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
