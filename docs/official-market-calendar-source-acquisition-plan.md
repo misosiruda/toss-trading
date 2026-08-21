@@ -299,7 +299,9 @@ network consumer method와 optional identity verifier method를 snapshot한다. 
 `acquireWordDocumentTitle`은 같은 network lifecycle 뒤 registered identity부터 title까지의
 fixed opaque consumer를 즉시 실행한다. OTP, body composition, document transport와 verification
 실패는 provider detail 없는 stage error로 변환하며 모든 중간 handle은 `finally` 또는 각
-exact-once consumer에서 dispose한다. 두 경로 모두 durable sink나 accepted evidence를 만들지 않는다.
+exact-once consumer에서 dispose한다. `acquireWordCandidateSummary`는 같은 lifecycle을 terminal
+summary 소비까지 연결하고 caller에게 opaque/raw handle을 반환하지 않는다. 세 경로 모두 durable
+sink나 accepted evidence를 만들지 않는다.
 
 `officialMarketCalendarKrxLegacyDocumentIdentity.ts`는 candidate document의 registered
 `fileName`, exact byte length, SHA-256와 8-byte OLE Compound File signature를 하나의
@@ -328,8 +330,9 @@ directory-sector count, chain count/시작점/file sector 범위와 declared sec
 FAT entry capacity와 FAT/DIFAT/mini FAT/directory declared sector 총합도 file sector count에
 결합한다. 결과는
 `structureStatus=header_only_not_verified`를 유지하며 FAT chain, directory entry, stream 또는
-Word table semantics를 검증하지 않는다. Identity-verified KRX handle과의 wiring도 아직
-수행하지 않았다. 명세 기준:
+Word table semantics를 검증하지 않는다. Identity-verified KRX handle부터 이 header verifier를
+거치는 fixed exact-once consumer wiring은 구현됐지만, 이후 OLE/Word 전체 검증이 통과하기 전에는
+header 결과만으로 source를 승인하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/05060311-bfce-4b12-874d-71fd4ce63aea
 
 `officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`의 fixed OLE-header consumer는
