@@ -528,9 +528,13 @@ operand, `sprmTDefTable`의 2-byte `cb` 예외를 exact byte consumption으로 �
 `sprmPChgTabs`의 `cb=255` 특수 형식은 아직 지원하지 않으므로 fail-closed로 거부한다.
 `officialMarketCalendarKrxLegacyWordPrcGrpPrl.ts`는 모든 PRC `GrpPrl`을 이 공통 parser로
 끝까지 해석하고 paragraph/character/other property-group `Prl` count를 투영한다. 각 `Prl`의
-operand는 caller-owned copy이며, PRC의 paragraph modifier 선택과 PAPX table property에 modifier를
-append하는 단계는 아직 수행하지 않으므로 table property application과 source role은 미검증
-candidate다. 명세 기준:
+operand는 caller-owned copy다. `officialMarketCalendarKrxLegacyWordDirectParagraphProperties.ts`는
+MS-DOC 2.4.6.1에 따라 paragraph-boundary 탐색이 성공한 마지막 iteration의 `Pcd`, 즉 terminal
+`endPieceIndex` 하나만 선택한다. PAPX direct `Prl` 뒤에 `Prm0`의 paragraph modifier 하나 또는
+`Prm1` PRC의 `sgc=1` modifier만 순서대로 append한 뒤 table property 불변식을 평가한다. 시작 piece나
+중간 piece의 `Pcd.Prm`은 적용하지 않으며 character/other property modifier는 count만 기록하고 table
+상태에는 적용하지 않는다. Table mark와 실제 text code unit 결합 및 row/cell boundary는 아직
+수행하지 않으므로 source role은 미검증 candidate다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
@@ -553,8 +557,9 @@ compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, 
 들어온 경우에만 CP end를 계산하며 UTF-16LE FC 정렬, `Pcd.fNoParaLast`, terminal code unit이
 cell/TTP mark `0x0007`, section mark `0x000C`, paragraph mark `0x000D` 중 하나인지 fail-closed로
 검증한다. 결과는 paragraph CP range와 terminal PAPX page/paragraph/FC identity를 결합하지만
-`Pcd.Prm`이나 PAPX property를 적용하지 않는다. 따라서 cell/TTP 역할, table row/cell boundary와
-source role은 계속 미검증 candidate다. 명세 기준:
+`Pcd.Prm`이나 PAPX property를 이 boundary 결과 자체에는 적용하지 않는다. 후속 direct paragraph
+property verifier가 terminal PAPX와 terminal `Pcd.Prm`을 결합하지만, cell/TTP text mark 역할,
+table row/cell boundary와 source role은 계속 미검증 candidate다. 명세 기준:
 https://learn.microsoft.com/en-sg/openspecs/office_file_formats/ms-doc/30461a5b-e3ad-44cd-a3fe-038f86639b13
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
