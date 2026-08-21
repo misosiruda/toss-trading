@@ -294,10 +294,12 @@ OTP handle을 만들지 않는다.
 `fileName` request를 network 전에 검증하고 fixed OTP GET → filename-bound parameters →
 opaque wire body → fixed document POST를 하나의 process-local lifecycle로 조립한다. Production
 factory는 dependency/connector override를 노출하지 않고, test-only factory는 제한된 두
-consumer method를 snapshot한다. OTP, body composition과 document transport 실패는 provider
-detail 없는 stage error로 변환하며 모든 중간 handle은 `finally`에서 dispose한다. 성공한
-opaque document response의 ownership만 caller에게 이전하며 parser/durable sink로 자동 연결하지
-않는다.
+network consumer method와 optional identity verifier method를 snapshot한다. 기존 `acquire`는
+성공한 opaque document response의 ownership을 caller에게 이전한다. 별도
+`acquireWordDocumentTitle`은 같은 network lifecycle 뒤 registered identity부터 title까지의
+fixed opaque consumer를 즉시 실행한다. OTP, body composition, document transport와 verification
+실패는 provider detail 없는 stage error로 변환하며 모든 중간 handle은 `finally` 또는 각
+exact-once consumer에서 dispose한다. 두 경로 모두 durable sink나 accepted evidence를 만들지 않는다.
 
 `officialMarketCalendarKrxLegacyDocumentIdentity.ts`는 candidate document의 registered
 `fileName`, exact byte length, SHA-256와 8-byte OLE Compound File signature를 하나의
@@ -305,8 +307,9 @@ fail-closed identity boundary에서 검증한다. Production verifier는 source 
 받지 않고, test-only verifier만 snapshot된 synthetic expectation을 사용한다. 성공 결과는
 hash와 signature 검증 사실을 기록하지만 `parserStatus=not_verified`와
 `sourceRoleStatus=candidate_not_accepted`를 유지한다. Signature 확인은 OLE container 전체
-구조나 Word table semantics 검증을 대신하지 않으며 opaque network response consumer와도
-아직 연결되지 않는다.
+구조나 Word table semantics 검증을 대신하지 않는다. Fixed response consumer와 coordinator의
+verified acquisition method가 이 identity를 후속 OLE/Word/title opaque lifecycle의 첫 단계로
+결합한다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.ts`의 fixed response consumer는
 network consumer가 만든 opaque response handle만 exact 한 번 consume하고 내부 document
