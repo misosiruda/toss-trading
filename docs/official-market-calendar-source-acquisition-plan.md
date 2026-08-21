@@ -540,6 +540,17 @@ STD/UPX framing, base style inheritance와 paragraph property semantics를 아�
 non-default `istd` 장벽을 해결하거나 source를 acceptance하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0c9df81f-98d0-454e-ad84-b612cd05b1a4
 
+`officialMarketCalendarKrxLegacyWordStsh.ts`는 bounded Stshf copy를 `LPStshi`와 `cstd`개의
+`LPStd`로 framing한다. `Stshif`의 minimum size, `cstd` 범위, `cbSTDBaseInFile`, reserved flags와
+fixed-style count를 검증하고, 각 signed non-negative `cbStd`, even-byte padding 및 전체 Stshf의
+exact consumption을 확인한다. Fixed istd 13과 14는 empty여야 한다. 각 non-empty `stdBytes`는
+독립 copy지만 `STD`, `StdfBase`, `xstzName`, `GrLPUpxSw`, style inheritance와 property semantics는
+아직 파싱하지 않으며 source role은 candidate로 유지한다. 명세 기준:
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/c8ee0f39-02c3-4caa-b27a-6a97600130fe
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/51f9dd62-66af-4a78-9174-0fe432cd1acf
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0e246123-e907-4ad1-9dfc-558512e2b052
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/8ff6f5f0-ee65-48e3-ab1e-f15deeb24355
+
 `officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
 `FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
 declared bytes 안에 non-empty CLX range 전체가 포함되는지 fail-closed로 검증한다. 반환하는
