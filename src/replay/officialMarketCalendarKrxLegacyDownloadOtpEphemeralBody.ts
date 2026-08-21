@@ -92,6 +92,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPcdPrms,
   type VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms
 } from "./officialMarketCalendarKrxLegacyWordPcdPrm.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
+} from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -114,6 +118,7 @@ declare const krxLegacyDownloadWordClxReferenceVerifiedDocumentBrand: unique sym
 declare const krxLegacyDownloadWordClxVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPlcPcdVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -222,6 +227,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordPlcPcdVerifiedDocume
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument {
   readonly [krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument {
+  readonly [krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -451,6 +461,10 @@ interface ReadyWordPcdPrmVerifiedDocumentState extends ReadyWordPlcPcdVerifiedDo
   pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms;
 }
 
+interface ReadyWordPrcGrpPrlVerifiedDocumentState extends ReadyWordPcdPrmVerifiedDocumentState {
+  prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -501,6 +515,9 @@ type WordPlcPcdVerifiedDocumentState =
   | DisposedState;
 type WordPcdPrmVerifiedDocumentState =
   | ReadyWordPcdPrmVerifiedDocumentState
+  | DisposedState;
+type WordPrcGrpPrlVerifiedDocumentState =
+  | ReadyWordPrcGrpPrlVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -574,6 +591,10 @@ const wordPlcPcdVerifiedDocumentStates = new WeakMap<
 const wordPcdPrmVerifiedDocumentStates = new WeakMap<
   object,
   WordPcdPrmVerifiedDocumentState
+>();
+const wordPrcGrpPrlVerifiedDocumentStates = new WeakMap<
+  object,
+  WordPrcGrpPrlVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -1949,6 +1970,70 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerified
   disposeWordPcdPrmVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordPcdPrmVerifiedDocumentToWordPrcGrpPrlVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPcdPrmVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordPcdPrmVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-pcd-prm-verified document must be ready and come from the fixed Word Pcd Prm consumer"
+    );
+  }
+  let prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls | undefined;
+  let transferred = false;
+  try {
+    prcGrpPrls = verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls(
+      state.rawDocumentBytes
+    );
+    if (
+      prcGrpPrls.nFib !== state.pcdPrms.nFib ||
+      prcGrpPrls.tableStreamName !== state.pcdPrms.tableStreamName ||
+      prcGrpPrls.prcs.length !== state.pcdPrms.prcs.length ||
+      prcGrpPrls.pieces.length !== state.pcdPrms.pieces.length ||
+      !samePcdPrmProjection(state.pcdPrms, prcGrpPrls) ||
+      !samePrcGrpPrlProjection(state.pcdPrms, prcGrpPrls) ||
+      prcGrpPrls.prcGrpprlFramingVerified !== true ||
+      prcGrpPrls.sprmFramingVerified !== true ||
+      prcGrpPrls.paragraphModifierSelectionStatus !== "not_applied" ||
+      prcGrpPrls.tablePropertyApplicationStatus !== "not_applied" ||
+      prcGrpPrls.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word Prc GrpPrl verification result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordPrcGrpPrlVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-prc-grpprl-verified document cannot be serialized or exported"
+      );
+    });
+    wordPrcGrpPrlVerifiedDocumentStates.set(verifiedHandle, {
+      ...state,
+      prcGrpPrls
+    });
+    wordPcdPrmVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      if (prcGrpPrls !== undefined) zeroizePrcGrpPrlBytes(prcGrpPrls);
+      disposeWordPcdPrmVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordPrcGrpPrlVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-prc-grpprl-verified document must come from the fixed Word Prc GrpPrl consumer"
+    );
+  }
+  disposeWordPrcGrpPrlVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -2906,6 +2991,62 @@ function disposeWordPcdPrmVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     wordPcdPrmVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeWordPrcGrpPrlVerifiedDocumentObject(handle: object): void {
+  const state = wordPrcGrpPrlVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordPrcGrpPrlVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function samePcdPrmProjection(
+  pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms,
+  prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
+): boolean {
+  return prcGrpPrls.pieces.every((piece, index) => {
+    const expected = pcdPrms.pieces[index];
+    return expected !== undefined &&
+      piece.index === expected.index &&
+      piece.cpStart === expected.cpStart &&
+      piece.cpEnd === expected.cpEnd &&
+      piece.rawPrm === expected.rawPrm;
+  });
+}
+
+function samePrcGrpPrlProjection(
+  pcdPrms: VerifiedOfficialMarketCalendarKrxLegacyWordPcdPrms,
+  prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
+): boolean {
+  return prcGrpPrls.prcs.every((prc, index) => {
+    const expected = pcdPrms.prcs[index];
+    return expected !== undefined &&
+      prc.index === expected.index &&
+      prc.clxByteOffset === expected.clxByteOffset &&
+      prc.grpprlByteOffset === expected.grpprlByteOffset &&
+      prc.grpprlByteLength === expected.grpprlByteLength &&
+      prc.prlCount === prc.prls.length &&
+      prc.prlCount === prc.paragraphPrlCount + prc.characterPrlCount + prc.otherPropertyGroupPrlCount;
+  });
+}
+
+function zeroizePrcGrpPrlBytes(
+  prcGrpPrls: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
+): void {
+  for (const prc of prcGrpPrls.prcs) {
+    zeroizeBytes(prc.grpprlBytes);
+    for (const prl of prc.prls) zeroizeBytes(prl.operandBytes);
   }
 }
 

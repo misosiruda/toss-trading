@@ -46,16 +46,21 @@ export function parseOfficialMarketCalendarKrxLegacyWordPrls(
     throw invalidPrl();
   }
   const prls: VerifiedOfficialMarketCalendarKrxLegacyWordPrl[] = [];
-  let byteOffset = startByteOffset;
-  while (byteOffset < bytes.length) {
-    const parsed = parsePrl(bytes, byteOffset, prls.length);
-    prls.push(parsed.prl);
-    byteOffset = parsed.byteEnd;
+  try {
+    let byteOffset = startByteOffset;
+    while (byteOffset < bytes.length) {
+      const parsed = parsePrl(bytes, byteOffset, prls.length);
+      prls.push(parsed.prl);
+      byteOffset = parsed.byteEnd;
+    }
+    if (byteOffset !== bytes.length) {
+      throw invalidPrl();
+    }
+    return Object.freeze(prls);
+  } catch (error) {
+    for (const prl of prls) zeroizeBytes(prl.operandBytes);
+    throw error;
   }
-  if (byteOffset !== bytes.length) {
-    throw invalidPrl();
-  }
-  return Object.freeze(prls);
 }
 
 function parsePrl(
@@ -145,6 +150,14 @@ function readUint16(bytes: Uint8Array, offset: number): number {
     throw invalidPrl();
   }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidPrl(): OfficialMarketCalendarKrxLegacyWordPrlError {

@@ -581,7 +581,11 @@ operand, `sprmTDefTable`의 2-byte `cb` 예외를 exact byte consumption으로 �
 `sprmPChgTabs`의 `cb=255` 특수 형식은 아직 지원하지 않으므로 fail-closed로 거부한다.
 `officialMarketCalendarKrxLegacyWordPrcGrpPrl.ts`는 모든 PRC `GrpPrl`을 이 공통 parser로
 끝까지 해석하고 paragraph/character/other property-group `Prl` count를 투영한다. 각 `Prl`의
-operand는 caller-owned copy다. `officialMarketCalendarKrxLegacyWordDirectParagraphProperties.ts`는
+operand는 caller-owned copy다. Fixed consumer는 word-pcd-prm-verified handle을 한 번만 소비하고
+piece/PRC projection과 `Prl` count 불변식을 교차 확인해 새 opaque handle로 ownership을 이전한다.
+성공·실패·dispose 경로에서 `GrpPrl`과 operand copy를 포함한 모든 private bytes를 zeroize한다.
+paragraph modifier 선택과 table property 적용은 아직 수행하지 않는다.
+`officialMarketCalendarKrxLegacyWordDirectParagraphProperties.ts`는
 MS-DOC 2.4.6.1에 따라 paragraph-boundary 탐색이 성공한 마지막 iteration의 `Pcd`, 즉 terminal
 `endPieceIndex` 하나만 선택한다. PAPX direct `Prl` 뒤에 `Prm0`의 paragraph modifier 하나 또는
 `Prm1` PRC의 `sgc=1` modifier만 순서대로 append한 뒤 table property 불변식을 평가한다. 시작 piece나
