@@ -17,6 +17,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
@@ -31,6 +32,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadOleHeaderVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -46,6 +48,7 @@ import { OfficialMarketCalendarOleCompoundFileDirectoryEntriesError } from "./of
 import { OfficialMarketCalendarOleCompoundFileDirectoryTreeError } from "./officialMarketCalendarOleCompoundFileDirectoryTree.js";
 import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketCalendarOleCompoundFileFat.js";
 import { OfficialMarketCalendarOleCompoundFileMiniFatEntriesError } from "./officialMarketCalendarOleCompoundFileMiniFatEntries.js";
+import { OfficialMarketCalendarOleCompoundFileRootMiniStreamError } from "./officialMarketCalendarOleCompoundFileRootMiniStream.js";
 import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
@@ -212,12 +215,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const rootMiniStreamVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+          miniFatEntriesVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(rootMiniStreamVerifiedHandle), true);
+      assert.deepEqual(Object.keys(rootMiniStreamVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(miniFatEntriesVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+            miniFatEntriesVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(rootMiniStreamVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadMiniFatEntriesVerifiedDocument(
-        miniFatEntriesVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument(
+        rootMiniStreamVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -314,6 +330,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed mini FAT entries consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadRootMiniStreamVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed root mini stream consumer/
   );
 });
 
@@ -667,6 +690,79 @@ test("KRX legacy mini FAT entries consumer closes ownership when allocator verif
         () =>
           consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
             directoryTreeHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy root mini stream consumer closes ownership when root allocation verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  new DataView(documentBytes.buffer).setUint32(2164, 4, true);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+      const fatHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatHandle
+        );
+      const systemChainsHandle =
+        consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+          fatHandle
+        );
+      const directoryEntriesHandle =
+        consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+          systemChainsHandle
+        );
+      const directoryTreeHandle =
+        consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+          directoryEntriesHandle
+        );
+      const miniFatEntriesHandle =
+        consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
+          directoryTreeHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+            miniFatEntriesHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarOleCompoundFileRootMiniStreamError &&
+          error.code ===
+            "OFFICIAL_CALENDAR_OLE_ROOT_MINI_STREAM_LENGTH_MISMATCH"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+            miniFatEntriesHandle
           ),
         /must be ready/
       );

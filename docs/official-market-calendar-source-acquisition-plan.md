@@ -443,8 +443,12 @@ count와 64-byte mini-sector count를 계산하고 root starting sector에서 ex
 mini stream 최대 크기 초과를 fail-closed로 거부한다. Mini FAT regular pointer는 실제 root mini
 sector count 안에 있어야 하고 그 capacity 밖 entry는 `FREESECT`여야 한다. Zero-size root는
 `ENDOFCHAIN` 시작점과 empty chain을 요구한다. 결과는 root mini stream sector locations와
-`rootMiniStreamVerified=true`, `miniFatCapacityVerified=true`를 immutable하게 반환하지만 user
-stream별 FAT/mini FAT chain과 bytes는 아직 검증하지 않으며 opaque lifecycle에도 연결하지 않는다.
+`rootMiniStreamVerified=true`, `miniFatCapacityVerified=true`를 immutable하게 반환한다. Fixed
+consumer는 mini-FAT-entries-verified handle을 exact 한 번 consume하고 같은 private bytes를
+verifier에 전달한다. 성공 시 이전 verified result와 root-mini-stream result 및 bytes ownership을
+getter/callback 없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는 bytes를
+zeroize한다. User stream별 FAT/mini FAT chain과 bytes는 아직 검증하지 않으며 새 opaque handle도
+durable sink나 parser operation을 노출하지 않는다.
 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/026fde6e-143d-41bf-a7da-c08b2130d50e
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/c5d235f7-b73c-4ec5-bf8d-5c08306cd023
