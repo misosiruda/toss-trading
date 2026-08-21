@@ -608,6 +608,12 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/473fd992-c824-4655-8880-3186bd432f80
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/61b635c3-2c44-4155-bf17-fec281b30c71
 
+`officialMarketCalendarKrxLegacyWordDocumentTitle.ts`는 registered document identity의
+연도별 `observedDocumentTitle`을 decoded main-document의 exact paragraph 하나와 결합한다.
+부분 문자열, 다른 paragraph text에 포함된 제목, 누락 또는 중복 title paragraph는
+fail-closed로 거부한다. 이 경계는 column/date/holiday semantics를 해석하지 않고
+source role을 candidate로 유지한다.
+
 `officialMarketCalendarKrxLegacyWordDocumentCounts.ts`는 verified FIB의 `FibRgLw97`에서
 main/subdocument character count를 읽고 PlcPcd final CP와 합계를 대조한다. Fixed consumer는
 word-prc-grpprl-verified handle을 한 번만 소비해 같은 private document를 재검증하고 이전 final CP와
