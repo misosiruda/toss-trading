@@ -114,6 +114,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordSourceRows
 } from "./officialMarketCalendarKrxLegacyWordSourceRows.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_TITLE_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordDocumentTitleError,
+  verifyOfficialMarketCalendarKrxLegacyWordDocumentTitle
+} from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
+import {
   OFFICIAL_MARKET_CALENDAR_OLE_COMPOUND_FILE_USER_STREAM_ALLOCATION_SCHEMA_VERSION,
   OfficialMarketCalendarOleCompoundFileUserStreamAllocationError,
   verifyOfficialMarketCalendarOleCompoundFileUserStreamAllocation
@@ -2346,6 +2351,60 @@ test("official calendar KRX legacy Word main document verifies a subdocument ter
   assert.equal(result.terminalGuardStatus, "verified_paragraph_mark");
 });
 
+test("official calendar KRX legacy Word document title binds the registered title paragraph", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  const title = "KRX Derivatives Trading Calendar 2013";
+  configureDocumentTitleFixture(bytes, `${title}\r`);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordDocumentTitle({
+    fileName: "E_Trading_Calendar2013.doc",
+    rawDocumentBytes: bytes
+  });
+
+  assert.deepEqual(result, {
+    schemaVersion:
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_TITLE_SCHEMA_VERSION,
+    fileName: "E_Trading_Calendar2013.doc",
+    targetYear: "2013",
+    nFib: 0x00c1,
+    tableStreamName: "1Table",
+    expectedDocumentTitle: title,
+    titleCpStart: 0,
+    titleCpEnd: title.length,
+    titleOccurrenceCount: 1,
+    titleBindingVerified: true,
+    columnSemanticsStatus: "not_interpreted",
+    holidaySemanticsStatus: "not_interpreted",
+    sourceRoleStatus: "candidate_not_accepted"
+  });
+  assert.equal(Object.isFrozen(result), true);
+});
+
+test("official calendar KRX legacy Word document title rejects missing, partial, and duplicate paragraphs", () => {
+  const title = "KRX Derivatives Trading Calendar 2013";
+  for (const text of [
+    `prefix ${title}\r`,
+    `${title} suffix\r`,
+    `${title}\r${title}\r`,
+    "KRX Derivatives Trading Calendar 2014\r"
+  ]) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureDocumentTitleFixture(bytes, text);
+
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarKrxLegacyWordDocumentTitle({
+          fileName: "E_Trading_Calendar2013.doc",
+          rawDocumentBytes: bytes
+        }),
+      (error: unknown) =>
+        error instanceof OfficialMarketCalendarKrxLegacyWordDocumentTitleError &&
+        error.code ===
+          "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_TITLE_INVALID"
+    );
+  }
+});
+
 test("official calendar KRX legacy Word main document rejects missing paragraph boundaries", () => {
   const invalidValues = [
     { counts: [0, 0, 0, 0, 0, 0, 0], codeUnits: [] },
@@ -3283,6 +3342,27 @@ function configureValidNestedAndOuterTableRowsFixture(bytes: Uint8Array): void {
       0
     )
   );
+}
+
+function configureDocumentTitleFixture(
+  bytes: Uint8Array,
+  text: string
+): void {
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(bytes, [0, text.length], [
+    { flags: 0, fcCompressed: 920 }
+  ]);
+  configureDocumentCounts(bytes, [text.length, 0, 0, 0, 0, 0, 0]);
+  writeWordUint32(bytes, 64, 920 + text.length * 2);
+  for (let index = 0; index < text.length; index += 1) {
+    writeWordUint16(bytes, 920 + index * 2, text.charCodeAt(index));
+  }
 }
 
 function configureValidDepthOneTableTextMarksFixture(
