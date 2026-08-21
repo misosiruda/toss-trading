@@ -62,6 +62,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordPcdPrms
 } from "./officialMarketCalendarKrxLegacyWordPcdPrm.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PRC_GRPPRL_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordPrcGrpPrlError,
+  verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls
+} from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_DOCUMENT_COUNTS_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordDocumentCountsError,
   verifyOfficialMarketCalendarKrxLegacyWordDocumentCounts
@@ -1697,6 +1702,135 @@ test("official calendar KRX legacy Word Pcd Prm binds complex modifiers to Prc",
     [[0x16, 0x24, 1], [0x17, 0x24, 0]]
   );
   assert.deepEqual([...result.prcs[1]!.grpprlBytes], [0x17, 0x24, 1]);
+});
+
+test("official calendar KRX legacy Word Prc GrpPrl verifies shared Prl framing", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  const referencedGrpPrl: number[] = [];
+  appendPrlBytes(referencedGrpPrl, 0x2416, [1]);
+  appendPrlBytes(referencedGrpPrl, 0x0801, [0x7f]);
+  appendPrlBytes(referencedGrpPrl, 0xd608, [2, 0, 0]);
+  configurePlcPcd(
+    bytes,
+    [0, 1],
+    [{ flags: 0, fcCompressed: 920, prm: 3 }],
+    [[], referencedGrpPrl]
+  );
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls(bytes);
+
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PRC_GRPPRL_SCHEMA_VERSION
+  );
+  assert.deepEqual(
+    result.prcs.map((prc) => ({
+      index: prc.index,
+      prlCount: prc.prlCount,
+      paragraphPrlCount: prc.paragraphPrlCount,
+      characterPrlCount: prc.characterPrlCount,
+      otherPropertyGroupPrlCount: prc.otherPropertyGroupPrlCount,
+      prls: prc.prls.map((prl) => ({
+        index: prl.index,
+        byteOffset: prl.byteOffset,
+        sprm: prl.sprm,
+        sgc: prl.sgc,
+        operandByteOffset: prl.operandByteOffset,
+        operandBytes: [...prl.operandBytes],
+        operandLengthKind: prl.operandLengthKind
+      }))
+    })),
+    [
+      {
+        index: 0,
+        prlCount: 0,
+        paragraphPrlCount: 0,
+        characterPrlCount: 0,
+        otherPropertyGroupPrlCount: 0,
+        prls: []
+      },
+      {
+        index: 1,
+        prlCount: 3,
+        paragraphPrlCount: 1,
+        characterPrlCount: 1,
+        otherPropertyGroupPrlCount: 1,
+        prls: [
+          {
+            index: 0,
+            byteOffset: 0,
+            sprm: 0x2416,
+            sgc: 1,
+            operandByteOffset: 2,
+            operandBytes: [1],
+            operandLengthKind: "fixed"
+          },
+          {
+            index: 1,
+            byteOffset: 3,
+            sprm: 0x0801,
+            sgc: 2,
+            operandByteOffset: 5,
+            operandBytes: [0x7f],
+            operandLengthKind: "fixed"
+          },
+          {
+            index: 2,
+            byteOffset: 6,
+            sprm: 0xd608,
+            sgc: 5,
+            operandByteOffset: 8,
+            operandBytes: [2, 0, 0],
+            operandLengthKind: "t_def_table_two_byte_prefix"
+          }
+        ]
+      }
+    ]
+  );
+  assert.equal(result.pieces[0]!.prcIndex, 1);
+  assert.equal(result.prcGrpprlFramingVerified, true);
+  assert.equal(result.sprmFramingVerified, true);
+  assert.equal(result.paragraphModifierSelectionStatus, "not_applied");
+  assert.equal(result.tablePropertyApplicationStatus, "not_applied");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.prcs), true);
+  assert.equal(Object.isFrozen(result.prcs[1]), true);
+  assert.equal(Object.isFrozen(result.prcs[1]!.prls), true);
+
+  result.prcs[1]!.grpprlBytes[2] = 0;
+  assert.deepEqual([...result.prcs[1]!.prls[0]!.operandBytes], [1]);
+});
+
+test("official calendar KRX legacy Word Prc GrpPrl rejects invalid inner framing", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configurePlcPcd(
+    bytes,
+    [0, 1],
+    [{ flags: 0, fcCompressed: 920, prm: 1 }],
+    [[0x16, 0x24]]
+  );
+
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordPrcGrpPrlError &&
+      error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PRC_GRPPRL_INVALID"
+  );
 });
 
 test("official calendar KRX legacy Word Pcd Prm rejects unknown simple and missing complex modifiers", () => {

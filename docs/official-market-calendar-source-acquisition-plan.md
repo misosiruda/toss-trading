@@ -521,9 +521,16 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-
 분기한다. `Prm0.isprm`은 MS-DOC의 complete allowlist와 대조하고 `isprm=0`/`val=0` no-op,
 paragraph/character property group, `sprmPFInTable`/`sprmPFTtp` table modifier identity를
 immutable하게 반환한다. `Prm1.igrpprl`은 CLX `RgPrc`의 zero-based index 범위 안에 있어야 하며,
-각 `PrcData.cbGrpprl`과 exact `GrpPrl` caller-owned copy를 함께 투영한다. PRC `GrpPrl` 내부 Prl
-framing/의미와 PAPX table property에 modifier를 append하는 단계는 아직 수행하지 않으므로 table
-property application과 source role은 미검증 candidate다. 명세 기준:
+각 `PrcData.cbGrpprl`과 exact `GrpPrl` caller-owned copy를 함께 투영한다.
+`officialMarketCalendarKrxLegacyWordPrl.ts`는 PAPX와 PRC가 공유하는 `Prl` framing 경계로,
+2-byte `Sprm`의 `ispmd`/`fSpec`/`sgc`/`spra`를 분해하고 fixed operand, 1-byte `cb` variable
+operand, `sprmTDefTable`의 2-byte `cb` 예외를 exact byte consumption으로 검증한다.
+`sprmPChgTabs`의 `cb=255` 특수 형식은 아직 지원하지 않으므로 fail-closed로 거부한다.
+`officialMarketCalendarKrxLegacyWordPrcGrpPrl.ts`는 모든 PRC `GrpPrl`을 이 공통 parser로
+끝까지 해석하고 paragraph/character/other property-group `Prl` count를 투영한다. 각 `Prl`의
+operand는 caller-owned copy이며, PRC의 paragraph modifier 선택과 PAPX table property에 modifier를
+append하는 단계는 아직 수행하지 않으므로 table property application과 source role은 미검증
+candidate다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
