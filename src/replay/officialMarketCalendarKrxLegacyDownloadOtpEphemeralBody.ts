@@ -1175,6 +1175,28 @@ export function consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseTo
   );
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse
+): OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument {
+  return consumeIdentityVerifiedDocumentToWordDocumentTitleVerifiedDocument(
+    consumeOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+      handle
+    )
+  );
+}
+
+export function consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToWordDocumentTitleVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
+  verifier: TestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier
+): OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument {
+  return consumeIdentityVerifiedDocumentToWordDocumentTitleVerifiedDocument(
+    consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+      handle,
+      verifier
+    )
+  );
+}
+
 export function disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument(
   handle: OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument
 ): void {
@@ -3151,6 +3173,142 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleV
   const handleObject = assertHandleObject(handle);
   if (!wordDocumentTitleVerifiedDocumentStates.has(handleObject)) throw new Error("KRX legacy word-document-title-verified document must come from the fixed Word document title consumer");
   disposeWordDocumentTitleVerifiedDocumentObject(handleObject);
+}
+
+function consumeIdentityVerifiedDocumentToWordDocumentTitleVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordDocumentTitleVerifiedDocument {
+  const oleHeader =
+    consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+      handle
+    );
+  const difat =
+    consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+      oleHeader
+    );
+  const fat =
+    consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+      difat
+    );
+  const systemChains =
+    consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+      fat
+    );
+  const directoryEntries =
+    consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+      systemChains
+    );
+  const directoryTree =
+    consumeOfficialMarketCalendarKrxLegacyDirectoryEntriesVerifiedDocumentToDirectoryTreeVerifiedDocument(
+      directoryEntries
+    );
+  const miniFatEntries =
+    consumeOfficialMarketCalendarKrxLegacyDirectoryTreeVerifiedDocumentToMiniFatEntriesVerifiedDocument(
+      directoryTree
+    );
+  const rootMiniStream =
+    consumeOfficialMarketCalendarKrxLegacyMiniFatEntriesVerifiedDocumentToRootMiniStreamVerifiedDocument(
+      miniFatEntries
+    );
+  const userStreamAllocation =
+    consumeOfficialMarketCalendarKrxLegacyRootMiniStreamVerifiedDocumentToUserStreamAllocationVerifiedDocument(
+      rootMiniStream
+    );
+  const userStreamBytes =
+    consumeOfficialMarketCalendarKrxLegacyUserStreamAllocationVerifiedDocumentToUserStreamBytesProjectedDocument(
+      userStreamAllocation
+    );
+  const wordStreams =
+    consumeOfficialMarketCalendarKrxLegacyUserStreamBytesProjectedDocumentToWordStreamsVerifiedDocument(
+      userStreamBytes
+    );
+  const wordFib =
+    consumeOfficialMarketCalendarKrxLegacyWordStreamsVerifiedDocumentToWordFibVerifiedDocument(
+      wordStreams
+    );
+  const wordClxReference =
+    consumeOfficialMarketCalendarKrxLegacyWordFibVerifiedDocumentToWordClxReferenceVerifiedDocument(
+      wordFib
+    );
+  const wordClx =
+    consumeOfficialMarketCalendarKrxLegacyWordClxReferenceVerifiedDocumentToWordClxVerifiedDocument(
+      wordClxReference
+    );
+  const wordPlcPcd =
+    consumeOfficialMarketCalendarKrxLegacyWordClxVerifiedDocumentToWordPlcPcdVerifiedDocument(
+      wordClx
+    );
+  const wordPcdPrm =
+    consumeOfficialMarketCalendarKrxLegacyWordPlcPcdVerifiedDocumentToWordPcdPrmVerifiedDocument(
+      wordPlcPcd
+    );
+  const wordPrcGrpPrl =
+    consumeOfficialMarketCalendarKrxLegacyWordPcdPrmVerifiedDocumentToWordPrcGrpPrlVerifiedDocument(
+      wordPcdPrm
+    );
+  const wordDocumentCounts =
+    consumeOfficialMarketCalendarKrxLegacyWordPrcGrpPrlVerifiedDocumentToWordDocumentCountsVerifiedDocument(
+      wordPrcGrpPrl
+    );
+  const wordTextRanges =
+    consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(
+      wordDocumentCounts
+    );
+  const wordTextBytes =
+    consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument(
+      wordTextRanges
+    );
+  const wordText =
+    consumeOfficialMarketCalendarKrxLegacyWordTextBytesProjectedDocumentToWordTextDecodedDocument(
+      wordTextBytes
+    );
+  const wordMainDocument =
+    consumeOfficialMarketCalendarKrxLegacyWordTextDecodedDocumentToWordMainDocumentVerifiedDocument(
+      wordText
+    );
+  const wordPlcBtePapxReference =
+    consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument(
+      wordMainDocument
+    );
+  const wordPlcBtePapx =
+    consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(
+      wordPlcBtePapxReference
+    );
+  const wordPapxFkpReferences =
+    consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(
+      wordPlcBtePapx
+    );
+  const wordPapxFkp =
+    consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(
+      wordPapxFkpReferences
+    );
+  const wordGrpPrl =
+    consumeOfficialMarketCalendarKrxLegacyWordPapxFkpVerifiedDocumentToWordGrpPrlVerifiedDocument(
+      wordPapxFkp
+    );
+  const wordParagraphBoundaries =
+    consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(
+      wordGrpPrl
+    );
+  const wordDirectParagraphProperties =
+    consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(
+      wordParagraphBoundaries
+    );
+  const wordTableTextMarks =
+    consumeOfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesVerifiedDocumentToWordTableTextMarksVerifiedDocument(
+      wordDirectParagraphProperties
+    );
+  const wordTableRowGrouping =
+    consumeOfficialMarketCalendarKrxLegacyWordTableTextMarksVerifiedDocumentToWordTableRowGroupingVerifiedDocument(
+      wordTableTextMarks
+    );
+  const wordSourceRows =
+    consumeOfficialMarketCalendarKrxLegacyWordTableRowGroupingVerifiedDocumentToWordSourceRowsVerifiedDocument(
+      wordTableRowGrouping
+    );
+  return consumeOfficialMarketCalendarKrxLegacyWordSourceRowsVerifiedDocumentToWordDocumentTitleVerifiedDocument(
+    wordSourceRows
+  );
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
