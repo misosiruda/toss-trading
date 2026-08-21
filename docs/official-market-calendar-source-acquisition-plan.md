@@ -556,8 +556,12 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a649fcc5-
 non-negative strict ascending인지 확인하고,
 `Pcd.fDirty=0`과 `FcCompressed.r1=0`을 적용한 뒤 CP range, `fNoParaLast`, 30-bit `fc`와
 `fCompressed`를 immutable descriptor로 반환한다. Undefined `Pcd.fR1`/`fR2`는 명세대로
-무시하고 `prm`, FibRgLw document total, WordDocument text byte range와 decoding은 아직
-검증하지 않으며 source role도 candidate로 유지한다. 명세 기준:
+무시한다. Fixed consumer는 word-clx-verified handle을 exact 한 번 consume하고 같은 private bytes를
+verifier에 전달한다. 성공 시 이전 verified result와 immutable CP/Pcd projection을 getter/callback 없는
+새 opaque handle로 이전하며, 실패·dispose·JSON export에서는 raw document와 모든 이전 byte copy를
+zeroize한다. `prm`, FibRgLw document total, WordDocument text byte range와 decoding은 아직
+검증하지 않고 source role도 candidate로 유지하며 새 opaque handle도 parser operation을 노출하지 않는다.
+명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/1caae71f-35c4-49d7-adf0-af5fc766331c
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/498993c9-0a2d-47aa-8ada-fed27616e275
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249

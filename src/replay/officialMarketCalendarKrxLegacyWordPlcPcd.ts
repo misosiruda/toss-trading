@@ -50,62 +50,70 @@ export function verifyOfficialMarketCalendarKrxLegacyWordPlcPcd(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordPlcPcd {
   const clx = verifyOfficialMarketCalendarKrxLegacyWordClx(input);
-  const bytes = clx.plcPcdBytes;
-  const cpCount = clx.pieceDescriptorCount + 1;
-  const pcdOffset = cpCount * CP_SIZE;
-  const characterPositions: number[] = [];
+  try {
+    const bytes = clx.plcPcdBytes;
+    const cpCount = clx.pieceDescriptorCount + 1;
+    const pcdOffset = cpCount * CP_SIZE;
+    const characterPositions: number[] = [];
 
-  for (let index = 0; index < cpCount; index += 1) {
-    const cp = readInt32(bytes, index * CP_SIZE);
-    if (
-      cp < 0 ||
-      (index === 0 && cp !== 0) ||
-      (index > 0 && cp <= characterPositions[index - 1]!)
-    ) {
-      throw invalidPlcPcd();
+    for (let index = 0; index < cpCount; index += 1) {
+      const cp = readInt32(bytes, index * CP_SIZE);
+      if (
+        cp < 0 ||
+        (index === 0 && cp !== 0) ||
+        (index > 0 && cp <= characterPositions[index - 1]!)
+      ) {
+        throw invalidPlcPcd();
+      }
+      characterPositions.push(cp);
     }
-    characterPositions.push(cp);
-  }
 
-  const pieces: VerifiedOfficialMarketCalendarKrxLegacyWordPieceDescriptor[] = [];
-  for (let index = 0; index < clx.pieceDescriptorCount; index += 1) {
-    const offset = pcdOffset + index * PCD_SIZE;
-    const flags = readUint16(bytes, offset);
-    const fcCompressed = readUint32(bytes, offset + 2);
-    if (
-      (flags & PCD_F_DIRTY_MASK) !== 0 ||
-      (fcCompressed & FC_RESERVED_MASK) !== 0
-    ) {
-      throw invalidPlcPcd();
+    const pieces: VerifiedOfficialMarketCalendarKrxLegacyWordPieceDescriptor[] = [];
+    for (let index = 0; index < clx.pieceDescriptorCount; index += 1) {
+      const offset = pcdOffset + index * PCD_SIZE;
+      const flags = readUint16(bytes, offset);
+      const fcCompressed = readUint32(bytes, offset + 2);
+      if (
+        (flags & PCD_F_DIRTY_MASK) !== 0 ||
+        (fcCompressed & FC_RESERVED_MASK) !== 0
+      ) {
+        throw invalidPlcPcd();
+      }
+      const cpStart = characterPositions[index]!;
+      const cpEnd = characterPositions[index + 1]!;
+      pieces.push(
+        Object.freeze({
+          index,
+          cpStart,
+          cpEnd,
+          characterCount: cpEnd - cpStart,
+          fNoParaLast: (flags & 0x0001) !== 0,
+          fc: fcCompressed & FC_MASK,
+          fCompressed: (fcCompressed & FC_COMPRESSED_MASK) !== 0
+        })
+      );
     }
-    const cpStart = characterPositions[index]!;
-    const cpEnd = characterPositions[index + 1]!;
-    pieces.push(
-      Object.freeze({
-        index,
-        cpStart,
-        cpEnd,
-        characterCount: cpEnd - cpStart,
-        fNoParaLast: (flags & 0x0001) !== 0,
-        fc: fcCompressed & FC_MASK,
-        fCompressed: (fcCompressed & FC_COMPRESSED_MASK) !== 0
-      })
-    );
-  }
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_PCD_SCHEMA_VERSION,
-    nFib: clx.nFib,
-    tableStreamName: clx.tableStreamName,
-    characterPositions: Object.freeze(characterPositions),
-    pieces: Object.freeze(pieces),
-    plcPcdVerified: true,
-    documentTotalStatus: "not_verified_against_fib_rg_lw",
-    textRangeStatus: "not_verified",
-    prmStatus: "not_parsed",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+    return Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_PCD_SCHEMA_VERSION,
+      nFib: clx.nFib,
+      tableStreamName: clx.tableStreamName,
+      characterPositions: Object.freeze(characterPositions),
+      pieces: Object.freeze(pieces),
+      plcPcdVerified: true,
+      documentTotalStatus: "not_verified_against_fib_rg_lw",
+      textRangeStatus: "not_verified",
+      prmStatus: "not_parsed",
+      sourceRoleStatus: "candidate_not_accepted"
+    });
+  } finally {
+    try {
+      Uint8Array.prototype.fill.call(clx.plcPcdBytes, 0);
+    } catch {
+      // A detached caller-owned projection has no remaining bytes to clear.
+    }
+  }
 }
 
 function readInt32(bytes: Uint8Array, offset: number): number {
