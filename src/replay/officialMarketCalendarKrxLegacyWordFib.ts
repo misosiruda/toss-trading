@@ -67,66 +67,76 @@ export function verifyOfficialMarketCalendarKrxLegacyWordFib(
 ): VerifiedOfficialMarketCalendarKrxLegacyWordFib {
   const streams =
     verifyOfficialMarketCalendarKrxLegacyWordBinaryFileStreams(input);
-  const bytes = streams.wordDocumentBytes;
-  let offset = FIB_BASE_SIZE;
+  let returned = false;
+  try {
+    const bytes = streams.wordDocumentBytes;
+    let offset = FIB_BASE_SIZE;
 
-  const csw = readUint16(bytes, offset);
-  if (csw !== FIB_RG_W_WORD_COUNT) {
-    throw invalidStructure();
+    const csw = readUint16(bytes, offset);
+    if (csw !== FIB_RG_W_WORD_COUNT) {
+      throw invalidStructure();
+    }
+    offset = advance(offset + 2, csw, 2, bytes.length);
+
+    const cslw = readUint16(bytes, offset);
+    if (cslw !== FIB_RG_LW_DWORD_COUNT) {
+      throw invalidStructure();
+    }
+    offset = advance(offset + 2, cslw, 4, bytes.length);
+
+    const cbRgFcLcb = readUint16(bytes, offset);
+    offset = advance(offset + 2, cbRgFcLcb, 8, bytes.length);
+
+    const cswNew = readUint16(bytes, offset);
+    const fibRgCswNewOffset = offset + 2;
+    offset = advance(fibRgCswNewOffset, cswNew, 2, bytes.length);
+
+    const nFib =
+      cswNew === 0
+        ? streams.nFibBase
+        : readUint16(bytes, fibRgCswNewOffset);
+    const definition = VERSION_DEFINITIONS.find(
+      (candidate) => candidate.nFib === nFib
+    );
+    if (
+      definition === undefined ||
+      definition.cbRgFcLcb !== cbRgFcLcb ||
+      definition.cswNew !== cswNew
+    ) {
+      throw invalidVersion();
+    }
+    const flags = readUint16(bytes, 10);
+    const cQuickSaves = (flags >>> 4) & 0x0f;
+    if (definition.nFib >= 0x00d9 && cQuickSaves !== 0x0f) {
+      throw invalidVersion();
+    }
+
+    const result = Object.freeze({
+      schemaVersion: OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_FIB_SCHEMA_VERSION,
+      nFibBase: streams.nFibBase,
+      nFib: definition.nFib,
+      version: definition.version,
+      csw: FIB_RG_W_WORD_COUNT,
+      cslw: FIB_RG_LW_DWORD_COUNT,
+      cbRgFcLcb: definition.cbRgFcLcb,
+      cswNew: definition.cswNew,
+      fibByteLength: offset,
+      tableStreamName: streams.tableStreamName,
+      wordDocumentBytes: streams.wordDocumentBytes,
+      tableStreamBytes: streams.tableStreamBytes,
+      fibStructureVerified: true as const,
+      fibFieldStatus: "count_sections_only_not_parsed" as const,
+      clxStatus: "not_parsed" as const,
+      sourceRoleStatus: "candidate_not_accepted" as const
+    });
+    returned = true;
+    return result;
+  } finally {
+    if (!returned) {
+      zeroizeBytes(streams.wordDocumentBytes);
+      zeroizeBytes(streams.tableStreamBytes);
+    }
   }
-  offset = advance(offset + 2, csw, 2, bytes.length);
-
-  const cslw = readUint16(bytes, offset);
-  if (cslw !== FIB_RG_LW_DWORD_COUNT) {
-    throw invalidStructure();
-  }
-  offset = advance(offset + 2, cslw, 4, bytes.length);
-
-  const cbRgFcLcb = readUint16(bytes, offset);
-  offset = advance(offset + 2, cbRgFcLcb, 8, bytes.length);
-
-  const cswNew = readUint16(bytes, offset);
-  const fibRgCswNewOffset = offset + 2;
-  offset = advance(fibRgCswNewOffset, cswNew, 2, bytes.length);
-
-  const nFib =
-    cswNew === 0
-      ? streams.nFibBase
-      : readUint16(bytes, fibRgCswNewOffset);
-  const definition = VERSION_DEFINITIONS.find(
-    (candidate) => candidate.nFib === nFib
-  );
-  if (
-    definition === undefined ||
-    definition.cbRgFcLcb !== cbRgFcLcb ||
-    definition.cswNew !== cswNew
-  ) {
-    throw invalidVersion();
-  }
-  const flags = readUint16(bytes, 10);
-  const cQuickSaves = (flags >>> 4) & 0x0f;
-  if (definition.nFib >= 0x00d9 && cQuickSaves !== 0x0f) {
-    throw invalidVersion();
-  }
-
-  return Object.freeze({
-    schemaVersion: OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_FIB_SCHEMA_VERSION,
-    nFibBase: streams.nFibBase,
-    nFib: definition.nFib,
-    version: definition.version,
-    csw: FIB_RG_W_WORD_COUNT,
-    cslw: FIB_RG_LW_DWORD_COUNT,
-    cbRgFcLcb: definition.cbRgFcLcb,
-    cswNew: definition.cswNew,
-    fibByteLength: offset,
-    tableStreamName: streams.tableStreamName,
-    wordDocumentBytes: streams.wordDocumentBytes,
-    tableStreamBytes: streams.tableStreamBytes,
-    fibStructureVerified: true,
-    fibFieldStatus: "count_sections_only_not_parsed",
-    clxStatus: "not_parsed",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
 }
 
 function advance(
@@ -147,6 +157,14 @@ function readUint16(bytes: Uint8Array, offset: number): number {
     throw invalidStructure();
   }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidStructure(): OfficialMarketCalendarKrxLegacyWordFibError {

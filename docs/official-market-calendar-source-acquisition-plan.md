@@ -512,8 +512,12 @@ variable-length FIB count section을 순서대로 검증한다. `csw=0x000E`, `c
 `cswNew=0`이면 `FibBase.nFib`, nonzero이면 `FibRgCswNew.nFibNew`를 effective `nFib`로 결정한 뒤
 Word97/2000/2002/2003/2007의 registered `cbRgFcLcb`와 `cswNew` 조합만 허용한다. Effective
 `nFib>=0x00D9`에서는 `cQuickSaves=0xF`도 적용한다. 결과는 FIB byte length, effective version과
-count summary를 반환하지만 FibRgW/FibRgLw/FibRgFcLcb/FibRgCswNewData 내부 field, CLX와 text는
-아직 파싱하지 않으며 source role도 candidate로 유지한다. 명세 기준:
+count summary를 반환한다. Fixed consumer는 word-streams-verified handle을 exact 한 번 consume하고
+같은 private bytes를 verifier에 전달한다. 성공 시 이전 verified result와 variable FIB result 및 모든
+byte-copy ownership을 getter/callback 없는 새 opaque handle로 이전하며, 실패·dispose·JSON export에서는
+raw document와 모든 이전·신규 Word stream copy를 zeroize한다. FibRgW/FibRgLw/FibRgFcLcb/
+FibRgCswNewData 내부 field, CLX와 text는 아직 파싱하지 않고 source role도 candidate로 유지하며 새
+opaque handle도 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9aeaa2e7-4a45-468e-ab13-3f6193eb9394
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/a4876d81-6ff1-485e-8655-75266ec84c07
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fe661052-9c88-4ae1-aec4-44799b2b4777
