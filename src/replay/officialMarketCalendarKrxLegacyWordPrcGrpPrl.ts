@@ -57,49 +57,66 @@ export function verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls(
   input: Uint8Array
 ): VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrls {
   const pcdPrms = verifyOfficialMarketCalendarKrxLegacyWordPcdPrms(input);
-  const prcs = pcdPrms.prcs.map((prc) => {
-    let prls: readonly VerifiedOfficialMarketCalendarKrxLegacyWordPrl[];
-    try {
-      prls = parseOfficialMarketCalendarKrxLegacyWordPrls(prc.grpprlBytes);
-    } catch (error) {
-      if (error instanceof OfficialMarketCalendarKrxLegacyWordPrlError) {
-        throw invalidPrcGrpPrl();
+  const prcs: VerifiedOfficialMarketCalendarKrxLegacyWordPrcGrpPrl[] = [];
+  let retainedBytes = false;
+  try {
+    for (const prc of pcdPrms.prcs) {
+      let prls: readonly VerifiedOfficialMarketCalendarKrxLegacyWordPrl[];
+      try {
+        prls = parseOfficialMarketCalendarKrxLegacyWordPrls(prc.grpprlBytes);
+      } catch (error) {
+        if (error instanceof OfficialMarketCalendarKrxLegacyWordPrlError) {
+          throw invalidPrcGrpPrl();
+        }
+        throw error;
       }
-      throw error;
-    }
-    let paragraphPrlCount = 0;
-    let characterPrlCount = 0;
-    for (const prl of prls) {
-      if (prl.sgc === 1) {
-        paragraphPrlCount += 1;
-      } else if (prl.sgc === 2) {
-        characterPrlCount += 1;
+      let paragraphPrlCount = 0;
+      let characterPrlCount = 0;
+      for (const prl of prls) {
+        if (prl.sgc === 1) paragraphPrlCount += 1;
+        else if (prl.sgc === 2) characterPrlCount += 1;
       }
+      prcs.push(Object.freeze({
+        ...prc,
+        prls,
+        prlCount: prls.length,
+        paragraphPrlCount,
+        characterPrlCount,
+        otherPropertyGroupPrlCount:
+          prls.length - paragraphPrlCount - characterPrlCount
+      }));
     }
-    return Object.freeze({
-      ...prc,
-      prls,
-      prlCount: prls.length,
-      paragraphPrlCount,
-      characterPrlCount,
-      otherPropertyGroupPrlCount:
-        prls.length - paragraphPrlCount - characterPrlCount
+    const result = Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PRC_GRPPRL_SCHEMA_VERSION,
+      nFib: pcdPrms.nFib,
+      tableStreamName: pcdPrms.tableStreamName,
+      prcs: Object.freeze(prcs),
+      pieces: pcdPrms.pieces,
+      prcGrpprlFramingVerified: true as const,
+      sprmFramingVerified: true as const,
+      paragraphModifierSelectionStatus: "not_applied" as const,
+      tablePropertyApplicationStatus: "not_applied" as const,
+      sourceRoleStatus: "candidate_not_accepted" as const
     });
-  });
+    retainedBytes = true;
+    return result;
+  } finally {
+    if (!retainedBytes) {
+      for (const prc of pcdPrms.prcs) zeroizeBytes(prc.grpprlBytes);
+      for (const prc of prcs) {
+        for (const prl of prc.prls) zeroizeBytes(prl.operandBytes);
+      }
+    }
+  }
+}
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PRC_GRPPRL_SCHEMA_VERSION,
-    nFib: pcdPrms.nFib,
-    tableStreamName: pcdPrms.tableStreamName,
-    prcs: Object.freeze(prcs),
-    pieces: pcdPrms.pieces,
-    prcGrpprlFramingVerified: true,
-    sprmFramingVerified: true,
-    paragraphModifierSelectionStatus: "not_applied",
-    tablePropertyApplicationStatus: "not_applied",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function invalidPrcGrpPrl(): OfficialMarketCalendarKrxLegacyWordPrcGrpPrlError {
