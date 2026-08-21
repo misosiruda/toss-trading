@@ -34,6 +34,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordTextBytesProjectedDocumentToWordTextDecodedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordTextDecodedDocumentToWordMainDocumentVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -61,6 +62,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordTextDecodedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -88,6 +90,7 @@ import { OfficialMarketCalendarKrxLegacyWordPrcGrpPrlError } from "./officialMar
 import { OfficialMarketCalendarKrxLegacyWordDocumentCountsError } from "./officialMarketCalendarKrxLegacyWordDocumentCounts.js";
 import { OfficialMarketCalendarKrxLegacyWordTextRangesError } from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
 import { OfficialMarketCalendarKrxLegacyWordMainDocumentError } from "./officialMarketCalendarKrxLegacyWordMainDocument.js";
+import { OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError } from "./officialMarketCalendarKrxLegacyWordPlcBtePapxReference.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -137,6 +140,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
   configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
   configureSyntheticWordDocumentCounts(documentBytes, 1);
   configureSyntheticWordTextRange(documentBytes, 922);
+  configureSyntheticWordPlcBtePapxReference(documentBytes);
   await withDownloadServer(
     (response) => sendValidResponse(response, documentBytes),
     async (port) => {
@@ -452,12 +456,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordPlcBtePapxReferenceVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument(
+          wordMainDocumentVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(wordPlcBtePapxReferenceVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordPlcBtePapxReferenceVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(wordMainDocumentVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument(
+            wordMainDocumentVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(wordPlcBtePapxReferenceVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument(
-        wordMainDocumentVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument(
+        wordPlcBtePapxReferenceVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -641,6 +658,10 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(
     () => disposeOfficialMarketCalendarKrxLegacyDownloadWordMainDocumentVerifiedDocument({} as never),
     /must come from the fixed Word main document consumer/
+  );
+  assert.throws(
+    () => disposeOfficialMarketCalendarKrxLegacyDownloadWordPlcBtePapxReferenceVerifiedDocument({} as never),
+    /must come from the fixed Word PlcBtePapx reference consumer/
   );
 });
 
@@ -1414,6 +1435,41 @@ test("KRX legacy Word main document consumer closes ownership without a paragrap
   );
 });
 
+test("KRX legacy Word PlcBtePapx reference consumer closes ownership for an out-of-bounds table range", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1]);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 922);
+  configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 4097);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const mainDocument = await acquireWordMainDocumentVerifiedHandle(
+        port,
+        documentBytes
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument(
+            mainDocument
+          ),
+        (error: unknown) =>
+          error instanceof OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError &&
+          error.code ===
+            "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_INVALID"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordMainDocumentVerifiedDocumentToWordPlcBtePapxReferenceVerifiedDocument(
+            mainDocument
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -1893,6 +1949,21 @@ function configureSyntheticWordTextRange(
   bytes[wordOffset + 921] = 0;
 }
 
+function configureSyntheticWordPlcBtePapxReference(
+  bytes: Uint8Array,
+  tableOffset = 100,
+  byteLength = 4
+): void {
+  const wordOffset = (4 + 1) * 512;
+  const tableStreamOffset = (12 + 1) * 512;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setUint32(wordOffset + 154 + 13 * 8, tableOffset, true);
+  view.setUint32(wordOffset + 154 + 13 * 8 + 4, byteLength, true);
+  if (tableOffset + 4 <= 4096) {
+    view.setUint32(tableStreamOffset + tableOffset, 920, true);
+  }
+}
+
 async function acquireWordClxVerifiedHandle(
   port: number,
   documentBytes: Uint8Array
@@ -1919,6 +1990,16 @@ async function acquireWordTextDecodedHandle(
   const ranges = consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument(counts);
   const bytes = consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument(ranges);
   return consumeOfficialMarketCalendarKrxLegacyWordTextBytesProjectedDocumentToWordTextDecodedDocument(bytes);
+}
+
+async function acquireWordMainDocumentVerifiedHandle(
+  port: number,
+  documentBytes: Uint8Array
+) {
+  const decoded = await acquireWordTextDecodedHandle(port, documentBytes);
+  return consumeOfficialMarketCalendarKrxLegacyWordTextDecodedDocumentToWordMainDocumentVerifiedDocument(
+    decoded
+  );
 }
 
 function writeSyntheticDirectoryName(
