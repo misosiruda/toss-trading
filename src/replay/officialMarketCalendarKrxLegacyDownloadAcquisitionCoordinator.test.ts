@@ -16,10 +16,12 @@ import {
   consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
   disposeOfficialMarketCalendarKrxLegacyDownloadEphemeralResponse,
+  disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadIdentityVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadDifatVerifiedDocument,
@@ -36,6 +38,7 @@ import {
   KRX_LEGACY_DOWNLOAD_TEST_SERVER_OPTIONS
 } from "./officialMarketCalendarKrxLegacyDownloadNetworkTestFixture.js";
 import { OfficialMarketCalendarOleCompoundFileDifatError } from "./officialMarketCalendarOleCompoundFileDifat.js";
+import { OfficialMarketCalendarOleCompoundFileDirectoryEntriesError } from "./officialMarketCalendarOleCompoundFileDirectoryEntries.js";
 import { OfficialMarketCalendarOleCompoundFileFatError } from "./officialMarketCalendarOleCompoundFileFat.js";
 import { OfficialMarketCalendarOleCompoundFileSystemChainsError } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
 
@@ -164,12 +167,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const directoryEntriesVerifiedHandle =
+        consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+          systemChainsVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(directoryEntriesVerifiedHandle), true);
+      assert.deepEqual(Object.keys(directoryEntriesVerifiedHandle), []);
       assert.throws(
-        () => JSON.stringify(systemChainsVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+            systemChainsVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(directoryEntriesVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument(
-        systemChainsVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument(
+        directoryEntriesVerifiedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -245,6 +261,13 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
         {} as never
       ),
     /must come from the fixed system chains consumer/
+  );
+  assert.throws(
+    () =>
+      disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument(
+        {} as never
+      ),
+    /must come from the fixed directory entries consumer/
   );
 });
 
@@ -402,6 +425,66 @@ test("KRX legacy system chains consumer closes ownership when chain verification
         () =>
           consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
             fatHandle
+          ),
+        /must be ready/
+      );
+    }
+  );
+});
+
+test("KRX legacy directory entries consumer closes ownership when entry verification fails", async () => {
+  const documentBytes = syntheticOleDocument();
+  new DataView(documentBytes.buffer).setUint16(2048, "N".charCodeAt(0), true);
+  await withDownloadServer(
+    (response) => sendValidResponse(response, documentBytes),
+    async (port) => {
+      const responseHandle = await createCoordinatorForPort(port).acquire({
+        fileName: FILE_NAME
+      });
+      const verifier =
+        createTestOnlyOfficialMarketCalendarKrxLegacyDocumentIdentityVerifier({
+          fileName: FILE_NAME,
+          targetYear: "2013",
+          contentLength: documentBytes.byteLength,
+          sha256: createHash("sha256").update(documentBytes).digest("hex"),
+          oleCompoundFileSignature: "d0cf11e0a1b11ae1"
+        });
+      const identityHandle =
+        consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument(
+          responseHandle,
+          verifier
+        );
+      const headerHandle =
+        consumeOfficialMarketCalendarKrxLegacyIdentityVerifiedDocumentToOleHeaderVerifiedDocument(
+          identityHandle
+        );
+      const difatHandle =
+        consumeOfficialMarketCalendarKrxLegacyOleHeaderVerifiedDocumentToDifatVerifiedDocument(
+          headerHandle
+        );
+      const fatHandle =
+        consumeOfficialMarketCalendarKrxLegacyDifatVerifiedDocumentToFatVerifiedDocument(
+          difatHandle
+        );
+      const systemChainsHandle =
+        consumeOfficialMarketCalendarKrxLegacyFatVerifiedDocumentToSystemChainsVerifiedDocument(
+          fatHandle
+        );
+
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+            systemChainsHandle
+          ),
+        (error: unknown) =>
+          error instanceof
+            OfficialMarketCalendarOleCompoundFileDirectoryEntriesError &&
+          error.code === "OFFICIAL_CALENDAR_OLE_DIRECTORY_ENTRIES_INVALID_ROOT"
+      );
+      assert.throws(
+        () =>
+          consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+            systemChainsHandle
           ),
         /must be ready/
       );
@@ -620,7 +703,35 @@ function syntheticOleDocument(): Uint8Array {
   view.setUint32(516, 0xfffffffd, true);
   view.setUint32(520, 0xfffffffd, true);
   view.setUint32(524, 0xfffffffe, true);
+  initializeSyntheticDirectorySector(bytes);
   return bytes;
+}
+
+function initializeSyntheticDirectorySector(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer);
+  const directoryOffset = 2048;
+  const rootName = "Root Entry";
+  for (let index = 0; index < rootName.length; index += 1) {
+    view.setUint16(
+      directoryOffset + index * 2,
+      rootName.charCodeAt(index),
+      true
+    );
+  }
+  view.setUint16(directoryOffset + rootName.length * 2, 0, true);
+  view.setUint16(directoryOffset + 64, (rootName.length + 1) * 2, true);
+  view.setUint8(directoryOffset + 66, 5);
+  view.setUint8(directoryOffset + 67, 1);
+  view.setUint32(directoryOffset + 68, 0xffffffff, true);
+  view.setUint32(directoryOffset + 72, 0xffffffff, true);
+  view.setUint32(directoryOffset + 76, 0xffffffff, true);
+  view.setUint32(directoryOffset + 116, 0xfffffffe, true);
+  for (let streamId = 1; streamId < 4; streamId += 1) {
+    const entryOffset = directoryOffset + streamId * 128;
+    view.setUint32(entryOffset + 68, 0xffffffff, true);
+    view.setUint32(entryOffset + 72, 0xffffffff, true);
+    view.setUint32(entryOffset + 76, 0xffffffff, true);
+  }
 }
 
 function canonicalOtpBytes(): Uint8Array {
