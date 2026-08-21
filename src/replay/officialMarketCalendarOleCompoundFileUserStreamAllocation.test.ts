@@ -27,6 +27,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordStsh
 } from "./officialMarketCalendarKrxLegacyWordStsh.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_STDF_BASE_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordStdfBaseError,
+  verifyOfficialMarketCalendarKrxLegacyWordStdfBases
+} from "./officialMarketCalendarKrxLegacyWordStdfBase.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError,
   verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference
@@ -862,6 +867,51 @@ test("official calendar KRX legacy Word STSH rejects invalid headers and LPStd f
     oddTableOffset,
     "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSH_INVALID"
   );
+});
+
+test("official calendar KRX legacy Word StdfBase verifies metadata and inheritance", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  configureVariableFib(bytes, { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 });
+  const records = new Map<number, Uint8Array>([
+    [0, buildStdfBaseRecord({ sti: 0, istdBase: 0x0fff, istdNext: 0, body: new Uint8Array([0x31, 0x32]) })]
+  ]);
+  configureRawStsh(bytes, buildStshBytes({ records }), 2);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordStdfBases(bytes);
+  assert.equal(result.schemaVersion, OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_STDF_BASE_SCHEMA_VERSION);
+  assert.equal(result.cbSTDBaseInFile, 10);
+  assert.deepEqual(result.styles[0], {
+    istd: 0, status: "base_verified_body_not_parsed", sti: 0, stk: 1,
+    istdBase: null, cupx: 2, istdNext: 0, bchUpe: 12,
+    styleBodyBytes: new Uint8Array([0x31, 0x32])
+  });
+  assert.equal(result.styles[1]!.status, "empty");
+  assert.equal(result.stdfBaseVerified, true);
+  assert.equal(result.inheritanceReferencesVerified, true);
+  assert.equal(result.cupxStatus, "projected_semantics_not_verified");
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+  assert.equal(Object.isFrozen(result.styles), true);
+});
+
+test("official calendar KRX legacy Word StdfBase rejects invalid metadata and references", () => {
+  const invalidRecords: readonly ReadonlyMap<number, Uint8Array>[] = [
+    new Map([[0, new Uint8Array(9)]]),
+    new Map([[0, buildStdfBaseRecord({ sti: 0x0fff })]]),
+    new Map([[0, buildStdfBaseRecord({ stk: 0 })]]),
+    new Map([[0, buildStdfBaseRecord({ bchUpe: 11 })]]),
+    new Map([[0, buildStdfBaseRecord({ sti: 1 })]]),
+    new Map([[0, buildStdfBaseRecord({ istdNext: 1 })]]),
+    new Map([[0, buildStdfBaseRecord({ istdBase: 0 })]]),
+    new Map([[0, buildStdfBaseRecord({ istdBase: 1 })]])
+  ];
+  for (const records of invalidRecords) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 });
+    configureRawStsh(bytes, buildStshBytes({ records }), 2);
+    assertStdfBaseCode(bytes, "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STDF_BASE_INVALID");
+  }
 });
 
 test("official calendar KRX legacy Word PlcBtePapx reference projects every supported version", () => {
@@ -3444,6 +3494,30 @@ function buildStshBytes(
   return bytes;
 }
 
+function buildStdfBaseRecord(
+  options: {
+    baseSize?: 10 | 18;
+    sti?: number;
+    stk?: number;
+    istdBase?: number;
+    cupx?: number;
+    istdNext?: number;
+    bchUpe?: number;
+    body?: Uint8Array;
+  } = {}
+): Uint8Array {
+  const baseSize = options.baseSize ?? 10;
+  const body = options.body ?? new Uint8Array();
+  const bytes = new Uint8Array(baseSize + body.length);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, options.sti ?? 0, true);
+  view.setUint16(2, (options.stk ?? 1) | ((options.istdBase ?? 0x0fff) << 4), true);
+  view.setUint16(4, (options.cupx ?? 2) | ((options.istdNext ?? 0) << 4), true);
+  view.setUint16(6, options.bchUpe ?? bytes.length, true);
+  bytes.set(body, baseSize);
+  return bytes;
+}
+
 function setStshUint16(
   bytes: Uint8Array,
   offset: number,
@@ -4288,6 +4362,18 @@ function assertStshCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordStsh(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordStshError &&
+      error.code === code
+  );
+}
+
+function assertStdfBaseCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordStdfBaseError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordStdfBases(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordStdfBaseError &&
       error.code === code
   );
 }
