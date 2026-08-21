@@ -31,6 +31,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordPcdPrmVerifiedDocumentToWordPrcGrpPrlVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPrcGrpPrlVerifiedDocumentToWordDocumentCountsVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordDocumentCountsVerifiedDocumentToWordTextRangesVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -55,6 +56,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPrcGrpPrlVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -406,12 +408,25 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           ),
         /must be ready/
       );
+      const wordTextBytesProjectedHandle =
+        consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument(
+          wordTextRangesVerifiedHandle
+        );
+      assert.equal(Object.isFrozen(wordTextBytesProjectedHandle), true);
+      assert.deepEqual(Object.keys(wordTextBytesProjectedHandle), []);
       assert.throws(
-        () => JSON.stringify(wordTextRangesVerifiedHandle),
+        () =>
+          consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument(
+            wordTextRangesVerifiedHandle
+          ),
+        /must be ready/
+      );
+      assert.throws(
+        () => JSON.stringify(wordTextBytesProjectedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument(
-        wordTextRangesVerifiedHandle
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument(
+        wordTextBytesProjectedHandle
       );
 
       const productionResponse = await coordinator.acquire({
@@ -583,6 +598,10 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(
     () => disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument({} as never),
     /must come from the fixed Word text ranges consumer/
+  );
+  assert.throws(
+    () => disposeOfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument({} as never),
+    /must come from the fixed Word text bytes consumer/
   );
 });
 

@@ -627,6 +627,11 @@ word-document-counts-verified handle을 한 번만 소비하고 이전 CP range�
 교차 확인해 새 opaque handle로 ownership을 이전한다. text bytes 자체의 projection/decoding과 source
 role은 아직 승인하지 않으며 실패·dispose에서는 이전 private byte ownership 전체를 zeroize한다.
 
+`officialMarketCalendarKrxLegacyWordTextBytes.ts`는 검증된 range마다 WordDocument text bytes의
+caller-owned copy를 만든다. Fixed consumer는 word-text-ranges-verified handle을 한 번만 소비하고
+range identity와 copy length를 교차 확인해 새 opaque handle로 ownership을 이전한다. 성공·실패·dispose
+경로에서 생성된 text piece copy를 zeroize하며 decoding과 source role은 아직 승인하지 않는다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
