@@ -43,6 +43,10 @@ import {
   verifyOfficialMarketCalendarOleCompoundFileSystemChains,
   type VerifiedOfficialMarketCalendarOleCompoundFileSystemChains
 } from "./officialMarketCalendarOleCompoundFileSystemChains.js";
+import {
+  verifyOfficialMarketCalendarOleCompoundFileDirectoryEntries,
+  type VerifiedOfficialMarketCalendarOleCompoundFileDirectoryEntries
+} from "./officialMarketCalendarOleCompoundFileDirectoryEntries.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -53,6 +57,7 @@ declare const krxLegacyDownloadOleHeaderVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadDifatVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadFatVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadSystemChainsVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadDirectoryEntriesVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -101,6 +106,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadFatVerifiedDocument {
 
 export interface OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument {
   readonly [krxLegacyDownloadSystemChainsVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument {
+  readonly [krxLegacyDownloadDirectoryEntriesVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -212,6 +222,17 @@ interface ReadySystemChainsVerifiedDocumentState {
   systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
 }
 
+interface ReadyDirectoryEntriesVerifiedDocumentState {
+  status: "ready";
+  rawDocumentBytes: Uint8Array;
+  identity: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity;
+  oleHeader: VerifiedOfficialMarketCalendarOleCompoundFileHeader;
+  difat: VerifiedOfficialMarketCalendarOleCompoundFileDifat;
+  fat: VerifiedOfficialMarketCalendarOleCompoundFileFat;
+  systemChains: VerifiedOfficialMarketCalendarOleCompoundFileSystemChains;
+  directoryEntries: VerifiedOfficialMarketCalendarOleCompoundFileDirectoryEntries;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -226,6 +247,9 @@ type DifatVerifiedDocumentState =
 type FatVerifiedDocumentState = ReadyFatVerifiedDocumentState | DisposedState;
 type SystemChainsVerifiedDocumentState =
   | ReadySystemChainsVerifiedDocumentState
+  | DisposedState;
+type DirectoryEntriesVerifiedDocumentState =
+  | ReadyDirectoryEntriesVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -251,6 +275,10 @@ const fatVerifiedDocumentStates = new WeakMap<
 const systemChainsVerifiedDocumentStates = new WeakMap<
   object,
   SystemChainsVerifiedDocumentState
+>();
+const directoryEntriesVerifiedDocumentStates = new WeakMap<
+  object,
+  DirectoryEntriesVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -767,6 +795,75 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifi
     );
   }
   disposeSystemChainsVerifiedDocumentObject(handleObject);
+}
+
+export function consumeOfficialMarketCalendarKrxLegacySystemChainsVerifiedDocumentToDirectoryEntriesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadSystemChainsVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = systemChainsVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy system-chains-verified document must be ready and come from the fixed system chains consumer"
+    );
+  }
+  let transferred = false;
+  try {
+    const directoryEntries =
+      verifyOfficialMarketCalendarOleCompoundFileDirectoryEntries(
+        state.rawDocumentBytes
+      );
+    if (
+      directoryEntries.majorVersion !== state.systemChains.majorVersion ||
+      directoryEntries.sectorSize !== state.systemChains.sectorSize ||
+      !sameNumberSequence(
+        directoryEntries.directorySectorLocations,
+        state.systemChains.directorySectorLocations
+      ) ||
+      directoryEntries.directoryEntriesVerified !== true ||
+      directoryEntries.treeStatus !== "not_verified" ||
+      directoryEntries.streamAllocationStatus !== "not_verified"
+    ) {
+      throw new Error("KRX legacy OLE directory entries result is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeDirectoryEntriesVerifiedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy directory-entries-verified document cannot be serialized or exported"
+      );
+    });
+    directoryEntriesVerifiedDocumentStates.set(verifiedHandle, {
+      status: "ready",
+      rawDocumentBytes: state.rawDocumentBytes,
+      identity: state.identity,
+      oleHeader: state.oleHeader,
+      difat: state.difat,
+      fat: state.fat,
+      systemChains: state.systemChains,
+      directoryEntries
+    });
+    systemChainsVerifiedDocumentStates.set(handleObject, {
+      status: "disposed"
+    });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument;
+  } finally {
+    if (!transferred) {
+      disposeSystemChainsVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadDirectoryEntriesVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!directoryEntriesVerifiedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy directory-entries-verified document must come from the fixed directory entries consumer"
+    );
+  }
+  disposeDirectoryEntriesVerifiedDocumentObject(handleObject);
 }
 
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
@@ -1544,6 +1641,20 @@ function disposeSystemChainsVerifiedDocumentObject(handle: object): void {
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     systemChainsVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeDirectoryEntriesVerifiedDocumentObject(handle: object): void {
+  const state = directoryEntriesVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") {
+    return;
+  }
+  try {
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    directoryEntriesVerifiedDocumentStates.set(handle, {
+      status: "disposed"
+    });
   }
 }
 

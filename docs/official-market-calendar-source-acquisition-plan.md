@@ -391,9 +391,12 @@ stream뿐 아니라 root entry가 나타내는 mini stream에도 적용한다. S
 declared name 뒤 64-byte field padding의 zero는 명세상 `MUST`가 아니므로 parser compatibility를
 위해 acceptance 조건으로 승격하지 않고 projection에도 포함하지 않는다. Root directory entry는
 sibling tree node가 아니므로 red/black color를 모두 허용하며, 후속 tree verifier의 child-tree root
-black 규칙과 구분한다. 결과는 모든 entry를
-immutable하게 반환하지만 red-black tree, sibling name ordering/uniqueness, root mini stream과 stream
-allocation은 아직 검증하지 않으며 opaque lifecycle에도 연결하지 않았다. 명세 기준:
+black 규칙과 구분한다. 결과는 모든 entry를 immutable하게 반환한다. Fixed consumer는
+system-chains-verified handle을 exact 한 번 consume하고 같은 private bytes를 verifier에 전달한다.
+성공 시 이전 verified result와 directory-entry result 및 bytes ownership을 getter/callback 없는 새
+opaque handle로 이전하며, 실패·dispose·JSON export에서는 bytes를 zeroize한다. Red-black tree,
+sibling name ordering/uniqueness, root mini stream과 stream allocation은 아직 검증하지 않으며 새
+opaque handle도 durable sink나 parser operation을 노출하지 않는다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/60fe8611-66c3-496b-b70d-a504c94c9ace
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/026fde6e-143d-41bf-a7da-c08b2130d50e
 
