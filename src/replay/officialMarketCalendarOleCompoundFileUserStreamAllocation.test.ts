@@ -22,6 +22,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordStshfReference
 } from "./officialMarketCalendarKrxLegacyWordStshfReference.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_STSH_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordStshError,
+  verifyOfficialMarketCalendarKrxLegacyWordStsh
+} from "./officialMarketCalendarKrxLegacyWordStsh.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError,
   verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference
@@ -729,6 +734,134 @@ test("official calendar KRX legacy Word Stshf reference rejects empty or out-of-
       "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSHF_REFERENCE_INVALID"
     );
   }
+});
+
+test("official calendar KRX legacy Word STSH frames every supported version", () => {
+  const definitions = [
+    { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 },
+    { nFib: 0x00d9, version: "Word2000", cbRgFcLcb: 0x006c, cswNew: 2 },
+    { nFib: 0x0101, version: "Word2002", cbRgFcLcb: 0x0088, cswNew: 2 },
+    { nFib: 0x010c, version: "Word2003", cbRgFcLcb: 0x00a4, cswNew: 2 },
+    { nFib: 0x0112, version: "Word2007", cbRgFcLcb: 0x00b7, cswNew: 5 }
+  ] as const;
+  for (const definition of definitions) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, definition);
+    const cbSTDBaseInFile =
+      definition.nFib === 0x00c1 ? 0x000a : 0x0012;
+    const stshBytes = buildStshBytes({
+      cbSTDBaseInFile,
+      records: new Map([[0, new Uint8Array([0x31, 0x32, 0x33])]])
+    });
+    configureRawStsh(bytes, stshBytes, 4);
+
+    const result = verifyOfficialMarketCalendarKrxLegacyWordStsh(bytes);
+    assert.equal(
+      result.schemaVersion,
+      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_STSH_SCHEMA_VERSION
+    );
+    assert.equal(result.nFib, definition.nFib);
+    assert.equal(result.tableStreamName, "1Table");
+    assert.equal(result.fcStshf, 4);
+    assert.equal(result.lcbStshf, stshBytes.length);
+    assert.equal(result.cbStshi, 18);
+    assert.equal(result.cstd, 15);
+    assert.equal(result.cbSTDBaseInFile, cbSTDBaseInFile);
+    assert.equal(result.styleDefinitions.length, 15);
+    assert.deepEqual(
+      result.styleDefinitions[0],
+      {
+        istd: 0,
+        cbStd: 3,
+        stdOffset: 22,
+        stdBytes: new Uint8Array([0x31, 0x32, 0x33]),
+        styleDefinitionStatus: "framing_only_not_parsed"
+      }
+    );
+    assert.equal(result.styleDefinitions[1]!.styleDefinitionStatus, "empty");
+    assert.equal(result.styleDefinitions[13]!.cbStd, 0);
+    assert.equal(result.styleDefinitions[14]!.cbStd, 0);
+    assert.equal(result.stshFramingVerified, true);
+    assert.equal(
+      result.stshiStatus,
+      "fixed_header_verified_optional_fields_not_parsed"
+    );
+    assert.equal(
+      result.styleDefinitionsStatus,
+      "length_framed_std_not_parsed"
+    );
+    assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.isFrozen(result.styleDefinitions), true);
+    assert.equal(Object.isFrozen(result.styleDefinitions[0]), true);
+
+    const tableStart = (3 + 1) * readSectorSize(bytes) + 4;
+    bytes[tableStart + 22] = 0x7b;
+    assert.deepEqual(
+      result.styleDefinitions[0]!.stdBytes,
+      new Uint8Array([0x31, 0x32, 0x33])
+    );
+    result.styleDefinitions[0]!.stdBytes[1] = 0x4c;
+    assert.equal(bytes[tableStart + 23], 0x32);
+  }
+});
+
+test("official calendar KRX legacy Word STSH rejects invalid headers and LPStd framing", () => {
+  const mutations: Array<(bytes: Uint8Array) => Uint8Array> = [
+    (bytes) => bytes.subarray(0, 19),
+    (bytes) => setStshUint16(bytes, 0, 17),
+    (bytes) => setStshUint16(bytes, 0, 19),
+    (bytes) => setStshUint16(bytes, 2, 14),
+    (bytes) => setStshUint16(bytes, 2, 0x0ffe),
+    (bytes) => setStshUint16(bytes, 4, 9),
+    (bytes) => setStshUint16(bytes, 6, 0),
+    (bytes) => setStshUint16(bytes, 10, 14),
+    (bytes) => setStshInt16(bytes, 20, -1),
+    (bytes) => setStshUint16(bytes, 20, 100),
+    (bytes) => {
+      const withFixedStyle = buildStshBytes({
+        records: new Map([[13, new Uint8Array([0x41, 0x42])]])
+      });
+      return withFixedStyle;
+    },
+    (bytes) => {
+      const withTrailingByte = new Uint8Array(bytes.length + 1);
+      withTrailingByte.set(bytes);
+      return withTrailingByte;
+    }
+  ];
+  for (const mutate of mutations) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    configureVariableFib(bytes, {
+      nFib: 0x00c1,
+      version: "Word97",
+      cbRgFcLcb: 0x005d,
+      cswNew: 0
+    });
+    const stshBytes = mutate(buildStshBytes());
+    configureRawStsh(bytes, stshBytes, 4);
+
+    assertStshCode(
+      bytes,
+      "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSH_INVALID"
+    );
+  }
+
+  const oddTableOffset = compoundFileWithUserStreams(3);
+  configureWordRootStreams(oddTableOffset, "1Table");
+  configureVariableFib(oddTableOffset, {
+    nFib: 0x00c1,
+    version: "Word97",
+    cbRgFcLcb: 0x005d,
+    cswNew: 0
+  });
+  configureRawStsh(oddTableOffset, buildStshBytes(), 3);
+  assertStshCode(
+    oddTableOffset,
+    "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_STSH_INVALID"
+  );
 });
 
 test("official calendar KRX legacy Word PlcBtePapx reference projects every supported version", () => {
@@ -3264,6 +3397,79 @@ function configureStshfReference(
   }
 }
 
+function configureRawStsh(
+  bytes: Uint8Array,
+  stshBytes: Uint8Array,
+  tableOffset: number
+): void {
+  configureStshfReference(bytes, tableOffset, stshBytes.length, 0);
+  bytes.set(
+    stshBytes,
+    (3 + 1) * readSectorSize(bytes) + tableOffset
+  );
+}
+
+function buildStshBytes(
+  options: {
+    cbStshi?: number;
+    cstd?: number;
+    cbSTDBaseInFile?: number;
+    stshifFlags?: number;
+    istdMaxFixedWhenSaved?: number;
+    records?: ReadonlyMap<number, Uint8Array>;
+  } = {}
+): Uint8Array {
+  const cbStshi = options.cbStshi ?? 18;
+  const cstd = options.cstd ?? 15;
+  const records = options.records ?? new Map<number, Uint8Array>();
+  let byteLength = 2 + cbStshi;
+  for (let istd = 0; istd < cstd; istd += 1) {
+    const record = records.get(istd) ?? new Uint8Array();
+    byteLength += 2 + record.length + (record.length % 2);
+  }
+  const bytes = new Uint8Array(byteLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, cbStshi, true);
+  view.setUint16(2, cstd, true);
+  view.setUint16(4, options.cbSTDBaseInFile ?? 0x000a, true);
+  view.setUint16(6, options.stshifFlags ?? 0x0001, true);
+  view.setUint16(10, options.istdMaxFixedWhenSaved ?? 0x000f, true);
+  let offset = 2 + cbStshi;
+  for (let istd = 0; istd < cstd; istd += 1) {
+    const record = records.get(istd) ?? new Uint8Array();
+    view.setInt16(offset, record.length, true);
+    bytes.set(record, offset + 2);
+    offset += 2 + record.length + (record.length % 2);
+  }
+  return bytes;
+}
+
+function setStshUint16(
+  bytes: Uint8Array,
+  offset: number,
+  value: number
+): Uint8Array {
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint16(
+    offset,
+    value,
+    true
+  );
+  return bytes;
+}
+
+function setStshInt16(
+  bytes: Uint8Array,
+  offset: number,
+  value: number
+): Uint8Array {
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setInt16(
+    offset,
+    value,
+    true
+  );
+  return bytes;
+}
+
 function configurePlcBtePapxReference(
   bytes: Uint8Array,
   offset: number,
@@ -4070,6 +4276,18 @@ function assertStshfReferenceCode(
     () => verifyOfficialMarketCalendarKrxLegacyWordStshfReference(bytes),
     (error: unknown) =>
       error instanceof OfficialMarketCalendarKrxLegacyWordStshfReferenceError &&
+      error.code === code
+  );
+}
+
+function assertStshCode(
+  bytes: Uint8Array,
+  code: OfficialMarketCalendarKrxLegacyWordStshError["code"]
+): void {
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordStsh(bytes),
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarKrxLegacyWordStshError &&
       error.code === code
   );
 }
