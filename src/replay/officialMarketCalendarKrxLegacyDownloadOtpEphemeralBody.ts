@@ -104,6 +104,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordTextRanges,
   type VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges
 } from "./officialMarketCalendarKrxLegacyWordTextRanges.js";
+import {
+  projectOfficialMarketCalendarKrxLegacyWordTextBytes,
+  type ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes
+} from "./officialMarketCalendarKrxLegacyWordTextBytes.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -129,6 +133,7 @@ declare const krxLegacyDownloadWordPcdPrmVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordPrcGrpPrlVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordDocumentCountsVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordTextRangesVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordTextBytesProjectedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -252,6 +257,11 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordDocumentCountsVerifi
 
 export interface OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument {
   readonly [krxLegacyDownloadWordTextRangesVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+
+export interface OfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument {
+  readonly [krxLegacyDownloadWordTextBytesProjectedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -493,6 +503,10 @@ interface ReadyWordTextRangesVerifiedDocumentState extends ReadyWordDocumentCoun
   textRanges: VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges;
 }
 
+interface ReadyWordTextBytesProjectedDocumentState extends ReadyWordTextRangesVerifiedDocumentState {
+  textBytes: ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes;
+}
+
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
 type IdentityVerifiedDocumentState =
@@ -552,6 +566,9 @@ type WordDocumentCountsVerifiedDocumentState =
   | DisposedState;
 type WordTextRangesVerifiedDocumentState =
   | ReadyWordTextRangesVerifiedDocumentState
+  | DisposedState;
+type WordTextBytesProjectedDocumentState =
+  | ReadyWordTextBytesProjectedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -637,6 +654,10 @@ const wordDocumentCountsVerifiedDocumentStates = new WeakMap<
 const wordTextRangesVerifiedDocumentStates = new WeakMap<
   object,
   WordTextRangesVerifiedDocumentState
+>();
+const wordTextBytesProjectedDocumentStates = new WeakMap<
+  object,
+  WordTextBytesProjectedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2189,6 +2210,67 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordTextRangesVeri
   disposeWordTextRangesVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordTextRangesVerifiedDocumentToWordTextBytesProjectedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordTextRangesVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordTextRangesVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") {
+    throw new Error(
+      "KRX legacy word-text-ranges-verified document must be ready and come from the fixed Word text ranges consumer"
+    );
+  }
+  let textBytes: ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes | undefined;
+  let transferred = false;
+  try {
+    textBytes = projectOfficialMarketCalendarKrxLegacyWordTextBytes(
+      state.rawDocumentBytes
+    );
+    if (
+      textBytes.nFib !== state.textRanges.nFib ||
+      textBytes.tableStreamName !== state.textRanges.tableStreamName ||
+      textBytes.cbMac !== state.textRanges.cbMac ||
+      textBytes.pieces.length !== state.textRanges.ranges.length ||
+      !sameTextByteProjection(state.textRanges, textBytes) ||
+      textBytes.textBytesProjected !== true ||
+      textBytes.textDecodingStatus !== "not_decoded" ||
+      textBytes.sourceRoleStatus !== "candidate_not_accepted"
+    ) {
+      throw new Error("KRX legacy Word text byte projection is invalid");
+    }
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordTextBytesProjectedDocumentObject(verifiedHandle);
+      throw new Error(
+        "KRX legacy word-text-bytes-projected document cannot be serialized or exported"
+      );
+    });
+    wordTextBytesProjectedDocumentStates.set(verifiedHandle, {
+      ...state,
+      textBytes
+    });
+    wordTextRangesVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument;
+  } finally {
+    if (!transferred) {
+      if (textBytes !== undefined) zeroizeTextPieceBytes(textBytes);
+      disposeWordTextRangesVerifiedDocumentObject(handleObject);
+    }
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordTextBytesProjectedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordTextBytesProjectedDocumentStates.has(handleObject)) {
+    throw new Error(
+      "KRX legacy word-text-bytes-projected document must come from the fixed Word text bytes consumer"
+    );
+  }
+  disposeWordTextBytesProjectedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -3198,6 +3280,45 @@ function disposeWordTextRangesVerifiedDocumentObject(handle: object): void {
   } finally {
     wordTextRangesVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
+}
+
+function disposeWordTextBytesProjectedDocumentObject(handle: object): void {
+  const state = wordTextBytesProjectedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordTextBytesProjectedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function sameTextByteProjection(
+  textRanges: VerifiedOfficialMarketCalendarKrxLegacyWordTextRanges,
+  textBytes: ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes
+): boolean {
+  return textBytes.pieces.every((piece, index) => {
+    const range = textRanges.ranges[index];
+    return range !== undefined &&
+      piece.index === range.index &&
+      piece.byteStart === range.byteStart &&
+      piece.byteLength === range.byteLength &&
+      piece.byteEnd === range.byteEnd &&
+      piece.bytes.length === range.byteLength;
+  });
+}
+
+function zeroizeTextPieceBytes(
+  textBytes: ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes
+): void {
+  for (const piece of textBytes.pieces) zeroizeBytes(piece.bytes);
 }
 
 function sameTextRangeProjection(

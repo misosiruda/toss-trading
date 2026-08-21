@@ -63,31 +63,50 @@ export function projectOfficialMarketCalendarKrxLegacyWordTextBytes(
 ): ProjectedOfficialMarketCalendarKrxLegacyWordTextBytes {
   const ranges = verifyOfficialMarketCalendarKrxLegacyWordTextRanges(input);
   const fib = verifyOfficialMarketCalendarKrxLegacyWordFib(input);
-  if (
-    ranges.nFib !== fib.nFib ||
-    ranges.tableStreamName !== fib.tableStreamName
-  ) {
-    throw projectionError();
+  const pieces: ProjectedOfficialMarketCalendarKrxLegacyWordTextPieceBytes[] = [];
+  let retainedBytes = false;
+  try {
+    if (
+      ranges.nFib !== fib.nFib ||
+      ranges.tableStreamName !== fib.tableStreamName
+    ) {
+      throw projectionError();
+    }
+    for (const range of ranges.ranges) {
+      pieces.push(Object.freeze({
+        ...range,
+        bytes: copyRange(fib.wordDocumentBytes, range.byteStart, range.byteLength),
+        bytesOwnership: "caller_owned_copy" as const
+      }));
+    }
+    const result = Object.freeze({
+      schemaVersion:
+        OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_BYTES_SCHEMA_VERSION,
+      nFib: ranges.nFib,
+      tableStreamName: ranges.tableStreamName,
+      cbMac: ranges.cbMac,
+      pieces: Object.freeze(pieces),
+      textBytesProjected: true as const,
+      textDecodingStatus: "not_decoded" as const,
+      sourceRoleStatus: "candidate_not_accepted" as const
+    });
+    retainedBytes = true;
+    return result;
+  } finally {
+    zeroizeBytes(fib.wordDocumentBytes);
+    zeroizeBytes(fib.tableStreamBytes);
+    if (!retainedBytes) {
+      for (const piece of pieces) zeroizeBytes(piece.bytes);
+    }
   }
-  const pieces = ranges.ranges.map((range) =>
-    Object.freeze({
-      ...range,
-      bytes: copyRange(fib.wordDocumentBytes, range.byteStart, range.byteLength),
-      bytesOwnership: "caller_owned_copy" as const
-    })
-  );
+}
 
-  return Object.freeze({
-    schemaVersion:
-      OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TEXT_BYTES_SCHEMA_VERSION,
-    nFib: ranges.nFib,
-    tableStreamName: ranges.tableStreamName,
-    cbMac: ranges.cbMac,
-    pieces: Object.freeze(pieces),
-    textBytesProjected: true,
-    textDecodingStatus: "not_decoded",
-    sourceRoleStatus: "candidate_not_accepted"
-  });
+function zeroizeBytes(bytes: Uint8Array): void {
+  try {
+    Uint8Array.prototype.fill.call(bytes, 0);
+  } catch {
+    // A detached caller-owned projection has no remaining bytes to clear.
+  }
 }
 
 function copyRange(
