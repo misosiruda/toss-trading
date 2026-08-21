@@ -709,6 +709,12 @@ count, terminal mark 제거/preservation policy와 structural projection status�
 semantics와 source acceptance는 아직 수행하지 않으며 실패·dispose에서 모든 이전 private byte ownership을
 정리한다.
 
+Registered title paragraph binding도 fixed consumer로 연결한다. word-source-rows-verified handle을 한 번만
+소비해 identity의 file name/target year, main-document와 source-row parser의 Word version/Table stream,
+title CP range와 decoded text를 교차 확인하고 새 opaque handle로 ownership을 이전한다. Column/date/holiday
+semantics와 source acceptance는 계속 수행하지 않으며 실패·dispose에서 모든 이전 private byte ownership을
+정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX
