@@ -680,6 +680,12 @@ paragraph coverage, terminal PAPX identity와 mark 검증 상태를 교차 확�
 ownership을 이전한다. Direct paragraph/table property는 아직 적용하지 않으며 실패·dispose에서 모든
 이전 private byte ownership을 정리한다.
 
+`officialMarketCalendarKrxLegacyWordDirectParagraphProperties.ts`의 terminal PAPX와 terminal Pcd.Prm
+결합 결과를 fixed consumer로 연결한다. word-paragraph-boundaries-verified handle을 한 번만 소비해
+paragraph identity, MS-DOC 2.4.6.1 적용 순서와 Prm0/Prm1 선택 상태를 교차 확인하고 새 opaque handle로
+ownership을 이전한다. Text mark와 table row/cell semantics는 아직 승인하지 않으며 실패·dispose에서
+모든 이전 private byte ownership을 정리한다.
+
 `officialMarketCalendarKrxLegacyWordParagraphBoundaries.ts`는 Main Document의 CP 0부터
 `ccpText`까지 MS-DOC 2.4.2 paragraph-boundary algorithm을 적용한다. 각 piece의
 compressed/uncompressed byte width로 현재 CP를 physical FC에 투영하고, terminal PAPX

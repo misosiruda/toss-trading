@@ -40,6 +40,7 @@ import {
   consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordPapxFkpVerifiedDocumentToWordGrpPrlVerifiedDocument,
   consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument,
+  consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument,
   consumeTestOnlyOfficialMarketCalendarKrxLegacyDownloadResponseToIdentityVerifiedDocument,
   createOfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody,
   createTestOnlyOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer,
@@ -73,6 +74,7 @@ import {
   disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument,
   disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument,
+  disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument,
   type OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody
 } from "./officialMarketCalendarKrxLegacyDownloadOtpEphemeralBody.js";
 import {
@@ -106,6 +108,7 @@ import { OfficialMarketCalendarKrxLegacyWordPapxFkpReferencesError } from "./off
 import { OfficialMarketCalendarKrxLegacyWordPapxFkpError } from "./officialMarketCalendarKrxLegacyWordPapxFkp.js";
 import { OfficialMarketCalendarKrxLegacyWordGrpPrlError } from "./officialMarketCalendarKrxLegacyWordGrpPrl.js";
 import { OfficialMarketCalendarKrxLegacyWordParagraphBoundariesError } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
+import { OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError } from "./officialMarketCalendarKrxLegacyWordDirectParagraphProperties.js";
 
 const FILE_NAME = "E_Trading_Calendar2013.doc";
 const FILE_LENGTH = 195_584;
@@ -514,11 +517,15 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
       assert.equal(Object.isFrozen(wordParagraphBoundariesVerifiedHandle), true);
       assert.deepEqual(Object.keys(wordParagraphBoundariesVerifiedHandle), []);
       assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(wordGrpPrlVerifiedHandle), /must be ready/);
+      const wordDirectParagraphPropertiesVerifiedHandle = consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(wordParagraphBoundariesVerifiedHandle);
+      assert.equal(Object.isFrozen(wordDirectParagraphPropertiesVerifiedHandle), true);
+      assert.deepEqual(Object.keys(wordDirectParagraphPropertiesVerifiedHandle), []);
+      assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(wordParagraphBoundariesVerifiedHandle), /must be ready/);
       assert.throws(
-        () => JSON.stringify(wordParagraphBoundariesVerifiedHandle),
+        () => JSON.stringify(wordDirectParagraphPropertiesVerifiedHandle),
         /cannot be serialized or exported/
       );
-      disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument(wordParagraphBoundariesVerifiedHandle);
+      disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument(wordDirectParagraphPropertiesVerifiedHandle);
 
       const productionResponse = await coordinator.acquire({
         fileName: FILE_NAME
@@ -714,6 +721,7 @@ test("KRX legacy identity response consumer rejects forged handles and verifier 
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordPapxFkpVerifiedDocument({} as never), /must come from the fixed Word PapxFkp consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocument({} as never), /must come from the fixed Word GrpPrl consumer/);
   assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument({} as never), /must come from the fixed Word paragraph boundaries consumer/);
+  assert.throws(() => disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument({} as never), /must come from the fixed Word direct paragraph properties consumer/);
 });
 
 test("KRX legacy DIFAT consumer closes ownership when structure verification fails", async () => {
@@ -1630,6 +1638,25 @@ test("KRX legacy Word paragraph boundaries consumer closes ownership beyond main
   });
 });
 
+test("KRX legacy Word direct paragraph properties consumer closes ownership for invalid merged semantics", async () => {
+  const documentBytes = syntheticOleDocument();
+  configureSyntheticWordStreams(documentBytes);
+  configureSyntheticWordPrcGrpPrl(documentBytes, [0x16, 0x24, 1], 0x0132);
+  configureSyntheticWordDocumentCounts(documentBytes, 1);
+  configureSyntheticWordTextRange(documentBytes, 1536);
+  configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
+  await withDownloadServer((response) => sendValidResponse(response, documentBytes), async (port) => {
+    const reference = await acquireWordPlcBtePapxReferenceVerifiedHandle(port, documentBytes);
+    const plc = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceVerifiedDocumentToWordPlcBtePapxVerifiedDocument(reference);
+    const fkpReferences = consumeOfficialMarketCalendarKrxLegacyWordPlcBtePapxVerifiedDocumentToWordPapxFkpReferencesVerifiedDocument(plc);
+    const fkp = consumeOfficialMarketCalendarKrxLegacyWordPapxFkpReferencesVerifiedDocumentToWordPapxFkpVerifiedDocument(fkpReferences);
+    const groups = consumeOfficialMarketCalendarKrxLegacyWordPapxFkpVerifiedDocumentToWordGrpPrlVerifiedDocument(fkp);
+    const boundaries = consumeOfficialMarketCalendarKrxLegacyWordGrpPrlVerifiedDocumentToWordParagraphBoundariesVerifiedDocument(groups);
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(boundaries), (error: unknown) => error instanceof OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError && error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_PROPERTIES_INVALID");
+    assert.throws(() => consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(boundaries), /must be ready/);
+  });
+});
+
 test("KRX legacy coordinator rejects invalid requests before dependencies", async () => {
   let calls = 0;
   const throwingRequest = Object.defineProperty({}, "fileName", {
@@ -2061,7 +2088,8 @@ function configureSyntheticWordPcdPrm(
 
 function configureSyntheticWordPrcGrpPrl(
   bytes: Uint8Array,
-  grpprlBytes: readonly number[]
+  grpprlBytes: readonly number[],
+  rawPrm = 1
 ): void {
   const wordOffset = (4 + 1) * 512;
   const clxOffset = (12 + 1) * 512 + 7;
@@ -2077,7 +2105,7 @@ function configureSyntheticWordPrcGrpPrl(
       1, 0, 0, 0,
       0, 0,
       0x98, 0x03, 0, 0,
-      1, 0
+      rawPrm & 0xff, (rawPrm >>> 8) & 0xff
     ]),
     clxOffset
   );

@@ -140,6 +140,10 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries,
   type VerifiedOfficialMarketCalendarKrxLegacyWordParagraphBoundaries
 } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
+import {
+  verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties,
+  type VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties
+} from "./officialMarketCalendarKrxLegacyWordDirectParagraphProperties.js";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -174,6 +178,7 @@ declare const krxLegacyDownloadWordPapxFkpReferencesVerifiedDocumentBrand: uniqu
 declare const krxLegacyDownloadWordPapxFkpVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordGrpPrlVerifiedDocumentBrand: unique symbol;
 declare const krxLegacyDownloadWordParagraphBoundariesVerifiedDocumentBrand: unique symbol;
+declare const krxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocumentBrand: unique symbol;
 
 export interface OfficialMarketCalendarKrxLegacyDownloadOtpEphemeralBody {
   readonly [krxLegacyDownloadOtpEphemeralBodyBrand]: true;
@@ -338,6 +343,10 @@ export interface OfficialMarketCalendarKrxLegacyDownloadWordGrpPrlVerifiedDocume
 }
 export interface OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument {
   readonly [krxLegacyDownloadWordParagraphBoundariesVerifiedDocumentBrand]: true;
+  toJSON(): never;
+}
+export interface OfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument {
+  readonly [krxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocumentBrand]: true;
   toJSON(): never;
 }
 
@@ -610,6 +619,9 @@ interface ReadyWordGrpPrlVerifiedDocumentState extends ReadyWordPapxFkpVerifiedD
 interface ReadyWordParagraphBoundariesVerifiedDocumentState extends ReadyWordGrpPrlVerifiedDocumentState {
   paragraphBoundaries: VerifiedOfficialMarketCalendarKrxLegacyWordParagraphBoundaries;
 }
+interface ReadyWordDirectParagraphPropertiesVerifiedDocumentState extends ReadyWordParagraphBoundariesVerifiedDocumentState {
+  directParagraphProperties: VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties;
+}
 
 type WireBodyState = ReadyWireBodyState | DisposedState;
 type ResponseState = ReadyResponseState | DisposedState;
@@ -697,6 +709,9 @@ type WordGrpPrlVerifiedDocumentState =
   | DisposedState;
 type WordParagraphBoundariesVerifiedDocumentState =
   | ReadyWordParagraphBoundariesVerifiedDocumentState
+  | DisposedState;
+type WordDirectParagraphPropertiesVerifiedDocumentState =
+  | ReadyWordDirectParagraphPropertiesVerifiedDocumentState
   | DisposedState;
 
 const bodyStates = new WeakMap<object, BodyState>();
@@ -818,6 +833,10 @@ const wordGrpPrlVerifiedDocumentStates = new WeakMap<
 const wordParagraphBoundariesVerifiedDocumentStates = new WeakMap<
   object,
   WordParagraphBoundariesVerifiedDocumentState
+>();
+const wordDirectParagraphPropertiesVerifiedDocumentStates = new WeakMap<
+  object,
+  WordDirectParagraphPropertiesVerifiedDocumentState
 >();
 type HttpsRequest = (
   options: RequestOptions,
@@ -2842,6 +2861,49 @@ export function disposeOfficialMarketCalendarKrxLegacyDownloadWordParagraphBound
   disposeWordParagraphBoundariesVerifiedDocumentObject(handleObject);
 }
 
+export function consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVerifiedDocumentToWordDirectParagraphPropertiesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordParagraphBoundariesVerifiedDocument
+): OfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument {
+  const handleObject = assertHandleObject(handle);
+  const state = wordParagraphBoundariesVerifiedDocumentStates.get(handleObject);
+  if (state === undefined || state.status === "disposed") throw new Error("KRX legacy word-paragraph-boundaries-verified document must be ready and come from the fixed Word paragraph boundaries consumer");
+  let transferred = false;
+  try {
+    const directParagraphProperties = verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(state.rawDocumentBytes);
+    if (
+      directParagraphProperties.nFib !== state.paragraphBoundaries.nFib ||
+      directParagraphProperties.tableStreamName !== state.paragraphBoundaries.tableStreamName ||
+      directParagraphProperties.paragraphs.length !== state.paragraphBoundaries.paragraphs.length ||
+      directParagraphProperties.paragraphs.some((paragraph, index) => paragraph.index !== state.paragraphBoundaries.paragraphs[index]?.index || paragraph.cpStart !== state.paragraphBoundaries.paragraphs[index]?.cpStart || paragraph.cpEnd !== state.paragraphBoundaries.paragraphs[index]?.cpEnd) ||
+      directParagraphProperties.directParagraphFormattingAlgorithm !== "ms_doc_2_4_6_1_terminal_pcd" ||
+      directParagraphProperties.papxThenTerminalPcdOrderVerified !== true ||
+      directParagraphProperties.prm0ParagraphSelectionVerified !== true ||
+      directParagraphProperties.prm1ParagraphSelectionVerified !== true ||
+      directParagraphProperties.tableTextMarkSemanticsStatus !== "not_verified" ||
+      directParagraphProperties.tableRowCellBoundaryStatus !== "not_verified" ||
+      directParagraphProperties.sourceRoleStatus !== "candidate_not_accepted"
+    ) throw new Error("KRX legacy Word direct paragraph properties result is invalid");
+    const verifiedHandle = createOpaqueHandle(() => {
+      disposeWordDirectParagraphPropertiesVerifiedDocumentObject(verifiedHandle);
+      throw new Error("KRX legacy word-direct-paragraph-properties-verified document cannot be serialized or exported");
+    });
+    wordDirectParagraphPropertiesVerifiedDocumentStates.set(verifiedHandle, { ...state, directParagraphProperties });
+    wordParagraphBoundariesVerifiedDocumentStates.set(handleObject, { status: "disposed" });
+    transferred = true;
+    return verifiedHandle as OfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument;
+  } finally {
+    if (!transferred) disposeWordParagraphBoundariesVerifiedDocumentObject(handleObject);
+  }
+}
+
+export function disposeOfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument(
+  handle: OfficialMarketCalendarKrxLegacyDownloadWordDirectParagraphPropertiesVerifiedDocument
+): void {
+  const handleObject = assertHandleObject(handle);
+  if (!wordDirectParagraphPropertiesVerifiedDocumentStates.has(handleObject)) throw new Error("KRX legacy word-direct-paragraph-properties-verified document must come from the fixed Word direct paragraph properties consumer");
+  disposeWordDirectParagraphPropertiesVerifiedDocumentObject(handleObject);
+}
+
 export function createOfficialMarketCalendarKrxLegacyDownloadNetworkConsumer(): OfficialMarketCalendarKrxLegacyDownloadNetworkConsumer {
   const policy = resolveDownloadNetworkPolicy();
   return createNetworkConsumer({
@@ -4053,6 +4115,28 @@ function disposeWordParagraphBoundariesVerifiedDocumentObject(handle: object): v
     zeroizeBytes(state.rawDocumentBytes);
   } finally {
     wordParagraphBoundariesVerifiedDocumentStates.set(handle, { status: "disposed" });
+  }
+}
+
+function disposeWordDirectParagraphPropertiesVerifiedDocumentObject(handle: object): void {
+  const state = wordDirectParagraphPropertiesVerifiedDocumentStates.get(handle);
+  if (state === undefined || state.status === "disposed") return;
+  try {
+    zeroizeGrpPrlBytes(state.grpPrls);
+    zeroizePapxFkpBytes(state.papxFkp);
+    zeroizePapxFkpReferenceBytes(state.papxFkpReferences);
+    zeroizeBytes(state.plcBtePapxReference.plcBtePapxBytes);
+    zeroizeTextPieceBytes(state.textBytes);
+    zeroizePrcGrpPrlBytes(state.prcGrpPrls);
+    zeroizePcdPrmBytes(state.pcdPrms);
+    zeroizeBytes(state.clx.plcPcdBytes);
+    zeroizeBytes(state.clxReference.clxBytes);
+    zeroizeWordFibBytes(state.wordFib);
+    zeroizeWordStreamBytes(state.wordStreams);
+    zeroizeProjectedUserStreamBytes(state.userStreamBytes);
+    zeroizeBytes(state.rawDocumentBytes);
+  } finally {
+    wordDirectParagraphPropertiesVerifiedDocumentStates.set(handle, { status: "disposed" });
   }
 }
 
