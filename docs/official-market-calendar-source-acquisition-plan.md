@@ -195,9 +195,10 @@ process-local `code`, successful observation의 Origin/Referer와 2013~2015 file
 content length, SHA-256, OLE signature, observed title/holiday-line count를 immutable v1
 candidate policy로 고정한다. 이 문서는 derivatives market scope이며 legacy Word table용
 parser는 registered title을 exact paragraph에 결합하는 fixed opaque lifecycle까지 구현됐다.
-Structural cell의 column/date/holiday semantics, evidence role/coverage 검증은 아직 구현하지
-않았다. 따라서 KRX 전체 market holiday completeness, durable evidence reuse와 accepted
-acquisition은 계속 주장하지 않는다.
+Registered production identity에 대해서는 12개월 calendar grid와 event column을 검증하고
+holiday description을 candidate로 분류한다. Evidence role/coverage와 cross-market completeness는
+아직 구현하지 않았다. 따라서 KRX 전체 market holiday completeness, durable evidence reuse와
+accepted acquisition은 계속 주장하지 않는다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy.ts`는 이 candidate policy의
 2013~2015 file name만 `file_nm`으로 허용한다. 전용 request-header policy와 연도별 exact
@@ -657,8 +658,14 @@ CP range도 보존한다. 입력 paragraph 수를 넘는 table depth는 depth별
 거부해 resource usage를 입력 크기에 묶는다. `officialMarketCalendarKrxLegacyWordSourceRows.ts`는
 각 cell CP range를 main-document text에 다시 결합하고 terminal table mark 한 code unit만 content에서
 제외한다. Raw text에는 terminal mark를 보존하고 cell 내부 paragraph/nested control code는 정규화하지
-않는다. 구조적 source row text까지만 투영했으며 column 의미와 날짜/휴장 semantics를 해석하지
-않았으므로 source role은 미검증 candidate다. 명세 기준:
+않는다. 구조적 source row text projection 자체는 column 의미를 부여하지 않는다.
+`officialMarketCalendarKrxLegacyWordCalendarSemantics.ts`는 registered production identity의
+terminal summary에서 6개 two-month block, January..December title, SUN..SAT header, 각 월의
+Gregorian day를 5-row grid에 배치하는 문서 고유의 sixth-week slash folding을 검증한다. 이어지는
+5-cell event row는 좌/우 월의 day/description pair와 빈 separator로 해석하고 `Holiday (...)`만
+holiday candidate로 분류한다. 날짜 범위, header/grid mismatch, 빈 pair의 비대칭과 malformed holiday
+표현은 fail-closed한다. 2026-08-24 실제 2013 문서는 96 structural row, 828 cell, 99 event,
+13 holiday candidate로 통과했다. 이 수치는 completeness나 accepted evidence 근거가 아니다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
@@ -668,12 +675,13 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/61b635c3-
 `officialMarketCalendarKrxLegacyWordDocumentTitle.ts`는 registered document identity의
 연도별 `observedDocumentTitle`을 decoded main-document의 exact paragraph 하나와 결합한다.
 부분 문자열, 다른 paragraph text에 포함된 제목, 누락 또는 중복 title paragraph는
-fail-closed로 거부한다. 이 경계는 column/date/holiday semantics를 해석하지 않고
-source role을 candidate로 유지한다. Fixed production/test-only response consumer는
+fail-closed로 거부하며 source role을 candidate로 유지한다. Fixed production/test-only response consumer는
 ephemeral network response부터 이 title-verified opaque handle까지 등록된 identity와
 모든 OLE/Word 단계를 순서대로 한 번씩 소비한다. Terminal candidate-summary consumer는
 이 handle을 exact 한 번 소비하고 raw document를 zeroize한 뒤 file/year, Word version/Table
-stream, structural row/cell count와 미해석/미승인 상태만 frozen summary로 반환한다.
+stream과 structural row/cell count를 frozen summary로 반환한다. Registered production authority는
+calendar/event/holiday candidate semantics도 검증해 count와 상태를 반환하지만 test-only authority는
+이를 승격하지 않고 `not_interpreted`를 유지한다.
 Summary v2도 identity verification authority를 보존해 synthetic test expectation을 production
 registered source policy 검증으로 오인할 수 없게 한다.
 Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
