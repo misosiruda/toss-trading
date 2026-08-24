@@ -85,14 +85,9 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
   ) {
     throw invalidDirectParagraphProperties();
   }
-  const needsParagraphStyleResolution = grpPrls.groups.some(
-    (group) => group.istd !== null
-  );
-  const paragraphStyles = needsParagraphStyleResolution
-    ? verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(input)
-    : null;
+  const paragraphStyles =
+    verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(input);
   if (
-    paragraphStyles !== null &&
     (paragraphStyles.nFib !== boundaries.nFib ||
       paragraphStyles.tableStreamName !== boundaries.tableStreamName)
   ) {
@@ -117,14 +112,11 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
     ) {
       throw invalidDirectParagraphProperties();
     }
-    const paragraphStyle =
-      group.istd !== null && paragraphStyles !== null
-        ? paragraphStyles?.styles.find((style) => style.istd === group.istd)
-        : undefined;
-    if (
-      group.istd !== null &&
-      paragraphStyle === undefined
-    ) {
+    const effectiveIstd = group.istd ?? 0;
+    const paragraphStyle = paragraphStyles.styles.find(
+      (style) => style.istd === effectiveIstd
+    );
+    if (paragraphStyle === undefined) {
       throw unsupportedDirectParagraphStyle();
     }
     const stylePrls = paragraphStyle?.resolvedParagraphPrls ?? [];

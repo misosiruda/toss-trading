@@ -3120,16 +3120,6 @@ test("official calendar KRX legacy Word direct paragraph properties resolve non-
 test("official calendar KRX legacy Word direct paragraph properties resolve default style", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidParagraphBoundariesFixture(bytes);
-  configurePapxFkpPage(bytes, 2048, {
-    rgfc: [920, 930, 951, 953],
-    bxPap: [
-      { bOffset: 0, reservedValue: 0 },
-      { bOffset: 30, reservedValue: 0 },
-      { bOffset: 0, reservedValue: 0 }
-    ],
-    papx: []
-  });
-  setPapxGrpPrl(bytes, 2048 + 60, tablePropertyGroup([], 0));
   configureRawStsh(bytes, buildStshBytes({
     records: new Map([
       [

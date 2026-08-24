@@ -1858,7 +1858,6 @@ test("KRX legacy Word table text marks consumer closes ownership for a depth-one
   configureSyntheticWordDocumentCounts(documentBytes, 1);
   configureSyntheticWordTextRange(documentBytes, 1536);
   configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
-  configureSyntheticWordDefaultParagraphStyle(documentBytes);
   const fkpOffset = (4 + 1) * 512 + 1024;
   documentBytes[fkpOffset + 8] = 20;
   documentBytes.set([3, 0, 0, 0x17, 0x24, 1], fkpOffset + 40);
@@ -2400,6 +2399,7 @@ function configureSyntheticWordStreams(bytes: Uint8Array): void {
   view.setUint32(wordOffset + 154 + 33 * 8 + 4, 9, true);
   const clxOffset = (12 + 1) * 512 + 7;
   bytes.set(Uint8Array.from([2, 4, 0, 0, 0, 0, 0, 0, 0]), clxOffset);
+  configureSyntheticWordDefaultParagraphStyle(bytes);
 }
 
 function configureSyntheticWordPcdPrm(
