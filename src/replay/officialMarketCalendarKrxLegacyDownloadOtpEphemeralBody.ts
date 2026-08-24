@@ -166,7 +166,7 @@ import {
 } from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_word_candidate_summary.v2";
+  "official_market_calendar_krx_legacy_word_candidate_summary.v3";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;

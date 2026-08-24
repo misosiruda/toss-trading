@@ -682,7 +682,7 @@ ephemeral network response부터 이 title-verified opaque handle까지 등록�
 stream과 structural row/cell count를 frozen summary로 반환한다. Registered production authority는
 calendar/event/holiday candidate semantics도 검증해 count와 상태를 반환하지만 test-only authority는
 이를 승격하지 않고 `not_interpreted`를 유지한다.
-Summary v2도 identity verification authority를 보존해 synthetic test expectation을 production
+Summary v3도 identity verification authority를 보존해 synthetic test expectation을 production
 registered source policy 검증으로 오인할 수 없게 한다.
 Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
 title 검증과 terminal 소비를 한 호출로 연결하고 caller에게 opaque/raw handle을 반환하지 않는다.
