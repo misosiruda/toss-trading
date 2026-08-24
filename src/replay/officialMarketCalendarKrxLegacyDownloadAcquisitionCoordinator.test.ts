@@ -2399,6 +2399,7 @@ function configureSyntheticWordStreams(bytes: Uint8Array): void {
   view.setUint32(wordOffset + 154 + 33 * 8 + 4, 9, true);
   const clxOffset = (12 + 1) * 512 + 7;
   bytes.set(Uint8Array.from([2, 4, 0, 0, 0, 0, 0, 0, 0]), clxOffset);
+  configureSyntheticWordDefaultParagraphStyle(bytes);
 }
 
 function configureSyntheticWordPcdPrm(
@@ -2507,6 +2508,47 @@ function configureSyntheticWordPlcBtePapxReference(
       view.setUint8(fkpByteOffset + 511, 1);
     }
   }
+}
+
+function configureSyntheticWordDefaultParagraphStyle(bytes: Uint8Array): void {
+  const wordOffset = (4 + 1) * 512;
+  const tableStreamOffset = (12 + 1) * 512;
+  const tableOffset = 200;
+  const cbStshi = 18;
+  const cstd = 15;
+  const styleBody = Uint8Array.from([
+    1, 0, 0x41, 0, 0, 0,
+    2, 0, 0, 0,
+    0, 0
+  ]);
+  const styleRecord = new Uint8Array(10 + styleBody.length);
+  const recordView = new DataView(styleRecord.buffer);
+  recordView.setUint16(0, 0, true);
+  recordView.setUint16(2, 1 | (0x0fff << 4), true);
+  recordView.setUint16(4, 2, true);
+  recordView.setUint16(6, styleRecord.length, true);
+  styleRecord.set(styleBody, 10);
+
+  const stsh = new Uint8Array(2 + cbStshi + cstd * 2 + styleRecord.length);
+  const stshView = new DataView(stsh.buffer);
+  stshView.setUint16(0, cbStshi, true);
+  stshView.setUint16(2, cstd, true);
+  stshView.setUint16(4, 10, true);
+  stshView.setUint16(6, 1, true);
+  stshView.setUint16(10, cstd, true);
+  let offset = 2 + cbStshi;
+  stshView.setInt16(offset, styleRecord.length, true);
+  stsh.set(styleRecord, offset + 2);
+  offset += 2 + styleRecord.length;
+  while (offset < stsh.length) {
+    stshView.setInt16(offset, 0, true);
+    offset += 2;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setUint32(wordOffset + 154 + 8, tableOffset, true);
+  view.setUint32(wordOffset + 154 + 12, stsh.length, true);
+  bytes.set(stsh, tableStreamOffset + tableOffset);
 }
 
 async function acquireWordClxVerifiedHandle(

@@ -551,12 +551,25 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/51f9dd62-
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0e246123-e907-4ad1-9dfc-558512e2b052
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/8ff6f5f0-ee65-48e3-ab1e-f15deeb24355
 
-`officialMarketCalendarKrxLegacyWordStdfBase.ts`는 non-empty STD의 10-byte `StdfBase`에서
-`sti`, `stk`, `istdBase`, `cupx`, `istdNext`, `bchUpe`를 투영한다. Style type, fixed-index `sti`,
-LPStd size equality, non-empty next/base reference와 inheritance cycle을 fail-closed로 검증한다.
-`StdfPost2000OrNone`, style name, UPX와 `cupx` semantics는 아직 파싱하지 않는다. 명세 기준:
+`officialMarketCalendarKrxLegacyWordStdfBase.ts`는 non-empty STD의 `StdfBase`와 optional
+`StdfPost2000`에서 `sti`, `stk`, `istdBase`, `cupx`, `istdNext`, `bchUpe`, revision/link metadata를
+투영한다. Style type, fixed-index `sti`, LPStd size equality, non-empty next/base/link reference,
+inheritance cycle과 style type/revision별 `cupx`를 fail-closed로 검증한다.
+`officialMarketCalendarKrxLegacyWordParagraphStyleProperties.ts`는 `Xstz` name의 length/terminator,
+모든 `LPUpx`의 length/even padding을 검증하고 paragraph style의 첫 `LPUpxPapx`를 paragraph
+`Prl`로 제한한 뒤 base style부터 현재 style 순서로 결합한다. Direct PAPX와 terminal PCD보다
+앞에 style paragraph properties를 적용해 non-default `istd`를 해석한다. Style name 문자열 의미,
+character/table/list UPX 의미와 revision-marked original formatting 의미는 아직 해석하지 않는다.
+2026-08-24 credential-free 2013 production acquisition에서 non-default style 중단점은 통과했고,
+`istd=0` paragraph의 direct PAPX가 가리키는 `sprmPHugePapx (0x6646)`의 `Data` stream
+`PrcData`를 아직 해석하지 않아 table text mark 검증에서 fail-closed됐다. Raw document bytes는
+보존하지 않았다.
+명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/df0f4654-071d-442f-8563-752d7e0285ef
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9cc628d4-c325-4622-9724-c2215fe65cb6
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/dd73d580-cce7-445f-b692-3421060b9682
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/742bb472-b6b3-416a-b8ef-0dcc9f82f918
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/44774bb4-730b-4a46-8002-8608ae2e9525
 
 `officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
 `FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
@@ -771,8 +784,9 @@ cell/TTP mark `0x0007`, section mark `0x000C`, paragraph mark `0x000D` 중 하�
 property verifier, table text mark verifier와 table row grouping verifier가 terminal PAPX, terminal
 `Pcd.Prm`, code unit 역할, depth별 row/cell CP range와 terminal mark를 제외한 structural cell text를
 결합하지만 column semantics와 source role은 계속 미검증 candidate다. Direct verifier는
-non-default `istd`를 별도 unsupported error code로 fail-closed 분류하며 style sheet를 해석하거나
-default style로 강등하지 않는다. 명세 기준:
+paragraph style의 `LPUpxPapx`와 base-style inheritance를 해석해 non-default `istd`를 적용한다.
+해석되지 않는 style type이나 malformed reference는 default style로 강등하지 않고 fail-closed한다.
+명세 기준:
 https://learn.microsoft.com/en-sg/openspecs/office_file_formats/ms-doc/30461a5b-e3ad-44cd-a3fe-038f86639b13
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/aa2e55a2-f4f2-4795-bab5-6d9d7a0ed249
@@ -782,6 +796,8 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-
 확인한 결과 network/identity와 direct paragraph 전 단계는 통과했지만 non-default style에서
 `OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED`로 중단됐다. OTP와 raw
 document bytes는 저장하거나 출력하지 않았으며 이 관찰은 accepted acquisition/evidence가 아니다.
+2026-08-24 재검증에서는 이 style 중단점을 통과했고 `sprmPHugePapx`의 `Data` stream `PrcData`
+미지원 경계에서 중단됐다. 이 재검증도 raw document bytes를 저장하거나 출력하지 않았다.
 
 ### KRX Holiday Data POST Static Policy
 

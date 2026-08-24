@@ -12,6 +12,13 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordStdfBaseStyle {
   cupx: number;
   istdNext: number;
   bchUpe: number;
+  stdfPost2000: {
+    istdLink: number | null;
+    fHasOriginalStyle: boolean;
+    rsid: number;
+    iftcHtml: number;
+    iPriority: number;
+  } | null;
   styleBodyBytes: Uint8Array;
 }
 
@@ -31,7 +38,7 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordStdfBases {
   )[];
   stdfBaseVerified: true;
   inheritanceReferencesVerified: true;
-  cupxStatus: "projected_semantics_not_verified";
+  cupxStatus: "style_type_and_revision_mark_verified";
   styleBodyStatus: "xstz_name_and_upx_not_parsed";
   sourceRoleStatus: "candidate_not_accepted";
 }
@@ -83,6 +90,10 @@ export function verifyOfficialMarketCalendarKrxLegacyWordStdfBases(
       const cupx = third & 0x000f;
       const istdNext = third >>> 4;
       const bchUpe = readUint16(bytes, 6);
+      const stdfPost2000 =
+        stsh.cbSTDBaseInFile === 0x0012
+          ? parseStdfPost2000(bytes)
+          : null;
       if (
         sti === 0x0fff ||
         stk < 1 ||
@@ -93,6 +104,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordStdfBases(
       ) {
         throw invalidStdfBase();
       }
+      verifyCupx(stk, cupx, stdfPost2000?.fHasOriginalStyle ?? false);
       const bodyLength = definition.cbStd - stsh.cbSTDBaseInFile;
       const styleBodyBytes = new Uint8Array(bodyLength);
       styleBodyBytes.set(bytes.subarray(stsh.cbSTDBaseInFile));
@@ -107,6 +119,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordStdfBases(
           cupx,
           istdNext,
           bchUpe,
+          stdfPost2000,
           styleBodyBytes
         })
       );
@@ -122,7 +135,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordStdfBases(
       styles: Object.freeze(styles),
       stdfBaseVerified: true,
       inheritanceReferencesVerified: true,
-      cupxStatus: "projected_semantics_not_verified",
+      cupxStatus: "style_type_and_revision_mark_verified",
       styleBodyStatus: "xstz_name_and_upx_not_parsed",
       sourceRoleStatus: "candidate_not_accepted"
     });
@@ -169,6 +182,59 @@ function verifyReferences(
         throw invalidStdfBase();
       }
     }
+    if (
+      style.stdfPost2000 !== null &&
+      style.stdfPost2000.istdLink !== null &&
+      !nonEmpty.has(style.stdfPost2000.istdLink)
+    ) {
+      throw invalidStdfBase();
+    }
+  }
+}
+
+function parseStdfPost2000(
+  bytes: Uint8Array
+): NonNullable<VerifiedOfficialMarketCalendarKrxLegacyWordStdfBaseStyle["stdfPost2000"]> {
+  const linkAndFlags = readUint16(bytes, 10);
+  const istdLink = linkAndFlags & 0x0fff;
+  const fHasOriginalStyle = (linkAndFlags & 0x1000) !== 0;
+  const reserved = linkAndFlags >>> 13;
+  const rsid = readUint32(bytes, 12);
+  const htmlAndPriority = readUint16(bytes, 16);
+  const iftcHtml = htmlAndPriority & 0x0007;
+  const unused = (htmlAndPriority & 0x0008) !== 0;
+  const iPriority = htmlAndPriority >>> 4;
+  if (reserved !== 0 || unused || iPriority > 0x0063) {
+    throw invalidStdfBase();
+  }
+  return Object.freeze({
+    istdLink: istdLink === 0 ? null : istdLink,
+    fHasOriginalStyle,
+    rsid,
+    iftcHtml,
+    iPriority
+  });
+}
+
+function verifyCupx(
+  stk: number,
+  cupx: number,
+  fHasOriginalStyle: boolean
+): void {
+  const expected =
+    stk === 1
+      ? fHasOriginalStyle
+        ? 3
+        : 2
+      : stk === 2
+        ? fHasOriginalStyle
+          ? 2
+          : 1
+        : stk === 3
+          ? 3
+          : 1;
+  if (cupx !== expected || (fHasOriginalStyle && (stk === 3 || stk === 4))) {
+    throw invalidStdfBase();
   }
 }
 
@@ -177,6 +243,16 @@ function readUint16(bytes: Uint8Array, offset: number): number {
     throw invalidStdfBase();
   }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function readUint32(bytes: Uint8Array, offset: number): number {
+  if (offset < 0 || offset + 4 > bytes.length) {
+    throw invalidStdfBase();
+  }
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(
+    offset,
+    true
+  );
 }
 
 function zeroizeBytes(bytes: Uint8Array): void {
