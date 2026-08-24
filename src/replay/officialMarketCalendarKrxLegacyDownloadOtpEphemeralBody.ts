@@ -158,12 +158,15 @@ import {
   type VerifiedOfficialMarketCalendarKrxLegacyWordSourceRows
 } from "./officialMarketCalendarKrxLegacyWordSourceRows.js";
 import {
+  verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics
+} from "./officialMarketCalendarKrxLegacyWordCalendarSemantics.js";
+import {
   verifyOfficialMarketCalendarKrxLegacyWordDocumentTitle,
   type VerifiedOfficialMarketCalendarKrxLegacyWordDocumentTitle
 } from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_word_candidate_summary.v2";
+  "official_market_calendar_krx_legacy_word_candidate_summary.v3";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -400,8 +403,12 @@ export interface OfficialMarketCalendarKrxLegacyWordCandidateSummary {
   structuralSourceCellCount: number;
   titleBindingVerified: true;
   identityVerificationAuthority: VerifiedOfficialMarketCalendarKrxLegacyDocumentIdentity["identityVerificationAuthority"];
-  columnSemanticsStatus: "not_interpreted";
-  holidaySemanticsStatus: "not_interpreted";
+  calendarEventCount: number | null;
+  holidayCount: number | null;
+  columnSemanticsStatus:
+    | "not_interpreted"
+    | "calendar_grid_and_event_columns_verified";
+  holidaySemanticsStatus: "not_interpreted" | "classified_not_accepted";
   sourceRoleStatus: "candidate_not_accepted";
   durableEvidenceReuse: false;
   acceptedAcquisition: false;
@@ -3244,6 +3251,23 @@ export function consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedD
     if (!Number.isSafeInteger(structuralSourceCellCount)) {
       throw new Error("KRX legacy Word candidate summary count is invalid");
     }
+    const calendarSemantics =
+      state.identity.identityVerificationAuthority === "registered_source_policy"
+        ? verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+            state.sourceRows,
+            state.identity.targetYear
+          )
+        : null;
+    if (
+      calendarSemantics !== null &&
+      (calendarSemantics.nFib !== state.sourceRows.nFib ||
+        calendarSemantics.tableStreamName !== state.sourceRows.tableStreamName ||
+        calendarSemantics.targetYear !== state.identity.targetYear ||
+        calendarSemantics.months.length !== 12 ||
+        calendarSemantics.sourceRoleStatus !== "candidate_not_accepted")
+    ) {
+      throw new Error("KRX legacy Word calendar semantics result is invalid");
+    }
     return Object.freeze({
       schemaVersion:
         OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION,
@@ -3256,8 +3280,12 @@ export function consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedD
       titleBindingVerified: true,
       identityVerificationAuthority:
         state.identity.identityVerificationAuthority,
-      columnSemanticsStatus: "not_interpreted",
-      holidaySemanticsStatus: "not_interpreted",
+      calendarEventCount: calendarSemantics?.events.length ?? null,
+      holidayCount: calendarSemantics?.holidayCount ?? null,
+      columnSemanticsStatus:
+        calendarSemantics?.columnSemanticsStatus ?? "not_interpreted",
+      holidaySemanticsStatus:
+        calendarSemantics?.holidaySemanticsStatus ?? "not_interpreted",
       sourceRoleStatus: "candidate_not_accepted",
       durableEvidenceReuse: false,
       acceptedAcquisition: false

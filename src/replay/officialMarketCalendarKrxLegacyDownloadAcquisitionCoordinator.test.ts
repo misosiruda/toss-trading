@@ -634,7 +634,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v2",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v3",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -643,6 +643,8 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           structuralSourceCellCount: 0,
           titleBindingVerified: true,
           identityVerificationAuthority: "test_only_expectation",
+          calendarEventCount: null,
+          holidayCount: null,
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
           sourceRoleStatus: "candidate_not_accepted",
@@ -665,7 +667,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ).acquireWordCandidateSummary({ fileName: FILE_NAME }),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v2",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v3",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -674,6 +676,8 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           structuralSourceCellCount: 0,
           titleBindingVerified: true,
           identityVerificationAuthority: "test_only_expectation",
+          calendarEventCount: null,
+          holidayCount: null,
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
           sourceRoleStatus: "candidate_not_accepted",
