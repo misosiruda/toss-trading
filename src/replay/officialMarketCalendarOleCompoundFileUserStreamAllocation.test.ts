@@ -3117,6 +3117,40 @@ test("official calendar KRX legacy Word direct paragraph properties resolve non-
   assert.equal(result.paragraphs[0]!.tableRole, "depth_1_ttp_candidate");
 });
 
+test("official calendar KRX legacy Word direct paragraph properties resolve default style", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureValidParagraphBoundariesFixture(bytes);
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 930, 951, 953],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 30, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(bytes, 2048 + 60, tablePropertyGroup([], 0));
+  configureRawStsh(bytes, buildStshBytes({
+    records: new Map([
+      [
+        0,
+        buildStdfBaseRecord({
+          sti: 0,
+          istdNext: 0,
+          body: buildParagraphStyleBody(0, [[0x2405, [1]]])
+        })
+      ]
+    ])
+  }), 64);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(bytes);
+
+  assert.equal(result.paragraphs[0]!.styleInheritanceDepth, 1);
+  assert.equal(result.paragraphs[0]!.styleParagraphPrlCount, 1);
+  assert.equal(result.paragraphs[0]!.propertiesStatus, "style_and_papx_applied");
+});
+
 test("official calendar KRX legacy Word table text marks classify depth-one cells and TTP", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidDepthOneTableTextMarksFixture(bytes, 0x0007);
@@ -3771,6 +3805,7 @@ function configureValidParagraphBoundariesFixture(
     ],
     papx: []
   });
+  configureDefaultParagraphStyleFixture(bytes, 10);
 }
 
 function configureConsecutiveDepthOneTtpMarksFixture(bytes: Uint8Array): void {
@@ -3827,6 +3862,7 @@ function configureConsecutiveDepthOneTtpMarksFixture(bytes: Uint8Array): void {
       0
     )
   );
+  configureDefaultParagraphStyleFixture(bytes, 10);
 }
 
 function configureValidNestedAndOuterTableRowsFixture(bytes: Uint8Array): void {
@@ -3912,6 +3948,7 @@ function configureValidNestedAndOuterTableRowsFixture(bytes: Uint8Array): void {
       0
     )
   );
+  configureDefaultParagraphStyleFixture(bytes, 18);
 }
 
 function configureDocumentTitleFixture(
@@ -3980,6 +4017,7 @@ function configureValidDepthOneTableTextMarksFixture(
       0
     )
   );
+  configureDefaultParagraphStyleFixture(bytes, 10);
 }
 
 function configureValidNestedTableTextMarkFixture(
@@ -4021,6 +4059,32 @@ function configureValidNestedTableTextMarkFixture(
       ],
       0
     )
+  );
+  configureDefaultParagraphStyleFixture(bytes, 18);
+}
+
+function configureDefaultParagraphStyleFixture(
+  bytes: Uint8Array,
+  baseSize: 10 | 18
+): void {
+  expandTableMiniStream(bytes);
+  configureRawStsh(
+    bytes,
+    buildStshBytes({
+      cbSTDBaseInFile: baseSize,
+      records: new Map([
+        [
+          0,
+          buildStdfBaseRecord({
+            baseSize,
+            sti: 0,
+            istdNext: 0,
+            body: buildParagraphStyleBody(0)
+          })
+        ]
+      ])
+    }),
+    64
   );
 }
 

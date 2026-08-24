@@ -86,7 +86,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
     throw invalidDirectParagraphProperties();
   }
   const needsParagraphStyleResolution = grpPrls.groups.some(
-    (group) => group.istd !== null && group.istd !== 0
+    (group) => group.istd !== null
   );
   const paragraphStyles = needsParagraphStyleResolution
     ? verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(input)
@@ -123,7 +123,6 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
         : undefined;
     if (
       group.istd !== null &&
-      group.istd !== 0 &&
       paragraphStyle === undefined
     ) {
       throw unsupportedDirectParagraphStyle();

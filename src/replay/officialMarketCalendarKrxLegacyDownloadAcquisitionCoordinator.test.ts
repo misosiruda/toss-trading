@@ -1858,6 +1858,7 @@ test("KRX legacy Word table text marks consumer closes ownership for a depth-one
   configureSyntheticWordDocumentCounts(documentBytes, 1);
   configureSyntheticWordTextRange(documentBytes, 1536);
   configureSyntheticWordPlcBtePapxReference(documentBytes, 100, 12);
+  configureSyntheticWordDefaultParagraphStyle(documentBytes);
   const fkpOffset = (4 + 1) * 512 + 1024;
   documentBytes[fkpOffset + 8] = 20;
   documentBytes.set([3, 0, 0, 0x17, 0x24, 1], fkpOffset + 40);
@@ -2507,6 +2508,47 @@ function configureSyntheticWordPlcBtePapxReference(
       view.setUint8(fkpByteOffset + 511, 1);
     }
   }
+}
+
+function configureSyntheticWordDefaultParagraphStyle(bytes: Uint8Array): void {
+  const wordOffset = (4 + 1) * 512;
+  const tableStreamOffset = (12 + 1) * 512;
+  const tableOffset = 200;
+  const cbStshi = 18;
+  const cstd = 15;
+  const styleBody = Uint8Array.from([
+    1, 0, 0x41, 0, 0, 0,
+    2, 0, 0, 0,
+    0, 0
+  ]);
+  const styleRecord = new Uint8Array(10 + styleBody.length);
+  const recordView = new DataView(styleRecord.buffer);
+  recordView.setUint16(0, 0, true);
+  recordView.setUint16(2, 1 | (0x0fff << 4), true);
+  recordView.setUint16(4, 2, true);
+  recordView.setUint16(6, styleRecord.length, true);
+  styleRecord.set(styleBody, 10);
+
+  const stsh = new Uint8Array(2 + cbStshi + cstd * 2 + styleRecord.length);
+  const stshView = new DataView(stsh.buffer);
+  stshView.setUint16(0, cbStshi, true);
+  stshView.setUint16(2, cstd, true);
+  stshView.setUint16(4, 10, true);
+  stshView.setUint16(6, 1, true);
+  stshView.setUint16(10, cstd, true);
+  let offset = 2 + cbStshi;
+  stshView.setInt16(offset, styleRecord.length, true);
+  stsh.set(styleRecord, offset + 2);
+  offset += 2 + styleRecord.length;
+  while (offset < stsh.length) {
+    stshView.setInt16(offset, 0, true);
+    offset += 2;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setUint32(wordOffset + 154 + 8, tableOffset, true);
+  view.setUint32(wordOffset + 154 + 12, stsh.length, true);
+  bytes.set(stsh, tableStreamOffset + tableOffset);
 }
 
 async function acquireWordClxVerifiedHandle(
