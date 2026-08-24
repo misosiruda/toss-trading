@@ -347,7 +347,7 @@ function parseEventColumns(
 
 function splitCombinedEventCell(value: string): EventTextColumns {
   const match = normalize(value).match(
-    /^((?:[1-9]|[12][0-9]|3[01])(?:\s*~\s*(?:[1-9]|[12][0-9]|3[01])|\s+(?:[1-9]|[12][0-9]|3[01]))*)\s*([^0-9\s].*)$/
+    /^((?:[1-9]|[12][0-9]|3[01])(?:\s*~\s*(?:[1-9]|[12][0-9]|3[01]))?)\s*([^0-9\s].*)$/
   );
   if (match === null) throw invalidCalendarSemantics();
   return { dayText: match[1]!, descriptionText: match[2]! };

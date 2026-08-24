@@ -80,6 +80,15 @@ test("official calendar KRX legacy Word calendar semantics reject malformed head
     ),
     OfficialMarketCalendarKrxLegacyWordCalendarSemanticsError
   );
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+      replaceRowValues(buildSourceRows(), 7, [
+        "1 3-year KTB schedule", "", "2", "description"
+      ]),
+      "2013"
+    ),
+    OfficialMarketCalendarKrxLegacyWordCalendarSemanticsError
+  );
 });
 
 test("official calendar KRX legacy Word calendar semantics accept observed legacy event layouts", () => {
