@@ -3001,6 +3001,8 @@ export function consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVer
       directParagraphProperties.papxThenTerminalPcdOrderVerified !== true ||
       directParagraphProperties.prm0ParagraphSelectionVerified !== true ||
       directParagraphProperties.prm1ParagraphSelectionVerified !== true ||
+      directParagraphProperties.paragraphStyleBindingStatus !==
+        "default_and_non_default_resolved" ||
       directParagraphProperties.tableTextMarkSemanticsStatus !== "not_verified" ||
       directParagraphProperties.tableRowCellBoundaryStatus !== "not_verified" ||
       directParagraphProperties.sourceRoleStatus !== "candidate_not_accepted"

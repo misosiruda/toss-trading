@@ -2,6 +2,7 @@ import { verifyOfficialMarketCalendarKrxLegacyWordGrpPrls } from "./officialMark
 import { verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
 import { verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls } from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
 import type { VerifiedOfficialMarketCalendarKrxLegacyWordPrl } from "./officialMarketCalendarKrxLegacyWordPrl.js";
+import { verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties } from "./officialMarketCalendarKrxLegacyWordParagraphStyleProperties.js";
 import {
   OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError,
   interpretOfficialMarketCalendarKrxLegacyWordTableParagraphProperties
@@ -25,10 +26,16 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphPrope
   terminalPcdPrmKind: "prm0" | "prm1";
   terminalPcdRawPrm: number;
   papxPrlCount: number;
+  styleParagraphPrlCount: number;
+  styleInheritanceDepth: number;
   appendedPcdParagraphPrlCount: number;
   ignoredPcdNonParagraphPrlCount: number;
   directParagraphPrlCount: number;
-  propertiesStatus: "papx_only" | "papx_and_terminal_pcd_applied";
+  propertiesStatus:
+    | "papx_only"
+    | "papx_and_terminal_pcd_applied"
+    | "style_and_papx_applied"
+    | "style_papx_and_terminal_pcd_applied";
   textMarkValidationStatus: "not_applicable" | "pending_text_binding";
 }
 
@@ -41,6 +48,7 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphPrope
   papxThenTerminalPcdOrderVerified: true;
   prm0ParagraphSelectionVerified: true;
   prm1ParagraphSelectionVerified: true;
+  paragraphStyleBindingStatus: "default_and_non_default_resolved";
   tableTextMarkSemanticsStatus: "not_verified";
   tableRowCellBoundaryStatus: "not_verified";
   sourceRoleStatus: "candidate_not_accepted";
@@ -77,6 +85,19 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
   ) {
     throw invalidDirectParagraphProperties();
   }
+  const needsParagraphStyleResolution = grpPrls.groups.some(
+    (group) => group.istd !== null && group.istd !== 0
+  );
+  const paragraphStyles = needsParagraphStyleResolution
+    ? verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(input)
+    : null;
+  if (
+    paragraphStyles !== null &&
+    (paragraphStyles.nFib !== boundaries.nFib ||
+      paragraphStyles.tableStreamName !== boundaries.tableStreamName)
+  ) {
+    throw invalidDirectParagraphProperties();
+  }
 
   const paragraphs = boundaries.paragraphs.map((boundary) => {
     const group = grpPrls.groups.find(
@@ -96,9 +117,18 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
     ) {
       throw invalidDirectParagraphProperties();
     }
-    if (group.istd !== null && group.istd !== 0) {
+    const paragraphStyle =
+      group.istd !== null && paragraphStyles !== null
+        ? paragraphStyles?.styles.find((style) => style.istd === group.istd)
+        : undefined;
+    if (
+      group.istd !== null &&
+      group.istd !== 0 &&
+      paragraphStyle === undefined
+    ) {
       throw unsupportedDirectParagraphStyle();
     }
+    const stylePrls = paragraphStyle?.resolvedParagraphPrls ?? [];
 
     const pcdModifiers = resolveTerminalPcdParagraphModifiers(
       terminalPiece,
@@ -110,8 +140,9 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
         interpretOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(
           boundaries.nFib,
           group.istd,
-          [...group.prls, ...pcdModifiers.prls],
-          pcdModifiers.additionalUninterpretedParagraphPrlCount
+          [...stylePrls, ...group.prls, ...pcdModifiers.prls],
+          pcdModifiers.additionalUninterpretedParagraphPrlCount,
+          paragraphStyle !== undefined
         );
     } catch (error) {
       if (
@@ -136,16 +167,18 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
       terminalPcdPrmKind: terminalPiece.kind,
       terminalPcdRawPrm: terminalPiece.rawPrm,
       papxPrlCount: group.prls.length,
+      styleParagraphPrlCount: stylePrls.length,
+      styleInheritanceDepth: paragraphStyle?.inheritanceChain.length ?? 0,
       appendedPcdParagraphPrlCount: pcdModifiers.appendedParagraphPrlCount,
       ignoredPcdNonParagraphPrlCount:
         pcdModifiers.ignoredNonParagraphPrlCount,
       directParagraphPrlCount:
         group.prls.length + pcdModifiers.appendedParagraphPrlCount,
       ...interpreted,
-      propertiesStatus:
-        pcdModifiers.appendedParagraphPrlCount === 0
-          ? "papx_only"
-          : "papx_and_terminal_pcd_applied",
+      propertiesStatus: resolvePropertiesStatus(
+        stylePrls.length,
+        pcdModifiers.appendedParagraphPrlCount
+      ),
       textMarkValidationStatus:
         interpreted.tableRole === "not_in_table" ||
         interpreted.tableRole === "table_paragraph"
@@ -164,10 +197,25 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
     papxThenTerminalPcdOrderVerified: true,
     prm0ParagraphSelectionVerified: true,
     prm1ParagraphSelectionVerified: true,
+    paragraphStyleBindingStatus: "default_and_non_default_resolved",
     tableTextMarkSemanticsStatus: "not_verified",
     tableRowCellBoundaryStatus: "not_verified",
     sourceRoleStatus: "candidate_not_accepted"
   });
+}
+
+function resolvePropertiesStatus(
+  stylePrlCount: number,
+  terminalPcdPrlCount: number
+): VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphProperty["propertiesStatus"] {
+  if (stylePrlCount === 0) {
+    return terminalPcdPrlCount === 0
+      ? "papx_only"
+      : "papx_and_terminal_pcd_applied";
+  }
+  return terminalPcdPrlCount === 0
+    ? "style_and_papx_applied"
+    : "style_papx_and_terminal_pcd_applied";
 }
 
 function resolveTerminalPcdParagraphModifiers(

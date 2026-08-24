@@ -32,6 +32,11 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordStdfBases
 } from "./officialMarketCalendarKrxLegacyWordStdfBase.js";
 import {
+  OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_STYLE_PROPERTIES_SCHEMA_VERSION,
+  OfficialMarketCalendarKrxLegacyWordParagraphStylePropertiesError,
+  verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties
+} from "./officialMarketCalendarKrxLegacyWordParagraphStyleProperties.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PLC_BTE_PAPX_REFERENCE_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordPlcBtePapxReferenceError,
   verifyOfficialMarketCalendarKrxLegacyWordPlcBtePapxReference
@@ -884,14 +889,104 @@ test("official calendar KRX legacy Word StdfBase verifies metadata and inheritan
   assert.deepEqual(result.styles[0], {
     istd: 0, status: "base_verified_body_not_parsed", sti: 0, stk: 1,
     istdBase: null, cupx: 2, istdNext: 0, bchUpe: 12,
+    stdfPost2000: null,
     styleBodyBytes: new Uint8Array([0x31, 0x32])
   });
   assert.equal(result.styles[1]!.status, "empty");
   assert.equal(result.stdfBaseVerified, true);
   assert.equal(result.inheritanceReferencesVerified, true);
-  assert.equal(result.cupxStatus, "projected_semantics_not_verified");
+  assert.equal(result.cupxStatus, "style_type_and_revision_mark_verified");
   assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
   assert.equal(Object.isFrozen(result.styles), true);
+});
+
+test("official calendar KRX legacy Word StdfBase verifies Post2000 metadata", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  expandTableMiniStream(bytes);
+  configureVariableFib(bytes, { nFib: 0x00d9, version: "Word2000", cbRgFcLcb: 0x006c, cswNew: 2 });
+  const record = buildStdfBaseRecord({
+    baseSize: 18,
+    sti: 0,
+    cupx: 3,
+    istdNext: 0,
+    fHasOriginalStyle: true,
+    rsid: 0x10203040,
+    iftcHtml: 3,
+    iPriority: 99
+  });
+  configureRawStsh(bytes, buildStshBytes({
+    cbSTDBaseInFile: 18,
+    records: new Map([[0, record]])
+  }), 2);
+
+  const result = verifyOfficialMarketCalendarKrxLegacyWordStdfBases(bytes);
+  assert.deepEqual(result.styles[0]!.status === "empty" ? null : result.styles[0]!.stdfPost2000, {
+    istdLink: null,
+    fHasOriginalStyle: true,
+    rsid: 0x10203040,
+    iftcHtml: 3,
+    iPriority: 99
+  });
+  assert.equal(result.cupxStatus, "style_type_and_revision_mark_verified");
+});
+
+test("official calendar KRX legacy Word paragraph styles frame UPX and resolve inheritance", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureWordRootStreams(bytes, "1Table");
+  expandTableMiniStream(bytes);
+  configureVariableFib(bytes, { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 });
+  const records = new Map<number, Uint8Array>([
+    [0, buildStdfBaseRecord({ sti: 0, istdNext: 0, body: buildParagraphStyleBody(0, [[0x2416, [1]]]) })],
+    [1, buildStdfBaseRecord({ sti: 1, istdBase: 0, istdNext: 1, body: buildParagraphStyleBody(1, [[0x2417, [1]]]) })]
+  ]);
+  configureRawStsh(bytes, buildStshBytes({ records }), 64);
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(bytes);
+  assert.equal(
+    result.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_STYLE_PROPERTIES_SCHEMA_VERSION
+  );
+  assert.deepEqual(result.styles.map((style) => ({
+    istd: style.istd,
+    inheritanceChain: style.inheritanceChain,
+    directSprms: style.directParagraphPrls.map((prl) => prl.sprm),
+    resolvedSprms: style.resolvedParagraphPrls.map((prl) => prl.sprm),
+    upxCount: style.upxCount,
+    paragraphUpxIstdStatus: style.paragraphUpxIstdStatus
+  })), [
+    { istd: 0, inheritanceChain: [0], directSprms: [0x2416], resolvedSprms: [0x2416], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" },
+    { istd: 1, inheritanceChain: [0, 1], directSprms: [0x2417], resolvedSprms: [0x2416, 0x2417], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" }
+  ]);
+  assert.equal(result.xstzNameFramingVerified, true);
+  assert.equal(result.lpUpxFramingVerified, true);
+  assert.equal(result.paragraphUpxPapxVerified, true);
+  assert.equal(result.inheritanceOrderVerified, true);
+  assert.equal(result.sourceRoleStatus, "candidate_not_accepted");
+});
+
+test("official calendar KRX legacy Word paragraph styles reject malformed Xstz and UPX", () => {
+  const invalidBodies = [
+    new Uint8Array([0, 0, 0, 0]),
+    new Uint8Array([1, 0, 0x41, 0, 1, 0]),
+    new Uint8Array([1, 0, 0x41, 0, 0, 0, 2, 0, 0, 0])
+  ];
+  for (const body of invalidBodies) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureWordRootStreams(bytes, "1Table");
+    expandTableMiniStream(bytes);
+    configureVariableFib(bytes, { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 });
+    configureRawStsh(bytes, buildStshBytes({
+      records: new Map([[0, buildStdfBaseRecord({ body })]])
+    }), 64);
+    assert.throws(
+      () => verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(bytes),
+      (error: unknown) =>
+        error instanceof OfficialMarketCalendarKrxLegacyWordParagraphStylePropertiesError &&
+        error.code === "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_PARAGRAPH_STYLE_PROPERTIES_INVALID"
+    );
+  }
 });
 
 test("official calendar KRX legacy Word StdfBase rejects invalid metadata and references", () => {
@@ -2982,9 +3077,10 @@ test("official calendar KRX legacy Word direct paragraph properties reject inval
   );
 });
 
-test("official calendar KRX legacy Word direct paragraph properties identify unsupported non-default style", () => {
+test("official calendar KRX legacy Word direct paragraph properties resolve non-default style", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidParagraphBoundariesFixture(bytes);
+  expandTableMiniStream(bytes);
   configurePapxFkpPage(bytes, 2048, {
     rgfc: [920, 930, 951, 953],
     bxPap: [
@@ -3005,18 +3101,19 @@ test("official calendar KRX legacy Word direct paragraph properties identify uns
       1
     )
   );
+  configureRawStsh(bytes, buildStshBytes({
+    records: new Map([
+      [0, buildStdfBaseRecord({ sti: 0, istdNext: 0, body: buildParagraphStyleBody(0) })],
+      [1, buildStdfBaseRecord({ sti: 1, istdBase: 0, istdNext: 1, body: buildParagraphStyleBody(1) })]
+    ])
+  }), 64);
 
-  assert.throws(
-    () =>
-      verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(
-        bytes
-      ),
-    (error: unknown) =>
-      error instanceof
-        OfficialMarketCalendarKrxLegacyWordDirectParagraphPropertiesError &&
-      error.code ===
-        "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED"
-  );
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(bytes);
+  assert.equal(result.paragraphStyleBindingStatus, "default_and_non_default_resolved");
+  assert.equal(result.paragraphs[0]!.styleInheritanceDepth, 2);
+  assert.equal(result.paragraphs[0]!.styleParagraphPrlCount, 0);
+  assert.equal(result.paragraphs[0]!.tableRole, "depth_1_ttp_candidate");
 });
 
 test("official calendar KRX legacy Word table text marks classify depth-one cells and TTP", () => {
@@ -3503,6 +3600,11 @@ function buildStdfBaseRecord(
     cupx?: number;
     istdNext?: number;
     bchUpe?: number;
+    istdLink?: number;
+    fHasOriginalStyle?: boolean;
+    rsid?: number;
+    iftcHtml?: number;
+    iPriority?: number;
     body?: Uint8Array;
   } = {}
 ): Uint8Array {
@@ -3514,7 +3616,70 @@ function buildStdfBaseRecord(
   view.setUint16(2, (options.stk ?? 1) | ((options.istdBase ?? 0x0fff) << 4), true);
   view.setUint16(4, (options.cupx ?? 2) | ((options.istdNext ?? 0) << 4), true);
   view.setUint16(6, options.bchUpe ?? bytes.length, true);
+  if (baseSize === 18) {
+    view.setUint16(
+      10,
+      (options.istdLink ?? 0) |
+        (options.fHasOriginalStyle === true ? 0x1000 : 0),
+      true
+    );
+    view.setUint32(12, options.rsid ?? 0, true);
+    view.setUint16(
+      16,
+      (options.iftcHtml ?? 0) | ((options.iPriority ?? 0) << 4),
+      true
+    );
+  }
   bytes.set(body, baseSize);
+  return bytes;
+}
+
+function expandTableMiniStream(bytes: Uint8Array): void {
+  const miniSectorCount = 8;
+  setRootUint32(bytes, 120, miniSectorCount * 64);
+  setStreamUint32(bytes, 2, 120, miniSectorCount * 64);
+  for (let index = 0; index < miniSectorCount; index += 1) {
+    writeMiniFatEntry(
+      bytes,
+      index,
+      index === miniSectorCount - 1 ? ENDOFCHAIN : index + 1
+    );
+  }
+}
+
+function buildParagraphStyleBody(
+  istd: number,
+  paragraphPrls: readonly (readonly [number, readonly number[]])[] = []
+): Uint8Array {
+  const name = Uint8Array.of(1, 0, 0x41 + istd, 0, 0, 0);
+  const papx = Uint8Array.from([
+    istd & 0xff,
+    (istd >>> 8) & 0xff,
+    ...paragraphPrls.flatMap(([sprm, operand]) => [
+      sprm & 0xff,
+      (sprm >>> 8) & 0xff,
+      ...operand
+    ])
+  ]);
+  const chpx = new Uint8Array();
+  const bytes = new Uint8Array(
+    name.length +
+      2 +
+      papx.length +
+      (papx.length % 2) +
+      2 +
+      chpx.length +
+      (chpx.length % 2)
+  );
+  bytes.set(name, 0);
+  const view = new DataView(bytes.buffer);
+  let offset = name.length;
+  view.setUint16(offset, papx.length, true);
+  offset += 2;
+  bytes.set(papx, offset);
+  offset += papx.length + (papx.length % 2);
+  view.setUint16(offset, chpx.length, true);
+  bytes.set(chpx, offset + 2);
   return bytes;
 }
 

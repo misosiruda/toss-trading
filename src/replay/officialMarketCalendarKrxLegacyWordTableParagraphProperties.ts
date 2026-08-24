@@ -132,10 +132,11 @@ export function interpretOfficialMarketCalendarKrxLegacyWordTableParagraphProper
     VerifiedOfficialMarketCalendarKrxLegacyWordPrl,
     "sprm" | "operandBytes"
   >[],
-  additionalUninterpretedPrlCount = 0
+  additionalUninterpretedPrlCount = 0,
+  paragraphStyleResolved = false
 ): InterpretedOfficialMarketCalendarKrxLegacyWordTableParagraphProperties {
   if (
-    (istd !== null && istd !== 0) ||
+    (istd !== null && istd !== 0 && !paragraphStyleResolved) ||
     !Number.isSafeInteger(additionalUninterpretedPrlCount) ||
     additionalUninterpretedPrlCount < 0
   ) {
