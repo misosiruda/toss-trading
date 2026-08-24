@@ -3,7 +3,7 @@ import type {
 } from "./officialMarketCalendarKrxLegacyWordSourceRows.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CALENDAR_SEMANTICS_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_word_calendar_semantics.v1";
+  "official_market_calendar_krx_legacy_word_calendar_semantics.v2";
 
 export interface VerifiedOfficialMarketCalendarKrxLegacyWordCalendarEvent {
   index: number;
@@ -37,7 +37,7 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordCalendarSemantics {
   twoMonthBlockCount: 6;
   monthTitleStatus: "january_through_december_verified";
   weekdayHeaderStatus: "sunday_through_saturday_verified";
-  dateGridStatus: "gregorian_five_row_fold_verified";
+  dateGridStatus: "gregorian_five_or_six_row_layout_verified";
   columnSemanticsStatus: "calendar_grid_and_event_columns_verified";
   holidaySemanticsStatus: "classified_not_accepted";
   sourceRoleStatus: "candidate_not_accepted";
@@ -116,29 +116,43 @@ export function verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
 
     verifyTitleRow(block[0]!, firstMonth, secondMonth);
     verifyWeekdayRow(block[1]!);
-    const dateRows = block.slice(2, 7);
-    if (dateRows.length !== 5) throw invalidCalendarSemantics();
+    const dateRows = block.slice(2).filter(
+      (row, index, rows) =>
+        row.cells.length === 15 &&
+        rows.slice(0, index).every((candidate) => candidate.cells.length === 15)
+    );
+    if (dateRows.length < 5 || dateRows.length > 6) {
+      throw invalidCalendarSemantics();
+    }
     verifyDateGrid(dateRows, year, firstMonth, 0);
     verifyDateGrid(dateRows, year, secondMonth, 8);
 
     const firstEvents: VerifiedOfficialMarketCalendarKrxLegacyWordCalendarEvent[] = [];
     const secondEvents: VerifiedOfficialMarketCalendarKrxLegacyWordCalendarEvent[] = [];
     const eventRowIndices: number[] = [];
-    for (const row of block.slice(7)) {
-      if (row.cells.length !== 5 || normalize(row.cells[2]!.contentText) !== "") {
-        throw invalidCalendarSemantics();
-      }
+    for (const row of block.slice(2 + dateRows.length)) {
+      const eventColumns = parseEventColumns(row);
       eventRowIndices.push(row.index);
-      const left = parseEvent(row.index, firstMonth, row.cells[0]!.contentText, row.cells[1]!.contentText, year, events.length);
-      if (left !== null) {
-        firstEvents.push(left);
-        events.push(left);
-      }
-      const right = parseEvent(row.index, secondMonth, row.cells[3]!.contentText, row.cells[4]!.contentText, year, events.length);
-      if (right !== null) {
-        secondEvents.push(right);
-        events.push(right);
-      }
+      const left = parseEvents(
+        row.index,
+        firstMonth,
+        eventColumns.left.dayText,
+        eventColumns.left.descriptionText,
+        year,
+        events.length
+      );
+      firstEvents.push(...left);
+      events.push(...left);
+      const right = parseEvents(
+        row.index,
+        secondMonth,
+        eventColumns.right.dayText,
+        eventColumns.right.descriptionText,
+        year,
+        events.length
+      );
+      secondEvents.push(...right);
+      events.push(...right);
     }
 
     months.push(
@@ -166,7 +180,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
     twoMonthBlockCount: 6,
     monthTitleStatus: "january_through_december_verified",
     weekdayHeaderStatus: "sunday_through_saturday_verified",
-    dateGridStatus: "gregorian_five_row_fold_verified",
+    dateGridStatus: "gregorian_five_or_six_row_layout_verified",
     columnSemanticsStatus: "calendar_grid_and_event_columns_verified",
     holidaySemanticsStatus: "classified_not_accepted",
     sourceRoleStatus: "candidate_not_accepted"
@@ -183,7 +197,7 @@ function verifyTitleRow(
     row.cells.length !== 3 ||
     normalize(row.cells[0]!.contentText) !== MONTH_NAMES[firstMonth - 1] ||
     normalize(row.cells[1]!.contentText) !== "" ||
-    normalize(row.cells[2]!.contentText) !== MONTH_NAMES[secondMonth - 1]
+    !isExpectedMonthTitle(row.cells[2]!.contentText, secondMonth)
   ) {
     throw invalidCalendarSemantics();
   }
@@ -210,8 +224,7 @@ function verifyDateGrid(
   month: number,
   cellOffset: 0 | 8
 ): void {
-  const expected = createExpectedDateGrid(year, month);
-  rows.forEach((row, rowIndex) => {
+  const actual = rows.map((row) => {
     if (
       row.tableDepth !== 1 ||
       row.cells.length !== 15 ||
@@ -219,18 +232,33 @@ function verifyDateGrid(
     ) {
       throw invalidCalendarSemantics();
     }
-    for (let weekday = 0; weekday < 7; weekday += 1) {
-      if (
-        normalize(row.cells[cellOffset + weekday]!.contentText) !==
-        expected[rowIndex]![weekday]
-      ) {
-        throw invalidCalendarSemantics();
-      }
-    }
+    return Array.from({ length: 7 }, (_, weekday) =>
+      normalize(row.cells[cellOffset + weekday]!.contentText)
+    );
   });
+  const folded = rows.length === 5
+    ? createExpectedFiveRowFoldedDateGrid(year, month)
+    : null;
+  if (folded !== null && isDeepEqualGrid(actual, folded)) return;
+
+  const unfolded = createExpectedUnfoldedDateGrid(year, month);
+  const firstNonEmpty = actual.findIndex((row) => row.some((value) => value !== ""));
+  let lastNonEmpty = -1;
+  for (let index = actual.length - 1; index >= 0; index -= 1) {
+    if (actual[index]!.some((value) => value !== "")) {
+      lastNonEmpty = index;
+      break;
+    }
+  }
+  if (
+    firstNonEmpty < 0 ||
+    !isDeepEqualGrid(actual.slice(firstNonEmpty, lastNonEmpty + 1), unfolded)
+  ) {
+    throw invalidCalendarSemantics();
+  }
 }
 
-function createExpectedDateGrid(year: number, month: number): string[][] {
+function createExpectedFiveRowFoldedDateGrid(year: number, month: number): string[][] {
   const cells = Array.from({ length: 5 }, () =>
     Array.from({ length: 7 }, () => "")
   );
@@ -246,36 +274,146 @@ function createExpectedDateGrid(year: number, month: number): string[][] {
   return cells;
 }
 
-function parseEvent(
+function createExpectedUnfoldedDateGrid(year: number, month: number): string[][] {
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells = Array.from(
+    { length: Math.ceil((firstWeekday + dayCount) / 7) },
+    () => Array.from({ length: 7 }, () => "")
+  );
+  for (let day = 1; day <= dayCount; day += 1) {
+    const linearIndex = firstWeekday + day - 1;
+    cells[Math.floor(linearIndex / 7)]![linearIndex % 7] = String(day);
+  }
+  return cells;
+}
+
+function isDeepEqualGrid(
+  actual: readonly (readonly string[])[],
+  expected: readonly (readonly string[])[]
+): boolean {
+  return actual.length === expected.length && actual.every(
+    (row, rowIndex) =>
+      row.length === expected[rowIndex]!.length &&
+      row.every((value, columnIndex) => value === expected[rowIndex]![columnIndex])
+  );
+}
+
+interface EventTextColumns {
+  dayText: string;
+  descriptionText: string;
+}
+
+function parseEventColumns(
+  row: VerifiedOfficialMarketCalendarKrxLegacyWordSourceRows["rows"][number]
+): { left: EventTextColumns; right: EventTextColumns } {
+  if (row.tableDepth !== 1) throw invalidCalendarSemantics();
+  if (row.cells.length === 5) {
+    if (normalize(row.cells[2]!.contentText) !== "") {
+      throw invalidCalendarSemantics();
+    }
+    return {
+      left: {
+        dayText: row.cells[0]!.contentText,
+        descriptionText: row.cells[1]!.contentText
+      },
+      right: {
+        dayText: row.cells[3]!.contentText,
+        descriptionText: row.cells[4]!.contentText
+      }
+    };
+  }
+  if (row.cells.length !== 4) throw invalidCalendarSemantics();
+  if (normalize(row.cells[1]!.contentText) === "") {
+    return {
+      left: splitCombinedEventCell(row.cells[0]!.contentText),
+      right: {
+        dayText: row.cells[2]!.contentText,
+        descriptionText: row.cells[3]!.contentText
+      }
+    };
+  }
+  if (normalize(row.cells[2]!.contentText) === "") {
+    return {
+      left: {
+        dayText: row.cells[0]!.contentText,
+        descriptionText: row.cells[1]!.contentText
+      },
+      right: splitCombinedEventCell(row.cells[3]!.contentText)
+    };
+  }
+  throw invalidCalendarSemantics();
+}
+
+function splitCombinedEventCell(value: string): EventTextColumns {
+  const match = normalize(value).match(
+    /^((?:[1-9]|[12][0-9]|3[01])(?:\s*~\s*(?:[1-9]|[12][0-9]|3[01])|\s+(?:[1-9]|[12][0-9]|3[01]))*)\s*([^0-9\s].*)$/
+  );
+  if (match === null) throw invalidCalendarSemantics();
+  return { dayText: match[1]!, descriptionText: match[2]! };
+}
+
+function parseEvents(
   sourceRowIndex: number,
   month: number,
   dayText: string,
   descriptionText: string,
   year: number,
   index: number
-): VerifiedOfficialMarketCalendarKrxLegacyWordCalendarEvent | null {
+): readonly VerifiedOfficialMarketCalendarKrxLegacyWordCalendarEvent[] {
   const normalizedDay = normalize(dayText);
   const description = normalize(descriptionText);
-  if (normalizedDay === "" && description === "") return null;
-  if (!/^(?:[1-9]|[12][0-9]|3[01])$/.test(normalizedDay) || description === "") {
+  if (normalizedDay === "" && description === "") return [];
+  if (description === "") {
     throw invalidCalendarSemantics();
   }
-  const day = Number(normalizedDay);
+  const days = parseEventDays(normalizedDay);
   const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  if (day > dayCount) throw invalidCalendarSemantics();
+  if (days.some((day) => day > dayCount)) throw invalidCalendarSemantics();
   const isHoliday = description.startsWith("Holiday (");
   if (isHoliday && !/^Holiday \(.+\)$/.test(description)) {
     throw invalidCalendarSemantics();
   }
-  return Object.freeze({
-    index,
+  return Object.freeze(days.map((day, dayIndex) => Object.freeze({
+    index: index + dayIndex,
     sourceRowIndex,
     month,
     day,
     date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
     description,
     kind: isHoliday ? "holiday" : "derivatives_schedule"
-  });
+  })));
+}
+
+function parseEventDays(value: string): readonly number[] {
+  const single = value.match(/^(?:[1-9]|[12][0-9]|3[01])$/);
+  if (single !== null) return [Number(value)];
+  const range = value.match(
+    /^([1-9]|[12][0-9]|3[01])\s*~\s*([1-9]|[12][0-9]|3[01])$/
+  );
+  if (range !== null) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (start >= end) throw invalidCalendarSemantics();
+    return Object.freeze(Array.from(
+      { length: end - start + 1 },
+      (_, offset) => start + offset
+    ));
+  }
+  if (/^(?:[1-9]|[12][0-9]|3[01])(?:\s+(?:[1-9]|[12][0-9]|3[01]))+$/.test(value)) {
+    const days = value.split(/\s+/u).map(Number);
+    if (days.some((day, index) => index > 0 && day <= days[index - 1]!)) {
+      throw invalidCalendarSemantics();
+    }
+    return Object.freeze(days);
+  }
+  throw invalidCalendarSemantics();
+}
+
+function isExpectedMonthTitle(value: string, month: number): boolean {
+  const normalized = normalize(value);
+  return normalized === MONTH_NAMES[month - 1] ||
+    (month === 2 && normalized === "Febuary");
 }
 
 function createMonth(

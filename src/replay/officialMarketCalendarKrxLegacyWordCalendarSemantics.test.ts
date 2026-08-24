@@ -38,7 +38,10 @@ test("official calendar KRX legacy Word calendar semantics verify two-month bloc
     { date: "2013-01-01", kind: "holiday" },
     { date: "2013-02-02", kind: "derivatives_schedule" }
   ]);
-  assert.equal(result.dateGridStatus, "gregorian_five_row_fold_verified");
+  assert.equal(
+    result.dateGridStatus,
+    "gregorian_five_or_six_row_layout_verified"
+  );
   assert.equal(
     result.columnSemanticsStatus,
     "calendar_grid_and_event_columns_verified"
@@ -52,7 +55,9 @@ test("official calendar KRX legacy Word calendar semantics reject malformed head
     new Map([["1:0", "MON"]]),
     new Map([["20:0", "24"]]),
     new Map([["7:1", ""]]),
-    new Map([["7:1", "Holiday (New Year"]])
+    new Map([["7:1", "Holiday (New Year"]]),
+    new Map([["7:0", "10~8"]]),
+    new Map([["7:0", "10 10"]])
   ];
   for (const overrides of invalidFixtures) {
     assert.throws(
@@ -68,6 +73,69 @@ test("official calendar KRX legacy Word calendar semantics reject malformed head
           "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_CALENDAR_SEMANTICS_INVALID"
     );
   }
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+      replaceRowValues(buildSourceRows(), 7, ["1", "description", "2", "description"]),
+      "2013"
+    ),
+    OfficialMarketCalendarKrxLegacyWordCalendarSemanticsError
+  );
+});
+
+test("official calendar KRX legacy Word calendar semantics accept observed legacy event layouts", () => {
+  const rangeResult = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    buildSourceRows(new Map([
+    ["0:2", "Febuary"],
+    ["7:0", "8~10"]
+    ])),
+    "2013"
+  );
+  assert.deepEqual(
+    rangeResult.months[0]!.events.slice(0, 3).map((event) => event.day),
+    [8, 9, 10]
+  );
+
+  const listResult = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    buildSourceRows(new Map([["7:0", "10 11"]])),
+    "2013"
+  );
+  assert.deepEqual(
+    listResult.months[0]!.events.slice(0, 2).map((event) => event.day),
+    [10, 11]
+  );
+
+  const combinedLeftResult = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    replaceRowValues(buildSourceRows(), 7, [
+      "12 Derivative schedule", "", "2", "Derivative schedule"
+    ]),
+    "2013"
+  );
+  assert.equal(combinedLeftResult.months[0]!.events[0]!.day, 12);
+
+  const combinedRightResult = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    replaceRowValues(buildSourceRows(), 7, [
+      "1", "Holiday (January holiday)", "", "3 Derivative schedule"
+    ]),
+    "2013"
+  );
+  assert.deepEqual(
+    combinedRightResult.months[1]!.events.map((event) => event.day),
+    [3]
+  );
+});
+
+test("official calendar KRX legacy Word calendar semantics accept padded six-row grids", () => {
+  const result = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    insertRowValues(
+      buildSourceRows(),
+      7,
+      ["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+    ),
+    "2013"
+  );
+
+  assert.equal(result.months[0]!.dateGridRowIndices.length, 6);
+  assert.equal(result.months[1]!.dateGridRowIndices.length, 6);
 });
 
 function buildSourceRows(
@@ -131,6 +199,51 @@ function appendRow(
     rowTerminatorParagraphIndex: rowIndex,
     rowTerminatorRole: "depth_1_ttp_mark"
   });
+}
+
+function replaceRowValues(
+  sourceRows: ReturnType<typeof buildSourceRows>,
+  rowIndex: number,
+  values: readonly string[]
+): ReturnType<typeof buildSourceRows> {
+  return {
+    ...sourceRows,
+    rows: Object.freeze(sourceRows.rows.map((row) =>
+      row.index === rowIndex
+        ? {
+            ...row,
+            cells: Object.freeze(values.map((value, index) =>
+              createCell(index, value)
+            ))
+          }
+        : row
+    ))
+  };
+}
+
+function insertRowValues(
+  sourceRows: ReturnType<typeof buildSourceRows>,
+  rowIndex: number,
+  values: readonly string[]
+): ReturnType<typeof buildSourceRows> {
+  const inserted: VerifiedOfficialMarketCalendarKrxLegacyWordSourceRow = {
+    ...sourceRows.rows[rowIndex - 1]!,
+    cells: Object.freeze(values.map((value, index) => createCell(index, value)))
+  };
+  return {
+    ...sourceRows,
+    rows: Object.freeze([
+      ...sourceRows.rows.slice(0, rowIndex),
+      inserted,
+      ...sourceRows.rows.slice(rowIndex)
+    ].map((row, index) => ({
+      ...row,
+      index,
+      cpStart: index * 100,
+      cpEnd: index * 100 + row.cells.length,
+      rowTerminatorParagraphIndex: index
+    })))
+  };
 }
 
 function createCell(
