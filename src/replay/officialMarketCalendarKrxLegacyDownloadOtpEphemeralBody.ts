@@ -3003,6 +3003,14 @@ export function consumeOfficialMarketCalendarKrxLegacyWordParagraphBoundariesVer
       directParagraphProperties.prm1ParagraphSelectionVerified !== true ||
       directParagraphProperties.paragraphStyleBindingStatus !==
         "default_and_non_default_resolved" ||
+      directParagraphProperties.hugePapxPrcDataStatus !==
+        "resolved_when_present" ||
+      directParagraphProperties.paragraphs.some(
+        (paragraph) =>
+          (paragraph.papxHugePapxStatus === "prc_data_resolved"
+            ? paragraph.papxHugePapxResolutionDepth < 1
+            : paragraph.papxHugePapxResolutionDepth !== 0)
+      ) ||
       directParagraphProperties.tableTextMarkSemanticsStatus !== "not_verified" ||
       directParagraphProperties.tableRowCellBoundaryStatus !== "not_verified" ||
       directParagraphProperties.sourceRoleStatus !== "candidate_not_accepted"

@@ -560,16 +560,24 @@ inheritance cycle과 style type/revision별 `cupx`를 fail-closed로 검증한�
 `Prl`로 제한한 뒤 base style부터 현재 style 순서로 결합한다. Direct PAPX와 terminal PCD보다
 앞에 style paragraph properties를 적용해 non-default `istd`를 해석한다. Style name 문자열 의미,
 character/table/list UPX 의미와 revision-marked original formatting 의미는 아직 해석하지 않는다.
-2026-08-24 credential-free 2013 production acquisition에서 non-default style 중단점은 통과했고,
-`istd=0` paragraph의 direct PAPX가 가리키는 `sprmPHugePapx (0x6646)`의 `Data` stream
-`PrcData`를 아직 해석하지 않아 table text mark 검증에서 fail-closed됐다. Raw document bytes는
-보존하지 않았다.
+`officialMarketCalendarKrxLegacyWordHugePapx.ts`는 direct `GrpPrlAndIstd`의 첫 번째이자 유일한
+`sprmPHugePapx (0x6646)`를 `istd=0`에서만 처리하고, 4-byte offset이 가리키는 root `Data`
+stream의 signed `PrcData.cbGrpprl`과 complete `Prl` framing을 검증한다. `sprmPHugePapx`와
+`sprmPTableProps`가 서로 참조하는 체인은 visited offset으로 cycle을 차단하면서 최종 `PrcData`까지
+해석하고, 참조 Sprm 이후의 같은 배열은 적용하지 않는다. `cbGrpprl`은 10..0x3FA2와 Data stream
+범위 안에 있어야 하며 missing/short/cyclic reference는 fail-closed한다. Projection된 Data bytes와
+PrcData operand copy는 성공·실패 후 zeroize한다. 2026-08-24 credential-free 2013 production
+acquisition은 이 경계를 포함해 기존 terminal `TITLE_VERIFIED` 단계까지 통과했다. Raw document
+bytes는 저장하거나 출력하지 않았고, column/date/holiday semantics와 source acceptance는 여전히
+미검증이다.
 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/df0f4654-071d-442f-8563-752d7e0285ef
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/9cc628d4-c325-4622-9724-c2215fe65cb6
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/dd73d580-cce7-445f-b692-3421060b9682
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/742bb472-b6b3-416a-b8ef-0dcc9f82f918
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/44774bb4-730b-4a46-8002-8608ae2e9525
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/0218f8a6-6150-4695-965c-9abc8a685b81
+https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/473fd992-c824-4655-8880-3186bd432f80
 
 `officialMarketCalendarKrxLegacyWordClxReference.ts`는 verified variable FIB의
 `FibRgFcLcb97`에서 0-based pair index 33인 `fcClx`/`lcbClx`를 읽고 selected Table stream의
@@ -796,8 +804,9 @@ https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/5b45f0e7-
 확인한 결과 network/identity와 direct paragraph 전 단계는 통과했지만 non-default style에서
 `OFFICIAL_CALENDAR_KRX_LEGACY_WORD_DIRECT_PARAGRAPH_STYLE_UNSUPPORTED`로 중단됐다. OTP와 raw
 document bytes는 저장하거나 출력하지 않았으며 이 관찰은 accepted acquisition/evidence가 아니다.
-2026-08-24 재검증에서는 이 style 중단점을 통과했고 `sprmPHugePapx`의 `Data` stream `PrcData`
-미지원 경계에서 중단됐다. 이 재검증도 raw document bytes를 저장하거나 출력하지 않았다.
+2026-08-24 재검증에서는 style 중단점과 `sprmPHugePapx`/`sprmPTableProps` Data stream
+`PrcData` chain을 통과해 terminal title 검증까지 완료됐다. 이 재검증도 raw document bytes를
+저장하거나 출력하지 않았으며 accepted acquisition/evidence로 승격하지 않았다.
 
 ### KRX Holiday Data POST Static Policy
 
