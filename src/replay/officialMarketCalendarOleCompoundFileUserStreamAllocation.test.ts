@@ -120,6 +120,9 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties
 } from "./officialMarketCalendarKrxLegacyWordDirectParagraphProperties.js";
 import {
+  OfficialMarketCalendarKrxLegacyWordHugePapxError
+} from "./officialMarketCalendarKrxLegacyWordHugePapx.js";
+import {
   OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_TABLE_TEXT_MARKS_SCHEMA_VERSION,
   OfficialMarketCalendarKrxLegacyWordTableTextMarksError,
   verifyOfficialMarketCalendarKrxLegacyWordTableTextMarks
@@ -3141,6 +3144,62 @@ test("official calendar KRX legacy Word direct paragraph properties resolve defa
   assert.equal(result.paragraphs[0]!.propertiesStatus, "style_and_papx_applied");
 });
 
+test("official calendar KRX legacy Word direct paragraph properties resolve HugePapx PrcData chain", () => {
+  const bytes = compoundFileWithUserStreams(3);
+  configureHugePapxDirectParagraphFixture(bytes);
+  configureDataStream(bytes, Uint8Array.from([
+    12, 0,
+    0x6b, 0x64, ...int32Bytes(16),
+    0x05, 0x24, 1,
+    0x06, 0x24, 1,
+    0, 0,
+    12, 0,
+    0x16, 0x24, 1,
+    0x17, 0x24, 1,
+    0x05, 0x24, 1,
+    0x06, 0x24, 1
+  ]));
+
+  const result =
+    verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(bytes);
+
+  assert.equal(result.hugePapxPrcDataStatus, "resolved_when_present");
+  assert.equal(result.paragraphs[0]!.papxHugePapxStatus, "prc_data_resolved");
+  assert.equal(result.paragraphs[0]!.papxHugePapxResolutionDepth, 2);
+  assert.equal(result.paragraphs[0]!.papxPrlCount, 1);
+  assert.equal(result.paragraphs[0]!.resolvedPapxPrlCount, 4);
+  assert.equal(result.paragraphs[0]!.tableRole, "depth_1_ttp_candidate");
+});
+
+test("official calendar KRX legacy Word HugePapx rejects missing, short, and cyclic PrcData", () => {
+  const fixtures = [
+    null,
+    Uint8Array.from([9, 0, ...new Uint8Array(9)]),
+    Uint8Array.from([
+      12, 0,
+      0x6b, 0x64, ...int32Bytes(0),
+      0x05, 0x24, 1,
+      0x06, 0x24, 1
+    ])
+  ];
+  for (const data of fixtures) {
+    const bytes = compoundFileWithUserStreams(3);
+    configureHugePapxDirectParagraphFixture(bytes);
+    if (data !== null) configureDataStream(bytes, data);
+
+    assert.throws(
+      () =>
+        verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperties(
+          bytes
+        ),
+      (error: unknown) =>
+        error instanceof OfficialMarketCalendarKrxLegacyWordHugePapxError &&
+        error.code ===
+          "OFFICIAL_CALENDAR_KRX_LEGACY_WORD_HUGE_PAPX_INVALID"
+    );
+  }
+});
+
 test("official calendar KRX legacy Word table text marks classify depth-one cells and TTP", () => {
   const bytes = compoundFileWithUserStreams(3);
   configureValidDepthOneTableTextMarksFixture(bytes, 0x0007);
@@ -3670,6 +3729,40 @@ function expandTableMiniStream(bytes: Uint8Array): void {
       index === miniSectorCount - 1 ? ENDOFCHAIN : index + 1
     );
   }
+}
+
+function configureDataStream(
+  bytes: Uint8Array,
+  data: Uint8Array
+): void {
+  assert.ok(data.length <= 64);
+  initializeStreamEntry(bytes, 3, "Data", 64, 8);
+  setStreamUint32(bytes, 2, 68, 3);
+  setRootUint32(bytes, 120, 1024);
+  writeFatEntry(bytes, 3, 12);
+  writeFatEntry(bytes, 12, ENDOFCHAIN);
+  writeMiniFatEntry(bytes, 8, ENDOFCHAIN);
+  const sectorSize = readSectorSize(bytes);
+  bytes.fill(0, sectorSize * 13, sectorSize * 14);
+  bytes.set(data, sectorSize * 13);
+}
+
+function configureHugePapxDirectParagraphFixture(bytes: Uint8Array): void {
+  configureValidParagraphBoundariesFixture(bytes);
+  configurePapxFkpPage(bytes, 2048, {
+    rgfc: [920, 930, 951, 953],
+    bxPap: [
+      { bOffset: 0, reservedValue: 0 },
+      { bOffset: 30, reservedValue: 0 },
+      { bOffset: 0, reservedValue: 0 }
+    ],
+    papx: []
+  });
+  setPapxGrpPrl(
+    bytes,
+    2048 + 60,
+    tablePropertyGroup([[0x6646, int32Bytes(0)]], 0)
+  );
 }
 
 function buildParagraphStyleBody(

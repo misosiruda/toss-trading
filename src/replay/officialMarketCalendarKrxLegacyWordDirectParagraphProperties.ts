@@ -2,6 +2,10 @@ import { verifyOfficialMarketCalendarKrxLegacyWordGrpPrls } from "./officialMark
 import { verifyOfficialMarketCalendarKrxLegacyWordParagraphBoundaries } from "./officialMarketCalendarKrxLegacyWordParagraphBoundaries.js";
 import { verifyOfficialMarketCalendarKrxLegacyWordPrcGrpPrls } from "./officialMarketCalendarKrxLegacyWordPrcGrpPrl.js";
 import type { VerifiedOfficialMarketCalendarKrxLegacyWordPrl } from "./officialMarketCalendarKrxLegacyWordPrl.js";
+import {
+  disposeResolvedOfficialMarketCalendarKrxLegacyWordHugePapx,
+  resolveOfficialMarketCalendarKrxLegacyWordHugePapx
+} from "./officialMarketCalendarKrxLegacyWordHugePapx.js";
 import { verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties } from "./officialMarketCalendarKrxLegacyWordParagraphStyleProperties.js";
 import {
   OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError,
@@ -26,6 +30,12 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphPrope
   terminalPcdPrmKind: "prm0" | "prm1";
   terminalPcdRawPrm: number;
   papxPrlCount: number;
+  resolvedPapxPrlCount: number;
+  papxHugePapxStatus:
+    | "not_present"
+    | "ignored_not_first"
+    | "prc_data_resolved";
+  papxHugePapxResolutionDepth: number;
   styleParagraphPrlCount: number;
   styleInheritanceDepth: number;
   appendedPcdParagraphPrlCount: number;
@@ -49,6 +59,7 @@ export interface VerifiedOfficialMarketCalendarKrxLegacyWordDirectParagraphPrope
   prm0ParagraphSelectionVerified: true;
   prm1ParagraphSelectionVerified: true;
   paragraphStyleBindingStatus: "default_and_non_default_resolved";
+  hugePapxPrcDataStatus: "resolved_when_present";
   tableTextMarkSemanticsStatus: "not_verified";
   tableRowCellBoundaryStatus: "not_verified";
   sourceRoleStatus: "candidate_not_accepted";
@@ -125,57 +136,71 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
       terminalPiece,
       prcGrpPrls.prcs
     );
+    const resolvedPapx =
+      resolveOfficialMarketCalendarKrxLegacyWordHugePapx(
+        input,
+        group.istd,
+        group.prls
+      );
     let interpreted: InterpretedOfficialMarketCalendarKrxLegacyWordTableParagraphProperties;
     try {
-      interpreted =
-        interpretOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(
-          boundaries.nFib,
-          group.istd,
-          [...stylePrls, ...group.prls, ...pcdModifiers.prls],
-          pcdModifiers.additionalUninterpretedParagraphPrlCount,
-          paragraphStyle !== undefined
-        );
-    } catch (error) {
-      if (
-        error instanceof
-        OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError
-      ) {
-        throw invalidDirectParagraphProperties();
+      try {
+        interpreted =
+          interpretOfficialMarketCalendarKrxLegacyWordTableParagraphProperties(
+            boundaries.nFib,
+            group.istd,
+            [...stylePrls, ...resolvedPapx.prls, ...pcdModifiers.prls],
+            pcdModifiers.additionalUninterpretedParagraphPrlCount,
+            paragraphStyle !== undefined
+          );
+      } catch (error) {
+        if (
+          error instanceof
+          OfficialMarketCalendarKrxLegacyWordTableParagraphPropertiesError
+        ) {
+          throw invalidDirectParagraphProperties();
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    return Object.freeze({
-      index: boundary.index,
-      cpStart: boundary.cpStart,
-      cpEnd: boundary.cpEnd,
-      markCp: boundary.markCp,
-      markCodeUnit: boundary.markCodeUnit,
-      markKind: boundary.markKind,
-      terminalPapxPageIndex: boundary.terminalPapxPageIndex,
-      terminalPapxParagraphIndex: boundary.terminalPapxParagraphIndex,
-      terminalPcdPieceIndex: terminalPiece.index,
-      terminalPcdPrmKind: terminalPiece.kind,
-      terminalPcdRawPrm: terminalPiece.rawPrm,
-      papxPrlCount: group.prls.length,
-      styleParagraphPrlCount: stylePrls.length,
-      styleInheritanceDepth: paragraphStyle?.inheritanceChain.length ?? 0,
-      appendedPcdParagraphPrlCount: pcdModifiers.appendedParagraphPrlCount,
-      ignoredPcdNonParagraphPrlCount:
-        pcdModifiers.ignoredNonParagraphPrlCount,
-      directParagraphPrlCount:
-        group.prls.length + pcdModifiers.appendedParagraphPrlCount,
-      ...interpreted,
-      propertiesStatus: resolvePropertiesStatus(
-        stylePrls.length,
-        pcdModifiers.appendedParagraphPrlCount
-      ),
-      textMarkValidationStatus:
-        interpreted.tableRole === "not_in_table" ||
-        interpreted.tableRole === "table_paragraph"
-          ? "not_applicable"
-          : "pending_text_binding"
-    });
+      return Object.freeze({
+        index: boundary.index,
+        cpStart: boundary.cpStart,
+        cpEnd: boundary.cpEnd,
+        markCp: boundary.markCp,
+        markCodeUnit: boundary.markCodeUnit,
+        markKind: boundary.markKind,
+        terminalPapxPageIndex: boundary.terminalPapxPageIndex,
+        terminalPapxParagraphIndex: boundary.terminalPapxParagraphIndex,
+        terminalPcdPieceIndex: terminalPiece.index,
+        terminalPcdPrmKind: terminalPiece.kind,
+        terminalPcdRawPrm: terminalPiece.rawPrm,
+        papxPrlCount: group.prls.length,
+        resolvedPapxPrlCount: resolvedPapx.prls.length,
+        papxHugePapxStatus: resolvedPapx.status,
+        papxHugePapxResolutionDepth: resolvedPapx.resolutionDepth,
+        styleParagraphPrlCount: stylePrls.length,
+        styleInheritanceDepth: paragraphStyle.inheritanceChain.length,
+        appendedPcdParagraphPrlCount: pcdModifiers.appendedParagraphPrlCount,
+        ignoredPcdNonParagraphPrlCount:
+          pcdModifiers.ignoredNonParagraphPrlCount,
+        directParagraphPrlCount:
+          resolvedPapx.prls.length +
+          pcdModifiers.appendedParagraphPrlCount,
+        ...interpreted,
+        propertiesStatus: resolvePropertiesStatus(
+          stylePrls.length,
+          pcdModifiers.appendedParagraphPrlCount
+        ),
+        textMarkValidationStatus:
+          interpreted.tableRole === "not_in_table" ||
+          interpreted.tableRole === "table_paragraph"
+            ? "not_applicable"
+            : "pending_text_binding"
+      });
+    } finally {
+      disposeResolvedOfficialMarketCalendarKrxLegacyWordHugePapx(resolvedPapx);
+    }
   });
 
   return Object.freeze({
@@ -189,6 +214,7 @@ export function verifyOfficialMarketCalendarKrxLegacyWordDirectParagraphProperti
     prm0ParagraphSelectionVerified: true,
     prm1ParagraphSelectionVerified: true,
     paragraphStyleBindingStatus: "default_and_non_default_resolved",
+    hugePapxPrcDataStatus: "resolved_when_present",
     tableTextMarkSemanticsStatus: "not_verified",
     tableRowCellBoundaryStatus: "not_verified",
     sourceRoleStatus: "candidate_not_accepted"
