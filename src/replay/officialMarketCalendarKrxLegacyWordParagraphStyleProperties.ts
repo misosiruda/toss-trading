@@ -60,6 +60,34 @@ interface ParsedParagraphStyle {
 }
 
 const LP_UPX_HEADER_BYTE_LENGTH = 2;
+const FORBIDDEN_PARAGRAPH_STYLE_SPRMS = new Set([
+  0x4600, // sprmPIstd
+  0xc601, // sprmPIstdPermute
+  0x2602, // sprmPIncLvl
+  0x4610, // sprmPNest80
+  0xc615, // sprmPChgTabs
+  0x2416, // sprmPFInTable
+  0x2417, // sprmPFTtp
+  0x442c, // sprmPDcs
+  0xc645, // sprmPNumRM
+  0x2443, // sprmPFNumRMIns
+  0x6646, // sprmPHugePapx
+  0x6649, // sprmPItap
+  0x664a, // sprmPDtap
+  0x244b, // sprmPFInnerTableCell
+  0x244c, // sprmPFInnerTtp
+  0x245a, // sprmPFOpenTch
+  0x465f, // sprmPNest
+  0x2462, // sprmPFNoAllowOverlap
+  0x2664, // sprmPWall
+  0x6465, // sprmPIpgp
+  0xc666, // sprmPCnf
+  0x6467, // sprmPRsid
+  0xc669, // sprmPIstdListPermute
+  0x646b, // sprmPTableProps
+  0xc66c, // sprmPTIstdInfo
+  0xc66f // sprmPPropRMark
+]);
 
 export function verifyOfficialMarketCalendarKrxLegacyWordParagraphStyleProperties(
   input: Uint8Array
@@ -185,7 +213,12 @@ function parseParagraphUpx(
       bytes,
       hasIstd ? 2 : 0
     );
-    if (prls.some((prl) => prl.sgc !== 1)) {
+    if (
+      prls.some(
+        (prl) =>
+          prl.sgc !== 1 || FORBIDDEN_PARAGRAPH_STYLE_SPRMS.has(prl.sprm)
+      )
+    ) {
       for (const prl of prls) zeroizeBytes(prl.operandBytes);
       throw invalidParagraphStyleProperties();
     }

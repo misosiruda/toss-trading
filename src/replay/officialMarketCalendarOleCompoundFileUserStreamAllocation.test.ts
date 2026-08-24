@@ -937,8 +937,8 @@ test("official calendar KRX legacy Word paragraph styles frame UPX and resolve i
   expandTableMiniStream(bytes);
   configureVariableFib(bytes, { nFib: 0x00c1, version: "Word97", cbRgFcLcb: 0x005d, cswNew: 0 });
   const records = new Map<number, Uint8Array>([
-    [0, buildStdfBaseRecord({ sti: 0, istdNext: 0, body: buildParagraphStyleBody(0, [[0x2416, [1]]]) })],
-    [1, buildStdfBaseRecord({ sti: 1, istdBase: 0, istdNext: 1, body: buildParagraphStyleBody(1, [[0x2417, [1]]]) })]
+    [0, buildStdfBaseRecord({ sti: 0, istdNext: 0, body: buildParagraphStyleBody(0, [[0x2405, [1]]]) })],
+    [1, buildStdfBaseRecord({ sti: 1, istdBase: 0, istdNext: 1, body: buildParagraphStyleBody(1, [[0x2406, [1]]]) })]
   ]);
   configureRawStsh(bytes, buildStshBytes({ records }), 64);
 
@@ -956,8 +956,8 @@ test("official calendar KRX legacy Word paragraph styles frame UPX and resolve i
     upxCount: style.upxCount,
     paragraphUpxIstdStatus: style.paragraphUpxIstdStatus
   })), [
-    { istd: 0, inheritanceChain: [0], directSprms: [0x2416], resolvedSprms: [0x2416], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" },
-    { istd: 1, inheritanceChain: [0, 1], directSprms: [0x2417], resolvedSprms: [0x2416, 0x2417], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" }
+    { istd: 0, inheritanceChain: [0], directSprms: [0x2405], resolvedSprms: [0x2405], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" },
+    { istd: 1, inheritanceChain: [0, 1], directSprms: [0x2406], resolvedSprms: [0x2405, 0x2406], upxCount: 2, paragraphUpxIstdStatus: "present_and_matched" }
   ]);
   assert.equal(result.xstzNameFramingVerified, true);
   assert.equal(result.lpUpxFramingVerified, true);
@@ -970,7 +970,8 @@ test("official calendar KRX legacy Word paragraph styles reject malformed Xstz a
   const invalidBodies = [
     new Uint8Array([0, 0, 0, 0]),
     new Uint8Array([1, 0, 0x41, 0, 1, 0]),
-    new Uint8Array([1, 0, 0x41, 0, 0, 0, 2, 0, 0, 0])
+    new Uint8Array([1, 0, 0x41, 0, 0, 0, 2, 0, 0, 0]),
+    buildParagraphStyleBody(0, [[0x2416, [1]]])
   ];
   for (const body of invalidBodies) {
     const bytes = compoundFileWithUserStreams(3);
