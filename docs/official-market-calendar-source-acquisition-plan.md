@@ -1229,22 +1229,36 @@ identity-bound handle에 delete-pending을 설정한 뒤 close한다. Session �
 일치하지 않으면 `unsupported`를 유지한다. Windows에서 file/directory move와 양쪽
 collision entry 보존을 통과하면 atomic no-replace capability는 true로 기록하지만,
 `MOVEFILE_WRITE_THROUGH`는 staging tree의 bottom-up directory metadata flush를 증명하지
-않는다. 따라서 schema v2는 `directorySync=movefileex_write_through_only`,
-`directoryDurabilitySync=false`와 `directory_durability_sync_unavailable` blocker를
-유지한다. 다른 platform도 별도 primitive가 아직 없으므로 fail-closed `unsupported`다.
-현재 등록된 세 implementation ID는 schema 수준에서도 `supported` payload를 허용하지
-않으며, 향후 durability implementation은 새 ID와 별도 검증 계약을 사용해야 한다.
+않는다. 따라서 legacy Windows v2/v3 implementation은
+`directorySync=movefileex_write_through_only`, `directoryDurabilitySync=false`와
+`directory_durability_sync_unavailable` blocker를 유지한다. 다른 platform도 별도
+primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 네 implementation ID 중
+아래 v4만 관찰 전체가 일치할 때 `supported` payload를 허용한다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
+
+Windows v4 implementation은 별도 fixed helper가 `GENERIC_WRITE`와
+`FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`로 exact directory handle을
+열고, `NtFlushBuffersFileEx` normal mode로 leaf에서 inclusive ancestor까지 bottom-up
+동기화한다. Normal mode는 file cache의 data와 metadata를 기록하고 underlying storage
+cache를 동기화하는 계약이며, helper는 각 handle이 directory이고 reparse point가 아닌지
+확인하고 handle 기준 filesystem이 문서에 명시된 NTFS, ReFS, FAT/FAT32 또는 exFAT인지
+allowlist 검증한다. Populated staging tree와 atomic no-replace move 이후 parent sync가 모두
+`STATUS_SUCCESS`이고 probe cleanup까지 검증된 경우에만
+`directorySync=ntflushbuffersfileex_normal`, `directoryDurabilitySync=true`와 filesystem
+`supported`를 기록한다. Export, access, filesystem 또는 runtime 실패는 성공으로 축소하지
+않는다. API 기준은 Microsoft의
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntflushbuffersfileex
+를 따른다.
 
 `officialMarketCalendarPublicationActivationPreflight.ts`는 verified package plan과
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
-`verifiedSetAction: unchanged`만 허용한다. 현재 Windows implementation도 directory
-metadata durability가 미검증이므로 activation은 `blocked`다. 향후 별도 implementation이
-bottom-up directory metadata durability까지 검증하더라도 activation schema와 writer를
-별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
+`verifiedSetAction: unchanged`만 허용한다. Windows v4 filesystem capability가 모두
+검증돼도 실제 package/record writer와 coordinator가 아직 없으므로
+`publication_writer_unavailable` blocker로 activation은 `blocked`다. Writer와 activation
+schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -1614,9 +1628,11 @@ sync, record rename 또는 record parent sync가 실패하면 verified set을 �
 recovery 전에는 accepted 상태로 재사용하지 않는다.
 
 POSIX sync failure는 성공으로 축소하지 않는다. Windows에서는 raw directory-handle
-sync의 `EPERM`을 성공으로 축소하지 않는다. `MOVEFILE_WRITE_THROUGH` 검증은 atomic
-no-replace move capability만 증명하며 staging 내부 directory entry의 bottom-up durability를
-대체하지 않는다. 다른 platform 결과도 POSIX durability로 오인하지 않는다. Package publish
+sync의 `EPERM`을 성공으로 축소하지 않으며 v4 helper의 `NtFlushBuffersFileEx` normal-mode
+`STATUS_SUCCESS`만 directory metadata/storage sync 관찰로 인정한다.
+`MOVEFILE_WRITE_THROUGH` 검증은 atomic no-replace move capability만 증명하며 staging 내부
+directory entry의 bottom-up durability를 대체하지 않는다. 다른 platform 결과도 POSIX
+durability로 오인하지 않는다. Package publish
 이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
 publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
 Windows preflight의 probe namespace는 verified publication root의 exact child로 제한하고

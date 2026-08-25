@@ -103,18 +103,16 @@ public static class TossTradingCalendarProbeCleanup
 
             if (cleanupError == 0)
             {
-                cleanupError = CleanupNestedDirectory(
+                cleanupError = CleanupPackageDirectory(
                     probeRoot,
-                    "fresh-directory.staging",
-                    "artifact.json"
+                    "fresh-directory.staging"
                 );
             }
             if (cleanupError == 0)
             {
-                cleanupError = CleanupNestedDirectory(
+                cleanupError = CleanupPackageDirectory(
                     probeRoot,
-                    "fresh-directory.published",
-                    "artifact.json"
+                    "fresh-directory.published"
                 );
             }
             if (cleanupError == 0)
@@ -161,6 +159,74 @@ public static class TossTradingCalendarProbeCleanup
             {
                 cleanupError = MarkDirectoryForDeletion(directoryHandle);
             }
+        }
+        finally
+        {
+            if (!CloseHandle(directoryHandle) && cleanupError == 0)
+            {
+                cleanupError = Marshal.GetLastWin32Error();
+            }
+        }
+        return cleanupError;
+    }
+
+    private static int CleanupPackageDirectory(
+        string probeRoot,
+        string directoryName
+    )
+    {
+        string directoryPath = Path.Combine(probeRoot, directoryName);
+        IntPtr directoryHandle;
+        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = CleanupNestedDirectory(
+                directoryPath,
+                Path.Combine("sources", "sha256"),
+                "source.bin"
+            );
+            if (cleanupError == 0)
+            {
+                cleanupError = CleanupEmptyDirectory(directoryPath, "sources");
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = DeleteFileIfPresent(
+                    Path.Combine(directoryPath, "artifact.json")
+                );
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = MarkDirectoryForDeletion(directoryHandle);
+            }
+        }
+        finally
+        {
+            if (!CloseHandle(directoryHandle) && cleanupError == 0)
+            {
+                cleanupError = Marshal.GetLastWin32Error();
+            }
+        }
+        return cleanupError;
+    }
+
+    private static int CleanupEmptyDirectory(
+        string parentPath,
+        string directoryName
+    )
+    {
+        string directoryPath = Path.Combine(parentPath, directoryName);
+        IntPtr directoryHandle;
+        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = MarkDirectoryForDeletion(directoryHandle);
         }
         finally
         {

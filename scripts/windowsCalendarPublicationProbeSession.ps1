@@ -208,16 +208,14 @@ public static class TossTradingCalendarProbeSession
             if (deleteError != 0) return deleteError;
         }
 
-        int cleanupError = CleanupNestedDirectory(
+        int cleanupError = CleanupPackageDirectory(
             probeRoot,
-            "fresh-directory.staging",
-            "artifact.json"
+            "fresh-directory.staging"
         );
         if (cleanupError != 0) return cleanupError;
-        cleanupError = CleanupNestedDirectory(
+        cleanupError = CleanupPackageDirectory(
             probeRoot,
-            "fresh-directory.published",
-            "artifact.json"
+            "fresh-directory.published"
         );
         if (cleanupError != 0) return cleanupError;
         cleanupError = CleanupNestedDirectory(
@@ -233,6 +231,70 @@ public static class TossTradingCalendarProbeSession
     public static int CloseOwnedDirectory(IntPtr handle)
     {
         return CloseHandle(handle) ? 0 : Marshal.GetLastWin32Error();
+    }
+
+    private static int CleanupPackageDirectory(
+        string probeRoot,
+        string directoryName
+    )
+    {
+        string directoryPath = Path.Combine(probeRoot, directoryName);
+        IntPtr directoryHandle;
+        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = CleanupNestedDirectory(
+                directoryPath,
+                Path.Combine("sources", "sha256"),
+                "source.bin"
+            );
+            if (cleanupError == 0)
+            {
+                cleanupError = CleanupEmptyDirectory(directoryPath, "sources");
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = DeleteFileIfPresent(
+                    Path.Combine(directoryPath, "artifact.json")
+                );
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = MarkDirectoryForDeletion(directoryHandle);
+            }
+        }
+        finally
+        {
+            int closeError = CloseOwnedDirectory(directoryHandle);
+            if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
+        }
+        return cleanupError;
+    }
+
+    private static int CleanupEmptyDirectory(
+        string parentPath,
+        string directoryName
+    )
+    {
+        string directoryPath = Path.Combine(parentPath, directoryName);
+        IntPtr directoryHandle;
+        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = MarkDirectoryForDeletion(directoryHandle);
+        }
+        finally
+        {
+            int closeError = CloseOwnedDirectory(directoryHandle);
+            if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
+        }
+        return cleanupError;
     }
 
     private static int CleanupNestedDirectory(
