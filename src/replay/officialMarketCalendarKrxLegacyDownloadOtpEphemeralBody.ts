@@ -164,9 +164,13 @@ import {
   verifyOfficialMarketCalendarKrxLegacyWordDocumentTitle,
   type VerifiedOfficialMarketCalendarKrxLegacyWordDocumentTitle
 } from "./officialMarketCalendarKrxLegacyWordDocumentTitle.js";
+import {
+  assessOfficialMarketCalendarKrxLegacyCandidateEvidence,
+  type OfficialMarketCalendarKrxLegacyCandidateEvidenceAssessment
+} from "./officialMarketCalendarKrxLegacyCandidateEvidenceAssessment.js";
 
 export const OFFICIAL_MARKET_CALENDAR_KRX_LEGACY_WORD_CANDIDATE_SUMMARY_SCHEMA_VERSION =
-  "official_market_calendar_krx_legacy_word_candidate_summary.v4";
+  "official_market_calendar_krx_legacy_word_candidate_summary.v5";
 
 declare const krxLegacyDownloadOtpEphemeralBodyBrand: unique symbol;
 declare const krxLegacyDownloadEphemeralParametersBrand: unique symbol;
@@ -409,6 +413,7 @@ export interface OfficialMarketCalendarKrxLegacyWordCandidateSummary {
     | "not_interpreted"
     | "calendar_grid_and_event_columns_verified";
   holidaySemanticsStatus: "not_interpreted" | "classified_not_accepted";
+  evidenceAssessment: OfficialMarketCalendarKrxLegacyCandidateEvidenceAssessment;
   sourceRoleStatus: "candidate_not_accepted";
   durableEvidenceReuse: false;
   acceptedAcquisition: false;
@@ -3286,6 +3291,13 @@ export function consumeOfficialMarketCalendarKrxLegacyWordDocumentTitleVerifiedD
         calendarSemantics?.columnSemanticsStatus ?? "not_interpreted",
       holidaySemanticsStatus:
         calendarSemantics?.holidaySemanticsStatus ?? "not_interpreted",
+      evidenceAssessment:
+        assessOfficialMarketCalendarKrxLegacyCandidateEvidence({
+          identityVerificationAuthority:
+            state.identity.identityVerificationAuthority,
+          targetYear: state.identity.targetYear,
+          calendarSemantics
+        }),
       sourceRoleStatus: "candidate_not_accepted",
       durableEvidenceReuse: false,
       acceptedAcquisition: false

@@ -196,9 +196,11 @@ content length, SHA-256, OLE signature, observed title/holiday-line count를 imm
 candidate policy로 고정한다. 이 문서는 derivatives market scope이며 legacy Word table용
 parser는 registered title을 exact paragraph에 결합하는 fixed opaque lifecycle까지 구현됐다.
 Registered production identity에 대해서는 12개월 calendar grid와 event column을 검증하고
-holiday description을 candidate로 분류한다. Evidence role/coverage와 cross-market completeness는
-아직 구현하지 않았다. 따라서 KRX 전체 market holiday completeness, durable evidence reuse와
-accepted acquisition은 계속 주장하지 않는다.
+holiday description을 candidate로 분류한다. Terminal summary v5는 이 결과에 한해서만
+`holiday_rows` candidate role과 해당 연도의 calendar-grid start/end를 기록한다. Schedule coverage는
+빈 배열로 고정하고 derivatives-only scope, holiday schedule completeness, cross-market completeness,
+raw-source durability blocker를 모두 보존한다. 따라서 KRX 전체 market holiday completeness,
+durable evidence reuse와 accepted acquisition은 계속 주장하지 않는다.
 
 `officialMarketCalendarKrxLegacyDownloadOtpNetworkPolicy.ts`는 이 candidate policy의
 2013~2015 file name만 `file_nm`으로 허용한다. 전용 request-header policy와 연도별 exact
@@ -687,8 +689,14 @@ ephemeral network response부터 이 title-verified opaque handle까지 등록�
 stream과 structural row/cell count를 frozen summary로 반환한다. Registered production authority는
 calendar/event/holiday candidate semantics도 검증해 count와 상태를 반환하지만 test-only authority는
 이를 승격하지 않고 `not_interpreted`를 유지한다.
-Summary v4도 identity verification authority를 보존해 synthetic test expectation을 production
-registered source policy 검증으로 오인할 수 없게 한다.
+Summary v5도 identity verification authority를 보존해 synthetic test expectation을 production
+registered source policy 검증으로 오인할 수 없게 한다. 별도 candidate evidence assessment는
+registered production semantics의 12개월 grid, holiday candidate와 연도 binding을 다시 확인한 뒤
+`candidateEvidenceRoles=["holiday_rows"]`, 연도 전체 calendar-grid coverage와 빈 schedule coverage를
+반환한다. Test-only authority는 semantics 입력 자체를 거부하며 `not_interpreted`와
+`registered_source_policy_verification_required` blocker만 반환한다. Production 결과도
+derivatives-only, schedule completeness, cross-market completeness와 raw-source durability blocker를
+제거하지 않으므로 source collection document나 accepted artifact로 투영할 수 없다.
 Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
 title 검증과 terminal 소비를 한 호출로 연결하고 caller에게 opaque/raw handle을 반환하지 않는다.
 Structural row 수를 registered `observedHolidayLineCount`와 동일하다고 가정하지 않는다.
