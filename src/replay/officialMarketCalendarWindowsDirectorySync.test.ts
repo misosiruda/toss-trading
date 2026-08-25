@@ -7,7 +7,7 @@ import test from "node:test";
 import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 
 test(
-  "Windows calendar directory sync flushes an exact bottom-up chain",
+  "Windows calendar directory sync flushes an exact bottom-up chain through the publication root",
   { skip: process.platform !== "win32" },
   async () => {
     const publicationRoot = await mkdtemp(
@@ -22,7 +22,7 @@ test(
         await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
           publicationRoot,
           leafDirectory,
-          inclusiveAncestorDirectory: packageRoot
+          inclusiveAncestorDirectory: publicationRoot
         }),
         true
       );

@@ -454,7 +454,7 @@ async function probeWindowsPublicationFilesystem(
       await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
         publicationRoot,
         leafDirectory: probeRoot,
-        inclusiveAncestorDirectory: probeRoot
+        inclusiveAncestorDirectory: publicationRoot
       })
         ? "ntflushbuffersfileex_normal"
         : "probe_failed";
