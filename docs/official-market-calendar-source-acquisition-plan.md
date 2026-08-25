@@ -661,11 +661,16 @@ CP range도 보존한다. 입력 paragraph 수를 넘는 table depth는 depth별
 않는다. 구조적 source row text projection 자체는 column 의미를 부여하지 않는다.
 `officialMarketCalendarKrxLegacyWordCalendarSemantics.ts`는 registered production identity의
 terminal summary에서 6개 two-month block, January..December title, SUN..SAT header, 각 월의
-Gregorian day를 5-row grid에 배치하는 문서 고유의 sixth-week slash folding을 검증한다. 이어지는
-5-cell event row는 좌/우 월의 day/description pair와 빈 separator로 해석하고 `Holiday (...)`만
-holiday candidate로 분류한다. 날짜 범위, header/grid mismatch, 빈 pair의 비대칭과 malformed holiday
-표현은 fail-closed한다. 2026-08-24 실제 2013 문서는 96 structural row, 828 cell, 99 event,
-13 holiday candidate로 통과했다. 이 수치는 completeness나 accepted evidence 근거가 아니다. 명세 기준:
+Gregorian day를 5-row sixth-week slash folding 또는 외곽 blank padding을 둔 5~6-row 비접기 grid로
+검증한다. 이어지는 5-cell event row는 좌/우 월의 day/description pair와 빈 separator로 해석한다.
+관측된 4-cell row는 한쪽 day/description이 하나의 cell로 결합됐고 빈 separator 위치로 방향이
+명확할 때만 해석하며, 결합 cell의 day와 description 사이에는 정규화 후 공백 구분자가 있어야 한다.
+독립 day cell의 증가 범위(`30~31`)와 공백 목록(`10 11`)은 날짜별 event로 확장하고 결합 cell은
+단일 day 또는 증가 범위만 허용한다. `Holiday (...)`만 holiday candidate로 분류한다. 역순·중복 날짜,
+header/grid mismatch, 빈 pair의 비대칭, 모호한 4-cell row와 malformed holiday 표현은 fail-closed한다.
+2026-08-24 실제 등록 문서는 2013년 96 row/828 cell/99 event/13 holiday candidate,
+2014년 100 row/857 cell/103 event/15 holiday candidate, 2015년 110 row/927 cell/121 event/2 holiday
+candidate로 통과했다. 이 수치는 completeness나 accepted evidence 근거가 아니다. 명세 기준:
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/35226a0b-9038-4427-83c2-3830a8554267
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/6891279f-5855-441b-96f2-7455081147be
 https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/fdc916f9-18c4-453c-95fb-072f2c74c0e2
@@ -682,7 +687,7 @@ ephemeral network response부터 이 title-verified opaque handle까지 등록�
 stream과 structural row/cell count를 frozen summary로 반환한다. Registered production authority는
 calendar/event/holiday candidate semantics도 검증해 count와 상태를 반환하지만 test-only authority는
 이를 승격하지 않고 `not_interpreted`를 유지한다.
-Summary v3도 identity verification authority를 보존해 synthetic test expectation을 production
+Summary v4도 identity verification authority를 보존해 synthetic test expectation을 production
 registered source policy 검증으로 오인할 수 없게 한다.
 Legacy download acquisition coordinator의 `acquireWordCandidateSummary`는 OTP/download,
 title 검증과 terminal 소비를 한 호출로 연결하고 caller에게 opaque/raw handle을 반환하지 않는다.
