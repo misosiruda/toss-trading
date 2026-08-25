@@ -181,6 +181,15 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
       ),
     /current publication filesystem implementations cannot report supported/
   );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarPublicationFilesystemPreflightHash({
+        ...impossibleSupportedPayload,
+        implementationId:
+          "node_fs_promises_win32_ntflushbuffersfileex.v4" as const
+      }),
+    /Windows v4 directory durability requires the NtFlushBuffersFileEx observation/
+  );
 });
 
 test("calendar publication filesystem preflight requires an absolute existing root", async () => {

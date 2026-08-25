@@ -232,6 +232,19 @@ function validatePreflightPayload(
       message: "publication directory durability observation must match capability"
     });
   }
+  if (
+    value.implementationId ===
+      "node_fs_promises_win32_ntflushbuffersfileex.v4" &&
+    value.capabilities.directoryDurabilitySync &&
+    value.observations.directorySync !== "ntflushbuffersfileex_normal"
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["observations", "directorySync"],
+      message:
+        "Windows v4 directory durability requires the NtFlushBuffersFileEx observation"
+    });
+  }
   const observationCapabilities = {
     exclusiveStagingFileCreate:
       value.observations.existingFileExclusiveCreate === "verified",
