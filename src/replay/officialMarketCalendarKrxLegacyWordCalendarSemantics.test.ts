@@ -83,6 +83,15 @@ test("official calendar KRX legacy Word calendar semantics reject malformed head
   assert.throws(
     () => verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
       replaceRowValues(buildSourceRows(), 7, [
+        "12Derivative schedule", "", "2", "description"
+      ]),
+      "2013"
+    ),
+    OfficialMarketCalendarKrxLegacyWordCalendarSemanticsError
+  );
+  assert.throws(
+    () => verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+      replaceRowValues(buildSourceRows(), 7, [
         "1 3-year KTB schedule", "", "2", "description"
       ]),
       "2013"
@@ -129,6 +138,17 @@ test("official calendar KRX legacy Word calendar semantics accept observed legac
   );
   assert.deepEqual(
     combinedRightResult.months[1]!.events.map((event) => event.day),
+    [3]
+  );
+
+  const rightOnlyCombinedResult = verifyOfficialMarketCalendarKrxLegacyWordCalendarSemantics(
+    replaceRowValues(buildSourceRows(), 7, [
+      "", "", "", "3 Derivative schedule"
+    ]),
+    "2013"
+  );
+  assert.deepEqual(
+    rightOnlyCombinedResult.months[1]!.events.map((event) => event.day),
     [3]
   );
 });

@@ -324,7 +324,14 @@ function parseEventColumns(
     };
   }
   if (row.cells.length !== 4) throw invalidCalendarSemantics();
-  if (normalize(row.cells[1]!.contentText) === "") {
+  const values = row.cells.map((cell) => normalize(cell.contentText));
+  const leftPairEmpty = values[0] === "" && values[1] === "";
+  const rightPairEmpty = values[2] === "" && values[3] === "";
+  if (
+    values[0] !== "" &&
+    values[1] === "" &&
+    (values[2] !== "" || rightPairEmpty)
+  ) {
     return {
       left: splitCombinedEventCell(row.cells[0]!.contentText),
       right: {
@@ -333,7 +340,11 @@ function parseEventColumns(
       }
     };
   }
-  if (normalize(row.cells[2]!.contentText) === "") {
+  if (
+    values[2] === "" &&
+    values[3] !== "" &&
+    (values[1] !== "" || leftPairEmpty)
+  ) {
     return {
       left: {
         dayText: row.cells[0]!.contentText,
@@ -347,7 +358,7 @@ function parseEventColumns(
 
 function splitCombinedEventCell(value: string): EventTextColumns {
   const match = normalize(value).match(
-    /^((?:[1-9]|[12][0-9]|3[01])(?:\s*~\s*(?:[1-9]|[12][0-9]|3[01]))?)\s*([^0-9\s].*)$/
+    /^((?:[1-9]|[12][0-9]|3[01])(?:\s*~\s*(?:[1-9]|[12][0-9]|3[01]))?)\s+([^0-9\s].*)$/
   );
   if (match === null) throw invalidCalendarSemantics();
   return { dayText: match[1]!, descriptionText: match[2]! };
