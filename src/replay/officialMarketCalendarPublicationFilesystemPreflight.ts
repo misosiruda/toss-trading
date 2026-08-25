@@ -4,6 +4,7 @@ import {
   mkdtemp,
   mkdir,
   open,
+  readFile,
   realpath,
   rmdir,
   unlink
@@ -315,15 +316,22 @@ async function probeWindowsPublicationFilesystem(
   try {
     const freshFileSource = join(probeRoot, "fresh-file.staging");
     const freshFileDestination = join(probeRoot, "fresh-file.published");
+    const freshFileContents = "calendar publication preflight\n";
     const freshFile = await open(freshFileSource, "wx");
-    observations.existingFileExclusiveCreate = "verified";
     try {
-      await freshFile.writeFile("calendar publication preflight\n", "utf8");
+      await freshFile.writeFile(freshFileContents, "utf8");
       await freshFile.sync();
       observations.fileSync = "verified";
     } finally {
       await freshFile.close();
     }
+    observations.existingFileExclusiveCreate =
+      (await verifyExistingFileExclusiveCreate(
+        freshFileSource,
+        freshFileContents
+      ))
+        ? "verified"
+        : "probe_failed";
     await publishOfficialMarketCalendarEntryAtomicNoReplace({
       sourcePath: freshFileSource,
       destinationPath: freshFileDestination,
@@ -523,6 +531,26 @@ async function removeFileIfPresent(path: string): Promise<boolean> {
     return true;
   } catch (error) {
     return isNodeError(error) && error.code === "ENOENT";
+  }
+}
+
+async function verifyExistingFileExclusiveCreate(
+  path: string,
+  expectedContents: string
+): Promise<boolean> {
+  try {
+    const unexpectedHandle = await open(path, "wx");
+    await unexpectedHandle.close();
+    return false;
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "EEXIST") {
+      return false;
+    }
+  }
+  try {
+    return (await readFile(path, "utf8")) === expectedContents;
+  } catch {
+    return false;
   }
 }
 

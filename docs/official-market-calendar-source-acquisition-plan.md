@@ -1210,7 +1210,8 @@ atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
 root의 realpath identity를 hash에 결합한다. Windows에서는 writer-owned probe directory
-안에서 `wx` file create와 file sync를 실행하고, repository에 고정된
+안에서 `wx` file create와 file sync를 실행한 뒤 같은 path의 두 번째 `wx`가 `EEXIST`로
+실패하고 기존 bytes가 보존되는지 확인한다. Repository에 고정된
 `windowsAtomicNoReplaceMove.ps1` helper의 `MoveFileExW` + `MOVEFILE_WRITE_THROUGH`를
 file과 populated directory에 각각 적용한다. Fresh destination 이동과 existing destination
 충돌 보존을 모두 실제로 검증해야 atomic no-replace capability를 true로 기록한다.
