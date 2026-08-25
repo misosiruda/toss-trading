@@ -11,7 +11,7 @@ test(
   { skip: process.platform !== "win32" },
   async () => {
     const publicationRoot = await mkdtemp(
-      join(tmpdir(), "calendar-probe-session-test-")
+      join(tmpdir(), "캘린더-probe-session-test-")
     );
     const movedRoot = join(publicationRoot, "unexpected-replacement");
     try {

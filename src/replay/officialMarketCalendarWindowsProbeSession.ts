@@ -68,7 +68,7 @@ export async function createOfficialMarketCalendarWindowsProbeSession(input: {
   try {
     await waitForReady();
   } catch (error) {
-    child.kill();
+    await cleanupAfterStartupFailure();
     throw error;
   }
 
@@ -136,6 +136,19 @@ export async function createOfficialMarketCalendarWindowsProbeSession(input: {
       return false;
     } catch (error) {
       return isNodeError(error) && error.code === "ENOENT";
+    }
+  }
+
+  async function cleanupAfterStartupFailure(): Promise<void> {
+    if (child.exitCode !== null) return;
+    const closePromise = new Promise<number | null>((resolve) => {
+      child.once("close", resolve);
+    });
+    if (!child.stdin.destroyed) {
+      child.stdin.end("CLEANUP\n");
+    }
+    if ((await waitForExit(closePromise)) === "timeout") {
+      child.kill();
     }
   }
 }

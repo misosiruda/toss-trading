@@ -8,6 +8,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8WithoutBom
+$OutputEncoding = $utf8WithoutBom
 
 Add-Type -TypeDefinition @"
 using System;
