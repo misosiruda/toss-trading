@@ -2118,28 +2118,14 @@ test("calendar publication activation preflight follows verified filesystem capa
     filesystemPreflight.preflightHash
   );
   assert.deepEqual(decision.blockers, filesystemPreflight.blockers);
-  if (filesystemPreflight.status === "supported") {
-    assert.equal(decision.status, "permitted");
-    assert.deepEqual(decision.blockers, []);
-    assert.equal(
-      decision.filesystemMutationAction,
-      "publish_package_and_record"
-    );
-    assert.equal(decision.verifiedSetAction, "add_after_durability");
-    assert.deepEqual(
+  assert.equal(decision.status, "blocked");
+  assert.equal(decision.filesystemMutationAction, "none");
+  assert.equal(decision.verifiedSetAction, "unchanged");
+  assert.throws(
+    () =>
       assertOfficialMarketCalendarPublicationActivationPermitted(decision),
-      decision
-    );
-  } else {
-    assert.equal(decision.status, "blocked");
-    assert.equal(decision.filesystemMutationAction, "none");
-    assert.equal(decision.verifiedSetAction, "unchanged");
-    assert.throws(
-      () =>
-        assertOfficialMarketCalendarPublicationActivationPermitted(decision),
-      /publication activation is blocked/
-    );
-  }
+    /publication activation is blocked/
+  );
   assert.ok(Object.isFrozen(decision));
   assert.ok(Object.isFrozen(decision.blockers));
   assert.deepEqual(

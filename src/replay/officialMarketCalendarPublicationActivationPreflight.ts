@@ -13,7 +13,7 @@ import { createReplayResearchHash } from "./replayRunManifest.js";
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION =
   "official_market_calendar_publication_activation_preflight.v1";
 
-const activationPreflightBaseSchema = z
+const activationPreflightPayloadSchema = z
   .object({
     schemaVersion: z.literal(
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION
@@ -23,6 +23,7 @@ const activationPreflightBaseSchema = z
     packagePlanHash: sha256HashSchema,
     filesystemPreflightHash: sha256HashSchema,
     publicationRootIdentityHash: sha256HashSchema,
+    status: z.literal("blocked"),
     blockers: z.array(z.enum([
       "atomic_no_replace_directory_publish_unavailable",
       "directory_durability_sync_unavailable",
@@ -30,33 +31,11 @@ const activationPreflightBaseSchema = z
       "file_durability_sync_unavailable",
       "atomic_no_replace_file_publish_unavailable",
       "safe_mutation_probe_cleanup_unavailable"
-    ]))
-  })
-  .strict();
-
-const blockedActivationPreflightPayloadSchema = activationPreflightBaseSchema
-  .safeExtend({
-    status: z.literal("blocked"),
-    blockers: activationPreflightBaseSchema.shape.blockers.min(1),
+    ])).min(1),
     filesystemMutationAction: z.literal("none"),
     verifiedSetAction: z.literal("unchanged")
   })
-  .strict();
-
-const permittedActivationPreflightPayloadSchema = activationPreflightBaseSchema
-  .safeExtend({
-    status: z.literal("permitted"),
-    blockers: activationPreflightBaseSchema.shape.blockers.max(0),
-    filesystemMutationAction: z.literal("publish_package_and_record"),
-    verifiedSetAction: z.literal("add_after_durability")
-  })
-  .strict();
-
-const activationPreflightPayloadSchema = z
-  .discriminatedUnion("status", [
-    blockedActivationPreflightPayloadSchema,
-    permittedActivationPreflightPayloadSchema
-  ])
+  .strict()
   .superRefine((value, context) => {
     for (let index = 1; index < value.blockers.length; index += 1) {
       if (value.blockers[index - 1]! >= value.blockers[index]!) {
@@ -70,14 +49,9 @@ const activationPreflightPayloadSchema = z
   });
 
 export const officialMarketCalendarPublicationActivationPreflightSchema =
-  z.discriminatedUnion("status", [
-    blockedActivationPreflightPayloadSchema
-      .safeExtend({ decisionHash: sha256HashSchema })
-      .strict(),
-    permittedActivationPreflightPayloadSchema
-      .safeExtend({ decisionHash: sha256HashSchema })
-      .strict()
-  ]);
+  activationPreflightPayloadSchema
+    .safeExtend({ decisionHash: sha256HashSchema })
+    .strict();
 
 export type OfficialMarketCalendarPublicationActivationPreflight = z.infer<
   typeof officialMarketCalendarPublicationActivationPreflightSchema
@@ -113,7 +87,6 @@ export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
     parseOfficialMarketCalendarPublicationFilesystemPreflight(
       parsed.filesystemPreflight
     );
-  const permitted = filesystemPreflight.status === "supported";
   const payload = activationPreflightPayloadSchema.parse({
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION,
@@ -123,14 +96,10 @@ export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
     filesystemPreflightHash: filesystemPreflight.preflightHash,
     publicationRootIdentityHash:
       filesystemPreflight.publicationRootIdentityHash,
-    status: permitted ? "permitted" : "blocked",
+    status: "blocked",
     blockers: filesystemPreflight.blockers,
-    filesystemMutationAction: permitted
-      ? "publish_package_and_record"
-      : "none",
-    verifiedSetAction: permitted
-      ? "add_after_durability"
-      : "unchanged"
+    filesystemMutationAction: "none",
+    verifiedSetAction: "unchanged"
   });
   return deepFreeze({
     ...payload,
@@ -158,15 +127,12 @@ export function parseOfficialMarketCalendarPublicationActivationPreflight(
 
 export function assertOfficialMarketCalendarPublicationActivationPermitted(
   value: unknown
-): OfficialMarketCalendarPublicationActivationPreflight {
+): never {
   const decision =
     parseOfficialMarketCalendarPublicationActivationPreflight(value);
-  if (decision.status !== "permitted") {
-    throw new Error(
-      `official calendar publication activation is blocked: ${decision.blockers.join(",")}`
-    );
-  }
-  return decision;
+  throw new Error(
+    `official calendar publication activation is blocked: ${decision.blockers.join(",")}`
+  );
 }
 
 export function createOfficialMarketCalendarPublicationActivationPreflightHash(

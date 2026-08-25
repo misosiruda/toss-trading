@@ -60,7 +60,7 @@ const preflightPayloadSchema = z
         fileSync: z.enum(["verified", "not_probed", "probe_failed"]),
         directorySync: z.enum([
           "synced",
-          "movefileex_write_through",
+          "movefileex_write_through_only",
           "unsupported",
           "probe_failed"
         ]),
@@ -207,9 +207,7 @@ function validatePreflightPayload(
   }
   if (
     value.capabilities.directoryDurabilitySync !==
-    ["synced", "movefileex_write_through"].includes(
-      value.observations.directorySync
-    )
+    (value.observations.directorySync === "synced")
   ) {
     context.addIssue({
       code: "custom",
@@ -245,7 +243,7 @@ function validatePreflightPayload(
     }
   }
   if (
-    value.observations.directorySync === "movefileex_write_through" &&
+    value.observations.directorySync === "movefileex_write_through_only" &&
     (value.platform !== "win32" ||
       value.implementationId !== "node_fs_promises_win32_movefileex.v2")
   ) {
@@ -340,8 +338,14 @@ async function probeWindowsPublicationFilesystem(
     observations.freshFileAtomicMove = "verified";
 
     const collisionFileSource = join(probeRoot, "collision-file.staging");
+    const collisionFileContents = "collision source must remain unchanged\n";
     const collisionFile = await open(collisionFileSource, "wx");
-    await collisionFile.close();
+    try {
+      await collisionFile.writeFile(collisionFileContents, "utf8");
+      await collisionFile.sync();
+    } finally {
+      await collisionFile.close();
+    }
     try {
       await publishOfficialMarketCalendarEntryAtomicNoReplace({
         sourcePath: collisionFileSource,
@@ -351,7 +355,14 @@ async function probeWindowsPublicationFilesystem(
       observations.existingFileAtomicMove = "probe_failed";
     } catch (error) {
       observations.existingFileAtomicMove =
-        isNodeError(error) && error.code === "EEXIST"
+        isNodeError(error) &&
+        error.code === "EEXIST" &&
+        (await verifyFileCollisionPreserved({
+          sourcePath: collisionFileSource,
+          sourceContents: collisionFileContents,
+          destinationPath: freshFileDestination,
+          destinationContents: freshFileContents
+        }))
           ? "collision_preserved"
           : "probe_failed";
     }
@@ -375,13 +386,28 @@ async function probeWindowsPublicationFilesystem(
       entryKind: "directory"
     });
     observations.freshDirectoryAtomicMove = "verified";
-    observations.directorySync = "movefileex_write_through";
+    observations.directorySync = "movefileex_write_through_only";
 
     const collisionDirectorySource = join(
       probeRoot,
       "collision-directory.staging"
     );
     await mkdir(collisionDirectorySource);
+    const collisionDirectoryMarkerContents =
+      "collision directory source must remain unchanged\n";
+    const collisionDirectoryMarker = await open(
+      join(collisionDirectorySource, "source-marker.txt"),
+      "wx"
+    );
+    try {
+      await collisionDirectoryMarker.writeFile(
+        collisionDirectoryMarkerContents,
+        "utf8"
+      );
+      await collisionDirectoryMarker.sync();
+    } finally {
+      await collisionDirectoryMarker.close();
+    }
     try {
       await publishOfficialMarketCalendarEntryAtomicNoReplace({
         sourcePath: collisionDirectorySource,
@@ -391,7 +417,13 @@ async function probeWindowsPublicationFilesystem(
       observations.existingDirectoryAtomicMove = "probe_failed";
     } catch (error) {
       observations.existingDirectoryAtomicMove =
-        isNodeError(error) && error.code === "EEXIST"
+        isNodeError(error) &&
+        error.code === "EEXIST" &&
+        (await verifyDirectoryCollisionPreserved({
+          sourcePath: collisionDirectorySource,
+          sourceMarkerContents: collisionDirectoryMarkerContents,
+          destinationPath: freshDirectoryDestination
+        }))
           ? "collision_preserved"
           : "probe_failed";
     }
@@ -410,8 +442,7 @@ async function probeWindowsPublicationFilesystem(
       exclusiveStagingFileCreate:
         observations.existingFileExclusiveCreate === "verified",
       fileDurabilitySync: observations.fileSync === "verified",
-      directoryDurabilitySync:
-        observations.directorySync === "movefileex_write_through",
+      directoryDurabilitySync: false,
       atomicNoReplaceFilePublish:
         observations.freshFileAtomicMove === "verified" &&
         observations.existingFileAtomicMove === "collision_preserved",
@@ -446,7 +477,12 @@ async function cleanupWindowsProbe(
     join(resolvedProbeRoot, "fresh-file.published"),
     join(resolvedProbeRoot, "collision-file.staging"),
     join(resolvedProbeRoot, "fresh-directory.staging", "artifact.json"),
-    join(resolvedProbeRoot, "fresh-directory.published", "artifact.json")
+    join(resolvedProbeRoot, "fresh-directory.published", "artifact.json"),
+    join(
+      resolvedProbeRoot,
+      "collision-directory.staging",
+      "source-marker.txt"
+    )
   ];
   const directories = [
     join(resolvedProbeRoot, "fresh-directory.staging"),
@@ -549,6 +585,45 @@ async function verifyExistingFileExclusiveCreate(
   }
   try {
     return (await readFile(path, "utf8")) === expectedContents;
+  } catch {
+    return false;
+  }
+}
+
+async function verifyFileCollisionPreserved(input: {
+  sourcePath: string;
+  sourceContents: string;
+  destinationPath: string;
+  destinationContents: string;
+}): Promise<boolean> {
+  try {
+    const [sourceContents, destinationContents] = await Promise.all([
+      readFile(input.sourcePath, "utf8"),
+      readFile(input.destinationPath, "utf8")
+    ]);
+    return (
+      sourceContents === input.sourceContents &&
+      destinationContents === input.destinationContents
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function verifyDirectoryCollisionPreserved(input: {
+  sourcePath: string;
+  sourceMarkerContents: string;
+  destinationPath: string;
+}): Promise<boolean> {
+  try {
+    const [sourceContents, destinationContents] = await Promise.all([
+      readFile(join(input.sourcePath, "source-marker.txt"), "utf8"),
+      readFile(join(input.destinationPath, "artifact.json"), "utf8")
+    ]);
+    return (
+      sourceContents === input.sourceMarkerContents &&
+      destinationContents === "{}\n"
+    );
   } catch {
     return false;
   }

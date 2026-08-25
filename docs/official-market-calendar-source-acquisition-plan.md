@@ -1219,10 +1219,12 @@ file과 populated directory에 각각 적용한다. Fresh destination 이동과 
 Probe cleanup은 realpath parent와 고정 prefix를 재검증한 exact child만 file-by-file,
 directory-by-directory로 제거하며 recursive delete를 사용하지 않는다. Cleanup 실패는
 `safe_mutation_probe_cleanup_unavailable` blocker로 남기고 capability 하나라도 관찰과
-일치하지 않으면 `unsupported`를 유지한다. Windows 성공 결과는 schema v2의
-`node_fs_promises_win32_movefileex.v2` implementation과
-`directorySync=movefileex_write_through` observation에 결합한다. 다른 platform은 별도
-atomic no-replace primitive가 아직 없으므로 fail-closed `unsupported`다.
+일치하지 않으면 `unsupported`를 유지한다. Windows에서 file/directory move와 양쪽
+collision entry 보존을 통과하면 atomic no-replace capability는 true로 기록하지만,
+`MOVEFILE_WRITE_THROUGH`는 staging tree의 bottom-up directory metadata flush를 증명하지
+않는다. 따라서 schema v2는 `directorySync=movefileex_write_through_only`,
+`directoryDurabilitySync=false`와 `directory_durability_sync_unavailable` blocker를
+유지한다. 다른 platform도 별도 primitive가 아직 없으므로 fail-closed `unsupported`다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
@@ -1230,10 +1232,10 @@ https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 �
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
-`verifiedSetAction: unchanged`만 허용한다. 모든 Windows capability와 probe cleanup이
-검증된 경우에만 `permitted`, `publish_package_and_record`, `add_after_durability`를
-반환한다. 이 permit은 실제 package writer나 coordinator activation 완료를 뜻하지 않으며,
-writer는 같은 preflight/root identity와 durability 순서를 다시 지켜야 한다.
+`verifiedSetAction: unchanged`만 허용한다. 현재 Windows implementation도 directory
+metadata durability가 미검증이므로 activation은 `blocked`다. 향후 별도 implementation이
+bottom-up directory metadata durability까지 검증하더라도 activation schema와 writer를
+별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -1603,9 +1605,9 @@ sync, record rename 또는 record parent sync가 실패하면 verified set을 �
 recovery 전에는 accepted 상태로 재사용하지 않는다.
 
 POSIX sync failure는 성공으로 축소하지 않는다. Windows에서는 raw directory-handle
-sync의 `EPERM`을 성공으로 축소하지 않고 실제 file/directory no-replace move를
-`MOVEFILE_WRITE_THROUGH`로 검증한 v2 preflight만 별도 Windows durability capability로
-인정한다. 다른 platform 결과를 POSIX durability로 오인하지 않는다. Package publish
+sync의 `EPERM`을 성공으로 축소하지 않는다. `MOVEFILE_WRITE_THROUGH` 검증은 atomic
+no-replace move capability만 증명하며 staging 내부 directory entry의 bottom-up durability를
+대체하지 않는다. 다른 platform 결과도 POSIX durability로 오인하지 않는다. Package publish
 이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
 publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
 Windows preflight의 probe namespace는 verified publication root의 exact child로 제한하고

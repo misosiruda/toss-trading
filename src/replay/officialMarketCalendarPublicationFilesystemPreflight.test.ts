@@ -21,11 +21,11 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
     });
 
     if (process.platform === "win32") {
-      assert.equal(preflight.status, "supported");
+      assert.equal(preflight.status, "unsupported");
       assert.deepEqual(preflight.capabilities, {
         exclusiveStagingFileCreate: true,
         fileDurabilitySync: true,
-        directoryDurabilitySync: true,
+        directoryDurabilitySync: false,
         atomicNoReplaceFilePublish: true,
         atomicNoReplaceDirectoryPublish: true
       });
@@ -36,7 +36,7 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
       assert.equal(preflight.observations.fileSync, "verified");
       assert.equal(
         preflight.observations.directorySync,
-        "movefileex_write_through"
+        "movefileex_write_through_only"
       );
       assert.equal(preflight.observations.freshFileAtomicMove, "verified");
       assert.equal(
@@ -51,10 +51,13 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
         preflight.observations.existingDirectoryAtomicMove,
         "collision_preserved"
       );
-      assert.deepEqual(preflight.blockers, []);
-      assert.deepEqual(
-        assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
-        preflight
+      assert.deepEqual(preflight.blockers, [
+        "directory_durability_sync_unavailable"
+      ]);
+      assert.throws(
+        () =>
+          assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
+        /directory_durability_sync_unavailable/
       );
     } else {
       assert.equal(preflight.status, "unsupported");
