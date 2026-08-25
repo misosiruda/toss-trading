@@ -2079,7 +2079,7 @@ test("calendar publication package plan binds artifact bytes and exact sidecars"
   );
 });
 
-test("calendar publication activation preflight blocks mutation and verified-set changes", async () => {
+test("calendar publication activation preflight follows verified filesystem capabilities", async () => {
   const fixture = evidenceArtifactV2Fixture();
   const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
     fixture.input,
@@ -2111,7 +2111,6 @@ test("calendar publication activation preflight blocks mutation and verified-set
       filesystemPreflight
     }, fixture.options);
 
-  assert.equal(decision.status, "blocked");
   assert.equal(decision.artifactHash, artifact.artifactHash);
   assert.equal(decision.packagePlanHash, plan.planHash);
   assert.equal(
@@ -2119,18 +2118,33 @@ test("calendar publication activation preflight blocks mutation and verified-set
     filesystemPreflight.preflightHash
   );
   assert.deepEqual(decision.blockers, filesystemPreflight.blockers);
-  assert.equal(decision.filesystemMutationAction, "none");
-  assert.equal(decision.verifiedSetAction, "unchanged");
+  if (filesystemPreflight.status === "supported") {
+    assert.equal(decision.status, "permitted");
+    assert.deepEqual(decision.blockers, []);
+    assert.equal(
+      decision.filesystemMutationAction,
+      "publish_package_and_record"
+    );
+    assert.equal(decision.verifiedSetAction, "add_after_durability");
+    assert.deepEqual(
+      assertOfficialMarketCalendarPublicationActivationPermitted(decision),
+      decision
+    );
+  } else {
+    assert.equal(decision.status, "blocked");
+    assert.equal(decision.filesystemMutationAction, "none");
+    assert.equal(decision.verifiedSetAction, "unchanged");
+    assert.throws(
+      () =>
+        assertOfficialMarketCalendarPublicationActivationPermitted(decision),
+      /publication activation is blocked/
+    );
+  }
   assert.ok(Object.isFrozen(decision));
   assert.ok(Object.isFrozen(decision.blockers));
   assert.deepEqual(
     parseOfficialMarketCalendarPublicationActivationPreflight(decision),
     decision
-  );
-  assert.throws(
-    () =>
-      assertOfficialMarketCalendarPublicationActivationPermitted(decision),
-    /publication activation is blocked/
   );
   assert.throws(
     () =>

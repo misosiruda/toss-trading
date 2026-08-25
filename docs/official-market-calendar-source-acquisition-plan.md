@@ -1209,33 +1209,30 @@ sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory
 atomic no-replace publication과 coordinator activation은 후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
-root의 realpath identity를 hash에 결합하고 mutation 없이 platform이 제공하는
-`O_DIRECTORY | O_NONBLOCK` read-only flags로 publication root handle을 연다. 같은
-handle의 `stat()`으로 directory인지 검증한 뒤 durability sync만 관찰한다.
-Handle `stat()` 또는 `close()` I/O 실패는 `probe_failed`로 기록하되 실제
-non-directory handle은 입력 오류로 명시적으로 거부한다.
-Built-in Node API는 verified directory entry에
-cleanup mutation을 결합하는 primitive와 atomic no-replace directory publish contract를
-제공하지 않는다. 따라서 exclusive create, file sync, hard-link와 directory rename
-mutation probe는 실행하지 않고 `not_probed_safe_cleanup_unavailable` observation과
-`safe_mutation_probe_cleanup_unavailable` blocker로 보존한다. 관련 capability는 모두
-false이며 built-in implementation은 모든 platform에서 `unsupported`이다. Windows의
-directory sync `EPERM`은 Windows에서만 `unsupported` compatibility observation으로
-기록하고 다른 platform에서는 `probe_failed`로 보존한다. Capability, observation과 blocker는
-서로 일치해야 하고 canonical preflight hash에 결합되며 반환 contract 전체를
-deep-freeze한다. 실제 writer enablement에는 별도 검증된 handle-bound cleanup과
-no-replace directory primitive가 선행되어야 한다.
-Stored contract도 `directorySync: unsupported`이면 `platform: win32`를 요구해
-runtime producer의 compatibility 경계를 그대로 재검증한다.
+root의 realpath identity를 hash에 결합한다. Windows에서는 writer-owned probe directory
+안에서 `wx` file create와 file sync를 실행하고, repository에 고정된
+`windowsAtomicNoReplaceMove.ps1` helper의 `MoveFileExW` + `MOVEFILE_WRITE_THROUGH`를
+file과 populated directory에 각각 적용한다. Fresh destination 이동과 existing destination
+충돌 보존을 모두 실제로 검증해야 atomic no-replace capability를 true로 기록한다.
+
+Probe cleanup은 realpath parent와 고정 prefix를 재검증한 exact child만 file-by-file,
+directory-by-directory로 제거하며 recursive delete를 사용하지 않는다. Cleanup 실패는
+`safe_mutation_probe_cleanup_unavailable` blocker로 남기고 capability 하나라도 관찰과
+일치하지 않으면 `unsupported`를 유지한다. Windows 성공 결과는 schema v2의
+`node_fs_promises_win32_movefileex.v2` implementation과
+`directorySync=movefileex_write_through` observation에 결합한다. 다른 platform은 별도
+atomic no-replace primitive가 아직 없으므로 fail-closed `unsupported`다.
+Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
+https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
 `officialMarketCalendarPublicationActivationPreflight.ts`는 verified package plan과
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
-결합한다. 현재 built-in filesystem implementation은 항상 `blocked`이며 exact
-artifact/plan/preflight/root identity와 canonical blocker를 decision hash에 포함한다.
-이 상태에서는 `filesystemMutationAction: none`, `verifiedSetAction: unchanged`만
-허용하므로 writer 또는 coordinator가 unsupported preflight를 성공으로 축소할 수 없다.
-별도 검증된 filesystem implementation이 도입되기 전에는 activation permit을 만들지
-않으며 실제 write, recovery와 verified-set 갱신은 수행하지 않는다.
+결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
+blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
+`verifiedSetAction: unchanged`만 허용한다. 모든 Windows capability와 probe cleanup이
+검증된 경우에만 `permitted`, `publish_package_and_record`, `add_after_durability`를
+반환한다. 이 permit은 실제 package writer나 coordinator activation 완료를 뜻하지 않으며,
+writer는 같은 preflight/root identity와 durability 순서를 다시 지켜야 한다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -1604,14 +1601,15 @@ sync, record rename 또는 record parent sync가 실패하면 verified set을 �
 않는다. Record가 final path에 보이는 실패도 reader에는 quarantined이며 explicit
 recovery 전에는 accepted 상태로 재사용하지 않는다.
 
-POSIX sync failure는 성공으로 축소하지 않는다. Windows에서 directory sync가
-`EPERM`으로 지원되지 않는 경우는 platform-specific compatibility 상태와
-테스트를 명시하고 POSIX durability 완료로 주장하지 않는다. Package publish
+POSIX sync failure는 성공으로 축소하지 않는다. Windows에서는 raw directory-handle
+sync의 `EPERM`을 성공으로 축소하지 않고 실제 file/directory no-replace move를
+`MOVEFILE_WRITE_THROUGH`로 검증한 v2 preflight만 별도 Windows durability capability로
+인정한다. 다른 platform 결과를 POSIX durability로 오인하지 않는다. Package publish
 이전 실패는 writer-owned staging만 정리한다. 이미 publish된 package,
 publication record 또는 unrelated path는 어떤 실패에서도 변경하지 않는다.
-Built-in preflight는 verified directory entry에 cleanup을 원자적으로 결합할 수 없으므로
-temporary namespace, probe file 또는 probe directory를 만들지 않는다. 따라서 cleanup
-path mutation, pending setup mutation과 intermediate symlink traversal도 발생하지 않는다.
+Windows preflight의 probe namespace는 verified publication root의 exact child로 제한하고
+realpath parent/prefix 검증 후 고정 entry만 비재귀 cleanup한다. Cleanup 실패는 capability
+blocker로 남기며 probe path를 publication package나 record로 재사용하지 않는다.
 Artifact는 누락 sidecar, conflicting archive path reuse, hash/path 불일치 또는
 unreferenced sidecar가 있으면 fail-closed로 거부한다.
 
