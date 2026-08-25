@@ -14,7 +14,6 @@ $OutputEncoding = $utf8WithoutBom
 
 Add-Type -TypeDefinition @"
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
 
 public static class TossTradingCalendarProbeSession
@@ -28,14 +27,13 @@ public static class TossTradingCalendarProbeSession
     private const uint FILE_ATTRIBUTE_HIDDEN = 0x00000002;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+    private const uint FILE_OPEN = 1;
     private const uint FILE_CREATE = 2;
     private const uint FILE_DIRECTORY_FILE = 0x00000001;
+    private const uint FILE_NON_DIRECTORY_FILE = 0x00000040;
     private const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
     private const uint FILE_OPEN_FOR_BACKUP_INTENT = 0x00004000;
     private const uint FILE_OPEN_REPARSE_POINT = 0x00200000;
-    private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
-    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-    private const uint OPEN_EXISTING = 3;
     private const uint OBJ_CASE_INSENSITIVE = 0x00000040;
     private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
 
@@ -97,17 +95,6 @@ public static class TossTradingCalendarProbeSession
     [DllImport("ntdll.dll")]
     private static extern uint RtlNtStatusToDosError(int status);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr CreateFileW(
-        string fileName,
-        uint desiredAccess,
-        uint shareMode,
-        IntPtr securityAttributes,
-        uint creationDisposition,
-        uint flagsAndAttributes,
-        IntPtr templateFile
-    );
-
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandleEx(
@@ -116,10 +103,6 @@ public static class TossTradingCalendarProbeSession
         out FILE_ATTRIBUTE_TAG_INFO fileInformation,
         uint bufferSize
     );
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteFileW(string fileName);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -204,22 +187,22 @@ public static class TossTradingCalendarProbeSession
         };
         foreach (string fileName in rootFiles)
         {
-            int deleteError = DeleteFileIfPresent(Path.Combine(probeRoot, fileName));
+            int deleteError = DeleteFileIfPresent(rootHandle, fileName);
             if (deleteError != 0) return deleteError;
         }
 
         int cleanupError = CleanupPackageDirectory(
-            probeRoot,
+            rootHandle,
             "fresh-directory.staging"
         );
         if (cleanupError != 0) return cleanupError;
         cleanupError = CleanupPackageDirectory(
-            probeRoot,
+            rootHandle,
             "fresh-directory.published"
         );
         if (cleanupError != 0) return cleanupError;
         cleanupError = CleanupNestedDirectory(
-            probeRoot,
+            rootHandle,
             "collision-directory.staging",
             "source-marker.txt"
         );
@@ -234,84 +217,88 @@ public static class TossTradingCalendarProbeSession
     }
 
     private static int CleanupPackageDirectory(
-        string probeRoot,
+        IntPtr probeRootHandle,
         string directoryName
     )
     {
-        string directoryPath = Path.Combine(probeRoot, directoryName);
         IntPtr directoryHandle;
-        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        int openError = OpenOwnedDirectoryRelative(
+            probeRootHandle,
+            directoryName,
+            out directoryHandle
+        );
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = CleanupSourcesDirectory(directoryHandle);
+            if (cleanupError == 0)
+            {
+                cleanupError = DeleteFileIfPresent(directoryHandle, "artifact.json");
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = MarkDirectoryForDeletion(directoryHandle);
+            }
+        }
+        finally
+        {
+            int closeError = CloseOwnedDirectory(directoryHandle);
+            if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
+        }
+        return cleanupError;
+    }
+
+    private static int CleanupSourcesDirectory(IntPtr packageHandle)
+    {
+        IntPtr sourcesHandle;
+        int openError = OpenOwnedDirectoryRelative(
+            packageHandle,
+            "sources",
+            out sourcesHandle
+        );
         if (openError == 2 || openError == 3) return 0;
         if (openError != 0) return openError;
         int cleanupError = 0;
         try
         {
             cleanupError = CleanupNestedDirectory(
-                directoryPath,
-                Path.Combine("sources", "sha256"),
+                sourcesHandle,
+                "sha256",
                 "source.bin"
             );
             if (cleanupError == 0)
             {
-                cleanupError = CleanupEmptyDirectory(directoryPath, "sources");
-            }
-            if (cleanupError == 0)
-            {
-                cleanupError = DeleteFileIfPresent(
-                    Path.Combine(directoryPath, "artifact.json")
-                );
-            }
-            if (cleanupError == 0)
-            {
-                cleanupError = MarkDirectoryForDeletion(directoryHandle);
+                cleanupError = MarkDirectoryForDeletion(sourcesHandle);
             }
         }
         finally
         {
-            int closeError = CloseOwnedDirectory(directoryHandle);
-            if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
-        }
-        return cleanupError;
-    }
-
-    private static int CleanupEmptyDirectory(
-        string parentPath,
-        string directoryName
-    )
-    {
-        string directoryPath = Path.Combine(parentPath, directoryName);
-        IntPtr directoryHandle;
-        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
-        if (openError == 2 || openError == 3) return 0;
-        if (openError != 0) return openError;
-        int cleanupError = 0;
-        try
-        {
-            cleanupError = MarkDirectoryForDeletion(directoryHandle);
-        }
-        finally
-        {
-            int closeError = CloseOwnedDirectory(directoryHandle);
+            int closeError = CloseOwnedDirectory(sourcesHandle);
             if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
         }
         return cleanupError;
     }
 
     private static int CleanupNestedDirectory(
-        string probeRoot,
+        IntPtr parentHandle,
         string directoryName,
         string fileName
     )
     {
-        string directoryPath = Path.Combine(probeRoot, directoryName);
         IntPtr directoryHandle;
-        int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
+        int openError = OpenOwnedDirectoryRelative(
+            parentHandle,
+            directoryName,
+            out directoryHandle
+        );
         if (openError == 2 || openError == 3) return 0;
         if (openError != 0) return openError;
         int cleanupError = 0;
         try
         {
-            cleanupError = DeleteFileIfPresent(Path.Combine(directoryPath, fileName));
+            cleanupError = DeleteFileIfPresent(directoryHandle, fileName);
             if (cleanupError == 0)
             {
                 cleanupError = MarkDirectoryForDeletion(directoryHandle);
@@ -325,50 +312,147 @@ public static class TossTradingCalendarProbeSession
         return cleanupError;
     }
 
-    private static int OpenOwnedDirectory(string path, out IntPtr handle)
+    private static int OpenOwnedDirectoryRelative(
+        IntPtr parentHandle,
+        string name,
+        out IntPtr handle
+    )
     {
-        handle = CreateFileW(
-            path,
-            FILE_READ_ATTRIBUTES | DELETE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            IntPtr.Zero,
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-            IntPtr.Zero
+        return OpenOwnedEntryRelative(
+            parentHandle,
+            name,
+            true,
+            out handle
         );
-        if (handle == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
-
-        FILE_ATTRIBUTE_TAG_INFO information;
-        bool inspected = GetFileInformationByHandleEx(
-            handle,
-            9,
-            out information,
-            (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO))
-        );
-        if (!inspected)
-        {
-            int error = Marshal.GetLastWin32Error();
-            CloseOwnedDirectory(handle);
-            handle = INVALID_HANDLE_VALUE;
-            return error;
-        }
-        if (
-            (information.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
-            (information.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
-        )
-        {
-            CloseOwnedDirectory(handle);
-            handle = INVALID_HANDLE_VALUE;
-            return 4390;
-        }
-        return 0;
     }
 
-    private static int DeleteFileIfPresent(string path)
+    private static int OpenOwnedFileRelative(
+        IntPtr parentHandle,
+        string name,
+        out IntPtr handle
+    )
     {
-        if (DeleteFileW(path)) return 0;
-        int error = Marshal.GetLastWin32Error();
-        return error == 2 || error == 3 ? 0 : error;
+        return OpenOwnedEntryRelative(
+            parentHandle,
+            name,
+            false,
+            out handle
+        );
+    }
+
+    private static int OpenOwnedEntryRelative(
+        IntPtr parentHandle,
+        string name,
+        bool expectDirectory,
+        out IntPtr handle
+    )
+    {
+        handle = INVALID_HANDLE_VALUE;
+        if (
+            String.IsNullOrEmpty(name) ||
+            name.IndexOfAny(new char[] { '\\', '/' }) >= 0 ||
+            name == "." ||
+            name == ".."
+        ) return 87;
+
+        IntPtr stringBuffer = Marshal.StringToHGlobalUni(name);
+        IntPtr unicodeStringPointer = IntPtr.Zero;
+        try
+        {
+            UNICODE_STRING unicodeString = new UNICODE_STRING {
+                Length = checked((ushort)(name.Length * 2)),
+                MaximumLength = checked((ushort)((name.Length + 1) * 2)),
+                Buffer = stringBuffer
+            };
+            unicodeStringPointer = Marshal.AllocHGlobal(
+                Marshal.SizeOf(typeof(UNICODE_STRING))
+            );
+            Marshal.StructureToPtr(unicodeString, unicodeStringPointer, false);
+            OBJECT_ATTRIBUTES attributes = new OBJECT_ATTRIBUTES {
+                Length = Marshal.SizeOf(typeof(OBJECT_ATTRIBUTES)),
+                RootDirectory = parentHandle,
+                ObjectName = unicodeStringPointer,
+                Attributes = OBJ_CASE_INSENSITIVE,
+                SecurityDescriptor = IntPtr.Zero,
+                SecurityQualityOfService = IntPtr.Zero
+            };
+            IO_STATUS_BLOCK statusBlock;
+            int status = NtCreateFile(
+                out handle,
+                FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
+                ref attributes,
+                out statusBlock,
+                IntPtr.Zero,
+                0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_OPEN,
+                (expectDirectory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE) |
+                    FILE_SYNCHRONOUS_IO_NONALERT |
+                    FILE_OPEN_FOR_BACKUP_INTENT |
+                    FILE_OPEN_REPARSE_POINT,
+                IntPtr.Zero,
+                0
+            );
+            if (status < 0)
+            {
+                handle = INVALID_HANDLE_VALUE;
+                return unchecked((int)RtlNtStatusToDosError(status));
+            }
+
+            FILE_ATTRIBUTE_TAG_INFO information;
+            bool inspected = GetFileInformationByHandleEx(
+                handle,
+                9,
+                out information,
+                (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO))
+            );
+            if (!inspected)
+            {
+                int error = Marshal.GetLastWin32Error();
+                CloseOwnedDirectory(handle);
+                handle = INVALID_HANDLE_VALUE;
+                return error;
+            }
+            bool isDirectory =
+                (information.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            if (
+                isDirectory != expectDirectory ||
+                (information.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+            )
+            {
+                CloseOwnedDirectory(handle);
+                handle = INVALID_HANDLE_VALUE;
+                return 4390;
+            }
+            return 0;
+        }
+        finally
+        {
+            if (unicodeStringPointer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(unicodeStringPointer);
+            }
+            Marshal.FreeHGlobal(stringBuffer);
+        }
+    }
+
+    private static int DeleteFileIfPresent(IntPtr parentHandle, string fileName)
+    {
+        IntPtr fileHandle;
+        int openError = OpenOwnedFileRelative(parentHandle, fileName, out fileHandle);
+        if (openError == 2 || openError == 3) return 0;
+        if (openError != 0) return openError;
+        int cleanupError = 0;
+        try
+        {
+            cleanupError = MarkDirectoryForDeletion(fileHandle);
+        }
+        finally
+        {
+            int closeError = CloseOwnedDirectory(fileHandle);
+            if (closeError != 0 && cleanupError == 0) cleanupError = closeError;
+        }
+        return cleanupError;
     }
 
     private static int MarkDirectoryForDeletion(IntPtr handle)
