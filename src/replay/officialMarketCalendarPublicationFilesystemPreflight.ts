@@ -205,6 +205,13 @@ function validatePreflightPayload(
       message: "publication filesystem status must match blockers"
     });
   }
+  if (value.status === "supported") {
+    context.addIssue({
+      code: "custom",
+      path: ["implementationId"],
+      message: "current publication filesystem implementations cannot report supported"
+    });
+  }
   if (
     value.capabilities.directoryDurabilitySync !==
     (value.observations.directorySync === "synced")

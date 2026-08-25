@@ -144,6 +144,37 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
       /MoveFileEx durability is reserved for the Windows implementation/
     );
   }
+
+  const { preflightHash: _storedHash, ...preflightPayload } = preflight;
+  const impossibleSupportedPayload = {
+    ...preflightPayload,
+    status: "supported" as const,
+    capabilities: {
+      exclusiveStagingFileCreate: true,
+      fileDurabilitySync: true,
+      directoryDurabilitySync: true,
+      atomicNoReplaceFilePublish: true,
+      atomicNoReplaceDirectoryPublish: true
+    },
+    observations: {
+      existingFileExclusiveCreate: "verified" as const,
+      fileSync: "verified" as const,
+      directorySync: "synced" as const,
+      freshFileAtomicMove: "verified" as const,
+      existingFileAtomicMove: "collision_preserved" as const,
+      freshDirectoryAtomicMove: "verified" as const,
+      existingDirectoryAtomicMove: "collision_preserved" as const,
+      probeCleanup: "verified" as const
+    },
+    blockers: []
+  };
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarPublicationFilesystemPreflightHash(
+        impossibleSupportedPayload
+      ),
+    /current publication filesystem implementations cannot report supported/
+  );
 });
 
 test("calendar publication filesystem preflight requires an absolute existing root", async () => {

@@ -1225,6 +1225,8 @@ collision entry 보존을 통과하면 atomic no-replace capability는 true로 �
 않는다. 따라서 schema v2는 `directorySync=movefileex_write_through_only`,
 `directoryDurabilitySync=false`와 `directory_durability_sync_unavailable` blocker를
 유지한다. 다른 platform도 별도 primitive가 아직 없으므로 fail-closed `unsupported`다.
+현재 등록된 두 implementation ID는 schema 수준에서도 `supported` payload를 허용하지
+않으며, 향후 durability implementation은 새 ID와 별도 검증 계약을 사용해야 한다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
