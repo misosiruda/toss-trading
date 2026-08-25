@@ -83,7 +83,11 @@ const preflightPayloadSchema = z
           "not_probed",
           "probe_failed"
         ]),
-        probeCleanup: z.enum(["verified", "probe_failed"])
+        probeCleanup: z.enum([
+          "verified",
+          "identity_not_retained",
+          "probe_failed"
+        ])
       })
       .strict(),
     blockers: z.array(blockerSchema)
@@ -440,7 +444,7 @@ async function probeWindowsPublicationFilesystem(
       publicationRoot,
       probeRoot
     ))
-      ? "verified"
+      ? "identity_not_retained"
       : "probe_failed";
   }
   return {

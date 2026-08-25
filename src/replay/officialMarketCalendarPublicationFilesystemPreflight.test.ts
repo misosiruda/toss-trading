@@ -52,7 +52,8 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
         "collision_preserved"
       );
       assert.deepEqual(preflight.blockers, [
-        "directory_durability_sync_unavailable"
+        "directory_durability_sync_unavailable",
+        "safe_mutation_probe_cleanup_unavailable"
       ]);
       assert.throws(
         () =>
@@ -67,7 +68,10 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
         /filesystem is unsupported/
       );
     }
-    assert.equal(preflight.observations.probeCleanup, "verified");
+    assert.equal(
+      preflight.observations.probeCleanup,
+      process.platform === "win32" ? "identity_not_retained" : "verified"
+    );
     assert.deepEqual(await readdir(publicationRoot), []);
     assert.equal(Object.isFrozen(preflight.capabilities), true);
     assert.equal(Object.isFrozen(preflight.observations), true);
