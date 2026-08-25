@@ -1216,24 +1216,23 @@ root의 realpath identity를 hash에 결합한다. Windows에서는 writer-owned
 file과 populated directory에 각각 적용한다. Fresh destination 이동과 existing destination
 충돌 보존을 모두 실제로 검증해야 atomic no-replace capability를 true로 기록한다.
 
-Probe cleanup은 realpath parent와 고정 prefix를 재검증하고, Windows helper가 probe root와
-nested directory를 reparse-point 비추적 및 no-delete-share handle로 고정한 동안 exact child만
-file-by-file, directory-by-directory로 제거한다. Recursive delete를 사용하지 않으며 junction
-또는 예상 밖 entry를 만나면 외부 target을 건드리지 않고 실패한다. Directory 제거는
-같은 identity-bound handle에 delete-pending을 설정한 뒤 close하여 path 교체 race를 막는다.
-다만 Node `mkdtemp`가 생성 handle을 helper에 넘기지 못하므로 생성 순간부터 cleanup까지
-probe root identity를 연속 보유했다는 증거는 없다. Windows에서 실제 cleanup이 끝나도
-`probeCleanup=identity_not_retained`와 `safe_mutation_probe_cleanup_unavailable` blocker를
-유지한다. Cleanup 실패는
-`safe_mutation_probe_cleanup_unavailable` blocker로 남기고 capability 하나라도 관찰과
+Probe session helper는 `NtCreateFile(FILE_CREATE | FILE_DIRECTORY_FILE)`로 unique probe
+root를 만들면서 no-delete-share handle을 원자적으로 확보한다. Node probe가 끝날 때까지
+같은 helper process와 handle을 유지하므로 생성 직후부터 cleanup 완료까지 root identity가
+path rename/replacement로 바뀌지 않는다. Cleanup은 nested directory를 reparse-point 비추적
+및 no-delete-share handle로 고정한 동안 exact child만 file-by-file,
+directory-by-directory로 제거한다. Recursive delete를 사용하지 않으며 junction 또는 예상 밖
+entry를 만나면 외부 target을 건드리지 않고 실패한다. Directory 제거는 같은
+identity-bound handle에 delete-pending을 설정한 뒤 close한다. Session 종료, exact root 삭제와
+`PROBE_CLEANUP_VERIFIED`를 모두 확인한 경우에만 `probeCleanup=verified`로 기록한다. Cleanup
+실패는 `safe_mutation_probe_cleanup_unavailable` blocker로 남기고 capability 하나라도 관찰과
 일치하지 않으면 `unsupported`를 유지한다. Windows에서 file/directory move와 양쪽
 collision entry 보존을 통과하면 atomic no-replace capability는 true로 기록하지만,
 `MOVEFILE_WRITE_THROUGH`는 staging tree의 bottom-up directory metadata flush를 증명하지
 않는다. 따라서 schema v2는 `directorySync=movefileex_write_through_only`,
-`directoryDurabilitySync=false`, `directory_durability_sync_unavailable`과 cleanup identity
-blocker를 유지한다. 다른 platform도 별도 primitive가 아직 없으므로 fail-closed
-`unsupported`다.
-현재 등록된 두 implementation ID는 schema 수준에서도 `supported` payload를 허용하지
+`directoryDurabilitySync=false`와 `directory_durability_sync_unavailable` blocker를
+유지한다. 다른 platform도 별도 primitive가 아직 없으므로 fail-closed `unsupported`다.
+현재 등록된 세 implementation ID는 schema 수준에서도 `supported` payload를 허용하지
 않으며, 향후 durability implementation은 새 ID와 별도 검증 계약을 사용해야 한다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
