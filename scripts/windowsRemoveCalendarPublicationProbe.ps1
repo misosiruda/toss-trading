@@ -17,6 +17,7 @@ using System.Runtime.InteropServices;
 public static class TossTradingCalendarProbeCleanup
 {
     private const uint FILE_READ_ATTRIBUTES = 0x00000080;
+    private const uint DELETE = 0x00010000;
     private const uint FILE_SHARE_READ = 0x00000001;
     private const uint FILE_SHARE_WRITE = 0x00000002;
     private const uint OPEN_EXISTING = 3;
@@ -31,6 +32,13 @@ public static class TossTradingCalendarProbeCleanup
     {
         public uint FileAttributes;
         public uint ReparseTag;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FILE_DISPOSITION_INFO
+    {
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool DeleteFile;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -57,9 +65,14 @@ public static class TossTradingCalendarProbeCleanup
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DeleteFileW(string fileName);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool RemoveDirectoryW(string pathName);
+    private static extern bool SetFileInformationByHandle(
+        IntPtr file,
+        int fileInformationClass,
+        ref FILE_DISPOSITION_INFO fileInformation,
+        uint bufferSize
+    );
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -70,6 +83,7 @@ public static class TossTradingCalendarProbeCleanup
         IntPtr rootHandle;
         int rootOpenError = OpenOwnedDirectory(probeRoot, out rootHandle);
         if (rootOpenError != 0) return rootOpenError;
+        int cleanupError = 0;
         try
         {
             string[] rootFiles = {
@@ -80,34 +94,50 @@ public static class TossTradingCalendarProbeCleanup
             foreach (string fileName in rootFiles)
             {
                 int deleteError = DeleteFileIfPresent(Path.Combine(probeRoot, fileName));
-                if (deleteError != 0) return deleteError;
+                if (deleteError != 0)
+                {
+                    cleanupError = deleteError;
+                    break;
+                }
             }
 
-            int cleanupError = CleanupNestedDirectory(
-                probeRoot,
-                "fresh-directory.staging",
-                "artifact.json"
-            );
-            if (cleanupError != 0) return cleanupError;
-            cleanupError = CleanupNestedDirectory(
-                probeRoot,
-                "fresh-directory.published",
-                "artifact.json"
-            );
-            if (cleanupError != 0) return cleanupError;
-            cleanupError = CleanupNestedDirectory(
-                probeRoot,
-                "collision-directory.staging",
-                "source-marker.txt"
-            );
-            if (cleanupError != 0) return cleanupError;
+            if (cleanupError == 0)
+            {
+                cleanupError = CleanupNestedDirectory(
+                    probeRoot,
+                    "fresh-directory.staging",
+                    "artifact.json"
+                );
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = CleanupNestedDirectory(
+                    probeRoot,
+                    "fresh-directory.published",
+                    "artifact.json"
+                );
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = CleanupNestedDirectory(
+                    probeRoot,
+                    "collision-directory.staging",
+                    "source-marker.txt"
+                );
+            }
+            if (cleanupError == 0)
+            {
+                cleanupError = MarkDirectoryForDeletion(rootHandle);
+            }
         }
         finally
         {
-            CloseHandle(rootHandle);
+            if (!CloseHandle(rootHandle) && cleanupError == 0)
+            {
+                cleanupError = Marshal.GetLastWin32Error();
+            }
         }
-
-        return RemoveDirectoryIfPresent(probeRoot);
+        return cleanupError;
     }
 
     private static int CleanupNestedDirectory(
@@ -121,25 +151,32 @@ public static class TossTradingCalendarProbeCleanup
         int openError = OpenOwnedDirectory(directoryPath, out directoryHandle);
         if (openError == 2 || openError == 3) return 0;
         if (openError != 0) return openError;
+        int cleanupError = 0;
         try
         {
-            int deleteError = DeleteFileIfPresent(
+            cleanupError = DeleteFileIfPresent(
                 Path.Combine(directoryPath, fileName)
             );
-            if (deleteError != 0) return deleteError;
+            if (cleanupError == 0)
+            {
+                cleanupError = MarkDirectoryForDeletion(directoryHandle);
+            }
         }
         finally
         {
-            CloseHandle(directoryHandle);
+            if (!CloseHandle(directoryHandle) && cleanupError == 0)
+            {
+                cleanupError = Marshal.GetLastWin32Error();
+            }
         }
-        return RemoveDirectoryIfPresent(directoryPath);
+        return cleanupError;
     }
 
     private static int OpenOwnedDirectory(string path, out IntPtr handle)
     {
         handle = CreateFileW(
             path,
-            FILE_READ_ATTRIBUTES,
+            FILE_READ_ATTRIBUTES | DELETE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             IntPtr.Zero,
             OPEN_EXISTING,
@@ -184,11 +221,18 @@ public static class TossTradingCalendarProbeCleanup
         return error == 2 || error == 3 ? 0 : error;
     }
 
-    private static int RemoveDirectoryIfPresent(string path)
+    private static int MarkDirectoryForDeletion(IntPtr handle)
     {
-        if (RemoveDirectoryW(path)) return 0;
-        int error = Marshal.GetLastWin32Error();
-        return error == 2 || error == 3 ? 0 : error;
+        FILE_DISPOSITION_INFO disposition = new FILE_DISPOSITION_INFO {
+            DeleteFile = true
+        };
+        bool marked = SetFileInformationByHandle(
+            handle,
+            4,
+            ref disposition,
+            (uint)Marshal.SizeOf(typeof(FILE_DISPOSITION_INFO))
+        );
+        return marked ? 0 : Marshal.GetLastWin32Error();
     }
 }
 "@

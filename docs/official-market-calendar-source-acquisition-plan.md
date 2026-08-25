@@ -1219,7 +1219,9 @@ file과 populated directory에 각각 적용한다. Fresh destination 이동과 
 Probe cleanup은 realpath parent와 고정 prefix를 재검증하고, Windows helper가 probe root와
 nested directory를 reparse-point 비추적 및 no-delete-share handle로 고정한 동안 exact child만
 file-by-file, directory-by-directory로 제거한다. Recursive delete를 사용하지 않으며 junction
-또는 예상 밖 entry를 만나면 외부 target을 건드리지 않고 실패한다. Cleanup 실패는
+또는 예상 밖 entry를 만나면 외부 target을 건드리지 않고 실패한다. Directory 제거는
+같은 identity-bound handle에 delete-pending을 설정한 뒤 close하여 path 교체 race를 막는다.
+Cleanup 실패는
 `safe_mutation_probe_cleanup_unavailable` blocker로 남기고 capability 하나라도 관찰과
 일치하지 않으면 `unsupported`를 유지한다. Windows에서 file/directory move와 양쪽
 collision entry 보존을 통과하면 atomic no-replace capability는 true로 기록하지만,
