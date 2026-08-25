@@ -1,20 +1,19 @@
 import { constants } from "node:fs";
 import {
   lstat,
-  mkdtemp,
   mkdir,
   open,
   readFile,
   realpath
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { z } from "zod";
 
 import { sha256HashSchema, type Sha256Hash } from "../domain/schemas.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
-import { cleanupOfficialMarketCalendarWindowsPublicationProbe } from "./officialMarketCalendarWindowsProbeCleanup.js";
+import { createOfficialMarketCalendarWindowsProbeSession } from "./officialMarketCalendarWindowsProbeSession.js";
 
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION =
   "official_market_calendar_publication_filesystem_preflight.v2";
@@ -35,7 +34,8 @@ const preflightPayloadSchema = z
     ),
     implementationId: z.enum([
       "node_fs_promises.v2",
-      "node_fs_promises_win32_movefileex.v2"
+      "node_fs_promises_win32_movefileex.v2",
+      "node_fs_promises_win32_native_probe_session.v3"
     ]),
     platform: z.string().regex(/^[a-z0-9_]+$/),
     publicationRootIdentityHash: sha256HashSchema,
@@ -129,7 +129,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
     implementationId:
       process.platform === "win32"
-        ? "node_fs_promises_win32_movefileex.v2"
+        ? "node_fs_promises_win32_native_probe_session.v3"
         : "node_fs_promises.v2",
     platform: process.platform,
     publicationRootIdentityHash: createReplayResearchHash(publicationRoot),
@@ -255,7 +255,7 @@ function validatePreflightPayload(
   if (
     value.observations.directorySync === "movefileex_write_through_only" &&
     (value.platform !== "win32" ||
-      value.implementationId !== "node_fs_promises_win32_movefileex.v2")
+      !value.implementationId.startsWith("node_fs_promises_win32_"))
   ) {
     context.addIssue({
       code: "custom",
@@ -264,8 +264,7 @@ function validatePreflightPayload(
     });
   }
   if (
-    (value.implementationId ===
-      "node_fs_promises_win32_movefileex.v2") !==
+    value.implementationId.startsWith("node_fs_promises_win32_") !==
     (value.platform === "win32")
   ) {
     context.addIssue({
@@ -308,9 +307,9 @@ async function probeWindowsPublicationFilesystem(
   capabilities: OfficialMarketCalendarPublicationFilesystemPreflightPayload["capabilities"];
   observations: OfficialMarketCalendarPublicationFilesystemPreflightPayload["observations"];
 }> {
-  const probeRoot = await mkdtemp(
-    join(publicationRoot, ".calendar-publication-preflight-")
-  );
+  const probeSession =
+    await createOfficialMarketCalendarWindowsProbeSession({ publicationRoot });
+  const probeRoot = probeSession.probeRoot;
   const observations: OfficialMarketCalendarPublicationFilesystemPreflightPayload["observations"] = {
     existingFileExclusiveCreate: "not_probed",
     fileSync: "not_probed",
@@ -440,11 +439,8 @@ async function probeWindowsPublicationFilesystem(
   } catch {
     // Each observation remains explicit; unsupported capabilities fail closed.
   } finally {
-    observations.probeCleanup = (await cleanupWindowsProbe(
-      publicationRoot,
-      probeRoot
-    ))
-      ? "identity_not_retained"
+    observations.probeCleanup = (await probeSession.cleanup())
+      ? "verified"
       : "probe_failed";
   }
   return {
@@ -462,30 +458,6 @@ async function probeWindowsPublicationFilesystem(
     },
     observations
   };
-}
-
-async function cleanupWindowsProbe(
-  publicationRoot: string,
-  probeRoot: string
-): Promise<boolean> {
-  let resolvedProbeRoot: string;
-  try {
-    resolvedProbeRoot = await realpath(probeRoot);
-  } catch {
-    return false;
-  }
-  if (
-    dirname(resolvedProbeRoot) !== publicationRoot ||
-    !basename(resolvedProbeRoot).startsWith(
-      ".calendar-publication-preflight-"
-    )
-  ) {
-    return false;
-  }
-  return cleanupOfficialMarketCalendarWindowsPublicationProbe({
-    publicationRoot,
-    probeRoot: resolvedProbeRoot
-  });
 }
 
 async function inspectUnsupportedNodeFilesystem(
