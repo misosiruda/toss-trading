@@ -5,9 +5,7 @@ import {
   mkdir,
   open,
   readFile,
-  realpath,
-  rmdir,
-  unlink
+  realpath
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 
@@ -16,6 +14,7 @@ import { z } from "zod";
 import { sha256HashSchema, type Sha256Hash } from "../domain/schemas.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
+import { cleanupOfficialMarketCalendarWindowsPublicationProbe } from "./officialMarketCalendarWindowsProbeCleanup.js";
 
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION =
   "official_market_calendar_publication_filesystem_preflight.v2";
@@ -479,32 +478,10 @@ async function cleanupWindowsProbe(
   ) {
     return false;
   }
-  const files = [
-    join(resolvedProbeRoot, "fresh-file.staging"),
-    join(resolvedProbeRoot, "fresh-file.published"),
-    join(resolvedProbeRoot, "collision-file.staging"),
-    join(resolvedProbeRoot, "fresh-directory.staging", "artifact.json"),
-    join(resolvedProbeRoot, "fresh-directory.published", "artifact.json"),
-    join(
-      resolvedProbeRoot,
-      "collision-directory.staging",
-      "source-marker.txt"
-    )
-  ];
-  const directories = [
-    join(resolvedProbeRoot, "fresh-directory.staging"),
-    join(resolvedProbeRoot, "fresh-directory.published"),
-    join(resolvedProbeRoot, "collision-directory.staging"),
-    resolvedProbeRoot
-  ];
-  let cleanupSucceeded = true;
-  for (const path of files) {
-    cleanupSucceeded = (await removeFileIfPresent(path)) && cleanupSucceeded;
-  }
-  for (const path of directories) {
-    cleanupSucceeded = (await removeDirectoryIfPresent(path)) && cleanupSucceeded;
-  }
-  return cleanupSucceeded;
+  return cleanupOfficialMarketCalendarWindowsPublicationProbe({
+    publicationRoot,
+    probeRoot: resolvedProbeRoot
+  });
 }
 
 async function inspectUnsupportedNodeFilesystem(
@@ -568,15 +545,6 @@ async function probeDirectorySync(path: string) {
   }
 }
 
-async function removeFileIfPresent(path: string): Promise<boolean> {
-  try {
-    await unlink(path);
-    return true;
-  } catch (error) {
-    return isNodeError(error) && error.code === "ENOENT";
-  }
-}
-
 async function verifyExistingFileExclusiveCreate(
   path: string,
   expectedContents: string
@@ -633,15 +601,6 @@ async function verifyDirectoryCollisionPreserved(input: {
     );
   } catch {
     return false;
-  }
-}
-
-async function removeDirectoryIfPresent(path: string): Promise<boolean> {
-  try {
-    await rmdir(path);
-    return true;
-  } catch (error) {
-    return isNodeError(error) && error.code === "ENOENT";
   }
 }
 
