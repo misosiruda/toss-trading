@@ -634,7 +634,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v4",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v5",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -647,6 +647,16 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           holidayCount: null,
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
+          evidenceAssessment: {
+            status: "not_interpreted",
+            candidateEvidenceRoles: [],
+            calendarGridCoverageStartDate: null,
+            calendarGridCoverageEndDate: null,
+            scheduleCoverageIntervals: [],
+            acceptanceBlockers: [
+              "registered_source_policy_verification_required"
+            ]
+          },
           sourceRoleStatus: "candidate_not_accepted",
           durableEvidenceReuse: false,
           acceptedAcquisition: false
@@ -667,7 +677,7 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
         ).acquireWordCandidateSummary({ fileName: FILE_NAME }),
         {
           schemaVersion:
-            "official_market_calendar_krx_legacy_word_candidate_summary.v4",
+            "official_market_calendar_krx_legacy_word_candidate_summary.v5",
           fileName: FILE_NAME,
           targetYear: "2013",
           nFib: 0x00c1,
@@ -680,6 +690,16 @@ test("KRX legacy response transfers only through the fixed verification lifecycl
           holidayCount: null,
           columnSemanticsStatus: "not_interpreted",
           holidaySemanticsStatus: "not_interpreted",
+          evidenceAssessment: {
+            status: "not_interpreted",
+            candidateEvidenceRoles: [],
+            calendarGridCoverageStartDate: null,
+            calendarGridCoverageEndDate: null,
+            scheduleCoverageIntervals: [],
+            acceptanceBlockers: [
+              "registered_source_policy_verification_required"
+            ]
+          },
           sourceRoleStatus: "candidate_not_accepted",
           durableEvidenceReuse: false,
           acceptedAcquisition: false
