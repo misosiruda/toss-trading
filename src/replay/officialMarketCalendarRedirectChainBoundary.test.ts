@@ -2117,7 +2117,10 @@ test("calendar publication activation preflight follows verified filesystem capa
     decision.filesystemPreflightHash,
     filesystemPreflight.preflightHash
   );
-  assert.deepEqual(decision.blockers, filesystemPreflight.blockers);
+  assert.deepEqual(
+    decision.blockers,
+    [...filesystemPreflight.blockers, "publication_writer_unavailable"].sort()
+  );
   assert.equal(decision.status, "blocked");
   assert.equal(decision.filesystemMutationAction, "none");
   assert.equal(decision.verifiedSetAction, "unchanged");

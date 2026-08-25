@@ -23,13 +23,13 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
     if (process.platform === "win32") {
       assert.equal(
         preflight.implementationId,
-        "node_fs_promises_win32_native_probe_session.v3"
+        "node_fs_promises_win32_ntflushbuffersfileex.v4"
       );
-      assert.equal(preflight.status, "unsupported");
+      assert.equal(preflight.status, "supported");
       assert.deepEqual(preflight.capabilities, {
         exclusiveStagingFileCreate: true,
         fileDurabilitySync: true,
-        directoryDurabilitySync: false,
+        directoryDurabilitySync: true,
         atomicNoReplaceFilePublish: true,
         atomicNoReplaceDirectoryPublish: true
       });
@@ -40,7 +40,7 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
       assert.equal(preflight.observations.fileSync, "verified");
       assert.equal(
         preflight.observations.directorySync,
-        "movefileex_write_through_only"
+        "ntflushbuffersfileex_normal"
       );
       assert.equal(preflight.observations.freshFileAtomicMove, "verified");
       assert.equal(
@@ -55,13 +55,10 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
         preflight.observations.existingDirectoryAtomicMove,
         "collision_preserved"
       );
-      assert.deepEqual(preflight.blockers, [
-        "directory_durability_sync_unavailable"
-      ]);
-      assert.throws(
-        () =>
-          assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
-        /directory_durability_sync_unavailable/
+      assert.deepEqual(preflight.blockers, []);
+      assert.deepEqual(
+        assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
+        preflight
       );
     } else {
       assert.equal(preflight.status, "unsupported");
@@ -148,13 +145,15 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
               platformPayload
             )
         }),
-      /MoveFileEx durability is reserved for the Windows implementation/
+      /NtFlushBuffersFileEx durability requires the Windows v4 implementation/
     );
   }
 
   const { preflightHash: _storedHash, ...preflightPayload } = preflight;
   const impossibleSupportedPayload = {
     ...preflightPayload,
+    implementationId: "node_fs_promises_win32_native_probe_session.v3" as const,
+    platform: "win32",
     status: "supported" as const,
     capabilities: {
       exclusiveStagingFileCreate: true,
@@ -181,6 +180,15 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
         impossibleSupportedPayload
       ),
     /current publication filesystem implementations cannot report supported/
+  );
+  assert.throws(
+    () =>
+      createOfficialMarketCalendarPublicationFilesystemPreflightHash({
+        ...impossibleSupportedPayload,
+        implementationId:
+          "node_fs_promises_win32_ntflushbuffersfileex.v4" as const
+      }),
+    /Windows v4 directory durability requires the NtFlushBuffersFileEx observation/
   );
 });
 

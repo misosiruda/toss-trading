@@ -13,6 +13,7 @@ import { z } from "zod";
 import { sha256HashSchema, type Sha256Hash } from "../domain/schemas.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
+import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 import { createOfficialMarketCalendarWindowsProbeSession } from "./officialMarketCalendarWindowsProbeSession.js";
 
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION =
@@ -35,7 +36,8 @@ const preflightPayloadSchema = z
     implementationId: z.enum([
       "node_fs_promises.v2",
       "node_fs_promises_win32_movefileex.v2",
-      "node_fs_promises_win32_native_probe_session.v3"
+      "node_fs_promises_win32_native_probe_session.v3",
+      "node_fs_promises_win32_ntflushbuffersfileex.v4"
     ]),
     platform: z.string().regex(/^[a-z0-9_]+$/),
     publicationRootIdentityHash: sha256HashSchema,
@@ -59,6 +61,7 @@ const preflightPayloadSchema = z
         fileSync: z.enum(["verified", "not_probed", "probe_failed"]),
         directorySync: z.enum([
           "synced",
+          "ntflushbuffersfileex_normal",
           "movefileex_write_through_only",
           "unsupported",
           "probe_failed"
@@ -129,7 +132,7 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
     implementationId:
       process.platform === "win32"
-        ? "node_fs_promises_win32_native_probe_session.v3"
+        ? "node_fs_promises_win32_ntflushbuffersfileex.v4"
         : "node_fs_promises.v2",
     platform: process.platform,
     publicationRootIdentityHash: createReplayResearchHash(publicationRoot),
@@ -208,7 +211,11 @@ function validatePreflightPayload(
       message: "publication filesystem status must match blockers"
     });
   }
-  if (value.status === "supported") {
+  if (
+    value.status === "supported" &&
+    value.implementationId !==
+      "node_fs_promises_win32_ntflushbuffersfileex.v4"
+  ) {
     context.addIssue({
       code: "custom",
       path: ["implementationId"],
@@ -217,12 +224,25 @@ function validatePreflightPayload(
   }
   if (
     value.capabilities.directoryDurabilitySync !==
-    (value.observations.directorySync === "synced")
+    isVerifiedDirectorySync(value.observations.directorySync)
   ) {
     context.addIssue({
       code: "custom",
       path: ["observations", "directorySync"],
       message: "publication directory durability observation must match capability"
+    });
+  }
+  if (
+    value.implementationId ===
+      "node_fs_promises_win32_ntflushbuffersfileex.v4" &&
+    value.capabilities.directoryDurabilitySync &&
+    value.observations.directorySync !== "ntflushbuffersfileex_normal"
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["observations", "directorySync"],
+      message:
+        "Windows v4 directory durability requires the NtFlushBuffersFileEx observation"
     });
   }
   const observationCapabilities = {
@@ -261,6 +281,18 @@ function validatePreflightPayload(
       code: "custom",
       path: ["observations", "directorySync"],
       message: "MoveFileEx durability is reserved for the Windows implementation"
+    });
+  }
+  if (
+    value.observations.directorySync === "ntflushbuffersfileex_normal" &&
+    (value.platform !== "win32" ||
+      value.implementationId !==
+        "node_fs_promises_win32_ntflushbuffersfileex.v4")
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["observations", "directorySync"],
+      message: "NtFlushBuffersFileEx durability requires the Windows v4 implementation"
     });
   }
   if (
@@ -382,6 +414,10 @@ async function probeWindowsPublicationFilesystem(
       "fresh-directory.published"
     );
     await mkdir(freshDirectorySource);
+    const sourcesDirectory = join(freshDirectorySource, "sources");
+    const sourceHashDirectory = join(sourcesDirectory, "sha256");
+    await mkdir(sourcesDirectory);
+    await mkdir(sourceHashDirectory);
     const nestedFile = await open(join(freshDirectorySource, "artifact.json"), "wx");
     try {
       await nestedFile.writeFile("{}\n", "utf8");
@@ -389,13 +425,39 @@ async function probeWindowsPublicationFilesystem(
     } finally {
       await nestedFile.close();
     }
+    const sourceSidecar = await open(
+      join(sourceHashDirectory, "source.bin"),
+      "wx"
+    );
+    try {
+      await sourceSidecar.writeFile("source bytes\n", "utf8");
+      await sourceSidecar.sync();
+    } finally {
+      await sourceSidecar.close();
+    }
+    if (
+      !(await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
+        publicationRoot,
+        leafDirectory: sourceHashDirectory,
+        inclusiveAncestorDirectory: freshDirectorySource
+      }))
+    ) {
+      throw new Error("calendar publication staging directory sync failed");
+    }
     await publishOfficialMarketCalendarEntryAtomicNoReplace({
       sourcePath: freshDirectorySource,
       destinationPath: freshDirectoryDestination,
       entryKind: "directory"
     });
     observations.freshDirectoryAtomicMove = "verified";
-    observations.directorySync = "movefileex_write_through_only";
+    observations.directorySync =
+      await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
+        publicationRoot,
+        leafDirectory: probeRoot,
+        inclusiveAncestorDirectory: publicationRoot
+      })
+        ? "ntflushbuffersfileex_normal"
+        : "probe_failed";
 
     const collisionDirectorySource = join(
       probeRoot,
@@ -448,7 +510,9 @@ async function probeWindowsPublicationFilesystem(
       exclusiveStagingFileCreate:
         observations.existingFileExclusiveCreate === "verified",
       fileDurabilitySync: observations.fileSync === "verified",
-      directoryDurabilitySync: false,
+      directoryDurabilitySync: isVerifiedDirectorySync(
+        observations.directorySync
+      ),
       atomicNoReplaceFilePublish:
         observations.freshFileAtomicMove === "verified" &&
         observations.existingFileAtomicMove === "collision_preserved",
@@ -458,6 +522,15 @@ async function probeWindowsPublicationFilesystem(
     },
     observations
   };
+}
+
+function isVerifiedDirectorySync(
+  observation: OfficialMarketCalendarPublicationFilesystemPreflightPayload["observations"]["directorySync"]
+): boolean {
+  return (
+    observation === "synced" ||
+    observation === "ntflushbuffersfileex_normal"
+  );
 }
 
 async function inspectUnsupportedNodeFilesystem(
