@@ -11,57 +11,74 @@ import {
   parseOfficialMarketCalendarPublicationFilesystemPreflight
 } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 
-test("calendar publication filesystem preflight keeps Node directory publish disabled", async () => {
-  const publicationRoot = await mkdtemp(join(tmpdir(), "calendar-publication-preflight-test-"));
+test("calendar publication filesystem preflight verifies or blocks the runtime capabilities", async () => {
+  const publicationRoot = await mkdtemp(
+    join(tmpdir(), "calendar-publication-preflight-test-")
+  );
   try {
     const preflight = await inspectOfficialMarketCalendarPublicationFilesystem({
       publicationRoot
     });
 
-    assert.equal(preflight.status, "unsupported");
-    assert.equal(preflight.capabilities.exclusiveStagingFileCreate, false);
-    assert.equal(preflight.capabilities.fileDurabilitySync, false);
-    assert.equal(preflight.capabilities.atomicNoReplaceFilePublish, false);
-    assert.equal(preflight.capabilities.atomicNoReplaceDirectoryPublish, false);
+    if (process.platform === "win32") {
+      assert.equal(preflight.status, "unsupported");
+      assert.deepEqual(preflight.capabilities, {
+        exclusiveStagingFileCreate: true,
+        fileDurabilitySync: true,
+        directoryDurabilitySync: false,
+        atomicNoReplaceFilePublish: true,
+        atomicNoReplaceDirectoryPublish: true
+      });
+      assert.equal(
+        preflight.observations.existingFileExclusiveCreate,
+        "verified"
+      );
+      assert.equal(preflight.observations.fileSync, "verified");
+      assert.equal(
+        preflight.observations.directorySync,
+        "movefileex_write_through_only"
+      );
+      assert.equal(preflight.observations.freshFileAtomicMove, "verified");
+      assert.equal(
+        preflight.observations.existingFileAtomicMove,
+        "collision_preserved"
+      );
+      assert.equal(
+        preflight.observations.freshDirectoryAtomicMove,
+        "verified"
+      );
+      assert.equal(
+        preflight.observations.existingDirectoryAtomicMove,
+        "collision_preserved"
+      );
+      assert.deepEqual(preflight.blockers, [
+        "directory_durability_sync_unavailable",
+        "safe_mutation_probe_cleanup_unavailable"
+      ]);
+      assert.throws(
+        () =>
+          assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
+        /directory_durability_sync_unavailable/
+      );
+    } else {
+      assert.equal(preflight.status, "unsupported");
+      assert.throws(
+        () =>
+          assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
+        /filesystem is unsupported/
+      );
+    }
     assert.equal(
-      preflight.observations.existingFileExclusiveCreate,
-      "not_probed_safe_cleanup_unavailable"
-    );
-    assert.equal(
-      preflight.observations.fileSync,
-      "not_probed_safe_cleanup_unavailable"
-    );
-    assert.equal(
-      preflight.observations.freshFileHardLink,
-      "not_probed_safe_cleanup_unavailable"
-    );
-    assert.equal(
-      preflight.observations.existingFileHardLink,
-      "not_probed_safe_cleanup_unavailable"
-    );
-    assert.equal(
-      preflight.observations.existingDirectoryRename,
-      "not_probed_safe_cleanup_unavailable"
+      preflight.observations.probeCleanup,
+      process.platform === "win32" ? "identity_not_retained" : "verified"
     );
     assert.deepEqual(await readdir(publicationRoot), []);
     assert.equal(Object.isFrozen(preflight.capabilities), true);
     assert.equal(Object.isFrozen(preflight.observations), true);
     assert.equal(Object.isFrozen(preflight.blockers), true);
-    assert.ok(
-      preflight.blockers.includes(
-        "atomic_no_replace_directory_publish_unavailable"
-      )
-    );
-    assert.ok(
-      preflight.blockers.includes("safe_mutation_probe_cleanup_unavailable")
-    );
     assert.deepEqual(
       parseOfficialMarketCalendarPublicationFilesystemPreflight(preflight),
       preflight
-    );
-    assert.throws(
-      () => assertOfficialMarketCalendarPublicationFilesystemSupported(preflight),
-      /filesystem is unsupported/
     );
   } finally {
     await rm(publicationRoot, { recursive: true });
@@ -85,49 +102,82 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
     () =>
       parseOfficialMarketCalendarPublicationFilesystemPreflight({
         ...preflight,
-        blockers: [...preflight.blockers, preflight.blockers[0]!]
+        blockers: [
+          ...preflight.blockers,
+          "safe_mutation_probe_cleanup_unavailable"
+        ]
       }),
-    /unique and canonical|blockers must match capabilities/
+    /unique and canonical|blockers must match capabilities|status must match blockers/
   );
+  const capabilityTamper = {
+    ...preflight,
+    capabilities: {
+      ...preflight.capabilities,
+      atomicNoReplaceFilePublish:
+        !preflight.capabilities.atomicNoReplaceFilePublish
+    }
+  };
+  const { preflightHash: _preflightHash, ...capabilityPayload } =
+    capabilityTamper;
   assert.throws(
     () =>
       parseOfficialMarketCalendarPublicationFilesystemPreflight({
-        ...preflight,
-        capabilities: {
-          ...preflight.capabilities,
-          atomicNoReplaceFilePublish:
-            !preflight.capabilities.atomicNoReplaceFilePublish
-        }
+        ...capabilityPayload,
+        preflightHash:
+          createOfficialMarketCalendarPublicationFilesystemPreflightHash(
+            capabilityPayload
+          )
       }),
-    /expected false|blockers must match capabilities|observations must match capabilities/
+    /blockers must match capabilities/
   );
-  const { preflightHash: _preflightHash, ...payload } = preflight;
-  const nonWindowsUnsupportedPayload = {
-    ...payload,
-    platform: "linux",
+  if (process.platform === "win32") {
+    const platformTamper = {
+      ...preflight,
+      platform: "linux"
+    };
+    const { preflightHash: _platformHash, ...platformPayload } = platformTamper;
+    assert.throws(
+      () =>
+        parseOfficialMarketCalendarPublicationFilesystemPreflight({
+          ...platformPayload,
+          preflightHash:
+            createOfficialMarketCalendarPublicationFilesystemPreflightHash(
+              platformPayload
+            )
+        }),
+      /MoveFileEx durability is reserved for the Windows implementation/
+    );
+  }
+
+  const { preflightHash: _storedHash, ...preflightPayload } = preflight;
+  const impossibleSupportedPayload = {
+    ...preflightPayload,
+    status: "supported" as const,
     capabilities: {
-      ...payload.capabilities,
-      directoryDurabilitySync: false
+      exclusiveStagingFileCreate: true,
+      fileDurabilitySync: true,
+      directoryDurabilitySync: true,
+      atomicNoReplaceFilePublish: true,
+      atomicNoReplaceDirectoryPublish: true
     },
     observations: {
-      ...payload.observations,
-      directorySync: "unsupported" as const
+      existingFileExclusiveCreate: "verified" as const,
+      fileSync: "verified" as const,
+      directorySync: "synced" as const,
+      freshFileAtomicMove: "verified" as const,
+      existingFileAtomicMove: "collision_preserved" as const,
+      freshDirectoryAtomicMove: "verified" as const,
+      existingDirectoryAtomicMove: "collision_preserved" as const,
+      probeCleanup: "verified" as const
     },
-    blockers: [...new Set([
-      ...payload.blockers,
-      "directory_durability_sync_unavailable" as const
-    ])].sort()
+    blockers: []
   };
   assert.throws(
     () =>
-      parseOfficialMarketCalendarPublicationFilesystemPreflight({
-        ...nonWindowsUnsupportedPayload,
-        preflightHash:
-          createOfficialMarketCalendarPublicationFilesystemPreflightHash(
-            nonWindowsUnsupportedPayload
-          )
-      }),
-    /unsupported directory sync is reserved for Windows/
+      createOfficialMarketCalendarPublicationFilesystemPreflightHash(
+        impossibleSupportedPayload
+      ),
+    /current publication filesystem implementations cannot report supported/
   );
 });
 
@@ -141,7 +191,9 @@ test("calendar publication filesystem preflight requires an absolute existing ro
 });
 
 test("calendar publication filesystem preflight rejects a regular-file root", async () => {
-  const testRoot = await mkdtemp(join(tmpdir(), "calendar-publication-file-root-test-"));
+  const testRoot = await mkdtemp(
+    join(tmpdir(), "calendar-publication-file-root-test-")
+  );
   const fileRoot = join(testRoot, "publication-root.json");
   try {
     await writeFile(fileRoot, "{}", { flag: "wx" });
