@@ -31,7 +31,7 @@ const activationPreflightPayloadSchema = z
       "file_durability_sync_unavailable",
       "atomic_no_replace_file_publish_unavailable",
       "safe_mutation_probe_cleanup_unavailable",
-      "publication_writer_unavailable"
+      "publication_record_writer_unavailable"
     ])).min(1),
     filesystemMutationAction: z.literal("none"),
     verifiedSetAction: z.literal("unchanged")
@@ -100,7 +100,7 @@ export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
     status: "blocked",
     blockers: [
       ...filesystemPreflight.blockers,
-      "publication_writer_unavailable" as const
+      "publication_record_writer_unavailable" as const
     ].sort(),
     filesystemMutationAction: "none",
     verifiedSetAction: "unchanged"

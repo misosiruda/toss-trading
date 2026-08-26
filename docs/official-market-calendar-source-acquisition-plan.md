@@ -1198,15 +1198,16 @@ metadata와 nested acquisition/parser provenance를 보존하고 `sourceArchiveB
 composite ref, package-relative path, source hash와 length는 caller 입력 없이 metadata에서
 파생한다. Artifact 생성 시 모든 source에 `retrievedAt <= generatedAt < staleAfter`를
 적용하고 stored parse는 exact bytes와 registry로 전체 payload/hash를 재생성한다.
-Filesystem package writer, durability sync, coordinator activation/recovery와 reader-time
-freshness gate는 별도 후속 단계이다.
+Windows filesystem package writer와 reader-time freshness gate는 구현됐고, publication
+record writer와 coordinator activation/recovery는 별도 후속 단계이다.
 
 `officialMarketCalendarPublicationPackagePlan.ts`는 verified v2 artifact와 canonical exact
 sidecar set을 다시 검증해 canonical `artifact.json` bytes의 hash/length, source archive
 file descriptor, hash-derived package path와 publication record/path를 하나의 immutable
 plan hash에 결합한다. Plan field는 caller가 공급하지 않으며 stored parse도 artifact와
-sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory/file sync,
-atomic no-replace publication과 coordinator activation은 후속 단계이다.
+sidecar에서 전체 plan을 재생성한다. 이 plan의 package filesystem write, directory/file
+sync와 atomic no-replace publication은 구현됐고 record write와 coordinator activation은
+후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
 root의 realpath identity를 hash에 결합한다. Windows에서는 writer-owned probe directory
@@ -1256,9 +1257,9 @@ filesystem preflight를 publication/activation 직전 하나의 immutable decisi
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
 `verifiedSetAction: unchanged`만 허용한다. Windows v4 filesystem capability가 모두
-검증돼도 실제 package/record writer와 coordinator가 아직 없으므로
-`publication_writer_unavailable` blocker로 activation은 `blocked`다. Writer와 activation
-schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
+검증돼도 publication record writer와 coordinator가 아직 없으므로
+`publication_record_writer_unavailable` blocker로 activation은 `blocked`다. Record writer와
+activation schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -1531,8 +1532,19 @@ surface는 금지한다.
 
 현재 `officialMarketCalendarPublicationRecord.ts`는 record schema와 canonical hash,
 artifact hash에서 파생되는 immutable package/record path를 strict 검증한다. 이 contract는
-filesystem writer, directory/file sync, atomic no-replace publication,
-`PublicationCoordinator` activation 또는 recovery를 수행하지 않는다.
+publication record filesystem writer, `PublicationCoordinator` activation 또는 recovery를
+수행하지 않는다.
+
+`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v4 filesystem preflight의
+exact root identity와 verified package plan/sidecar를 mutation 전에 다시 검증한다. `sha256`
+namespace를 root까지 sync하고 native staging session이 staging root, `sources`,
+`sources/sha256` handle을 no-delete-share로 유지하는 동안 artifact/sidecar를 `wx`로 기록해
+각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝난 뒤에만
+child handle을 release하되 staging root identity handle은 유지한다. Atomic no-replace package
+move와 package namespace/root sync 후 목적지 file ID가 retained identity와 같은지 확인한다.
+Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
+parent sync 또는 identity completion 실패는 visible package를 quarantined error로 남긴다.
+이 writer는 publication record 또는 verified set을 생성하지 않는다.
 
 Coordinator는 writer와 reader 사이에 exclusive publication state lock을
 사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에
