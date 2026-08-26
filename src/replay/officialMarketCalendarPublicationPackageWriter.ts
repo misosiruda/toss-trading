@@ -251,14 +251,10 @@ export async function writeOfficialMarketCalendarPublicationPackage(
     if (publishOutcomeUncertain) {
       throw error;
     }
+    let pinnedFileReleaseFailed = false;
     if (pinnedFiles !== undefined && !pinnedFilesFinalized) {
       pinnedFilesFinalized = await pinnedFiles.release();
-      if (!pinnedFilesFinalized) {
-        throw new Error(
-          "official calendar publication pinned file release failed",
-          { cause: error }
-        );
-      }
+      pinnedFileReleaseFailed = !pinnedFilesFinalized;
     }
     if (published && !released) {
       throw new Error(
@@ -275,6 +271,12 @@ export async function writeOfficialMarketCalendarPublicationPackage(
           reason: "staging_completion_failed"
         });
       }
+    }
+    if (pinnedFileReleaseFailed) {
+      throw new Error(
+        "official calendar publication pinned file release failed",
+        { cause: error }
+      );
     }
     throw error;
   }

@@ -221,27 +221,26 @@ public static class TossTradingCalendarPinnedFile
         return true;
     }
 
-    public static int VerifyPublished(string path, string expectedIdentity, string expectedHash, long expectedLength)
+    public static int PinPublished(string path, string expectedIdentity, string expectedHash, long expectedLength, out IntPtr current)
     {
-        IntPtr current = CreateFileW(path, GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+        current = CreateFileW(path, GENERIC_READ | FILE_READ_ATTRIBUTES, FILE_SHARE_READ, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
         if (current == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
-        try
+        FILE_ATTRIBUTE_TAG_INFO attributes;
+        if (!GetFileInformationByHandleEx(current, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return RejectPin(ref current, Marshal.GetLastWin32Error());
+        if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) return RejectPin(ref current, 4390);
+        string actualIdentity;
+        int identityError = ReadIdentity(current, out actualIdentity);
+        if (identityError != 0) return RejectPin(ref current, identityError);
+        if (!String.Equals(actualIdentity, expectedIdentity, StringComparison.Ordinal)) return RejectPin(ref current, 1168);
+        bool matches;
+        using (SafeFileHandle safe = new SafeFileHandle(current, false))
+        using (FileStream stream = new FileStream(safe, FileAccess.Read))
+        using (SHA256 sha = SHA256.Create())
         {
-            string actualIdentity;
-            int identityError = ReadIdentity(current, out actualIdentity);
-            if (identityError != 0) return identityError;
-            if (!String.Equals(actualIdentity, expectedIdentity, StringComparison.Ordinal)) return 1168;
-            using (SafeFileHandle safe = new SafeFileHandle(current, false))
-            using (FileStream stream = new FileStream(safe, FileAccess.Read))
-            using (SHA256 sha = SHA256.Create())
-            {
-                if (stream.Length != expectedLength) return 13;
-                stream.Position = 0;
-                string actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
-                return String.Equals(actual, expectedHash, StringComparison.Ordinal) ? 0 : 13;
-            }
+            string actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            matches = stream.Length == expectedLength && String.Equals(actual, expectedHash, StringComparison.Ordinal);
         }
-        finally { CloseHandle(current); }
+        return matches ? 0 : RejectPin(ref current, 13);
     }
 
     public static int Close(ref IntPtr handle)
@@ -266,6 +265,7 @@ $expectedHashes = [System.Collections.Generic.List[string]]::new()
 $expectedLengths = [System.Collections.Generic.List[long]]::new()
 $expectedIdentities = [System.Collections.Generic.List[string]]::new()
 $handles = [System.Collections.Generic.List[IntPtr]]::new()
+$publishedHandles = [System.Collections.Generic.List[IntPtr]]::new()
 $sessionError = 0
 try {
     while ($true) {
@@ -363,13 +363,22 @@ try {
             }
             for ($index = 0; $index -lt $handles.Count; $index++) {
                 if ($collision -or $sessionError -ne 0) { break }
-                $sessionError = [TossTradingCalendarPinnedFile]::VerifyPublished(
+                $handle = $handles[$index]
+                $sessionError = [TossTradingCalendarPinnedFile]::Close([ref]$handle)
+                $handles[$index] = [IntPtr]::Zero
+            }
+            for ($index = 0; $index -lt $handles.Count; $index++) {
+                if ($collision -or $sessionError -ne 0) { break }
+                $publishedHandle = [IntPtr]::Zero
+                $sessionError = [TossTradingCalendarPinnedFile]::PinPublished(
                     (Join-Path $destinationRoot $relativePaths[$index].Replace('/', '\')),
                     $expectedIdentities[$index],
                     $expectedHashes[$index],
-                    $expectedLengths[$index]
+                    $expectedLengths[$index],
+                    [ref]$publishedHandle
                 )
                 if ($sessionError -ne 0) { break }
+                $publishedHandles.Add($publishedHandle)
             }
             if (-not $collision -and $sessionError -eq 0) {
                 $sessionError = [TossTradingCalendarPinnedFile]::VerifyExactTree(
@@ -385,6 +394,11 @@ try {
     }
 }
 finally {
+    for ($index = 0; $index -lt $publishedHandles.Count; $index++) {
+        $handle = $publishedHandles[$index]
+        $closeError = [TossTradingCalendarPinnedFile]::Close([ref]$handle)
+        if ($sessionError -eq 0) { $sessionError = $closeError }
+    }
     for ($index = 0; $index -lt $handles.Count; $index++) {
         $handle = $handles[$index]
         $closeError = [TossTradingCalendarPinnedFile]::Close([ref]$handle)
