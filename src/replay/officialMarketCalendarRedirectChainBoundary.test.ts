@@ -46,7 +46,10 @@ import {
   requireOfficialMarketCalendarPublicationReaderHandle
 } from "./officialMarketCalendarPublicationReaderFreshness.js";
 import {
+  LEGACY_OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION,
+  OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION,
   assertOfficialMarketCalendarPublicationActivationPermitted,
+  createOfficialMarketCalendarPublicationActivationPreflightHash,
   evaluateOfficialMarketCalendarPublicationActivationPreflight,
   parseOfficialMarketCalendarPublicationActivationPreflight
 } from "./officialMarketCalendarPublicationActivationPreflight.js";
@@ -2281,6 +2284,10 @@ test("calendar publication activation preflight follows verified filesystem capa
       filesystemPreflight
     }, fixture.options);
 
+  assert.equal(
+    decision.schemaVersion,
+    OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION
+  );
   assert.equal(decision.artifactHash, artifact.artifactHash);
   assert.equal(decision.packagePlanHash, plan.planHash);
   assert.equal(
@@ -2308,6 +2315,31 @@ test("calendar publication activation preflight follows verified filesystem capa
     parseOfficialMarketCalendarPublicationActivationPreflight(decision),
     decision
   );
+  const { decisionHash: _decisionHash, ...currentPayload } = decision;
+  const legacyPayload = {
+    ...currentPayload,
+    schemaVersion:
+      "official_market_calendar_publication_activation_preflight.v1" as const,
+    blockers: currentPayload.blockers.map((blocker) =>
+      blocker === "publication_record_writer_unavailable"
+        ? "publication_writer_unavailable" as const
+        : blocker
+    )
+  };
+  const legacyDecision = {
+    ...legacyPayload,
+    decisionHash:
+      createOfficialMarketCalendarPublicationActivationPreflightHash(
+        legacyPayload
+      )
+  };
+  const parsedLegacyDecision =
+    parseOfficialMarketCalendarPublicationActivationPreflight(legacyDecision);
+  assert.equal(
+    parsedLegacyDecision.schemaVersion,
+    LEGACY_OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION
+  );
+  assert.deepEqual(parsedLegacyDecision, legacyDecision);
   assert.throws(
     () =>
       evaluateOfficialMarketCalendarPublicationActivationPreflight({

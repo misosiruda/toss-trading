@@ -21,17 +21,53 @@ using Microsoft.Win32.SafeHandles;
 public static class TossTradingCalendarPinnedFile
 {
     private const uint GENERIC_READ = 0x80000000;
+    private const uint FILE_LIST_DIRECTORY = 0x00000001;
+    private const uint FILE_ADD_FILE = 0x00000002;
+    private const uint FILE_ADD_SUBDIRECTORY = 0x00000004;
+    private const uint FILE_TRAVERSE = 0x00000020;
     private const uint FILE_READ_ATTRIBUTES = 0x00000080;
     private const uint DELETE = 0x00010000;
+    private const uint SYNCHRONIZE = 0x00100000;
     private const uint FILE_SHARE_READ = 0x00000001;
     private const uint FILE_SHARE_WRITE = 0x00000002;
     private const uint FILE_SHARE_DELETE = 0x00000004;
     private const uint OPEN_EXISTING = 3;
+    private const uint FILE_OPEN = 1;
+    private const uint FILE_CREATE = 2;
+    private const uint FILE_DIRECTORY_FILE = 0x00000001;
+    private const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
+    private const uint FILE_OPEN_FOR_BACKUP_INTENT = 0x00004000;
+    private const uint FILE_OPEN_REPARSE_POINT = 0x00200000;
+    private const uint OBJ_CASE_INSENSITIVE = 0x00000040;
     private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
     private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
     private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct UNICODE_STRING
+    {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct OBJECT_ATTRIBUTES
+    {
+        public int Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_STATUS_BLOCK
+    {
+        public IntPtr Status;
+        public UIntPtr Information;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FILE_ATTRIBUTE_TAG_INFO { public uint FileAttributes; public uint ReparseTag; }
@@ -56,12 +92,25 @@ public static class TossTradingCalendarPinnedFile
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CreateDirectoryW(string path, IntPtr securityAttributes);
     [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetFileInformationByHandleBuffer(IntPtr file, int kind, IntPtr info, uint size);
+    [DllImport("ntdll.dll")]
+    private static extern int NtCreateFile(
+        out IntPtr fileHandle,
+        uint desiredAccess,
+        ref OBJECT_ATTRIBUTES objectAttributes,
+        out IO_STATUS_BLOCK ioStatusBlock,
+        IntPtr allocationSize,
+        uint fileAttributes,
+        uint shareAccess,
+        uint createDisposition,
+        uint createOptions,
+        IntPtr eaBuffer,
+        uint eaLength
+    );
+    [DllImport("ntdll.dll")]
+    private static extern uint RtlNtStatusToDosError(int status);
 
     public static int Pin(string path, string expectedHash, long expectedLength, out IntPtr handle)
     {
@@ -104,9 +153,113 @@ public static class TossTradingCalendarPinnedFile
         }
     }
 
-    public static int CreateDirectoryNoReplace(string path)
+    public static int OpenAbsoluteDirectory(string path, out IntPtr handle)
     {
-        return CreateDirectoryW(path, IntPtr.Zero) ? 0 : Marshal.GetLastWin32Error();
+        handle = CreateFileW(
+            path,
+            FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
+                FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+            IntPtr.Zero
+        );
+        if (handle == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
+        return InspectDirectory(ref handle);
+    }
+
+    public static int OpenRelativeDirectory(
+        IntPtr parentHandle,
+        string name,
+        out IntPtr handle
+    )
+    {
+        return OpenRelativeDirectoryCore(
+            parentHandle,
+            name,
+            FILE_OPEN,
+            out handle
+        );
+    }
+
+    public static int CreateRelativeDirectory(
+        IntPtr parentHandle,
+        string name,
+        out IntPtr handle
+    )
+    {
+        return OpenRelativeDirectoryCore(
+            parentHandle,
+            name,
+            FILE_CREATE,
+            out handle
+        );
+    }
+
+    private static int OpenRelativeDirectoryCore(
+        IntPtr parentHandle,
+        string name,
+        uint disposition,
+        out IntPtr handle
+    )
+    {
+        handle = INVALID_HANDLE_VALUE;
+        if (!IsSingleComponent(name)) return 87;
+        IntPtr stringBuffer = Marshal.StringToHGlobalUni(name);
+        IntPtr unicodeStringPointer = IntPtr.Zero;
+        try
+        {
+            UNICODE_STRING unicodeString = new UNICODE_STRING {
+                Length = checked((ushort)(name.Length * 2)),
+                MaximumLength = checked((ushort)((name.Length + 1) * 2)),
+                Buffer = stringBuffer
+            };
+            unicodeStringPointer = Marshal.AllocHGlobal(
+                Marshal.SizeOf(typeof(UNICODE_STRING))
+            );
+            Marshal.StructureToPtr(unicodeString, unicodeStringPointer, false);
+            OBJECT_ATTRIBUTES attributes = new OBJECT_ATTRIBUTES {
+                Length = Marshal.SizeOf(typeof(OBJECT_ATTRIBUTES)),
+                RootDirectory = parentHandle,
+                ObjectName = unicodeStringPointer,
+                Attributes = OBJ_CASE_INSENSITIVE,
+                SecurityDescriptor = IntPtr.Zero,
+                SecurityQualityOfService = IntPtr.Zero
+            };
+            IO_STATUS_BLOCK statusBlock;
+            int status = NtCreateFile(
+                out handle,
+                FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_TRAVERSE |
+                    FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
+                ref attributes,
+                out statusBlock,
+                IntPtr.Zero,
+                0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                disposition,
+                FILE_DIRECTORY_FILE |
+                    FILE_SYNCHRONOUS_IO_NONALERT |
+                    FILE_OPEN_FOR_BACKUP_INTENT |
+                    FILE_OPEN_REPARSE_POINT,
+                IntPtr.Zero,
+                0
+            );
+            if (status < 0)
+            {
+                handle = INVALID_HANDLE_VALUE;
+                return unchecked((int)RtlNtStatusToDosError(status));
+            }
+            return InspectDirectory(ref handle);
+        }
+        finally
+        {
+            if (unicodeStringPointer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(unicodeStringPointer);
+            }
+            Marshal.FreeHGlobal(stringBuffer);
+        }
     }
 
     public static int VerifyExistingPackage(
@@ -177,28 +330,6 @@ public static class TossTradingCalendarPinnedFile
             matches = stream.Length == expectedLength && String.Equals(actual, expectedHash, StringComparison.Ordinal);
         }
         return matches ? 0 : RejectPin(ref handle, 13);
-    }
-
-    public static int QuarantineDirectoryNoReplace(string path, string quarantinePath)
-    {
-        IntPtr directory = CreateFileW(
-            path,
-            FILE_READ_ATTRIBUTES | DELETE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            IntPtr.Zero,
-            OPEN_EXISTING,
-            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
-            IntPtr.Zero
-        );
-        if (directory == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
-        try
-        {
-            FILE_ATTRIBUTE_TAG_INFO attributes;
-            if (!GetFileInformationByHandleEx(directory, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return Marshal.GetLastWin32Error();
-            if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != FILE_ATTRIBUTE_DIRECTORY) return 4390;
-            return MovePinnedFileNoReplace(directory, quarantinePath);
-        }
-        finally { CloseHandle(directory); }
     }
 
     public static int MovePinnedFileNoReplace(IntPtr retained, string destinationPath)
@@ -298,17 +429,49 @@ public static class TossTradingCalendarPinnedFile
         handle = IntPtr.Zero;
         return error;
     }
+
+    private static int InspectDirectory(ref IntPtr handle)
+    {
+        FILE_ATTRIBUTE_TAG_INFO attributes;
+        if (!GetFileInformationByHandleEx(
+            handle,
+            9,
+            out attributes,
+            (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO))
+        )) return RejectPin(ref handle, Marshal.GetLastWin32Error());
+        if (
+            (attributes.FileAttributes &
+                (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) !=
+            FILE_ATTRIBUTE_DIRECTORY
+        ) return RejectPin(ref handle, 4390);
+        return 0;
+    }
+
+    private static bool IsSingleComponent(string name)
+    {
+        return
+            !String.IsNullOrEmpty(name) &&
+            name != "." &&
+            name != ".." &&
+            name.IndexOfAny(new char[] { '\\', '/' }) < 0;
+    }
 }
 "@
 
 $stagingRoot = [System.IO.Path]::GetFullPath($StagingRoot)
 $destinationRoot = [System.IO.Path]::GetFullPath($DestinationRoot)
+$namespaceRoot = [System.IO.Directory]::GetParent($destinationRoot).FullName
+$destinationName = [System.IO.Path]::GetFileName($destinationRoot)
 $relativePaths = [System.Collections.Generic.List[string]]::new()
 $expectedHashes = [System.Collections.Generic.List[string]]::new()
 $expectedLengths = [System.Collections.Generic.List[long]]::new()
 $expectedIdentities = [System.Collections.Generic.List[string]]::new()
 $handles = [System.Collections.Generic.List[IntPtr]]::new()
 $publishedHandles = [System.Collections.Generic.List[IntPtr]]::new()
+$namespaceHandle = [IntPtr]::Zero
+$destinationHandle = [IntPtr]::Zero
+$sourcesHandle = [IntPtr]::Zero
+$hashesHandle = [IntPtr]::Zero
 $sessionError = 0
 try {
     while ($true) {
@@ -344,6 +507,7 @@ try {
         $command = [Console]::In.ReadLine()
         if ($command -eq "PUBLISH") {
             $collision = $false
+            $destinationCreated = $false
             for ($index = 0; $index -lt $handles.Count; $index++) {
                 $sessionError = [TossTradingCalendarPinnedFile]::VerifyRetained(
                     $handles[$index],
@@ -353,11 +517,32 @@ try {
                 if ($sessionError -ne 0) { break }
             }
             if ($sessionError -eq 0) {
-                $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
-                    $destinationRoot
+                $sessionError = [TossTradingCalendarPinnedFile]::OpenAbsoluteDirectory(
+                    $namespaceRoot,
+                    [ref]$namespaceHandle
                 )
             }
+            if ($sessionError -eq 0) {
+                $sessionError = [TossTradingCalendarPinnedFile]::CreateRelativeDirectory(
+                    $namespaceHandle,
+                    $destinationName,
+                    [ref]$destinationHandle
+                )
+                if ($sessionError -eq 0) { $destinationCreated = $true }
+            }
             if ($sessionError -eq 80 -or $sessionError -eq 183) {
+                $sessionError = [TossTradingCalendarPinnedFile]::OpenRelativeDirectory(
+                    $namespaceHandle,
+                    $destinationName,
+                    [ref]$destinationHandle
+                )
+            }
+            if (
+                -not $destinationCreated -and
+                $destinationHandle -ne [IntPtr]::Zero -and
+                $sessionError -eq 0 -and
+                (Test-Path -LiteralPath $destinationRoot)
+            ) {
                 $sessionError = [TossTradingCalendarPinnedFile]::VerifyExistingPackage(
                     $destinationRoot,
                     $relativePaths.ToArray(),
@@ -371,27 +556,39 @@ try {
                 }
                 else {
                     $quarantinePath = "{0}.quarantine-{1}" -f $destinationRoot, [Guid]::NewGuid().ToString("D")
-                    $sessionError = [TossTradingCalendarPinnedFile]::QuarantineDirectoryNoReplace(
-                        $destinationRoot,
+                    $sessionError = [TossTradingCalendarPinnedFile]::MovePinnedFileNoReplace(
+                        $destinationHandle,
                         $quarantinePath
                     )
                     if ($sessionError -eq 0) {
+                        $sessionError = [TossTradingCalendarPinnedFile]::Close(
+                            [ref]$destinationHandle
+                        )
+                    }
+                    if ($sessionError -eq 0) {
                         [Console]::Out.WriteLine("PACKAGE_PARTIAL_DIRECTORY_QUARANTINED")
                         [Console]::Out.Flush()
-                        $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
-                            $destinationRoot
+                        $sessionError = [TossTradingCalendarPinnedFile]::CreateRelativeDirectory(
+                            $namespaceHandle,
+                            $destinationName,
+                            [ref]$destinationHandle
                         )
+                        if ($sessionError -eq 0) { $destinationCreated = $true }
                     }
                 }
             }
             if (-not $collision -and $sessionError -eq 0) {
-                $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
-                    (Join-Path $destinationRoot "sources")
+                $sessionError = [TossTradingCalendarPinnedFile]::CreateRelativeDirectory(
+                    $destinationHandle,
+                    "sources",
+                    [ref]$sourcesHandle
                 )
             }
             if (-not $collision -and $sessionError -eq 0) {
-                $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
-                    (Join-Path $destinationRoot "sources\sha256")
+                $sessionError = [TossTradingCalendarPinnedFile]::CreateRelativeDirectory(
+                    $sourcesHandle,
+                    "sha256",
+                    [ref]$hashesHandle
                 )
             }
             for ($index = 0; $index -lt $handles.Count; $index++) {
@@ -455,6 +652,19 @@ finally {
     for ($index = 0; $index -lt $handles.Count; $index++) {
         $handle = $handles[$index]
         $closeError = [TossTradingCalendarPinnedFile]::Close([ref]$handle)
+        if ($sessionError -eq 0) { $sessionError = $closeError }
+    }
+    foreach ($directoryHandleName in @(
+        'hashesHandle',
+        'sourcesHandle',
+        'destinationHandle',
+        'namespaceHandle'
+    )) {
+        $directoryHandle = Get-Variable -Name $directoryHandleName -ValueOnly
+        $closeError = [TossTradingCalendarPinnedFile]::Close(
+            [ref]$directoryHandle
+        )
+        Set-Variable -Name $directoryHandleName -Value $directoryHandle
         if ($sessionError -eq 0) { $sessionError = $closeError }
     }
 }

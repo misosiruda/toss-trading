@@ -106,6 +106,10 @@ test(
         ),
         isSharingViolation
       );
+      await assert.rejects(
+        rename(destinationRoot, `${destinationRoot}.displaced`),
+        isSharingViolation
+      );
       await writeFile(
         join(destinationRoot, "unplanned.txt"),
         "unplanned\n"

@@ -11,9 +11,11 @@ import {
 import { createReplayResearchHash } from "./replayRunManifest.js";
 
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION =
+  "official_market_calendar_publication_activation_preflight.v2";
+export const LEGACY_OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION =
   "official_market_calendar_publication_activation_preflight.v1";
 
-const activationPreflightPayloadSchema = z
+const currentActivationPreflightPayloadSchema = z
   .object({
     schemaVersion: z.literal(
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION
@@ -37,22 +39,51 @@ const activationPreflightPayloadSchema = z
     verifiedSetAction: z.literal("unchanged")
   })
   .strict()
-  .superRefine((value, context) => {
-    for (let index = 1; index < value.blockers.length; index += 1) {
-      if (value.blockers[index - 1]! >= value.blockers[index]!) {
-        context.addIssue({
-          code: "custom",
-          path: ["blockers", index],
-          message: "publication activation blockers must be unique and canonical"
-        });
-      }
-    }
-  });
+  .superRefine(requireCanonicalBlockers);
+
+const legacyActivationPreflightPayloadSchema = z
+  .object({
+    schemaVersion: z.literal(
+      LEGACY_OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION
+    ),
+    operation: z.literal("publish_and_activate"),
+    artifactHash: sha256HashSchema,
+    packagePlanHash: sha256HashSchema,
+    filesystemPreflightHash: sha256HashSchema,
+    publicationRootIdentityHash: sha256HashSchema,
+    status: z.literal("blocked"),
+    blockers: z.array(z.enum([
+      "atomic_no_replace_directory_publish_unavailable",
+      "directory_durability_sync_unavailable",
+      "exclusive_staging_file_create_unavailable",
+      "file_durability_sync_unavailable",
+      "atomic_no_replace_file_publish_unavailable",
+      "safe_mutation_probe_cleanup_unavailable",
+      "publication_writer_unavailable"
+    ])).min(1),
+    filesystemMutationAction: z.literal("none"),
+    verifiedSetAction: z.literal("unchanged")
+  })
+  .strict()
+  .superRefine(requireCanonicalBlockers);
+
+const activationPreflightPayloadSchema = z.discriminatedUnion(
+  "schemaVersion",
+  [
+    legacyActivationPreflightPayloadSchema,
+    currentActivationPreflightPayloadSchema
+  ]
+);
 
 export const officialMarketCalendarPublicationActivationPreflightSchema =
-  activationPreflightPayloadSchema
-    .safeExtend({ decisionHash: sha256HashSchema })
-    .strict();
+  z.discriminatedUnion("schemaVersion", [
+    legacyActivationPreflightPayloadSchema
+      .safeExtend({ decisionHash: sha256HashSchema })
+      .strict(),
+    currentActivationPreflightPayloadSchema
+      .safeExtend({ decisionHash: sha256HashSchema })
+      .strict()
+  ]);
 
 export type OfficialMarketCalendarPublicationActivationPreflight = z.infer<
   typeof officialMarketCalendarPublicationActivationPreflightSchema
@@ -88,7 +119,7 @@ export function evaluateOfficialMarketCalendarPublicationActivationPreflight(
     parseOfficialMarketCalendarPublicationFilesystemPreflight(
       parsed.filesystemPreflight
     );
-  const payload = activationPreflightPayloadSchema.parse({
+  const payload = currentActivationPreflightPayloadSchema.parse({
     schemaVersion:
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_ACTIVATION_PREFLIGHT_SCHEMA_VERSION,
     operation: "publish_and_activate",
@@ -145,6 +176,21 @@ export function createOfficialMarketCalendarPublicationActivationPreflightHash(
   return createReplayResearchHash(
     activationPreflightPayloadSchema.parse(value)
   );
+}
+
+function requireCanonicalBlockers(
+  value: { blockers: string[] },
+  context: z.RefinementCtx
+): void {
+  for (let index = 1; index < value.blockers.length; index += 1) {
+    if (value.blockers[index - 1]! >= value.blockers[index]!) {
+      context.addIssue({
+        code: "custom",
+        path: ["blockers", index],
+        message: "publication activation blockers must be unique and canonical"
+      });
+    }
+  }
 }
 
 function deepFreeze<T>(value: T): T {
