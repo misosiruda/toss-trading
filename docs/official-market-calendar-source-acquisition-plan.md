@@ -1198,15 +1198,16 @@ metadata와 nested acquisition/parser provenance를 보존하고 `sourceArchiveB
 composite ref, package-relative path, source hash와 length는 caller 입력 없이 metadata에서
 파생한다. Artifact 생성 시 모든 source에 `retrievedAt <= generatedAt < staleAfter`를
 적용하고 stored parse는 exact bytes와 registry로 전체 payload/hash를 재생성한다.
-Filesystem package writer, durability sync, coordinator activation/recovery와 reader-time
-freshness gate는 별도 후속 단계이다.
+Windows filesystem package writer와 reader-time freshness gate는 구현됐고, publication
+record writer와 coordinator activation/recovery는 별도 후속 단계이다.
 
 `officialMarketCalendarPublicationPackagePlan.ts`는 verified v2 artifact와 canonical exact
 sidecar set을 다시 검증해 canonical `artifact.json` bytes의 hash/length, source archive
 file descriptor, hash-derived package path와 publication record/path를 하나의 immutable
 plan hash에 결합한다. Plan field는 caller가 공급하지 않으며 stored parse도 artifact와
-sidecar에서 전체 plan을 재생성한다. 실제 filesystem write, directory/file sync,
-atomic no-replace publication과 coordinator activation은 후속 단계이다.
+sidecar에서 전체 plan을 재생성한다. 이 plan의 package filesystem write, directory/file
+sync와 atomic no-replace publication은 구현됐고 record write와 coordinator activation은
+후속 단계이다.
 
 `officialMarketCalendarPublicationFilesystemPreflight.ts`는 exact absolute publication
 root의 realpath identity를 hash에 결합한다. Windows에서는 writer-owned probe directory
@@ -1232,12 +1233,16 @@ collision entry 보존을 통과하면 atomic no-replace capability는 true로 �
 않는다. 따라서 legacy Windows v2/v3 implementation은
 `directorySync=movefileex_write_through_only`, `directoryDurabilitySync=false`와
 `directory_durability_sync_unavailable` blocker를 유지한다. 다른 platform도 별도
-primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 네 implementation ID 중
-아래 v4만 관찰 전체가 일치할 때 `supported` payload를 허용한다.
+primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 implementation ID 중
+아래 v6만 관찰 전체가 일치할 때 `supported` payload를 허용한다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
-Windows v4 implementation은 별도 fixed helper가 `GENERIC_WRITE`와
+Windows v6 implementation은 publication root의 canonical path뿐 아니라 retained handle의
+volume/file identity를 preflight hash에 결합한다. Root lease는 probe 전체에서 delete share를
+거부하고 writer mutation 시작 시 다시 획득한 뒤 staging session이 같은 root handle 경계를
+인수할 때까지 유지하므로 path가 다른 directory identity로 교체되는 구간을 허용하지 않는다.
+Directory durability는 별도 fixed helper가 `GENERIC_WRITE`와
 `FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`로 exact directory handle을
 열고, `NtFlushBuffersFileEx` normal mode로 leaf에서 inclusive ancestor까지 bottom-up
 동기화한다. Normal mode는 file cache의 data와 metadata를 기록하고 underlying storage
@@ -1255,10 +1260,10 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-nt
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
-`verifiedSetAction: unchanged`만 허용한다. Windows v4 filesystem capability가 모두
-검증돼도 실제 package/record writer와 coordinator가 아직 없으므로
-`publication_writer_unavailable` blocker로 activation은 `blocked`다. Writer와 activation
-schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
+`verifiedSetAction: unchanged`만 허용한다. Windows v6 filesystem capability가 모두
+검증돼도 publication record writer와 coordinator가 아직 없으므로
+`publication_record_writer_unavailable` blocker로 activation은 `blocked`다. Record writer와
+activation schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
 
 Acquisition client는 credential provider, proxy credential, HTTP auth handler와
 client certificate를 구성하지 않는다. 각 effective request를 전송하기 전에
@@ -1531,8 +1536,33 @@ surface는 금지한다.
 
 현재 `officialMarketCalendarPublicationRecord.ts`는 record schema와 canonical hash,
 artifact hash에서 파생되는 immutable package/record path를 strict 검증한다. 이 contract는
-filesystem writer, directory/file sync, atomic no-replace publication,
-`PublicationCoordinator` activation 또는 recovery를 수행하지 않는다.
+publication record filesystem writer, `PublicationCoordinator` activation 또는 recovery를
+수행하지 않는다.
+
+`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v6 filesystem preflight의
+exact root volume/file identity와 verified package plan/sidecar를 mutation 전에 다시
+검증한다. `sha256`
+namespace를 root까지 sync하고 native staging session이 staging root, `sources`,
+`sources/sha256` handle을 no-delete-share로 유지하는 동안 artifact/sidecar를 `wx`로 기록해
+각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝나면 별도 native
+helper가 artifact/sidecar file을 no-write-share retained handle로 pin하고 이동 직전 다시
+hash/length를 검증한다. Windows는 열린 child file handle과 parent directory move를 함께
+허용하지 않으므로 whole-directory move를 사용하지 않는다. Helper는 final hash directory와
+canonical `sources/sha256` hierarchy를 no-replace로 예약한 뒤 각 planned file handle 자체에
+`FileRenameInfo`를 적용해 handle을 닫지 않고 final path로 이동한다. Staging에 추가된 unplanned
+entry는 final package로 이동하지 않는다. Move용 DELETE-access handle을 닫은 뒤 destination에서
+쓰기와 삭제 share를 모두 거부하는 새 handle을 열어 같은 volume/file identity와 hash/length인지
+확인하고, 이 handle들을 exact directory-entry set 검증이 끝난 뒤에도 유지한다. Writer가 final
+tree 전체를 root까지 sync하고 staging session의 exact planned cleanup을 완료한 뒤 `COMPLETE`를
+보내야 helper가 destination handle을 닫는다. 이전 attempt가 final hash
+directory에 incomplete tree를 남겼다면 exact tree/hash 검증 실패를 확인하고 그 directory
+identity를 retained handle로 같은 parent의 unique quarantine path에 no-replace 이동한 뒤 현재
+planned file publication을 재개한다. Exact complete destination만 정상 collision으로 취급한다.
+Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
+atomic move 결과가 timeout/abnormal exit/postcondition failure로 불확실하거나 package parent
+sync 또는 identity completion이 실패하면 visible package/staging을 삭제하지 않고
+quarantined error로 남긴다.
+이 writer는 publication record 또는 verified set을 생성하지 않는다.
 
 Coordinator는 writer와 reader 사이에 exclusive publication state lock을
 사용하고 package 및 record의 모든 sync가 성공한 뒤에만 hash를 verified set에

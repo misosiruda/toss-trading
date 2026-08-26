@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
+import {
+  OfficialMarketCalendarAtomicPublishError,
+  publishOfficialMarketCalendarEntryAtomicNoReplace
+} from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 
 const windowsTest = process.platform === "win32" ? test : test.skip;
 
@@ -43,7 +46,10 @@ windowsTest("Windows calendar atomic publish preserves an existing file", async 
       destinationPath,
       entryKind: "file"
     }),
-    { code: "EEXIST" }
+    (error: unknown) =>
+      error instanceof OfficialMarketCalendarAtomicPublishError &&
+      error.code === "EEXIST" &&
+      error.outcome === "confirmed_not_moved"
   );
   assert.equal(await readFile(destinationPath, "utf8"), "existing record\n");
   assert.equal(await readFile(sourcePath, "utf8"), "new record\n");
