@@ -109,17 +109,23 @@ public static class TossTradingCalendarPinnedFile
         return CreateDirectoryW(path, IntPtr.Zero) ? 0 : Marshal.GetLastWin32Error();
     }
 
-    public static int VerifyExistingPackage(string destinationRoot, string[] relativePaths, string[] expectedHashes, long[] expectedLengths)
+    public static int VerifyExistingPackage(
+        string destinationRoot,
+        string[] relativePaths,
+        string[] expectedHashes,
+        long[] expectedLengths,
+        List<IntPtr> existingHandles
+    )
     {
         int exactTreeError = VerifyExactTree(destinationRoot, relativePaths);
         if (exactTreeError != 0) return exactTreeError;
-        List<IntPtr> existingHandles = new List<IntPtr>();
+        bool succeeded = false;
         try
         {
             for (int index = 0; index < relativePaths.Length; index++)
             {
                 IntPtr existing;
-                int error = Pin(
+                int error = PinExisting(
                     Path.Combine(destinationRoot, relativePaths[index].Replace('/', '\\')),
                     expectedHashes[index],
                     expectedLengths[index],
@@ -128,12 +134,49 @@ public static class TossTradingCalendarPinnedFile
                 if (error != 0) return error;
                 existingHandles.Add(existing);
             }
-            return 0;
+            int finalTreeError = VerifyExactTree(destinationRoot, relativePaths);
+            succeeded = finalTreeError == 0;
+            return finalTreeError;
         }
         finally
         {
-            foreach (IntPtr existing in existingHandles) CloseHandle(existing);
+            if (!succeeded)
+            {
+                foreach (IntPtr existing in existingHandles) CloseHandle(existing);
+                existingHandles.Clear();
+            }
         }
+    }
+
+    public static int PinExisting(
+        string path,
+        string expectedHash,
+        long expectedLength,
+        out IntPtr handle
+    )
+    {
+        handle = CreateFileW(
+            path,
+            GENERIC_READ | FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT,
+            IntPtr.Zero
+        );
+        if (handle == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
+        FILE_ATTRIBUTE_TAG_INFO attributes;
+        if (!GetFileInformationByHandleEx(handle, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return RejectPin(ref handle, Marshal.GetLastWin32Error());
+        if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) return RejectPin(ref handle, 4390);
+        bool matches;
+        using (SafeFileHandle safe = new SafeFileHandle(handle, false))
+        using (FileStream stream = new FileStream(safe, FileAccess.Read))
+        using (SHA256 sha = SHA256.Create())
+        {
+            string actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            matches = stream.Length == expectedLength && String.Equals(actual, expectedHash, StringComparison.Ordinal);
+        }
+        return matches ? 0 : RejectPin(ref handle, 13);
     }
 
     public static int QuarantineDirectoryNoReplace(string path, string quarantinePath)
@@ -319,7 +362,8 @@ try {
                     $destinationRoot,
                     $relativePaths.ToArray(),
                     $expectedHashes.ToArray(),
-                    $expectedLengths.ToArray()
+                    $expectedLengths.ToArray(),
+                    $publishedHandles
                 )
                 if ($sessionError -eq 0) {
                     $collision = $true
@@ -391,6 +435,12 @@ try {
                 [Console]::Out.Flush()
                 $completionCommand = [Console]::In.ReadLine()
                 if ($completionCommand -ne "COMPLETE") { $sessionError = 87 }
+                if ($sessionError -eq 0) {
+                    $sessionError = [TossTradingCalendarPinnedFile]::VerifyExactTree(
+                        $destinationRoot,
+                        $relativePaths.ToArray()
+                    )
+                }
             }
         }
         elseif ($command -ne "RELEASE") { $sessionError = 87 }

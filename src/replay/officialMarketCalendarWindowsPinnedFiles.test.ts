@@ -58,7 +58,7 @@ test("Windows calendar package helper input fails closed on broken pipes", async
 });
 
 test(
-  "Windows calendar package file pins block mutation and retain identity through planned file publication",
+  "Windows calendar package file pins block planned mutation and reject final tree additions",
   { skip: process.platform !== "win32" },
   async () => {
     const publicationRoot = await mkdtemp(
@@ -106,8 +106,12 @@ test(
         ),
         isSharingViolation
       );
+      await writeFile(
+        join(destinationRoot, "unplanned.txt"),
+        "unplanned\n"
+      );
       finalized = await pinned.release();
-      assert.equal(finalized, true);
+      assert.equal(finalized, false);
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();
