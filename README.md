@@ -220,6 +220,7 @@ CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-va
 Repository access와 public review 보안 절차는 [docs/repository-access-security-policy.md](docs/repository-access-security-policy.md)를 참고합니다.
 대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
 AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investment-process-refactoring-plan.md](docs/ai-investment-process-refactoring-plan.md)를 참고합니다.
+전략 포트폴리오 정책, 종목별 mandate, bucket 기반 종목 선택과 통합 리밸런싱 계획은 [docs/strategy-portfolio-operating-model-plan.md](docs/strategy-portfolio-operating-model-plan.md)를 참고합니다.
 Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
 Next.js 기반 dashboard 전환 기획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다.
 
