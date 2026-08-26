@@ -4,6 +4,8 @@ import {
   access,
   mkdir,
   mkdtemp,
+  readFile,
+  readdir,
   rename,
   rm,
   writeFile
@@ -18,7 +20,7 @@ import type { OfficialMarketCalendarWindowsPinnedFiles } from "./officialMarketC
 const SOURCE_HEX = "b".repeat(64);
 
 test(
-  "Windows calendar package file pins block mutation and retain identity through directory publication",
+  "Windows calendar package file pins block mutation and retain identity through planned file publication",
   { skip: process.platform !== "win32" },
   async () => {
     const publicationRoot = await mkdtemp(
@@ -70,6 +72,51 @@ test(
 );
 
 test(
+  "Windows calendar package file publication excludes unplanned staging entries",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const publicationRoot = await mkdtemp(
+      join(tmpdir(), "calendar-package-unplanned-entry-")
+    );
+    const packageNamespace = join(publicationRoot, "sha256");
+    const stagingRoot = join(packageNamespace, ".package.staging");
+    const destinationRoot = join(packageNamespace, "a".repeat(64));
+    const artifactBytes = Buffer.from("{\"schemaVersion\":1}\n", "utf8");
+    let pinned: OfficialMarketCalendarWindowsPinnedFiles | undefined;
+    let finalized = false;
+    try {
+      await mkdir(join(stagingRoot, "sources", "sha256"), {
+        recursive: true
+      });
+      await writeFile(join(stagingRoot, "artifact.json"), artifactBytes);
+      await writeFile(join(stagingRoot, "unplanned.txt"), "unplanned\n");
+      pinned = await pinOfficialMarketCalendarWindowsPackageFiles({
+        stagingRoot,
+        destinationRoot,
+        files: [descriptor("artifact.json", artifactBytes)]
+      });
+
+      const outcome = await pinned.publish();
+      finalized = true;
+      assert.equal(outcome, "published_verified");
+      assert.deepEqual(await readdir(destinationRoot), [
+        "artifact.json",
+        "sources"
+      ]);
+      assert.equal(
+        await readFile(join(stagingRoot, "unplanned.txt"), "utf8"),
+        "unplanned\n"
+      );
+    } finally {
+      if (pinned !== undefined && !finalized) {
+        await pinned.release();
+      }
+      await rm(publicationRoot, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
   "Windows calendar package file pins deny in-place content mutation before publication",
   { skip: process.platform !== "win32" },
   async () => {
@@ -108,7 +155,7 @@ test(
 );
 
 test(
-  "Windows calendar package file pins deny staged file substitution before publication",
+  "Windows calendar package file pins publish retained identity after staged path substitution",
   { skip: process.platform !== "win32" },
   async () => {
     const publicationRoot = await mkdtemp(
@@ -137,9 +184,17 @@ test(
         ]
       });
 
-      await assert.rejects(rename(sourcePath, displacedPath), isSharingViolation);
-      finalized = await pinned.release();
-      assert.equal(finalized, true);
+      await rename(sourcePath, displacedPath);
+      await writeFile(sourcePath, Buffer.from("substituted\n", "utf8"));
+      const outcome = await pinned.publish();
+      finalized = true;
+      assert.equal(outcome, "published_verified");
+      assert.deepEqual(
+        await readFile(
+          join(destinationRoot, "sources", "sha256", `${SOURCE_HEX}.bin`)
+        ),
+        sourceBytes
+      );
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();

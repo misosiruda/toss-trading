@@ -116,7 +116,6 @@ export async function writeOfficialMarketCalendarPublicationPackage(
   );
   const {
     publicationRoot,
-    packageNamespace,
     destinationPath,
     stagingRoot,
     stagingSession
@@ -197,7 +196,7 @@ export async function writeOfficialMarketCalendarPublicationPackage(
     if (publishOutcome === "indeterminate") {
       publishOutcomeUncertain = true;
       try {
-        stagingCompleted = await stagingSession.complete();
+        stagingCompleted = await stagingSession.cleanup(sourceFileNames);
       } catch {
         stagingCompleted = false;
       }
@@ -220,13 +219,13 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       packageParentSyncFailed =
         !(await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
           publicationRoot,
-          leafDirectory: packageNamespace,
+          leafDirectory: join(destinationPath, "sources", "sha256"),
           inclusiveAncestorDirectory: publicationRoot
         }));
     } catch {
       packageParentSyncFailed = true;
     }
-    stagingCompleted = await stagingSession.complete();
+    stagingCompleted = await stagingSession.cleanup(sourceFileNames);
     if (!stagingCompleted) {
       throw new OfficialMarketCalendarPackageQuarantinedError({
         artifactHash: prepared.plan.artifact.artifactHash,
@@ -261,21 +260,14 @@ export async function writeOfficialMarketCalendarPublicationPackage(
         );
       }
     }
-    if (!published) {
-      const cleaned = await stagingSession.cleanup(sourceFileNames);
-      if (!cleaned) {
-        throw new Error(
-          "official calendar publication package staging cleanup failed",
-          { cause: error }
-        );
-      }
-    } else if (!released) {
+    if (published && !released) {
       throw new Error(
         "official calendar publication package state is inconsistent",
         { cause: error }
       );
-    } else if (!stagingCompleted) {
-      stagingCompleted = await stagingSession.complete();
+    }
+    if (!stagingCompleted) {
+      stagingCompleted = await stagingSession.cleanup(sourceFileNames);
       if (!stagingCompleted) {
         throw new OfficialMarketCalendarPackageQuarantinedError({
           artifactHash: prepared.plan.artifact.artifactHash,
@@ -349,7 +341,6 @@ async function preparePublicationStaging(input: {
     }
     return {
       publicationRoot,
-      packageNamespace,
       destinationPath,
       stagingRoot,
       stagingSession

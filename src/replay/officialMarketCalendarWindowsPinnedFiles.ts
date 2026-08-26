@@ -43,6 +43,11 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
     destinationParent,
     basename(input.destinationRoot)
   );
+  if (dirname(stagingRoot) !== destinationParent) {
+    throw new Error(
+      "official calendar pinned package paths must share one real parent"
+    );
+  }
   const files = parseFileDescriptors(input.files);
   const child = spawn("powershell.exe", [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",

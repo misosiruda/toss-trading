@@ -1545,11 +1545,14 @@ exact root volume/file identity와 verified package plan/sidecar를 mutation 전
 namespace를 root까지 sync하고 native staging session이 staging root, `sources`,
 `sources/sha256` handle을 no-delete-share로 유지하는 동안 artifact/sidecar를 `wx`로 기록해
 각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝나면 별도 native
-helper가 artifact/sidecar file을 no-write/no-delete-share handle로 pin하고 이동 직전 다시
+helper가 artifact/sidecar file을 no-write-share retained handle로 pin하고 이동 직전 다시
 hash/length를 검증한다. Windows는 열린 child file handle과 parent directory move를 함께
-허용하지 않으므로 같은 helper가 pin을 닫은 직후 `MoveFileExW` no-replace move를 수행하고,
-목적지의 volume/file identity, hash와 length를 다시 검증한다. Staging root identity handle은
-move 전체에서 유지하며 package namespace/root sync 뒤 목적지 directory identity도 확인한다.
+허용하지 않으므로 whole-directory move를 사용하지 않는다. Helper는 final hash directory와
+canonical `sources/sha256` hierarchy를 no-replace로 예약한 뒤 각 planned file handle 자체에
+`FileRenameInfo`를 적용해 handle을 닫지 않고 final path로 이동한다. Staging에 추가된 unplanned
+entry는 final package로 이동하지 않으며, destination volume/file identity, hash/length와 exact
+directory-entry set을 검증한 뒤 final tree 전체를 root까지 sync한다. Staging session은 남은
+staging tree가 exact planned cleanup으로 비워지는지도 확인한다.
 Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
 atomic move 결과가 timeout/abnormal exit/postcondition failure로 불확실하거나 package parent
 sync 또는 identity completion이 실패하면 visible package/staging을 삭제하지 않고
