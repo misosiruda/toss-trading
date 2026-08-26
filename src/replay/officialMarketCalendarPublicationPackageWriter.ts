@@ -20,7 +20,10 @@ import {
 } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 import { createOfficialMarketCalendarWindowsPackageStagingSession } from "./officialMarketCalendarWindowsPackageStagingSession.js";
-import { createOfficialMarketCalendarWindowsPublicationRootLease } from "./officialMarketCalendarWindowsPublicationRootLease.js";
+import {
+  createOfficialMarketCalendarWindowsPublicationRootLease,
+  type OfficialMarketCalendarWindowsPublicationRootLease
+} from "./officialMarketCalendarWindowsPublicationRootLease.js";
 import {
   pinOfficialMarketCalendarWindowsPackageFiles,
   type OfficialMarketCalendarWindowsPinnedFiles
@@ -311,6 +314,10 @@ async function preparePublicationStaging(input: {
         >
       >
     | undefined;
+  let packageNamespaceLease:
+    | OfficialMarketCalendarWindowsPublicationRootLease
+    | undefined;
+  let packageNamespaceLeaseReleased = false;
   try {
     if (
       rootLease.publicationRootIdentityHash !==
@@ -327,10 +334,18 @@ async function preparePublicationStaging(input: {
         "official calendar publication package writer root must be a real directory"
       );
     }
-    const packageNamespace = await ensureDurableNamespaceChain(
+    const packageNamespaceState = await ensureDurableNamespaceChain(
       publicationRoot,
-      ["sha256"]
+      ["sha256"],
+      true
     );
+    const packageNamespace = packageNamespaceState.namespacePath;
+    packageNamespaceLease = packageNamespaceState.leafLease;
+    if (packageNamespaceLease === undefined) {
+      throw new Error(
+        "official calendar publication namespace lease missing"
+      );
+    }
     await ensureDurableNamespaceChain(publicationRoot, ["published", "sha256"]);
     const destinationPath = join(
       publicationRoot,
@@ -344,8 +359,16 @@ async function preparePublicationStaging(input: {
       await createOfficialMarketCalendarWindowsPackageStagingSession({
         publicationRoot,
         packageNamespace,
+        packageNamespaceVolumeIdentity: packageNamespaceLease.volumeIdentity,
+        packageNamespaceFileIdentity: packageNamespaceLease.fileIdentity,
         stagingRoot
       });
+    packageNamespaceLeaseReleased = await packageNamespaceLease.release();
+    if (!packageNamespaceLeaseReleased) {
+      throw new Error(
+        "official calendar publication namespace lease handoff failed"
+      );
+    }
     leaseReleased = await rootLease.release();
     if (!leaseReleased) {
       throw new Error(
@@ -364,6 +387,12 @@ async function preparePublicationStaging(input: {
     }
     throw error;
   } finally {
+    if (
+      packageNamespaceLease !== undefined &&
+      !packageNamespaceLeaseReleased
+    ) {
+      await packageNamespaceLease.release();
+    }
     if (!leaseReleased) {
       await rootLease.release();
     }
@@ -372,10 +401,16 @@ async function preparePublicationStaging(input: {
 
 async function ensureDurableNamespaceChain(
   publicationRoot: string,
-  segments: readonly string[]
-): Promise<string> {
+  segments: readonly string[],
+  retainLeafLease = false
+): Promise<{
+  namespacePath: string;
+  leafLease: OfficialMarketCalendarWindowsPublicationRootLease | undefined;
+}> {
   let namespacePath = publicationRoot;
-  for (const segment of segments) {
+  let leafLease: OfficialMarketCalendarWindowsPublicationRootLease | undefined;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]!;
     namespacePath = join(namespacePath, segment);
     try {
       await mkdir(namespacePath);
@@ -393,17 +428,34 @@ async function ensureDurableNamespaceChain(
         "official calendar publication namespace must be a real directory"
       );
     }
-    if (
-      !(await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
-        publicationRoot,
-        leafDirectory: namespacePath,
-        inclusiveAncestorDirectory: publicationRoot
-      }))
-    ) {
-      throw new Error("official calendar publication namespace sync failed");
+    const namespaceLease =
+      await createOfficialMarketCalendarWindowsPublicationRootLease(
+        namespacePath
+      );
+    let namespaceLeaseRetained = false;
+    try {
+      if (
+        !(await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
+          publicationRoot,
+          leafDirectory: namespacePath,
+          inclusiveAncestorDirectory: publicationRoot
+        }))
+      ) {
+        throw new Error("official calendar publication namespace sync failed");
+      }
+      if (retainLeafLease && index === segments.length - 1) {
+        leafLease = namespaceLease;
+        namespaceLeaseRetained = true;
+      }
+    } finally {
+      if (!namespaceLeaseRetained && !(await namespaceLease.release())) {
+        throw new Error(
+          "official calendar publication namespace lease release failed"
+        );
+      }
     }
   }
-  return namespacePath;
+  return { namespacePath, leafLease };
 }
 
 async function writeDurableFile(path: string, bytes: Uint8Array): Promise<void> {

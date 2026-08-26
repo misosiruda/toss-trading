@@ -14,6 +14,7 @@ import test from "node:test";
 
 import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 import { createOfficialMarketCalendarWindowsPackageStagingSession } from "./officialMarketCalendarWindowsPackageStagingSession.js";
+import { createOfficialMarketCalendarWindowsPublicationRootLease } from "./officialMarketCalendarWindowsPublicationRootLease.js";
 
 const ARTIFACT_HEX = "a".repeat(64);
 const SOURCE_FILE_NAME = `${"b".repeat(64)}.bin`;
@@ -34,7 +35,7 @@ test(
     try {
       await mkdir(packageNamespace);
       const session =
-        await createOfficialMarketCalendarWindowsPackageStagingSession({
+        await createIdentityBoundStagingSession({
           publicationRoot,
           packageNamespace,
           stagingRoot
@@ -81,7 +82,7 @@ test(
     try {
       await mkdir(packageNamespace);
       const session =
-        await createOfficialMarketCalendarWindowsPackageStagingSession({
+        await createIdentityBoundStagingSession({
           publicationRoot,
           packageNamespace,
           stagingRoot
@@ -122,7 +123,7 @@ test(
     try {
       await mkdir(packageNamespace);
       const session =
-        await createOfficialMarketCalendarWindowsPackageStagingSession({
+        await createIdentityBoundStagingSession({
           publicationRoot,
           packageNamespace,
           stagingRoot
@@ -160,7 +161,7 @@ test(
     try {
       await mkdir(packageNamespace);
       const session =
-        await createOfficialMarketCalendarWindowsPackageStagingSession({
+        await createIdentityBoundStagingSession({
           publicationRoot,
           packageNamespace,
           stagingRoot
@@ -179,6 +180,67 @@ test(
     }
   }
 );
+
+test(
+  "Windows calendar package staging session rejects a mismatched namespace identity before staging creation",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const publicationRoot = await mkdtemp(
+      join(tmpdir(), "calendar-package-staging-namespace-identity-")
+    );
+    const packageNamespace = join(publicationRoot, "sha256");
+    const otherNamespace = join(publicationRoot, "other");
+    const stagingRoot = join(
+      packageNamespace,
+      `.calendar-package-${ARTIFACT_HEX}-00000000-0000-4000-8000-000000000005.staging`
+    );
+    try {
+      await mkdir(packageNamespace);
+      await mkdir(otherNamespace);
+      const wrongLease =
+        await createOfficialMarketCalendarWindowsPublicationRootLease(
+          otherNamespace
+        );
+      try {
+        await assert.rejects(
+          createOfficialMarketCalendarWindowsPackageStagingSession({
+            publicationRoot,
+            packageNamespace,
+            packageNamespaceVolumeIdentity: wrongLease.volumeIdentity,
+            packageNamespaceFileIdentity: wrongLease.fileIdentity,
+            stagingRoot
+          }),
+          /exited before ready/u
+        );
+      } finally {
+        assert.equal(await wrongLease.release(), true);
+      }
+      assert.deepEqual(await readdir(packageNamespace), []);
+    } finally {
+      await rm(publicationRoot, { recursive: true, force: true });
+    }
+  }
+);
+
+async function createIdentityBoundStagingSession(input: {
+  publicationRoot: string;
+  packageNamespace: string;
+  stagingRoot: string;
+}) {
+  const namespaceLease =
+    await createOfficialMarketCalendarWindowsPublicationRootLease(
+      input.packageNamespace
+    );
+  try {
+    return await createOfficialMarketCalendarWindowsPackageStagingSession({
+      ...input,
+      packageNamespaceVolumeIdentity: namespaceLease.volumeIdentity,
+      packageNamespaceFileIdentity: namespaceLease.fileIdentity
+    });
+  } finally {
+    assert.equal(await namespaceLease.release(), true);
+  }
+}
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;

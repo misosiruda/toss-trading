@@ -3,6 +3,8 @@ import { realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { writeOfficialMarketCalendarWindowsHelperInput } from "./officialMarketCalendarWindowsChildInput.js";
+
 const helperPath = fileURLToPath(
   new URL("../../scripts/windowsCalendarPublicationPinnedFiles.ps1", import.meta.url)
 );
@@ -55,12 +57,22 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
   ], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
   let stdout = ""; let stderr = "";
+  let stdinFailed = false;
   child.stdout.on("data", (chunk: string) => { stdout += chunk; });
   child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  child.stdin.on("error", () => { stdinFailed = true; });
   const lines = files.map(({ relativePath, contentHash, contentLength }) =>
     `${relativePath}|${contentHash}|${contentLength}`
   );
-  child.stdin.write(`${lines.join("\n")}\nEND\n`);
+  if (
+    !(await writeOfficialMarketCalendarWindowsHelperInput(
+      child.stdin,
+      `${lines.join("\n")}\nEND\n`
+    ))
+  ) {
+    if (child.exitCode === null) child.kill();
+    throw new Error("official calendar package file pin input failed");
+  }
   const pinned = await waitForMarker(`PACKAGE_FILES_PINNED:${files.length}`);
   if (!pinned) {
     if (child.exitCode === null) child.kill();
@@ -80,7 +92,17 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
     }
     state = "publishing";
     const close = new Promise<number | null>((resolve) => child.once("close", resolve));
-    child.stdin.write("PUBLISH\n");
+    if (
+      !(await writeOfficialMarketCalendarWindowsHelperInput(
+        child.stdin,
+        "PUBLISH\n"
+      ))
+    ) {
+      if (child.exitCode === null) child.kill();
+      await waitForExit(close);
+      state = "finalized";
+      return "indeterminate";
+    }
     const verified = await waitForMarker("PACKAGE_FILES_VERIFIED");
     if (verified) {
       state = "published";
@@ -106,10 +128,16 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
     const command = state === "published" ? "COMPLETE\n" : "RELEASE\n";
     state = "finalized";
     const close = new Promise<number | null>((resolve) => child.once("close", resolve));
-    child.stdin.end(command);
+    const inputCompleted =
+      await writeOfficialMarketCalendarWindowsHelperInput(
+        child.stdin,
+        command,
+        true
+      );
+    if (!inputCompleted && child.exitCode === null) child.kill();
     const code = await waitForExit(close);
     if (code === "timeout") child.kill();
-    return code === 0;
+    return inputCompleted && !stdinFailed && code === 0;
   }
   async function waitForMarker(marker: string): Promise<boolean> {
     if (stdout.split(/\r?\n/u).includes(marker)) return true;

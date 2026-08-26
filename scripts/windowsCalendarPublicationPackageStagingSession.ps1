@@ -7,7 +7,13 @@ param(
     [string]$PackageNamespace,
 
     [Parameter(Mandatory = $true)]
-    [string]$StagingRoot
+    [string]$StagingRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedNamespaceVolumeIdentity,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedNamespaceFileIdentity
 )
 
 $ErrorActionPreference = "Stop"
@@ -187,6 +193,50 @@ public static class TossTradingCalendarPackageStagingSession
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             out handle
         );
+    }
+
+    public static int OpenRelativeNamespaceDirectory(
+        IntPtr parentHandle,
+        string name,
+        out IntPtr handle
+    )
+    {
+        return OpenRelativeEntryWithAccess(
+            parentHandle,
+            name,
+            true,
+            FILE_OPEN,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            out handle
+        );
+    }
+
+    public static int VerifyIdentity(
+        IntPtr handle,
+        string expectedVolumeIdentity,
+        string expectedFileIdentity
+    )
+    {
+        uint expectedVolume;
+        ulong expectedFile;
+        if (
+            !UInt32.TryParse(expectedVolumeIdentity, out expectedVolume) ||
+            !UInt64.TryParse(expectedFileIdentity, out expectedFile)
+        ) return 87;
+        BY_HANDLE_FILE_INFORMATION information;
+        if (!GetFileInformationByHandle(handle, out information))
+        {
+            return Marshal.GetLastWin32Error();
+        }
+        ulong fileIdentity =
+            ((ulong)information.FileIndexHigh << 32) |
+            information.FileIndexLow;
+        return
+            information.VolumeSerialNumber == expectedVolume &&
+            fileIdentity == expectedFile
+                ? 0
+                : 1168;
     }
 
     public static int CreateRelativeDirectory(
@@ -660,10 +710,17 @@ try {
         [ref]$publicationRootHandle
     )
     if ($sessionError -eq 0) {
-        $sessionError = [TossTradingCalendarPackageStagingSession]::OpenRelativeDirectory(
+        $sessionError = [TossTradingCalendarPackageStagingSession]::OpenRelativeNamespaceDirectory(
             $publicationRootHandle,
             "sha256",
             [ref]$namespaceHandle
+        )
+    }
+    if ($sessionError -eq 0) {
+        $sessionError = [TossTradingCalendarPackageStagingSession]::VerifyIdentity(
+            $namespaceHandle,
+            $ExpectedNamespaceVolumeIdentity,
+            $ExpectedNamespaceFileIdentity
         )
     }
     if ($sessionError -eq 0) {

@@ -12,12 +12,50 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import test from "node:test";
 
-import { pinOfficialMarketCalendarWindowsPackageFiles } from "./officialMarketCalendarWindowsPinnedFiles.js";
+import { writeOfficialMarketCalendarWindowsHelperInput } from "./officialMarketCalendarWindowsChildInput.js";
+import {
+  pinOfficialMarketCalendarWindowsPackageFiles
+} from "./officialMarketCalendarWindowsPinnedFiles.js";
 import type { OfficialMarketCalendarWindowsPinnedFiles } from "./officialMarketCalendarWindowsPinnedFiles.js";
 
 const SOURCE_HEX = "b".repeat(64);
+
+test("Windows calendar package helper input fails closed on broken pipes", async () => {
+  const writeFailure = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback(Object.assign(new Error("broken pipe"), { code: "EPIPE" }));
+    }
+  });
+  writeFailure.on("error", () => undefined);
+  assert.equal(
+    await writeOfficialMarketCalendarWindowsHelperInput(
+      writeFailure,
+      "PUBLISH\n"
+    ),
+    false
+  );
+
+  const endFailure = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+    final(callback) {
+      callback(Object.assign(new Error("broken pipe"), { code: "EPIPE" }));
+    }
+  });
+  endFailure.on("error", () => undefined);
+  assert.equal(
+    await writeOfficialMarketCalendarWindowsHelperInput(
+      endFailure,
+      "COMPLETE\n",
+      true
+    ),
+    false
+  );
+});
 
 test(
   "Windows calendar package file pins block mutation and retain identity through planned file publication",

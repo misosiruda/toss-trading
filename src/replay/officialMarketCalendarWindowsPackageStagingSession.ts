@@ -3,6 +3,8 @@ import { access, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { writeOfficialMarketCalendarWindowsHelperInput } from "./officialMarketCalendarWindowsChildInput.js";
+
 const windowsPackageStagingSessionHelperPath = fileURLToPath(
   new URL(
     "../../scripts/windowsCalendarPublicationPackageStagingSession.ps1",
@@ -21,6 +23,8 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
   input: {
     publicationRoot: string;
     packageNamespace: string;
+    packageNamespaceVolumeIdentity: string;
+    packageNamespaceFileIdentity: string;
     stagingRoot: string;
   }
 ): Promise<OfficialMarketCalendarWindowsPackageStagingSession> {
@@ -28,7 +32,9 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
     process.platform !== "win32" ||
     !isAbsolute(input.publicationRoot) ||
     !isAbsolute(input.packageNamespace) ||
-    !isAbsolute(input.stagingRoot)
+    !isAbsolute(input.stagingRoot) ||
+    !/^\d+$/u.test(input.packageNamespaceVolumeIdentity) ||
+    !/^\d+$/u.test(input.packageNamespaceFileIdentity)
   ) {
     throw new Error(
       "official calendar Windows package staging session requires absolute win32 paths"
@@ -67,7 +73,9 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
       windowsPackageStagingSessionHelperPath,
       publicationRoot,
       packageNamespace,
-      stagingRoot
+      stagingRoot,
+      input.packageNamespaceVolumeIdentity,
+      input.packageNamespaceFileIdentity
     ],
     {
       stdio: ["pipe", "pipe", "pipe"],
@@ -79,11 +87,15 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
   let stdout = "";
   let stderr = "";
   let ready = false;
+  let stdinFailed = false;
   child.stdout.on("data", (chunk: string) => {
     stdout += chunk;
   });
   child.stderr.on("data", (chunk: string) => {
     stderr += chunk;
+  });
+  child.stdin.on("error", () => {
+    stdinFailed = true;
   });
 
   try {
@@ -150,10 +162,19 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
 
   async function releaseHandles(): Promise<boolean> {
     if (!ready || child.exitCode !== null || child.stdin.destroyed) return false;
-    child.stdin.write("RELEASE\n");
+    if (
+      !(await writeOfficialMarketCalendarWindowsHelperInput(
+        child.stdin,
+        "RELEASE\n"
+      ))
+    ) {
+      state = "finalized";
+      if (child.exitCode === null) child.kill();
+      return false;
+    }
     const released = await waitForMarker("PACKAGE_STAGING_RELEASED");
-    if (released) state = "released";
-    return released;
+    if (released && !stdinFailed) state = "released";
+    return released && !stdinFailed;
   }
 
   async function finish(
@@ -166,11 +187,15 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
     const closePromise = new Promise<number | null>((resolve) => {
       child.once("close", resolve);
     });
-    child.stdin.end(
-      mode === "complete"
-        ? "DONE\n"
-        : `CLEANUP\n${sourceFileNames.join("\n")}\nEND\n`
-    );
+    const inputCompleted =
+      await writeOfficialMarketCalendarWindowsHelperInput(
+        child.stdin,
+        mode === "complete"
+          ? "DONE\n"
+          : `CLEANUP\n${sourceFileNames.join("\n")}\nEND\n`,
+        true
+      );
+    if (!inputCompleted && child.exitCode === null) child.kill();
     const exitCode = await waitForExit(closePromise);
     if (exitCode === "timeout") {
       child.kill();
@@ -181,6 +206,8 @@ export async function createOfficialMarketCalendarWindowsPackageStagingSession(
         ? "PACKAGE_STAGING_COMPLETED"
         : "PACKAGE_STAGING_CLEANUP_VERIFIED";
     if (
+      !inputCompleted ||
+      stdinFailed ||
       exitCode !== 0 ||
       !stdout.split(/\r?\n/u).includes(expectedMarker)
     ) {

@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { writeOfficialMarketCalendarWindowsHelperInput } from "./officialMarketCalendarWindowsChildInput.js";
 import { createReplayResearchHash } from "./replayRunManifest.js";
 
 const helperPath = fileURLToPath(
@@ -12,6 +13,8 @@ const helperPath = fileURLToPath(
 export interface OfficialMarketCalendarWindowsPublicationRootLease {
   readonly publicationRoot: string;
   readonly publicationRootIdentityHash: string;
+  readonly volumeIdentity: string;
+  readonly fileIdentity: string;
   release(): Promise<boolean>;
 }
 
@@ -34,8 +37,10 @@ export async function createOfficialMarketCalendarWindowsPublicationRootLease(
   child.stderr.setEncoding("utf8");
   let stdout = "";
   let stderr = "";
+  let stdinFailed = false;
   child.stdout.on("data", (chunk: string) => { stdout += chunk; });
   child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  child.stdin.on("error", () => { stdinFailed = true; });
 
   const identity = await new Promise<{ volumeIdentity: string; fileIdentity: string }>(
     (resolve, reject) => {
@@ -66,17 +71,26 @@ export async function createOfficialMarketCalendarWindowsPublicationRootLease(
   return Object.freeze({
     publicationRoot,
     publicationRootIdentityHash,
+    volumeIdentity: identity.volumeIdentity,
+    fileIdentity: identity.fileIdentity,
     async release(): Promise<boolean> {
       if (released || child.exitCode !== null || child.stdin.destroyed) return false;
       released = true;
       const close = new Promise<number | null>((resolve) => child.once("close", resolve));
-      child.stdin.end("RELEASE\n");
+      const inputCompleted =
+        await writeOfficialMarketCalendarWindowsHelperInput(
+          child.stdin,
+          "RELEASE\n",
+          true
+        );
+      if (!inputCompleted && child.exitCode === null) child.kill();
       const code = await waitForExit(close);
       if (code === "timeout") {
         child.kill();
         return false;
       }
-      return code === 0 && stdout.split(/\r?\n/u).includes("PUBLICATION_ROOT_LEASE_RELEASED");
+      return inputCompleted && !stdinFailed && code === 0 &&
+        stdout.split(/\r?\n/u).includes("PUBLICATION_ROOT_LEASE_RELEASED");
     }
   });
 }
