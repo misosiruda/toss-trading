@@ -16,6 +16,7 @@ import { createReplayResearchHash } from "./replayRunManifest.js";
 import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 import { createOfficialMarketCalendarWindowsProbeSession } from "./officialMarketCalendarWindowsProbeSession.js";
+import { createOfficialMarketCalendarWindowsPublicationRootLease } from "./officialMarketCalendarWindowsPublicationRootLease.js";
 
 export const OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION =
   "official_market_calendar_publication_filesystem_preflight.v3";
@@ -39,7 +40,8 @@ const preflightPayloadSchema = z
       "node_fs_promises_win32_movefileex.v2",
       "node_fs_promises_win32_native_probe_session.v3",
       "node_fs_promises_win32_ntflushbuffersfileex.v4",
-      "node_fs_promises_win32_root_file_identity.v5"
+      "node_fs_promises_win32_root_file_identity.v5",
+      "node_fs_promises_win32_root_handle_lease.v6"
     ]),
     platform: z.string().regex(/^[a-z0-9_]+$/),
     publicationRootIdentityHash: sha256HashSchema,
@@ -121,25 +123,17 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
   }
   const publicationRoot = await realpath(input.publicationRoot);
   await assertDirectory(publicationRoot);
-  const publicationRootIdentityHash =
-    await createOfficialMarketCalendarPublicationRootIdentityHash(
-      publicationRoot
-    );
-  const observation =
+  const inspected =
     process.platform === "win32"
-      ? await probeWindowsPublicationFilesystem(publicationRoot)
-      : await inspectUnsupportedNodeFilesystem(publicationRoot);
-  const verifiedPublicationRootIdentityHash =
-    await createOfficialMarketCalendarPublicationRootIdentityHash(
-      publicationRoot
-    );
-  if (
-    verifiedPublicationRootIdentityHash !== publicationRootIdentityHash
-  ) {
-    throw new Error(
-      "official calendar publication root identity changed during preflight"
-    );
-  }
+      ? await inspectWindowsPublicationFilesystemWithRootLease(publicationRoot)
+      : {
+          observation: await inspectUnsupportedNodeFilesystem(publicationRoot),
+          publicationRootIdentityHash:
+            await createOfficialMarketCalendarPublicationRootIdentityHash(
+              publicationRoot
+            )
+        };
+  const observation = inspected.observation;
   const blockers = createBlockers(
     observation.capabilities,
     observation.observations.probeCleanup === "verified"
@@ -149,10 +143,10 @@ export async function inspectOfficialMarketCalendarPublicationFilesystem(input: 
       OFFICIAL_MARKET_CALENDAR_PUBLICATION_FILESYSTEM_PREFLIGHT_SCHEMA_VERSION,
     implementationId:
       process.platform === "win32"
-        ? "node_fs_promises_win32_root_file_identity.v5"
+        ? "node_fs_promises_win32_root_handle_lease.v6"
         : "node_fs_promises.v2",
     platform: process.platform,
-    publicationRootIdentityHash: verifiedPublicationRootIdentityHash,
+    publicationRootIdentityHash: inspected.publicationRootIdentityHash,
     status: blockers.length === 0 ? "supported" : "unsupported",
     capabilities: observation.capabilities,
     observations: observation.observations,
@@ -266,7 +260,7 @@ function validatePreflightPayload(
   if (
     value.status === "supported" &&
     value.implementationId !==
-      "node_fs_promises_win32_root_file_identity.v5"
+      "node_fs_promises_win32_root_handle_lease.v6"
   ) {
     context.addIssue({
       code: "custom",
@@ -286,7 +280,7 @@ function validatePreflightPayload(
   }
   if (
     value.implementationId ===
-      "node_fs_promises_win32_root_file_identity.v5" &&
+      "node_fs_promises_win32_root_handle_lease.v6" &&
     value.capabilities.directoryDurabilitySync &&
     value.observations.directorySync !== "ntflushbuffersfileex_normal"
   ) {
@@ -339,7 +333,7 @@ function validatePreflightPayload(
     value.observations.directorySync === "ntflushbuffersfileex_normal" &&
     (value.platform !== "win32" ||
       value.implementationId !==
-        "node_fs_promises_win32_root_file_identity.v5")
+        "node_fs_promises_win32_root_handle_lease.v6")
   ) {
     context.addIssue({
       code: "custom",
@@ -574,6 +568,30 @@ async function probeWindowsPublicationFilesystem(
     },
     observations
   };
+}
+
+async function inspectWindowsPublicationFilesystemWithRootLease(
+  publicationRoot: string
+): Promise<{
+  observation: Awaited<ReturnType<typeof probeWindowsPublicationFilesystem>>;
+  publicationRootIdentityHash: string;
+}> {
+  const lease =
+    await createOfficialMarketCalendarWindowsPublicationRootLease(
+      publicationRoot
+    );
+  try {
+    return {
+      observation: await probeWindowsPublicationFilesystem(publicationRoot),
+      publicationRootIdentityHash: lease.publicationRootIdentityHash
+    };
+  } finally {
+    if (!(await lease.release())) {
+      throw new Error(
+        "official calendar publication root lease release failed"
+      );
+    }
+  }
 }
 
 function isVerifiedDirectorySync(

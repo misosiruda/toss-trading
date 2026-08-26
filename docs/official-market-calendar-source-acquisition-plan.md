@@ -1233,13 +1233,15 @@ collision entry 보존을 통과하면 atomic no-replace capability는 true로 �
 않는다. 따라서 legacy Windows v2/v3 implementation은
 `directorySync=movefileex_write_through_only`, `directoryDurabilitySync=false`와
 `directory_durability_sync_unavailable` blocker를 유지한다. 다른 platform도 별도
-primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 네 implementation ID 중
-아래 v4만 관찰 전체가 일치할 때 `supported` payload를 허용한다.
+primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 implementation ID 중
+아래 v6만 관찰 전체가 일치할 때 `supported` payload를 허용한다.
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
-Windows v5 implementation은 publication root의 canonical path뿐 아니라 retained handle의
-volume/file identity를 preflight hash에 결합하고 probe 전후 같은 identity인지 확인한다.
+Windows v6 implementation은 publication root의 canonical path뿐 아니라 retained handle의
+volume/file identity를 preflight hash에 결합한다. Root lease는 probe 전체에서 delete share를
+거부하고 writer mutation 시작 시 다시 획득한 뒤 staging session이 같은 root handle 경계를
+인수할 때까지 유지하므로 path가 다른 directory identity로 교체되는 구간을 허용하지 않는다.
 Directory durability는 별도 fixed helper가 `GENERIC_WRITE`와
 `FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`로 exact directory handle을
 열고, `NtFlushBuffersFileEx` normal mode로 leaf에서 inclusive ancestor까지 bottom-up
@@ -1258,7 +1260,7 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-nt
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
-`verifiedSetAction: unchanged`만 허용한다. Windows v5 filesystem capability가 모두
+`verifiedSetAction: unchanged`만 허용한다. Windows v6 filesystem capability가 모두
 검증돼도 publication record writer와 coordinator가 아직 없으므로
 `publication_record_writer_unavailable` blocker로 activation은 `blocked`다. Record writer와
 activation schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
@@ -1537,14 +1539,17 @@ artifact hash에서 파생되는 immutable package/record path를 strict 검증�
 publication record filesystem writer, `PublicationCoordinator` activation 또는 recovery를
 수행하지 않는다.
 
-`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v5 filesystem preflight의
+`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v6 filesystem preflight의
 exact root volume/file identity와 verified package plan/sidecar를 mutation 전에 다시
 검증한다. `sha256`
 namespace를 root까지 sync하고 native staging session이 staging root, `sources`,
 `sources/sha256` handle을 no-delete-share로 유지하는 동안 artifact/sidecar를 `wx`로 기록해
-각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝난 뒤에만
-child handle을 release하되 staging root identity handle은 유지한다. Atomic no-replace package
-move와 package namespace/root sync 후 목적지 file ID가 retained identity와 같은지 확인한다.
+각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝나면 별도 native
+helper가 artifact/sidecar file을 no-write/no-delete-share handle로 pin하고 이동 직전 다시
+hash/length를 검증한다. Windows는 열린 child file handle과 parent directory move를 함께
+허용하지 않으므로 같은 helper가 pin을 닫은 직후 `MoveFileExW` no-replace move를 수행하고,
+목적지의 volume/file identity, hash와 length를 다시 검증한다. Staging root identity handle은
+move 전체에서 유지하며 package namespace/root sync 뒤 목적지 directory identity도 확인한다.
 Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
 atomic move 결과가 timeout/abnormal exit/postcondition failure로 불확실하거나 package parent
 sync 또는 identity completion이 실패하면 visible package/staging을 삭제하지 않고

@@ -10,20 +10,21 @@ import { basename, isAbsolute, join } from "node:path";
 
 import { z } from "zod";
 
-import {
-  assertOfficialMarketCalendarPublicationFilesystemSupported,
-  createOfficialMarketCalendarPublicationRootIdentityHash
-} from "./officialMarketCalendarPublicationFilesystemPreflight.js";
+import { assertOfficialMarketCalendarPublicationFilesystemSupported } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 import {
   parseOfficialMarketCalendarPublicationPackagePlan,
   type OfficialMarketCalendarPublicationPackagePlan
 } from "./officialMarketCalendarPublicationPackagePlan.js";
 import {
-  OfficialMarketCalendarAtomicPublishError,
-  publishOfficialMarketCalendarEntryAtomicNoReplace
+  OfficialMarketCalendarAtomicPublishError
 } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 import { createOfficialMarketCalendarWindowsPackageStagingSession } from "./officialMarketCalendarWindowsPackageStagingSession.js";
+import { createOfficialMarketCalendarWindowsPublicationRootLease } from "./officialMarketCalendarWindowsPublicationRootLease.js";
+import {
+  pinOfficialMarketCalendarWindowsPackageFiles,
+  type OfficialMarketCalendarWindowsPinnedFiles
+} from "./officialMarketCalendarWindowsPinnedFiles.js";
 
 const sourceSidecarSchema = z
   .object({
@@ -52,6 +53,7 @@ export class OfficialMarketCalendarPackageQuarantinedError extends Error {
   readonly packagePath: string;
   readonly reason:
     | "atomic_publish_outcome_uncertain"
+    | "staged_file_identity_failed"
     | "staging_completion_failed"
     | "package_parent_sync_failed";
 
@@ -60,6 +62,7 @@ export class OfficialMarketCalendarPackageQuarantinedError extends Error {
     packagePath: string;
     reason:
       | "atomic_publish_outcome_uncertain"
+      | "staged_file_identity_failed"
       | "staging_completion_failed"
       | "package_parent_sync_failed";
   }) {
@@ -105,54 +108,30 @@ export async function writeOfficialMarketCalendarPublicationPackage(
   const sidecars = input.sidecars.map((sidecar) =>
     sourceSidecarSchema.parse(sidecar)
   );
-  const publicationRoot = await realpath(input.publicationRoot);
-  const rootStats = await lstat(publicationRoot);
-  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
-    throw new Error(
-      "official calendar publication package writer root must be a real directory"
-    );
-  }
-  if (
-    preflight.publicationRootIdentityHash !==
-    (await createOfficialMarketCalendarPublicationRootIdentityHash(
-      publicationRoot
-    ))
-  ) {
-    throw new Error(
-      "official calendar publication package writer preflight root identity mismatch"
-    );
-  }
-
-  const packageNamespace = await ensureDurableNamespaceChain(
-    publicationRoot,
-    ["sha256"]
-  );
-  await ensureDurableNamespaceChain(publicationRoot, ["published", "sha256"]);
-
   const artifactHex = prepared.plan.artifact.artifactHash.slice(
     "sha256:".length
-  );
-  const destinationPath = join(
-    publicationRoot,
-    ...prepared.plan.packagePath.split("/")
-  );
-  const stagingRoot = join(
-    packageNamespace,
-    `.calendar-package-${artifactHex}-${randomUUID()}.staging`
   );
   const sourceFileNames = prepared.plan.sourceArchiveFiles.map(({ archivePath }) =>
     basename(archivePath)
   );
-  const stagingSession =
-    await createOfficialMarketCalendarWindowsPackageStagingSession({
-      publicationRoot,
-      packageNamespace,
-      stagingRoot
-    });
+  const {
+    publicationRoot,
+    packageNamespace,
+    destinationPath,
+    stagingRoot,
+    stagingSession
+  } = await preparePublicationStaging({
+    publicationRootInput: input.publicationRoot,
+    publicationRootIdentityHash: preflight.publicationRootIdentityHash,
+    artifactHex,
+    packagePath: prepared.plan.packagePath
+  });
   let released = false;
   let published = false;
   let stagingCompleted = false;
   let publishOutcomeUncertain = false;
+  let pinnedFiles: OfficialMarketCalendarWindowsPinnedFiles | undefined;
+  let pinnedFilesFinalized = false;
   try {
     await writeDurableFile(
       join(stagingRoot, prepared.plan.artifactFile.packageRelativePath),
@@ -172,6 +151,22 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       );
     }
     await verifyStagingTree(stagingRoot, prepared.plan, sidecars);
+    pinnedFiles = await pinOfficialMarketCalendarWindowsPackageFiles({
+      stagingRoot,
+      destinationRoot: destinationPath,
+      files: [
+        {
+          relativePath: prepared.plan.artifactFile.packageRelativePath,
+          contentHash: prepared.plan.artifactFile.contentHash,
+          contentLength: prepared.plan.artifactFile.contentLength
+        },
+        ...prepared.plan.sourceArchiveFiles.map((file) => ({
+          relativePath: file.archivePath,
+          contentHash: file.sourceDocumentHash,
+          contentLength: file.contentLength
+        }))
+      ]
+    });
     const sourceHashDirectory = join(stagingRoot, "sources", "sha256");
     if (
       !(await syncOfficialMarketCalendarWindowsPublicationDirectoryChain({
@@ -190,32 +185,36 @@ export async function writeOfficialMarketCalendarPublicationPackage(
         "official calendar publication package staging release failed"
       );
     }
-    try {
-      await publishOfficialMarketCalendarEntryAtomicNoReplace({
-        sourcePath: stagingRoot,
-        destinationPath,
-        entryKind: "directory"
+    const publishOutcome = await pinnedFiles.publish();
+    pinnedFilesFinalized = true;
+    if (publishOutcome === "collision") {
+      throw new OfficialMarketCalendarAtomicPublishError({
+        message: "official calendar atomic publish destination already exists",
+        outcome: "confirmed_not_moved",
+        code: "EEXIST"
       });
-    } catch (error) {
-      if (
-        error instanceof OfficialMarketCalendarAtomicPublishError &&
-        error.outcome !== "confirmed_not_moved"
-      ) {
-        publishOutcomeUncertain = true;
-        try {
-          stagingCompleted = await stagingSession.complete();
-        } catch {
-          stagingCompleted = false;
-        }
-        throw new OfficialMarketCalendarPackageQuarantinedError({
-          artifactHash: prepared.plan.artifact.artifactHash,
-          packagePath: prepared.plan.packagePath,
-          reason: "atomic_publish_outcome_uncertain"
-        });
+    }
+    if (publishOutcome === "indeterminate") {
+      publishOutcomeUncertain = true;
+      try {
+        stagingCompleted = await stagingSession.complete();
+      } catch {
+        stagingCompleted = false;
       }
-      throw error;
+      throw new OfficialMarketCalendarPackageQuarantinedError({
+        artifactHash: prepared.plan.artifact.artifactHash,
+        packagePath: prepared.plan.packagePath,
+        reason: "atomic_publish_outcome_uncertain"
+      });
     }
     published = true;
+    if (publishOutcome === "published_unverified") {
+      throw new OfficialMarketCalendarPackageQuarantinedError({
+        artifactHash: prepared.plan.artifact.artifactHash,
+        packagePath: prepared.plan.packagePath,
+        reason: "staged_file_identity_failed"
+      });
+    }
     let packageParentSyncFailed = false;
     try {
       packageParentSyncFailed =
@@ -253,6 +252,15 @@ export async function writeOfficialMarketCalendarPublicationPackage(
     if (publishOutcomeUncertain) {
       throw error;
     }
+    if (pinnedFiles !== undefined && !pinnedFilesFinalized) {
+      pinnedFilesFinalized = await pinnedFiles.release();
+      if (!pinnedFilesFinalized) {
+        throw new Error(
+          "official calendar publication pinned file release failed",
+          { cause: error }
+        );
+      }
+    }
     if (!published) {
       const cleaned = await stagingSession.cleanup(sourceFileNames);
       if (!cleaned) {
@@ -277,6 +285,84 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       }
     }
     throw error;
+  }
+}
+
+async function preparePublicationStaging(input: {
+  publicationRootInput: string;
+  publicationRootIdentityHash: string;
+  artifactHex: string;
+  packagePath: string;
+}) {
+  const rootLease =
+    await createOfficialMarketCalendarWindowsPublicationRootLease(
+      input.publicationRootInput
+    );
+  let leaseReleased = false;
+  let stagingSession:
+    | Awaited<
+        ReturnType<
+          typeof createOfficialMarketCalendarWindowsPackageStagingSession
+        >
+      >
+    | undefined;
+  try {
+    if (
+      rootLease.publicationRootIdentityHash !==
+      input.publicationRootIdentityHash
+    ) {
+      throw new Error(
+        "official calendar publication package writer preflight root identity mismatch"
+      );
+    }
+    const publicationRoot = rootLease.publicationRoot;
+    const rootStats = await lstat(publicationRoot);
+    if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+      throw new Error(
+        "official calendar publication package writer root must be a real directory"
+      );
+    }
+    const packageNamespace = await ensureDurableNamespaceChain(
+      publicationRoot,
+      ["sha256"]
+    );
+    await ensureDurableNamespaceChain(publicationRoot, ["published", "sha256"]);
+    const destinationPath = join(
+      publicationRoot,
+      ...input.packagePath.split("/")
+    );
+    const stagingRoot = join(
+      packageNamespace,
+      `.calendar-package-${input.artifactHex}-${randomUUID()}.staging`
+    );
+    stagingSession =
+      await createOfficialMarketCalendarWindowsPackageStagingSession({
+        publicationRoot,
+        packageNamespace,
+        stagingRoot
+      });
+    leaseReleased = await rootLease.release();
+    if (!leaseReleased) {
+      throw new Error(
+        "official calendar publication root lease handoff failed"
+      );
+    }
+    return {
+      publicationRoot,
+      packageNamespace,
+      destinationPath,
+      stagingRoot,
+      stagingSession
+    };
+  } catch (error) {
+    if (stagingSession !== undefined) {
+      await stagingSession.cleanup([]);
+    }
+    throw error;
+  } finally {
+    if (!leaseReleased) {
+      await rootLease.release();
+    }
   }
 }
 
