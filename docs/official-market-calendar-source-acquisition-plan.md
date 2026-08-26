@@ -1238,7 +1238,9 @@ primitive가 아직 없으므로 fail-closed `unsupported`다. 등록된 네 imp
 Windows directory move와 `MOVEFILE_WRITE_THROUGH` 기준은 Microsoft의
 https://learn.microsoft.com/en-us/windows/win32/fileio/moving-directories 를 따른다.
 
-Windows v4 implementation은 별도 fixed helper가 `GENERIC_WRITE`와
+Windows v5 implementation은 publication root의 canonical path뿐 아니라 retained handle의
+volume/file identity를 preflight hash에 결합하고 probe 전후 같은 identity인지 확인한다.
+Directory durability는 별도 fixed helper가 `GENERIC_WRITE`와
 `FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`로 exact directory handle을
 열고, `NtFlushBuffersFileEx` normal mode로 leaf에서 inclusive ancestor까지 bottom-up
 동기화한다. Normal mode는 file cache의 data와 metadata를 기록하고 underlying storage
@@ -1256,7 +1258,7 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-nt
 filesystem preflight를 publication/activation 직전 하나의 immutable decision으로
 결합한다. Unsupported runtime은 exact artifact/plan/preflight/root identity와 canonical
 blocker를 decision hash에 포함하고 `filesystemMutationAction: none`,
-`verifiedSetAction: unchanged`만 허용한다. Windows v4 filesystem capability가 모두
+`verifiedSetAction: unchanged`만 허용한다. Windows v5 filesystem capability가 모두
 검증돼도 publication record writer와 coordinator가 아직 없으므로
 `publication_record_writer_unavailable` blocker로 activation은 `blocked`다. Record writer와
 activation schema를 별도 변경하기 전에는 `permitted` mutation action을 만들지 않는다.
@@ -1535,15 +1537,18 @@ artifact hash에서 파생되는 immutable package/record path를 strict 검증�
 publication record filesystem writer, `PublicationCoordinator` activation 또는 recovery를
 수행하지 않는다.
 
-`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v4 filesystem preflight의
-exact root identity와 verified package plan/sidecar를 mutation 전에 다시 검증한다. `sha256`
+`officialMarketCalendarPublicationPackageWriter.ts`는 Windows v5 filesystem preflight의
+exact root volume/file identity와 verified package plan/sidecar를 mutation 전에 다시
+검증한다. `sha256`
 namespace를 root까지 sync하고 native staging session이 staging root, `sources`,
 `sources/sha256` handle을 no-delete-share로 유지하는 동안 artifact/sidecar를 `wx`로 기록해
 각 file을 sync한다. Readback hash/length/bytes와 bottom-up directory sync가 끝난 뒤에만
 child handle을 release하되 staging root identity handle은 유지한다. Atomic no-replace package
 move와 package namespace/root sync 후 목적지 file ID가 retained identity와 같은지 확인한다.
 Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
-parent sync 또는 identity completion 실패는 visible package를 quarantined error로 남긴다.
+atomic move 결과가 timeout/abnormal exit/postcondition failure로 불확실하거나 package parent
+sync 또는 identity completion이 실패하면 visible package/staging을 삭제하지 않고
+quarantined error로 남긴다.
 이 writer는 publication record 또는 verified set을 생성하지 않는다.
 
 Coordinator는 writer와 reader 사이에 exclusive publication state lock을

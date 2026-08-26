@@ -14,6 +14,23 @@ export type OfficialMarketCalendarAtomicPublishEntryKind =
   | "file"
   | "directory";
 
+export class OfficialMarketCalendarAtomicPublishError extends Error {
+  readonly outcome: "confirmed_not_moved" | "indeterminate" | "moved_unverified";
+  readonly code: "EEXIST" | undefined;
+
+  constructor(input: {
+    message: string;
+    outcome: "confirmed_not_moved" | "indeterminate" | "moved_unverified";
+    code?: "EEXIST";
+    cause?: unknown;
+  }) {
+    super(input.message, { cause: input.cause });
+    this.name = "OfficialMarketCalendarAtomicPublishError";
+    this.outcome = input.outcome;
+    this.code = input.code;
+  }
+}
+
 export async function publishOfficialMarketCalendarEntryAtomicNoReplace(
   input: {
     sourcePath: string;
@@ -73,40 +90,51 @@ export async function publishOfficialMarketCalendarEntryAtomicNoReplace(
       windowsErrorCode !== null &&
       windowsDestinationExistsErrorCodes.has(windowsErrorCode)
     ) {
-      const collision = new Error(
-        "official calendar atomic publish destination already exists"
-      ) as NodeJS.ErrnoException;
-      collision.code = "EEXIST";
-      throw collision;
+      throw new OfficialMarketCalendarAtomicPublishError({
+        message: "official calendar atomic publish destination already exists",
+        outcome: "confirmed_not_moved",
+        code: "EEXIST",
+        cause: error
+      });
     }
-    throw new Error(
-      windowsErrorCode === null
-        ? "official calendar Windows atomic publish helper failed"
-        : `official calendar Windows atomic publish helper failed with Win32 error ${windowsErrorCode}`,
-      { cause: error }
-    );
+    throw new OfficialMarketCalendarAtomicPublishError({
+      message:
+        windowsErrorCode === null
+          ? "official calendar Windows atomic publish outcome is indeterminate"
+          : `official calendar Windows atomic publish outcome is indeterminate after Win32 error ${windowsErrorCode}`,
+      outcome: "indeterminate",
+      cause: error
+    });
   }
 
-  const destinationStats = await lstat(input.destinationPath);
-  if (
-    (input.entryKind === "file" && !destinationStats.isFile()) ||
-    (input.entryKind === "directory" && !destinationStats.isDirectory())
-  ) {
-    throw new Error(
-      "official calendar atomic publish destination type does not match source"
-    );
-  }
   try {
-    await access(input.sourcePath);
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return;
+    const destinationStats = await lstat(input.destinationPath);
+    if (
+      (input.entryKind === "file" && !destinationStats.isFile()) ||
+      (input.entryKind === "directory" && !destinationStats.isDirectory())
+    ) {
+      throw new Error(
+        "official calendar atomic publish destination type does not match source"
+      );
     }
-    throw error;
+    try {
+      await access(input.sourcePath);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+    throw new Error(
+      "official calendar atomic publish source remained visible after move"
+    );
+  } catch (error) {
+    throw new OfficialMarketCalendarAtomicPublishError({
+      message: "official calendar atomic publish move completed but verification failed",
+      outcome: "moved_unverified",
+      cause: error
+    });
   }
-  throw new Error(
-    "official calendar atomic publish source remained visible after move"
-  );
 }
 
 function readWindowsMoveErrorCode(error: unknown): number | null {

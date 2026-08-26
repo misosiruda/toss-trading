@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -2184,6 +2192,60 @@ test(
     assert.deepEqual(await readdir(join(publicationRoot, "sha256")), [
       artifact.artifactHash.slice("sha256:".length)
     ]);
+  }
+);
+
+test(
+  "calendar publication package writer rejects a replaced preflight root before mutation",
+  { skip: process.platform !== "win32" },
+  async (t) => {
+    const parentRoot = await mkdtemp(
+      join(tmpdir(), "calendar-package-writer-root-identity-")
+    );
+    t.after(() => rm(parentRoot, { recursive: true, force: true }));
+    const publicationRoot = join(parentRoot, "publication");
+    const displacedRoot = join(parentRoot, "displaced-publication");
+    await mkdir(publicationRoot);
+    const fixture = evidenceArtifactV2Fixture();
+    const artifact = createOfficialMarketCalendarEvidenceArtifactV2(
+      fixture.input,
+      fixture.options
+    );
+    const sidecars = artifact.sourceArchiveBindings
+      .map(({ archivePath, sourceDocumentRef }) => ({
+        archivePath,
+        bytes:
+          fixture.options.sourceBytesByExchange[sourceDocumentRef.exchange][
+            sourceDocumentRef.documentId
+          ]
+      }))
+      .sort((left, right) =>
+        left.archivePath < right.archivePath ? -1 : 1
+      );
+    const prepared = createOfficialMarketCalendarPublicationPackagePlan(
+      { artifact, sidecars },
+      fixture.options
+    );
+    const filesystemPreflight =
+      await inspectOfficialMarketCalendarPublicationFilesystem({
+        publicationRoot
+      });
+    await rename(publicationRoot, displacedRoot);
+    await mkdir(publicationRoot);
+
+    await assert.rejects(
+      writeOfficialMarketCalendarPublicationPackage(
+        {
+          publicationRoot,
+          filesystemPreflight,
+          packagePlan: prepared.plan,
+          sidecars
+        },
+        fixture.options
+      ),
+      /preflight root identity mismatch/
+    );
+    assert.deepEqual(await readdir(publicationRoot), []);
   }
 );
 

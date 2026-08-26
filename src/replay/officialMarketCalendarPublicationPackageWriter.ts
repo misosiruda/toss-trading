@@ -10,15 +10,18 @@ import { basename, isAbsolute, join } from "node:path";
 
 import { z } from "zod";
 
-import { createReplayResearchHash } from "./replayRunManifest.js";
 import {
-  assertOfficialMarketCalendarPublicationFilesystemSupported
+  assertOfficialMarketCalendarPublicationFilesystemSupported,
+  createOfficialMarketCalendarPublicationRootIdentityHash
 } from "./officialMarketCalendarPublicationFilesystemPreflight.js";
 import {
   parseOfficialMarketCalendarPublicationPackagePlan,
   type OfficialMarketCalendarPublicationPackagePlan
 } from "./officialMarketCalendarPublicationPackagePlan.js";
-import { publishOfficialMarketCalendarEntryAtomicNoReplace } from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
+import {
+  OfficialMarketCalendarAtomicPublishError,
+  publishOfficialMarketCalendarEntryAtomicNoReplace
+} from "./officialMarketCalendarWindowsAtomicNoReplacePublish.js";
 import { syncOfficialMarketCalendarWindowsPublicationDirectoryChain } from "./officialMarketCalendarWindowsDirectorySync.js";
 import { createOfficialMarketCalendarWindowsPackageStagingSession } from "./officialMarketCalendarWindowsPackageStagingSession.js";
 
@@ -48,13 +51,17 @@ export class OfficialMarketCalendarPackageQuarantinedError extends Error {
   readonly artifactHash: string;
   readonly packagePath: string;
   readonly reason:
+    | "atomic_publish_outcome_uncertain"
     | "staging_completion_failed"
     | "package_parent_sync_failed";
 
   constructor(input: {
     artifactHash: string;
     packagePath: string;
-    reason: "staging_completion_failed" | "package_parent_sync_failed";
+    reason:
+      | "atomic_publish_outcome_uncertain"
+      | "staging_completion_failed"
+      | "package_parent_sync_failed";
   }) {
     super(
       `official calendar package is quarantined: ${input.reason}`
@@ -107,7 +114,9 @@ export async function writeOfficialMarketCalendarPublicationPackage(
   }
   if (
     preflight.publicationRootIdentityHash !==
-    createReplayResearchHash(publicationRoot)
+    (await createOfficialMarketCalendarPublicationRootIdentityHash(
+      publicationRoot
+    ))
   ) {
     throw new Error(
       "official calendar publication package writer preflight root identity mismatch"
@@ -143,6 +152,7 @@ export async function writeOfficialMarketCalendarPublicationPackage(
   let released = false;
   let published = false;
   let stagingCompleted = false;
+  let publishOutcomeUncertain = false;
   try {
     await writeDurableFile(
       join(stagingRoot, prepared.plan.artifactFile.packageRelativePath),
@@ -180,11 +190,31 @@ export async function writeOfficialMarketCalendarPublicationPackage(
         "official calendar publication package staging release failed"
       );
     }
-    await publishOfficialMarketCalendarEntryAtomicNoReplace({
-      sourcePath: stagingRoot,
-      destinationPath,
-      entryKind: "directory"
-    });
+    try {
+      await publishOfficialMarketCalendarEntryAtomicNoReplace({
+        sourcePath: stagingRoot,
+        destinationPath,
+        entryKind: "directory"
+      });
+    } catch (error) {
+      if (
+        error instanceof OfficialMarketCalendarAtomicPublishError &&
+        error.outcome !== "confirmed_not_moved"
+      ) {
+        publishOutcomeUncertain = true;
+        try {
+          stagingCompleted = await stagingSession.complete();
+        } catch {
+          stagingCompleted = false;
+        }
+        throw new OfficialMarketCalendarPackageQuarantinedError({
+          artifactHash: prepared.plan.artifact.artifactHash,
+          packagePath: prepared.plan.packagePath,
+          reason: "atomic_publish_outcome_uncertain"
+        });
+      }
+      throw error;
+    }
     published = true;
     let packageParentSyncFailed = false;
     try {
@@ -220,6 +250,9 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       publicationRecordPath: prepared.plan.publicationRecordPath
     });
   } catch (error) {
+    if (publishOutcomeUncertain) {
+      throw error;
+    }
     if (!published) {
       const cleaned = await stagingSession.cleanup(sourceFileNames);
       if (!cleaned) {

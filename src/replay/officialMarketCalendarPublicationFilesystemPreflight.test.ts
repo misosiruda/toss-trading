@@ -23,7 +23,7 @@ test("calendar publication filesystem preflight verifies or blocks the runtime c
     if (process.platform === "win32") {
       assert.equal(
         preflight.implementationId,
-        "node_fs_promises_win32_ntflushbuffersfileex.v4"
+        "node_fs_promises_win32_root_file_identity.v5"
       );
       assert.equal(preflight.status, "supported");
       assert.deepEqual(preflight.capabilities, {
@@ -186,7 +186,7 @@ test("calendar publication filesystem preflight rejects tamper", async () => {
       createOfficialMarketCalendarPublicationFilesystemPreflightHash({
         ...impossibleSupportedPayload,
         implementationId:
-          "node_fs_promises_win32_ntflushbuffersfileex.v4" as const
+          "node_fs_promises_win32_root_file_identity.v5" as const
       }),
     /Windows v4 directory durability requires the NtFlushBuffersFileEx observation/
   );
