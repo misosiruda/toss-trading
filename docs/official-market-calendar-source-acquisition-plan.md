@@ -1552,9 +1552,9 @@ canonical `sources/sha256` hierarchy를 no-replace로 예약한 뒤 각 planned 
 `FileRenameInfo`를 적용해 handle을 닫지 않고 final path로 이동한다. Staging에 추가된 unplanned
 entry는 final package로 이동하지 않는다. Move용 DELETE-access handle을 닫은 뒤 destination에서
 쓰기와 삭제 share를 모두 거부하는 새 handle을 열어 같은 volume/file identity와 hash/length인지
-확인하고, 이 handle들을 exact directory-entry set 검증이 끝날 때까지 유지한다. 그 뒤 final tree
-전체를 root까지 sync한다. Staging session은 남은
-staging tree가 exact planned cleanup으로 비워지는지도 확인한다. 이전 attempt가 final hash
+확인하고, 이 handle들을 exact directory-entry set 검증이 끝난 뒤에도 유지한다. Writer가 final
+tree 전체를 root까지 sync하고 staging session의 exact planned cleanup을 완료한 뒤 `COMPLETE`를
+보내야 helper가 destination handle을 닫는다. 이전 attempt가 final hash
 directory에 incomplete tree를 남겼다면 exact tree/hash 검증 실패를 확인하고 그 directory
 identity를 retained handle로 같은 parent의 unique quarantine path에 no-replace 이동한 뒤 현재
 planned file publication을 재개한다. Exact complete destination만 정상 collision으로 취급한다.

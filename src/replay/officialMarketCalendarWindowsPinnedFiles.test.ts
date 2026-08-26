@@ -56,12 +56,20 @@ test(
       });
 
       const outcome = await pinned.publish();
-      finalized = true;
       assert.equal(outcome, "published_verified");
       await access(join(destinationRoot, "artifact.json"));
       await access(
         join(destinationRoot, "sources", "sha256", `${SOURCE_HEX}.bin`)
       );
+      await assert.rejects(
+        rename(
+          join(destinationRoot, "artifact.json"),
+          join(destinationRoot, "artifact.displaced.json")
+        ),
+        isSharingViolation
+      );
+      finalized = await pinned.release();
+      assert.equal(finalized, true);
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();
@@ -97,7 +105,6 @@ test(
       });
 
       const outcome = await pinned.publish();
-      finalized = true;
       assert.equal(outcome, "published_verified");
       assert.deepEqual(await readdir(destinationRoot), [
         "artifact.json",
@@ -107,6 +114,8 @@ test(
         await readFile(join(stagingRoot, "unplanned.txt"), "utf8"),
         "unplanned\n"
       );
+      finalized = await pinned.release();
+      assert.equal(finalized, true);
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();
@@ -180,7 +189,6 @@ test(
       });
 
       const outcome = await pinned.publish();
-      finalized = true;
       assert.equal(outcome, "published_verified");
       assert.deepEqual(
         await readFile(join(destinationRoot, "artifact.json")),
@@ -197,6 +205,8 @@ test(
         ),
         "partial\n"
       );
+      finalized = await pinned.release();
+      assert.equal(finalized, true);
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();
@@ -239,7 +249,6 @@ test(
       await rename(sourcePath, displacedPath);
       await writeFile(sourcePath, Buffer.from("substituted\n", "utf8"));
       const outcome = await pinned.publish();
-      finalized = true;
       assert.equal(outcome, "published_verified");
       assert.deepEqual(
         await readFile(
@@ -247,6 +256,8 @@ test(
         ),
         sourceBytes
       );
+      finalized = await pinned.release();
+      assert.equal(finalized, true);
     } finally {
       if (pinned !== undefined && !finalized) {
         await pinned.release();

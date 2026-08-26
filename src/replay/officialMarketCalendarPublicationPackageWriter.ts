@@ -55,7 +55,8 @@ export class OfficialMarketCalendarPackageQuarantinedError extends Error {
     | "atomic_publish_outcome_uncertain"
     | "staged_file_identity_failed"
     | "staging_completion_failed"
-    | "package_parent_sync_failed";
+    | "package_parent_sync_failed"
+    | "published_file_completion_failed";
 
   constructor(input: {
     artifactHash: string;
@@ -64,7 +65,8 @@ export class OfficialMarketCalendarPackageQuarantinedError extends Error {
       | "atomic_publish_outcome_uncertain"
       | "staged_file_identity_failed"
       | "staging_completion_failed"
-      | "package_parent_sync_failed";
+      | "package_parent_sync_failed"
+      | "published_file_completion_failed";
   }) {
     super(
       `official calendar package is quarantined: ${input.reason}`
@@ -185,7 +187,7 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       );
     }
     const publishOutcome = await pinnedFiles.publish();
-    pinnedFilesFinalized = true;
+    pinnedFilesFinalized = publishOutcome !== "published_verified";
     if (publishOutcome === "collision") {
       throw new OfficialMarketCalendarAtomicPublishError({
         message: "official calendar atomic publish destination already exists",
@@ -226,6 +228,15 @@ export async function writeOfficialMarketCalendarPublicationPackage(
       packageParentSyncFailed = true;
     }
     stagingCompleted = await stagingSession.cleanup(sourceFileNames);
+    const publishedFilesCompleted = await pinnedFiles.release();
+    pinnedFilesFinalized = true;
+    if (!publishedFilesCompleted) {
+      throw new OfficialMarketCalendarPackageQuarantinedError({
+        artifactHash: prepared.plan.artifact.artifactHash,
+        packagePath: prepared.plan.packagePath,
+        reason: "published_file_completion_failed"
+      });
+    }
     if (!stagingCompleted) {
       throw new OfficialMarketCalendarPackageQuarantinedError({
         artifactHash: prepared.plan.artifact.artifactHash,
@@ -253,8 +264,8 @@ export async function writeOfficialMarketCalendarPublicationPackage(
     }
     let pinnedFileReleaseFailed = false;
     if (pinnedFiles !== undefined && !pinnedFilesFinalized) {
-      pinnedFilesFinalized = await pinnedFiles.release();
-      pinnedFileReleaseFailed = !pinnedFilesFinalized;
+      pinnedFileReleaseFailed = !(await pinnedFiles.release());
+      pinnedFilesFinalized = true;
     }
     if (published && !released) {
       throw new Error(

@@ -66,7 +66,7 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
     if (child.exitCode === null) child.kill();
     throw new Error(`official calendar package file pin failed: ${stderr.trim()}`);
   }
-  let finalized = false;
+  let state: "pinned" | "publishing" | "published" | "finalized" = "pinned";
   return Object.freeze({
     publish: publishPinnedPackage,
     release: () => finalizeRelease()
@@ -75,27 +75,38 @@ export async function pinOfficialMarketCalendarWindowsPackageFiles(input: {
   async function publishPinnedPackage(): Promise<
     "published_verified" | "published_unverified" | "collision" | "indeterminate"
   > {
-    if (finalized || child.exitCode !== null || child.stdin.destroyed) {
+    if (state !== "pinned" || child.exitCode !== null || child.stdin.destroyed) {
       return "indeterminate";
     }
-    finalized = true;
+    state = "publishing";
     const close = new Promise<number | null>((resolve) => child.once("close", resolve));
-    child.stdin.end("PUBLISH\n");
+    child.stdin.write("PUBLISH\n");
+    const verified = await waitForMarker("PACKAGE_FILES_VERIFIED");
+    if (verified) {
+      state = "published";
+      return "published_verified";
+    }
+    if (child.exitCode === null) child.kill();
     const code = await waitForExit(close);
-    if (code === "timeout") child.kill();
+    state = "finalized";
     const lines = stdout.split(/\r?\n/u);
     if (lines.includes("PACKAGE_DIRECTORY_COLLISION")) return "collision";
     if (!lines.includes("PACKAGE_DIRECTORY_PUBLISHED")) return "indeterminate";
-    return code === 0 && lines.includes("PACKAGE_FILES_VERIFIED")
-      ? "published_verified"
-      : "published_unverified";
+    return code === 0 ? "published_verified" : "published_unverified";
   }
 
   async function finalizeRelease(): Promise<boolean> {
-    if (finalized || child.exitCode !== null || child.stdin.destroyed) return false;
-    finalized = true;
+    if (
+      (state !== "pinned" && state !== "published") ||
+      child.exitCode !== null ||
+      child.stdin.destroyed
+    ) {
+      return false;
+    }
+    const command = state === "published" ? "COMPLETE\n" : "RELEASE\n";
+    state = "finalized";
     const close = new Promise<number | null>((resolve) => child.once("close", resolve));
-    child.stdin.end("RELEASE\n");
+    child.stdin.end(command);
     const code = await waitForExit(close);
     if (code === "timeout") child.kill();
     return code === 0;

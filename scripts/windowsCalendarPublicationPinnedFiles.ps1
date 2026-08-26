@@ -388,6 +388,9 @@ try {
             }
             if (-not $collision -and $sessionError -eq 0) {
                 [Console]::Out.WriteLine("PACKAGE_FILES_VERIFIED")
+                [Console]::Out.Flush()
+                $completionCommand = [Console]::In.ReadLine()
+                if ($completionCommand -ne "COMPLETE") { $sessionError = 87 }
             }
         }
         elseif ($command -ne "RELEASE") { $sessionError = 87 }
