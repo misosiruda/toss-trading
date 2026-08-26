@@ -1552,7 +1552,10 @@ canonical `sources/sha256` hierarchy를 no-replace로 예약한 뒤 각 planned 
 `FileRenameInfo`를 적용해 handle을 닫지 않고 final path로 이동한다. Staging에 추가된 unplanned
 entry는 final package로 이동하지 않으며, destination volume/file identity, hash/length와 exact
 directory-entry set을 검증한 뒤 final tree 전체를 root까지 sync한다. Staging session은 남은
-staging tree가 exact planned cleanup으로 비워지는지도 확인한다.
+staging tree가 exact planned cleanup으로 비워지는지도 확인한다. 이전 attempt가 final hash
+directory에 incomplete tree를 남겼다면 exact tree/hash 검증 실패를 확인하고 그 directory
+identity를 retained handle로 같은 parent의 unique quarantine path에 no-replace 이동한 뒤 현재
+planned file publication을 재개한다. Exact complete destination만 정상 collision으로 취급한다.
 Pre-publish failure와 collision은 expected file name만 handle-relative로 정리하고, package
 atomic move 결과가 timeout/abnormal exit/postcondition failure로 불확실하거나 package parent
 sync 또는 identity completion이 실패하면 visible package/staging을 삭제하지 않고

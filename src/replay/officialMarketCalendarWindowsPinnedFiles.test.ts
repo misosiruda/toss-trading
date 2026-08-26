@@ -155,6 +155,58 @@ test(
 );
 
 test(
+  "Windows calendar package file publication quarantines and recovers a partial destination",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const publicationRoot = await mkdtemp(
+      join(tmpdir(), "calendar-package-partial-destination-")
+    );
+    const packageNamespace = join(publicationRoot, "sha256");
+    const stagingRoot = join(packageNamespace, ".package.staging");
+    const destinationName = "a".repeat(64);
+    const destinationRoot = join(packageNamespace, destinationName);
+    const artifactBytes = Buffer.from("{\"schemaVersion\":1}\n", "utf8");
+    let pinned: OfficialMarketCalendarWindowsPinnedFiles | undefined;
+    let finalized = false;
+    try {
+      await mkdir(stagingRoot, { recursive: true });
+      await writeFile(join(stagingRoot, "artifact.json"), artifactBytes);
+      await mkdir(destinationRoot);
+      await writeFile(join(destinationRoot, "artifact.json"), "partial\n");
+      pinned = await pinOfficialMarketCalendarWindowsPackageFiles({
+        stagingRoot,
+        destinationRoot,
+        files: [descriptor("artifact.json", artifactBytes)]
+      });
+
+      const outcome = await pinned.publish();
+      finalized = true;
+      assert.equal(outcome, "published_verified");
+      assert.deepEqual(
+        await readFile(join(destinationRoot, "artifact.json")),
+        artifactBytes
+      );
+      const quarantineName = (await readdir(packageNamespace)).find((entry) =>
+        entry.startsWith(`${destinationName}.quarantine-`)
+      );
+      assert.notEqual(quarantineName, undefined);
+      assert.equal(
+        await readFile(
+          join(packageNamespace, quarantineName!, "artifact.json"),
+          "utf8"
+        ),
+        "partial\n"
+      );
+    } finally {
+      if (pinned !== undefined && !finalized) {
+        await pinned.release();
+      }
+      await rm(publicationRoot, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
   "Windows calendar package file pins publish retained identity after staged path substitution",
   { skip: process.platform !== "win32" },
   async () => {

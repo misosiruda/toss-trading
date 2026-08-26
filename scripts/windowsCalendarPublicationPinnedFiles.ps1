@@ -24,9 +24,11 @@ public static class TossTradingCalendarPinnedFile
     private const uint FILE_READ_ATTRIBUTES = 0x00000080;
     private const uint DELETE = 0x00010000;
     private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
     private const uint FILE_SHARE_DELETE = 0x00000004;
     private const uint OPEN_EXISTING = 3;
     private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
     private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
     private const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
     private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
@@ -66,17 +68,17 @@ public static class TossTradingCalendarPinnedFile
         handle = CreateFileW(path, GENERIC_READ | FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
         if (handle == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
         FILE_ATTRIBUTE_TAG_INFO attributes;
-        if (!GetFileInformationByHandleEx(handle, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return Marshal.GetLastWin32Error();
-        if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) return 4390;
+        if (!GetFileInformationByHandleEx(handle, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return RejectPin(ref handle, Marshal.GetLastWin32Error());
+        if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) return RejectPin(ref handle, 4390);
+        bool matches;
         using (SafeFileHandle safe = new SafeFileHandle(handle, false))
         using (FileStream stream = new FileStream(safe, FileAccess.Read))
         using (SHA256 sha = SHA256.Create())
         {
-            if (stream.Length != expectedLength) return 13;
             string actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
-            if (!String.Equals(actual, expectedHash, StringComparison.Ordinal)) return 13;
+            matches = stream.Length == expectedLength && String.Equals(actual, expectedHash, StringComparison.Ordinal);
         }
-        return 0;
+        return matches ? 0 : RejectPin(ref handle, 13);
     }
 
     public static int ReadIdentity(IntPtr handle, out string identity)
@@ -105,6 +107,55 @@ public static class TossTradingCalendarPinnedFile
     public static int CreateDirectoryNoReplace(string path)
     {
         return CreateDirectoryW(path, IntPtr.Zero) ? 0 : Marshal.GetLastWin32Error();
+    }
+
+    public static int VerifyExistingPackage(string destinationRoot, string[] relativePaths, string[] expectedHashes, long[] expectedLengths)
+    {
+        int exactTreeError = VerifyExactTree(destinationRoot, relativePaths);
+        if (exactTreeError != 0) return exactTreeError;
+        List<IntPtr> existingHandles = new List<IntPtr>();
+        try
+        {
+            for (int index = 0; index < relativePaths.Length; index++)
+            {
+                IntPtr existing;
+                int error = Pin(
+                    Path.Combine(destinationRoot, relativePaths[index].Replace('/', '\\')),
+                    expectedHashes[index],
+                    expectedLengths[index],
+                    out existing
+                );
+                if (error != 0) return error;
+                existingHandles.Add(existing);
+            }
+            return 0;
+        }
+        finally
+        {
+            foreach (IntPtr existing in existingHandles) CloseHandle(existing);
+        }
+    }
+
+    public static int QuarantineDirectoryNoReplace(string path, string quarantinePath)
+    {
+        IntPtr directory = CreateFileW(
+            path,
+            FILE_READ_ATTRIBUTES | DELETE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+            IntPtr.Zero
+        );
+        if (directory == INVALID_HANDLE_VALUE) return Marshal.GetLastWin32Error();
+        try
+        {
+            FILE_ATTRIBUTE_TAG_INFO attributes;
+            if (!GetFileInformationByHandleEx(directory, 9, out attributes, (uint)Marshal.SizeOf(typeof(FILE_ATTRIBUTE_TAG_INFO)))) return Marshal.GetLastWin32Error();
+            if ((attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != FILE_ATTRIBUTE_DIRECTORY) return 4390;
+            return MovePinnedFileNoReplace(directory, quarantinePath);
+        }
+        finally { CloseHandle(directory); }
     }
 
     public static int MovePinnedFileNoReplace(IntPtr retained, string destinationPath)
@@ -198,6 +249,13 @@ public static class TossTradingCalendarPinnedFile
         if (handle == IntPtr.Zero || handle == INVALID_HANDLE_VALUE) { handle = IntPtr.Zero; return 0; }
         bool closed = CloseHandle(handle); int error = closed ? 0 : Marshal.GetLastWin32Error(); handle = IntPtr.Zero; return error;
     }
+
+    private static int RejectPin(ref IntPtr handle, int error)
+    {
+        if (handle != IntPtr.Zero && handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
+        handle = IntPtr.Zero;
+        return error;
+    }
 }
 "@
 
@@ -257,11 +315,32 @@ try {
                 )
             }
             if ($sessionError -eq 80 -or $sessionError -eq 183) {
-                $sessionError = 0
-                $collision = $true
-                [Console]::Out.WriteLine("PACKAGE_DIRECTORY_COLLISION")
+                $sessionError = [TossTradingCalendarPinnedFile]::VerifyExistingPackage(
+                    $destinationRoot,
+                    $relativePaths.ToArray(),
+                    $expectedHashes.ToArray(),
+                    $expectedLengths.ToArray()
+                )
+                if ($sessionError -eq 0) {
+                    $collision = $true
+                    [Console]::Out.WriteLine("PACKAGE_DIRECTORY_COLLISION")
+                }
+                else {
+                    $quarantinePath = "{0}.quarantine-{1}" -f $destinationRoot, [Guid]::NewGuid().ToString("D")
+                    $sessionError = [TossTradingCalendarPinnedFile]::QuarantineDirectoryNoReplace(
+                        $destinationRoot,
+                        $quarantinePath
+                    )
+                    if ($sessionError -eq 0) {
+                        [Console]::Out.WriteLine("PACKAGE_PARTIAL_DIRECTORY_QUARANTINED")
+                        [Console]::Out.Flush()
+                        $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
+                            $destinationRoot
+                        )
+                    }
+                }
             }
-            elseif ($sessionError -eq 0) {
+            if (-not $collision -and $sessionError -eq 0) {
                 $sessionError = [TossTradingCalendarPinnedFile]::CreateDirectoryNoReplace(
                     (Join-Path $destinationRoot "sources")
                 )
