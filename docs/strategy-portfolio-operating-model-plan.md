@@ -897,6 +897,8 @@ interface CandidateAssignment {
   scoringModelVersion: string;
   sizingInputHash: string;
   sizingOutputHash: string;
+  assignmentHash: string;
+  createdAt: string;
 }
 ```
 
@@ -927,6 +929,14 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
 만든다. selector mandate의 range는 assignment 값과 정확히 같아야 하며 input/output hash
 검증을 모두 통과해야 한다. assignment의 portfolio/snapshot/policy/as-of scope는 request를
 읽지 못해도 독립 검증할 수 있도록 직접 저장하고, resolve 가능한 request와도 일치해야 한다.
+- `assignmentHash`는 `assignmentId`, `assignmentHash`, `createdAt`을 제외한 assignment 전체
+  payload에서 계산한다. reason/evidence ref는 canonical sort하고 duplicate를 거절하며
+  eligibility, score, model version, input/output hash와 range/notional을 모두 digest에 포함한다.
+  append와 mandate 발급 전에 독립 rehash가 일치해야 한다.
+- mandate resolver는 exact selection policy와 sizing input의 feature/evidence를 다시 읽어
+  required evidence freshness 및 모든 hard gate를 deterministic하게 재평가한다. 재계산한
+  `eligibility`, `selectionScore`, `reasonCodes`가 assignment와 정확히 같지 않거나 assignment가
+  `eligible`이 아니면 input/output/assignment hash가 유효해도 mandate를 만들지 않는다.
 
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
@@ -1496,7 +1506,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-trigger-claims.jsonl` | 신규 append-only | mutable snapshot과 독립적인 trigger dedupe claim |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
-| `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
+| `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력·결과와 전체 digest |
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
 | `portfolio-action-risk-decisions.jsonl` | 신규 append-only | plan/action/pre-state별 Risk Engine 최종 판단 |
 | `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, fill execution, rejection, stale, applied transition chain |
@@ -1652,6 +1662,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - price/volume 기반 `market_technical` feature부터 구현
 - evidence completeness와 scoring model version 기록
 - candidate assignment append-only repository와 request lineage 검증
+- assignment full-payload digest와 eligibility/hard-gate 독립 재평가
 - canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
@@ -1660,6 +1671,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 같은 입력은 같은 ordering과 reason code를 만든다.
 - policy가 요구하는 evidence/source/freshness rule을 exact record에서 읽는다.
 - required evidence가 없는 candidate는 fail-closed한다.
+- assignment 전체 payload rehash와 eligibility/score/reason code 재계산이 일치한다.
 - sizing input record에서 feature, exposure/liquidity cap과 cost input을 재구성해 같은 hash와
   output range를 만든다.
 
@@ -1737,6 +1749,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - mandate event chain의 선형 predecessor와 derived status 검증
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
+- candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
