@@ -1640,11 +1640,22 @@ interface PaperFillExecutionRecord {
   rebalancePlanId: string;
   rebalanceActionId: string;
   fillId: string;
+  market: Market;
+  symbol: string;
   side: "BUY" | "SELL";
   requestedNotionalKrw: number;
   requestedQuantity: number;
   quantityOverride: number | null;
   sourcePriceKrw: number;
+  sourcePriceEvidence: {
+    sourceContractId: string;
+    evidenceRef: string;
+    evidenceHash: string;
+    market: Market;
+    symbol: string;
+    priceField: "last_price";
+    observedAt: string;
+  };
   averagePriceKrw: number | null;
   fillPriceKrw: number;
   quantity: number;
@@ -1865,6 +1876,11 @@ type RebalancePlanEvent =
   participation에서 fill price, quantity, gross/net amount와 모든 cost component를 독립 재계산해
   stored output 및 total과 대조한다. exact retry만 기존 record로 수렴하며 이 검증 전에는
   execution event, cost/flow event 또는 portfolio mutation을 만들지 않는다.
+- `sourcePriceEvidence`는 fill의 market/symbol과 정확히 같은 typed price observation을 가리키며
+  source contract, evidence ID/hash, `last_price` field와 observed time을 직접 보존한다. resolver는
+  evidence payload를 독립 rehash하고 해당 field의 값과 `sourcePriceKrw`, freshness cutoff를
+  대조한다. generic `evidenceRefs`의 배열 순서나 liquidity evidence를 source price origin으로
+  추정하지 않으며 unresolved/mismatched observation은 fill과 mark-head mutation을 거절한다.
 - 성공적으로 저장되는 `PaperFillExecutionRecord.liquidityStatus`는 기존
   `PaperLiquidityStatus` 중 `not_modeled`, `sufficient`, `partial`만 사용한다. `rejected` 또는
   `stale` liquidity result와 reject reason이 있는 결과는 fill record나 execution/accounting
@@ -1917,6 +1933,12 @@ type RebalancePlanEvent =
 - event는 action sequence/fill sequence 순서로만
   append하며 다음 action은 이전 action이 target을 채운 뒤에만 시작한다. retry는 기존 fill
   ID/event를 반환하며 새 ID로 같은 체결을 중복 계상할 수 없다.
+- 하나의 accepted fill은 pre-fill source-price valuation과 valuation head update, verified
+  `PaperFillExecutionRecord`, portfolio quantity/cash mutation, position mutation-head event,
+  reservation/turnover/cost/capital-flow/risk-state event, resulting portfolio snapshot과
+  `execution_applied` event를 하나의 durable transaction으로 commit한다. 적용 순서는 canonical
+  sequence로 고정하되 외부 observer에는 전부 보이거나 전부 보이지 않아야 한다. 중간 실패는
+  모두 rollback하며 restart가 새 quantity와 이전 mark head 또는 회계 없는 portfolio를 볼 수 없다.
 - 첫 fill 전에는 plan record의 preview version/snapshot을 current state와 비교한다. 이후
   fill의 expected pre-state는 직전 `execution_applied`의 resulting state와 같아야 한다.
   이 선형 chain에 기록된 in-plan mutation은 stale이 아니며, 그 외 version/snapshot drift는
@@ -2660,6 +2682,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
 - fill 전 source-price valuation, source-price mutation head와 execution-cost 단일 계상
 - fill-price rebase 및 valuation 없는 price-changing migration 거절
+- source-price evidence가 generic/liquidity ref이거나 market/symbol/as-of/hash가 다른 fill 거절
 - corrupt mark head snapshot, event branch와 unauthenticated mutation origin 거절
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
@@ -2683,9 +2706,11 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - positive execution-cost delta, unresolved execution과 duplicate cost event 거절
 - execution-cost plan/action/fill origin mismatch와 cross-plan duplicate fill 거절
 - actual fill full-payload rehash, 비용 breakdown 재계산과 execution-cost delta 일치
+- typed source-price evidence의 market/symbol/field/as-of/hash와 fill source price 일치
 - BUY worst-case/actual net cash debit의 spendable cash·reserve cap 검증
 - SELL actual net cash credit의 approved/recomputed minimum floor 검증
 - BUY/SELL fill accounting group의 side별 cost/flow 순서와 atomic append 검증
+- valuation/head, fill, quantity/cash mutation, 회계·risk·snapshot·execution event 전체 원자성
 - fee-only equity 감소 직후 unit NAV/drawdown 재계산과 breach 평가
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
 - 동일 drawdown semantics의 policy activation에서 unit NAV/high-water mark 승계
