@@ -252,6 +252,25 @@ interface BucketSelectionPolicyRef {
   hash: string;
 }
 
+interface PortfolioRiskRuleSetRecord {
+  riskRuleSetRecordId: string;
+  version: string;
+  hash: string;
+  rules: Array<{
+    ruleId: string;
+    ruleVersion: string;
+    appliesTo: Array<"BUY" | "SELL">;
+    parameterHash: string;
+  }>;
+  createdAt: string;
+}
+
+interface PortfolioRiskRuleSetRef {
+  riskRuleSetRecordId: string;
+  version: string;
+  hash: string;
+}
+
 type BucketSelectionTrigger =
   | { mode: "below_min" }
   | {
@@ -334,6 +353,7 @@ interface StrategyBucketPolicy {
   enabledMarkets: Market[];
   enabledAssetClasses: string[];
   selectionPolicyRef: BucketSelectionPolicyRef;
+  riskRuleSetRef: PortfolioRiskRuleSetRef;
 }
 ```
 
@@ -371,9 +391,15 @@ interface StrategyBucketPolicy {
 - activation과 replay 시작 시 `selectionPolicyRef`가 같은 bucket/version/hash의 immutable
   record로 resolve되어야 한다. required evidence, freshness, source contract, hard gate,
   feature와 scoring version을 구현 기본값으로 대체하지 않는다.
+- `riskRuleSetRef`도 같은 ID/version/hash의 immutable record로 resolve하고 rule ID 중복,
+  빈 applicability와 parameter hash mismatch를 거절한다. action side에 적용되는 rule 전체가
+  Risk Engine decision의 required set이며 caller가 일부 rule만 선택할 수 없다.
+- risk rule set은 rule ID로 canonical sort하고 ID/createdAt/hash를 제외한 payload에서 hash를
+  계산한다. BUY와 SELL 각각에 적용되는 required rule이 하나 이상이어야 하며 record는
+  append-only다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
-  `selectionPolicyRef`와 `reviewCadence` boundary ref를 포함해 selection/schedule rule 교체가
-  동일 policy hash 아래에서 일어나지 않게 한다.
+  `selectionPolicyRef`, `riskRuleSetRef`와 `reviewCadence` boundary ref를 포함해
+  selection/risk/schedule rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
 - take-profit을 사용하지 않으면 `disabled`, 전량 익절은 trigger ratio가 필수인
   `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
   `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
@@ -618,6 +644,8 @@ type BucketEquityEvent =
       policyHash: string;
       amountKrw: number;
       rebalancePlanId: string;
+      rebalanceActionId: string;
+      fillId: string;
       asOf: string;
     }
   | {
@@ -641,7 +669,7 @@ type BucketEquityEvent =
       bucket: StrategyBucket;
       policyHash: string;
       equityDeltaKrw: number;
-      executionEventId: string;
+      fillId: string;
       evidenceRefs: string[];
       asOf: string;
     };
@@ -663,10 +691,14 @@ type BucketEquityEvent =
   flow 직전 unit NAV에서 unit을 mint/burn한다. 따라서 자금 이동 자체는 unit NAV와
   drawdown을 바꾸지 않는다. 양수 amount는 mint, 음수 amount는 burn이며 0 amount와
   보유 unit을 초과하는 burn은 거절한다.
+- capital flow는 exact plan/action/fill origin을 resolve하고 amount가 해당 fill에서 파생된
+  cash 이동과 일치해야 한다. `fillId`는 모든 bucket capital-flow event에서 unique하며
+  acknowledgement-loss retry는 기존 event를 반환한다. 새 event ID로
+  같은 origin을 다시 append하거나 다른 amount에 재사용하면 거절한다.
 - bucket 내부 BUY/SELL은 asset/cash 교환이므로 체결 notional 자체는 손익이 아니다.
   mark-to-market PnL과 fee/slippage만 equity와 unit NAV를 변경한다.
 - `valuation.equityDeltaKrw`는 mark-to-market 결과에 따라 양수 또는 음수일 수 있다.
-  `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 fill별 `executionEventId`로 fee/slippage
+  `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 `fillId`로 fee/slippage
   근거를 연결한다. 양수 cost, unresolved execution 또는 중복 cost event는 거절한다.
 - valuation 후 `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
   `drawdownRatio = 1 - unitNavKrw / highWaterMarkUnitNavKrw`로 계산한다.
@@ -826,12 +858,26 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts
+type RebalanceExecutionTarget =
+  | {
+      targetKind: "fractional_notional";
+      targetNotionalKrw: number;
+    }
+  | {
+      targetKind: "whole_share_quantity";
+      targetQuantity: number;
+      referencePriceKrw: number;
+      plannedNotionalKrw: number;
+      residualNotionalKrw: number;
+      priceEvidenceRef: string;
+    };
+
 interface RebalanceActionBase {
   actionId: string;
   actionSequence: number;
   market: Market;
   symbol: string;
-  targetNotionalKrw: number;
+  executionTarget: RebalanceExecutionTarget;
   maximumNotionalKrw: number;
   reasonCodes: string[];
 }
@@ -870,6 +916,9 @@ interface RebalancePlanRecord {
 
 interface PortfolioActionRiskDecision {
   riskDecisionId: string;
+  riskRuleSetRecordId: string;
+  riskRuleSetVersion: string;
+  riskRuleSetHash: string;
   planId: string;
   actionId: string;
   portfolioId: string;
@@ -879,10 +928,13 @@ interface PortfolioActionRiskDecision {
   market: Market;
   symbol: string;
   side: "BUY" | "SELL";
-  actionTargetNotionalKrw: number;
+  actionExecutionTargetHash: string;
   priorCumulativeFilledNotionalKrw: number;
+  priorCumulativeFilledQuantity: number;
   requestedNotionalKrw: number;
+  requestedQuantity: number;
   decision: "approved" | "rejected";
+  requiredRuleIds: string[];
   ruleResults: Array<{
     ruleId: string;
     result: "pass" | "fail";
@@ -934,8 +986,11 @@ type RebalancePlanEvent =
       fillSequence: number;
       fillId: string;
       requestedNotionalKrw: number;
+      requestedQuantity: number;
       filledNotionalKrw: number;
+      filledQuantity: number;
       cumulativeFilledNotionalKrw: number;
+      cumulativeFilledQuantity: number;
       riskDecisionId: string;
       expectedPrePortfolioVersion: string;
       expectedPrePortfolioSnapshotHash: string;
@@ -971,9 +1026,11 @@ type RebalancePlanEvent =
   `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. 두 predecessor field는 함께
   존재하거나 함께 생략하며 predecessor는 terminal `applied`이고 그 resulting snapshot이
   후속 plan의 preview snapshot과 같아야 한다.
-- `targetNotionalKrw`는 immutable plan이 실제 요청하는 양수 금액이며
-  `targetNotionalKrw <= maximumNotionalKrw`를 검증한다. executor는 이 값을 cap 안에서 다시
-  선택하지 않는다. SELL은 snapshot의 가용 position notional도 넘을 수 없다.
+- fractional 실행은 양수 `targetNotionalKrw`, whole-share 실행은 양의 정수
+  `targetQuantity`를 immutable target으로 사용한다. whole-share target은 sizing 시점의
+  reference price/evidence로 `plannedNotionalKrw`와 floor rounding 후 남은
+  `residualNotionalKrw`를 기록한다. planned/target notional은 `maximumNotionalKrw` 이하이고
+  SELL target은 snapshot의 가용 position도 넘을 수 없다. executor는 target을 재결정하지 않는다.
 - 일반 action은 active mandate를 참조한다. `unassigned_legacy_reduce_only`는 mandate ID를
   합성하지 않고 저장된 legacy state의 `observedPositionRef`/`detectedAt`을 직접 참조하며
   SELL만 허용한다. 이 variant도 lifecycle/Risk Engine 검증을 우회할 수 없다.
@@ -988,22 +1045,30 @@ type RebalancePlanEvent =
   Engine decision과 실행 직전 expected version/snapshot, 실행 직후 resulting version/snapshot을
   일대일로 보존한다. fill ID는 plan 전체에서 unique하고 같은 fill을 재기록할 수 없다.
 - `PortfolioActionRiskDecision`은 기존 범용 decision ID를 그대로 신뢰하지 않고 plan/action,
-  policy, market/symbol/side, action target, prior cumulative, 이번 requested notional과 expected
-  pre-state를 canonical risk input hash에 묶는다. `execution_applied` 전에 exact record가
+  policy, market/symbol/side, execution target hash, prior cumulative notional/quantity, 이번
+  requested notional/quantity와 expected pre-state를 canonical risk input hash에 묶는다.
+  `execution_applied` 전에 exact record가
   resolve되고 `approved`이며 action, amount와 expected state가 모두 일치해야 한다.
   stale/unrelated/rejected decision은 실행할 수 없다.
+- decision resolver는 active bucket의 exact risk rule set에서 action side에 적용되는 canonical
+  required rule ID 집합을 다시 계산한다. `requiredRuleIds`와 result의 unique rule ID 집합이
+  정확히 같고 모든 result가 `pass`일 때만 `decision = approved`를 파생한다. 빈 결과,
+  missing/extra/duplicate rule, 하나라도 `fail`인 approved record와 hash mismatch는 corrupt로
+  보고 fail-closed한다.
 - action별 fill sequence는 0부터 gap 없이 증가하고 `filledNotionalKrw > 0`,
-  `cumulativeFilledNotionalKrw = previous cumulative + filledNotionalKrw`, cumulative가 action의
-  `targetNotionalKrw` 이하인지 append 전에 검증한다. requested notional은 남은 target 이하이고
-  filled notional은 requested 이하이어야 한다. event는 action sequence/fill sequence 순서로만
+  `filledQuantity > 0`, notional/quantity cumulative가 각각 이전 값과 이번 fill의 합인지
+  검증한다. fractional requested/filled/cumulative notional은 남은 target 이하이고 whole-share
+  requested/filled/cumulative quantity는 남은 target 이하이어야 한다. requested notional은
+  Risk Engine이 승인한 current price cap 이하여야 한다. event는 action sequence/fill sequence 순서로만
   append하며 다음 action은 이전 action이 target을 채운 뒤에만 시작한다. retry는 기존 fill
   ID/event를 반환하며 새 ID로 같은 체결을 중복 계상할 수 없다.
 - 첫 fill 전에는 plan record의 preview version/snapshot을 current state와 비교한다. 이후
   fill의 expected pre-state는 직전 `execution_applied`의 resulting state와 같아야 한다.
   이 선형 chain에 기록된 in-plan mutation은 stale이 아니며, 그 외 version/snapshot drift는
   plan을 terminal `stale`로 만든다.
-- `applied`는 모든 action의 cumulative filled notional이 각 `targetNotionalKrw`와 정확히
-  같고 체결 결과가 event chain에 기록된 뒤에만 만들고
+- `applied`는 fractional action의 cumulative filled notional이 `targetNotionalKrw`, whole-share
+  action의 cumulative filled quantity가 `targetQuantity`와 정확히 같고 체결 결과가 event
+  chain에 기록된 뒤에만 만들고
   ordered `executionEventIds`와 최종 portfolio version/snapshot을 보존한다. 한 plan에 정확히
   한 번만 존재할 수 있다.
 - current plan state는 event chain fold로 재구성한다. 재시작 후 snapshot/cache와 replay
@@ -1113,6 +1178,34 @@ SELL과 BUY가 같은 orchestration trigger에서 필요하면 side별 plan을 �
 ### 8.3 Idempotency와 동시성
 
 ```ts
+interface PortfolioPolicyTriggerEventBase {
+  policyTriggerEventId: string;
+  portfolioId: string;
+  policyHash: string;
+  eventHash: string;
+  evidenceRefs: string[];
+  asOf: string;
+  createdAt: string;
+}
+
+type PortfolioPolicyTriggerEvent = PortfolioPolicyTriggerEventBase &
+  (
+    | {
+        eventType: "regime_change";
+        market: Market;
+        previousRegime: string;
+        currentRegime: string;
+      }
+    | {
+        eventType: "thesis_evidence_change";
+        mandateId: string;
+        market: Market;
+        symbol: string;
+        previousThesisStatus: "intact" | "watch" | "invalidated" | "unknown";
+        currentThesisStatus: "intact" | "watch" | "invalidated" | "unknown";
+      }
+  );
+
 type PortfolioCycleTrigger =
   | {
       triggerKind: "scheduled";
@@ -1128,7 +1221,8 @@ type PortfolioCycleTrigger =
   | {
       triggerKind: "policy_event";
       eventType: "regime_change" | "thesis_evidence_change";
-      eventRef: string;
+      policyTriggerEventId: string;
+      eventHash: string;
       eventAsOf: string;
     }
   | {
@@ -1144,9 +1238,16 @@ type PortfolioCycleTrigger =
 - `PortfolioCycleTrigger`에서 identity/ref/cutoff를 한 가지 방식으로만 만든다. scheduled는
   `triggerIdentity = scheduled:<scheduleBoundaryHash>`, ref는 canonical slot ID, cutoff는 slot
   end다. `every_tick` identity는 `every_tick`, ref는 packet hash, cutoff는 packet `asOf`다.
-  policy event identity는 `event:<eventType>`, ref/cutoff는 immutable event ref/`asOf`다. risk
+  policy event identity는 `event:<eventType>`, ref/cutoff는 immutable event hash/`asOf`다. risk
   breach identity는 `risk_breach:<stateUpdateKind>`, ref/cutoff는 원인이 된 immutable state
   update ref/`asOf`다. union에 없는 trigger나 field 조합은 거절한다.
+- `PortfolioPolicyTriggerEvent`는 event ID/createdAt/hash를 제외한 canonical payload에서
+  `eventHash`를 만들고 event ID를 hash에서 결정론적으로 파생해 append-only 저장한다. 같은
+  hash 재시도는 기존 record를 반환하고 같은 ID의 payload/hash 충돌을 거절한다. trigger는
+  exact ID/hash/type/as-of/portfolio/policy를 resolve하며 evidence, mandate 또는 market scope가
+  누락·불일치하면 cycle을 만들지 않는다.
+- previous/current 값은 달라야 하고 evidence ref는 비어 있을 수 없다. thesis event의 mandate는
+  같은 portfolio/policy/market/symbol의 active mandate로 resolve되어야 한다.
 - `evidenceCutoffAt`은 처리 시작 시각이 아니라 trigger에서 canonical하게 파생한다.
   scheduled cycle은 schedule slot end, `every_tick`은 packet `asOf`, event trigger는 event
   `asOf`를 사용하며 같은 `triggerRef`가 다른 cutoff를 제시하면 거절한다.
@@ -1195,6 +1296,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
 | `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
+| `portfolio-risk-rule-set-records.jsonl` | 신규 append-only | side별 required Risk Engine rule과 parameter hash |
 | `session-calendar-records.jsonl` | 신규 append-only | exchange-date별 session과 provenance |
 | `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
@@ -1207,6 +1309,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
 | `candidate-sizing-input-records.jsonl` | 신규 append-only | feature, exposure/liquidity cap과 execution cost input |
+| `portfolio-policy-trigger-events.jsonl` | 신규 append-only | regime/thesis evidence change payload와 canonical hash |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
@@ -1296,6 +1399,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
+- immutable portfolio risk rule set ref와 required-rule resolver
 - immutable market schedule boundary ref와 timezone/calendar/hash validation
 - immutable session calendar record와 date-coverage resolver
 - append-only activation record와 single-active fail-closed resolver
@@ -1392,13 +1496,15 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
-- partial fill 누계가 action target을 넘지 않고 target 미달 plan은 applied가 될 수 없다.
-- 각 action은 cap과 별도의 concrete target notional을 가지며 executor가 금액을 재결정하지 않는다.
+- partial fill 누계가 execution target을 넘지 않고 target 미달 plan은 applied가 될 수 없다.
+- 각 action은 cap과 별도의 fractional notional 또는 whole-share quantity target을 가지며
+  executor가 target을 재결정하지 않는다.
 - unassigned legacy position은 observed state에 연결된 reduce-only SELL로만 표현된다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
 - cadence scheduler와 conflict resolver
+- immutable regime/thesis trigger event repository와 dedupe resolver
 - bucket별 exit policy와 selection request 실행
 - 각 fill 후 mark-to-market 및 risk snapshot 재평가
 - paper-only execution과 audit lineage
@@ -1436,6 +1542,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - activation sequence gap/duplicate와 future/backdated effective time 거절
 - as-of activation fold와 supersedes/retired target 검증
 - active policy의 selection policy ref가 immutable record와 일치
+- active policy의 risk rule set ref와 canonical required rule이 immutable record와 일치
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
 - mandate event chain의 선형 predecessor와 derived status 검증
@@ -1457,11 +1564,14 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - rebalance plan record hash와 선형 event predecessor/scope 일치
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
 - sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
-- action target notional의 양수/cap/가용 position 범위 검증
+- fractional notional과 whole-share quantity/residual의 strict union, cap 및 완료 조건 검증
 - mandate action과 unassigned legacy reduce-only action의 strict lineage union 검증
 - 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 - risk decision의 plan/action/target/pre-state exact scope 및 input hash 검증
+- risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
 - partial fill requested/filled/sequence/cumulative 계산, target 초과와 target 미달 applied 거절
+- capital-flow execution origin 중복과 amount mismatch 거절
+- policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
 ### Gap 및 sizing
 
