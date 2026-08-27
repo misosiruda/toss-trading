@@ -375,6 +375,12 @@ interface StrategyBucketPolicy {
   minWeightRatio: number;
   maxWeightRatio: number;
   maxTurnoverRatio: number;
+  turnoverWindow: {
+    mode: "fixed_utc";
+    durationSeconds: number;
+    anchor: "unix_epoch";
+    denominator: "window_open_portfolio_net_worth_krw";
+  };
   maxDrawdownRatio: number;
   drawdownSemanticsVersion: string;
   drawdownSemanticsHash: string;
@@ -426,6 +432,18 @@ interface StrategyBucketPolicy {
   selection request, mandate 및 rebalance action의 market도 이 집합 안에 있어야 한다.
 - schedule slot ID와 cutoff는 boundary record 및 session calendar로 계산한다. DST, 휴장,
   조기 종료를 구현체의 local timezone이나 처리 시각으로 추정하지 않는다.
+- turnover window는 Unix epoch를 anchor로 한 고정 UTC 구간이며 duration은 양의 정수다.
+  window ID는 portfolio/policy/bucket/window start/end에서 파생하고 분모는 window 시작 직전
+  immutable portfolio snapshot의 positive `virtualNetWorthKrw`로 고정한다. 분모를 resolve할 수
+  없거나 0 이하이면 신규 fill을 fail-closed하며 중간 자금 유입으로 분모를 재설정하지 않는다.
+- 모든 BUY/SELL fill의 absolute filled notional을 `BucketTurnoverEvent`에 append하고 선형
+  predecessor, exact plan/action/fill origin, full event hash와 누계를 검증한다. state hash는
+  event replay 결과와 같아야 하며 fill retry는 기존 event로 수렴한다. turnover ratio는
+  `cumulativeAbsoluteFilledNotionalKrw / windowOpenPortfolioNetWorthKrw`다.
+- turnover event hash는 event ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는
+  hash에서 파생한다. state ID는 window identity에서 파생하며 state hash는 자기 hash를 제외한
+  complete snapshot payload에서 계산한다. resolver는 event chain을 replay해 누계, ratio,
+  last event와 state hash를 독립 검증한다.
 - `risk_breach`는 선택 가능한 `eventTriggers` 값이 아니다. 모든 enabled bucket은 market
   mark, fill, fee, cash-flow와 risk-state update마다 cadence와 무관하게 Risk Engine에서
   재평가되며 breach는 즉시 신규 매수를 차단하고 sell-first reduce-only cycle을 만든다.
@@ -446,7 +464,7 @@ interface StrategyBucketPolicy {
   않는 value type을 거절한다. Risk Engine replay와 fill 직전 재검증은 이 저장 payload의
   수치·enum·boolean만 사용하며 현재 runtime default로 누락값을 보충하지 않는다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
-  `selectionPolicyRef`, `riskRuleSetRef`와 `reviewCadence` boundary ref를 포함해
+  `selectionPolicyRef`, `riskRuleSetRef`, `reviewCadence` boundary ref와 `turnoverWindow`를 포함해
   selection/risk/schedule rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
 - root `PortfolioPolicy`는 bucket lineage가 없는 position 전용
   `PortfolioLegacyReduceOnlyPolicy`를 필수로 가지며 이 config와 rule-set ref도 policy hash에
@@ -621,6 +639,7 @@ type PositionStrategyState =
 
 interface AssignedPositionStrategyState {
   stateKind: "assigned";
+  positionStrategyStateHash: string;
   portfolioId: string;
   market: Market;
   symbol: string;
@@ -642,6 +661,7 @@ interface AssignedPositionStrategyState {
 
 interface UnassignedLegacyPositionStrategyState {
   stateKind: "unassigned_legacy";
+  positionStrategyStateHash: string;
   portfolioId: string;
   market: Market;
   symbol: string;
@@ -656,6 +676,11 @@ interface UnassignedLegacyPositionStrategyState {
 
 기존 replay-local trailing state를 durable strategy state로 승격한다. portfolio snapshot과
 strategy state의 policy/mandate lineage가 일치하지 않으면 신규 매수를 중단한다.
+- `positionStrategyStateHash`는 hash 자체를 제외한 complete variant payload에서 계산한다.
+  resolver는 매 read/restart마다 strict variant를 canonicalize해 독립 rehash하고 assigned
+  state의 mandate/event ID/hash를 exact resolve한다. peak, partial take-profit, holding/review
+  timestamp, thesis status 또는 legacy reason 중 하나라도 digest와 다르면 해당 symbol의 신규
+  action을 fail-closed하고 read-only corruption 상태로 보고한다.
 legacy position에 mandate, policy hash 또는 신뢰할 수 있는 `openedAt`이 없으면 값을
 추정하지 않고 `unassigned_legacy` variant로 저장한다. 이 variant에는 가상의 lineage나
 holding state를 채우지 않으며, 하나라도 존재하면 해당 portfolio의 신규 매수를
@@ -681,6 +706,38 @@ interface BucketRiskState {
   lastBucketEquityEventId: string;
   riskStateHash: string;
   asOf: string;
+}
+
+interface BucketTurnoverState {
+  turnoverStateId: string;
+  turnoverStateHash: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  policyHash: string;
+  windowStartedAt: string;
+  windowEndsAt: string;
+  windowOpenPortfolioNetWorthKrw: number;
+  cumulativeAbsoluteFilledNotionalKrw: number;
+  turnoverRatio: number;
+  lastTurnoverEventId?: string;
+  asOf: string;
+}
+
+interface BucketTurnoverEvent {
+  turnoverEventId: string;
+  turnoverEventHash: string;
+  previousTurnoverEventId?: string;
+  turnoverStateId: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  policyHash: string;
+  rebalancePlanId: string;
+  rebalanceActionId: string;
+  fillId: string;
+  absoluteFilledNotionalKrw: number;
+  resultingCumulativeAbsoluteFilledNotionalKrw: number;
+  asOf: string;
+  createdAt: string;
 }
 
 interface BucketValuationMarkRecord {
@@ -1105,6 +1162,20 @@ interface PortfolioActionRiskDecision {
     | { scopeKind: "bucket"; bucket: StrategyBucket }
     | { scopeKind: "legacy_reduce_only"; legacyPolicyHash: string };
   actionExecutionTargetHash: string;
+  turnoverAssessment:
+    | {
+        scopeKind: "bucket";
+        turnoverStateId: string;
+        turnoverStateHash: string;
+        turnoverWindowOpenPortfolioNetWorthKrw: number;
+        priorBucketTurnoverNotionalKrw: number;
+        requestedBucketTurnoverNotionalKrw: number;
+        resultingBucketTurnoverRatio: number;
+      }
+    | {
+        scopeKind: "legacy_reduce_only";
+        countedInBucketTurnover: false;
+      };
   priorCumulativeFilledNotionalKrw: number;
   priorCumulativeFilledQuantity: number;
   requestedNotionalKrw: number;
@@ -1126,6 +1197,7 @@ interface PortfolioActionRiskDecision {
 type RebalancePlanEvent =
   | {
       planEventId: string;
+      planEventHash: string;
       previousPlanEventId?: never;
       eventType: "previewed";
       planId: string;
@@ -1138,6 +1210,7 @@ type RebalancePlanEvent =
     }
   | {
       planEventId: string;
+      planEventHash: string;
       previousPlanEventId: string;
       eventType: "approved" | "rejected" | "stale";
       planId: string;
@@ -1151,6 +1224,7 @@ type RebalancePlanEvent =
     }
   | {
       planEventId: string;
+      planEventHash: string;
       previousPlanEventId: string;
       eventType: "execution_applied";
       planId: string;
@@ -1178,6 +1252,7 @@ type RebalancePlanEvent =
     }
   | {
       planEventId: string;
+      planEventHash: string;
       previousPlanEventId: string;
       eventType: "applied";
       planId: string;
@@ -1220,6 +1295,9 @@ type RebalancePlanEvent =
 - 첫 event는 predecessor가 없는 `previewed`여야 한다. 이후 event는 직전 event ID를
   `previousPlanEventId`로 참조하며 record와 동일한 plan/cycle/portfolio/version/snapshot/
   policy scope를 직접 저장한다.
+- `planEventHash`는 event ID와 자기 hash를 제외한 complete variant payload에서
+  계산하고 event ID는 hash에서 파생한다. chain fold 전에 모든 event를 독립 rehash하며
+  event type, reason, predecessor, risk/fill 또는 resulting state가 바뀐 record는 fail-closed한다.
 - 허용 전이는 `previewed -> approved | rejected | stale`, `approved -> execution_applied |
   rejected | stale`, `execution_applied -> execution_applied | applied | rejected |
   stale`뿐이다. `rejected`, `stale`, `applied`는 terminal이며 unknown predecessor, duplicate
@@ -1234,6 +1312,12 @@ type RebalancePlanEvent =
   `execution_applied` 전에 exact record가
   resolve되고 `approved`이며 action, amount와 expected state가 모두 일치해야 한다.
   stale/unrelated/rejected decision은 실행할 수 없다.
+- bucket action decision은 current turnover window/state ID/hash, 고정 분모, prior cumulative
+  notional과 이번 요청의 worst-case absolute turnover contribution을 risk input에 묶는다.
+  Risk Engine은 resulting turnover ratio가 `maxTurnoverRatio` 이하인 범위만 승인한다. fill
+  직전 state가 달라졌거나 실제 fill 반영 후 누계가 cap을 넘으면 portfolio mutation과
+  turnover event를 모두 거절한다. fill 성공 시 같은 transaction에서 turnover event/state를
+  갱신한 뒤 다음 action을 평가한다.
 - mandate action은 active mandate의 bucket rule set을 사용하고 legacy action은 root policy의
   `PortfolioLegacyReduceOnlyPolicy.riskRuleSetRef`만 사용한다. scope union이 action lineage와
   맞지 않거나 legacy decision이 bucket을 주장하면 거절한다.
@@ -1578,10 +1662,12 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
 | `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
-| `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
+| `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
 | `bucket-equity-events.jsonl` | 신규 append-only | bucket capital flow, valuation, execution cost |
 | `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
+| `bucket-turnover-events.jsonl` | 신규 append-only | window별 fill turnover 원천과 누계 |
+| `bucket-turnover-state.json` | 신규 snapshot | 고정 분모, 누적 notional과 turnover ratio |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
 | `candidate-sizing-input-records.jsonl` | 신규 append-only | feature, exposure/liquidity cap과 execution cost input |
 | `portfolio-policy-trigger-events.jsonl` | 신규 append-only | regime/thesis evidence change payload와 canonical hash |
@@ -1708,6 +1794,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - portfolio 안에서 한 종목 하나의 active mandate invariant
 - 기존 position의 `unassigned_legacy` migration
 - position peak/review/holding age와 bucket unit-NAV drawdown state persistence
+- position strategy state full-payload digest와 restart 검증
 
 완료 조건:
 
@@ -1720,6 +1807,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
   `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
 - mandate event chain의 branch/unknown predecessor/terminal transition을 거절한다.
 - mandate/event/state의 canonical hash가 다르면 신규 매수를 거절한다.
+- position strategy state의 peak/partial-exit/holding/review payload rehash가 일치한다.
 - 재시작 후 bucket equity event replay와 risk snapshot이 같은 unit NAV/high-water mark를 만든다.
 
 ### PR 4. `PortfolioGapAnalyzer`
@@ -1766,6 +1854,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - target range, turnover, cost와 liquidity threshold
 - portfolio/policy version binding과 idempotency key
 - immutable plan record와 append-only state event chain
+- plan event full-payload digest, hash-derived ID와 독립 rehash
+- bucket turnover window/event/state와 action risk input binding
 - side별 chained plan과 fill별 risk decision/execution state lineage
 - action-scoped risk decision resolver와 partial-fill cumulative guard
 - read-only preview 및 artifact 저장
@@ -1775,6 +1865,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - preview는 portfolio와 trade를 변경하지 않는다.
 - stale preview 또는 version mismatch를 적용할 수 없다.
 - plan 상태는 허용된 선형 transition만 가지며 재시작 후 동일하게 복원된다.
+- plan event payload digest가 다르면 승인·실행을 fail-closed한다.
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
@@ -1855,6 +1946,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
 - bucket `enabledMarkets`와 scheduled boundary/packet/request/mandate/action market 일치
 - rebalance plan record hash와 선형 event predecessor/scope 일치
+- rebalance plan event full-payload digest와 hash-derived ID 검증
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
 - sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
 - fractional BUY notional, fractional SELL quantity와 whole-share quantity/residual의 strict
@@ -1862,6 +1954,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - mandate action과 unassigned legacy reduce-only action의 strict lineage union 검증
 - 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 - risk decision의 plan/action/target/pre-state exact scope 및 input hash 검증
+- turnover window/state replay, prior/requested 누계와 risk-decision cap 검증
 - full risk decision digest rehash와 deterministic rule/output 재평가
 - mandate bucket rule scope와 legacy portfolio-level SELL rule scope 분리
 - risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
