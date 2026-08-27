@@ -370,11 +370,12 @@ interface StrategyBucketPolicy {
   weekly anchor와 non-session-day rule을 고정한다. 누락·중복 market, hash mismatch 또는
   policy가 허용한 market과 boundary market 불일치는 activation에서 거절한다.
 - `weeklyAnchorDay`는 weekly record에서만 필수이며 hourly/daily record에는 허용하지 않는다.
-  `hash`는 ID와 `createdAt`을 제외한 전체 boundary payload의 canonical hash로 검증한다.
+  `hash`는 ID, `hash` 자체와 `createdAt`을 제외한 전체 boundary payload의 canonical hash로
+  검증한다.
 - `SessionCalendarRecord`는 exchange date별 session을 중복 없이 정렬해 저장한다. closed
   session은 open/close를 가질 수 없고, open session은 timezone offset이 포함된
-  `opensAt < closesAt`을 필수로 가진다. record hash는 ID/createdAt을 제외한 전체 payload를
-  묶고 각 entry는 provenance ref를 가져야 한다.
+  `opensAt < closesAt`을 필수로 가진다. record hash는 ID, `hash` 자체와 `createdAt`을 제외한
+  전체 payload를 묶고 각 entry는 provenance ref를 가져야 한다.
 - valid range의 모든 calendar date는 open 또는 closed entry를 정확히 하나 가져야 하며
   provenance ref는 검증된 official calendar evidence/publication으로 resolve되어야 한다.
 - boundary resolver는 exact session calendar ID/version/hash를 읽고 market/timezone 일치와
@@ -747,6 +748,9 @@ interface PortfolioSizingSnapshot {
 
 interface BucketSelectionRequest {
   requestId: string;
+  cycleId: string;
+  triggerIdentity: string;
+  triggerRef: string;
   portfolioId: string;
   portfolioSnapshotId: string;
   portfolioSnapshotHash: string;
@@ -843,6 +847,10 @@ stale이면 높은 score가 있더라도 `eligible`로 승격하지 않는다.
 값과 provenance, 계산된 exposure payload를 canonical form으로 append-only 저장한다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
+- `requestId`는 `cycleId + bucket + portfolioSnapshotHash + policyHash + gapBasis`의 canonical
+  hash에서 결정론적으로 파생한다. request는 cycle의 exact trigger identity/ref를 직접
+  보존하며 같은 ID의 exact retry는 기존 record를 반환한다. 같은 ID의 다른 payload나 한
+  cycle/bucket에 두 번째 request를 append하는 요청은 거절한다.
 `CandidateSizingInputRecord`는 policy/snapshot/request scope, versioned feature value와 evidence,
 exposure cap, liquidity 및 execution cost model input 전체를 canonical form으로 append-only
 저장한다. `sizingInputHash`는 record ID, hash와 생성 시각을 제외한 이 전체 payload에서
@@ -850,6 +858,10 @@ exposure cap, liquidity 및 execution cost model input 전체를 canonical form�
 scope/hash가 다르면 생성하지 않는다.
 feature/evidence ref와 분류 metadata는 모두 resolve되어야 하며 array와 exposure key는
 canonical order로 정규화한다. sizing algorithm version이 다르면 같은 input으로 취급하지 않는다.
+- `sizingInputRecordId`와 `assignmentId`는 서로 다른 domain prefix와
+  request/market/symbol에서 각각 결정론적으로 파생한다. exact retry는 기존 record를
+  반환하고 같은 identity에 다른 sizing input hash 또는 assignment payload를 쓰는 요청은
+  fail-closed한다.
 `sizingOutputHash`는 계산된 min/target/max weight range와 최대 notional을 canonicalize해
 만든다. selector mandate의 range는 assignment 값과 정확히 같아야 하며 input/output hash
 검증을 모두 통과해야 한다. assignment의 portfolio/snapshot/policy/as-of scope는 request를
@@ -933,6 +945,8 @@ interface PortfolioActionRiskDecision {
   priorCumulativeFilledQuantity: number;
   requestedNotionalKrw: number;
   requestedQuantity: number;
+  worstCaseFillNotionalKrw: number;
+  approvedMaximumFillNotionalKrw: number;
   decision: "approved" | "rejected";
   requiredRuleIds: string[];
   ruleResults: Array<{
@@ -1058,8 +1072,15 @@ type RebalancePlanEvent =
 - action별 fill sequence는 0부터 gap 없이 증가하고 `filledNotionalKrw > 0`,
   `filledQuantity > 0`, notional/quantity cumulative가 각각 이전 값과 이번 fill의 합인지
   검증한다. fractional requested/filled/cumulative notional은 남은 target 이하이고 whole-share
-  requested/filled/cumulative quantity는 남은 target 이하이어야 한다. requested notional은
-  Risk Engine이 승인한 current price cap 이하여야 한다. event는 action sequence/fill sequence 순서로만
+  requested/filled/cumulative quantity는 남은 target 이하이어야 한다. Risk Engine은 current
+  price와 slippage bound로 `worstCaseFillNotionalKrw`를 계산하고 action remaining cap, cash,
+  exposure와 liquidity limit 중 최소값을 `approvedMaximumFillNotionalKrw`로 승인한다.
+  requested와 worst-case notional이 이 approved maximum 이하여야만 decision을 승인한다.
+- deterministic paper fill을 계산한 뒤 portfolio를 변경하기 전에 actual `filledNotionalKrw`가
+  해당 approved maximum 이하이고, 새 cumulative filled notional이 action의
+  `maximumNotionalKrw` 및 current cash/exposure cap을 넘지 않는지 다시 검증한다. 초과 fill은
+  `execution_applied`, capital flow 또는 portfolio mutation 없이 거절한다.
+- event는 action sequence/fill sequence 순서로만
   append하며 다음 action은 이전 action이 target을 채운 뒤에만 시작한다. retry는 기존 fill
   ID/event를 반환하며 새 ID로 같은 체결을 중복 계상할 수 없다.
 - 첫 fill 전에는 plan record의 preview version/snapshot을 current state와 비교한다. 이후
@@ -1459,6 +1480,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - min이 0이고 target이 양수인 선택적 bucket은 명시적인 entry floor까지만 empty
   portfolio bootstrap이 가능하며 floor 도달 후 target을 반복 추격하지 않는다.
 - cash reserve 미달이면 모든 buy capacity가 0이다.
+- 같은 cycle/bucket의 selection request retry는 기존 record로 수렴한다.
 
 ### PR 5. Bucket candidate selector contract
 
@@ -1556,8 +1578,10 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - manual `classify_existing_reduce_only`의 buy/increase 차단
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
+- cycle-derived selection request와 request/symbol-derived assignment identity 및 collision 거절
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
+- schedule/session calendar hash 입력의 ID/digest/createdAt 제외와 독립 rehash 검증
 - session calendar ID/version/hash/date coverage와 entry provenance 검증
 - scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
 - bucket `enabledMarkets`와 scheduled boundary/packet/request/mandate/action market 일치
@@ -1570,6 +1594,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - risk decision의 plan/action/target/pre-state exact scope 및 input hash 검증
 - risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
 - partial fill requested/filled/sequence/cumulative 계산, target 초과와 target 미달 applied 거절
+- whole-share slippage 후 actual/cumulative notional의 approved cash/exposure/liquidity cap 재검증
 - capital-flow execution origin 중복과 amount mismatch 거절
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
