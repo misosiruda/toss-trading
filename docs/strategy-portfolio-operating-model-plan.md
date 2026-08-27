@@ -275,6 +275,32 @@ interface ScheduleBoundaryRecord {
   createdAt: string;
 }
 
+type SessionCalendarEntry =
+  | {
+      exchangeDate: string;
+      sessionKind: "closed";
+      sourceEvidenceRefs: string[];
+    }
+  | {
+      exchangeDate: string;
+      sessionKind: "regular" | "early_close" | "delayed_open";
+      opensAt: string;
+      closesAt: string;
+      sourceEvidenceRefs: string[];
+    };
+
+interface SessionCalendarRecord {
+  sessionCalendarRecordId: string;
+  market: Market;
+  version: string;
+  hash: string;
+  timeZone: string;
+  validFromExchangeDate: string;
+  validThroughExchangeDate: string;
+  sessions: SessionCalendarEntry[];
+  createdAt: string;
+}
+
 interface ScheduleBoundaryRef {
   scheduleBoundaryRecordId: string;
   version: string;
@@ -325,6 +351,15 @@ interface StrategyBucketPolicy {
   policy가 허용한 market과 boundary market 불일치는 activation에서 거절한다.
 - `weeklyAnchorDay`는 weekly record에서만 필수이며 hourly/daily record에는 허용하지 않는다.
   `hash`는 ID와 `createdAt`을 제외한 전체 boundary payload의 canonical hash로 검증한다.
+- `SessionCalendarRecord`는 exchange date별 session을 중복 없이 정렬해 저장한다. closed
+  session은 open/close를 가질 수 없고, open session은 timezone offset이 포함된
+  `opensAt < closesAt`을 필수로 가진다. record hash는 ID/createdAt을 제외한 전체 payload를
+  묶고 각 entry는 provenance ref를 가져야 한다.
+- valid range의 모든 calendar date는 open 또는 closed entry를 정확히 하나 가져야 하며
+  provenance ref는 검증된 official calendar evidence/publication으로 resolve되어야 한다.
+- boundary resolver는 exact session calendar ID/version/hash를 읽고 market/timezone 일치와
+  requested slot의 date coverage를 검증한다. record가 missing/corrupt하거나 date gap이 있으면
+  policy activation과 due-cycle 생성을 fail-closed한다.
 - `enabledMarkets`는 비어 있지 않은 canonical unique set이어야 한다. scheduled cadence의
   resolved boundary market 집합은 `enabledMarkets`와 정확히 같아야 하고 `every_tick` packet,
   selection request, mandate 및 rebalance action의 market도 이 집합 안에 있어야 한다.
@@ -443,6 +478,7 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
         evidenceEligibility: "eligible";
         portfolioSnapshotId: string;
         portfolioSnapshotHash: string;
+        sizingInputRecordId: string;
         minWeightRatio: number;
         targetWeightRatio: number;
         maxWeightRatio: number;
@@ -479,9 +515,9 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
 - manual event의 `open_or_increase`는 active bucket selection policy를 resolve해 자동
   selector와 같은 required evidence, freshness와 hard gate를 통과한 `eligible` 결과 및
   validation hash가 있을 때만 허용한다. 또한 immutable portfolio sizing snapshot과
-  selector와 동일한 backend sizing algorithm에서 나온 input/output hash, min/target/max
-  range와 maximum notional을 필수로 보존한다. `authorizationRef`는 이 gate와 sizing을
-  우회할 수 없다.
+  selector와 동일한 backend sizing algorithm에서 나온 immutable sizing input record,
+  input/output hash, min/target/max range와 maximum notional을 필수로 보존한다.
+  `authorizationRef`는 이 gate와 sizing을 우회할 수 없다.
 - `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
   classification range를 기록할 수 있지만 신규 매수와 수량 증가는 금지한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
@@ -585,7 +621,7 @@ type BucketEquityEvent =
       asOf: string;
     }
   | {
-      eventType: "valuation" | "execution_cost";
+      eventType: "valuation";
       bucketEquityEventId: string;
       previousBucketEquityEventId: string;
       riskStateEpochId: string;
@@ -593,6 +629,19 @@ type BucketEquityEvent =
       bucket: StrategyBucket;
       policyHash: string;
       equityDeltaKrw: number;
+      evidenceRefs: string[];
+      asOf: string;
+    }
+  | {
+      eventType: "execution_cost";
+      bucketEquityEventId: string;
+      previousBucketEquityEventId: string;
+      riskStateEpochId: string;
+      portfolioId: string;
+      bucket: StrategyBucket;
+      policyHash: string;
+      equityDeltaKrw: number;
+      executionEventId: string;
       evidenceRefs: string[];
       asOf: string;
     };
@@ -616,6 +665,9 @@ type BucketEquityEvent =
   보유 unit을 초과하는 burn은 거절한다.
 - bucket 내부 BUY/SELL은 asset/cash 교환이므로 체결 notional 자체는 손익이 아니다.
   mark-to-market PnL과 fee/slippage만 equity와 unit NAV를 변경한다.
+- `valuation.equityDeltaKrw`는 mark-to-market 결과에 따라 양수 또는 음수일 수 있다.
+  `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 fill별 `executionEventId`로 fee/slippage
+  근거를 연결한다. 양수 cost, unresolved execution 또는 중복 cost event는 거절한다.
 - valuation 후 `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
   `drawdownRatio = 1 - unitNavKrw / highWaterMarkUnitNavKrw`로 계산한다.
 - units가 0이면 마지막 unit NAV/high-water mark를 유지하며, 같은 epoch의 재진입은 그
@@ -676,9 +728,61 @@ interface BucketSelectionRequest {
   evidenceCutoffAt: string;
 }
 
+interface CandidateSizingInputRecord {
+  sizingInputRecordId: string;
+  requestId: string;
+  portfolioId: string;
+  portfolioSnapshotId: string;
+  portfolioSnapshotHash: string;
+  policyHash: string;
+  asOf: string;
+  market: Market;
+  symbol: string;
+  bucket: StrategyBucket;
+  scoringModelVersion: string;
+  sizingAlgorithmVersion: string;
+  selectionScore: number;
+  exposureKeys: {
+    sector: string;
+    country: string;
+    currency: string;
+    classificationEvidenceRef: string;
+  };
+  featureInputs: Array<{
+    featureDefinitionRef: string;
+    value: number | boolean | string;
+    evidenceRefs: string[];
+  }>;
+  exposureCapInputs: {
+    bucketRemainingKrw: number;
+    symbolRemainingKrw: number;
+    sectorRemainingKrw: number;
+    countryRemainingKrw: number;
+    currencyRemainingKrw: number;
+    cashAvailableKrw: number;
+  };
+  liquidityInput: {
+    averageDailyNotionalKrw: number;
+    maximumParticipationRatio: number;
+    maximumLiquidityNotionalKrw: number;
+    evidenceRefs: string[];
+  };
+  executionCostInput: {
+    modelVersion: string;
+    feeBps: number;
+    halfSpreadBps: number;
+    slippageBps: number;
+    estimatedCostKrw: number;
+    evidenceRefs: string[];
+  };
+  sizingInputHash: string;
+  createdAt: string;
+}
+
 interface CandidateAssignment {
   assignmentId: string;
   requestId: string;
+  sizingInputRecordId: string;
   portfolioId: string;
   portfolioSnapshotId: string;
   portfolioSnapshotHash: string;
@@ -707,8 +811,13 @@ stale이면 높은 score가 있더라도 `eligible`로 승격하지 않는다.
 값과 provenance, 계산된 exposure payload를 canonical form으로 append-only 저장한다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
-`sizingInputHash`는 policy hash, portfolio snapshot hash, selection request, candidate
-assignment feature, exposure/liquidity cap과 execution cost input을 canonicalize해 만든다.
+`CandidateSizingInputRecord`는 policy/snapshot/request scope, versioned feature value와 evidence,
+exposure cap, liquidity 및 execution cost model input 전체를 canonical form으로 append-only
+저장한다. `sizingInputHash`는 record ID, hash와 생성 시각을 제외한 이 전체 payload에서
+계산한다. assignment는 exact record ID/hash를 직접 보존하며 record가 resolve되지 않거나
+scope/hash가 다르면 생성하지 않는다.
+feature/evidence ref와 분류 metadata는 모두 resolve되어야 하며 array와 exposure key는
+canonical order로 정규화한다. sizing algorithm version이 다르면 같은 input으로 취급하지 않는다.
 `sizingOutputHash`는 계산된 min/target/max weight range와 최대 notional을 canonicalize해
 만든다. selector mandate의 range는 assignment 값과 정확히 같아야 하며 input/output hash
 검증을 모두 통과해야 한다. assignment의 portfolio/snapshot/policy/as-of scope는 request를
@@ -1016,6 +1125,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
 | `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
+| `session-calendar-records.jsonl` | 신규 append-only | exchange-date별 session과 provenance |
 | `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
@@ -1026,6 +1136,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `bucket-equity-events.jsonl` | 신규 append-only | bucket capital flow, valuation, execution cost |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
+| `candidate-sizing-input-records.jsonl` | 신규 append-only | feature, exposure/liquidity cap과 execution cost input |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
@@ -1040,14 +1151,15 @@ ref가 적용되면 해당 ref도 직접 포함한다. `unassigned_legacy`는 po
 legacy position의 안전한 축소는 `unassigned_legacy_reduce_only` action만 사용하며 fabricated
 mandate 없이 observed position과 legacy state에 연결한다. 이 경로로 BUY 또는 increase를
 표현할 수 없다.
-selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 assignment
-record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
-policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
+selector가 만든 mandate는 immutable portfolio sizing snapshot, request, sizing input과
+assignment record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지
+않거나 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
 manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 해당 sizing 또는
 classification range가 일치할 때만 발행한다. 신규 매수를 허용하는 manual event는 active
 selection policy의 동일한 evidence/freshness/hard gate와 immutable portfolio snapshot 기반
-backend sizing input/output hash까지 검증한다. active policy가 참조하는 selection policy
-record가 없거나 hash가 다르면 candidate evaluation과 신규 매수를 fail-closed한다.
+sizing input record 및 backend sizing input/output hash까지 검증한다. active policy가 참조하는
+selection policy record가 없거나 hash가 다르면 candidate evaluation과 신규 매수를
+fail-closed한다.
 
 ## 11. API와 Dashboard 계획
 
@@ -1114,6 +1226,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable market schedule boundary ref와 timezone/calendar/hash validation
+- immutable session calendar record와 date-coverage resolver
 - append-only activation record와 single-active fail-closed resolver
 - policy hash/version parser와 migration test
 - runner와 order engine에는 아직 연결하지 않음
@@ -1179,6 +1292,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - price/volume 기반 `market_technical` feature부터 구현
 - evidence completeness와 scoring model version 기록
 - candidate assignment append-only repository와 request lineage 검증
+- canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
 완료 조건:
@@ -1186,6 +1300,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 같은 입력은 같은 ordering과 reason code를 만든다.
 - policy가 요구하는 evidence/source/freshness rule을 exact record에서 읽는다.
 - required evidence가 없는 candidate는 fail-closed한다.
+- sizing input record에서 feature, exposure/liquidity cap과 cost input을 재구성해 같은 hash와
+  output range를 만든다.
 
 ### PR 6. Rebalance preview planner
 
@@ -1252,6 +1368,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - mandate event chain의 선형 predecessor와 derived status 검증
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
+- selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
@@ -1261,6 +1378,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
+- session calendar ID/version/hash/date coverage와 entry provenance 검증
 - scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
 - bucket `enabledMarkets`와 scheduled boundary/packet/request/mandate/action market 일치
 - rebalance plan record hash와 선형 event predecessor/scope 일치
@@ -1277,6 +1395,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - overweight sell이 underweight buy보다 먼저 처리됨
 - cash reserve, symbol, bucket, sector, country, currency limit 중 최소 cap 적용
 - dust와 거래비용 threshold 이하의 계획 제외
+- sizing input record의 algorithm/feature/classification/cap/liquidity/cost payload rehash와 replay
 - 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현 및
   `sizingOutputHash` 검증
 
@@ -1284,6 +1403,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - BUY/SELL notional은 drawdown 손익으로 계상하지 않고 fee/slippage와 mark PnL만 반영
 - shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
+- positive execution-cost delta, unresolved execution과 duplicate cost event 거절
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
 - 동일 drawdown semantics의 policy activation에서 unit NAV/high-water mark 승계
 - exposure가 있는 상태의 drawdown semantics 변경 activation 거절
