@@ -477,7 +477,9 @@ type InvestmentMandateRecord = InvestmentMandateBase & MandateAssignmentLineage;
 
 interface InvestmentMandateEventBase {
   mandateEventId: string;
+  mandateEventHash: string;
   mandateId: string;
+  mandateHash: string;
   portfolioId: string;
   market: Market;
   symbol: string;
@@ -485,6 +487,7 @@ interface InvestmentMandateEventBase {
   policyHash: string;
   asOf: string;
   reasonCodes: string[];
+  createdAt: string;
 }
 
 type InvestmentMandateEvent = InvestmentMandateEventBase &
@@ -506,6 +509,7 @@ type InvestmentMandateEvent = InvestmentMandateEventBase &
 
 interface InvestmentMandateBase {
   mandateId: string;
+  mandateHash: string;
   portfolioId: string;
   market: Market;
   symbol: string;
@@ -571,6 +575,14 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
 - 같은 portfolio 안에서 같은 종목을 두 bucket에 중복 계상하지 않는다.
 - mandate record와 event ID는 재사용하지 않는다. record 생성 직후 상태는 `proposed`이며
   status는 event chain을 fold해 `active`, `review_required`, `retired`로 파생한다.
+- `mandateHash`는 mandate ID, hash와 `createdAt`을 제외한 complete record payload에서
+  계산하며 reason/evidence ref를 canonical sort하고 duplicate를 거절한다. mandate ID는 이
+  hash에서 파생하고 resolver는 사용 전 독립 rehash한다. `reviewAfter`, `expiresAt`, cadence,
+  target range, evidence와 assignment lineage 중 하나라도 달라지면 같은 mandate로 인정하지 않는다.
+- mandate event도 event ID/hash/createdAt을 제외한 complete payload로 `mandateEventHash`를
+  계산하고 ID를 hash에서 파생한다. 모든 event는 exact `mandateId + mandateHash`를 보존한다.
+  position strategy state는 mandate ID/hash와 current mandate event ID/hash를 함께 저장하며
+  record/event/state 중 하나라도 resolve 또는 rehash되지 않으면 신규 매수를 fail-closed한다.
 - 첫 activation event만 `previousMandateEventId`를 생략할 수 있다. 이후 event는 현재 chain
   head를 정확히 가리켜야 하며 unknown predecessor, duplicate ID, branch, retired 이후 전이는
   fail-closed한다.
@@ -607,6 +619,9 @@ interface AssignedPositionStrategyState {
   market: Market;
   symbol: string;
   mandateId: string;
+  mandateHash: string;
+  lastMandateEventId: string;
+  lastMandateEventHash: string;
   policyHash: string;
   openedAt: string;
   lastIncreasedAt?: string;
@@ -662,6 +677,26 @@ interface BucketRiskState {
   asOf: string;
 }
 
+interface BucketValuationMarkRecord {
+  bucketValuationMarkRecordId: string;
+  valuationMarkHash: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  policyHash: string;
+  positionInputs: Array<{
+    market: Market;
+    symbol: string;
+    quantity: number;
+    previousPriceKrw: number;
+    currentPriceKrw: number;
+    previousPriceEvidenceRef: string;
+    currentPriceEvidenceRef: string;
+  }>;
+  equityDeltaKrw: number;
+  asOf: string;
+  createdAt: string;
+}
+
 type BucketEquityEvent =
   | {
       eventType: "epoch_initialized";
@@ -692,6 +727,8 @@ type BucketEquityEvent =
       rebalancePlanId: string;
       rebalanceActionId: string;
       fillId: string;
+      fillAccountingGroupId: string;
+      fillAccountingSequence: 0 | 1;
       asOf: string;
     }
   | {
@@ -703,6 +740,8 @@ type BucketEquityEvent =
       bucket: StrategyBucket;
       policyHash: string;
       equityDeltaKrw: number;
+      bucketValuationMarkRecordId: string;
+      valuationMarkHash: string;
       evidenceRefs: string[];
       asOf: string;
     }
@@ -718,6 +757,8 @@ type BucketEquityEvent =
       rebalancePlanId: string;
       rebalanceActionId: string;
       fillId: string;
+      fillAccountingGroupId: string;
+      fillAccountingSequence: 0 | 1;
       evidenceRefs: string[];
       asOf: string;
     };
@@ -743,9 +784,20 @@ type BucketEquityEvent =
   cash 이동과 일치해야 한다. `fillId`는 모든 bucket capital-flow event에서 unique하며
   acknowledgement-loss retry는 기존 event를 반환한다. 새 event ID로
   같은 origin을 다시 append하거나 다른 amount에 재사용하면 거절한다.
+- fill accounting group ID는 portfolio/plan/action/fill에서 결정론적으로 파생한다. BUY는
+  `capital_flow(sequence=0) -> execution_cost(sequence=1)`, SELL은
+  `execution_cost(sequence=0) -> capital_flow(sequence=1)` 순서로 고정한다. SELL deallocation
+  amount는 비용 반영 후의 net proceeds이며 post-cost unit NAV에서 units를 burn한다.
+  두 event는 한 durable transaction에서 연속 append하거나 둘 다 보이지 않게 처리하고,
+  순서 역전·중간 event 삽입·불완전 group·같은 origin의 다른 sequence를 거절한다.
 - bucket 내부 BUY/SELL은 asset/cash 교환이므로 체결 notional 자체는 손익이 아니다.
   mark-to-market PnL과 fee/slippage만 equity와 unit NAV를 변경한다.
 - `valuation.equityDeltaKrw`는 mark-to-market 결과에 따라 양수 또는 음수일 수 있다.
+  valuation은 exact immutable `BucketValuationMarkRecord` ID/hash를 참조한다. mark record는
+  position input을 market/symbol 순으로 canonicalize하고 duplicate를 거절하며 ID/hash/createdAt을
+  제외한 payload로 hash와 hash-derived ID를 만든다. resolver는 저장된 quantity와 이전/현재
+  mark evidence로 delta를 독립 재계산한다. 같은 epoch/bucket/mark record origin의 exact retry는
+  기존 event를 반환하고 새 event ID, predecessor 또는 delta로 중복 append할 수 없다.
   `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 `fillId`로 fee/slippage
   근거를 연결한다. exact plan/action/fill이 같은 portfolio의 execution과 일치해야 하며 양수
   cost, unresolved execution 또는 중복 origin cost event는 거절한다.
@@ -1495,9 +1547,10 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
-| `instrument-mandate-events.jsonl` | 신규 append-only | mandate activate/review/retire transition chain |
+| `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
 | `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
 | `bucket-equity-events.jsonl` | 신규 append-only | bucket capital flow, valuation, execution cost |
+| `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
 | `candidate-sizing-input-records.jsonl` | 신규 append-only | feature, exposure/liquidity cap과 execution cost input |
@@ -1621,6 +1674,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - immutable mandate record/event chain, assigned/unassigned legacy state와 manual assignment
   event의 strict schema/repository
+- mandate/event full-payload digest와 position state의 exact hash binding
 - portfolio 안에서 한 종목 하나의 active mandate invariant
 - 기존 position의 `unassigned_legacy` migration
 - position peak/review/holding age와 bucket unit-NAV drawdown state persistence
@@ -1635,6 +1689,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
   `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
 - mandate event chain의 branch/unknown predecessor/terminal transition을 거절한다.
+- mandate/event/state의 canonical hash가 다르면 신규 매수를 거절한다.
 - 재시작 후 bucket equity event replay와 risk snapshot이 같은 unit NAV/high-water mark를 만든다.
 
 ### PR 4. `PortfolioGapAnalyzer`
@@ -1747,6 +1802,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
 - mandate event chain의 선형 predecessor와 derived status 검증
+- mandate record/event full-payload digest와 position state의 exact hash binding
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
@@ -1781,6 +1837,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - whole-share slippage 후 actual/cumulative notional의 approved cash/exposure/liquidity cap 재검증
 - fractional SELL의 quantity 기반 완료와 불필요한 residual notional 대기 방지
 - capital-flow execution origin 중복과 amount mismatch 거절
+- valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
 ### Gap 및 sizing
@@ -1801,6 +1858,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
 - positive execution-cost delta, unresolved execution과 duplicate cost event 거절
 - execution-cost plan/action/fill origin mismatch와 cross-plan duplicate fill 거절
+- BUY/SELL fill accounting group의 side별 cost/flow 순서와 atomic append 검증
 - fee-only equity 감소 직후 unit NAV/drawdown 재계산과 breach 평가
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
 - 동일 drawdown semantics의 policy activation에서 unit NAV/high-water mark 승계
