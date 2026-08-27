@@ -371,6 +371,10 @@ interface StrategyBucketPolicy {
 - `every_tick`은 `reviewCadence.mode = every_tick`으로 표현하며 `intraday` bucket이고
   참조한 immutable selection policy에
   `everyTickSourceRequirement`가 있을 때만 허용한다.
+- selection policy hash는 record ID, `hash` 자체와 `createdAt`을 제외한 전체 payload에서
+  계산한다. required evidence는 evidence class/source contract, hard-gate ID와 feature ref는
+  각 canonical key로 정렬하고 duplicate를 거절하며 every-tick source requirement와 scoring
+  model version도 digest에 포함한다. record ID는 hash에서 파생한다.
 - scheduled cadence는 대상 market별 immutable `ScheduleBoundaryRecord`를 정확히 하나씩
   참조한다. record는 IANA timezone, versioned session calendar, local anchor, interval,
   weekly anchor와 non-session-day rule을 고정한다. 누락·중복 market, hash mismatch 또는
@@ -397,7 +401,8 @@ interface StrategyBucketPolicy {
   재평가되며 breach는 즉시 신규 매수를 차단하고 sell-first reduce-only cycle을 만든다.
 - activation과 replay 시작 시 `selectionPolicyRef`가 같은 bucket/version/hash의 immutable
   record로 resolve되어야 한다. required evidence, freshness, source contract, hard gate,
-  feature와 scoring version을 구현 기본값으로 대체하지 않는다.
+  feature와 scoring version을 구현 기본값으로 대체하지 않는다. resolver는 canonical payload를
+  독립 rehash해 ID/ref/hash가 모두 일치하지 않으면 fail-closed한다.
 - `riskRuleSetRef`도 같은 ID/version/hash의 immutable record로 resolve하고 rule ID 중복,
   빈 applicability와 parameter hash mismatch를 거절한다. action side에 적용되는 rule 전체가
   Risk Engine decision의 required set이며 caller가 일부 rule만 선택할 수 없다.
@@ -623,6 +628,7 @@ interface BucketRiskState {
   equityKrw: number;
   drawdownRatio: number;
   lastBucketEquityEventId: string;
+  riskStateHash: string;
   asOf: string;
 }
 
@@ -679,6 +685,8 @@ type BucketEquityEvent =
       bucket: StrategyBucket;
       policyHash: string;
       equityDeltaKrw: number;
+      rebalancePlanId: string;
+      rebalanceActionId: string;
       fillId: string;
       evidenceRefs: string[];
       asOf: string;
@@ -709,9 +717,15 @@ type BucketEquityEvent =
   mark-to-market PnL과 fee/slippage만 equity와 unit NAV를 변경한다.
 - `valuation.equityDeltaKrw`는 mark-to-market 결과에 따라 양수 또는 음수일 수 있다.
   `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 `fillId`로 fee/slippage
-  근거를 연결한다. 양수 cost, unresolved execution 또는 중복 cost event는 거절한다.
-- valuation 후 `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
+  근거를 연결한다. exact plan/action/fill이 같은 portfolio의 execution과 일치해야 하며 양수
+  cost, unresolved execution 또는 중복 origin cost event는 거절한다.
+- `capital_flow`, `valuation`, `execution_cost`를 append할 때마다 resulting equity/units에서
+  unit NAV를 계산한다. capital flow는 NAV/HWM을 유지하고 valuation/execution cost 후에는
+  `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
   `drawdownRatio = 1 - unitNavKrw / highWaterMarkUnitNavKrw`로 계산한다.
+- resulting risk state를 같은 transaction/event fold에서 먼저 확정한 뒤 risk breach를
+  평가한다. 특히 fee/slippage만으로 drawdown limit을 넘으면 이전 snapshot 값이 아니라 새
+  drawdown으로 즉시 buy 차단과 reduce-only cycle을 만든다.
 - units가 0이면 마지막 unit NAV/high-water mark를 유지하며, 같은 epoch의 재진입은 그
   NAV에서 mint한다. 새 policy activation도 위 `initial_or_empty` 조건이 아니면 baseline을
   재설정할 수 없다.
@@ -719,6 +733,8 @@ type BucketEquityEvent =
   `previousBucketEquityEventId`를 필수로 가지며 event ID와 predecessor를 선형 append-only로
   검증한다. current snapshot은 event replay로 재구성 가능해야 하며 event/snapshot mismatch나
   누락은 신규 매수를 fail-closed한다.
+- `riskStateHash`는 hash 자체를 제외한 current state payload의 canonical digest이며 event
+  replay 결과와 독립 rehash가 모두 일치해야 한다.
 
 ### 6.6 `PortfolioSizingSnapshot`, `BucketSelectionRequest`와 `CandidateAssignment`
 
@@ -1088,7 +1104,8 @@ type RebalancePlanEvent =
   event ID, branch, terminal 이후 event는 거절한다.
 - 각 paper fill 직후 `execution_applied`를 durable하게 기록한다. event는 action/fill별 Risk
   Engine decision과 실행 직전 expected version/snapshot, 실행 직후 resulting version/snapshot을
-  일대일로 보존한다. fill ID는 plan 전체에서 unique하고 같은 fill을 재기록할 수 없다.
+  일대일로 보존한다. fill ID는 portfolio 전체에서 globally unique하고 같은 fill을 다른
+  plan/action 또는 새 event로 재기록할 수 없다.
 - `PortfolioActionRiskDecision`은 기존 범용 decision ID를 그대로 신뢰하지 않고 plan/action,
   policy, market/symbol/side, execution target hash, prior cumulative notional/quantity, 이번
   requested notional/quantity와 expected pre-state를 canonical risk input hash에 묶는다.
@@ -1267,6 +1284,45 @@ type PortfolioPolicyTriggerEvent = PortfolioPolicyTriggerEventBase &
       }
   );
 
+interface PortfolioRiskStateUpdateRecordBase {
+  riskStateUpdateRecordId: string;
+  portfolioId: string;
+  policyHash: string;
+  stateUpdateHash: string;
+  asOf: string;
+  createdAt: string;
+}
+
+type PortfolioRiskStateUpdateRecord = PortfolioRiskStateUpdateRecordBase &
+  (
+    | {
+        stateUpdateKind: "market_mark";
+        portfolioSnapshotId: string;
+        portfolioSnapshotHash: string;
+      }
+    | {
+        stateUpdateKind: "fill";
+        rebalancePlanId: string;
+        rebalanceActionId: string;
+        planExecutionEventId: string;
+        fillId: string;
+      }
+    | {
+        stateUpdateKind: "fee" | "cash_flow";
+        bucketEquityEventId: string;
+        rebalancePlanId: string;
+        rebalanceActionId: string;
+        fillId: string;
+      }
+    | {
+        stateUpdateKind: "risk_state";
+        riskStateEpochId: string;
+        bucket: StrategyBucket;
+        lastBucketEquityEventId: string;
+        riskStateHash: string;
+      }
+  );
+
 type PortfolioCycleTrigger =
   | {
       triggerKind: "scheduled";
@@ -1289,7 +1345,8 @@ type PortfolioCycleTrigger =
   | {
       triggerKind: "risk_breach";
       stateUpdateKind: "market_mark" | "fill" | "fee" | "cash_flow" | "risk_state";
-      stateUpdateRef: string;
+      riskStateUpdateRecordId: string;
+      stateUpdateHash: string;
       stateUpdateAsOf: string;
     };
 ```
@@ -1301,7 +1358,7 @@ type PortfolioCycleTrigger =
   end다. `every_tick` identity는 `every_tick`, ref는 packet hash, cutoff는 packet `asOf`다.
   policy event identity는 `event:<eventType>`, ref/cutoff는 immutable event hash/`asOf`다. risk
   breach identity는 `risk_breach:<stateUpdateKind>`, ref/cutoff는 원인이 된 immutable state
-  update ref/`asOf`다. union에 없는 trigger나 field 조합은 거절한다.
+  update hash/`asOf`다. union에 없는 trigger나 field 조합은 거절한다.
 - `PortfolioPolicyTriggerEvent`는 event ID/createdAt/hash를 제외한 canonical payload에서
   `eventHash`를 만들고 event ID를 hash에서 결정론적으로 파생해 append-only 저장한다. 같은
   hash 재시도는 기존 record를 반환하고 같은 ID의 payload/hash 충돌을 거절한다. trigger는
@@ -1309,9 +1366,17 @@ type PortfolioCycleTrigger =
   누락·불일치하면 cycle을 만들지 않는다.
 - previous/current 값은 달라야 하고 evidence ref는 비어 있을 수 없다. thesis event의 mandate는
   같은 portfolio/policy/market/symbol의 active mandate로 resolve되어야 한다.
+- `PortfolioRiskStateUpdateRecord`는 update kind별 exact immutable origin을 참조한다. market
+  mark는 portfolio snapshot, fill은 plan/action/execution event/fill, fee와 cash flow는 bucket
+  equity event 및 plan/action/fill, risk state는 epoch/last event/state hash를 resolve한다.
+- state update hash는 record ID, `stateUpdateHash`와 `createdAt`을 제외한 canonical payload에서
+  계산하고 ID는 kind와 hash에서 결정론적으로 파생한다. exact retry는 기존 record를 반환하며 missing origin,
+  as-of/scope/hash mismatch, 같은 ID의 payload collision을 거절한다. risk-breach trigger는 exact
+  update record ID/hash/kind/as-of를 검증한 뒤에만 cycle을 만든다.
 - `evidenceCutoffAt`은 처리 시작 시각이 아니라 trigger에서 canonical하게 파생한다.
   scheduled cycle은 schedule slot end, `every_tick`은 packet `asOf`, event trigger는 event
-  `asOf`를 사용하며 같은 `triggerRef`가 다른 cutoff를 제시하면 거절한다.
+  `asOf`, risk breach는 state update `asOf`를 사용하며 같은 `triggerRef`가 다른 cutoff를
+  제시하면 거절한다.
 - 같은 cycle ID의 rebalance plan은 한 번만 적용한다.
 - plan의 preview, approval, fill execution, rejection, stale, applied 상태는 immutable plan
   record와 선형 append-only event chain으로 저장하며 재시작 후 replay로 current state를
@@ -1371,6 +1436,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
 | `candidate-sizing-input-records.jsonl` | 신규 append-only | feature, exposure/liquidity cap과 execution cost input |
 | `portfolio-policy-trigger-events.jsonl` | 신규 append-only | regime/thesis evidence change payload와 canonical hash |
+| `portfolio-risk-state-updates.jsonl` | 신규 append-only | risk trigger별 immutable update origin과 canonical hash |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
@@ -1567,6 +1633,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
+- immutable risk-state update origin repository와 breach trigger resolver
 - bucket별 exit policy와 selection request 실행
 - 각 fill 후 mark-to-market 및 risk snapshot 재평가
 - paper-only execution과 audit lineage
@@ -1604,6 +1671,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - activation sequence gap/duplicate와 future/backdated effective time 거절
 - as-of activation fold와 supersedes/retired target 검증
 - active policy의 selection policy ref가 immutable record와 일치
+- selection policy payload canonical ordering, digest 제외 field와 독립 rehash 검증
 - active policy의 risk rule set ref와 canonical required rule이 immutable record와 일치
 - root legacy reduce-only rule set ref와 SELL-only scope 해소
 - `portfolioId`당 single active policy
@@ -1660,6 +1728,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - BUY/SELL notional은 drawdown 손익으로 계상하지 않고 fee/slippage와 mark PnL만 반영
 - shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
 - positive execution-cost delta, unresolved execution과 duplicate cost event 거절
+- execution-cost plan/action/fill origin mismatch와 cross-plan duplicate fill 거절
+- fee-only equity 감소 직후 unit NAV/drawdown 재계산과 breach 평가
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
 - 동일 drawdown semantics의 policy activation에서 unit NAV/high-water mark 승계
 - exposure가 있는 상태의 drawdown semantics 변경 activation 거절
@@ -1672,6 +1742,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - bucket별 due/not-due 판단
 - `every_tick` packet hash deduplication과 event trigger cycle identity
 - scheduled/every-tick/policy-event/risk-breach trigger union의 identity/ref/cutoff 재현
+- risk update kind별 immutable origin resolver, retry 수렴과 ID/payload collision 거절
 - minimum/maximum holding boundary
 - 같거나 역전된 minimum/maximum holding boundary의 validation 거절
 - `timeExpiryAction`별 review-only와 reduce-only sell 동작
