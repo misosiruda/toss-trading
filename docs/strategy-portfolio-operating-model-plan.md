@@ -173,6 +173,25 @@ interface ActivePortfolioPolicyRef {
 ### 6.2 `StrategyBucketPolicy`
 
 ```ts
+type TakeProfitPolicy =
+  | { mode: "disabled" }
+  | {
+      mode: "full_exit";
+      takeProfitRatio: number;
+    }
+  | {
+      mode: "partial_then_trail";
+      takeProfitRatio: number;
+      takeProfitSellRatio: number;
+      trailingStopFromPeakRatio: number;
+    };
+
+interface StrategyBucketExitPolicy {
+  takeProfit: TakeProfitPolicy;
+  stopLossRatio?: number;
+  timeExpiryAction: "review_required" | "sell_all";
+}
+
 interface StrategyBucketPolicy {
   bucket: StrategyBucket;
   targetWeightRatio: number;
@@ -187,14 +206,7 @@ interface StrategyBucketPolicy {
   selectionTrigger: "below_min" | "target_gap_on_due_cycle";
   minimumHoldingSeconds?: number;
   maximumHoldingSeconds?: number;
-  exitPolicy: {
-    takeProfitRatio?: number;
-    takeProfitMode: "full_exit" | "partial_then_trail";
-    takeProfitSellRatio?: number;
-    trailingStopFromPeakRatio?: number;
-    stopLossRatio?: number;
-    timeExpiryAction: "review_required" | "sell_all";
-  };
+  exitPolicy: StrategyBucketExitPolicy;
   enabledAssetClasses: string[];
   selectionPolicyVersion: string;
 }
@@ -205,6 +217,9 @@ interface StrategyBucketPolicy {
   empty portfolio에서 영구적으로 선택 불가능한 정책을 거절한다.
 - `every_tick`은 `intraday` bucket과 검증된 event source requirement가 함께 있을 때만
   허용한다.
+- take-profit을 사용하지 않으면 `disabled`, 전량 익절은 trigger ratio가 필수인
+  `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
+  `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
 - `maximumHoldingSeconds`가 있으면 `timeExpiryAction`을 함께 검증한다.
 - `review_required`는 만료 시 신규 매수를 차단하고 검토 상태로만 전환한다.
 - `sell_all`을 명시한 bucket만 만료 시 reduce-only paper sell candidate를 만들며,
@@ -221,6 +236,7 @@ interface InvestmentMandate {
   symbol: string;
   bucket: StrategyBucket;
   policyHash: string;
+  asOf: string;
   assignmentSource: "manual_policy" | "deterministic_selector";
   selectionRequestId?: string;
   candidateAssignmentId?: string;
@@ -340,6 +356,7 @@ interface BucketSelectionRequest {
   portfolioSnapshotId: string;
   portfolioSnapshotHash: string;
   policyHash: string;
+  asOf: string;
   bucket: StrategyBucket;
   gapKrw: number;
   availableSlots: number;
@@ -350,17 +367,25 @@ interface BucketSelectionRequest {
 interface CandidateAssignment {
   assignmentId: string;
   requestId: string;
+  portfolioId: string;
+  portfolioSnapshotId: string;
+  portfolioSnapshotHash: string;
+  policyHash: string;
+  asOf: string;
   market: Market;
   symbol: string;
   bucket: StrategyBucket;
   eligibility: "eligible" | "watch" | "blocked";
+  minWeightRatio: number;
   targetWeightRatio: number;
+  maxWeightRatio: number;
   maximumNotionalKrw: number;
   selectionScore: number;
   reasonCodes: string[];
   evidenceRefs: string[];
   scoringModelVersion: string;
   sizingInputHash: string;
+  sizingOutputHash: string;
 }
 ```
 
@@ -372,6 +397,10 @@ request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 se
 거절한다.
 `sizingInputHash`는 policy hash, portfolio snapshot hash, selection request, candidate
 assignment feature, exposure/liquidity cap과 execution cost input을 canonicalize해 만든다.
+`sizingOutputHash`는 계산된 min/target/max weight range와 최대 notional을 canonicalize해
+만든다. selector mandate의 range는 assignment 값과 정확히 같아야 하며 input/output hash
+검증을 모두 통과해야 한다. assignment의 portfolio/snapshot/policy/as-of scope는 request를
+읽지 못해도 독립 검증할 수 있도록 직접 저장하고, resolve 가능한 request와도 일치해야 한다.
 
 ## 7. Bucket별 종목 선택 정책
 
@@ -514,9 +543,11 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
 | `rebalance-plans.jsonl` | 신규 append-only | preview, approval, rejection, applied 상태 |
 
-모든 downstream artifact는 최소한 `policyHash`, `portfolioId`, `asOf`, source/evidence ref를
-포함한다. corrupt line이나 lineage mismatch는 경고만 표시하고 계속 매수하는 대신
-fail-closed한다.
+정책에 묶인 selector, mandate와 rebalance downstream artifact는 최소한 `policyHash`,
+`portfolioId`, `asOf`를 record 또는 record envelope에 직접 포함하고, source/evidence
+ref가 적용되면 해당 ref도 직접 포함한다. `unassigned_legacy`는 policy lineage가 없음을
+명시하는 예외다. corrupt line이나 lineage mismatch는 경고만 표시하고 계속 매수하는
+대신 fail-closed한다.
 selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 assignment
 record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
@@ -701,6 +732,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `portfolioId + market + symbol`당 single active mandate
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
+- selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
@@ -712,7 +744,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - overweight sell이 underweight buy보다 먼저 처리됨
 - cash reserve, symbol, bucket, sector, country, currency limit 중 최소 cap 적용
 - dust와 거래비용 threshold 이하의 계획 제외
-- 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현
+- 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현 및
+  `sizingOutputHash` 검증
 
 ### Cadence 및 exit
 
