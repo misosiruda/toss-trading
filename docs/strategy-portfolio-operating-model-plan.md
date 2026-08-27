@@ -1501,7 +1501,7 @@ type RebalancePlanEvent =
       planEventId: string;
       planEventHash: string;
       previousPlanEventId: string;
-      eventType: "approved" | "rejected" | "stale";
+      eventType: "approved" | "rejected";
       planId: string;
       planHash: string;
       cycleId: string;
@@ -1509,6 +1509,24 @@ type RebalancePlanEvent =
       portfolioVersion: string;
       portfolioSnapshotHash: string;
       policyHash: string;
+      asOf: string;
+      reasonCodes: string[];
+    }
+  | {
+      planEventId: string;
+      planEventHash: string;
+      previousPlanEventId: string;
+      eventType: "stale";
+      planId: string;
+      planHash: string;
+      cycleId: string;
+      portfolioId: string;
+      portfolioVersion: string;
+      portfolioSnapshotHash: string;
+      policyHash: string;
+      observedCurrentPortfolioVersion: string;
+      observedCurrentPortfolioSnapshotId: string;
+      observedCurrentPortfolioSnapshotHash: string;
       asOf: string;
       reasonCodes: string[];
     }
@@ -1577,7 +1595,9 @@ type RebalancePlanEvent =
   `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. initial plan은 predecessor를 생략하고,
   후속 BUY는 `applied`, stale replacement는 `stale` predecessor만 허용한다. predecessor union의
   plan/event ID/hash는 exact terminal event로 resolve되어야 하고 그 resulting snapshot 또는
-  stale 재평가 snapshot이 후속 plan의 preview snapshot과 같아야 한다.
+  stale event의 `observedCurrentPortfolioVersion`/snapshot ID/hash가 후속 plan의 preview scope와
+  같아야 한다. stale event의 기존 `portfolioVersion`/`portfolioSnapshotHash`는 원 plan scope로
+  유지하며 관측된 current snapshot으로 덮어쓰지 않는다.
 - fractional BUY는 양수 `targetNotionalKrw`, fractional SELL은 양수 `targetQuantity`,
   whole-share 실행은 양의 정수 `targetQuantity`를 immutable target으로 사용한다.
   fractional SELL quantity는 snapshot의 가용 quantity 이하이고 BUY/SELL side와 target kind가
@@ -1964,9 +1984,10 @@ type PortfolioTriggerClaimEvent =
   `completed_no_action` 하나뿐이며 branch, duplicate terminal과 terminal 이후 event를 거절한다.
 - crash 후 terminal event가 없으면 current portfolio로 다시 평가하지 않고 claim에 고정된
   evaluation snapshot과 deterministic initial cycle ID로 평가를 resume한다. plan record와
-  `completed_with_plan` event는 같은 transaction에서 저장하고, action이 없을 때도 reason과
-  resulting snapshot을 가진 `completed_no_action` event를 durable하게 남긴다. 따라서 claim만
-  소비된 채 risk breach나 no-op 결과가 유실될 수 없다.
+  plan의 최초 `previewed` event 및 `completed_with_plan` event는 같은 transaction에서 저장한다.
+  세 record 중 하나라도 저장되지 않으면 모두 rollback해 claim을 nonterminal로 유지한다. action이
+  없을 때도 reason과 resulting snapshot을 가진 `completed_no_action` event를 durable하게 남긴다.
+  따라서 claim만 소비되거나 event chain 없는 plan이 남아 risk breach/no-op 결과가 유실될 수 없다.
 - initial cycle ID는 `triggerClaimId + initial`에서 파생한다. portfolio version/snapshot은
   immutable plan의 preview scope와 stale 검증에는 포함하지만 trigger claim 또는 initial cycle
   identity에는 포함하지 않는다. 따라서 성공 후 acknowledgement가 유실되어 같은 packet/event가
@@ -2008,6 +2029,8 @@ type PortfolioTriggerClaimEvent =
 - 후속 BUY plan record는 `predecessorKind = applied`, stale replacement plan record는
   `predecessorKind = stale`을 사용하고 각각 선행 plan/event ID/hash를 보존한다. union kind와
   실제 terminal event type이 다르거나 predecessor plan hash가 재계산 결과와 다르면 거절한다.
+  stale replacement는 predecessor stale event에 저장된 observed current version/snapshot을 exact
+  resolve하고 새 plan preview scope에 그대로 묶는다.
 - plan의 preview, approval, fill execution, rejection, stale, applied 상태는 immutable plan
   record와 선형 append-only event chain으로 저장하며 재시작 후 replay로 current state를
   복원한다.
@@ -2283,6 +2306,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - plan event payload digest가 다르면 승인·실행을 fail-closed한다.
 - plan ID가 record hash에서 파생되고 모든 event가 같은 plan hash를 보존한다.
 - stale replacement와 SELL 후속 BUY가 각 terminal predecessor union을 정확히 보존한다.
+- claim completion, plan record와 최초 preview event가 하나의 transaction으로 저장된다.
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
@@ -2453,6 +2477,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - duplicate trigger claim/cycle 및 duplicate plan apply
 - stale replacement와 SELL 후속 BUY cycle의 terminal predecessor 기반 identity 검증
 - applied/stale predecessor strict union과 plan/event ID/hash/type mismatch 거절
+- stale event의 original scope와 observed current snapshot 분리 및 replacement scope binding
+- completed-with-plan, plan record와 최초 preview event의 원자 commit/rollback
 - trigger claim 중간 crash 뒤 frozen evaluation snapshot resume 및 no-action terminal dedupe
 - plan event chain 재시작 복원과 applied plan의 exactly-once 검증
 - in-plan expected mutation 허용과 unrelated portfolio drift의 stale 전환
