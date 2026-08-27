@@ -147,25 +147,43 @@ flowchart TD
 아래 contract는 구현 방향을 설명하기 위한 목표 형태다. 실제 schema 추가 시 Zod
 strict schema, version, parser, migration과 negative test를 함께 작성한다.
 
-### 6.1 `ActivePortfolioPolicyRef`
+### 6.1 `PortfolioPolicyActivationEvent`
 
 ```ts
-interface ActivePortfolioPolicyRef {
-  mode: "paper_only";
-  activationId: string;
-  portfolioId: string;
-  policyRecordId: string;
-  policyId: string;
-  policyVersion: string;
-  policyHash: string;
-  status: "active" | "retired";
-  effectiveFrom: string;
-  createdAt: string;
-}
+type PortfolioPolicyActivationEvent =
+  | {
+      eventType: "activated";
+      mode: "paper_only";
+      activationId: string;
+      portfolioId: string;
+      policyRecordId: string;
+      policyId: string;
+      policyVersion: string;
+      policyHash: string;
+      supersedesActivationId?: string;
+      effectiveFrom: string;
+      createdAt: string;
+    }
+  | {
+      eventType: "retired";
+      mode: "paper_only";
+      retirementEventId: string;
+      portfolioId: string;
+      retiredActivationId: string;
+      reasonCode: string;
+      effectiveFrom: string;
+      createdAt: string;
+    };
 ```
 
 - policy record 자체는 immutable하게 유지한다.
-- 활성화와 교체는 append-only activation event로 기록한다.
+- `activationId`와 `retirementEventId`는 재사용하지 않는다.
+- 교체 activation은 현재 active ID를 `supersedesActivationId`로 지정해 한 event에서 이전
+  activation을 닫고 새 policy를 연다. policy 없이 중단할 때는 `retiredActivationId`를 가진
+  retirement event를 append한다.
+- resolver는 event order를 fold하고 supersedes/retired target이 그 시점의 current active와
+  정확히 일치하는지 검증한다. unknown target, 이미 닫힌 target과 분기된 transition은
+  fail-closed한다.
 - 같은 `portfolioId`와 시점에 active policy가 0개 또는 2개 이상이면 해당 portfolio
   실행을 fail-closed한다.
 - simulation run은 시작 시 policy hash를 고정하며 실행 도중 새 정책으로 바뀌지 않는다.
@@ -229,6 +247,13 @@ interface BucketSelectionPolicyRef {
   hash: string;
 }
 
+type BucketSelectionTrigger =
+  | { mode: "below_min" }
+  | {
+      mode: "entry_floor_on_due_cycle";
+      entryWeightRatio: number;
+    };
+
 interface StrategyBucketPolicy {
   bucket: StrategyBucket;
   targetWeightRatio: number;
@@ -240,8 +265,7 @@ interface StrategyBucketPolicy {
   eventTriggers: Array<
     "regime_change" | "thesis_evidence_change" | "risk_breach"
   >;
-  selectionTrigger: "below_min" | "entry_floor_on_due_cycle";
-  entryWeightRatio?: number;
+  selectionTrigger: BucketSelectionTrigger;
   minimumHoldingSeconds?: number;
   maximumHoldingSeconds?: number;
   exitPolicy: StrategyBucketExitPolicy;
@@ -251,9 +275,10 @@ interface StrategyBucketPolicy {
 ```
 
 - `holdingPeriodHint`를 실제 cadence와 holding boundary로 구체화한다.
-- target이 양수이고 min이 0인 bucket은 `entry_floor_on_due_cycle`과
-  `0 < entryWeightRatio <= targetWeightRatio`를 필수로 검증해 empty portfolio에서
-  영구적으로 선택 불가능한 정책을 거절한다.
+- `entry_floor_on_due_cycle`은 min 값과 무관하게 `entryWeightRatio`를 필수로 가지며
+  `minWeightRatio <= entryWeightRatio <= targetWeightRatio`와 양수 조건을 검증한다.
+- target이 양수이고 min이 0인 bucket에 `below_min`을 지정하면 empty portfolio에서
+  영구적으로 선택 불가능하므로 policy validation에서 거절한다.
 - `every_tick`은 `intraday` bucket이고 참조한 immutable selection policy에
   `everyTickSourceRequirement`가 있을 때만 허용한다.
 - activation과 replay 시작 시 `selectionPolicyRef`가 같은 bucket/version/hash의 immutable
@@ -312,7 +337,7 @@ interface InvestmentMandateBase {
   status: "proposed" | "active" | "review_required" | "retired";
 }
 
-interface ManualAssignmentEvent {
+interface ManualAssignmentEventBase {
   manualAssignmentEventId: string;
   portfolioId: string;
   policyHash: string;
@@ -320,19 +345,37 @@ interface ManualAssignmentEvent {
   symbol: string;
   bucket: StrategyBucket;
   asOf: string;
-  targetWeightRatio: number;
-  minWeightRatio: number;
-  maxWeightRatio: number;
-  authorizationScope: "open_or_increase" | "classify_existing_reduce_only";
   selectionPolicyRecordId: string;
   selectionPolicyHash: string;
   reasonCodes: string[];
   evidenceRefs: string[];
   evidenceAsOf: string;
-  evidenceEligibility: "eligible" | "blocked";
   evidenceValidationHash: string;
   authorizationRef: string;
 }
+
+type ManualAssignmentEvent = ManualAssignmentEventBase &
+  (
+    | {
+        authorizationScope: "open_or_increase";
+        evidenceEligibility: "eligible";
+        portfolioSnapshotId: string;
+        portfolioSnapshotHash: string;
+        minWeightRatio: number;
+        targetWeightRatio: number;
+        maxWeightRatio: number;
+        maximumNotionalKrw: number;
+        sizingInputHash: string;
+        sizingOutputHash: string;
+      }
+    | {
+        authorizationScope: "classify_existing_reduce_only";
+        evidenceEligibility: "eligible" | "blocked";
+        classificationMinWeightRatio: number;
+        classificationTargetWeightRatio: number;
+        classificationMaxWeightRatio: number;
+      }
+  );
 ```
 
 - 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
@@ -345,9 +388,12 @@ interface ManualAssignmentEvent {
   portfolio/policy/symbol/bucket/as-of scope가 mandate와 일치해야 한다.
 - manual event의 `open_or_increase`는 active bucket selection policy를 resolve해 자동
   selector와 같은 required evidence, freshness와 hard gate를 통과한 `eligible` 결과 및
-  validation hash가 있을 때만 허용한다. `authorizationRef`는 이 gate를 우회할 수 없다.
+  validation hash가 있을 때만 허용한다. 또한 immutable portfolio sizing snapshot과
+  selector와 동일한 backend sizing algorithm에서 나온 input/output hash, min/target/max
+  range와 maximum notional을 필수로 보존한다. `authorizationRef`는 이 gate와 sizing을
+  우회할 수 없다.
 - `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
-  사용할 수 있지만 신규 매수와 수량 증가는 금지한다.
+  classification range를 기록할 수 있지만 신규 매수와 수량 증가는 금지한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
 - target weight는 AI 출력이 아니라 backend sizing 결과다.
 
@@ -554,14 +600,14 @@ currentWeight = bucketExposureKrw / virtualNetWorthKrw
 targetGapKrw = max(0, targetWeightKrw - currentExposureKrw)
 overweightKrw = max(0, currentExposureKrw - maxWeightKrw)
 underweightKrw = max(0, minWeightKrw - currentExposureKrw)
-entryWeightKrw = entryWeightRatio * virtualNetWorthKrw
+entryWeightKrw = selectionTrigger.entryWeightRatio * virtualNetWorthKrw
 entryGapKrw = max(0, entryWeightKrw - currentExposureKrw)
 ```
 
-- `selectionTrigger = below_min`이면 `underweightKrw > 0`일 때만 request를 만든다.
+- `selectionTrigger.mode = below_min`이면 `underweightKrw > 0`일 때만 request를 만든다.
 - `targetGapKrw`는 compliance와 목표 대비 drift 표시용이며 그 자체로 매수 요청이나
   exact-target 추격을 발생시키지 않는다.
-- `selectionTrigger = entry_floor_on_due_cycle`이면 bucket cadence 또는 event trigger가
+- `selectionTrigger.mode = entry_floor_on_due_cycle`이면 bucket cadence 또는 event trigger가
   도래했고 `entryGapKrw > 0`일 때만 request를 만든다. 이 모드는 min이 0인 선택적
   bucket을 empty portfolio에서 bootstrap하되 entry floor까지만 채우는 명시적 band
   예외다. entry floor에 도달한 뒤에는 target을 추격하지 않는다.
@@ -644,9 +690,10 @@ ref가 적용되면 해당 ref도 직접 포함한다. `unassigned_legacy`는 po
 selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 assignment
 record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
-manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 sizing range가 일치할
-때만 발행한다. 신규 매수를 허용하는 manual event는 active selection policy의 동일한
-evidence/freshness/hard gate 결과까지 검증한다. active policy가 참조하는 selection policy
+manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 해당 sizing 또는
+classification range가 일치할 때만 발행한다. 신규 매수를 허용하는 manual event는 active
+selection policy의 동일한 evidence/freshness/hard gate와 immutable portfolio snapshot 기반
+backend sizing input/output hash까지 검증한다. active policy가 참조하는 selection policy
 record가 없거나 hash가 다르면 candidate evaluation과 신규 매수를 fail-closed한다.
 
 ## 11. API와 Dashboard 계획
@@ -839,6 +886,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
+- manual `open_or_increase`의 immutable portfolio snapshot과 backend sizing input/output hash 일치
 - manual `classify_existing_reduce_only`의 buy/increase 차단
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
@@ -887,8 +935,9 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
   합성하지 않는다.
 - policy activation 이전에는 현재 paper runner 동작을 유지한다.
 - 각 구현 PR은 feature flag 또는 미연결 contract 상태로 배포 가능해야 한다.
-- active policy 적용에 문제가 있으면 activation event를 retire하고 이전 validated policy를
-  새 activation event로 복구한다. 저장 record를 수정하거나 삭제하지 않는다.
+- active policy 적용에 문제가 있으면 현재 `activationId`를 `supersedesActivationId`로
+  지정한 새 activation event로 이전 validated policy를 다시 활성화한다. policy 없이
+  중단할 때만 명시적인 retirement event를 사용하며 저장 record를 수정하거나 삭제하지 않는다.
 - DB schema 변경은 현재 계획에 없으며 local JSON/JSONL artifact migration만 대상이다.
 
 ## 16. 최종 수용 기준
