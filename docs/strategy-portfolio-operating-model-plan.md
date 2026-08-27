@@ -1314,6 +1314,22 @@ type RebalanceAction = RebalanceActionBase &
       }
   );
 
+type RebalancePlanPredecessor =
+  | {
+      predecessorKind: "applied";
+      predecessorPlanId: string;
+      predecessorPlanHash: string;
+      predecessorPlanEventId: string;
+      predecessorPlanEventHash: string;
+    }
+  | {
+      predecessorKind: "stale";
+      predecessorPlanId: string;
+      predecessorPlanHash: string;
+      predecessorPlanEventId: string;
+      predecessorPlanEventHash: string;
+    };
+
 interface RebalancePlanRecord {
   planId: string;
   cycleId: string;
@@ -1324,8 +1340,7 @@ interface RebalancePlanRecord {
   evidenceCutoffAt: string;
   triggerRef: string;
   phase: "sell" | "buy";
-  predecessorPlanId?: string;
-  predecessorAppliedPlanEventId?: string;
+  predecessor?: RebalancePlanPredecessor;
   actions: [RebalanceAction, ...RebalanceAction[]];
   planHash: string;
   createdAt: string;
@@ -1474,6 +1489,7 @@ type RebalancePlanEvent =
       previousPlanEventId?: never;
       eventType: "previewed";
       planId: string;
+      planHash: string;
       cycleId: string;
       portfolioId: string;
       portfolioVersion: string;
@@ -1487,6 +1503,7 @@ type RebalancePlanEvent =
       previousPlanEventId: string;
       eventType: "approved" | "rejected" | "stale";
       planId: string;
+      planHash: string;
       cycleId: string;
       portfolioId: string;
       portfolioVersion: string;
@@ -1501,6 +1518,7 @@ type RebalancePlanEvent =
       previousPlanEventId: string;
       eventType: "execution_applied";
       planId: string;
+      planHash: string;
       cycleId: string;
       portfolioId: string;
       portfolioVersion: string;
@@ -1531,6 +1549,7 @@ type RebalancePlanEvent =
       previousPlanEventId: string;
       eventType: "applied";
       planId: string;
+      planHash: string;
       cycleId: string;
       portfolioId: string;
       portfolioVersion: string;
@@ -1545,16 +1564,20 @@ type RebalancePlanEvent =
 
 - plan 본문은 immutable `RebalancePlanRecord`로 한 번만 저장한다. `planHash`는 plan ID,
   `planHash` 자체와 생성 시각을 제외한 scope와 ordered action payload의 canonical hash다.
+  `planId`는 domain prefix와 `planHash`에서 파생하며 모든 plan event가 exact `planId + planHash`를
+  직접 보존한다. resolver는 event fold와 approval 전에 record를 독립 rehash하고 ID/hash/event
+  binding 중 하나라도 다르면 plan을 corrupt로 보고 실행을 fail-closed한다.
 - 동일 cycle ID의 동일 scope/hash 재시도는 기존 plan을 반환한다. 같은 cycle ID에 다른
   scope, action 또는 hash를 쓰거나 두 번째 plan을 만드는 요청은 거절한다.
 - 하나의 plan에는 한 side만 포함한다. 같은 orchestration trigger에 SELL과 BUY가 모두
   필요하면 `sell` plan을 먼저 적용하고, 새 mark/risk snapshot에서 `buy` plan을 다시
-  산출한다. 후속 plan은 새 cycle ID와 `predecessorPlanId`/
-  `predecessorAppliedPlanEventId`로 선행 SELL 결과를 직접 연결한다.
+  산출한다. 후속 plan은 새 cycle ID와 `predecessorKind = applied` union으로 선행 SELL plan과
+  terminal event의 ID/hash를 직접 연결한다.
 - action sequence는 0부터 gap 없이 증가하고 action ID는 plan 안에서 unique해야 한다.
-  `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. 두 predecessor field는 함께
-  존재하거나 함께 생략하며 predecessor는 terminal `applied`이고 그 resulting snapshot이
-  후속 plan의 preview snapshot과 같아야 한다.
+  `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. initial plan은 predecessor를 생략하고,
+  후속 BUY는 `applied`, stale replacement는 `stale` predecessor만 허용한다. predecessor union의
+  plan/event ID/hash는 exact terminal event로 resolve되어야 하고 그 resulting snapshot 또는
+  stale 재평가 snapshot이 후속 plan의 preview snapshot과 같아야 한다.
 - fractional BUY는 양수 `targetNotionalKrw`, fractional SELL은 양수 `targetQuantity`,
   whole-share 실행은 양의 정수 `targetQuantity`를 immutable target으로 사용한다.
   fractional SELL quantity는 snapshot의 가용 quantity 이하이고 BUY/SELL side와 target kind가
@@ -1875,20 +1898,75 @@ type PortfolioCycleTrigger =
 
 interface PortfolioTriggerClaimRecord {
   triggerClaimId: string;
+  triggerClaimHash: string;
   portfolioId: string;
   policyHash: string;
   triggerIdentity: string;
   triggerRef: string;
   evidenceCutoffAt: string;
   triggerPayloadHash: string;
+  evaluationPortfolioVersion: string;
+  evaluationPortfolioSnapshotId: string;
+  evaluationPortfolioSnapshotHash: string;
   createdAt: string;
 }
+
+type PortfolioTriggerClaimEvent =
+  | {
+      triggerClaimEventId: string;
+      triggerClaimEventHash: string;
+      triggerClaimId: string;
+      triggerClaimHash: string;
+      previousTriggerClaimEventId?: never;
+      eventType: "evaluation_started";
+      initialCycleId: string;
+      asOf: string;
+      createdAt: string;
+    }
+  | {
+      triggerClaimEventId: string;
+      triggerClaimEventHash: string;
+      triggerClaimId: string;
+      triggerClaimHash: string;
+      previousTriggerClaimEventId: string;
+      eventType: "completed_with_plan";
+      initialCycleId: string;
+      planId: string;
+      planHash: string;
+      asOf: string;
+      createdAt: string;
+    }
+  | {
+      triggerClaimEventId: string;
+      triggerClaimEventHash: string;
+      triggerClaimId: string;
+      triggerClaimHash: string;
+      previousTriggerClaimEventId: string;
+      eventType: "completed_no_action";
+      initialCycleId: string;
+      reasonCodes: string[];
+      resultingPortfolioVersion: string;
+      resultingPortfolioSnapshotHash: string;
+      asOf: string;
+      createdAt: string;
+    };
 ```
 
 - trigger claim ID는 mutable portfolio state와 독립적으로 `portfolioId + policyHash +
   evidenceCutoffAt + triggerIdentity + triggerRef`에서 파생한다. claim은 durable unique key로
-  먼저 append하며 exact payload 재시도는 기존 claim과 기존 cycle 결과를 반환하고 같은 ID의
-  다른 payload/hash는 거절한다.
+  먼저 append한다. 최초 claim은 그 순간의 immutable evaluation portfolio version/snapshot
+  ID/hash를 함께 고정하며 `triggerClaimHash`는 ID/hash/createdAt을 제외한 complete payload에서
+  계산한다. exact payload 재시도는 기존 claim과 terminal result를 반환하고 같은 ID의 다른
+  payload/hash는 거절한다.
+- claim 생성과 첫 `evaluation_started` event append는 한 transaction으로 commit한다. claim event는
+  ID/hash/createdAt을 제외한 complete payload로 hash와 hash-derived ID를 만들고 exact claim
+  ID/hash 및 선형 predecessor를 보존한다. terminal은 `completed_with_plan` 또는
+  `completed_no_action` 하나뿐이며 branch, duplicate terminal과 terminal 이후 event를 거절한다.
+- crash 후 terminal event가 없으면 current portfolio로 다시 평가하지 않고 claim에 고정된
+  evaluation snapshot과 deterministic initial cycle ID로 평가를 resume한다. plan record와
+  `completed_with_plan` event는 같은 transaction에서 저장하고, action이 없을 때도 reason과
+  resulting snapshot을 가진 `completed_no_action` event를 durable하게 남긴다. 따라서 claim만
+  소비된 채 risk breach나 no-op 결과가 유실될 수 없다.
 - initial cycle ID는 `triggerClaimId + initial`에서 파생한다. portfolio version/snapshot은
   immutable plan의 preview scope와 stale 검증에는 포함하지만 trigger claim 또는 initial cycle
   identity에는 포함하지 않는다. 따라서 성공 후 acknowledgement가 유실되어 같은 packet/event가
@@ -1922,10 +2000,14 @@ interface PortfolioTriggerClaimRecord {
   제시하면 거절한다.
 - 같은 cycle ID의 rebalance plan은 한 번만 적용한다.
 - SELL 완료 후 BUY 후속 cycle은 `triggerClaimId + post_sell_buy +
-  predecessorAppliedPlanEventId`, stale replacement는 `triggerClaimId + replacement +
-  predecessorStalePlanEventId`에서 파생한다. 둘 다 선행 terminal event와 새 preview snapshot을
-  exact resolve하며 같은 predecessor의 중복 cycle을 거절한다. mutable snapshot만 바뀌었다는
-  이유로 replacement를 만들 수 없다.
+  predecessor.predecessorPlanEventId`, stale replacement는 `triggerClaimId + replacement +
+  predecessor.predecessorPlanEventId`에서 파생하되 predecessor kind를 cycle identity에 함께
+  포함한다. 둘 다 선행 terminal event와 새 preview snapshot을 exact resolve하며 같은
+  predecessor의 중복 cycle을 거절한다. mutable snapshot만 바뀌었다는 이유로 replacement를
+  만들 수 없다.
+- 후속 BUY plan record는 `predecessorKind = applied`, stale replacement plan record는
+  `predecessorKind = stale`을 사용하고 각각 선행 plan/event ID/hash를 보존한다. union kind와
+  실제 terminal event type이 다르거나 predecessor plan hash가 재계산 결과와 다르면 거절한다.
 - plan의 preview, approval, fill execution, rejection, stale, applied 상태는 immutable plan
   record와 선형 append-only event chain으로 저장하며 재시작 후 replay로 current state를
   복원한다.
@@ -1995,6 +2077,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-policy-trigger-events.jsonl` | 신규 append-only | regime/thesis evidence change payload와 canonical hash |
 | `portfolio-risk-state-updates.jsonl` | 신규 append-only | risk trigger별 immutable update origin과 canonical hash |
 | `portfolio-trigger-claims.jsonl` | 신규 append-only | mutable snapshot과 독립적인 trigger dedupe claim |
+| `portfolio-trigger-claim-events.jsonl` | 신규 append-only | claim 평가 시작과 plan/no-action terminal 결과 |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | full digest와 재계산 가능한 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력·결과와 전체 digest |
@@ -2185,6 +2268,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - target range, turnover, cost와 liquidity threshold
 - portfolio/policy version binding과 idempotency key
 - immutable plan record와 append-only state event chain
+- plan ID/hash/event binding과 applied/stale predecessor strict union
 - plan event full-payload digest, hash-derived ID와 독립 rehash
 - bucket turnover window/event/state와 action risk input binding
 - side별 chained plan과 fill별 risk decision/execution state lineage
@@ -2197,6 +2281,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - stale preview 또는 version mismatch를 적용할 수 없다.
 - plan 상태는 허용된 선형 transition만 가지며 재시작 후 동일하게 복원된다.
 - plan event payload digest가 다르면 승인·실행을 fail-closed한다.
+- plan ID가 record hash에서 파생되고 모든 event가 같은 plan hash를 보존한다.
+- stale replacement와 SELL 후속 BUY가 각 terminal predecessor union을 정확히 보존한다.
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
@@ -2212,6 +2298,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
 - immutable risk-state update origin repository와 breach trigger resolver
+- frozen evaluation snapshot을 가진 resumable trigger claim event chain
 - bucket별 exit policy와 selection request 실행
 - 각 fill 후 mark-to-market 및 risk snapshot 재평가
 - paper-only execution과 audit lineage
@@ -2282,11 +2369,13 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
 - mutable portfolio snapshot과 독립적인 trigger claim dedupe, 성공 후 동일 packet retry 수렴
+- claim 생성/시작 원자성과 crash 후 frozen snapshot resume, plan/no-action terminal 결과 보존
 - schedule/session calendar hash 입력의 ID/digest/createdAt 제외와 독립 rehash 검증
 - session calendar ID/version/hash/date coverage와 entry provenance 검증
 - scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
 - bucket `enabledMarkets`와 scheduled boundary/packet/request/mandate/action market 일치
 - rebalance plan record hash와 선형 event predecessor/scope 일치
+- hash-derived plan ID와 모든 plan event의 exact plan ID/hash binding
 - rebalance plan event full-payload digest와 hash-derived ID 검증
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
 - sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
@@ -2363,6 +2452,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - stale terminal event 이후 새 portfolio snapshot/version으로 replacement preview 생성
 - duplicate trigger claim/cycle 및 duplicate plan apply
 - stale replacement와 SELL 후속 BUY cycle의 terminal predecessor 기반 identity 검증
+- applied/stale predecessor strict union과 plan/event ID/hash/type mismatch 거절
+- trigger claim 중간 crash 뒤 frozen evaluation snapshot resume 및 no-action terminal dedupe
 - plan event chain 재시작 복원과 applied plan의 exactly-once 검증
 - in-plan expected mutation 허용과 unrelated portfolio drift의 stale 전환
 - decision/trade/state 중간 실패 후 재구성 또는 안전 중단
