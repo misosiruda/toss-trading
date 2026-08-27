@@ -516,6 +516,16 @@ interface StrategyBucketPolicy {
 type MandateAssignmentLineage =
   | {
       assignmentSource: "manual_policy";
+      manualAuthorizationScope: "open_or_increase";
+      manualAssignmentEventId: string;
+      manualCapacityReservationId: string;
+      manualCapacityReservationHash: string;
+      reservedSlotOrdinal: number;
+      reservedMaximumNotionalKrw: number;
+    }
+  | {
+      assignmentSource: "manual_policy";
+      manualAuthorizationScope: "classify_existing_reduce_only";
       manualAssignmentEventId: string;
     }
   | {
@@ -629,6 +639,44 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
         classificationMaxWeightRatio: number;
       }
   );
+
+interface ManualOpeningCapacityReservationRecord {
+  manualCapacityReservationId: string;
+  manualCapacityReservationHash: string;
+  manualAssignmentEventId: string;
+  manualAssignmentEventHash: string;
+  portfolioId: string;
+  policyHash: string;
+  bucket: StrategyBucket;
+  market: Market;
+  symbol: string;
+  currentPortfolioSnapshotId: string;
+  currentPortfolioSnapshotHash: string;
+  capacityLedgerVersion: number;
+  reservedSlotOrdinal: number;
+  reservedMaximumNotionalKrw: number;
+  resultingReservedNotionalKrw: number;
+  authorizationRef: string;
+  createdAt: string;
+}
+
+interface BucketOpeningCapacityState {
+  capacityStateId: string;
+  capacityStateHash: string;
+  portfolioId: string;
+  policyHash: string;
+  bucket: StrategyBucket;
+  currentPortfolioSnapshotId: string;
+  currentPortfolioSnapshotHash: string;
+  capacityLedgerVersion: number;
+  activePositionCount: number;
+  unconsumedReservationCount: number;
+  availableSlots: number;
+  reservedOpeningNotionalKrw: number;
+  remainingOpeningBudgetKrw: number;
+  lastReservationRecordId?: string;
+  asOf: string;
+}
 ```
 
 - 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
@@ -653,8 +701,10 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
 - `deterministic_selector` mandate는 request, assignment, scoring model과 score를 모두
   필수로 보존한다.
 - `manual_policy` mandate는 selector lineage field를 포함하지 않고
-  `manualAssignmentEventId`를 필수로 보존한다. 해당 append-only event가 먼저 저장되고
-  portfolio/policy/symbol/bucket/as-of scope가 mandate와 일치해야 한다.
+  `manualAssignmentEventId`와 event의 `authorizationScope`를 필수로 보존한다. `open_or_increase`만
+  capacity reservation lineage를 요구하고 `classify_existing_reduce_only`에는 이를 허용하지 않는다.
+  같은 transaction에서 append될 event payload를 먼저 검증하고 portfolio/policy/symbol/bucket/as-of
+  scope가 mandate와 일치해야 한다.
 - manual assignment event hash는 event ID/hash/createdAt을 제외한 complete variant payload에서
   계산하고 ID는 hash에서 파생한다. mandate 발급 전에 scope, evidence/validation,
   authorization, sizing 또는 classification range를 포함한 payload를 독립 rehash하며 exact
@@ -665,6 +715,27 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
   selector와 동일한 backend sizing algorithm에서 나온 immutable sizing input record,
   input/output hash, min/target/max range와 maximum notional을 필수로 보존한다.
   `authorizationRef`는 이 gate와 sizing을 우회할 수 없다.
+- manual open/increase는 event에 저장된 과거 snapshot만 신뢰하지 않는다. event append와
+  mandate activation을 묶는 transaction에서 current portfolio와 `BucketOpeningCapacityState`를
+  다시 읽어 active position+unconsumed reservation 수, current gap과 aggregate reserved notional을
+  재계산한다. available slot과 remaining budget이 모두 양수일 때만 다음 unique slot ordinal과
+  `min(manual maximum, remaining budget)`을 reserve한다.
+- `ManualOpeningCapacityReservationRecord`는 ID/hash/createdAt을 제외한 complete payload로 hash와
+  hash-derived ID를 만들며 manual event ID/hash, current snapshot, CAS ledger version, slot과
+  notional을 보존한다. manual event, reservation, mandate activation과 ledger version increment는
+  한 transaction으로 commit하고 실패 시 모두 rollback한다. mandate는 reservation ID/hash와
+  동일 slot/notional을 보존하며 reservation ID는 한 번만 소비할 수 있다.
+- `BucketOpeningCapacityState`는 selector와 manual open/increase가 함께 사용하는 bucket별 current
+  ledger다. state hash는 자기 hash를 제외한 complete payload로 계산하며 resolver는 current
+  portfolio, active mandate와 미소비 reservation을 replay해 position/reservation 수, available
+  slot, reserved notional과 remaining budget을 독립 재계산한다. snapshot/hash mismatch, version
+  gap 또는 state mismatch는 신규 mandate를 fail-closed한다.
+- selector assignment reservation과 manual reservation은 모두 expected `capacityLedgerVersion`을
+  조건으로 같은 state를 compare-and-swap한다. `(portfolioId, policyHash, bucket,
+  reservedSlotOrdinal)`은 active/unconsumed 동안 unique하고 총 reserved notional은 current gap과
+  maximum additional exposure budget을 넘을 수 없다. mandate activation이 reservation을
+  소비하거나 mandate가 미발급 상태로 취소·만료되면 같은 transaction에서 ledger를 갱신한다.
+  충돌한 요청은 stale snapshot으로 재계산해야 하며 이전 snapshot의 별도 reservation을 만들 수 없다.
 - `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
   classification range를 기록할 수 있지만 신규 매수와 수량 증가는 금지한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
@@ -1189,7 +1260,10 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
   `maximumOpeningNotionalKrw`로 고정하고 request 전체 reservation 합도 다시 검증한다.
   mandate repository는
   `candidateAssignmentId`를 unique consumption key로 사용해 같은 assignment의 두 번째 mandate를
-  거절하며 set seal과 mandate activation 사이의 경쟁은 transaction/compare-and-swap으로 막는다.
+  거절한다. set의 reservation을 실제 mandate로 소비할 때 current `BucketOpeningCapacityState`를
+  다시 계산하고 manual reservation과 같은 slot/notional ledger를 expected version으로
+  compare-and-swap한다. set seal과 mandate activation 사이에 manual 또는 다른 selector가 용량을
+  먼저 차지했으면 transaction을 rollback하고 stale request로 재평가한다.
 
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
@@ -1341,8 +1415,8 @@ interface PaperFillExecutionRecord {
   averageVolume: number | null;
   liquidityStale: boolean;
   fillStatus: "filled" | "partial";
-  liquidityStatus: "filled" | "partial" | "unavailable";
-  liquidityRejectReason: string | null;
+  liquidityStatus: "not_modeled" | "sufficient" | "partial";
+  liquidityRejectReason: null;
   fractionalShares: boolean;
   executionPolicy: {
     modelVersion: string;
@@ -1522,6 +1596,11 @@ type RebalancePlanEvent =
   participation에서 fill price, quantity, gross/net amount와 모든 cost component를 독립 재계산해
   stored output 및 total과 대조한다. exact retry만 기존 record로 수렴하며 이 검증 전에는
   execution event, cost/flow event 또는 portfolio mutation을 만들지 않는다.
+- 성공적으로 저장되는 `PaperFillExecutionRecord.liquidityStatus`는 기존
+  `PaperLiquidityStatus` 중 `not_modeled`, `sufficient`, `partial`만 사용한다. `rejected` 또는
+  `stale` liquidity result와 reject reason이 있는 결과는 fill record나 execution/accounting
+  event를 만들지 않고 plan을 `rejected` 또는 `stale` terminal로 전환한다. 문서 전용 별칭인
+  `filled`나 `unavailable`은 저장 contract에서 허용하지 않는다.
 - `PortfolioActionRiskDecision`은 기존 범용 decision ID를 그대로 신뢰하지 않고 plan/action,
   policy, market/symbol/side, execution target hash, prior cumulative notional/quantity, 이번
   requested notional/quantity와 expected pre-state를 canonical risk input hash에 묶는다.
@@ -1901,6 +1980,8 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | full digest로 인증한 manual authorization과 sizing lineage |
+| `manual-opening-capacity-reservations.jsonl` | 신규 append-only | manual open/increase의 single-use slot·notional 예약 |
+| `bucket-opening-capacity-state.json` | 신규 snapshot | selector/manual 공용 slot·opening budget CAS ledger |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
 | `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
 | `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
@@ -1935,12 +2016,13 @@ mandate 없이 observed position과 legacy state에 연결한다. 이 경로로 
 selector가 만든 mandate는 immutable portfolio sizing snapshot, request, sizing input과
 assignment record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지
 않거나 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
-manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 해당 sizing 또는
-classification range가 일치할 때만 발행한다. 신규 매수를 허용하는 manual event는 active
+manual mandate도 같은 transaction에서 `ManualAssignmentEvent`를 검증·append하고 scope와 해당
+sizing 또는 classification range가 일치할 때만 발행한다. 신규 매수를 허용하는 manual event는 active
 selection policy의 동일한 evidence/freshness/hard gate와 immutable portfolio snapshot 기반
 sizing input record 및 backend sizing input/output hash까지 검증한다. active policy가 참조하는
 selection policy record가 없거나 hash가 다르면 candidate evaluation과 신규 매수를
-fail-closed한다.
+fail-closed한다. selector와 manual 신규 mandate는 공용 `BucketOpeningCapacityState`를 CAS로
+갱신해 같은 bucket의 slot과 opening budget을 원자적으로 예약·소비한다.
 
 ## 11. API와 Dashboard 계획
 
@@ -2083,6 +2165,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - candidate assignment append-only repository와 request lineage 검증
 - assignment full-payload digest와 eligibility/hard-gate 독립 재평가
 - request별 sealed assignment set의 deterministic top-N과 unique assignment consumption
+- selector/manual 공용 bucket opening capacity ledger와 version CAS
 - canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
@@ -2094,6 +2177,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - assignment 전체 payload rehash와 eligibility/score/reason code 재계산이 일치한다.
 - sizing input record에서 feature, exposure/liquidity cap과 cost input을 재구성해 같은 hash와
   output range를 만든다.
+- 같은 snapshot의 selector와 manual 요청이 경합해도 unique slot과 opening budget을 초과하지 않는다.
 
 ### PR 6. Rebalance preview planner
 
@@ -2180,6 +2264,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - candidate assignment set의 sealed ordering/top-N, available slot cap과 unique consumption
 - selected assignment reservation 합계의 request gap/additional-exposure budget 상한
+- selector/manual 동시 요청의 공용 capacity ledger CAS, unique slot과 aggregate budget 상한
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
@@ -2188,6 +2273,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
 - manual `open_or_increase`의 immutable portfolio snapshot과 backend sizing input/output hash 일치
+- manual event/reservation/mandate/state의 원자 commit, rollback과 reservation single-use
 - manual `classify_existing_reduce_only`의 buy/increase 차단
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
@@ -2216,6 +2302,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
 - partial fill requested/filled/sequence/cumulative 계산, target 초과와 target 미달 applied 거절
 - whole-share slippage 후 actual/cumulative notional의 approved cash/exposure/liquidity cap 재검증
+- 성공 fill의 liquidity status가 `not_modeled | sufficient | partial`인지 검증하고
+  `filled | unavailable | rejected | stale` 저장 및 reject reason 동반 fill 거절
 - fractional SELL의 quantity 기반 완료와 불필요한 residual notional 대기 방지
 - capital-flow execution origin 중복과 amount mismatch 거절
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
