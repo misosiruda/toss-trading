@@ -555,6 +555,7 @@ interface InvestmentMandateBase {
 
 interface ManualAssignmentEventBase {
   manualAssignmentEventId: string;
+  manualAssignmentEventHash: string;
   portfolioId: string;
   policyHash: string;
   market: Market;
@@ -568,6 +569,7 @@ interface ManualAssignmentEventBase {
   evidenceAsOf: string;
   evidenceValidationHash: string;
   authorizationRef: string;
+  createdAt: string;
 }
 
 type ManualAssignmentEvent = ManualAssignmentEventBase &
@@ -619,6 +621,10 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
 - `manual_policy` mandate는 selector lineage field를 포함하지 않고
   `manualAssignmentEventId`를 필수로 보존한다. 해당 append-only event가 먼저 저장되고
   portfolio/policy/symbol/bucket/as-of scope가 mandate와 일치해야 한다.
+- manual assignment event hash는 event ID/hash/createdAt을 제외한 complete variant payload에서
+  계산하고 ID는 hash에서 파생한다. mandate 발급 전에 scope, evidence/validation,
+  authorization, sizing 또는 classification range를 포함한 payload를 독립 rehash하며 exact
+  retry만 기존 event로 수렴한다.
 - manual event의 `open_or_increase`는 active bucket selection policy를 resolve해 자동
   selector와 같은 required evidence, freshness와 hard gate를 통과한 `eligible` 결과 및
   validation hash가 있을 때만 허용한다. 또한 immutable portfolio sizing snapshot과
@@ -764,6 +770,7 @@ type BucketEquityEvent =
   | {
       eventType: "epoch_initialized";
       bucketEquityEventId: string;
+      bucketEquityEventHash: string;
       riskStateEpochId: string;
       activationId: string;
       previousRiskStateEpochId?: string;
@@ -781,6 +788,7 @@ type BucketEquityEvent =
   | {
       eventType: "capital_flow";
       bucketEquityEventId: string;
+      bucketEquityEventHash: string;
       previousBucketEquityEventId: string;
       riskStateEpochId: string;
       portfolioId: string;
@@ -797,6 +805,7 @@ type BucketEquityEvent =
   | {
       eventType: "valuation";
       bucketEquityEventId: string;
+      bucketEquityEventHash: string;
       previousBucketEquityEventId: string;
       riskStateEpochId: string;
       portfolioId: string;
@@ -811,6 +820,7 @@ type BucketEquityEvent =
   | {
       eventType: "execution_cost";
       bucketEquityEventId: string;
+      bucketEquityEventHash: string;
       previousBucketEquityEventId: string;
       riskStateEpochId: string;
       portfolioId: string;
@@ -830,6 +840,10 @@ type BucketEquityEvent =
 - policy activation은 bucket별 새 `riskStateEpochId`를 만들고 activation ID를 직접 참조하는
   `epoch_initialized` event로 시작한다. 초기화에는 존재하지 않는 rebalance plan을 참조하지
   않는다.
+- 모든 bucket equity event는 event ID와 `bucketEquityEventHash`를 제외한 complete variant
+  payload에서 hash를 계산하고 ID를 hash에서 파생한다. predecessor fold 전에 event type,
+  epoch/activation, amount/delta, execution/mark origin과 초기 NAV/HWM/units를 포함한 payload를
+  독립 rehash하며 mismatch는 전체 epoch를 corrupt로 처리해 신규 매수를 fail-closed한다.
 - 기존 bucket risk state가 있고 `drawdownSemanticsHash`가 같으면 `carried_forward`로 이전
   epoch ID, unit NAV와 high-water mark를 그대로 이어받는다. 정책의 다른 field가 바뀌어도
   drawdown history는 초기화되지 않는다.
@@ -922,6 +936,7 @@ interface PortfolioSizingSnapshot {
 
 interface BucketSelectionRequest {
   requestId: string;
+  requestHash: string;
   cycleId: string;
   triggerIdentity: string;
   triggerRef: string;
@@ -936,6 +951,7 @@ interface BucketSelectionRequest {
   availableSlots: number;
   maximumAdditionalExposureKrw: number;
   evidenceCutoffAt: string;
+  createdAt: string;
 }
 
 interface CandidateSizingInputRecord {
@@ -1045,10 +1061,14 @@ symbol 순서로 정렬하며 duplicate tuple을 거절한다.
   독립 재구성하기 전에는 snapshot을 sizing 또는 risk input으로 사용하지 않는다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
-- `requestId`는 `cycleId + bucket + portfolioSnapshotHash + policyHash + gapBasis`의 canonical
+- `requestHash`는 request ID/hash/createdAt을 제외한 complete payload에서 계산하고 request ID는
   hash에서 결정론적으로 파생한다. request는 cycle의 exact trigger identity/ref를 직접
-  보존하며 같은 ID의 exact retry는 기존 record를 반환한다. 같은 ID의 다른 payload나 한
-  cycle/bucket에 두 번째 request를 append하는 요청은 거절한다.
+  보존하며 같은 payload retry는 기존 record를 반환한다. `(cycleId, bucket)` unique key가 같은
+  두 번째 payload나 같은 ID의 hash collision은 거절한다.
+- selector는 sizing 전에 exact policy와 independently verified portfolio snapshot에서 current
+  exposure, min/entry-floor gap, available slot, cash/exposure cap을 다시 계산한다. derived
+  `gapBasis`, `gapKrw`, `availableSlots`, `maximumAdditionalExposureKrw`, cutoff와 request full
+  digest가 저장값과 정확히 같지 않으면 request를 소비하지 않는다.
 `CandidateSizingInputRecord`는 policy/snapshot/request scope, versioned feature value와 evidence,
 exposure cap, liquidity 및 execution cost model input 전체를 canonical form으로 append-only
 저장한다. `sizingInputHash`는 record ID, hash와 생성 시각을 제외한 이 전체 payload에서
@@ -1659,11 +1679,11 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
-| `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
+| `manual-assignment-events.jsonl` | 신규 append-only | full digest로 인증한 manual authorization과 sizing lineage |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
 | `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
 | `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
-| `bucket-equity-events.jsonl` | 신규 append-only | bucket capital flow, valuation, execution cost |
+| `bucket-equity-events.jsonl` | 신규 append-only | full-event digest를 가진 capital flow, valuation, execution cost |
 | `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `bucket-turnover-events.jsonl` | 신규 append-only | window별 fill turnover 원천과 누계 |
@@ -1674,7 +1694,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-risk-state-updates.jsonl` | 신규 append-only | risk trigger별 immutable update origin과 canonical hash |
 | `portfolio-trigger-claims.jsonl` | 신규 append-only | mutable snapshot과 독립적인 trigger dedupe claim |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
-| `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
+| `bucket-selection-requests.jsonl` | 신규 append-only | full digest와 재계산 가능한 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력·결과와 전체 digest |
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
 | `portfolio-action-risk-decisions.jsonl` | 신규 append-only | plan/action/pre-state별 Risk Engine 최종 판단 |
@@ -1801,6 +1821,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
 - selector가 만든 mandate는 request, assignment와 scoring model lineage를 가진다.
 - manual mandate는 먼저 저장된 assignment event와 scope/range가 일치한다.
+- manual assignment event의 complete payload digest와 hash-derived ID가 일치한다.
 - manual `open_or_increase`는 selector와 같은 evidence gate를 통과하고,
   `classify_existing_reduce_only`는 buy/increase를 만들지 않는다.
 - lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
@@ -1938,6 +1959,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - cycle-derived selection request와 request/symbol-derived assignment identity 및 collision 거절
+- selection request full-payload digest와 snapshot/policy 기반 gap/slot/cap 독립 재계산
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
 - mutable portfolio snapshot과 독립적인 trigger claim dedupe, 성공 후 동일 packet retry 수렴
@@ -1962,6 +1984,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - whole-share slippage 후 actual/cumulative notional의 approved cash/exposure/liquidity cap 재검증
 - fractional SELL의 quantity 기반 완료와 불필요한 residual notional 대기 방지
 - capital-flow execution origin 중복과 amount mismatch 거절
+- 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
