@@ -90,17 +90,17 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 현재 dashboard policy builder의 초기 draft는 다음 비중을 사용한다. 이 값은 활성
 정책이나 투자 권고가 아니라 paper simulation을 시작하기 위한 편집 가능한 예시다.
 
-| Bucket | Target | Min | Max | Max turnover | Max drawdown | Holding hint | Selection trigger |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| `long_term` | 35% | 20% | 50% | 15% | 18% | `multi_month` | `below_min` |
-| `swing` | 20% | 10% | 30% | 35% | 12% | `multi_week` | `below_min` |
-| `short_term` | 15% | 0% | 25% | 50% | 8% | `multi_day` | `target_gap_on_due_cycle` |
-| `intraday` | 10% | 0% | 15% | 100% | 4% | `intraday` | `target_gap_on_due_cycle` |
-| `hedge` | 5% | 0% | 15% | 40% | 6% | `hedge` | `target_gap_on_due_cycle` |
-| cash | 15% | - | - | - | - | dynamic regime | - |
+| Bucket | Target | Min | Max | Max turnover | Max drawdown | Holding hint | Selection trigger | Entry floor |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| `long_term` | 35% | 20% | 50% | 15% | 18% | `multi_month` | `below_min` | - |
+| `swing` | 20% | 10% | 30% | 35% | 12% | `multi_week` | `below_min` | - |
+| `short_term` | 15% | 0% | 25% | 50% | 8% | `multi_day` | `entry_floor_on_due_cycle` | 5% |
+| `intraday` | 10% | 0% | 15% | 100% | 4% | `intraday` | `entry_floor_on_due_cycle` | 2% |
+| `hedge` | 5% | 0% | 15% | 40% | 6% | `hedge` | `entry_floor_on_due_cycle` | 2% |
+| cash | 15% | - | - | - | - | dynamic regime | - | - |
 
-`Selection trigger` 열은 현재 builder에 구현된 값이 아니라 위 초기 비중을 runtime
-policy로 정규화할 때 추가할 계획 기본값이다.
+`Selection trigger`와 `Entry floor` 열은 현재 builder에 구현된 값이 아니라 위 초기
+비중을 runtime policy로 정규화할 때 추가할 계획 기본값이다.
 
 Policy builder의 drawdown/turnover 값과 historical replay preset의 take-profit,
 stop-loss, trailing stop 값은 현재 서로 다른 configuration source다. runtime policy를
@@ -192,6 +192,43 @@ interface StrategyBucketExitPolicy {
   timeExpiryAction: "review_required" | "sell_all";
 }
 
+type EvidenceClass =
+  | "market_technical"
+  | "fundamental_quality"
+  | "portfolio_fit"
+  | "execution_fit";
+
+interface EvidenceRequirement {
+  evidenceClass: EvidenceClass;
+  sourceContractId: string;
+  maximumAgeSeconds: number;
+  minimumObservationCount?: number;
+}
+
+interface BucketSelectionPolicyRecord {
+  selectionPolicyRecordId: string;
+  bucket: StrategyBucket;
+  version: string;
+  hash: string;
+  requiredEvidence: EvidenceRequirement[];
+  everyTickSourceRequirement?: {
+    sourceContractId: string;
+    eventType: "verified_market_packet";
+    maximumAgeSeconds: number;
+    dedupeKey: "packet_hash";
+  };
+  hardGateRuleIds: string[];
+  scoringModelVersion: string;
+  featureDefinitionRefs: string[];
+  createdAt: string;
+}
+
+interface BucketSelectionPolicyRef {
+  selectionPolicyRecordId: string;
+  version: string;
+  hash: string;
+}
+
 interface StrategyBucketPolicy {
   bucket: StrategyBucket;
   targetWeightRatio: number;
@@ -203,20 +240,27 @@ interface StrategyBucketPolicy {
   eventTriggers: Array<
     "regime_change" | "thesis_evidence_change" | "risk_breach"
   >;
-  selectionTrigger: "below_min" | "target_gap_on_due_cycle";
+  selectionTrigger: "below_min" | "entry_floor_on_due_cycle";
+  entryWeightRatio?: number;
   minimumHoldingSeconds?: number;
   maximumHoldingSeconds?: number;
   exitPolicy: StrategyBucketExitPolicy;
   enabledAssetClasses: string[];
-  selectionPolicyVersion: string;
+  selectionPolicyRef: BucketSelectionPolicyRef;
 }
 ```
 
 - `holdingPeriodHint`를 실제 cadence와 holding boundary로 구체화한다.
-- target이 양수이고 min이 0인 bucket은 `target_gap_on_due_cycle`을 필수로 검증해
-  empty portfolio에서 영구적으로 선택 불가능한 정책을 거절한다.
-- `every_tick`은 `intraday` bucket과 검증된 event source requirement가 함께 있을 때만
-  허용한다.
+- target이 양수이고 min이 0인 bucket은 `entry_floor_on_due_cycle`과
+  `0 < entryWeightRatio <= targetWeightRatio`를 필수로 검증해 empty portfolio에서
+  영구적으로 선택 불가능한 정책을 거절한다.
+- `every_tick`은 `intraday` bucket이고 참조한 immutable selection policy에
+  `everyTickSourceRequirement`가 있을 때만 허용한다.
+- activation과 replay 시작 시 `selectionPolicyRef`가 같은 bucket/version/hash의 immutable
+  record로 resolve되어야 한다. required evidence, freshness, source contract, hard gate,
+  feature와 scoring version을 구현 기본값으로 대체하지 않는다.
+- active `PortfolioPolicy` canonical hash는 각 bucket의 complete `selectionPolicyRef`를
+  포함해 selection rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
 - take-profit을 사용하지 않으면 `disabled`, 전량 익절은 trigger ratio가 필수인
   `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
   `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
@@ -229,7 +273,22 @@ interface StrategyBucketPolicy {
 ### 6.3 `InvestmentMandate`
 
 ```ts
-interface InvestmentMandate {
+type MandateAssignmentLineage =
+  | {
+      assignmentSource: "manual_policy";
+      manualAssignmentEventId: string;
+    }
+  | {
+      assignmentSource: "deterministic_selector";
+      selectionRequestId: string;
+      candidateAssignmentId: string;
+      scoringModelVersion: string;
+      selectionScore: number;
+    };
+
+type InvestmentMandate = InvestmentMandateBase & MandateAssignmentLineage;
+
+interface InvestmentMandateBase {
   mandateId: string;
   portfolioId: string;
   market: Market;
@@ -237,14 +296,9 @@ interface InvestmentMandate {
   bucket: StrategyBucket;
   policyHash: string;
   asOf: string;
-  assignmentSource: "manual_policy" | "deterministic_selector";
-  selectionRequestId?: string;
-  candidateAssignmentId?: string;
-  scoringModelVersion?: string;
   targetWeightRatio: number;
   minWeightRatio: number;
   maxWeightRatio: number;
-  selectionScore: number;
   reasonCodes: string[];
   evidenceRefs: string[];
   evidenceAsOf: string;
@@ -254,15 +308,32 @@ interface InvestmentMandate {
   expiresAt?: string;
   status: "proposed" | "active" | "review_required" | "retired";
 }
+
+interface ManualAssignmentEvent {
+  manualAssignmentEventId: string;
+  portfolioId: string;
+  policyHash: string;
+  market: Market;
+  symbol: string;
+  bucket: StrategyBucket;
+  asOf: string;
+  targetWeightRatio: number;
+  minWeightRatio: number;
+  maxWeightRatio: number;
+  reasonCodes: string[];
+  evidenceRefs: string[];
+  authorizationRef: string;
+}
 ```
 
 - 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
 - 같은 portfolio 안에서 같은 종목을 두 bucket에 중복 계상하지 않는다.
 - bucket 변경은 기존 mandate를 retire하고 새 mandate를 발행하는 명시적 migration이다.
-- `deterministic_selector` mandate는 `selectionRequestId`, `candidateAssignmentId`,
-  `scoringModelVersion`을 모두 필수로 보존한다.
-- `manual_policy` mandate는 selector lineage field를 포함하지 않으며 별도의 manual
-  assignment audit event를 참조한다.
+- `deterministic_selector` mandate는 request, assignment, scoring model과 score를 모두
+  필수로 보존한다.
+- `manual_policy` mandate는 selector lineage field를 포함하지 않고
+  `manualAssignmentEventId`를 필수로 보존한다. 해당 append-only event가 먼저 저장되고
+  portfolio/policy/symbol/bucket/as-of scope가 mandate와 일치해야 한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
 - target weight는 AI 출력이 아니라 backend sizing 결과다.
 
@@ -358,6 +429,7 @@ interface BucketSelectionRequest {
   policyHash: string;
   asOf: string;
   bucket: StrategyBucket;
+  gapBasis: "min" | "entry_floor";
   gapKrw: number;
   availableSlots: number;
   maximumAdditionalExposureKrw: number;
@@ -468,14 +540,19 @@ currentWeight = bucketExposureKrw / virtualNetWorthKrw
 targetGapKrw = max(0, targetWeightKrw - currentExposureKrw)
 overweightKrw = max(0, currentExposureKrw - maxWeightKrw)
 underweightKrw = max(0, minWeightKrw - currentExposureKrw)
+entryWeightKrw = entryWeightRatio * virtualNetWorthKrw
+entryGapKrw = max(0, entryWeightKrw - currentExposureKrw)
 ```
 
 - `selectionTrigger = below_min`이면 `underweightKrw > 0`일 때만 request를 만든다.
-- `selectionTrigger = target_gap_on_due_cycle`이면 bucket cadence 또는 event trigger가
-  도래했고 `targetGapKrw > 0`일 때 request를 만들 수 있다. 이 모드는 min이 0인 선택적
-  bucket을 empty portfolio에서 bootstrap할 수 있도록 policy에 명시적으로 선언한다.
+- `targetGapKrw`는 compliance와 목표 대비 drift 표시용이며 그 자체로 매수 요청이나
+  exact-target 추격을 발생시키지 않는다.
+- `selectionTrigger = entry_floor_on_due_cycle`이면 bucket cadence 또는 event trigger가
+  도래했고 `entryGapKrw > 0`일 때만 request를 만든다. 이 모드는 min이 0인 선택적
+  bucket을 empty portfolio에서 bootstrap하되 entry floor까지만 채우는 명시적 band
+  예외다. entry floor에 도달한 뒤에는 target을 추격하지 않는다.
 - target보다 낮지만 min 이상인 `below_min` bucket은 비용과 turnover를 고려해 유지한다.
-- `target_gap_on_due_cycle`도 required evidence, buy capacity, cash reserve, cost와 turnover
+- `entry_floor_on_due_cycle`도 required evidence, buy capacity, cash reserve, cost와 turnover
   gate를 통과하지 못하면 request 또는 trade를 만들지 않는다.
 - max를 넘으면 신규 매수를 차단하고 sell/rebalance candidate를 만든다.
 - cash reserve 미달이면 모든 신규 매수를 차단한다.
@@ -533,8 +610,10 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
+| `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
+| `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
 | `instrument-mandates.jsonl` | 신규 append-only | 종목 역할·target·evidence 변화 |
 | `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
@@ -551,6 +630,9 @@ ref가 적용되면 해당 ref도 직접 포함한다. `unassigned_legacy`는 po
 selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 assignment
 record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
+manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 sizing range가 일치할
+때만 발행한다. active policy가 참조하는 selection policy record가 없거나 hash가 다르면
+candidate evaluation과 신규 매수를 fail-closed한다.
 
 ## 11. API와 Dashboard 계획
 
@@ -615,6 +697,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 ### PR 1. Runtime policy contract와 activation lineage
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
+- immutable bucket selection policy ref와 resolver validation
 - append-only activation record와 single-active fail-closed resolver
 - policy hash/version parser와 migration test
 - runner와 order engine에는 아직 연결하지 않음
@@ -637,7 +720,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 ### PR 3. `InvestmentMandate`와 position strategy state
 
-- assigned/unassigned legacy state를 구분하는 strict schema와 repository
+- assigned/unassigned legacy state와 manual assignment event의 strict schema/repository
 - portfolio 안에서 한 종목 하나의 active mandate invariant
 - 기존 position의 `unassigned_legacy` migration
 - peak, review cadence, holding age persistence
@@ -646,6 +729,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
 - selector가 만든 mandate는 request, assignment와 scoring model lineage를 가진다.
+- manual mandate는 먼저 저장된 assignment event와 scope/range가 일치한다.
 - lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
   `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
 
@@ -660,15 +744,16 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
-- `below_min` request는 `underweightKrw > 0`일 때만, `target_gap_on_due_cycle` request는
-  due cycle에서 `targetGapKrw > 0`일 때만 생성된다.
-- min이 0이고 target이 양수인 선택적 bucket은 명시적인 `target_gap_on_due_cycle`로
-  empty portfolio bootstrap이 가능하다.
+- `below_min` request는 `underweightKrw > 0`일 때만, `entry_floor_on_due_cycle` request는
+  due cycle에서 `entryGapKrw > 0`일 때만 생성된다.
+- min이 0이고 target이 양수인 선택적 bucket은 명시적인 entry floor까지만 empty
+  portfolio bootstrap이 가능하며 floor 도달 후 target을 반복 추격하지 않는다.
 - cash reserve 미달이면 모든 buy capacity가 0이다.
 
 ### PR 5. Bucket candidate selector contract
 
 - 공통 hard gate와 bucket별 scoring interface
+- immutable selection policy record와 hash resolver
 - price/volume 기반 `market_technical` feature부터 구현
 - evidence completeness와 scoring model version 기록
 - candidate assignment append-only repository와 request lineage 검증
@@ -677,6 +762,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
+- policy가 요구하는 evidence/source/freshness rule을 exact record에서 읽는다.
 - required evidence가 없는 candidate는 fail-closed한다.
 
 ### PR 6. Rebalance preview planner
@@ -728,11 +814,13 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - bucket target + cash target 합계 100%
 - target이 min/max 범위 안에 존재
 - policy hash canonicalization과 version compatibility
+- active policy의 selection policy ref가 immutable record와 일치
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
+- manual mandate의 assignment event reference와 scope/range 일치
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
@@ -740,7 +828,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 ### Gap 및 sizing
 
 - `below_min` mode는 min/max band 내부에서 불필요한 trade가 없음
-- `target_gap_on_due_cycle`은 명시적인 due cycle과 target gap이 모두 있어야 selection 가능
+- `entry_floor_on_due_cycle`은 due cycle과 entry gap이 모두 있을 때만 floor까지 selection 가능
 - overweight sell이 underweight buy보다 먼저 처리됨
 - cash reserve, symbol, bucket, sector, country, currency limit 중 최소 cap 적용
 - dust와 거래비용 threshold 이하의 계획 제외
