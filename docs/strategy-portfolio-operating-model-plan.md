@@ -513,15 +513,28 @@ interface StrategyBucketPolicy {
 ### 6.3 `InvestmentMandate`
 
 ```ts
+type ManualCapacityReservationLineage = {
+  manualCapacityReservationId: string;
+  manualCapacityReservationHash: string;
+  reservedMaximumNotionalKrw: number;
+} &
+  (
+    | {
+        reservationKind: "new_position";
+        reservedSlotOrdinal: number;
+      }
+    | {
+        reservationKind: "increase_existing";
+        existingPositionRef: string;
+      }
+  );
+
 type MandateAssignmentLineage =
   | {
       assignmentSource: "manual_policy";
       manualAuthorizationScope: "open_or_increase";
       manualAssignmentEventId: string;
-      manualCapacityReservationId: string;
-      manualCapacityReservationHash: string;
-      reservedSlotOrdinal: number;
-      reservedMaximumNotionalKrw: number;
+      capacityReservation: ManualCapacityReservationLineage;
     }
   | {
       assignmentSource: "manual_policy";
@@ -640,7 +653,7 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
       }
   );
 
-interface ManualOpeningCapacityReservationRecord {
+interface ManualOpeningCapacityReservationRecordBase {
   manualCapacityReservationId: string;
   manualCapacityReservationHash: string;
   manualAssignmentEventId: string;
@@ -653,12 +666,24 @@ interface ManualOpeningCapacityReservationRecord {
   currentPortfolioSnapshotId: string;
   currentPortfolioSnapshotHash: string;
   capacityLedgerVersion: number;
-  reservedSlotOrdinal: number;
   reservedMaximumNotionalKrw: number;
   resultingReservedNotionalKrw: number;
   authorizationRef: string;
   createdAt: string;
 }
+
+type ManualOpeningCapacityReservationRecord =
+  ManualOpeningCapacityReservationRecordBase &
+    (
+      | {
+          reservationKind: "new_position";
+          reservedSlotOrdinal: number;
+        }
+      | {
+          reservationKind: "increase_existing";
+          existingPositionRef: string;
+        }
+    );
 
 interface BucketOpeningCapacityState {
   capacityStateId: string;
@@ -670,12 +695,37 @@ interface BucketOpeningCapacityState {
   currentPortfolioSnapshotHash: string;
   capacityLedgerVersion: number;
   activePositionCount: number;
-  unconsumedReservationCount: number;
+  pendingReservationCount: number;
+  mandateBoundUnusedSlotCount: number;
   availableSlots: number;
   reservedOpeningNotionalKrw: number;
   remainingOpeningBudgetKrw: number;
   lastReservationRecordId?: string;
   asOf: string;
+}
+
+interface OpeningCapacityReservationEvent {
+  capacityReservationEventId: string;
+  capacityReservationEventHash: string;
+  previousCapacityReservationEventId?: string;
+  reservationId: string;
+  reservationHash: string;
+  portfolioId: string;
+  policyHash: string;
+  bucket: StrategyBucket;
+  eventType:
+    | "reserved"
+    | "bound_to_mandate"
+    | "partially_consumed"
+    | "consumed_by_position"
+    | "released";
+  mandateId?: string;
+  paperFillRecordId?: string;
+  remainingReservedNotionalKrw: number;
+  occupiesNewPositionSlot: boolean;
+  capacityLedgerVersion: number;
+  asOf: string;
+  createdAt: string;
 }
 ```
 
@@ -702,7 +752,8 @@ interface BucketOpeningCapacityState {
   필수로 보존한다.
 - `manual_policy` mandate는 selector lineage field를 포함하지 않고
   `manualAssignmentEventId`와 event의 `authorizationScope`를 필수로 보존한다. `open_or_increase`만
-  capacity reservation lineage를 요구하고 `classify_existing_reduce_only`에는 이를 허용하지 않는다.
+  strict `new_position | increase_existing` capacity reservation lineage를 요구하고
+  `classify_existing_reduce_only`에는 이를 허용하지 않는다.
   같은 transaction에서 append될 event payload를 먼저 검증하고 portfolio/policy/symbol/bucket/as-of
   scope가 mandate와 일치해야 한다.
 - manual assignment event hash는 event ID/hash/createdAt을 제외한 complete variant payload에서
@@ -717,24 +768,31 @@ interface BucketOpeningCapacityState {
   `authorizationRef`는 이 gate와 sizing을 우회할 수 없다.
 - manual open/increase는 event에 저장된 과거 snapshot만 신뢰하지 않는다. event append와
   mandate activation을 묶는 transaction에서 current portfolio와 `BucketOpeningCapacityState`를
-  다시 읽어 active position+unconsumed reservation 수, current gap과 aggregate reserved notional을
-  재계산한다. available slot과 remaining budget이 모두 양수일 때만 다음 unique slot ordinal과
-  `min(manual maximum, remaining budget)`을 reserve한다.
+  다시 읽어 active position+pending reservation+active mandate의 unused opening reservation 수,
+  current gap과 aggregate reserved notional을 재계산한다. 신규 symbol은 available slot과 remaining
+  budget이 모두 양수일 때만 다음 unique slot ordinal과 `min(manual maximum, remaining budget)`을
+  reserve한다. 기존 position 증가는 새 slot을 차감하지 않지만 remaining budget은 reserve한다.
 - `ManualOpeningCapacityReservationRecord`는 ID/hash/createdAt을 제외한 complete payload로 hash와
   hash-derived ID를 만들며 manual event ID/hash, current snapshot, CAS ledger version, slot과
-  notional을 보존한다. manual event, reservation, mandate activation과 ledger version increment는
+  notional 또는 existing position ref를 보존한다. manual event, reservation, mandate activation과 ledger version increment는
   한 transaction으로 commit하고 실패 시 모두 rollback한다. mandate는 reservation ID/hash와
-  동일 slot/notional을 보존하며 reservation ID는 한 번만 소비할 수 있다.
+  동일 reservation kind/slot 또는 position ref/notional을 보존하며 reservation ID는 하나의
+  mandate에만 bind할 수 있다.
 - `BucketOpeningCapacityState`는 selector와 manual open/increase가 함께 사용하는 bucket별 current
   ledger다. state hash는 자기 hash를 제외한 complete payload로 계산하며 resolver는 current
-  portfolio, active mandate와 미소비 reservation을 replay해 position/reservation 수, available
-  slot, reserved notional과 remaining budget을 독립 재계산한다. snapshot/hash mismatch, version
+  portfolio와 `OpeningCapacityReservationEvent` chain을 replay해 active position, pending 및
+  mandate-bound unused slot 수, available slot, reserved notional과 remaining budget을 독립
+  재계산한다. snapshot/hash mismatch, version
   gap 또는 state mismatch는 신규 mandate를 fail-closed한다.
 - selector assignment reservation과 manual reservation은 모두 expected `capacityLedgerVersion`을
   조건으로 같은 state를 compare-and-swap한다. `(portfolioId, policyHash, bucket,
   reservedSlotOrdinal)`은 active/unconsumed 동안 unique하고 총 reserved notional은 current gap과
-  maximum additional exposure budget을 넘을 수 없다. mandate activation이 reservation을
-  소비하거나 mandate가 미발급 상태로 취소·만료되면 같은 transaction에서 ledger를 갱신한다.
+  maximum additional exposure budget을 넘을 수 없다. mandate activation은 reservation을
+  `bound_to_mandate`로 한 번만 전환할 뿐 slot/notional을 해제하지 않는다. 신규 position의 첫
+  BUY fill이 생길 때 slot reservation을 `consumed_by_position`으로 바꾸고 active position count를
+  같은 transaction에서 늘려 합계 점유량을 유지한다. partial fill은 filled notional만 차감하고
+  잔여 reservation은 mandate에 계속 묶는다. target 충족 또는 mandate 취소·retire 시에만 잔여를
+  consume/release하며 ledger를 같은 transaction에서 갱신한다.
   충돌한 요청은 stale snapshot으로 재계산해야 하며 이전 snapshot의 별도 reservation을 만들 수 없다.
 - `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
   classification range를 기록할 수 있지만 신규 매수와 수량 증가는 금지한다.
@@ -861,6 +919,8 @@ interface BucketValuationMarkRecord {
     market: Market;
     symbol: string;
     quantity: number;
+    previousPositionMarkHeadId: string;
+    previousPositionMarkHeadHash: string;
     previousPriceKrw: number;
     currentPriceKrw: number;
     previousPriceEvidenceRef: string;
@@ -869,6 +929,22 @@ interface BucketValuationMarkRecord {
   equityDeltaKrw: number;
   asOf: string;
   createdAt: string;
+}
+
+interface BucketPositionMarkHeadState {
+  positionMarkHeadId: string;
+  positionMarkHeadHash: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  market: Market;
+  symbol: string;
+  quantity: number;
+  currentPriceKrw: number;
+  currentPriceEvidenceRef: string;
+  lastValuationMarkRecordId?: string;
+  lastValuationMarkHash?: string;
+  lastPositionMutationRef?: string;
+  asOf: string;
 }
 
 type BucketEquityEvent =
@@ -982,8 +1058,17 @@ type BucketEquityEvent =
   valuation은 exact immutable `BucketValuationMarkRecord` ID/hash를 참조한다. mark record는
   position input을 market/symbol 순으로 canonicalize하고 duplicate를 거절하며 ID/hash/createdAt을
   제외한 payload로 hash와 hash-derived ID를 만든다. resolver는 저장된 quantity와 이전/현재
-  mark evidence로 delta를 독립 재계산한다. 같은 epoch/bucket/mark record origin의 exact retry는
+  mark evidence로 delta를 독립 재계산한다. 각 input의 previous head ID/hash, quantity, price와
+  evidence는 해당 symbol의 current `BucketPositionMarkHeadState`와 정확히 같아야 하고
+  `previousPriceKrw`는 그 head의 `currentPriceKrw`여야 한다. current `asOf`는 head보다 뒤여야 하며
+  같은 symbol의 overlapping/discontinuous interval은 거절한다. valuation event와 모든 resulting
+  position mark head CAS update는 한 transaction으로 처리한다. 같은 epoch/bucket/mark record origin의 exact retry는
   기존 event를 반환하고 새 event ID, predecessor 또는 delta로 중복 append할 수 없다.
+- fill 또는 position migration으로 quantity가 바뀌면 다음 valuation 전에 exact fill/migration
+  origin을 가진 position mark head update로 quantity와 price basis를 조정한다. resolver는 이전
+  head와 mutation origin을 replay해 새 head를 검증하며, 임의의 이전 가격을 제시하거나 fill 이후
+  오래된 head에서 valuation을 분기할 수 없다. initial/legacy position의 첫 head는 verified current
+  mark evidence로 열고 그 자체로 valuation PnL을 만들지 않는다.
   `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 exact `PaperFillExecutionRecord`
   ID/hash를 참조한다. resolver는 source/fill price, quantity, participation/liquidity input,
   complete execution policy와 fee/tax/spread/slippage/impact breakdown을 독립 재계산하고
@@ -2086,12 +2171,14 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | full digest로 인증한 manual authorization과 sizing lineage |
 | `manual-opening-capacity-reservations.jsonl` | 신규 append-only | manual open/increase의 single-use slot·notional 예약 |
+| `opening-capacity-reservation-events.jsonl` | 신규 append-only | selector/manual 예약의 mandate binding, fill 소비와 release chain |
 | `bucket-opening-capacity-state.json` | 신규 snapshot | selector/manual 공용 slot·opening budget CAS ledger |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
 | `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
 | `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
 | `bucket-equity-events.jsonl` | 신규 append-only | full-event digest를 가진 capital flow, valuation, execution cost |
 | `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
+| `bucket-position-mark-head-state.json` | 신규 snapshot | 종목별 last accepted price/evidence와 valuation predecessor |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `bucket-turnover-events.jsonl` | 신규 append-only | window별 fill turnover 원천과 누계 |
 | `bucket-turnover-state.json` | 신규 snapshot | 고정 분모, 누적 notional과 turnover ratio |
@@ -2272,6 +2359,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - assignment full-payload digest와 eligibility/hard-gate 독립 재평가
 - request별 sealed assignment set의 deterministic top-N과 unique assignment consumption
 - selector/manual 공용 bucket opening capacity ledger와 version CAS
+- mandate activation부터 position 생성까지 유지되는 reservation lifecycle event chain
 - canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
@@ -2284,6 +2372,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - sizing input record에서 feature, exposure/liquidity cap과 cost input을 재구성해 같은 hash와
   output range를 만든다.
 - 같은 snapshot의 selector와 manual 요청이 경합해도 unique slot과 opening budget을 초과하지 않는다.
+- mandate만 활성화되고 fill이 늦어져도 unused opening capacity가 해제되지 않는다.
 
 ### PR 6. Rebalance preview planner
 
@@ -2376,10 +2465,12 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - candidate assignment set의 sealed ordering/top-N, available slot cap과 unique consumption
 - selected assignment reservation 합계의 request gap/additional-exposure budget 상한
 - selector/manual 동시 요청의 공용 capacity ledger CAS, unique slot과 aggregate budget 상한
+- reservation의 mandate binding, partial fill, position 생성과 release transition replay
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
 - valuation mark의 market/symbol, FX의 base/quote identity와 duplicate 거절
+- 종목별 previous mark head 연속성, overlap/gap과 stale predecessor 거절
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
@@ -2421,6 +2512,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - capital-flow execution origin 중복과 amount mismatch 거절
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
+- fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
 ### Gap 및 sizing
