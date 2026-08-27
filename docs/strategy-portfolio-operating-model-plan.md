@@ -704,29 +704,79 @@ interface BucketOpeningCapacityState {
   asOf: string;
 }
 
-interface OpeningCapacityReservationEvent {
+interface OpeningCapacityReservationEventBase {
   capacityReservationEventId: string;
   capacityReservationEventHash: string;
-  previousCapacityReservationEventId?: string;
   reservationId: string;
   reservationHash: string;
   portfolioId: string;
   policyHash: string;
   bucket: StrategyBucket;
-  eventType:
-    | "reserved"
-    | "bound_to_mandate"
-    | "partially_consumed"
-    | "consumed_by_position"
-    | "released";
-  mandateId?: string;
-  paperFillRecordId?: string;
   remainingReservedNotionalKrw: number;
   occupiesNewPositionSlot: boolean;
   capacityLedgerVersion: number;
   asOf: string;
   createdAt: string;
 }
+
+type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
+  (
+    | {
+        eventType: "reserved";
+        previousCapacityReservationEventId?: never;
+        reservationSource:
+          | {
+              sourceKind: "manual";
+              manualCapacityReservationId: string;
+              manualCapacityReservationHash: string;
+            }
+          | {
+              sourceKind: "selector";
+              candidateAssignmentSetId: string;
+              candidateAssignmentSetHash: string;
+              candidateAssignmentId: string;
+            };
+      }
+    | {
+        eventType: "bound_to_mandate";
+        previousCapacityReservationEventId: string;
+        mandateId: string;
+        mandateHash: string;
+      }
+    | {
+        eventType: "partially_consumed";
+        previousCapacityReservationEventId: string;
+        mandateId: string;
+        mandateHash: string;
+        fillId: string;
+        paperFillRecordId: string;
+        paperFillHash: string;
+      }
+    | {
+        eventType: "consumed_by_position";
+        previousCapacityReservationEventId: string;
+        mandateId: string;
+        mandateHash: string;
+        fillId: string;
+        paperFillRecordId: string;
+        paperFillHash: string;
+        resultingPositionRef: string;
+      }
+    | {
+        eventType: "released";
+        previousCapacityReservationEventId: string;
+        releaseOrigin:
+          | { originKind: "request_cancelled"; requestOrManualEventId: string }
+          | {
+              originKind: "mandate_terminal";
+              mandateId: string;
+              mandateHash: string;
+              mandateEventId: string;
+              mandateEventHash: string;
+            };
+        releaseReasonCode: string;
+      }
+  );
 ```
 
 - 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
@@ -784,6 +834,12 @@ interface OpeningCapacityReservationEvent {
   mandate-bound unused slot 수, available slot, reserved notional과 remaining budget을 독립
   재계산한다. snapshot/hash mismatch, version
   gap 또는 state mismatch는 신규 mandate를 fail-closed한다.
+- capacity reservation event hash는 event ID/hash/createdAt을 제외한 complete strict variant
+  payload에서 계산하고 ID는 hash에서 파생한다. resolver는 source assignment/manual reservation,
+  mandate/event와 paper fill origin을 exact ID/hash로 resolve한 뒤 독립 rehash한다. 첫 `reserved`
+  event만 predecessor를 생략하며 이후 event는 current chain head와 다음 ledger version을 정확히
+  가리켜야 한다. unknown/optional origin, transition branch, version gap, terminal 이후 event,
+  증가한 remaining notional과 event type에 맞지 않는 slot flag는 모두 거절한다.
 - selector assignment reservation과 manual reservation은 모두 expected `capacityLedgerVersion`을
   조건으로 같은 state를 compare-and-swap한다. `(portfolioId, policyHash, bucket,
   reservedSlotOrdinal)`은 active/unconsumed 동안 unique하고 총 reserved notional은 current gap과
@@ -941,11 +997,73 @@ interface BucketPositionMarkHeadState {
   quantity: number;
   currentPriceKrw: number;
   currentPriceEvidenceRef: string;
+  lastPositionMarkHeadEventId: string;
+  lastPositionMarkHeadEventHash: string;
   lastValuationMarkRecordId?: string;
   lastValuationMarkHash?: string;
   lastPositionMutationRef?: string;
   asOf: string;
 }
+
+interface BucketPositionMarkHeadEventBase {
+  positionMarkHeadEventId: string;
+  positionMarkHeadEventHash: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  market: Market;
+  symbol: string;
+  resultingQuantity: number;
+  resultingPriceKrw: number;
+  resultingPriceEvidenceRef: string;
+  asOf: string;
+  createdAt: string;
+}
+
+type BucketPositionMarkHeadEvent = BucketPositionMarkHeadEventBase &
+  (
+    | {
+        eventType: "initialized";
+        previousPositionMarkHeadEventId?: never;
+        initializationOrigin:
+          | {
+              originKind: "position_opening_fill";
+              fillId: string;
+              paperFillRecordId: string;
+              paperFillHash: string;
+            }
+          | {
+              originKind: "legacy_verified_mark";
+              observedPositionRef: string;
+              markEvidenceRef: string;
+            };
+      }
+    | {
+        eventType: "valuation_applied";
+        previousPositionMarkHeadEventId: string;
+        previousPositionMarkHeadEventHash: string;
+        bucketValuationMarkRecordId: string;
+        valuationMarkHash: string;
+        bucketEquityEventId: string;
+        bucketEquityEventHash: string;
+      }
+    | {
+        eventType: "position_mutation_applied";
+        previousPositionMarkHeadEventId: string;
+        previousPositionMarkHeadEventHash: string;
+        mutationOrigin:
+          | {
+              originKind: "paper_fill";
+              fillId: string;
+              paperFillRecordId: string;
+              paperFillHash: string;
+            }
+          | {
+              originKind: "verified_migration";
+              migrationRecordId: string;
+              migrationRecordHash: string;
+            };
+      }
+  );
 
 type BucketEquityEvent =
   | {
@@ -1069,6 +1187,13 @@ type BucketEquityEvent =
   head와 mutation origin을 replay해 새 head를 검증하며, 임의의 이전 가격을 제시하거나 fill 이후
   오래된 head에서 valuation을 분기할 수 없다. initial/legacy position의 첫 head는 verified current
   mark evidence로 열고 그 자체로 valuation PnL을 만들지 않는다.
+- position mark head event hash는 event ID/hash/createdAt을 제외한 complete strict variant
+  payload에서 계산하고 ID는 hash에서 파생한다. initialized만 predecessor를 생략하며 valuation과
+  mutation variant는 previous event ID/hash와 exact authenticated origin을 필수로 가진다. head
+  snapshot hash는 자기 hash를 제외한 complete payload에서 계산하고 stable ID는
+  portfolio/bucket/market/symbol에서 파생한다. 사용 전 event chain을 독립 rehash·replay해 resulting
+  quantity/price/evidence, last origin과 snapshot hash가 모두 일치해야 하며 mismatch는 valuation과
+  신규 매수를 fail-closed한다.
   `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 exact `PaperFillExecutionRecord`
   ID/hash를 참조한다. resolver는 source/fill price, quantity, participation/liquidity input,
   complete execution policy와 fee/tax/spread/slippage/impact breakdown을 독립 재계산하고
@@ -2178,6 +2303,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
 | `bucket-equity-events.jsonl` | 신규 append-only | full-event digest를 가진 capital flow, valuation, execution cost |
 | `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
+| `bucket-position-mark-head-events.jsonl` | 신규 append-only | 종목별 mark initialization, valuation과 position mutation chain |
 | `bucket-position-mark-head-state.json` | 신규 snapshot | 종목별 last accepted price/evidence와 valuation predecessor |
 | `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `bucket-turnover-events.jsonl` | 신규 append-only | window별 fill turnover 원천과 누계 |
@@ -2466,11 +2592,13 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selected assignment reservation 합계의 request gap/additional-exposure budget 상한
 - selector/manual 동시 요청의 공용 capacity ledger CAS, unique slot과 aggregate budget 상한
 - reservation의 mandate binding, partial fill, position 생성과 release transition replay
+- reservation event strict variant의 full-payload rehash와 mandatory origin 검증
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
 - valuation mark의 market/symbol, FX의 base/quote identity와 duplicate 거절
 - 종목별 previous mark head 연속성, overlap/gap과 stale predecessor 거절
+- mark head event strict variant rehash와 snapshot replay 일치
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
@@ -2513,6 +2641,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
 - fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
+- corrupt mark head snapshot, event branch와 unauthenticated mutation origin 거절
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
 ### Gap 및 sizing
