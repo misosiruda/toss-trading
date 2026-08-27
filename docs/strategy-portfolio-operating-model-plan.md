@@ -156,6 +156,7 @@ type PortfolioPolicyActivationEvent =
       mode: "paper_only";
       activationId: string;
       portfolioId: string;
+      activationSequence: number;
       policyRecordId: string;
       policyId: string;
       policyVersion: string;
@@ -169,6 +170,7 @@ type PortfolioPolicyActivationEvent =
       mode: "paper_only";
       retirementEventId: string;
       portfolioId: string;
+      activationSequence: number;
       retiredActivationId: string;
       reasonCode: string;
       effectiveFrom: string;
@@ -178,12 +180,15 @@ type PortfolioPolicyActivationEvent =
 
 - policy record 자체는 immutable하게 유지한다.
 - `activationId`와 `retirementEventId`는 재사용하지 않는다.
+- event는 backend가 append 시 부여한 portfolio별 연속 `activationSequence`를 가진다.
+  예약·backdate를 지원하지 않으며 `effectiveFrom`은 `createdAt`과 같은 즉시 적용 시각이어야
+  한다. 미래 또는 과거 effective time과 sequence gap/duplicate를 거절한다.
 - 교체 activation은 현재 active ID를 `supersedesActivationId`로 지정해 한 event에서 이전
   activation을 닫고 새 policy를 연다. policy 없이 중단할 때는 `retiredActivationId`를 가진
   retirement event를 append한다.
-- resolver는 event order를 fold하고 supersedes/retired target이 그 시점의 current active와
-  정확히 일치하는지 검증한다. unknown target, 이미 닫힌 target과 분기된 transition은
-  fail-closed한다.
+- as-of resolver는 `effectiveFrom <= asOf`인 event만 선택한 뒤 `activationSequence` 오름차순으로
+  fold하고 supersedes/retired target이 그 시점의 current active와 정확히 일치하는지
+  검증한다. unknown target, 이미 닫힌 target과 분기된 transition은 fail-closed한다.
 - 같은 `portfolioId`와 시점에 active policy가 0개 또는 2개 이상이면 해당 portfolio
   실행을 fail-closed한다.
 - simulation run은 시작 시 policy hash를 고정하며 실행 도중 새 정책으로 바뀌지 않는다.
@@ -502,9 +507,22 @@ interface BucketRiskState {
 
 type BucketEquityEvent =
   | {
+      eventType: "epoch_initialized";
+      bucketEquityEventId: string;
+      riskStateEpochId: string;
+      activationId: string;
+      portfolioId: string;
+      bucket: StrategyBucket;
+      policyHash: string;
+      initialEquityKrw: number;
+      initialUnits: number;
+      initialUnitNavKrw: 1;
+      asOf: string;
+    }
+  | {
       eventType: "capital_flow";
       bucketEquityEventId: string;
-      previousBucketEquityEventId?: string;
+      previousBucketEquityEventId: string;
       riskStateEpochId: string;
       portfolioId: string;
       bucket: StrategyBucket;
@@ -516,7 +534,7 @@ type BucketEquityEvent =
   | {
       eventType: "valuation" | "execution_cost";
       bucketEquityEventId: string;
-      previousBucketEquityEventId?: string;
+      previousBucketEquityEventId: string;
       riskStateEpochId: string;
       portfolioId: string;
       bucket: StrategyBucket;
@@ -527,8 +545,11 @@ type BucketEquityEvent =
     };
 ```
 
-- policy activation은 bucket별 새 `riskStateEpochId`를 만들고 당시 equity를 unit NAV 1의
-  명시적인 시작 baseline으로 기록한다. 이전 epoch와 high-water mark는 삭제하지 않는다.
+- policy activation은 bucket별 새 `riskStateEpochId`를 만들고 activation ID를 직접 참조하는
+  `epoch_initialized` event로 당시 equity, unit NAV 1과 initial units를 기록한다. 초기화에는
+  존재하지 않는 rebalance plan을 참조하지 않는다. 이전 epoch와 high-water mark는 삭제하지
+  않는다. `initialEquityKrw >= 0`이고 `initialUnits = initialEquityKrw / initialUnitNavKrw`를
+  검증한다.
 - shared cash와 bucket 사이의 allocation/deallocation은 `capital_flow` event로 기록하고
   flow 직전 unit NAV에서 unit을 mint/burn한다. 따라서 자금 이동 자체는 unit NAV와
   drawdown을 바꾸지 않는다. 양수 amount는 mint, 음수 amount는 burn이며 0 amount와
@@ -539,9 +560,10 @@ type BucketEquityEvent =
   `drawdownRatio = 1 - unitNavKrw / highWaterMarkUnitNavKrw`로 계산한다.
 - units가 0이면 마지막 unit NAV/high-water mark를 유지하며, 같은 epoch의 재진입은 그
   NAV에서 mint한다. 새 policy epoch만 baseline을 재설정할 수 있다.
-- epoch의 첫 event만 `previousBucketEquityEventId`를 생략할 수 있다. 이후 event ID와
-  predecessor는 선형 append-only로 검증하고 current snapshot은 event replay로 재구성
-  가능해야 한다. event/snapshot mismatch나 누락은 신규 매수를 fail-closed한다.
+- epoch의 첫 event는 반드시 predecessor가 없는 `epoch_initialized`여야 한다. 이후 event는
+  `previousBucketEquityEventId`를 필수로 가지며 event ID와 predecessor를 선형 append-only로
+  검증한다. current snapshot은 event replay로 재구성 가능해야 하며 event/snapshot mismatch나
+  누락은 신규 매수를 fail-closed한다.
 
 ### 6.6 `PortfolioSizingSnapshot`, `BucketSelectionRequest`와 `CandidateAssignment`
 
@@ -733,11 +755,14 @@ snapshot을 다시 만든 뒤 BUY를 평가한다. 같은 종목에 상충하는
 
 ### 8.3 Idempotency와 동시성
 
-- cycle ID는 `portfolioId + policyHash + evidenceCutoffAt + cadence + triggerRef`에서
-  파생한다. scheduled cadence는 canonical schedule slot을, `every_tick`은 검증된 market
-  packet hash를, event trigger는 해당 immutable evidence ref를 `triggerRef`로 사용한다.
+- cycle ID는 `portfolioId + policyHash + portfolioVersion + portfolioSnapshotHash +
+  evidenceCutoffAt + cadence + triggerRef`에서 파생한다. scheduled cadence는 canonical
+  schedule slot을, `every_tick`은 검증된 market packet hash를, event trigger는 해당
+  immutable evidence ref를 `triggerRef`로 사용한다.
 - 같은 cycle ID의 rebalance plan은 한 번만 적용한다.
-- portfolio version 또는 policy hash가 preview 이후 달라지면 plan을 폐기한다.
+- portfolio version/snapshot 또는 policy hash가 preview 이후 달라지면 plan을 terminal
+  `stale`로 기록하고 적용하지 않는다. 동일 trigger를 다시 평가해도 새 snapshot/version은
+  새 cycle ID를 만들므로 replacement preview를 생성할 수 있다.
 - multi-process 실행 전 portfolio-scoped lock 또는 compare-and-swap version을 둔다.
 - decision/trade/portfolio/strategy-state 저장 실패가 부분 상태를 만들지 않도록 durable
   transaction boundary 또는 재구성 가능한 append-only event contract가 필요하다.
@@ -981,6 +1006,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - bucket target + cash target 합계 100%
 - target이 min/max 범위 안에 존재
 - policy hash canonicalization과 version compatibility
+- activation sequence gap/duplicate와 future/backdated effective time 거절
+- as-of activation fold와 supersedes/retired target 검증
 - active policy의 selection policy ref가 immutable record와 일치
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
@@ -1012,6 +1039,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
 - policy epoch 전환 외 high-water mark 암묵적 초기화 금지
+- activation ID를 참조하는 epoch initialization과 initial unit/equity 검증
 - corrupt/missing event와 snapshot mismatch의 신규 매수 fail-closed
 
 ### Cadence 및 exit
@@ -1029,6 +1057,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - active policy 없음/중복/corrupt
 - stale evidence와 missing required feature
 - portfolio version drift
+- stale cycle 이후 새 portfolio snapshot/version으로 replacement preview 생성
 - duplicate cycle 및 duplicate plan apply
 - decision/trade/state 중간 실패 후 재구성 또는 안전 중단
 
