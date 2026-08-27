@@ -548,6 +548,9 @@ type MandateAssignmentLineage =
       candidateAssignmentSetId: string;
       candidateAssignmentSetHash: string;
       selectedRank: number;
+      openingCapacityReservationId: string;
+      openingCapacityReservationHash: string;
+      reservedSlotOrdinal: number;
       reservedMaximumNotionalKrw: number;
       scoringModelVersion: string;
       selectionScore: number;
@@ -735,6 +738,7 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
               candidateAssignmentSetId: string;
               candidateAssignmentSetHash: string;
               candidateAssignmentId: string;
+              reservedSlotOrdinal: number;
             };
       }
     | {
@@ -850,6 +854,10 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   잔여 reservation은 mandate에 계속 묶는다. target 충족 또는 mandate 취소·retire 시에만 잔여를
   consume/release하며 ledger를 같은 transaction에서 갱신한다.
   충돌한 요청은 stale snapshot으로 재계산해야 하며 이전 snapshot의 별도 reservation을 만들 수 없다.
+- selector mandate와 최초 `reserved` event는 ledger가 부여한 전역 `reservedSlotOrdinal`, reservation
+  ID/hash와 reserved maximum notional을 직접 보존한다. resolver는 assignment set의 request-local
+  `selectedRank`를 slot으로 간주하지 않고 capacity event chain에서 같은 ordinal과 reservation
+  ID/hash를 독립 검증한다.
 - `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
   classification range를 기록할 수 있지만 신규 매수와 수량 증가는 금지한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
@@ -1187,6 +1195,14 @@ type BucketEquityEvent =
   head와 mutation origin을 replay해 새 head를 검증하며, 임의의 이전 가격을 제시하거나 fill 이후
   오래된 head에서 valuation을 분기할 수 없다. initial/legacy position의 첫 head는 verified current
   mark evidence로 열고 그 자체로 valuation PnL을 만들지 않는다.
+- paper fill mutation은 quantity를 바꾸기 전에 기존 quantity 전체를 fill record의 authenticated
+  `sourcePriceKrw`/price evidence로 valuation하고 그 valuation event/head update를 먼저 원자 적용한다.
+  이어지는 mutation head의 `resultingPriceKrw`와 evidence는 같은 source price/evidence여야 하며
+  BUY/SELL 모두 `fillPriceKrw`로 rebase할 수 없다. spread/slippage/impact 차이는 이미
+  `execution_cost`로 계상하므로 이를 mark baseline에 다시 포함하지 않는다. 신규 position은 source
+  price로 initialize하고, verified migration은 previous head의 price/evidence를 그대로 보존하는
+  quantity reconciliation만 허용한다. migration이 가격을 바꾸려면 별도 authenticated valuation을
+  먼저 적용해야 한다. resolver는 origin fill/migration과 이 규칙으로 resulting head를 독립 재계산한다.
 - position mark head event hash는 event ID/hash/createdAt을 제외한 complete strict variant
   payload에서 계산하고 ID는 hash에서 파생한다. initialized만 predecessor를 생략하며 valuation과
   mutation variant는 previous event ID/hash와 exact authenticated origin을 필수로 가진다. head
@@ -2591,6 +2607,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - candidate assignment set의 sealed ordering/top-N, available slot cap과 unique consumption
 - selected assignment reservation 합계의 request gap/additional-exposure budget 상한
 - selector/manual 동시 요청의 공용 capacity ledger CAS, unique slot과 aggregate budget 상한
+- selector mandate/event의 ledger-assigned global slot ordinal과 reservation ID/hash 일치
 - reservation의 mandate binding, partial fill, position 생성과 release transition replay
 - reservation event strict variant의 full-payload rehash와 mandatory origin 검증
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
@@ -2641,6 +2658,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
 - fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
+- fill 전 source-price valuation, source-price mutation head와 execution-cost 단일 계상
+- fill-price rebase 및 valuation 없는 price-changing migration 거절
 - corrupt mark head snapshot, event branch와 unauthenticated mutation origin 거절
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
