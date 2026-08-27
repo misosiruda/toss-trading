@@ -305,6 +305,7 @@ interface StrategyBucketPolicy {
   minimumHoldingSeconds?: number;
   maximumHoldingSeconds?: number;
   exitPolicy: StrategyBucketExitPolicy;
+  enabledMarkets: Market[];
   enabledAssetClasses: string[];
   selectionPolicyRef: BucketSelectionPolicyRef;
 }
@@ -324,6 +325,9 @@ interface StrategyBucketPolicy {
   policy가 허용한 market과 boundary market 불일치는 activation에서 거절한다.
 - `weeklyAnchorDay`는 weekly record에서만 필수이며 hourly/daily record에는 허용하지 않는다.
   `hash`는 ID와 `createdAt`을 제외한 전체 boundary payload의 canonical hash로 검증한다.
+- `enabledMarkets`는 비어 있지 않은 canonical unique set이어야 한다. scheduled cadence의
+  resolved boundary market 집합은 `enabledMarkets`와 정확히 같아야 하고 `every_tick` packet,
+  selection request, mandate 및 rebalance action의 market도 이 집합 안에 있어야 한다.
 - schedule slot ID와 cutoff는 boundary record 및 session calendar로 계산한다. DST, 휴장,
   조기 종료를 구현체의 local timezone이나 처리 시각으로 추정하지 않는다.
 - `risk_breach`는 선택 가능한 `eventTriggers` 값이 아니다. 모든 enabled bucket은 market
@@ -332,8 +336,9 @@ interface StrategyBucketPolicy {
 - activation과 replay 시작 시 `selectionPolicyRef`가 같은 bucket/version/hash의 immutable
   record로 resolve되어야 한다. required evidence, freshness, source contract, hard gate,
   feature와 scoring version을 구현 기본값으로 대체하지 않는다.
-- active `PortfolioPolicy` canonical hash는 각 bucket의 complete `selectionPolicyRef`를
-  포함해 selection rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
+- active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
+  `selectionPolicyRef`와 `reviewCadence` boundary ref를 포함해 selection/schedule rule 교체가
+  동일 policy hash 아래에서 일어나지 않게 한다.
 - take-profit을 사용하지 않으면 `disabled`, 전량 익절은 trigger ratio가 필수인
   `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
   `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
@@ -712,16 +717,30 @@ assignment feature, exposure/liquidity cap과 execution cost input을 canonicali
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts
-interface RebalanceAction {
+interface RebalanceActionBase {
   actionId: string;
   actionSequence: number;
   market: Market;
   symbol: string;
-  side: "BUY" | "SELL";
-  mandateId: string;
+  targetNotionalKrw: number;
   maximumNotionalKrw: number;
   reasonCodes: string[];
 }
+
+type RebalanceAction = RebalanceActionBase &
+  (
+    | {
+        lineageKind: "mandate";
+        side: "BUY" | "SELL";
+        mandateId: string;
+      }
+    | {
+        lineageKind: "unassigned_legacy_reduce_only";
+        side: "SELL";
+        observedPositionRef: string;
+        legacyStateDetectedAt: string;
+      }
+  );
 
 interface RebalancePlanRecord {
   planId: string;
@@ -815,6 +834,12 @@ type RebalancePlanEvent =
   `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. 두 predecessor field는 함께
   존재하거나 함께 생략하며 predecessor는 terminal `applied`이고 그 resulting snapshot이
   후속 plan의 preview snapshot과 같아야 한다.
+- `targetNotionalKrw`는 immutable plan이 실제 요청하는 양수 금액이며
+  `targetNotionalKrw <= maximumNotionalKrw`를 검증한다. executor는 이 값을 cap 안에서 다시
+  선택하지 않는다. SELL은 snapshot의 가용 position notional도 넘을 수 없다.
+- 일반 action은 active mandate를 참조한다. `unassigned_legacy_reduce_only`는 mandate ID를
+  합성하지 않고 저장된 legacy state의 `observedPositionRef`/`detectedAt`을 직접 참조하며
+  SELL만 허용한다. 이 variant도 lifecycle/Risk Engine 검증을 우회할 수 없다.
 - 첫 event는 predecessor가 없는 `previewed`여야 한다. 이후 event는 직전 event ID를
   `previousPlanEventId`로 참조하며 record와 동일한 plan/cycle/portfolio/version/snapshot/
   policy scope를 직접 저장한다.
@@ -1012,6 +1037,9 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 ref가 적용되면 해당 ref도 직접 포함한다. `unassigned_legacy`는 policy lineage가 없음을
 명시하는 예외다. corrupt line이나 lineage mismatch는 경고만 표시하고 계속 매수하는
 대신 fail-closed한다.
+legacy position의 안전한 축소는 `unassigned_legacy_reduce_only` action만 사용하며 fabricated
+mandate 없이 observed position과 legacy state에 연결한다. 이 경로로 BUY 또는 increase를
+표현할 수 없다.
 selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 assignment
 record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
@@ -1094,6 +1122,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - `portfolioId`별 active policy 1개를 deterministic하게 읽는다.
 - 해당 portfolio의 active policy 없음, 중복 active, corrupt lineage를 모두 거절한다.
+- enabled market 집합과 scheduled boundary market 집합이 정확히 일치한다.
 
 ### PR 2. Active policy 기반 portfolio compliance
 
@@ -1175,6 +1204,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
+- 각 action은 cap과 별도의 concrete target notional을 가지며 executor가 금액을 재결정하지 않는다.
+- unassigned legacy position은 observed state에 연결된 reduce-only SELL로만 표현된다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
@@ -1231,9 +1262,12 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
 - scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
+- bucket `enabledMarkets`와 scheduled boundary/packet/request/mandate/action market 일치
 - rebalance plan record hash와 선형 event predecessor/scope 일치
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
 - sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
+- action target notional의 양수/cap/가용 position 범위 검증
+- mandate action과 unassigned legacy reduce-only action의 strict lineage union 검증
 - 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 
 ### Gap 및 sizing
