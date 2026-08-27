@@ -242,7 +242,12 @@ interface InvestmentMandate {
 ### 6.4 `PositionStrategyState`
 
 ```ts
-interface PositionStrategyState {
+type PositionStrategyState =
+  | AssignedPositionStrategyState
+  | UnassignedLegacyPositionStrategyState;
+
+interface AssignedPositionStrategyState {
+  stateKind: "assigned";
   portfolioId: string;
   market: Market;
   symbol: string;
@@ -257,10 +262,27 @@ interface PositionStrategyState {
   partialTakeProfitExecuted: boolean;
   thesisStatus: "intact" | "watch" | "invalidated" | "unknown";
 }
+
+interface UnassignedLegacyPositionStrategyState {
+  stateKind: "unassigned_legacy";
+  portfolioId: string;
+  market: Market;
+  symbol: string;
+  observedPositionRef: string;
+  reasonCodes: Array<
+    "missing_mandate" | "missing_policy_lineage" | "missing_opened_at"
+  >;
+  detectedAt: string;
+  status: "review_required";
+}
 ```
 
 기존 replay-local trailing state를 durable strategy state로 승격한다. portfolio snapshot과
 strategy state의 policy/mandate lineage가 일치하지 않으면 신규 매수를 중단한다.
+legacy position에 mandate, policy hash 또는 신뢰할 수 있는 `openedAt`이 없으면 값을
+추정하지 않고 `unassigned_legacy` variant로 저장한다. 이 variant에는 가상의 lineage나
+holding state를 채우지 않으며, 하나라도 존재하면 해당 portfolio의 신규 매수를
+fail-closed하고 read-only inspection과 Risk Engine을 통과한 reduce-only 처리만 허용한다.
 
 ### 6.5 `BucketSelectionRequest`와 `CandidateAssignment`
 
@@ -426,11 +448,16 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `instrument-mandates.jsonl` | 신규 append-only | 종목 역할·target·evidence 변화 |
 | `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
+| `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
+| `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
 | `rebalance-plans.jsonl` | 신규 append-only | preview, approval, rejection, applied 상태 |
 
 모든 downstream artifact는 최소한 `policyHash`, `portfolioId`, `asOf`, source/evidence ref를
 포함한다. corrupt line이나 lineage mismatch는 경고만 표시하고 계속 매수하는 대신
 fail-closed한다.
+selector가 만든 mandate는 참조하는 request와 assignment record를 먼저 append-only로
+저장한 뒤에만 발행한다. 두 ID가 resolve되지 않거나 policy/snapshot/scoring/sizing
+lineage가 일치하지 않으면 mandate 생성을 거절한다.
 
 ## 11. API와 Dashboard 계획
 
@@ -517,22 +544,24 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 ### PR 3. `InvestmentMandate`와 position strategy state
 
-- mandate/state strict schema와 repository
-- 한 종목 하나의 active mandate invariant
-- 기존 position의 unknown mandate migration
+- assigned/unassigned legacy state를 구분하는 strict schema와 repository
+- portfolio 안에서 한 종목 하나의 active mandate invariant
+- 기존 position의 `unassigned_legacy` migration
 - peak, review cadence, holding age persistence
 
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
 - selector가 만든 mandate는 request, assignment와 scoring model lineage를 가진다.
-- legacy position은 자동 추정하지 않고 `review_required`로 구분한다.
+- lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
+  `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
 
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
 - min/max band와 available slot 계산
 - selection request 생성 조건
+- selection request append-only repository
 
 완료 조건:
 
@@ -546,6 +575,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 공통 hard gate와 bucket별 scoring interface
 - price/volume 기반 `market_technical` feature부터 구현
 - evidence completeness와 scoring model version 기록
+- candidate assignment append-only repository와 request lineage 검증
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
 완료 조건:
@@ -606,6 +636,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `portfolioId + market + symbol`당 single active mandate
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
+- selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
+- legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 
 ### Gap 및 sizing
 
@@ -642,7 +674,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - 기존 `VirtualPortfolio`와 historical replay artifact는 즉시 제거하지 않는다.
 - 신규 field는 versioned artifact 또는 별도 state로 도입하고 legacy input을 명시적으로
-  `unknown`/`review_required`로 정규화한다.
+  `unassigned_legacy`/`review_required`로 정규화한다. 누락된 lineage나 holding timestamp는
+  합성하지 않는다.
 - policy activation 이전에는 현재 paper runner 동작을 유지한다.
 - 각 구현 PR은 feature flag 또는 미연결 contract 상태로 배포 가능해야 한다.
 - active policy 적용에 문제가 있으면 activation event를 retire하고 이전 validated policy를
