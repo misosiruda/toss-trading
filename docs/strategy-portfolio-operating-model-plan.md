@@ -265,6 +265,9 @@ interface StrategyBucketPolicy {
   `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
   `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
 - `maximumHoldingSeconds`가 있으면 `timeExpiryAction`을 함께 검증한다.
+- holding boundary는 `minimumHoldingSeconds >= 0`, `maximumHoldingSeconds > 0`이고 둘 다
+  있으면 반드시 `minimumHoldingSeconds < maximumHoldingSeconds`여야 한다. 같거나 역전된
+  값은 policy validation에서 거절한다.
 - `review_required`는 만료 시 신규 매수를 차단하고 검토 상태로만 전환한다.
 - `sell_all`을 명시한 bucket만 만료 시 reduce-only paper sell candidate를 만들며,
   Risk Engine 재검증을 통과해야 한다.
@@ -320,8 +323,14 @@ interface ManualAssignmentEvent {
   targetWeightRatio: number;
   minWeightRatio: number;
   maxWeightRatio: number;
+  authorizationScope: "open_or_increase" | "classify_existing_reduce_only";
+  selectionPolicyRecordId: string;
+  selectionPolicyHash: string;
   reasonCodes: string[];
   evidenceRefs: string[];
+  evidenceAsOf: string;
+  evidenceEligibility: "eligible" | "blocked";
+  evidenceValidationHash: string;
   authorizationRef: string;
 }
 ```
@@ -334,6 +343,11 @@ interface ManualAssignmentEvent {
 - `manual_policy` mandate는 selector lineage field를 포함하지 않고
   `manualAssignmentEventId`를 필수로 보존한다. 해당 append-only event가 먼저 저장되고
   portfolio/policy/symbol/bucket/as-of scope가 mandate와 일치해야 한다.
+- manual event의 `open_or_increase`는 active bucket selection policy를 resolve해 자동
+  selector와 같은 required evidence, freshness와 hard gate를 통과한 `eligible` 결과 및
+  validation hash가 있을 때만 허용한다. `authorizationRef`는 이 gate를 우회할 수 없다.
+- `classify_existing_reduce_only`는 evidence가 blocked여도 기존 position 분류를 위해
+  사용할 수 있지만 신규 매수와 수량 증가는 금지한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
 - target weight는 AI 출력이 아니라 backend sizing 결과다.
 
@@ -631,8 +645,9 @@ selector가 만든 mandate는 immutable portfolio sizing snapshot, request와 as
 record를 순서대로 append-only 저장한 뒤에만 발행한다. 각 ID가 resolve되지 않거나
 policy/snapshot/scoring/sizing lineage가 일치하지 않으면 mandate 생성을 거절한다.
 manual mandate도 `ManualAssignmentEvent`를 먼저 저장하고 scope와 sizing range가 일치할
-때만 발행한다. active policy가 참조하는 selection policy record가 없거나 hash가 다르면
-candidate evaluation과 신규 매수를 fail-closed한다.
+때만 발행한다. 신규 매수를 허용하는 manual event는 active selection policy의 동일한
+evidence/freshness/hard gate 결과까지 검증한다. active policy가 참조하는 selection policy
+record가 없거나 hash가 다르면 candidate evaluation과 신규 매수를 fail-closed한다.
 
 ## 11. API와 Dashboard 계획
 
@@ -730,6 +745,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
 - selector가 만든 mandate는 request, assignment와 scoring model lineage를 가진다.
 - manual mandate는 먼저 저장된 assignment event와 scope/range가 일치한다.
+- manual `open_or_increase`는 selector와 같은 evidence gate를 통과하고,
+  `classify_existing_reduce_only`는 buy/increase를 만들지 않는다.
 - lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
   `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
 
@@ -821,6 +838,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
+- manual `open_or_increase`의 active selection policy evidence validation hash 일치
+- manual `classify_existing_reduce_only`의 buy/increase 차단
 - selector mandate가 참조하는 append-only request/assignment record의 해소 가능성
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
@@ -840,6 +859,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - bucket별 due/not-due 판단
 - `every_tick` packet hash deduplication과 event trigger cycle identity
 - minimum/maximum holding boundary
+- 같거나 역전된 minimum/maximum holding boundary의 validation 거절
 - `timeExpiryAction`별 review-only와 reduce-only sell 동작
 - partial take-profit 후 durable trailing state
 - lifecycle invalidation과 risk breach가 minimum holding보다 우선
