@@ -131,7 +131,8 @@ flowchart TD
 2. mark-to-market 후 bucket, symbol, cash, market, country, currency exposure를 계산한다.
 3. 목표 범위를 벗어난 bucket과 position을 찾는다.
 4. 축소 또는 청산 계획을 신규 매수 계획보다 먼저 만든다.
-5. target 미달 bucket에만 `BucketSelectionRequest`를 만든다.
+5. min weight 미달로 `underweightKrw > 0`인 bucket에만
+   `BucketSelectionRequest`를 만든다.
 6. bucket 전용 hard gate와 score로 candidate를 평가한다.
 7. backend가 종목별 target range와 최대 notional을 산정한다.
 8. Risk Engine이 최신 portfolio와 candidate evidence로 다시 검증한다.
@@ -204,6 +205,7 @@ interface StrategyBucketPolicy {
 ```ts
 interface InvestmentMandate {
   mandateId: string;
+  portfolioId: string;
   market: Market;
   symbol: string;
   bucket: StrategyBucket;
@@ -227,8 +229,8 @@ interface InvestmentMandate {
 }
 ```
 
-- 같은 `market:symbol`에는 하나의 active mandate만 허용한다.
-- 같은 종목을 두 bucket에 중복 계상하지 않는다.
+- 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
+- 같은 portfolio 안에서 같은 종목을 두 bucket에 중복 계상하지 않는다.
 - bucket 변경은 기존 mandate를 retire하고 새 mandate를 발행하는 명시적 migration이다.
 - `deterministic_selector` mandate는 `selectionRequestId`, `candidateAssignmentId`,
   `scoringModelVersion`을 모두 필수로 보존한다.
@@ -266,6 +268,8 @@ strategy state의 policy/mandate lineage가 일치하지 않으면 신규 매수
 interface BucketSelectionRequest {
   requestId: string;
   portfolioId: string;
+  portfolioSnapshotId: string;
+  portfolioSnapshotHash: string;
   policyHash: string;
   bucket: StrategyBucket;
   gapKrw: number;
@@ -287,11 +291,14 @@ interface CandidateAssignment {
   reasonCodes: string[];
   evidenceRefs: string[];
   scoringModelVersion: string;
+  sizingInputHash: string;
 }
 ```
 
 `watch`와 `blocked` candidate는 주문 후보가 될 수 없다. required evidence가 없거나
 stale이면 높은 score가 있더라도 `eligible`로 승격하지 않는다.
+`sizingInputHash`는 policy hash, portfolio snapshot hash, selection request, candidate
+assignment feature, exposure/liquidity cap과 execution cost input을 canonicalize해 만든다.
 
 ## 7. Bucket별 종목 선택 정책
 
@@ -332,7 +339,12 @@ candidate는 `unknown` 또는 `blocked`로 남긴다. 가격 상승만으로 기
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
   cash reserve와 execution cost를 적용해 target range를 산정한다.
-- 동일 score 입력과 policy version은 동일한 정렬과 sizing 결과를 내야 한다.
+- 동일 candidate evidence, feature input과 scoring model version은 동일한 정렬과
+  reason code를 만들어야 한다.
+- sizing 재현성은 `policyHash`, versioned portfolio snapshot, selection request,
+  candidate assignment, exposure/liquidity cap과 execution cost를 포함한 전체
+  `sizingInputHash`에 묶는다. 동일한 전체 입력만 동일한 target range와 최대 notional을
+  만들어야 한다.
 - 동점은 `market`, `symbol` canonical order로 해소해 replay 재현성을 보장한다.
 
 초기 sizing은 복잡한 최적화보다 다음 bounded allocation을 사용한다.
@@ -525,6 +537,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
+- `BucketSelectionRequest`는 `underweightKrw > 0`이고 buy capacity가 있는 bucket에만
+  생성된다.
 - cash reserve 미달이면 모든 buy capacity가 0이다.
 
 ### PR 5. Bucket candidate selector contract
@@ -589,7 +603,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - target이 min/max 범위 안에 존재
 - policy hash canonicalization과 version compatibility
 - `portfolioId`당 single active policy
-- `market:symbol`당 single active mandate
+- `portfolioId + market + symbol`당 single active mandate
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
 
@@ -599,6 +613,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - overweight sell이 underweight buy보다 먼저 처리됨
 - cash reserve, symbol, bucket, sector, country, currency limit 중 최소 cap 적용
 - dust와 거래비용 threshold 이하의 계획 제외
+- 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현
 
 ### Cadence 및 exit
 
