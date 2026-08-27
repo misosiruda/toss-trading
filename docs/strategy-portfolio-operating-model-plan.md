@@ -271,6 +271,12 @@ interface PortfolioRiskRuleSetRef {
   hash: string;
 }
 
+interface PortfolioLegacyReduceOnlyPolicy {
+  allowBuyOrIncrease: false;
+  maximumParticipationRatio: number;
+  riskRuleSetRef: PortfolioRiskRuleSetRef;
+}
+
 type BucketSelectionTrigger =
   | { mode: "below_min" }
   | {
@@ -401,6 +407,9 @@ interface StrategyBucketPolicy {
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
   `selectionPolicyRef`, `riskRuleSetRef`와 `reviewCadence` boundary ref를 포함해
   selection/risk/schedule rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
+- root `PortfolioPolicy`는 bucket lineage가 없는 position 전용
+  `PortfolioLegacyReduceOnlyPolicy`를 필수로 가지며 이 config와 rule-set ref도 policy hash에
+  포함한다. 이 policy는 SELL과 exposure 축소만 허용하고 bucket을 합성하지 않는다.
 - take-profit을 사용하지 않으면 `disabled`, 전량 익절은 trigger ratio가 필수인
   `full_exit`, 부분 익절은 trigger/sell/trailing ratio가 모두 필수인
   `partial_then_trail`로만 표현한다. 각 ratio의 범위도 strict validation한다.
@@ -718,7 +727,11 @@ interface PortfolioExposureSnapshot {
   virtualNetWorthKrw: number;
   cashKrw: number;
   bucketExposureKrw: Record<StrategyBucket, number>;
-  symbolExposureKrw: Record<string, number>;
+  symbolExposureKrw: Array<{
+    market: Market;
+    symbol: string;
+    exposureKrw: number;
+  }>;
   marketExposureKrw: Record<string, number>;
   sectorExposureKrw: Record<string, number>;
   countryExposureKrw: Record<string, number>;
@@ -845,6 +858,8 @@ interface CandidateAssignment {
 stale이면 높은 score가 있더라도 `eligible`로 승격하지 않는다.
 `PortfolioSizingSnapshot`은 해당 시점의 paper `VirtualPortfolio`, 실제 사용한 mark/FX
 값과 provenance, 계산된 exposure payload를 canonical form으로 append-only 저장한다.
+symbol exposure는 raw symbol string으로 keying하지 않고 `(market, symbol)` tuple을 market,
+symbol 순서로 정렬하며 duplicate tuple을 거절한다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
 - `requestId`는 `cycleId + bucket + portfolioSnapshotHash + policyHash + gapBasis`의 canonical
@@ -872,8 +887,15 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
 ```ts
 type RebalanceExecutionTarget =
   | {
-      targetKind: "fractional_notional";
+      targetKind: "fractional_buy_notional";
       targetNotionalKrw: number;
+    }
+  | {
+      targetKind: "fractional_sell_quantity";
+      targetQuantity: number;
+      referencePriceKrw: number;
+      markedTargetNotionalKrw: number;
+      priceEvidenceRef: string;
     }
   | {
       targetKind: "whole_share_quantity";
@@ -928,6 +950,7 @@ interface RebalancePlanRecord {
 
 interface PortfolioActionRiskDecision {
   riskDecisionId: string;
+  riskDecisionHash: string;
   riskRuleSetRecordId: string;
   riskRuleSetVersion: string;
   riskRuleSetHash: string;
@@ -940,6 +963,9 @@ interface PortfolioActionRiskDecision {
   market: Market;
   symbol: string;
   side: "BUY" | "SELL";
+  riskRuleScope:
+    | { scopeKind: "bucket"; bucket: StrategyBucket }
+    | { scopeKind: "legacy_reduce_only"; legacyPolicyHash: string };
   actionExecutionTargetHash: string;
   priorCumulativeFilledNotionalKrw: number;
   priorCumulativeFilledQuantity: number;
@@ -955,6 +981,7 @@ interface PortfolioActionRiskDecision {
     reasonCode: string;
   }>;
   riskInputHash: string;
+  riskEvidenceRefs: string[];
   decidedAt: string;
 }
 
@@ -1040,11 +1067,15 @@ type RebalancePlanEvent =
   `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. 두 predecessor field는 함께
   존재하거나 함께 생략하며 predecessor는 terminal `applied`이고 그 resulting snapshot이
   후속 plan의 preview snapshot과 같아야 한다.
-- fractional 실행은 양수 `targetNotionalKrw`, whole-share 실행은 양의 정수
-  `targetQuantity`를 immutable target으로 사용한다. whole-share target은 sizing 시점의
+- fractional BUY는 양수 `targetNotionalKrw`, fractional SELL은 양수 `targetQuantity`,
+  whole-share 실행은 양의 정수 `targetQuantity`를 immutable target으로 사용한다.
+  fractional SELL quantity는 snapshot의 가용 quantity 이하이고 BUY/SELL side와 target kind가
+  일치해야 한다. whole-share target은 sizing 시점의
   reference price/evidence로 `plannedNotionalKrw`와 floor rounding 후 남은
   `residualNotionalKrw`를 기록한다. planned/target notional은 `maximumNotionalKrw` 이하이고
   SELL target은 snapshot의 가용 position도 넘을 수 없다. executor는 target을 재결정하지 않는다.
+- `actionExecutionTargetHash`는 plan에 저장된 complete `executionTarget`의 canonical hash이며
+  Risk Engine과 execution event가 같은 target을 독립 검증할 때 사용한다.
 - 일반 action은 active mandate를 참조한다. `unassigned_legacy_reduce_only`는 mandate ID를
   합성하지 않고 저장된 legacy state의 `observedPositionRef`/`detectedAt`을 직접 참조하며
   SELL만 허용한다. 이 variant도 lifecycle/Risk Engine 검증을 우회할 수 없다.
@@ -1064,15 +1095,24 @@ type RebalancePlanEvent =
   `execution_applied` 전에 exact record가
   resolve되고 `approved`이며 action, amount와 expected state가 모두 일치해야 한다.
   stale/unrelated/rejected decision은 실행할 수 없다.
-- decision resolver는 active bucket의 exact risk rule set에서 action side에 적용되는 canonical
+- mandate action은 active mandate의 bucket rule set을 사용하고 legacy action은 root policy의
+  `PortfolioLegacyReduceOnlyPolicy.riskRuleSetRef`만 사용한다. scope union이 action lineage와
+  맞지 않거나 legacy decision이 bucket을 주장하면 거절한다.
+- decision resolver는 위 scope로 선택한 exact risk rule set에서 action side에 적용되는 canonical
   required rule ID 집합을 다시 계산한다. `requiredRuleIds`와 result의 unique rule ID 집합이
   정확히 같고 모든 result가 `pass`일 때만 `decision = approved`를 파생한다. 빈 결과,
   missing/extra/duplicate rule, 하나라도 `fail`인 approved record와 hash mismatch는 corrupt로
   보고 fail-closed한다.
+- `riskDecisionHash`는 decision ID와 digest 자체를 제외한 input/output 전체를 canonicalize해
+  계산하고 decision ID는 이 digest에서 파생한다. 실행 직전 resolver는 immutable
+  plan/action/snapshot/rule-set/evidence ref에서 input을 복원해 모든 rule, worst-case notional,
+  approved maximum과 derived decision을 deterministic하게 다시 계산한다. 재계산 결과나 full
+  decision digest가 stored record와 다르면 실행을 fail-closed한다.
 - action별 fill sequence는 0부터 gap 없이 증가하고 `filledNotionalKrw > 0`,
   `filledQuantity > 0`, notional/quantity cumulative가 각각 이전 값과 이번 fill의 합인지
-  검증한다. fractional requested/filled/cumulative notional은 남은 target 이하이고 whole-share
-  requested/filled/cumulative quantity는 남은 target 이하이어야 한다. Risk Engine은 current
+  검증한다. fractional BUY의 requested/filled/cumulative notional은 남은 target 이하이고
+  fractional SELL과 whole-share의 requested/filled/cumulative quantity는 남은 target 이하이어야
+  한다. Risk Engine은 current
   price와 slippage bound로 `worstCaseFillNotionalKrw`를 계산하고 action remaining cap, cash,
   exposure와 liquidity limit 중 최소값을 `approvedMaximumFillNotionalKrw`로 승인한다.
   requested와 worst-case notional이 이 approved maximum 이하여야만 decision을 승인한다.
@@ -1087,9 +1127,9 @@ type RebalancePlanEvent =
   fill의 expected pre-state는 직전 `execution_applied`의 resulting state와 같아야 한다.
   이 선형 chain에 기록된 in-plan mutation은 stale이 아니며, 그 외 version/snapshot drift는
   plan을 terminal `stale`로 만든다.
-- `applied`는 fractional action의 cumulative filled notional이 `targetNotionalKrw`, whole-share
-  action의 cumulative filled quantity가 `targetQuantity`와 정확히 같고 체결 결과가 event
-  chain에 기록된 뒤에만 만들고
+- `applied`는 fractional BUY의 cumulative filled notional이 `targetNotionalKrw`, fractional
+  SELL과 whole-share action의 cumulative filled quantity가 `targetQuantity`와 정확히 같고
+  체결 결과가 event chain에 기록된 뒤에만 만들고
   ordered `executionEventIds`와 최종 portfolio version/snapshot을 보존한다. 한 plan에 정확히
   한 번만 존재할 수 있다.
 - current plan state는 event chain fold로 재구성한다. 재시작 후 snapshot/cache와 replay
@@ -1519,8 +1559,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
 - partial fill 누계가 execution target을 넘지 않고 target 미달 plan은 applied가 될 수 없다.
-- 각 action은 cap과 별도의 fractional notional 또는 whole-share quantity target을 가지며
-  executor가 target을 재결정하지 않는다.
+- 각 action은 cap과 별도의 fractional BUY notional 또는 fractional/whole-share quantity
+  target을 가지며 executor가 target을 재결정하지 않는다.
 - unassigned legacy position은 observed state에 연결된 reduce-only SELL로만 표현된다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
@@ -1565,6 +1605,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - as-of activation fold와 supersedes/retired target 검증
 - active policy의 selection policy ref가 immutable record와 일치
 - active policy의 risk rule set ref와 canonical required rule이 immutable record와 일치
+- root legacy reduce-only rule set ref와 SELL-only scope 해소
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
 - mandate event chain의 선형 predecessor와 derived status 검증
@@ -1588,13 +1629,17 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - rebalance plan record hash와 선형 event predecessor/scope 일치
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
 - sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
-- fractional notional과 whole-share quantity/residual의 strict union, cap 및 완료 조건 검증
+- fractional BUY notional, fractional SELL quantity와 whole-share quantity/residual의 strict
+  union, cap 및 완료 조건 검증
 - mandate action과 unassigned legacy reduce-only action의 strict lineage union 검증
 - 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 - risk decision의 plan/action/target/pre-state exact scope 및 input hash 검증
+- full risk decision digest rehash와 deterministic rule/output 재평가
+- mandate bucket rule scope와 legacy portfolio-level SELL rule scope 분리
 - risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
 - partial fill requested/filled/sequence/cumulative 계산, target 초과와 target 미달 applied 거절
 - whole-share slippage 후 actual/cumulative notional의 approved cash/exposure/liquidity cap 재검증
+- fractional SELL의 quantity 기반 완료와 불필요한 residual notional 대기 방지
 - capital-flow execution origin 중복과 amount mismatch 거절
 - policy trigger event ID/hash/type/as-of/scope resolver와 payload collision 거절
 
@@ -1604,6 +1649,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `entry_floor_on_due_cycle`은 due cycle과 entry gap이 모두 있을 때만 floor까지 selection 가능
 - overweight sell이 underweight buy보다 먼저 처리됨
 - cash reserve, symbol, bucket, sector, country, currency limit 중 최소 cap 적용
+- `(market, symbol)` exposure tuple 정렬·중복 거절과 동일 symbol의 market별 cap 분리
 - dust와 거래비용 threshold 이하의 계획 제외
 - sizing input record의 algorithm/feature/classification/cap/liquidity/cost payload rehash와 replay
 - 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현 및
