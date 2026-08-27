@@ -369,6 +369,26 @@ type BucketReviewCadence =
       boundaryRefs: ScheduleBoundaryRef[];
     };
 
+interface BucketDrawdownSemanticsRecord {
+  drawdownSemanticsRecordId: string;
+  version: string;
+  hash: string;
+  equityBasis: "bucket_assets_plus_cash";
+  unitFlowRule: "mint_burn_at_pre_flow_unit_nav";
+  pnlRule: "mark_to_market_and_execution_cost_only";
+  highWaterMarkRule: "max_previous_and_resulting_unit_nav";
+  drawdownFormula: "one_minus_unit_nav_over_high_water_mark";
+  emptyEpochRule: "preserve_nav_until_explicit_initial_or_empty_epoch";
+  activationCarryRule: "carry_when_semantics_hash_matches";
+  createdAt: string;
+}
+
+interface BucketDrawdownSemanticsRef {
+  drawdownSemanticsRecordId: string;
+  version: string;
+  hash: string;
+}
+
 interface StrategyBucketPolicy {
   bucket: StrategyBucket;
   targetWeightRatio: number;
@@ -382,8 +402,7 @@ interface StrategyBucketPolicy {
     denominator: "window_open_portfolio_net_worth_krw";
   };
   maxDrawdownRatio: number;
-  drawdownSemanticsVersion: string;
-  drawdownSemanticsHash: string;
+  drawdownSemanticsRef: BucketDrawdownSemanticsRef;
   reviewCadence: BucketReviewCadence;
   eventTriggers: Array<
     "regime_change" | "thesis_evidence_change"
@@ -467,8 +486,14 @@ interface StrategyBucketPolicy {
   object key는 lexical order로 canonicalize하고 non-finite number, duplicate key와 지원하지
   않는 value type을 거절한다. Risk Engine replay와 fill 직전 재검증은 이 저장 payload의
   수치·enum·boolean만 사용하며 현재 runtime default로 누락값을 보충하지 않는다.
+- `drawdownSemanticsRef`는 exact immutable `BucketDrawdownSemanticsRecord`로 resolve한다. hash는
+  ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는 hash에서 파생한다. activation,
+  risk-state replay와 breach evaluation은 저장된 unit flow/PnL/HWM/drawdown/empty/carry rule만
+  사용하고 runtime 구현 기본값으로 대체하지 않는다. 독립 rehash 또는 version/hash가 다르면
+  activation과 신규 매수를 fail-closed한다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
-  `selectionPolicyRef`, `riskRuleSetRef`, `reviewCadence` boundary ref와 `turnoverWindow`를 포함해
+  `selectionPolicyRef`, `riskRuleSetRef`, `drawdownSemanticsRef`, `reviewCadence` boundary ref와
+  `turnoverWindow`를 포함해
   selection/risk/schedule rule 교체가 동일 policy hash 아래에서 일어나지 않게 한다.
 - root `PortfolioPolicy`는 bucket lineage가 없는 position 전용
   `PortfolioLegacyReduceOnlyPolicy`를 필수로 가지며 이 config와 rule-set ref도 policy hash에
@@ -500,6 +525,7 @@ type MandateAssignmentLineage =
       candidateAssignmentSetId: string;
       candidateAssignmentSetHash: string;
       selectedRank: number;
+      reservedMaximumNotionalKrw: number;
       scoringModelVersion: string;
       selectionScore: number;
     };
@@ -550,6 +576,7 @@ interface InvestmentMandateBase {
   targetWeightRatio: number;
   minWeightRatio: number;
   maxWeightRatio: number;
+  maximumOpeningNotionalKrw: number;
   reasonCodes: string[];
   evidenceRefs: string[];
   evidenceAsOf: string;
@@ -935,13 +962,24 @@ interface PortfolioSizingSnapshot {
   policyHash: string;
   asOf: string;
   virtualPortfolio: VirtualPortfolio;
-  valuationInputs: Array<{
-    kind: "mark_price" | "fx_rate";
-    key: string;
-    value: number;
-    evidenceRef: string;
-    evidenceAsOf: string;
-  }>;
+  valuationInputs: Array<
+    | {
+        kind: "mark_price";
+        market: Market;
+        symbol: string;
+        priceKrw: number;
+        evidenceRef: string;
+        evidenceAsOf: string;
+      }
+    | {
+        kind: "fx_rate";
+        baseCurrency: string;
+        quoteCurrency: "KRW";
+        rate: number;
+        evidenceRef: string;
+        evidenceAsOf: string;
+      }
+  >;
   exposureSnapshot: PortfolioExposureSnapshot;
   exposureSnapshotHash: string;
   portfolioSnapshotHash: string;
@@ -1062,6 +1100,7 @@ interface CandidateAssignmentSetRecord {
   requestId: string;
   requestHash: string;
   availableSlots: number;
+  requestAllocationBudgetKrw: number;
   orderedAssignments: Array<{
     assignmentId: string;
     assignmentHash: string;
@@ -1070,7 +1109,13 @@ interface CandidateAssignmentSetRecord {
     market: Market;
     symbol: string;
   }>;
-  selectedAssignmentIds: string[];
+  selectedAssignments: Array<{
+    assignmentId: string;
+    assignmentHash: string;
+    selectedRank: number;
+    reservedMaximumNotionalKrw: number;
+  }>;
+  totalReservedMaximumNotionalKrw: number;
   createdAt: string;
 }
 ```
@@ -1087,8 +1132,10 @@ symbol 순서로 정렬하며 duplicate tuple을 거절한다.
   다시 계산해 payload와 hash가 모두 같은지 검증한다.
 - `portfolioSnapshotHash`는 snapshot ID와 자기 hash를 제외하고 independently verified
   `exposureSnapshotHash`를 포함한 complete snapshot payload에서 계산하며 ID는 hash에서
-  파생한다. virtual portfolio의 position/order array는 stable domain key로, valuation input은
-  kind/key/evidence ref 순으로 정렬하고 duplicate를 거절한다. downstream consumer는 두 hash를
+  파생한다. virtual portfolio의 position/order array는 stable domain key로 정렬한다. valuation
+  input은 mark를 market/symbol, FX를 base/quote currency로 정렬하고 duplicate logical identity를
+  거절하며 mark는 exact `(market, symbol)` position, FX는 exact currency pair에만 적용한다.
+  downstream consumer는 두 hash를
   독립 재구성하기 전에는 snapshot을 sizing 또는 risk input으로 사용하지 않는다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
@@ -1129,12 +1176,18 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
   `eligible`이 아니면 input/output/assignment hash가 유효해도 mandate를 만들지 않는다.
 - 한 request의 모든 assignment를 저장한 뒤 immutable `CandidateAssignmentSetRecord`를 한 번
   seal한다. eligible 우선, selection score 내림차순, market/symbol canonical tie-break로 전체를
-  정렬하고 `selectedAssignmentIds`는 앞의 `min(availableSlots, eligibleCount)`개와 정확히 같아야
-  한다. set hash는 ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는 hash에서
+  정렬하고 selected assignment는 앞의 `min(availableSlots, eligibleCount)`개와 정확히 같아야
+  한다. `requestAllocationBudgetKrw = min(gapKrw, maximumAdditionalExposureKrw)`로 고정하고
+  rank 순서로 각 assignment의 individual maximum과 remaining request budget 중 작은 값을
+  reserve한다. 모든 positive reservation의 합은 request budget 이하여야 하며 0 reservation은
+  selected list에서 제외한다. set hash는 ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는 hash에서
   파생하며 request당 두 번째 set을 거절한다.
 - deterministic selector mandate는 exact set ID/hash와 selected rank를 보존한다. resolver는
   request의 verified `availableSlots`, ordered assignment hashes와 top-N을 독립 재계산하고 해당
-  assignment가 selected list의 같은 rank에 있을 때만 발급한다. mandate repository는
+  assignment가 selected list의 같은 rank에 있을 때만 발급한다.
+  assignment의 individual cap과 set의 `reservedMaximumNotionalKrw` 중 작은 값을
+  `maximumOpeningNotionalKrw`로 고정하고 request 전체 reservation 합도 다시 검증한다.
+  mandate repository는
   `candidateAssignmentId`를 unique consumption key로 사용해 같은 assignment의 두 번째 mandate를
   거절하며 set seal과 mandate activation 사이의 경쟁은 transaction/compare-and-swap으로 막는다.
 
@@ -1509,6 +1562,10 @@ type RebalancePlanEvent =
   spendable cash와 cash reserve를 넘지 않는지 검증한다. 새 cumulative filled notional도
   action의 `maximumNotionalKrw` 및 current exposure/liquidity cap을 넘을 수 없다. 하나라도
   초과하면 `execution_applied`, cost/flow/turnover event 또는 portfolio mutation 없이 거절한다.
+- SELL은 verified paper fill의 actual `netAmountKrw`가 risk decision의 independently recomputed
+  `expectedMinimumNetCashCreditKrw` 이상인지 mutation 전에 검증한다. 실제 net credit가 floor보다
+  작으면 execution event, bucket/legacy accounting, turnover 또는 portfolio mutation을 모두
+  만들지 않고 rejected/stale policy에 따라 종료한다.
 - event는 action sequence/fill sequence 순서로만
   append하며 다음 action은 이전 action이 target을 채운 뒤에만 시작한다. retry는 기존 fill
   ID/event를 반환하며 새 ID로 같은 체결을 중복 계상할 수 없다.
@@ -1576,8 +1633,10 @@ candidate는 `unknown` 또는 `blocked`로 남긴다. 가격 상승만으로 기
 1. bucket gap을 available slot 수로 나눈 기본 notional을 계산한다.
 2. candidate score에 따른 deterministic multiplier를 허용 범위 안에서 적용한다.
 3. symbol, bucket, sector, country, currency, liquidity limit 중 가장 작은 cap을 적용한다.
-4. 최소 주문 단위보다 작거나 비용 대비 편익 threshold를 넘지 못하면 거래하지 않는다.
-5. exact target을 추적하지 않고 min/max rebalance band 안에서는 유지한다.
+4. selected rank 순으로 remaining request allocation budget을 reserve해 aggregate maximum이
+   gap과 `maximumAdditionalExposureKrw` 중 작은 값을 넘지 않게 한다.
+5. 최소 주문 단위보다 작거나 비용 대비 편익 threshold를 넘지 못하면 거래하지 않는다.
+6. exact target을 추적하지 않고 min/max rebalance band 안에서는 유지한다.
 
 ## 8. Portfolio gap과 리밸런싱
 
@@ -1836,6 +1895,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
 | `portfolio-risk-rule-parameter-records.jsonl` | 신규 append-only | rule별 canonical parameter payload와 immutable hash |
 | `portfolio-risk-rule-set-records.jsonl` | 신규 append-only | side별 required Risk Engine rule과 parameter ref |
+| `bucket-drawdown-semantics-records.jsonl` | 신규 append-only | unit NAV/HWM/reset/carry 계산 규칙 payload |
 | `session-calendar-records.jsonl` | 신규 append-only | exchange-date별 session과 provenance |
 | `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
@@ -1947,6 +2007,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable portfolio risk rule parameter/rule set ref와 required-rule resolver
+- immutable bucket drawdown semantics ref와 activation/replay resolver
 - immutable market schedule boundary ref와 timezone/calendar/hash validation
 - immutable session calendar record와 date-coverage resolver
 - append-only activation record와 single-active fail-closed resolver
@@ -2109,6 +2170,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selection policy payload canonical ordering, digest 제외 field와 독립 rehash 검증
 - active policy의 risk rule set ref와 canonical required rule이 immutable record와 일치
 - risk parameter payload canonical hash, rule ID/version scope와 독립 resolver 검증
+- drawdown semantics payload digest와 unit NAV/HWM/reset/carry rule resolver 검증
 - root legacy reduce-only rule set ref와 SELL-only scope 해소
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
@@ -2117,9 +2179,11 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - candidate assignment set의 sealed ordering/top-N, available slot cap과 unique consumption
+- selected assignment reservation 합계의 request gap/additional-exposure budget 상한
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
+- valuation mark의 market/symbol, FX의 base/quote identity와 duplicate 거절
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
@@ -2179,6 +2243,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - execution-cost plan/action/fill origin mismatch와 cross-plan duplicate fill 거절
 - actual fill full-payload rehash, 비용 breakdown 재계산과 execution-cost delta 일치
 - BUY worst-case/actual net cash debit의 spendable cash·reserve cap 검증
+- SELL actual net cash credit의 approved/recomputed minimum floor 검증
 - BUY/SELL fill accounting group의 side별 cost/flow 순서와 atomic append 검증
 - fee-only equity 감소 직후 unit NAV/drawdown 재계산과 breach 평가
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
