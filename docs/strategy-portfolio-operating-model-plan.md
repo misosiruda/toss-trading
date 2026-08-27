@@ -149,6 +149,7 @@ strict schema, version, parser, migration과 negative test를 함께 작성한�
 interface ActivePortfolioPolicyRef {
   mode: "paper_only";
   activationId: string;
+  portfolioId: string;
   policyRecordId: string;
   policyId: string;
   policyVersion: string;
@@ -161,7 +162,8 @@ interface ActivePortfolioPolicyRef {
 
 - policy record 자체는 immutable하게 유지한다.
 - 활성화와 교체는 append-only activation event로 기록한다.
-- 같은 시점에 active policy가 0개 또는 2개 이상이면 실행을 fail-closed한다.
+- 같은 `portfolioId`와 시점에 active policy가 0개 또는 2개 이상이면 해당 portfolio
+  실행을 fail-closed한다.
 - simulation run은 시작 시 policy hash를 고정하며 실행 도중 새 정책으로 바뀌지 않는다.
 
 ### 6.2 `StrategyBucketPolicy`
@@ -183,6 +185,7 @@ interface StrategyBucketPolicy {
     takeProfitSellRatio?: number;
     trailingStopFromPeakRatio?: number;
     stopLossRatio?: number;
+    timeExpiryAction: "review_required" | "sell_all";
   };
   enabledAssetClasses: string[];
   selectionPolicyVersion: string;
@@ -190,8 +193,10 @@ interface StrategyBucketPolicy {
 ```
 
 - `holdingPeriodHint`를 실제 cadence와 holding boundary로 구체화한다.
-- maximum holding은 자동 매도를 뜻하지 않는다. 만료 시 review-required 상태로 전환하고
-  policy가 명시적으로 time exit를 요구하는 bucket만 paper sell candidate를 만든다.
+- `maximumHoldingSeconds`가 있으면 `timeExpiryAction`을 함께 검증한다.
+- `review_required`는 만료 시 신규 매수를 차단하고 검토 상태로만 전환한다.
+- `sell_all`을 명시한 bucket만 만료 시 reduce-only paper sell candidate를 만들며,
+  Risk Engine 재검증을 통과해야 한다.
 - lifecycle, stale evidence, Risk Engine reject는 minimum holding보다 우선한다.
 
 ### 6.3 `InvestmentMandate`
@@ -204,6 +209,9 @@ interface InvestmentMandate {
   bucket: StrategyBucket;
   policyHash: string;
   assignmentSource: "manual_policy" | "deterministic_selector";
+  selectionRequestId?: string;
+  candidateAssignmentId?: string;
+  scoringModelVersion?: string;
   targetWeightRatio: number;
   minWeightRatio: number;
   maxWeightRatio: number;
@@ -222,6 +230,10 @@ interface InvestmentMandate {
 - 같은 `market:symbol`에는 하나의 active mandate만 허용한다.
 - 같은 종목을 두 bucket에 중복 계상하지 않는다.
 - bucket 변경은 기존 mandate를 retire하고 새 mandate를 발행하는 명시적 migration이다.
+- `deterministic_selector` mandate는 `selectionRequestId`, `candidateAssignmentId`,
+  `scoringModelVersion`을 모두 필수로 보존한다.
+- `manual_policy` mandate는 selector lineage field를 포함하지 않으며 별도의 manual
+  assignment audit event를 참조한다.
 - AI 문자열은 `reasonCodes`나 `evidenceRefs`를 대체할 수 없다.
 - target weight는 AI 출력이 아니라 backend sizing 결과다.
 
@@ -263,6 +275,7 @@ interface BucketSelectionRequest {
 }
 
 interface CandidateAssignment {
+  assignmentId: string;
   requestId: string;
   market: Market;
   symbol: string;
@@ -397,7 +410,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
-| `portfolio-policy-activations.jsonl` | 신규 append-only | active/retired policy lineage |
+| `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `instrument-mandates.jsonl` | 신규 append-only | 종목 역할·target·evidence 변화 |
 | `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
@@ -476,8 +489,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 완료 조건:
 
-- active policy 1개를 deterministic하게 읽는다.
-- active policy 없음, 중복 active, corrupt lineage를 모두 거절한다.
+- `portfolioId`별 active policy 1개를 deterministic하게 읽는다.
+- 해당 portfolio의 active policy 없음, 중복 active, corrupt lineage를 모두 거절한다.
 
 ### PR 2. Active policy 기반 portfolio compliance
 
@@ -500,6 +513,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
+- selector가 만든 mandate는 request, assignment와 scoring model lineage를 가진다.
 - legacy position은 자동 추정하지 않고 `review_required`로 구분한다.
 
 ### PR 4. `PortfolioGapAnalyzer`
@@ -574,9 +588,10 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - bucket target + cash target 합계 100%
 - target이 min/max 범위 안에 존재
 - policy hash canonicalization과 version compatibility
-- portfolio당 single active policy
+- `portfolioId`당 single active policy
 - `market:symbol`당 single active mandate
 - mandate와 position의 policy hash 일치
+- selector mandate의 request/assignment/scoring model lineage 완전성
 
 ### Gap 및 sizing
 
@@ -589,6 +604,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - bucket별 due/not-due 판단
 - minimum/maximum holding boundary
+- `timeExpiryAction`별 review-only와 reduce-only sell 동작
 - partial take-profit 후 durable trailing state
 - lifecycle invalidation과 risk breach가 minimum holding보다 우선
 
