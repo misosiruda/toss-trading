@@ -314,7 +314,36 @@ type MandateAssignmentLineage =
       selectionScore: number;
     };
 
-type InvestmentMandate = InvestmentMandateBase & MandateAssignmentLineage;
+type InvestmentMandateRecord = InvestmentMandateBase & MandateAssignmentLineage;
+
+interface InvestmentMandateEventBase {
+  mandateEventId: string;
+  mandateId: string;
+  portfolioId: string;
+  market: Market;
+  symbol: string;
+  bucket: StrategyBucket;
+  policyHash: string;
+  asOf: string;
+  reasonCodes: string[];
+}
+
+type InvestmentMandateEvent = InvestmentMandateEventBase &
+  (
+    | {
+        eventType: "activated";
+        previousMandateEventId?: string;
+      }
+    | {
+        eventType: "review_required";
+        previousMandateEventId: string;
+      }
+    | {
+        eventType: "retired";
+        previousMandateEventId: string;
+        supersededByMandateId?: string;
+      }
+  );
 
 interface InvestmentMandateBase {
   mandateId: string;
@@ -334,7 +363,7 @@ interface InvestmentMandateBase {
   validFrom: string;
   reviewAfter?: string;
   expiresAt?: string;
-  status: "proposed" | "active" | "review_required" | "retired";
+  createdAt: string;
 }
 
 interface ManualAssignmentEventBase {
@@ -380,7 +409,15 @@ type ManualAssignmentEvent = ManualAssignmentEventBase &
 
 - 같은 `portfolioId + market + symbol`에는 하나의 active mandate만 허용한다.
 - 같은 portfolio 안에서 같은 종목을 두 bucket에 중복 계상하지 않는다.
-- bucket 변경은 기존 mandate를 retire하고 새 mandate를 발행하는 명시적 migration이다.
+- mandate record와 event ID는 재사용하지 않는다. record 생성 직후 상태는 `proposed`이며
+  status는 event chain을 fold해 `active`, `review_required`, `retired`로 파생한다.
+- 첫 activation event만 `previousMandateEventId`를 생략할 수 있다. 이후 event는 현재 chain
+  head를 정확히 가리켜야 하며 unknown predecessor, duplicate ID, branch, retired 이후 전이는
+  fail-closed한다.
+- bucket 변경은 새 mandate record를 먼저 만들고 기존 mandate의 retirement event에
+  `supersededByMandateId`를 기록한 뒤 새 mandate를 activate하는 명시적 migration이다.
+- resolver가 같은 `portfolioId + market + symbol`에 active mandate를 2개 이상 찾으면 해당
+  종목의 신규 매수를 중단한다.
 - `deterministic_selector` mandate는 request, assignment, scoring model과 score를 모두
   필수로 보존한다.
 - `manual_policy` mandate는 selector lineage field를 포함하지 않고
@@ -446,7 +483,67 @@ scheduled cadence mandate/state는 `reviewAfter`/`nextReviewAt`을 필수로 검
 `every_tick`은 두 timestamp를 생략하고 `lastReviewedTriggerRef`에 마지막 처리 market
 packet hash를 저장해 다음 packet의 due 여부를 결정한다.
 
-### 6.5 `PortfolioSizingSnapshot`, `BucketSelectionRequest`와 `CandidateAssignment`
+### 6.5 `BucketRiskState`
+
+```ts
+interface BucketRiskState {
+  riskStateEpochId: string;
+  portfolioId: string;
+  bucket: StrategyBucket;
+  policyHash: string;
+  units: number;
+  unitNavKrw: number;
+  highWaterMarkUnitNavKrw: number;
+  equityKrw: number;
+  drawdownRatio: number;
+  lastBucketEquityEventId: string;
+  asOf: string;
+}
+
+type BucketEquityEvent =
+  | {
+      eventType: "capital_flow";
+      bucketEquityEventId: string;
+      previousBucketEquityEventId?: string;
+      riskStateEpochId: string;
+      portfolioId: string;
+      bucket: StrategyBucket;
+      policyHash: string;
+      amountKrw: number;
+      rebalancePlanId: string;
+      asOf: string;
+    }
+  | {
+      eventType: "valuation" | "execution_cost";
+      bucketEquityEventId: string;
+      previousBucketEquityEventId?: string;
+      riskStateEpochId: string;
+      portfolioId: string;
+      bucket: StrategyBucket;
+      policyHash: string;
+      equityDeltaKrw: number;
+      evidenceRefs: string[];
+      asOf: string;
+    };
+```
+
+- policy activation은 bucket별 새 `riskStateEpochId`를 만들고 당시 equity를 unit NAV 1의
+  명시적인 시작 baseline으로 기록한다. 이전 epoch와 high-water mark는 삭제하지 않는다.
+- shared cash와 bucket 사이의 allocation/deallocation은 `capital_flow` event로 기록하고
+  flow 직전 unit NAV에서 unit을 mint/burn한다. 따라서 자금 이동 자체는 unit NAV와
+  drawdown을 바꾸지 않는다. 양수 amount는 mint, 음수 amount는 burn이며 0 amount와
+  보유 unit을 초과하는 burn은 거절한다.
+- bucket 내부 BUY/SELL은 asset/cash 교환이므로 체결 notional 자체는 손익이 아니다.
+  mark-to-market PnL과 fee/slippage만 equity와 unit NAV를 변경한다.
+- valuation 후 `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
+  `drawdownRatio = 1 - unitNavKrw / highWaterMarkUnitNavKrw`로 계산한다.
+- units가 0이면 마지막 unit NAV/high-water mark를 유지하며, 같은 epoch의 재진입은 그
+  NAV에서 mint한다. 새 policy epoch만 baseline을 재설정할 수 있다.
+- epoch의 첫 event만 `previousBucketEquityEventId`를 생략할 수 있다. 이후 event ID와
+  predecessor는 선형 append-only로 검증하고 current snapshot은 event replay로 재구성
+  가능해야 한다. event/snapshot mismatch나 누락은 신규 매수를 fail-closed한다.
+
+### 6.6 `PortfolioSizingSnapshot`, `BucketSelectionRequest`와 `CandidateAssignment`
 
 ```ts
 interface PortfolioExposureSnapshot {
@@ -674,8 +771,11 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
-| `instrument-mandates.jsonl` | 신규 append-only | 종목 역할·target·evidence 변화 |
+| `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
+| `instrument-mandate-events.jsonl` | 신규 append-only | mandate activate/review/retire transition chain |
 | `position-strategy-state.json` | 신규 snapshot | 현재 보유기간·peak·review 상태 |
+| `bucket-equity-events.jsonl` | 신규 append-only | bucket capital flow, valuation, execution cost |
+| `bucket-risk-state.json` | 신규 snapshot | unit NAV, high-water mark와 drawdown current state |
 | `portfolio-sizing-snapshots.jsonl` | 신규 append-only | sizing 시점의 virtual portfolio, mark와 exposure |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
@@ -782,10 +882,11 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 ### PR 3. `InvestmentMandate`와 position strategy state
 
-- assigned/unassigned legacy state와 manual assignment event의 strict schema/repository
+- immutable mandate record/event chain, assigned/unassigned legacy state와 manual assignment
+  event의 strict schema/repository
 - portfolio 안에서 한 종목 하나의 active mandate invariant
 - 기존 position의 `unassigned_legacy` migration
-- peak, review cadence, holding age persistence
+- position peak/review/holding age와 bucket unit-NAV drawdown state persistence
 
 완료 조건:
 
@@ -796,6 +897,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
   `classify_existing_reduce_only`는 buy/increase를 만들지 않는다.
 - lineage 또는 holding timestamp가 없는 legacy position은 값을 자동 추정하지 않고
   `unassigned_legacy`와 `review_required`로 구분하며 해당 portfolio의 신규 매수를 막는다.
+- mandate event chain의 branch/unknown predecessor/terminal transition을 거절한다.
+- 재시작 후 bucket equity event replay와 risk snapshot이 같은 unit NAV/high-water mark를 만든다.
 
 ### PR 4. `PortfolioGapAnalyzer`
 
@@ -881,6 +984,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - active policy의 selection policy ref가 immutable record와 일치
 - `portfolioId`당 single active policy
 - `portfolioId + market + symbol`당 single active mandate
+- mandate event chain의 선형 predecessor와 derived status 검증
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
@@ -901,6 +1005,14 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - dust와 거래비용 threshold 이하의 계획 제외
 - 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현 및
   `sizingOutputHash` 검증
+
+### Bucket risk state
+
+- BUY/SELL notional은 drawdown 손익으로 계상하지 않고 fee/slippage와 mark PnL만 반영
+- shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
+- 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
+- policy epoch 전환 외 high-water mark 암묵적 초기화 금지
+- corrupt/missing event와 snapshot mismatch의 신규 매수 fail-closed
 
 ### Cadence 및 exit
 
