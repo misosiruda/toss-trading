@@ -497,6 +497,9 @@ type MandateAssignmentLineage =
       assignmentSource: "deterministic_selector";
       selectionRequestId: string;
       candidateAssignmentId: string;
+      candidateAssignmentSetId: string;
+      candidateAssignmentSetHash: string;
+      selectedRank: number;
       scoringModelVersion: string;
       selectionScore: number;
     };
@@ -1052,6 +1055,24 @@ interface CandidateAssignment {
   assignmentHash: string;
   createdAt: string;
 }
+
+interface CandidateAssignmentSetRecord {
+  candidateAssignmentSetId: string;
+  candidateAssignmentSetHash: string;
+  requestId: string;
+  requestHash: string;
+  availableSlots: number;
+  orderedAssignments: Array<{
+    assignmentId: string;
+    assignmentHash: string;
+    eligibility: "eligible" | "watch" | "blocked";
+    selectionScore: number;
+    market: Market;
+    symbol: string;
+  }>;
+  selectedAssignmentIds: string[];
+  createdAt: string;
+}
 ```
 
 `watch`와 `blocked` candidate는 주문 후보가 될 수 없다. required evidence가 없거나
@@ -1106,6 +1127,16 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
   required evidence freshness 및 모든 hard gate를 deterministic하게 재평가한다. 재계산한
   `eligibility`, `selectionScore`, `reasonCodes`가 assignment와 정확히 같지 않거나 assignment가
   `eligible`이 아니면 input/output/assignment hash가 유효해도 mandate를 만들지 않는다.
+- 한 request의 모든 assignment를 저장한 뒤 immutable `CandidateAssignmentSetRecord`를 한 번
+  seal한다. eligible 우선, selection score 내림차순, market/symbol canonical tie-break로 전체를
+  정렬하고 `selectedAssignmentIds`는 앞의 `min(availableSlots, eligibleCount)`개와 정확히 같아야
+  한다. set hash는 ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는 hash에서
+  파생하며 request당 두 번째 set을 거절한다.
+- deterministic selector mandate는 exact set ID/hash와 selected rank를 보존한다. resolver는
+  request의 verified `availableSlots`, ordered assignment hashes와 top-N을 독립 재계산하고 해당
+  assignment가 selected list의 같은 rank에 있을 때만 발급한다. mandate repository는
+  `candidateAssignmentId`를 unique consumption key로 사용해 같은 assignment의 두 번째 mandate를
+  거절하며 set seal과 mandate activation 사이의 경쟁은 transaction/compare-and-swap으로 막는다.
 
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
@@ -1287,6 +1318,28 @@ interface PaperFillExecutionRecord {
   createdAt: string;
 }
 
+interface PortfolioLegacyExecutionAccountingRecord {
+  legacyAccountingRecordId: string;
+  legacyAccountingHash: string;
+  portfolioId: string;
+  observedPositionRef: string;
+  activePortfolioPolicyHash: string;
+  rebalancePlanId: string;
+  rebalanceActionId: string;
+  fillId: string;
+  paperFillRecordId: string;
+  paperFillHash: string;
+  grossProceedsKrw: number;
+  totalExecutionCostKrw: number;
+  netCashCreditKrw: number;
+  expectedPrePortfolioVersion: string;
+  expectedPrePortfolioSnapshotHash: string;
+  resultingPortfolioVersion: string;
+  resultingPortfolioSnapshotHash: string;
+  asOf: string;
+  createdAt: string;
+}
+
 type RebalancePlanEvent =
   | {
       planEventId: string;
@@ -1387,6 +1440,16 @@ type RebalancePlanEvent =
 - 일반 action은 active mandate를 참조한다. `unassigned_legacy_reduce_only`는 mandate ID를
   합성하지 않고 저장된 legacy state의 `observedPositionRef`/`detectedAt`을 직접 참조하며
   SELL만 허용한다. 이 variant도 lifecycle/Risk Engine 검증을 우회할 수 없다.
+- legacy reduce-only fill은 bucket을 합성하거나 `BucketEquityEvent`/`BucketTurnoverEvent`를
+  만들지 않는다. 대신 exact observed position, root legacy policy, plan/action/fill과 verified
+  paper fill record를 참조하는 `PortfolioLegacyExecutionAccountingRecord`를 사용한다.
+  record hash는 ID/hash/createdAt을 제외한 complete payload에서 계산하고 ID는 hash에서 파생한다.
+  gross proceeds, total cost와 net cash credit을 fill record에서 독립 재계산하고 position 감소,
+  shared cash credit, portfolio version/snapshot과 accounting record를 한 transaction으로 반영한다.
+  retry는 기존 record를 반환하며 bucket/policy/mandate lineage를 만들어내지 않는다.
+- legacy fill 이후에는 resulting portfolio snapshot으로 portfolio-level exposure, cash reserve와
+  root risk rule을 즉시 재평가한다. 비용은 같은 legacy accounting record에 포함하므로 bucket
+  fee/cash-flow update를 만들지 않고 fill-origin risk-state update로 trigger lineage를 보존한다.
 - 첫 event는 predecessor가 없는 `previewed`여야 한다. 이후 event는 직전 event ID를
   `previousPlanEventId`로 참조하며 record와 동일한 plan/cycle/portfolio/version/snapshot/
   policy scope를 직접 저장한다.
@@ -1616,6 +1679,18 @@ type PortfolioRiskStateUpdateRecord = PortfolioRiskStateUpdateRecordBase &
         rebalanceActionId: string;
         planExecutionEventId: string;
         fillId: string;
+        paperFillRecordId: string;
+        paperFillHash: string;
+        accountingScope:
+          | {
+              scopeKind: "bucket";
+              fillAccountingGroupId: string;
+            }
+          | {
+              scopeKind: "legacy_portfolio";
+              legacyAccountingRecordId: string;
+              legacyAccountingHash: string;
+            };
       }
     | {
         stateUpdateKind: "fee" | "cash_flow";
@@ -1696,6 +1771,9 @@ interface PortfolioTriggerClaimRecord {
 - `PortfolioRiskStateUpdateRecord`는 update kind별 exact immutable origin을 참조한다. market
   mark는 portfolio snapshot, fill은 plan/action/execution event/fill, fee와 cash flow는 bucket
   equity event 및 plan/action/fill, risk state는 epoch/last event/state hash를 resolve한다.
+- fill update는 exact paper fill record와 accounting scope도 resolve한다. bucket scope는 fill
+  accounting group, legacy scope는 portfolio-level legacy accounting record를 요구하며 두 variant를
+  섞거나 legacy fill에 bucket equity origin을 합성하면 거절한다.
 - state update hash는 record ID, `stateUpdateHash`와 `createdAt`을 제외한 canonical payload에서
   계산하고 ID는 kind와 hash에서 결정론적으로 파생한다. exact retry는 기존 record를 반환하며 missing origin,
   as-of/scope/hash mismatch, 같은 ID의 payload collision을 거절한다. risk-breach trigger는 exact
@@ -1779,10 +1857,12 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | full digest와 재계산 가능한 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력·결과와 전체 digest |
+| `candidate-assignment-sets.jsonl` | 신규 append-only | request별 sealed ordering, top-N과 slot selection |
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
 | `portfolio-action-risk-decisions.jsonl` | 신규 append-only | plan/action/pre-state별 Risk Engine 최종 판단 |
 | `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, fill execution, rejection, stale, applied transition chain |
 | `paper-fill-execution-records.jsonl` | 신규 append-only | 실제 fill input/output과 비용 breakdown 전체 digest |
+| `portfolio-legacy-execution-accounting.jsonl` | 신규 append-only | unassigned legacy SELL의 portfolio-level 회계 |
 
 정책에 묶인 selector, mandate와 rebalance downstream artifact는 최소한 `policyHash`,
 `portfolioId`, `asOf`를 record 또는 record envelope에 직접 포함하고, source/evidence
@@ -1941,6 +2021,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - evidence completeness와 scoring model version 기록
 - candidate assignment append-only repository와 request lineage 검증
 - assignment full-payload digest와 eligibility/hard-gate 독립 재평가
+- request별 sealed assignment set의 deterministic top-N과 unique assignment consumption
 - canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
@@ -1979,6 +2060,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 각 action은 cap과 별도의 fractional BUY notional 또는 fractional/whole-share quantity
   target을 가지며 executor가 target을 재결정하지 않는다.
 - unassigned legacy position은 observed state에 연결된 reduce-only SELL로만 표현된다.
+- unassigned legacy SELL은 bucket lineage 없이 portfolio-level accounting record로 원자 반영된다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
@@ -1992,7 +2074,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 완료 조건:
 
 - 하나의 cycle에서 상충하는 BUY/SELL이 발생하지 않는다.
-- 모든 paper fill이 policy, mandate, decision, risk decision과 연결된다.
+- 일반 paper fill은 policy/mandate/decision/risk decision, legacy reduce-only fill은 active root
+  policy/observed legacy state/decision/risk decision/accounting record와 연결된다.
 
 ### PR 8. Integrated replay와 운영 화면
 
@@ -2033,6 +2116,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - mandate record/event full-payload digest와 position state의 exact hash binding
 - mandate와 position의 policy hash 일치
 - selector mandate의 request/assignment/scoring model lineage 완전성
+- candidate assignment set의 sealed ordering/top-N, available slot cap과 unique consumption
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
@@ -2110,6 +2194,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `every_tick` packet hash deduplication과 event trigger cycle identity
 - scheduled/every-tick/policy-event/risk-breach trigger union의 identity/ref/cutoff 재현
 - risk update kind별 immutable origin resolver, retry 수렴과 ID/payload collision 거절
+- legacy fill risk update의 portfolio accounting origin과 bucket-origin 혼용 거절
 - minimum/maximum holding boundary
 - 같거나 역전된 minimum/maximum holding boundary의 validation 거절
 - `timeExpiryAction`별 review-only와 reduce-only sell 동작
