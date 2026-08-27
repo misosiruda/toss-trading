@@ -433,9 +433,13 @@ interface StrategyBucketPolicy {
 - schedule slot ID와 cutoff는 boundary record 및 session calendar로 계산한다. DST, 휴장,
   조기 종료를 구현체의 local timezone이나 처리 시각으로 추정하지 않는다.
 - turnover window는 Unix epoch를 anchor로 한 고정 UTC 구간이며 duration은 양의 정수다.
-  window ID는 portfolio/policy/bucket/window start/end에서 파생하고 분모는 window 시작 직전
+  window ID는 policy와 독립적으로 portfolio/bucket/window start/end에서 파생하고 분모는 window 시작 직전
   immutable portfolio snapshot의 positive `virtualNetWorthKrw`로 고정한다. 분모를 resolve할 수
   없거나 0 이하이면 신규 fill을 fail-closed하며 중간 자금 유입으로 분모를 재설정하지 않는다.
+- 같은 window 안의 policy activation은 기존 turnover event/state 누계를 그대로 이어받고 새
+  policy의 `maxTurnoverRatio`를 누계에 적용한다. `turnoverWindow` duration/anchor/denominator를
+  바꾸는 policy는 기존 window가 끝난 정확한 boundary에서만 activation할 수 있으며 중간
+  activation은 거절한다. 정책 교체 자체로 window나 누계를 초기화할 수 없다.
 - 모든 BUY/SELL fill의 absolute filled notional을 `BucketTurnoverEvent`에 append하고 선형
   predecessor, exact plan/action/fill origin, full event hash와 누계를 검증한다. state hash는
   event replay 결과와 같아야 하며 fill retry는 기존 event로 수렴한다. turnover ratio는
@@ -719,7 +723,7 @@ interface BucketTurnoverState {
   turnoverStateHash: string;
   portfolioId: string;
   bucket: StrategyBucket;
-  policyHash: string;
+  lastAppliedPolicyHash: string;
   windowStartedAt: string;
   windowEndsAt: string;
   windowOpenPortfolioNetWorthKrw: number;
@@ -798,6 +802,8 @@ type BucketEquityEvent =
       rebalancePlanId: string;
       rebalanceActionId: string;
       fillId: string;
+      paperFillRecordId: string;
+      paperFillHash: string;
       fillAccountingGroupId: string;
       fillAccountingSequence: 0 | 1;
       asOf: string;
@@ -830,6 +836,8 @@ type BucketEquityEvent =
       rebalancePlanId: string;
       rebalanceActionId: string;
       fillId: string;
+      paperFillRecordId: string;
+      paperFillHash: string;
       fillAccountingGroupId: string;
       fillAccountingSequence: 0 | 1;
       evidenceRefs: string[];
@@ -875,9 +883,11 @@ type BucketEquityEvent =
   제외한 payload로 hash와 hash-derived ID를 만든다. resolver는 저장된 quantity와 이전/현재
   mark evidence로 delta를 독립 재계산한다. 같은 epoch/bucket/mark record origin의 exact retry는
   기존 event를 반환하고 새 event ID, predecessor 또는 delta로 중복 append할 수 없다.
-  `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 `fillId`로 fee/slippage
-  근거를 연결한다. exact plan/action/fill이 같은 portfolio의 execution과 일치해야 하며 양수
-  cost, unresolved execution 또는 중복 origin cost event는 거절한다.
+  `execution_cost.equityDeltaKrw`는 0 이하만 허용하고 exact `PaperFillExecutionRecord`
+  ID/hash를 참조한다. resolver는 source/fill price, quantity, participation/liquidity input,
+  complete execution policy와 fee/tax/spread/slippage/impact breakdown을 독립 재계산하고
+  `equityDeltaKrw = -totalCostKrw`인지 검증한다. exact plan/action/fill scope가 다르거나 양수
+  cost, unresolved/corrupt fill 또는 중복 origin cost event는 거절한다.
 - `capital_flow`, `valuation`, `execution_cost`를 append할 때마다 resulting equity/units에서
   unit NAV를 계산한다. capital flow는 NAV/HWM을 유지하고 valuation/execution cost 후에는
   `highWaterMarkUnitNavKrw = max(previous, unitNavKrw)`,
@@ -1202,6 +1212,16 @@ interface PortfolioActionRiskDecision {
   requestedQuantity: number;
   worstCaseFillNotionalKrw: number;
   approvedMaximumFillNotionalKrw: number;
+  cashAssessment:
+    | {
+        side: "BUY";
+        worstCaseNetCashDebitKrw: number;
+        approvedMaximumNetCashDebitKrw: number;
+      }
+    | {
+        side: "SELL";
+        expectedMinimumNetCashCreditKrw: number;
+      };
   decision: "approved" | "rejected";
   requiredRuleIds: string[];
   ruleResults: Array<{
@@ -1212,6 +1232,59 @@ interface PortfolioActionRiskDecision {
   riskInputHash: string;
   riskEvidenceRefs: string[];
   decidedAt: string;
+}
+
+interface PaperFillExecutionRecord {
+  paperFillRecordId: string;
+  paperFillHash: string;
+  portfolioId: string;
+  rebalancePlanId: string;
+  rebalanceActionId: string;
+  fillId: string;
+  side: "BUY" | "SELL";
+  requestedNotionalKrw: number;
+  requestedQuantity: number;
+  quantityOverride: number | null;
+  sourcePriceKrw: number;
+  averagePriceKrw: number | null;
+  fillPriceKrw: number;
+  quantity: number;
+  filledNotionalKrw: number;
+  grossAmountKrw: number;
+  netAmountKrw: number;
+  participationRate: number | null;
+  volume: number | null;
+  averageVolume: number | null;
+  liquidityStale: boolean;
+  fillStatus: "filled" | "partial";
+  liquidityStatus: "filled" | "partial" | "unavailable";
+  liquidityRejectReason: string | null;
+  fractionalShares: boolean;
+  executionPolicy: {
+    modelVersion: string;
+    fillPriceRule: "current_candidate_last_price";
+    slippageBps: number;
+    feeBps: number;
+    taxBps: number;
+    halfSpreadBps: number;
+    fillRatio: number;
+    allowFractionalShares: boolean;
+    maxVolumeParticipationRate: number;
+    minLiquidityFillRatio: number;
+    rejectStaleLiquidity: boolean;
+    marketImpactBpsPerParticipationRate: number;
+  };
+  costBreakdown: {
+    feeKrw: number;
+    taxKrw: number;
+    slippageKrw: number;
+    spreadCostKrw: number;
+    impactCostKrw: number;
+    totalCostKrw: number;
+  };
+  evidenceRefs: string[];
+  asOf: string;
+  createdAt: string;
 }
 
 type RebalancePlanEvent =
@@ -1258,6 +1331,8 @@ type RebalancePlanEvent =
       actionSequence: number;
       fillSequence: number;
       fillId: string;
+      paperFillRecordId: string;
+      paperFillHash: string;
       requestedNotionalKrw: number;
       requestedQuantity: number;
       filledNotionalKrw: number;
@@ -1324,8 +1399,13 @@ type RebalancePlanEvent =
   event ID, branch, terminal 이후 event는 거절한다.
 - 각 paper fill 직후 `execution_applied`를 durable하게 기록한다. event는 action/fill별 Risk
   Engine decision과 실행 직전 expected version/snapshot, 실행 직후 resulting version/snapshot을
-  일대일로 보존한다. fill ID는 portfolio 전체에서 globally unique하고 같은 fill을 다른
-  plan/action 또는 새 event로 재기록할 수 없다.
+  일대일로 보존하고 exact paper fill record ID/hash를 참조한다. fill ID는 portfolio 전체에서
+  globally unique하고 같은 fill을 다른 plan/action 또는 새 event로 재기록할 수 없다.
+- `PaperFillExecutionRecord` hash는 record ID/hash/createdAt을 제외한 complete payload에서
+  계산하고 ID는 hash에서 파생한다. execution policy, source price, liquidity evidence와
+  participation에서 fill price, quantity, gross/net amount와 모든 cost component를 독립 재계산해
+  stored output 및 total과 대조한다. exact retry만 기존 record로 수렴하며 이 검증 전에는
+  execution event, cost/flow event 또는 portfolio mutation을 만들지 않는다.
 - `PortfolioActionRiskDecision`은 기존 범용 decision ID를 그대로 신뢰하지 않고 plan/action,
   policy, market/symbol/side, execution target hash, prior cumulative notional/quantity, 이번
   requested notional/quantity와 expected pre-state를 canonical risk input hash에 묶는다.
@@ -1356,13 +1436,16 @@ type RebalancePlanEvent =
   검증한다. fractional BUY의 requested/filled/cumulative notional은 남은 target 이하이고
   fractional SELL과 whole-share의 requested/filled/cumulative quantity는 남은 target 이하이어야
   한다. Risk Engine은 current
-  price와 slippage bound로 `worstCaseFillNotionalKrw`를 계산하고 action remaining cap, cash,
-  exposure와 liquidity limit 중 최소값을 `approvedMaximumFillNotionalKrw`로 승인한다.
-  requested와 worst-case notional이 이 approved maximum 이하여야만 decision을 승인한다.
+  price와 complete cost bound로 `worstCaseFillNotionalKrw`와 BUY의
+  `worstCaseNetCashDebitKrw`를 계산한다. action remaining/exposure/liquidity cap은 gross filled
+  notional에, current spendable cash와 policy cash reserve cap은 비용을 포함한 net debit에
+  적용한다. 두 값이 각각 `approvedMaximumFillNotionalKrw`와
+  `approvedMaximumNetCashDebitKrw` 이하여야만 decision을 승인한다.
 - deterministic paper fill을 계산한 뒤 portfolio를 변경하기 전에 actual `filledNotionalKrw`가
-  해당 approved maximum 이하이고, 새 cumulative filled notional이 action의
-  `maximumNotionalKrw` 및 current cash/exposure cap을 넘지 않는지 다시 검증한다. 초과 fill은
-  `execution_applied`, capital flow 또는 portfolio mutation 없이 거절한다.
+  해당 gross approved maximum 이하이고 BUY `netAmountKrw`가 net-debit approval, current
+  spendable cash와 cash reserve를 넘지 않는지 검증한다. 새 cumulative filled notional도
+  action의 `maximumNotionalKrw` 및 current exposure/liquidity cap을 넘을 수 없다. 하나라도
+  초과하면 `execution_applied`, cost/flow/turnover event 또는 portfolio mutation 없이 거절한다.
 - event는 action sequence/fill sequence 순서로만
   append하며 다음 action은 이전 action이 target을 채운 뒤에만 시작한다. retry는 기존 fill
   ID/event를 반환하며 새 ID로 같은 체결을 중복 계상할 수 없다.
@@ -1699,6 +1782,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
 | `portfolio-action-risk-decisions.jsonl` | 신규 append-only | plan/action/pre-state별 Risk Engine 최종 판단 |
 | `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, fill execution, rejection, stale, applied transition chain |
+| `paper-fill-execution-records.jsonl` | 신규 append-only | 실제 fill input/output과 비용 breakdown 전체 digest |
 
 정책에 묶인 selector, mandate와 rebalance downstream artifact는 최소한 `policyHash`,
 `portfolioId`, `asOf`를 record 또는 record envelope에 직접 포함하고, source/evidence
@@ -1890,6 +1974,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
 - SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
 - 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
+- 모든 fill의 실제 가격·유동성·비용 breakdown이 독립 재현되고 BUY net debit cap을 통과한다.
 - partial fill 누계가 execution target을 넘지 않고 target 미달 plan은 applied가 될 수 없다.
 - 각 action은 cap과 별도의 fractional BUY notional 또는 fractional/whole-share quantity
   target을 가지며 executor가 target을 재결정하지 않는다.
@@ -1977,6 +2062,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 - risk decision의 plan/action/target/pre-state exact scope 및 input hash 검증
 - turnover window/state replay, prior/requested 누계와 risk-decision cap 검증
+- 같은 window의 policy activation 누계 승계와 mid-window window semantics 변경 거절
 - full risk decision digest rehash와 deterministic rule/output 재평가
 - mandate bucket rule scope와 legacy portfolio-level SELL rule scope 분리
 - risk rule set의 required rule 완전성, duplicate/missing/extra/fail result 거절
@@ -2007,6 +2093,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - shared cash allocation/deallocation이 unit을 mint/burn하고 unit NAV를 바꾸지 않음
 - positive execution-cost delta, unresolved execution과 duplicate cost event 거절
 - execution-cost plan/action/fill origin mismatch와 cross-plan duplicate fill 거절
+- actual fill full-payload rehash, 비용 breakdown 재계산과 execution-cost delta 일치
+- BUY worst-case/actual net cash debit의 spendable cash·reserve cap 검증
 - BUY/SELL fill accounting group의 side별 cost/flow 순서와 atomic append 검증
 - fee-only equity 감소 직후 unit NAV/drawdown 재계산과 breach 평가
 - 재시작 event replay와 snapshot의 unit NAV/high-water mark/drawdown 일치
