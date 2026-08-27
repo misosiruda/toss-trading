@@ -155,6 +155,7 @@ type PortfolioPolicyActivationEvent =
       eventType: "activated";
       mode: "paper_only";
       activationId: string;
+      activationEventHash: string;
       portfolioId: string;
       activationSequence: number;
       policyRecordId: string;
@@ -169,6 +170,7 @@ type PortfolioPolicyActivationEvent =
       eventType: "retired";
       mode: "paper_only";
       retirementEventId: string;
+      activationEventHash: string;
       portfolioId: string;
       activationSequence: number;
       retiredActivationId: string;
@@ -180,6 +182,10 @@ type PortfolioPolicyActivationEvent =
 
 - policy record 자체는 immutable하게 유지한다.
 - `activationId`와 `retirementEventId`는 재사용하지 않는다.
+- `activationEventHash`는 variant별 event ID, hash와 `createdAt`을 제외한 complete canonical
+  payload에서 계산하며 event ID는 hash에서 파생한다. resolver는 sequence fold 전에 모든
+  event를 독립 rehash하고 policy tuple, supersedes/retired target, effective time 또는 reason이
+  바뀐 record를 fail-closed한다. exact payload retry만 기존 event로 수렴한다.
 - event는 backend가 append 시 부여한 portfolio별 연속 `activationSequence`를 가진다.
   예약·backdate를 지원하지 않으며 `effectiveFrom`은 `createdAt`과 같은 즉시 적용 시각이어야
   한다. 미래 또는 과거 effective time과 sequence gap/duplicate를 거절한다.
@@ -916,9 +922,20 @@ interface CandidateSizingInputRecord {
   };
   executionCostInput: {
     modelVersion: string;
+    side: "BUY" | "SELL";
+    referenceNotionalKrw: number;
+    participationRate: number;
+    fillPriceRule: "current_candidate_last_price";
     feeBps: number;
+    taxBps: number;
     halfSpreadBps: number;
     slippageBps: number;
+    fillRatio: number;
+    allowFractionalShares: boolean;
+    maxVolumeParticipationRate: number;
+    minLiquidityFillRatio: number;
+    rejectStaleLiquidity: boolean;
+    marketImpactBpsPerParticipationRate: number;
     estimatedCostKrw: number;
     evidenceRefs: string[];
   };
@@ -960,6 +977,15 @@ stale이면 높은 score가 있더라도 `eligible`로 승격하지 않는다.
 값과 provenance, 계산된 exposure payload를 canonical form으로 append-only 저장한다.
 symbol exposure는 raw symbol string으로 keying하지 않고 `(market, symbol)` tuple을 market,
 symbol 순서로 정렬하며 duplicate tuple을 거절한다.
+- `exposureSnapshotHash`는 hash field를 제외한 complete exposure payload에서 계산한다. map
+  key는 lexical order, symbol exposure는 market/symbol order로 canonicalize하고 duplicate와
+  non-finite number를 거절한다. resolver는 virtual portfolio와 valuation input에서 exposure를
+  다시 계산해 payload와 hash가 모두 같은지 검증한다.
+- `portfolioSnapshotHash`는 snapshot ID와 자기 hash를 제외하고 independently verified
+  `exposureSnapshotHash`를 포함한 complete snapshot payload에서 계산하며 ID는 hash에서
+  파생한다. virtual portfolio의 position/order array는 stable domain key로, valuation input은
+  kind/key/evidence ref 순으로 정렬하고 duplicate를 거절한다. downstream consumer는 두 hash를
+  독립 재구성하기 전에는 snapshot을 sizing 또는 risk input으로 사용하지 않는다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
 - `requestId`는 `cycleId + bucket + portfolioSnapshotHash + policyHash + gapBasis`의 canonical
@@ -971,6 +997,10 @@ exposure cap, liquidity 및 execution cost model input 전체를 canonical form�
 저장한다. `sizingInputHash`는 record ID, hash와 생성 시각을 제외한 이 전체 payload에서
 계산한다. assignment는 exact record ID/hash를 직접 보존하며 record가 resolve되지 않거나
 scope/hash가 다르면 생성하지 않는다.
+execution cost input은 현재 `PaperExecutionPolicy`의 fill rule, fee, tax, spread, slippage,
+fill/fractional/liquidity/staleness 및 market-impact parameter 전체와 side, reference notional,
+participation rate를 보존한다. `estimatedCostKrw`는 이 저장값만으로 독립 재계산하며 runtime
+default로 누락 parameter를 보충하지 않는다.
 feature/evidence ref와 분류 metadata는 모두 resolve되어야 하며 array와 exposure key는
 canonical order로 정규화한다. sizing algorithm version이 다르면 같은 input으로 취급하지 않는다.
 - `sizingInputRecordId`와 `assignmentId`는 서로 다른 domain prefix와
@@ -1163,8 +1193,8 @@ type RebalancePlanEvent =
     };
 ```
 
-- plan 본문은 immutable `RebalancePlanRecord`로 한 번만 저장한다. `planHash`는 plan ID와
-  생성 시각을 제외한 scope와 ordered action payload의 canonical hash다.
+- plan 본문은 immutable `RebalancePlanRecord`로 한 번만 저장한다. `planHash`는 plan ID,
+  `planHash` 자체와 생성 시각을 제외한 scope와 ordered action payload의 canonical hash다.
 - 동일 cycle ID의 동일 scope/hash 재시도는 기존 plan을 반환한다. 같은 cycle ID에 다른
   scope, action 또는 hash를 쓰거나 두 번째 plan을 만드는 요청은 거절한다.
 - 하나의 plan에는 한 side만 포함한다. 같은 orchestration trigger에 SELL과 BUY가 모두
@@ -1793,6 +1823,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - target이 min/max 범위 안에 존재
 - policy hash canonicalization과 version compatibility
 - activation sequence gap/duplicate와 future/backdated effective time 거절
+- activation event full-payload digest, hash-derived ID와 독립 rehash 검증
 - as-of activation fold와 supersedes/retired target 검증
 - active policy의 selection policy ref가 immutable record와 일치
 - selection policy payload canonical ordering, digest 제외 field와 독립 rehash 검증
@@ -1807,6 +1838,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selector mandate의 request/assignment/scoring model lineage 완전성
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
+- portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
@@ -1849,6 +1881,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - `(market, symbol)` exposure tuple 정렬·중복 거절과 동일 symbol의 market별 cap 분리
 - dust와 거래비용 threshold 이하의 계획 제외
 - sizing input record의 algorithm/feature/classification/cap/liquidity/cost payload rehash와 replay
+- tax/market-impact를 포함한 full execution policy와 cost calculation input 재현
 - 동일한 전체 `sizingInputHash`의 target range와 최대 notional 재현 및
   `sizingOutputHash` 검증
 
