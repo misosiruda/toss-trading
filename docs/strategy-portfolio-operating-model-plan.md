@@ -800,6 +800,19 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   fail-closed한다.
 - bucket 변경은 새 mandate record를 먼저 만들고 기존 mandate의 retirement event에
   `supersededByMandateId`를 기록한 뒤 새 mandate를 activate하는 명시적 migration이다.
+- 보유 position의 bucket 변경은 `BucketMandateMigrationTransferRecord` 없이는 완료할 수 없다.
+  record는 retiring/activating mandate ID/hash, source mark head, quantity, 동일 price/evidence,
+  `transferEquityKrw = quantity * transferPriceKrw`와 transfer group을 full-payload hash로 묶고
+  ID를 hash에서 파생한다. from/to bucket은 달라야 하며 exact position과 mandate scope를
+  resolve하고 독립 재계산한다.
+- migration transaction은 old mark head `bucket_transfer_out`, old bucket
+  `strategy_transfer_out(sequence=0)`, new bucket `strategy_transfer_in(sequence=1)`, new mark head
+  `bucket_transfer_in`, old mandate retirement, new mandate activation, position strategy-state
+  변경과 resulting risk states를 모두 원자 commit한다. transfer out은 음수, in은 같은 절댓값의
+  양수여서 portfolio total equity는 변하지 않는다. 각 bucket은 transfer 직전 unit NAV에서 units를
+  burn/mint해 NAV와 high-water mark history를 유지한다. old head는 terminal로 닫고 new head는
+  동일 quantity/price/evidence로 시작한다. partial/cross-policy/duplicate transfer와 한쪽만 보이는
+  상태는 fail-closed한다.
 - resolver가 같은 `portfolioId + market + symbol`에 active mandate를 2개 이상 찾으면 해당
   종목의 신규 매수를 중단한다.
 - `deterministic_selector` mandate는 request, assignment, scoring model과 score를 모두
@@ -1013,6 +1026,29 @@ interface BucketPositionMarkHeadState {
   asOf: string;
 }
 
+interface BucketMandateMigrationTransferRecord {
+  migrationRecordId: string;
+  migrationRecordHash: string;
+  portfolioId: string;
+  market: Market;
+  symbol: string;
+  quantity: number;
+  fromBucket: StrategyBucket;
+  toBucket: StrategyBucket;
+  retiringMandateId: string;
+  retiringMandateHash: string;
+  activatingMandateId: string;
+  activatingMandateHash: string;
+  sourcePositionMarkHeadId: string;
+  sourcePositionMarkHeadHash: string;
+  transferPriceKrw: number;
+  transferPriceEvidenceRef: string;
+  transferEquityKrw: number;
+  transferGroupId: string;
+  asOf: string;
+  createdAt: string;
+}
+
 interface BucketPositionMarkHeadEventBase {
   positionMarkHeadEventId: string;
   positionMarkHeadEventHash: string;
@@ -1070,6 +1106,22 @@ type BucketPositionMarkHeadEvent = BucketPositionMarkHeadEventBase &
               migrationRecordId: string;
               migrationRecordHash: string;
             };
+      }
+    | {
+        eventType: "bucket_transfer_out";
+        previousPositionMarkHeadEventId: string;
+        previousPositionMarkHeadEventHash: string;
+        migrationRecordId: string;
+        migrationRecordHash: string;
+        transferGroupId: string;
+      }
+    | {
+        eventType: "bucket_transfer_in";
+        previousPositionMarkHeadEventId?: never;
+        previousPositionMarkHeadEventHash?: never;
+        migrationRecordId: string;
+        migrationRecordHash: string;
+        transferGroupId: string;
       }
   );
 
@@ -1145,6 +1197,22 @@ type BucketEquityEvent =
       fillAccountingSequence: 0 | 1;
       evidenceRefs: string[];
       asOf: string;
+    }
+  | {
+      eventType: "strategy_transfer_out" | "strategy_transfer_in";
+      bucketEquityEventId: string;
+      bucketEquityEventHash: string;
+      previousBucketEquityEventId: string;
+      riskStateEpochId: string;
+      portfolioId: string;
+      bucket: StrategyBucket;
+      policyHash: string;
+      migrationRecordId: string;
+      migrationRecordHash: string;
+      transferGroupId: string;
+      transferSequence: 0 | 1;
+      amountKrw: number;
+      asOf: string;
     };
 ```
 
@@ -1168,6 +1236,11 @@ type BucketEquityEvent =
   flow 직전 unit NAV에서 unit을 mint/burn한다. 따라서 자금 이동 자체는 unit NAV와
   drawdown을 바꾸지 않는다. 양수 amount는 mint, 음수 amount는 burn이며 0 amount와
   보유 unit을 초과하는 burn은 거절한다.
+- `strategy_transfer_out/in`은 shared cash flow나 fill이 아니라 위 verified mandate migration
+  record만 origin으로 사용한다. 같은 transfer group의 out/in 금액 합은 0이고 sequence는
+  old=0, new=1이어야 하며 두 bucket event, mark-head transfer와 mandate state를 한 transaction에서
+  처리한다. transfer는 각 bucket의 unit 수만 조정하고 unit NAV/HWM 또는 portfolio total equity를
+  바꾸지 않는다.
 - capital flow는 exact plan/action/fill origin을 resolve하고 amount가 해당 fill에서 파생된
   cash 이동과 일치해야 한다. `fillId`는 모든 bucket capital-flow event에서 unique하며
   acknowledgement-loss retry는 기존 event를 반환한다. 새 event ID로
@@ -1204,8 +1277,10 @@ type BucketEquityEvent =
   quantity reconciliation만 허용한다. migration이 가격을 바꾸려면 별도 authenticated valuation을
   먼저 적용해야 한다. resolver는 origin fill/migration과 이 규칙으로 resulting head를 독립 재계산한다.
 - position mark head event hash는 event ID/hash/createdAt을 제외한 complete strict variant
-  payload에서 계산하고 ID는 hash에서 파생한다. initialized만 predecessor를 생략하며 valuation과
-  mutation variant는 previous event ID/hash와 exact authenticated origin을 필수로 가진다. head
+  payload에서 계산하고 ID는 hash에서 파생한다. `initialized`와 새 bucket head의
+  `bucket_transfer_in`만 predecessor를 생략하며 valuation, mutation과 `bucket_transfer_out`은
+  previous event ID/hash와 exact authenticated origin을 필수로 가진다. transfer-out 이후 old
+  head event는 terminal이다. head
   snapshot hash는 자기 hash를 제외한 complete payload에서 계산하고 stable ID는
   portfolio/bucket/market/symbol에서 파생한다. 사용 전 event chain을 독립 rehash·replay해 resulting
   quantity/price/evidence, last origin과 snapshot hash가 모두 일치해야 하며 mismatch는 valuation과
@@ -1252,6 +1327,31 @@ interface PortfolioExposureSnapshot {
   pendingSellExposureKrw: number;
 }
 
+type PendingPortfolioActionInput = {
+  planId: string;
+  planHash: string;
+  planEventId: string;
+  planEventHash: string;
+  actionId: string;
+  actionExecutionTargetHash: string;
+  market: Market;
+  symbol: string;
+  remainingNotionalKrw: number;
+  asOf: string;
+} &
+  (
+    | {
+        side: "BUY";
+        openingCapacityReservationId: string;
+        openingCapacityReservationHash: string;
+      }
+    | {
+        side: "SELL";
+        remainingQuantity: number;
+        priceEvidenceRef: string;
+      }
+  );
+
 interface PortfolioSizingSnapshot {
   portfolioSnapshotId: string;
   portfolioId: string;
@@ -1277,6 +1377,7 @@ interface PortfolioSizingSnapshot {
         evidenceAsOf: string;
       }
   >;
+  pendingActionInputs: PendingPortfolioActionInput[];
   exposureSnapshot: PortfolioExposureSnapshot;
   exposureSnapshotHash: string;
   portfolioSnapshotHash: string;
@@ -1434,6 +1535,13 @@ symbol 순서로 정렬하며 duplicate tuple을 거절한다.
   거절하며 mark는 exact `(market, symbol)` position, FX는 exact currency pair에만 적용한다.
   downstream consumer는 두 hash를
   독립 재구성하기 전에는 snapshot을 sizing 또는 risk input으로 사용하지 않는다.
+- `pendingActionInputs`는 nonterminal approved/executing plan의 remaining action만 포함하고 exact
+  plan/event ID/hash, execution target과 BUY reservation 또는 SELL quantity/price origin을 직접
+  보존한다. resolver는 plan event chain, fill cumulative와 reservation chain을 replay해 remaining
+  amount를 재계산하고 market/symbol/side 순으로 canonicalize한다. `pendingBuyExposureKrw`와
+  `pendingSellExposureKrw`는 이 입력의 합으로만 파생하며 pending input이 빈 경우에만 둘 다 0일
+  수 있다. unresolved/corrupt action, duplicate logical action 또는 total mismatch는 snapshot을
+  sizing에 사용하지 않고 fail-closed한다.
 request의 snapshot ID/hash가 이 immutable record와 일치하지 않으면 selection과 sizing을
 거절한다.
 - `requestHash`는 request ID/hash/createdAt을 제외한 complete payload에서 계산하고 request ID는
@@ -2338,6 +2446,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `bucket-opening-capacity-state.json` | 신규 snapshot | selector/manual 공용 slot·opening budget CAS ledger |
 | `instrument-mandate-records.jsonl` | 신규 append-only | immutable 종목 역할·target·evidence |
 | `instrument-mandate-events.jsonl` | 신규 append-only | mandate hash에 묶인 activate/review/retire transition chain |
+| `bucket-mandate-migration-transfers.jsonl` | 신규 append-only | cross-bucket equity·mark-head·mandate 원자 transfer |
 | `position-strategy-state.json` | 신규 snapshot | full digest로 검증하는 현재 보유기간·peak·review 상태 |
 | `bucket-equity-events.jsonl` | 신규 append-only | full-event digest를 가진 capital flow, valuation, execution cost |
 | `bucket-valuation-mark-records.jsonl` | 신규 append-only | valuation별 immutable position/mark origin과 delta |
@@ -2635,7 +2744,9 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - candidate assignment의 full-payload digest와 eligibility/hard-gate 독립 재평가
 - selector/manual sizing input record의 feature/cap/liquidity/cost payload와 hash 완전성
 - portfolio sizing snapshot의 exposure/full digest 재계산과 canonical ordering 검증
+- pending plan/action/reservation input replay와 BUY/SELL exposure total 일치
 - valuation mark의 market/symbol, FX의 base/quote identity와 duplicate 거절
+- cross-bucket mandate migration의 zero-sum equity, unit NAV/HWM와 mark-head 보존
 - 종목별 previous mark head 연속성, overlap/gap과 stale predecessor 거절
 - mark head event strict variant rehash와 snapshot replay 일치
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
@@ -2678,6 +2789,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - fractional SELL의 quantity 기반 완료와 불필요한 residual notional 대기 방지
 - capital-flow execution origin 중복과 amount mismatch 거절
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
+- strategy transfer pair의 sequence, equal-and-opposite amount와 전체 transaction 원자성
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
 - fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
 - fill 전 source-price valuation, source-price mutation head와 execution-cost 단일 계상
