@@ -259,6 +259,35 @@ type BucketSelectionTrigger =
       entryWeightRatio: number;
     };
 
+interface ScheduleBoundaryRecord {
+  scheduleBoundaryRecordId: string;
+  market: Market;
+  version: string;
+  hash: string;
+  timeZone: string;
+  sessionCalendarRecordId: string;
+  sessionCalendarVersion: string;
+  sessionCalendarHash: string;
+  interval: "hourly" | "daily" | "weekly";
+  anchorLocalTime: string;
+  weeklyAnchorDay?: "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
+  nonSessionDayRule: "previous_session" | "next_session";
+  createdAt: string;
+}
+
+interface ScheduleBoundaryRef {
+  scheduleBoundaryRecordId: string;
+  version: string;
+  hash: string;
+}
+
+type BucketReviewCadence =
+  | { mode: "every_tick" }
+  | {
+      mode: "scheduled";
+      boundaryRefs: ScheduleBoundaryRef[];
+    };
+
 interface StrategyBucketPolicy {
   bucket: StrategyBucket;
   targetWeightRatio: number;
@@ -268,7 +297,7 @@ interface StrategyBucketPolicy {
   maxDrawdownRatio: number;
   drawdownSemanticsVersion: string;
   drawdownSemanticsHash: string;
-  reviewCadence: "every_tick" | "hourly" | "daily" | "weekly";
+  reviewCadence: BucketReviewCadence;
   eventTriggers: Array<
     "regime_change" | "thesis_evidence_change"
   >;
@@ -286,8 +315,17 @@ interface StrategyBucketPolicy {
   `minWeightRatio <= entryWeightRatio <= targetWeightRatio`와 양수 조건을 검증한다.
 - target이 양수이고 min이 0인 bucket에 `below_min`을 지정하면 empty portfolio에서
   영구적으로 선택 불가능하므로 policy validation에서 거절한다.
-- `every_tick`은 `intraday` bucket이고 참조한 immutable selection policy에
+- `every_tick`은 `reviewCadence.mode = every_tick`으로 표현하며 `intraday` bucket이고
+  참조한 immutable selection policy에
   `everyTickSourceRequirement`가 있을 때만 허용한다.
+- scheduled cadence는 대상 market별 immutable `ScheduleBoundaryRecord`를 정확히 하나씩
+  참조한다. record는 IANA timezone, versioned session calendar, local anchor, interval,
+  weekly anchor와 non-session-day rule을 고정한다. 누락·중복 market, hash mismatch 또는
+  policy가 허용한 market과 boundary market 불일치는 activation에서 거절한다.
+- `weeklyAnchorDay`는 weekly record에서만 필수이며 hourly/daily record에는 허용하지 않는다.
+  `hash`는 ID와 `createdAt`을 제외한 전체 boundary payload의 canonical hash로 검증한다.
+- schedule slot ID와 cutoff는 boundary record 및 session calendar로 계산한다. DST, 휴장,
+  조기 종료를 구현체의 local timezone이나 처리 시각으로 추정하지 않는다.
 - `risk_breach`는 선택 가능한 `eventTriggers` 값이 아니다. 모든 enabled bucket은 market
   mark, fill, fee, cash-flow와 risk-state update마다 cadence와 무관하게 Risk Engine에서
   재평가되며 breach는 즉시 신규 매수를 차단하고 sell-first reduce-only cycle을 만든다.
@@ -369,7 +407,7 @@ interface InvestmentMandateBase {
   reasonCodes: string[];
   evidenceRefs: string[];
   evidenceAsOf: string;
-  reviewCadence: "every_tick" | "hourly" | "daily" | "weekly";
+  reviewCadence: BucketReviewCadence;
   validFrom: string;
   reviewAfter?: string;
   expiresAt?: string;
@@ -674,6 +712,17 @@ assignment feature, exposure/liquidity cap과 execution cost input을 canonicali
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts
+interface RebalanceAction {
+  actionId: string;
+  actionSequence: number;
+  market: Market;
+  symbol: string;
+  side: "BUY" | "SELL";
+  mandateId: string;
+  maximumNotionalKrw: number;
+  reasonCodes: string[];
+}
+
 interface RebalancePlanRecord {
   planId: string;
   cycleId: string;
@@ -683,7 +732,10 @@ interface RebalancePlanRecord {
   policyHash: string;
   evidenceCutoffAt: string;
   triggerRef: string;
-  actions: RebalanceAction[];
+  phase: "sell" | "buy";
+  predecessorPlanId?: string;
+  predecessorAppliedPlanEventId?: string;
+  actions: [RebalanceAction, ...RebalanceAction[]];
   planHash: string;
   createdAt: string;
 }
@@ -717,6 +769,26 @@ type RebalancePlanEvent =
   | {
       planEventId: string;
       previousPlanEventId: string;
+      eventType: "execution_applied";
+      planId: string;
+      cycleId: string;
+      portfolioId: string;
+      portfolioVersion: string;
+      portfolioSnapshotHash: string;
+      policyHash: string;
+      asOf: string;
+      actionId: string;
+      actionSequence: number;
+      fillId: string;
+      riskDecisionId: string;
+      expectedPrePortfolioVersion: string;
+      expectedPrePortfolioSnapshotHash: string;
+      resultingPortfolioVersion: string;
+      resultingPortfolioSnapshotHash: string;
+    }
+  | {
+      planEventId: string;
+      previousPlanEventId: string;
       eventType: "applied";
       planId: string;
       cycleId: string;
@@ -725,8 +797,9 @@ type RebalancePlanEvent =
       portfolioSnapshotHash: string;
       policyHash: string;
       asOf: string;
-      riskDecisionId: string;
-      fillIds: string[];
+      executionEventIds: string[];
+      resultingPortfolioVersion: string;
+      resultingPortfolioSnapshotHash: string;
     };
 ```
 
@@ -734,15 +807,31 @@ type RebalancePlanEvent =
   생성 시각을 제외한 scope와 ordered action payload의 canonical hash다.
 - 동일 cycle ID의 동일 scope/hash 재시도는 기존 plan을 반환한다. 같은 cycle ID에 다른
   scope, action 또는 hash를 쓰거나 두 번째 plan을 만드는 요청은 거절한다.
+- 하나의 plan에는 한 side만 포함한다. 같은 orchestration trigger에 SELL과 BUY가 모두
+  필요하면 `sell` plan을 먼저 적용하고, 새 mark/risk snapshot에서 `buy` plan을 다시
+  산출한다. 후속 plan은 새 cycle ID와 `predecessorPlanId`/
+  `predecessorAppliedPlanEventId`로 선행 SELL 결과를 직접 연결한다.
+- action sequence는 0부터 gap 없이 증가하고 action ID는 plan 안에서 unique해야 한다.
+  `sell` plan에는 SELL만, `buy` plan에는 BUY만 허용한다. 두 predecessor field는 함께
+  존재하거나 함께 생략하며 predecessor는 terminal `applied`이고 그 resulting snapshot이
+  후속 plan의 preview snapshot과 같아야 한다.
 - 첫 event는 predecessor가 없는 `previewed`여야 한다. 이후 event는 직전 event ID를
   `previousPlanEventId`로 참조하며 record와 동일한 plan/cycle/portfolio/version/snapshot/
   policy scope를 직접 저장한다.
-- 허용 전이는 `previewed -> approved | rejected | stale`, `approved -> applied | rejected |
+- 허용 전이는 `previewed -> approved | rejected | stale`, `approved -> execution_applied |
+  rejected | stale`, `execution_applied -> execution_applied | applied | rejected |
   stale`뿐이다. `rejected`, `stale`, `applied`는 terminal이며 unknown predecessor, duplicate
   event ID, branch, terminal 이후 event는 거절한다.
-- `applied`는 현재 portfolio version/snapshot과 active policy hash를 다시 검증하고 Risk
-  Engine 승인 뒤에만 기록한다. `riskDecisionId`와 실제 paper `fillIds`를 포함하며 한 plan에
-  정확히 한 번만 존재할 수 있다.
+- 각 paper fill 직후 `execution_applied`를 durable하게 기록한다. event는 action/fill별 Risk
+  Engine decision과 실행 직전 expected version/snapshot, 실행 직후 resulting version/snapshot을
+  일대일로 보존한다. fill ID는 plan 전체에서 unique하고 같은 fill을 재기록할 수 없다.
+- 첫 fill 전에는 plan record의 preview version/snapshot을 current state와 비교한다. 이후
+  fill의 expected pre-state는 직전 `execution_applied`의 resulting state와 같아야 한다.
+  이 선형 chain에 기록된 in-plan mutation은 stale이 아니며, 그 외 version/snapshot drift는
+  plan을 terminal `stale`로 만든다.
+- `applied`는 계획된 action의 허용된 체결 결과가 모두 event chain에 기록된 뒤에만 만들고
+  ordered `executionEventIds`와 최종 portfolio version/snapshot을 보존한다. 한 plan에 정확히
+  한 번만 존재할 수 있다.
 - current plan state는 event chain fold로 재구성한다. 재시작 후 snapshot/cache와 replay
   결과가 다르거나 chain이 불완전하면 신규 적용을 fail-closed한다.
 
@@ -842,25 +931,30 @@ entryGapKrw = max(0, entryWeightKrw - currentExposureKrw)
 7. cash/hedge reserve 복구
 8. policy selection trigger를 충족한 bucket 신규 매수
 
-SELL과 BUY가 같은 cycle에 있으면 SELL을 먼저 paper fill하고 mark-to-market 및 risk
-snapshot을 다시 만든 뒤 BUY를 평가한다. 같은 종목에 상충하는 BUY/SELL을 동시에
-발행하지 않는다.
+SELL과 BUY가 같은 orchestration trigger에서 필요하면 side별 plan을 분리한다. SELL plan을
+먼저 paper fill하고 mark-to-market 및 risk snapshot을 다시 만든 뒤 새 snapshot/version에
+묶인 BUY plan을 생성·평가한다. 두 plan은 predecessor로 연결하되 cycle ID는 각각의 snapshot
+기준으로 다르다. 같은 종목에 상충하는 BUY/SELL을 동시에 발행하지 않는다.
 
 ### 8.3 Idempotency와 동시성
 
 - cycle ID는 `portfolioId + policyHash + portfolioVersion + portfolioSnapshotHash +
-  evidenceCutoffAt + cadence + triggerRef`에서 파생한다. scheduled cadence는 canonical
-  schedule slot을, `every_tick`은 검증된 market packet hash를, event trigger는 해당
+  evidenceCutoffAt + cadenceIdentity + triggerRef`에서 파생한다. `cadenceIdentity`는
+  `every_tick` mode 또는 schedule boundary hash와 canonical slot ID다. scheduled cadence는
+  canonical schedule slot을, `every_tick`은 검증된 market packet hash를, event trigger는 해당
   immutable evidence ref를 `triggerRef`로 사용한다.
 - `evidenceCutoffAt`은 처리 시작 시각이 아니라 trigger에서 canonical하게 파생한다.
   scheduled cycle은 schedule slot end, `every_tick`은 packet `asOf`, event trigger는 event
   `asOf`를 사용하며 같은 `triggerRef`가 다른 cutoff를 제시하면 거절한다.
 - 같은 cycle ID의 rebalance plan은 한 번만 적용한다.
-- plan의 preview, approval, rejection, stale, applied 상태는 immutable plan record와 선형
-  append-only event chain으로 저장하며 재시작 후 replay로 current state를 복원한다.
-- portfolio version/snapshot 또는 policy hash가 preview 이후 달라지면 plan을 terminal
-  `stale`로 기록하고 적용하지 않는다. 동일 trigger를 다시 평가해도 새 snapshot/version은
-  새 cycle ID를 만들므로 replacement preview를 생성할 수 있다.
+- plan의 preview, approval, fill execution, rejection, stale, applied 상태는 immutable plan
+  record와 선형 append-only event chain으로 저장하며 재시작 후 replay로 current state를
+  복원한다.
+- 첫 실행 전 portfolio version/snapshot 또는 policy hash가 preview와 다르면 plan을 terminal
+  `stale`로 기록하고 적용하지 않는다. 실행 시작 후에는 직전 `execution_applied`가 선언한
+  resulting state만 다음 action의 expected state로 허용한다. 다른 drift는 `stale`이며, 새
+  snapshot/version은 새 cycle ID를 만들므로 replacement 또는 SELL 후속 BUY preview를
+  생성할 수 있다.
 - multi-process 실행 전 portfolio-scoped lock 또는 compare-and-swap version을 둔다.
 - decision/trade/portfolio/strategy-state 저장 실패가 부분 상태를 만들지 않도록 durable
   transaction boundary 또는 재구성 가능한 append-only event contract가 필요하다.
@@ -879,6 +973,9 @@ snapshot을 다시 만든 뒤 BUY를 평가한다. 같은 종목에 상충하는
 | `intraday` | `hourly` 또는 `every_tick` | intraday source와 liquidity evidence가 모두 준비된 경우 |
 | `hedge` | daily 또는 regime change | 하방 노출과 hedge effectiveness 재계산 |
 
+표의 cadence는 운영 의도를 나타내는 초기값이다. 실제 due 시각과 schedule slot은 policy가
+참조한 market별 `ScheduleBoundaryRecord`에서만 계산하며 서버 timezone이나 단순 UTC 날짜
+경계에 의존하지 않는다.
 daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. cadence별 source requirement가
 충족되지 않으면 해당 bucket만 `degraded` 또는 `blocked`로 두고 다른 bucket의 read-only
 평가를 계속할 수 있다.
@@ -894,6 +991,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
 | `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
+| `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | manual mandate authorization과 sizing lineage |
@@ -907,7 +1005,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `bucket-selection-requests.jsonl` | 신규 append-only | snapshot/policy에 묶인 bucket selection 요청 |
 | `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력과 결과 |
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
-| `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, rejection, stale, applied transition chain |
+| `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, fill execution, rejection, stale, applied transition chain |
 
 정책에 묶인 selector, mandate와 rebalance downstream artifact는 최소한 `policyHash`,
 `portfolioId`, `asOf`를 record 또는 record envelope에 직접 포함하고, source/evidence
@@ -987,6 +1085,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
+- immutable market schedule boundary ref와 timezone/calendar/hash validation
 - append-only activation record와 single-active fail-closed resolver
 - policy hash/version parser와 migration test
 - runner와 order engine에는 아직 연결하지 않음
@@ -1065,6 +1164,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - target range, turnover, cost와 liquidity threshold
 - portfolio/policy version binding과 idempotency key
 - immutable plan record와 append-only state event chain
+- side별 chained plan과 fill별 risk decision/execution state lineage
 - read-only preview 및 artifact 저장
 
 완료 조건:
@@ -1073,6 +1173,8 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - stale preview 또는 version mismatch를 적용할 수 없다.
 - plan 상태는 허용된 선형 transition만 가지며 재시작 후 동일하게 복원된다.
 - terminal plan은 재승인·재적용할 수 없고 applied plan은 정확히 한 번만 적용된다.
+- SELL/BUY가 함께 필요하면 SELL applied snapshot에 묶인 별도 BUY plan만 생성된다.
+- 모든 fill이 Risk Engine decision과 pre/resulting portfolio state에 연결된다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
@@ -1128,8 +1230,11 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - selection request가 참조하는 immutable portfolio sizing snapshot의 해소와 hash 검증
 - legacy unassigned state에 fabricated mandate/policy/holding timestamp가 없음
 - trigger 종류별 canonical `evidenceCutoffAt` 파생과 같은 trigger ref의 cutoff mismatch 거절
+- scheduled cadence boundary의 timezone/calendar/hash 해소와 DST·휴장·조기 종료 slot 재현
 - rebalance plan record hash와 선형 event predecessor/scope 일치
 - rebalance plan의 허용 transition, terminal state와 duplicate/branch 거절
+- sell/buy 혼합 plan 거절과 SELL applied snapshot 기반 후속 BUY plan lineage
+- 각 fill의 action/risk decision/pre-resulting portfolio state mapping 검증
 
 ### Gap 및 sizing
 
@@ -1171,6 +1276,7 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 - stale cycle 이후 새 portfolio snapshot/version으로 replacement preview 생성
 - duplicate cycle 및 duplicate plan apply
 - plan event chain 재시작 복원과 applied plan의 exactly-once 검증
+- in-plan expected mutation 허용과 unrelated portfolio drift의 stale 전환
 - decision/trade/state 중간 실패 후 재구성 또는 안전 중단
 
 ### Safety
