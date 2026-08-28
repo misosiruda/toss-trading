@@ -12,6 +12,7 @@ import {
 } from "../api/paperPolicyValidation.js";
 import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
 import {
+  compareText,
   hashCanonicalPayload,
   hashDerivedId,
   parseStrategyBucketRuntimePolicy,
@@ -329,7 +330,7 @@ function bucketOrdinal(bucket: StrategyBucket): number {
 }
 
 function canonicalAssetClasses(values: readonly string[]): string[] {
-  const canonical = values.map((value) => value.trim()).sort();
+  const canonical = values.map((value) => value.trim()).sort(compareText);
   if (canonical.some((value) => value.length === 0)) {
     throw new Error("enabled asset classes cannot contain an empty value");
   }

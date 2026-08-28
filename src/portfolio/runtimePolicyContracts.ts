@@ -1084,7 +1084,7 @@ function assertNoDuplicateKeys<T>(
   }
 }
 
-function compareText(left: string, right: string): number {
+export function compareText(left: string, right: string): number {
   return Buffer.from(left).compare(Buffer.from(right));
 }
 

@@ -72,6 +72,22 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   assert.deepEqual(parseRuntimePortfolioPolicyRecord(record), record);
 });
 
+test("normalizer uses the runtime contract text comparator for asset classes", () => {
+  const fixture = dependencyFixture();
+  const candidate = policyCandidate();
+  candidate.strategyBuckets[0]!.enabledAssetClasses = ["\u{10000}", "\uE000"];
+
+  const record = normalizeRuntimePortfolioPolicy(
+    normalizationInput(candidate, fixture),
+    fixture.repository
+  );
+
+  assert.deepEqual(record.strategyBuckets[0]!.enabledAssetClasses, [
+    "\uE000",
+    "\u{10000}"
+  ]);
+});
+
 test("normalizer rejects invalid source candidate before creating runtime policy", () => {
   const fixture = dependencyFixture();
   const candidate = policyCandidate();

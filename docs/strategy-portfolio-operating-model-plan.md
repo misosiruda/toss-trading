@@ -2584,7 +2584,8 @@ record ID 파생 규칙, record tuple, policy hash, validation summary가 내장
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
-resolver를 통과한다. activation 시 runtime default로 누락값을 보충하지 않는다.
+resolver를 통과한다. asset class canonicalization은 runtime contract와 동일한 UTF-8 byte
+comparator를 사용한다. activation 시 runtime default로 누락값을 보충하지 않는다.
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
