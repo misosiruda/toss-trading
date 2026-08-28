@@ -1011,7 +1011,7 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function hashCanonicalPayload(value: unknown): Sha256Hash {
+export function hashCanonicalPayload(value: unknown): Sha256Hash {
   return sha256HashSchema.parse(
     `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`
   );
@@ -1035,7 +1035,7 @@ function canonicalValue(value: unknown): unknown {
   return value;
 }
 
-function hashDerivedId(prefix: string, hash: Sha256Hash): string {
+export function hashDerivedId(prefix: string, hash: Sha256Hash): string {
   return `${prefix}_${hash.slice("sha256:".length)}`;
 }
 

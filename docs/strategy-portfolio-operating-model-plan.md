@@ -2576,6 +2576,13 @@ loader로 제한한다. 여섯 dependency JSONL 중 corrupt line이 하나라도
 검증한다. 기존 `JsonlStore.append`는 cross-process atomic dedupe를 제공하지 않으므로 dependency
 writer와 exact-retry 처리는 원자성 계약을 갖춘 후속 변경 전까지 노출하지 않는다.
 
+current validation candidate 정규화는 `src/portfolio/runtimePortfolioPolicy.ts`가 담당한다.
+기존 candidate의 allocation/cash/hedge/exposure 값은 backend validation을 다시 통과해야 하며,
+cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
+명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
+rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
+resolver를 통과한다. activation 시 runtime default로 누락값을 보충하지 않는다.
+
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable portfolio risk rule parameter/rule set ref와 required-rule resolver

@@ -1,0 +1,260 @@
+import { z } from "zod";
+
+import {
+  paperPolicyValidationCandidateSchema,
+  validatePaperPolicyCandidate
+} from "../api/paperPolicyValidation.js";
+import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
+import {
+  hashCanonicalPayload,
+  hashDerivedId,
+  parseStrategyBucketRuntimePolicy,
+  portfolioRiskRuleSetRefSchema,
+  strategyBucketRuntimePolicySchema,
+  type PortfolioRiskRuleSetRef,
+  type StrategyBucket,
+  type StrategyBucketRuntimePolicy
+} from "./runtimePolicyContracts.js";
+import {
+  ImmutablePolicyDependencyRepository,
+  resolveStrategyBucketRuntimePolicyDependencies,
+  type RequiredCalendarDate
+} from "./runtimePolicyDependencyResolver.js";
+
+const identifierSchema = z.string().trim().min(1).max(160);
+const versionSchema = z.string().trim().min(1).max(80);
+const ratioSchema = z.number().finite().min(0).max(1);
+
+export const runtimeBucketPolicyConfigurationSchema =
+  strategyBucketRuntimePolicySchema.omit({
+    targetWeightRatio: true,
+    minWeightRatio: true,
+    maxWeightRatio: true,
+    maxTurnoverRatio: true,
+    maxDrawdownRatio: true,
+    enabledAssetClasses: true
+  });
+
+const runtimePortfolioPolicyPayloadSchema = z
+  .object({
+    mode: z.literal("paper_only"),
+    recordType: z.literal("runtime_portfolio_policy_record"),
+    portfolioId: identifierSchema,
+    sourcePolicyRecordId: identifierSchema,
+    sourcePolicyHash: z.string().regex(/^[a-f0-9]{64}$/),
+    policyId: identifierSchema,
+    version: versionSchema,
+    name: identifierSchema,
+    strategyBuckets: z
+      .array(strategyBucketRuntimePolicySchema)
+      .length(5),
+    cashPolicy: z
+      .object({
+        targetCashRatio: ratioSchema,
+        minimumCashReserveKrw: z.number().int().nonnegative(),
+        ruleSource: z.enum([
+          "static",
+          "dynamic_regime",
+          "high_volatility",
+          "fallback"
+        ])
+      })
+      .strict(),
+    hedgePolicy: z
+      .object({
+        hedgeEnabled: z.boolean(),
+        hedgeTargetRatio: ratioSchema,
+        maxCostRatio: ratioSchema.max(0.1)
+      })
+      .strict(),
+    exposurePolicy: z
+      .object({
+        maxSymbolExposureRatio: ratioSchema.positive(),
+        maxCountryExposureRatio: ratioSchema.positive(),
+        maxCurrencyExposureRatio: ratioSchema.positive()
+      })
+      .strict(),
+    legacyReduceOnlyPolicy: z
+      .object({
+        allowBuyOrIncrease: z.literal(false),
+        maximumParticipationRatio: ratioSchema.positive(),
+        riskRuleSetRef: portfolioRiskRuleSetRefSchema
+      })
+      .strict()
+  })
+  .strict();
+
+export const runtimePortfolioPolicyRecordSchema =
+  runtimePortfolioPolicyPayloadSchema
+    .safeExtend({
+      runtimePolicyRecordId: identifierSchema,
+      policyHash: sha256HashSchema,
+      createdAt: isoDateTimeSchema
+    })
+    .strict();
+
+export type RuntimeBucketPolicyConfiguration = z.infer<
+  typeof runtimeBucketPolicyConfigurationSchema
+>;
+export type RuntimePortfolioPolicyRecord = z.infer<
+  typeof runtimePortfolioPolicyRecordSchema
+>;
+
+export interface RuntimeBucketNormalizationInput {
+  configuration: RuntimeBucketPolicyConfiguration;
+  requiredCalendarDates?: readonly RequiredCalendarDate[];
+}
+
+export interface RuntimePortfolioPolicyNormalizationInput {
+  portfolioId: string;
+  sourcePolicyRecordId: string;
+  candidate: unknown;
+  bucketInputs: readonly RuntimeBucketNormalizationInput[];
+  legacyReduceOnlyPolicy: {
+    allowBuyOrIncrease: false;
+    maximumParticipationRatio: number;
+    riskRuleSetRef: PortfolioRiskRuleSetRef;
+  };
+  createdAt: string;
+}
+
+export function normalizeRuntimePortfolioPolicy(
+  input: RuntimePortfolioPolicyNormalizationInput,
+  dependencies: ImmutablePolicyDependencyRepository
+): RuntimePortfolioPolicyRecord {
+  const createdAt = isoDateTimeSchema.parse(input.createdAt);
+  const candidate = paperPolicyValidationCandidateSchema.parse(input.candidate);
+  const validation = validatePaperPolicyCandidate(candidate, new Date(createdAt));
+  if (!validation.validatedForPaperSimulationConfig) {
+    throw new Error("source policy candidate must pass paper validation");
+  }
+  if (input.bucketInputs.length !== candidate.strategyBuckets.length) {
+    throw new Error("runtime bucket configuration count must match source buckets");
+  }
+
+  const configs = new Map<StrategyBucket, RuntimeBucketNormalizationInput>();
+  for (const bucketInput of input.bucketInputs) {
+    const configuration = runtimeBucketPolicyConfigurationSchema.parse(
+      bucketInput.configuration
+    );
+    if (configs.has(configuration.bucket)) {
+      throw new Error("runtime bucket configuration must resolve exactly once");
+    }
+    configs.set(
+      configuration.bucket,
+      bucketInput.requiredCalendarDates === undefined
+        ? { configuration }
+        : {
+            configuration,
+            requiredCalendarDates: bucketInput.requiredCalendarDates
+          }
+    );
+  }
+
+  const sourceBuckets = [...candidate.strategyBuckets].sort(
+    (left, right) => bucketOrdinal(left.bucket) - bucketOrdinal(right.bucket)
+  );
+  const strategyBuckets = sourceBuckets.map((sourceBucket) => {
+    const bucketInput = configs.get(sourceBucket.bucket);
+    if (bucketInput === undefined) {
+      throw new Error("runtime bucket configuration is missing");
+    }
+    const policy = parseStrategyBucketRuntimePolicy({
+      ...bucketInput.configuration,
+      targetWeightRatio: sourceBucket.targetWeightRatio,
+      minWeightRatio: sourceBucket.minWeightRatio,
+      maxWeightRatio: sourceBucket.maxWeightRatio,
+      maxTurnoverRatio: sourceBucket.maxTurnoverRatio,
+      maxDrawdownRatio: sourceBucket.maxDrawdownRatio,
+      enabledAssetClasses: sourceBucket.enabledAssetClasses
+    });
+    resolveStrategyBucketRuntimePolicyDependencies(
+      policy,
+      dependencies,
+      bucketInput.requiredCalendarDates
+    );
+    return policy;
+  });
+  assertCanonicalBuckets(strategyBuckets);
+  dependencies.resolveRiskRuleSet(
+    input.legacyReduceOnlyPolicy.riskRuleSetRef
+  );
+
+  const payload = runtimePortfolioPolicyPayloadSchema.parse({
+    mode: "paper_only",
+    recordType: "runtime_portfolio_policy_record",
+    portfolioId: input.portfolioId,
+    sourcePolicyRecordId: input.sourcePolicyRecordId,
+    sourcePolicyHash: validation.policyHash,
+    policyId: candidate.policyId,
+    version: candidate.version,
+    name: candidate.name,
+    strategyBuckets,
+    cashPolicy: candidate.cashPolicy,
+    hedgePolicy: candidate.hedgePolicy,
+    exposurePolicy: candidate.exposurePolicy,
+    legacyReduceOnlyPolicy: input.legacyReduceOnlyPolicy
+  });
+  const policyHash = hashCanonicalPayload(payload);
+  return deepFreeze({
+    ...payload,
+    runtimePolicyRecordId: hashDerivedId("runtime_portfolio_policy", policyHash),
+    policyHash,
+    createdAt
+  });
+}
+
+export function parseRuntimePortfolioPolicyRecord(
+  value: unknown
+): RuntimePortfolioPolicyRecord {
+  const record = runtimePortfolioPolicyRecordSchema.parse(value);
+  for (const bucket of record.strategyBuckets) {
+    parseStrategyBucketRuntimePolicy(bucket);
+  }
+  assertCanonicalBuckets(record.strategyBuckets);
+  const { runtimePolicyRecordId, policyHash, createdAt: _createdAt, ...payload } =
+    record;
+  const expectedHash = hashCanonicalPayload(payload);
+  if (policyHash !== expectedHash) {
+    throw new Error("runtime portfolio policy hash mismatch");
+  }
+  if (
+    runtimePolicyRecordId !==
+    hashDerivedId("runtime_portfolio_policy", expectedHash)
+  ) {
+    throw new Error("runtime portfolio policy record ID mismatch");
+  }
+  return deepFreeze(record);
+}
+
+function assertCanonicalBuckets(
+  buckets: readonly StrategyBucketRuntimePolicy[]
+): void {
+  const expected: readonly StrategyBucket[] = [
+    "long_term",
+    "swing",
+    "short_term",
+    "intraday",
+    "hedge"
+  ];
+  if (
+    buckets.length !== expected.length ||
+    buckets.some((bucket, index) => bucket.bucket !== expected[index])
+  ) {
+    throw new Error("runtime strategy buckets must use canonical complete order");
+  }
+}
+
+function bucketOrdinal(bucket: StrategyBucket): number {
+  return ["long_term", "swing", "short_term", "intraday", "hedge"].indexOf(
+    bucket
+  );
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
