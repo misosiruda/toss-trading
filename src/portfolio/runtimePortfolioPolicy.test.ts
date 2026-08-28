@@ -139,6 +139,20 @@ test("normalizer rejects source tuple rewriting and impossible chronology", () =
   );
 });
 
+test("normalizer rejects dependencies created after the runtime policy", () => {
+  const fixture = dependencyFixture("2026-08-29T00:00:00.000Z");
+  const candidate = policyCandidate();
+
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        normalizationInput(candidate, fixture),
+        fixture.repository
+      ),
+    /runtime policy dependency cannot postdate the runtime policy/
+  );
+});
+
 test("normalizer rejects invalid source candidate before creating runtime policy", () => {
   const fixture = dependencyFixture();
   const candidate = policyCandidate();
@@ -410,7 +424,7 @@ function sourcePolicyRecord(
   };
 }
 
-function dependencyFixture() {
+function dependencyFixture(dependencyCreatedAt = CREATED_AT) {
   const selections = new Map(
     BUCKETS.map((bucket) => [
       bucket,
@@ -437,7 +451,7 @@ function dependencyFixture() {
         hardGateRuleIds: ["liquidity"],
         scoringModelVersion: `selector.${bucket}.v1`,
         featureDefinitionRefs: ["momentum.v1"],
-        createdAt: CREATED_AT
+        createdAt: dependencyCreatedAt
       })
     ])
   );
@@ -446,14 +460,14 @@ function dependencyFixture() {
     ruleVersion: "v1",
     version: "record.v1",
     parameters: { minimumCashRatio: 0.15 },
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const sell = createPortfolioRiskRuleParameterRecord({
     ruleId: "reduce_only",
     ruleVersion: "v1",
     version: "record.v1",
     parameters: { allowIncrease: false },
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const riskSet = createPortfolioRiskRuleSetRecord({
     version: "risk-set.v1",
@@ -471,7 +485,7 @@ function dependencyFixture() {
         parameterRef: riskRuleParameterRefFor(sell)
       }
     ],
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const drawdown = createBucketDrawdownSemanticsRecord({
     version: "unit-nav.v1",
@@ -482,7 +496,7 @@ function dependencyFixture() {
     drawdownFormula: "one_minus_unit_nav_over_high_water_mark",
     emptyEpochRule: "preserve_nav_until_explicit_initial_or_empty_epoch",
     activationCarryRule: "carry_when_semantics_hash_matches",
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const calendar = createSessionCalendarRecord({
     market: "KR",
@@ -499,7 +513,7 @@ function dependencyFixture() {
         sourceEvidenceRefs: ["official-calendar:krx:2026-08-28"]
       }
     ],
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const boundary = createScheduleBoundaryRecord({
     market: "KR",
@@ -511,7 +525,7 @@ function dependencyFixture() {
     interval: "daily",
     anchorLocalTime: "15:30:00",
     nonSessionDayRule: "previous_session",
-    createdAt: CREATED_AT
+    createdAt: dependencyCreatedAt
   });
   const records: ImmutablePolicyDependencyRecords = {
     selectionPolicies: [...selections.values()],

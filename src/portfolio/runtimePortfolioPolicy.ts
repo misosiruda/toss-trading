@@ -200,16 +200,35 @@ export function normalizeRuntimePortfolioPolicy(
         sourceBucket.enabledAssetClasses
       )
     });
-    resolveStrategyBucketRuntimePolicyDependencies(
+    const resolvedDependencies = resolveStrategyBucketRuntimePolicyDependencies(
       policy,
       dependencies,
       bucketInput.requiredCalendarDates
     );
+    assertDependenciesDoNotPostdateRuntime(
+      [
+        resolvedDependencies.selectionPolicy,
+        resolvedDependencies.riskRuleSet,
+        ...resolvedDependencies.riskRules.map(({ parameter }) => parameter),
+        resolvedDependencies.drawdownSemantics,
+        ...resolvedDependencies.scheduleBoundaries.flatMap(
+          ({ boundary, calendar }) => [boundary, calendar]
+        )
+      ],
+      createdAt
+    );
     return policy;
   });
   assertCanonicalBuckets(strategyBuckets);
-  dependencies.resolveRiskRuleSetDependencies(
+  const legacyRiskDependencies = dependencies.resolveRiskRuleSetDependencies(
     input.legacyReduceOnlyPolicy.riskRuleSetRef
+  );
+  assertDependenciesDoNotPostdateRuntime(
+    [
+      legacyRiskDependencies.riskRuleSet,
+      ...legacyRiskDependencies.riskRules.map(({ parameter }) => parameter)
+    ],
+    createdAt
   );
 
   const payload = runtimePortfolioPolicyPayloadSchema.parse({
@@ -345,6 +364,16 @@ function assertCanonicalSourceIdentity(candidate: {
     candidate.name !== candidate.name.trim()
   ) {
     throw new Error("source policy identity must already be canonical");
+  }
+}
+
+function assertDependenciesDoNotPostdateRuntime(
+  records: readonly { createdAt: string }[],
+  runtimeCreatedAt: string
+): void {
+  const runtimeTime = Date.parse(runtimeCreatedAt);
+  if (records.some((record) => Date.parse(record.createdAt) > runtimeTime)) {
+    throw new Error("runtime policy dependency cannot postdate the runtime policy");
   }
 }
 
