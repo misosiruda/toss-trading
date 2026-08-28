@@ -88,6 +88,37 @@ test("normalizer uses the runtime contract text comparator for asset classes", (
   ]);
 });
 
+test("normalizer rejects source tuple rewriting and impossible chronology", () => {
+  const fixture = dependencyFixture();
+  const noncanonicalCandidate = policyCandidate();
+  noncanonicalCandidate.policyId = ` ${noncanonicalCandidate.policyId} `;
+
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        normalizationInput(noncanonicalCandidate, fixture),
+        fixture.repository
+      ),
+    /source policy identity must already be canonical/
+  );
+
+  const candidate = policyCandidate();
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...normalizationInput(candidate, fixture),
+          sourcePolicyRecord: sourcePolicyRecord(
+            candidate,
+            "2026-08-29T00:00:00.000Z"
+          )
+        },
+        fixture.repository
+      ),
+    /runtime policy cannot predate its source policy record/
+  );
+});
+
 test("normalizer rejects invalid source candidate before creating runtime policy", () => {
   const fixture = dependencyFixture();
   const candidate = policyCandidate();
@@ -328,18 +359,21 @@ function normalizationInput(
   };
 }
 
-function sourcePolicyRecord(candidate: ReturnType<typeof policyCandidate>) {
-  const validation = validatePaperPolicyCandidate(candidate, new Date(CREATED_AT));
+function sourcePolicyRecord(
+  candidate: ReturnType<typeof policyCandidate>,
+  createdAt = CREATED_AT
+) {
+  const validation = validatePaperPolicyCandidate(candidate, new Date(createdAt));
   return {
     mode: "paper_only" as const,
     recordType: "portfolio_policy_record" as const,
-    policyRecordId: policyRecordIdFor(candidate, new Date(CREATED_AT)),
+    policyRecordId: policyRecordIdFor(candidate, new Date(createdAt)),
     policyId: candidate.policyId,
     version: candidate.version,
     name: candidate.name,
     policyHash: validation.policyHash,
     status: "stored" as const,
-    createdAt: CREATED_AT,
+    createdAt,
     validationStatus: "valid" as const,
     candidate,
     validation: {

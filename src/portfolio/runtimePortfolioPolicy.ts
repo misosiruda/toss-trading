@@ -135,6 +135,10 @@ export function normalizeRuntimePortfolioPolicy(
   const candidate = paperPolicyValidationCandidateSchema.parse(
     sourcePolicyRecord.candidate
   );
+  assertCanonicalSourceIdentity(candidate);
+  if (Date.parse(createdAt) < Date.parse(sourcePolicyRecord.createdAt)) {
+    throw new Error("runtime policy cannot predate its source policy record");
+  }
   const validation = validatePaperPolicyCandidate(candidate, new Date(createdAt));
   if (!validation.validatedForPaperSimulationConfig) {
     throw new Error("source policy candidate must pass paper validation");
@@ -327,6 +331,20 @@ function bucketOrdinal(bucket: StrategyBucket): number {
   return ["long_term", "swing", "short_term", "intraday", "hedge"].indexOf(
     bucket
   );
+}
+
+function assertCanonicalSourceIdentity(candidate: {
+  policyId: string;
+  version: string;
+  name: string;
+}): void {
+  if (
+    candidate.policyId !== candidate.policyId.trim() ||
+    candidate.version !== candidate.version.trim() ||
+    candidate.name !== candidate.name.trim()
+  ) {
+    throw new Error("source policy identity must already be canonical");
+  }
 }
 
 function canonicalAssetClasses(values: readonly string[]): string[] {

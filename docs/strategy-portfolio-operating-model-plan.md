@@ -2580,7 +2580,8 @@ current validation candidate 정규화는 `src/portfolio/runtimePortfolioPolicy.
 기존 candidate의 allocation/cash/hedge/exposure 값은 backend validation을 다시 통과해야 하며,
 normalizer는 candidate와 record ID를 따로 받지 않고 strict `PaperPolicyRecord`를 받아
 record ID 파생 규칙, record tuple, policy hash, validation summary가 내장 candidate와
-일치하는지 다시 검증한다.
+일치하는지 다시 검증한다. source tuple의 식별자는 이미 trim된 canonical 값이어야 하며
+runtime `createdAt`은 source record `createdAt`보다 빠를 수 없다.
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
