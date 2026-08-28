@@ -423,35 +423,38 @@ function normalizeLegacyCreatedAt(
   value: string,
   explicitOffset: string | undefined
 ): string {
+  const legacyValue = value.trim();
   if (
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      value
+      legacyValue
     )
   ) {
-    return value;
+    return legacyValue;
   }
-  if (hasExplicitLegacyTimeZone(value)) {
-    return canonicalLegacyTimestamp(value);
+  if (hasExplicitLegacyTimeZone(legacyValue)) {
+    return canonicalLegacyTimestamp(legacyValue);
   }
   if (explicitOffset === undefined) {
     throw new Error(
       "legacy dependency has offsetless createdAt; set legacyOffsetlessCreatedAtOffset explicitly"
     );
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return `${value}T00:00:00${explicitOffset}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(legacyValue)) {
+    return `${legacyValue}T00:00:00${explicitOffset}`;
   }
   const zoneSuffix =
     explicitOffset === "Z" ? " GMT" : ` ${explicitOffset.replace(":", "")}`;
-  if (!value.includes(":")) {
-    return canonicalLegacyTimestamp(`${value} 00:00:00${zoneSuffix}`);
+  if (!legacyValue.includes(":")) {
+    return canonicalLegacyTimestamp(`${legacyValue} 00:00:00${zoneSuffix}`);
   }
   if (
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(
+      legacyValue
+    )
   ) {
-    return `${value}${explicitOffset}`;
+    return `${legacyValue}${explicitOffset}`;
   }
-  return canonicalLegacyTimestamp(`${value}${zoneSuffix}`);
+  return canonicalLegacyTimestamp(`${legacyValue}${zoneSuffix}`);
 }
 
 function hasExplicitLegacyTimeZone(value: string): boolean {
