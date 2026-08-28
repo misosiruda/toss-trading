@@ -504,10 +504,12 @@ interface StrategyBucketPolicy {
   사용하고 runtime 구현 기본값으로 대체하지 않는다. 독립 rehash 또는 version/hash가 다르면
   activation과 신규 매수를 fail-closed한다.
 - 여섯 dependency record는 semantic `hash`/hash-derived ID와 별도로 `lineageHash`를 가진다.
-  `lineageHash`는 `recordType`, record ID, semantic hash, `createdAt`의 canonical digest이며,
-  모든 ref가 이를 포함한다. risk rule set은 parameter lineage를, schedule boundary는 session
-  calendar lineage를 payload에 포함해 상위 runtime policy hash까지 생성 시각 provenance를
-  연쇄 결속한다. parser, loader와 resolver는 semantic hash/ID와 lineage hash를 모두 독립
+  `lineageHash`는 `recordType`, record ID, semantic hash, `createdAt`과 canonical child
+  `dependencyLineageHashes`의 digest이며 모든 ref가 이를 포함한다. risk rule set은 parameter
+  lineage를, schedule boundary는 session calendar lineage를 parent lineage digest에 포함해
+  상위 runtime policy hash까지 생성 시각 provenance를 연쇄 결속한다. 새 lineage-only field는
+  기존 semantic hash/ID 입력에서 제외해 append-only artifact identity를 유지한다. parser,
+  loader와 resolver는 semantic hash/ID와 lineage hash를 모두 독립
   검증하며 어느 dependency의 `createdAt`만 바뀌어도 activation 전 fail-closed한다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
   `selectionPolicyRef`, `riskRuleSetRef`, `drawdownSemanticsRef`, `reviewCadence` boundary ref와
@@ -2591,8 +2593,12 @@ ID/version/hash만 사용하고 runtime default로 누락값을 보충하지 않
 filesystem adapter의 첫 변경은 `src/portfolio/runtimePolicyDependencyFiles.ts`의 read-only
 loader로 제한한다. 여섯 dependency JSONL 중 corrupt line이 하나라도 있으면 부분 record set을
 만들지 않고 전체 load를 거절하며, 로드 후 resolver가 semantic hash와 duplicate ID를 다시
-검증한다. 기존 `JsonlStore.append`는 cross-process atomic dedupe를 제공하지 않으므로 dependency
-writer와 exact-retry 처리는 원자성 계약을 갖춘 후속 변경 전까지 노출하지 않는다.
+검증한다. lineage field 도입 전 record는 loader가 원본 파일을 수정하지 않는 read-time migration으로
+leaf lineage를 결정적으로 backfill하고 risk set→parameter, boundary→calendar lineage를 exact ref로
+연결한 뒤 최신 parser를 통과시킨다. legacy semantic hash/ID는 유지하며 partial lineage나 ref
+mismatch는 migration하지 않고 fail-closed한다. 기존 `JsonlStore.append`는 cross-process atomic
+dedupe를 제공하지 않으므로 dependency writer와 exact-retry 처리는 원자성 계약을 갖춘 후속
+변경 전까지 노출하지 않는다.
 
 current validation candidate 정규화는 `src/portfolio/runtimePortfolioPolicy.ts`가 담당한다.
 기존 candidate의 allocation/cash/hedge/exposure 값은 backend validation을 다시 통과해야 하며,
