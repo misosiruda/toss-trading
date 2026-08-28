@@ -461,7 +461,7 @@ function hasExplicitLegacyTimeZone(value: string): boolean {
   const annotationSuffix = "(?:\\s*(?:\\([^)]*\\))?)?$";
   if (
     new RegExp(
-      `(?:z|\\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\\b)${annotationSuffix}`,
+      `(?:z|\\b(?:UT|UTC|GMT)0{1,4}|\\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\\b)${annotationSuffix}`,
       "i"
     ).test(value)
   ) {
