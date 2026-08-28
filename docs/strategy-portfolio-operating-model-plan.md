@@ -2604,8 +2604,8 @@ legacy `createdAt`은 주변 공백을 먼저 제거해 이미 명시된 zone을
 또는 `-14:00`~`+14:00` 범위의 numeric offset을 명시한 경우에만 메모리에서 시각대를 보완하고,
 ISO와 `YYYY/MM/DD`/`MM/DD/YYYY` date-only 값은 해당 offset의 자정으로 정규화한다. semantic
 hash/ID와 원본 파일은 그대로
-유지한다. 단독 `Z`/`z`, `GMT`/`UTC`, RFC numeric zone, `GMT+HHMM`, 짧은 `GMT+H`/`+HH`
-offset 또는 ISO compact numeric offset처럼 시간대가 명시된 legacy 형식은 별도 option보다
+유지한다. 단독 `Z`/`z`, `GMT`/`UTC`, RFC numeric zone, `GMT+HHMM`, 짧은
+`GMT+H`/`+HH`/`GMT+H:MM` offset 또는 ISO compact numeric offset처럼 시간대가 명시된 legacy 형식은 별도 option보다
 우선해 epoch-equivalent ISO UTC로 canonicalize한다.
 기존 `JsonlStore.append`는 cross-process atomic
 dedupe를 제공하지 않으므로 dependency writer와 exact-retry 처리는 원자성 계약을 갖춘 후속

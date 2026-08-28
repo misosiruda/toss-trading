@@ -471,7 +471,7 @@ function hasExplicitLegacyTimeZone(value: string): boolean {
     return false;
   }
   return new RegExp(
-    `(?:GMT)?[+-](?:\\d{1,4}|\\d{2}:\\d{2})${annotationSuffix}`,
+    `(?:GMT)?[+-](?:\\d{1,4}|\\d{1,2}:\\d{2})${annotationSuffix}`,
     "i"
   ).test(value);
 }
