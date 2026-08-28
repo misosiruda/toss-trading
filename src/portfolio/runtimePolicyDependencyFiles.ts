@@ -41,6 +41,11 @@ export interface LoadedImmutablePolicyDependencies {
   repository: ImmutablePolicyDependencyRepository;
 }
 
+export interface ImmutablePolicyDependencyFileLoaderOptions {
+  /** Explicit zone for pre-lineage createdAt values that omitted an offset. */
+  legacyOffsetlessCreatedAtOffset?: string;
+}
+
 export function createImmutablePolicyDependencyPaths(
   baseDir: string
 ): ImmutablePolicyDependencyPaths {
@@ -82,9 +87,16 @@ export function createImmutablePolicyDependencyPaths(
  */
 export class ImmutablePolicyDependencyFileLoader {
   private readonly paths: ImmutablePolicyDependencyPaths;
+  private readonly legacyOffsetlessCreatedAtOffset: string | undefined;
 
-  constructor(baseDir: string) {
+  constructor(
+    baseDir: string,
+    options: ImmutablePolicyDependencyFileLoaderOptions = {}
+  ) {
     this.paths = createImmutablePolicyDependencyPaths(baseDir);
+    this.legacyOffsetlessCreatedAtOffset = parseLegacyTimestampOffset(
+      options.legacyOffsetlessCreatedAtOffset
+    );
   }
 
   async load(): Promise<LoadedImmutablePolicyDependencies> {
@@ -143,7 +155,9 @@ export class ImmutablePolicyDependencyFileLoader {
         record,
         parseBucketSelectionPolicyRecord,
         "selectionPolicyRecordId",
-        "selection_policy"
+        "selection_policy",
+        [],
+        this.legacyOffsetlessCreatedAtOffset
       )
     );
     const migratedRiskParameters = riskParameters.records.map((record) =>
@@ -151,7 +165,9 @@ export class ImmutablePolicyDependencyFileLoader {
         record,
         parsePortfolioRiskRuleParameterRecord,
         "riskRuleParameterRecordId",
-        "risk_parameter"
+        "risk_parameter",
+        [],
+        this.legacyOffsetlessCreatedAtOffset
       )
     );
     const riskParametersById = exactRecordMap(
@@ -160,14 +176,20 @@ export class ImmutablePolicyDependencyFileLoader {
       "risk parameter"
     );
     const migratedRiskRuleSets = riskRuleSets.records.map((record) =>
-      migrateRiskRuleSet(record, riskParametersById)
+      migrateRiskRuleSet(
+        record,
+        riskParametersById,
+        this.legacyOffsetlessCreatedAtOffset
+      )
     );
     const migratedDrawdownSemantics = drawdownSemantics.records.map((record) =>
       migrateRecordLineage(
         record,
         parseBucketDrawdownSemanticsRecord,
         "drawdownSemanticsRecordId",
-        "drawdown_semantics"
+        "drawdown_semantics",
+        [],
+        this.legacyOffsetlessCreatedAtOffset
       )
     );
     const migratedSessionCalendars = sessionCalendars.records.map((record) =>
@@ -175,7 +197,9 @@ export class ImmutablePolicyDependencyFileLoader {
         record,
         parseSessionCalendarRecord,
         "sessionCalendarRecordId",
-        "session_calendar"
+        "session_calendar",
+        [],
+        this.legacyOffsetlessCreatedAtOffset
       )
     );
     const sessionCalendarsById = exactRecordMap(
@@ -183,8 +207,13 @@ export class ImmutablePolicyDependencyFileLoader {
       (record) => record.sessionCalendarRecordId,
       "session calendar"
     );
-    const migratedScheduleBoundaries = scheduleBoundaries.records.map((record) =>
-      migrateScheduleBoundary(record, sessionCalendarsById)
+    const migratedScheduleBoundaries = scheduleBoundaries.records.map(
+      (record) =>
+        migrateScheduleBoundary(
+          record,
+          sessionCalendarsById,
+          this.legacyOffsetlessCreatedAtOffset
+        )
     );
 
     const records: ImmutablePolicyDependencyRecords = deepFreeze({
@@ -213,7 +242,8 @@ const rawDependencyRecordSchema = z.unknown();
 
 function migrateRiskRuleSet(
   value: unknown,
-  parameters: ReadonlyMap<string, PortfolioRiskRuleParameterRecord>
+  parameters: ReadonlyMap<string, PortfolioRiskRuleParameterRecord>,
+  legacyOffsetlessCreatedAtOffset: string | undefined
 ): PortfolioRiskRuleSetRecord {
   const record = objectRecord(value, "risk rule set");
   if (Object.hasOwn(record, "lineageHash")) {
@@ -270,13 +300,15 @@ function migrateRiskRuleSet(
     parsePortfolioRiskRuleSetRecord,
     "riskRuleSetRecordId",
     "risk_rule_set",
-    dependencyLineageHashes
+    dependencyLineageHashes,
+    legacyOffsetlessCreatedAtOffset
   );
 }
 
 function migrateScheduleBoundary(
   value: unknown,
-  calendars: ReadonlyMap<string, SessionCalendarRecord>
+  calendars: ReadonlyMap<string, SessionCalendarRecord>,
+  legacyOffsetlessCreatedAtOffset: string | undefined
 ): ScheduleBoundaryRecord {
   const record = objectRecord(value, "schedule boundary");
   if (Object.hasOwn(record, "lineageHash")) {
@@ -318,7 +350,8 @@ function migrateScheduleBoundary(
     parseScheduleBoundaryRecord,
     "scheduleBoundaryRecordId",
     "schedule_boundary",
-    [calendar.lineageHash]
+    [calendar.lineageHash],
+    legacyOffsetlessCreatedAtOffset
   );
 }
 
@@ -327,7 +360,8 @@ function migrateRecordLineage<T>(
   parse: (record: unknown) => T,
   idKey: string,
   recordType: string,
-  dependencyLineageHashes: readonly string[] = []
+  dependencyLineageHashes: readonly string[] = [],
+  legacyOffsetlessCreatedAtOffset?: string
 ): T {
   const record = objectRecord(value, recordType);
   if (Object.hasOwn(record, "lineageHash")) {
@@ -335,9 +369,13 @@ function migrateRecordLineage<T>(
   }
   const recordId = stringField(record, idKey, recordType);
   const semanticHash = stringField(record, "hash", recordType);
-  const createdAt = stringField(record, "createdAt", recordType);
+  const createdAt = normalizeLegacyCreatedAt(
+    stringField(record, "createdAt", recordType),
+    legacyOffsetlessCreatedAtOffset
+  );
   return parse({
     ...record,
+    createdAt,
     lineageHash: hashImmutableRecordLineage({
       recordType,
       recordId,
@@ -346,6 +384,33 @@ function migrateRecordLineage<T>(
       dependencyLineageHashes
     })
   });
+}
+
+function parseLegacyTimestampOffset(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!/^(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/.test(value)) {
+    throw new Error(
+      "legacyOffsetlessCreatedAtOffset must be Z or a numeric offset from -14:00 to +14:00"
+    );
+  }
+  return value;
+}
+
+function normalizeLegacyCreatedAt(
+  value: string,
+  explicitOffset: string | undefined
+): string {
+  if (/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    return value;
+  }
+  if (explicitOffset === undefined) {
+    throw new Error(
+      "legacy dependency has offsetless createdAt; set legacyOffsetlessCreatedAtOffset explicitly"
+    );
+  }
+  return `${value}${explicitOffset}`;
 }
 
 function exactRecordMap<T>(
