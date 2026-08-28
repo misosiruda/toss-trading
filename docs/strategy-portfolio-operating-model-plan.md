@@ -2570,6 +2570,12 @@ ID/version/hash만 사용하고 runtime default로 누락값을 보충하지 않
 정규화와 filesystem adapter는 resolver 위의 별도 변경으로 추가하며 activation이나 runner에는
 아직 연결하지 않는다.
 
+filesystem adapter의 첫 변경은 `src/portfolio/runtimePolicyDependencyFiles.ts`의 read-only
+loader로 제한한다. 여섯 dependency JSONL 중 corrupt line이 하나라도 있으면 부분 record set을
+만들지 않고 전체 load를 거절하며, 로드 후 resolver가 semantic hash와 duplicate ID를 다시
+검증한다. 기존 `JsonlStore.append`는 cross-process atomic dedupe를 제공하지 않으므로 dependency
+writer와 exact-retry 처리는 원자성 계약을 갖춘 후속 변경 전까지 노출하지 않는다.
+
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable portfolio risk rule parameter/rule set ref와 required-rule resolver
