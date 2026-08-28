@@ -180,7 +180,7 @@ function parseCreateCandidate(body: unknown): PaperPolicyValidationCandidate {
   }
 }
 
-function policyRecordIdFor(
+export function policyRecordIdFor(
   candidate: PaperPolicyValidationCandidate,
   createdAt: Date
 ): string {

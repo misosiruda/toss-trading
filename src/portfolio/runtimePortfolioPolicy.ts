@@ -2,7 +2,10 @@ import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
 
-import { paperPolicyRecordSchema } from "../api/paperPolicyRecords.js";
+import {
+  paperPolicyRecordSchema,
+  policyRecordIdFor
+} from "../api/paperPolicyRecords.js";
 import {
   paperPolicyValidationCandidateSchema,
   validatePaperPolicyCandidate
@@ -136,6 +139,8 @@ export function normalizeRuntimePortfolioPolicy(
     throw new Error("source policy candidate must pass paper validation");
   }
   if (
+    sourcePolicyRecord.policyRecordId !==
+      policyRecordIdFor(candidate, new Date(sourcePolicyRecord.createdAt)) ||
     sourcePolicyRecord.policyId !== validation.policyId ||
     sourcePolicyRecord.version !== validation.version ||
     sourcePolicyRecord.name !== candidate.name ||

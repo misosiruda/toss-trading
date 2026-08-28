@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { policyRecordIdFor } from "../api/paperPolicyRecords.js";
 import { validatePaperPolicyCandidate } from "../api/paperPolicyValidation.js";
 
 import {
@@ -99,6 +100,20 @@ test("normalizer binds source record tuple and hash to its candidate", () => {
           sourcePolicyRecord: {
             ...sourcePolicyRecord(candidate),
             policyHash: "0".repeat(64)
+          }
+        },
+        fixture.repository
+      ),
+    /source policy record lineage does not match its candidate/
+  );
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...input,
+          sourcePolicyRecord: {
+            ...sourcePolicyRecord(candidate),
+            policyRecordId: "portfolio_policy_fabricated"
           }
         },
         fixture.repository
@@ -302,7 +317,7 @@ function sourcePolicyRecord(candidate: ReturnType<typeof policyCandidate>) {
   return {
     mode: "paper_only" as const,
     recordType: "portfolio_policy_record" as const,
-    policyRecordId: "portfolio_policy_source",
+    policyRecordId: policyRecordIdFor(candidate, new Date(CREATED_AT)),
     policyId: candidate.policyId,
     version: candidate.version,
     name: candidate.name,
