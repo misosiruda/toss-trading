@@ -2564,6 +2564,12 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 runner/order engine 연결을 포함하지 않는다. 후속 resolver는 이 contract가 검증한 exact
 ID/version/hash만 사용하고 runtime default로 누락값을 보충하지 않는다.
 
+두 번째 단계도 exact dependency resolver와 validation candidate 정규화/persistence adapter로
+나눈다. resolver는 `src/portfolio/runtimePolicyDependencyResolver.ts`에서 전체 dependency set의
+손상·중복 ID를 먼저 거절하고 selection/risk/drawdown/schedule/calendar ref를 독립 재검증한다.
+정규화와 filesystem adapter는 resolver 위의 별도 변경으로 추가하며 activation이나 runner에는
+아직 연결하지 않는다.
+
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable portfolio risk rule parameter/rule set ref와 required-rule resolver
