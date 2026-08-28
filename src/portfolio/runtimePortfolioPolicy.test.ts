@@ -117,6 +117,26 @@ test("normalizer rejects source tuple rewriting and impossible chronology", () =
       ),
     /runtime policy cannot predate its source policy record/
   );
+
+  const input = normalizationInput(candidate, fixture);
+  const source = sourcePolicyRecord(candidate);
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...input,
+          sourcePolicyRecord: {
+            ...source,
+            validation: {
+              ...source.validation,
+              validatedAt: "2026-08-28T00:00:01.000Z"
+            }
+          }
+        },
+        fixture.repository
+      ),
+    /source policy record lineage does not match its candidate/
+  );
 });
 
 test("normalizer rejects invalid source candidate before creating runtime policy", () => {

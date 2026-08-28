@@ -146,6 +146,7 @@ export function normalizeRuntimePortfolioPolicy(
   if (
     sourcePolicyRecord.policyRecordId !==
       policyRecordIdFor(candidate, new Date(sourcePolicyRecord.createdAt)) ||
+    sourcePolicyRecord.validation.validatedAt !== sourcePolicyRecord.createdAt ||
     sourcePolicyRecord.policyId !== validation.policyId ||
     sourcePolicyRecord.version !== validation.version ||
     sourcePolicyRecord.name !== candidate.name ||
