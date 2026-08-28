@@ -1,5 +1,8 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { z } from "zod";
 
+import { paperPolicyRecordSchema } from "../api/paperPolicyRecords.js";
 import {
   paperPolicyValidationCandidateSchema,
   validatePaperPolicyCandidate
@@ -107,8 +110,7 @@ export interface RuntimeBucketNormalizationInput {
 
 export interface RuntimePortfolioPolicyNormalizationInput {
   portfolioId: string;
-  sourcePolicyRecordId: string;
-  candidate: unknown;
+  sourcePolicyRecord: unknown;
   bucketInputs: readonly RuntimeBucketNormalizationInput[];
   legacyReduceOnlyPolicy: {
     allowBuyOrIncrease: false;
@@ -123,10 +125,27 @@ export function normalizeRuntimePortfolioPolicy(
   dependencies: ImmutablePolicyDependencyRepository
 ): RuntimePortfolioPolicyRecord {
   const createdAt = isoDateTimeSchema.parse(input.createdAt);
-  const candidate = paperPolicyValidationCandidateSchema.parse(input.candidate);
+  const sourcePolicyRecord = paperPolicyRecordSchema.parse(
+    input.sourcePolicyRecord
+  );
+  const candidate = paperPolicyValidationCandidateSchema.parse(
+    sourcePolicyRecord.candidate
+  );
   const validation = validatePaperPolicyCandidate(candidate, new Date(createdAt));
   if (!validation.validatedForPaperSimulationConfig) {
     throw new Error("source policy candidate must pass paper validation");
+  }
+  if (
+    sourcePolicyRecord.policyId !== validation.policyId ||
+    sourcePolicyRecord.version !== validation.version ||
+    sourcePolicyRecord.name !== candidate.name ||
+    sourcePolicyRecord.policyHash !== validation.policyHash ||
+    !isDeepStrictEqual(
+      sourcePolicyRecord.validation.summary,
+      validation.summary
+    )
+  ) {
+    throw new Error("source policy record lineage does not match its candidate");
   }
   if (input.bucketInputs.length !== candidate.strategyBuckets.length) {
     throw new Error("runtime bucket configuration count must match source buckets");
@@ -186,7 +205,7 @@ export function normalizeRuntimePortfolioPolicy(
     mode: "paper_only",
     recordType: "runtime_portfolio_policy_record",
     portfolioId: input.portfolioId,
-    sourcePolicyRecordId: input.sourcePolicyRecordId,
+    sourcePolicyRecordId: sourcePolicyRecord.policyRecordId,
     sourcePolicyHash: validation.policyHash,
     policyId: candidate.policyId,
     version: candidate.version,

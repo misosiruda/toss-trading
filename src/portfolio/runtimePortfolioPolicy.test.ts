@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { validatePaperPolicyCandidate } from "../api/paperPolicyValidation.js";
+
 import {
   createBucketDrawdownSemanticsRecord,
   createBucketSelectionPolicyRecord,
@@ -42,8 +44,7 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   const record = normalizeRuntimePortfolioPolicy(
     {
       portfolioId: "paper-main",
-      sourcePolicyRecordId: "portfolio_policy_source",
-      candidate,
+      sourcePolicyRecord: sourcePolicyRecord(candidate),
       bucketInputs: runtimeBucketInputs(fixture).reverse(),
       legacyReduceOnlyPolicy: {
         allowBuyOrIncrease: false,
@@ -82,6 +83,27 @@ test("normalizer rejects invalid source candidate before creating runtime policy
         fixture.repository
       ),
     /source policy candidate must pass paper validation/
+  );
+});
+
+test("normalizer binds source record tuple and hash to its candidate", () => {
+  const fixture = dependencyFixture();
+  const candidate = policyCandidate();
+  const input = normalizationInput(candidate, fixture);
+
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...input,
+          sourcePolicyRecord: {
+            ...sourcePolicyRecord(candidate),
+            policyHash: "0".repeat(64)
+          }
+        },
+        fixture.repository
+      ),
+    /source policy record lineage does not match its candidate/
   );
 });
 
@@ -264,8 +286,7 @@ function normalizationInput(
 ) {
   return {
     portfolioId: "paper-main",
-    sourcePolicyRecordId: "portfolio_policy_source",
-    candidate,
+    sourcePolicyRecord: sourcePolicyRecord(candidate),
     bucketInputs: runtimeBucketInputs(fixture),
     legacyReduceOnlyPolicy: {
       allowBuyOrIncrease: false as const,
@@ -273,6 +294,34 @@ function normalizationInput(
       riskRuleSetRef: riskRuleSetRefFor(fixture.riskSet)
     },
     createdAt: CREATED_AT
+  };
+}
+
+function sourcePolicyRecord(candidate: ReturnType<typeof policyCandidate>) {
+  const validation = validatePaperPolicyCandidate(candidate, new Date(CREATED_AT));
+  return {
+    mode: "paper_only" as const,
+    recordType: "portfolio_policy_record" as const,
+    policyRecordId: "portfolio_policy_source",
+    policyId: candidate.policyId,
+    version: candidate.version,
+    name: candidate.name,
+    policyHash: validation.policyHash,
+    status: "stored" as const,
+    createdAt: CREATED_AT,
+    validationStatus: "valid" as const,
+    candidate,
+    validation: {
+      validatedAt: validation.validatedAt,
+      issueCount: 0 as const,
+      summary: validation.summary
+    },
+    safety: {
+      storageMutationEnabled: true as const,
+      liveTradingEnabled: false as const,
+      orderPlacementEnabled: false as const,
+      replayRunnerStarted: false as const
+    }
   };
 }
 

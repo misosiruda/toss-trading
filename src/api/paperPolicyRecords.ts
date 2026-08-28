@@ -29,7 +29,7 @@ const paperPolicyValidationSummarySchema = z
   })
   .strict();
 
-const paperPolicyRecordSchema = z
+export const paperPolicyRecordSchema = z
   .object({
     mode: z.literal("paper_only"),
     recordType: z.literal("portfolio_policy_record"),
