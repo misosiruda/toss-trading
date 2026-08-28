@@ -75,6 +75,21 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   assert.deepEqual(parseRuntimePortfolioPolicyRecord(record), record);
 });
 
+test("normalizer canonicalizes the legacy risk ref before dependency resolution", () => {
+  const fixture = dependencyFixture();
+  const input = normalizationInput(policyCandidate(), fixture);
+  const expectedRef = riskRuleSetRefFor(fixture.riskSet);
+  input.legacyReduceOnlyPolicy.riskRuleSetRef = {
+    ...expectedRef,
+    riskRuleSetRecordId: ` ${expectedRef.riskRuleSetRecordId} `,
+    version: ` ${expectedRef.version} `
+  };
+
+  const record = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+
+  assert.deepEqual(record.legacyReduceOnlyPolicy.riskRuleSetRef, expectedRef);
+});
+
 test("runtime policy hash binds dependency creation lineage", () => {
   const earlierFixture = dependencyFixture("2026-08-27T00:00:00.000Z");
   const currentFixture = dependencyFixture();

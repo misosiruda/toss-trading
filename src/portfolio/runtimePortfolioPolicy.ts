@@ -227,8 +227,11 @@ export function normalizeRuntimePortfolioPolicy(
     return policy;
   });
   assertCanonicalBuckets(strategyBuckets);
-  const legacyRiskDependencies = dependencies.resolveRiskRuleSetDependencies(
+  const legacyRiskRuleSetRef = portfolioRiskRuleSetRefSchema.parse(
     input.legacyReduceOnlyPolicy.riskRuleSetRef
+  );
+  const legacyRiskDependencies = dependencies.resolveRiskRuleSetDependencies(
+    legacyRiskRuleSetRef
   );
   assertDependenciesDoNotPostdateRuntime(
     [
@@ -252,7 +255,10 @@ export function normalizeRuntimePortfolioPolicy(
     cashPolicy: candidate.cashPolicy,
     hedgePolicy: candidate.hedgePolicy,
     exposurePolicy: candidate.exposurePolicy,
-    legacyReduceOnlyPolicy: input.legacyReduceOnlyPolicy
+    legacyReduceOnlyPolicy: {
+      ...input.legacyReduceOnlyPolicy,
+      riskRuleSetRef: legacyRiskRuleSetRef
+    }
   });
   const policyHash = hashCanonicalPayload(payload);
   const runtimePolicyRecordId = hashDerivedId(

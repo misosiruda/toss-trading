@@ -2601,7 +2601,8 @@ ref ID/version은 같은 canonical form으로 변환한 뒤 exact lookup과 line
 없는 legacy `createdAt`의 시간대는 추측하지
 않으며 loader 기본 동작은 해당 record를 거절한다. 운영자가 `legacyOffsetlessCreatedAtOffset`에 `Z`
 또는 `-14:00`~`+14:00` 범위의 numeric offset을 명시한 경우에만 메모리에서 시각대를 보완하고,
-date-only 값은 해당 offset의 `T00:00:00`으로 정규화한다. semantic hash/ID와 원본 파일은 그대로
+ISO와 `YYYY/MM/DD`/`MM/DD/YYYY` date-only 값은 해당 offset의 자정으로 정규화한다. semantic
+hash/ID와 원본 파일은 그대로
 유지한다. 단독 `Z`/`z`, `GMT`/`UTC`, RFC numeric zone, `GMT+HHMM` 또는 ISO compact numeric offset처럼
 시간대가 명시된 legacy 형식은 별도 option 없이 epoch-equivalent ISO UTC로 canonicalize한다.
 기존 `JsonlStore.append`는 cross-process atomic
