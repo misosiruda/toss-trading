@@ -458,9 +458,22 @@ function normalizeLegacyCreatedAt(
 }
 
 function hasExplicitLegacyTimeZone(value: string): boolean {
-  return /(?:z|\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b|GMT[+-]\d{4}|[+-]\d{2}:?\d{2})(?:\s*(?:\([^)]*\))?)?$/i.test(
-    value
-  );
+  const annotationSuffix = "(?:\\s*(?:\\([^)]*\\))?)?$";
+  if (
+    new RegExp(
+      `(?:z|\\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\\b)${annotationSuffix}`,
+      "i"
+    ).test(value)
+  ) {
+    return true;
+  }
+  if (!value.includes(":")) {
+    return false;
+  }
+  return new RegExp(
+    `(?:GMT)?[+-](?:\\d{1,4}|\\d{2}:\\d{2})${annotationSuffix}`,
+    "i"
+  ).test(value);
 }
 
 function canonicalLegacyTimestamp(value: string): string {
