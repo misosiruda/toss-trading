@@ -291,6 +291,41 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
     () =>
       parseRuntimePortfolioPolicyRecord({
         ...record,
+        name: ` ${record.name} `
+      }),
+    /runtime portfolio policy record must already be canonical/
+  );
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...record,
+        strategyBuckets: record.strategyBuckets.map((bucket, index) =>
+          index === 0
+            ? {
+                ...bucket,
+                selectionPolicyRef: {
+                  ...bucket.selectionPolicyRef,
+                  selectionPolicyRecordId:
+                    ` ${bucket.selectionPolicyRef.selectionPolicyRecordId} `
+                }
+              }
+            : bucket
+        )
+      }),
+    /runtime portfolio policy record must already be canonical/
+  );
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...record,
+        createdAt: "2026-08-28T00:00:00"
+      }),
+    /chronology timestamps must include a UTC or numeric offset/
+  );
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...record,
         name: "Tampered policy name"
       }),
     /runtime portfolio policy hash mismatch/

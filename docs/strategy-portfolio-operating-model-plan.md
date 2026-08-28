@@ -2585,6 +2585,8 @@ source `validation.validatedAt`은 source record `createdAt`과 같아야 한다
 source record `createdAt`보다 빠를 수 없다. resolve된 selection, risk set/parameter, drawdown,
 schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이후에 생성될 수 없다.
 chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
+stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
+root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency

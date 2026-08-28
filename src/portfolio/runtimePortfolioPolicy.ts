@@ -262,6 +262,10 @@ export function parseRuntimePortfolioPolicyRecord(
   value: unknown
 ): RuntimePortfolioPolicyRecord {
   const record = runtimePortfolioPolicyRecordSchema.parse(value);
+  if (!isDeepStrictEqual(value, record)) {
+    throw new Error("runtime portfolio policy record must already be canonical");
+  }
+  chronologyTimestamp(record.createdAt);
   for (const bucket of record.strategyBuckets) {
     parseStrategyBucketRuntimePolicy(bucket);
   }
