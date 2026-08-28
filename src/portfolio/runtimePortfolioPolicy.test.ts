@@ -42,10 +42,11 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   const candidate = policyCandidate();
   candidate.strategyBuckets.reverse();
   candidate.strategyBuckets[0]!.enabledAssetClasses = [" etf ", "equity"];
+  const sourceRecord = sourcePolicyRecord(candidate);
   const record = normalizeRuntimePortfolioPolicy(
     {
       portfolioId: "paper-main",
-      sourcePolicyRecord: sourcePolicyRecord(candidate),
+      sourcePolicyRecord: sourceRecord,
       bucketInputs: runtimeBucketInputs(fixture).reverse(),
       legacyReduceOnlyPolicy: {
         allowBuyOrIncrease: false,
@@ -68,6 +69,8 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
     `runtime_portfolio_policy_${record.policyHash.slice("sha256:".length)}`
   );
   assert.equal(record.sourcePolicyHash.length, 64);
+  assert.equal(record.sourcePolicyRecordHash, hashCanonicalPayload(sourceRecord));
+  assert.match(record.lineageHash, /^sha256:[a-f0-9]{64}$/);
   assert.equal(Object.isFrozen(record.strategyBuckets[0]), true);
   assert.deepEqual(parseRuntimePortfolioPolicyRecord(record), record);
 });
@@ -202,7 +205,7 @@ test("normalizer rejects dependencies created after the runtime policy", () => {
         normalizationInput(candidate, offsetlessFixture),
         offsetlessFixture.repository
       ),
-    /chronology timestamps must include a UTC or numeric offset/
+    /dependency chronology requires a UTC or numeric offset/
   );
 });
 
@@ -253,6 +256,27 @@ test("normalizer binds source record tuple and hash to its candidate", () => {
         fixture.repository
       ),
     /source policy record lineage does not match its candidate/
+  );
+
+  const alternateCandidate = policyCandidate();
+  alternateCandidate.name = "Alternate balanced paper policy";
+  const firstSource = sourcePolicyRecord(candidate);
+  const alternateSource = sourcePolicyRecord(alternateCandidate);
+  const firstRecord = normalizeRuntimePortfolioPolicy(
+    { ...input, sourcePolicyRecord: firstSource },
+    fixture.repository
+  );
+  const alternateRecord = normalizeRuntimePortfolioPolicy(
+    {
+      ...normalizationInput(alternateCandidate, fixture),
+      sourcePolicyRecord: alternateSource
+    },
+    fixture.repository
+  );
+  assert.equal(firstSource.policyRecordId, alternateSource.policyRecordId);
+  assert.notEqual(
+    firstRecord.sourcePolicyRecordHash,
+    alternateRecord.sourcePolicyRecordHash
   );
 });
 
@@ -357,6 +381,14 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
     () =>
       parseRuntimePortfolioPolicyRecord({
         ...record,
+        createdAt: "2026-08-27T00:00:00.000Z"
+      }),
+    /runtime portfolio policy lineage hash mismatch/
+  );
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...record,
         name: "Tampered policy name"
       }),
     /runtime portfolio policy hash mismatch/
@@ -373,6 +405,7 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
   const {
     runtimePolicyRecordId: _recordId,
     policyHash: _policyHash,
+    lineageHash: _lineageHash,
     createdAt: _createdAt,
     ...invalidPayload
   } = semanticallyInvalid;
@@ -397,6 +430,7 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
   const {
     runtimePolicyRecordId: _allocationId,
     policyHash: _allocationHash,
+    lineageHash: _allocationLineageHash,
     createdAt: _allocationCreatedAt,
     ...allocationPayload
   } = allocationInvalid;

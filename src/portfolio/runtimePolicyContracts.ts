@@ -26,6 +26,14 @@ const offsetIsoDateTimeSchema = isoDateTimeSchema.refine(
   (value) => /(Z|[+-]\d{2}:\d{2})$/.test(value),
   "session date-time must include a UTC or numeric timezone offset"
 );
+const immutableRecordLineagePayloadSchema = z
+  .object({
+    recordType: identifierSchema,
+    recordId: identifierSchema,
+    semanticHash: sha256HashSchema,
+    createdAt: isoDateTimeSchema
+  })
+  .strict();
 
 export const evidenceClassSchema = z.enum([
   "market_technical",
@@ -1040,12 +1048,12 @@ function verifyImmutableRecord<
   if (record[idKey] !== hashDerivedId(idPrefix, expectedHash)) {
     throw new Error(`${idPrefix} record ID must be derived from its hash`);
   }
-  const expectedLineageHash = lineageHashFor(
-    idPrefix,
-    record[idKey],
-    record.hash,
-    record.createdAt
-  );
+  const expectedLineageHash = hashImmutableRecordLineage({
+    recordType: idPrefix,
+    recordId: record[idKey],
+    semanticHash: record.hash,
+    createdAt: record.createdAt
+  });
   if (record.lineageHash !== expectedLineageHash) {
     throw new Error(`${idPrefix} record lineage hash mismatch`);
   }
@@ -1061,28 +1069,24 @@ function immutableRecordIdentity(
   const recordId = hashDerivedId(recordType, semanticHash);
   return {
     recordId,
-    lineageHash: lineageHashFor(
+    lineageHash: hashImmutableRecordLineage({
       recordType,
       recordId,
       semanticHash,
       createdAt
-    ),
+    }),
     createdAt
   };
 }
 
-function lineageHashFor(
-  recordType: string,
-  recordId: string,
-  semanticHash: string,
-  createdAt: string
-): Sha256Hash {
-  return hashCanonicalPayload({
-    recordType,
-    recordId,
-    semanticHash,
-    createdAt
-  });
+export function hashImmutableRecordLineage(input: {
+  recordType: string;
+  recordId: string;
+  semanticHash: string;
+  createdAt: string;
+}): Sha256Hash {
+  const canonical = immutableRecordLineagePayloadSchema.parse(input);
+  return hashCanonicalPayload(canonical);
 }
 
 function deepFreeze<T>(value: T): T {

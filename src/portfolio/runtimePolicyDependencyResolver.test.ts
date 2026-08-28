@@ -161,6 +161,34 @@ test("resolver binds every risk rule to the same rule ID and version parameter",
   );
 });
 
+test("resolver rejects nested dependencies that postdate their parent record", () => {
+  const lateParameter = dependencyFixture({
+    riskParameterCreatedAt: "2026-08-28T00:00:01.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveStrategyBucketRuntimePolicyDependencies(
+        scheduledPolicy(lateParameter),
+        new ImmutablePolicyDependencyRepository(lateParameter.records),
+        [{ market: "KR", exchangeDate: "2026-08-28" }]
+      ),
+    /risk rule parameter cannot postdate its risk rule set/
+  );
+
+  const lateCalendar = dependencyFixture({
+    calendarCreatedAt: "2026-08-28T00:00:01.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveStrategyBucketRuntimePolicyDependencies(
+        scheduledPolicy(lateCalendar),
+        new ImmutablePolicyDependencyRepository(lateCalendar.records),
+        [{ market: "KR", exchangeDate: "2026-08-28" }]
+      ),
+    /session calendar cannot postdate its schedule boundary/
+  );
+});
+
 test("scheduled resolver requires exact enabled-market dates and coverage", () => {
   const fixture = dependencyFixture();
   const repository = new ImmutablePolicyDependencyRepository(fixture.records);
@@ -255,6 +283,10 @@ type FixtureOptions = {
   mismatchBuyParameterIdentity?: boolean;
   boundaryMarket?: "KR" | "US";
   boundaryTimeZone?: string;
+  riskParameterCreatedAt?: string;
+  riskSetCreatedAt?: string;
+  calendarCreatedAt?: string;
+  boundaryCreatedAt?: string;
 };
 
 function dependencyFixture(options: FixtureOptions = {}) {
@@ -291,14 +323,14 @@ function dependencyFixture(options: FixtureOptions = {}) {
     ruleVersion: "v1",
     version: "record.v1",
     parameters: { minimumCashRatio: 0.15 },
-    createdAt: CREATED_AT
+    createdAt: options.riskParameterCreatedAt ?? CREATED_AT
   });
   const sellParameter = createPortfolioRiskRuleParameterRecord({
     ruleId: "reduce_only",
     ruleVersion: "v1",
     version: "record.v1",
     parameters: { allowIncrease: false },
-    createdAt: CREATED_AT
+    createdAt: options.riskParameterCreatedAt ?? CREATED_AT
   });
   const riskSet = createPortfolioRiskRuleSetRecord({
     version: "risk-set.v1",
@@ -316,7 +348,7 @@ function dependencyFixture(options: FixtureOptions = {}) {
         parameterRef: riskRuleParameterRefFor(sellParameter)
       }
     ],
-    createdAt: CREATED_AT
+    createdAt: options.riskSetCreatedAt ?? CREATED_AT
   });
   const drawdownSemantics = createBucketDrawdownSemanticsRecord({
     version: "unit-nav.v1",
@@ -336,7 +368,7 @@ function dependencyFixture(options: FixtureOptions = {}) {
     validFromExchangeDate: "2026-08-28",
     validThroughExchangeDate: "2026-08-29",
     sessions: [openSession("2026-08-28"), closedSession("2026-08-29")],
-    createdAt: CREATED_AT
+    createdAt: options.calendarCreatedAt ?? CREATED_AT
   });
   const boundary = createScheduleBoundaryRecord({
     market: options.boundaryMarket ?? "KR",
@@ -349,7 +381,7 @@ function dependencyFixture(options: FixtureOptions = {}) {
     interval: "daily",
     anchorLocalTime: "15:30:00",
     nonSessionDayRule: "previous_session",
-    createdAt: CREATED_AT
+    createdAt: options.boundaryCreatedAt ?? CREATED_AT
   });
   const records: ImmutablePolicyDependencyRecords = {
     selectionPolicies: [selection],

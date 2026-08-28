@@ -15,6 +15,7 @@ import {
   compareText,
   hashCanonicalPayload,
   hashDerivedId,
+  hashImmutableRecordLineage,
   parseStrategyBucketRuntimePolicy,
   portfolioRiskRuleSetRefSchema,
   strategyBucketRuntimePolicySchema,
@@ -48,6 +49,7 @@ const runtimePortfolioPolicyPayloadSchema = z
     recordType: z.literal("runtime_portfolio_policy_record"),
     portfolioId: identifierSchema,
     sourcePolicyRecordId: identifierSchema,
+    sourcePolicyRecordHash: sha256HashSchema,
     sourcePolicyHash: z.string().regex(/^[a-f0-9]{64}$/),
     policyId: identifierSchema,
     version: versionSchema,
@@ -96,6 +98,7 @@ export const runtimePortfolioPolicyRecordSchema =
     .safeExtend({
       runtimePolicyRecordId: identifierSchema,
       policyHash: sha256HashSchema,
+      lineageHash: sha256HashSchema,
       createdAt: isoDateTimeSchema
     })
     .strict();
@@ -133,6 +136,7 @@ export function normalizeRuntimePortfolioPolicy(
   const sourcePolicyRecord = paperPolicyRecordSchema.parse(
     input.sourcePolicyRecord
   );
+  const sourcePolicyRecordHash = hashCanonicalPayload(sourcePolicyRecord);
   const candidate = paperPolicyValidationCandidateSchema.parse(
     sourcePolicyRecord.candidate
   );
@@ -239,6 +243,7 @@ export function normalizeRuntimePortfolioPolicy(
     recordType: "runtime_portfolio_policy_record",
     portfolioId: input.portfolioId,
     sourcePolicyRecordId: sourcePolicyRecord.policyRecordId,
+    sourcePolicyRecordHash,
     sourcePolicyHash: validation.policyHash,
     policyId: candidate.policyId,
     version: candidate.version,
@@ -250,10 +255,20 @@ export function normalizeRuntimePortfolioPolicy(
     legacyReduceOnlyPolicy: input.legacyReduceOnlyPolicy
   });
   const policyHash = hashCanonicalPayload(payload);
+  const runtimePolicyRecordId = hashDerivedId(
+    "runtime_portfolio_policy",
+    policyHash
+  );
   return deepFreeze({
     ...payload,
-    runtimePolicyRecordId: hashDerivedId("runtime_portfolio_policy", policyHash),
+    runtimePolicyRecordId,
     policyHash,
+    lineageHash: hashImmutableRecordLineage({
+      recordType: "runtime_portfolio_policy",
+      recordId: runtimePolicyRecordId,
+      semanticHash: policyHash,
+      createdAt
+    }),
     createdAt
   });
 }
@@ -271,8 +286,13 @@ export function parseRuntimePortfolioPolicyRecord(
   }
   assertCanonicalBuckets(record.strategyBuckets);
   assertPortfolioWideInvariants(record);
-  const { runtimePolicyRecordId, policyHash, createdAt: _createdAt, ...payload } =
-    record;
+  const {
+    runtimePolicyRecordId,
+    policyHash,
+    lineageHash,
+    createdAt,
+    ...payload
+  } = record;
   const expectedHash = hashCanonicalPayload(payload);
   if (policyHash !== expectedHash) {
     throw new Error("runtime portfolio policy hash mismatch");
@@ -282,6 +302,17 @@ export function parseRuntimePortfolioPolicyRecord(
     hashDerivedId("runtime_portfolio_policy", expectedHash)
   ) {
     throw new Error("runtime portfolio policy record ID mismatch");
+  }
+  if (
+    lineageHash !==
+    hashImmutableRecordLineage({
+      recordType: "runtime_portfolio_policy",
+      recordId: runtimePolicyRecordId,
+      semanticHash: policyHash,
+      createdAt
+    })
+  ) {
+    throw new Error("runtime portfolio policy lineage hash mismatch");
   }
   return deepFreeze(record);
 }

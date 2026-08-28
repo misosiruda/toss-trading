@@ -2598,15 +2598,22 @@ current validation candidate 정규화는 `src/portfolio/runtimePortfolioPolicy.
 기존 candidate의 allocation/cash/hedge/exposure 값은 backend validation을 다시 통과해야 하며,
 normalizer는 candidate와 record ID를 따로 받지 않고 strict `PaperPolicyRecord`를 받아
 record ID 파생 규칙, record tuple, policy hash, validation summary가 내장 candidate와
-일치하는지 다시 검증한다. source tuple의 식별자는 이미 trim된 canonical 값이어야 하며
+일치하는지 다시 검증한다. runtime payload의 `sourcePolicyRecordHash`는 strict source record
+전체의 canonical digest를 저장해 같은 policy ID/생성 millisecond가 재사용되어도 정확한 source
+payload를 구분한다. source tuple의 식별자는 이미 trim된 canonical 값이어야 하며
 source `validation.validatedAt`은 source record `createdAt`과 같아야 한다. runtime `createdAt`은
 source record `createdAt`보다 빠를 수 없다. resolve된 selection, risk set/parameter, drawdown,
 schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이후에 생성될 수 없다.
 각 dependency ref는 ID/version/semantic hash뿐 아니라 `lineageHash`도 exact-match해야 하며,
 상위 runtime policy hash가 resolved dependency의 생성 시각 provenance까지 고정한다.
+각 risk parameter `createdAt`은 참조한 risk rule set보다 늦을 수 없고, session calendar
+`createdAt`은 참조한 schedule boundary보다 늦을 수 없다. flat runtime cutoff만 만족하는
+역전된 nested lineage도 resolver에서 거절한다.
 chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
 stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
 root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.
+runtime record는 semantic policy hash/ID와 별도 `lineageHash`에 `createdAt`을 결속해 저장 시각
+단독 변조를 거절한다.
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
