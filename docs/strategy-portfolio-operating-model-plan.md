@@ -2584,6 +2584,7 @@ record ID 파생 규칙, record tuple, policy hash, validation summary가 내장
 source `validation.validatedAt`은 source record `createdAt`과 같아야 한다. runtime `createdAt`은
 source record `createdAt`보다 빠를 수 없다. resolve된 selection, risk set/parameter, drawdown,
 schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이후에 생성될 수 없다.
+chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency

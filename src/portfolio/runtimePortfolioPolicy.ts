@@ -129,6 +129,7 @@ export function normalizeRuntimePortfolioPolicy(
   dependencies: ImmutablePolicyDependencyRepository
 ): RuntimePortfolioPolicyRecord {
   const createdAt = isoDateTimeSchema.parse(input.createdAt);
+  const runtimeCreatedAtTime = chronologyTimestamp(createdAt);
   const sourcePolicyRecord = paperPolicyRecordSchema.parse(
     input.sourcePolicyRecord
   );
@@ -136,7 +137,9 @@ export function normalizeRuntimePortfolioPolicy(
     sourcePolicyRecord.candidate
   );
   assertCanonicalSourceIdentity(candidate);
-  if (Date.parse(createdAt) < Date.parse(sourcePolicyRecord.createdAt)) {
+  if (
+    runtimeCreatedAtTime < chronologyTimestamp(sourcePolicyRecord.createdAt)
+  ) {
     throw new Error("runtime policy cannot predate its source policy record");
   }
   const validation = validatePaperPolicyCandidate(candidate, new Date(createdAt));
@@ -371,10 +374,25 @@ function assertDependenciesDoNotPostdateRuntime(
   records: readonly { createdAt: string }[],
   runtimeCreatedAt: string
 ): void {
-  const runtimeTime = Date.parse(runtimeCreatedAt);
-  if (records.some((record) => Date.parse(record.createdAt) > runtimeTime)) {
+  const runtimeTime = chronologyTimestamp(runtimeCreatedAt);
+  if (
+    records.some(
+      (record) => chronologyTimestamp(record.createdAt) > runtimeTime
+    )
+  ) {
     throw new Error("runtime policy dependency cannot postdate the runtime policy");
   }
+}
+
+function chronologyTimestamp(value: string): number {
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new Error("chronology timestamps must include a UTC or numeric offset");
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("chronology timestamp must be an ISO-compatible date-time");
+  }
+  return timestamp;
 }
 
 function canonicalAssetClasses(values: readonly string[]): string[] {

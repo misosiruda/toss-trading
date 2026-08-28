@@ -137,6 +137,18 @@ test("normalizer rejects source tuple rewriting and impossible chronology", () =
       ),
     /source policy record lineage does not match its candidate/
   );
+
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...input,
+          createdAt: "2026-08-28T00:00:00"
+        },
+        fixture.repository
+      ),
+    /chronology timestamps must include a UTC or numeric offset/
+  );
 });
 
 test("normalizer rejects dependencies created after the runtime policy", () => {
@@ -150,6 +162,16 @@ test("normalizer rejects dependencies created after the runtime policy", () => {
         fixture.repository
       ),
     /runtime policy dependency cannot postdate the runtime policy/
+  );
+
+  const offsetlessFixture = dependencyFixture("2026-08-28T00:00:00");
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        normalizationInput(candidate, offsetlessFixture),
+        offsetlessFixture.repository
+      ),
+    /chronology timestamps must include a UTC or numeric offset/
   );
 });
 
