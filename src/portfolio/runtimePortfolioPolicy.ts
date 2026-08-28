@@ -176,7 +176,7 @@ export function normalizeRuntimePortfolioPolicy(
     return policy;
   });
   assertCanonicalBuckets(strategyBuckets);
-  dependencies.resolveRiskRuleSet(
+  dependencies.resolveRiskRuleSetDependencies(
     input.legacyReduceOnlyPolicy.riskRuleSetRef
   );
 
@@ -212,6 +212,7 @@ export function parseRuntimePortfolioPolicyRecord(
     parseStrategyBucketRuntimePolicy(bucket);
   }
   assertCanonicalBuckets(record.strategyBuckets);
+  assertPortfolioWideInvariants(record);
   const { runtimePolicyRecordId, policyHash, createdAt: _createdAt, ...payload } =
     record;
   const expectedHash = hashCanonicalPayload(payload);
@@ -225,6 +226,56 @@ export function parseRuntimePortfolioPolicyRecord(
     throw new Error("runtime portfolio policy record ID mismatch");
   }
   return deepFreeze(record);
+}
+
+function assertPortfolioWideInvariants(
+  record: RuntimePortfolioPolicyRecord
+): void {
+  const validation = validatePaperPolicyCandidate(
+    {
+      mode: "paper_only",
+      policyId: record.policyId,
+      version: record.version,
+      name: record.name,
+      strategyBuckets: record.strategyBuckets.map((bucket) => ({
+        bucket: bucket.bucket,
+        targetWeightRatio: bucket.targetWeightRatio,
+        minWeightRatio: bucket.minWeightRatio,
+        maxWeightRatio: bucket.maxWeightRatio,
+        maxTurnoverRatio: bucket.maxTurnoverRatio,
+        maxDrawdownRatio: bucket.maxDrawdownRatio,
+        holdingPeriodHint: holdingPeriodHintFor(bucket.bucket),
+        enabledAssetClasses: bucket.enabledAssetClasses
+      })),
+      cashPolicy: record.cashPolicy,
+      hedgePolicy: record.hedgePolicy,
+      exposurePolicy: record.exposurePolicy,
+      executionBoundary: {
+        liveTradingEnabled: false,
+        orderPlacementEnabled: false,
+        backendValidationRequired: true
+      }
+    },
+    new Date(record.createdAt)
+  );
+  if (!validation.validatedForPaperSimulationConfig) {
+    throw new Error("runtime portfolio policy violates portfolio-wide invariants");
+  }
+}
+
+function holdingPeriodHintFor(bucket: StrategyBucket) {
+  switch (bucket) {
+    case "long_term":
+      return "multi_month" as const;
+    case "swing":
+      return "multi_week" as const;
+    case "short_term":
+      return "multi_day" as const;
+    case "intraday":
+      return "intraday" as const;
+    case "hedge":
+      return "hedge" as const;
+  }
 }
 
 function assertCanonicalBuckets(

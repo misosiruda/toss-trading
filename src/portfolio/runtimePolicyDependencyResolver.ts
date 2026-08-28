@@ -151,6 +151,24 @@ export class ImmutablePolicyDependencyRepository {
     );
   }
 
+  resolveRiskRuleSetDependencies(ref: PortfolioRiskRuleSetRef): {
+    riskRuleSet: PortfolioRiskRuleSetRecord;
+    riskRules: readonly ResolvedPortfolioRiskRule[];
+  } {
+    const riskRuleSet = this.resolveRiskRuleSet(ref);
+    const riskRules = riskRuleSet.rules.map((rule) => {
+      const parameter = this.resolveRiskParameter(rule.parameterRef);
+      if (
+        parameter.ruleId !== rule.ruleId ||
+        parameter.ruleVersion !== rule.ruleVersion
+      ) {
+        throw new Error("risk rule parameter identity does not match its rule");
+      }
+      return deepFreeze({ rule, parameter });
+    });
+    return deepFreeze({ riskRuleSet, riskRules });
+  }
+
   resolveDrawdownSemantics(
     ref: BucketDrawdownSemanticsRef
   ): BucketDrawdownSemanticsRecord {
@@ -245,17 +263,8 @@ export function resolveStrategyBucketRuntimePolicyDependencies(
     }
   }
 
-  const riskRuleSet = repository.resolveRiskRuleSet(policy.riskRuleSetRef);
-  const riskRules = riskRuleSet.rules.map((rule) => {
-    const parameter = repository.resolveRiskParameter(rule.parameterRef);
-    if (
-      parameter.ruleId !== rule.ruleId ||
-      parameter.ruleVersion !== rule.ruleVersion
-    ) {
-      throw new Error("risk rule parameter identity does not match its rule");
-    }
-    return deepFreeze({ rule, parameter });
-  });
+  const { riskRuleSet, riskRules } =
+    repository.resolveRiskRuleSetDependencies(policy.riskRuleSetRef);
   const drawdownSemantics = repository.resolveDrawdownSemantics(
     policy.drawdownSemanticsRef
   );

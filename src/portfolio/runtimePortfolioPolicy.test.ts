@@ -146,7 +146,7 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
     () =>
       parseRuntimePortfolioPolicyRecord({
         ...record,
-        cashPolicy: { ...record.cashPolicy, targetCashRatio: 0.2 }
+        name: "Tampered policy name"
       }),
     /runtime portfolio policy hash mismatch/
   );
@@ -177,6 +177,79 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
         )
       }),
     /must use entry_floor_on_due_cycle/
+  );
+
+  const allocationInvalid = {
+    ...record,
+    cashPolicy: { ...record.cashPolicy, targetCashRatio: 0.2 }
+  };
+  const {
+    runtimePolicyRecordId: _allocationId,
+    policyHash: _allocationHash,
+    createdAt: _allocationCreatedAt,
+    ...allocationPayload
+  } = allocationInvalid;
+  const allocationHash = hashCanonicalPayload(allocationPayload);
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...allocationInvalid,
+        policyHash: allocationHash,
+        runtimePolicyRecordId: hashDerivedId(
+          "runtime_portfolio_policy",
+          allocationHash
+        )
+      }),
+    /violates portfolio-wide invariants/
+  );
+});
+
+test("normalizer resolves every legacy risk rule parameter", () => {
+  const fixture = dependencyFixture();
+  const missingParameter = createPortfolioRiskRuleParameterRecord({
+    ruleId: "legacy_cash_guard",
+    ruleVersion: "v1",
+    version: "record.v1",
+    parameters: { minimumCashRatio: 0.15 },
+    createdAt: CREATED_AT
+  });
+  const legacyRiskSet = createPortfolioRiskRuleSetRecord({
+    version: "legacy-risk-set.v1",
+    rules: [
+      {
+        ruleId: "legacy_cash_guard",
+        ruleVersion: "v1",
+        appliesTo: ["BUY"],
+        parameterRef: riskRuleParameterRefFor(missingParameter)
+      },
+      {
+        ruleId: "reduce_only",
+        ruleVersion: "v1",
+        appliesTo: ["SELL"],
+        parameterRef: riskRuleParameterRefFor(fixture.sell)
+      }
+    ],
+    createdAt: CREATED_AT
+  });
+  const repository = new ImmutablePolicyDependencyRepository({
+    ...fixture.records,
+    riskRuleSets: [...fixture.records.riskRuleSets, legacyRiskSet]
+  });
+
+  assert.throws(
+    () =>
+      normalizeRuntimePortfolioPolicy(
+        {
+          ...normalizationInput(policyCandidate(), fixture),
+          legacyReduceOnlyPolicy: {
+            allowBuyOrIncrease: false,
+            maximumParticipationRatio: 0.1,
+            riskRuleSetRef: riskRuleSetRefFor(legacyRiskSet)
+          }
+        },
+        repository
+      ),
+    /risk parameter ref does not resolve/
   );
 });
 
@@ -314,6 +387,8 @@ function dependencyFixture() {
     riskSet,
     drawdown,
     boundary,
+    sell,
+    records,
     repository: new ImmutablePolicyDependencyRepository(records)
   };
 }
