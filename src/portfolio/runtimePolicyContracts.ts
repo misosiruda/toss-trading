@@ -143,22 +143,19 @@ export const portfolioRiskRuleParameterRecordSchema =
 
 const riskRuleApplicationSchema = z.enum(["BUY", "SELL"]);
 
+const portfolioRiskRuleSchema = z
+  .object({
+    ruleId: identifierSchema,
+    ruleVersion: versionSchema,
+    appliesTo: z.array(riskRuleApplicationSchema).min(1).max(2),
+    parameterRef: portfolioRiskRuleParameterRefSchema
+  })
+  .strict();
+
 const portfolioRiskRuleSetPayloadSchema = z
   .object({
     version: versionSchema,
-    rules: z
-      .array(
-        z
-          .object({
-            ruleId: identifierSchema,
-            ruleVersion: versionSchema,
-            appliesTo: z.array(riskRuleApplicationSchema).min(1).max(2),
-            parameterRef: portfolioRiskRuleParameterRefSchema
-          })
-          .strict()
-      )
-      .min(1)
-      .max(128)
+    rules: z.array(portfolioRiskRuleSchema).min(1).max(128)
   })
   .strict();
 
@@ -427,7 +424,7 @@ export function createBucketSelectionPolicyRecord(
     )
   });
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     selectionPolicyRecordId: hashDerivedId("selection_policy", hash),
     hash,
@@ -457,7 +454,7 @@ export function selectionPolicyRefFor(
   record: BucketSelectionPolicyRecord
 ): BucketSelectionPolicyRef {
   const parsed = parseBucketSelectionPolicyRecord(record);
-  return Object.freeze({
+  return deepFreeze({
     selectionPolicyRecordId: parsed.selectionPolicyRecordId,
     version: parsed.version,
     hash: parsed.hash
@@ -472,7 +469,7 @@ export function createPortfolioRiskRuleParameterRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = portfolioRiskRuleParameterPayloadSchema.parse(unparsedPayload);
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     riskRuleParameterRecordId: hashDerivedId("risk_parameter", hash),
     hash,
@@ -496,7 +493,7 @@ export function riskRuleParameterRefFor(
   record: PortfolioRiskRuleParameterRecord
 ): PortfolioRiskRuleParameterRef {
   const parsed = parsePortfolioRiskRuleParameterRecord(record);
-  return Object.freeze({
+  return deepFreeze({
     riskRuleParameterRecordId: parsed.riskRuleParameterRecordId,
     version: parsed.version,
     hash: parsed.hash
@@ -515,7 +512,7 @@ export function createPortfolioRiskRuleSetRecord(
   });
   assertRiskRuleCoverage(payload.rules);
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     riskRuleSetRecordId: hashDerivedId("risk_rule_set", hash),
     hash,
@@ -541,7 +538,7 @@ export function riskRuleSetRefFor(
   record: PortfolioRiskRuleSetRecord
 ): PortfolioRiskRuleSetRef {
   const parsed = parsePortfolioRiskRuleSetRecord(record);
-  return Object.freeze({
+  return deepFreeze({
     riskRuleSetRecordId: parsed.riskRuleSetRecordId,
     version: parsed.version,
     hash: parsed.hash
@@ -556,7 +553,7 @@ export function createBucketDrawdownSemanticsRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = bucketDrawdownSemanticsPayloadSchema.parse(unparsedPayload);
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     drawdownSemanticsRecordId: hashDerivedId("drawdown_semantics", hash),
     hash,
@@ -580,7 +577,7 @@ export function drawdownSemanticsRefFor(
   record: BucketDrawdownSemanticsRecord
 ): BucketDrawdownSemanticsRef {
   const parsed = parseBucketDrawdownSemanticsRecord(record);
-  return Object.freeze({
+  return deepFreeze({
     drawdownSemanticsRecordId: parsed.drawdownSemanticsRecordId,
     version: parsed.version,
     hash: parsed.hash
@@ -597,7 +594,7 @@ export function createSessionCalendarRecord(
   });
   assertSessionCalendarPayload(payload);
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     sessionCalendarRecordId: hashDerivedId("session_calendar", hash),
     hash,
@@ -626,7 +623,7 @@ export function createScheduleBoundaryRecord(
   const payload = scheduleBoundaryPayloadSchema.parse(unparsedPayload);
   assertScheduleBoundaryPayload(payload);
   const hash = hashCanonicalPayload(payload);
-  return Object.freeze({
+  return deepFreeze({
     ...payload,
     scheduleBoundaryRecordId: hashDerivedId("schedule_boundary", hash),
     hash,
@@ -651,7 +648,7 @@ export function scheduleBoundaryRefFor(
   record: ScheduleBoundaryRecord
 ): ScheduleBoundaryRef {
   const parsed = parseScheduleBoundaryRecord(record);
-  return Object.freeze({
+  return deepFreeze({
     scheduleBoundaryRecordId: parsed.scheduleBoundaryRecordId,
     version: parsed.version,
     hash: parsed.hash
@@ -663,7 +660,7 @@ export function parseStrategyBucketRuntimePolicy(
 ): StrategyBucketRuntimePolicy {
   const policy = strategyBucketRuntimePolicySchema.parse(value);
   assertStrategyBucketRuntimePolicy(policy);
-  return Object.freeze(policy);
+  return deepFreeze(policy);
 }
 
 function assertStrategyBucketRuntimePolicy(
@@ -759,10 +756,13 @@ function canonicalRiskRules(
     typeof portfolioRiskRuleSetPayloadSchema
   >["rules"][number][]
 ): z.infer<typeof portfolioRiskRuleSetPayloadSchema>["rules"] {
-  const rules = values.map((value) => ({
-    ...value,
-    appliesTo: canonicalUniqueText(value.appliesTo, "appliesTo")
-  }));
+  const rules = values.map((value) => {
+    const parsed = portfolioRiskRuleSchema.parse(value);
+    return {
+      ...parsed,
+      appliesTo: canonicalUniqueText(parsed.appliesTo, "appliesTo")
+    };
+  });
   const canonical = [...rules].sort((left, right) =>
     compareText(left.ruleId, right.ruleId)
   );
@@ -998,7 +998,17 @@ function verifyImmutableRecord<
   if (record[idKey] !== hashDerivedId(idPrefix, expectedHash)) {
     throw new Error(`${idPrefix} record ID must be derived from its hash`);
   }
-  return Object.freeze(record);
+  return deepFreeze(record);
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
 }
 
 function hashCanonicalPayload(value: unknown): Sha256Hash {

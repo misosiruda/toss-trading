@@ -179,6 +179,63 @@ test("risk rule set canonicalizes rules and requires BUY and SELL coverage", () 
       }),
     /canonical ruleId order/
   );
+  assert.throws(
+    () =>
+      createPortfolioRiskRuleSetRecord({
+        version: "risk-set.v1",
+        rules: [
+          {
+            ruleId: "cash_reserve",
+            ruleVersion: "v1",
+            appliesTo: ["BUY"],
+            parameterRef: riskRuleParameterRefFor(buyParameter)
+          },
+          {
+            ruleId: " cash_reserve ",
+            ruleVersion: "v1",
+            appliesTo: ["SELL"],
+            parameterRef: riskRuleParameterRefFor(sellParameter)
+          }
+        ],
+        createdAt: CREATED_AT
+      }),
+    /duplicate canonical keys/
+  );
+});
+
+test("immutable contract helpers deep-freeze nested verified payloads", () => {
+  const selection = selectionPolicyRecord();
+  const buyParameter = riskParameterRecord("cash_reserve", ["BUY"]);
+  const sellParameter = riskParameterRecord("reduce_only", ["SELL"]);
+  const riskSet = createPortfolioRiskRuleSetRecord({
+    version: "risk-set.v1",
+    rules: [
+      {
+        ruleId: "cash_reserve",
+        ruleVersion: "v1",
+        appliesTo: ["BUY"],
+        parameterRef: riskRuleParameterRefFor(buyParameter)
+      },
+      {
+        ruleId: "reduce_only",
+        ruleVersion: "v1",
+        appliesTo: ["SELL"],
+        parameterRef: riskRuleParameterRefFor(sellParameter)
+      }
+    ],
+    createdAt: CREATED_AT
+  });
+
+  assert.equal(Object.isFrozen(selection.requiredEvidence), true);
+  assert.equal(Object.isFrozen(selection.requiredEvidence[0]), true);
+  assert.equal(Object.isFrozen(riskSet.rules), true);
+  assert.equal(Object.isFrozen(riskSet.rules[0]?.parameterRef), true);
+  assert.throws(() => {
+    selection.requiredEvidence[0]!.maximumAgeSeconds = 1;
+  }, TypeError);
+  assert.throws(() => {
+    riskSet.rules[0]!.parameterRef.hash = `sha256:${"0".repeat(64)}`;
+  }, TypeError);
 });
 
 test("drawdown semantics accepts only the versioned invariant tuple", () => {
