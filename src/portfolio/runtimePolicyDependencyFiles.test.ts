@@ -188,6 +188,55 @@ test("dependency loader migrates legacy date-only timestamps at explicit midnigh
   });
 });
 
+test("dependency loader canonicalizes timezone-qualified legacy timestamp forms", async () => {
+  const cases = [
+    ["Thu, 28 Aug 2026 00:00:00 GMT", "2026-08-28T00:00:00.000Z"],
+    ["Fri, 28 Aug 2026 09:00:00 +0900", "2026-08-28T00:00:00.000Z"],
+    [
+      "Fri Aug 28 2026 09:00:00 GMT+0900 (Korean Standard Time)",
+      "2026-08-28T00:00:00.000Z"
+    ],
+    ["2026-08-28T00:00:00+0900", "2026-08-27T15:00:00.000Z"]
+  ] as const;
+
+  for (const [createdAt, expected] of cases) {
+    await withTemporaryDirectory(async (baseDir) => {
+      const record = selectionPolicyRecord();
+      const paths = createImmutablePolicyDependencyPaths(baseDir);
+      await appendJsonLine(paths.selectionPolicies, {
+        ...omitLineage(record),
+        createdAt
+      });
+      const before = await readFile(paths.selectionPolicies, "utf8");
+
+      const loaded = await new ImmutablePolicyDependencyFileLoader(baseDir).load();
+
+      assert.equal(loaded.records.selectionPolicies[0]?.createdAt, expected);
+      assert.equal(await readFile(paths.selectionPolicies, "utf8"), before);
+    });
+  }
+});
+
+test("dependency loader applies an explicit offset to non-ISO legacy timestamps", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const record = selectionPolicyRecord();
+    const paths = createImmutablePolicyDependencyPaths(baseDir);
+    await appendJsonLine(paths.selectionPolicies, {
+      ...omitLineage(record),
+      createdAt: "August 28, 2026 00:00:00"
+    });
+
+    const loaded = await new ImmutablePolicyDependencyFileLoader(baseDir, {
+      legacyOffsetlessCreatedAtOffset: "+09:00"
+    }).load();
+
+    assert.equal(
+      loaded.records.selectionPolicies[0]?.createdAt,
+      "2026-08-27T15:00:00.000Z"
+    );
+  });
+});
+
 test("dependency loader rejects malformed JSONL instead of accepting a partial set", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const paths = createImmutablePolicyDependencyPaths(baseDir);

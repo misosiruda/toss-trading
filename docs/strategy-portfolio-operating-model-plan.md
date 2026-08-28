@@ -2600,7 +2600,9 @@ mismatch는 migration하지 않고 fail-closed한다. offset 없는 legacy `crea
 않으며 loader 기본 동작은 해당 record를 거절한다. 운영자가 `legacyOffsetlessCreatedAtOffset`에 `Z`
 또는 `-14:00`~`+14:00` 범위의 numeric offset을 명시한 경우에만 메모리에서 시각대를 보완하고,
 date-only 값은 해당 offset의 `T00:00:00`으로 정규화한다. semantic hash/ID와 원본 파일은 그대로
-유지한다. 기존 `JsonlStore.append`는 cross-process atomic
+유지한다. `GMT`/`UTC`, RFC numeric zone, `GMT+HHMM` 또는 ISO compact numeric offset처럼
+시간대가 명시된 legacy 형식은 별도 option 없이 epoch-equivalent ISO UTC로 canonicalize한다.
+기존 `JsonlStore.append`는 cross-process atomic
 dedupe를 제공하지 않으므로 dependency writer와 exact-retry 처리는 원자성 계약을 갖춘 후속
 변경 전까지 노출하지 않는다.
 

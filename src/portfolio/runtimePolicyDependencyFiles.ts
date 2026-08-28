@@ -402,8 +402,15 @@ function normalizeLegacyCreatedAt(
   value: string,
   explicitOffset: string | undefined
 ): string {
-  if (/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+  if (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      value
+    )
+  ) {
     return value;
+  }
+  if (hasExplicitLegacyTimeZone(value)) {
+    return canonicalLegacyTimestamp(value);
   }
   if (explicitOffset === undefined) {
     throw new Error(
@@ -413,7 +420,28 @@ function normalizeLegacyCreatedAt(
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return `${value}T00:00:00${explicitOffset}`;
   }
-  return `${value}${explicitOffset}`;
+  if (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)
+  ) {
+    return `${value}${explicitOffset}`;
+  }
+  const zoneSuffix =
+    explicitOffset === "Z" ? " GMT" : ` ${explicitOffset.replace(":", "")}`;
+  return canonicalLegacyTimestamp(`${value}${zoneSuffix}`);
+}
+
+function hasExplicitLegacyTimeZone(value: string): boolean {
+  return /(?:\b(?:UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b|GMT[+-]\d{4}|[+-]\d{2}:?\d{2})(?:\s*(?:\([^)]*\))?)?$/i.test(
+    value
+  );
+}
+
+function canonicalLegacyTimestamp(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("legacy dependency createdAt cannot be normalized");
+  }
+  return new Date(timestamp).toISOString();
 }
 
 function exactRecordMap<T>(
