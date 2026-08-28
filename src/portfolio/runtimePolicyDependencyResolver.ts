@@ -123,6 +123,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.selectionPolicyRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "selection policy"
     );
   }
@@ -135,6 +136,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.riskRuleParameterRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "risk parameter"
     );
   }
@@ -147,6 +149,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.riskRuleSetRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "risk rule set"
     );
   }
@@ -177,6 +180,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.drawdownSemanticsRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "drawdown semantics"
     );
   }
@@ -191,6 +195,7 @@ export class ImmutablePolicyDependencyRepository {
       boundary.sessionCalendarRecordId,
       boundary.sessionCalendarVersion,
       boundary.sessionCalendarHash,
+      boundary.sessionCalendarLineageHash,
       "session calendar"
     );
 
@@ -237,6 +242,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.scheduleBoundaryRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "schedule boundary"
     );
   }
@@ -337,19 +343,26 @@ function verifiedRecordMap<T>(
   return result;
 }
 
-function resolveExactRef<T extends { version: string; hash: string }>(
+function resolveExactRef<
+  T extends { version: string; hash: string; lineageHash: string }
+>(
   records: ReadonlyMap<string, T>,
   id: string,
   version: string,
   hash: string,
+  lineageHash: string,
   label: string
 ): T {
   const record = records.get(id);
   if (record === undefined) {
     throw new Error(`${label} ref does not resolve`);
   }
-  if (record.version !== version || record.hash !== hash) {
-    throw new Error(`${label} ref version/hash mismatch`);
+  if (
+    record.version !== version ||
+    record.hash !== hash ||
+    record.lineageHash !== lineageHash
+  ) {
+    throw new Error(`${label} ref version/hash/lineage mismatch`);
   }
   return record;
 }

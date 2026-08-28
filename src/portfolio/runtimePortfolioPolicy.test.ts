@@ -72,6 +72,37 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   assert.deepEqual(parseRuntimePortfolioPolicyRecord(record), record);
 });
 
+test("runtime policy hash binds dependency creation lineage", () => {
+  const earlierFixture = dependencyFixture("2026-08-27T00:00:00.000Z");
+  const currentFixture = dependencyFixture();
+  const candidate = policyCandidate();
+  const earlierRecord = normalizeRuntimePortfolioPolicy(
+    normalizationInput(candidate, earlierFixture),
+    earlierFixture.repository
+  );
+  const currentRecord = normalizeRuntimePortfolioPolicy(
+    normalizationInput(candidate, currentFixture),
+    currentFixture.repository
+  );
+  const earlierSelection = earlierFixture.selections.get("long_term")!;
+  const currentSelection = currentFixture.selections.get("long_term")!;
+
+  assert.equal(
+    earlierSelection.selectionPolicyRecordId,
+    currentSelection.selectionPolicyRecordId
+  );
+  assert.equal(earlierSelection.hash, currentSelection.hash);
+  assert.notEqual(
+    earlierSelection.lineageHash,
+    currentSelection.lineageHash
+  );
+  assert.notEqual(earlierRecord.policyHash, currentRecord.policyHash);
+  assert.notEqual(
+    earlierRecord.runtimePolicyRecordId,
+    currentRecord.runtimePolicyRecordId
+  );
+});
+
 test("normalizer uses the runtime contract text comparator for asset classes", () => {
   const fixture = dependencyFixture();
   const candidate = policyCandidate();
@@ -579,6 +610,7 @@ function dependencyFixture(dependencyCreatedAt = CREATED_AT) {
     sessionCalendarRecordId: calendar.sessionCalendarRecordId,
     sessionCalendarVersion: calendar.version,
     sessionCalendarHash: calendar.hash,
+    sessionCalendarLineageHash: calendar.lineageHash,
     interval: "daily",
     anchorLocalTime: "15:30:00",
     nonSessionDayRule: "previous_session",

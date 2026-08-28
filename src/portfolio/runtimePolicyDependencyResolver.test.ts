@@ -114,7 +114,22 @@ test("resolver rejects missing or mismatched exact refs", () => {
         repository,
         [{ market: "KR", exchangeDate: "2026-08-28" }]
       ),
-    /risk rule set ref version\/hash mismatch/
+    /risk rule set ref version\/hash\/lineage mismatch/
+  );
+  assert.throws(
+    () =>
+      resolveStrategyBucketRuntimePolicyDependencies(
+        {
+          ...policy,
+          selectionPolicyRef: {
+            ...policy.selectionPolicyRef,
+            lineageHash: `sha256:${"0".repeat(64)}`
+          }
+        },
+        repository,
+        [{ market: "KR", exchangeDate: "2026-08-28" }]
+      ),
+    /selection policy ref version\/hash\/lineage mismatch/
   );
 });
 
@@ -330,6 +345,7 @@ function dependencyFixture(options: FixtureOptions = {}) {
     sessionCalendarRecordId: calendar.sessionCalendarRecordId,
     sessionCalendarVersion: calendar.version,
     sessionCalendarHash: calendar.hash,
+    sessionCalendarLineageHash: calendar.lineageHash,
     interval: "daily",
     anchorLocalTime: "15:30:00",
     nonSessionDayRule: "previous_session",

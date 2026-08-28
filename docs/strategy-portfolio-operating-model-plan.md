@@ -239,6 +239,7 @@ interface BucketSelectionPolicyRecord {
   bucket: StrategyBucket;
   version: string;
   hash: string;
+  lineageHash: string;
   requiredEvidence: EvidenceRequirement[];
   everyTickSourceRequirement?: {
     sourceContractId: string;
@@ -256,6 +257,7 @@ interface BucketSelectionPolicyRef {
   selectionPolicyRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 type CanonicalRiskParameterValue =
@@ -272,6 +274,7 @@ interface PortfolioRiskRuleParameterRecord {
   ruleVersion: string;
   version: string;
   hash: string;
+  lineageHash: string;
   parameters: { [key: string]: CanonicalRiskParameterValue };
   createdAt: string;
 }
@@ -280,12 +283,14 @@ interface PortfolioRiskRuleParameterRef {
   riskRuleParameterRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface PortfolioRiskRuleSetRecord {
   riskRuleSetRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
   rules: Array<{
     ruleId: string;
     ruleVersion: string;
@@ -299,6 +304,7 @@ interface PortfolioRiskRuleSetRef {
   riskRuleSetRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface PortfolioLegacyReduceOnlyPolicy {
@@ -319,10 +325,12 @@ interface ScheduleBoundaryRecord {
   market: Market;
   version: string;
   hash: string;
+  lineageHash: string;
   timeZone: string;
   sessionCalendarRecordId: string;
   sessionCalendarVersion: string;
   sessionCalendarHash: string;
+  sessionCalendarLineageHash: string;
   interval: "hourly" | "daily" | "weekly";
   anchorLocalTime: string;
   weeklyAnchorDay?: "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
@@ -349,6 +357,7 @@ interface SessionCalendarRecord {
   market: Market;
   version: string;
   hash: string;
+  lineageHash: string;
   timeZone: string;
   validFromExchangeDate: string;
   validThroughExchangeDate: string;
@@ -360,6 +369,7 @@ interface ScheduleBoundaryRef {
   scheduleBoundaryRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 type BucketReviewCadence =
@@ -373,6 +383,7 @@ interface BucketDrawdownSemanticsRecord {
   drawdownSemanticsRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
   equityBasis: "bucket_assets_plus_cash";
   unitFlowRule: "mint_burn_at_pre_flow_unit_nav";
   pnlRule: "mark_to_market_and_execution_cost_only";
@@ -387,6 +398,7 @@ interface BucketDrawdownSemanticsRef {
   drawdownSemanticsRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface StrategyBucketPolicy {
@@ -491,6 +503,12 @@ interface StrategyBucketPolicy {
   risk-state replay와 breach evaluation은 저장된 unit flow/PnL/HWM/drawdown/empty/carry rule만
   사용하고 runtime 구현 기본값으로 대체하지 않는다. 독립 rehash 또는 version/hash가 다르면
   activation과 신규 매수를 fail-closed한다.
+- 여섯 dependency record는 semantic `hash`/hash-derived ID와 별도로 `lineageHash`를 가진다.
+  `lineageHash`는 `recordType`, record ID, semantic hash, `createdAt`의 canonical digest이며,
+  모든 ref가 이를 포함한다. risk rule set은 parameter lineage를, schedule boundary는 session
+  calendar lineage를 payload에 포함해 상위 runtime policy hash까지 생성 시각 provenance를
+  연쇄 결속한다. parser, loader와 resolver는 semantic hash/ID와 lineage hash를 모두 독립
+  검증하며 어느 dependency의 `createdAt`만 바뀌어도 activation 전 fail-closed한다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
   `selectionPolicyRef`, `riskRuleSetRef`, `drawdownSemanticsRef`, `reviewCadence` boundary ref와
   `turnoverWindow`를 포함해
@@ -2584,6 +2602,8 @@ record ID 파생 규칙, record tuple, policy hash, validation summary가 내장
 source `validation.validatedAt`은 source record `createdAt`과 같아야 한다. runtime `createdAt`은
 source record `createdAt`보다 빠를 수 없다. resolve된 selection, risk set/parameter, drawdown,
 schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이후에 생성될 수 없다.
+각 dependency ref는 ID/version/semantic hash뿐 아니라 `lineageHash`도 exact-match해야 하며,
+상위 runtime policy hash가 resolved dependency의 생성 시각 provenance까지 고정한다.
 chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
 stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
 root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.

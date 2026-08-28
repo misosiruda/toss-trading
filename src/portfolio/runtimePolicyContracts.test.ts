@@ -9,6 +9,7 @@ import {
   createScheduleBoundaryRecord,
   createSessionCalendarRecord,
   drawdownSemanticsRefFor,
+  parseBucketDrawdownSemanticsRecord,
   parseBucketSelectionPolicyRecord,
   parsePortfolioRiskRuleParameterRecord,
   parsePortfolioRiskRuleSetRecord,
@@ -46,10 +47,12 @@ test("selection policy canonicalizes ordered sets and verifies full payload hash
     retriedRecord.selectionPolicyRecordId,
     record.selectionPolicyRecordId
   );
+  assert.notEqual(retriedRecord.lineageHash, record.lineageHash);
   assert.deepEqual(selectionPolicyRefFor(record), {
     selectionPolicyRecordId: record.selectionPolicyRecordId,
     version: record.version,
-    hash: record.hash
+    hash: record.hash,
+    lineageHash: record.lineageHash
   });
 
   assert.throws(
@@ -114,7 +117,8 @@ test("risk parameter hash binds nested canonical parameter payload", () => {
   assert.deepEqual(riskRuleParameterRefFor(record), {
     riskRuleParameterRecordId: record.riskRuleParameterRecordId,
     version: record.version,
-    hash: record.hash
+    hash: record.hash,
+    lineageHash: record.lineageHash
   });
   assert.throws(
     () =>
@@ -169,7 +173,8 @@ test("risk rule set canonicalizes rules and requires BUY and SELL coverage", () 
   assert.deepEqual(riskRuleSetRefFor(record), {
     riskRuleSetRecordId: record.riskRuleSetRecordId,
     version: record.version,
-    hash: record.hash
+    hash: record.hash,
+    lineageHash: record.lineageHash
   });
   assert.throws(
     () =>
@@ -254,6 +259,63 @@ test("immutable contract helpers deep-freeze nested verified payloads", () => {
   }, TypeError);
 });
 
+test("dependency lineage hashes bind createdAt across every immutable record", () => {
+  const selection = selectionPolicyRecord();
+  const buyParameter = riskParameterRecord("cash_reserve", ["BUY"]);
+  const sellParameter = riskParameterRecord("reduce_only", ["SELL"]);
+  const riskSet = createPortfolioRiskRuleSetRecord({
+    version: "risk-set.v1",
+    rules: [
+      {
+        ruleId: "cash_reserve",
+        ruleVersion: "v1",
+        appliesTo: ["BUY"],
+        parameterRef: riskRuleParameterRefFor(buyParameter)
+      },
+      {
+        ruleId: "reduce_only",
+        ruleVersion: "v1",
+        appliesTo: ["SELL"],
+        parameterRef: riskRuleParameterRefFor(sellParameter)
+      }
+    ],
+    createdAt: CREATED_AT
+  });
+  const drawdown = createBucketDrawdownSemanticsRecord({
+    ...drawdownSemanticsInput(),
+    createdAt: CREATED_AT
+  });
+  const calendar = createSessionCalendarRecord({
+    market: "KR",
+    version: "krx-calendar.v1",
+    timeZone: "Asia/Seoul",
+    validFromExchangeDate: "2026-08-28",
+    validThroughExchangeDate: "2026-08-28",
+    sessions: [openSession("2026-08-28")],
+    createdAt: CREATED_AT
+  });
+  const boundary = createScheduleBoundaryRecord({
+    market: "KR",
+    version: "daily-close.v1",
+    timeZone: calendar.timeZone,
+    sessionCalendarRecordId: calendar.sessionCalendarRecordId,
+    sessionCalendarVersion: calendar.version,
+    sessionCalendarHash: calendar.hash,
+    sessionCalendarLineageHash: calendar.lineageHash,
+    interval: "daily",
+    anchorLocalTime: "15:30:00",
+    nonSessionDayRule: "previous_session",
+    createdAt: CREATED_AT
+  });
+
+  assertCreatedAtBound(parseBucketSelectionPolicyRecord, selection);
+  assertCreatedAtBound(parsePortfolioRiskRuleParameterRecord, buyParameter);
+  assertCreatedAtBound(parsePortfolioRiskRuleSetRecord, riskSet);
+  assertCreatedAtBound(parseBucketDrawdownSemanticsRecord, drawdown);
+  assertCreatedAtBound(parseSessionCalendarRecord, calendar);
+  assertCreatedAtBound(parseScheduleBoundaryRecord, boundary);
+});
+
 test("drawdown semantics accepts only the versioned invariant tuple", () => {
   const record = createBucketDrawdownSemanticsRecord({
     ...drawdownSemanticsInput(),
@@ -263,7 +325,8 @@ test("drawdown semantics accepts only the versioned invariant tuple", () => {
   assert.deepEqual(drawdownSemanticsRefFor(record), {
     drawdownSemanticsRecordId: record.drawdownSemanticsRecordId,
     version: record.version,
-    hash: record.hash
+    hash: record.hash,
+    lineageHash: record.lineageHash
   });
   assert.throws(() =>
     createBucketDrawdownSemanticsRecord({
@@ -388,6 +451,7 @@ test("schedule boundary binds calendar identity and validates interval shape", (
     sessionCalendarRecordId: calendar.sessionCalendarRecordId,
     sessionCalendarVersion: calendar.version,
     sessionCalendarHash: calendar.hash,
+    sessionCalendarLineageHash: calendar.lineageHash,
     interval: "weekly",
     anchorLocalTime: "16:00:00",
     weeklyAnchorDay: "friday",
@@ -398,7 +462,8 @@ test("schedule boundary binds calendar identity and validates interval shape", (
   assert.deepEqual(scheduleBoundaryRefFor(record), {
     scheduleBoundaryRecordId: record.scheduleBoundaryRecordId,
     version: record.version,
-    hash: record.hash
+    hash: record.hash,
+    lineageHash: record.lineageHash
   });
   assert.throws(
     () =>
@@ -417,6 +482,7 @@ test("schedule boundary binds calendar identity and validates interval shape", (
         sessionCalendarRecordId: calendar.sessionCalendarRecordId,
         sessionCalendarVersion: calendar.version,
         sessionCalendarHash: calendar.hash,
+        sessionCalendarLineageHash: calendar.lineageHash,
         interval: "weekly",
         anchorLocalTime: "16:00",
         nonSessionDayRule: "previous_session",
@@ -591,4 +657,18 @@ function closedSession(exchangeDate: string) {
     sessionKind: "closed" as const,
     sourceEvidenceRefs: [`official-calendar:krx:${exchangeDate}`]
   };
+}
+
+function assertCreatedAtBound(
+  parse: (value: unknown) => unknown,
+  record: { createdAt: string }
+): void {
+  assert.throws(
+    () =>
+      parse({
+        ...record,
+        createdAt: "2026-08-27T00:00:00.000Z"
+      }),
+    /record lineage hash mismatch/
+  );
 }

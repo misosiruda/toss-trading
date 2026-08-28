@@ -28,7 +28,8 @@ test("dependency loader returns an empty fail-closed repository for missing file
         loaded.repository.resolveSelectionPolicy({
           selectionPolicyRecordId: "selection_policy_missing",
           version: "selection.v1",
-          hash: `sha256:${"0".repeat(64)}`
+          hash: `sha256:${"0".repeat(64)}`,
+          lineageHash: `sha256:${"0".repeat(64)}`
         }),
       /selection policy ref does not resolve/
     );
