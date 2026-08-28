@@ -314,6 +314,64 @@ test("dependency lineage hashes bind createdAt across every immutable record", (
   assertCreatedAtBound(parseBucketDrawdownSemanticsRecord, drawdown);
   assertCreatedAtBound(parseSessionCalendarRecord, calendar);
   assertCreatedAtBound(parseScheduleBoundaryRecord, boundary);
+
+  const offsetlessCreatedAt = "2026-08-28T00:00:00";
+  const offsetlessConstructors: Array<() => unknown> = [
+    () =>
+      createBucketSelectionPolicyRecord({
+        ...selectionPolicyInput(),
+        createdAt: offsetlessCreatedAt
+      }),
+    () =>
+      createPortfolioRiskRuleParameterRecord({
+        ruleId: "cash_reserve",
+        ruleVersion: "v1",
+        version: "record.v1",
+        parameters: { minimumCashRatio: 0.15 },
+        createdAt: offsetlessCreatedAt
+      }),
+    () =>
+      createPortfolioRiskRuleSetRecord({
+        version: riskSet.version,
+        rules: riskSet.rules,
+        createdAt: offsetlessCreatedAt
+      }),
+    () =>
+      createBucketDrawdownSemanticsRecord({
+        ...drawdownSemanticsInput(),
+        createdAt: offsetlessCreatedAt
+      }),
+    () =>
+      createSessionCalendarRecord({
+        market: calendar.market,
+        version: calendar.version,
+        timeZone: calendar.timeZone,
+        validFromExchangeDate: calendar.validFromExchangeDate,
+        validThroughExchangeDate: calendar.validThroughExchangeDate,
+        sessions: calendar.sessions,
+        createdAt: offsetlessCreatedAt
+      }),
+    () =>
+      createScheduleBoundaryRecord({
+        market: boundary.market,
+        version: boundary.version,
+        timeZone: boundary.timeZone,
+        sessionCalendarRecordId: boundary.sessionCalendarRecordId,
+        sessionCalendarVersion: boundary.sessionCalendarVersion,
+        sessionCalendarHash: boundary.sessionCalendarHash,
+        sessionCalendarLineageHash: boundary.sessionCalendarLineageHash,
+        interval: boundary.interval,
+        anchorLocalTime: boundary.anchorLocalTime,
+        nonSessionDayRule: boundary.nonSessionDayRule,
+        createdAt: offsetlessCreatedAt
+      })
+  ];
+  for (const create of offsetlessConstructors) {
+    assert.throws(
+      create,
+      /date-time must include a UTC or numeric timezone offset/
+    );
+  }
 });
 
 test("drawdown semantics accepts only the versioned invariant tuple", () => {
@@ -670,5 +728,13 @@ function assertCreatedAtBound(
         createdAt: "2026-08-27T00:00:00.000Z"
       }),
     /record lineage hash mismatch/
+  );
+  assert.throws(
+    () =>
+      parse({
+        ...record,
+        createdAt: "2026-08-28T00:00:00"
+      }),
+    /date-time must include a UTC or numeric timezone offset/
   );
 }

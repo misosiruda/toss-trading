@@ -22,16 +22,16 @@ const calendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isValidCalendarDate, "expected a valid calendar date");
-const offsetIsoDateTimeSchema = isoDateTimeSchema.refine(
+const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
   (value) => /(Z|[+-]\d{2}:\d{2})$/.test(value),
-  "session date-time must include a UTC or numeric timezone offset"
+  "date-time must include a UTC or numeric timezone offset"
 );
 const immutableRecordLineagePayloadSchema = z
   .object({
     recordType: identifierSchema,
     recordId: identifierSchema,
     semanticHash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -87,7 +87,7 @@ export const bucketSelectionPolicyRecordSchema =
       selectionPolicyRecordId: identifierSchema,
       hash: sha256HashSchema,
       lineageHash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -149,7 +149,7 @@ export const portfolioRiskRuleParameterRecordSchema =
       riskRuleParameterRecordId: identifierSchema,
       hash: sha256HashSchema,
       lineageHash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -185,7 +185,7 @@ export const portfolioRiskRuleSetRecordSchema = portfolioRiskRuleSetPayloadSchem
     riskRuleSetRecordId: identifierSchema,
     hash: sha256HashSchema,
     lineageHash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -232,7 +232,7 @@ export const bucketDrawdownSemanticsRecordSchema =
       drawdownSemanticsRecordId: identifierSchema,
       hash: sha256HashSchema,
       lineageHash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -255,8 +255,8 @@ const sessionCalendarOpenEntrySchema = z
   .object({
     exchangeDate: calendarDateSchema,
     sessionKind: z.enum(["regular", "early_close", "delayed_open"]),
-    opensAt: offsetIsoDateTimeSchema,
-    closesAt: offsetIsoDateTimeSchema,
+    opensAt: offsetQualifiedIsoDateTimeSchema,
+    closesAt: offsetQualifiedIsoDateTimeSchema,
     sourceEvidenceRefs: z.array(identifierSchema).min(1).max(32)
   })
   .strict();
@@ -282,7 +282,7 @@ export const sessionCalendarRecordSchema = sessionCalendarPayloadSchema
     sessionCalendarRecordId: identifierSchema,
     hash: sha256HashSchema,
     lineageHash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -325,7 +325,7 @@ export const scheduleBoundaryRecordSchema = scheduleBoundaryPayloadSchema
     scheduleBoundaryRecordId: identifierSchema,
     hash: sha256HashSchema,
     lineageHash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -1065,7 +1065,7 @@ function immutableRecordIdentity(
   semanticHash: Sha256Hash,
   value: string
 ): { recordId: string; lineageHash: Sha256Hash; createdAt: string } {
-  const createdAt = isoDateTimeSchema.parse(value);
+  const createdAt = offsetQualifiedIsoDateTimeSchema.parse(value);
   const recordId = hashDerivedId(recordType, semanticHash);
   return {
     recordId,

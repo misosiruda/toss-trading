@@ -198,14 +198,9 @@ test("normalizer rejects dependencies created after the runtime policy", () => {
     /runtime policy dependency cannot postdate the runtime policy/
   );
 
-  const offsetlessFixture = dependencyFixture("2026-08-28T00:00:00");
   assert.throws(
-    () =>
-      normalizeRuntimePortfolioPolicy(
-        normalizationInput(candidate, offsetlessFixture),
-        offsetlessFixture.repository
-      ),
-    /dependency chronology requires a UTC or numeric offset/
+    () => dependencyFixture("2026-08-28T00:00:00"),
+    /date-time must include a UTC or numeric timezone offset/
   );
 });
 

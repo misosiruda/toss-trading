@@ -2610,6 +2610,8 @@ schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이�
 `createdAt`은 참조한 schedule boundary보다 늦을 수 없다. flat runtime cutoff만 만족하는
 역전된 nested lineage도 resolver에서 거절한다.
 chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
+여섯 dependency record의 constructor와 parser가 이 조건을 직접 강제해 offset 없는
+`createdAt` artifact가 저장된 뒤 runtime resolution에서만 실패하는 상태를 허용하지 않는다.
 stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
 root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.
 runtime record는 semantic policy hash/ID와 별도 `lineageHash`에 `createdAt`을 결속해 저장 시각
