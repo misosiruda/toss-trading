@@ -414,11 +414,11 @@ export function createBucketSelectionPolicyRecord(
     requiredEvidence: canonicalEvidenceRequirements(
       unparsedPayload.requiredEvidence
     ),
-    hardGateRuleIds: canonicalUniqueText(
+    hardGateRuleIds: canonicalIdentifiers(
       unparsedPayload.hardGateRuleIds,
       "hardGateRuleIds"
     ),
-    featureDefinitionRefs: canonicalUniqueText(
+    featureDefinitionRefs: canonicalIdentifiers(
       unparsedPayload.featureDefinitionRefs,
       "featureDefinitionRefs"
     )
@@ -1046,6 +1046,16 @@ function canonicalUniqueText<T extends string>(
   const canonical = [...values].sort(compareText);
   assertNoDuplicateKeys(canonical, (value) => value, label);
   return canonical;
+}
+
+function canonicalIdentifiers(
+  values: readonly string[],
+  label: string
+): string[] {
+  return canonicalUniqueText(
+    values.map((value) => identifierSchema.parse(value)),
+    label
+  );
 }
 
 function assertCanonicalUniqueText<T extends string>(

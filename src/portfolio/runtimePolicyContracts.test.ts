@@ -90,6 +90,22 @@ test("selection policy rejects duplicate canonical evidence and rule keys", () =
       }),
     /duplicate canonical keys/
   );
+  assert.throws(
+    () =>
+      createBucketSelectionPolicyRecord({
+        ...selectionPolicyInput(),
+        hardGateRuleIds: ["liquidity", " liquidity "]
+      }),
+    /duplicate canonical keys/
+  );
+  assert.throws(
+    () =>
+      createBucketSelectionPolicyRecord({
+        ...selectionPolicyInput(),
+        featureDefinitionRefs: ["momentum.v1", " momentum.v1 "]
+      }),
+    /duplicate canonical keys/
+  );
 });
 
 test("risk parameter hash binds nested canonical parameter payload", () => {
