@@ -162,6 +162,32 @@ test("dependency loader requires an explicit offset for legacy offsetless timest
   });
 });
 
+test("dependency loader migrates legacy date-only timestamps at explicit midnight", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const record = selectionPolicyRecord();
+    const paths = createImmutablePolicyDependencyPaths(baseDir);
+    await appendJsonLine(paths.selectionPolicies, {
+      ...omitLineage(record),
+      createdAt: "2026-08-28"
+    });
+    const before = await readFile(paths.selectionPolicies, "utf8");
+
+    const loaded = await new ImmutablePolicyDependencyFileLoader(baseDir, {
+      legacyOffsetlessCreatedAtOffset: "+09:00"
+    }).load();
+
+    assert.equal(
+      loaded.records.selectionPolicies[0]?.createdAt,
+      "2026-08-28T00:00:00+09:00"
+    );
+    assert.equal(
+      loaded.records.selectionPolicies[0]?.selectionPolicyRecordId,
+      record.selectionPolicyRecordId
+    );
+    assert.equal(await readFile(paths.selectionPolicies, "utf8"), before);
+  });
+});
+
 test("dependency loader rejects malformed JSONL instead of accepting a partial set", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const paths = createImmutablePolicyDependencyPaths(baseDir);

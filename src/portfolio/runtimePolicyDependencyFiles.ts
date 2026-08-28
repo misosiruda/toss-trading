@@ -410,6 +410,9 @@ function normalizeLegacyCreatedAt(
       "legacy dependency has offsetless createdAt; set legacyOffsetlessCreatedAtOffset explicitly"
     );
   }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return `${value}T00:00:00${explicitOffset}`;
+  }
   return `${value}${explicitOffset}`;
 }
 
