@@ -125,6 +125,56 @@ test("dependency loader backfills legacy lineage in memory without rewriting fil
   });
 });
 
+test("dependency loader canonicalizes legacy record and nested ref identities", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const fixture = fullDependencyFixture();
+    const paths = createImmutablePolicyDependencyPaths(baseDir);
+    await appendJsonLine(paths.selectionPolicies, {
+      ...omitLineage(fixture.selection),
+      selectionPolicyRecordId: ` ${fixture.selection.selectionPolicyRecordId} `
+    });
+    for (const record of fixture.riskParameters) {
+      await appendJsonLine(paths.riskParameters, {
+        ...omitLineage(record),
+        riskRuleParameterRecordId: ` ${record.riskRuleParameterRecordId} `
+      });
+    }
+    const legacyRiskSet = omitLineage(fixture.riskSet);
+    await appendJsonLine(paths.riskRuleSets, {
+      ...legacyRiskSet,
+      riskRuleSetRecordId: ` ${legacyRiskSet.riskRuleSetRecordId} `,
+      rules: legacyRiskSet.rules.map((rule) => ({
+        ...rule,
+        parameterRef: {
+          ...omitLineage(rule.parameterRef),
+          riskRuleParameterRecordId: ` ${rule.parameterRef.riskRuleParameterRecordId} `,
+          version: ` ${rule.parameterRef.version} `
+        }
+      }))
+    });
+    await appendJsonLine(paths.drawdownSemantics, {
+      ...omitLineage(fixture.drawdown),
+      drawdownSemanticsRecordId: ` ${fixture.drawdown.drawdownSemanticsRecordId} `
+    });
+    await appendJsonLine(paths.sessionCalendars, {
+      ...omitLineage(fixture.calendar),
+      sessionCalendarRecordId: ` ${fixture.calendar.sessionCalendarRecordId} `
+    });
+    const legacyBoundary = omitLineage(fixture.boundary);
+    await appendJsonLine(paths.scheduleBoundaries, {
+      ...legacyBoundary,
+      scheduleBoundaryRecordId: ` ${legacyBoundary.scheduleBoundaryRecordId} `,
+      sessionCalendarRecordId: ` ${legacyBoundary.sessionCalendarRecordId} `,
+      sessionCalendarVersion: ` ${legacyBoundary.sessionCalendarVersion} `,
+      sessionCalendarLineageHash: undefined
+    });
+
+    const loaded = await new ImmutablePolicyDependencyFileLoader(baseDir).load();
+
+    assert.deepEqual(loaded.records, fixture.records);
+  });
+});
+
 test("dependency loader requires an explicit offset for legacy offsetless timestamps", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const record = selectionPolicyRecord();

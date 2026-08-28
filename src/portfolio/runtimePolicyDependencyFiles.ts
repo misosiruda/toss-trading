@@ -257,9 +257,14 @@ function migrateRiskRuleSet(
         rule.parameterRef,
         "risk rule parameter ref"
       );
-      const recordId = stringField(
+      const recordId = canonicalLegacyTextField(
         parameterRef,
         "riskRuleParameterRecordId",
+        "risk rule parameter ref"
+      );
+      const parameterVersion = canonicalLegacyTextField(
+        parameterRef,
+        "version",
         "risk rule parameter ref"
       );
       const parameter = parameters.get(recordId);
@@ -267,8 +272,7 @@ function migrateRiskRuleSet(
         throw new Error("legacy risk rule parameter ref does not resolve");
       }
       if (
-        parameter.version !==
-          stringField(parameterRef, "version", "risk rule parameter ref") ||
+        parameter.version !== parameterVersion ||
         parameter.hash !==
           stringField(parameterRef, "hash", "risk rule parameter ref")
       ) {
@@ -290,6 +294,8 @@ function migrateRiskRuleSet(
         ...rule,
         parameterRef: {
           ...parameterRef,
+          riskRuleParameterRecordId: recordId,
+          version: parameterVersion,
           lineageHash: parameter.lineageHash
         }
       };
@@ -314,9 +320,14 @@ function migrateScheduleBoundary(
   if (Object.hasOwn(record, "lineageHash")) {
     return parseScheduleBoundaryRecord(value);
   }
-  const calendarId = stringField(
+  const calendarId = canonicalLegacyTextField(
     record,
     "sessionCalendarRecordId",
+    "schedule boundary"
+  );
+  const calendarVersion = canonicalLegacyTextField(
+    record,
+    "sessionCalendarVersion",
     "schedule boundary"
   );
   const calendar = calendars.get(calendarId);
@@ -324,8 +335,7 @@ function migrateScheduleBoundary(
     throw new Error("legacy schedule boundary calendar ref does not resolve");
   }
   if (
-    calendar.version !==
-      stringField(record, "sessionCalendarVersion", "schedule boundary") ||
+    calendar.version !== calendarVersion ||
     calendar.hash !==
       stringField(record, "sessionCalendarHash", "schedule boundary")
   ) {
@@ -345,6 +355,8 @@ function migrateScheduleBoundary(
   return migrateRecordLineage(
     {
       ...record,
+      sessionCalendarRecordId: calendarId,
+      sessionCalendarVersion: calendarVersion,
       sessionCalendarLineageHash: calendar.lineageHash
     },
     parseScheduleBoundaryRecord,
@@ -367,7 +379,7 @@ function migrateRecordLineage<T>(
   if (Object.hasOwn(record, "lineageHash")) {
     return parse(record);
   }
-  const recordId = stringField(record, idKey, recordType);
+  const recordId = canonicalLegacyTextField(record, idKey, recordType);
   const semanticHash = stringField(record, "hash", recordType);
   const createdAt = normalizeLegacyCreatedAt(
     stringField(record, "createdAt", recordType),
@@ -375,6 +387,7 @@ function migrateRecordLineage<T>(
   );
   return parse({
     ...record,
+    [idKey]: recordId,
     createdAt,
     lineageHash: hashImmutableRecordLineage({
       recordType,
@@ -384,6 +397,14 @@ function migrateRecordLineage<T>(
       dependencyLineageHashes
     })
   });
+}
+
+function canonicalLegacyTextField(
+  record: Readonly<Record<string, unknown>>,
+  key: string,
+  label: string
+): string {
+  return stringField(record, key, label).trim();
 }
 
 function parseLegacyTimestampOffset(value: string | undefined): string | undefined {

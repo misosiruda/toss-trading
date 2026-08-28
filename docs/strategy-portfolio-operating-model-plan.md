@@ -2596,7 +2596,9 @@ loader로 제한한다. 여섯 dependency JSONL 중 corrupt line이 하나라도
 검증한다. lineage field 도입 전 record는 loader가 원본 파일을 수정하지 않는 read-time migration으로
 leaf lineage를 결정적으로 backfill하고 risk set→parameter, boundary→calendar lineage를 exact ref로
 연결한 뒤 최신 parser를 통과시킨다. legacy semantic hash/ID는 유지하며 partial lineage나 ref
-mismatch는 migration하지 않고 fail-closed한다. offset 없는 legacy `createdAt`의 시간대는 추측하지
+mismatch는 migration하지 않고 fail-closed한다. 부모 parser가 trim하던 legacy record ID와 nested
+ref ID/version은 같은 canonical form으로 변환한 뒤 exact lookup과 lineage 계산을 수행한다. offset
+없는 legacy `createdAt`의 시간대는 추측하지
 않으며 loader 기본 동작은 해당 record를 거절한다. 운영자가 `legacyOffsetlessCreatedAtOffset`에 `Z`
 또는 `-14:00`~`+14:00` 범위의 numeric offset을 명시한 경우에만 메모리에서 시각대를 보완하고,
 date-only 값은 해당 offset의 `T00:00:00`으로 정규화한다. semantic hash/ID와 원본 파일은 그대로
