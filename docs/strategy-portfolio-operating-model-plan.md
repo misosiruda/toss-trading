@@ -2552,6 +2552,18 @@ target policy를 읽지 못하면 현재처럼 임의의 `0%` target이나 `ok`�
 
 ### PR 1. Runtime policy contract와 activation lineage
 
+실제 구현은 다음처럼 독립적으로 검토 가능한 책임으로 나눈다.
+
+1. immutable policy dependency contract: selection policy, risk parameter/rule set,
+   drawdown semantics, session calendar, schedule boundary의 strict schema, canonical hash와
+   hash-derived ID 검증
+2. dependency repository/resolver와 current validation candidate의 runtime policy 정규화
+3. append-only activation event repository와 single-active as-of resolver
+
+첫 단계의 contract는 `src/portfolio/runtimePolicyContracts.ts`에 두며 filesystem 저장이나
+runner/order engine 연결을 포함하지 않는다. 후속 resolver는 이 contract가 검증한 exact
+ID/version/hash만 사용하고 runtime default로 누락값을 보충하지 않는다.
+
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
 - immutable portfolio risk rule parameter/rule set ref와 required-rule resolver
