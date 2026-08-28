@@ -166,7 +166,9 @@ export function normalizeRuntimePortfolioPolicy(
       maxWeightRatio: sourceBucket.maxWeightRatio,
       maxTurnoverRatio: sourceBucket.maxTurnoverRatio,
       maxDrawdownRatio: sourceBucket.maxDrawdownRatio,
-      enabledAssetClasses: sourceBucket.enabledAssetClasses
+      enabledAssetClasses: canonicalAssetClasses(
+        sourceBucket.enabledAssetClasses
+      )
     });
     resolveStrategyBucketRuntimePolicyDependencies(
       policy,
@@ -300,6 +302,17 @@ function bucketOrdinal(bucket: StrategyBucket): number {
   return ["long_term", "swing", "short_term", "intraday", "hedge"].indexOf(
     bucket
   );
+}
+
+function canonicalAssetClasses(values: readonly string[]): string[] {
+  const canonical = values.map((value) => value.trim()).sort();
+  if (canonical.some((value) => value.length === 0)) {
+    throw new Error("enabled asset classes cannot contain an empty value");
+  }
+  if (new Set(canonical).size !== canonical.length) {
+    throw new Error("enabled asset classes contain duplicate canonical values");
+  }
+  return canonical;
 }
 
 function deepFreeze<T>(value: T): T {

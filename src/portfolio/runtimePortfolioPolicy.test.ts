@@ -38,6 +38,7 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   const fixture = dependencyFixture();
   const candidate = policyCandidate();
   candidate.strategyBuckets.reverse();
+  candidate.strategyBuckets[0]!.enabledAssetClasses = [" etf ", "equity"];
   const record = normalizeRuntimePortfolioPolicy(
     {
       portfolioId: "paper-main",
@@ -55,6 +56,10 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   );
 
   assert.deepEqual(record.strategyBuckets.map(({ bucket }) => bucket), BUCKETS);
+  assert.deepEqual(record.strategyBuckets[4]!.enabledAssetClasses, [
+    "equity",
+    "etf"
+  ]);
   assert.match(record.policyHash, /^sha256:[a-f0-9]{64}$/);
   assert.equal(
     record.runtimePolicyRecordId,
