@@ -196,7 +196,9 @@ test("dependency loader canonicalizes timezone-qualified legacy timestamp forms"
       "Fri Aug 28 2026 09:00:00 GMT+0900 (Korean Standard Time)",
       "2026-08-28T00:00:00.000Z"
     ],
-    ["2026-08-28T00:00:00+0900", "2026-08-27T15:00:00.000Z"]
+    ["2026-08-28T00:00:00+0900", "2026-08-27T15:00:00.000Z"],
+    ["2026-08-28 00:00:00Z", "2026-08-28T00:00:00.000Z"],
+    ["2026-08-28T00:00:00z", "2026-08-28T00:00:00.000Z"]
   ] as const;
 
   for (const [createdAt, expected] of cases) {
