@@ -426,8 +426,14 @@ function assertDependenciesDoNotPostdateRuntime(
 }
 
 function chronologyTimestamp(value: string): number {
-  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) {
-    throw new Error("chronology timestamps must include a UTC or numeric offset");
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(
+      value
+    )
+  ) {
+    throw new Error(
+      "chronology timestamps must include a UTC or numeric offset and use at most millisecond precision"
+    );
   }
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {

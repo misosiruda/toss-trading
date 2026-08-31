@@ -414,8 +414,10 @@ function assertSameCanonicalSet<T extends string>(
 ): void {
   const canonicalActual = [...new Set(actual)].sort();
   const canonicalExpected = [...new Set(expected)].sort();
+  if (actual.length !== canonicalActual.length) {
+    throw new Error(`${label} must not contain duplicate markets`);
+  }
   if (
-    actual.length !== canonicalActual.length ||
     expected.length !== canonicalExpected.length ||
     canonicalActual.length !== canonicalExpected.length ||
     canonicalActual.some((value, index) => value !== canonicalExpected[index])
