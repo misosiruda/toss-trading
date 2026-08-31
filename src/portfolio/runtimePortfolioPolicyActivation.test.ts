@@ -432,7 +432,7 @@ test("replacement changes turnover window semantics only at the current window b
         policies: [currentPolicy, replacementPolicy],
         dependencies: DEPENDENCY_FIXTURE.repository
       }),
-    /turnover window semantics can change only at the current window boundary/
+    /turnover window semantics can change only at both window boundaries/
   );
 
   const boundaryReplacement = createPortfolioPolicyActivatedEvent({
@@ -450,6 +450,29 @@ test("replacement changes turnover window semantics only at the current window b
       dependencies: DEPENDENCY_FIXTURE.repository
     }).activation.activationId,
     boundaryReplacement.activationId
+  );
+
+  const hourlyCurrent = createPortfolioPolicyActivatedEvent({
+    policy: replacementPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T00:00:00.000Z"
+  });
+  const insideDailyReplacement = createPortfolioPolicyActivatedEvent({
+    policy: currentPolicy,
+    activationSequence: 2,
+    supersedesActivationId: hourlyCurrent.activationId,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId: currentPolicy.portfolioId,
+        asOf: "2026-08-28T01:00:00.000Z",
+        events: [hourlyCurrent, insideDailyReplacement],
+        policies: [currentPolicy, replacementPolicy],
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /turnover window semantics can change only at both window boundaries/
   );
 });
 
@@ -487,7 +510,7 @@ test("post-retirement activation preserves the last turnover window boundary", (
         policies: [dailyPolicy, hourlyPolicy],
         dependencies: DEPENDENCY_FIXTURE.repository
       }),
-    /turnover window semantics can change only at the current window boundary/
+    /turnover window semantics can change only at both window boundaries/
   );
 
   const boundaryReopen = createPortfolioPolicyActivatedEvent({

@@ -430,9 +430,14 @@ function assertReplacementTurnoverWindowBoundary(
     }
     const currentWindowDurationMs =
       BigInt(currentBucket.turnoverWindow.durationSeconds) * 1_000n;
-    if (activationTimeMs % currentWindowDurationMs !== 0n) {
+    const replacementWindowDurationMs =
+      BigInt(replacementBucket.turnoverWindow.durationSeconds) * 1_000n;
+    if (
+      activationTimeMs % currentWindowDurationMs !== 0n ||
+      activationTimeMs % replacementWindowDurationMs !== 0n
+    ) {
       throw new Error(
-        "turnover window semantics can change only at the current window boundary"
+        "turnover window semantics can change only at both window boundaries"
       );
     }
   }
