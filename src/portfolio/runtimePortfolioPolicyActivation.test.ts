@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { readDashboardPortfolioComplianceViewModel } from "../api/dashboardViewModels.js";
+import {
+  createStoragePaths,
+  FileVirtualPortfolioStore
+} from "../storage/repositories.js";
 import {
   createBucketDrawdownSemanticsRecord,
   createBucketSelectionPolicyRecord,
@@ -24,9 +29,11 @@ import {
   type StrategyBucket
 } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
 import {
   createPortfolioPolicyActivatedEvent,
   createPortfolioPolicyRetiredEvent,
+  findActiveRuntimePortfolioPolicyAsOf,
   parsePortfolioPolicyActivationEvent,
   resolveActiveRuntimePortfolioPolicyAsOf,
   type PortfolioPolicyActivatedEvent,
@@ -38,7 +45,8 @@ import {
 } from "./runtimePortfolioPolicy.js";
 import {
   RuntimePortfolioPolicyActivationFileRepository,
-  createRuntimePortfolioPolicyActivationPaths
+  createRuntimePortfolioPolicyActivationPaths,
+  readConsistentRuntimePortfolioPolicyActivationSnapshot
 } from "./runtimePortfolioPolicyActivationFiles.js";
 import {
   RuntimePortfolioPolicyFileRepository,
@@ -169,6 +177,16 @@ test("activation resolver deterministically folds replacement and retirement as 
         dependencies: DEPENDENCY_FIXTURE.repository
       }),
     /active runtime portfolio policy is required/
+  );
+  assert.equal(
+    findActiveRuntimePortfolioPolicyAsOf({
+      portfolioId: firstPolicy.portfolioId,
+      asOf: "2026-08-28T03:30:00.000Z",
+      events,
+      policies,
+      dependencies: DEPENDENCY_FIXTURE.repository
+    }),
+    undefined
   );
   assert.equal(
     resolveActiveRuntimePortfolioPolicyAsOf({
@@ -1004,6 +1022,550 @@ test("runtime policy repository treats an abandoned lock as unavailable", async 
   });
 });
 
+test("runtime policy repository preserves an observed invalid generation", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const paths = createRuntimePortfolioPolicyPaths(baseDir);
+    await writeJsonl(paths.recordsPath, [policy]);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      new ImmutablePolicyDependencyRepository({
+        selectionPolicies: [],
+        riskParameters: [],
+        riskRuleSets: [],
+        drawdownSemantics: [],
+        sessionCalendars: [],
+        scheduleBoundaries: []
+      })
+    );
+
+    const generation = await repository.readGeneration();
+
+    assert.equal(generation.status, "invalid");
+    assert.deepEqual(generation.records, [policy]);
+    assert.match(String(generation.error), /corrupt line 1/);
+  });
+});
+
+test("activation repository preserves events that fail history validation", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const event = createPortfolioPolicyActivatedEvent({
+      policy,
+      activationSequence: 1,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    });
+    const paths = createRuntimePortfolioPolicyActivationPaths(baseDir);
+    await writeJsonl(paths.eventsPath, [event]);
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [],
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const generation = await repository.readGeneration();
+
+    assert.equal(generation.status, "invalid");
+    assert.deepEqual(generation.records, [event]);
+    assert.match(String(generation.error), /does not resolve/);
+  });
+});
+
+test("policy activation snapshot retries after the policy generation advances", async () => {
+  const stalePolicy = runtimePolicy({ portfolioId: "paper-stale" });
+  const activePolicy = runtimePolicy({
+    portfolioId: "paper-current",
+    version: "v2",
+    name: "Current policy"
+  });
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy: activePolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  const snapshot =
+    await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? [stalePolicy]
+          : [stalePolicy, activePolicy];
+      },
+      readEvents: async (policies) => {
+        activationReadCount += 1;
+        if (
+          !policies.some(
+            (policy) =>
+              policy.runtimePolicyRecordId === activePolicy.runtimePolicyRecordId
+          )
+        ) {
+          return invalidGeneration(
+            [activation],
+            "activated runtime portfolio policy record does not resolve"
+          );
+        }
+        return validGeneration([activation]);
+      }
+    });
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 2);
+  assert.equal(snapshot.policies.at(-1)?.policyHash, activePolicy.policyHash);
+  assert.equal(snapshot.events[0], activation);
+});
+
+test("policy activation snapshot keeps stable activation corruption fail-closed", async () => {
+  const policy = runtimePolicy();
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return [policy];
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        return invalidGeneration([], "stable activation corruption");
+      }
+    }),
+    /stable activation corruption/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 2);
+});
+
+test("policy activation snapshot reloads an appended dependency generation", async () => {
+  const activePolicy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy: activePolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+  let policyReadCount = 0;
+
+  const snapshot =
+    await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? DEPENDENCY_FIXTURE
+          : extendedDependencies;
+      },
+      readPolicies: async (dependencies) => {
+        policyReadCount += 1;
+        if (
+          dependencies.records.selectionPolicies.length ===
+          DEPENDENCY_FIXTURE.records.selectionPolicies.length
+        ) {
+          return invalidGeneration(
+            [activePolicy],
+            "runtime policy dependency ref does not resolve"
+          );
+        }
+        return validGeneration([activePolicy]);
+      },
+      readEvents: async () => [activation]
+    });
+
+  assert.equal(dependencyReadCount, 2);
+  assert.equal(policyReadCount, 2);
+  assert.equal(
+    snapshot.dependencies.records.selectionPolicies.length,
+    DEPENDENCY_FIXTURE.records.selectionPolicies.length + 1
+  );
+  assert.equal(snapshot.events[0], activation);
+});
+
+test("policy activation snapshot rejects a replaced policy generation", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? [firstPolicy, secondPolicy]
+          : [secondPolicy];
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        return invalidGeneration([], "activation read requires a refresh");
+      }
+    }),
+    /policy generation must be an append-only extension/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 1);
+});
+
+test("policy activation snapshot rejects a regressed dependency generation", async () => {
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? extendedDependencies
+          : DEPENDENCY_FIXTURE;
+      },
+      readPolicies: async () => {
+        return invalidGeneration([], "policy read requires a refresh");
+      },
+      readEvents: async () => []
+    }),
+    /dependency generation must be an append-only extension/
+  );
+
+  assert.equal(dependencyReadCount, 2);
+});
+
+test("policy activation snapshot rejects a replaced policy generation after dependency retry", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+  let policyReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? DEPENDENCY_FIXTURE
+          : extendedDependencies;
+      },
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? invalidGeneration(
+              [firstPolicy, secondPolicy],
+              "stale dependency generation"
+            )
+          : validGeneration([secondPolicy]);
+      },
+      readEvents: async () => []
+    }),
+    /policy generation must be an append-only extension/
+  );
+
+  assert.equal(dependencyReadCount, 2);
+  assert.equal(policyReadCount, 2);
+});
+
+test("policy activation snapshot rejects a replaced activation generation", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  const firstActivation = createPortfolioPolicyActivatedEvent({
+    policy: firstPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const secondActivation = createPortfolioPolicyActivatedEvent({
+    policy: secondPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? validGeneration([firstPolicy])
+          : validGeneration([firstPolicy, secondPolicy]);
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        return activationReadCount === 1
+          ? invalidGeneration(
+              [firstActivation],
+              "activation read requires a policy refresh"
+            )
+          : validGeneration([secondActivation]);
+      }
+    }),
+    /activation generation must be an append-only extension/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 2);
+});
+
+test("portfolio compliance reads bucket bands from the active stored policy hash", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const activation = await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 300_000,
+      positions: [
+        position("005930", "long_term", 100_000),
+        position("000660", "swing", 250_000),
+        position("035420", "short_term", 300_000),
+        position("252670", "hedge", 50_000, "inverse")
+      ],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+    const rows = new Map(view.bucketCompliance.map((row) => [row.bucket, row]));
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(view.activePolicy?.policyHash, policy.policyHash);
+    assert.equal(view.activePolicy?.version, policy.version);
+    assert.equal(view.activePolicy?.activationId, activation.activationId);
+    assert.equal(view.sourceStatus.policyArtifacts, "ok");
+    assert.equal(rows.get("long_term")?.minWeightRatio, 0.2);
+    assert.equal(rows.get("long_term")?.targetWeightRatio, 0.35);
+    assert.equal(rows.get("long_term")?.maxWeightRatio, 0.5);
+    assert.equal(rows.get("long_term")?.currentWeightRatio, 0.1);
+    assert.ok(Math.abs((rows.get("long_term")?.gapRatio ?? 1) - 0.25) < 1e-12);
+    assert.equal(rows.get("long_term")?.status, "under");
+    assert.ok(Math.abs((rows.get("swing")?.gapRatio ?? 1) + 0.05) < 1e-12);
+    assert.equal(rows.get("swing")?.status, "ok");
+    assert.equal(rows.get("short_term")?.status, "over");
+    assert.equal(rows.get("intraday")?.status, "ok");
+    assert.equal(view.cashCompliance.targetCashRatio, 0.15);
+    assert.equal(view.cashCompliance.minimumCashReserveKrw, 150_000);
+    assert.equal(view.status, "breach");
+    assert.equal(
+      view.warnings.some((warning) => warning.includes("policy targets")),
+      false
+    );
+  });
+});
+
+test("portfolio compliance fails closed when stored active policy lineage is corrupt", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+    const policyPaths = createRuntimePortfolioPolicyPaths(baseDir);
+    await writeFile(
+      policyPaths.recordsPath,
+      `${JSON.stringify({ ...policy, sourcePolicyHash: "0".repeat(64) })}\n`,
+      "utf8"
+    );
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "invalid");
+    assert.equal(view.activePolicy, null);
+    assert.equal(view.sourceStatus.policyArtifacts, "corrupt");
+    assert.equal(view.status, "breach");
+    assert.equal(
+      view.bucketCompliance.every(
+        (row) =>
+          row.status === "missing_policy" &&
+          row.minWeightRatio === null &&
+          row.targetWeightRatio === null &&
+          row.maxWeightRatio === null &&
+          row.gapRatio === null
+      ),
+      true
+    );
+  });
+});
+
+test("portfolio compliance rejects an offsetless portfolio as-of timestamp", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-08-28T02:00:00"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "invalid");
+    assert.equal(view.activePolicy, null);
+    assert.equal(view.sourceStatus.policyArtifacts, "corrupt");
+    assert.equal(view.status, "breach");
+  });
+});
+
+test("portfolio compliance accepts a basic numeric-offset portfolio as-of timestamp", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-08-28T11:00:00+0900"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(view.activePolicy?.policyHash, policy.policyHash);
+    assert.equal(view.sourceStatus.policyArtifacts, "ok");
+  });
+});
+
+test("portfolio compliance ignores hedge effectiveness when the active policy disables hedging", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy({ hedgeEnabled: false });
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 200_000,
+      positions: [
+        position("005930", "long_term", 350_000),
+        position("000660", "swing", 200_000),
+        position("035420", "short_term", 150_000),
+        position("069500", "intraday", 100_000)
+      ],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(view.hedgeCompliance.policyEnabled, false);
+    assert.equal(view.hedgeCompliance.status, "ineffective");
+    assert.equal(view.status, "ok");
+  });
+});
+
+test("portfolio compliance fails closed for unassigned legacy position exposure", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy({
+      hedgeEnabled: false,
+      zeroBucketMinimums: true
+    });
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 200_000,
+      positions: [position("005930", undefined, 800_000)],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+    const unassigned = view.exposureCompliance.byStrategyBucket.find(
+      (exposure) => exposure.key === "unassigned"
+    );
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(
+      view.bucketCompliance.every((row) => row.status === "ok"),
+      true
+    );
+    assert.equal(view.hedgeCompliance.status, "ineffective");
+    assert.equal(unassigned?.exposureKrw, 800_000);
+    assert.equal(view.exposureCompliance.status, "breach");
+    assert.equal(view.status, "breach");
+  });
+});
+
+async function storeActivePolicyArtifacts(
+  baseDir: string,
+  policy: RuntimePortfolioPolicyRecord
+): Promise<PortfolioPolicyActivatedEvent> {
+  const dependencyPaths = createImmutablePolicyDependencyPaths(baseDir);
+  const records = DEPENDENCY_FIXTURE.records;
+  await Promise.all([
+    writeJsonl(dependencyPaths.selectionPolicies, records.selectionPolicies),
+    writeJsonl(dependencyPaths.riskParameters, records.riskParameters),
+    writeJsonl(dependencyPaths.riskRuleSets, records.riskRuleSets),
+    writeJsonl(dependencyPaths.drawdownSemantics, records.drawdownSemantics),
+    writeJsonl(dependencyPaths.sessionCalendars, records.sessionCalendars),
+    writeJsonl(dependencyPaths.scheduleBoundaries, records.scheduleBoundaries)
+  ]);
+  await new RuntimePortfolioPolicyFileRepository(
+    baseDir,
+    DEPENDENCY_FIXTURE.repository
+  ).append(policy);
+  return new RuntimePortfolioPolicyActivationFileRepository(
+    baseDir,
+    [policy],
+    DEPENDENCY_FIXTURE.repository
+  ).appendActivated({
+    policy,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+}
+
+async function writeJsonl(
+  path: string,
+  records: readonly unknown[]
+): Promise<void> {
+  await writeFile(
+    path,
+    records.length === 0
+      ? ""
+      : `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    "utf8"
+  );
+}
+
+function validGeneration<T>(
+  value: readonly T[],
+  records: readonly unknown[] = value
+) {
+  return { status: "ok" as const, records, value };
+}
+
+function invalidGeneration(
+  records: readonly unknown[],
+  message: string
+) {
+  return { status: "invalid" as const, records, error: new Error(message) };
+}
+
+function position(
+  symbol: string,
+  strategyBucket: StrategyBucket | undefined,
+  marketValueKrw: number,
+  assetClass: "equity" | "inverse" = "equity"
+) {
+  return {
+    market: "KR" as const,
+    symbol,
+    assetClass,
+    ...(strategyBucket === undefined ? {} : { strategyBucket }),
+    quantity: 1,
+    averagePriceKrw: marketValueKrw,
+    marketValueKrw,
+    updatedAt: "2026-08-28T02:00:00.000Z"
+  };
+}
+
 function rehashActivatedEvent(
   event: PortfolioPolicyActivatedEvent,
   changes: Partial<
@@ -1029,6 +1591,35 @@ function rehashActivatedEvent(
     ),
     activationEventHash,
     createdAt
+  };
+}
+
+function extendedDependencyFixture() {
+  const additionalSelectionPolicy = createBucketSelectionPolicyRecord({
+    bucket: "long_term",
+    version: "selection.long_term.v2",
+    requiredEvidence: [
+      {
+        evidenceClass: "market_technical",
+        sourceContractId: "verified-market-packet.v1",
+        maximumAgeSeconds: 60
+      }
+    ],
+    hardGateRuleIds: ["liquidity"],
+    scoringModelVersion: "selector.long_term.v2",
+    featureDefinitionRefs: ["momentum.v2"],
+    createdAt: "2026-08-28T00:30:00.000Z"
+  });
+  const records: ImmutablePolicyDependencyRecords = {
+    ...DEPENDENCY_FIXTURE.records,
+    selectionPolicies: [
+      ...DEPENDENCY_FIXTURE.records.selectionPolicies,
+      additionalSelectionPolicy
+    ]
+  };
+  return {
+    records,
+    repository: new ImmutablePolicyDependencyRepository(records)
   };
 }
 
@@ -1161,17 +1752,19 @@ function runtimePolicy(options: {
   createdAt?: string;
   enabledMarkets?: readonly ("KR" | "US")[];
   turnoverDurationSeconds?: number;
+  hedgeEnabled?: boolean;
+  zeroBucketMinimums?: boolean;
 } = {}): RuntimePortfolioPolicyRecord {
   const portfolioId = options.portfolioId ?? "paper-main";
   const version = options.version ?? "v1";
   const name = options.name ?? "Policy v1";
   const createdAt = options.createdAt ?? POLICY_CREATED_AT;
   const targets = new Map<StrategyBucket, [number, number, number]>([
-    ["long_term", [0.35, 0.2, 0.5]],
-    ["swing", [0.2, 0.1, 0.3]],
+    ["long_term", [0.35, options.zeroBucketMinimums === true ? 0 : 0.2, 0.5]],
+    ["swing", [0.2, options.zeroBucketMinimums === true ? 0 : 0.1, 0.3]],
     ["short_term", [0.15, 0, 0.25]],
     ["intraday", [0.1, 0, 0.15]],
-    ["hedge", [0.05, 0, 0.15]]
+    ["hedge", [options.hedgeEnabled === false ? 0 : 0.05, 0, 0.15]]
   ]);
   const strategyBuckets = BUCKETS.map((bucket) => {
     const [targetWeightRatio, minWeightRatio, maxWeightRatio] = targets.get(bucket)!;
@@ -1202,7 +1795,8 @@ function runtimePolicy(options: {
             }),
       eventTriggers: [],
       selectionTrigger:
-        minWeightRatio > 0
+        minWeightRatio > 0 ||
+        (bucket === "hedge" && options.hedgeEnabled === false)
           ? ({ mode: "below_min" as const })
           : ({
               mode: "entry_floor_on_due_cycle" as const,
@@ -1234,13 +1828,13 @@ function runtimePolicy(options: {
     name,
     strategyBuckets,
     cashPolicy: {
-      targetCashRatio: 0.15,
+      targetCashRatio: options.hedgeEnabled === false ? 0.2 : 0.15,
       minimumCashReserveKrw: 100_000,
       ruleSource: "static" as const
     },
     hedgePolicy: {
-      hedgeEnabled: true,
-      hedgeTargetRatio: 0.05,
+      hedgeEnabled: options.hedgeEnabled ?? true,
+      hedgeTargetRatio: options.hedgeEnabled === false ? 0 : 0.05,
       maxCostRatio: 0.02
     },
     exposurePolicy: {

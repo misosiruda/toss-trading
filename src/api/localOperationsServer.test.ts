@@ -2595,6 +2595,9 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     const complianceAnalytics = portfolioCompliance.payload[
       "complianceAnalytics"
     ] as Record<string, Record<string, unknown>>;
+    const complianceSourceStatus = portfolioCompliance.payload[
+      "sourceStatus"
+    ] as Record<string, unknown>;
     const strategyBucketAnalytics = complianceAnalytics["strategyBucket"]!;
     const cashReserveAnalytics = complianceAnalytics["cashReserve"]!;
     const hedgeEffectivenessAnalytics =
@@ -2702,10 +2705,19 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
       "portfolio-compliance"
     );
     assert.equal(portfolioCompliance.payload["policyStatus"], "missing");
+    assert.equal(portfolioCompliance.payload["activePolicy"], null);
     assert.equal(portfolioCompliance.payload["virtualNetWorthKrw"], 1_000_000);
     assert.equal(
       bucketRows.find((row) => row["bucket"] === "long_term")?.["exposureKrw"],
       150_000
+    );
+    assert.equal(
+      bucketRows.find((row) => row["bucket"] === "long_term")?.["targetWeightRatio"],
+      null
+    );
+    assert.equal(
+      bucketRows.find((row) => row["bucket"] === "long_term")?.["status"],
+      "missing_policy"
     );
     assert.equal(hedgeCompliance["hedgeExposureKrw"], 50_000);
     assert.equal(cashCompliance["marketRegime"], "bull");
@@ -2716,6 +2728,7 @@ test("local operations API serves dashboard ViewModel contracts read-only", asyn
     assert.equal(cashCompliance["status"], "ok");
     assert.equal(strategyBucketAnalytics["occupiedBucketCount"], 2);
     assert.equal(strategyBucketAnalytics["missingPolicyTargetCount"], 5);
+    assert.equal(complianceSourceStatus["policyArtifacts"], "missing");
     assert.equal(
       (strategyBucketAnalytics["largestBucket"] as Record<string, unknown>)["key"],
       "long_term"

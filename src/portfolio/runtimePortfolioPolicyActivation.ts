@@ -184,6 +184,20 @@ export function resolveActiveRuntimePortfolioPolicyAsOf(input: {
   policies: readonly unknown[];
   dependencies: ImmutablePolicyDependencyRepository;
 }): ActiveRuntimePortfolioPolicy {
+  const activeAtAsOf = findActiveRuntimePortfolioPolicyAsOf(input);
+  if (activeAtAsOf === undefined) {
+    throw new Error("active runtime portfolio policy is required");
+  }
+  return activeAtAsOf;
+}
+
+export function findActiveRuntimePortfolioPolicyAsOf(input: {
+  portfolioId: string;
+  asOf: string;
+  events: readonly unknown[];
+  policies: readonly unknown[];
+  dependencies: ImmutablePolicyDependencyRepository;
+}): ActiveRuntimePortfolioPolicy | undefined {
   const portfolioId = identifierSchema.parse(input.portfolioId);
   const asOfTime = chronologyTimestamp(input.asOf);
   const policiesById = exactPolicyMap(input.policies);
@@ -199,10 +213,7 @@ export function resolveActiveRuntimePortfolioPolicyAsOf(input: {
     input.dependencies
   );
 
-  if (activeAtAsOf === undefined) {
-    throw new Error("active runtime portfolio policy is required");
-  }
-  return deepFreeze(activeAtAsOf);
+  return activeAtAsOf === undefined ? undefined : deepFreeze(activeAtAsOf);
 }
 
 export function validateRuntimePortfolioPolicyActivationHistory(input: {

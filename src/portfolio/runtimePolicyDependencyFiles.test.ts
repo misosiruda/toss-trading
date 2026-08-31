@@ -20,7 +20,8 @@ import {
 } from "./runtimePolicyContracts.js";
 import {
   ImmutablePolicyDependencyFileLoader,
-  createImmutablePolicyDependencyPaths
+  createImmutablePolicyDependencyPaths,
+  loadConsistentImmutablePolicyDependencies
 } from "./runtimePolicyDependencyFiles.js";
 
 const CREATED_AT = "2026-08-28T00:00:00.000Z";
@@ -325,6 +326,106 @@ test("dependency loader rejects malformed JSONL instead of accepting a partial s
   });
 });
 
+test("dependency loader retries a mixed append-only raw generation", async () => {
+  const fixture = fullDependencyFixture();
+  const legacyRiskSet = legacyRiskRuleSet(fixture.riskSet);
+  const mixed = rawDependencyGeneration({
+    ...fixture.records,
+    riskParameters: [],
+    riskRuleSets: [legacyRiskSet]
+  });
+  const complete = rawDependencyGeneration({
+    ...fixture.records,
+    riskRuleSets: [legacyRiskSet]
+  });
+  let readCount = 0;
+
+  const loaded = await loadConsistentImmutablePolicyDependencies({
+    readGeneration: async () => {
+      readCount += 1;
+      return readCount === 1 ? mixed : complete;
+    }
+  });
+
+  assert.equal(readCount, 2);
+  assert.equal(loaded.records.riskParameters.length, 2);
+  assert.deepEqual(
+    loaded.repository.resolveRiskRuleSet(riskRuleSetRefFor(fixture.riskSet)),
+    fixture.riskSet
+  );
+});
+
+test("dependency loader retries a transient corrupt append generation", async () => {
+  const fixture = fullDependencyFixture();
+  const transient = rawDependencyGeneration({
+    ...fixture.records,
+    riskParameters: []
+  });
+  transient.riskParameters.corruptLineCount = 1;
+  const complete = rawDependencyGeneration(fixture.records);
+  let readCount = 0;
+
+  const loaded = await loadConsistentImmutablePolicyDependencies({
+    readGeneration: async () => {
+      readCount += 1;
+      return readCount === 1 ? transient : complete;
+    }
+  });
+
+  assert.equal(readCount, 2);
+  assert.equal(loaded.records.riskParameters.length, 2);
+});
+
+test("dependency loader keeps a stable mixed generation fail-closed", async () => {
+  const fixture = fullDependencyFixture();
+  const mixed = rawDependencyGeneration({
+    ...fixture.records,
+    riskParameters: [],
+    riskRuleSets: [legacyRiskRuleSet(fixture.riskSet)]
+  });
+  let readCount = 0;
+
+  await assert.rejects(
+    loadConsistentImmutablePolicyDependencies({
+      readGeneration: async () => {
+        readCount += 1;
+        return mixed;
+      }
+    }),
+    /legacy risk rule parameter ref does not resolve/
+  );
+
+  assert.equal(readCount, 2);
+});
+
+test("dependency loader rejects a replaced raw generation during retry", async () => {
+  const fixture = fullDependencyFixture();
+  const legacyRiskSet = legacyRiskRuleSet(fixture.riskSet);
+  const mixed = rawDependencyGeneration({
+    ...fixture.records,
+    riskParameters: [],
+    riskRuleSets: [legacyRiskSet]
+  });
+  const replaced = rawDependencyGeneration({
+    ...fixture.records,
+    selectionPolicies: [],
+    riskRuleSets: [legacyRiskSet]
+  });
+  let readCount = 0;
+
+  await assert.rejects(
+    loadConsistentImmutablePolicyDependencies({
+      readGeneration: async () => {
+        readCount += 1;
+        return readCount === 1 ? mixed : replaced;
+      }
+    }),
+    /dependency files must be append-only extensions/
+  );
+
+  assert.equal(readCount, 2);
+});
+
 test("dependency loader rejects semantic hash tamper after JSON schema parsing", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const record = selectionPolicyRecord();
@@ -468,6 +569,55 @@ function fullDependencyFixture() {
       drawdownSemantics: [drawdown],
       sessionCalendars: [calendar],
       scheduleBoundaries: [boundary]
+    }
+  };
+}
+
+function legacyRiskRuleSet(
+  riskSet: ReturnType<typeof createPortfolioRiskRuleSetRecord>
+) {
+  const legacy = omitLineage(riskSet);
+  return {
+    ...legacy,
+    rules: legacy.rules.map((rule) => ({
+      ...rule,
+      parameterRef: omitLineage(rule.parameterRef)
+    }))
+  };
+}
+
+function rawDependencyGeneration(records: {
+  selectionPolicies: readonly unknown[];
+  riskParameters: readonly unknown[];
+  riskRuleSets: readonly unknown[];
+  drawdownSemantics: readonly unknown[];
+  sessionCalendars: readonly unknown[];
+  scheduleBoundaries: readonly unknown[];
+}) {
+  return {
+    selectionPolicies: {
+      records: [...records.selectionPolicies],
+      corruptLineCount: 0
+    },
+    riskParameters: {
+      records: [...records.riskParameters],
+      corruptLineCount: 0
+    },
+    riskRuleSets: {
+      records: [...records.riskRuleSets],
+      corruptLineCount: 0
+    },
+    drawdownSemantics: {
+      records: [...records.drawdownSemantics],
+      corruptLineCount: 0
+    },
+    sessionCalendars: {
+      records: [...records.sessionCalendars],
+      corruptLineCount: 0
+    },
+    scheduleBoundaries: {
+      records: [...records.scheduleBoundaries],
+      corruptLineCount: 0
     }
   };
 }

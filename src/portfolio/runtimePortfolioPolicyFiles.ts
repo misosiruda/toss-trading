@@ -17,6 +17,18 @@ export interface RuntimePortfolioPolicyFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
+export type RuntimePortfolioPolicyGenerationRead =
+  | {
+      status: "ok";
+      records: readonly unknown[];
+      value: readonly RuntimePortfolioPolicyRecord[];
+    }
+  | {
+      status: "invalid";
+      records: readonly unknown[];
+      error: unknown;
+    };
+
 export function createRuntimePortfolioPolicyPaths(baseDir: string): {
   recordsPath: string;
   lockPath: string;
@@ -65,6 +77,10 @@ export class RuntimePortfolioPolicyFileRepository {
     return this.withLock(async () => this.readAllUnderLock());
   }
 
+  async readGeneration(): Promise<RuntimePortfolioPolicyGenerationRead> {
+    return this.withLock(async () => this.readGenerationUnderLock());
+  }
+
   async append(value: unknown): Promise<RuntimePortfolioPolicyRecord> {
     const parsed = validateRuntimePortfolioPolicyDependencies(
       value,
@@ -92,7 +108,7 @@ export class RuntimePortfolioPolicyFileRepository {
     });
   }
 
-  private async readAllUnderLock(): Promise<readonly RuntimePortfolioPolicyRecord[]> {
+  private async readRawRecordsUnderLock(): Promise<readonly unknown[]> {
     let raw: string;
     try {
       raw = await readFile(this.recordsPath, "utf8");
@@ -107,18 +123,35 @@ export class RuntimePortfolioPolicyFileRepository {
     }
     const lines = raw.split(/\r?\n/);
     lines.pop();
-    const records: RuntimePortfolioPolicyRecord[] = [];
-    const recordIds = new Set<string>();
+    const records: unknown[] = [];
     for (const [index, line] of lines.entries()) {
       if (line.length === 0) {
         throw new Error(
           `runtime portfolio policy file contains corrupt line ${index + 1}`
         );
       }
+      try {
+        records.push(JSON.parse(line));
+      } catch (error) {
+        throw new Error(
+          `runtime portfolio policy file contains corrupt line ${index + 1}`,
+          { cause: error }
+        );
+      }
+    }
+    return Object.freeze(records);
+  }
+
+  private validateRawRecords(
+    records: readonly unknown[]
+  ): readonly RuntimePortfolioPolicyRecord[] {
+    const policies: RuntimePortfolioPolicyRecord[] = [];
+    const recordIds = new Set<string>();
+    for (const [index, value] of records.entries()) {
       let record: RuntimePortfolioPolicyRecord;
       try {
         record = validateRuntimePortfolioPolicyDependencies(
-          JSON.parse(line),
+          value,
           this.dependencies
         );
       } catch (error) {
@@ -133,9 +166,30 @@ export class RuntimePortfolioPolicyFileRepository {
         );
       }
       recordIds.add(record.runtimePolicyRecordId);
-      records.push(record);
+      policies.push(record);
     }
-    return Object.freeze(records);
+    return Object.freeze(policies);
+  }
+
+  private async readGenerationUnderLock(): Promise<RuntimePortfolioPolicyGenerationRead> {
+    const records = await this.readRawRecordsUnderLock();
+    try {
+      return Object.freeze({
+        status: "ok" as const,
+        records,
+        value: this.validateRawRecords(records)
+      });
+    } catch (error) {
+      return Object.freeze({ status: "invalid" as const, records, error });
+    }
+  }
+
+  private async readAllUnderLock(): Promise<readonly RuntimePortfolioPolicyRecord[]> {
+    const generation = await this.readGenerationUnderLock();
+    if (generation.status === "invalid") {
+      throw generation.error;
+    }
+    return generation.value;
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {

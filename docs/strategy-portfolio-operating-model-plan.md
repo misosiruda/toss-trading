@@ -2696,6 +2696,38 @@ repository도 runner/order engine에는 아직 연결하지 않는다.
 - bucket gap과 `under`, `over`, `ok`, `missing_policy` 계산
 - dashboard에 실제 policy version과 gap 표시
 
+`src/api/dashboardViewModels.ts`는 virtual portfolio snapshot의 `updatedAt`을 as-of로 사용해
+immutable dependency, `runtime-portfolio-policy-records.jsonl`,
+`portfolio-policy-activations.jsonl`을 strict read한 뒤 해당 `portfolioId`의 active policy를
+해소한다. 화면에 내리는 `activePolicy`는 runtime record ID, policy ID/version/hash와 activation
+ID/effective time을 함께 보존한다. bucket `gapRatio`는 `targetWeightRatio -
+currentWeightRatio`이며 min 미만은 `under`, max 초과는 `over`, band 안은 `ok`다. active policy가
+없거나 retired 상태이면 target/min/max/gap을 `null`과 `missing_policy`로 내리고, corrupt
+policy/dependency/activation lineage는 `policyStatus = invalid`, source `corrupt`, 전체 `breach`로
+fail-closed한다. portfolio as-of는 UTC 또는 numeric offset이 있는 timestamp만 canonical UTC로
+정규화하며 numeric offset의 extended `+09:00`과 basic `+0900` 형식을 모두 허용한다. active
+policy가 hedge를 비활성화한 경우 관측 hedge 효과성은 표시하되 이를 전체 breach에는 합산하지
+않는다. backend는 이 정책 상태를 hedge compliance의 `policyEnabled`로 내리고 Next.js breach
+목록도 같은 flag가 `true`일 때만 `ineffective`/`over_hedged`를 위반으로 표시한다.
+`strategyBucket`이 없는 legacy position은 `unassigned` exposure로 별도 표시하고 active
+policy compliance를 `breach`로 fail-closed한다. `ImmutablePolicyDependencyFileLoader`도 여섯
+dependency JSONL을 처음 읽는 동안 생길 수 있는 mixed generation 또는 append 중인 마지막 줄의
+transient corruption을 내부에서 한 번 더 읽어 검증한다. 두 번째 generation이 clean strict
+append-only extension인 경우에만 복구한다. dependency → policy → activation
+publication 사이의 모든 cross-file race는 앞서 읽은 각 record 배열을 exact prefix로 보존하는
+strict append-only extension이 관찰된 경우에만 bounded re-read한다. truncated, reordered,
+replaced generation과 stable corruption은 재시도로 숨기지 않는다.
+policy repository는 dependency validation 전 raw record generation을, activation repository는
+history validation 전 structural event generation을 함께 반환한다. 따라서 최초 validation이 stale
+dependency/policy 때문에 실패해도 retry policy/event 배열이 최초 관찰 배열을 exact prefix로
+보존하는지 독립적으로 검증한다.
+active policy가 있을 때 cash target과 absolute reserve floor도 같은 policy record에서 읽는다. 이
+read-only 경로는 runner, Risk Engine 또는 OrderRouter를 호출하지 않는다.
+
+Next.js dashboard contract와 `/dashboard`, `/dashboard/portfolio` Server Component는 nullable
+band/gap을 0%로 대체하지 않고 `missing`으로 표시하며, active policy version/hash와 bucket별
+min/target/max/current/gap을 backend ViewModel 그대로 렌더링한다.
+
 완료 조건:
 
 - 저장 정책과 화면 target이 같은 policy hash를 사용한다.

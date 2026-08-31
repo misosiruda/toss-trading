@@ -297,17 +297,27 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
         asOf: "2026-06-30T00:00:00.000Z",
         portfolioId: "paper-portfolio-unit",
         virtualNetWorthKrw: 1000000,
-        policyStatus: "missing",
+        policyStatus: "active",
+        activePolicy: {
+          runtimePolicyRecordId: "runtime_portfolio_policy_hash",
+          policyId: "balanced-paper",
+          version: "v3",
+          policyHash: `sha256:${"a".repeat(64)}`,
+          activationId: "portfolio_policy_activation_hash",
+          effectiveFrom: "2026-06-29T00:00:00.000Z"
+        },
         bucketCompliance: [
           {
             bucket: "long_term",
-            targetWeightRatio: 0,
+            minWeightRatio: 0.2,
+            targetWeightRatio: 0.35,
+            maxWeightRatio: 0.5,
             currentWeightRatio: 0.4,
-            gapRatio: 0.4,
+            gapRatio: -0.05,
             exposureKrw: 400000,
             turnoverRatio: 0.12,
-            status: "missing",
-            primaryReason: "policy target unavailable"
+            status: "ok",
+            primaryReason: null
           }
         ],
         cashCompliance: {
@@ -325,6 +335,7 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
           }
         },
         hedgeCompliance: {
+          policyEnabled: true,
           hedgeEnabled: true,
           hedgeExposureKrw: 50000,
           hedgeExposureRatio: 0.05,
@@ -423,7 +434,8 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
           decisions: "ok",
           trades: "ok",
           auditEvents: "ok",
-          batchAggregate: "ok"
+          batchAggregate: "ok",
+          policyArtifacts: "ok"
         },
         warnings: [],
         status: "watch"
@@ -442,6 +454,8 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
     assert.equal(pageData.portfolio.data.viewModel, "portfolio-compliance");
     assert.equal(pageData.portfolio.data.readOnly, true);
     assert.equal(pageData.portfolio.data.mode, "paper_only");
+    assert.equal(pageData.portfolio.data.activePolicy.version, "v3");
+    assert.equal(pageData.portfolio.data.bucketCompliance[0].gapRatio, -0.05);
     assert.equal(
       pageData.portfolio.data.riskGateSummary.rejectCodes
         .VIRTUAL_CASH_EXCEEDED,
@@ -828,12 +842,14 @@ test("run detail page data uses selected run outside returned page", async () =>
   }
 });
 
-test("hedge missing status is not treated as a compliance breach", async () => {
+test("hedge breach status follows the active policy flag", async () => {
   const { isHedgeComplianceBreachStatus } =
     await loadDashboardViewModelsModule();
 
-  assert.equal(isHedgeComplianceBreachStatus("ok"), false);
-  assert.equal(isHedgeComplianceBreachStatus("missing"), false);
-  assert.equal(isHedgeComplianceBreachStatus("ineffective"), true);
-  assert.equal(isHedgeComplianceBreachStatus("over_hedged"), true);
+  assert.equal(isHedgeComplianceBreachStatus("ok", true), false);
+  assert.equal(isHedgeComplianceBreachStatus("missing", true), false);
+  assert.equal(isHedgeComplianceBreachStatus("ineffective", true), true);
+  assert.equal(isHedgeComplianceBreachStatus("over_hedged", true), true);
+  assert.equal(isHedgeComplianceBreachStatus("ineffective", false), false);
+  assert.equal(isHedgeComplianceBreachStatus("over_hedged", null), false);
 });
