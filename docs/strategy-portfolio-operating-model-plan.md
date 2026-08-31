@@ -87,6 +87,12 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 | active policy 기반 dashboard | 미구현 | 동일 policy hash로 compliance 계산 |
 | 여러 bucket 동시 실행 | 미구현 | cadence-aware orchestrator 추가 |
 
+runtime policy의 immutable dependency contract, read-only filesystem loader,
+validation candidate 정규화와 strict persistence adapter는 구현되어 있다. activation lifecycle은
+strict event contract와 dependency를 다시 해소하는 deterministic as-of fold까지 구현되었으며,
+cross-process atomic append/dedupe를 보장하는 activation repository와 runner 연결은 아직 포함하지
+않는다.
+
 현재 dashboard policy builder의 초기 draft는 다음 비중을 사용한다. 이 값은 활성
 정책이나 투자 권고가 아니라 paper simulation을 시작하기 위한 편집 가능한 예시다.
 
@@ -162,6 +168,7 @@ type PortfolioPolicyActivationEvent =
       policyId: string;
       policyVersion: string;
       policyHash: string;
+      policyLineageHash: string;
       supersedesActivationId?: string;
       effectiveFrom: string;
       createdAt: string;
@@ -184,8 +191,9 @@ type PortfolioPolicyActivationEvent =
 - `activationId`와 `retirementEventId`는 재사용하지 않는다.
 - `activationEventHash`는 variant별 event ID, hash와 `createdAt`을 제외한 complete canonical
   payload에서 계산하며 event ID는 hash에서 파생한다. resolver는 sequence fold 전에 모든
-  event를 독립 rehash하고 policy tuple, supersedes/retired target, effective time 또는 reason이
-  바뀐 record를 fail-closed한다. exact payload retry만 기존 event로 수렴한다.
+  event를 독립 rehash하고 policy record ID/ID/version/hash/lineage tuple,
+  supersedes/retired target, effective time 또는 reason이 바뀐 record를 fail-closed한다. exact
+  payload retry만 기존 event로 수렴한다.
 - event는 backend가 append 시 부여한 portfolio별 연속 `activationSequence`를 가진다.
   예약·backdate를 지원하지 않으며 `effectiveFrom`은 `createdAt`과 같은 즉시 적용 시각이어야
   한다. 미래 또는 과거 effective time과 sequence gap/duplicate를 거절한다.
@@ -455,9 +463,9 @@ interface StrategyBucketPolicy {
   전체 payload를 묶고 각 entry는 provenance ref를 가져야 한다.
 - valid range의 모든 calendar date는 open 또는 closed entry를 정확히 하나 가져야 하며
   provenance ref는 검증된 official calendar evidence/publication으로 resolve되어야 한다.
-- boundary resolver는 exact session calendar ID/version/hash를 읽고 market/timezone 일치와
-  requested slot의 date coverage를 검증한다. record가 missing/corrupt하거나 date gap이 있으면
-  policy activation과 due-cycle 생성을 fail-closed한다.
+- boundary resolver는 exact session calendar ID/version/hash를 읽는다. policy activation은
+  calendar의 missing/corrupt와 market/timezone 불일치를 fail-closed하고, due-cycle 생성은 이에
+  더해 requested slot의 date coverage를 검증해 date gap도 fail-closed한다.
 - `enabledMarkets`는 비어 있지 않은 canonical unique set이어야 한다. scheduled cadence의
   resolved boundary market 집합은 `enabledMarkets`와 정확히 같아야 하고 `every_tick` packet,
   selection request, mandate 및 rebalance action의 market도 이 집합 안에 있어야 한다.
@@ -2626,7 +2634,10 @@ schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이�
 각 risk parameter `createdAt`은 참조한 risk rule set보다 늦을 수 없고, session calendar
 `createdAt`은 참조한 schedule boundary보다 늦을 수 없다. flat runtime cutoff만 만족하는
 역전된 nested lineage도 resolver에서 거절한다.
-chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
+chronology에 참여하는 activation timestamp는 `Z` 또는 numeric UTC offset과 정확히 3자리
+millisecond precision을 포함해야 하며, sub-millisecond 입력을 허용하지 않는다.
+dependency/runtime policy timestamp도 `Z` 또는 numeric UTC offset을 포함하고
+sub-millisecond를 허용하지 않으며 최대 3자리 fractional second까지만 허용한다.
 여섯 dependency record의 constructor와 parser가 이 조건을 직접 강제해 offset 없는
 `createdAt` artifact가 저장된 뒤 runtime resolution에서만 실패하는 상태를 허용하지 않는다.
 stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
@@ -2638,6 +2649,16 @@ cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normal
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
 resolver를 통과한다. asset class canonicalization은 runtime contract와 동일한 UTF-8 byte
 comparator를 사용한다. activation 시 runtime default로 누락값을 보충하지 않는다.
+
+activation contract와 as-of resolver는 `src/portfolio/runtimePortfolioPolicyActivation.ts`가
+담당한다. activated/retired payload 전체를 독립 rehash하고 event ID를 hash에서 다시 파생하며,
+portfolio별 sequence, 즉시 적용 시각, supersedes/retired target을 선형 fold한다. activated
+policy는 record ID/ID/version/hash/lineage tuple을 exact-match하고 모든 bucket의
+selection/risk/drawdown/schedule/calendar dependency와 root legacy risk set을 다시 해소한다.
+scheduled bucket은 activation 시 enabled market과 boundary market의 canonical 집합이 정확히
+같아야 하며, 실제 exchange-date coverage는 해당 orchestration cycle에서 검증한다. 교체 policy가
+bucket의 turnover window semantics를 바꾸면 기존 Unix-epoch window의 정확한 boundary에서만
+활성화한다. 이 단계는 filesystem append나 runner/order engine 연결을 포함하지 않는다.
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation

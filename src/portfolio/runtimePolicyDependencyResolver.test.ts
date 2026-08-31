@@ -56,6 +56,47 @@ test("scheduled policy resolves exact immutable dependencies and calendar covera
   assert.equal(Object.isFrozen(resolved.riskRules), true);
 });
 
+test("scheduled policy rejects distinct boundary records for the same market", () => {
+  const fixture = dependencyFixture();
+  const secondBoundary = createScheduleBoundaryRecord({
+    market: fixture.boundary.market,
+    version: "daily-close.v2",
+    timeZone: fixture.boundary.timeZone,
+    sessionCalendarRecordId: fixture.calendar.sessionCalendarRecordId,
+    sessionCalendarVersion: fixture.calendar.version,
+    sessionCalendarHash: fixture.calendar.hash,
+    sessionCalendarLineageHash: fixture.calendar.lineageHash,
+    interval: "daily",
+    anchorLocalTime: "14:30:00",
+    nonSessionDayRule: "previous_session",
+    createdAt: CREATED_AT
+  });
+  const boundaryRefs = [
+    scheduleBoundaryRefFor(fixture.boundary),
+    scheduleBoundaryRefFor(secondBoundary)
+  ].sort((left, right) =>
+    left.scheduleBoundaryRecordId.localeCompare(
+      right.scheduleBoundaryRecordId,
+      "en"
+    )
+  );
+  assert.throws(
+    () =>
+      resolveStrategyBucketRuntimePolicyDependencies(
+        {
+          ...scheduledPolicy(fixture),
+          reviewCadence: { mode: "scheduled", boundaryRefs }
+        },
+        new ImmutablePolicyDependencyRepository({
+          ...fixture.records,
+          scheduleBoundaries: [fixture.boundary, secondBoundary]
+        }),
+        [{ market: "KR", exchangeDate: "2026-08-28" }]
+      ),
+    /scheduled boundary markets must not contain duplicate markets/
+  );
+});
+
 test("repository rejects corrupt and duplicate immutable records before resolution", () => {
   const fixture = dependencyFixture();
   const corruptedSelection = {

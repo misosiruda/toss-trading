@@ -372,6 +372,14 @@ test("dependency lineage hashes bind createdAt across every immutable record", (
       /date-time must include a UTC or numeric timezone offset/
     );
   }
+  assert.throws(
+    () =>
+      createBucketSelectionPolicyRecord({
+        ...selectionPolicyInput(),
+        createdAt: "2026-08-28T00:00:00.0001Z"
+      }),
+    /at most millisecond precision/
+  );
 });
 
 test("drawdown semantics accepts only the versioned invariant tuple", () => {

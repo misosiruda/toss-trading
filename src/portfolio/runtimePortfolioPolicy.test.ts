@@ -391,6 +391,14 @@ test("normalizer resolves bucket dependencies and parser rejects policy tamper",
     () =>
       parseRuntimePortfolioPolicyRecord({
         ...record,
+        createdAt: "2026-08-28T00:00:00.0001Z"
+      }),
+    /at most millisecond precision/
+  );
+  assert.throws(
+    () =>
+      parseRuntimePortfolioPolicyRecord({
+        ...record,
         createdAt: "2026-08-27T00:00:00.000Z"
       }),
     /runtime portfolio policy lineage hash mismatch/

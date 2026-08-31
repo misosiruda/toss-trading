@@ -194,6 +194,25 @@ export class ImmutablePolicyDependencyRepository {
     ref: ScheduleBoundaryRef,
     requiredExchangeDate: string
   ): ResolvedScheduleBoundary {
+    const { boundary, calendar } = this.resolveScheduleBoundaryIdentity(ref);
+    if (
+      requiredExchangeDate < calendar.validFromExchangeDate ||
+      requiredExchangeDate > calendar.validThroughExchangeDate ||
+      !calendar.sessions.some(
+        (session) => session.exchangeDate === requiredExchangeDate
+      )
+    ) {
+      throw new Error(
+        `session calendar does not cover required exchange date ${requiredExchangeDate}`
+      );
+    }
+
+    return deepFreeze({ boundary, calendar });
+  }
+
+  resolveScheduleBoundaryIdentity(
+    ref: ScheduleBoundaryRef
+  ): ResolvedScheduleBoundary {
     const boundary = this.resolveScheduleBoundaryRecord(ref);
     const calendar = resolveExactRef(
       this.sessionCalendars,
@@ -208,25 +227,12 @@ export class ImmutablePolicyDependencyRepository {
       boundary,
       "session calendar cannot postdate its schedule boundary"
     );
-
     if (calendar.market !== boundary.market) {
       throw new Error("schedule boundary and session calendar market mismatch");
     }
     if (calendar.timeZone !== boundary.timeZone) {
       throw new Error("schedule boundary and session calendar timezone mismatch");
     }
-    if (
-      requiredExchangeDate < calendar.validFromExchangeDate ||
-      requiredExchangeDate > calendar.validThroughExchangeDate ||
-      !calendar.sessions.some(
-        (session) => session.exchangeDate === requiredExchangeDate
-      )
-    ) {
-      throw new Error(
-        `session calendar does not cover required exchange date ${requiredExchangeDate}`
-      );
-    }
-
     return deepFreeze({ boundary, calendar });
   }
 
@@ -244,7 +250,7 @@ export class ImmutablePolicyDependencyRepository {
     return this.resolveScheduleBoundary(ref, requiredExchangeDate);
   }
 
-  private resolveScheduleBoundaryRecord(
+  resolveScheduleBoundaryRecord(
     ref: ScheduleBoundaryRef
   ): ScheduleBoundaryRecord {
     return resolveExactRef(
@@ -262,6 +268,36 @@ export function resolveStrategyBucketRuntimePolicyDependencies(
   value: unknown,
   repository: ImmutablePolicyDependencyRepository,
   requiredCalendarDates: readonly RequiredCalendarDate[] = []
+): ResolvedStrategyBucketRuntimePolicy {
+  const resolved = resolveStrategyBucketRuntimePolicyDependencyIdentities(
+    value,
+    repository
+  );
+  const policy = resolved.policy;
+  let scheduleBoundaries = resolved.scheduleBoundaries;
+  if (policy.reviewCadence.mode === "scheduled") {
+    const calendarDates = exactCalendarDateMap(
+      requiredCalendarDates,
+      policy.enabledMarkets
+    );
+    scheduleBoundaries = policy.reviewCadence.boundaryRefs.map((ref) =>
+      repository.resolveScheduleBoundaryForMarketDates(ref, calendarDates)
+    );
+  } else if (requiredCalendarDates.length > 0) {
+    throw new Error("every_tick runtime policy cannot accept calendar dates");
+  }
+
+  return deepFreeze({ ...resolved, scheduleBoundaries });
+}
+
+/**
+ * Resolves the immutable identity graph needed to activate or replay a policy.
+ * Exchange-date coverage remains a cycle-time concern, while the exact
+ * scheduled boundary market set is invariant at activation time.
+ */
+export function resolveStrategyBucketRuntimePolicyDependencyIdentities(
+  value: unknown,
+  repository: ImmutablePolicyDependencyRepository
 ): ResolvedStrategyBucketRuntimePolicy {
   const policy = parseStrategyBucketRuntimePolicy(value);
   const selectionPolicy = repository.resolveSelectionPolicy(
@@ -287,23 +323,17 @@ export function resolveStrategyBucketRuntimePolicyDependencies(
 
   let scheduleBoundaries: readonly ResolvedScheduleBoundary[] = [];
   if (policy.reviewCadence.mode === "scheduled") {
-    const calendarDates = exactCalendarDateMap(
-      requiredCalendarDates,
-      policy.enabledMarkets
-    );
-    scheduleBoundaries = policy.reviewCadence.boundaryRefs.map((ref) =>
-      repository.resolveScheduleBoundaryForMarketDates(ref, calendarDates)
-    );
-    const boundaryMarkets = scheduleBoundaries.map(
-      ({ boundary }) => boundary.market
+    const boundaryMarkets = policy.reviewCadence.boundaryRefs.map(
+      (ref) => repository.resolveScheduleBoundaryRecord(ref).market
     );
     assertSameCanonicalSet(
       boundaryMarkets,
       policy.enabledMarkets,
       "scheduled boundary markets"
     );
-  } else if (requiredCalendarDates.length > 0) {
-    throw new Error("every_tick runtime policy cannot accept calendar dates");
+    scheduleBoundaries = policy.reviewCadence.boundaryRefs.map((ref) =>
+      repository.resolveScheduleBoundaryIdentity(ref)
+    );
   }
 
   return deepFreeze({
@@ -384,8 +414,10 @@ function assertSameCanonicalSet<T extends string>(
 ): void {
   const canonicalActual = [...new Set(actual)].sort();
   const canonicalExpected = [...new Set(expected)].sort();
+  if (actual.length !== canonicalActual.length) {
+    throw new Error(`${label} must not contain duplicate markets`);
+  }
   if (
-    actual.length !== canonicalActual.length ||
     expected.length !== canonicalExpected.length ||
     canonicalActual.length !== canonicalExpected.length ||
     canonicalActual.some((value, index) => value !== canonicalExpected[index])
