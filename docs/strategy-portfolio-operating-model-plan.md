@@ -463,9 +463,9 @@ interface StrategyBucketPolicy {
   전체 payload를 묶고 각 entry는 provenance ref를 가져야 한다.
 - valid range의 모든 calendar date는 open 또는 closed entry를 정확히 하나 가져야 하며
   provenance ref는 검증된 official calendar evidence/publication으로 resolve되어야 한다.
-- boundary resolver는 exact session calendar ID/version/hash를 읽고 market/timezone 일치와
-  requested slot의 date coverage를 검증한다. record가 missing/corrupt하거나 date gap이 있으면
-  policy activation과 due-cycle 생성을 fail-closed한다.
+- boundary resolver는 exact session calendar ID/version/hash를 읽는다. policy activation은
+  calendar의 missing/corrupt와 market/timezone 불일치를 fail-closed하고, due-cycle 생성은 이에
+  더해 requested slot의 date coverage를 검증해 date gap도 fail-closed한다.
 - `enabledMarkets`는 비어 있지 않은 canonical unique set이어야 한다. scheduled cadence의
   resolved boundary market 집합은 `enabledMarkets`와 정확히 같아야 하고 `every_tick` packet,
   selection request, mandate 및 rebalance action의 market도 이 집합 안에 있어야 한다.
