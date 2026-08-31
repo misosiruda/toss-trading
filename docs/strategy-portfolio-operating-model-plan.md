@@ -2705,7 +2705,9 @@ currentWeightRatio`이며 min 미만은 `under`, max 초과는 `over`, band 안�
 없거나 retired 상태이면 target/min/max/gap을 `null`과 `missing_policy`로 내리고, corrupt
 policy/dependency/activation lineage는 `policyStatus = invalid`, source `corrupt`, 전체 `breach`로
 fail-closed한다. portfolio as-of는 UTC 또는 numeric offset이 있는 timestamp만 canonical UTC로
-정규화한다. `ImmutablePolicyDependencyFileLoader`도 여섯 dependency JSONL을 처음 읽는 동안 생길
+정규화하며 numeric offset의 extended `+09:00`과 basic `+0900` 형식을 모두 허용한다. active
+policy가 hedge를 비활성화한 경우 관측 hedge 효과성은 표시하되 이를 전체 breach에는 합산하지
+않는다. `ImmutablePolicyDependencyFileLoader`도 여섯 dependency JSONL을 처음 읽는 동안 생길
 수 있는 mixed generation을 내부에서 한 번 더 읽어 검증한다. dependency → policy → activation
 publication 사이의 모든 cross-file race는 앞서 읽은 각 record 배열을 exact prefix로 보존하는
 strict append-only extension이 관찰된 경우에만 bounded re-read한다. truncated, reordered,

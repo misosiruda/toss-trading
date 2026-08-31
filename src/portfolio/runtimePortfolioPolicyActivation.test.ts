@@ -1287,6 +1287,51 @@ test("portfolio compliance rejects an offsetless portfolio as-of timestamp", asy
   });
 });
 
+test("portfolio compliance accepts a basic numeric-offset portfolio as-of timestamp", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-08-28T11:00:00+0900"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(view.activePolicy?.policyHash, policy.policyHash);
+    assert.equal(view.sourceStatus.policyArtifacts, "ok");
+  });
+});
+
+test("portfolio compliance ignores hedge effectiveness when the active policy disables hedging", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy({ hedgeEnabled: false });
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 200_000,
+      positions: [
+        position("005930", "long_term", 350_000),
+        position("000660", "swing", 200_000),
+        position("035420", "short_term", 150_000),
+        position("069500", "intraday", 100_000)
+      ],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(view.hedgeCompliance.status, "ineffective");
+    assert.equal(view.status, "ok");
+  });
+});
+
 async function storeActivePolicyArtifacts(
   baseDir: string,
   policy: RuntimePortfolioPolicyRecord
@@ -1532,6 +1577,7 @@ function runtimePolicy(options: {
   createdAt?: string;
   enabledMarkets?: readonly ("KR" | "US")[];
   turnoverDurationSeconds?: number;
+  hedgeEnabled?: boolean;
 } = {}): RuntimePortfolioPolicyRecord {
   const portfolioId = options.portfolioId ?? "paper-main";
   const version = options.version ?? "v1";
@@ -1542,7 +1588,7 @@ function runtimePolicy(options: {
     ["swing", [0.2, 0.1, 0.3]],
     ["short_term", [0.15, 0, 0.25]],
     ["intraday", [0.1, 0, 0.15]],
-    ["hedge", [0.05, 0, 0.15]]
+    ["hedge", [options.hedgeEnabled === false ? 0 : 0.05, 0, 0.15]]
   ]);
   const strategyBuckets = BUCKETS.map((bucket) => {
     const [targetWeightRatio, minWeightRatio, maxWeightRatio] = targets.get(bucket)!;
@@ -1573,7 +1619,8 @@ function runtimePolicy(options: {
             }),
       eventTriggers: [],
       selectionTrigger:
-        minWeightRatio > 0
+        minWeightRatio > 0 ||
+        (bucket === "hedge" && options.hedgeEnabled === false)
           ? ({ mode: "below_min" as const })
           : ({
               mode: "entry_floor_on_due_cycle" as const,
@@ -1605,13 +1652,13 @@ function runtimePolicy(options: {
     name,
     strategyBuckets,
     cashPolicy: {
-      targetCashRatio: 0.15,
+      targetCashRatio: options.hedgeEnabled === false ? 0.2 : 0.15,
       minimumCashReserveKrw: 100_000,
       ruleSource: "static" as const
     },
     hedgePolicy: {
-      hedgeEnabled: true,
-      hedgeTargetRatio: 0.05,
+      hedgeEnabled: options.hedgeEnabled ?? true,
+      hedgeTargetRatio: options.hedgeEnabled === false ? 0 : 0.05,
       maxCostRatio: 0.02
     },
     exposurePolicy: {

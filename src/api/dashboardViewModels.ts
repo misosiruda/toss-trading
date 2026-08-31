@@ -915,7 +915,9 @@ export async function readDashboardPortfolioComplianceViewModel(
       policyStatus: policyArtifacts.status,
       bucketCompliance,
       cashCompliance,
-      hedgeCompliance
+      hedgeCompliance,
+      hedgePolicyEnabled:
+        policyArtifacts.active?.policy.hedgePolicy.hedgeEnabled ?? false
     })
   };
 }
@@ -1236,7 +1238,7 @@ async function readActivePortfolioPolicy(
 }
 
 function canonicalPolicyAsOf(value: string): string {
-  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
     throw new Error(
       "portfolio policy as-of must include a UTC or numeric timezone offset"
     );
@@ -1266,6 +1268,7 @@ function portfolioComplianceStatus(input: {
   bucketCompliance: BucketComplianceRow[];
   cashCompliance: CashComplianceView;
   hedgeCompliance: HedgeComplianceView;
+  hedgePolicyEnabled: boolean;
 }): DashboardViewModelStatus {
   if (input.portfolio === null) {
     return "missing";
@@ -1280,8 +1283,9 @@ function portfolioComplianceStatus(input: {
     (row) => row.status === "under" || row.status === "over"
   ) ||
     input.cashCompliance.status === "under_reserved" ||
-    input.hedgeCompliance.status === "ineffective" ||
-    input.hedgeCompliance.status === "over_hedged"
+    (input.hedgePolicyEnabled &&
+      (input.hedgeCompliance.status === "ineffective" ||
+        input.hedgeCompliance.status === "over_hedged"))
     ? "breach"
     : "ok";
 }
