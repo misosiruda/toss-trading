@@ -271,7 +271,10 @@ function ComplianceBreachList({
             detail: `gap ${formatKrw(data.cashCompliance.cashGapKrw)}`
           }
         ]),
-    ...(isHedgeComplianceBreachStatus(data.hedgeCompliance.status)
+    ...(isHedgeComplianceBreachStatus(
+      data.hedgeCompliance.status,
+      data.hedgeCompliance.policyEnabled
+    )
       ? [
           {
             key: "hedge",

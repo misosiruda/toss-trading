@@ -62,6 +62,7 @@ export interface PolicyComplianceViewModel {
     rejectCodes: Record<string, number>;
   };
   hedgeCompliance: {
+    policyEnabled: boolean | null;
     hedgeEnabled: boolean;
     hedgeExposureKrw: number;
     hedgeExposureRatio: number;
@@ -97,9 +98,10 @@ export interface PolicyComplianceViewModel {
 }
 
 export function isHedgeComplianceBreachStatus(
-  status: PolicyComplianceViewModel["hedgeCompliance"]["status"]
+  status: PolicyComplianceViewModel["hedgeCompliance"]["status"],
+  policyEnabled: PolicyComplianceViewModel["hedgeCompliance"]["policyEnabled"]
 ): boolean {
-  return status !== "ok" && status !== "missing";
+  return policyEnabled === true && status !== "ok" && status !== "missing";
 }
 
 export interface ComplianceAnalyticsView {
@@ -1548,6 +1550,8 @@ function isHedgeCompliance(
 ): value is PolicyComplianceViewModel["hedgeCompliance"] {
   return (
     isRecord(value) &&
+    (typeof value["policyEnabled"] === "boolean" ||
+      value["policyEnabled"] === null) &&
     typeof value["hedgeEnabled"] === "boolean" &&
     isNumber(value["hedgeExposureKrw"]) &&
     isNumber(value["hedgeExposureRatio"]) &&

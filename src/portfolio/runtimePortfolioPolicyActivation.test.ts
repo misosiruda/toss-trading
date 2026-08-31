@@ -1327,6 +1327,7 @@ test("portfolio compliance ignores hedge effectiveness when the active policy di
     const view = await readDashboardPortfolioComplianceViewModel(baseDir);
 
     assert.equal(view.policyStatus, "active");
+    assert.equal(view.hedgeCompliance.policyEnabled, false);
     assert.equal(view.hedgeCompliance.status, "ineffective");
     assert.equal(view.status, "ok");
   });

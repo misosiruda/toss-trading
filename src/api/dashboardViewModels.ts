@@ -175,6 +175,7 @@ interface CashComplianceView {
 }
 
 interface HedgeComplianceView {
+  policyEnabled: boolean | null;
   hedgeEnabled: boolean;
   hedgeExposureKrw: number;
   hedgeExposureRatio: number;
@@ -857,7 +858,8 @@ export async function readDashboardPortfolioComplianceViewModel(
     exposure,
     trades: trades.records,
     rejectedCount,
-    rejectCodes: riskRejectCodes
+    rejectCodes: riskRejectCodes,
+    policy: policyArtifacts.active?.policy ?? null
   });
   const exposureCompliance = exposureComplianceView(
     exposure,
@@ -925,9 +927,7 @@ export async function readDashboardPortfolioComplianceViewModel(
       bucketCompliance,
       cashCompliance,
       hedgeCompliance,
-      exposureCompliance,
-      hedgePolicyEnabled:
-        policyArtifacts.active?.policy.hedgePolicy.hedgeEnabled ?? false
+      exposureCompliance
     })
   };
 }
@@ -1279,7 +1279,6 @@ function portfolioComplianceStatus(input: {
   cashCompliance: CashComplianceView;
   hedgeCompliance: HedgeComplianceView;
   exposureCompliance: ExposureComplianceView;
-  hedgePolicyEnabled: boolean;
 }): DashboardViewModelStatus {
   if (input.portfolio === null) {
     return "missing";
@@ -1295,7 +1294,7 @@ function portfolioComplianceStatus(input: {
   ) ||
     input.cashCompliance.status === "under_reserved" ||
     input.exposureCompliance.status === "breach" ||
-    (input.hedgePolicyEnabled &&
+    (input.hedgeCompliance.policyEnabled === true &&
       (input.hedgeCompliance.status === "ineffective" ||
         input.hedgeCompliance.status === "over_hedged"))
     ? "breach"
@@ -1468,6 +1467,7 @@ function hedgeComplianceView(input: {
   trades: VirtualTrade[];
   rejectedCount: number;
   rejectCodes: Record<string, number>;
+  policy: RuntimePortfolioPolicyRecord | null;
 }): HedgeComplianceView {
   const hedgeTradeCount = input.trades.filter(
     (trade) => trade.strategyBucket === "hedge"
@@ -1484,6 +1484,7 @@ function hedgeComplianceView(input: {
       : 0;
 
   return {
+    policyEnabled: input.policy?.hedgePolicy.hedgeEnabled ?? null,
     hedgeEnabled: input.exposure.hedgeExposureKrw > 0 || hedgeTradeCount > 0,
     hedgeExposureKrw: input.exposure.hedgeExposureKrw,
     hedgeExposureRatio: ratio(

@@ -335,6 +335,7 @@ test("portfolio compliance page data reads read-only ViewModel contract", async 
           }
         },
         hedgeCompliance: {
+          policyEnabled: true,
           hedgeEnabled: true,
           hedgeExposureKrw: 50000,
           hedgeExposureRatio: 0.05,
@@ -841,12 +842,14 @@ test("run detail page data uses selected run outside returned page", async () =>
   }
 });
 
-test("hedge missing status is not treated as a compliance breach", async () => {
+test("hedge breach status follows the active policy flag", async () => {
   const { isHedgeComplianceBreachStatus } =
     await loadDashboardViewModelsModule();
 
-  assert.equal(isHedgeComplianceBreachStatus("ok"), false);
-  assert.equal(isHedgeComplianceBreachStatus("missing"), false);
-  assert.equal(isHedgeComplianceBreachStatus("ineffective"), true);
-  assert.equal(isHedgeComplianceBreachStatus("over_hedged"), true);
+  assert.equal(isHedgeComplianceBreachStatus("ok", true), false);
+  assert.equal(isHedgeComplianceBreachStatus("missing", true), false);
+  assert.equal(isHedgeComplianceBreachStatus("ineffective", true), true);
+  assert.equal(isHedgeComplianceBreachStatus("over_hedged", true), true);
+  assert.equal(isHedgeComplianceBreachStatus("ineffective", false), false);
+  assert.equal(isHedgeComplianceBreachStatus("over_hedged", null), false);
 });
