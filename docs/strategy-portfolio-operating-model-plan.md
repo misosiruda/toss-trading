@@ -2717,6 +2717,10 @@ append-only extension인 경우에만 복구한다. dependency → policy → ac
 publication 사이의 모든 cross-file race는 앞서 읽은 각 record 배열을 exact prefix로 보존하는
 strict append-only extension이 관찰된 경우에만 bounded re-read한다. truncated, reordered,
 replaced generation과 stable corruption은 재시도로 숨기지 않는다.
+policy repository는 dependency validation 전 raw record generation을, activation repository는
+history validation 전 structural event generation을 함께 반환한다. 따라서 최초 validation이 stale
+dependency/policy 때문에 실패해도 retry policy/event 배열이 최초 관찰 배열을 exact prefix로
+보존하는지 독립적으로 검증한다.
 active policy가 있을 때 cash target과 absolute reserve floor도 같은 policy record에서 읽는다. 이
 read-only 경로는 runner, Risk Engine 또는 OrderRouter를 호출하지 않는다.
 

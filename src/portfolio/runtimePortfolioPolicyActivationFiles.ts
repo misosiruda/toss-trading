@@ -46,6 +46,30 @@ export interface RuntimePortfolioPolicyActivationSnapshot {
   events: readonly PortfolioPolicyActivationEvent[];
 }
 
+export type RuntimePortfolioPolicyActivationGenerationRead =
+  | {
+      status: "ok";
+      records: readonly PortfolioPolicyActivationEvent[];
+      value: readonly PortfolioPolicyActivationEvent[];
+    }
+  | {
+      status: "invalid";
+      records: readonly PortfolioPolicyActivationEvent[];
+      error: unknown;
+    };
+
+export type AppendOnlyGenerationRead<T> =
+  | {
+      status: "ok";
+      records: readonly unknown[];
+      value: readonly T[];
+    }
+  | {
+      status: "invalid";
+      records: readonly unknown[];
+      error: unknown;
+    };
+
 /**
  * Reads policy and activation files as one logical append-only generation.
  *
@@ -59,17 +83,24 @@ export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(inp
   loadDependencies: () => Promise<LoadedImmutablePolicyDependencies>;
   readPolicies: (
     dependencies: LoadedImmutablePolicyDependencies
-  ) => Promise<readonly RuntimePortfolioPolicyRecord[]>;
+  ) => Promise<
+    | readonly RuntimePortfolioPolicyRecord[]
+    | AppendOnlyGenerationRead<RuntimePortfolioPolicyRecord>
+  >;
   readEvents: (
     policies: readonly RuntimePortfolioPolicyRecord[],
     dependencies: LoadedImmutablePolicyDependencies
-  ) => Promise<readonly PortfolioPolicyActivationEvent[]>;
+  ) => Promise<
+    | readonly PortfolioPolicyActivationEvent[]
+    | AppendOnlyGenerationRead<PortfolioPolicyActivationEvent>
+  >;
 }): Promise<RuntimePortfolioPolicyActivationSnapshot> {
   let dependencies = await input.loadDependencies();
-  let policies: readonly RuntimePortfolioPolicyRecord[];
-  try {
-    policies = await input.readPolicies(dependencies);
-  } catch (error) {
+  let policyGeneration = normalizeGenerationRead(
+    await input.readPolicies(dependencies)
+  );
+  if (policyGeneration.status === "invalid") {
+    const error = policyGeneration.error;
     const refreshedDependencies = await input.loadDependencies();
     const dependencyRelation = dependencyGenerationRelation(
       dependencies.records,
@@ -84,13 +115,38 @@ export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(inp
     if (dependencyRelation === "same") {
       throw error;
     }
+    const refreshedPolicyGeneration = normalizeGenerationRead(
+      await input.readPolicies(refreshedDependencies)
+    );
+    const policyRelation = appendOnlyGenerationRelation(
+      policyGeneration.records,
+      refreshedPolicyGeneration.records
+    );
+    if (policyRelation === "invalid") {
+      throw new Error(
+        "runtime portfolio policy generation must be an append-only extension",
+        { cause: error }
+      );
+    }
+    if (refreshedPolicyGeneration.status === "invalid") {
+      throw error;
+    }
     dependencies = refreshedDependencies;
-    policies = await input.readPolicies(dependencies);
+    policyGeneration = refreshedPolicyGeneration;
   }
-  try {
-    const events = await input.readEvents(policies, dependencies);
-    return Object.freeze({ dependencies, policies, events });
-  } catch (error) {
+  const policies = policyGeneration.value;
+  const eventGeneration = normalizeGenerationRead(
+    await input.readEvents(policies, dependencies)
+  );
+  if (eventGeneration.status === "ok") {
+    return Object.freeze({
+      dependencies,
+      policies,
+      events: eventGeneration.value
+    });
+  }
+  {
+    const error = eventGeneration.error;
     const refreshedDependencies = await input.loadDependencies();
     const dependencyRelation = dependencyGenerationRelation(
       dependencies.records,
@@ -102,10 +158,12 @@ export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(inp
         { cause: error }
       );
     }
-    const refreshedPolicies = await input.readPolicies(refreshedDependencies);
+    const refreshedPolicyGeneration = normalizeGenerationRead(
+      await input.readPolicies(refreshedDependencies)
+    );
     const policyRelation = appendOnlyGenerationRelation(
-      policies,
-      refreshedPolicies
+      policyGeneration.records,
+      refreshedPolicyGeneration.records
     );
     if (policyRelation === "invalid") {
       throw new Error(
@@ -113,19 +171,52 @@ export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(inp
         { cause: error }
       );
     }
-    if (dependencyRelation === "same" && policyRelation === "same") {
+    if (refreshedPolicyGeneration.status === "invalid") {
       throw error;
     }
-    const events = await input.readEvents(
-      refreshedPolicies,
-      refreshedDependencies
+    const refreshedPolicies = refreshedPolicyGeneration.value;
+    const refreshedEventGeneration = normalizeGenerationRead(
+      await input.readEvents(refreshedPolicies, refreshedDependencies)
     );
+    const eventRelation = appendOnlyGenerationRelation(
+      eventGeneration.records,
+      refreshedEventGeneration.records
+    );
+    if (eventRelation === "invalid") {
+      throw new Error(
+        "portfolio policy activation generation must be an append-only extension",
+        { cause: error }
+      );
+    }
+    if (refreshedEventGeneration.status === "invalid") {
+      throw error;
+    }
+    if (
+      dependencyRelation === "same" &&
+      policyRelation === "same" &&
+      eventRelation === "same"
+    ) {
+      throw error;
+    }
     return Object.freeze({
       dependencies: refreshedDependencies,
       policies: refreshedPolicies,
-      events
+      events: refreshedEventGeneration.value
     });
   }
+}
+
+function normalizeGenerationRead<T>(
+  value: readonly T[] | AppendOnlyGenerationRead<T>
+): AppendOnlyGenerationRead<T> {
+  if (Array.isArray(value)) {
+    return Object.freeze({
+      status: "ok" as const,
+      records: value,
+      value
+    });
+  }
+  return value as AppendOnlyGenerationRead<T>;
 }
 
 export function createRuntimePortfolioPolicyActivationPaths(baseDir: string): {
@@ -177,6 +268,10 @@ export class RuntimePortfolioPolicyActivationFileRepository {
 
   async readAll(): Promise<readonly PortfolioPolicyActivationEvent[]> {
     return this.withLock(async () => this.readAllUnderLock());
+  }
+
+  async readGeneration(): Promise<RuntimePortfolioPolicyActivationGenerationRead> {
+    return this.withLock(async () => this.readGenerationUnderLock());
   }
 
   async resolveActiveAsOf(
@@ -247,7 +342,7 @@ export class RuntimePortfolioPolicyActivationFileRepository {
     });
   }
 
-  private async readAllUnderLock(): Promise<readonly PortfolioPolicyActivationEvent[]> {
+  private async readEventRecordsUnderLock(): Promise<readonly PortfolioPolicyActivationEvent[]> {
     let raw: string;
     try {
       raw = await readFile(this.eventsPath, "utf8");
@@ -289,12 +384,35 @@ export class RuntimePortfolioPolicyActivationFileRepository {
       eventIds.add(eventId);
       events.push(event);
     }
+    return Object.freeze(events);
+  }
+
+  private validateEventRecords(
+    events: readonly PortfolioPolicyActivationEvent[]
+  ): void {
     for (const portfolioId of new Set(
       events.map((event) => event.portfolioId)
     )) {
       this.validateHistory(events, portfolioId);
     }
-    return Object.freeze(events);
+  }
+
+  private async readGenerationUnderLock(): Promise<RuntimePortfolioPolicyActivationGenerationRead> {
+    const records = await this.readEventRecordsUnderLock();
+    try {
+      this.validateEventRecords(records);
+      return Object.freeze({ status: "ok" as const, records, value: records });
+    } catch (error) {
+      return Object.freeze({ status: "invalid" as const, records, error });
+    }
+  }
+
+  private async readAllUnderLock(): Promise<readonly PortfolioPolicyActivationEvent[]> {
+    const generation = await this.readGenerationUnderLock();
+    if (generation.status === "invalid") {
+      throw generation.error;
+    }
+    return generation.value;
   }
 
   private validateHistory(

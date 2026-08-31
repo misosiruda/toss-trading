@@ -1219,13 +1219,13 @@ async function readActivePortfolioPolicy(
           new RuntimePortfolioPolicyFileRepository(
             storageBaseDir,
             dependencyGeneration.repository
-          ).readAll(),
+          ).readGeneration(),
         readEvents: (policyGeneration, dependencyGeneration) =>
           new RuntimePortfolioPolicyActivationFileRepository(
             storageBaseDir,
             policyGeneration,
             dependencyGeneration.repository
-          ).readAll()
+          ).readGeneration()
       });
     const active = findActiveRuntimePortfolioPolicyAsOf({
       portfolioId: portfolio.portfolioId,

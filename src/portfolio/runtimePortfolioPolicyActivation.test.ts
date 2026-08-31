@@ -1022,6 +1022,55 @@ test("runtime policy repository treats an abandoned lock as unavailable", async 
   });
 });
 
+test("runtime policy repository preserves an observed invalid generation", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const paths = createRuntimePortfolioPolicyPaths(baseDir);
+    await writeJsonl(paths.recordsPath, [policy]);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      new ImmutablePolicyDependencyRepository({
+        selectionPolicies: [],
+        riskParameters: [],
+        riskRuleSets: [],
+        drawdownSemantics: [],
+        sessionCalendars: [],
+        scheduleBoundaries: []
+      })
+    );
+
+    const generation = await repository.readGeneration();
+
+    assert.equal(generation.status, "invalid");
+    assert.deepEqual(generation.records, [policy]);
+    assert.match(String(generation.error), /corrupt line 1/);
+  });
+});
+
+test("activation repository preserves events that fail history validation", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const event = createPortfolioPolicyActivatedEvent({
+      policy,
+      activationSequence: 1,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    });
+    const paths = createRuntimePortfolioPolicyActivationPaths(baseDir);
+    await writeJsonl(paths.eventsPath, [event]);
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [],
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const generation = await repository.readGeneration();
+
+    assert.equal(generation.status, "invalid");
+    assert.deepEqual(generation.records, [event]);
+    assert.match(String(generation.error), /does not resolve/);
+  });
+});
+
 test("policy activation snapshot retries after the policy generation advances", async () => {
   const stalePolicy = runtimePolicy({ portfolioId: "paper-stale" });
   const activePolicy = runtimePolicy({
@@ -1054,11 +1103,12 @@ test("policy activation snapshot retries after the policy generation advances", 
               policy.runtimePolicyRecordId === activePolicy.runtimePolicyRecordId
           )
         ) {
-          throw new Error(
+          return invalidGeneration(
+            [activation],
             "activated runtime portfolio policy record does not resolve"
           );
         }
-        return [activation];
+        return validGeneration([activation]);
       }
     });
 
@@ -1082,14 +1132,14 @@ test("policy activation snapshot keeps stable activation corruption fail-closed"
       },
       readEvents: async () => {
         activationReadCount += 1;
-        throw new Error("stable activation corruption");
+        return invalidGeneration([], "stable activation corruption");
       }
     }),
     /stable activation corruption/
   );
 
   assert.equal(policyReadCount, 2);
-  assert.equal(activationReadCount, 1);
+  assert.equal(activationReadCount, 2);
 });
 
 test("policy activation snapshot reloads an appended dependency generation", async () => {
@@ -1117,9 +1167,12 @@ test("policy activation snapshot reloads an appended dependency generation", asy
           dependencies.records.selectionPolicies.length ===
           DEPENDENCY_FIXTURE.records.selectionPolicies.length
         ) {
-          throw new Error("runtime policy dependency ref does not resolve");
+          return invalidGeneration(
+            [activePolicy],
+            "runtime policy dependency ref does not resolve"
+          );
         }
-        return [activePolicy];
+        return validGeneration([activePolicy]);
       },
       readEvents: async () => [activation]
     });
@@ -1150,7 +1203,7 @@ test("policy activation snapshot rejects a replaced policy generation", async ()
       },
       readEvents: async () => {
         activationReadCount += 1;
-        throw new Error("activation read requires a refresh");
+        return invalidGeneration([], "activation read requires a refresh");
       }
     }),
     /policy generation must be an append-only extension/
@@ -1173,7 +1226,7 @@ test("policy activation snapshot rejects a regressed dependency generation", asy
           : DEPENDENCY_FIXTURE;
       },
       readPolicies: async () => {
-        throw new Error("policy read requires a refresh");
+        return invalidGeneration([], "policy read requires a refresh");
       },
       readEvents: async () => []
     }),
@@ -1181,6 +1234,81 @@ test("policy activation snapshot rejects a regressed dependency generation", asy
   );
 
   assert.equal(dependencyReadCount, 2);
+});
+
+test("policy activation snapshot rejects a replaced policy generation after dependency retry", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+  let policyReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? DEPENDENCY_FIXTURE
+          : extendedDependencies;
+      },
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? invalidGeneration(
+              [firstPolicy, secondPolicy],
+              "stale dependency generation"
+            )
+          : validGeneration([secondPolicy]);
+      },
+      readEvents: async () => []
+    }),
+    /policy generation must be an append-only extension/
+  );
+
+  assert.equal(dependencyReadCount, 2);
+  assert.equal(policyReadCount, 2);
+});
+
+test("policy activation snapshot rejects a replaced activation generation", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  const firstActivation = createPortfolioPolicyActivatedEvent({
+    policy: firstPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const secondActivation = createPortfolioPolicyActivatedEvent({
+    policy: secondPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? validGeneration([firstPolicy])
+          : validGeneration([firstPolicy, secondPolicy]);
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        return activationReadCount === 1
+          ? invalidGeneration(
+              [firstActivation],
+              "activation read requires a policy refresh"
+            )
+          : validGeneration([secondActivation]);
+      }
+    }),
+    /activation generation must be an append-only extension/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 2);
 });
 
 test("portfolio compliance reads bucket bands from the active stored policy hash", async () => {
@@ -1404,6 +1532,20 @@ async function writeJsonl(
       : `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
     "utf8"
   );
+}
+
+function validGeneration<T>(
+  value: readonly T[],
+  records: readonly unknown[] = value
+) {
+  return { status: "ok" as const, records, value };
+}
+
+function invalidGeneration(
+  records: readonly unknown[],
+  message: string
+) {
+  return { status: "invalid" as const, records, error: new Error(message) };
 }
 
 function position(
