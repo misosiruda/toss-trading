@@ -276,6 +276,15 @@ test("activation parser rejects future and backdated effective time after indepe
   );
   assert.throws(
     () =>
+      createPortfolioPolicyActivatedEvent({
+        policy,
+        activationSequence: 1,
+        createdAt: "2026-08-28T01:00:00.0001Z"
+      }),
+    /must use millisecond precision/
+  );
+  assert.throws(
+    () =>
       parsePortfolioPolicyActivationEvent(
         rehashActivatedEvent(event, {
           effectiveFrom: "2026-08-28T00:59:59.000Z"
@@ -337,7 +346,18 @@ test("activation resolver requires exact runtime policy identity and chronology"
         policies: [policy],
         dependencies: DEPENDENCY_FIXTURE.repository
       }),
-    /date-time must include a UTC or numeric timezone offset/
+    /millisecond precision and include a UTC or numeric timezone offset/
+  );
+  assert.throws(
+    () =>
+      resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId: policy.portfolioId,
+        asOf: "2026-08-28T02:00:00.0001Z",
+        events: [event],
+        policies: [policy],
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /must use millisecond precision/
   );
 });
 

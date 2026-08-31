@@ -17,8 +17,8 @@ const identifierSchema = z.string().trim().min(1).max(160);
 const versionSchema = z.string().trim().min(1).max(80);
 const positiveIntegerSchema = z.number().int().positive();
 const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
-  (value) => /(Z|[+-]\d{2}:\d{2})$/.test(value),
-  "date-time must include a UTC or numeric timezone offset"
+  (value) => /\.\d{3}(Z|[+-]\d{2}:\d{2})$/.test(value),
+  "date-time must use millisecond precision and include a UTC or numeric timezone offset"
 );
 
 const activatedPayloadSchema = z
