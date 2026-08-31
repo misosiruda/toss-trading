@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
 
@@ -100,6 +101,18 @@ export class ImmutablePolicyDependencyFileLoader {
   }
 
   async load(): Promise<LoadedImmutablePolicyDependencies> {
+    return loadConsistentImmutablePolicyDependencies({
+      readGeneration: () => this.readAllDependencyFiles(),
+      ...(this.legacyOffsetlessCreatedAtOffset === undefined
+        ? {}
+        : {
+            legacyOffsetlessCreatedAtOffset:
+              this.legacyOffsetlessCreatedAtOffset
+          })
+    });
+  }
+
+  private async readAllDependencyFiles(): Promise<ImmutablePolicyDependencyRawGeneration> {
     const [
       selectionPolicies,
       riskParameters,
@@ -140,7 +153,7 @@ export class ImmutablePolicyDependencyFileLoader {
       ).readAll()
     ]);
 
-    const reads = {
+    return {
       selectionPolicies,
       riskParameters,
       riskRuleSets,
@@ -148,97 +161,190 @@ export class ImmutablePolicyDependencyFileLoader {
       sessionCalendars,
       scheduleBoundaries
     };
-    assertNoCorruptDependencyLines(reads);
-
-    const migratedSelectionPolicies = selectionPolicies.records.map((record) =>
-      migrateRecordLineage(
-        record,
-        parseBucketSelectionPolicyRecord,
-        "selectionPolicyRecordId",
-        "selection_policy",
-        [],
-        this.legacyOffsetlessCreatedAtOffset
-      )
-    );
-    const migratedRiskParameters = riskParameters.records.map((record) =>
-      migrateRecordLineage(
-        record,
-        parsePortfolioRiskRuleParameterRecord,
-        "riskRuleParameterRecordId",
-        "risk_parameter",
-        [],
-        this.legacyOffsetlessCreatedAtOffset
-      )
-    );
-    const riskParametersById = exactRecordMap(
-      migratedRiskParameters,
-      (record) => record.riskRuleParameterRecordId,
-      "risk parameter"
-    );
-    const migratedRiskRuleSets = riskRuleSets.records.map((record) =>
-      migrateRiskRuleSet(
-        record,
-        riskParametersById,
-        this.legacyOffsetlessCreatedAtOffset
-      )
-    );
-    const migratedDrawdownSemantics = drawdownSemantics.records.map((record) =>
-      migrateRecordLineage(
-        record,
-        parseBucketDrawdownSemanticsRecord,
-        "drawdownSemanticsRecordId",
-        "drawdown_semantics",
-        [],
-        this.legacyOffsetlessCreatedAtOffset
-      )
-    );
-    const migratedSessionCalendars = sessionCalendars.records.map((record) =>
-      migrateRecordLineage(
-        record,
-        parseSessionCalendarRecord,
-        "sessionCalendarRecordId",
-        "session_calendar",
-        [],
-        this.legacyOffsetlessCreatedAtOffset
-      )
-    );
-    const sessionCalendarsById = exactRecordMap(
-      migratedSessionCalendars,
-      (record) => record.sessionCalendarRecordId,
-      "session calendar"
-    );
-    const migratedScheduleBoundaries = scheduleBoundaries.records.map(
-      (record) =>
-        migrateScheduleBoundary(
-          record,
-          sessionCalendarsById,
-          this.legacyOffsetlessCreatedAtOffset
-        )
-    );
-
-    const records: ImmutablePolicyDependencyRecords = deepFreeze({
-      selectionPolicies: migratedSelectionPolicies,
-      riskParameters: migratedRiskParameters,
-      riskRuleSets: migratedRiskRuleSets,
-      drawdownSemantics: migratedDrawdownSemantics,
-      sessionCalendars: migratedSessionCalendars,
-      scheduleBoundaries: migratedScheduleBoundaries
-    });
-    const repository = new ImmutablePolicyDependencyRepository(records);
-    return Object.freeze({ records, repository });
   }
 }
 
-type DependencyReads = {
+export interface ImmutablePolicyDependencyRawGeneration {
   selectionPolicies: JsonlReadResult<unknown>;
   riskParameters: JsonlReadResult<unknown>;
   riskRuleSets: JsonlReadResult<unknown>;
   drawdownSemantics: JsonlReadResult<unknown>;
   sessionCalendars: JsonlReadResult<unknown>;
   scheduleBoundaries: JsonlReadResult<unknown>;
-};
+}
 
 const rawDependencyRecordSchema = z.unknown();
+
+export async function loadConsistentImmutablePolicyDependencies(input: {
+  readGeneration: () => Promise<ImmutablePolicyDependencyRawGeneration>;
+  legacyOffsetlessCreatedAtOffset?: string;
+}): Promise<LoadedImmutablePolicyDependencies> {
+  const reads = await input.readGeneration();
+  try {
+    return loadDependencyReads(
+      reads,
+      input.legacyOffsetlessCreatedAtOffset
+    );
+  } catch (error) {
+    if (hasCorruptDependencyLines(reads)) {
+      throw error;
+    }
+    const refreshedReads = await input.readGeneration();
+    const relation = dependencyReadGenerationRelation(reads, refreshedReads);
+    if (relation === "invalid") {
+      throw new Error(
+        "immutable policy dependency files must be append-only extensions",
+        { cause: error }
+      );
+    }
+    if (relation === "same") {
+      throw error;
+    }
+    return loadDependencyReads(
+      refreshedReads,
+      input.legacyOffsetlessCreatedAtOffset
+    );
+  }
+}
+
+function loadDependencyReads(
+  reads: ImmutablePolicyDependencyRawGeneration,
+  legacyOffsetlessCreatedAtOffset: string | undefined
+): LoadedImmutablePolicyDependencies {
+  assertNoCorruptDependencyLines(reads);
+  const migratedSelectionPolicies = reads.selectionPolicies.records.map(
+    (record) =>
+      migrateRecordLineage(
+        record,
+        parseBucketSelectionPolicyRecord,
+        "selectionPolicyRecordId",
+        "selection_policy",
+        [],
+        legacyOffsetlessCreatedAtOffset
+      )
+  );
+  const migratedRiskParameters = reads.riskParameters.records.map((record) =>
+    migrateRecordLineage(
+      record,
+      parsePortfolioRiskRuleParameterRecord,
+      "riskRuleParameterRecordId",
+      "risk_parameter",
+      [],
+      legacyOffsetlessCreatedAtOffset
+    )
+  );
+  const riskParametersById = exactRecordMap(
+    migratedRiskParameters,
+    (record) => record.riskRuleParameterRecordId,
+    "risk parameter"
+  );
+  const migratedRiskRuleSets = reads.riskRuleSets.records.map((record) =>
+    migrateRiskRuleSet(
+      record,
+      riskParametersById,
+      legacyOffsetlessCreatedAtOffset
+    )
+  );
+  const migratedDrawdownSemantics = reads.drawdownSemantics.records.map(
+    (record) =>
+      migrateRecordLineage(
+        record,
+        parseBucketDrawdownSemanticsRecord,
+        "drawdownSemanticsRecordId",
+        "drawdown_semantics",
+        [],
+        legacyOffsetlessCreatedAtOffset
+      )
+  );
+  const migratedSessionCalendars = reads.sessionCalendars.records.map(
+    (record) =>
+      migrateRecordLineage(
+        record,
+        parseSessionCalendarRecord,
+        "sessionCalendarRecordId",
+        "session_calendar",
+        [],
+        legacyOffsetlessCreatedAtOffset
+      )
+  );
+  const sessionCalendarsById = exactRecordMap(
+    migratedSessionCalendars,
+    (record) => record.sessionCalendarRecordId,
+    "session calendar"
+  );
+  const migratedScheduleBoundaries = reads.scheduleBoundaries.records.map(
+    (record) =>
+      migrateScheduleBoundary(
+        record,
+        sessionCalendarsById,
+        legacyOffsetlessCreatedAtOffset
+      )
+  );
+  const records: ImmutablePolicyDependencyRecords = deepFreeze({
+    selectionPolicies: migratedSelectionPolicies,
+    riskParameters: migratedRiskParameters,
+    riskRuleSets: migratedRiskRuleSets,
+    drawdownSemantics: migratedDrawdownSemantics,
+    sessionCalendars: migratedSessionCalendars,
+    scheduleBoundaries: migratedScheduleBoundaries
+  });
+  const repository = new ImmutablePolicyDependencyRepository(records);
+  return Object.freeze({ records, repository });
+}
+
+type DependencyReadGenerationRelation = "same" | "extended" | "invalid";
+
+function dependencyReadGenerationRelation(
+  left: ImmutablePolicyDependencyRawGeneration,
+  right: ImmutablePolicyDependencyRawGeneration
+): DependencyReadGenerationRelation {
+  const relations: DependencyReadGenerationRelation[] = [
+    rawRecordGenerationRelation(
+      left.selectionPolicies.records,
+      right.selectionPolicies.records
+    ),
+    rawRecordGenerationRelation(
+      left.riskParameters.records,
+      right.riskParameters.records
+    ),
+    rawRecordGenerationRelation(
+      left.riskRuleSets.records,
+      right.riskRuleSets.records
+    ),
+    rawRecordGenerationRelation(
+      left.drawdownSemantics.records,
+      right.drawdownSemantics.records
+    ),
+    rawRecordGenerationRelation(
+      left.sessionCalendars.records,
+      right.sessionCalendars.records
+    ),
+    rawRecordGenerationRelation(
+      left.scheduleBoundaries.records,
+      right.scheduleBoundaries.records
+    )
+  ];
+  return relations.includes("invalid")
+    ? "invalid"
+    : relations.includes("extended")
+      ? "extended"
+      : "same";
+}
+
+function rawRecordGenerationRelation(
+  left: readonly unknown[],
+  right: readonly unknown[]
+): DependencyReadGenerationRelation {
+  if (
+    right.length < left.length ||
+    !left.every((record, index) =>
+      isDeepStrictEqual(record, right[index])
+    )
+  ) {
+    return "invalid";
+  }
+  return right.length === left.length ? "same" : "extended";
+}
 
 function migrateRiskRuleSet(
   value: unknown,
@@ -542,7 +648,9 @@ function optionalStringField(
   return stringField(record, key, label);
 }
 
-function assertNoCorruptDependencyLines(reads: DependencyReads): void {
+function assertNoCorruptDependencyLines(
+  reads: ImmutablePolicyDependencyRawGeneration
+): void {
   const corrupt = Object.entries(reads)
     .filter(([, result]) => result.corruptLineCount > 0)
     .map(([kind, result]) => `${kind}:${result.corruptLineCount}`);
@@ -553,6 +661,14 @@ function assertNoCorruptDependencyLines(reads: DependencyReads): void {
       )}`
     );
   }
+}
+
+function hasCorruptDependencyLines(
+  reads: ImmutablePolicyDependencyRawGeneration
+): boolean {
+  return Object.values(reads).some(
+    (result) => result.corruptLineCount > 0
+  );
 }
 
 function deepFreeze<T>(value: T): T {
