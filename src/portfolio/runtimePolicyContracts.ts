@@ -22,10 +22,19 @@ const calendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isValidCalendarDate, "expected a valid calendar date");
-const offsetIsoDateTimeSchema = isoDateTimeSchema.refine(
+const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
   (value) => /(Z|[+-]\d{2}:\d{2})$/.test(value),
-  "session date-time must include a UTC or numeric timezone offset"
+  "date-time must include a UTC or numeric timezone offset"
 );
+const immutableRecordLineagePayloadSchema = z
+  .object({
+    recordType: identifierSchema,
+    recordId: identifierSchema,
+    semanticHash: sha256HashSchema,
+    createdAt: offsetQualifiedIsoDateTimeSchema,
+    dependencyLineageHashes: z.array(sha256HashSchema).min(1).max(256).optional()
+  })
+  .strict();
 
 export const evidenceClassSchema = z.enum([
   "market_technical",
@@ -68,7 +77,8 @@ export const bucketSelectionPolicyRefSchema = z
   .object({
     selectionPolicyRecordId: identifierSchema,
     version: versionSchema,
-    hash: sha256HashSchema
+    hash: sha256HashSchema,
+    lineageHash: sha256HashSchema
   })
   .strict();
 
@@ -77,7 +87,8 @@ export const bucketSelectionPolicyRecordSchema =
     .safeExtend({
       selectionPolicyRecordId: identifierSchema,
       hash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      lineageHash: sha256HashSchema,
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -128,7 +139,8 @@ export const portfolioRiskRuleParameterRefSchema = z
   .object({
     riskRuleParameterRecordId: identifierSchema,
     version: versionSchema,
-    hash: sha256HashSchema
+    hash: sha256HashSchema,
+    lineageHash: sha256HashSchema
   })
   .strict();
 
@@ -137,7 +149,8 @@ export const portfolioRiskRuleParameterRecordSchema =
     .safeExtend({
       riskRuleParameterRecordId: identifierSchema,
       hash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      lineageHash: sha256HashSchema,
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -163,7 +176,8 @@ export const portfolioRiskRuleSetRefSchema = z
   .object({
     riskRuleSetRecordId: identifierSchema,
     version: versionSchema,
-    hash: sha256HashSchema
+    hash: sha256HashSchema,
+    lineageHash: sha256HashSchema
   })
   .strict();
 
@@ -171,7 +185,8 @@ export const portfolioRiskRuleSetRecordSchema = portfolioRiskRuleSetPayloadSchem
   .safeExtend({
     riskRuleSetRecordId: identifierSchema,
     hash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    lineageHash: sha256HashSchema,
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -207,7 +222,8 @@ export const bucketDrawdownSemanticsRefSchema = z
   .object({
     drawdownSemanticsRecordId: identifierSchema,
     version: versionSchema,
-    hash: sha256HashSchema
+    hash: sha256HashSchema,
+    lineageHash: sha256HashSchema
   })
   .strict();
 
@@ -216,7 +232,8 @@ export const bucketDrawdownSemanticsRecordSchema =
     .safeExtend({
       drawdownSemanticsRecordId: identifierSchema,
       hash: sha256HashSchema,
-      createdAt: isoDateTimeSchema
+      lineageHash: sha256HashSchema,
+      createdAt: offsetQualifiedIsoDateTimeSchema
     })
     .strict();
 
@@ -239,8 +256,8 @@ const sessionCalendarOpenEntrySchema = z
   .object({
     exchangeDate: calendarDateSchema,
     sessionKind: z.enum(["regular", "early_close", "delayed_open"]),
-    opensAt: offsetIsoDateTimeSchema,
-    closesAt: offsetIsoDateTimeSchema,
+    opensAt: offsetQualifiedIsoDateTimeSchema,
+    closesAt: offsetQualifiedIsoDateTimeSchema,
     sourceEvidenceRefs: z.array(identifierSchema).min(1).max(32)
   })
   .strict();
@@ -265,7 +282,8 @@ export const sessionCalendarRecordSchema = sessionCalendarPayloadSchema
   .safeExtend({
     sessionCalendarRecordId: identifierSchema,
     hash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    lineageHash: sha256HashSchema,
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -282,6 +300,7 @@ const scheduleBoundaryPayloadSchema = z
     sessionCalendarRecordId: identifierSchema,
     sessionCalendarVersion: versionSchema,
     sessionCalendarHash: sha256HashSchema,
+    sessionCalendarLineageHash: sha256HashSchema,
     interval: z.enum(["hourly", "daily", "weekly"]),
     anchorLocalTime: z
       .string()
@@ -297,7 +316,8 @@ export const scheduleBoundaryRefSchema = z
   .object({
     scheduleBoundaryRecordId: identifierSchema,
     version: versionSchema,
-    hash: sha256HashSchema
+    hash: sha256HashSchema,
+    lineageHash: sha256HashSchema
   })
   .strict();
 
@@ -305,7 +325,8 @@ export const scheduleBoundaryRecordSchema = scheduleBoundaryPayloadSchema
   .safeExtend({
     scheduleBoundaryRecordId: identifierSchema,
     hash: sha256HashSchema,
-    createdAt: isoDateTimeSchema
+    lineageHash: sha256HashSchema,
+    createdAt: offsetQualifiedIsoDateTimeSchema
   })
   .strict();
 
@@ -424,11 +445,13 @@ export function createBucketSelectionPolicyRecord(
     )
   });
   const hash = hashCanonicalPayload(payload);
+  const identity = immutableRecordIdentity("selection_policy", hash, createdAt);
   return deepFreeze({
     ...payload,
-    selectionPolicyRecordId: hashDerivedId("selection_policy", hash),
+    selectionPolicyRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -457,7 +480,8 @@ export function selectionPolicyRefFor(
   return deepFreeze({
     selectionPolicyRecordId: parsed.selectionPolicyRecordId,
     version: parsed.version,
-    hash: parsed.hash
+    hash: parsed.hash,
+    lineageHash: parsed.lineageHash
   });
 }
 
@@ -469,11 +493,13 @@ export function createPortfolioRiskRuleParameterRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = portfolioRiskRuleParameterPayloadSchema.parse(unparsedPayload);
   const hash = hashCanonicalPayload(payload);
+  const identity = immutableRecordIdentity("risk_parameter", hash, createdAt);
   return deepFreeze({
     ...payload,
-    riskRuleParameterRecordId: hashDerivedId("risk_parameter", hash),
+    riskRuleParameterRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -496,7 +522,8 @@ export function riskRuleParameterRefFor(
   return deepFreeze({
     riskRuleParameterRecordId: parsed.riskRuleParameterRecordId,
     version: parsed.version,
-    hash: parsed.hash
+    hash: parsed.hash,
+    lineageHash: parsed.lineageHash
   });
 }
 
@@ -511,12 +538,21 @@ export function createPortfolioRiskRuleSetRecord(
     rules: canonicalRiskRules(unparsedPayload.rules)
   });
   assertRiskRuleCoverage(payload.rules);
-  const hash = hashCanonicalPayload(payload);
+  const hash = hashCanonicalPayload(
+    portfolioRiskRuleSetSemanticPayload(payload)
+  );
+  const identity = immutableRecordIdentity(
+    "risk_rule_set",
+    hash,
+    createdAt,
+    payload.rules.map(({ parameterRef }) => parameterRef.lineageHash)
+  );
   return deepFreeze({
     ...payload,
-    riskRuleSetRecordId: hashDerivedId("risk_rule_set", hash),
+    riskRuleSetRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -528,9 +564,10 @@ export function parsePortfolioRiskRuleSetRecord(
   assertRiskRuleCoverage(record.rules);
   return verifyImmutableRecord(
     record,
-    portfolioRiskRuleSetPayload(record),
+    portfolioRiskRuleSetSemanticPayload(record),
     "riskRuleSetRecordId",
-    "risk_rule_set"
+    "risk_rule_set",
+    record.rules.map(({ parameterRef }) => parameterRef.lineageHash)
   );
 }
 
@@ -541,7 +578,8 @@ export function riskRuleSetRefFor(
   return deepFreeze({
     riskRuleSetRecordId: parsed.riskRuleSetRecordId,
     version: parsed.version,
-    hash: parsed.hash
+    hash: parsed.hash,
+    lineageHash: parsed.lineageHash
   });
 }
 
@@ -553,11 +591,17 @@ export function createBucketDrawdownSemanticsRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = bucketDrawdownSemanticsPayloadSchema.parse(unparsedPayload);
   const hash = hashCanonicalPayload(payload);
+  const identity = immutableRecordIdentity(
+    "drawdown_semantics",
+    hash,
+    createdAt
+  );
   return deepFreeze({
     ...payload,
-    drawdownSemanticsRecordId: hashDerivedId("drawdown_semantics", hash),
+    drawdownSemanticsRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -580,7 +624,8 @@ export function drawdownSemanticsRefFor(
   return deepFreeze({
     drawdownSemanticsRecordId: parsed.drawdownSemanticsRecordId,
     version: parsed.version,
-    hash: parsed.hash
+    hash: parsed.hash,
+    lineageHash: parsed.lineageHash
   });
 }
 
@@ -594,11 +639,13 @@ export function createSessionCalendarRecord(
   });
   assertSessionCalendarPayload(payload);
   const hash = hashCanonicalPayload(payload);
+  const identity = immutableRecordIdentity("session_calendar", hash, createdAt);
   return deepFreeze({
     ...payload,
-    sessionCalendarRecordId: hashDerivedId("session_calendar", hash),
+    sessionCalendarRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -622,12 +669,19 @@ export function createScheduleBoundaryRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = scheduleBoundaryPayloadSchema.parse(unparsedPayload);
   assertScheduleBoundaryPayload(payload);
-  const hash = hashCanonicalPayload(payload);
+  const hash = hashCanonicalPayload(scheduleBoundarySemanticPayload(payload));
+  const identity = immutableRecordIdentity(
+    "schedule_boundary",
+    hash,
+    createdAt,
+    [payload.sessionCalendarLineageHash]
+  );
   return deepFreeze({
     ...payload,
-    scheduleBoundaryRecordId: hashDerivedId("schedule_boundary", hash),
+    scheduleBoundaryRecordId: identity.recordId,
     hash,
-    createdAt: isoDateTimeSchema.parse(createdAt)
+    lineageHash: identity.lineageHash,
+    createdAt: identity.createdAt
   });
 }
 
@@ -638,9 +692,10 @@ export function parseScheduleBoundaryRecord(
   assertScheduleBoundaryPayload(record);
   return verifyImmutableRecord(
     record,
-    scheduleBoundaryPayload(record),
+    scheduleBoundarySemanticPayload(record),
     "scheduleBoundaryRecordId",
-    "schedule_boundary"
+    "schedule_boundary",
+    [record.sessionCalendarLineageHash]
   );
 }
 
@@ -651,7 +706,8 @@ export function scheduleBoundaryRefFor(
   return deepFreeze({
     scheduleBoundaryRecordId: parsed.scheduleBoundaryRecordId,
     version: parsed.version,
-    hash: parsed.hash
+    hash: parsed.hash,
+    lineageHash: parsed.lineageHash
   });
 }
 
@@ -916,6 +972,7 @@ function bucketSelectionPolicyPayload(
   const {
     selectionPolicyRecordId: _selectionPolicyRecordId,
     hash: _hash,
+    lineageHash: _lineageHash,
     createdAt: _createdAt,
     ...payload
   } = record;
@@ -928,22 +985,38 @@ function portfolioRiskRuleParameterPayload(
   const {
     riskRuleParameterRecordId: _riskRuleParameterRecordId,
     hash: _hash,
+    lineageHash: _lineageHash,
     createdAt: _createdAt,
     ...payload
   } = record;
   return payload;
 }
 
-function portfolioRiskRuleSetPayload(
-  record: PortfolioRiskRuleSetRecord
-): z.infer<typeof portfolioRiskRuleSetPayloadSchema> {
-  const {
-    riskRuleSetRecordId: _riskRuleSetRecordId,
-    hash: _hash,
-    createdAt: _createdAt,
-    ...payload
-  } = record;
-  return payload;
+function portfolioRiskRuleSetSemanticPayload(
+  value:
+    | z.infer<typeof portfolioRiskRuleSetPayloadSchema>
+    | PortfolioRiskRuleSetRecord
+): unknown {
+  const payload =
+    "riskRuleSetRecordId" in value
+      ? (() => {
+          const {
+            riskRuleSetRecordId: _riskRuleSetRecordId,
+            hash: _hash,
+            lineageHash: _lineageHash,
+            createdAt: _createdAt,
+            ...recordPayload
+          } = value;
+          return recordPayload;
+        })()
+      : value;
+  return {
+    ...payload,
+    rules: payload.rules.map((rule) => {
+      const { lineageHash: _lineageHash, ...parameterRef } = rule.parameterRef;
+      return { ...rule, parameterRef };
+    })
+  };
 }
 
 function bucketDrawdownSemanticsPayload(
@@ -952,6 +1025,7 @@ function bucketDrawdownSemanticsPayload(
   const {
     drawdownSemanticsRecordId: _drawdownSemanticsRecordId,
     hash: _hash,
+    lineageHash: _lineageHash,
     createdAt: _createdAt,
     ...payload
   } = record;
@@ -964,32 +1038,50 @@ function sessionCalendarPayload(
   const {
     sessionCalendarRecordId: _sessionCalendarRecordId,
     hash: _hash,
+    lineageHash: _lineageHash,
     createdAt: _createdAt,
     ...payload
   } = record;
   return payload;
 }
 
-function scheduleBoundaryPayload(
-  record: ScheduleBoundaryRecord
-): z.infer<typeof scheduleBoundaryPayloadSchema> {
+function scheduleBoundarySemanticPayload(
+  value:
+    | z.infer<typeof scheduleBoundaryPayloadSchema>
+    | ScheduleBoundaryRecord
+): unknown {
+  const payload =
+    "scheduleBoundaryRecordId" in value
+      ? (() => {
+          const {
+            scheduleBoundaryRecordId: _scheduleBoundaryRecordId,
+            hash: _hash,
+            lineageHash: _lineageHash,
+            createdAt: _createdAt,
+            ...recordPayload
+          } = value;
+          return recordPayload;
+        })()
+      : value;
   const {
-    scheduleBoundaryRecordId: _scheduleBoundaryRecordId,
-    hash: _hash,
-    createdAt: _createdAt,
-    ...payload
-  } = record;
-  return payload;
+    sessionCalendarLineageHash: _sessionCalendarLineageHash,
+    ...semanticPayload
+  } = payload;
+  return semanticPayload;
 }
 
 function verifyImmutableRecord<
-  TRecord extends Record<TIdKey | "hash", string>,
+  TRecord extends Record<
+    TIdKey | "hash" | "lineageHash" | "createdAt",
+    string
+  >,
   TIdKey extends keyof TRecord & string
 >(
   record: TRecord,
   payload: unknown,
   idKey: TIdKey,
-  idPrefix: string
+  idPrefix: string,
+  dependencyLineageHashes: readonly string[] = []
 ): TRecord {
   const expectedHash = hashCanonicalPayload(payload);
   if (record.hash !== expectedHash) {
@@ -998,7 +1090,60 @@ function verifyImmutableRecord<
   if (record[idKey] !== hashDerivedId(idPrefix, expectedHash)) {
     throw new Error(`${idPrefix} record ID must be derived from its hash`);
   }
+  const expectedLineageHash = hashImmutableRecordLineage({
+    recordType: idPrefix,
+    recordId: record[idKey],
+    semanticHash: record.hash,
+    createdAt: record.createdAt,
+    dependencyLineageHashes
+  });
+  if (record.lineageHash !== expectedLineageHash) {
+    throw new Error(`${idPrefix} record lineage hash mismatch`);
+  }
   return deepFreeze(record);
+}
+
+function immutableRecordIdentity(
+  recordType: string,
+  semanticHash: Sha256Hash,
+  value: string,
+  dependencyLineageHashes: readonly string[] = []
+): { recordId: string; lineageHash: Sha256Hash; createdAt: string } {
+  const createdAt = offsetQualifiedIsoDateTimeSchema.parse(value);
+  const recordId = hashDerivedId(recordType, semanticHash);
+  return {
+    recordId,
+    lineageHash: hashImmutableRecordLineage({
+      recordType,
+      recordId,
+      semanticHash,
+      createdAt,
+      dependencyLineageHashes
+    }),
+    createdAt
+  };
+}
+
+export function hashImmutableRecordLineage(input: {
+  recordType: string;
+  recordId: string;
+  semanticHash: string;
+  createdAt: string;
+  dependencyLineageHashes?: readonly string[];
+}): Sha256Hash {
+  const dependencyLineageHashes =
+    input.dependencyLineageHashes === undefined ||
+    input.dependencyLineageHashes.length === 0
+      ? undefined
+      : canonicalUniqueText(
+          input.dependencyLineageHashes,
+          "dependencyLineageHashes"
+        );
+  const canonical = immutableRecordLineagePayloadSchema.parse({
+    ...input,
+    dependencyLineageHashes
+  });
+  return hashCanonicalPayload(canonical);
 }
 
 function deepFreeze<T>(value: T): T {
@@ -1011,7 +1156,7 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function hashCanonicalPayload(value: unknown): Sha256Hash {
+export function hashCanonicalPayload(value: unknown): Sha256Hash {
   return sha256HashSchema.parse(
     `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`
   );
@@ -1035,7 +1180,7 @@ function canonicalValue(value: unknown): unknown {
   return value;
 }
 
-function hashDerivedId(prefix: string, hash: Sha256Hash): string {
+export function hashDerivedId(prefix: string, hash: Sha256Hash): string {
   return `${prefix}_${hash.slice("sha256:".length)}`;
 }
 
@@ -1084,7 +1229,7 @@ function assertNoDuplicateKeys<T>(
   }
 }
 
-function compareText(left: string, right: string): number {
+export function compareText(left: string, right: string): number {
   return Buffer.from(left).compare(Buffer.from(right));
 }
 

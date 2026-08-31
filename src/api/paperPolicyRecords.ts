@@ -29,7 +29,7 @@ const paperPolicyValidationSummarySchema = z
   })
   .strict();
 
-const paperPolicyRecordSchema = z
+export const paperPolicyRecordSchema = z
   .object({
     mode: z.literal("paper_only"),
     recordType: z.literal("portfolio_policy_record"),
@@ -180,7 +180,7 @@ function parseCreateCandidate(body: unknown): PaperPolicyValidationCandidate {
   }
 }
 
-function policyRecordIdFor(
+export function policyRecordIdFor(
   candidate: PaperPolicyValidationCandidate,
   createdAt: Date
 ): string {

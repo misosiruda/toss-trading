@@ -123,6 +123,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.selectionPolicyRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "selection policy"
     );
   }
@@ -135,6 +136,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.riskRuleParameterRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "risk parameter"
     );
   }
@@ -147,8 +149,32 @@ export class ImmutablePolicyDependencyRepository {
       ref.riskRuleSetRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "risk rule set"
     );
+  }
+
+  resolveRiskRuleSetDependencies(ref: PortfolioRiskRuleSetRef): {
+    riskRuleSet: PortfolioRiskRuleSetRecord;
+    riskRules: readonly ResolvedPortfolioRiskRule[];
+  } {
+    const riskRuleSet = this.resolveRiskRuleSet(ref);
+    const riskRules = riskRuleSet.rules.map((rule) => {
+      const parameter = this.resolveRiskParameter(rule.parameterRef);
+      if (
+        parameter.ruleId !== rule.ruleId ||
+        parameter.ruleVersion !== rule.ruleVersion
+      ) {
+        throw new Error("risk rule parameter identity does not match its rule");
+      }
+      assertNestedDependencyChronology(
+        parameter,
+        riskRuleSet,
+        "risk rule parameter cannot postdate its risk rule set"
+      );
+      return deepFreeze({ rule, parameter });
+    });
+    return deepFreeze({ riskRuleSet, riskRules });
   }
 
   resolveDrawdownSemantics(
@@ -159,6 +185,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.drawdownSemanticsRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "drawdown semantics"
     );
   }
@@ -173,7 +200,13 @@ export class ImmutablePolicyDependencyRepository {
       boundary.sessionCalendarRecordId,
       boundary.sessionCalendarVersion,
       boundary.sessionCalendarHash,
+      boundary.sessionCalendarLineageHash,
       "session calendar"
+    );
+    assertNestedDependencyChronology(
+      calendar,
+      boundary,
+      "session calendar cannot postdate its schedule boundary"
     );
 
     if (calendar.market !== boundary.market) {
@@ -219,6 +252,7 @@ export class ImmutablePolicyDependencyRepository {
       ref.scheduleBoundaryRecordId,
       ref.version,
       ref.hash,
+      ref.lineageHash,
       "schedule boundary"
     );
   }
@@ -245,17 +279,8 @@ export function resolveStrategyBucketRuntimePolicyDependencies(
     }
   }
 
-  const riskRuleSet = repository.resolveRiskRuleSet(policy.riskRuleSetRef);
-  const riskRules = riskRuleSet.rules.map((rule) => {
-    const parameter = repository.resolveRiskParameter(rule.parameterRef);
-    if (
-      parameter.ruleId !== rule.ruleId ||
-      parameter.ruleVersion !== rule.ruleVersion
-    ) {
-      throw new Error("risk rule parameter identity does not match its rule");
-    }
-    return deepFreeze({ rule, parameter });
-  });
+  const { riskRuleSet, riskRules } =
+    repository.resolveRiskRuleSetDependencies(policy.riskRuleSetRef);
   const drawdownSemantics = repository.resolveDrawdownSemantics(
     policy.drawdownSemanticsRef
   );
@@ -328,19 +353,26 @@ function verifiedRecordMap<T>(
   return result;
 }
 
-function resolveExactRef<T extends { version: string; hash: string }>(
+function resolveExactRef<
+  T extends { version: string; hash: string; lineageHash: string }
+>(
   records: ReadonlyMap<string, T>,
   id: string,
   version: string,
   hash: string,
+  lineageHash: string,
   label: string
 ): T {
   const record = records.get(id);
   if (record === undefined) {
     throw new Error(`${label} ref does not resolve`);
   }
-  if (record.version !== version || record.hash !== hash) {
-    throw new Error(`${label} ref version/hash mismatch`);
+  if (
+    record.version !== version ||
+    record.hash !== hash ||
+    record.lineageHash !== lineageHash
+  ) {
+    throw new Error(`${label} ref version/hash/lineage mismatch`);
   }
   return record;
 }
@@ -360,6 +392,29 @@ function assertSameCanonicalSet<T extends string>(
   ) {
     throw new Error(`${label} must exactly match enabled markets`);
   }
+}
+
+function assertNestedDependencyChronology(
+  dependency: { createdAt: string },
+  parent: { createdAt: string },
+  message: string
+): void {
+  const dependencyTime = chronologyTimestamp(dependency.createdAt);
+  const parentTime = chronologyTimestamp(parent.createdAt);
+  if (dependencyTime > parentTime) {
+    throw new Error(message);
+  }
+}
+
+function chronologyTimestamp(value: string): number {
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new Error("dependency chronology requires a UTC or numeric offset");
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("dependency chronology requires an ISO-compatible date-time");
+  }
+  return timestamp;
 }
 
 function deepFreeze<T>(value: T): T {

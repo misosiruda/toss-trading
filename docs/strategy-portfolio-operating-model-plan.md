@@ -239,6 +239,7 @@ interface BucketSelectionPolicyRecord {
   bucket: StrategyBucket;
   version: string;
   hash: string;
+  lineageHash: string;
   requiredEvidence: EvidenceRequirement[];
   everyTickSourceRequirement?: {
     sourceContractId: string;
@@ -256,6 +257,7 @@ interface BucketSelectionPolicyRef {
   selectionPolicyRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 type CanonicalRiskParameterValue =
@@ -272,6 +274,7 @@ interface PortfolioRiskRuleParameterRecord {
   ruleVersion: string;
   version: string;
   hash: string;
+  lineageHash: string;
   parameters: { [key: string]: CanonicalRiskParameterValue };
   createdAt: string;
 }
@@ -280,12 +283,14 @@ interface PortfolioRiskRuleParameterRef {
   riskRuleParameterRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface PortfolioRiskRuleSetRecord {
   riskRuleSetRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
   rules: Array<{
     ruleId: string;
     ruleVersion: string;
@@ -299,6 +304,7 @@ interface PortfolioRiskRuleSetRef {
   riskRuleSetRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface PortfolioLegacyReduceOnlyPolicy {
@@ -319,10 +325,12 @@ interface ScheduleBoundaryRecord {
   market: Market;
   version: string;
   hash: string;
+  lineageHash: string;
   timeZone: string;
   sessionCalendarRecordId: string;
   sessionCalendarVersion: string;
   sessionCalendarHash: string;
+  sessionCalendarLineageHash: string;
   interval: "hourly" | "daily" | "weekly";
   anchorLocalTime: string;
   weeklyAnchorDay?: "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
@@ -349,6 +357,7 @@ interface SessionCalendarRecord {
   market: Market;
   version: string;
   hash: string;
+  lineageHash: string;
   timeZone: string;
   validFromExchangeDate: string;
   validThroughExchangeDate: string;
@@ -360,6 +369,7 @@ interface ScheduleBoundaryRef {
   scheduleBoundaryRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 type BucketReviewCadence =
@@ -373,6 +383,7 @@ interface BucketDrawdownSemanticsRecord {
   drawdownSemanticsRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
   equityBasis: "bucket_assets_plus_cash";
   unitFlowRule: "mint_burn_at_pre_flow_unit_nav";
   pnlRule: "mark_to_market_and_execution_cost_only";
@@ -387,6 +398,7 @@ interface BucketDrawdownSemanticsRef {
   drawdownSemanticsRecordId: string;
   version: string;
   hash: string;
+  lineageHash: string;
 }
 
 interface StrategyBucketPolicy {
@@ -491,6 +503,14 @@ interface StrategyBucketPolicy {
   risk-state replay와 breach evaluation은 저장된 unit flow/PnL/HWM/drawdown/empty/carry rule만
   사용하고 runtime 구현 기본값으로 대체하지 않는다. 독립 rehash 또는 version/hash가 다르면
   activation과 신규 매수를 fail-closed한다.
+- 여섯 dependency record는 semantic `hash`/hash-derived ID와 별도로 `lineageHash`를 가진다.
+  `lineageHash`는 `recordType`, record ID, semantic hash, `createdAt`과 canonical child
+  `dependencyLineageHashes`의 digest이며 모든 ref가 이를 포함한다. risk rule set은 parameter
+  lineage를, schedule boundary는 session calendar lineage를 parent lineage digest에 포함해
+  상위 runtime policy hash까지 생성 시각 provenance를 연쇄 결속한다. 새 lineage-only field는
+  기존 semantic hash/ID 입력에서 제외해 append-only artifact identity를 유지한다. parser,
+  loader와 resolver는 semantic hash/ID와 lineage hash를 모두 독립
+  검증하며 어느 dependency의 `createdAt`만 바뀌어도 activation 전 fail-closed한다.
 - active `PortfolioPolicy` canonical hash는 각 bucket의 `enabledMarkets`, complete
   `selectionPolicyRef`, `riskRuleSetRef`, `drawdownSemanticsRef`, `reviewCadence` boundary ref와
   `turnoverWindow`를 포함해
@@ -2573,8 +2593,51 @@ ID/version/hash만 사용하고 runtime default로 누락값을 보충하지 않
 filesystem adapter의 첫 변경은 `src/portfolio/runtimePolicyDependencyFiles.ts`의 read-only
 loader로 제한한다. 여섯 dependency JSONL 중 corrupt line이 하나라도 있으면 부분 record set을
 만들지 않고 전체 load를 거절하며, 로드 후 resolver가 semantic hash와 duplicate ID를 다시
-검증한다. 기존 `JsonlStore.append`는 cross-process atomic dedupe를 제공하지 않으므로 dependency
-writer와 exact-retry 처리는 원자성 계약을 갖춘 후속 변경 전까지 노출하지 않는다.
+검증한다. lineage field 도입 전 record는 loader가 원본 파일을 수정하지 않는 read-time migration으로
+leaf lineage를 결정적으로 backfill하고 risk set→parameter, boundary→calendar lineage를 exact ref로
+연결한 뒤 최신 parser를 통과시킨다. legacy semantic hash/ID는 유지하며 partial lineage나 ref
+mismatch는 migration하지 않고 fail-closed한다. 부모 parser가 trim하던 legacy record ID와 nested
+ref ID/version은 같은 canonical form으로 변환한 뒤 exact lookup과 lineage 계산을 수행한다. offset
+legacy `createdAt`은 주변 공백을 먼저 제거해 이미 명시된 zone을 보존한다. offset 없는 legacy
+`createdAt`의 시간대는 추측하지
+않으며 loader 기본 동작은 해당 record를 거절한다. 운영자가 `legacyOffsetlessCreatedAtOffset`에 `Z`
+또는 `-14:00`~`+14:00` 범위의 numeric offset을 명시한 경우에만 메모리에서 시각대를 보완하고,
+ISO와 `YYYY/MM/DD`/`MM/DD/YYYY` date-only 값은 해당 offset의 자정으로 정규화한다. semantic
+hash/ID와 원본 파일은 그대로
+유지한다. 단독 `Z`/`z`, `GMT`/`UTC`, RFC numeric zone, `GMT+HHMM`, 짧은
+`GMT+H`/`+HH`/`GMT+H:MM` offset, `GMT0`/`UT0` 계열의 zero-suffixed UTC 또는 ISO compact numeric offset처럼 시간대가 명시된 legacy 형식은 별도 option보다
+우선해 epoch-equivalent ISO UTC로 canonicalize한다.
+기존 `JsonlStore.append`는 cross-process atomic
+dedupe를 제공하지 않으므로 dependency writer와 exact-retry 처리는 원자성 계약을 갖춘 후속
+변경 전까지 노출하지 않는다.
+
+current validation candidate 정규화는 `src/portfolio/runtimePortfolioPolicy.ts`가 담당한다.
+기존 candidate의 allocation/cash/hedge/exposure 값은 backend validation을 다시 통과해야 하며,
+normalizer는 candidate와 record ID를 따로 받지 않고 strict `PaperPolicyRecord`를 받아
+record ID 파생 규칙, record tuple, policy hash, validation summary가 내장 candidate와
+일치하는지 다시 검증한다. runtime payload의 `sourcePolicyRecordHash`는 strict source record
+전체의 canonical digest를 저장해 같은 policy ID/생성 millisecond가 재사용되어도 정확한 source
+payload를 구분한다. source tuple의 식별자는 이미 trim된 canonical 값이어야 하며
+source `validation.validatedAt`은 source record `createdAt`과 같아야 한다. runtime `createdAt`은
+source record `createdAt`보다 빠를 수 없다. resolve된 selection, risk set/parameter, drawdown,
+schedule boundary/calendar와 legacy risk dependency도 runtime `createdAt` 이후에 생성될 수 없다.
+각 dependency ref는 ID/version/semantic hash뿐 아니라 `lineageHash`도 exact-match해야 하며,
+상위 runtime policy hash가 resolved dependency의 생성 시각 provenance까지 고정한다.
+각 risk parameter `createdAt`은 참조한 risk rule set보다 늦을 수 없고, session calendar
+`createdAt`은 참조한 schedule boundary보다 늦을 수 없다. flat runtime cutoff만 만족하는
+역전된 nested lineage도 resolver에서 거절한다.
+chronology에 참여하는 모든 timestamp는 `Z` 또는 numeric UTC offset을 포함해야 한다.
+여섯 dependency record의 constructor와 parser가 이 조건을 직접 강제해 offset 없는
+`createdAt` artifact가 저장된 뒤 runtime resolution에서만 실패하는 상태를 허용하지 않는다.
+stored runtime record parser는 strict schema parse 결과가 raw input과 deep-equal해야만 허용해
+root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.
+runtime record는 semantic policy hash/ID와 별도 `lineageHash`에 `createdAt`을 결속해 저장 시각
+단독 변조를 거절한다.
+cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
+명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
+rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency
+resolver를 통과한다. asset class canonicalization은 runtime contract와 동일한 UTF-8 byte
+comparator를 사용한다. activation 시 runtime default로 누락값을 보충하지 않는다.
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
