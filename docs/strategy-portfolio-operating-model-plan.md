@@ -2466,6 +2466,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `session-calendar-records.jsonl` | 신규 append-only | exchange-date별 session과 provenance |
 | `schedule-boundary-records.jsonl` | 신규 append-only | market timezone, calendar와 cadence slot boundary |
 | `portfolio-policy-records.jsonl` | 기존 append-only | validated immutable policy |
+| `runtime-portfolio-policy-records.jsonl` | 신규 append-only | dependency-resolved canonical runtime policy와 immutable lineage |
 | `portfolio-policy-activations.jsonl` | 신규 append-only | portfolio별 active/retired policy lineage |
 | `manual-assignment-events.jsonl` | 신규 append-only | full digest로 인증한 manual authorization과 sizing lineage |
 | `manual-opening-capacity-reservations.jsonl` | 신규 append-only | manual open/increase의 single-use slot·notional 예약 |
@@ -2643,6 +2644,13 @@ stored runtime record parser는 strict schema parse 결과가 raw input과 deep-
 root와 nested identifier의 조용한 trim 변환을 거절하며 `createdAt` offset도 다시 검증한다.
 runtime record는 semantic policy hash/ID와 별도 `lineageHash`에 `createdAt`을 결속해 저장 시각
 단독 변조를 거절한다.
+filesystem repository는 `src/portfolio/runtimePortfolioPolicyFiles.ts`가 담당한다.
+`runtime-portfolio-policy-records.jsonl`의 read-validate-append 전체를 `wx` exclusive lock으로
+직렬화하고, record를 append하거나 읽을 때마다 complete payload hash와 hash-derived ID를
+재검증한 뒤 모든 immutable dependency ref를 다시 해소한다. exact record retry는 기존 record로
+수렴하며 file handle sync 이후에만 성공을 반환한다. 같은 semantic ID의 다른 lineage,
+corrupt/torn/blank line, duplicate record ID 또는 abandoned lock은 자동 복구하지 않고
+fail-closed한다. 이 repository도 runner/order engine에는 연결하지 않는다.
 cadence, holding, exit, selection/risk/drawdown/calendar ref는 bucket별 normalization input으로
 명시해야 한다. 결과 record는 canonical 5-bucket 순서, source policy hash, legacy reduce-only
 rule-set ref를 포함한 complete payload hash와 hash-derived ID를 가지며 저장 전 dependency

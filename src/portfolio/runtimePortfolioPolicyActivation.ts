@@ -4,12 +4,10 @@ import { z } from "zod";
 
 import { isoDateTimeSchema, sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
-import {
-  ImmutablePolicyDependencyRepository,
-  resolveStrategyBucketRuntimePolicyDependencyIdentities
-} from "./runtimePolicyDependencyResolver.js";
+import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import {
   parseRuntimePortfolioPolicyRecord,
+  validateRuntimePortfolioPolicyDependencies,
   type RuntimePortfolioPolicyRecord
 } from "./runtimePortfolioPolicy.js";
 
@@ -393,38 +391,7 @@ function resolveActivatedPolicy(
   if (chronologyTimestamp(policy.createdAt) > chronologyTimestamp(event.createdAt)) {
     throw new Error("runtime portfolio policy cannot postdate its activation");
   }
-  const dependencyRecords = policy.strategyBuckets.flatMap((bucket) => {
-    const resolved = resolveStrategyBucketRuntimePolicyDependencyIdentities(
-      bucket,
-      dependencies
-    );
-    return [
-      resolved.selectionPolicy,
-      resolved.riskRuleSet,
-      ...resolved.riskRules.map(({ parameter }) => parameter),
-      resolved.drawdownSemantics,
-      ...resolved.scheduleBoundaries.flatMap(({ boundary, calendar }) => [
-        boundary,
-        calendar
-      ])
-    ];
-  });
-  const legacyRisk = dependencies.resolveRiskRuleSetDependencies(
-    policy.legacyReduceOnlyPolicy.riskRuleSetRef
-  );
-  dependencyRecords.push(
-    legacyRisk.riskRuleSet,
-    ...legacyRisk.riskRules.map(({ parameter }) => parameter)
-  );
-  const policyCreatedAt = chronologyTimestamp(policy.createdAt);
-  if (
-    dependencyRecords.some(
-      (record) => chronologyTimestamp(record.createdAt) > policyCreatedAt
-    )
-  ) {
-    throw new Error("runtime policy dependency cannot postdate the policy");
-  }
-  return policy;
+  return validateRuntimePortfolioPolicyDependencies(policy, dependencies);
 }
 
 function assertReplacementTurnoverWindowBoundary(

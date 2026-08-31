@@ -25,6 +25,7 @@ import {
 } from "./runtimePolicyContracts.js";
 import {
   ImmutablePolicyDependencyRepository,
+  resolveStrategyBucketRuntimePolicyDependencyIdentities,
   resolveStrategyBucketRuntimePolicyDependencies,
   type RequiredCalendarDate
 } from "./runtimePolicyDependencyResolver.js";
@@ -321,6 +322,38 @@ export function parseRuntimePortfolioPolicyRecord(
     throw new Error("runtime portfolio policy lineage hash mismatch");
   }
   return deepFreeze(record);
+}
+
+export function validateRuntimePortfolioPolicyDependencies(
+  value: unknown,
+  dependencies: ImmutablePolicyDependencyRepository
+): RuntimePortfolioPolicyRecord {
+  const policy = parseRuntimePortfolioPolicyRecord(value);
+  const dependencyRecords = policy.strategyBuckets.flatMap((bucket) => {
+    const resolved = resolveStrategyBucketRuntimePolicyDependencyIdentities(
+      bucket,
+      dependencies
+    );
+    return [
+      resolved.selectionPolicy,
+      resolved.riskRuleSet,
+      ...resolved.riskRules.map(({ parameter }) => parameter),
+      resolved.drawdownSemantics,
+      ...resolved.scheduleBoundaries.flatMap(({ boundary, calendar }) => [
+        boundary,
+        calendar
+      ])
+    ];
+  });
+  const legacyRisk = dependencies.resolveRiskRuleSetDependencies(
+    policy.legacyReduceOnlyPolicy.riskRuleSetRef
+  );
+  dependencyRecords.push(
+    legacyRisk.riskRuleSet,
+    ...legacyRisk.riskRules.map(({ parameter }) => parameter)
+  );
+  assertDependenciesDoNotPostdateRuntime(dependencyRecords, policy.createdAt);
+  return policy;
 }
 
 function assertPortfolioWideInvariants(
