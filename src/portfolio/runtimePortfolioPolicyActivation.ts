@@ -19,6 +19,9 @@ const positiveIntegerSchema = z.number().int().positive();
 const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
   (value) => /\.\d{3}(Z|[+-]\d{2}:\d{2})$/.test(value),
   "date-time must use millisecond precision and include a UTC or numeric timezone offset"
+).refine(
+  hasValidCalendarDatePrefix,
+  "date-time must include a valid calendar date"
 );
 
 const activatedPayloadSchema = z
@@ -450,6 +453,22 @@ function chronologyTimestamp(value: string): number {
     throw new Error("chronology timestamp must be an ISO-compatible date-time");
   }
   return timestamp;
+}
+
+function hasValidCalendarDatePrefix(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T/.exec(value);
+  if (match === null) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 function deepFreeze<T>(value: T): T {

@@ -285,6 +285,15 @@ test("activation parser rejects future and backdated effective time after indepe
   );
   assert.throws(
     () =>
+      createPortfolioPolicyActivatedEvent({
+        policy,
+        activationSequence: 1,
+        createdAt: "2026-02-30T01:00:00.000Z"
+      }),
+    /must include a valid calendar date/
+  );
+  assert.throws(
+    () =>
       parsePortfolioPolicyActivationEvent(
         rehashActivatedEvent(event, {
           effectiveFrom: "2026-08-28T00:59:59.000Z"
@@ -358,6 +367,17 @@ test("activation resolver requires exact runtime policy identity and chronology"
         dependencies: DEPENDENCY_FIXTURE.repository
       }),
     /must use millisecond precision/
+  );
+  assert.throws(
+    () =>
+      resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId: policy.portfolioId,
+        asOf: "2026-02-30T02:00:00.000Z",
+        events: [event],
+        policies: [policy],
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /must include a valid calendar date/
   );
 });
 
