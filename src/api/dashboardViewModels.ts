@@ -1199,21 +1199,20 @@ async function readActivePortfolioPolicy(
     return { status: "missing", active: null, sourceStatus: "missing" };
   }
   try {
-    const dependencies = await new ImmutablePolicyDependencyFileLoader(
-      storageBaseDir
-    ).load();
-    const policyRepository = new RuntimePortfolioPolicyFileRepository(
-      storageBaseDir,
-      dependencies.repository
-    );
-    const { policies, events } =
+    const { dependencies, policies, events } =
       await readConsistentRuntimePortfolioPolicyActivationSnapshot({
-        readPolicies: () => policyRepository.readAll(),
-        readEvents: (policyGeneration) =>
+        loadDependencies: () =>
+          new ImmutablePolicyDependencyFileLoader(storageBaseDir).load(),
+        readPolicies: (dependencyGeneration) =>
+          new RuntimePortfolioPolicyFileRepository(
+            storageBaseDir,
+            dependencyGeneration.repository
+          ).readAll(),
+        readEvents: (policyGeneration, dependencyGeneration) =>
           new RuntimePortfolioPolicyActivationFileRepository(
             storageBaseDir,
             policyGeneration,
-            dependencies.repository
+            dependencyGeneration.repository
           ).readAll()
       });
     const active = findActiveRuntimePortfolioPolicyAsOf({

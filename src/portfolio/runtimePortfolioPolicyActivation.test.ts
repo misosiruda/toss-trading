@@ -1039,6 +1039,7 @@ test("policy activation snapshot retries after the policy generation advances", 
 
   const snapshot =
     await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
       readPolicies: async () => {
         policyReadCount += 1;
         return policyReadCount === 1
@@ -1074,6 +1075,7 @@ test("policy activation snapshot keeps stable activation corruption fail-closed"
 
   await assert.rejects(
     readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
       readPolicies: async () => {
         policyReadCount += 1;
         return [policy];
@@ -1088,6 +1090,97 @@ test("policy activation snapshot keeps stable activation corruption fail-closed"
 
   assert.equal(policyReadCount, 2);
   assert.equal(activationReadCount, 1);
+});
+
+test("policy activation snapshot reloads an appended dependency generation", async () => {
+  const activePolicy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy: activePolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+  let policyReadCount = 0;
+
+  const snapshot =
+    await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? DEPENDENCY_FIXTURE
+          : extendedDependencies;
+      },
+      readPolicies: async (dependencies) => {
+        policyReadCount += 1;
+        if (
+          dependencies.records.selectionPolicies.length ===
+          DEPENDENCY_FIXTURE.records.selectionPolicies.length
+        ) {
+          throw new Error("runtime policy dependency ref does not resolve");
+        }
+        return [activePolicy];
+      },
+      readEvents: async () => [activation]
+    });
+
+  assert.equal(dependencyReadCount, 2);
+  assert.equal(policyReadCount, 2);
+  assert.equal(
+    snapshot.dependencies.records.selectionPolicies.length,
+    DEPENDENCY_FIXTURE.records.selectionPolicies.length + 1
+  );
+  assert.equal(snapshot.events[0], activation);
+});
+
+test("policy activation snapshot rejects a replaced policy generation", async () => {
+  const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
+  const secondPolicy = runtimePolicy({ portfolioId: "paper-second" });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => DEPENDENCY_FIXTURE,
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? [firstPolicy, secondPolicy]
+          : [secondPolicy];
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        throw new Error("activation read requires a refresh");
+      }
+    }),
+    /policy generation must be an append-only extension/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 1);
+});
+
+test("policy activation snapshot rejects a regressed dependency generation", async () => {
+  const extendedDependencies = extendedDependencyFixture();
+  let dependencyReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      loadDependencies: async () => {
+        dependencyReadCount += 1;
+        return dependencyReadCount === 1
+          ? extendedDependencies
+          : DEPENDENCY_FIXTURE;
+      },
+      readPolicies: async () => {
+        throw new Error("policy read requires a refresh");
+      },
+      readEvents: async () => []
+    }),
+    /dependency generation must be an append-only extension/
+  );
+
+  assert.equal(dependencyReadCount, 2);
 });
 
 test("portfolio compliance reads bucket bands from the active stored policy hash", async () => {
@@ -1278,6 +1371,35 @@ function rehashActivatedEvent(
     ),
     activationEventHash,
     createdAt
+  };
+}
+
+function extendedDependencyFixture() {
+  const additionalSelectionPolicy = createBucketSelectionPolicyRecord({
+    bucket: "long_term",
+    version: "selection.long_term.v2",
+    requiredEvidence: [
+      {
+        evidenceClass: "market_technical",
+        sourceContractId: "verified-market-packet.v1",
+        maximumAgeSeconds: 60
+      }
+    ],
+    hardGateRuleIds: ["liquidity"],
+    scoringModelVersion: "selector.long_term.v2",
+    featureDefinitionRefs: ["momentum.v2"],
+    createdAt: "2026-08-28T00:30:00.000Z"
+  });
+  const records: ImmutablePolicyDependencyRecords = {
+    ...DEPENDENCY_FIXTURE.records,
+    selectionPolicies: [
+      ...DEPENDENCY_FIXTURE.records.selectionPolicies,
+      additionalSelectionPolicy
+    ]
+  };
+  return {
+    records,
+    repository: new ImmutablePolicyDependencyRepository(records)
   };
 }
 

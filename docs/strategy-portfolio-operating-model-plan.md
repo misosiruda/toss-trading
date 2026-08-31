@@ -2705,10 +2705,11 @@ currentWeightRatio`이며 min 미만은 `under`, max 초과는 `over`, band 안�
 없거나 retired 상태이면 target/min/max/gap을 `null`과 `missing_policy`로 내리고, corrupt
 policy/dependency/activation lineage는 `policyStatus = invalid`, source `corrupt`, 전체 `breach`로
 fail-closed한다. portfolio as-of는 UTC 또는 numeric offset이 있는 timestamp만 canonical UTC로
-정규화하며, policy read 이후 새 activation이 보이는 cross-file race는 policy generation이 실제
-증가한 경우에만 한 번 다시 읽는다. stable corruption은 재시도로 숨기지 않는다. active policy가
-있을 때 cash target과 absolute reserve floor도 같은 policy record에서 읽는다. 이 read-only 경로는
-runner, Risk Engine 또는 OrderRouter를 호출하지 않는다.
+정규화한다. dependency → policy → activation publication 사이의 cross-file race는 앞서 읽은 각
+record 배열을 exact prefix로 보존하는 strict append-only extension이 관찰된 경우에만 bounded
+re-read한다. truncated, reordered, replaced generation과 stable corruption은 재시도로 숨기지 않는다.
+active policy가 있을 때 cash target과 absolute reserve floor도 같은 policy record에서 읽는다. 이
+read-only 경로는 runner, Risk Engine 또는 OrderRouter를 호출하지 않는다.
 
 Next.js dashboard contract와 `/dashboard`, `/dashboard/portfolio` Server Component는 nullable
 band/gap을 0%로 대체하지 않고 `missing`으로 표시하며, active policy version/hash와 bucket별

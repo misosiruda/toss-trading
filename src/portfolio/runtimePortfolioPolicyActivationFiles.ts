@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
+import type { ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
+import type { LoadedImmutablePolicyDependencies } from "./runtimePolicyDependencyFiles.js";
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 import {
@@ -38,6 +41,7 @@ export interface AppendPortfolioPolicyRetiredInput {
 }
 
 export interface RuntimePortfolioPolicyActivationSnapshot {
+  dependencies: LoadedImmutablePolicyDependencies;
   policies: readonly RuntimePortfolioPolicyRecord[];
   events: readonly PortfolioPolicyActivationEvent[];
 }
@@ -45,31 +49,83 @@ export interface RuntimePortfolioPolicyActivationSnapshot {
 /**
  * Reads policy and activation files as one logical append-only generation.
  *
- * A policy append is durably acknowledged before its activation can be
- * appended. If an activation reader observes that new event after an older
- * policy read, strict validation fails because the referenced policy is not in
- * that older generation. Re-read policies and retry only when the policy
- * generation actually advanced; stable corruption remains fail-closed.
+ * Dependency records and a policy are durably acknowledged before that policy
+ * can be activated. If a later file becomes visible after an earlier file was
+ * read, strict validation can fail against the older generation. Re-read the
+ * complete chain once and retry only when every changed generation is a strict
+ * append-only extension; stable corruption and replacement remain fail-closed.
  */
 export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(input: {
-  readPolicies: () => Promise<readonly RuntimePortfolioPolicyRecord[]>;
+  loadDependencies: () => Promise<LoadedImmutablePolicyDependencies>;
+  readPolicies: (
+    dependencies: LoadedImmutablePolicyDependencies
+  ) => Promise<readonly RuntimePortfolioPolicyRecord[]>;
   readEvents: (
-    policies: readonly RuntimePortfolioPolicyRecord[]
+    policies: readonly RuntimePortfolioPolicyRecord[],
+    dependencies: LoadedImmutablePolicyDependencies
   ) => Promise<readonly PortfolioPolicyActivationEvent[]>;
 }): Promise<RuntimePortfolioPolicyActivationSnapshot> {
-  let policies = await input.readPolicies();
+  let dependencies = await input.loadDependencies();
+  let policies: readonly RuntimePortfolioPolicyRecord[];
   try {
-    const events = await input.readEvents(policies);
-    return Object.freeze({ policies, events });
+    policies = await input.readPolicies(dependencies);
   } catch (error) {
-    const refreshedPolicies = await input.readPolicies();
-    if (samePolicyGeneration(policies, refreshedPolicies)) {
+    const refreshedDependencies = await input.loadDependencies();
+    const dependencyRelation = dependencyGenerationRelation(
+      dependencies.records,
+      refreshedDependencies.records
+    );
+    if (dependencyRelation === "invalid") {
+      throw new Error(
+        "runtime policy dependency generation must be an append-only extension",
+        { cause: error }
+      );
+    }
+    if (dependencyRelation === "same") {
       throw error;
     }
-    policies = refreshedPolicies;
+    dependencies = refreshedDependencies;
+    policies = await input.readPolicies(dependencies);
   }
-  const events = await input.readEvents(policies);
-  return Object.freeze({ policies, events });
+  try {
+    const events = await input.readEvents(policies, dependencies);
+    return Object.freeze({ dependencies, policies, events });
+  } catch (error) {
+    const refreshedDependencies = await input.loadDependencies();
+    const dependencyRelation = dependencyGenerationRelation(
+      dependencies.records,
+      refreshedDependencies.records
+    );
+    if (dependencyRelation === "invalid") {
+      throw new Error(
+        "runtime policy dependency generation must be an append-only extension",
+        { cause: error }
+      );
+    }
+    const refreshedPolicies = await input.readPolicies(refreshedDependencies);
+    const policyRelation = appendOnlyGenerationRelation(
+      policies,
+      refreshedPolicies
+    );
+    if (policyRelation === "invalid") {
+      throw new Error(
+        "runtime portfolio policy generation must be an append-only extension",
+        { cause: error }
+      );
+    }
+    if (dependencyRelation === "same" && policyRelation === "same") {
+      throw error;
+    }
+    const events = await input.readEvents(
+      refreshedPolicies,
+      refreshedDependencies
+    );
+    return Object.freeze({
+      dependencies: refreshedDependencies,
+      policies: refreshedPolicies,
+      events
+    });
+  }
 }
 
 export function createRuntimePortfolioPolicyActivationPaths(baseDir: string): {
@@ -331,19 +387,52 @@ function sameRetiredAppendInput(
   );
 }
 
-function samePolicyGeneration(
-  left: readonly RuntimePortfolioPolicyRecord[],
-  right: readonly RuntimePortfolioPolicyRecord[]
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every(
-      (record, index) =>
-        record.runtimePolicyRecordId === right[index]?.runtimePolicyRecordId &&
-        record.policyHash === right[index]?.policyHash &&
-        record.lineageHash === right[index]?.lineageHash
+type GenerationRelation = "same" | "extended" | "invalid";
+
+function dependencyGenerationRelation(
+  left: ImmutablePolicyDependencyRecords,
+  right: ImmutablePolicyDependencyRecords
+): GenerationRelation {
+  const relations: GenerationRelation[] = [
+    appendOnlyGenerationRelation(
+      left.selectionPolicies,
+      right.selectionPolicies
+    ),
+    appendOnlyGenerationRelation(left.riskParameters, right.riskParameters),
+    appendOnlyGenerationRelation(left.riskRuleSets, right.riskRuleSets),
+    appendOnlyGenerationRelation(
+      left.drawdownSemantics,
+      right.drawdownSemantics
+    ),
+    appendOnlyGenerationRelation(
+      left.sessionCalendars,
+      right.sessionCalendars
+    ),
+    appendOnlyGenerationRelation(
+      left.scheduleBoundaries,
+      right.scheduleBoundaries
     )
-  );
+  ];
+  return relations.includes("invalid")
+    ? "invalid"
+    : relations.includes("extended")
+      ? "extended"
+      : "same";
+}
+
+function appendOnlyGenerationRelation<T>(
+  left: readonly T[],
+  right: readonly T[]
+): GenerationRelation {
+  if (
+    right.length < left.length ||
+    !left.every((record, index) =>
+      isDeepStrictEqual(record, right[index])
+    )
+  ) {
+    return "invalid";
+  }
+  return right.length === left.length ? "same" : "extended";
 }
 
 async function appendDurableJsonLine(
