@@ -120,11 +120,19 @@ function PortfolioComplianceView({
 }) {
   return (
     <>
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Metric label="Net worth" value={formatKrw(data.virtualNetWorthKrw)} />
         <Metric
           label="Portfolio"
           value={data.portfolioId ?? "missing"}
+        />
+        <Metric
+          label="Policy version"
+          value={data.activePolicy?.version ?? "missing"}
+        />
+        <Metric
+          label="Policy hash"
+          value={data.activePolicy?.policyHash ?? "missing"}
         />
         <Metric
           label="Cash ratio"
@@ -137,7 +145,7 @@ function PortfolioComplianceView({
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+        <section className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
           <SectionHeader
             eyebrow={data.asOf === null ? "missing asOf" : formatDateTime(data.asOf)}
             status={data.status}
@@ -146,9 +154,9 @@ function PortfolioComplianceView({
           <BucketAllocationMatrix rows={data.bucketCompliance} />
         </section>
 
-        <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+        <section className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
           <SectionHeader
-            eyebrow={data.policyStatus}
+            eyebrow={`${data.policyStatus} · ${data.activePolicy?.version ?? "no active version"}`}
             status={data.status}
             title="Compliance Breaches"
           />
@@ -172,7 +180,7 @@ function PortfolioComplianceView({
 
 function BucketAllocationMatrix({ rows }: { rows: BucketComplianceRow[] }) {
   return (
-    <div className="mt-4 overflow-x-auto">
+    <div className="mt-4 w-full max-w-full overflow-x-auto">
       <table
         aria-label="Bucket allocation compliance table"
         className="min-w-full text-left text-sm"
@@ -180,7 +188,9 @@ function BucketAllocationMatrix({ rows }: { rows: BucketComplianceRow[] }) {
         <thead className="text-xs uppercase text-[var(--muted)]">
           <tr>
             <th className="py-2 pr-3 font-medium">Bucket</th>
+            <th className="py-2 pr-3 font-medium">Min</th>
             <th className="py-2 pr-3 font-medium">Target</th>
+            <th className="py-2 pr-3 font-medium">Max</th>
             <th className="py-2 pr-3 font-medium">Current</th>
             <th className="py-2 pr-3 font-medium">Gap</th>
             <th className="py-2 pr-3 font-medium">Exposure</th>
@@ -192,7 +202,7 @@ function BucketAllocationMatrix({ rows }: { rows: BucketComplianceRow[] }) {
         <tbody className="divide-y divide-[var(--border)]">
           {rows.length === 0 ? (
             <tr>
-              <td className="py-4 text-[var(--muted)]" colSpan={8}>
+              <td className="py-4 text-[var(--muted)]" colSpan={10}>
                 No bucket compliance rows are available.
               </td>
             </tr>
@@ -201,13 +211,19 @@ function BucketAllocationMatrix({ rows }: { rows: BucketComplianceRow[] }) {
               <tr key={row.bucket}>
                 <td className="py-2 pr-3">{BUCKET_LABELS[row.bucket]}</td>
                 <td className="py-2 pr-3 font-mono text-xs">
-                  {formatRatio(row.targetWeightRatio)}
+                  {formatNullableRatio(row.minWeightRatio)}
+                </td>
+                <td className="py-2 pr-3 font-mono text-xs">
+                  {formatNullableRatio(row.targetWeightRatio)}
+                </td>
+                <td className="py-2 pr-3 font-mono text-xs">
+                  {formatNullableRatio(row.maxWeightRatio)}
                 </td>
                 <td className="py-2 pr-3 font-mono text-xs">
                   {formatRatio(row.currentWeightRatio)}
                 </td>
                 <td className="py-2 pr-3 font-mono text-xs">
-                  {formatSignedRatio(row.gapRatio)}
+                  {formatNullableSignedRatio(row.gapRatio)}
                 </td>
                 <td className="py-2 pr-3 font-mono text-xs">
                   {formatKrw(row.exposureKrw)}
@@ -242,7 +258,8 @@ function ComplianceBreachList({
         key: `bucket-${row.bucket}`,
         label: BUCKET_LABELS[row.bucket],
         status: row.status,
-        detail: row.primaryReason ?? `gap ${formatSignedRatio(row.gapRatio)}`
+        detail:
+          row.primaryReason ?? `gap ${formatNullableSignedRatio(row.gapRatio)}`
       })),
     ...(data.cashCompliance.status === "ok"
       ? []
@@ -401,7 +418,7 @@ function ExposureCompliancePanel({
   data: PolicyComplianceViewModel;
 }) {
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader
         eyebrow="concentration"
         status={data.exposureCompliance.status}
@@ -481,7 +498,7 @@ function CostTurnoverPanel({
   analytics: ComplianceAnalyticsView;
 }) {
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader
         eyebrow="paper execution assumptions"
         title="Cost and Turnover"
@@ -796,6 +813,10 @@ function formatNullableRatio(value: number | null): string {
 function formatSignedRatio(value: number): string {
   const formatted = formatRatio(value);
   return value > 0 ? `+${formatted}` : formatted;
+}
+
+function formatNullableSignedRatio(value: number | null): string {
+  return value === null ? "missing" : formatSignedRatio(value);
 }
 
 function formatDateTime(value: string): string {

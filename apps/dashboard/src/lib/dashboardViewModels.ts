@@ -19,13 +19,24 @@ export type DashboardViewModelName =
 
 export interface BucketComplianceRow {
   bucket: StrategyBucket;
-  targetWeightRatio: number;
+  minWeightRatio: number | null;
+  targetWeightRatio: number | null;
+  maxWeightRatio: number | null;
   currentWeightRatio: number;
-  gapRatio: number;
+  gapRatio: number | null;
   exposureKrw: number;
   turnoverRatio: number | null;
-  status: "ok" | "under" | "over" | "missing";
+  status: "ok" | "under" | "over" | "missing_policy";
   primaryReason: string | null;
+}
+
+export interface ActivePolicySummary {
+  runtimePolicyRecordId: string;
+  policyId: string;
+  version: string;
+  policyHash: string;
+  activationId: string;
+  effectiveFrom: string;
 }
 
 export interface PolicyComplianceViewModel {
@@ -35,7 +46,8 @@ export interface PolicyComplianceViewModel {
   asOf: string | null;
   portfolioId: string | null;
   virtualNetWorthKrw: number;
-  policyStatus: "missing";
+  policyStatus: "active" | "missing" | "invalid";
+  activePolicy: ActivePolicySummary | null;
   bucketCompliance: BucketComplianceRow[];
   cashCompliance: {
     marketRegime: string;
@@ -1271,7 +1283,11 @@ function isPolicyComplianceViewModel(
     isNullableString(value.asOf) &&
     isNullableString(value.portfolioId) &&
     isNumber(value.virtualNetWorthKrw) &&
-    value.policyStatus === "missing" &&
+    (value.policyStatus === "active" ||
+      value.policyStatus === "missing" ||
+      value.policyStatus === "invalid") &&
+    (value.activePolicy === null || isActivePolicySummary(value.activePolicy)) &&
+    (value.policyStatus === "active") === (value.activePolicy !== null) &&
     Array.isArray(value.bucketCompliance) &&
     value.bucketCompliance.every(isBucketComplianceRow) &&
     isCashCompliance(value.cashCompliance) &&
@@ -1282,6 +1298,18 @@ function isPolicyComplianceViewModel(
     isSourceStatus(value.sourceStatus) &&
     isStringArray(value.warnings) &&
     isViewModelStatus(value.status)
+  );
+}
+
+function isActivePolicySummary(value: unknown): value is ActivePolicySummary {
+  return (
+    isRecord(value) &&
+    typeof value["runtimePolicyRecordId"] === "string" &&
+    typeof value["policyId"] === "string" &&
+    typeof value["version"] === "string" &&
+    typeof value["policyHash"] === "string" &&
+    typeof value["activationId"] === "string" &&
+    typeof value["effectiveFrom"] === "string"
   );
 }
 
@@ -1482,15 +1510,17 @@ function isBucketComplianceRow(value: unknown): value is BucketComplianceRow {
   return (
     isRecord(value) &&
     isStrategyBucket(value["bucket"]) &&
-    isNumber(value["targetWeightRatio"]) &&
+    isNullableNumber(value["minWeightRatio"]) &&
+    isNullableNumber(value["targetWeightRatio"]) &&
+    isNullableNumber(value["maxWeightRatio"]) &&
     isNumber(value["currentWeightRatio"]) &&
-    isNumber(value["gapRatio"]) &&
+    isNullableNumber(value["gapRatio"]) &&
     isNumber(value["exposureKrw"]) &&
     isNullableNumber(value["turnoverRatio"]) &&
     (value["status"] === "ok" ||
       value["status"] === "under" ||
       value["status"] === "over" ||
-      value["status"] === "missing") &&
+      value["status"] === "missing_policy") &&
     isNullableString(value["primaryReason"])
   );
 }

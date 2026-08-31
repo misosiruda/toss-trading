@@ -189,12 +189,16 @@ function PortfolioPanel({
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <PanelHeader
-        eyebrow="Portfolio policy"
+        eyebrow={`${data.policyStatus} · ${data.activePolicy?.version ?? "no active version"}`}
         status={data.status}
         title="Portfolio Compliance"
       />
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Net worth" value={formatKrw(data.virtualNetWorthKrw)} />
+        <Metric
+          label="Policy version"
+          value={data.activePolicy?.version ?? "missing"}
+        />
         <Metric
           label="Cash"
           value={formatRatio(data.cashCompliance.currentCashRatio)}
@@ -211,8 +215,10 @@ function PortfolioPanel({
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Bucket</th>
-              <th className="py-2 pr-3 font-medium">Exposure</th>
+              <th className="py-2 pr-3 font-medium">Target</th>
               <th className="py-2 pr-3 font-medium">Current</th>
+              <th className="py-2 pr-3 font-medium">Gap</th>
+              <th className="py-2 pr-3 font-medium">Exposure</th>
               <th className="py-2 pr-3 font-medium">Turnover</th>
               <th className="py-2 font-medium">Status</th>
             </tr>
@@ -483,13 +489,19 @@ function BucketRow({ row }: { row: BucketComplianceRow }) {
     <tr>
       <td className="py-2 pr-3">{BUCKET_LABELS[row.bucket]}</td>
       <td className="py-2 pr-3 font-mono text-xs">
-        {formatKrw(row.exposureKrw)}
+        {formatNullableRatio(row.targetWeightRatio)}
       </td>
       <td className="py-2 pr-3 font-mono text-xs">
         {formatRatio(row.currentWeightRatio)}
       </td>
       <td className="py-2 pr-3 font-mono text-xs">
-        {row.turnoverRatio === null ? "missing" : formatRatio(row.turnoverRatio)}
+        {formatNullableSignedRatio(row.gapRatio)}
+      </td>
+      <td className="py-2 pr-3 font-mono text-xs">
+        {formatKrw(row.exposureKrw)}
+      </td>
+      <td className="py-2 pr-3 font-mono text-xs">
+        {formatNullableRatio(row.turnoverRatio)}
       </td>
       <td className="py-2">
         <Badge tone={statusTone(row.status)} value={row.status} />
@@ -620,6 +632,14 @@ function formatRatio(value: number): string {
 
 function formatNullableRatio(value: number | null): string {
   return value === null ? "missing" : formatRatio(value);
+}
+
+function formatNullableSignedRatio(value: number | null): string {
+  if (value === null) {
+    return "missing";
+  }
+  const formatted = formatRatio(value);
+  return value > 0 ? `+${formatted}` : formatted;
 }
 
 function formatDateTime(value: string): string {

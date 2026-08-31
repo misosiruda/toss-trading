@@ -2696,6 +2696,21 @@ repository도 runner/order engine에는 아직 연결하지 않는다.
 - bucket gap과 `under`, `over`, `ok`, `missing_policy` 계산
 - dashboard에 실제 policy version과 gap 표시
 
+`src/api/dashboardViewModels.ts`는 virtual portfolio snapshot의 `updatedAt`을 as-of로 사용해
+immutable dependency, `runtime-portfolio-policy-records.jsonl`,
+`portfolio-policy-activations.jsonl`을 strict read한 뒤 해당 `portfolioId`의 active policy를
+해소한다. 화면에 내리는 `activePolicy`는 runtime record ID, policy ID/version/hash와 activation
+ID/effective time을 함께 보존한다. bucket `gapRatio`는 `targetWeightRatio -
+currentWeightRatio`이며 min 미만은 `under`, max 초과는 `over`, band 안은 `ok`다. active policy가
+없거나 retired 상태이면 target/min/max/gap을 `null`과 `missing_policy`로 내리고, corrupt
+policy/dependency/activation lineage는 `policyStatus = invalid`, source `corrupt`, 전체 `breach`로
+fail-closed한다. active policy가 있을 때 cash target과 absolute reserve floor도 같은 policy
+record에서 읽는다. 이 read-only 경로는 runner, Risk Engine 또는 OrderRouter를 호출하지 않는다.
+
+Next.js dashboard contract와 `/dashboard`, `/dashboard/portfolio` Server Component는 nullable
+band/gap을 0%로 대체하지 않고 `missing`으로 표시하며, active policy version/hash와 bucket별
+min/target/max/current/gap을 backend ViewModel 그대로 렌더링한다.
+
 완료 조건:
 
 - 저장 정책과 화면 target이 같은 policy hash를 사용한다.

@@ -190,9 +190,18 @@ interface StrategyBucketPolicyView {
 ```ts
 interface PolicyComplianceViewModel {
   mode: "paper_only";
-  asOf: string;
-  portfolioId: string;
+  asOf: string | null;
+  portfolioId: string | null;
   virtualNetWorthKrw: number;
+  policyStatus: "active" | "missing" | "invalid";
+  activePolicy: {
+    runtimePolicyRecordId: string;
+    policyId: string;
+    version: string;
+    policyHash: string;
+    activationId: string;
+    effectiveFrom: string;
+  } | null;
   bucketCompliance: BucketComplianceRow[];
   cashCompliance: CashComplianceView;
   hedgeCompliance: HedgeComplianceView;
@@ -204,12 +213,14 @@ interface PolicyComplianceViewModel {
 
 interface BucketComplianceRow {
   bucket: StrategyBucket;
-  targetWeightRatio: number;
+  minWeightRatio: number | null;
+  targetWeightRatio: number | null;
+  maxWeightRatio: number | null;
   currentWeightRatio: number;
-  gapRatio: number;
+  gapRatio: number | null;
   exposureKrw: number;
   turnoverRatio: number | null;
-  status: "ok" | "under" | "over" | "missing";
+  status: "ok" | "under" | "over" | "missing_policy";
   primaryReason: string | null;
 }
 ```
@@ -770,7 +781,7 @@ npm run check
 - `GET /dashboard/view-model/strategy-test-lab`
 - `GET /dashboard/view-model/risk-gate-trace`
 - `GET /dashboard/view-model/validation-lab`
-- policy draft 저장소가 없는 값은 `policyStatus: "missing"` 또는 row-level `status: "missing"`으로 내려준다.
+- active runtime policy가 없으면 `policyStatus: "missing"`, target/min/max/gap은 `null`, row-level `status: "missing_policy"`로 내려준다. lineage 검증 실패는 `policyStatus: "invalid"`로 fail-closed한다.
 - strategy bucket isolated replay mutation과 결과 artifact가 없는 값은 disabled capability 또는 empty result로 내려준다.
 - live order, raw `codex exec`, raw `tossctl` 실행 surface는 추가하지 않는다.
 
