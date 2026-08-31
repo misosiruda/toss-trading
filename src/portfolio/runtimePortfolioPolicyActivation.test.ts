@@ -453,6 +453,60 @@ test("replacement changes turnover window semantics only at the current window b
   );
 });
 
+test("post-retirement activation preserves the last turnover window boundary", () => {
+  const dailyPolicy = runtimePolicy();
+  const hourlyPolicy = runtimePolicy({
+    version: "v2",
+    name: "Hourly turnover policy",
+    turnoverDurationSeconds: 3_600
+  });
+  const activated = createPortfolioPolicyActivatedEvent({
+    policy: dailyPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T00:00:00.000Z"
+  });
+  const retired = createPortfolioPolicyRetiredEvent({
+    portfolioId: dailyPolicy.portfolioId,
+    activationSequence: 2,
+    retiredActivationId: activated.activationId,
+    reasonCode: "operator_pause",
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const midWindowReopen = createPortfolioPolicyActivatedEvent({
+    policy: hourlyPolicy,
+    activationSequence: 3,
+    createdAt: "2026-08-28T12:00:00.000Z"
+  });
+
+  assert.throws(
+    () =>
+      resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId: dailyPolicy.portfolioId,
+        asOf: "2026-08-28T12:00:00.000Z",
+        events: [activated, retired, midWindowReopen],
+        policies: [dailyPolicy, hourlyPolicy],
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /turnover window semantics can change only at the current window boundary/
+  );
+
+  const boundaryReopen = createPortfolioPolicyActivatedEvent({
+    policy: hourlyPolicy,
+    activationSequence: 3,
+    createdAt: "2026-08-29T00:00:00.000Z"
+  });
+  assert.equal(
+    resolveActiveRuntimePortfolioPolicyAsOf({
+      portfolioId: dailyPolicy.portfolioId,
+      asOf: "2026-08-29T00:00:00.000Z",
+      events: [activated, retired, boundaryReopen],
+      policies: [dailyPolicy, hourlyPolicy],
+      dependencies: DEPENDENCY_FIXTURE.repository
+    }).activation.activationId,
+    boundaryReopen.activationId
+  );
+});
+
 test("retirement event independently binds reason and target", () => {
   const policy = runtimePolicy();
   const activated = createPortfolioPolicyActivatedEvent({

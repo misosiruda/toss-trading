@@ -291,6 +291,7 @@ function validateAndFoldPortfolioEvents(
   let expectedSequence = 1;
   let previousEffectiveTime: number | undefined;
   let current: ActiveRuntimePortfolioPolicy | undefined;
+  let lastActivated: ActiveRuntimePortfolioPolicy | undefined;
 
   for (const event of ordered) {
     if (event.activationSequence !== expectedSequence) {
@@ -316,6 +317,13 @@ function validateAndFoldPortfolioEvents(
             "first or post-retirement activation cannot supersede another activation"
           );
         }
+        if (lastActivated !== undefined) {
+          assertReplacementTurnoverWindowBoundary(
+            event,
+            lastActivated.policy,
+            policy
+          );
+        }
       } else if (event.supersedesActivationId !== current.activation.activationId) {
         throw new Error(
           "replacement activation must supersede the current activation"
@@ -328,6 +336,7 @@ function validateAndFoldPortfolioEvents(
         );
       }
       current = deepFreeze({ activation: event, policy });
+      lastActivated = current;
     } else {
       if (
         current === undefined ||
