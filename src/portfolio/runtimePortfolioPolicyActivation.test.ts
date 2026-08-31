@@ -634,6 +634,7 @@ test("activation file repository serializes exact retries across processes", asy
   await withTemporaryDirectory(async (baseDir) => {
     const policy = runtimePolicy();
     const fixturePath = join(baseDir, "child-fixture.json");
+    const nestedBaseDir = join(baseDir, "nested", "activation");
     await writeFile(
       fixturePath,
       JSON.stringify({
@@ -644,11 +645,11 @@ test("activation file repository serializes exact retries across processes", asy
     );
 
     const [left, right] = await Promise.all([
-      appendActivationFromChildProcess(fixturePath, baseDir),
-      appendActivationFromChildProcess(fixturePath, baseDir)
+      appendActivationFromChildProcess(fixturePath, nestedBaseDir),
+      appendActivationFromChildProcess(fixturePath, nestedBaseDir)
     ]);
     const repository = new RuntimePortfolioPolicyActivationFileRepository(
-      baseDir,
+      nestedBaseDir,
       [policy],
       DEPENDENCY_FIXTURE.repository
     );
