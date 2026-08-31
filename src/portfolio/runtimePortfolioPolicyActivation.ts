@@ -207,6 +207,24 @@ export function resolveActiveRuntimePortfolioPolicyAsOf(input: {
   return deepFreeze(activeAtAsOf);
 }
 
+export function validateRuntimePortfolioPolicyActivationHistory(input: {
+  portfolioId: string;
+  events: readonly unknown[];
+  policies: readonly unknown[];
+  dependencies: ImmutablePolicyDependencyRepository;
+}): ActiveRuntimePortfolioPolicy | undefined {
+  const portfolioId = identifierSchema.parse(input.portfolioId);
+  const policiesById = exactPolicyMap(input.policies);
+  const events = input.events.map(parsePortfolioPolicyActivationEvent);
+  assertUniqueEventIds(events);
+  const active = validateAndFoldPortfolioEvents(
+    events.filter((event) => event.portfolioId === portfolioId),
+    policiesById,
+    input.dependencies
+  );
+  return active === undefined ? undefined : deepFreeze(active);
+}
+
 function verifyActivatedEvent(
   event: PortfolioPolicyActivatedEvent
 ): PortfolioPolicyActivatedEvent {
