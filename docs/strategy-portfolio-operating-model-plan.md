@@ -2653,8 +2653,9 @@ portfolio별 sequence, 즉시 적용 시각, supersedes/retired target을 선형
 policy는 record ID/ID/version/hash/lineage tuple을 exact-match하고 모든 bucket의
 selection/risk/drawdown/schedule/calendar dependency와 root legacy risk set을 다시 해소한다.
 scheduled bucket은 activation 시 enabled market과 boundary market의 canonical 집합이 정확히
-같아야 하며, 실제 exchange-date coverage는 해당 orchestration cycle에서 검증한다. 이 단계는
-filesystem append나 runner/order engine 연결을 포함하지 않는다.
+같아야 하며, 실제 exchange-date coverage는 해당 orchestration cycle에서 검증한다. 교체 policy가
+bucket의 turnover window semantics를 바꾸면 기존 Unix-epoch window의 정확한 boundary에서만
+활성화한다. 이 단계는 filesystem append나 runner/order engine 연결을 포함하지 않는다.
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation

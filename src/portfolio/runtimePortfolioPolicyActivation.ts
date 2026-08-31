@@ -320,6 +320,12 @@ function validateAndFoldPortfolioEvents(
         throw new Error(
           "replacement activation must supersede the current activation"
         );
+      } else {
+        assertReplacementTurnoverWindowBoundary(
+          event,
+          current.policy,
+          policy
+        );
       }
       current = deepFreeze({ activation: event, policy });
     } else {
@@ -389,6 +395,38 @@ function resolveActivatedPolicy(
     throw new Error("runtime policy dependency cannot postdate the policy");
   }
   return policy;
+}
+
+function assertReplacementTurnoverWindowBoundary(
+  event: PortfolioPolicyActivatedEvent,
+  currentPolicy: RuntimePortfolioPolicyRecord,
+  replacementPolicy: RuntimePortfolioPolicyRecord
+): void {
+  const currentBuckets = new Map(
+    currentPolicy.strategyBuckets.map((bucket) => [bucket.bucket, bucket])
+  );
+  const activationTimeMs = BigInt(chronologyTimestamp(event.effectiveFrom));
+  for (const replacementBucket of replacementPolicy.strategyBuckets) {
+    const currentBucket = currentBuckets.get(replacementBucket.bucket);
+    if (currentBucket === undefined) {
+      throw new Error("replacement runtime policy bucket does not resolve");
+    }
+    if (
+      isDeepStrictEqual(
+        currentBucket.turnoverWindow,
+        replacementBucket.turnoverWindow
+      )
+    ) {
+      continue;
+    }
+    const currentWindowDurationMs =
+      BigInt(currentBucket.turnoverWindow.durationSeconds) * 1_000n;
+    if (activationTimeMs % currentWindowDurationMs !== 0n) {
+      throw new Error(
+        "turnover window semantics can change only at the current window boundary"
+      );
+    }
+  }
 }
 
 function chronologyTimestamp(value: string): number {

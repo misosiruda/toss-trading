@@ -385,6 +385,54 @@ test("activation resolver independently resolves policy dependencies and boundar
   );
 });
 
+test("replacement changes turnover window semantics only at the current window boundary", () => {
+  const currentPolicy = runtimePolicy();
+  const replacementPolicy = runtimePolicy({
+    version: "v2",
+    name: "Hourly turnover policy",
+    turnoverDurationSeconds: 3_600
+  });
+  const current = createPortfolioPolicyActivatedEvent({
+    policy: currentPolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T00:00:00.000Z"
+  });
+  const midWindowReplacement = createPortfolioPolicyActivatedEvent({
+    policy: replacementPolicy,
+    activationSequence: 2,
+    supersedesActivationId: current.activationId,
+    createdAt: "2026-08-28T12:00:00.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId: currentPolicy.portfolioId,
+        asOf: "2026-08-28T12:00:00.000Z",
+        events: [current, midWindowReplacement],
+        policies: [currentPolicy, replacementPolicy],
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /turnover window semantics can change only at the current window boundary/
+  );
+
+  const boundaryReplacement = createPortfolioPolicyActivatedEvent({
+    policy: replacementPolicy,
+    activationSequence: 2,
+    supersedesActivationId: current.activationId,
+    createdAt: "2026-08-29T00:00:00.000Z"
+  });
+  assert.equal(
+    resolveActiveRuntimePortfolioPolicyAsOf({
+      portfolioId: currentPolicy.portfolioId,
+      asOf: "2026-08-29T00:00:00.000Z",
+      events: [current, boundaryReplacement],
+      policies: [currentPolicy, replacementPolicy],
+      dependencies: DEPENDENCY_FIXTURE.repository
+    }).activation.activationId,
+    boundaryReplacement.activationId
+  );
+});
+
 test("retirement event independently binds reason and target", () => {
   const policy = runtimePolicy();
   const activated = createPortfolioPolicyActivatedEvent({
@@ -570,6 +618,7 @@ function runtimePolicy(options: {
   name?: string;
   createdAt?: string;
   enabledMarkets?: readonly ("KR" | "US")[];
+  turnoverDurationSeconds?: number;
 } = {}): RuntimePortfolioPolicyRecord {
   const portfolioId = options.portfolioId ?? "paper-main";
   const version = options.version ?? "v1";
@@ -592,7 +641,7 @@ function runtimePolicy(options: {
       maxTurnoverRatio: 0.5,
       turnoverWindow: {
         mode: "fixed_utc" as const,
-        durationSeconds: 86_400,
+        durationSeconds: options.turnoverDurationSeconds ?? 86_400,
         anchor: "unix_epoch" as const,
         denominator: "window_open_portfolio_net_worth_krw" as const
       },
