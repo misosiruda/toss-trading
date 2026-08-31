@@ -784,6 +784,25 @@ test("activation file repository leaves an abandoned lock fail-closed", async ()
   });
 });
 
+test("activation file repository durably creates a nested storage directory", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const nestedBaseDir = join(baseDir, "portfolio", "activation");
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      nestedBaseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const event = await repository.appendActivated({
+      policy,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    });
+
+    assert.deepEqual(await repository.readAll(), [event]);
+  });
+});
+
 function rehashActivatedEvent(
   event: PortfolioPolicyActivatedEvent,
   changes: Partial<

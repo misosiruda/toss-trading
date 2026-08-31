@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  sep
+} from "node:path";
 
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import {
@@ -120,6 +126,7 @@ export class RuntimePortfolioPolicyActivationFileRepository {
           sameActivatedAppendInput(event, candidate)
       );
       if (retry !== undefined) {
+        await syncOutputDirectory(dirname(this.eventsPath));
         return retry;
       }
       this.validateHistory([...events, candidate], candidate.portfolioId);
@@ -143,6 +150,7 @@ export class RuntimePortfolioPolicyActivationFileRepository {
           sameRetiredAppendInput(event, candidate)
       );
       if (retry !== undefined) {
+        await syncOutputDirectory(dirname(this.eventsPath));
         return retry;
       }
       this.validateHistory([...events, candidate], candidate.portfolioId);
@@ -214,7 +222,13 @@ export class RuntimePortfolioPolicyActivationFileRepository {
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
-    await mkdir(dirname(this.eventsPath), { recursive: true });
+    const outputDirectory = dirname(this.eventsPath);
+    const firstCreatedDirectory = await mkdir(outputDirectory, {
+      recursive: true
+    });
+    if (firstCreatedDirectory !== undefined) {
+      await syncCreatedDirectoryChain(firstCreatedDirectory, outputDirectory);
+    }
     const release = await acquireExclusiveLock({
       lockPath: this.lockPath,
       timeoutMs: this.lockTimeoutMs,
@@ -289,6 +303,63 @@ async function appendDurableJsonLine(
   } finally {
     await handle.close();
   }
+  await syncOutputDirectory(dirname(path));
+}
+
+async function syncCreatedDirectoryChain(
+  firstCreatedDirectory: string,
+  outputDirectory: string
+): Promise<void> {
+  const [firstCreatedPath, outputPath] = await Promise.all([
+    realpath(firstCreatedDirectory),
+    realpath(outputDirectory)
+  ]);
+  const relativeOutputPath = relative(firstCreatedPath, outputPath);
+  if (
+    isAbsolute(relativeOutputPath) ||
+    relativeOutputPath === ".." ||
+    relativeOutputPath.startsWith(`..${sep}`)
+  ) {
+    throw new Error("created directory must be an ancestor of output directory");
+  }
+  const createdDirectories = [dirname(firstCreatedPath), firstCreatedPath];
+  let currentPath = firstCreatedPath;
+  for (const segment of relativeOutputPath.split(sep).filter(Boolean)) {
+    currentPath = join(currentPath, segment);
+    createdDirectories.push(currentPath);
+  }
+  for (const directory of createdDirectories) {
+    await syncOutputDirectory(directory);
+  }
+}
+
+async function syncOutputDirectory(outputDirectory: string): Promise<void> {
+  let directory: Awaited<ReturnType<typeof open>>;
+  try {
+    directory = await open(outputDirectory, "r");
+  } catch (error) {
+    if (!isUnsupportedWindowsDirectorySync(error)) {
+      throw error;
+    }
+    return;
+  }
+  try {
+    await directory.sync();
+  } catch (error) {
+    if (!isUnsupportedWindowsDirectorySync(error)) {
+      throw error;
+    }
+  } finally {
+    await directory.close();
+  }
+}
+
+function isUnsupportedWindowsDirectorySync(error: unknown): boolean {
+  return (
+    process.platform === "win32" &&
+    isNodeError(error) &&
+    error.code === "EPERM"
+  );
 }
 
 async function acquireExclusiveLock(input: {
