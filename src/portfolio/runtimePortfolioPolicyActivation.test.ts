@@ -681,7 +681,7 @@ test("activation file repository assigns a linear sequence and converges old ret
     });
     const acknowledgedLate = await repository.appendActivated(firstInput);
     const retired = await repository.appendRetired({
-      portfolioId: firstPolicy.portfolioId,
+      portfolioId: ` ${firstPolicy.portfolioId} `,
       retiredActivationId: replacement.activationId,
       reasonCode: "operator_pause",
       createdAt: "2026-08-29T01:00:00.000Z"
@@ -695,6 +695,7 @@ test("activation file repository assigns a linear sequence and converges old ret
 
     assert.deepEqual(acknowledgedLate, first);
     assert.deepEqual(retirementRetry, retired);
+    assert.equal(retired.portfolioId, firstPolicy.portfolioId);
     assert.deepEqual(
       (await repository.readAll()).map((event) => event.activationSequence),
       [1, 2, 3]

@@ -134,9 +134,11 @@ export class RuntimePortfolioPolicyActivationFileRepository {
   ): Promise<PortfolioPolicyRetiredEvent> {
     return this.withLock(async () => {
       const events = await this.readAllUnderLock();
+      const portfolioId = canonicalPortfolioId(input.portfolioId);
       const candidate = createPortfolioPolicyRetiredEvent({
         ...input,
-        activationSequence: nextSequence(events, input.portfolioId)
+        portfolioId,
+        activationSequence: nextSequence(events, portfolioId)
       });
       const retry = events.find(
         (event): event is PortfolioPolicyRetiredEvent =>
@@ -239,6 +241,17 @@ function policyPortfolioId(value: unknown): string {
   const portfolioId = (value as Record<string, unknown>).portfolioId;
   if (typeof portfolioId !== "string") {
     throw new Error("runtime portfolio policy portfolioId must be a string");
+  }
+  return portfolioId;
+}
+
+function canonicalPortfolioId(value: string): string {
+  if (typeof value !== "string") {
+    throw new Error("portfolioId must be a string");
+  }
+  const portfolioId = value.trim();
+  if (portfolioId.length === 0 || portfolioId.length > 160) {
+    throw new Error("portfolioId must contain between 1 and 160 characters");
   }
   return portfolioId;
 }
