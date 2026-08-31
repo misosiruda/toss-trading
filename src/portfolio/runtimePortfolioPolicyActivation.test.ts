@@ -45,7 +45,8 @@ import {
 } from "./runtimePortfolioPolicy.js";
 import {
   RuntimePortfolioPolicyActivationFileRepository,
-  createRuntimePortfolioPolicyActivationPaths
+  createRuntimePortfolioPolicyActivationPaths,
+  readConsistentRuntimePortfolioPolicyActivationSnapshot
 } from "./runtimePortfolioPolicyActivationFiles.js";
 import {
   RuntimePortfolioPolicyFileRepository,
@@ -1021,6 +1022,74 @@ test("runtime policy repository treats an abandoned lock as unavailable", async 
   });
 });
 
+test("policy activation snapshot retries after the policy generation advances", async () => {
+  const stalePolicy = runtimePolicy({ portfolioId: "paper-stale" });
+  const activePolicy = runtimePolicy({
+    portfolioId: "paper-current",
+    version: "v2",
+    name: "Current policy"
+  });
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy: activePolicy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  const snapshot =
+    await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return policyReadCount === 1
+          ? [stalePolicy]
+          : [stalePolicy, activePolicy];
+      },
+      readEvents: async (policies) => {
+        activationReadCount += 1;
+        if (
+          !policies.some(
+            (policy) =>
+              policy.runtimePolicyRecordId === activePolicy.runtimePolicyRecordId
+          )
+        ) {
+          throw new Error(
+            "activated runtime portfolio policy record does not resolve"
+          );
+        }
+        return [activation];
+      }
+    });
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 2);
+  assert.equal(snapshot.policies.at(-1)?.policyHash, activePolicy.policyHash);
+  assert.equal(snapshot.events[0], activation);
+});
+
+test("policy activation snapshot keeps stable activation corruption fail-closed", async () => {
+  const policy = runtimePolicy();
+  let policyReadCount = 0;
+  let activationReadCount = 0;
+
+  await assert.rejects(
+    readConsistentRuntimePortfolioPolicyActivationSnapshot({
+      readPolicies: async () => {
+        policyReadCount += 1;
+        return [policy];
+      },
+      readEvents: async () => {
+        activationReadCount += 1;
+        throw new Error("stable activation corruption");
+      }
+    }),
+    /stable activation corruption/
+  );
+
+  assert.equal(policyReadCount, 2);
+  assert.equal(activationReadCount, 1);
+});
+
 test("portfolio compliance reads bucket bands from the active stored policy hash", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const policy = runtimePolicy();
@@ -1101,6 +1170,27 @@ test("portfolio compliance fails closed when stored active policy lineage is cor
       ),
       true
     );
+  });
+});
+
+test("portfolio compliance rejects an offsetless portfolio as-of timestamp", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-08-28T02:00:00"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+
+    assert.equal(view.policyStatus, "invalid");
+    assert.equal(view.activePolicy, null);
+    assert.equal(view.sourceStatus.policyArtifacts, "corrupt");
+    assert.equal(view.status, "breach");
   });
 });
 

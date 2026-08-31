@@ -42,7 +42,10 @@ import {
   findActiveRuntimePortfolioPolicyAsOf,
   type ActiveRuntimePortfolioPolicy
 } from "../portfolio/runtimePortfolioPolicyActivation.js";
-import { RuntimePortfolioPolicyActivationFileRepository } from "../portfolio/runtimePortfolioPolicyActivationFiles.js";
+import {
+  readConsistentRuntimePortfolioPolicyActivationSnapshot,
+  RuntimePortfolioPolicyActivationFileRepository
+} from "../portfolio/runtimePortfolioPolicyActivationFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "../portfolio/runtimePortfolioPolicyFiles.js";
 
 const STRATEGY_BUCKETS = [
@@ -1199,20 +1202,23 @@ async function readActivePortfolioPolicy(
     const dependencies = await new ImmutablePolicyDependencyFileLoader(
       storageBaseDir
     ).load();
-    const policies = await new RuntimePortfolioPolicyFileRepository(
+    const policyRepository = new RuntimePortfolioPolicyFileRepository(
       storageBaseDir,
       dependencies.repository
-    ).readAll();
-    const activationRepository =
-      new RuntimePortfolioPolicyActivationFileRepository(
-        storageBaseDir,
-        policies,
-        dependencies.repository
-      );
-    const events = await activationRepository.readAll();
+    );
+    const { policies, events } =
+      await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+        readPolicies: () => policyRepository.readAll(),
+        readEvents: (policyGeneration) =>
+          new RuntimePortfolioPolicyActivationFileRepository(
+            storageBaseDir,
+            policyGeneration,
+            dependencies.repository
+          ).readAll()
+      });
     const active = findActiveRuntimePortfolioPolicyAsOf({
       portfolioId: portfolio.portfolioId,
-      asOf: new Date(portfolio.updatedAt).toISOString(),
+      asOf: canonicalPolicyAsOf(portfolio.updatedAt),
       events,
       policies,
       dependencies: dependencies.repository
@@ -1228,6 +1234,15 @@ async function readActivePortfolioPolicy(
   } catch {
     return { status: "invalid", active: null, sourceStatus: "corrupt" };
   }
+}
+
+function canonicalPolicyAsOf(value: string): string {
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    throw new Error(
+      "portfolio policy as-of must include a UTC or numeric timezone offset"
+    );
+  }
+  return new Date(value).toISOString();
 }
 
 function activePolicySummary(

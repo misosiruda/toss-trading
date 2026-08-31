@@ -3,6 +3,7 @@ import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 import {
   createPortfolioPolicyActivatedEvent,
   createPortfolioPolicyRetiredEvent,
@@ -34,6 +35,41 @@ export interface AppendPortfolioPolicyRetiredInput {
   retiredActivationId: string;
   reasonCode: string;
   createdAt: string;
+}
+
+export interface RuntimePortfolioPolicyActivationSnapshot {
+  policies: readonly RuntimePortfolioPolicyRecord[];
+  events: readonly PortfolioPolicyActivationEvent[];
+}
+
+/**
+ * Reads policy and activation files as one logical append-only generation.
+ *
+ * A policy append is durably acknowledged before its activation can be
+ * appended. If an activation reader observes that new event after an older
+ * policy read, strict validation fails because the referenced policy is not in
+ * that older generation. Re-read policies and retry only when the policy
+ * generation actually advanced; stable corruption remains fail-closed.
+ */
+export async function readConsistentRuntimePortfolioPolicyActivationSnapshot(input: {
+  readPolicies: () => Promise<readonly RuntimePortfolioPolicyRecord[]>;
+  readEvents: (
+    policies: readonly RuntimePortfolioPolicyRecord[]
+  ) => Promise<readonly PortfolioPolicyActivationEvent[]>;
+}): Promise<RuntimePortfolioPolicyActivationSnapshot> {
+  let policies = await input.readPolicies();
+  try {
+    const events = await input.readEvents(policies);
+    return Object.freeze({ policies, events });
+  } catch (error) {
+    const refreshedPolicies = await input.readPolicies();
+    if (samePolicyGeneration(policies, refreshedPolicies)) {
+      throw error;
+    }
+    policies = refreshedPolicies;
+  }
+  const events = await input.readEvents(policies);
+  return Object.freeze({ policies, events });
 }
 
 export function createRuntimePortfolioPolicyActivationPaths(baseDir: string): {
@@ -292,6 +328,21 @@ function sameRetiredAppendInput(
     left.reasonCode === right.reasonCode &&
     left.effectiveFrom === right.effectiveFrom &&
     left.createdAt === right.createdAt
+  );
+}
+
+function samePolicyGeneration(
+  left: readonly RuntimePortfolioPolicyRecord[],
+  right: readonly RuntimePortfolioPolicyRecord[]
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (record, index) =>
+        record.runtimePolicyRecordId === right[index]?.runtimePolicyRecordId &&
+        record.policyHash === right[index]?.policyHash &&
+        record.lineageHash === right[index]?.lineageHash
+    )
   );
 }
 
