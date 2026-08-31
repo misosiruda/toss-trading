@@ -40,6 +40,10 @@ import {
   RuntimePortfolioPolicyActivationFileRepository,
   createRuntimePortfolioPolicyActivationPaths
 } from "./runtimePortfolioPolicyActivationFiles.js";
+import {
+  RuntimePortfolioPolicyFileRepository,
+  createRuntimePortfolioPolicyPaths
+} from "./runtimePortfolioPolicyFiles.js";
 
 const POLICY_CREATED_AT = "2026-08-28T00:00:00.000Z";
 const HASH_A = `sha256:${"a".repeat(64)}` as const;
@@ -775,13 +779,15 @@ test("activation file repository leaves an abandoned lock fail-closed", async ()
       baseDir,
       [policy],
       DEPENDENCY_FIXTURE.repository,
-      { lockTimeoutMs: 20, lockRetryDelayMs: 5 }
+      { lockTimeoutMs: 20, lockRetryDelayMs: 500 }
     );
 
+    const startedAt = Date.now();
     await assert.rejects(
       () => repository.readAll(),
       /repository lock is unavailable/
     );
+    assert.ok(Date.now() - startedAt < 250);
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
   });
 });
@@ -802,6 +808,199 @@ test("activation file repository durably creates a nested storage directory", as
     });
 
     assert.deepEqual(await repository.readAll(), [event]);
+  });
+});
+
+test("runtime policy repository durably appends, reads, and converges exact retries", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    assert.deepEqual(await repository.readAll(), []);
+    assert.deepEqual(await repository.append(policy), policy);
+    assert.deepEqual(await repository.append(structuredClone(policy)), policy);
+    assert.deepEqual(await repository.readAll(), [policy]);
+
+    const paths = createRuntimePortfolioPolicyPaths(baseDir);
+    assert.equal(
+      paths.recordsPath,
+      join(baseDir, "runtime-portfolio-policy-records.jsonl")
+    );
+    assert.equal(
+      (await readFile(paths.recordsPath, "utf8")).trim().split("\n").length,
+      1
+    );
+  });
+});
+
+test("runtime policy repository persists the canonical JSON view of signed zero", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const signedZeroPolicy = structuredClone(runtimePolicy());
+    const shortTerm = signedZeroPolicy.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(shortTerm !== undefined);
+    shortTerm.minWeightRatio = -0;
+    const policy = parseRuntimePortfolioPolicyRecord(signedZeroPolicy);
+    assert.equal(Object.is(shortTerm.minWeightRatio, -0), true);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const stored = await repository.append(policy);
+    const storedShortTerm = stored.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(storedShortTerm !== undefined);
+    assert.equal(Object.is(storedShortTerm.minWeightRatio, -0), false);
+    assert.deepEqual(await repository.append(runtimePolicy()), stored);
+    assert.deepEqual(await repository.readAll(), [stored]);
+  });
+});
+
+test("runtime policy repository serializes concurrent exact appends", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const nestedBaseDir = join(baseDir, "runtime", "policies");
+    const first = new RuntimePortfolioPolicyFileRepository(
+      nestedBaseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+    const second = new RuntimePortfolioPolicyFileRepository(
+      nestedBaseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const results = await Promise.all([
+      first.append(policy),
+      second.append(structuredClone(policy))
+    ]);
+
+    assert.deepEqual(results, [policy, policy]);
+    assert.deepEqual(await first.readAll(), [policy]);
+  });
+});
+
+test("runtime policy repository serializes exact retries across processes", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const fixturePath = join(baseDir, "runtime-policy-fixture.json");
+    const nestedBaseDir = join(baseDir, "runtime", "policies");
+    await writeFile(
+      fixturePath,
+      JSON.stringify({
+        policy,
+        dependencyRecords: DEPENDENCY_FIXTURE.records
+      }),
+      "utf8"
+    );
+
+    const results = await Promise.all([
+      appendRuntimePolicyFromChildProcess(fixturePath, nestedBaseDir),
+      appendRuntimePolicyFromChildProcess(fixturePath, nestedBaseDir)
+    ]);
+
+    assert.deepEqual(results, [policy, policy]);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      nestedBaseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+    assert.deepEqual(await repository.readAll(), [policy]);
+  });
+});
+
+test("runtime policy repository rejects semantic ID collisions", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+    await repository.append(runtimePolicy());
+
+    await assert.rejects(
+      repository.append(
+        runtimePolicy({ createdAt: "2026-08-28T00:00:01.000Z" })
+      ),
+      /record ID collision/
+    );
+  });
+});
+
+test("runtime policy repository fails closed on torn, blank, duplicate, and tampered lines", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const paths = createRuntimePortfolioPolicyPaths(baseDir);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    await writeFile(paths.recordsPath, JSON.stringify(policy), "utf8");
+    await assert.rejects(repository.readAll(), /torn final line/);
+
+    await writeFile(
+      paths.recordsPath,
+      `${JSON.stringify(policy)}\n\n`,
+      "utf8"
+    );
+    await assert.rejects(repository.readAll(), /corrupt line 2/);
+
+    await writeFile(
+      paths.recordsPath,
+      `${JSON.stringify(policy)}\n${JSON.stringify(policy)}\n`,
+      "utf8"
+    );
+    await assert.rejects(repository.readAll(), /duplicate record ID/);
+
+    await writeFile(
+      paths.recordsPath,
+      `${JSON.stringify({ ...policy, sourcePolicyHash: "0".repeat(64) })}\n`,
+      "utf8"
+    );
+    await assert.rejects(repository.readAll(), /corrupt line 1/);
+  });
+});
+
+test("runtime policy repository revalidates immutable dependency lineage", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const emptyDependencies = new ImmutablePolicyDependencyRepository({
+      selectionPolicies: [],
+      riskParameters: [],
+      riskRuleSets: [],
+      drawdownSemantics: [],
+      sessionCalendars: [],
+      scheduleBoundaries: []
+    });
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      emptyDependencies
+    );
+
+    await assert.rejects(
+      repository.append(policy),
+      /selection policy ref does not resolve/
+    );
+  });
+});
+
+test("runtime policy repository treats an abandoned lock as unavailable", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const paths = createRuntimePortfolioPolicyPaths(baseDir);
+    await writeFile(paths.lockPath, "abandoned\n", "utf8");
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository,
+      { lockTimeoutMs: 20, lockRetryDelayMs: 500 }
+    );
+
+    const startedAt = Date.now();
+    await assert.rejects(repository.readAll(), /lock is unavailable/);
+    assert.ok(Date.now() - startedAt < 250);
   });
 });
 
@@ -1129,6 +1328,53 @@ async function appendActivationFromChildProcess(
       }
       try {
         resolve(parsePortfolioPolicyActivationEvent(JSON.parse(stdout)) as PortfolioPolicyActivatedEvent);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+async function appendRuntimePolicyFromChildProcess(
+  fixturePath: string,
+  baseDir: string
+): Promise<RuntimePortfolioPolicyRecord> {
+  const script = `
+    import { readFile } from "node:fs/promises";
+    import { ImmutablePolicyDependencyRepository } from "./dist/portfolio/runtimePolicyDependencyResolver.js";
+    import { RuntimePortfolioPolicyFileRepository } from "./dist/portfolio/runtimePortfolioPolicyFiles.js";
+    const fixture = JSON.parse(await readFile(process.argv[1], "utf8"));
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      process.argv[2],
+      new ImmutablePolicyDependencyRepository(fixture.dependencyRecords)
+    );
+    const policy = await repository.append(fixture.policy);
+    process.stdout.write(JSON.stringify(policy));
+  `;
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", script, fixturePath, baseDir],
+      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`runtime policy child failed (${code}): ${stderr}`));
+        return;
+      }
+      try {
+        resolve(parseRuntimePortfolioPolicyRecord(JSON.parse(stdout)));
       } catch (error) {
         reject(error);
       }
