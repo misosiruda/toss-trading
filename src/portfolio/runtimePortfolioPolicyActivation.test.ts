@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -32,6 +36,10 @@ import {
   parseRuntimePortfolioPolicyRecord,
   type RuntimePortfolioPolicyRecord
 } from "./runtimePortfolioPolicy.js";
+import {
+  RuntimePortfolioPolicyActivationFileRepository,
+  createRuntimePortfolioPolicyActivationPaths
+} from "./runtimePortfolioPolicyActivationFiles.js";
 
 const POLICY_CREATED_AT = "2026-08-28T00:00:00.000Z";
 const HASH_A = `sha256:${"a".repeat(64)}` as const;
@@ -579,6 +587,203 @@ test("retirement event independently binds reason and target", () => {
   );
 });
 
+test("activation file repository atomically deduplicates concurrent exact retries", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const firstRepository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository
+    );
+    const secondRepository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository
+    );
+    const input = {
+      policy,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    };
+
+    const [left, right] = await Promise.all([
+      firstRepository.appendActivated(input),
+      secondRepository.appendActivated(input)
+    ]);
+
+    assert.deepEqual(right, left);
+    assert.equal(left.activationSequence, 1);
+    assert.deepEqual(await firstRepository.readAll(), [left]);
+    assert.equal(
+      (await readFile(
+        createRuntimePortfolioPolicyActivationPaths(baseDir).eventsPath,
+        "utf8"
+      )).split("\n").filter(Boolean).length,
+      1
+    );
+    assert.equal(
+      (await firstRepository.resolveActiveAsOf(
+        policy.portfolioId,
+        "2026-08-28T01:00:00.000Z"
+      )).activation.activationId,
+      left.activationId
+    );
+  });
+});
+
+test("activation file repository serializes exact retries across processes", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const fixturePath = join(baseDir, "child-fixture.json");
+    await writeFile(
+      fixturePath,
+      JSON.stringify({
+        policy,
+        dependencyRecords: DEPENDENCY_FIXTURE.records
+      }),
+      "utf8"
+    );
+
+    const [left, right] = await Promise.all([
+      appendActivationFromChildProcess(fixturePath, baseDir),
+      appendActivationFromChildProcess(fixturePath, baseDir)
+    ]);
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    assert.deepEqual(right, left);
+    assert.equal(left.activationSequence, 1);
+    assert.deepEqual(await repository.readAll(), [left]);
+  });
+});
+
+test("activation file repository assigns a linear sequence and converges old retries", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const firstPolicy = runtimePolicy();
+    const secondPolicy = runtimePolicy({ version: "v2", name: "Policy v2" });
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [firstPolicy, secondPolicy],
+      DEPENDENCY_FIXTURE.repository
+    );
+    const firstInput = {
+      policy: firstPolicy,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    };
+    const first = await repository.appendActivated(firstInput);
+    const replacement = await repository.appendActivated({
+      policy: secondPolicy,
+      supersedesActivationId: first.activationId,
+      createdAt: "2026-08-29T00:00:00.000Z"
+    });
+    const acknowledgedLate = await repository.appendActivated(firstInput);
+    const retired = await repository.appendRetired({
+      portfolioId: firstPolicy.portfolioId,
+      retiredActivationId: replacement.activationId,
+      reasonCode: "operator_pause",
+      createdAt: "2026-08-29T01:00:00.000Z"
+    });
+    const retirementRetry = await repository.appendRetired({
+      portfolioId: firstPolicy.portfolioId,
+      retiredActivationId: replacement.activationId,
+      reasonCode: "operator_pause",
+      createdAt: "2026-08-29T01:00:00.000Z"
+    });
+
+    assert.deepEqual(acknowledgedLate, first);
+    assert.deepEqual(retirementRetry, retired);
+    assert.deepEqual(
+      (await repository.readAll()).map((event) => event.activationSequence),
+      [1, 2, 3]
+    );
+    assert.equal(
+      (await repository.resolveActiveAsOf(
+        firstPolicy.portfolioId,
+        "2026-08-29T00:30:00.000Z"
+      )).policy.runtimePolicyRecordId,
+      secondPolicy.runtimePolicyRecordId
+    );
+    await assert.rejects(
+      () =>
+        repository.resolveActiveAsOf(
+          firstPolicy.portfolioId,
+          "2026-08-29T01:00:00.000Z"
+        ),
+      /active runtime portfolio policy is required/
+    );
+  });
+});
+
+test("activation file repository fails closed for corrupt or torn history", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository
+    );
+    await repository.appendActivated({
+      policy,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    });
+    const paths = createRuntimePortfolioPolicyActivationPaths(baseDir);
+    await appendFile(paths.eventsPath, "{corrupt}\n", "utf8");
+    const before = await readFile(paths.eventsPath, "utf8");
+
+    await assert.rejects(
+      () => repository.readAll(),
+      /contains corrupt line 2/
+    );
+    await assert.rejects(
+      () =>
+        repository.appendActivated({
+          policy,
+          createdAt: "2026-08-29T00:00:00.000Z"
+        }),
+      /contains corrupt line 2/
+    );
+    assert.equal(await readFile(paths.eventsPath, "utf8"), before);
+
+    await writeFile(paths.eventsPath, before.trimEnd(), "utf8");
+    await assert.rejects(
+      () => repository.readAll(),
+      /torn final line/
+    );
+
+    await writeFile(
+      paths.eventsPath,
+      `${before.split("\n")[0]}\n\n`,
+      "utf8"
+    );
+    await assert.rejects(
+      () => repository.readAll(),
+      /contains corrupt line 2/
+    );
+  });
+});
+
+test("activation file repository leaves an abandoned lock fail-closed", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy();
+    const paths = createRuntimePortfolioPolicyActivationPaths(baseDir);
+    await writeFile(paths.lockPath, "abandoned\n", "utf8");
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      baseDir,
+      [policy],
+      DEPENDENCY_FIXTURE.repository,
+      { lockTimeoutMs: 20, lockRetryDelayMs: 5 }
+    );
+
+    await assert.rejects(
+      () => repository.readAll(),
+      /repository lock is unavailable/
+    );
+    assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
+  });
+});
+
 function rehashActivatedEvent(
   event: PortfolioPolicyActivatedEvent,
   changes: Partial<
@@ -845,5 +1050,67 @@ function runtimePolicy(options: {
       createdAt
     }),
     createdAt
+  });
+}
+
+async function withTemporaryDirectory(
+  run: (baseDir: string) => Promise<void>
+): Promise<void> {
+  const baseDir = await mkdtemp(join(tmpdir(), "toss-activation-repository-"));
+  try {
+    await run(baseDir);
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+}
+
+async function appendActivationFromChildProcess(
+  fixturePath: string,
+  baseDir: string
+): Promise<PortfolioPolicyActivatedEvent> {
+  const script = `
+    import { readFile } from "node:fs/promises";
+    import { ImmutablePolicyDependencyRepository } from "./dist/portfolio/runtimePolicyDependencyResolver.js";
+    import { RuntimePortfolioPolicyActivationFileRepository } from "./dist/portfolio/runtimePortfolioPolicyActivationFiles.js";
+    const fixture = JSON.parse(await readFile(process.argv[1], "utf8"));
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(
+      process.argv[2],
+      [fixture.policy],
+      new ImmutablePolicyDependencyRepository(fixture.dependencyRecords)
+    );
+    const event = await repository.appendActivated({
+      policy: fixture.policy,
+      createdAt: "2026-08-28T01:00:00.000Z"
+    });
+    process.stdout.write(JSON.stringify(event));
+  `;
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", script, fixturePath, baseDir],
+      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`activation child failed (${code}): ${stderr}`));
+        return;
+      }
+      try {
+        resolve(parsePortfolioPolicyActivationEvent(JSON.parse(stdout)) as PortfolioPolicyActivatedEvent);
+      } catch (error) {
+        reject(error);
+      }
+    });
   });
 }

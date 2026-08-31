@@ -76,7 +76,7 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 | --- | --- | --- |
 | strategy bucket schema | 구현 | 유지 |
 | policy draft validation | 구현 | runtime policy contract와 통합 |
-| policy append-only 저장 | 구현 | active/retired lifecycle 추가 |
+| policy append-only 저장 | activation repository까지 구현 | runner에서 active policy 사용 |
 | bucket target/min/max weight | draft에 구현 | 실제 compliance와 sizing에 적용 |
 | bucket exposure/turnover gate | 구현, policy 입력 연결은 수동 | active policy에서 자동 파생 |
 | bucket별 replay preset | 구현 | shared portfolio orchestration에 재사용 |
@@ -89,9 +89,8 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 
 runtime policy의 immutable dependency contract, read-only filesystem loader,
 validation candidate 정규화와 strict persistence adapter는 구현되어 있다. activation lifecycle은
-strict event contract와 dependency를 다시 해소하는 deterministic as-of fold까지 구현되었으며,
-cross-process atomic append/dedupe를 보장하는 activation repository와 runner 연결은 아직 포함하지
-않는다.
+strict event contract, dependency를 다시 해소하는 deterministic as-of fold와 cross-process
+atomic append/dedupe repository까지 구현되었다. runner 연결은 아직 포함하지 않는다.
 
 현재 dashboard policy builder의 초기 draft는 다음 비중을 사용한다. 이 값은 활성
 정책이나 투자 권고가 아니라 paper simulation을 시작하기 위한 편집 가능한 예시다.
@@ -2658,7 +2657,14 @@ selection/risk/drawdown/schedule/calendar dependency와 root legacy risk set을 
 scheduled bucket은 activation 시 enabled market과 boundary market의 canonical 집합이 정확히
 같아야 하며, 실제 exchange-date coverage는 해당 orchestration cycle에서 검증한다. 교체 policy가
 bucket의 turnover window semantics를 바꾸면 기존 Unix-epoch window의 정확한 boundary에서만
-활성화한다. 이 단계는 filesystem append나 runner/order engine 연결을 포함하지 않는다.
+활성화한다.
+
+filesystem repository는 `src/portfolio/runtimePortfolioPolicyActivationFiles.ts`가 담당한다.
+`portfolio-policy-activations.jsonl`의 read-validate-append 전체를 `wx` exclusive lock으로
+직렬화하고 portfolio별 sequence를 repository 안에서 부여한다. 같은 append input의 retry는 이미
+저장된 event로 수렴하며 file handle sync 이후에만 성공을 반환한다. corrupt/torn line, duplicate
+event ID, invalid chain 또는 abandoned lock은 자동 복구를 추측하지 않고 fail-closed한다. 이
+repository도 runner/order engine에는 아직 연결하지 않는다.
 
 - current validation candidate를 runtime `PortfolioPolicy` contract로 정규화
 - immutable bucket selection policy ref와 resolver validation
@@ -2831,6 +2837,7 @@ bucket의 turnover window semantics를 바꾸면 기존 Unix-epoch window의 정
 - activation sequence gap/duplicate와 future/backdated effective time 거절
 - activation event full-payload digest, hash-derived ID와 독립 rehash 검증
 - as-of activation fold와 supersedes/retired target 검증
+- activation repository의 cross-process exact retry 수렴, atomic sequence와 corrupt/torn line 거절
 - active policy의 selection policy ref가 immutable record와 일치
 - selection policy payload canonical ordering, digest 제외 field와 독립 rehash 검증
 - active policy의 risk rule set ref와 canonical required rule이 immutable record와 일치
