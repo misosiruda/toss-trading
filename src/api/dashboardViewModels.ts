@@ -859,6 +859,10 @@ export async function readDashboardPortfolioComplianceViewModel(
     rejectedCount,
     rejectCodes: riskRejectCodes
   });
+  const exposureCompliance = exposureComplianceView(
+    exposure,
+    portfolio !== null
+  );
   const warnings = [
     ...(policyArtifacts.status === "active"
       ? []
@@ -867,6 +871,11 @@ export async function readDashboardPortfolioComplianceViewModel(
             ? "portfolio policy artifacts failed strict validation; policy targets are unavailable"
             : "active portfolio policy is unavailable; policy targets are reported as missing"
         ]),
+    ...(exposure.unassignedExposureKrw > 0
+      ? [
+          "legacy positions without strategyBucket are excluded from policy buckets"
+        ]
+      : []),
     "strategy bucket isolated replay artifacts are not available in this ViewModel"
   ];
 
@@ -882,7 +891,7 @@ export async function readDashboardPortfolioComplianceViewModel(
     bucketCompliance,
     cashCompliance,
     hedgeCompliance,
-    exposureCompliance: exposureComplianceView(exposure, portfolio !== null),
+    exposureCompliance,
     riskGateSummary: {
       decisionRecordCount: decisions.records.length,
       decisionItemCount: decisionItems.length,
@@ -916,6 +925,7 @@ export async function readDashboardPortfolioComplianceViewModel(
       bucketCompliance,
       cashCompliance,
       hedgeCompliance,
+      exposureCompliance,
       hedgePolicyEnabled:
         policyArtifacts.active?.policy.hedgePolicy.hedgeEnabled ?? false
     })
@@ -1268,6 +1278,7 @@ function portfolioComplianceStatus(input: {
   bucketCompliance: BucketComplianceRow[];
   cashCompliance: CashComplianceView;
   hedgeCompliance: HedgeComplianceView;
+  exposureCompliance: ExposureComplianceView;
   hedgePolicyEnabled: boolean;
 }): DashboardViewModelStatus {
   if (input.portfolio === null) {
@@ -1283,6 +1294,7 @@ function portfolioComplianceStatus(input: {
     (row) => row.status === "under" || row.status === "over"
   ) ||
     input.cashCompliance.status === "under_reserved" ||
+    input.exposureCompliance.status === "breach" ||
     (input.hedgePolicyEnabled &&
       (input.hedgeCompliance.status === "ineffective" ||
         input.hedgeCompliance.status === "over_hedged"))
@@ -1297,6 +1309,7 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
   byMarket: Map<string, number>;
   byBucket: Record<StrategyBucket, number>;
   bySymbol: Map<string, number>;
+  unassignedExposureKrw: number;
   hedgeExposureKrw: number;
   downsideExposureKrw: number;
   netDownsideExposureKrw: number;
@@ -1305,6 +1318,7 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
   const byBucket = emptyBucketAmounts();
   const bySymbol = new Map<string, number>();
   let grossExposureKrw = 0;
+  let unassignedExposureKrw = 0;
   const downsideExposure =
     portfolio === null
       ? {
@@ -1324,6 +1338,8 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
     );
     if (position.strategyBucket !== undefined) {
       byBucket[position.strategyBucket] += value;
+    } else {
+      unassignedExposureKrw += value;
     }
   }
 
@@ -1335,6 +1351,7 @@ function portfolioExposure(portfolio: VirtualPortfolio | null): {
     byMarket,
     byBucket,
     bySymbol,
+    unassignedExposureKrw,
     hedgeExposureKrw: downsideExposure.hedgeExposureKrw,
     downsideExposureKrw: downsideExposure.downsideExposureKrw,
     netDownsideExposureKrw: downsideExposure.netDownsideExposureKrw
@@ -1511,19 +1528,37 @@ function exposureComplianceView(
       exposure.byMarket,
       exposure.virtualNetWorthKrw
     ),
-    byStrategyBucket: STRATEGY_BUCKETS.map((bucket) => ({
-      key: bucket,
-      exposureKrw: exposure.byBucket[bucket],
-      exposureRatio: ratio(
-        exposure.byBucket[bucket],
-        exposure.virtualNetWorthKrw
-      )
-    })),
+    byStrategyBucket: [
+      ...STRATEGY_BUCKETS.map((bucket) => ({
+        key: bucket,
+        exposureKrw: exposure.byBucket[bucket],
+        exposureRatio: ratio(
+          exposure.byBucket[bucket],
+          exposure.virtualNetWorthKrw
+        )
+      })),
+      ...(exposure.unassignedExposureKrw > 0
+        ? [
+            {
+              key: "unassigned",
+              exposureKrw: exposure.unassignedExposureKrw,
+              exposureRatio: ratio(
+                exposure.unassignedExposureKrw,
+                exposure.virtualNetWorthKrw
+              )
+            }
+          ]
+        : [])
+    ],
     maxSymbolExposure: maxExposureBucket(
       exposure.bySymbol,
       exposure.virtualNetWorthKrw
     ),
-    status: hasPortfolio ? "ok" : "missing"
+    status: !hasPortfolio
+      ? "missing"
+      : exposure.unassignedExposureKrw > 0
+        ? "breach"
+        : "ok"
   };
 }
 

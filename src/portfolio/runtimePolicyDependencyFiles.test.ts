@@ -355,6 +355,27 @@ test("dependency loader retries a mixed append-only raw generation", async () =>
   );
 });
 
+test("dependency loader retries a transient corrupt append generation", async () => {
+  const fixture = fullDependencyFixture();
+  const transient = rawDependencyGeneration({
+    ...fixture.records,
+    riskParameters: []
+  });
+  transient.riskParameters.corruptLineCount = 1;
+  const complete = rawDependencyGeneration(fixture.records);
+  let readCount = 0;
+
+  const loaded = await loadConsistentImmutablePolicyDependencies({
+    readGeneration: async () => {
+      readCount += 1;
+      return readCount === 1 ? transient : complete;
+    }
+  });
+
+  assert.equal(readCount, 2);
+  assert.equal(loaded.records.riskParameters.length, 2);
+});
+
 test("dependency loader keeps a stable mixed generation fail-closed", async () => {
   const fixture = fullDependencyFixture();
   const mixed = rawDependencyGeneration({

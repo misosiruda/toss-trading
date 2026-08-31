@@ -186,9 +186,6 @@ export async function loadConsistentImmutablePolicyDependencies(input: {
       input.legacyOffsetlessCreatedAtOffset
     );
   } catch (error) {
-    if (hasCorruptDependencyLines(reads)) {
-      throw error;
-    }
     const refreshedReads = await input.readGeneration();
     const relation = dependencyReadGenerationRelation(reads, refreshedReads);
     if (relation === "invalid") {
@@ -197,7 +194,7 @@ export async function loadConsistentImmutablePolicyDependencies(input: {
         { cause: error }
       );
     }
-    if (relation === "same") {
+    if (relation === "same" || hasCorruptDependencyLines(refreshedReads)) {
       throw error;
     }
     return loadDependencyReads(

@@ -1332,6 +1332,38 @@ test("portfolio compliance ignores hedge effectiveness when the active policy di
   });
 });
 
+test("portfolio compliance fails closed for unassigned legacy position exposure", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const policy = runtimePolicy({
+      hedgeEnabled: false,
+      zeroBucketMinimums: true
+    });
+    await storeActivePolicyArtifacts(baseDir, policy);
+    const paths = createStoragePaths(baseDir);
+    await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write({
+      portfolioId: policy.portfolioId,
+      cashKrw: 200_000,
+      positions: [position("005930", undefined, 800_000)],
+      updatedAt: "2026-08-28T02:00:00.000Z"
+    });
+
+    const view = await readDashboardPortfolioComplianceViewModel(baseDir);
+    const unassigned = view.exposureCompliance.byStrategyBucket.find(
+      (exposure) => exposure.key === "unassigned"
+    );
+
+    assert.equal(view.policyStatus, "active");
+    assert.equal(
+      view.bucketCompliance.every((row) => row.status === "ok"),
+      true
+    );
+    assert.equal(view.hedgeCompliance.status, "ineffective");
+    assert.equal(unassigned?.exposureKrw, 800_000);
+    assert.equal(view.exposureCompliance.status, "breach");
+    assert.equal(view.status, "breach");
+  });
+});
+
 async function storeActivePolicyArtifacts(
   baseDir: string,
   policy: RuntimePortfolioPolicyRecord
@@ -1375,7 +1407,7 @@ async function writeJsonl(
 
 function position(
   symbol: string,
-  strategyBucket: StrategyBucket,
+  strategyBucket: StrategyBucket | undefined,
   marketValueKrw: number,
   assetClass: "equity" | "inverse" = "equity"
 ) {
@@ -1383,7 +1415,7 @@ function position(
     market: "KR" as const,
     symbol,
     assetClass,
-    strategyBucket,
+    ...(strategyBucket === undefined ? {} : { strategyBucket }),
     quantity: 1,
     averagePriceKrw: marketValueKrw,
     marketValueKrw,
@@ -1578,14 +1610,15 @@ function runtimePolicy(options: {
   enabledMarkets?: readonly ("KR" | "US")[];
   turnoverDurationSeconds?: number;
   hedgeEnabled?: boolean;
+  zeroBucketMinimums?: boolean;
 } = {}): RuntimePortfolioPolicyRecord {
   const portfolioId = options.portfolioId ?? "paper-main";
   const version = options.version ?? "v1";
   const name = options.name ?? "Policy v1";
   const createdAt = options.createdAt ?? POLICY_CREATED_AT;
   const targets = new Map<StrategyBucket, [number, number, number]>([
-    ["long_term", [0.35, 0.2, 0.5]],
-    ["swing", [0.2, 0.1, 0.3]],
+    ["long_term", [0.35, options.zeroBucketMinimums === true ? 0 : 0.2, 0.5]],
+    ["swing", [0.2, options.zeroBucketMinimums === true ? 0 : 0.1, 0.3]],
     ["short_term", [0.15, 0, 0.25]],
     ["intraday", [0.1, 0, 0.15]],
     ["hedge", [options.hedgeEnabled === false ? 0 : 0.05, 0, 0.15]]
