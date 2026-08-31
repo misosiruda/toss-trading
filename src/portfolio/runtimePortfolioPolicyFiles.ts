@@ -66,8 +66,12 @@ export class RuntimePortfolioPolicyFileRepository {
   }
 
   async append(value: unknown): Promise<RuntimePortfolioPolicyRecord> {
-    const candidate = validateRuntimePortfolioPolicyDependencies(
+    const parsed = validateRuntimePortfolioPolicyDependencies(
       value,
+      this.dependencies
+    );
+    const candidate = validateRuntimePortfolioPolicyDependencies(
+      JSON.parse(JSON.stringify(parsed)),
       this.dependencies
     );
     return this.withLock(async () => {
@@ -228,6 +232,9 @@ async function acquireExclusiveLock(input: {
 }): Promise<() => Promise<void>> {
   const deadline = Date.now() + input.timeoutMs;
   while (true) {
+    if (Date.now() >= deadline) {
+      throw new Error("runtime portfolio policy repository lock is unavailable");
+    }
     try {
       const handle = await open(input.lockPath, "wx");
       const token = randomUUID();
@@ -255,10 +262,11 @@ async function acquireExclusiveLock(input: {
       if (!isNodeError(error) || error.code !== "EEXIST") {
         throw error;
       }
-      if (Date.now() >= deadline) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
         throw new Error("runtime portfolio policy repository lock is unavailable");
       }
-      await delay(input.retryDelayMs);
+      await delay(Math.min(input.retryDelayMs, remainingMs));
     }
   }
 }

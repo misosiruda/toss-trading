@@ -779,13 +779,15 @@ test("activation file repository leaves an abandoned lock fail-closed", async ()
       baseDir,
       [policy],
       DEPENDENCY_FIXTURE.repository,
-      { lockTimeoutMs: 20, lockRetryDelayMs: 5 }
+      { lockTimeoutMs: 20, lockRetryDelayMs: 500 }
     );
 
+    const startedAt = Date.now();
     await assert.rejects(
       () => repository.readAll(),
       /repository lock is unavailable/
     );
+    assert.ok(Date.now() - startedAt < 250);
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
   });
 });
@@ -831,6 +833,32 @@ test("runtime policy repository durably appends, reads, and converges exact retr
       (await readFile(paths.recordsPath, "utf8")).trim().split("\n").length,
       1
     );
+  });
+});
+
+test("runtime policy repository persists the canonical JSON view of signed zero", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const signedZeroPolicy = structuredClone(runtimePolicy());
+    const shortTerm = signedZeroPolicy.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(shortTerm !== undefined);
+    shortTerm.minWeightRatio = -0;
+    const policy = parseRuntimePortfolioPolicyRecord(signedZeroPolicy);
+    assert.equal(Object.is(shortTerm.minWeightRatio, -0), true);
+    const repository = new RuntimePortfolioPolicyFileRepository(
+      baseDir,
+      DEPENDENCY_FIXTURE.repository
+    );
+
+    const stored = await repository.append(policy);
+    const storedShortTerm = stored.strategyBuckets.find(
+      (bucket) => bucket.bucket === "short_term"
+    );
+    assert.ok(storedShortTerm !== undefined);
+    assert.equal(Object.is(storedShortTerm.minWeightRatio, -0), false);
+    assert.deepEqual(await repository.append(runtimePolicy()), stored);
+    assert.deepEqual(await repository.readAll(), [stored]);
   });
 });
 
@@ -967,10 +995,12 @@ test("runtime policy repository treats an abandoned lock as unavailable", async 
     const repository = new RuntimePortfolioPolicyFileRepository(
       baseDir,
       DEPENDENCY_FIXTURE.repository,
-      { lockTimeoutMs: 20, lockRetryDelayMs: 5 }
+      { lockTimeoutMs: 20, lockRetryDelayMs: 500 }
     );
 
+    const startedAt = Date.now();
     await assert.rejects(repository.readAll(), /lock is unavailable/);
+    assert.ok(Date.now() - startedAt < 250);
   });
 });
 
