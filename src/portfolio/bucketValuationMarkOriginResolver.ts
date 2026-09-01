@@ -7,6 +7,10 @@ import {
   type BucketValuationPositionInput,
   parseBucketValuationMarkRecord
 } from "./bucketValuationMark.js";
+import {
+  type SourcePriceEvidenceRecord,
+  parseSourcePriceEvidenceRecord
+} from "./sourcePriceEvidence.js";
 
 export interface ResolvedBucketValuationPositionInput {
   input: BucketValuationPositionInput;
@@ -16,6 +20,16 @@ export interface ResolvedBucketValuationPositionInput {
 export interface ResolvedBucketValuationMarkPreviousHeads {
   record: BucketValuationMarkRecord;
   positions: readonly ResolvedBucketValuationPositionInput[];
+}
+
+export interface ResolvedBucketValuationPositionOrigins
+  extends ResolvedBucketValuationPositionInput {
+  currentPriceEvidence: SourcePriceEvidenceRecord;
+}
+
+export interface ResolvedBucketValuationMarkOrigins {
+  record: BucketValuationMarkRecord;
+  positions: readonly ResolvedBucketValuationPositionOrigins[];
 }
 
 /**
@@ -62,6 +76,35 @@ export function resolveBucketValuationMarkPreviousHeads(input: {
   return deepFreeze({ record, positions });
 }
 
+/** Resolves every current mark price to one immutable typed observation. */
+export function resolveBucketValuationMarkOrigins(input: {
+  value: unknown;
+  currentStates: readonly unknown[];
+  currentPriceEvidence: readonly unknown[];
+}): ResolvedBucketValuationMarkOrigins {
+  const previous = resolveBucketValuationMarkPreviousHeads(input);
+  const evidence = parseUniqueEvidence(input.currentPriceEvidence);
+  const positions = previous.positions.map((position) => {
+    const matches = evidence.filter(
+      (candidate) =>
+        candidate.evidenceRef === position.input.currentPriceEvidenceRef
+    );
+    if (matches.length !== 1) {
+      throw new Error(
+        "bucket valuation current price evidence does not resolve exactly once"
+      );
+    }
+    const currentPriceEvidence = matches[0] as SourcePriceEvidenceRecord;
+    assertCurrentPriceEvidenceMatches(
+      previous.record,
+      position.input,
+      currentPriceEvidence
+    );
+    return deepFreeze({ ...position, currentPriceEvidence });
+  });
+  return deepFreeze({ record: previous.record, positions });
+}
+
 function parseUniqueStates(
   values: readonly unknown[]
 ): readonly BucketPositionMarkHeadState[] {
@@ -80,6 +123,22 @@ function parseUniqueStates(
     scopes.add(scope);
   }
   return states;
+}
+
+function parseUniqueEvidence(
+  values: readonly unknown[]
+): readonly SourcePriceEvidenceRecord[] {
+  const evidence = values.map((value) =>
+    parseSourcePriceEvidenceRecord(value)
+  );
+  const refs = new Set<string>();
+  for (const record of evidence) {
+    if (refs.has(record.evidenceRef)) {
+      throw new Error("source price evidence contains a duplicate ref");
+    }
+    refs.add(record.evidenceRef);
+  }
+  return evidence;
 }
 
 function assertPreviousHeadMatches(
@@ -106,6 +165,26 @@ function assertPreviousHeadMatches(
     throw new Error(
       "bucket valuation mark must advance every previous head interval"
     );
+  }
+}
+
+function assertCurrentPriceEvidenceMatches(
+  record: BucketValuationMarkRecord,
+  input: BucketValuationPositionInput,
+  evidence: SourcePriceEvidenceRecord
+): void {
+  if (
+    evidence.market !== input.market ||
+    evidence.symbol !== input.symbol ||
+    evidence.priceField !== "last_price"
+  ) {
+    throw new Error("bucket valuation current price evidence scope mismatch");
+  }
+  if (evidence.priceKrw !== input.currentPriceKrw) {
+    throw new Error("bucket valuation current price evidence value mismatch");
+  }
+  if (Date.parse(evidence.observedAt) !== Date.parse(record.asOf)) {
+    throw new Error("bucket valuation current price evidence time mismatch");
   }
 }
 
