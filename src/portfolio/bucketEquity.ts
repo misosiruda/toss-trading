@@ -365,6 +365,9 @@ function isWithinFloatingPointTolerance(
   actual: number,
   expected: number
 ): boolean {
+  if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+    return false;
+  }
   const scale = Math.max(1, Math.abs(actual), Math.abs(expected));
   return (
     Math.abs(actual - expected) <=

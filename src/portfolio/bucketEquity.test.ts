@@ -129,6 +129,26 @@ test("bucket equity initialization rejects baseline and unit fabrication", () =>
       }),
     /high-water mark cannot be below unit NAV/
   );
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
+        eventType: "epoch_initialized",
+        riskStateEpochId: "epoch-overflow",
+        activationId: "activation-overflow",
+        previousRiskStateEpochId: "epoch-1",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        initializationMode: "carried_forward",
+        initialEquityKrw: 0,
+        initialUnits: Number.MAX_VALUE,
+        initialUnitNavKrw: 2,
+        initialHighWaterMarkUnitNavKrw: 2,
+        asOf: "2026-09-02T00:00:00.000Z"
+      }),
+    /equity must equal units multiplied by unit NAV/
+  );
 });
 
 test("bucket equity chained variants preserve exact origins and canonical evidence", () => {
@@ -311,6 +331,24 @@ test("bucket risk state independently verifies equity, high-water mark, and draw
   assert.deepEqual(
     parseBucketRiskState(divisionDerivedState),
     divisionDerivedState
+  );
+  assert.throws(
+    () =>
+      createBucketRiskState({
+        riskStateEpochId: "epoch-overflow",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        units: Number.MAX_VALUE,
+        unitNavKrw: 2,
+        highWaterMarkUnitNavKrw: 2,
+        equityKrw: 0,
+        drawdownRatio: 0,
+        lastBucketEquityEventId: "bucket-event-overflow",
+        asOf: "2026-09-03T01:00:00.000Z"
+      }),
+    /equity must equal units multiplied by unit NAV/
   );
 });
 
