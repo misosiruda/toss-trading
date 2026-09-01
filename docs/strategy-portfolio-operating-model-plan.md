@@ -2795,6 +2795,18 @@ mandate opening cap과 같으며 event의 authorized maximum을 넘을 수 없�
 portfolio sizing snapshot/input/output, capacity reservation record와 active policy activation을 한 lock에서
 다시 해소하는 coordinator는 PR4/5 계약과 함께 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+여섯 번째 분할은 `BucketEquityEvent`의 epoch initialization, capital flow, valuation,
+execution cost, strategy transfer strict variant와 `BucketRiskState` snapshot contract를 구현한다.
+event는 ID/hash를 제외한 complete payload를 digest하고 ID를 hash에서 파생하며, initialization
+mode별 predecessor, units/NAV/high-water mark 관계, event별 금액 부호와 accounting sequence,
+valuation/cost evidence의 canonical order를 검증한다. risk snapshot은 equity, NAV/high-water mark와
+drawdown을 독립 재계산하고 complete payload hash를 검증한다. JSON digest에서 `-0`이 `0`으로
+축약되는 identity ambiguity를 막기 위해 0을 허용하는 금액과 비율에도 negative zero를 거절한다.
+equity, units와 unit NAV 사이의 교차 산술 검증은 IEEE-754 역연산 오차만 수용하는 규모 기반의
+결정론적 허용오차를 적용하고 그 범위를 넘는 drift는 거절한다.
+append-only repository의 선형 predecessor fold, exact origin resolver와 fill group/transfer의 다중 파일
+durable transaction은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
