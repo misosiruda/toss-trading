@@ -2916,6 +2916,18 @@ prefix/hash, candidate/resulting-state 불일치는 복구하지 않는다. Wind
 않는다. fill/valuation/migration 및 bucket equity exact origin resolver를 묶는 coordinator와 runner
 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열여섯 번째 분할은 immutable valuation mark를 current position mark-head snapshot에 결속하는 순수
+`resolveBucketValuationMarkPreviousHeads` resolver를 구현한다. resolver는 mark record와 제공된 모든
+state를 독립 rehash하고 duplicate state scope를 거절한다. mark의 `(portfolioId, bucket)`에 속한
+quantity 양수 active head 집합과 `positionInputs`가 정확히 같은 instrument 집합인지 확인하고, 각
+input의 stable head ID/hash, quantity, `previousPriceKrw`/`previousPriceEvidenceRef`가 current head와
+exact-match하며 mark `asOf`가 모든 head interval을 strict하게 전진시키는지 검증한다. closed head와
+다른 portfolio/bucket scope는 valuation 대상에서 제외한다. typed current-price evidence contract가
+아직 없으므로 generic ref에서 current price를 추정하거나 evidence hash를 합성하지 않는다. current
+price evidence resolver, immutable mark repository/current snapshot을 같은 lock에서 해소하는
+coordinator와 valuation bucket-equity event 및 모든 mark-head CAS update의 원자 commit은 후속 분할
+전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3079,6 +3091,7 @@ prefix/hash, candidate/resulting-state 불일치는 복구하지 않는다. Wind
 - mark head event strict variant rehash와 snapshot replay 일치
 - position mark-head event repository의 thread/process exact retry 수렴과 corrupt/torn/branch/origin 거절
 - position mark-head durable snapshot의 replay equality와 journal complete/partial recovery 검증
+- valuation mark의 active position completeness와 previous head ID/hash/quantity/price/evidence 해소
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
