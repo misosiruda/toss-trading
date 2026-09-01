@@ -157,6 +157,36 @@ test("bucket valuation mark rejects invalid chronology and numeric identity", ()
       }),
     /must remain finite/
   );
+  assert.throws(
+    () =>
+      createBucketValuationMarkRecord({
+        ...recordInput(),
+        positionInputs: [
+          positionInput({
+            quantity: Number.MIN_VALUE,
+            previousPriceKrw: 1,
+            currentPriceKrw: 1.5
+          })
+        ],
+        equityDeltaKrw: 0
+      }),
+    /must remain finite/
+  );
+  assert.throws(
+    () =>
+      createBucketValuationMarkRecord({
+        ...recordInput(),
+        positionInputs: [
+          positionInput({
+            quantity: 1,
+            previousPriceKrw: 1,
+            currentPriceKrw: 1 + Number.EPSILON
+          })
+        ],
+        equityDeltaKrw: 0
+      }),
+    /equity delta does not match/
+  );
 });
 
 function recordInput() {

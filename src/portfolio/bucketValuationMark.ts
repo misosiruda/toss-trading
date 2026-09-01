@@ -154,11 +154,15 @@ function assertValuationMarkPayload(
   }
   let expectedDeltaKrw = 0;
   for (const position of payload.positionInputs) {
-    const contribution =
-      position.quantity *
-      (position.currentPriceKrw - position.previousPriceKrw);
+    const priceDeltaKrw =
+      position.currentPriceKrw - position.previousPriceKrw;
+    const contribution = position.quantity * priceDeltaKrw;
     expectedDeltaKrw += contribution;
-    if (!Number.isFinite(contribution) || !Number.isFinite(expectedDeltaKrw)) {
+    if (
+      (priceDeltaKrw !== 0 && contribution === 0) ||
+      !Number.isFinite(contribution) ||
+      !Number.isFinite(expectedDeltaKrw)
+    ) {
       throw new Error("bucket valuation delta calculation must remain finite");
     }
   }
@@ -203,8 +207,12 @@ function isValidFloatingPointResult(actual: number, expected: number): boolean {
   if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
     return false;
   }
-  const scale = Math.max(Math.abs(actual), Math.abs(expected), 1);
+  if (actual === expected) {
+    return true;
+  }
+  const scale = Math.max(Math.abs(actual), Math.abs(expected));
   return (
+    scale > 0 &&
     Math.abs(actual - expected) <=
     Number.EPSILON * scale * FLOATING_POINT_TOLERANCE_FACTOR
   );

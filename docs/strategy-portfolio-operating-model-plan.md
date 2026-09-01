@@ -2849,7 +2849,8 @@ carry-forward 판단과 runner 연결은 후속 분할 전까지 구현 완료�
 구현한다. record constructor는 position input을 UTF-8 기준 market/symbol 순으로 canonicalize하고
 instrument duplicate를 거절한다. parser는 ID/hash/`createdAt`을 제외한 complete payload를 독립
 rehash하고 ID를 hash에서 다시 파생하며, 각 quantity와 current/previous KRW price 차이의 합으로
-`equityDeltaKrw`를 결정론적으로 재계산한다. signed zero, 비유한 산술, `asOf`보다 이른 `createdAt`,
+`equityDeltaKrw`를 결정론적으로 재계산한다. signed zero, 비유한 산술, nonzero contribution의
+zero underflow, `asOf`보다 이른 `createdAt`,
 non-canonical stored order와 identity drift는 fail-closed한다. exact previous mark-head/evidence 해소,
 append-only record repository, position mark-head CAS update와 valuation event를 묶는 transaction은
 후속 분할 전까지 구현 완료로 간주하지 않는다.
