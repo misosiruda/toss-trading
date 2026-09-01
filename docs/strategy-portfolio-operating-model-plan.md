@@ -2815,6 +2815,8 @@ initial-or-empty 조건과 동일 drawdown semantics의 exact carried state를 �
 strategy transfer는 flow 직전 unit NAV에서 unit을 mint/burn해 NAV/HWM을 유지하고, valuation과
 execution cost는 resulting equity에서 unit NAV/HWM/drawdown을 갱신한다. 초과 burn, 음수·비유한
 equity/unit, branch/stale epoch와 corrupt/torn/blank/duplicate JSONL은 append 전에 fail-closed한다.
+보유 unit이 남은 100% drawdown은 terminal zero-NAV와 drawdown 1로 기록하되, unit이 0인 empty
+epoch는 마지막 positive NAV/HWM을 보존하고 zero-NAV에서의 unit flow는 거절한다.
 concurrent exact retry는 기존 event로 수렴하고 새 event는 file/directory durable sync 후 공개한다.
 별도 `bucket-risk-state.json` snapshot persistence와 event/snapshot atomic commit, activation/policy 및
 fill/valuation/migration exact origin resolver, fill accounting group/transfer 다중 파일 transaction,

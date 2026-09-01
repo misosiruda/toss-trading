@@ -163,6 +163,9 @@ function applyUnitFlow(
   event: Exclude<BucketEquityEvent, { eventType: "epoch_initialized" }>,
   amountKrw: number
 ): BucketRiskState {
+  if (state.unitNavKrw === 0) {
+    throw new Error("bucket equity unit flow is undefined at zero unit NAV");
+  }
   if (amountKrw < 0 && -amountKrw > state.equityKrw) {
     throw new Error("bucket equity unit burn exceeds current units");
   }
@@ -212,7 +215,7 @@ function applyEquityDelta(
   }
   const nextUnitNavKrw =
     state.units === 0 ? state.unitNavKrw : nextEquityKrw / state.units;
-  if (!Number.isFinite(nextUnitNavKrw) || nextUnitNavKrw <= 0) {
+  if (!Number.isFinite(nextUnitNavKrw) || nextUnitNavKrw < 0) {
     throw new Error("bucket equity delta produces an invalid unit NAV");
   }
   const nextHighWaterMarkUnitNavKrw = Math.max(

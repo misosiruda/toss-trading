@@ -118,6 +118,62 @@ test("bucket equity replay carries exact state across compatible policy epochs",
   assert.equal(state.drawdownRatio, 0.19999999999999996);
 });
 
+test("bucket equity replay records and carries a terminal 100 percent drawdown", () => {
+  const initialized = initialization();
+  const terminalLoss = createBucketEquityEvent({
+    ...chained(initialized),
+    eventType: "valuation",
+    equityDeltaKrw: -1_000,
+    bucketValuationMarkRecordId: "valuation-terminal",
+    valuationMarkHash: HASH_C,
+    evidenceRefs: ["mark-a"]
+  });
+  const carried = createBucketEquityEvent({
+    eventType: "epoch_initialized",
+    riskStateEpochId: "epoch-terminal-2",
+    activationId: "activation-terminal-2",
+    previousRiskStateEpochId: "epoch-1",
+    portfolioId: "portfolio-1",
+    bucket: "intraday",
+    policyHash: HASH_C,
+    drawdownSemanticsHash: HASH_B,
+    initializationMode: "carried_forward",
+    initialEquityKrw: 0,
+    initialUnits: 1_000,
+    initialUnitNavKrw: 0,
+    initialHighWaterMarkUnitNavKrw: 1,
+    asOf: "2026-09-02T00:00:00.000Z"
+  });
+  const state = foldBucketEquityHistory([
+    initialized,
+    terminalLoss,
+    carried
+  ]).states[0];
+  assert.ok(state);
+  assert.equal(state.equityKrw, 0);
+  assert.equal(state.unitNavKrw, 0);
+  assert.equal(state.drawdownRatio, 1);
+  assert.equal(state.riskStateEpochId, "epoch-terminal-2");
+
+  const invalidFlow = capitalFlow(
+    carried,
+    100,
+    0,
+    "fill-zero-nav",
+    "2026-09-02T01:00:00.000Z"
+  );
+  assert.throws(
+    () =>
+      foldBucketEquityHistory([
+        initialized,
+        terminalLoss,
+        carried,
+        invalidFlow
+      ]),
+    /unit flow is undefined at zero unit NAV/
+  );
+});
+
 test("bucket equity replay rejects branches, stale epochs, scope drift, and chronology regressions", () => {
   const initialized = initialization();
   const first = capitalFlow(initialized, 100, 0, "fill-1");

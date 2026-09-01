@@ -35,7 +35,7 @@ const epochBaseSchema = z
     drawdownSemanticsHash: sha256HashSchema,
     initialEquityKrw: nonNegativeAmountSchema,
     initialUnits: nonNegativeAmountSchema,
-    initialUnitNavKrw: positiveValueSchema,
+    initialUnitNavKrw: nonNegativeAmountSchema,
     initialHighWaterMarkUnitNavKrw: positiveValueSchema,
     asOf: offsetQualifiedIsoDateTimeSchema
   })
@@ -183,7 +183,7 @@ const bucketRiskStatePayloadSchema = z
     policyHash: sha256HashSchema,
     drawdownSemanticsHash: sha256HashSchema,
     units: nonNegativeAmountSchema,
-    unitNavKrw: positiveValueSchema,
+    unitNavKrw: nonNegativeAmountSchema,
     highWaterMarkUnitNavKrw: positiveValueSchema,
     equityKrw: nonNegativeAmountSchema,
     drawdownRatio: z
@@ -289,6 +289,12 @@ function assertBucketEquityEventPayload(
       throw new Error("initial high-water mark cannot be below unit NAV");
     }
     if (
+      payload.initialUnitNavKrw === 0 &&
+      payload.initialUnits === 0
+    ) {
+      throw new Error("empty bucket equity epoch must preserve a positive unit NAV");
+    }
+    if (
       payload.initializationMode === "initial_or_empty" &&
       (payload.initialUnitNavKrw !== 1 ||
         payload.initialHighWaterMarkUnitNavKrw !== 1)
@@ -342,6 +348,9 @@ function assertBucketRiskStatePayload(
     )
   ) {
     throw new Error("bucket risk equity must equal units multiplied by unit NAV");
+  }
+  if (state.unitNavKrw === 0 && state.units === 0) {
+    throw new Error("empty bucket risk state must preserve a positive unit NAV");
   }
   const expectedDrawdown =
     1 - state.unitNavKrw / state.highWaterMarkUnitNavKrw;
