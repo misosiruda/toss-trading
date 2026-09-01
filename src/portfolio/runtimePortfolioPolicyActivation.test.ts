@@ -11,6 +11,11 @@ import {
   FileVirtualPortfolioStore
 } from "../storage/repositories.js";
 import {
+  createBucketEquityEvent,
+  type BucketEquityEvent
+} from "./bucketEquity.js";
+import { resolveBucketEquityEpochInitialization } from "./bucketEquityOriginResolver.js";
+import {
   createBucketDrawdownSemanticsRecord,
   createBucketSelectionPolicyRecord,
   createPortfolioRiskRuleParameterRecord,
@@ -64,6 +69,134 @@ const BUCKETS = [
   "hedge"
 ] as const;
 const DEPENDENCY_FIXTURE = dependencyFixture();
+
+test("bucket equity epoch resolves the exact active policy and drawdown dependency", () => {
+  const policy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const activePolicy = resolveActiveRuntimePortfolioPolicyAsOf({
+    portfolioId: policy.portfolioId,
+    asOf: activation.effectiveFrom,
+    events: [activation],
+    policies: [policy],
+    dependencies: DEPENDENCY_FIXTURE.repository
+  });
+  const event = bucketEpochInitialization(policy, activation);
+
+  const resolved = resolveBucketEquityEpochInitialization({
+    value: event,
+    activePolicy,
+    dependencies: DEPENDENCY_FIXTURE.repository
+  });
+  assert.equal(resolved.activation.activationId, activation.activationId);
+  assert.equal(resolved.policy.runtimePolicyRecordId, policy.runtimePolicyRecordId);
+  assert.equal(resolved.bucketPolicy.bucket, "intraday");
+  assert.equal(resolved.drawdownSemantics.hash, event.drawdownSemanticsHash);
+});
+
+test("bucket equity epoch rejects fabricated activation identity and timing", () => {
+  const policy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const activePolicy = { activation, policy };
+
+  assert.throws(
+    () =>
+      resolveBucketEquityEpochInitialization({
+        value: bucketEpochInitialization(policy, activation, {
+          activationId: "fabricated-activation"
+        }),
+        activePolicy,
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /activation ID mismatch/
+  );
+  assert.throws(
+    () =>
+      resolveBucketEquityEpochInitialization({
+        value: bucketEpochInitialization(policy, activation, {
+          asOf: "2026-08-28T01:00:01.000Z"
+        }),
+        activePolicy,
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /asOf must equal policy activation effectiveFrom/
+  );
+});
+
+test("bucket equity epoch rejects policy scope and drawdown lineage drift", () => {
+  const policy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const activePolicy = { activation, policy };
+
+  for (const value of [
+    bucketEpochInitialization(policy, activation, {
+      portfolioId: "foreign-portfolio"
+    }),
+    bucketEpochInitialization(policy, activation, { policyHash: HASH_B })
+  ]) {
+    assert.throws(
+      () =>
+        resolveBucketEquityEpochInitialization({
+          value,
+          activePolicy,
+          dependencies: DEPENDENCY_FIXTURE.repository
+        }),
+      /runtime policy scope mismatch/
+    );
+  }
+  assert.throws(
+    () =>
+      resolveBucketEquityEpochInitialization({
+        value: bucketEpochInitialization(policy, activation, {
+          drawdownSemanticsHash: HASH_B
+        }),
+        activePolicy,
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /drawdown semantics hash mismatch/
+  );
+});
+
+test("bucket equity epoch independently verifies the active policy pair", () => {
+  const policy = runtimePolicy();
+  const activation = createPortfolioPolicyActivatedEvent({
+    policy,
+    activationSequence: 1,
+    createdAt: "2026-08-28T01:00:00.000Z"
+  });
+  const replacement = runtimePolicy({ version: "v2" });
+  const event = bucketEpochInitialization(policy, activation);
+
+  assert.throws(
+    () =>
+      resolveBucketEquityEpochInitialization({
+        value: event,
+        activePolicy: { activation, policy: replacement },
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /active runtime policy pair identity mismatch/
+  );
+  assert.throws(
+    () =>
+      resolveBucketEquityEpochInitialization({
+        value: event,
+        activePolicy: { activation, policy, extra: true },
+        dependencies: DEPENDENCY_FIXTURE.repository
+      }),
+    /active runtime policy pair must be canonical/
+  );
+});
 
 test("activation event binds the complete policy tuple with a hash-derived ID", () => {
   const policy = runtimePolicy();
@@ -1865,6 +1998,35 @@ function runtimePolicy(options: {
     }),
     createdAt
   });
+}
+
+function bucketEpochInitialization(
+  policy: RuntimePortfolioPolicyRecord,
+  activation: PortfolioPolicyActivatedEvent,
+  overrides: {
+    activationId?: string;
+    portfolioId?: string;
+    policyHash?: `sha256:${string}`;
+    drawdownSemanticsHash?: `sha256:${string}`;
+    asOf?: string;
+  } = {}
+): Extract<BucketEquityEvent, { eventType: "epoch_initialized" }> {
+  return createBucketEquityEvent({
+    eventType: "epoch_initialized",
+    riskStateEpochId: `epoch-${activation.activationId}`,
+    activationId: activation.activationId,
+    portfolioId: policy.portfolioId,
+    bucket: "intraday",
+    policyHash: policy.policyHash,
+    drawdownSemanticsHash: DEPENDENCY_FIXTURE.drawdown.hash,
+    initializationMode: "initial_or_empty",
+    initialEquityKrw: 0,
+    initialUnits: 0,
+    initialUnitNavKrw: 1,
+    initialHighWaterMarkUnitNavKrw: 1,
+    asOf: activation.effectiveFrom,
+    ...overrides
+  }) as Extract<BucketEquityEvent, { eventType: "epoch_initialized" }>;
 }
 
 async function withTemporaryDirectory(

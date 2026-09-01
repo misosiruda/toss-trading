@@ -2835,6 +2835,16 @@ candidate/resulting-state 불일치는 복구하지 않는다. external activati
 origin resolver, fill accounting group/transfer와 다른 저장소를 포괄하는 transaction, risk breach 평가와
 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+아홉 번째 분할은 `epoch_initialized` event를 activation-aware caller가 제공한 exact active runtime
+policy pair와 immutable drawdown dependency에 결속하는 순수 origin resolver를 구현한다. resolver는
+activation event와 runtime policy record를 독립 rehash하고 activation의 portfolio/policy
+record/ID/version/hash/lineage tuple, event의 activation ID·portfolio·policy hash와 activation
+`effectiveFrom` 시각을 모두 exact-match한다. 해당 bucket의 drawdown semantics ref도 immutable
+dependency repository에서 다시 해소해 event hash와 비교한다. active pair의 추가 field, retired
+event, dependency corruption 또는 어느 lineage mismatch도 거절한다. activation history를 같은
+lock에서 현재 시각 기준으로 해소하고 epoch event/projection을 commit하는 coordinator, 기존 epoch의
+carry-forward 판단과 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
