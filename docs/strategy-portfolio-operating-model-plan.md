@@ -2743,15 +2743,24 @@ min/target/max/current/gap을 backend ViewModel 그대로 렌더링한다.
 - position peak/review/holding age와 bucket unit-NAV drawdown state persistence
 - position strategy state full-payload digest와 restart 검증
 
-현재 첫 분할은 `InvestmentMandateRecord`, lifecycle event와 manual assignment event의
+첫 분할은 `InvestmentMandateRecord`, lifecycle event와 manual assignment event의
 strict variant schema, canonical ordered set, full-payload hash, hash-derived ID와 timezone-safe
 chronology 검증을 구현한다. `createdAt`은 semantic hash에서 제외하며 parser가 저장 payload를
 독립 rehash한다. `every_tick` mandate는 `intraday` bucket에만 허용하고 manual
 `open_or_increase` assignment의 `maximumNotionalKrw`는 양수로 제한한다. opening-capable
-mandate와 assignment는 양수 `targetWeightRatio`와 `maxWeightRatio`를 요구한다. repository,
-event-chain fold, manual assignment dependency resolver,
-`PositionStrategyState`와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+mandate와 assignment는 양수 `targetWeightRatio`와 `maxWeightRatio`를 요구한다.
 retired lifecycle event의 `supersededByMandateId`는 자기 `mandateId`와 같을 수 없다.
+
+두 번째 분할은 `instrument-mandate-records.jsonl`과
+`instrument-mandate-events.jsonl`을 하나의 exclusive lock 아래 read-validate-append하는 strict
+repository를 구현한다. exact retry는 저장된 동일 record/event로 수렴하고 ID collision, torn/blank
+JSONL, abandoned lock과 전체 history rehash/fold 실패는 쓰기 전에 fail-closed한다. lifecycle은
+`portfolioId + market + symbol`별 단일 predecessor chain으로 fold한다. 최초 activation만
+predecessor를 생략하고, 후속 activation은 기존 retirement가 미리 선언한 proposed successor와
+정확히 일치해야 한다. 따라서 `proposed`, `active`, `review_required`, `retired` 상태는 저장하지
+않고 event replay로 파생하며 한 종목에 두 current mandate가 생기는 branch를 거절한다. manual
+assignment repository/dependency resolver, `PositionStrategyState`, bucket equity state와 runner
+연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 
