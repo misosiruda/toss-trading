@@ -2822,6 +2822,19 @@ concurrent exact retry는 기존 event로 수렴하고 새 event는 file/directo
 fill/valuation/migration exact origin resolver, fill accounting group/transfer 다중 파일 transaction,
 risk breach 평가와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+여덟 번째 분할은 replay 결과를 canonical `(portfolioId, bucket)` 순서로 저장하는
+`bucket-risk-state.json` durable projection과 event/snapshot commit journal을 구현한다. 모든 정상
+read/restart는 snapshot state별 complete payload hash, duplicate scope/order와 전체 event replay의
+exact equality를 검증하며 journal이 없을 때 missing/corrupt/torn/mismatch snapshot을 자동 보정하지
+않고 fail-closed한다. append는 이전 event-log byte length와 raw SHA-256, candidate event와 resulting
+states 전체를 hash한 pending journal을 먼저 atomic replace/sync하고 event append와 snapshot replace를
+같은 lock에서 수행한다. restart recovery는 journal의 이전 raw prefix와 candidate line을 독립 검증해
+완전한 event는 snapshot projection을 완료하고, candidate line의 검증된 partial prefix만 남은 경우
+이전 byte boundary로 truncate하고 이전 replay state를 복원한다. 예상하지 않은 later bytes, prefix/hash,
+candidate/resulting-state 불일치는 복구하지 않는다. external activation/policy 및 fill/valuation/migration
+origin resolver, fill accounting group/transfer와 다른 저장소를 포괄하는 transaction, risk breach 평가와
+runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
