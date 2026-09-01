@@ -2,7 +2,8 @@ import {
   type BucketEquityEvent,
   type BucketRiskState,
   createBucketRiskState,
-  parseBucketEquityEvent
+  parseBucketEquityEvent,
+  parseBucketRiskState
 } from "./bucketEquity.js";
 import { compareText } from "./runtimePolicyContracts.js";
 
@@ -57,21 +58,13 @@ export function foldBucketEquityHistory(
     if (history === undefined) {
       throw new Error("bucket equity event appears before epoch initialization");
     }
-    if (history.currentEpochId !== event.riskStateEpochId) {
-      throw new Error("bucket equity event does not target the current epoch");
-    }
-    if (event.previousBucketEquityEventId !== history.state.lastBucketEquityEventId) {
-      throw new Error("bucket equity event predecessor does not match current head");
-    }
-    if (event.policyHash !== history.state.policyHash) {
-      throw new Error("bucket equity event policy does not match current epoch");
-    }
-    if (Date.parse(event.asOf) < Date.parse(history.state.asOf)) {
-      throw new Error("bucket equity event asOf cannot move backward");
-    }
+    const state = applyVerifiedChainedEventToCurrentState(
+      history.state,
+      event
+    );
     scopes.set(key, {
       currentEpochId: history.currentEpochId,
-      state: applyChainedEvent(history.state, event)
+      state
     });
   }
 
@@ -86,6 +79,21 @@ export function foldBucketEquityHistory(
     events: Object.freeze(events),
     states: Object.freeze(states)
   });
+}
+
+/** Replays one strict chained event against one strict current risk state. */
+export function applyBucketEquityEventToCurrentState(input: {
+  currentState: unknown;
+  event: unknown;
+}): BucketRiskState {
+  const currentState = parseBucketRiskState(input.currentState);
+  const event = parseBucketEquityEvent(input.event);
+  if (event.eventType === "epoch_initialized") {
+    throw new Error(
+      "bucket equity current-state projection requires a chained event"
+    );
+  }
+  return applyVerifiedChainedEventToCurrentState(currentState, event);
 }
 
 function assertEpochInitialization(
@@ -156,6 +164,33 @@ function applyChainedEvent(
     return applyUnitFlow(state, event, event.amountKrw);
   }
   return applyEquityDelta(state, event, event.equityDeltaKrw);
+}
+
+function applyVerifiedChainedEventToCurrentState(
+  state: BucketRiskState,
+  event: Exclude<BucketEquityEvent, { eventType: "epoch_initialized" }>
+): BucketRiskState {
+  if (
+    event.portfolioId !== state.portfolioId ||
+    event.bucket !== state.bucket
+  ) {
+    throw new Error("bucket equity event scope does not match current state");
+  }
+  if (event.riskStateEpochId !== state.riskStateEpochId) {
+    throw new Error("bucket equity event does not target the current epoch");
+  }
+  if (event.previousBucketEquityEventId !== state.lastBucketEquityEventId) {
+    throw new Error(
+      "bucket equity event predecessor does not match current head"
+    );
+  }
+  if (event.policyHash !== state.policyHash) {
+    throw new Error("bucket equity event policy does not match current epoch");
+  }
+  if (Date.parse(event.asOf) < Date.parse(state.asOf)) {
+    throw new Error("bucket equity event asOf cannot move backward");
+  }
+  return applyChainedEvent(state, event);
 }
 
 function applyUnitFlow(
