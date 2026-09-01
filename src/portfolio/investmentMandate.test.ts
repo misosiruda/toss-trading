@@ -192,8 +192,24 @@ test("mandate rejects noncanonical scheduled cadence boundary refs", () => {
         ...mandateBase(),
         reviewCadence: {
           mode: "scheduled",
+          boundaryRefs: [boundary("boundary-a")]
+        },
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "classify_existing_reduce_only",
+        manualAssignmentEventId: "manual-event-1",
+        createdAt: CREATED_AT
+      }),
+    /scheduled mandate requires reviewAfter/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        reviewCadence: {
+          mode: "scheduled",
           boundaryRefs: [boundary("boundary-b"), boundary("boundary-a")]
         },
+        reviewAfter: "2026-09-02T00:30:00.000Z",
         assignmentSource: "manual_policy",
         manualAuthorizationScope: "classify_existing_reduce_only",
         manualAssignmentEventId: "manual-event-1",
@@ -201,6 +217,31 @@ test("mandate rejects noncanonical scheduled cadence boundary refs", () => {
       }),
     /canonical record ID order/
   );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        reviewAfter: "2026-09-02T00:30:00.000Z",
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "classify_existing_reduce_only",
+        manualAssignmentEventId: "manual-event-1",
+        createdAt: CREATED_AT
+      }),
+    /every_tick mandate must omit reviewAfter/
+  );
+  const scheduled = createInvestmentMandateRecord({
+    ...mandateBase(),
+    reviewCadence: {
+      mode: "scheduled",
+      boundaryRefs: [boundary("boundary-a"), boundary("boundary-b")]
+    },
+    reviewAfter: "2026-09-02T00:30:00.000Z",
+    assignmentSource: "manual_policy",
+    manualAuthorizationScope: "classify_existing_reduce_only",
+    manualAssignmentEventId: "manual-event-1",
+    createdAt: CREATED_AT
+  });
+  assert.deepEqual(parseInvestmentMandateRecord(scheduled), scheduled);
 });
 
 test("mandate events hash the complete strict variant payload", () => {
@@ -302,7 +343,6 @@ function mandateBase() {
     evidenceAsOf: "2026-09-01T00:00:00.000Z",
     reviewCadence: { mode: "every_tick" as const },
     validFrom: "2026-09-01T00:30:00.000Z",
-    reviewAfter: "2026-09-02T00:30:00.000Z",
     expiresAt: "2026-10-01T00:30:00.000Z"
   };
 }

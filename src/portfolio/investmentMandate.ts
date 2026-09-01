@@ -441,6 +441,7 @@ function assertMandateChronology(
     evidenceAsOf: string;
     asOf: string;
     validFrom: string;
+    reviewCadence: z.infer<typeof bucketReviewCadenceSchema>;
     reviewAfter?: string | undefined;
     expiresAt?: string | undefined;
   },
@@ -448,6 +449,18 @@ function assertMandateChronology(
 ): void {
   assertNotAfter(value.evidenceAsOf, value.asOf, "mandate evidenceAsOf");
   assertNotAfter(value.asOf, createdAt, "mandate asOf");
+  if (
+    value.reviewCadence.mode === "scheduled" &&
+    value.reviewAfter === undefined
+  ) {
+    throw new Error("scheduled mandate requires reviewAfter");
+  }
+  if (
+    value.reviewCadence.mode === "every_tick" &&
+    value.reviewAfter !== undefined
+  ) {
+    throw new Error("every_tick mandate must omit reviewAfter");
+  }
   if (value.reviewAfter !== undefined) {
     assertNotAfter(value.validFrom, value.reviewAfter, "mandate reviewAfter");
   }
