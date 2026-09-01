@@ -2784,6 +2784,17 @@ repository/dependency resolver, legacy migration coordinator, mandate transition
 commit하는 다중 파일 coordinator, bucket equity state와 runner 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+다섯 번째 분할은 `manual-assignment-events.jsonl` strict append-only repository를 구현한다. event
+ID/hash를 매 read마다 독립 검증하고 concurrent exact retry는 기존 event로 수렴시키며 ID collision,
+torn/blank/corrupt/duplicate line과 abandoned lock은 append 전에 fail-closed한다. activation-aware
+caller가 제공한 active runtime policy와 selection policy record는 event의 portfolio/policy/bucket/market,
+selection record ID/hash/version/lineage와 정확히 일치해야 한다. 저장된 event를 manual mandate에
+bind할 때 assignment ID, authorization scope, portfolio/policy/market/symbol/bucket/as-of, evidence refs와
+classification 또는 opening range를 모두 비교한다. open/increase mandate의 reserved notional은 양수이고
+mandate opening cap과 같으며 event의 authorized maximum을 넘을 수 없다. evidence observation replay,
+portfolio sizing snapshot/input/output, capacity reservation record와 active policy activation을 한 lock에서
+다시 해소하는 coordinator는 PR4/5 계약과 함께 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
