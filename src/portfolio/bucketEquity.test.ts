@@ -353,6 +353,31 @@ test("bucket risk state independently verifies equity, high-water mark, and draw
     /hash does not match its payload/
   );
 
+  const terminal = createBucketRiskState({
+    riskStateEpochId: "epoch-terminal",
+    portfolioId: "portfolio-1",
+    bucket: "intraday",
+    policyHash: HASH_A,
+    drawdownSemanticsHash: HASH_B,
+    units: 1_000,
+    unitNavKrw: 0,
+    highWaterMarkUnitNavKrw: 1,
+    equityKrw: 0,
+    drawdownRatio: 1,
+    lastBucketEquityEventId: "bucket-event-terminal",
+    asOf: "2026-09-01T02:00:00.000Z"
+  });
+  assert.deepEqual(parseBucketRiskState(terminal), terminal);
+  const { riskStateHash: _terminalHash, ...terminalPayload } = terminal;
+  assert.throws(
+    () =>
+      createBucketRiskState({
+        ...terminalPayload,
+        units: 0
+      }),
+    /empty bucket risk state must preserve a positive unit NAV/
+  );
+
   const divisionDerivedUnitNav = 31 / 39;
   const divisionDerivedState = createBucketRiskState({
     riskStateEpochId: "epoch-2",

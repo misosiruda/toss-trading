@@ -2807,6 +2807,21 @@ equity, units와 unit NAV 사이의 교차 산술 검증은 IEEE-754 역연산 �
 append-only repository의 선형 predecessor fold, exact origin resolver와 fill group/transfer의 다중 파일
 durable transaction은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+일곱 번째 분할은 `bucket-equity-events.jsonl` strict append-only repository와 deterministic
+replay fold를 구현한다. repository는 하나의 exclusive lock 아래 매 read/restart마다 모든 event의
+complete payload hash와 hash-derived ID를 다시 검증하고, `(portfolioId, bucket)`별 current epoch와
+event head를 재구성한다. epoch 첫 event, exact predecessor, policy scope, non-regressing `asOf`,
+initial-or-empty 조건과 동일 drawdown semantics의 exact carried state를 검증한다. capital flow와
+strategy transfer는 flow 직전 unit NAV에서 unit을 mint/burn해 NAV/HWM을 유지하고, valuation과
+execution cost는 resulting equity에서 unit NAV/HWM/drawdown을 갱신한다. 초과 burn, 음수·비유한
+equity/unit, branch/stale epoch와 corrupt/torn/blank/duplicate JSONL은 append 전에 fail-closed한다.
+보유 unit이 남은 100% drawdown은 terminal zero-NAV와 drawdown 1로 기록하되, unit이 0인 empty
+epoch는 마지막 positive NAV/HWM을 보존하고 zero-NAV에서의 unit flow는 거절한다.
+concurrent exact retry는 기존 event로 수렴하고 새 event는 file/directory durable sync 후 공개한다.
+별도 `bucket-risk-state.json` snapshot persistence와 event/snapshot atomic commit, activation/policy 및
+fill/valuation/migration exact origin resolver, fill accounting group/transfer 다중 파일 transaction,
+risk breach 평가와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
