@@ -2928,6 +2928,17 @@ price evidence resolver, immutable mark repository/current snapshot을 같은 lo
 coordinator와 valuation bucket-equity event 및 모든 mark-head CAS update의 원자 commit은 후속 분할
 전까지 구현 완료로 간주하지 않는다.
 
+열일곱 번째 분할은 valuation과 paper fill이 공용으로 참조할 immutable
+`SourcePriceEvidenceRecord` strict contract를 구현한다. record payload는 `sourceContractId`, exact
+market/symbol, `priceField = last_price`, 양수 KRW price, offset-qualified `observedAt`과 canonical
+unique raw `sourceRefs`를 포함한다. `evidenceHash`는 `evidenceRef`/hash/`createdAt`을 제외한 complete
+payload에서 계산하고 `evidenceRef`는 hash-derived ID로 만든다. parser는 stored payload를 독립
+rehash하고 non-canonical source ref order, duplicate provenance, unsupported price field, identity drift와
+observation 이전 `createdAt`을 거절한다. 기존 `HistoricalMarketSnapshot.snapshotId`나 generic
+`sourceRefs`는 payload hash와 결속되지 않았으므로 immutable price origin으로 승격하지 않는다.
+append-only evidence repository, valuation mark의 current price/evidence resolver와 fill execution
+contract 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3092,6 +3103,7 @@ coordinator와 valuation bucket-equity event 및 모든 mark-head CAS update의 
 - position mark-head event repository의 thread/process exact retry 수렴과 corrupt/torn/branch/origin 거절
 - position mark-head durable snapshot의 replay equality와 journal complete/partial recovery 검증
 - valuation mark의 active position completeness와 previous head ID/hash/quantity/price/evidence 해소
+- typed source-price evidence의 complete payload hash와 hash-derived ref 및 canonical provenance 검증
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
