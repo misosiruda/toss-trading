@@ -2845,6 +2845,16 @@ event, dependency corruption 또는 어느 lineage mismatch도 거절한다. act
 lock에서 현재 시각 기준으로 해소하고 epoch event/projection을 commit하는 coordinator, 기존 epoch의
 carry-forward 판단과 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열 번째 분할은 valuation event의 immutable origin인 `BucketValuationMarkRecord` strict contract를
+구현한다. record constructor는 position input을 UTF-8 기준 market/symbol 순으로 canonicalize하고
+instrument duplicate를 거절한다. parser는 ID/hash/`createdAt`을 제외한 complete payload를 독립
+rehash하고 ID를 hash에서 다시 파생하며, 각 quantity와 current/previous KRW price 차이의 합으로
+`equityDeltaKrw`를 결정론적으로 재계산한다. signed zero, 비유한 산술, nonzero contribution의
+zero underflow, `asOf`보다 이른 `createdAt`,
+non-canonical stored order와 identity drift는 fail-closed한다. exact previous mark-head/evidence 해소,
+append-only record repository, position mark-head CAS update와 valuation event를 묶는 transaction은
+후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
