@@ -2901,6 +2901,21 @@ abandoned lock은 자동 복구하지 않는다. `bucket-position-mark-head-stat
 event/snapshot commit journal, fill/valuation/migration 및 bucket equity exact origin resolver를 묶는
 coordinator는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열다섯 번째 분할은 replay 결과를 canonical
+`(portfolioId, bucket, market, symbol)` 순서로 저장하는
+`bucket-position-mark-head-state.json` durable projection과 event/snapshot commit journal을 구현한다.
+모든 정상 read/restart는 snapshot state별 complete payload hash, duplicate scope/order와 전체 event
+replay의 exact equality를 검증하며 journal이 없을 때 missing/corrupt/torn/mismatch snapshot을 자동
+보정하지 않고 fail-closed한다. append는 이전 event-log byte length와 raw SHA-256, candidate event와
+resulting states 전체를 hash한 pending journal을 먼저 atomic replace/sync하고 event append와 snapshot
+replace를 같은 lock에서 수행한다. restart recovery는 journal의 이전 raw prefix와 candidate line을
+독립 검증해 완전한 event는 snapshot projection을 완료하고, candidate line의 검증된 partial prefix만
+남은 경우 이전 byte boundary로 truncate하고 이전 replay state를 복원한다. 예상하지 않은 later bytes,
+prefix/hash, candidate/resulting-state 불일치는 복구하지 않는다. Windows lock file delete-pending의
+일시적 `EPERM`은 같은 bounded timeout 안에서만 contention으로 재시도하며 abandoned lock은 제거하지
+않는다. fill/valuation/migration 및 bucket equity exact origin resolver를 묶는 coordinator와 runner
+연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3063,6 +3078,7 @@ coordinator는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 - 종목별 previous mark head 연속성, overlap/gap과 stale predecessor 거절
 - mark head event strict variant rehash와 snapshot replay 일치
 - position mark-head event repository의 thread/process exact retry 수렴과 corrupt/torn/branch/origin 거절
+- position mark-head durable snapshot의 replay equality와 journal complete/partial recovery 검증
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
