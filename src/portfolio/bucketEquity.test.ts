@@ -92,6 +92,46 @@ test("bucket equity initialization rejects baseline and unit fabrication", () =>
   assert.throws(
     () =>
       createBucketEquityEvent({
+        eventType: "epoch_initialized",
+        riskStateEpochId: "epoch-underflow",
+        activationId: "activation-underflow",
+        previousRiskStateEpochId: "epoch-1",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        initializationMode: "carried_forward",
+        initialEquityKrw: 0,
+        initialUnits: Number.MIN_VALUE,
+        initialUnitNavKrw: 0.5,
+        initialHighWaterMarkUnitNavKrw: 1,
+        asOf: "2026-09-02T00:00:00.000Z"
+      }),
+    /equity must equal units multiplied by unit NAV/
+  );
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
+        eventType: "epoch_initialized",
+        riskStateEpochId: "epoch-self",
+        activationId: "activation-self",
+        previousRiskStateEpochId: "epoch-self",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        initializationMode: "carried_forward",
+        initialEquityKrw: 1,
+        initialUnits: 1,
+        initialUnitNavKrw: 1,
+        initialHighWaterMarkUnitNavKrw: 1,
+        asOf: "2026-09-02T00:00:00.000Z"
+      }),
+    /cannot reference itself/
+  );
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
         ...epochPayload(),
         initialUnitNavKrw: 0.9,
         initialEquityKrw: 900,
@@ -364,6 +404,24 @@ test("bucket risk state independently verifies equity, high-water mark, and draw
         equityKrw: 0,
         drawdownRatio: 0,
         lastBucketEquityEventId: "bucket-event-subnormal",
+        asOf: "2026-09-04T01:00:00.000Z"
+      }),
+    /equity must equal units multiplied by unit NAV/
+  );
+  assert.throws(
+    () =>
+      createBucketRiskState({
+        riskStateEpochId: "epoch-underflow",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        units: Number.MIN_VALUE,
+        unitNavKrw: 0.5,
+        highWaterMarkUnitNavKrw: 1,
+        equityKrw: 0,
+        drawdownRatio: 0.5,
+        lastBucketEquityEventId: "bucket-event-underflow",
         asOf: "2026-09-04T01:00:00.000Z"
       }),
     /equity must equal units multiplied by unit NAV/

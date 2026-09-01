@@ -274,11 +274,11 @@ function assertBucketEquityEventPayload(
   payload: z.infer<typeof bucketEquityEventPayloadSchema>
 ): void {
   if (payload.eventType === "epoch_initialized") {
-    const expectedEquity = payload.initialUnits * payload.initialUnitNavKrw;
     if (
-      !isWithinFloatingPointTolerance(
+      !isValidFloatingPointProduct(
         payload.initialEquityKrw,
-        expectedEquity
+        payload.initialUnits,
+        payload.initialUnitNavKrw
       )
     ) {
       throw new Error("initial bucket equity must equal units multiplied by unit NAV");
@@ -294,6 +294,12 @@ function assertBucketEquityEventPayload(
         payload.initialHighWaterMarkUnitNavKrw !== 1)
     ) {
       throw new Error("initial or empty epoch must start at unit NAV one");
+    }
+    if (
+      payload.initializationMode === "carried_forward" &&
+      payload.previousRiskStateEpochId === payload.riskStateEpochId
+    ) {
+      throw new Error("carried-forward epoch cannot reference itself");
     }
     return;
   }
@@ -329,9 +335,10 @@ function assertBucketRiskStatePayload(
     throw new Error("bucket risk high-water mark cannot be below unit NAV");
   }
   if (
-    !isWithinFloatingPointTolerance(
+    !isValidFloatingPointProduct(
       state.equityKrw,
-      state.units * state.unitNavKrw
+      state.units,
+      state.unitNavKrw
     )
   ) {
     throw new Error("bucket risk equity must equal units multiplied by unit NAV");
@@ -361,11 +368,17 @@ function canonicalizeEvidenceRefs(value: unknown): unknown {
   return value;
 }
 
-function isWithinFloatingPointTolerance(
+function isValidFloatingPointProduct(
   actual: number,
-  expected: number
+  left: number,
+  right: number
 ): boolean {
-  if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+  const expected = left * right;
+  if (
+    !Number.isFinite(actual) ||
+    !Number.isFinite(expected) ||
+    (left !== 0 && right !== 0 && expected === 0)
+  ) {
     return false;
   }
   const scale = Math.max(Math.abs(actual), Math.abs(expected));
