@@ -70,7 +70,17 @@ export class InvestmentMandateFileRepository {
   }
 
   async readSnapshot(): Promise<InvestmentMandateHistorySnapshot> {
-    return this.withLock(async () => this.readSnapshotUnderLock());
+    return this.withConsistentSnapshot(async (snapshot) => snapshot);
+  }
+
+  /**
+   * Keeps the append-only mandate generation stable while a dependent durable
+   * state validates and commits its exact mandate/event lineage.
+   */
+  async withConsistentSnapshot<T>(
+    operation: (snapshot: InvestmentMandateHistorySnapshot) => Promise<T>
+  ): Promise<T> {
+    return this.withLock(async () => operation(await this.readSnapshotUnderLock()));
   }
 
   async readRecords(): Promise<readonly InvestmentMandateRecord[]> {

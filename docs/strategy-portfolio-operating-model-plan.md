@@ -2772,6 +2772,18 @@ legacy variant에는 mandate/policy/holding lineage를 합성하지 않는다. d
 repository, manual assignment repository/dependency resolver, legacy migration coordinator, bucket equity
 state와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+네 번째 분할은 canonical instrument scope 순서로 저장하는
+`position-strategy-state.json` snapshot repository를 구현한다. 각 read/restart는 모든 state의 complete
+payload hash와 assigned mandate/event dependency를 다시 검증하며, mandate repository의 consistent
+snapshot lock을 position-state CAS commit까지 유지해 review/retirement transition과 stale state 쓰기의
+경합을 막는다. `(portfolioId, market, symbol)`별 expected state hash compare-and-swap, concurrent exact
+retry 수렴, 임시 파일 durable sync 후 atomic replace, duplicate scope/non-canonical order/torn write/
+abandoned lock fail-closed를 적용한다. assigned state update는 `openedAt`을 바꿀 수 없고 holding/review
+timestamp, peak price와 partial take-profit 실행 여부를 과거 상태로 되돌릴 수 없다. manual assignment
+repository/dependency resolver, legacy migration coordinator, mandate transition과 position state를 함께
+commit하는 다중 파일 coordinator, bucket equity state와 runner 연결은 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
