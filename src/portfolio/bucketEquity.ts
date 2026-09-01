@@ -368,7 +368,7 @@ function isWithinFloatingPointTolerance(
   if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
     return false;
   }
-  const scale = Math.max(1, Math.abs(actual), Math.abs(expected));
+  const scale = Math.max(Math.abs(actual), Math.abs(expected));
   return (
     Math.abs(actual - expected) <=
     Number.EPSILON * scale * FLOATING_POINT_TOLERANCE_FACTOR

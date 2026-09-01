@@ -350,6 +350,24 @@ test("bucket risk state independently verifies equity, high-water mark, and draw
       }),
     /equity must equal units multiplied by unit NAV/
   );
+  assert.throws(
+    () =>
+      createBucketRiskState({
+        riskStateEpochId: "epoch-subnormal",
+        portfolioId: "portfolio-1",
+        bucket: "intraday",
+        policyHash: HASH_A,
+        drawdownSemanticsHash: HASH_B,
+        units: Number.MIN_VALUE,
+        unitNavKrw: 1,
+        highWaterMarkUnitNavKrw: 1,
+        equityKrw: 0,
+        drawdownRatio: 0,
+        lastBucketEquityEventId: "bucket-event-subnormal",
+        asOf: "2026-09-04T01:00:00.000Z"
+      }),
+    /equity must equal units multiplied by unit NAV/
+  );
 });
 
 function epochInitialized() {
