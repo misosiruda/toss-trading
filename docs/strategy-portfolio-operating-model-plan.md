@@ -2746,7 +2746,9 @@ min/target/max/current/gap을 backend ViewModel 그대로 렌더링한다.
 현재 첫 분할은 `InvestmentMandateRecord`, lifecycle event와 manual assignment event의
 strict variant schema, canonical ordered set, full-payload hash, hash-derived ID와 timezone-safe
 chronology 검증을 구현한다. `createdAt`은 semantic hash에서 제외하며 parser가 저장 payload를
-독립 rehash한다. repository, event-chain fold, manual assignment dependency resolver,
+독립 rehash한다. `every_tick` mandate는 `intraday` bucket에만 허용하고 manual
+`open_or_increase` assignment의 `maximumNotionalKrw`는 양수로 제한한다. repository,
+event-chain fold, manual assignment dependency resolver,
 `PositionStrategyState`와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:

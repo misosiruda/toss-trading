@@ -264,6 +264,29 @@ test("mandate rejects noncanonical scheduled cadence boundary refs", () => {
     () =>
       createInvestmentMandateRecord({
         ...mandateBase(),
+        bucket: "long_term",
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "classify_existing_reduce_only",
+        manualAssignmentEventId: "manual-event-1",
+        createdAt: CREATED_AT
+      }),
+    /every_tick cadence is restricted to intraday bucket/
+  );
+  const intraday = createInvestmentMandateRecord({
+    ...mandateBase(),
+    assignmentSource: "manual_policy",
+    manualAuthorizationScope: "classify_existing_reduce_only",
+    manualAssignmentEventId: "manual-event-1",
+    createdAt: CREATED_AT
+  });
+  assert.throws(
+    () => parseInvestmentMandateRecord({ ...intraday, bucket: "long_term" }),
+    /every_tick cadence is restricted to intraday bucket/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
         reviewCadence: {
           mode: "scheduled",
           boundaryRefs: [boundary("boundary-a")]
@@ -378,6 +401,29 @@ test("manual open assignment requires eligible sizing lineage and rehashes", () 
       createManualAssignmentEvent({
         ...manualAssignmentBase(),
         authorizationScope: "open_or_increase",
+        evidenceEligibility: "eligible",
+        portfolioSnapshotId: "snapshot-1",
+        portfolioSnapshotHash: HASH_A,
+        sizingInputRecordId: "sizing-1",
+        minWeightRatio: 0.1,
+        targetWeightRatio: 0.2,
+        maxWeightRatio: 0.3,
+        maximumNotionalKrw: 0,
+        sizingInputHash: HASH_B,
+        sizingOutputHash: HASH_C,
+        createdAt: CREATED_AT
+      }),
+    />0/
+  );
+  assert.throws(
+    () => parseManualAssignmentEvent({ ...event, maximumNotionalKrw: 0 }),
+    />0/
+  );
+  assert.throws(
+    () =>
+      createManualAssignmentEvent({
+        ...manualAssignmentBase(),
+        authorizationScope: "open_or_increase",
         evidenceEligibility: "blocked",
         createdAt: CREATED_AT
       } as never),
@@ -405,7 +451,7 @@ function mandateBase() {
     portfolioId: "portfolio-1",
     market: "KR" as const,
     symbol: "005930",
-    bucket: "long_term" as const,
+    bucket: "intraday" as const,
     policyHash: HASH_A,
     asOf: "2026-09-01T00:30:00.000Z",
     targetWeightRatio: 0.2,

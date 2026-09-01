@@ -8,6 +8,7 @@ import {
   strategyBucketSchema
 } from "../domain/schemas.js";
 import {
+  assertBucketReviewCadenceCompatibility,
   bucketReviewCadenceSchema,
   compareText,
   hashCanonicalPayload,
@@ -19,6 +20,7 @@ import {
 const identifierSchema = z.string().trim().min(1).max(160);
 const ratioSchema = z.number().finite().min(0).max(1);
 const moneyKrwSchema = z.number().int().nonnegative();
+const positiveMoneyKrwSchema = z.number().int().positive();
 const canonicalIdentifiersSchema = z.array(identifierSchema).min(1).max(128);
 
 const manualNewPositionReservationSchema = z
@@ -140,6 +142,7 @@ export function createInvestmentMandateRecord(
     evidenceRefs: canonicalIdentifiers(unparsedPayload.evidenceRefs, "evidenceRefs")
   });
   parseBucketReviewCadence(payload.reviewCadence);
+  assertBucketReviewCadenceCompatibility(payload.bucket, payload.reviewCadence);
   assertWeightRange(payload);
   assertMandateAssignmentInvariants(payload);
   assertMandateChronology(payload, createdAt);
@@ -163,6 +166,7 @@ export function parseInvestmentMandateRecord(
   assertCanonicalIdentifiers(payload.reasonCodes, "reasonCodes");
   assertCanonicalIdentifiers(payload.evidenceRefs, "evidenceRefs");
   parseBucketReviewCadence(payload.reviewCadence);
+  assertBucketReviewCadenceCompatibility(payload.bucket, payload.reviewCadence);
   assertWeightRange(payload);
   assertMandateAssignmentInvariants(payload);
   assertMandateChronology(payload, record.createdAt);
@@ -320,7 +324,7 @@ const manualOpenAssignmentPayloadSchema = manualAssignmentBasePayloadSchema
     minWeightRatio: ratioSchema,
     targetWeightRatio: ratioSchema,
     maxWeightRatio: ratioSchema,
-    maximumNotionalKrw: moneyKrwSchema,
+    maximumNotionalKrw: positiveMoneyKrwSchema,
     sizingInputHash: sha256HashSchema,
     sizingOutputHash: sha256HashSchema
   })

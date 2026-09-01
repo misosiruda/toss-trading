@@ -361,6 +361,15 @@ export function parseBucketReviewCadence(value: unknown): BucketReviewCadence {
   return deepFreeze(cadence);
 }
 
+export function assertBucketReviewCadenceCompatibility(
+  bucket: StrategyBucket,
+  cadence: BucketReviewCadence
+): void {
+  if (cadence.mode === "every_tick" && bucket !== "intraday") {
+    throw new Error("every_tick cadence is restricted to intraday bucket");
+  }
+}
+
 const takeProfitPolicySchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("disabled") }).strict(),
   z
@@ -765,9 +774,7 @@ function assertStrategyBucketRuntimePolicy(
       );
     }
   }
-  if (policy.reviewCadence.mode === "every_tick" && policy.bucket !== "intraday") {
-    throw new Error("every_tick cadence is restricted to intraday bucket");
-  }
+  assertBucketReviewCadenceCompatibility(policy.bucket, policy.reviewCadence);
   if (
     policy.minimumHoldingSeconds !== undefined &&
     policy.maximumHoldingSeconds !== undefined &&
