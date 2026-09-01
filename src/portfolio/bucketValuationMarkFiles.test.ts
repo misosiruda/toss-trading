@@ -86,6 +86,16 @@ test("valuation mark repository rejects semantic origin collisions", async () =>
         ),
       /origin collision/
     );
+    await assert.rejects(
+      () =>
+        repository.append(
+          valuationMark({
+            asOf: "2026-09-01T10:00:00+09:00",
+            createdAt: "2026-09-01T10:00:01+09:00"
+          })
+        ),
+      /origin collision/
+    );
   });
 });
 
@@ -148,6 +158,8 @@ function valuationMark(
     currentPriceKrw: number;
     equityDeltaKrw: number;
     currentPriceEvidenceRef: string;
+    asOf: string;
+    createdAt: string;
   }> = {}
 ) {
   const currentPriceKrw = overrides.currentPriceKrw ?? 110;
@@ -170,8 +182,8 @@ function valuationMark(
       }
     ],
     equityDeltaKrw: overrides.equityDeltaKrw ?? currentPriceKrw - 100,
-    asOf: "2026-09-01T01:00:00.000Z",
-    createdAt: "2026-09-01T01:00:01.000Z"
+    asOf: overrides.asOf ?? "2026-09-01T01:00:00.000Z",
+    createdAt: overrides.createdAt ?? "2026-09-01T01:00:01.000Z"
   });
 }
 

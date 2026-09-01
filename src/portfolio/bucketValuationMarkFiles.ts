@@ -164,7 +164,11 @@ export class BucketValuationMarkFileRepository {
 }
 
 function originKey(record: BucketValuationMarkRecord): string {
-  return JSON.stringify([record.portfolioId, record.bucket, record.asOf]);
+  return JSON.stringify([
+    record.portfolioId,
+    record.bucket,
+    Date.parse(record.asOf)
+  ]);
 }
 
 function cloneRecord(value: unknown): BucketValuationMarkRecord {
