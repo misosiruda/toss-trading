@@ -2950,6 +2950,17 @@ torn/blank/corrupt line, duplicate ref/origin과 abandoned lock은 자동 복구
 current evidence resolver, verified source adapter와 fill execution contract 연결은 후속 분할 전까지
 구현 완료로 간주하지 않는다.
 
+열아홉 번째 분할은 valuation mark의 각 `currentPriceEvidenceRef`를 immutable
+`SourcePriceEvidenceRecord`에 결속하는 resolver를 구현한다. resolver는 supplied evidence를 독립
+rehash하고 duplicate/unresolved ref를 거절하며 market/symbol, `priceField = last_price`, exact
+`currentPriceKrw`와 observed instant가 valuation input 및 mark `asOf`와 일치하는지 검증한다. offset
+표현이 달라도 같은 instant는 허용하지만 evidence `createdAt`이 mark `createdAt`보다 늦으면 미래에
+생성된 증거로 간주해 fail-closed한다. previous position head 검증과 active position complete-set 규칙은
+기존 resolver를 그대로 통과하며 결과는 canonical position input 순서의 immutable typed origin으로
+반환한다. valuation event, position mark-head CAS, bucket equity event를 동일 repository lock 아래
+원자 적용하는 coordinator와 verified source adapter, fill execution 연결은 후속 분할 전까지 구현
+완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3158,6 +3169,7 @@ current evidence resolver, verified source adapter와 fill execution contract �
 - 모든 bucket equity event variant의 full-payload digest와 hash-derived ID 검증
 - strategy transfer pair의 sequence, equal-and-opposite amount와 전체 transaction 원자성
 - valuation mark payload rehash/delta 재계산과 duplicate mark origin retry 수렴
+- valuation current price evidence의 ref/hash/scope/value/observed instant와 생성 순서 검증
 - fill/position mutation 후 mark head rebase와 다음 valuation predecessor CAS 검증
 - fill 전 source-price valuation, source-price mutation head와 execution-cost 단일 계상
 - fill-price rebase 및 valuation 없는 price-changing migration 거절
