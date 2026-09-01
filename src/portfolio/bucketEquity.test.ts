@@ -57,6 +57,27 @@ test("bucket equity epoch variants hash the complete initialization payload", ()
     asOf: "2026-09-03T00:00:00.000Z"
   });
   assert.deepEqual(parseBucketEquityEvent(fractionalNav), fractionalNav);
+
+  const divisionDerivedNav = createBucketEquityEvent({
+    eventType: "epoch_initialized",
+    riskStateEpochId: "epoch-4",
+    activationId: "activation-4",
+    previousRiskStateEpochId: fractionalNav.riskStateEpochId,
+    portfolioId: initialized.portfolioId,
+    bucket: initialized.bucket,
+    policyHash: HASH_A,
+    drawdownSemanticsHash: initialized.drawdownSemanticsHash,
+    initializationMode: "carried_forward",
+    initialEquityKrw: 31,
+    initialUnits: 39,
+    initialUnitNavKrw: 31 / 39,
+    initialHighWaterMarkUnitNavKrw: 1,
+    asOf: "2026-09-04T00:00:00.000Z"
+  });
+  assert.deepEqual(
+    parseBucketEquityEvent(divisionDerivedNav),
+    divisionDerivedNav
+  );
 });
 
 test("bucket equity initialization rejects baseline and unit fabrication", () => {
@@ -270,6 +291,26 @@ test("bucket risk state independently verifies equity, high-water mark, and draw
   assert.throws(
     () => parseBucketRiskState({ ...state, riskStateHash: HASH_C }),
     /hash does not match its payload/
+  );
+
+  const divisionDerivedUnitNav = 31 / 39;
+  const divisionDerivedState = createBucketRiskState({
+    riskStateEpochId: "epoch-2",
+    portfolioId: "portfolio-1",
+    bucket: "intraday",
+    policyHash: HASH_A,
+    drawdownSemanticsHash: HASH_B,
+    units: 39,
+    unitNavKrw: divisionDerivedUnitNav,
+    highWaterMarkUnitNavKrw: 1,
+    equityKrw: 31,
+    drawdownRatio: 1 - divisionDerivedUnitNav / 1,
+    lastBucketEquityEventId: "bucket-event-2",
+    asOf: "2026-09-02T01:00:00.000Z"
+  });
+  assert.deepEqual(
+    parseBucketRiskState(divisionDerivedState),
+    divisionDerivedState
   );
 });
 

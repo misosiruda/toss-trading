@@ -22,6 +22,7 @@ const signedAmountSchema = z
   .refine((value) => !Object.is(value, -0), "number must not be negative zero");
 const positiveValueSchema = z.number().finite().positive();
 const canonicalEvidenceRefsSchema = z.array(identifierSchema).min(1).max(128);
+const FLOATING_POINT_TOLERANCE_FACTOR = 8;
 
 const epochBaseSchema = z
   .object({
@@ -274,7 +275,12 @@ function assertBucketEquityEventPayload(
 ): void {
   if (payload.eventType === "epoch_initialized") {
     const expectedEquity = payload.initialUnits * payload.initialUnitNavKrw;
-    if (payload.initialEquityKrw !== expectedEquity) {
+    if (
+      !isWithinFloatingPointTolerance(
+        payload.initialEquityKrw,
+        expectedEquity
+      )
+    ) {
       throw new Error("initial bucket equity must equal units multiplied by unit NAV");
     }
     if (
@@ -322,7 +328,12 @@ function assertBucketRiskStatePayload(
   if (state.highWaterMarkUnitNavKrw < state.unitNavKrw) {
     throw new Error("bucket risk high-water mark cannot be below unit NAV");
   }
-  if (state.equityKrw !== state.units * state.unitNavKrw) {
+  if (
+    !isWithinFloatingPointTolerance(
+      state.equityKrw,
+      state.units * state.unitNavKrw
+    )
+  ) {
     throw new Error("bucket risk equity must equal units multiplied by unit NAV");
   }
   const expectedDrawdown =
@@ -348,6 +359,17 @@ function canonicalizeEvidenceRefs(value: unknown): unknown {
     };
   }
   return value;
+}
+
+function isWithinFloatingPointTolerance(
+  actual: number,
+  expected: number
+): boolean {
+  const scale = Math.max(1, Math.abs(actual), Math.abs(expected));
+  return (
+    Math.abs(actual - expected) <=
+    Number.EPSILON * scale * FLOATING_POINT_TOLERANCE_FACTOR
+  );
 }
 
 function assertCanonicalEvidenceRefs(
