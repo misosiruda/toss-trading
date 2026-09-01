@@ -77,14 +77,14 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 | strategy bucket schema | 구현 | 유지 |
 | policy draft validation | 구현 | runtime policy contract와 통합 |
 | policy append-only 저장 | activation repository까지 구현 | runner에서 active policy 사용 |
-| bucket target/min/max weight | draft에 구현 | 실제 compliance와 sizing에 적용 |
+| bucket target/min/max weight | active policy compliance에 적용, sizing 미연결 | sizing에도 동일 policy 적용 |
 | bucket exposure/turnover gate | 구현, policy 입력 연결은 수동 | active policy에서 자동 파생 |
 | bucket별 replay preset | 구현 | shared portfolio orchestration에 재사용 |
 | 종목별 bucket | manifest metadata 중심 | deterministic assignment와 mandate로 승격 |
-| 종목별 target range | 미구현 | mandate에 추가 |
+| 종목별 target range | mandate strict contract에 구현, persistence 미연결 | mandate repository/state에 연결 |
 | 실제 보유기간 상태 | 미구현 | position strategy state에 추가 |
 | 통합 rebalance plan | 미구현 | preview와 paper execution 분리 |
-| active policy 기반 dashboard | 미구현 | 동일 policy hash로 compliance 계산 |
+| active policy 기반 dashboard | 구현 | 동일 policy hash compliance 유지 |
 | 여러 bucket 동시 실행 | 미구현 | cadence-aware orchestrator 추가 |
 
 runtime policy의 immutable dependency contract, read-only filesystem loader,
@@ -2742,6 +2742,12 @@ min/target/max/current/gap을 backend ViewModel 그대로 렌더링한다.
 - 기존 position의 `unassigned_legacy` migration
 - position peak/review/holding age와 bucket unit-NAV drawdown state persistence
 - position strategy state full-payload digest와 restart 검증
+
+현재 첫 분할은 `InvestmentMandateRecord`, lifecycle event와 manual assignment event의
+strict variant schema, canonical ordered set, full-payload hash, hash-derived ID와 timezone-safe
+chronology 검증을 구현한다. `createdAt`은 semantic hash에서 제외하며 parser가 저장 payload를
+독립 rehash한다. repository, event-chain fold, manual assignment dependency resolver,
+`PositionStrategyState`와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 
