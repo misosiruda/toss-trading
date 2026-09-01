@@ -7,7 +7,8 @@ import {
 import { applyBucketEquityEventToCurrentState } from "./bucketEquityState.js";
 import {
   type BucketPositionMarkHeadEvent,
-  createBucketPositionMarkHeadEvent
+  createBucketPositionMarkHeadEvent,
+  parseBucketPositionMarkHeadEvent
 } from "./bucketPositionMarkHead.js";
 import {
   type ResolvedBucketValuationMarkOrigins,
@@ -27,6 +28,7 @@ export type BucketValuationPositionMarkHeadEvent = Extract<
 export interface ResolvedBucketValuationApplication
   extends ResolvedBucketValuationMarkOrigins {
   currentRiskState: BucketRiskState;
+  currentPositionHeadEvents: readonly BucketPositionMarkHeadEvent[];
   bucketEquityEvent: BucketValuationEquityEvent;
   resultingRiskState: BucketRiskState;
   positionMarkHeadEvents: readonly BucketValuationPositionMarkHeadEvent[];
@@ -41,6 +43,7 @@ export interface ResolvedBucketValuationApplication
 export function resolveBucketValuationApplication(input: {
   value: unknown;
   currentPositionStates: readonly unknown[];
+  currentPositionEvents: readonly unknown[];
   currentPriceEvidence: readonly unknown[];
   currentRiskState: unknown;
 }): ResolvedBucketValuationApplication {
@@ -51,6 +54,10 @@ export function resolveBucketValuationApplication(input: {
   });
   const currentRiskState = parseBucketRiskState(input.currentRiskState);
   assertRiskStateMatches(origins, currentRiskState);
+  const currentPositionHeadEvents = resolveCurrentPositionHeadEvents(
+    origins,
+    input.currentPositionEvents
+  );
 
   const bucketEquityEvent = asValuationEquityEvent(
     createBucketEquityEvent({
@@ -71,7 +78,7 @@ export function resolveBucketValuationApplication(input: {
       asOf: origins.record.asOf
     })
   );
-  const positionMarkHeadEvents = origins.positions.map((position) =>
+  const positionMarkHeadEvents = origins.positions.map((position, index) =>
     asValuationPositionEvent(
       createBucketPositionMarkHeadEvent({
         eventType: "valuation_applied",
@@ -93,7 +100,10 @@ export function resolveBucketValuationApplication(input: {
         bucketEquityEventId: bucketEquityEvent.bucketEquityEventId,
         bucketEquityEventHash: bucketEquityEvent.bucketEquityEventHash,
         asOf: origins.record.asOf,
-        createdAt: origins.record.createdAt
+        createdAt: laterCreatedAt(
+          origins.record.createdAt,
+          currentPositionHeadEvents[index]!.createdAt
+        )
       })
     )
   );
@@ -105,10 +115,72 @@ export function resolveBucketValuationApplication(input: {
   return deepFreeze({
     ...origins,
     currentRiskState,
+    currentPositionHeadEvents,
     bucketEquityEvent,
     resultingRiskState,
     positionMarkHeadEvents
   });
+}
+
+function resolveCurrentPositionHeadEvents(
+  origins: ResolvedBucketValuationMarkOrigins,
+  values: readonly unknown[]
+): readonly BucketPositionMarkHeadEvent[] {
+  if (values.length !== origins.positions.length) {
+    throw new Error(
+      "bucket valuation current position events must form the complete active set"
+    );
+  }
+  const eventsById = new Map<string, BucketPositionMarkHeadEvent>();
+  for (const value of values) {
+    const event = parseBucketPositionMarkHeadEvent(value);
+    if (eventsById.has(event.positionMarkHeadEventId)) {
+      throw new Error(
+        "bucket valuation current position events contain a duplicate event ID"
+      );
+    }
+    eventsById.set(event.positionMarkHeadEventId, event);
+  }
+  const events = origins.positions.map((position) => {
+    const event = eventsById.get(
+      position.previousHead.lastPositionMarkHeadEventId
+    );
+    if (event === undefined) {
+      throw new Error(
+        "bucket valuation current position event is unresolved"
+      );
+    }
+    assertCurrentPositionHeadEventMatches(position.previousHead, event);
+    return event;
+  });
+  return Object.freeze(events);
+}
+
+function assertCurrentPositionHeadEventMatches(
+  state: ResolvedBucketValuationMarkOrigins["positions"][number]["previousHead"],
+  event: BucketPositionMarkHeadEvent
+): void {
+  if (
+    event.positionMarkHeadEventHash !== state.lastPositionMarkHeadEventHash ||
+    event.portfolioId !== state.portfolioId ||
+    event.bucket !== state.bucket ||
+    event.market !== state.market ||
+    event.symbol !== state.symbol ||
+    event.resultingQuantity !== state.quantity ||
+    event.resultingPriceKrw !== state.currentPriceKrw ||
+    event.resultingPriceEvidenceRef !== state.currentPriceEvidenceRef ||
+    event.asOf !== state.asOf
+  ) {
+    throw new Error(
+      "bucket valuation current position event does not match its head state"
+    );
+  }
+}
+
+function laterCreatedAt(markCreatedAt: string, headCreatedAt: string): string {
+  return Date.parse(markCreatedAt) >= Date.parse(headCreatedAt)
+    ? markCreatedAt
+    : headCreatedAt;
 }
 
 function assertRiskStateMatches(

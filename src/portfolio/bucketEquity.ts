@@ -21,7 +21,14 @@ const signedAmountSchema = z
   .finite()
   .refine((value) => !Object.is(value, -0), "number must not be negative zero");
 const positiveValueSchema = z.number().finite().positive();
-const canonicalEvidenceRefsSchema = z.array(identifierSchema).min(1).max(128);
+const valuationEvidenceRefsSchema = z
+  .array(identifierSchema)
+  .min(1)
+  .max(10_000);
+const executionCostEvidenceRefsSchema = z
+  .array(identifierSchema)
+  .min(1)
+  .max(128);
 const FLOATING_POINT_TOLERANCE_FACTOR = 8;
 
 const epochBaseSchema = z
@@ -89,7 +96,7 @@ const valuationPayloadSchema = chainedEventBaseSchema
     equityDeltaKrw: signedAmountSchema,
     bucketValuationMarkRecordId: identifierSchema,
     valuationMarkHash: sha256HashSchema,
-    evidenceRefs: canonicalEvidenceRefsSchema
+    evidenceRefs: valuationEvidenceRefsSchema
   })
   .strict();
 
@@ -105,7 +112,7 @@ const executionCostPayloadSchema = chainedEventBaseSchema
         "number must not be negative zero"
       ),
     ...fillOriginSchema.shape,
-    evidenceRefs: canonicalEvidenceRefsSchema
+    evidenceRefs: executionCostEvidenceRefsSchema
   })
   .strict();
 

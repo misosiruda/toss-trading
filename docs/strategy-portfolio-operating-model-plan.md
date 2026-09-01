@@ -2966,14 +2966,20 @@ event set을 결정론적으로 projection한다. risk state는 payload hash를 
 portfolio/bucket/policy가 exact-match하며 mark `asOf`보다 늦지 않고 모든 current position head
 `asOf`보다 이르지 않은지 확인한다. projection은 current
 bucket equity head를 predecessor로 하는 `valuation` event를 먼저 만들고 mark의 current typed price
-evidence ref 전체를 canonical evidence set으로 결속한다. 이어서 모든 canonical position input에 대해
-current position event head를 predecessor로 하고 동일 mark ID/hash와 생성된 bucket equity event ID/hash를
-참조하는 `valuation_applied` event를 만든다. 결과 event는 기존 strict constructor의 hash-derived identity를
-사용한다. 생성한 equity event를 current risk state에 즉시 순수 적용해 predecessor/epoch/policy/as-of와
+evidence ref 전체를 canonical evidence set으로 결속한다. valuation event의 evidence 상한은 valuation
+mark의 position 상한과 같은 10,000개이며 execution-cost event의 128개 상한은 유지한다. 이어서 모든
+canonical position input에 대해 current position event complete set을 독립 rehash하고 state의 event
+ID/hash, scope, quantity, price, evidence, `asOf`와 exact-match한 head를 predecessor로 한다. 동일 mark
+ID/hash와 생성된 bucket equity event ID/hash를 참조하는 `valuation_applied` event를 만들며, `createdAt`은
+mark와 supplied current head event 중 늦은 instant의 원문 값을 선택해 replay chronology를 보존한다.
+결과 event는 기존 strict constructor의 hash-derived identity를 사용한다. 생성한 equity event를 current
+risk state에 즉시 순수 적용해 predecessor/epoch/policy/as-of와
 negative balance, empty epoch delta, numeric precision 규칙을 재사용하고 `resultingRiskState`까지 검증한다.
-전체 application graph는 immutable하다. `createdAt` metadata로 생성 순서를 추정하지 않으며, mark
-append와 bucket equity event, 모든 position mark-head event/state를 단일 durable transaction으로 commit하는
-repository coordinator와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+전체 application graph는 immutable하다. `createdAt`은 event identity material이 아니므로 이 projection
+자체가 독립적인 생성 시각 진위를 보장하지는 않는다. 후속 repository coordinator는 동일 lock 아래 저장된
+current head event를 공급해야 한다. mark append와 bucket equity event, 모든 position mark-head event/state를
+단일 durable transaction으로 commit하는 repository coordinator와 runner 연결은 후속 분할 전까지 구현
+완료로 간주하지 않는다.
 
 완료 조건:
 

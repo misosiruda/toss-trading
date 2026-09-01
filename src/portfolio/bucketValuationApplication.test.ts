@@ -6,9 +6,11 @@ import {
   createBucketRiskState
 } from "./bucketEquity.js";
 import {
+  createBucketPositionMarkHeadEvent,
   createBucketPositionMarkHeadState,
   parseBucketPositionMarkHeadEvent
 } from "./bucketPositionMarkHead.js";
+import { foldBucketPositionMarkHeadHistory } from "./bucketPositionMarkHeadState.js";
 import { resolveBucketValuationApplication } from "./bucketValuationApplication.js";
 import { createBucketValuationMarkRecord } from "./bucketValuationMark.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
@@ -140,6 +142,77 @@ test("valuation application rejects an inapplicable risk-state delta", () => {
   );
 });
 
+test("valuation application preserves prior event creation chronology", () => {
+  const fixture = applicationFixture({
+    samsungHeadCreatedAt: "2026-09-01T03:00:00.000Z"
+  });
+
+  const resolved = resolveBucketValuationApplication(fixture.input);
+  const samsungEvent = resolved.positionMarkHeadEvents.find(
+    (event) => event.symbol === "005930"
+  );
+
+  assert.ok(samsungEvent);
+  assert.equal(samsungEvent?.createdAt, "2026-09-01T03:00:00.000Z");
+  assert.doesNotThrow(() =>
+    foldBucketPositionMarkHeadHistory([
+      fixture.samsungHeadEvent,
+      samsungEvent
+    ])
+  );
+});
+
+test("valuation application requires the complete current event set", () => {
+  const fixture = applicationFixture();
+
+  assert.throws(
+    () =>
+      resolveBucketValuationApplication({
+        ...fixture.input,
+        currentPositionEvents: [fixture.samsungHeadEvent]
+      }),
+    /complete active set/
+  );
+});
+
+test("valuation application supports the complete 129-position mark", () => {
+  const origins = Array.from({ length: 129 }, (_, index) => {
+    const symbol = `S${index.toString().padStart(5, "0")}`;
+    const origin = positionOrigin({
+      symbol,
+      currentPriceEvidenceRef: `before-${symbol}`
+    });
+    const evidence = priceEvidence({
+      symbol,
+      priceKrw: 101,
+      sourceRefs: [`source-${symbol}`]
+    });
+    return { ...origin, evidence };
+  });
+  const mark = createBucketValuationMarkRecord({
+    portfolioId: "portfolio-1",
+    bucket: "swing",
+    policyHash: HASH_B,
+    positionInputs: origins.map(({ head, evidence }) =>
+      valuationPosition(head, evidence)
+    ),
+    equityDeltaKrw: 258,
+    asOf: "2026-09-01T02:00:00.000Z",
+    createdAt: "2026-09-01T02:00:01.000Z"
+  });
+
+  const resolved = resolveBucketValuationApplication({
+    value: mark,
+    currentPositionStates: origins.map(({ head }) => head),
+    currentPositionEvents: origins.map(({ event }) => event),
+    currentPriceEvidence: origins.map(({ evidence }) => evidence),
+    currentRiskState: riskState()
+  });
+
+  assert.equal(resolved.bucketEquityEvent.evidenceRefs.length, 129);
+  assert.equal(resolved.positionMarkHeadEvents.length, 129);
+});
+
 test("valuation application emits independently verifiable event identities", () => {
   const fixture = applicationFixture();
   const resolved = resolveBucketValuationApplication(fixture.input);
@@ -184,14 +257,22 @@ test("valuation application preserves the composed price-evidence gate", () => {
   );
 });
 
-function applicationFixture() {
-  const samsung = positionHead();
-  const hynix = positionHead({
+function applicationFixture(
+  overrides: Partial<{ samsungHeadCreatedAt: string }> = {}
+) {
+  const samsungOrigin = positionOrigin({
+    ...(overrides.samsungHeadCreatedAt === undefined
+      ? {}
+      : { createdAt: overrides.samsungHeadCreatedAt })
+  });
+  const hynixOrigin = positionOrigin({
     symbol: "000660",
     currentPriceKrw: 150,
     currentPriceEvidenceRef: "hynix-before",
-    lastPositionMarkHeadEventId: "head-hynix"
+    createdAt: "2026-09-01T01:00:01.000Z"
   });
+  const samsung = samsungOrigin.head;
+  const hynix = hynixOrigin.head;
   const samsungEvidence = priceEvidence();
   const hynixEvidence = priceEvidence({
     symbol: "000660",
@@ -216,37 +297,60 @@ function applicationFixture() {
     riskState: currentRiskState,
     samsungEvidence,
     hynixEvidence,
+    samsungHeadEvent: samsungOrigin.event,
+    hynixHeadEvent: hynixOrigin.event,
     input: {
       value: mark,
       currentPositionStates: [hynix, samsung],
+      currentPositionEvents: [hynixOrigin.event, samsungOrigin.event],
       currentPriceEvidence: [samsungEvidence, hynixEvidence],
       currentRiskState
     }
   };
 }
 
-function positionHead(
+function positionOrigin(
   overrides: Partial<{
     symbol: string;
     currentPriceKrw: number;
     currentPriceEvidenceRef: string;
-    lastPositionMarkHeadEventId: string;
+    createdAt: string;
   }> = {}
 ) {
-  return createBucketPositionMarkHeadState({
+  const symbol = overrides.symbol ?? "005930";
+  const currentPriceKrw = overrides.currentPriceKrw ?? 100;
+  const currentPriceEvidenceRef =
+    overrides.currentPriceEvidenceRef ?? "samsung-before";
+  const event = createBucketPositionMarkHeadEvent({
+    eventType: "initialized",
     portfolioId: "portfolio-1",
     bucket: "swing",
     market: "KR",
-    symbol: overrides.symbol ?? "005930",
-    quantity: 2,
-    currentPriceKrw: overrides.currentPriceKrw ?? 100,
-    currentPriceEvidenceRef:
-      overrides.currentPriceEvidenceRef ?? "samsung-before",
-    lastPositionMarkHeadEventId:
-      overrides.lastPositionMarkHeadEventId ?? "head-samsung",
-    lastPositionMarkHeadEventHash: HASH_A,
-    asOf: "2026-09-01T01:00:00.000Z"
+    symbol,
+    resultingQuantity: 2,
+    resultingPriceKrw: currentPriceKrw,
+    resultingPriceEvidenceRef: currentPriceEvidenceRef,
+    initializationOrigin: {
+      originKind: "legacy_verified_mark",
+      observedPositionRef: `observed-${symbol}`,
+      markEvidenceRef: currentPriceEvidenceRef
+    },
+    asOf: "2026-09-01T01:00:00.000Z",
+    createdAt: overrides.createdAt ?? "2026-09-01T01:00:01.000Z"
   });
+  const head = createBucketPositionMarkHeadState({
+    portfolioId: event.portfolioId,
+    bucket: event.bucket,
+    market: event.market,
+    symbol: event.symbol,
+    quantity: event.resultingQuantity,
+    currentPriceKrw: event.resultingPriceKrw,
+    currentPriceEvidenceRef: event.resultingPriceEvidenceRef,
+    lastPositionMarkHeadEventId: event.positionMarkHeadEventId,
+    lastPositionMarkHeadEventHash: event.positionMarkHeadEventHash,
+    asOf: event.asOf
+  });
+  return { event, head };
 }
 
 function priceEvidence(
@@ -269,7 +373,7 @@ function priceEvidence(
 }
 
 function valuationPosition(
-  head: ReturnType<typeof positionHead>,
+  head: ReturnType<typeof createBucketPositionMarkHeadState>,
   evidence: ReturnType<typeof priceEvidence>
 ) {
   return {
