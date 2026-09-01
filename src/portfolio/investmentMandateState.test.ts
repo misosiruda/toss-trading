@@ -13,6 +13,7 @@ import {
 } from "./investmentMandateState.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
+const HASH_B = `sha256:${"b".repeat(64)}`;
 
 test("mandate history folds an instrument chain across an explicit successor", () => {
   const first = mandateRecord("manual-event-1", {
@@ -232,6 +233,21 @@ test("mandate history rejects binding drift, duplicate identities, and backdatin
       }),
     /activation expiresAt/
   );
+
+  const scheduled = scheduledMandateRecord();
+  const overdueActivation = mandateEvent(scheduled, {
+    eventType: "activated",
+    asOf: "2026-09-02T00:30:00.001Z",
+    createdAt: "2026-09-02T00:31:00.000Z"
+  });
+  assert.throws(
+    () =>
+      validateInvestmentMandateHistory({
+        records: [scheduled],
+        events: [overdueActivation]
+      }),
+    /activation reviewAfter/
+  );
 });
 
 function mandateRecord(
@@ -298,5 +314,41 @@ function mandateEvent(
     policyHash: record.policyHash,
     reasonCodes: ["lifecycle"],
     ...transition
+  });
+}
+
+function scheduledMandateRecord(): InvestmentMandateRecord {
+  return createInvestmentMandateRecord({
+    portfolioId: "portfolio-1",
+    market: "KR",
+    symbol: "005930",
+    bucket: "long_term",
+    policyHash: HASH_A,
+    asOf: "2026-09-01T00:30:00.000Z",
+    targetWeightRatio: 0.2,
+    minWeightRatio: 0.1,
+    maxWeightRatio: 0.3,
+    maximumOpeningNotionalKrw: 0,
+    reasonCodes: ["reason-a"],
+    evidenceRefs: ["evidence-a"],
+    evidenceAsOf: "2026-09-01T00:00:00.000Z",
+    reviewCadence: {
+      mode: "scheduled",
+      boundaryRefs: [
+        {
+          scheduleBoundaryRecordId: "boundary-1",
+          version: "v1",
+          hash: HASH_A,
+          lineageHash: HASH_B
+        }
+      ]
+    },
+    validFrom: "2026-09-01T00:30:00.000Z",
+    reviewAfter: "2026-09-02T00:30:00.000Z",
+    expiresAt: "2026-10-01T00:30:00.000Z",
+    assignmentSource: "manual_policy",
+    manualAuthorizationScope: "classify_existing_reduce_only",
+    manualAssignmentEventId: "scheduled-manual-event",
+    createdAt: "2026-09-01T01:00:00.000Z"
   });
 }
