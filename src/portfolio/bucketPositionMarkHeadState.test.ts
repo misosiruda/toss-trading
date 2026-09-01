@@ -128,6 +128,16 @@ test("position mark head replay preserves opening fill origin in the snapshot", 
   const state = foldBucketPositionMarkHeadHistory([opening]).states[0];
   assert.ok(state);
   assert.equal(state.lastPositionMutationRef, "fill-open");
+
+  const duplicateFillMutation = mutationEvent(opening, {
+    resultingQuantity: 2,
+    fillId: "fill-open"
+  });
+  assert.throws(
+    () =>
+      foldBucketPositionMarkHeadHistory([opening, duplicateFillMutation]),
+    /duplicate origin/
+  );
 });
 
 test("position mark head replay rejects branches, missing roots, scope drift, and closed chaining", () => {
@@ -239,6 +249,32 @@ test("position mark head replay rejects duplicate IDs, origins, and corrupt stor
   });
   assert.throws(
     () => foldBucketPositionMarkHeadHistory([initialized, first, second]),
+    /duplicate origin/
+  );
+
+  const transferred = transferInEvent();
+  const duplicateMigrationMutation = createBucketPositionMarkHeadEvent({
+    ...scope(transferred),
+    eventType: "position_mutation_applied",
+    previousPositionMarkHeadEventId: transferred.positionMarkHeadEventId,
+    previousPositionMarkHeadEventHash: transferred.positionMarkHeadEventHash,
+    mutationOrigin: {
+      originKind: "verified_migration",
+      migrationRecordId: "migration-in-1",
+      migrationRecordHash: HASH_C
+    },
+    resultingQuantity: 2,
+    resultingPriceKrw: transferred.resultingPriceKrw,
+    resultingPriceEvidenceRef: transferred.resultingPriceEvidenceRef,
+    asOf: transferred.asOf,
+    createdAt: "2026-09-01T01:00:02.000Z"
+  });
+  assert.throws(
+    () =>
+      foldBucketPositionMarkHeadHistory([
+        transferred,
+        duplicateMigrationMutation
+      ]),
     /duplicate origin/
   );
 

@@ -227,35 +227,43 @@ function assertUniqueOrigin(
 function eventOriginKey(event: BucketPositionMarkHeadEvent): string {
   const scope = scopeKey(event);
   switch (event.eventType) {
-    case "initialized":
+    case "initialized": {
+      if (event.initializationOrigin.originKind === "position_opening_fill") {
+        return JSON.stringify([
+          scope,
+          "paper_fill",
+          event.initializationOrigin.fillId
+        ]);
+      }
       return JSON.stringify([
         scope,
-        event.eventType,
-        event.initializationOrigin.originKind,
-        event.initializationOrigin.originKind === "position_opening_fill"
-          ? event.initializationOrigin.fillId
-          : event.initializationOrigin.observedPositionRef
+        "legacy_verified_mark",
+        event.initializationOrigin.observedPositionRef
       ]);
+    }
     case "valuation_applied":
       return JSON.stringify([
         scope,
-        event.eventType,
+        "valuation",
         event.bucketValuationMarkRecordId
       ]);
-    case "position_mutation_applied":
+    case "position_mutation_applied": {
+      const originKind =
+        event.mutationOrigin.originKind === "paper_fill"
+          ? "paper_fill"
+          : "migration";
       return JSON.stringify([
         scope,
-        event.eventType,
-        event.mutationOrigin.originKind,
+        originKind,
         mutationOriginRef(event)
       ]);
+    }
     case "bucket_transfer_out":
     case "bucket_transfer_in":
       return JSON.stringify([
         scope,
-        event.eventType,
-        event.migrationRecordId,
-        event.transferGroupId
+        "migration",
+        event.migrationRecordId
       ]);
   }
 }
