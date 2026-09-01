@@ -22,12 +22,15 @@ const calendarDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isValidCalendarDate, "expected a valid calendar date");
-const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
+export const offsetQualifiedIsoDateTimeSchema = isoDateTimeSchema.refine(
   (value) =>
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(
       value
     ),
   "date-time must include a UTC or numeric timezone offset and use at most millisecond precision"
+).refine(
+  (value) => calendarDateSchema.safeParse(value.slice(0, 10)).success,
+  "date-time must include a valid calendar date"
 );
 const immutableRecordLineagePayloadSchema = z
   .object({
@@ -338,7 +341,7 @@ export type ScheduleBoundaryRecord = z.infer<
 >;
 export type ScheduleBoundaryRef = z.infer<typeof scheduleBoundaryRefSchema>;
 
-const bucketReviewCadenceSchema = z.discriminatedUnion("mode", [
+export const bucketReviewCadenceSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("every_tick") }).strict(),
   z
     .object({
@@ -347,6 +350,25 @@ const bucketReviewCadenceSchema = z.discriminatedUnion("mode", [
     })
     .strict()
 ]);
+
+export type BucketReviewCadence = z.infer<typeof bucketReviewCadenceSchema>;
+
+export function parseBucketReviewCadence(value: unknown): BucketReviewCadence {
+  const cadence = bucketReviewCadenceSchema.parse(value);
+  if (cadence.mode === "scheduled") {
+    assertCanonicalBoundaryRefs(cadence.boundaryRefs);
+  }
+  return deepFreeze(cadence);
+}
+
+export function assertBucketReviewCadenceCompatibility(
+  bucket: StrategyBucket,
+  cadence: BucketReviewCadence
+): void {
+  if (cadence.mode === "every_tick" && bucket !== "intraday") {
+    throw new Error("every_tick cadence is restricted to intraday bucket");
+  }
+}
 
 const takeProfitPolicySchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("disabled") }).strict(),
@@ -752,9 +774,7 @@ function assertStrategyBucketRuntimePolicy(
       );
     }
   }
-  if (policy.reviewCadence.mode === "every_tick" && policy.bucket !== "intraday") {
-    throw new Error("every_tick cadence is restricted to intraday bucket");
-  }
+  assertBucketReviewCadenceCompatibility(policy.bucket, policy.reviewCadence);
   if (
     policy.minimumHoldingSeconds !== undefined &&
     policy.maximumHoldingSeconds !== undefined &&
