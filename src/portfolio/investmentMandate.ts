@@ -420,6 +420,7 @@ function assertManualAssignmentPayload(
   assertNotAfter(payload.asOf, createdAt, "manual assignment asOf");
   if (payload.authorizationScope === "open_or_increase") {
     assertWeightRange(payload);
+    assertPositiveOpeningWeightRange(payload);
     return;
   }
   assertWeightRange({
@@ -454,6 +455,7 @@ function assertMandateAssignmentInvariants(
     }
     return;
   }
+  assertPositiveOpeningWeightRange(value);
   const reservedMaximumNotionalKrw =
     value.assignmentSource === "deterministic_selector"
       ? value.reservedMaximumNotionalKrw
@@ -466,6 +468,15 @@ function assertMandateAssignmentInvariants(
   }
   if (reservedMaximumNotionalKrw !== value.maximumOpeningNotionalKrw) {
     throw new Error("mandate opening cap must match its capacity reservation");
+  }
+}
+
+function assertPositiveOpeningWeightRange(value: {
+  targetWeightRatio: number;
+  maxWeightRatio: number;
+}): void {
+  if (value.targetWeightRatio <= 0 || value.maxWeightRatio <= 0) {
+    throw new Error("opening target and maximum weights must be positive");
   }
 }
 

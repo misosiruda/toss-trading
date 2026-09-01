@@ -146,6 +146,16 @@ test("selector and manual-open mandate variants preserve exclusive lineage", () 
     createdAt: CREATED_AT
   });
   assert.equal(manual.assignmentSource, "manual_policy");
+  assert.throws(
+    () =>
+      parseInvestmentMandateRecord({
+        ...manual,
+        minWeightRatio: 0,
+        targetWeightRatio: 0,
+        maxWeightRatio: 0
+      }),
+    /opening target and maximum weights must be positive/
+  );
 
   const selector = createInvestmentMandateRecord({
     ...mandateBase(),
@@ -178,6 +188,46 @@ test("selector and manual-open mandate variants preserve exclusive lineage", () 
         createdAt: CREATED_AT
       }),
     /opening cap must match/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        minWeightRatio: 0,
+        targetWeightRatio: 0,
+        maxWeightRatio: 0,
+        maximumOpeningNotionalKrw: 100_000,
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "open_or_increase",
+        manualAssignmentEventId: "manual-event-1",
+        capacityReservation: manualReservation(),
+        createdAt: CREATED_AT
+      }),
+    /opening target and maximum weights must be positive/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        minWeightRatio: 0,
+        targetWeightRatio: 0,
+        maxWeightRatio: 0,
+        maximumOpeningNotionalKrw: 100_000,
+        assignmentSource: "deterministic_selector",
+        selectionRequestId: "request-1",
+        candidateAssignmentId: "assignment-1",
+        candidateAssignmentSetId: "set-1",
+        candidateAssignmentSetHash: HASH_A,
+        selectedRank: 1,
+        openingCapacityReservationId: "reservation-1",
+        openingCapacityReservationHash: HASH_B,
+        reservedSlotOrdinal: 0,
+        reservedMaximumNotionalKrw: 100_000,
+        scoringModelVersion: "score-v1",
+        selectionScore: 0.75,
+        createdAt: CREATED_AT
+      }),
+    /opening target and maximum weights must be positive/
   );
   assert.throws(
     () =>
@@ -418,6 +468,35 @@ test("manual open assignment requires eligible sizing lineage and rehashes", () 
   assert.throws(
     () => parseManualAssignmentEvent({ ...event, maximumNotionalKrw: 0 }),
     />0/
+  );
+  assert.throws(
+    () =>
+      parseManualAssignmentEvent({
+        ...event,
+        minWeightRatio: 0,
+        targetWeightRatio: 0,
+        maxWeightRatio: 0
+      }),
+    /opening target and maximum weights must be positive/
+  );
+  assert.throws(
+    () =>
+      createManualAssignmentEvent({
+        ...manualAssignmentBase(),
+        authorizationScope: "open_or_increase",
+        evidenceEligibility: "eligible",
+        portfolioSnapshotId: "snapshot-1",
+        portfolioSnapshotHash: HASH_A,
+        sizingInputRecordId: "sizing-1",
+        minWeightRatio: 0,
+        targetWeightRatio: 0,
+        maxWeightRatio: 0,
+        maximumNotionalKrw: 100_000,
+        sizingInputHash: HASH_B,
+        sizingOutputHash: HASH_C,
+        createdAt: CREATED_AT
+      }),
+    /opening target and maximum weights must be positive/
   );
   assert.throws(
     () =>
