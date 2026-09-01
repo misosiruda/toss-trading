@@ -2855,6 +2855,15 @@ non-canonical stored order와 identity drift는 fail-closed한다. exact previou
 append-only record repository, position mark-head CAS update와 valuation event를 묶는 transaction은
 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열한 번째 분할은 `bucket-valuation-mark-records.jsonl` strict append-only repository를 구현한다.
+read/append마다 모든 record를 독립 rehash하고 record ID와 `(portfolioId, bucket, asOf)` origin
+중복을 거절한다. exact record retry는 같은 stored record로 수렴하며 같은 origin의 다른 mark는
+collision으로 fail-closed한다. read-validate-append 전체를 cross-process exclusive lock으로
+직렬화하고 append file/directory sync 이후에만 성공을 반환한다. torn/blank/corrupt line,
+duplicate ID/origin과 abandoned lock은 자동 복구하지 않는다. exact mark-head/evidence resolver와
+position mark-head CAS 및 bucket equity event를 포괄하는 transaction은 후속 분할 전까지 구현
+완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
