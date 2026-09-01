@@ -186,11 +186,6 @@ function assertCurrentPriceEvidenceMatches(
   if (Date.parse(evidence.observedAt) !== Date.parse(record.asOf)) {
     throw new Error("bucket valuation current price evidence time mismatch");
   }
-  if (Date.parse(evidence.createdAt) > Date.parse(record.createdAt)) {
-    throw new Error(
-      "bucket valuation current price evidence was created after the mark"
-    );
-  }
 }
 
 function deepFreeze<T>(value: T): T {

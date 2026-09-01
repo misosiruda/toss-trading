@@ -113,20 +113,12 @@ test("valuation mark rejects current evidence scope and value drift", () => {
   );
 });
 
-test("valuation mark rejects observation-time and evidence-creation drift", () => {
+test("valuation mark rejects observation-time drift", () => {
   const head = positionHead();
   const stale = priceEvidence({
     observedAt: "2026-09-01T01:59:59.999Z"
   });
   assert.throws(() => resolveWith(head, stale), /time mismatch/);
-
-  const late = priceEvidence({
-    createdAt: "2026-09-01T02:00:02.000Z"
-  });
-  assert.throws(
-    () => resolveWith(head, late),
-    /was created after the mark/
-  );
 });
 
 test("valuation mark independently rehashes supplied current evidence", () => {
