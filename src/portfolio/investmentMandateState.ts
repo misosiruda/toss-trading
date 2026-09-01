@@ -266,6 +266,9 @@ function assertEventChronology(
   assertNotAfter(record.createdAt, event.createdAt, "mandate createdAt");
   if (event.eventType === "activated") {
     assertNotAfter(record.validFrom, event.asOf, "mandate activation asOf");
+    if (record.expiresAt !== undefined) {
+      assertNotAfter(event.asOf, record.expiresAt, "mandate activation expiresAt");
+    }
   }
   if (head !== undefined) {
     assertNotAfter(head.asOf, event.asOf, "mandate event asOf");

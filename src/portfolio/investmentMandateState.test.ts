@@ -218,6 +218,20 @@ test("mandate history rejects binding drift, duplicate identities, and backdatin
       }),
     /event asOf/
   );
+
+  const expiredActivation = mandateEvent(record, {
+    eventType: "activated",
+    asOf: "2026-10-01T00:30:00.001Z",
+    createdAt: "2026-10-01T00:31:00.000Z"
+  });
+  assert.throws(
+    () =>
+      validateInvestmentMandateHistory({
+        records: [record],
+        events: [expiredActivation]
+      }),
+    /activation expiresAt/
+  );
 });
 
 function mandateRecord(
