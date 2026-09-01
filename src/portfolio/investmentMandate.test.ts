@@ -179,6 +179,41 @@ test("selector and manual-open mandate variants preserve exclusive lineage", () 
       }),
     /opening cap must match/
   );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "open_or_increase",
+        manualAssignmentEventId: "manual-event-1",
+        capacityReservation: {
+          ...manualReservation(),
+          reservedMaximumNotionalKrw: 0
+        },
+        createdAt: CREATED_AT
+      }),
+    /must be positive/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        assignmentSource: "deterministic_selector",
+        selectionRequestId: "request-1",
+        candidateAssignmentId: "assignment-1",
+        candidateAssignmentSetId: "set-1",
+        candidateAssignmentSetHash: HASH_A,
+        selectedRank: 1,
+        openingCapacityReservationId: "reservation-1",
+        openingCapacityReservationHash: HASH_B,
+        reservedSlotOrdinal: 0,
+        reservedMaximumNotionalKrw: 0,
+        scoringModelVersion: "score-v1",
+        selectionScore: 0.75,
+        createdAt: CREATED_AT
+      }),
+    /must be positive/
+  );
 });
 
 test("mandate identity excludes createdAt but rejects ambiguous or invalid timestamps", () => {

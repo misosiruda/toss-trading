@@ -454,6 +454,12 @@ function assertMandateAssignmentInvariants(
     value.assignmentSource === "deterministic_selector"
       ? value.reservedMaximumNotionalKrw
       : value.capacityReservation.reservedMaximumNotionalKrw;
+  if (
+    value.maximumOpeningNotionalKrw <= 0 ||
+    reservedMaximumNotionalKrw <= 0
+  ) {
+    throw new Error("opening mandate cap and reservation must be positive");
+  }
   if (reservedMaximumNotionalKrw !== value.maximumOpeningNotionalKrw) {
     throw new Error("mandate opening cap must match its capacity reservation");
   }
