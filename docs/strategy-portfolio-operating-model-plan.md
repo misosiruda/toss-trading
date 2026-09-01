@@ -2939,6 +2939,17 @@ observation 이전 `createdAt`을 거절한다. 기존 `HistoricalMarketSnapshot
 append-only evidence repository, valuation mark의 current price/evidence resolver와 fill execution
 contract 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열여덟 번째 분할은 `source-price-evidence-records.jsonl` strict append-only repository를 구현한다.
+read/append마다 모든 record를 독립 rehash하고 evidence ref duplicate와
+`(sourceContractId, market, symbol, priceField, observed instant)` semantic origin duplicate를 거절한다.
+exact retry는 `createdAt`까지 같은 stored record로 수렴하고 같은 hash-derived ref의 다른 record 또는
+같은 origin의 다른 price/provenance는 collision으로 fail-closed한다. read-validate-append 전체를
+cross-process exclusive lock으로 직렬화하고 append file/directory sync 이후에만 성공을 반환한다.
+Windows lock delete-pending `EPERM`은 bounded timeout 안에서만 contention으로 재시도하며
+torn/blank/corrupt line, duplicate ref/origin과 abandoned lock은 자동 복구하지 않는다. valuation mark
+current evidence resolver, verified source adapter와 fill execution contract 연결은 후속 분할 전까지
+구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3104,6 +3115,7 @@ contract 연결은 후속 분할 전까지 구현 완료로 간주하지 않는�
 - position mark-head durable snapshot의 replay equality와 journal complete/partial recovery 검증
 - valuation mark의 active position completeness와 previous head ID/hash/quantity/price/evidence 해소
 - typed source-price evidence의 complete payload hash와 hash-derived ref 및 canonical provenance 검증
+- source-price evidence repository의 process retry 수렴과 ref/origin/corrupt history 거절
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
