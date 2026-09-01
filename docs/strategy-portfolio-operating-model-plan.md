@@ -2877,6 +2877,19 @@ fail-closed한다. append-only event repository, chain replay와 snapshot CAS pe
 migration exact origin resolver 및 bucket equity transaction 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+열세 번째 분할은 append-only event를 current snapshot으로 재구성하는 순수
+`foldBucketPositionMarkHeadHistory` replay를 구현한다. fold는 모든 event를 독립 rehash하고 global
+event ID duplicate, scope별 predecessor ID/hash branch, 초기화 전 chained event, active head의 두 번째
+root, closed head의 predecessor chaining과 `asOf`/`createdAt` 시각 역행을 거절한다. valuation은
+mark interval을 반드시 전진시키고 quantity를 보존하며, position mutation과 transfer-out은 직전 accepted price/evidence를
+바꿀 수 없다. mutation은 quantity를 실제로 변경해야 하고 transfer-out은 source quantity를 0으로
+종료한다. fill과 migration origin은 event variant가 달라도 동일 scope에서 한 번만 소비할 수 있으며,
+동일 scope의 authenticated origin 재사용을 거절하고 replay snapshot은
+`portfolioId + bucket + market + symbol` UTF-8 순서로 canonicalize한다. quantity 0으로 닫힌 head는
+후속 `initialized` 또는 `bucket_transfer_in` root로만 다시 열 수 있다. external origin resolver,
+append-only repository와 durable snapshot CAS transaction은 후속 분할 전까지 구현 완료로 간주하지
+않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
