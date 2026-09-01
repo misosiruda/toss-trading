@@ -133,6 +133,7 @@ test("assigned state resolves the exact every-tick mandate head", () => {
 
 test("assigned state rejects stale mandate heads and lineage drift", () => {
   const mandate = everyTickMandate();
+  const successor = everyTickMandate("manual-event-2");
   const activated = mandateEvent(mandate, {
     eventType: "activated",
     asOf: "2026-09-01T01:00:00.000Z",
@@ -179,6 +180,44 @@ test("assigned state rejects stale mandate heads and lineage drift", () => {
         mandateEvents: [activated]
       }),
     /does not match its mandate lineage/
+  );
+
+  const retired = mandateEvent(mandate, {
+    eventType: "retired",
+    previousMandateEventId: reviewRequired.mandateEventId,
+    supersededByMandateId: successor.mandateId,
+    asOf: "2026-09-01T03:00:00.000Z",
+    createdAt: "2026-09-01T03:00:00.000Z"
+  });
+  const successorActivated = mandateEvent(successor, {
+    eventType: "activated",
+    previousMandateEventId: retired.mandateEventId,
+    asOf: "2026-09-01T03:00:00.000Z",
+    createdAt: "2026-09-01T03:00:00.000Z"
+  });
+  const retiredState = createAssignedPositionStrategyState(
+    assignedStateInput({
+      mandateId: mandate.mandateId,
+      mandateHash: mandate.mandateHash,
+      lastMandateEventId: retired.mandateEventId,
+      lastMandateEventHash: retired.mandateEventHash,
+      policyHash: mandate.policyHash,
+      lastReviewedTriggerRef: HASH_C
+    })
+  );
+  assert.throws(
+    () =>
+      resolvePositionStrategyStateDependencies({
+        value: retiredState,
+        mandateRecords: [mandate, successor],
+        mandateEvents: [
+          activated,
+          reviewRequired,
+          retired,
+          successorActivated
+        ]
+      }),
+    /cannot resolve a retired mandate/
   );
 });
 
@@ -253,11 +292,13 @@ function assignedStateInput(
   };
 }
 
-function everyTickMandate(): InvestmentMandateRecord {
+function everyTickMandate(
+  manualAssignmentEventId = "manual-event-1"
+): InvestmentMandateRecord {
   return mandateRecord({
     bucket: "intraday",
     reviewCadence: { mode: "every_tick" }
-  });
+  }, manualAssignmentEventId);
 }
 
 function scheduledMandate(): InvestmentMandateRecord {
@@ -296,7 +337,8 @@ function mandateRecord(
           }>;
         };
         reviewAfter: string;
-      }
+      },
+  manualAssignmentEventId = "manual-event-1"
 ): InvestmentMandateRecord {
   return createInvestmentMandateRecord({
     portfolioId: "portfolio-1",
@@ -315,7 +357,7 @@ function mandateRecord(
     expiresAt: "2026-10-01T00:30:00.000Z",
     assignmentSource: "manual_policy",
     manualAuthorizationScope: "classify_existing_reduce_only",
-    manualAssignmentEventId: "manual-event-1",
+    manualAssignmentEventId,
     createdAt: "2026-09-01T01:00:00.000Z",
     ...cadence
   });
@@ -326,12 +368,20 @@ function mandateEvent(
   transition:
     | {
         eventType: "activated";
+        previousMandateEventId?: string;
         asOf: string;
         createdAt: string;
       }
     | {
         eventType: "review_required";
         previousMandateEventId: string;
+        asOf: string;
+        createdAt: string;
+      }
+    | {
+        eventType: "retired";
+        previousMandateEventId: string;
+        supersededByMandateId?: string;
         asOf: string;
         createdAt: string;
       }

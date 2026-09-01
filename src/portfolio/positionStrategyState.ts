@@ -151,6 +151,9 @@ export function resolvePositionStrategyStateDependencies(input: {
     records: input.mandateRecords,
     events: input.mandateEvents
   });
+  if (mandate.status === "retired") {
+    throw new Error("assigned position cannot resolve a retired mandate");
+  }
   const event = mandate.currentEvent;
   if (event === undefined) {
     throw new Error("assigned position requires an activated mandate");
