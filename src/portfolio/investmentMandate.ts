@@ -141,6 +141,7 @@ export function createInvestmentMandateRecord(
   });
   parseBucketReviewCadence(payload.reviewCadence);
   assertWeightRange(payload);
+  assertMandateAssignmentInvariants(payload);
   assertMandateChronology(payload, createdAt);
   const mandateHash = hashCanonicalPayload(payload);
   return deepFreeze(
@@ -163,6 +164,7 @@ export function parseInvestmentMandateRecord(
   assertCanonicalIdentifiers(payload.evidenceRefs, "evidenceRefs");
   parseBucketReviewCadence(payload.reviewCadence);
   assertWeightRange(payload);
+  assertMandateAssignmentInvariants(payload);
   assertMandateChronology(payload, record.createdAt);
   const expectedHash = hashCanonicalPayload(payload);
   if (
@@ -436,6 +438,27 @@ function assertWeightRange(value: {
   }
 }
 
+function assertMandateAssignmentInvariants(
+  value: z.infer<typeof investmentMandatePayloadSchema>
+): void {
+  if (
+    value.assignmentSource === "manual_policy" &&
+    value.manualAuthorizationScope === "classify_existing_reduce_only"
+  ) {
+    if (value.maximumOpeningNotionalKrw !== 0) {
+      throw new Error("reduce-only mandate opening cap must be zero");
+    }
+    return;
+  }
+  const reservedMaximumNotionalKrw =
+    value.assignmentSource === "deterministic_selector"
+      ? value.reservedMaximumNotionalKrw
+      : value.capacityReservation.reservedMaximumNotionalKrw;
+  if (reservedMaximumNotionalKrw !== value.maximumOpeningNotionalKrw) {
+    throw new Error("mandate opening cap must match its capacity reservation");
+  }
+}
+
 function assertMandateChronology(
   value: {
     evidenceAsOf: string;
@@ -449,6 +472,7 @@ function assertMandateChronology(
 ): void {
   assertNotAfter(value.evidenceAsOf, value.asOf, "mandate evidenceAsOf");
   assertNotAfter(value.asOf, createdAt, "mandate asOf");
+  assertNotAfter(value.asOf, value.validFrom, "mandate validFrom");
   if (
     value.reviewCadence.mode === "scheduled" &&
     value.reviewAfter === undefined

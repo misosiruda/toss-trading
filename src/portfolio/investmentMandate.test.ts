@@ -109,11 +109,36 @@ test("mandate variants reject foreign lineage and invalid range or chronology", 
       }),
     /evidenceAsOf/
   );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        validFrom: "2026-09-01T00:29:59.000Z",
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "classify_existing_reduce_only",
+        manualAssignmentEventId: "manual-event-1",
+        createdAt: CREATED_AT
+      }),
+    /mandate validFrom/
+  );
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        maximumOpeningNotionalKrw: 1,
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "classify_existing_reduce_only",
+        manualAssignmentEventId: "manual-event-1",
+        createdAt: CREATED_AT
+      }),
+    /reduce-only mandate opening cap must be zero/
+  );
 });
 
 test("selector and manual-open mandate variants preserve exclusive lineage", () => {
   const manual = createInvestmentMandateRecord({
     ...mandateBase(),
+    maximumOpeningNotionalKrw: 100_000,
     assignmentSource: "manual_policy",
     manualAuthorizationScope: "open_or_increase",
     manualAssignmentEventId: "manual-event-1",
@@ -124,6 +149,7 @@ test("selector and manual-open mandate variants preserve exclusive lineage", () 
 
   const selector = createInvestmentMandateRecord({
     ...mandateBase(),
+    maximumOpeningNotionalKrw: 100_000,
     assignmentSource: "deterministic_selector",
     selectionRequestId: "request-1",
     candidateAssignmentId: "assignment-1",
@@ -140,6 +166,19 @@ test("selector and manual-open mandate variants preserve exclusive lineage", () 
   });
   assert.equal(selector.assignmentSource, "deterministic_selector");
   assert.deepEqual(parseInvestmentMandateRecord(selector), selector);
+  assert.throws(
+    () =>
+      createInvestmentMandateRecord({
+        ...mandateBase(),
+        maximumOpeningNotionalKrw: 50_000,
+        assignmentSource: "manual_policy",
+        manualAuthorizationScope: "open_or_increase",
+        manualAssignmentEventId: "manual-event-1",
+        capacityReservation: manualReservation(),
+        createdAt: CREATED_AT
+      }),
+    /opening cap must match/
+  );
 });
 
 test("mandate identity excludes createdAt but rejects ambiguous or invalid timestamps", () => {
@@ -337,7 +376,7 @@ function mandateBase() {
     targetWeightRatio: 0.2,
     minWeightRatio: 0.1,
     maxWeightRatio: 0.3,
-    maximumOpeningNotionalKrw: 100_000,
+    maximumOpeningNotionalKrw: 0,
     reasonCodes: ["reason-a"],
     evidenceRefs: ["evidence-a"],
     evidenceAsOf: "2026-09-01T00:00:00.000Z",
