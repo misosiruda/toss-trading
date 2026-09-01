@@ -39,6 +39,24 @@ test("bucket equity epoch variants hash the complete initialization payload", ()
     carried.bucketEquityEventHash,
     initialized.bucketEquityEventHash
   );
+
+  const fractionalNav = createBucketEquityEvent({
+    eventType: "epoch_initialized",
+    riskStateEpochId: "epoch-3",
+    activationId: "activation-3",
+    previousRiskStateEpochId: carried.riskStateEpochId,
+    portfolioId: initialized.portfolioId,
+    bucket: initialized.bucket,
+    policyHash: HASH_C,
+    drawdownSemanticsHash: initialized.drawdownSemanticsHash,
+    initializationMode: "carried_forward",
+    initialEquityKrw: 3 * 0.1,
+    initialUnits: 3,
+    initialUnitNavKrw: 0.1,
+    initialHighWaterMarkUnitNavKrw: 1,
+    asOf: "2026-09-03T00:00:00.000Z"
+  });
+  assert.deepEqual(parseBucketEquityEvent(fractionalNav), fractionalNav);
 });
 
 test("bucket equity initialization rejects baseline and unit fabrication", () => {
@@ -48,7 +66,7 @@ test("bucket equity initialization rejects baseline and unit fabrication", () =>
         ...epochPayload(),
         initialUnits: 999
       }),
-    /units must equal equity divided by unit NAV/
+    /equity must equal units multiplied by unit NAV/
   );
   assert.throws(
     () =>
@@ -152,6 +170,26 @@ test("bucket equity events reject invalid signs, sequences, and stored identity 
   assert.throws(
     () =>
       createBucketEquityEvent({
+        ...chainedPayload(initialized.bucketEquityEventId),
+        eventType: "capital_flow",
+        amountKrw: 100,
+        ...fillOrigin(1)
+      }),
+    /sign does not match its accounting sequence/
+  );
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
+        ...chainedPayload(initialized.bucketEquityEventId),
+        eventType: "capital_flow",
+        amountKrw: -100,
+        ...fillOrigin(0)
+      }),
+    /sign does not match its accounting sequence/
+  );
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
         ...transferPayload(initialized.bucketEquityEventId),
         eventType: "strategy_transfer_out",
         transferSequence: 0,
@@ -200,7 +238,7 @@ test("bucket equity events reject invalid signs, sequences, and stored identity 
         ...initialized,
         initialEquityKrw: 999
       }),
-    /identity does not match|units must equal/
+    /identity does not match|equity must equal units multiplied/
   );
 });
 

@@ -273,9 +273,9 @@ function assertBucketEquityEventPayload(
   payload: z.infer<typeof bucketEquityEventPayloadSchema>
 ): void {
   if (payload.eventType === "epoch_initialized") {
-    const expectedUnits = payload.initialEquityKrw / payload.initialUnitNavKrw;
-    if (payload.initialUnits !== expectedUnits) {
-      throw new Error("initial bucket units must equal equity divided by unit NAV");
+    const expectedEquity = payload.initialUnits * payload.initialUnitNavKrw;
+    if (payload.initialEquityKrw !== expectedEquity) {
+      throw new Error("initial bucket equity must equal units multiplied by unit NAV");
     }
     if (
       payload.initialHighWaterMarkUnitNavKrw < payload.initialUnitNavKrw
@@ -291,8 +291,18 @@ function assertBucketEquityEventPayload(
     }
     return;
   }
-  if (payload.eventType === "capital_flow" && payload.amountKrw === 0) {
-    throw new Error("bucket capital flow amount cannot be zero");
+  if (payload.eventType === "capital_flow") {
+    if (payload.amountKrw === 0) {
+      throw new Error("bucket capital flow amount cannot be zero");
+    }
+    if (
+      (payload.amountKrw > 0 && payload.fillAccountingSequence !== 0) ||
+      (payload.amountKrw < 0 && payload.fillAccountingSequence !== 1)
+    ) {
+      throw new Error(
+        "bucket capital flow sign does not match its accounting sequence"
+      );
+    }
   }
   if (payload.eventType === "strategy_transfer_out") {
     if (payload.amountKrw >= 0) {
