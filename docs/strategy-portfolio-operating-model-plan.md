@@ -2759,8 +2759,18 @@ JSONL, abandoned lock과 전체 history rehash/fold 실패는 쓰기 전에 fail
 predecessor를 생략하고, 후속 activation은 기존 retirement가 미리 선언한 proposed successor와
 정확히 일치해야 한다. 따라서 `proposed`, `active`, `review_required`, `retired` 상태는 저장하지
 않고 event replay로 파생하며 한 종목에 두 current mandate가 생기는 branch를 거절한다. manual
-assignment repository/dependency resolver, `PositionStrategyState`, bucket equity state와 runner
+assignment repository/dependency resolver, durable `PositionStrategyState` repository, bucket equity state와 runner
 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
+세 번째 분할은 assigned/unassigned legacy `PositionStrategyState`의 strict variant와 complete
+payload hash를 구현한다. parser는 read/restart마다 저장 payload를 canonical form으로 독립 rehash하고
+legacy reason duplicate/order, peak price와 holding/review timestamp를 검증한다. assigned state
+resolver는 exact mandate ID/hash, current mandate event ID/hash와 portfolio/market/symbol/policy scope를
+다시 해소한다. scheduled state의 `nextReviewAt`은 mandate `reviewAfter`와 같아야 하며 every-tick
+state는 `nextReviewAt`을 생략하고 `lastReviewedTriggerRef`에 SHA-256 market packet hash를 보존한다.
+legacy variant에는 mandate/policy/holding lineage를 합성하지 않는다. durable position state
+repository, manual assignment repository/dependency resolver, legacy migration coordinator, bucket equity
+state와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 
