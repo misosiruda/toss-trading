@@ -257,7 +257,7 @@ export function createInvestmentMandateEvent(
     ...unparsedPayload,
     reasonCodes: canonicalIdentifiers(unparsedPayload.reasonCodes, "reasonCodes")
   });
-  assertNotAfter(payload.asOf, createdAt, "mandate event asOf");
+  assertMandateEventPayload(payload, createdAt);
   const mandateEventHash = hashCanonicalPayload(payload);
   return deepFreeze(
     investmentMandateEventSchema.parse({
@@ -284,7 +284,7 @@ export function parseInvestmentMandateEvent(
     ...payload
   } = event;
   assertCanonicalIdentifiers(payload.reasonCodes, "reasonCodes");
-  assertNotAfter(payload.asOf, createdAt, "mandate event asOf");
+  assertMandateEventPayload(payload, createdAt);
   const expectedHash = hashCanonicalPayload(payload);
   if (
     mandateEventHash !== expectedHash ||
@@ -294,6 +294,19 @@ export function parseInvestmentMandateEvent(
     throw new Error("investment mandate event identity does not match its payload");
   }
   return deepFreeze(event);
+}
+
+function assertMandateEventPayload(
+  payload: z.infer<typeof investmentMandateEventPayloadSchema>,
+  createdAt: string
+): void {
+  assertNotAfter(payload.asOf, createdAt, "mandate event asOf");
+  if (
+    payload.eventType === "retired" &&
+    payload.supersededByMandateId === payload.mandateId
+  ) {
+    throw new Error("retired mandate cannot supersede itself");
+  }
 }
 
 const manualAssignmentBasePayloadSchema = z

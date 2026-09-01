@@ -2751,6 +2751,7 @@ chronology 검증을 구현한다. `createdAt`은 semantic hash에서 제외하�
 mandate와 assignment는 양수 `targetWeightRatio`와 `maxWeightRatio`를 요구한다. repository,
 event-chain fold, manual assignment dependency resolver,
 `PositionStrategyState`와 runner 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+retired lifecycle event의 `supersededByMandateId`는 자기 `mandateId`와 같을 수 없다.
 
 완료 조건:
 

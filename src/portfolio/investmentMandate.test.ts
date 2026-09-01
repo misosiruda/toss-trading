@@ -423,6 +423,25 @@ test("retired mandate event preserves predecessor and superseding identity", () 
   });
   assert.equal(event.eventType, "retired");
   assert.equal(event.supersededByMandateId, "mandate-2");
+  assert.throws(
+    () =>
+      createInvestmentMandateEvent({
+        ...mandateEventBase(),
+        eventType: "retired",
+        previousMandateEventId: "mandate-event-1",
+        supersededByMandateId: "mandate-1",
+        createdAt: CREATED_AT
+      }),
+    /retired mandate cannot supersede itself/
+  );
+  assert.throws(
+    () =>
+      parseInvestmentMandateEvent({
+        ...event,
+        supersededByMandateId: event.mandateId
+      }),
+    /retired mandate cannot supersede itself/
+  );
 });
 
 test("manual open assignment requires eligible sizing lineage and rehashes", () => {
