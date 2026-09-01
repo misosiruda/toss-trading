@@ -2864,6 +2864,19 @@ duplicate ID/origin과 abandoned lock은 자동 복구하지 않는다. exact ma
 position mark-head CAS 및 bucket equity event를 포괄하는 transaction은 후속 분할 전까지 구현
 완료로 간주하지 않는다.
 
+열두 번째 분할은 종목별 valuation predecessor를 보존하는 `BucketPositionMarkHeadEvent`와
+`BucketPositionMarkHeadState` strict contract를 구현한다. event는 `initialized`,
+`valuation_applied`, `position_mutation_applied`, `bucket_transfer_out`, `bucket_transfer_in` variant를
+분리하고 event ID/hash/`createdAt`을 제외한 complete payload를 독립 rehash해 hash-derived ID를
+검증한다. initialization과 mutation origin은 strict discriminated union으로 제한하고 predecessor가
+필요한 variant는 ID/hash pair를 모두 요구한다. snapshot stable ID는
+`portfolioId + bucket + market + symbol` scope에서 파생하고 자기 hash를 제외한 complete payload를
+검증하며 valuation ID/hash는 함께 존재하거나 함께 생략해야 한다. signed zero, 비양수 price,
+`asOf` 이전 `createdAt`, legacy verified mark의 evidence 변경, source transfer-out의 nonzero quantity는
+fail-closed한다. append-only event repository, chain replay와 snapshot CAS persistence, fill/valuation/
+migration exact origin resolver 및 bucket equity transaction 연결은 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
