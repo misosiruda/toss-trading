@@ -2890,6 +2890,17 @@ mark interval을 반드시 전진시키고 quantity를 보존하며, position mu
 append-only repository와 durable snapshot CAS transaction은 후속 분할 전까지 구현 완료로 간주하지
 않는다.
 
+열네 번째 분할은 `bucket-position-mark-head-events.jsonl` strict append-only repository를 구현한다.
+read/append마다 전체 event log를 다시 parse·rehash하고
+`foldBucketPositionMarkHeadHistory`로 재생해 duplicate event ID/origin, predecessor branch, scope별
+시간 역행과 잘못된 closed/reopen 전이를 저장소 경계에서도 fail-closed한다. exact event retry는
+`createdAt`까지 동일한 stored event로 수렴하며 같은 hash-derived ID의 다른 stored payload는
+collision으로 거절한다. read-validate-append 전체를 cross-process exclusive lock으로 직렬화하고
+append file/directory sync 이후에만 성공을 반환한다. torn/blank/corrupt line, replay 불일치와
+abandoned lock은 자동 복구하지 않는다. `bucket-position-mark-head-state.json` durable snapshot CAS와
+event/snapshot commit journal, fill/valuation/migration 및 bucket equity exact origin resolver를 묶는
+coordinator는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
@@ -3051,6 +3062,7 @@ append-only repository와 durable snapshot CAS transaction은 후속 분할 전�
 - cross-bucket mandate migration의 zero-sum equity, unit NAV/HWM와 mark-head 보존
 - 종목별 previous mark head 연속성, overlap/gap과 stale predecessor 거절
 - mark head event strict variant rehash와 snapshot replay 일치
+- position mark-head event repository의 thread/process exact retry 수렴과 corrupt/torn/branch/origin 거절
 - selector mandate의 min/target/max range와 assignment `sizingOutputHash` 일치
 - manual mandate의 assignment event reference와 scope/range 일치
 - manual `open_or_increase`의 active selection policy evidence validation hash 일치
