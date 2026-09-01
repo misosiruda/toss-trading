@@ -2963,7 +2963,8 @@ execution 연결은 후속 분할 전까지 구현 완료로 간주하지 않는
 
 스무 번째 분할은 verified mark origin과 current `BucketRiskState`에서 complete valuation application
 event set을 결정론적으로 projection한다. risk state는 payload hash를 독립 검증하고 mark와
-portfolio/bucket/policy가 exact-match하며 mark `asOf`보다 앞서지 않았는지 확인한다. projection은 current
+portfolio/bucket/policy가 exact-match하며 mark `asOf`보다 늦지 않고 모든 current position head
+`asOf`보다 이르지 않은지 확인한다. projection은 current
 bucket equity head를 predecessor로 하는 `valuation` event를 먼저 만들고 mark의 current typed price
 evidence ref 전체를 canonical evidence set으로 결속한다. 이어서 모든 canonical position input에 대해
 current position event head를 predecessor로 하고 동일 mark ID/hash와 생성된 bucket equity event ID/hash를

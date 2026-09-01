@@ -127,6 +127,16 @@ function assertRiskStateMatches(
   if (Date.parse(state.asOf) > Date.parse(origins.record.asOf)) {
     throw new Error("bucket valuation risk state is ahead of the mark");
   }
+  if (
+    origins.positions.some(
+      (position) =>
+        Date.parse(state.asOf) < Date.parse(position.previousHead.asOf)
+    )
+  ) {
+    throw new Error(
+      "bucket valuation risk state predates a position mark head"
+    );
+  }
 }
 
 function asValuationEquityEvent(

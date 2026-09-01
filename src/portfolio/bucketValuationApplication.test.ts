@@ -86,8 +86,16 @@ test("valuation application rejects foreign risk scope and policy", () => {
   );
 });
 
-test("valuation application rejects ahead and corrupt risk states", () => {
+test("valuation application rejects stale, ahead, and corrupt risk states", () => {
   const fixture = applicationFixture();
+  assert.throws(
+    () =>
+      resolveBucketValuationApplication({
+        ...fixture.input,
+        currentRiskState: riskState({ asOf: "2026-09-01T00:59:59.999Z" })
+      }),
+    /predates a position mark head/
+  );
   assert.throws(
     () =>
       resolveBucketValuationApplication({
