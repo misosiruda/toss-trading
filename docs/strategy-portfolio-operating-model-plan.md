@@ -3067,6 +3067,15 @@ non-safe/non-finite/negative-zero 금액, current position exposure를 넘는 pe
 fail-closed한다. full `PortfolioSizingSnapshot`, virtual portfolio/valuation/pending action replay resolver와
 append-only repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+세 번째 분할은 full sizing snapshot에 들어갈 `PortfolioValuationInput`과
+`PendingPortfolioActionInput` strict canonical array 계약을 구현한다. valuation은 mark를
+`(market, symbol)`, FX를 `(baseCurrency, quoteCurrency)` identity로 중복 없이 정렬하고, pending
+action은 `(market, symbol, side, planId, actionId)` 순서와 plan/action unique identity를 강제한다.
+BUY는 opening capacity reservation ID/hash, SELL은 remaining quantity와 price evidence ref를
+필수 origin으로 보존한다. pending BUY/SELL exposure는 canonical action의 remaining notional 합으로만
+safe-integer 계산한다. exact mark/FX coverage, plan/reservation/fill chain replay와 snapshot 결속은 후속
+분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
