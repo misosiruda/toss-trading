@@ -3056,6 +3056,15 @@ BUY exposure를 차감해 계산하고, reserve 부족이나 available slot 부�
 `maximumAdditionalExposureKrw`를 0으로 fail-closed한다. immutable sizing snapshot과 mark provenance,
 selection request 저장은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+두 번째 분할은 `PortfolioExposureSnapshot` strict payload와 독립
+`exposureSnapshotHash` 검증을 구현한다. bucket map은 complete lexical key set, symbol exposure는
+canonical `(market, symbol)` 순서와 unique tuple을 강제하고 market/sector/country/currency map도
+lexical key 순서로 보존한다. cash를 제외한 position exposure와 모든 dimension 합계가 같아야 하며
+market 합계는 symbol tuple에서 다시 집계한 값과 exact-match해야 한다. 동적 classification map의 0
+entry, non-safe/non-finite/negative-zero 금액, current position exposure를 넘는 pending SELL은
+fail-closed한다. full `PortfolioSizingSnapshot`, virtual portfolio/valuation/pending action replay resolver와
+append-only repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
