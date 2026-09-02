@@ -3084,7 +3084,8 @@ risk tag와 price source ref도 정렬한다. snapshot hash는 ID/hash를 제외
 BUY/SELL exposure total mismatch는 fail-closed하며 virtual portfolio/position/price 시각도 numeric
 offset 또는 UTC를 요구하고 price update는 enclosing position update보다 늦을 수 없다. JSON
 hash에서 `0`과 구분되지 않는 virtual portfolio/position의
-negative zero numeric field도 hash 전에 거절한다. exact mark/FX coverage와 virtual NAV/dimension
+negative zero numeric field와 JSON persistence에서 누락되는 explicit `undefined` position field도
+hash 전에 거절한다. exact mark/FX coverage와 virtual NAV/dimension
 재계산, plan/fill/reservation chain replay 및 append-only persistence는 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 

@@ -165,6 +165,7 @@ function parseCanonicalVirtualPortfolio(value: unknown): VirtualPortfolio {
 }
 
 function canonicalizePosition(position: VirtualPosition): VirtualPosition {
+  assertNoExplicitUndefinedProperties(position, "position");
   assertWellFormedText(position.symbol, "position symbol");
   assertNotNegativeZero(position.quantity, "position quantity");
   assertNotNegativeZero(position.averagePriceKrw, "position average price");
@@ -184,6 +185,16 @@ function canonicalizePosition(position: VirtualPosition): VirtualPosition {
     ...(riskTags === undefined ? {} : { riskTags }),
     ...(priceSourceRefs === undefined ? {} : { priceSourceRefs })
   };
+}
+
+function assertNoExplicitUndefinedProperties(
+  value: Record<string, unknown>,
+  label: string
+): void {
+  const property = Object.keys(value).find((key) => value[key] === undefined);
+  if (property !== undefined) {
+    throw new Error(`${label} ${property} must be omitted instead of undefined`);
+  }
 }
 
 function canonicalOptionalText<Value extends string>(

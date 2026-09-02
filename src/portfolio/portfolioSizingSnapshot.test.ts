@@ -268,6 +268,35 @@ test("portfolio sizing snapshot rejects normalized and malformed position identi
       }),
     /position price cannot be after position updatedAt/
   );
+  assert.throws(
+    () =>
+      createPortfolioSizingSnapshot({
+        ...input,
+        virtualPortfolio: {
+          ...portfolio,
+          positions: [
+            { ...portfolio.positions[0], marketValueKrw: undefined },
+            portfolio.positions[1]
+          ]
+        }
+      }),
+    /position marketValueKrw must be omitted instead of undefined/
+  );
+
+  const snapshot = createPortfolioSizingSnapshot(input);
+  assert.throws(
+    () =>
+      parsePortfolioSizingSnapshot({
+        ...snapshot,
+        virtualPortfolio: {
+          ...snapshot.virtualPortfolio,
+          positions: snapshot.virtualPortfolio.positions.map((position, index) =>
+            index === 0 ? { ...position, marketValueKrw: undefined } : position
+          )
+        }
+      }),
+    /position marketValueKrw must be omitted instead of undefined/
+  );
 });
 
 function snapshotInput(): CreatePortfolioSizingSnapshotInput {
