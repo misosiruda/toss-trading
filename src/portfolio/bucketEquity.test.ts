@@ -236,6 +236,35 @@ test("bucket equity chained variants preserve exact origins and canonical eviden
   );
 });
 
+test("bucket valuation evidence capacity matches the valuation mark position limit", () => {
+  const initialized = epochInitialized();
+  const evidenceRefs = Array.from(
+    { length: 10_000 },
+    (_, index) => `price-${index.toString().padStart(5, "0")}`
+  );
+  const valuation = createBucketEquityEvent({
+    ...chainedPayload(initialized.bucketEquityEventId),
+    eventType: "valuation",
+    equityDeltaKrw: 0,
+    bucketValuationMarkRecordId: "valuation-mark-large",
+    valuationMarkHash: HASH_C,
+    evidenceRefs
+  });
+
+  assert.equal(valuation.eventType, "valuation");
+  assert.equal(valuation.evidenceRefs.length, 10_000);
+  assert.throws(
+    () =>
+      createBucketEquityEvent({
+        ...chainedPayload(valuation.bucketEquityEventId),
+        eventType: "execution_cost",
+        equityDeltaKrw: -1,
+        ...fillOrigin(1),
+        evidenceRefs: evidenceRefs.slice(0, 129)
+      })
+  );
+});
+
 test("bucket equity events reject invalid signs, sequences, and stored identity drift", () => {
   const initialized = epochInitialized();
   assert.throws(
