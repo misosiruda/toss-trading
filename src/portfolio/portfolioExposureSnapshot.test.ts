@@ -215,6 +215,14 @@ test("portfolio exposure snapshot fails closed for noncanonical values", () => {
       }),
     />0/
   );
+  assert.throws(
+    () =>
+      createPortfolioExposureSnapshot({
+        ...snapshotInput(),
+        sectorExposureKrw: { "10": 300_000, Technology: 200_000 }
+      }),
+    /must not be an integer-index property/
+  );
 });
 
 test("cash-only exposure has canonical empty dimensions", () => {

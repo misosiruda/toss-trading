@@ -18,6 +18,10 @@ const canonicalKeySchema = z
   .min(1)
   .max(160)
   .refine((value) => value === value.trim(), "key must already be canonical");
+const classificationKeySchema = canonicalKeySchema.refine(
+  (value) => !isArrayIndexKey(value),
+  "classification key must not be an integer-index property"
+);
 const nonNegativeAmountSchema = z
   .number()
   .int()
@@ -31,7 +35,7 @@ const positiveAmountSchema = z
   .finite()
   .positive()
   .refine(Number.isSafeInteger, "amount must be a safe integer");
-const exposureMapSchema = z.record(canonicalKeySchema, positiveAmountSchema);
+const exposureMapSchema = z.record(classificationKeySchema, positiveAmountSchema);
 
 const bucketExposureSchema = z
   .object({
@@ -170,7 +174,7 @@ function canonicalExposureMap(value: unknown): unknown {
   }
   const entries = Object.entries(value)
     .map(([key, amount]) => [
-      canonicalKeySchema.parse(key),
+      classificationKeySchema.parse(key),
       positiveAmountSchema.parse(amount)
     ] as const)
     .sort(([left], [right]) => compareText(left, right));
@@ -350,6 +354,19 @@ function compareSymbolExposure(
   return (
     compareText(left.market, right.market) ||
     compareText(left.symbol, right.symbol)
+  );
+}
+
+function isArrayIndexKey(value: string): boolean {
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) {
+    return false;
+  }
+  const numeric = Number(value);
+  return (
+    Number.isInteger(numeric) &&
+    numeric >= 0 &&
+    numeric < 4_294_967_295 &&
+    String(numeric) === value
   );
 }
 

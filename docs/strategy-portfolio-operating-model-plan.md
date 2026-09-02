@@ -3060,8 +3060,10 @@ selection request 저장은 후속 분할 전까지 구현 완료로 간주하�
 `exposureSnapshotHash` 검증을 구현한다. bucket map은 complete lexical key set, symbol exposure는
 canonical `(market, symbol)` 순서와 unique tuple을 강제하고 market/sector/country/currency map도
 lexical key 순서로 보존한다. cash를 제외한 position exposure와 모든 dimension 합계가 같아야 하며
-market 합계는 symbol tuple에서 다시 집계한 값과 exact-match해야 한다. 동적 classification map의 0
-entry, non-safe/non-finite/negative-zero 금액, current position exposure를 넘는 pending SELL은
+market 합계는 symbol tuple에서 다시 집계한 값과 exact-match해야 한다. JavaScript object enumeration이
+lexical order를 보존할 수 없는 integer-index 형태의 동적 classification key는 거절하고 `GICS:10`처럼
+명시적인 비정수 namespace를 사용한다. 동적 classification map의 0 entry,
+non-safe/non-finite/negative-zero 금액, current position exposure를 넘는 pending SELL은
 fail-closed한다. full `PortfolioSizingSnapshot`, virtual portfolio/valuation/pending action replay resolver와
 append-only repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
