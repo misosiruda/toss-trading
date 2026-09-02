@@ -3100,6 +3100,15 @@ market price/value/PnL 불일치는 fail-closed한다. FX rate는 이미 KRW로 
 conversion provenance이므로 이 분할에서 mark에 다시 곱하지 않는다. plan/fill/reservation chain
 replay와 append-only snapshot/request persistence는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+여섯 번째 분할은 valuation/exposure replay를 통과한 snapshot만
+`portfolio-sizing-snapshots.jsonl`에 저장하는 strict append-only repository를 구현한다. append와
+read 모두 complete log의 schema, nested/outer hash 및 valuation/exposure replay를 다시 검증한다.
+snapshot ID exact retry는 기존 record로 수렴하며 같은
+`(portfolioId, portfolioVersion, policyHash, asOf)` origin의 다른 payload, duplicate ID/origin,
+torn/blank/corrupt line을 거절한다. thread/process writer는 exclusive lock과 file/directory sync로
+직렬화하고 abandoned lock은 자동 제거하지 않는다. pending plan/fill/reservation chain replay와
+selection request contract/repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
