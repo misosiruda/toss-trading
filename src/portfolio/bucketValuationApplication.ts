@@ -196,6 +196,11 @@ function assertRiskStateMatches(
   if (state.policyHash !== origins.record.policyHash) {
     throw new Error("bucket valuation risk state policy mismatch");
   }
+  if (state.units === 0) {
+    throw new Error(
+      "bucket valuation active positions cannot use an empty risk epoch"
+    );
+  }
   if (Date.parse(state.asOf) > Date.parse(origins.record.asOf)) {
     throw new Error("bucket valuation risk state is ahead of the mark");
   }

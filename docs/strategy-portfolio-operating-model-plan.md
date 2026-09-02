@@ -2974,7 +2974,9 @@ ID/hash와 생성된 bucket equity event ID/hash를 참조하는 `valuation_appl
 mark와 supplied current head event 중 늦은 instant의 원문 값을 선택해 replay chronology를 보존한다.
 결과 event는 기존 strict constructor의 hash-derived identity를 사용한다. 생성한 equity event를 current
 risk state에 즉시 순수 적용해 predecessor/epoch/policy/as-of와
-negative balance, empty epoch delta, numeric precision 규칙을 재사용하고 `resultingRiskState`까지 검증한다.
+risk state가 zero-unit empty epoch이면 delta가 0 또는 net-zero여도 active valuation을 fail-closed한다.
+그 밖의 negative balance, numeric precision 규칙은 기존 replay 계산을 재사용하고
+`resultingRiskState`까지 검증한다.
 전체 application graph는 immutable하다. `createdAt`은 event identity material이 아니므로 이 projection
 자체가 독립적인 생성 시각 진위를 보장하지는 않는다. 후속 repository coordinator는 동일 lock 아래 저장된
 current head event를 공급해야 한다. mark append와 bucket equity event, 모든 position mark-head event/state를

@@ -116,7 +116,7 @@ test("valuation application rejects stale, ahead, and corrupt risk states", () =
   );
 });
 
-test("valuation application rejects an inapplicable risk-state delta", () => {
+test("valuation application rejects active positions in an empty risk epoch", () => {
   const fixture = applicationFixture();
   const empty = createBucketRiskState({
     riskStateEpochId: "epoch-1",
@@ -138,7 +138,43 @@ test("valuation application rejects an inapplicable risk-state delta", () => {
         ...fixture.input,
         currentRiskState: empty
       }),
-    /cannot change an empty epoch balance/
+    /active positions cannot use an empty risk epoch/
+  );
+
+  const hynixNetZeroEvidence = priceEvidence({
+    symbol: "000660",
+    priceKrw: 140,
+    sourceRefs: ["hynix-net-zero-source"]
+  });
+  const netZeroMark = createBucketValuationMarkRecord({
+    portfolioId: fixture.mark.portfolioId,
+    bucket: fixture.mark.bucket,
+    policyHash: fixture.mark.policyHash,
+    positionInputs: fixture.mark.positionInputs.map((position) =>
+      position.symbol === "000660"
+        ? {
+            ...position,
+            currentPriceKrw: hynixNetZeroEvidence.priceKrw,
+            currentPriceEvidenceRef: hynixNetZeroEvidence.evidenceRef
+          }
+        : position
+    ),
+    equityDeltaKrw: 0,
+    asOf: fixture.mark.asOf,
+    createdAt: fixture.mark.createdAt
+  });
+  assert.throws(
+    () =>
+      resolveBucketValuationApplication({
+        ...fixture.input,
+        value: netZeroMark,
+        currentPriceEvidence: [
+          fixture.samsungEvidence,
+          hynixNetZeroEvidence
+        ],
+        currentRiskState: empty
+      }),
+    /active positions cannot use an empty risk epoch/
   );
 });
 
