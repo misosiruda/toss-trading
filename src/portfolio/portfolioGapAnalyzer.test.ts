@@ -190,6 +190,30 @@ test("analyzer rejects stale scope and noncanonical complete bucket inputs", () 
   assert.equal(Object.isFrozen(analyzePortfolioGaps(valid).bucketGaps), true);
 });
 
+test("analyzer rejects negative-zero opening capacity counts", () => {
+  for (const field of [
+    "activePositionCount",
+    "pendingReservationCount",
+    "mandateBoundUnusedSlotCount"
+  ] as const) {
+    const valid = input();
+    assert.throws(
+      () =>
+        analyzePortfolioGaps({
+          ...valid,
+          exposure: {
+            ...valid.exposure,
+            bucketOpeningCapacities:
+              valid.exposure.bucketOpeningCapacities.map((capacity, index) =>
+                index === 0 ? { ...capacity, [field]: -0 } : capacity
+              )
+          }
+        }),
+      /count must not be negative zero/
+    );
+  }
+});
+
 function input(
   overrides: {
     cashKrw?: number;

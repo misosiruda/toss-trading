@@ -17,7 +17,11 @@ const nonNegativeAmountSchema = z
   .int()
   .nonnegative()
   .refine((value) => !Object.is(value, -0), "amount must not be negative zero");
-const nonNegativeIntegerSchema = z.number().int().nonnegative();
+const nonNegativeIntegerSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .refine((value) => !Object.is(value, -0), "count must not be negative zero");
 const positiveIntegerSchema = z.number().int().positive();
 
 const bucketExposureSchema = z
