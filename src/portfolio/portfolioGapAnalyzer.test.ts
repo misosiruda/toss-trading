@@ -168,6 +168,14 @@ test("analyzer rejects stale scope and noncanonical complete bucket inputs", () 
     () =>
       analyzePortfolioGaps({
         ...valid,
+        exposure: { ...valid.exposure, portfolioId: " portfolio-1 " }
+      }),
+    /identifier must already be canonical/
+  );
+  assert.throws(
+    () =>
+      analyzePortfolioGaps({
+        ...valid,
         exposure: { ...valid.exposure, portfolioId: "other" }
       }),
     /scope does not match/

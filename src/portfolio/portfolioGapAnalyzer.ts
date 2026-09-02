@@ -11,7 +11,14 @@ import {
   type RuntimePortfolioPolicyRecord
 } from "./runtimePortfolioPolicy.js";
 
-const identifierSchema = z.string().trim().min(1).max(160);
+const identifierSchema = z
+  .string()
+  .min(1)
+  .max(160)
+  .refine(
+    (value) => value === value.trim(),
+    "identifier must already be canonical"
+  );
 const nonNegativeAmountSchema = z
   .number()
   .int()
