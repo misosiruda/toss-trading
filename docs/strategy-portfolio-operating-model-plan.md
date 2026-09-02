@@ -3046,6 +3046,16 @@ fill 또는 broker mutation을 만들지 않는다. cadence orchestrator가 due 
 - policy의 `selectionTrigger`별 request 생성 조건
 - selection request append-only repository
 
+첫 분할은 active runtime policy와 같은 portfolio/policy scope의 verified exposure 및 opening capacity
+입력에서 bucket gap을 계산하는 순수 `analyzePortfolioGaps`를 구현한다. bucket exposure와 capacity는
+canonical complete bucket 순서를 강제하고, slot은 active position, pending reservation,
+mandate-bound unused reservation을 모두 점유한 것으로 계산한다. `below_min`은 min gap만,
+`entry_floor_on_due_cycle`은 due bucket의 entry-floor gap만 selection trigger로 인정하며 target gap은
+관찰용으로만 남긴다. cash opening capacity는 target cash ratio와 절대 minimum 중 큰 reserve 및 pending
+BUY exposure를 차감해 계산하고, reserve 부족이나 available slot 부재 시 bucket의
+`maximumAdditionalExposureKrw`를 0으로 fail-closed한다. immutable sizing snapshot과 mark provenance,
+selection request 저장은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
