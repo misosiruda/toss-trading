@@ -27,6 +27,10 @@ import {
   compareText,
   hashCanonicalPayload
 } from "./runtimePolicyContracts.js";
+import {
+  assertNoPendingBucketValuationApplicationTransaction,
+  createBucketValuationApplicationTransactionPath
+} from "./bucketValuationApplicationTransactionBoundary.js";
 
 export const BUCKET_POSITION_MARK_HEAD_EVENTS_FILE_NAME =
   "bucket-position-mark-head-events.jsonl";
@@ -98,6 +102,7 @@ export class BucketPositionMarkHeadFileRepository {
   private readonly statePath: string;
   private readonly transactionPath: string;
   private readonly lockPath: string;
+  private readonly applicationTransactionPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryDelayMs: number;
 
@@ -110,6 +115,8 @@ export class BucketPositionMarkHeadFileRepository {
     this.statePath = paths.statePath;
     this.transactionPath = paths.transactionPath;
     this.lockPath = paths.lockPath;
+    this.applicationTransactionPath =
+      createBucketValuationApplicationTransactionPath(baseDir);
     this.lockTimeoutMs = positiveInteger(
       options.lockTimeoutMs ?? 5_000,
       "lockTimeoutMs"
@@ -140,6 +147,9 @@ export class BucketPositionMarkHeadFileRepository {
   async append(value: unknown): Promise<BucketPositionMarkHeadEvent> {
     const candidate = cloneEvent(value);
     return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
       await this.recoverPendingTransactionUnderLock();
       const eventLog = await this.readEventLogUnderLock();
       await this.assertStoredStateMatchesReplay(eventLog.snapshot.states);
@@ -179,6 +189,9 @@ export class BucketPositionMarkHeadFileRepository {
     ) => Promise<T> | T
   ): Promise<T> {
     return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
       await this.recoverPendingTransactionUnderLock();
       const eventLog = await this.readEventLogUnderLock();
       await this.assertStoredStateMatchesReplay(eventLog.snapshot.states);

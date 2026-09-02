@@ -2983,6 +2983,32 @@ current head event를 공급해야 한다. mark append와 bucket equity event, �
 단일 durable transaction으로 commit하는 repository coordinator와 runner 연결은 후속 분할 전까지 구현
 완료로 간주하지 않는다.
 
+스물한 번째 분할은 `BucketValuationApplicationFileRepository`가 verified valuation mark,
+bucket equity event/risk state와 모든 position mark-head event/state를 하나의 durable aggregate
+transaction으로 commit하도록 구현한다. coordinator는 mark, equity, position repository의 기존
+cross-process lock과 immutable source-price evidence read lock 네 개를 경로 순서대로 모두 획득한 뒤
+저장된 event log와 snapshot을 다시 replay하고,
+caller가 전달한 risk/head snapshot이 아니라 lock 안에서 해소한 current state를 projection 입력으로
+사용한다. aggregate journal은 세 append-only log의 이전 byte length/raw SHA-256, 두 state document의
+이전 hash, complete application graph와 resulting states를 결속하며 durable journal 저장이 commit
+decision이다. restart recovery는 각 log가 이전 prefix와 journal suffix의 검증된 prefix인지, state
+document가 이전 또는 resulting bytes인지, 전체 graph와 replay 결과가 일치하는지 확인한 뒤 모든 target을
+roll-forward하고 journal을 제거한다. 예상하지 않은 later bytes, prefix/hash drift, 불완전 graph,
+component repository의 pending journal과 abandoned lock은 자동 보정하지 않고 fail-closed한다.
+
+aggregate journal이 남은 동안 기존 mark/equity/position 단일 repository reader와 writer도 동일 lock 획득
+후 `requires aggregate recovery`로 중단하므로 cross-repository partial state를 노출하지 않는다. crash로
+남은 lock은 운영자가 process 종료와 소유권을 확인한 뒤 별도 절차로 정리해야 하며 coordinator가 stale
+lock을 추정해 삭제하지 않는다. `SourcePriceEvidenceRecord`는 이미 별도 immutable dependency로 검증되며
+이번 transaction의 mutation 대상에는 포함하지 않는다. 대신 coordinator는 initial apply, recovery,
+exact retry와 snapshot read에서 mark의 모든 current evidence ref를 durable evidence log에서 exact-resolve하고
+record의 scope/value/observed instant를 다시 검증해 dangling provenance를 fail-closed한다. exact retry는
+저장된 complete application graph와 durable evidence를 검증한 뒤 같은 결과로 수렴한다. standalone mark
+repository가 exact mark를 먼저 저장했지만 application event graph가 아직 전혀 없다면 aggregate journal의
+`recordWriteMode = already_stored`로 기존 mark를 prefix에 결속하고 equity/position graph만 원자 완료한다.
+graph 일부만 존재하거나 stored mark가 다르면 fail-closed한다. runner가 verified mark 생성과 이 coordinator
+호출을 orchestration하는 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
