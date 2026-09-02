@@ -18,6 +18,10 @@ const canonicalIdentifierSchema = z
   .refine(
     (value) => value === value.trim(),
     "identifier must already be canonical"
+  )
+  .refine(
+    (value) => !containsLoneSurrogate(value),
+    "identifier must use well-formed Unicode"
   );
 const positiveAmountSchema = z
   .number()
@@ -243,6 +247,24 @@ function safeAdd(left: number, right: number): number {
     throw new Error("pending portfolio action exposure total is not a safe integer");
   }
   return total;
+}
+
+function containsLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const charCode = value.charCodeAt(index);
+    if (charCode >= 0xd800 && charCode <= 0xdbff) {
+      const nextCharCode = value.charCodeAt(index + 1);
+      if (nextCharCode >= 0xdc00 && nextCharCode <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return true;
+    }
+    if (charCode >= 0xdc00 && charCode <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function deepFreeze<Value>(value: Value): Value {

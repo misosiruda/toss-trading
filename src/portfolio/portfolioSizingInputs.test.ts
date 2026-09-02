@@ -73,6 +73,13 @@ test("valuation inputs fail closed for transformed and unsafe values", () => {
   assert.throws(
     () =>
       canonicalizePortfolioValuationInputs([
+        markInput({ symbol: "\ud800" })
+      ]),
+    /identifier must use well-formed Unicode/
+  );
+  assert.throws(
+    () =>
+      canonicalizePortfolioValuationInputs([
         markInput({ priceKrw: Number.POSITIVE_INFINITY })
       ]),
     /expected number/
