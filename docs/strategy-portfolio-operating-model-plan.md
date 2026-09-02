@@ -3076,6 +3076,16 @@ BUY는 opening capacity reservation ID/hash, SELL은 remaining quantity와 price
 safe-integer 계산한다. exact mark/FX coverage, plan/reservation/fill chain replay와 snapshot 결속은 후속
 분할 전까지 구현 완료로 간주하지 않는다.
 
+네 번째 분할은 canonical `VirtualPortfolio`, verified exposure, valuation/pending input을 하나의
+immutable `PortfolioSizingSnapshot`으로 결속한다. position은 `(market, symbol, strategyBucket)`
+identity로 bucket 분할을 보존하면서 stable order와 duplicate 거절을 적용하고, nested set 성격의
+risk tag와 price source ref도 정렬한다. snapshot hash는 ID/hash를 제외한 complete payload에서
+계산하고 ID는 hash-derived identity로 만든다. portfolio scope, as-of chronology, cash와 pending
+BUY/SELL exposure total mismatch는 fail-closed하며 virtual portfolio/position/price 시각도 numeric
+offset 또는 UTC를 요구한다. exact mark/FX coverage와 virtual NAV/dimension
+재계산, plan/fill/reservation chain replay 및 append-only persistence는 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
