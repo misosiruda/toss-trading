@@ -163,6 +163,58 @@ test("valuation application repository requires durable evidence on apply and re
   });
 });
 
+test("valuation application repository completes a standalone stored mark", async () => {
+  await withFixture(async (fixture) => {
+    const markRepository = new BucketValuationMarkFileRepository(
+      fixture.baseDir
+    );
+    await markRepository.append(fixture.mark);
+    const repository = new BucketValuationApplicationFileRepository(
+      fixture.baseDir
+    );
+
+    const applied = await repository.apply(fixture.input);
+    const retried = await repository.apply(fixture.input);
+
+    assert.equal(applied.alreadyApplied, false);
+    assert.equal(retried.alreadyApplied, true);
+    assert.deepEqual(await markRepository.readAll(), [fixture.mark]);
+    const snapshot = await repository.readSnapshot();
+    assert.equal(snapshot.equity.events.length, 2);
+    assert.equal(snapshot.positions.events.length, 4);
+  });
+});
+
+test("valuation application recovery completes a standalone stored mark", async () => {
+  await withFixture(async (fixture) => {
+    await new BucketValuationMarkFileRepository(fixture.baseDir).append(
+      fixture.mark
+    );
+    const pending = await createPendingFixture(fixture, "already_stored");
+    await writeFile(
+      fixture.paths.transactionPath,
+      `${JSON.stringify(pending.transaction, null, 2)}\n`,
+      "utf8"
+    );
+    await appendFile(
+      fixture.paths.equityEventsPath,
+      pending.equityBytes.subarray(
+        0,
+        Math.floor(pending.equityBytes.length / 2)
+      )
+    );
+
+    const recovered =
+      await new BucketValuationApplicationFileRepository(
+        fixture.baseDir
+      ).readSnapshot();
+
+    assert.deepEqual(recovered.records, [fixture.mark]);
+    assert.equal(recovered.equity.events.length, 2);
+    assert.equal(recovered.positions.events.length, 4);
+  });
+});
+
 test("valuation application recovery rolls every partial target forward", async () => {
   await withFixture(async (fixture) => {
     const pending = await createPendingFixture(fixture);
@@ -398,7 +450,10 @@ function applyFromChild(
   });
 }
 
-async function createPendingFixture(fixture: Fixture) {
+async function createPendingFixture(
+  fixture: Fixture,
+  recordWriteMode: "append" | "already_stored" = "append"
+) {
   const equitySnapshot = await new BucketEquityFileRepository(
     fixture.baseDir
   ).readSnapshot();
@@ -445,6 +500,7 @@ async function createPendingFixture(fixture: Fixture) {
     previousPositionEventLogHash: hashBytes(previousPositionRaw),
     previousRiskStateDocumentHash: hashBytes(previousRiskStateRaw),
     previousPositionStateDocumentHash: hashBytes(previousPositionStateRaw),
+    recordWriteMode,
     record: fixture.mark,
     bucketEquityEvent: application.bucketEquityEvent,
     positionMarkHeadEvents: application.positionMarkHeadEvents,
@@ -458,7 +514,10 @@ async function createPendingFixture(fixture: Fixture) {
     },
     previousEquityRaw,
     previousPositionRaw,
-    markBytes: jsonLines([fixture.mark]),
+    markBytes:
+      recordWriteMode === "append"
+        ? jsonLines([fixture.mark])
+        : Buffer.alloc(0),
     equityBytes: jsonLines([application.bucketEquityEvent]),
     positionBytes: jsonLines(application.positionMarkHeadEvents),
     resultingRiskStateBytes: stateBytes(resultingRiskStates)

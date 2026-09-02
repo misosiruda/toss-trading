@@ -3003,8 +3003,11 @@ lock을 추정해 삭제하지 않는다. `SourcePriceEvidenceRecord`는 이미 
 이번 transaction의 mutation 대상에는 포함하지 않는다. 대신 coordinator는 initial apply, recovery,
 exact retry와 snapshot read에서 mark의 모든 current evidence ref를 durable evidence log에서 exact-resolve하고
 record의 scope/value/observed instant를 다시 검증해 dangling provenance를 fail-closed한다. exact retry는
-저장된 complete application graph와 durable evidence를 검증한 뒤 같은 결과로 수렴한다. runner가 verified
-mark 생성과 이 coordinator 호출을 orchestration하는 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+저장된 complete application graph와 durable evidence를 검증한 뒤 같은 결과로 수렴한다. standalone mark
+repository가 exact mark를 먼저 저장했지만 application event graph가 아직 전혀 없다면 aggregate journal의
+`recordWriteMode = already_stored`로 기존 mark를 prefix에 결속하고 equity/position graph만 원자 완료한다.
+graph 일부만 존재하거나 stored mark가 다르면 fail-closed한다. runner가 verified mark 생성과 이 coordinator
+호출을 orchestration하는 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 

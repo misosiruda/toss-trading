@@ -78,6 +78,7 @@ const pendingTransactionSchema = z
     previousPositionEventLogHash: sha256HashSchema,
     previousRiskStateDocumentHash: sha256HashSchema,
     previousPositionStateDocumentHash: sha256HashSchema,
+    recordWriteMode: z.enum(["append", "already_stored"]),
     record: z.unknown(),
     bucketEquityEvent: z.unknown(),
     positionMarkHeadEvents: z.array(z.unknown()).min(1).max(10_000),
@@ -97,6 +98,7 @@ interface PendingBucketValuationApplicationTransaction {
   previousPositionEventLogHash: z.infer<typeof sha256HashSchema>;
   previousRiskStateDocumentHash: z.infer<typeof sha256HashSchema>;
   previousPositionStateDocumentHash: z.infer<typeof sha256HashSchema>;
+  recordWriteMode: "append" | "already_stored";
   record: BucketValuationMarkRecord;
   bucketEquityEvent: BucketEquityEvent;
   positionMarkHeadEvents: readonly BucketPositionMarkHeadEvent[];
@@ -227,14 +229,23 @@ export class BucketValuationApplicationFileRepository {
           candidate.bucketValuationMarkRecordId ===
           record.bucketValuationMarkRecordId
       );
+      let recordWriteMode: PendingBucketValuationApplicationTransaction[
+        "recordWriteMode"
+      ] = "append";
       if (existing !== undefined) {
         if (!isDeepStrictEqual(existing, record)) {
           throw new Error("bucket valuation application mark ID collision");
         }
-        await syncSnapshotFiles(this.paths);
-        return resolvePersistedApplication(snapshot, existing, true);
-      }
-      if (
+        const persisted = resolvePersistedApplicationIfComplete(
+          snapshot,
+          existing
+        );
+        if (persisted !== undefined) {
+          await syncSnapshotFiles(this.paths);
+          return persisted;
+        }
+        recordWriteMode = "already_stored";
+      } else if (
         snapshot.records.some(
           (candidate) => markOriginKey(candidate) === markOriginKey(record)
         )
@@ -267,7 +278,8 @@ export class BucketValuationApplicationFileRepository {
         snapshot,
         application,
         nextEquity.states,
-        nextPositions.states
+        nextPositions.states,
+        recordWriteMode
       );
       await writeDurableJsonDocument(this.paths.transactionPath, transaction);
       await this.rollForwardTransactionUnderLocks(transaction);
@@ -293,7 +305,10 @@ export class BucketValuationApplicationFileRepository {
       riskStateRaw: await readOptionalBuffer(this.paths.riskStatePath),
       positionStateRaw: await readOptionalBuffer(this.paths.positionStatePath)
     };
-    const markBytes = jsonLines([transaction.record]);
+    const markBytes =
+      transaction.recordWriteMode === "append"
+        ? jsonLines([transaction.record])
+        : Buffer.alloc(0);
     const equityBytes = jsonLines([transaction.bucketEquityEvent]);
     const positionBytes = jsonLines(transaction.positionMarkHeadEvents);
     const markPrevious = validateAppendTarget({
@@ -319,7 +334,11 @@ export class BucketValuationApplicationFileRepository {
     });
 
     const previousRecords = parseMarkLogBuffer(markPrevious);
-    assertMarkCanAppend(previousRecords, transaction.record);
+    if (transaction.recordWriteMode === "append") {
+      assertMarkCanAppend(previousRecords, transaction.record);
+    } else {
+      assertMarkAlreadyStored(previousRecords, transaction.record);
+    }
     const previousEquity = parseEquityEventLogBuffer(equityPrevious);
     const expectedEquity = foldBucketEquityHistory([
       ...previousEquity.events,
@@ -491,7 +510,10 @@ function createPendingTransaction(
   snapshot: RepositorySnapshotUnderLock,
   application: ResolvedBucketValuationApplication,
   resultingRiskStates: readonly BucketRiskState[],
-  resultingPositionStates: readonly BucketPositionMarkHeadState[]
+  resultingPositionStates: readonly BucketPositionMarkHeadState[],
+  recordWriteMode: PendingBucketValuationApplicationTransaction[
+    "recordWriteMode"
+  ]
 ): PendingBucketValuationApplicationTransaction {
   const payload = {
     schemaVersion: 1 as const,
@@ -503,6 +525,7 @@ function createPendingTransaction(
     previousPositionEventLogHash: hashBytes(snapshot.positionEventRaw),
     previousRiskStateDocumentHash: hashBytes(snapshot.riskStateRaw),
     previousPositionStateDocumentHash: hashBytes(snapshot.positionStateRaw),
+    recordWriteMode,
     record: application.record,
     bucketEquityEvent: application.bucketEquityEvent,
     positionMarkHeadEvents: application.positionMarkHeadEvents,
@@ -717,6 +740,26 @@ function resolvePersistedApplication(
   });
 }
 
+function resolvePersistedApplicationIfComplete(
+  snapshot: RepositorySnapshotUnderLock,
+  record: BucketValuationMarkRecord
+): PersistedBucketValuationApplication | undefined {
+  const equityEventCount = snapshot.equity.events.filter(
+    (event) =>
+      event.eventType === "valuation" &&
+      event.bucketValuationMarkRecordId === record.bucketValuationMarkRecordId
+  ).length;
+  const positionEventCount = snapshot.positions.events.filter(
+    (event) =>
+      event.eventType === "valuation_applied" &&
+      event.bucketValuationMarkRecordId === record.bucketValuationMarkRecordId
+  ).length;
+  if (equityEventCount === 0 && positionEventCount === 0) {
+    return undefined;
+  }
+  return resolvePersistedApplication(snapshot, record, true);
+}
+
 function persistedApplication(
   application: ResolvedBucketValuationApplication,
   alreadyApplied: boolean
@@ -874,6 +917,22 @@ function assertMarkCanAppend(
     )
   ) {
     throw new Error("bucket valuation application mark origin collision");
+  }
+}
+
+function assertMarkAlreadyStored(
+  records: readonly BucketValuationMarkRecord[],
+  record: BucketValuationMarkRecord
+): void {
+  const matches = records.filter(
+    (candidate) =>
+      candidate.bucketValuationMarkRecordId ===
+      record.bucketValuationMarkRecordId
+  );
+  if (matches.length !== 1 || !isDeepStrictEqual(matches[0], record)) {
+    throw new Error(
+      "bucket valuation application stored mark does not match journal"
+    );
   }
 }
 
