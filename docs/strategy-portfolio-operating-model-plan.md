@@ -3089,6 +3089,17 @@ hash 전에 거절한다. exact mark/FX coverage와 virtual NAV/dimension
 재계산, plan/fill/reservation chain replay 및 append-only persistence는 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+다섯 번째 분할은 저장된 sizing snapshot을 downstream sizing/risk input으로 사용하기 전에
+`resolvePortfolioSizingSnapshot`으로 두 hash를 재검증하고 valuation/exposure를 독립 replay한다.
+보유 `(market, symbol)`마다 mark가 정확히 하나 있어야 하며 split-bucket position은 같은 mark를
+공유한다. KR 보유는 KRW, US 보유는 USD로 분류하고 US exposure가 있으면 exact `USD/KRW` FX
+provenance를 요구하며 unused mark/FX도 거절한다. resolver는 mark와 quantity에서 virtual NAV 및
+bucket/symbol/market/sector/country/currency exposure를 safe-integer로 재계산하고 저장 exposure
+payload/hash와 exact-match한다. strategy bucket, sector, region이 없는 position과 embedded
+market price/value/PnL 불일치는 fail-closed한다. FX rate는 이미 KRW로 정규화된 `priceKrw`의
+conversion provenance이므로 이 분할에서 mark에 다시 곱하지 않는다. plan/fill/reservation chain
+replay와 append-only snapshot/request persistence는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
