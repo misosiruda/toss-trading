@@ -17,7 +17,7 @@ test("portfolio exposure snapshot canonicalizes dimensions and hashes full paylo
       { market: "KR", symbol: "005930", exposureKrw: 300_000 }
     ],
     sectorExposureKrw: { Technology: 200_000, Electronics: 300_000 },
-    countryExposureKrw: { US: 200_000, KR: 300_000, UNUSED: 0 },
+    countryExposureKrw: { US: 200_000, KR: 300_000 },
     currencyExposureKrw: { USD: 200_000, KRW: 300_000 }
   });
 
@@ -203,6 +203,17 @@ test("portfolio exposure snapshot fails closed for noncanonical values", () => {
         virtualNetWorthKrw: Number.MAX_SAFE_INTEGER + 1
       }),
     /safe integer/
+  );
+  assert.throws(
+    () =>
+      createPortfolioExposureSnapshot({
+        ...snapshotInput(),
+        sectorExposureKrw: {
+          ...snapshotInput().sectorExposureKrw,
+          UNUSED: 0
+        }
+      }),
+    />0/
   );
 });
 

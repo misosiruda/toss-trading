@@ -171,9 +171,8 @@ function canonicalExposureMap(value: unknown): unknown {
   const entries = Object.entries(value)
     .map(([key, amount]) => [
       canonicalKeySchema.parse(key),
-      nonNegativeAmountSchema.parse(amount)
+      positiveAmountSchema.parse(amount)
     ] as const)
-    .filter(([, amount]) => amount > 0)
     .sort(([left], [right]) => compareText(left, right));
   return Object.fromEntries(entries);
 }
