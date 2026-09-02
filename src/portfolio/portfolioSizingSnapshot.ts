@@ -232,11 +232,26 @@ function assertSnapshotBindings(
   if (payload.virtualPortfolio.portfolioId !== payload.portfolioId) {
     throw new Error("virtual portfolio does not match snapshot portfolio scope");
   }
-  assertNotAfter(payload.virtualPortfolio.updatedAt, payload.asOf, "portfolio");
+  assertNotAfter(
+    payload.virtualPortfolio.updatedAt,
+    payload.asOf,
+    "portfolio",
+    "snapshot asOf"
+  );
   for (const position of payload.virtualPortfolio.positions) {
-    assertNotAfter(position.updatedAt, payload.virtualPortfolio.updatedAt, "position");
+    assertNotAfter(
+      position.updatedAt,
+      payload.virtualPortfolio.updatedAt,
+      "position",
+      "portfolio updatedAt"
+    );
     if (position.priceUpdatedAt !== undefined) {
-      assertNotAfter(position.priceUpdatedAt, payload.asOf, "position price");
+      assertNotAfter(
+        position.priceUpdatedAt,
+        position.updatedAt,
+        "position price",
+        "position updatedAt"
+      );
     }
     if (position.priceStaleAfter !== undefined) {
       offsetQualifiedIsoDateTimeSchema.parse(position.priceStaleAfter);
@@ -249,10 +264,20 @@ function assertSnapshotBindings(
     }
   }
   for (const valuation of payload.valuationInputs) {
-    assertNotAfter(valuation.evidenceAsOf, payload.asOf, "valuation evidence");
+    assertNotAfter(
+      valuation.evidenceAsOf,
+      payload.asOf,
+      "valuation evidence",
+      "snapshot asOf"
+    );
   }
   for (const action of payload.pendingActionInputs) {
-    assertNotAfter(action.asOf, payload.asOf, "pending action");
+    assertNotAfter(
+      action.asOf,
+      payload.asOf,
+      "pending action",
+      "snapshot asOf"
+    );
   }
   if (payload.exposureSnapshot.cashKrw !== payload.virtualPortfolio.cashKrw) {
     throw new Error("exposure cash does not match virtual portfolio cash");
@@ -268,10 +293,15 @@ function assertSnapshotBindings(
   }
 }
 
-function assertNotAfter(value: string, asOf: string, label: string): void {
+function assertNotAfter(
+  value: string,
+  boundary: string,
+  label: string,
+  boundaryLabel: string
+): void {
   offsetQualifiedIsoDateTimeSchema.parse(value);
-  if (Date.parse(value) > Date.parse(asOf)) {
-    throw new Error(`${label} cannot be after snapshot asOf`);
+  if (Date.parse(value) > Date.parse(boundary)) {
+    throw new Error(`${label} cannot be after ${boundaryLabel}`);
   }
 }
 

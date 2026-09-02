@@ -251,6 +251,23 @@ test("portfolio sizing snapshot rejects normalized and malformed position identi
       }),
     /portfolio cash must not be negative zero/
   );
+  assert.throws(
+    () =>
+      createPortfolioSizingSnapshot({
+        ...input,
+        virtualPortfolio: {
+          ...portfolio,
+          positions: [
+            {
+              ...portfolio.positions[0],
+              priceUpdatedAt: "2026-09-01T23:00:01.000Z"
+            },
+            portfolio.positions[1]
+          ]
+        }
+      }),
+    /position price cannot be after position updatedAt/
+  );
 });
 
 function snapshotInput(): CreatePortfolioSizingSnapshotInput {
