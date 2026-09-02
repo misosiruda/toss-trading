@@ -7,6 +7,10 @@ import {
   type BucketValuationMarkRecord,
   parseBucketValuationMarkRecord
 } from "./bucketValuationMark.js";
+import {
+  assertNoPendingBucketValuationApplicationTransaction,
+  createBucketValuationApplicationTransactionPath
+} from "./bucketValuationApplicationTransactionBoundary.js";
 
 export const BUCKET_VALUATION_MARK_RECORDS_FILE_NAME =
   "bucket-valuation-mark-records.jsonl";
@@ -33,6 +37,7 @@ export function createBucketValuationMarkPaths(baseDir: string): {
 export class BucketValuationMarkFileRepository {
   private readonly recordsPath: string;
   private readonly lockPath: string;
+  private readonly applicationTransactionPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryDelayMs: number;
 
@@ -43,6 +48,8 @@ export class BucketValuationMarkFileRepository {
     const paths = createBucketValuationMarkPaths(baseDir);
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
+    this.applicationTransactionPath =
+      createBucketValuationApplicationTransactionPath(baseDir);
     this.lockTimeoutMs = positiveInteger(
       options.lockTimeoutMs ?? 5_000,
       "lockTimeoutMs"
@@ -54,7 +61,12 @@ export class BucketValuationMarkFileRepository {
   }
 
   async readAll(): Promise<readonly BucketValuationMarkRecord[]> {
-    return this.withLock(async () => this.readAllUnderLock());
+    return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
+      return this.readAllUnderLock();
+    });
   }
 
   async resolveById(
@@ -74,6 +86,9 @@ export class BucketValuationMarkFileRepository {
   async append(value: unknown): Promise<BucketValuationMarkRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
       const records = await this.readAllUnderLock();
       const existing = records.find(
         (record) =>

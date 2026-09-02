@@ -27,6 +27,10 @@ import {
   compareText,
   hashCanonicalPayload
 } from "./runtimePolicyContracts.js";
+import {
+  assertNoPendingBucketValuationApplicationTransaction,
+  createBucketValuationApplicationTransactionPath
+} from "./bucketValuationApplicationTransactionBoundary.js";
 
 export const BUCKET_EQUITY_EVENTS_FILE_NAME = "bucket-equity-events.jsonl";
 export const BUCKET_RISK_STATE_FILE_NAME = "bucket-risk-state.json";
@@ -96,6 +100,7 @@ export class BucketEquityFileRepository {
   private readonly statePath: string;
   private readonly transactionPath: string;
   private readonly lockPath: string;
+  private readonly applicationTransactionPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryDelayMs: number;
 
@@ -108,6 +113,8 @@ export class BucketEquityFileRepository {
     this.statePath = paths.statePath;
     this.transactionPath = paths.transactionPath;
     this.lockPath = paths.lockPath;
+    this.applicationTransactionPath =
+      createBucketValuationApplicationTransactionPath(baseDir);
     this.lockTimeoutMs = positiveInteger(
       options.lockTimeoutMs ?? 5_000,
       "lockTimeoutMs"
@@ -125,6 +132,9 @@ export class BucketEquityFileRepository {
   async append(value: unknown): Promise<BucketEquityEvent> {
     const candidate = cloneEvent(value);
     return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
       await this.recoverPendingTransactionUnderLock();
       const eventLog = await this.readEventLogUnderLock();
       await this.assertStoredStateMatchesReplay(eventLog.snapshot.states);
@@ -161,6 +171,9 @@ export class BucketEquityFileRepository {
     operation: (snapshot: BucketEquityHistorySnapshot) => Promise<T> | T
   ): Promise<T> {
     return this.withLock(async () => {
+      await assertNoPendingBucketValuationApplicationTransaction(
+        this.applicationTransactionPath
+      );
       await this.recoverPendingTransactionUnderLock();
       const eventLog = await this.readEventLogUnderLock();
       await this.assertStoredStateMatchesReplay(eventLog.snapshot.states);
