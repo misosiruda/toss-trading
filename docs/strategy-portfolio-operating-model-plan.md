@@ -3109,6 +3109,15 @@ torn/blank/corrupt line을 거절한다. thread/process writer는 exclusive lock
 직렬화하고 abandoned lock은 자동 제거하지 않는다. pending plan/fill/reservation chain replay와
 selection request contract/repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+일곱 번째 분할은 `BucketSelectionRequest` strict contract를 구현한다. request hash는
+request ID/hash/createdAt을 제외한 cycle/trigger, portfolio snapshot, policy, bucket gap/slot/cap,
+cutoff 전체 semantic payload에서 계산하고 ID는 hash에서 파생한다. gap, available slot,
+maximum additional exposure는 양수 safe integer여야 하고 additional exposure는 gap을 넘을 수 없다.
+`evidenceCutoffAt <= asOf <= createdAt`을 offset-qualified instant로 검증하며 normalized identifier,
+malformed Unicode, unknown field와 stored identity tamper를 거절한다. createdAt은 semantic retry
+identity에서 제외한다. snapshot/policy/gap 재해소, trigger 종류별 cutoff 파생과 append-only request
+repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
