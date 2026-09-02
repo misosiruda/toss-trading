@@ -103,43 +103,7 @@ export class SourcePriceEvidenceFileRepository {
       }
       throw error;
     }
-    if (raw.length > 0 && !raw.endsWith("\n")) {
-      throw new Error("source price evidence file has a torn final line");
-    }
-    const lines = raw.split(/\r?\n/);
-    lines.pop();
-    const records: SourcePriceEvidenceRecord[] = [];
-    const refs = new Set<string>();
-    const origins = new Set<string>();
-    for (const [index, line] of lines.entries()) {
-      if (line.length === 0) {
-        throw new Error(
-          `source price evidence file contains corrupt line ${index + 1}`
-        );
-      }
-      let record: SourcePriceEvidenceRecord;
-      try {
-        record = parseSourcePriceEvidenceRecord(JSON.parse(line));
-      } catch (error) {
-        throw new Error(
-          `source price evidence file contains corrupt line ${index + 1}`,
-          { cause: error }
-        );
-      }
-      if (refs.has(record.evidenceRef)) {
-        throw new Error("source price evidence file contains a duplicate ref");
-      }
-      const origin = originKey(record);
-      if (origins.has(origin)) {
-        throw new Error(
-          "source price evidence file contains a duplicate origin"
-        );
-      }
-      refs.add(record.evidenceRef);
-      origins.add(origin);
-      records.push(record);
-    }
-    return Object.freeze(records);
+    return parseSourcePriceEvidenceRecords(raw);
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -157,6 +121,49 @@ export class SourcePriceEvidenceFileRepository {
       await release();
     }
   }
+}
+
+/** Parses and independently verifies a complete durable evidence log. */
+export function parseSourcePriceEvidenceRecords(
+  raw: string
+): readonly SourcePriceEvidenceRecord[] {
+  if (raw.length > 0 && !raw.endsWith("\n")) {
+    throw new Error("source price evidence file has a torn final line");
+  }
+  const lines = raw.split(/\r?\n/);
+  lines.pop();
+  const records: SourcePriceEvidenceRecord[] = [];
+  const refs = new Set<string>();
+  const origins = new Set<string>();
+  for (const [index, line] of lines.entries()) {
+    if (line.length === 0) {
+      throw new Error(
+        `source price evidence file contains corrupt line ${index + 1}`
+      );
+    }
+    let record: SourcePriceEvidenceRecord;
+    try {
+      record = parseSourcePriceEvidenceRecord(JSON.parse(line));
+    } catch (error) {
+      throw new Error(
+        `source price evidence file contains corrupt line ${index + 1}`,
+        { cause: error }
+      );
+    }
+    if (refs.has(record.evidenceRef)) {
+      throw new Error("source price evidence file contains a duplicate ref");
+    }
+    const origin = originKey(record);
+    if (origins.has(origin)) {
+      throw new Error(
+        "source price evidence file contains a duplicate origin"
+      );
+    }
+    refs.add(record.evidenceRef);
+    origins.add(origin);
+    records.push(record);
+  }
+  return Object.freeze(records);
 }
 
 function originKey(record: SourcePriceEvidenceRecord): string {

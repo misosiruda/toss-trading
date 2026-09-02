@@ -36,6 +36,7 @@ import { createBucketValuationMarkRecord } from "./bucketValuationMark.js";
 import { BucketValuationMarkFileRepository } from "./bucketValuationMarkFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
+import { SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}` as const;
 const HASH_B = `sha256:${"b".repeat(64)}` as const;
@@ -123,6 +124,42 @@ test("valuation application repository serializes exact retries across processes
     assert.equal(snapshot.records.length, 1);
     assert.equal(snapshot.equity.events.length, 2);
     assert.equal(snapshot.positions.events.length, 4);
+  });
+});
+
+test("valuation application repository requires durable evidence on apply and retry", async () => {
+  await withFixture(async (fixture) => {
+    const repository = new BucketValuationApplicationFileRepository(
+      fixture.baseDir
+    );
+    await unlink(fixture.paths.evidenceRecordsPath);
+
+    await assert.rejects(
+      () => repository.apply(fixture.input),
+      /durable price evidence does not resolve exactly once/
+    );
+    assert.deepEqual(
+      await new BucketValuationMarkFileRepository(fixture.baseDir).readAll(),
+      []
+    );
+
+    const evidenceRepository = new SourcePriceEvidenceFileRepository(
+      fixture.baseDir
+    );
+    for (const evidence of fixture.evidence) {
+      await evidenceRepository.append(evidence);
+    }
+    await repository.apply(fixture.input);
+    await unlink(fixture.paths.evidenceRecordsPath);
+
+    await assert.rejects(
+      () => repository.apply(fixture.input),
+      /durable price evidence does not resolve exactly once/
+    );
+    await assert.rejects(
+      () => repository.readSnapshot(),
+      /durable price evidence does not resolve exactly once/
+    );
   });
 });
 
@@ -261,9 +298,6 @@ interface Fixture {
   evidence: readonly ReturnType<typeof createSourcePriceEvidenceRecord>[];
   input: {
     value: ReturnType<typeof createBucketValuationMarkRecord>;
-    currentPriceEvidence: readonly ReturnType<
-      typeof createSourcePriceEvidenceRecord
-    >[];
   };
 }
 
@@ -284,6 +318,10 @@ async function withFixture(
       priceEvidence(),
       priceEvidence({ symbol: "000660", price: 145 })
     ]);
+    const evidenceRepository = new SourcePriceEvidenceFileRepository(baseDir);
+    for (const record of evidence) {
+      await evidenceRepository.append(record);
+    }
     const mark = createBucketValuationMarkRecord({
       portfolioId: "portfolio-1",
       bucket: "swing",
@@ -314,7 +352,7 @@ async function withFixture(
       paths: createBucketValuationApplicationPaths(baseDir),
       mark,
       evidence,
-      input: { value: mark, currentPriceEvidence: evidence }
+      input: { value: mark }
     });
   } finally {
     await rm(baseDir, { recursive: true, force: true });

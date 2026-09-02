@@ -54,6 +54,11 @@ import {
   compareText,
   hashCanonicalPayload
 } from "./runtimePolicyContracts.js";
+import { type SourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
+import {
+  createSourcePriceEvidencePaths,
+  parseSourcePriceEvidenceRecords
+} from "./sourcePriceEvidenceFiles.js";
 
 const stateDocumentSchema = z
   .object({
@@ -106,6 +111,7 @@ interface RepositorySnapshotUnderLock {
   positionEventRaw: Buffer;
   riskStateRaw: Buffer;
   positionStateRaw: Buffer;
+  evidenceRecords: readonly SourcePriceEvidenceRecord[];
   records: readonly BucketValuationMarkRecord[];
   equity: BucketEquityHistorySnapshot;
   positions: BucketPositionMarkHeadHistorySnapshot;
@@ -132,6 +138,7 @@ export interface BucketValuationApplicationFileRepositoryOptions
 
 export function createBucketValuationApplicationPaths(baseDir: string): {
   markRecordsPath: string;
+  evidenceRecordsPath: string;
   equityEventsPath: string;
   riskStatePath: string;
   equityTransactionPath: string;
@@ -144,8 +151,10 @@ export function createBucketValuationApplicationPaths(baseDir: string): {
   const mark = createBucketValuationMarkPaths(baseDir);
   const equity = createBucketEquityPaths(baseDir);
   const positions = createBucketPositionMarkHeadPaths(baseDir);
+  const evidence = createSourcePriceEvidencePaths(baseDir);
   return {
     markRecordsPath: mark.recordsPath,
+    evidenceRecordsPath: evidence.recordsPath,
     equityEventsPath: equity.eventsPath,
     riskStatePath: equity.statePath,
     equityTransactionPath: equity.transactionPath,
@@ -154,7 +163,12 @@ export function createBucketValuationApplicationPaths(baseDir: string): {
     positionTransactionPath: positions.transactionPath,
     transactionPath: createBucketValuationApplicationTransactionPath(baseDir),
     lockPaths: Object.freeze(
-      [mark.lockPath, equity.lockPath, positions.lockPath].sort(compareText)
+      [
+        mark.lockPath,
+        equity.lockPath,
+        positions.lockPath,
+        evidence.lockPath
+      ].sort(compareText)
     )
   };
 }
@@ -198,13 +212,16 @@ export class BucketValuationApplicationFileRepository {
 
   async apply(input: {
     value: unknown;
-    currentPriceEvidence: readonly unknown[];
   }): Promise<PersistedBucketValuationApplication> {
     const record = cloneRecord(input.value);
     return this.withLocks(async () => {
       await this.assertNoSingleRepositoryTransactionUnderLocks();
       await this.recoverPendingTransactionUnderLocks();
       const snapshot = await this.readSnapshotUnderLocks();
+      const currentPriceEvidence = resolveDurableCurrentPriceEvidence(
+        record,
+        snapshot.evidenceRecords
+      );
       const existing = snapshot.records.find(
         (candidate) =>
           candidate.bucketValuationMarkRecordId ===
@@ -235,7 +252,7 @@ export class BucketValuationApplicationFileRepository {
         value: record,
         currentPositionStates,
         currentPositionEvents,
-        currentPriceEvidence: input.currentPriceEvidence,
+        currentPriceEvidence,
         currentRiskState
       });
       const nextEquity = foldBucketEquityHistory([
@@ -333,6 +350,14 @@ export class BucketValuationApplicationFileRepository {
       transaction.bucketEquityEvent,
       transaction.positionMarkHeadEvents
     );
+    resolveDurableCurrentPriceEvidence(
+      transaction.record,
+      parseSourcePriceEvidenceRecords(
+        (
+          await readOptionalBuffer(this.paths.evidenceRecordsPath)
+        ).toString("utf8")
+      )
+    );
     const resultingRiskStateBytes = stateDocumentBytes(
       transaction.resultingRiskStates
     );
@@ -392,7 +417,15 @@ export class BucketValuationApplicationFileRepository {
       this.paths.positionStatePath,
       "bucket valuation application position state snapshot is missing"
     );
+    const evidenceRecords = parseSourcePriceEvidenceRecords(
+      (
+        await readOptionalBuffer(this.paths.evidenceRecordsPath)
+      ).toString("utf8")
+    );
     const records = parseMarkLogBuffer(markRaw);
+    for (const record of records) {
+      resolveDurableCurrentPriceEvidence(record, evidenceRecords);
+    }
     const equity = parseEquityEventLogBuffer(equityEventRaw);
     const positions = parsePositionEventLogBuffer(positionEventRaw);
     const storedRiskStates = parseRiskStateDocument(riskStateRaw);
@@ -413,6 +446,7 @@ export class BucketValuationApplicationFileRepository {
       positionEventRaw,
       riskStateRaw,
       positionStateRaw,
+      evidenceRecords,
       records,
       equity,
       positions
@@ -569,6 +603,43 @@ function resolveCurrentRiskState(
     );
   }
   return matches[0] as BucketRiskState;
+}
+
+function resolveDurableCurrentPriceEvidence(
+  record: BucketValuationMarkRecord,
+  records: readonly SourcePriceEvidenceRecord[]
+): readonly SourcePriceEvidenceRecord[] {
+  const recordsByRef = new Map<string, SourcePriceEvidenceRecord>();
+  for (const evidence of records) {
+    if (recordsByRef.has(evidence.evidenceRef)) {
+      throw new Error("bucket valuation durable price evidence ref is duplicate");
+    }
+    recordsByRef.set(evidence.evidenceRef, evidence);
+  }
+  return Object.freeze(
+    record.positionInputs.map((position) => {
+      const evidence = recordsByRef.get(position.currentPriceEvidenceRef);
+      if (evidence === undefined) {
+        throw new Error(
+          "bucket valuation durable price evidence does not resolve exactly once"
+        );
+      }
+      if (
+        evidence.market !== position.market ||
+        evidence.symbol !== position.symbol ||
+        evidence.priceField !== "last_price"
+      ) {
+        throw new Error("bucket valuation durable price evidence scope mismatch");
+      }
+      if (evidence.priceKrw !== position.currentPriceKrw) {
+        throw new Error("bucket valuation durable price evidence value mismatch");
+      }
+      if (Date.parse(evidence.observedAt) !== Date.parse(record.asOf)) {
+        throw new Error("bucket valuation durable price evidence time mismatch");
+      }
+      return evidence;
+    })
+  );
 }
 
 function resolveCurrentPositionEvents(
