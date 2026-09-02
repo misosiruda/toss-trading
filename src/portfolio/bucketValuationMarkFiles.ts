@@ -287,7 +287,7 @@ async function acquireExclusiveLock(input: {
         await syncOutputDirectory(dirname(input.lockPath));
       };
     } catch (error) {
-      if (!isNodeError(error) || error.code !== "EEXIST") {
+      if (!isRetryableLockContention(error)) {
         throw error;
       }
       const remainingMs = deadline - Date.now();
@@ -297,6 +297,14 @@ async function acquireExclusiveLock(input: {
       await delay(Math.min(input.retryDelayMs, remainingMs));
     }
   }
+}
+
+function isRetryableLockContention(error: unknown): boolean {
+  return (
+    isNodeError(error) &&
+    (error.code === "EEXIST" ||
+      (process.platform === "win32" && error.code === "EPERM"))
+  );
 }
 
 function delay(milliseconds: number): Promise<void> {
