@@ -3009,6 +3009,20 @@ repository가 exact mark를 먼저 저장했지만 application event graph가 �
 graph 일부만 존재하거나 stored mark가 다르면 fail-closed한다. runner가 verified mark 생성과 이 coordinator
 호출을 orchestration하는 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+스물두 번째 분할은 `runBucketValuationOnce` workflow가 durable current position/evidence에서 verified
+mark를 만들고 aggregate coordinator에 적용하도록 연결한다. run input은 portfolio/bucket/policy,
+canonical unique current evidence ref complete set, offset-qualified `asOf`/`createdAt`만 허용하며 live order,
+broker 또는 자연어 decision field를 받지 않는다. workflow는 먼저 aggregate snapshot을 읽어 pending
+journal recovery와 기존 mark/equity/position/evidence 검증을 끝낸다. 동일 portfolio/bucket/as-of mark가
+이미 있으면 supplied policy와 evidence ref set이 exact-match할 때만 저장 mark로 retry하고, 적용 후
+current head에서 같은 origin의 새 mark를 재계산하지 않는다. 신규 origin은 active position complete set과
+durable evidence를 instrument scope로 일대일 해소하고 previous head ID/hash, quantity, previous/current
+price/evidence에서 delta를 계산해 strict mark constructor를 통과시킨다. proposal read 이후 position이나 risk
+state가 바뀌는 race는 aggregate coordinator의 lock 내부 재해소에서 stale로 fail-closed한다. 이 workflow는
+기존 legacy `paperRunOnce` virtual-decision/order pipeline이나 scheduler에 연결하지 않으며 paper order,
+fill 또는 broker mutation을 만들지 않는다. cadence orchestrator가 due bucket별 workflow input을 만드는
+연결은 PR6 범위 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - 모든 신규 paper position이 mandate와 policy hash를 가진다.
