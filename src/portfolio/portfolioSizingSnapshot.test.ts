@@ -226,6 +226,31 @@ test("portfolio sizing snapshot rejects normalized and malformed position identi
       }),
     /timezone offset/
   );
+  assert.throws(
+    () =>
+      createPortfolioSizingSnapshot({
+        ...input,
+        virtualPortfolio: {
+          ...portfolio,
+          positions: [
+            { ...portfolio.positions[0], marketValueKrw: -0 },
+            portfolio.positions[1]
+          ]
+        }
+      }),
+    /position market value must not be negative zero/
+  );
+  assert.throws(
+    () =>
+      createPortfolioSizingSnapshot({
+        ...input,
+        virtualPortfolio: {
+          ...portfolio,
+          cashKrw: -0
+        }
+      }),
+    /portfolio cash must not be negative zero/
+  );
 });
 
 function snapshotInput(): CreatePortfolioSizingSnapshotInput {

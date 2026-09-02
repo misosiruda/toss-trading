@@ -148,6 +148,7 @@ function canonicalizeVirtualPortfolio(value: unknown): VirtualPortfolio {
   if (!isDeepStrictEqual(value, portfolio)) {
     throw new Error("virtual portfolio must not require schema normalization");
   }
+  assertNotNegativeZero(portfolio.cashKrw, "portfolio cash");
   const positions = portfolio.positions
     .map(canonicalizePosition)
     .sort(comparePosition);
@@ -165,6 +166,14 @@ function parseCanonicalVirtualPortfolio(value: unknown): VirtualPortfolio {
 
 function canonicalizePosition(position: VirtualPosition): VirtualPosition {
   assertWellFormedText(position.symbol, "position symbol");
+  assertNotNegativeZero(position.quantity, "position quantity");
+  assertNotNegativeZero(position.averagePriceKrw, "position average price");
+  assertOptionalNotNegativeZero(position.marketPriceKrw, "position market price");
+  assertOptionalNotNegativeZero(position.marketValueKrw, "position market value");
+  assertOptionalNotNegativeZero(
+    position.unrealizedPnlKrw,
+    "position unrealized PnL"
+  );
   const riskTags = canonicalOptionalText(position.riskTags, "position risk tags");
   const priceSourceRefs = canonicalOptionalText(
     position.priceSourceRefs,
@@ -280,6 +289,21 @@ function assertWellFormedText(value: string, label: string): void {
     if (charCode >= 0xdc00 && charCode <= 0xdfff) {
       throw new Error(`${label} must use well-formed Unicode`);
     }
+  }
+}
+
+function assertOptionalNotNegativeZero(
+  value: number | undefined,
+  label: string
+): void {
+  if (value !== undefined) {
+    assertNotNegativeZero(value, label);
+  }
+}
+
+function assertNotNegativeZero(value: number, label: string): void {
+  if (Object.is(value, -0)) {
+    throw new Error(`${label} must not be negative zero`);
   }
 }
 
