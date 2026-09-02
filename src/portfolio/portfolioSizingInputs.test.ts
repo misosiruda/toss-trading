@@ -16,7 +16,7 @@ const AS_OF = "2026-09-02T00:00:00.000Z";
 test("valuation inputs canonicalize mark and FX identities", () => {
   const inputs = canonicalizePortfolioValuationInputs([
     fxInput({ baseCurrency: "USD" }),
-    markInput({ market: "US", symbol: "AAPL" }),
+    markInput({ market: "US", symbol: "AAPL", priceKrw: 100.5 }),
     markInput({ market: "KR", symbol: "005930" })
   ]);
 
@@ -28,6 +28,9 @@ test("valuation inputs canonicalize mark and FX identities", () => {
     ),
     ["mark_price:KR:005930", "mark_price:US:AAPL", "fx_rate:USD:KRW"]
   );
+  const usMark = inputs[1];
+  assert(usMark?.kind === "mark_price");
+  assert.equal(usMark.priceKrw, 100.5);
   assert.deepEqual(parseCanonicalPortfolioValuationInputs(inputs), inputs);
   assert.equal(Object.isFrozen(inputs), true);
 });
@@ -70,9 +73,9 @@ test("valuation inputs fail closed for transformed and unsafe values", () => {
   assert.throws(
     () =>
       canonicalizePortfolioValuationInputs([
-        markInput({ priceKrw: Number.MAX_SAFE_INTEGER + 1 })
+        markInput({ priceKrw: Number.POSITIVE_INFINITY })
       ]),
-    /safe integer/
+    /expected number/
   );
   assert.throws(
     () =>

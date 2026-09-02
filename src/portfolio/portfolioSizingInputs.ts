@@ -31,7 +31,7 @@ const markPriceValuationInputSchema = z
     kind: z.literal("mark_price"),
     market: marketSchema,
     symbol: canonicalIdentifierSchema,
-    priceKrw: positiveAmountSchema,
+    priceKrw: positiveNumberSchema,
     evidenceRef: canonicalIdentifierSchema,
     evidenceAsOf: offsetQualifiedIsoDateTimeSchema
   })
