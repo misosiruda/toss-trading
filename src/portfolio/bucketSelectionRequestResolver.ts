@@ -19,6 +19,7 @@ import {
   type ResolvedPortfolioSizingSnapshot
 } from "./portfolioSizingSnapshotResolver.js";
 import {
+  offsetQualifiedIsoDateTimeSchema,
   parseBucketSelectionPolicyRecord,
   type BucketSelectionPolicyRecord,
   type StrategyBucketRuntimePolicy
@@ -280,6 +281,11 @@ function assertEveryTickMarketPacketBinding(
   source: ResolvedEveryTickPortfolioCycleTrigger
 ): void {
   const packet = source.marketPacket;
+  assertOffsetQualifiedPacketEvidenceTimestamp(
+    packet.generatedAt,
+    "generatedAt"
+  );
+  assertOffsetQualifiedPacketEvidenceTimestamp(packet.expiresAt, "expiresAt");
   if (packet.virtualPortfolio.portfolioId !== request.portfolioId) {
     throw new Error("every_tick packet portfolio mismatch");
   }
@@ -314,6 +320,14 @@ function assertEveryTickMarketPacketBinding(
   const packetGeneratedAt = Date.parse(packet.generatedAt);
   const requestAsOf = Date.parse(request.asOf);
   for (const candidate of packet.candidates) {
+    assertOffsetQualifiedPacketEvidenceTimestamp(
+      candidate.collectedAt,
+      "candidate.collectedAt"
+    );
+    assertOffsetQualifiedPacketEvidenceTimestamp(
+      candidate.staleAfter,
+      "candidate.staleAfter"
+    );
     const collectedAt = Date.parse(candidate.collectedAt);
     const staleAfter = Date.parse(candidate.staleAfter);
     if (collectedAt > packetGeneratedAt) {
@@ -337,6 +351,17 @@ function assertEveryTickMarketPacketBinding(
     )
   ) {
     throw new Error("every_tick packet candidate market is disabled for bucket");
+  }
+}
+
+function assertOffsetQualifiedPacketEvidenceTimestamp(
+  value: string,
+  field: string
+): void {
+  if (!offsetQualifiedIsoDateTimeSchema.safeParse(value).success) {
+    throw new Error(
+      `every_tick packet ${field} must be an offset-qualified timestamp`
+    );
   }
 }
 

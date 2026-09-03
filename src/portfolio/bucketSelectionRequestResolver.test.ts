@@ -487,6 +487,22 @@ test("selection request resolver rejects stale and future candidate evidence", (
     () => resolveEveryTickFixture(futureEvidence),
     /candidate evidence postdates the market packet/
   );
+
+  const offsetlessExpiry = everyTickFixture({
+    packetExpiresAt: "2026-09-02T00:05:00"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(offsetlessExpiry),
+    /expiresAt must be an offset-qualified timestamp/
+  );
+
+  const offsetlessCandidateEvidence = everyTickFixture({
+    candidateCollectedAt: "2026-09-02T00:00:00"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(offsetlessCandidateEvidence),
+    /candidate.collectedAt must be an offset-qualified timestamp/
+  );
 });
 
 test("selection request resolver rejects ignored every-tick source input", () => {
@@ -521,6 +537,7 @@ function everyTickFixture(
     candidateCollectedAt?: string;
     candidateStaleAfter?: string;
     minimumObservationCount?: number;
+    packetExpiresAt?: string;
   } = {}
 ) {
   const sourceContractId =
@@ -568,6 +585,7 @@ function everyTickFixture(
   }).packet;
   const packet = {
     ...basePacket,
+    expiresAt: options.packetExpiresAt ?? basePacket.expiresAt,
     candidates: basePacket.candidates.map((candidate) => ({
       ...candidate,
       collectedAt: options.candidateCollectedAt ?? candidate.collectedAt,
