@@ -555,10 +555,21 @@ order -> broker/api/mcp/cli/ai/paper/storage
 검증 명령:
 
 ```powershell
+npm run check:changed
 npm run check
 npm run build
 npm test
 ```
+
+`npm run check:changed`는 build와 `quality:gate`를 실행한 뒤 `origin/main`과 현재 HEAD/worktree의
+변경 파일을 합산한다. 변경된 TypeScript module을 직접 또는 간접 import하거나 compiled CLI를
+subprocess/worker로 참조하거나 source file 자체를 검사하는 test file만 실행한다. 설정, tooling,
+non-TypeScript source, 역의존성을 증명할 수 없는 source 또는 선택된
+test file이 120개를 넘는 변경은 자동으로 전체 suite로 fallback한다. 기준 ref가 다르면
+`CHANGED_TEST_BASE_REF` 또는 `--base-ref`로 명시한다. `--plan`은 실행할 test plan만 출력한다.
+
+개발 중 반복 수정에는 `npm run check:changed`를 사용하되 PR 출하 전에는 반드시
+`npm run check`를 한 번 실행한다.
 
 `npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, Toss Open API auth config safe default, 관련 문서 drift를 검사한다.
 

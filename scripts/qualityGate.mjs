@@ -191,8 +191,18 @@ assert(
 assert(
   typeof packageJson.scripts?.check === "string" &&
     packageJson.scripts.check.includes("npm run quality:gate") &&
-    packageJson.scripts.check.includes("node --test"),
-  "package.json scripts.check must run quality:gate and node --test"
+    packageJson.scripts.check.includes("changedTestRunner.test.mjs") &&
+    packageJson.scripts.check.includes('node --test "dist/**/*.test.js"'),
+  "package.json scripts.check must run quality:gate, tooling tests and the full suite"
+);
+assert(
+  typeof packageJson.scripts?.["check:changed"] === "string" &&
+    packageJson.scripts["check:changed"].includes("npm run quality:gate") &&
+    packageJson.scripts["check:changed"].includes(
+      "changedTestRunner.test.mjs"
+    ) &&
+    packageJson.scripts["check:changed"].includes("changedTestRunner.mjs"),
+  "package.json scripts.check:changed must keep quality and planner gates"
 );
 
 if (failures.length > 0) {
