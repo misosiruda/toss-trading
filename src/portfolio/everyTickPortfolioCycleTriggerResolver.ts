@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { readFile } from "node:fs/promises";
 
 import {
   marketPacketSchema,
@@ -19,9 +20,14 @@ export interface ResolvedEveryTickPortfolioCycleTrigger
   marketPacket: MarketPacket;
 }
 
-export interface MarketPacketHistory {
-  records: readonly unknown[];
+const canonicalMarketPacketHistoryBrand = Symbol(
+  "canonicalMarketPacketHistory"
+);
+
+export interface CanonicalMarketPacketHistory {
+  records: readonly MarketPacket[];
   corruptLineCount: number;
+  readonly [canonicalMarketPacketHistoryBrand]: true;
 }
 
 /**
@@ -34,7 +40,7 @@ export interface MarketPacketHistory {
  */
 export function resolveEveryTickPortfolioCycleTrigger(input: {
   value: unknown;
-  marketPacketHistory: MarketPacketHistory;
+  marketPacketHistory: CanonicalMarketPacketHistory;
 }): ResolvedEveryTickPortfolioCycleTrigger {
   const resolved = resolvePortfolioCycleTrigger(input.value);
   if (resolved.trigger.triggerKind !== "every_tick") {
@@ -43,16 +49,14 @@ export function resolveEveryTickPortfolioCycleTrigger(input: {
   const trigger = resolved.trigger;
 
   if (
+    input.marketPacketHistory[canonicalMarketPacketHistoryBrand] !== true ||
     !Number.isSafeInteger(input.marketPacketHistory.corruptLineCount) ||
     input.marketPacketHistory.corruptLineCount !== 0
   ) {
     throw new Error("every-tick trigger packet history is corrupt");
   }
 
-  const packets = input.marketPacketHistory.records.map(
-    parseCanonicalMarketPacket
-  );
-  const matches = packets.filter(
+  const matches = input.marketPacketHistory.records.filter(
     (packet) => createMarketPacketHash(packet) === trigger.packetHash
   );
   if (matches.length !== 1) {
@@ -73,12 +77,70 @@ export function resolveEveryTickPortfolioCycleTrigger(input: {
   });
 }
 
-function parseCanonicalMarketPacket(value: unknown): MarketPacket {
-  const packet = marketPacketSchema.parse(value);
-  if (!isDeepStrictEqual(value, packet)) {
-    throw new Error("market packet must already be canonical");
+/** Reads packet JSONL without schema normalization hiding stored byte drift. */
+export async function readCanonicalMarketPacketHistory(
+  filePath: string
+): Promise<CanonicalMarketPacketHistory> {
+  try {
+    return parseCanonicalMarketPacketHistoryText(
+      await readFile(filePath, "utf8")
+    );
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return parseCanonicalMarketPacketHistoryText("");
+    }
+    throw error;
   }
-  return packet;
+}
+
+export function parseCanonicalMarketPacketHistoryText(
+  raw: string
+): CanonicalMarketPacketHistory {
+  if (raw.length === 0) {
+    return deepFreeze({
+      records: [],
+      corruptLineCount: 0,
+      [canonicalMarketPacketHistoryBrand]: true as const
+    });
+  }
+  const lines = raw.split("\n");
+  let corruptLineCount = 0;
+  if (raw.endsWith("\n")) {
+    lines.pop();
+  } else if (raw.length > 0) {
+    lines.pop();
+    corruptLineCount += 1;
+  }
+
+  const records: MarketPacket[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.length === 0) {
+      corruptLineCount += 1;
+      continue;
+    }
+    try {
+      const value: unknown = JSON.parse(line);
+      const packet = marketPacketSchema.parse(value);
+      if (!isDeepStrictEqual(value, packet)) {
+        corruptLineCount += 1;
+        continue;
+      }
+      records.push(packet);
+    } catch {
+      corruptLineCount += 1;
+    }
+  }
+
+  return deepFreeze({
+    records,
+    corruptLineCount,
+    [canonicalMarketPacketHistoryBrand]: true as const
+  });
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function deepFreeze<Value>(value: Value): Value {

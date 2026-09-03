@@ -4,7 +4,10 @@ import test from "node:test";
 import type { MarketPacket } from "../domain/schemas.js";
 import { createMockMarketPacket } from "../market/packetBuilder.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
-import { resolveEveryTickPortfolioCycleTrigger } from "./everyTickPortfolioCycleTriggerResolver.js";
+import {
+  parseCanonicalMarketPacketHistoryText,
+  resolveEveryTickPortfolioCycleTrigger
+} from "./everyTickPortfolioCycleTriggerResolver.js";
 
 const AS_OF = "2026-09-02T00:00:00.000Z";
 
@@ -74,11 +77,13 @@ test("every-tick trigger rejects packet hash and cutoff drift", () => {
 
 test("every-tick trigger rejects malformed unrelated records and other variants", () => {
   const packet = marketPacket();
-  assert.throws(() =>
-    resolveEveryTickPortfolioCycleTrigger({
-      value: trigger(packet),
-      marketPacketHistory: history(packet, { ...packet, extra: true })
-    })
+  assert.throws(
+    () =>
+      resolveEveryTickPortfolioCycleTrigger({
+        value: trigger(packet),
+        marketPacketHistory: history(packet, { ...packet, extra: true })
+      }),
+    /history is corrupt/
   );
   assert.throws(
     () =>
@@ -101,13 +106,43 @@ test("every-tick trigger rejects a corrupt packet history before lookup", () => 
     () =>
       resolveEveryTickPortfolioCycleTrigger({
         value: trigger(packet),
-        marketPacketHistory: {
-          records: [packet],
-          corruptLineCount: 1
-        }
+        marketPacketHistory: parseCanonicalMarketPacketHistoryText(
+          `${JSON.stringify(packet)}\nnot-json\n`
+        )
       }),
     /history is corrupt/
   );
+});
+
+test("raw history parsing exposes schema normalization instead of hiding it", () => {
+  const packet = marketPacket();
+  const normalizedBySchema = {
+    ...packet,
+    virtualPortfolio: {
+      ...packet.virtualPortfolio,
+      portfolioId: ` ${packet.virtualPortfolio.portfolioId} `
+    }
+  };
+  const parsed = parseCanonicalMarketPacketHistoryText(
+    `${JSON.stringify(normalizedBySchema)}\n`
+  );
+
+  assert.equal(parsed.records.length, 0);
+  assert.equal(parsed.corruptLineCount, 1);
+});
+
+test("raw history parsing rejects blank and unterminated JSONL records", () => {
+  const packet = marketPacket();
+  const blank = parseCanonicalMarketPacketHistoryText(
+    `${JSON.stringify(packet)}\n\n`
+  );
+  const unterminated = parseCanonicalMarketPacketHistoryText(
+    JSON.stringify(packet)
+  );
+
+  assert.equal(blank.corruptLineCount, 1);
+  assert.equal(unterminated.corruptLineCount, 1);
+  assert.equal(unterminated.records.length, 0);
 });
 
 function marketPacket(): MarketPacket {
@@ -134,9 +169,9 @@ function trigger(packet: MarketPacket): {
   };
 }
 
-function history(...records: readonly unknown[]): {
-  records: readonly unknown[];
-  corruptLineCount: number;
-} {
-  return { records, corruptLineCount: 0 };
+function history(...records: readonly unknown[]) {
+  return parseCanonicalMarketPacketHistoryText(
+    records.map((record) => JSON.stringify(record)).join("\n") +
+      (records.length === 0 ? "" : "\n")
+  );
 }
