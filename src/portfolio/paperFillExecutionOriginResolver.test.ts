@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
@@ -6,25 +9,28 @@ import { buildPaperFill } from "../paper/executionModel.js";
 import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
 import { resolvePaperFillExecutionOrigins } from "./paperFillExecutionOriginResolver.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
+import {
+  SourcePriceEvidenceFileRepository,
+  type VerifiedSourcePriceEvidenceHistory
+} from "./sourcePriceEvidenceFiles.js";
 
-const HASH_B = `sha256:${"b".repeat(64)}` as const;
-
-test("paper fill resolves its source price to typed immutable evidence", () => {
+test("paper fill resolves its source price from verified durable history", async () => {
   const evidence = priceEvidence();
   const record = paperFill({ evidence });
+  await withEvidenceHistory([evidence], (history) => {
+    const resolved = resolvePaperFillExecutionOrigins({
+      value: record,
+      sourcePriceEvidenceHistory: history
+    });
 
-  const resolved = resolvePaperFillExecutionOrigins({
-    value: record,
-    sourcePriceEvidence: [evidence]
+    assert.deepEqual(resolved.record, record);
+    assert.deepEqual(resolved.sourcePriceEvidence, evidence);
+    assert.ok(Object.isFrozen(resolved));
+    assert.ok(Object.isFrozen(resolved.sourcePriceEvidence));
   });
-
-  assert.deepEqual(resolved.record, record);
-  assert.deepEqual(resolved.sourcePriceEvidence, evidence);
-  assert.ok(Object.isFrozen(resolved));
-  assert.ok(Object.isFrozen(resolved.sourcePriceEvidence));
 });
 
-test("paper fill accepts equivalent offset notation for source observation", () => {
+test("paper fill accepts equivalent offset notation for source observation", async () => {
   const evidence = priceEvidence({
     observedAt: "2026-09-03T08:59:59+09:00",
     createdAt: "2026-09-03T08:59:59+09:00"
@@ -36,115 +42,128 @@ test("paper fill accepts equivalent offset notation for source observation", () 
     }
   });
 
-  assert.deepEqual(
-    resolvePaperFillExecutionOrigins({
+  await withEvidenceHistory([evidence], (history) => {
+    const resolved = resolvePaperFillExecutionOrigins({
       value: record,
-      sourcePriceEvidence: [evidence]
-    }).sourcePriceEvidence,
-    evidence
-  );
+      sourcePriceEvidenceHistory: history
+    });
+    assert.deepEqual(resolved.sourcePriceEvidence, evidence);
+  });
 });
 
-test("paper fill rejects unresolved and duplicate source evidence", () => {
+test("paper fill rejects unresolved and unverified source history", async () => {
   const evidence = priceEvidence();
   const record = paperFill({ evidence });
-
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: record,
-        sourcePriceEvidence: []
-      }),
-    /does not resolve exactly once/
-  );
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: record,
-        sourcePriceEvidence: [evidence, evidence]
-      }),
-    /duplicate ref/
-  );
-});
-
-test("paper fill rejects source projection scope, identity, and time drift", () => {
-  const evidence = priceEvidence();
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: paperFill({
-          evidence,
-          projectionOverrides: { sourceContractId: "other-contract" }
+  await withEvidenceHistory([], (history) => {
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: record,
+          sourcePriceEvidenceHistory: history
         }),
-        sourcePriceEvidence: [evidence]
-      }),
-    /projection mismatch/
-  );
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: paperFill({
-          evidence,
-          projectionOverrides: {
-            observedAt: "2026-09-02T23:59:58.000Z"
-          }
-        }),
-        sourcePriceEvidence: [evidence]
-      }),
-    /projection mismatch/
-  );
-
-  const foreign = priceEvidence({ market: "US", symbol: "US:AAPL" });
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: paperFill({
-          evidence: foreign,
-          projectionOverrides: { market: "KR", symbol: "KR:005930" }
-        }),
-        sourcePriceEvidence: [foreign]
-      }),
-    /projection mismatch/
-  );
-});
-
-test("paper fill rejects source price value and availability cutoff drift", () => {
-  const wrongPrice = priceEvidence({ priceKrw: 101 });
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
-        value: paperFill({ evidence: wrongPrice, sourcePriceKrw: 100 }),
-        sourcePriceEvidence: [wrongPrice]
-      }),
-    /value mismatch/
-  );
-
-  const futureEvidence = priceEvidence({
-    createdAt: "2026-09-03T00:00:01.000Z"
+      /does not resolve exactly once/
+    );
   });
   assert.throws(
     () =>
       resolvePaperFillExecutionOrigins({
-        value: paperFill({ evidence: futureEvidence }),
-        sourcePriceEvidence: [futureEvidence]
-      }),
-    /postdates fill cutoff/
-  );
-});
-
-test("paper fill independently rehashes supplied source evidence", () => {
-  const evidence = priceEvidence();
-  const record = paperFill({ evidence });
-
-  assert.throws(
-    () =>
-      resolvePaperFillExecutionOrigins({
         value: record,
-        sourcePriceEvidence: [{ ...evidence, evidenceHash: HASH_B }]
+        sourcePriceEvidenceHistory: {
+          records: [evidence]
+        } as VerifiedSourcePriceEvidenceHistory
       }),
-    /identity does not match/
+    /history is not verified/
   );
 });
+
+test("paper fill rejects source projection scope, identity, and time drift", async () => {
+  const evidence = priceEvidence();
+  await withEvidenceHistory([evidence], (history) => {
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: paperFill({
+            evidence,
+            projectionOverrides: { sourceContractId: "other-contract" }
+          }),
+          sourcePriceEvidenceHistory: history
+        }),
+      /projection mismatch/
+    );
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: paperFill({
+            evidence,
+            projectionOverrides: {
+              observedAt: "2026-09-02T23:59:58.000Z"
+            }
+          }),
+          sourcePriceEvidenceHistory: history
+        }),
+      /projection mismatch/
+    );
+  });
+
+  const foreign = priceEvidence({ market: "US", symbol: "US:AAPL" });
+  await withEvidenceHistory([foreign], (history) => {
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: paperFill({
+            evidence: foreign,
+            projectionOverrides: { market: "KR", symbol: "KR:005930" }
+          }),
+          sourcePriceEvidenceHistory: history
+        }),
+      /projection mismatch/
+    );
+  });
+});
+
+test("paper fill rejects source price value and durable availability cutoff drift", async () => {
+  const wrongPrice = priceEvidence({ priceKrw: 101 });
+  await withEvidenceHistory([wrongPrice], (history) => {
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: paperFill({ evidence: wrongPrice, sourcePriceKrw: 100 }),
+          sourcePriceEvidenceHistory: history
+        }),
+      /value mismatch/
+    );
+  });
+
+  const futureEvidence = priceEvidence({
+    createdAt: "2026-09-03T00:00:01.000Z"
+  });
+  await withEvidenceHistory([futureEvidence], (history) => {
+    assert.throws(
+      () =>
+        resolvePaperFillExecutionOrigins({
+          value: paperFill({ evidence: futureEvidence }),
+          sourcePriceEvidenceHistory: history
+        }),
+      /postdates fill cutoff/
+    );
+  });
+});
+
+async function withEvidenceHistory<T>(
+  evidence: readonly ReturnType<typeof priceEvidence>[],
+  run: (history: VerifiedSourcePriceEvidenceHistory) => T | Promise<T>
+): Promise<T> {
+  const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-origin-"));
+  try {
+    const repository = new SourcePriceEvidenceFileRepository(baseDir);
+    for (const record of evidence) {
+      await repository.append(record);
+    }
+    return await run(await repository.readVerifiedHistory());
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+}
 
 function priceEvidence(
   overrides: Partial<{

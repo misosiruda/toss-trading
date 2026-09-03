@@ -8,7 +8,9 @@ import test from "node:test";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import {
   SourcePriceEvidenceFileRepository,
-  createSourcePriceEvidencePaths
+  createSourcePriceEvidencePaths,
+  getVerifiedSourcePriceEvidenceRecords,
+  type VerifiedSourcePriceEvidenceHistory
 } from "./sourcePriceEvidenceFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}` as const;
@@ -22,6 +24,19 @@ test("source price evidence repository appends, resolves, and converges retries"
     assert.deepEqual(await repository.append(record), record);
     assert.deepEqual(await repository.resolveByRef(record.evidenceRef), record);
     assert.deepEqual(await repository.readAll(), [record]);
+    const history = await repository.readVerifiedHistory();
+    assert.deepEqual(getVerifiedSourcePriceEvidenceRecords(history), [record]);
+    const forged = Object.create(history) as VerifiedSourcePriceEvidenceHistory;
+    Object.defineProperty(forged, "records", {
+      value: Object.freeze([
+        { ...record, createdAt: "2026-09-01T01:00:00.000Z" }
+      ]),
+      enumerable: true
+    });
+    assert.throws(
+      () => getVerifiedSourcePriceEvidenceRecords(forged),
+      /history is not verified/
+    );
     const raw = await readFile(
       createSourcePriceEvidencePaths(baseDir).recordsPath,
       "utf8"
@@ -140,6 +155,13 @@ test("source price evidence repository fails closed for corrupt and torn history
 
 test("source price evidence repository leaves abandoned locks fail-closed", async () => {
   await withTemporaryDirectory(async (baseDir) => {
+    assert.throws(
+      () =>
+        getVerifiedSourcePriceEvidenceRecords({
+          records: []
+        } as VerifiedSourcePriceEvidenceHistory),
+      /history is not verified/
+    );
     const paths = createSourcePriceEvidencePaths(baseDir);
     await writeFile(paths.lockPath, "abandoned\n", "utf8");
     const repository = new SourcePriceEvidenceFileRepository(baseDir, {

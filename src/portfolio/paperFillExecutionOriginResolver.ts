@@ -8,6 +8,10 @@ import {
   parseSourcePriceEvidenceRecord,
   type SourcePriceEvidenceRecord
 } from "./sourcePriceEvidence.js";
+import {
+  getVerifiedSourcePriceEvidenceRecords,
+  type VerifiedSourcePriceEvidenceHistory
+} from "./sourcePriceEvidenceFiles.js";
 
 export interface ResolvedPaperFillExecutionOrigins {
   record: PaperFillExecutionRecord;
@@ -17,10 +21,12 @@ export interface ResolvedPaperFillExecutionOrigins {
 /** Resolves a paper fill's projected source price to one immutable observation. */
 export function resolvePaperFillExecutionOrigins(input: {
   value: unknown;
-  sourcePriceEvidence: readonly unknown[];
+  sourcePriceEvidenceHistory: VerifiedSourcePriceEvidenceHistory;
 }): ResolvedPaperFillExecutionOrigins {
   const record = parsePaperFillExecutionRecord(input.value);
-  const evidence = parseUniqueEvidence(input.sourcePriceEvidence);
+  const evidence = getVerifiedSourcePriceEvidenceRecords(
+    input.sourcePriceEvidenceHistory
+  ).map((value) => parseSourcePriceEvidenceRecord(value));
   const matches = evidence.filter(
     (candidate) =>
       candidate.evidenceRef === record.sourcePriceEvidence.evidenceRef
@@ -33,22 +39,6 @@ export function resolvePaperFillExecutionOrigins(input: {
   const sourcePriceEvidence = matches[0] as SourcePriceEvidenceRecord;
   assertSourcePriceEvidenceMatches(record, sourcePriceEvidence);
   return deepFreeze({ record, sourcePriceEvidence });
-}
-
-function parseUniqueEvidence(
-  values: readonly unknown[]
-): readonly SourcePriceEvidenceRecord[] {
-  const evidence = values.map((value) =>
-    parseSourcePriceEvidenceRecord(value)
-  );
-  const refs = new Set<string>();
-  for (const record of evidence) {
-    if (refs.has(record.evidenceRef)) {
-      throw new Error("source price evidence contains a duplicate ref");
-    }
-    refs.add(record.evidenceRef);
-  }
-  return evidence;
 }
 
 function assertSourcePriceEvidenceMatches(

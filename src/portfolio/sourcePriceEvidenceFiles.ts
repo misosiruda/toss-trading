@@ -16,6 +16,13 @@ export interface SourcePriceEvidenceFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
+const verifiedSourcePriceEvidenceHistories =
+  new WeakSet<VerifiedSourcePriceEvidenceHistory>();
+
+export interface VerifiedSourcePriceEvidenceHistory {
+  records: readonly SourcePriceEvidenceRecord[];
+}
+
 export function createSourcePriceEvidencePaths(baseDir: string): {
   recordsPath: string;
   lockPath: string;
@@ -54,7 +61,11 @@ export class SourcePriceEvidenceFileRepository {
   }
 
   async readAll(): Promise<readonly SourcePriceEvidenceRecord[]> {
-    return this.withLock(async () => this.readAllUnderLock());
+    return this.withLock(async () => (await this.readHistoryUnderLock()).records);
+  }
+
+  async readVerifiedHistory(): Promise<VerifiedSourcePriceEvidenceHistory> {
+    return this.withLock(async () => this.readHistoryUnderLock());
   }
 
   async resolveByRef(evidenceRef: string): Promise<SourcePriceEvidenceRecord> {
@@ -71,7 +82,7 @@ export class SourcePriceEvidenceFileRepository {
   async append(value: unknown): Promise<SourcePriceEvidenceRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
-      const records = await this.readAllUnderLock();
+      const records = (await this.readHistoryUnderLock()).records;
       const existing = records.find(
         (record) => record.evidenceRef === candidate.evidenceRef
       );
@@ -91,19 +102,19 @@ export class SourcePriceEvidenceFileRepository {
     });
   }
 
-  private async readAllUnderLock(): Promise<
-    readonly SourcePriceEvidenceRecord[]
-  > {
+  private async readHistoryUnderLock(): Promise<VerifiedSourcePriceEvidenceHistory> {
     let raw: string;
     try {
       raw = await readFile(this.recordsPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return Object.freeze([]);
+        return createVerifiedSourcePriceEvidenceHistory([]);
       }
       throw error;
     }
-    return parseSourcePriceEvidenceRecords(raw);
+    return createVerifiedSourcePriceEvidenceHistory(
+      parseSourcePriceEvidenceRecords(raw)
+    );
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -164,6 +175,23 @@ export function parseSourcePriceEvidenceRecords(
     records.push(record);
   }
   return Object.freeze(records);
+}
+
+export function getVerifiedSourcePriceEvidenceRecords(
+  history: VerifiedSourcePriceEvidenceHistory
+): readonly SourcePriceEvidenceRecord[] {
+  if (!verifiedSourcePriceEvidenceHistories.has(history)) {
+    throw new Error("source price evidence history is not verified");
+  }
+  return history.records;
+}
+
+function createVerifiedSourcePriceEvidenceHistory(
+  records: readonly SourcePriceEvidenceRecord[]
+): VerifiedSourcePriceEvidenceHistory {
+  const history = Object.freeze({ records: Object.freeze([...records]) });
+  verifiedSourcePriceEvidenceHistories.add(history);
+  return history;
 }
 
 function originKey(record: SourcePriceEvidenceRecord): string {
