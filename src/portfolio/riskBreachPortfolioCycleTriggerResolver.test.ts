@@ -6,6 +6,10 @@ import {
   type PortfolioRiskStateUpdateRecord
 } from "./portfolioRiskStateUpdate.js";
 import { parseVerifiedPortfolioRiskStateUpdateHistory } from "./portfolioRiskStateUpdateFiles.js";
+import {
+  createBucketRiskState,
+  type BucketRiskState
+} from "./bucketEquity.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import {
   createPortfolioSizingSnapshot,
@@ -96,6 +100,93 @@ test("risk-breach resolver rejects market-mark source for other update kinds", (
         expectedPolicyHash: update.policyHash
       }),
     /allowed only for a market_mark update/
+  );
+});
+
+test("risk-breach trigger resolves one exact immutable bucket risk state", () => {
+  const state = bucketRiskState();
+  const update = riskStateUpdate(state);
+  const resolved = resolveRiskBreachPortfolioCycleTriggerRaw({
+    value: trigger(update),
+    riskStateUpdateHistory: history(update),
+    bucketRiskStateSource: state,
+    expectedPortfolioId: update.portfolioId,
+    expectedPolicyHash: update.policyHash
+  });
+
+  assert.deepEqual(resolved.riskStateUpdate, update);
+  assert.deepEqual(resolved.bucketRiskState, state);
+  assert.equal(resolved.triggerIdentity, "risk_breach:risk_state");
+  assert.equal(Object.isFrozen(resolved.bucketRiskState), true);
+});
+
+test("risk-breach risk state requires an exact immutable state origin", () => {
+  const state = bucketRiskState();
+  const update = riskStateUpdate(state);
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /requires its bucket risk-state source/
+  );
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        bucketRiskStateSource: { ...state, riskStateHash: HASH_A },
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /hash does not match its payload/
+  );
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        bucketRiskStateSource: bucketRiskState("epoch-2"),
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /origin identity mismatch/
+  );
+
+  const lateUpdate = riskStateUpdate(state, {
+    asOf: "2026-09-03T00:00:01.000Z",
+    createdAt: "2026-09-03T00:00:02.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(lateUpdate),
+        riskStateUpdateHistory: history(lateUpdate),
+        bucketRiskStateSource: state,
+        expectedPortfolioId: lateUpdate.portfolioId,
+        expectedPolicyHash: lateUpdate.policyHash
+      }),
+    /origin scope mismatch/
+  );
+});
+
+test("risk-breach resolver rejects bucket risk state for other update kinds", () => {
+  const snapshot = marketMarkSnapshot();
+  const update = marketMarkUpdate(snapshot);
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        marketMarkSource: snapshot,
+        bucketRiskStateSource: bucketRiskState(),
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /allowed only for a risk_state update/
   );
 });
 
@@ -304,16 +395,36 @@ function marketMarkSnapshot(
   });
 }
 
-function riskStateUpdate() {
+function riskStateUpdate(
+  state: BucketRiskState = bucketRiskState(),
+  overrides: Partial<{ asOf: string; createdAt: string }> = {}
+) {
   return createPortfolioRiskStateUpdateRecord({
     portfolioId: "portfolio-1",
     policyHash: HASH_A,
-    asOf: "2026-09-03T00:00:00.000Z",
+    asOf: overrides.asOf ?? state.asOf,
     stateUpdateKind: "risk_state",
-    riskStateEpochId: "epoch-1",
+    riskStateEpochId: state.riskStateEpochId,
+    bucket: state.bucket,
+    lastBucketEquityEventId: state.lastBucketEquityEventId,
+    riskStateHash: state.riskStateHash,
+    createdAt: overrides.createdAt ?? "2026-09-03T00:00:01.000Z"
+  });
+}
+
+function bucketRiskState(riskStateEpochId = "epoch-1"): BucketRiskState {
+  return createBucketRiskState({
+    riskStateEpochId,
+    portfolioId: "portfolio-1",
     bucket: "short_term",
+    policyHash: HASH_A,
+    drawdownSemanticsHash: HASH_B,
+    units: 1_000,
+    unitNavKrw: 0.8,
+    highWaterMarkUnitNavKrw: 1,
+    equityKrw: 800,
+    drawdownRatio: 1 - 0.8 / 1,
     lastBucketEquityEventId: "bucket-equity-event-1",
-    riskStateHash: HASH_B,
-    createdAt: "2026-09-03T00:00:01.000Z"
+    asOf: "2026-09-03T00:00:00.000Z"
   });
 }

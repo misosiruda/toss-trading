@@ -3298,6 +3298,13 @@ snapshot ID/hash, portfolio/policy scope와 `asOf`를 exact-match한다. 다른 
 주입하거나 market-mark source를 생략하면 fail-closed한다. Fill/fee/cash-flow/risk-state update의 kind별
 immutable origin/state replay와 Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+스물아홉 번째 분할은 `risk_state` update가 참조하는 immutable `BucketRiskState`를 risk-breach source
+resolver에서 독립 재현한다. Risk-state update는 bucket risk-state source를 반드시 제공해야 하며 resolver는
+complete payload hash를 다시 검증한 뒤 update의 epoch ID, last bucket equity event ID, state hash,
+portfolio/policy/bucket scope와 `asOf`를 exact-match한다. 다른 update kind에 bucket risk-state source를
+주입하거나 risk-state source를 생략하면 fail-closed한다. Fill/fee/cash-flow update의 kind별 immutable
+origin/state replay와 Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

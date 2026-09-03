@@ -14,6 +14,7 @@ import {
   resolvePortfolioSizingSnapshot,
   type ResolvedPortfolioSizingSnapshot
 } from "./portfolioSizingSnapshotResolver.js";
+import { parseBucketRiskState, type BucketRiskState } from "./bucketEquity.js";
 
 export interface ResolvedRiskBreachPortfolioCycleTrigger
   extends ResolvedPortfolioCycleTrigger {
@@ -23,6 +24,7 @@ export interface ResolvedRiskBreachPortfolioCycleTrigger
   >;
   riskStateUpdate: PortfolioRiskStateUpdateRecord;
   marketMarkSnapshot?: ResolvedPortfolioSizingSnapshot["snapshot"];
+  bucketRiskState?: BucketRiskState;
 }
 
 /** Resolves a risk-breach trigger against a complete immutable update history. */
@@ -30,6 +32,7 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
   value: unknown;
   riskStateUpdateHistory: VerifiedPortfolioRiskStateUpdateHistory;
   marketMarkSource?: unknown;
+  bucketRiskStateSource?: unknown;
   expectedPortfolioId: string;
   expectedPolicyHash: string;
 }): ResolvedRiskBreachPortfolioCycleTrigger {
@@ -74,12 +77,17 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
     riskStateUpdate,
     input.marketMarkSource
   );
+  const bucketRiskState = resolveBucketRiskStateSource(
+    riskStateUpdate,
+    input.bucketRiskStateSource
+  );
 
   return deepFreeze({
     ...resolved,
     trigger,
     riskStateUpdate,
-    ...(marketMarkSnapshot === undefined ? {} : { marketMarkSnapshot })
+    ...(marketMarkSnapshot === undefined ? {} : { marketMarkSnapshot }),
+    ...(bucketRiskState === undefined ? {} : { bucketRiskState })
   });
 }
 
@@ -113,6 +121,40 @@ function resolveMarketMarkSource(
     throw new Error("market_mark update origin scope mismatch");
   }
   return snapshot;
+}
+
+function resolveBucketRiskStateSource(
+  update: PortfolioRiskStateUpdateRecord,
+  source: unknown
+): BucketRiskState | undefined {
+  if (update.stateUpdateKind !== "risk_state") {
+    if (source !== undefined) {
+      throw new Error(
+        "bucket risk-state source is allowed only for a risk_state update"
+      );
+    }
+    return undefined;
+  }
+  if (source === undefined) {
+    throw new Error("risk_state update requires its bucket risk-state source");
+  }
+  const state = parseBucketRiskState(source);
+  if (
+    state.riskStateEpochId !== update.riskStateEpochId ||
+    state.lastBucketEquityEventId !== update.lastBucketEquityEventId ||
+    state.riskStateHash !== update.riskStateHash
+  ) {
+    throw new Error("risk_state update origin identity mismatch");
+  }
+  if (
+    state.portfolioId !== update.portfolioId ||
+    state.policyHash !== update.policyHash ||
+    state.bucket !== update.bucket ||
+    state.asOf !== update.asOf
+  ) {
+    throw new Error("risk_state update origin scope mismatch");
+  }
+  return state;
 }
 
 function assertUniqueUpdateHistory(
