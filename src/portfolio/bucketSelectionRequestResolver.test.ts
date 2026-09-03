@@ -10,6 +10,7 @@ import {
   resolveBucketSelectionRequest,
   type BucketSelectionOpeningCapacity
 } from "./bucketSelectionRequestResolver.js";
+import type { PortfolioCycleTrigger } from "./portfolioCycleTrigger.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import {
   createPortfolioSizingSnapshot,
@@ -40,6 +41,7 @@ test("selection request resolver binds snapshot, policy, and replayed gap", () =
     value: fixture.request,
     sizingSnapshot: fixture.snapshot,
     activePolicy: fixture.policy,
+    cycleTrigger: fixture.trigger,
     bucketOpeningCapacities: openingCapacities()
   });
 
@@ -58,6 +60,7 @@ test("selection request resolver replays entry-floor eligibility as due", () => 
     value: fixture.request,
     sizingSnapshot: fixture.snapshot,
     activePolicy: fixture.policy,
+    cycleTrigger: fixture.trigger,
     bucketOpeningCapacities: openingCapacities()
   });
 
@@ -80,6 +83,7 @@ test("selection request resolver rejects snapshot and policy lineage mismatch", 
         value: wrongSnapshotRequest,
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /snapshot identity mismatch/
@@ -92,6 +96,7 @@ test("selection request resolver rejects snapshot and policy lineage mismatch", 
         value: fixture.request,
         sizingSnapshot: fixture.snapshot,
         activePolicy: replacementPolicy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /active policy mismatch/
@@ -107,6 +112,7 @@ test("selection request resolver rejects snapshot and policy lineage mismatch", 
         value: fixture.request,
         sizingSnapshot: corruptSnapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /identity does not match payload/
@@ -126,6 +132,7 @@ test("selection request resolver requires exact snapshot time and a pre-existing
         value: staleRequest,
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /snapshot scope mismatch/
@@ -148,6 +155,7 @@ test("selection request resolver requires exact snapshot time and a pre-existing
         value: fixture.request,
         sizingSnapshot: fixture.snapshot,
         activePolicy: futurePolicy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /predates its runtime policy/
@@ -171,6 +179,7 @@ test("selection request resolver rejects replayed gap, slot, and cap drift", () 
           value: request,
           sizingSnapshot: fixture.snapshot,
           activePolicy: fixture.policy,
+          cycleTrigger: fixture.trigger,
           bucketOpeningCapacities: openingCapacities()
         }),
       /does not match replay/
@@ -183,6 +192,7 @@ test("selection request resolver rejects replayed gap, slot, and cap drift", () 
         value: fixture.request,
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities({
           bucket: "long_term",
           activePositionCount: 1
@@ -200,6 +210,7 @@ test("selection request resolver fails closed when replay removes eligibility", 
         value: fixture.request,
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities({
           bucket: "long_term",
           maximumPositionCount: 1,
@@ -222,9 +233,83 @@ test("selection request resolver rejects trigger basis inconsistent with policy"
         value: request,
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
         bucketOpeningCapacities: openingCapacities()
       }),
     /does not match replay/
+  );
+});
+
+test("selection request resolver rejects trigger identity and cutoff drift", () => {
+  const fixture = selectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: {
+          ...fixture.trigger,
+          eventAsOf: "2026-09-01T23:58:00.000Z"
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /trigger binding mismatch/
+  );
+
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: {
+          triggerKind: "every_tick",
+          packetHash: HASH,
+          packetAsOf: "2026-09-01T23:59:00.000Z"
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /trigger binding mismatch/
+  );
+});
+
+test("selection request resolver enforces cadence and policy-event declarations", () => {
+  const scheduledFixture = selectionFixture({ bucket: "short_term" });
+  const otherBoundaryHash = `sha256:${"c".repeat(64)}` as const;
+  const otherBoundaryTrigger = {
+    ...scheduledFixture.trigger,
+    scheduleBoundaryHash: otherBoundaryHash
+  };
+  const otherBoundaryRequest = createBucketSelectionRequest({
+    ...requestInput(scheduledFixture.snapshot, "short_term"),
+    triggerIdentity: `scheduled:${otherBoundaryHash}`
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: otherBoundaryRequest,
+        sizingSnapshot: scheduledFixture.snapshot,
+        activePolicy: scheduledFixture.policy,
+        cycleTrigger: otherBoundaryTrigger,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /does not match bucket review cadence/
+  );
+
+  const policyWithoutEvent = runtimePolicy({ enabledLongTermEvents: false });
+  const snapshot = emptySizingSnapshot(policyWithoutEvent.policyHash);
+  const request = createBucketSelectionRequest(requestInput(snapshot, "long_term"));
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: request,
+        sizingSnapshot: snapshot,
+        activePolicy: policyWithoutEvent,
+        cycleTrigger: cycleTrigger("long_term"),
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /not enabled for bucket/
   );
 });
 
@@ -234,6 +319,7 @@ function selectionFixture(
   policy: RuntimePortfolioPolicyRecord;
   snapshot: PortfolioSizingSnapshot;
   request: ReturnType<typeof createBucketSelectionRequest>;
+  trigger: PortfolioCycleTrigger;
 } {
   const policy = runtimePolicy();
   const snapshot = emptySizingSnapshot(policy.policyHash);
@@ -241,7 +327,8 @@ function selectionFixture(
   return {
     policy,
     snapshot,
-    request: createBucketSelectionRequest(requestInput(snapshot, bucket))
+    request: createBucketSelectionRequest(requestInput(snapshot, bucket)),
+    trigger: cycleTrigger(bucket)
   };
 }
 
@@ -253,9 +340,9 @@ function requestInput(
   return {
     cycleId: `cycle-${bucket}-2026-09-02`,
     triggerIdentity: entryFloor
-      ? "scheduled:boundary-hash-1"
-      : "event:below-min-1",
-    triggerRef: entryFloor ? "schedule-slot-1" : "exposure-snapshot-1",
+      ? `scheduled:${HASH}`
+      : "event:regime_change",
+    triggerRef: entryFloor ? "schedule-slot-1" : HASH,
     portfolioId: snapshot.portfolioId,
     portfolioSnapshotId: snapshot.portfolioSnapshotId,
     portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
@@ -269,6 +356,25 @@ function requestInput(
     evidenceCutoffAt: "2026-09-01T23:59:00.000Z",
     createdAt: "2026-09-02T00:00:01.000Z"
   };
+}
+
+function cycleTrigger(
+  bucket: "long_term" | "short_term"
+): PortfolioCycleTrigger {
+  return bucket === "short_term"
+    ? {
+        triggerKind: "scheduled",
+        scheduleBoundaryHash: HASH,
+        scheduleSlotId: "schedule-slot-1",
+        slotEndsAt: "2026-09-01T23:59:00.000Z"
+      }
+    : {
+        triggerKind: "policy_event",
+        eventType: "regime_change",
+        policyTriggerEventId: "policy-trigger-event-1",
+        eventHash: HASH,
+        eventAsOf: "2026-09-01T23:59:00.000Z"
+      };
 }
 
 function emptySizingSnapshot(policyHash: string): PortfolioSizingSnapshot {
@@ -323,7 +429,10 @@ function openingCapacities(
 }
 
 function runtimePolicy(
-  overrides: { minimumCashReserveKrw?: number } = {}
+  overrides: {
+    minimumCashReserveKrw?: number;
+    enabledLongTermEvents?: boolean;
+  } = {}
 ): RuntimePortfolioPolicyRecord {
   const payload = {
     mode: "paper_only" as const,
@@ -335,7 +444,9 @@ function runtimePolicy(
     policyId: "balanced-paper",
     version: "v1",
     name: "Balanced paper policy",
-    strategyBuckets: BUCKETS.map(bucketPolicy),
+    strategyBuckets: BUCKETS.map((bucket) =>
+      bucketPolicy(bucket, overrides.enabledLongTermEvents ?? true)
+    ),
     cashPolicy: {
       targetCashRatio: 0.15,
       minimumCashReserveKrw: overrides.minimumCashReserveKrw ?? 100_000,
@@ -376,7 +487,10 @@ function runtimePolicy(
   };
 }
 
-function bucketPolicy(bucket: StrategyBucket): StrategyBucketRuntimePolicy {
+function bucketPolicy(
+  bucket: StrategyBucket,
+  enabledLongTermEvents = true
+): StrategyBucketRuntimePolicy {
   const weights = {
     long_term: [0.35, 0.2, 0.5, "below_min", 0] as const,
     swing: [0.2, 0.1, 0.3, "below_min", 0] as const,
@@ -417,7 +531,10 @@ function bucketPolicy(bucket: StrategyBucket): StrategyBucketRuntimePolicy {
               }
             ]
           },
-    eventTriggers: [],
+    eventTriggers:
+      bucket === "long_term" && enabledLongTermEvents
+        ? ["regime_change"]
+        : [],
     selectionTrigger:
       mode === "below_min"
         ? { mode }
