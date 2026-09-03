@@ -26,6 +26,7 @@ test("policy event repository appends, resolves, and converges semantic retries"
       first
     );
     assert.deepEqual(await repository.readAll(), [first]);
+    assert.deepEqual((await repository.readVerifiedHistory()).records, [first]);
     const raw = await readFile(
       createPortfolioPolicyTriggerEventPaths(baseDir).recordsPath,
       "utf8"

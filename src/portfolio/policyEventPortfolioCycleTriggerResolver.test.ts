@@ -5,6 +5,7 @@ import {
   createPortfolioPolicyTriggerEvent,
   type PortfolioPolicyTriggerEvent
 } from "./portfolioPolicyTriggerEvent.js";
+import { parseVerifiedPortfolioPolicyTriggerEventHistory } from "./portfolioPolicyTriggerEventFiles.js";
 import { resolvePolicyEventPortfolioCycleTrigger } from "./policyEventPortfolioCycleTriggerResolver.js";
 
 const POLICY_HASH = `sha256:${"a".repeat(64)}`;
@@ -13,7 +14,7 @@ test("policy-event trigger resolves one exact immutable event", () => {
   const event = regimeEvent();
   const resolved = resolvePolicyEventPortfolioCycleTrigger({
     value: trigger(event),
-    policyTriggerEvents: [event]
+    policyTriggerEventHistory: history(event)
   });
 
   assert.deepEqual(resolved.policyTriggerEvent, event);
@@ -30,7 +31,7 @@ test("policy-event trigger rejects missing and duplicate event IDs", () => {
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: trigger(event),
-        policyTriggerEvents: []
+        policyTriggerEventHistory: history()
       }),
     /resolved 0/
   );
@@ -38,7 +39,7 @@ test("policy-event trigger rejects missing and duplicate event IDs", () => {
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: trigger(event),
-        policyTriggerEvents: [event, event]
+        policyTriggerEventHistory: history(event, event)
       }),
     /duplicate ID/
   );
@@ -51,7 +52,7 @@ test("policy-event trigger rejects event hash, type, and cutoff drift", () => {
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: { ...trigger(event), eventHash: thesis.eventHash },
-        policyTriggerEvents: [event, thesis]
+        policyTriggerEventHistory: history(event, thesis)
       }),
     /does not match/
   );
@@ -59,7 +60,7 @@ test("policy-event trigger rejects event hash, type, and cutoff drift", () => {
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: { ...trigger(event), eventType: "thesis_evidence_change" },
-        policyTriggerEvents: [event]
+        policyTriggerEventHistory: history(event)
       }),
     /does not match/
   );
@@ -70,21 +71,37 @@ test("policy-event trigger rejects event hash, type, and cutoff drift", () => {
           ...trigger(event),
           eventAsOf: "2026-09-03T00:00:01.000Z"
         },
-        policyTriggerEvents: [event]
+        policyTriggerEventHistory: history(event)
       }),
     /does not match/
   );
 });
 
-test("policy-event trigger rejects corrupt unrelated history", () => {
+test("policy-event trigger rejects corrupt unrelated complete history", () => {
+  const event = regimeEvent();
+  assert.throws(
+    () =>
+      parseVerifiedPortfolioPolicyTriggerEventHistory(
+        `${JSON.stringify(event)}\n${JSON.stringify({
+          ...thesisEvent(),
+          eventHash: POLICY_HASH
+        })}\n`
+      ),
+    /corrupt line 2/
+  );
+});
+
+test("policy-event trigger rejects an unverified array wrapper", () => {
   const event = regimeEvent();
   assert.throws(
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: trigger(event),
-        policyTriggerEvents: [event, { ...thesisEvent(), eventHash: POLICY_HASH }]
+        policyTriggerEventHistory: {
+          records: [event]
+        } as never
       }),
-    /identity does not match payload/
+    /history is not verified/
   );
 });
 
@@ -98,7 +115,7 @@ test("policy-event trigger rejects other trigger variants", () => {
           packetHash: event.eventHash,
           packetAsOf: event.asOf
         },
-        policyTriggerEvents: [event]
+        policyTriggerEventHistory: history(event)
       }),
     /requires a policy_event trigger/
   );
@@ -112,6 +129,13 @@ function trigger(event: PortfolioPolicyTriggerEvent) {
     eventHash: event.eventHash,
     eventAsOf: event.asOf
   };
+}
+
+function history(...events: readonly PortfolioPolicyTriggerEvent[]) {
+  return parseVerifiedPortfolioPolicyTriggerEventHistory(
+    events.map((event) => JSON.stringify(event)).join("\n") +
+      (events.length === 0 ? "" : "\n")
+  );
 }
 
 function regimeEvent() {

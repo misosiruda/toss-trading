@@ -3,6 +3,10 @@ import {
   type PortfolioPolicyTriggerEvent
 } from "./portfolioPolicyTriggerEvent.js";
 import {
+  getVerifiedPortfolioPolicyTriggerEventRecords,
+  type VerifiedPortfolioPolicyTriggerEventHistory
+} from "./portfolioPolicyTriggerEventFiles.js";
+import {
   resolvePortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
 } from "./portfolioCycleTrigger.js";
@@ -19,7 +23,7 @@ export interface ResolvedPolicyEventPortfolioCycleTrigger
 /** Resolves a policy-event trigger against a complete immutable event history. */
 export function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
-  policyTriggerEvents: readonly unknown[];
+  policyTriggerEventHistory: VerifiedPortfolioPolicyTriggerEventHistory;
 }): ResolvedPolicyEventPortfolioCycleTrigger {
   const resolved = resolvePortfolioCycleTrigger(input.value);
   if (resolved.trigger.triggerKind !== "policy_event") {
@@ -28,7 +32,9 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
     );
   }
   const trigger = resolved.trigger;
-  const events = input.policyTriggerEvents.map((event) =>
+  const events = getVerifiedPortfolioPolicyTriggerEventRecords(
+    input.policyTriggerEventHistory
+  ).map((event) =>
     parsePortfolioPolicyTriggerEvent(event)
   );
   assertUniqueEventHistory(events);

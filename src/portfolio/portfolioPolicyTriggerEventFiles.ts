@@ -16,6 +16,15 @@ export interface PortfolioPolicyTriggerEventFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
+const verifiedPolicyTriggerEventHistoryBrand = Symbol(
+  "verifiedPolicyTriggerEventHistory"
+);
+
+export interface VerifiedPortfolioPolicyTriggerEventHistory {
+  records: readonly PortfolioPolicyTriggerEvent[];
+  readonly [verifiedPolicyTriggerEventHistoryBrand]: true;
+}
+
 export function createPortfolioPolicyTriggerEventPaths(baseDir: string): {
   recordsPath: string;
   lockPath: string;
@@ -54,7 +63,11 @@ export class PortfolioPolicyTriggerEventFileRepository {
   }
 
   async readAll(): Promise<readonly PortfolioPolicyTriggerEvent[]> {
-    return this.withLock(async () => this.readAllUnderLock());
+    return this.withLock(async () => (await this.readHistoryUnderLock()).records);
+  }
+
+  async readVerifiedHistory(): Promise<VerifiedPortfolioPolicyTriggerEventHistory> {
+    return this.withLock(async () => this.readHistoryUnderLock());
   }
 
   async resolveById(
@@ -73,7 +86,7 @@ export class PortfolioPolicyTriggerEventFileRepository {
   async append(value: unknown): Promise<PortfolioPolicyTriggerEvent> {
     const candidate = cloneEvent(value);
     return this.withLock(async () => {
-      const events = await this.readAllUnderLock();
+      const events = (await this.readHistoryUnderLock()).records;
       const existing = events.find(
         (event) =>
           event.policyTriggerEventId === candidate.policyTriggerEventId
@@ -93,19 +106,19 @@ export class PortfolioPolicyTriggerEventFileRepository {
     });
   }
 
-  private async readAllUnderLock(): Promise<
-    readonly PortfolioPolicyTriggerEvent[]
+  private async readHistoryUnderLock(): Promise<
+    VerifiedPortfolioPolicyTriggerEventHistory
   > {
     let raw: string;
     try {
       raw = await readFile(this.recordsPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return Object.freeze([]);
+        return parseVerifiedPortfolioPolicyTriggerEventHistory("");
       }
       throw error;
     }
-    return parsePortfolioPolicyTriggerEvents(raw);
+    return parseVerifiedPortfolioPolicyTriggerEventHistory(raw);
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -129,6 +142,12 @@ export class PortfolioPolicyTriggerEventFileRepository {
 export function parsePortfolioPolicyTriggerEvents(
   raw: string
 ): readonly PortfolioPolicyTriggerEvent[] {
+  return parseVerifiedPortfolioPolicyTriggerEventHistory(raw).records;
+}
+
+export function parseVerifiedPortfolioPolicyTriggerEventHistory(
+  raw: string
+): VerifiedPortfolioPolicyTriggerEventHistory {
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error("portfolio policy trigger event file has a torn final line");
   }
@@ -166,7 +185,19 @@ export function parsePortfolioPolicyTriggerEvents(
     hashes.add(event.eventHash);
     events.push(event);
   }
-  return Object.freeze(events);
+  return Object.freeze({
+    records: Object.freeze(events),
+    [verifiedPolicyTriggerEventHistoryBrand]: true as const
+  });
+}
+
+export function getVerifiedPortfolioPolicyTriggerEventRecords(
+  history: VerifiedPortfolioPolicyTriggerEventHistory
+): readonly PortfolioPolicyTriggerEvent[] {
+  if (history[verifiedPolicyTriggerEventHistoryBrand] !== true) {
+    throw new Error("portfolio policy trigger event history is not verified");
+  }
+  return history.records;
 }
 
 function sameSemanticEvent(
