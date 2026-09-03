@@ -3305,6 +3305,13 @@ portfolio/policy/bucket scope와 `asOf`를 exact-match한다. 다른 update kind
 주입하거나 risk-state source를 생략하면 fail-closed한다. Fill/fee/cash-flow update의 kind별 immutable
 origin/state replay와 Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+서른 번째 분할은 `fee`와 `cash_flow` update가 참조하는 immutable `BucketEquityEvent`를 risk-breach
+source resolver에서 독립 재현한다. Fee는 `execution_cost`, cash flow는 `capital_flow` event만 허용하며
+complete event payload hash와 hash-derived ID를 다시 검증한다. Event ID, plan/action/fill lineage,
+portfolio/policy scope와 `asOf`를 update에 exact-match하고 다른 update kind의 event source 주입 및 source
+누락을 fail-closed한다. Complete bucket equity event history의 predecessor/state replay, fill update origin과
+Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

@@ -14,7 +14,12 @@ import {
   resolvePortfolioSizingSnapshot,
   type ResolvedPortfolioSizingSnapshot
 } from "./portfolioSizingSnapshotResolver.js";
-import { parseBucketRiskState, type BucketRiskState } from "./bucketEquity.js";
+import {
+  parseBucketEquityEvent,
+  parseBucketRiskState,
+  type BucketEquityEvent,
+  type BucketRiskState
+} from "./bucketEquity.js";
 
 export interface ResolvedRiskBreachPortfolioCycleTrigger
   extends ResolvedPortfolioCycleTrigger {
@@ -25,6 +30,7 @@ export interface ResolvedRiskBreachPortfolioCycleTrigger
   riskStateUpdate: PortfolioRiskStateUpdateRecord;
   marketMarkSnapshot?: ResolvedPortfolioSizingSnapshot["snapshot"];
   bucketRiskState?: BucketRiskState;
+  bucketEquityEvent?: BucketEquityEvent;
 }
 
 /** Resolves a risk-breach trigger against a complete immutable update history. */
@@ -33,6 +39,7 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
   riskStateUpdateHistory: VerifiedPortfolioRiskStateUpdateHistory;
   marketMarkSource?: unknown;
   bucketRiskStateSource?: unknown;
+  bucketEquityEventSource?: unknown;
   expectedPortfolioId: string;
   expectedPolicyHash: string;
 }): ResolvedRiskBreachPortfolioCycleTrigger {
@@ -81,13 +88,18 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
     riskStateUpdate,
     input.bucketRiskStateSource
   );
+  const bucketEquityEvent = resolveBucketEquityEventSource(
+    riskStateUpdate,
+    input.bucketEquityEventSource
+  );
 
   return deepFreeze({
     ...resolved,
     trigger,
     riskStateUpdate,
     ...(marketMarkSnapshot === undefined ? {} : { marketMarkSnapshot }),
-    ...(bucketRiskState === undefined ? {} : { bucketRiskState })
+    ...(bucketRiskState === undefined ? {} : { bucketRiskState }),
+    ...(bucketEquityEvent === undefined ? {} : { bucketEquityEvent })
   });
 }
 
@@ -155,6 +167,45 @@ function resolveBucketRiskStateSource(
     throw new Error("risk_state update origin scope mismatch");
   }
   return state;
+}
+
+function resolveBucketEquityEventSource(
+  update: PortfolioRiskStateUpdateRecord,
+  source: unknown
+): BucketEquityEvent | undefined {
+  if (update.stateUpdateKind !== "fee" && update.stateUpdateKind !== "cash_flow") {
+    if (source !== undefined) {
+      throw new Error(
+        "bucket equity-event source is allowed only for a fee or cash_flow update"
+      );
+    }
+    return undefined;
+  }
+  if (source === undefined) {
+    throw new Error(
+      `${update.stateUpdateKind} update requires its bucket equity-event source`
+    );
+  }
+  const event = parseBucketEquityEvent(source);
+  const expectedEventType =
+    update.stateUpdateKind === "fee" ? "execution_cost" : "capital_flow";
+  if (
+    event.bucketEquityEventId !== update.bucketEquityEventId ||
+    event.eventType !== expectedEventType ||
+    event.rebalancePlanId !== update.rebalancePlanId ||
+    event.rebalanceActionId !== update.rebalanceActionId ||
+    event.fillId !== update.fillId
+  ) {
+    throw new Error(`${update.stateUpdateKind} update origin identity mismatch`);
+  }
+  if (
+    event.portfolioId !== update.portfolioId ||
+    event.policyHash !== update.policyHash ||
+    event.asOf !== update.asOf
+  ) {
+    throw new Error(`${update.stateUpdateKind} update origin scope mismatch`);
+  }
+  return event;
 }
 
 function assertUniqueUpdateHistory(

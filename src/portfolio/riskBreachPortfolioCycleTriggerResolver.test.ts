@@ -7,7 +7,9 @@ import {
 } from "./portfolioRiskStateUpdate.js";
 import { parseVerifiedPortfolioRiskStateUpdateHistory } from "./portfolioRiskStateUpdateFiles.js";
 import {
+  createBucketEquityEvent,
   createBucketRiskState,
+  type BucketEquityEvent,
   type BucketRiskState
 } from "./bucketEquity.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
@@ -187,6 +189,128 @@ test("risk-breach resolver rejects bucket risk state for other update kinds", ()
         expectedPolicyHash: update.policyHash
       }),
     /allowed only for a risk_state update/
+  );
+});
+
+for (const kind of ["fee", "cash_flow"] as const) {
+  test(`risk-breach trigger resolves one exact ${kind} equity event`, () => {
+    const event = equityEvent(kind);
+    const update = equityEventUpdate(kind, event);
+    const resolved = resolveRiskBreachPortfolioCycleTriggerRaw({
+      value: trigger(update),
+      riskStateUpdateHistory: history(update),
+      bucketEquityEventSource: event,
+      expectedPortfolioId: update.portfolioId,
+      expectedPolicyHash: update.policyHash
+    });
+
+    assert.deepEqual(resolved.riskStateUpdate, update);
+    assert.deepEqual(resolved.bucketEquityEvent, event);
+    assert.equal(resolved.triggerIdentity, `risk_breach:${kind}`);
+    assert.equal(Object.isFrozen(resolved.bucketEquityEvent), true);
+  });
+
+  test(`risk-breach ${kind} requires an exact immutable equity event`, () => {
+    const event = equityEvent(kind);
+    const update = equityEventUpdate(kind, event);
+    assert.throws(
+      () =>
+        resolveRiskBreachPortfolioCycleTriggerRaw({
+          value: trigger(update),
+          riskStateUpdateHistory: history(update),
+          expectedPortfolioId: update.portfolioId,
+          expectedPolicyHash: update.policyHash
+        }),
+      /requires its bucket equity-event source/
+    );
+    assert.throws(
+      () =>
+        resolveRiskBreachPortfolioCycleTriggerRaw({
+          value: trigger(update),
+          riskStateUpdateHistory: history(update),
+          bucketEquityEventSource: {
+            ...event,
+            bucketEquityEventHash: HASH_A
+          },
+          expectedPortfolioId: update.portfolioId,
+          expectedPolicyHash: update.policyHash
+        }),
+      /identity does not match its payload/
+    );
+    assert.throws(
+      () =>
+        resolveRiskBreachPortfolioCycleTriggerRaw({
+          value: trigger(update),
+          riskStateUpdateHistory: history(update),
+          bucketEquityEventSource: equityEvent(kind, "fill-2"),
+          expectedPortfolioId: update.portfolioId,
+          expectedPolicyHash: update.policyHash
+      }),
+      /origin identity mismatch/
+    );
+    const wrongLineageUpdate = equityEventUpdate(kind, event, {
+      rebalancePlanId: "plan-2"
+    });
+    assert.throws(
+      () =>
+        resolveRiskBreachPortfolioCycleTriggerRaw({
+          value: trigger(wrongLineageUpdate),
+          riskStateUpdateHistory: history(wrongLineageUpdate),
+          bucketEquityEventSource: event,
+          expectedPortfolioId: wrongLineageUpdate.portfolioId,
+          expectedPolicyHash: wrongLineageUpdate.policyHash
+        }),
+      /origin identity mismatch/
+    );
+
+    const lateUpdate = equityEventUpdate(kind, event, {
+      asOf: "2026-09-03T00:00:01.000Z",
+      createdAt: "2026-09-03T00:00:02.000Z"
+    });
+    assert.throws(
+      () =>
+        resolveRiskBreachPortfolioCycleTriggerRaw({
+          value: trigger(lateUpdate),
+          riskStateUpdateHistory: history(lateUpdate),
+          bucketEquityEventSource: event,
+          expectedPortfolioId: lateUpdate.portfolioId,
+          expectedPolicyHash: lateUpdate.policyHash
+        }),
+      /origin scope mismatch/
+    );
+  });
+}
+
+test("risk-breach equity-event origin enforces the update kind mapping", () => {
+  const event = equityEvent("cash_flow");
+  const update = equityEventUpdate("fee", event);
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        bucketEquityEventSource: event,
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /origin identity mismatch/
+  );
+});
+
+test("risk-breach resolver rejects equity-event source for other update kinds", () => {
+  const snapshot = marketMarkSnapshot();
+  const update = marketMarkUpdate(snapshot);
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        marketMarkSource: snapshot,
+        bucketEquityEventSource: equityEvent("fee"),
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: update.policyHash
+      }),
+    /allowed only for a fee or cash_flow update/
   );
 });
 
@@ -426,5 +550,68 @@ function bucketRiskState(riskStateEpochId = "epoch-1"): BucketRiskState {
     drawdownRatio: 1 - 0.8 / 1,
     lastBucketEquityEventId: "bucket-equity-event-1",
     asOf: "2026-09-03T00:00:00.000Z"
+  });
+}
+
+type FillBucketEquityEvent = Extract<
+  BucketEquityEvent,
+  { eventType: "capital_flow" | "execution_cost" }
+>;
+
+function equityEvent(
+  kind: "fee" | "cash_flow",
+  fillId = "fill-1"
+): FillBucketEquityEvent {
+  const shared = {
+    previousBucketEquityEventId: "bucket-equity-event-previous",
+    riskStateEpochId: "epoch-1",
+    portfolioId: "portfolio-1",
+    bucket: "short_term" as const,
+    policyHash: HASH_A,
+    asOf: "2026-09-03T00:00:00.000Z",
+    rebalancePlanId: "plan-1",
+    rebalanceActionId: "action-1",
+    fillId,
+    paperFillRecordId: `paper-${fillId}`,
+    paperFillHash: HASH_B,
+    fillAccountingGroupId: `group-${fillId}`
+  };
+  return createBucketEquityEvent(
+    kind === "fee"
+      ? {
+          ...shared,
+          eventType: "execution_cost",
+          equityDeltaKrw: -5,
+          fillAccountingSequence: 1,
+          evidenceRefs: ["fee-1"]
+        }
+      : {
+          ...shared,
+          eventType: "capital_flow",
+          amountKrw: 500,
+          fillAccountingSequence: 0
+        }
+  ) as FillBucketEquityEvent;
+}
+
+function equityEventUpdate(
+  kind: "fee" | "cash_flow",
+  event: FillBucketEquityEvent,
+  overrides: Partial<{
+    asOf: string;
+    createdAt: string;
+    rebalancePlanId: string;
+  }> = {}
+) {
+  return createPortfolioRiskStateUpdateRecord({
+    portfolioId: event.portfolioId,
+    policyHash: event.policyHash,
+    asOf: overrides.asOf ?? event.asOf,
+    stateUpdateKind: kind,
+    bucketEquityEventId: event.bucketEquityEventId,
+    rebalancePlanId: overrides.rebalancePlanId ?? event.rebalancePlanId,
+    rebalanceActionId: event.rebalanceActionId,
+    fillId: event.fillId,
+    createdAt: overrides.createdAt ?? "2026-09-03T00:00:01.000Z"
   });
 }
