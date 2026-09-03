@@ -39,22 +39,20 @@ test("execution-applied event identity covers fill and portfolio transition", ()
   assert.notEqual(nextFill.planEventHash, first.planEventHash);
 });
 
-test("execution-applied event rejects fill amounts above request", () => {
-  assert.throws(
-    () =>
-      createRebalancePlanExecutionAppliedEvent({
-        ...validInput(),
-        filledNotionalKrw: 101
-      }),
-    /exceeds its requested amount/
-  );
+test("execution-applied event permits slippage notional and rejects excess quantity", () => {
+  const slipped = createRebalancePlanExecutionAppliedEvent({
+    ...validInput(),
+    filledNotionalKrw: 101,
+    cumulativeFilledNotionalKrw: 101
+  });
+  assert.equal(slipped.filledNotionalKrw, 101);
   assert.throws(
     () =>
       createRebalancePlanExecutionAppliedEvent({
         ...validInput(),
         filledQuantity: 2
       }),
-    /exceeds its requested amount/
+    /quantity exceeds its request/
   );
 });
 

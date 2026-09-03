@@ -3345,8 +3345,10 @@ format으로 재생성해야 한다. Plan execution event/accounting origin과 f
 서른네 번째 분할은 한 accepted fill의 portfolio mutation을 immutable
 `RebalancePlanExecutionAppliedEvent` variant로 보존하는 strict contract를 구현한다. Event는 plan/action/fill
 sequence, exact paper fill ID/hash, requested/current/cumulative fill amount, Risk decision ID와 pre/resulting
-portfolio version/snapshot을 complete payload에 포함한다. Filled amount는 request를 초과할 수 없고 cumulative는
-current fill 이상이어야 하며 resulting portfolio state는 pre-state를 반드시 전진시킨다. Event hash는 ID/hash를
+portfolio version/snapshot을 complete payload에 포함한다. Cumulative amount는 current fill 이상이어야 하고
+resulting portfolio state는 pre-state를 반드시 전진시킨다. Filled quantity는 requested quantity를 초과할 수
+없지만 slippage가 반영된 filled notional은 requested notional을 초과할 수 있고,
+후속 Risk decision resolver가 `approvedMaximumFillNotionalKrw`와 exact 검증한다. Event hash는 ID/hash를
 제외한 complete payload, ID는 hash에서 파생한다. Full `RebalancePlanEvent` union repository/fold, exact
 plan/action/risk/fill resolver와 accounting/risk-state mutation 연결은 후속 분할 전까지 구현 완료로 간주하지
 않는다.

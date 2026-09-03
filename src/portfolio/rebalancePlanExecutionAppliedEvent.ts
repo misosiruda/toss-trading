@@ -107,11 +107,8 @@ export function parseRebalancePlanExecutionAppliedEvent(
 function assertPayload(
   payload: z.infer<typeof rebalancePlanExecutionAppliedPayloadSchema>
 ): void {
-  if (
-    payload.filledNotionalKrw > payload.requestedNotionalKrw ||
-    payload.filledQuantity > payload.requestedQuantity
-  ) {
-    throw new Error("execution-applied fill exceeds its requested amount");
+  if (payload.filledQuantity > payload.requestedQuantity) {
+    throw new Error("execution-applied fill quantity exceeds its request");
   }
   if (
     payload.cumulativeFilledNotionalKrw < payload.filledNotionalKrw ||
