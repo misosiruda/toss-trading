@@ -87,6 +87,28 @@ test("scheduled slot generation produces hourly boundaries and final close", () 
   );
 });
 
+test("scheduled slot generation derives IANA offset from UTC timestamps", () => {
+  const calendar = oneDayUsCalendarUtcSerialized();
+  const boundary = scheduleBoundary(calendar, {
+    interval: "daily",
+    anchorLocalTime: "10:00:00"
+  });
+  const slot = generateCanonicalScheduleSlots(boundary, calendar)[0]!;
+
+  assert.equal(slot.slotEndsAt, "2026-11-02T15:00:00.000Z");
+});
+
+test("scheduled daily anchor preserves an exact session-open boundary", () => {
+  const calendar = oneDayUsCalendar();
+  const boundary = scheduleBoundary(calendar, {
+    interval: "daily",
+    anchorLocalTime: "09:30:00"
+  });
+  const slot = generateCanonicalScheduleSlots(boundary, calendar)[0]!;
+
+  assert.equal(slot.slotEndsAt, "2026-11-02T14:30:00.000Z");
+});
+
 test("scheduled slot identity binds boundary and calendar lineage", () => {
   const firstCalendar = oneDayUsCalendar();
   const replayedCalendar = createSessionCalendarRecord({
@@ -279,6 +301,26 @@ function oneDayUsCalendar() {
         sessionKind: "regular",
         opensAt: "2026-11-02T09:30:00-05:00",
         closesAt: "2026-11-02T16:00:00-05:00",
+        sourceEvidenceRefs: ["calendar-evidence-2"]
+      }
+    ],
+    createdAt: "2026-09-02T00:00:00.000Z"
+  });
+}
+
+function oneDayUsCalendarUtcSerialized() {
+  return createSessionCalendarRecord({
+    market: "US",
+    version: "1",
+    timeZone: "America/New_York",
+    validFromExchangeDate: "2026-11-02",
+    validThroughExchangeDate: "2026-11-02",
+    sessions: [
+      {
+        exchangeDate: "2026-11-02",
+        sessionKind: "regular",
+        opensAt: "2026-11-02T14:30:00Z",
+        closesAt: "2026-11-02T21:00:00Z",
         sourceEvidenceRefs: ["calendar-evidence-2"]
       }
     ],

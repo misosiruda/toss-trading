@@ -198,11 +198,10 @@ function slotEndsForSession(
   const anchor = localAnchorInstant(
     session.exchangeDate,
     boundary.anchorLocalTime,
-    calendar.timeZone,
-    session
+    calendar.timeZone
   );
   if (boundary.interval !== "hourly") {
-    const slotEnd = anchor > opensAt && anchor <= closesAt ? anchor : closesAt;
+    const slotEnd = anchor >= opensAt && anchor <= closesAt ? anchor : closesAt;
     return [new Date(slotEnd).toISOString()];
   }
 
@@ -222,8 +221,7 @@ function slotEndsForSession(
 function localAnchorInstant(
   exchangeDate: string,
   anchorLocalTime: string,
-  timeZone: string,
-  session: OpenSession
+  timeZone: string
 ): number {
   const [year, month, day] = exchangeDate.split("-").map(Number) as [
     number,
@@ -236,10 +234,11 @@ function localAnchorInstant(
     number?
   ];
   const nominalUtc = Date.UTC(year, month - 1, day, hour, minute, second);
-  const offsets = new Set([
-    timestampOffsetMinutes(session.opensAt),
-    timestampOffsetMinutes(session.closesAt)
-  ]);
+  const offsets = new Set(
+    [-172_800_000, -86_400_000, 0, 86_400_000, 172_800_000].map(
+      (delta) => timeZoneOffsetMinutesAt(nominalUtc + delta, timeZone)
+    )
+  );
   const matches = [...offsets]
     .map((offset) => nominalUtc - offset * 60_000)
     .filter((candidate) =>
@@ -281,13 +280,19 @@ function localPartsMatch(
   return Object.entries(expected).every(([key, value]) => actual[key] === value);
 }
 
-function timestampOffsetMinutes(value: string): number {
-  if (value.endsWith("Z")) {
+function timeZoneOffsetMinutesAt(timestamp: number, timeZone: string): number {
+  const name = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "longOffset"
+  })
+    .formatToParts(new Date(timestamp))
+    .find((part) => part.type === "timeZoneName")?.value;
+  if (name === "GMT") {
     return 0;
   }
-  const match = /([+-])(\d{2}):(\d{2})$/.exec(value);
+  const match = /^GMT([+-])(\d{2}):(\d{2})$/.exec(name ?? "");
   if (match === null) {
-    throw new Error("session timestamp timezone offset is invalid");
+    throw new Error("IANA timezone offset cannot be resolved");
   }
   const minutes = Number(match[2]) * 60 + Number(match[3]);
   return match[1] === "+" ? minutes : -minutes;
