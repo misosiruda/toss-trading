@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { StrategyBucket } from "../domain/schemas.js";
+import { createMockMarketPacket } from "../market/packetBuilder.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import {
   createBucketSelectionRequest,
   type CreateBucketSelectionRequestInput
 } from "./bucketSelectionRequest.js";
+import {
+  parseCanonicalMarketPacketHistoryText,
+} from "./everyTickPortfolioCycleTriggerResolver.js";
 import {
   resolveBucketSelectionRequest,
   type BucketSelectionOpeningCapacity
@@ -17,9 +22,12 @@ import {
   type PortfolioSizingSnapshot
 } from "./portfolioSizingSnapshot.js";
 import {
+  createBucketSelectionPolicyRecord,
   hashCanonicalPayload,
   hashDerivedId,
   hashImmutableRecordLineage,
+  selectionPolicyRefFor,
+  type BucketSelectionPolicyRef,
   type StrategyBucketRuntimePolicy
 } from "./runtimePolicyContracts.js";
 import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
@@ -339,6 +347,212 @@ test("selection request resolver rejects risk-breach candidate selection", () =>
   );
 });
 
+test("selection request resolver binds every-tick packet and source policy", () => {
+  const fixture = everyTickFixture();
+  const resolved = resolveBucketSelectionRequest({
+    value: fixture.request,
+    sizingSnapshot: fixture.snapshot,
+    activePolicy: fixture.policy,
+    cycleTrigger: fixture.trigger,
+    everyTickTriggerSource: {
+      marketPacketHistory: fixture.history,
+      selectionPolicy: fixture.selectionPolicy
+    },
+    bucketOpeningCapacities: openingCapacities()
+  });
+
+  assert.equal(resolved.triggerSource?.sourceKind, "market_packet");
+  assert.equal(
+    resolved.triggerSource?.cycleTrigger.marketPacket.packetId,
+    fixture.packet.packetId
+  );
+  assert.equal(resolved.gap.gapBasis, "entry_floor");
+  assert.equal(resolved.gap.gapKrw, 20_000);
+});
+
+test("selection request resolver requires every-tick source and rejects stale packet", () => {
+  const fixture = everyTickFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /requires its packet source/
+  );
+
+  const stale = everyTickFixture({
+    packetGeneratedAt: "2026-09-01T23:58:59.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: stale.request,
+        sizingSnapshot: stale.snapshot,
+        activePolicy: stale.policy,
+        cycleTrigger: stale.trigger,
+        everyTickTriggerSource: {
+          marketPacketHistory: stale.history,
+          selectionPolicy: stale.selectionPolicy
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /packet is stale/
+  );
+
+  const unsupportedContract = everyTickFixture({
+    sourceContractId: "unregistered-packet.v1"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(unsupportedContract),
+    /does not bind the verified packet contract/
+  );
+
+  const futureDependency = everyTickFixture({
+    selectionPolicyCreatedAt: "2026-09-01T12:00:00.000Z"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(futureDependency),
+    /selection policy postdates the runtime policy/
+  );
+});
+
+test("selection request resolver rejects every-tick portfolio and market scope drift", () => {
+  const wrongPortfolio = everyTickFixture({ packetPortfolioId: "portfolio-2" });
+  assert.throws(
+    () => resolveEveryTickFixture(wrongPortfolio),
+    /packet portfolio mismatch/
+  );
+
+  const disabledMarket = everyTickFixture({ enabledMarkets: ["US"] });
+  assert.throws(
+    () => resolveEveryTickFixture(disabledMarket),
+    /candidate market is disabled/
+  );
+});
+
+test("selection request resolver rejects ignored every-tick source input", () => {
+  const fixture = selectionFixture();
+  const everyTick = everyTickFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        everyTickTriggerSource: {
+          marketPacketHistory: everyTick.history,
+          selectionPolicy: everyTick.selectionPolicy
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /allowed only for an every_tick trigger/
+  );
+});
+
+function everyTickFixture(
+  options: {
+    packetGeneratedAt?: string;
+    packetPortfolioId?: string;
+    enabledMarkets?: readonly ("KR" | "US")[];
+    sourceContractId?: string;
+    selectionPolicyCreatedAt?: string;
+  } = {}
+) {
+  const sourceContractId =
+    options.sourceContractId ?? "verified-market-packet.v1";
+  const selectionPolicy = createBucketSelectionPolicyRecord({
+    bucket: "intraday",
+    version: "v1",
+    requiredEvidence: [
+      {
+        evidenceClass: "market_technical",
+        sourceContractId,
+        maximumAgeSeconds: 60
+      }
+    ],
+    everyTickSourceRequirement: {
+      sourceContractId,
+      eventType: "verified_market_packet",
+      maximumAgeSeconds: 60,
+      dedupeKey: "packet_hash"
+    },
+    hardGateRuleIds: ["liquidity"],
+    scoringModelVersion: "selector.intraday.v1",
+    featureDefinitionRefs: ["momentum.v1"],
+    createdAt: options.selectionPolicyCreatedAt ?? POLICY_CREATED_AT
+  });
+  const policy = runtimePolicy({
+    intradaySelectionPolicyRef: selectionPolicyRefFor(selectionPolicy),
+    ...(options.enabledMarkets === undefined
+      ? {}
+      : { intradayEnabledMarkets: options.enabledMarkets })
+  });
+  const snapshot = emptySizingSnapshot(policy.policyHash);
+  const generatedAt = options.packetGeneratedAt ?? AS_OF;
+  const packet = createMockMarketPacket({
+    now: new Date(generatedAt),
+    portfolio: {
+      portfolioId: options.packetPortfolioId ?? snapshot.portfolioId,
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-09-01T23:30:00.000Z"
+    }
+  }).packet;
+  const packetHash = createMarketPacketHash(packet);
+  const trigger = {
+    triggerKind: "every_tick" as const,
+    packetHash,
+    packetAsOf: packet.generatedAt
+  };
+  const request = createBucketSelectionRequest({
+    cycleId: "cycle-intraday-2026-09-02",
+    triggerIdentity: "every_tick",
+    triggerRef: packetHash,
+    portfolioId: snapshot.portfolioId,
+    portfolioSnapshotId: snapshot.portfolioSnapshotId,
+    portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
+    policyHash: snapshot.policyHash,
+    asOf: snapshot.asOf,
+    bucket: "intraday",
+    gapBasis: "entry_floor",
+    gapKrw: 20_000,
+    availableSlots: 4,
+    maximumAdditionalExposureKrw: 20_000,
+    evidenceCutoffAt: packet.generatedAt,
+    createdAt: "2026-09-02T00:00:01.000Z"
+  });
+  return {
+    history: parseCanonicalMarketPacketHistoryText(
+      `${JSON.stringify(packet)}\n`
+    ),
+    packet,
+    policy,
+    request,
+    selectionPolicy,
+    snapshot,
+    trigger
+  };
+}
+
+function resolveEveryTickFixture(fixture: ReturnType<typeof everyTickFixture>) {
+  return resolveBucketSelectionRequest({
+    value: fixture.request,
+    sizingSnapshot: fixture.snapshot,
+    activePolicy: fixture.policy,
+    cycleTrigger: fixture.trigger,
+    everyTickTriggerSource: {
+      marketPacketHistory: fixture.history,
+      selectionPolicy: fixture.selectionPolicy
+    },
+    bucketOpeningCapacities: openingCapacities()
+  });
+}
+
 function selectionFixture(
   options: { bucket?: "long_term" | "short_term" } = {}
 ): {
@@ -458,6 +672,8 @@ function runtimePolicy(
   overrides: {
     minimumCashReserveKrw?: number;
     enabledLongTermEvents?: boolean;
+    intradaySelectionPolicyRef?: BucketSelectionPolicyRef;
+    intradayEnabledMarkets?: readonly ("KR" | "US")[];
   } = {}
 ): RuntimePortfolioPolicyRecord {
   const payload = {
@@ -471,7 +687,14 @@ function runtimePolicy(
     version: "v1",
     name: "Balanced paper policy",
     strategyBuckets: BUCKETS.map((bucket) =>
-      bucketPolicy(bucket, overrides.enabledLongTermEvents ?? true)
+      bucketPolicy(
+        bucket,
+        overrides.enabledLongTermEvents ?? true,
+        bucket === "intraday"
+          ? overrides.intradaySelectionPolicyRef
+          : undefined,
+        bucket === "intraday" ? overrides.intradayEnabledMarkets : undefined
+      )
     ),
     cashPolicy: {
       targetCashRatio: 0.15,
@@ -515,7 +738,9 @@ function runtimePolicy(
 
 function bucketPolicy(
   bucket: StrategyBucket,
-  enabledLongTermEvents = true
+  enabledLongTermEvents = true,
+  selectionPolicyRef?: BucketSelectionPolicyRef,
+  enabledMarkets?: readonly ("KR" | "US")[]
 ): StrategyBucketRuntimePolicy {
   const weights = {
     long_term: [0.35, 0.2, 0.5, "below_min", 0] as const,
@@ -569,12 +794,11 @@ function bucketPolicy(
       takeProfit: { mode: "disabled" },
       timeExpiryAction: "review_required"
     },
-    enabledMarkets: ["KR", "US"],
+    enabledMarkets: [...(enabledMarkets ?? ["KR", "US"])],
     enabledAssetClasses: ["equity"],
-    selectionPolicyRef: dependencyRef(
-      `${bucket}-selection`,
-      "selectionPolicyRecordId"
-    ),
+    selectionPolicyRef:
+      selectionPolicyRef ??
+      dependencyRef(`${bucket}-selection`, "selectionPolicyRecordId"),
     riskRuleSetRef: dependencyRef(`${bucket}-risk`, "riskRuleSetRecordId")
   };
 }
