@@ -3229,6 +3229,13 @@ ID/version/hash/lineage, market, exchange date, interval과 slot end의 complete
 slot end가 모두 exact-match하지 않으면 fail-closed한다. Runtime policy/request 연결은 후속 분할 전까지
 구현 완료로 간주하지 않는다.
 
+스물한 번째 분할은 scheduled source resolver를 `BucketSelectionRequest` replay에 연결한다. Scheduled
+request는 boundary/calendar source를 반드시 제공해야 하며 runtime policy의 bucket cadence ref와
+boundary ID/version/hash/lineage가 exact-match해야 한다. Boundary market은 bucket enabled market이어야
+하고 boundary는 active runtime policy보다 늦게 생성될 수 없다. 다른 trigger variant에 scheduled source를
+주입하거나 source를 생략하면 fail-closed한다. Policy-event source와 evidence/mandate 연결은 후속 분할
+전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

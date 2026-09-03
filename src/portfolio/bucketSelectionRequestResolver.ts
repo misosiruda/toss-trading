@@ -30,6 +30,10 @@ import {
   type ResolvedEveryTickPortfolioCycleTrigger
 } from "./everyTickPortfolioCycleTriggerResolver.js";
 import {
+  resolveScheduledPortfolioCycleTrigger,
+  type ResolvedScheduledPortfolioCycleTrigger
+} from "./scheduledPortfolioCycleTriggerResolver.js";
+import {
   resolvePortfolioCycleTrigger,
   type PortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
@@ -52,9 +56,14 @@ export interface ResolvedBucketSelectionRequest {
   policy: RuntimePortfolioPolicyRecord;
   bucketPolicy: StrategyBucketRuntimePolicy;
   cycleTrigger: ResolvedPortfolioCycleTrigger;
-  triggerSource?: ResolvedEveryTickBucketSelectionTriggerSource;
+  triggerSource?: ResolvedBucketSelectionTriggerSource;
   analysis: PortfolioGapAnalysis;
   gap: BucketPortfolioGap;
+}
+
+export interface ScheduledBucketSelectionTriggerSourceInput {
+  scheduleBoundary: unknown;
+  sessionCalendar: unknown;
 }
 
 export interface EveryTickBucketSelectionTriggerSourceInput {
@@ -67,6 +76,15 @@ export interface ResolvedEveryTickBucketSelectionTriggerSource {
   cycleTrigger: ResolvedEveryTickPortfolioCycleTrigger;
   selectionPolicy: BucketSelectionPolicyRecord;
 }
+
+export interface ResolvedScheduledBucketSelectionTriggerSource {
+  sourceKind: "schedule_slot";
+  cycleTrigger: ResolvedScheduledPortfolioCycleTrigger;
+}
+
+export type ResolvedBucketSelectionTriggerSource =
+  | ResolvedEveryTickBucketSelectionTriggerSource
+  | ResolvedScheduledBucketSelectionTriggerSource;
 
 /**
  * Resolves a stored selection request against immutable sizing and policy data.
@@ -82,6 +100,7 @@ export function resolveBucketSelectionRequest(input: {
   sizingSnapshot: unknown;
   activePolicy: unknown;
   cycleTrigger: unknown;
+  scheduledTriggerSource?: ScheduledBucketSelectionTriggerSourceInput;
   everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
   bucketOpeningCapacities: readonly BucketSelectionOpeningCapacity[];
 }): ResolvedBucketSelectionRequest {
@@ -102,6 +121,9 @@ export function resolveBucketSelectionRequest(input: {
     bucketPolicy,
     cycleTrigger,
     cycleTriggerValue: input.cycleTrigger,
+    ...(input.scheduledTriggerSource === undefined
+      ? {}
+      : { scheduledTriggerSource: input.scheduledTriggerSource }),
     ...(input.everyTickTriggerSource === undefined
       ? {}
       : { everyTickTriggerSource: input.everyTickTriggerSource })
@@ -175,8 +197,31 @@ function resolveTriggerSource(input: {
   bucketPolicy: StrategyBucketRuntimePolicy;
   cycleTrigger: ResolvedPortfolioCycleTrigger;
   cycleTriggerValue: unknown;
+  scheduledTriggerSource?: ScheduledBucketSelectionTriggerSourceInput;
   everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
-}): ResolvedEveryTickBucketSelectionTriggerSource | undefined {
+}): ResolvedBucketSelectionTriggerSource | undefined {
+  if (input.cycleTrigger.trigger.triggerKind === "scheduled") {
+    if (input.everyTickTriggerSource !== undefined) {
+      throw new Error(
+        "every-tick trigger source is allowed only for an every_tick trigger"
+      );
+    }
+    if (input.scheduledTriggerSource === undefined) {
+      throw new Error("scheduled selection request requires its slot source");
+    }
+    const cycleTrigger = resolveScheduledPortfolioCycleTrigger({
+      value: input.cycleTriggerValue,
+      scheduleBoundary: input.scheduledTriggerSource.scheduleBoundary,
+      sessionCalendar: input.scheduledTriggerSource.sessionCalendar
+    });
+    assertScheduledSourceBinding(input.policy, input.bucketPolicy, cycleTrigger);
+    return deepFreeze({ sourceKind: "schedule_slot", cycleTrigger });
+  }
+  if (input.scheduledTriggerSource !== undefined) {
+    throw new Error(
+      "scheduled trigger source is allowed only for a scheduled trigger"
+    );
+  }
   if (input.cycleTrigger.trigger.triggerKind !== "every_tick") {
     if (input.everyTickTriggerSource !== undefined) {
       throw new Error(
@@ -213,6 +258,35 @@ function resolveTriggerSource(input: {
     cycleTrigger,
     selectionPolicy
   });
+}
+
+function assertScheduledSourceBinding(
+  policy: RuntimePortfolioPolicyRecord,
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  source: ResolvedScheduledPortfolioCycleTrigger
+): void {
+  if (bucketPolicy.reviewCadence.mode !== "scheduled") {
+    throw new Error("scheduled source requires scheduled bucket cadence");
+  }
+  const boundary = source.boundary;
+  if (
+    !bucketPolicy.reviewCadence.boundaryRefs.some(
+      (reference) =>
+        reference.scheduleBoundaryRecordId ===
+          boundary.scheduleBoundaryRecordId &&
+        reference.version === boundary.version &&
+        reference.hash === boundary.hash &&
+        reference.lineageHash === boundary.lineageHash
+    )
+  ) {
+    throw new Error("scheduled source boundary ref mismatch");
+  }
+  if (!bucketPolicy.enabledMarkets.includes(boundary.market)) {
+    throw new Error("scheduled source market is disabled for bucket");
+  }
+  if (Date.parse(boundary.createdAt) > Date.parse(policy.createdAt)) {
+    throw new Error("scheduled source boundary postdates runtime policy");
+  }
 }
 
 function assertEveryTickSelectionPolicyBinding(
