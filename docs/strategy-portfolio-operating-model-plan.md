@@ -3181,6 +3181,13 @@ fail-closed한다. thread/process writer는 exclusive lock과 file/directory syn
 lock은 자동 제거하지 않는다. Active mandate/evidence source 해소 및 cycle trigger 연결은 후속 분할 전까지
 구현 완료로 간주하지 않는다.
 
+열다섯 번째 분할은 `policy_event` cycle trigger를 complete immutable policy event history에 exact-bind하는
+source resolver를 구현한다. history의 모든 event를 strict parse·rehash하고 duplicate ID/hash를 거절한 뒤
+trigger의 event ID가 정확히 하나의 record로 해소되어야 한다. resolved record의 event hash/type/as-of는
+trigger와 exact-match해야 하며 관련 없는 손상 event도 무시하지 않는다. Portfolio/policy/market scope,
+active mandate와 evidence artifact 해소 및 selection request 연결은 후속 분할 전까지 구현 완료로 간주하지
+않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
