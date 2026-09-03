@@ -3165,6 +3165,14 @@ packet/policy를 결과에 보존한다. 다른 trigger에 every-tick source를 
 `minimumObservationCount`를 요구하는 market evidence policy도 추정 없이 거절한다. Schedule slot, policy
 event와 risk-state update source resolution은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열세 번째 분할은 `PortfolioPolicyTriggerEvent`의 strict immutable contract를 구현한다. regime와 thesis
+variant는 portfolio/policy scope, non-empty canonical evidence ref, offset-qualified `asOf`를 공유하고
+previous/current 값이 반드시 달라야 한다. event hash는 ID/hash/createdAt을 제외한 complete payload에서
+계산하며 ID는 hash-derived identity로 만든다. createdAt만 다른 semantic retry는 같은 identity로
+수렴하고 stored payload/hash/ID drift, unknown field, duplicate evidence와 미래 as-of를 fail-closed한다.
+Append-only repository, active mandate/evidence source 해소 및 cycle trigger 연결은 후속 분할 전까지 구현
+완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
