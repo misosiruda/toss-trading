@@ -403,6 +403,26 @@ test("selection request resolver requires every-tick source and rejects stale pa
     /packet is stale/
   );
 
+  const evidenceStale = everyTickFixture({
+    packetGeneratedAt: "2026-09-01T23:59:30.000Z",
+    evidenceMaximumAgeSeconds: 10
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(evidenceStale),
+    /packet is stale/
+  );
+
+  const expiredAtBoundary = everyTickFixture({
+    packetGeneratedAt: "2026-09-01T23:55:00.000Z",
+    sourceMaximumAgeSeconds: 300,
+    evidenceMaximumAgeSeconds: 300
+  });
+  assert.equal(expiredAtBoundary.packet.expiresAt, AS_OF);
+  assert.throws(
+    () => resolveEveryTickFixture(expiredAtBoundary),
+    /packet is stale/
+  );
+
   const unsupportedContract = everyTickFixture({
     sourceContractId: "unregistered-packet.v1"
   });
@@ -461,6 +481,8 @@ function everyTickFixture(
     enabledMarkets?: readonly ("KR" | "US")[];
     sourceContractId?: string;
     selectionPolicyCreatedAt?: string;
+    sourceMaximumAgeSeconds?: number;
+    evidenceMaximumAgeSeconds?: number;
   } = {}
 ) {
   const sourceContractId =
@@ -472,13 +494,13 @@ function everyTickFixture(
       {
         evidenceClass: "market_technical",
         sourceContractId,
-        maximumAgeSeconds: 60
+        maximumAgeSeconds: options.evidenceMaximumAgeSeconds ?? 60
       }
     ],
     everyTickSourceRequirement: {
       sourceContractId,
       eventType: "verified_market_packet",
-      maximumAgeSeconds: 60,
+      maximumAgeSeconds: options.sourceMaximumAgeSeconds ?? 60,
       dedupeKey: "packet_hash"
     },
     hardGateRuleIds: ["liquidity"],

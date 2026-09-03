@@ -276,10 +276,21 @@ function assertEveryTickMarketPacketBinding(
     throw new Error("every_tick packet postdates the selection request");
   }
   const requirement = selectionPolicy.everyTickSourceRequirement;
+  const evidenceMaximumAgeSeconds = Math.min(
+    ...selectionPolicy.requiredEvidence
+      .filter(
+        (evidence) =>
+          evidence.evidenceClass === "market_technical" &&
+          evidence.sourceContractId ===
+            EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID
+      )
+      .map((evidence) => evidence.maximumAgeSeconds)
+  );
   if (
     requirement === undefined ||
-    ageMilliseconds / 1_000 > requirement.maximumAgeSeconds ||
-    Date.parse(request.asOf) > Date.parse(packet.expiresAt)
+    ageMilliseconds / 1_000 >
+      Math.min(requirement.maximumAgeSeconds, evidenceMaximumAgeSeconds) ||
+    Date.parse(request.asOf) >= Date.parse(packet.expiresAt)
   ) {
     throw new Error("every_tick packet is stale for the selection request");
   }
