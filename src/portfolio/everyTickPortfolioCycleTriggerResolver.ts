@@ -1,5 +1,5 @@
-import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   marketPacketSchema,
@@ -121,6 +121,10 @@ export function parseCanonicalMarketPacketHistoryText(
     }
     try {
       const value: unknown = JSON.parse(line);
+      if (containsNegativeZero(value)) {
+        corruptLineCount += 1;
+        continue;
+      }
       const packet = marketPacketSchema.parse(value);
       if (!isDeepStrictEqual(value, packet)) {
         corruptLineCount += 1;
@@ -137,6 +141,19 @@ export function parseCanonicalMarketPacketHistoryText(
     corruptLineCount,
     [canonicalMarketPacketHistoryBrand]: true as const
   });
+}
+
+function containsNegativeZero(value: unknown): boolean {
+  if (typeof value === "number") {
+    return Object.is(value, -0);
+  }
+  if (Array.isArray(value)) {
+    return value.some(containsNegativeZero);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).some(containsNegativeZero);
+  }
+  return false;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -3149,7 +3149,8 @@ strict schema로 다시 읽어 schema normalization 전 canonical form을 검증
 독립 재계산하는 source resolver를 구현한다. trigger의
 packet hash는 정확히 하나의 canonical packet으로 해소되어야 하며 `packetAsOf`는 packet에 저장된
 `generatedAt`과 exact-match해야 한다. 누락·중복 packet hash, hash가 달라진 payload, cutoff drift와
-관련 없는 손상 record도 fail-closed한다. Schedule slot, policy event와 risk-state update의 원본
+관련 없는 손상 record도 fail-closed하며 JSON stringify hash 충돌을 만드는 nested negative zero도
+canonical packet에서 거절한다. Schedule slot, policy event와 risk-state update의 원본
 immutable record 해소는 각 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:

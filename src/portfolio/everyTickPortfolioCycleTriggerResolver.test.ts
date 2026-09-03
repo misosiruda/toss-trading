@@ -145,6 +145,20 @@ test("raw history parsing rejects blank and unterminated JSONL records", () => {
   assert.equal(unterminated.records.length, 0);
 });
 
+test("raw history parsing rejects negative zero before packet hashing", () => {
+  const packet = marketPacket();
+  const negativeZeroCash = JSON.stringify(packet).replace(
+    '"cashKrw":1000000',
+    '"cashKrw":-0'
+  );
+  const parsed = parseCanonicalMarketPacketHistoryText(
+    `${negativeZeroCash}\n`
+  );
+
+  assert.equal(parsed.records.length, 0);
+  assert.equal(parsed.corruptLineCount, 1);
+});
+
 function marketPacket(): MarketPacket {
   return createMockMarketPacket({
     now: new Date(AS_OF),
