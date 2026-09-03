@@ -1,0 +1,456 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { StrategyBucket } from "../domain/schemas.js";
+import {
+  createBucketSelectionRequest,
+  type CreateBucketSelectionRequestInput
+} from "./bucketSelectionRequest.js";
+import {
+  resolveBucketSelectionRequest,
+  type BucketSelectionOpeningCapacity
+} from "./bucketSelectionRequestResolver.js";
+import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
+import {
+  createPortfolioSizingSnapshot,
+  type PortfolioSizingSnapshot
+} from "./portfolioSizingSnapshot.js";
+import {
+  hashCanonicalPayload,
+  hashDerivedId,
+  hashImmutableRecordLineage,
+  type StrategyBucketRuntimePolicy
+} from "./runtimePolicyContracts.js";
+import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
+
+const HASH = `sha256:${"a".repeat(64)}` as const;
+const POLICY_CREATED_AT = "2026-09-01T00:00:00.000Z";
+const AS_OF = "2026-09-02T00:00:00.000Z";
+const BUCKETS = [
+  "long_term",
+  "swing",
+  "short_term",
+  "intraday",
+  "hedge"
+] as const;
+
+test("selection request resolver binds snapshot, policy, and replayed gap", () => {
+  const fixture = selectionFixture();
+  const resolved = resolveBucketSelectionRequest({
+    value: fixture.request,
+    sizingSnapshot: fixture.snapshot,
+    activePolicy: fixture.policy,
+    bucketOpeningCapacities: openingCapacities()
+  });
+
+  assert.deepEqual(resolved.request, fixture.request);
+  assert.deepEqual(resolved.sizingSnapshot, fixture.snapshot);
+  assert.equal(resolved.gap.gapBasis, "min");
+  assert.equal(resolved.gap.gapKrw, 200_000);
+  assert.equal(resolved.gap.availableSlots, 4);
+  assert.equal(resolved.gap.maximumAdditionalExposureKrw, 200_000);
+  assert.equal(Object.isFrozen(resolved), true);
+});
+
+test("selection request resolver replays entry-floor eligibility as due", () => {
+  const fixture = selectionFixture({ bucket: "short_term" });
+  const resolved = resolveBucketSelectionRequest({
+    value: fixture.request,
+    sizingSnapshot: fixture.snapshot,
+    activePolicy: fixture.policy,
+    bucketOpeningCapacities: openingCapacities()
+  });
+
+  assert.equal(resolved.bucketPolicy.selectionTrigger.mode, "entry_floor_on_due_cycle");
+  assert.equal(resolved.gap.triggerDue, true);
+  assert.equal(resolved.gap.gapBasis, "entry_floor");
+  assert.equal(resolved.gap.gapKrw, 50_000);
+  assert.equal(resolved.gap.maximumAdditionalExposureKrw, 50_000);
+});
+
+test("selection request resolver rejects snapshot and policy lineage mismatch", () => {
+  const fixture = selectionFixture();
+  const wrongSnapshotRequest = createBucketSelectionRequest({
+    ...requestInput(fixture.snapshot, "long_term"),
+    portfolioSnapshotId: "portfolio-sizing-snapshot-other"
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: wrongSnapshotRequest,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /snapshot identity mismatch/
+  );
+
+  const replacementPolicy = runtimePolicy({ minimumCashReserveKrw: 1 });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: replacementPolicy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /active policy mismatch/
+  );
+
+  const corruptSnapshot = {
+    ...fixture.snapshot,
+    portfolioSnapshotHash: HASH
+  };
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: corruptSnapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /identity does not match payload/
+  );
+});
+
+test("selection request resolver requires exact snapshot time and a pre-existing policy", () => {
+  const fixture = selectionFixture();
+  const staleRequest = createBucketSelectionRequest({
+    ...requestInput(fixture.snapshot, "long_term"),
+    asOf: "2026-09-01T23:59:59.000Z",
+    evidenceCutoffAt: "2026-09-01T23:59:58.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: staleRequest,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /snapshot scope mismatch/
+  );
+
+  const futureCreatedAt = "2026-09-03T00:00:00.000Z";
+  const futurePolicy = {
+    ...fixture.policy,
+    lineageHash: hashImmutableRecordLineage({
+      recordType: "runtime_portfolio_policy",
+      recordId: fixture.policy.runtimePolicyRecordId,
+      semanticHash: fixture.policy.policyHash,
+      createdAt: futureCreatedAt
+    }),
+    createdAt: futureCreatedAt
+  };
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: futurePolicy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /predates its runtime policy/
+  );
+});
+
+test("selection request resolver rejects replayed gap, slot, and cap drift", () => {
+  const fixture = selectionFixture();
+  for (const override of [
+    { gapKrw: 199_999, maximumAdditionalExposureKrw: 199_999 },
+    { availableSlots: 3 },
+    { maximumAdditionalExposureKrw: 100_000 }
+  ]) {
+    const request = createBucketSelectionRequest({
+      ...requestInput(fixture.snapshot, "long_term"),
+      ...override
+    });
+    assert.throws(
+      () =>
+        resolveBucketSelectionRequest({
+          value: request,
+          sizingSnapshot: fixture.snapshot,
+          activePolicy: fixture.policy,
+          bucketOpeningCapacities: openingCapacities()
+        }),
+      /does not match replay/
+    );
+  }
+
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities({
+          bucket: "long_term",
+          activePositionCount: 1
+        })
+      }),
+    /does not match replay/
+  );
+});
+
+test("selection request resolver fails closed when replay removes eligibility", () => {
+  const fixture = selectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities({
+          bucket: "long_term",
+          maximumPositionCount: 1,
+          activePositionCount: 1
+        })
+      }),
+    /not eligible after gap replay/
+  );
+});
+
+test("selection request resolver rejects trigger basis inconsistent with policy", () => {
+  const fixture = selectionFixture();
+  const request = createBucketSelectionRequest({
+    ...requestInput(fixture.snapshot, "long_term"),
+    gapBasis: "entry_floor"
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /does not match replay/
+  );
+});
+
+function selectionFixture(
+  options: { bucket?: "long_term" | "short_term" } = {}
+): {
+  policy: RuntimePortfolioPolicyRecord;
+  snapshot: PortfolioSizingSnapshot;
+  request: ReturnType<typeof createBucketSelectionRequest>;
+} {
+  const policy = runtimePolicy();
+  const snapshot = emptySizingSnapshot(policy.policyHash);
+  const bucket = options.bucket ?? "long_term";
+  return {
+    policy,
+    snapshot,
+    request: createBucketSelectionRequest(requestInput(snapshot, bucket))
+  };
+}
+
+function requestInput(
+  snapshot: PortfolioSizingSnapshot,
+  bucket: "long_term" | "short_term"
+): CreateBucketSelectionRequestInput {
+  const entryFloor = bucket === "short_term";
+  return {
+    cycleId: `cycle-${bucket}-2026-09-02`,
+    triggerIdentity: entryFloor
+      ? "scheduled:boundary-hash-1"
+      : "event:below-min-1",
+    triggerRef: entryFloor ? "schedule-slot-1" : "exposure-snapshot-1",
+    portfolioId: snapshot.portfolioId,
+    portfolioSnapshotId: snapshot.portfolioSnapshotId,
+    portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
+    policyHash: snapshot.policyHash,
+    asOf: snapshot.asOf,
+    bucket,
+    gapBasis: entryFloor ? "entry_floor" : "min",
+    gapKrw: entryFloor ? 50_000 : 200_000,
+    availableSlots: 4,
+    maximumAdditionalExposureKrw: entryFloor ? 50_000 : 200_000,
+    evidenceCutoffAt: "2026-09-01T23:59:00.000Z",
+    createdAt: "2026-09-02T00:00:01.000Z"
+  };
+}
+
+function emptySizingSnapshot(policyHash: string): PortfolioSizingSnapshot {
+  const exposure = createPortfolioExposureSnapshot({
+    virtualNetWorthKrw: 1_000_000,
+    cashKrw: 1_000_000,
+    bucketExposureKrw: {
+      hedge: 0,
+      intraday: 0,
+      long_term: 0,
+      short_term: 0,
+      swing: 0
+    },
+    symbolExposureKrw: [],
+    marketExposureKrw: { KR: 0, US: 0 },
+    sectorExposureKrw: {},
+    countryExposureKrw: {},
+    currencyExposureKrw: {},
+    pendingBuyExposureKrw: 0,
+    pendingSellExposureKrw: 0
+  });
+  return createPortfolioSizingSnapshot({
+    portfolioId: "portfolio-1",
+    portfolioVersion: "portfolio-version-1",
+    policyHash,
+    asOf: AS_OF,
+    virtualPortfolio: {
+      portfolioId: "portfolio-1",
+      cashKrw: 1_000_000,
+      positions: [],
+      updatedAt: "2026-09-01T23:30:00.000Z"
+    },
+    valuationInputs: [],
+    pendingActionInputs: [],
+    ...exposure
+  });
+}
+
+function openingCapacities(
+  override?: Partial<BucketSelectionOpeningCapacity> & {
+    bucket: StrategyBucket;
+  }
+): BucketSelectionOpeningCapacity[] {
+  return BUCKETS.map((bucket) => ({
+    bucket,
+    maximumPositionCount: 4,
+    activePositionCount: 0,
+    pendingReservationCount: 0,
+    mandateBoundUnusedSlotCount: 0,
+    ...(override?.bucket === bucket ? override : {})
+  }));
+}
+
+function runtimePolicy(
+  overrides: { minimumCashReserveKrw?: number } = {}
+): RuntimePortfolioPolicyRecord {
+  const payload = {
+    mode: "paper_only" as const,
+    recordType: "runtime_portfolio_policy_record" as const,
+    portfolioId: "portfolio-1",
+    sourcePolicyRecordId: "source-policy-1",
+    sourcePolicyRecordHash: HASH,
+    sourcePolicyHash: "b".repeat(64),
+    policyId: "balanced-paper",
+    version: "v1",
+    name: "Balanced paper policy",
+    strategyBuckets: BUCKETS.map(bucketPolicy),
+    cashPolicy: {
+      targetCashRatio: 0.15,
+      minimumCashReserveKrw: overrides.minimumCashReserveKrw ?? 100_000,
+      ruleSource: "static" as const
+    },
+    hedgePolicy: {
+      hedgeEnabled: true,
+      hedgeTargetRatio: 0.05,
+      maxCostRatio: 0.01
+    },
+    exposurePolicy: {
+      maxSymbolExposureRatio: 0.1,
+      maxCountryExposureRatio: 0.8,
+      maxCurrencyExposureRatio: 0.8
+    },
+    legacyReduceOnlyPolicy: {
+      allowBuyOrIncrease: false as const,
+      maximumParticipationRatio: 0.1,
+      riskRuleSetRef: dependencyRef("legacy-risk", "riskRuleSetRecordId")
+    }
+  };
+  const policyHash = hashCanonicalPayload(payload);
+  const runtimePolicyRecordId = hashDerivedId(
+    "runtime_portfolio_policy",
+    policyHash
+  );
+  return {
+    ...payload,
+    runtimePolicyRecordId,
+    policyHash,
+    lineageHash: hashImmutableRecordLineage({
+      recordType: "runtime_portfolio_policy",
+      recordId: runtimePolicyRecordId,
+      semanticHash: policyHash,
+      createdAt: POLICY_CREATED_AT
+    }),
+    createdAt: POLICY_CREATED_AT
+  };
+}
+
+function bucketPolicy(bucket: StrategyBucket): StrategyBucketRuntimePolicy {
+  const weights = {
+    long_term: [0.35, 0.2, 0.5, "below_min", 0] as const,
+    swing: [0.2, 0.1, 0.3, "below_min", 0] as const,
+    short_term: [0.15, 0, 0.25, "entry_floor_on_due_cycle", 0.05] as const,
+    intraday: [0.1, 0, 0.15, "entry_floor_on_due_cycle", 0.02] as const,
+    hedge: [0.05, 0, 0.15, "entry_floor_on_due_cycle", 0.02] as const
+  }[bucket];
+  const [targetWeightRatio, minWeightRatio, maxWeightRatio, mode, entry] =
+    weights;
+  return {
+    bucket,
+    targetWeightRatio,
+    minWeightRatio,
+    maxWeightRatio,
+    maxTurnoverRatio: bucket === "long_term" ? 0.15 : 0.5,
+    turnoverWindow: {
+      mode: "fixed_utc",
+      durationSeconds: 86_400,
+      anchor: "unix_epoch",
+      denominator: "window_open_portfolio_net_worth_krw"
+    },
+    maxDrawdownRatio: 0.1,
+    drawdownSemanticsRef: dependencyRef(
+      `${bucket}-drawdown`,
+      "drawdownSemanticsRecordId"
+    ),
+    reviewCadence:
+      bucket === "intraday"
+        ? { mode: "every_tick" }
+        : {
+            mode: "scheduled",
+            boundaryRefs: [
+              {
+                scheduleBoundaryRecordId: `${bucket}-boundary`,
+                version: "v1",
+                hash: HASH,
+                lineageHash: HASH
+              }
+            ]
+          },
+    eventTriggers: [],
+    selectionTrigger:
+      mode === "below_min"
+        ? { mode }
+        : { mode, entryWeightRatio: entry },
+    exitPolicy: {
+      takeProfit: { mode: "disabled" },
+      timeExpiryAction: "review_required"
+    },
+    enabledMarkets: ["KR", "US"],
+    enabledAssetClasses: ["equity"],
+    selectionPolicyRef: dependencyRef(
+      `${bucket}-selection`,
+      "selectionPolicyRecordId"
+    ),
+    riskRuleSetRef: dependencyRef(`${bucket}-risk`, "riskRuleSetRecordId")
+  };
+}
+
+function dependencyRef(
+  id: string,
+  idKey:
+    | "selectionPolicyRecordId"
+    | "riskRuleSetRecordId"
+    | "drawdownSemanticsRecordId"
+) {
+  return {
+    [idKey]: id,
+    version: "v1",
+    hash: HASH,
+    lineageHash: HASH
+  } as Record<typeof idKey, string> & {
+    version: string;
+    hash: typeof HASH;
+    lineageHash: typeof HASH;
+  };
+}

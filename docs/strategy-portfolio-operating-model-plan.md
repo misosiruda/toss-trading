@@ -3126,6 +3126,15 @@ thread/process writer는 exclusive lock과 file/directory sync로 직렬화한�
 제거하지 않는다. snapshot/policy/gap 재해소와 trigger별 cutoff 검증은 후속 resolver 전까지 구현
 완료로 간주하지 않는다.
 
+아홉 번째 분할은 저장된 request가 참조하는 `PortfolioSizingSnapshot`의 ID/hash/scope/as-of를
+`resolvePortfolioSizingSnapshot`으로 다시 검증하고, activation-aware caller가 제공한 active runtime
+policy와 mandate/reservation replay 경계가 제공한 canonical opening-capacity 입력으로 bucket gap,
+available slot, maximum additional exposure를 독립 재계산하는 `resolveBucketSelectionRequest`를
+구현한다. replay 후 request eligibility가 사라지거나 gap basis/금액/slot/cap 중 하나라도 다르면
+fail-closed한다. 이 resolver는 `entry_floor_on_due_cycle` request를 due로 두고 gap만 재계산하며,
+trigger identity/ref 및 canonical `evidenceCutoffAt` 파생은 trigger-specific resolver가 공급하고 검증하는
+후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
