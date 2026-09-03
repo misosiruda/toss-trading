@@ -24,6 +24,8 @@ export interface ResolvedRiskBreachPortfolioCycleTrigger
 export function resolveRiskBreachPortfolioCycleTrigger(input: {
   value: unknown;
   riskStateUpdateHistory: VerifiedPortfolioRiskStateUpdateHistory;
+  expectedPortfolioId: string;
+  expectedPolicyHash: string;
 }): ResolvedRiskBreachPortfolioCycleTrigger {
   const resolved = resolvePortfolioCycleTrigger(input.value);
   if (resolved.trigger.triggerKind !== "risk_breach") {
@@ -47,6 +49,12 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
   }
 
   const riskStateUpdate = matches[0] as PortfolioRiskStateUpdateRecord;
+  if (
+    riskStateUpdate.portfolioId !== input.expectedPortfolioId ||
+    riskStateUpdate.policyHash !== input.expectedPolicyHash
+  ) {
+    throw new Error("risk-breach trigger source scope mismatch");
+  }
   if (
     riskStateUpdate.stateUpdateHash !== trigger.stateUpdateHash ||
     riskStateUpdate.stateUpdateKind !== trigger.stateUpdateKind ||

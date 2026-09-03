@@ -3213,6 +3213,12 @@ exact-bind하는 source resolver를 구현한다. repository/full-log parser가 
 record도 무시하지 않는다. 각 update kind의 portfolio/policy scope와 immutable origin/state replay 및
 Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열아홉 번째 분할은 `policy_event`와 `risk_breach` source resolver가 resolved immutable record의
+`portfolioId`와 `policyHash`를 caller의 expected active scope와 exact-match하도록 강화한다. trigger의
+ID/hash/type 또는 kind/as-of만 일치해도 다른 portfolio나 policy epoch의 source를 재사용할 수 없으며 scope
+drift는 cycle 생성 전에 fail-closed한다. Policy event의 market/evidence/active mandate 검증과 risk-state
+update kind별 origin/state replay는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

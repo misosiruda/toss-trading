@@ -6,7 +6,7 @@ import {
   type PortfolioPolicyTriggerEvent
 } from "./portfolioPolicyTriggerEvent.js";
 import { parseVerifiedPortfolioPolicyTriggerEventHistory } from "./portfolioPolicyTriggerEventFiles.js";
-import { resolvePolicyEventPortfolioCycleTrigger } from "./policyEventPortfolioCycleTriggerResolver.js";
+import { resolvePolicyEventPortfolioCycleTrigger as resolvePolicyEventPortfolioCycleTriggerRaw } from "./policyEventPortfolioCycleTriggerResolver.js";
 
 const POLICY_HASH = `sha256:${"a".repeat(64)}`;
 
@@ -77,6 +77,30 @@ test("policy-event trigger rejects event hash, type, and cutoff drift", () => {
   );
 });
 
+test("policy-event trigger rejects portfolio and policy scope drift", () => {
+  const event = regimeEvent();
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTriggerRaw({
+        value: trigger(event),
+        policyTriggerEventHistory: history(event),
+        expectedPortfolioId: "portfolio-2",
+        expectedPolicyHash: POLICY_HASH
+      }),
+    /source scope mismatch/
+  );
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTriggerRaw({
+        value: trigger(event),
+        policyTriggerEventHistory: history(event),
+        expectedPortfolioId: event.portfolioId,
+        expectedPolicyHash: `sha256:${"b".repeat(64)}`
+      }),
+    /source scope mismatch/
+  );
+});
+
 test("policy-event trigger rejects corrupt unrelated complete history", () => {
   const event = regimeEvent();
   assert.throws(
@@ -129,6 +153,17 @@ function trigger(event: PortfolioPolicyTriggerEvent) {
     eventHash: event.eventHash,
     eventAsOf: event.asOf
   };
+}
+
+function resolvePolicyEventPortfolioCycleTrigger(input: {
+  value: unknown;
+  policyTriggerEventHistory: ReturnType<typeof history>;
+}) {
+  return resolvePolicyEventPortfolioCycleTriggerRaw({
+    ...input,
+    expectedPortfolioId: "portfolio-1",
+    expectedPolicyHash: POLICY_HASH
+  });
 }
 
 function history(...events: readonly PortfolioPolicyTriggerEvent[]) {
