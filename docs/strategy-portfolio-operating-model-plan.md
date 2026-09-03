@@ -3330,6 +3330,13 @@ line, duplicate record ID/hash, duplicate `(portfolioId, fillId)`를 fail-closed
 Typed source-price evidence exact resolver, plan execution event/accounting origin과 fill risk-state update 연결은
 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+서른세 번째 분할은 `PaperFillExecutionRecord.sourcePriceEvidence` projection을 immutable
+`SourcePriceEvidenceRecord`에 exact-resolve한다. Resolver는 supplied evidence를 strict parser로 독립 rehash하고
+evidence ref/hash, source contract, market/symbol, `last_price`, observation instant를 projection과 대조하며
+`priceKrw`를 fill의 `sourcePriceKrw`와 exact-match한다. Evidence `createdAt`이 fill `asOf`를 초과하면 당시
+이용할 수 없었던 근거로 간주해 fail-closed하고 duplicate/unresolved evidence ref도 거절한다. Plan execution
+event/accounting origin과 fill risk-state update 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
