@@ -24,6 +24,8 @@ export interface ResolvedPolicyEventPortfolioCycleTrigger
 export function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: VerifiedPortfolioPolicyTriggerEventHistory;
+  expectedPortfolioId: string;
+  expectedPolicyHash: string;
 }): ResolvedPolicyEventPortfolioCycleTrigger {
   const resolved = resolvePortfolioCycleTrigger(input.value);
   if (resolved.trigger.triggerKind !== "policy_event") {
@@ -48,6 +50,12 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
   }
 
   const policyTriggerEvent = matches[0] as PortfolioPolicyTriggerEvent;
+  if (
+    policyTriggerEvent.portfolioId !== input.expectedPortfolioId ||
+    policyTriggerEvent.policyHash !== input.expectedPolicyHash
+  ) {
+    throw new Error("policy-event trigger source scope mismatch");
+  }
   if (
     policyTriggerEvent.eventHash !== trigger.eventHash ||
     policyTriggerEvent.eventType !== trigger.eventType ||

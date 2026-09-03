@@ -6,7 +6,7 @@ import {
   type PortfolioRiskStateUpdateRecord
 } from "./portfolioRiskStateUpdate.js";
 import { parseVerifiedPortfolioRiskStateUpdateHistory } from "./portfolioRiskStateUpdateFiles.js";
-import { resolveRiskBreachPortfolioCycleTrigger } from "./riskBreachPortfolioCycleTriggerResolver.js";
+import { resolveRiskBreachPortfolioCycleTrigger as resolveRiskBreachPortfolioCycleTriggerRaw } from "./riskBreachPortfolioCycleTriggerResolver.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
@@ -78,6 +78,30 @@ test("risk-breach trigger rejects update hash, kind, and cutoff drift", () => {
   );
 });
 
+test("risk-breach trigger rejects portfolio and policy scope drift", () => {
+  const update = marketMarkUpdate();
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        expectedPortfolioId: "portfolio-2",
+        expectedPolicyHash: HASH_A
+      }),
+    /source scope mismatch/
+  );
+  assert.throws(
+    () =>
+      resolveRiskBreachPortfolioCycleTriggerRaw({
+        value: trigger(update),
+        riskStateUpdateHistory: history(update),
+        expectedPortfolioId: update.portfolioId,
+        expectedPolicyHash: HASH_B
+      }),
+    /source scope mismatch/
+  );
+});
+
 test("risk-breach trigger rejects corrupt unrelated complete history", () => {
   const update = marketMarkUpdate();
   assert.throws(
@@ -130,6 +154,17 @@ function trigger(update: PortfolioRiskStateUpdateRecord) {
     stateUpdateHash: update.stateUpdateHash,
     stateUpdateAsOf: update.asOf
   };
+}
+
+function resolveRiskBreachPortfolioCycleTrigger(input: {
+  value: unknown;
+  riskStateUpdateHistory: ReturnType<typeof history>;
+}) {
+  return resolveRiskBreachPortfolioCycleTriggerRaw({
+    ...input,
+    expectedPortfolioId: "portfolio-1",
+    expectedPolicyHash: HASH_A
+  });
 }
 
 function history(...updates: readonly PortfolioRiskStateUpdateRecord[]) {
