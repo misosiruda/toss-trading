@@ -10,6 +10,10 @@ import {
   resolvePortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
 } from "./portfolioCycleTrigger.js";
+import {
+  resolvePortfolioSizingSnapshot,
+  type ResolvedPortfolioSizingSnapshot
+} from "./portfolioSizingSnapshotResolver.js";
 
 export interface ResolvedRiskBreachPortfolioCycleTrigger
   extends ResolvedPortfolioCycleTrigger {
@@ -18,12 +22,14 @@ export interface ResolvedRiskBreachPortfolioCycleTrigger
     { triggerKind: "risk_breach" }
   >;
   riskStateUpdate: PortfolioRiskStateUpdateRecord;
+  marketMarkSnapshot?: ResolvedPortfolioSizingSnapshot["snapshot"];
 }
 
 /** Resolves a risk-breach trigger against a complete immutable update history. */
 export function resolveRiskBreachPortfolioCycleTrigger(input: {
   value: unknown;
   riskStateUpdateHistory: VerifiedPortfolioRiskStateUpdateHistory;
+  marketMarkSource?: unknown;
   expectedPortfolioId: string;
   expectedPolicyHash: string;
 }): ResolvedRiskBreachPortfolioCycleTrigger {
@@ -64,12 +70,49 @@ export function resolveRiskBreachPortfolioCycleTrigger(input: {
       "risk-breach trigger does not match its immutable state update"
     );
   }
+  const marketMarkSnapshot = resolveMarketMarkSource(
+    riskStateUpdate,
+    input.marketMarkSource
+  );
 
   return deepFreeze({
     ...resolved,
     trigger,
-    riskStateUpdate
+    riskStateUpdate,
+    ...(marketMarkSnapshot === undefined ? {} : { marketMarkSnapshot })
   });
+}
+
+function resolveMarketMarkSource(
+  update: PortfolioRiskStateUpdateRecord,
+  source: unknown
+): ResolvedPortfolioSizingSnapshot["snapshot"] | undefined {
+  if (update.stateUpdateKind !== "market_mark") {
+    if (source !== undefined) {
+      throw new Error(
+        "market-mark source is allowed only for a market_mark update"
+      );
+    }
+    return undefined;
+  }
+  if (source === undefined) {
+    throw new Error("market_mark update requires its portfolio snapshot source");
+  }
+  const snapshot = resolvePortfolioSizingSnapshot(source).snapshot;
+  if (
+    snapshot.portfolioSnapshotId !== update.portfolioSnapshotId ||
+    snapshot.portfolioSnapshotHash !== update.portfolioSnapshotHash
+  ) {
+    throw new Error("market_mark update origin identity mismatch");
+  }
+  if (
+    snapshot.portfolioId !== update.portfolioId ||
+    snapshot.policyHash !== update.policyHash ||
+    snapshot.asOf !== update.asOf
+  ) {
+    throw new Error("market_mark update origin scope mismatch");
+  }
+  return snapshot;
 }
 
 function assertUniqueUpdateHistory(
