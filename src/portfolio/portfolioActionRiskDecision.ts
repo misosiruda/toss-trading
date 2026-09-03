@@ -234,6 +234,21 @@ function assertPayload(
   if (payload.decision !== derivedDecision) {
     throw new Error("risk decision does not match rule results");
   }
+  if (
+    payload.decision === "approved" &&
+    payload.worstCaseFillNotionalKrw >
+      payload.approvedMaximumFillNotionalKrw
+  ) {
+    throw new Error("approved risk decision exceeds fill notional cap");
+  }
+  if (
+    payload.decision === "approved" &&
+    payload.cashAssessment.side === "BUY" &&
+    payload.cashAssessment.worstCaseNetCashDebitKrw >
+      payload.cashAssessment.approvedMaximumNetCashDebitKrw
+  ) {
+    throw new Error("approved risk decision exceeds net cash debit cap");
+  }
   if (payload.riskRuleScope.scopeKind !== payload.turnoverAssessment.scopeKind) {
     throw new Error("risk decision scope does not match turnover assessment");
   }
@@ -244,6 +259,14 @@ function assertPayload(
     throw new Error("legacy reduce-only risk decision must be SELL");
   }
   if (payload.turnoverAssessment.scopeKind === "bucket") {
+    if (
+      payload.turnoverAssessment.requestedBucketTurnoverNotionalKrw !==
+      payload.worstCaseFillNotionalKrw
+    ) {
+      throw new Error(
+        "risk decision turnover contribution does not match worst-case fill"
+      );
+    }
     const expectedRatio =
       (payload.turnoverAssessment.priorBucketTurnoverNotionalKrw +
         payload.turnoverAssessment.requestedBucketTurnoverNotionalKrw) /

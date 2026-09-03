@@ -127,6 +127,38 @@ test("portfolio action risk decision rejects scope, side, and turnover drift", (
       }),
     /turnover ratio mismatch/
   );
+  assert.throws(
+    () =>
+      createPortfolioActionRiskDecision({
+        ...input,
+        worstCaseFillNotionalKrw: 101
+      }),
+    /turnover contribution does not match/
+  );
+});
+
+test("portfolio action risk decision rejects approved cap breaches", () => {
+  const input = bucketInput();
+  assert.throws(
+    () =>
+      createPortfolioActionRiskDecision({
+        ...input,
+        approvedMaximumFillNotionalKrw: 99
+      }),
+    /exceeds fill notional cap/
+  );
+  assert.throws(
+    () =>
+      createPortfolioActionRiskDecision({
+        ...input,
+        cashAssessment: {
+          side: "BUY",
+          worstCaseNetCashDebitKrw: 106,
+          approvedMaximumNetCashDebitKrw: 105
+        }
+      }),
+    /exceeds net cash debit cap/
+  );
 });
 
 test("portfolio action risk decision rejects tampered identity", () => {
@@ -135,7 +167,7 @@ test("portfolio action risk decision rejects tampered identity", () => {
     () =>
       parsePortfolioActionRiskDecision({
         ...decision,
-        approvedMaximumFillNotionalKrw: 50
+        approvedMaximumFillNotionalKrw: 109
       }),
     /identity mismatch/
   );
@@ -171,8 +203,8 @@ function bucketInput() {
       turnoverStateHash: HASH_B,
       turnoverWindowOpenPortfolioNetWorthKrw: 1_000,
       priorBucketTurnoverNotionalKrw: 100,
-      requestedBucketTurnoverNotionalKrw: 100,
-      resultingBucketTurnoverRatio: 0.2
+      requestedBucketTurnoverNotionalKrw: 105,
+      resultingBucketTurnoverRatio: 0.205
     },
     priorCumulativeFilledNotionalKrw: 0,
     priorCumulativeFilledQuantity: 0,
