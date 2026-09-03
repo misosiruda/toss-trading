@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -7,6 +10,10 @@ import {
   type InvestmentMandateEvent,
   type InvestmentMandateRecord
 } from "./investmentMandate.js";
+import {
+  InvestmentMandateFileRepository,
+  type VerifiedInvestmentMandateHistory
+} from "./investmentMandateFiles.js";
 import {
   createPortfolioPolicyTriggerEvent,
   type CreatePortfolioPolicyTriggerEventInput,
@@ -129,7 +136,7 @@ test("policy-event trigger rejects transition and chronology drift", () => {
   }
 });
 
-test("policy-event trigger exact-binds thesis evidence scope and transition", () => {
+test("policy-event trigger exact-binds thesis evidence scope and transition", async () => {
   const evidence = thesisEvidence();
   const event = thesisEvent();
   const mandate = thesisMandate();
@@ -138,14 +145,12 @@ test("policy-event trigger exact-binds thesis evidence scope and transition", ()
     asOf: "2026-09-02T00:00:00.000Z",
     createdAt: "2026-09-02T00:00:01.000Z"
   });
+  const mandateHistory = await verifiedMandateHistory([mandate], [activated]);
   const resolved = resolvePolicyEventPortfolioCycleTrigger({
     value: trigger(event),
     policyTriggerEventHistory: history(event),
     policyTriggerEvidenceHistory: evidenceHistory(evidence),
-    investmentMandateHistory: {
-      records: [mandate],
-      events: [activated]
-    }
+    investmentMandateHistory: mandateHistory
   });
   assert.deepEqual(resolved.policyTriggerEvidenceRecords, [evidence]);
   assert.equal(resolved.activeMandate?.record.mandateId, mandate.mandateId);
@@ -161,16 +166,13 @@ test("policy-event trigger exact-binds thesis evidence scope and transition", ()
         value: trigger(mismatchedEvent),
         policyTriggerEventHistory: history(mismatchedEvent),
         policyTriggerEvidenceHistory: evidenceHistory(wrongMandate),
-        investmentMandateHistory: {
-          records: [mandate],
-          events: [activated]
-        }
+        investmentMandateHistory: mandateHistory
       }),
     /thesis evidence transition mismatch/
   );
 });
 
-test("policy-event trigger requires mandate history only for thesis events", () => {
+test("policy-event trigger requires repository-verified mandate history only for thesis events", async () => {
   const evidence = thesisEvidence();
   const thesis = thesisEvent();
   assert.throws(
@@ -183,14 +185,38 @@ test("policy-event trigger requires mandate history only for thesis events", () 
     /requires investment mandate history/
   );
 
+  const mandate = thesisMandate();
+  const activated = mandateEvent(mandate, {
+    eventType: "activated",
+    asOf: "2026-09-02T00:00:00.000Z",
+    createdAt: "2026-09-02T00:00:01.000Z"
+  });
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTriggerRaw({
+        value: trigger(thesis),
+        policyTriggerEventHistory: history(thesis),
+        policyTriggerEvidenceHistory: evidenceHistory(evidence),
+        investmentMandateHistory: {
+          records: [mandate],
+          events: [activated],
+          states: []
+        } as never,
+        expectedPortfolioId: "portfolio-1",
+        expectedPolicyHash: POLICY_HASH
+      }),
+    /not repository verified/
+  );
+
   const regime = regimeEvent();
+  const emptyMandateHistory = await verifiedMandateHistory([], []);
   assert.throws(
     () =>
       resolvePolicyEventPortfolioCycleTrigger({
         value: trigger(regime),
         policyTriggerEventHistory: history(regime),
         policyTriggerEvidenceHistory: evidenceHistory(regimeEvidence()),
-        investmentMandateHistory: { records: [], events: [] }
+        investmentMandateHistory: emptyMandateHistory
       }),
     /allowed only for a thesis policy event/
   );
@@ -332,10 +358,7 @@ function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: ReturnType<typeof history>;
   policyTriggerEvidenceHistory?: ReturnType<typeof evidenceHistory>;
-  investmentMandateHistory?: {
-    records: readonly InvestmentMandateRecord[];
-    events: readonly InvestmentMandateEvent[];
-  };
+  investmentMandateHistory?: VerifiedInvestmentMandateHistory;
 }) {
   return resolvePolicyEventPortfolioCycleTriggerRaw({
     ...input,
@@ -468,6 +491,25 @@ function thesisEvidence(
     createdAt: "2026-09-03T00:00:00.500Z",
     ...override
   });
+}
+
+async function verifiedMandateHistory(
+  records: readonly InvestmentMandateRecord[],
+  events: readonly InvestmentMandateEvent[]
+): Promise<VerifiedInvestmentMandateHistory> {
+  const baseDir = await mkdtemp(join(tmpdir(), "policy-event-mandate-"));
+  try {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    for (const record of records) {
+      await repository.appendRecord(record);
+    }
+    for (const event of events) {
+      await repository.appendEvent(event);
+    }
+    return await repository.readVerifiedHistory();
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
 }
 
 function thesisMandate(

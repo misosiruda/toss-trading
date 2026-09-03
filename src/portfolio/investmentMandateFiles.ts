@@ -26,6 +26,12 @@ export interface InvestmentMandateFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
+const verifiedInvestmentMandateHistories =
+  new WeakSet<VerifiedInvestmentMandateHistory>();
+
+export interface VerifiedInvestmentMandateHistory
+  extends InvestmentMandateHistorySnapshot {}
+
 export function createInvestmentMandatePaths(baseDir: string): {
   recordsPath: string;
   eventsPath: string;
@@ -71,6 +77,10 @@ export class InvestmentMandateFileRepository {
 
   async readSnapshot(): Promise<InvestmentMandateHistorySnapshot> {
     return this.withConsistentSnapshot(async (snapshot) => snapshot);
+  }
+
+  async readVerifiedHistory(): Promise<VerifiedInvestmentMandateHistory> {
+    return this.withLock(async () => this.readSnapshotUnderLock());
   }
 
   /**
@@ -146,7 +156,7 @@ export class InvestmentMandateFileRepository {
     });
   }
 
-  private async readSnapshotUnderLock(): Promise<InvestmentMandateHistorySnapshot> {
+  private async readSnapshotUnderLock(): Promise<VerifiedInvestmentMandateHistory> {
     const records = await readJsonLines({
       path: this.recordsPath,
       label: "investment mandate record",
@@ -159,7 +169,9 @@ export class InvestmentMandateFileRepository {
       parse: parseInvestmentMandateEvent,
       id: (event) => event.mandateEventId
     });
-    return validateInvestmentMandateHistory({ records, events });
+    const history = validateInvestmentMandateHistory({ records, events });
+    verifiedInvestmentMandateHistories.add(history);
+    return history;
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -177,6 +189,15 @@ export class InvestmentMandateFileRepository {
       await release();
     }
   }
+}
+
+export function getVerifiedInvestmentMandateHistorySnapshot(
+  history: VerifiedInvestmentMandateHistory
+): InvestmentMandateHistorySnapshot {
+  if (!verifiedInvestmentMandateHistories.has(history)) {
+    throw new Error("investment mandate history is not repository verified");
+  }
+  return history;
 }
 
 function cloneRecord(value: unknown): InvestmentMandateRecord {

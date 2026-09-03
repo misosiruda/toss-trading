@@ -16,9 +16,12 @@ import {
 } from "./portfolioPolicyTriggerEvidenceFiles.js";
 import {
   resolveCurrentInvestmentMandateAsOf,
-  type InvestmentMandateHistorySnapshot,
   type InvestmentMandateState
 } from "./investmentMandateState.js";
+import {
+  getVerifiedInvestmentMandateHistorySnapshot,
+  type VerifiedInvestmentMandateHistory
+} from "./investmentMandateFiles.js";
 import {
   resolvePortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
@@ -40,10 +43,7 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: VerifiedPortfolioPolicyTriggerEventHistory;
   policyTriggerEvidenceHistory: VerifiedPortfolioPolicyTriggerEvidenceHistory;
-  investmentMandateHistory?: Pick<
-    InvestmentMandateHistorySnapshot,
-    "records" | "events"
-  >;
+  investmentMandateHistory?: VerifiedInvestmentMandateHistory;
   expectedPortfolioId: string;
   expectedPolicyHash: string;
 }): ResolvedPolicyEventPortfolioCycleTrigger {
@@ -103,9 +103,7 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
 
 function resolveEventMandate(
   event: PortfolioPolicyTriggerEvent,
-  history:
-    | Pick<InvestmentMandateHistorySnapshot, "records" | "events">
-    | undefined
+  history: VerifiedInvestmentMandateHistory | undefined
 ): InvestmentMandateState | undefined {
   if (event.eventType === "regime_change") {
     if (history !== undefined) {
@@ -118,6 +116,7 @@ function resolveEventMandate(
   if (history === undefined) {
     throw new Error("thesis policy event requires investment mandate history");
   }
+  const verifiedHistory = getVerifiedInvestmentMandateHistorySnapshot(history);
   return resolveCurrentInvestmentMandateAsOf({
     mandateId: event.mandateId,
     portfolioId: event.portfolioId,
@@ -126,8 +125,8 @@ function resolveEventMandate(
     symbol: event.symbol,
     asOf: event.asOf,
     knownAt: event.createdAt,
-    records: history.records,
-    events: history.events
+    records: verifiedHistory.records,
+    events: verifiedHistory.events
   });
 }
 
