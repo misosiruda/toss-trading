@@ -20,6 +20,11 @@ import {
 } from "./portfolioSizingSnapshotResolver.js";
 import type { StrategyBucketRuntimePolicy } from "./runtimePolicyContracts.js";
 import {
+  resolvePortfolioCycleTrigger,
+  type PortfolioCycleTrigger,
+  type ResolvedPortfolioCycleTrigger
+} from "./portfolioCycleTrigger.js";
+import {
   parseRuntimePortfolioPolicyRecord,
   type RuntimePortfolioPolicyRecord
 } from "./runtimePortfolioPolicy.js";
@@ -33,6 +38,7 @@ export interface ResolvedBucketSelectionRequest {
   verifiedExposure: ResolvedPortfolioSizingSnapshot["verifiedExposure"];
   policy: RuntimePortfolioPolicyRecord;
   bucketPolicy: StrategyBucketRuntimePolicy;
+  cycleTrigger: ResolvedPortfolioCycleTrigger;
   analysis: PortfolioGapAnalysis;
   gap: BucketPortfolioGap;
 }
@@ -42,13 +48,15 @@ export interface ResolvedBucketSelectionRequest {
  *
  * `activePolicy` must be obtained by an activation-aware caller for the request
  * timestamp. Opening-capacity counts must come from the mandate/reservation
- * replay boundary. Trigger identity and cutoff derivation are intentionally
- * verified by the trigger-specific resolver that supplies this function.
+ * replay boundary. The trigger must already be resolved against its immutable
+ * source artifact by the caller; this function independently derives and
+ * compares its canonical identity, reference, and evidence cutoff.
  */
 export function resolveBucketSelectionRequest(input: {
   value: unknown;
   sizingSnapshot: unknown;
   activePolicy: unknown;
+  cycleTrigger: unknown;
   bucketOpeningCapacities: readonly BucketSelectionOpeningCapacity[];
 }): ResolvedBucketSelectionRequest {
   const request = parseBucketSelectionRequest(input.value);
@@ -56,10 +64,12 @@ export function resolveBucketSelectionRequest(input: {
     input.sizingSnapshot
   );
   const policy = parseRuntimePortfolioPolicyRecord(input.activePolicy);
+  const cycleTrigger = resolvePortfolioCycleTrigger(input.cycleTrigger);
   assertSnapshotBinding(request, resolvedSnapshot.snapshot);
   assertPolicyBinding(request, policy);
 
   const bucketPolicy = resolveBucketPolicy(policy, request.bucket);
+  assertTriggerBinding(request, bucketPolicy, cycleTrigger);
   const analysis = analyzePortfolioGaps({
     policy,
     exposure: {
@@ -116,9 +126,63 @@ export function resolveBucketSelectionRequest(input: {
     verifiedExposure: resolvedSnapshot.verifiedExposure,
     policy,
     bucketPolicy,
+    cycleTrigger,
     analysis,
     gap
   });
+}
+
+function assertTriggerBinding(
+  request: BucketSelectionRequest,
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  resolved: ResolvedPortfolioCycleTrigger
+): void {
+  if (
+    request.triggerIdentity !== resolved.triggerIdentity ||
+    request.triggerRef !== resolved.triggerRef ||
+    request.evidenceCutoffAt !== resolved.evidenceCutoffAt
+  ) {
+    throw new Error("bucket selection request trigger binding mismatch");
+  }
+  assertTriggerCompatibility(bucketPolicy, resolved.trigger);
+}
+
+function assertTriggerCompatibility(
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  trigger: PortfolioCycleTrigger
+): void {
+  if (trigger.triggerKind === "risk_breach") {
+    throw new Error(
+      "risk-breach cycle cannot create a bucket selection request"
+    );
+  }
+  if (trigger.triggerKind === "scheduled") {
+    if (
+      bucketPolicy.reviewCadence.mode !== "scheduled" ||
+      !bucketPolicy.reviewCadence.boundaryRefs.some(
+        (reference) => reference.hash === trigger.scheduleBoundaryHash
+      )
+    ) {
+      throw new Error(
+        "scheduled cycle trigger does not match bucket review cadence"
+      );
+    }
+    return;
+  }
+  if (trigger.triggerKind === "every_tick") {
+    if (bucketPolicy.reviewCadence.mode !== "every_tick") {
+      throw new Error(
+        "every-tick cycle trigger does not match bucket review cadence"
+      );
+    }
+    return;
+  }
+  if (
+    trigger.triggerKind === "policy_event" &&
+    !bucketPolicy.eventTriggers.includes(trigger.eventType)
+  ) {
+    throw new Error("policy event trigger is not enabled for bucket");
+  }
 }
 
 function assertSnapshotBinding(

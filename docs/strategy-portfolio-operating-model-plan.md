@@ -3135,6 +3135,15 @@ fail-closed한다. 이 resolver는 `entry_floor_on_due_cycle` request를 due로 
 trigger identity/ref 및 canonical `evidenceCutoffAt` 파생은 trigger-specific resolver가 공급하고 검증하는
 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열 번째 분할은 `PortfolioCycleTrigger`를 `scheduled`, `every_tick`, `policy_event`, `risk_breach`의
+strict union으로 구현하고 complete trigger payload hash와 identity/ref/cutoff를 한 경로에서만
+파생한다. scheduled는 boundary hash/slot ID/slot end, every-tick은 packet hash/as-of, policy event는
+event type/hash/as-of, risk breach는 state-update kind/hash/as-of를 사용한다. Selection request resolver는
+파생된 세 필드와 request를 exact-match하고 scheduled/every-tick cadence 및 선언된 policy event trigger
+호환성도 검증한다. `risk_breach` cycle은 sell-first reduce-only이므로 selection request에서는
+fail-closed한다. Schedule slot, packet, policy event, risk-state update의 원본 immutable record 해소는 각
+source-specific resolver 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
