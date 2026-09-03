@@ -121,10 +121,11 @@ export function buildReverseDependencyGraph(sourceFilesInput) {
       reverse.set(dependency, dependents);
     }
     if (isTestSourcePath(importer)) {
-      for (const dependency of readRuntimeEntrypointReferences(
-        source,
-        importer
-      )) {
+      const testReferences = new Set([
+        ...readRuntimeEntrypointReferences(source, importer),
+        ...readSourceFileReferences(source, importer)
+      ]);
+      for (const dependency of testReferences) {
         const dependents = reverse.get(dependency) ?? new Set();
         dependents.add(importer);
         reverse.set(dependency, dependents);
@@ -212,6 +213,59 @@ export function readRuntimeEntrypointReferences(
         if (sourcePath !== undefined) {
           references.add(sourcePath);
         }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return Object.freeze([...references].sort(compareText));
+}
+
+/**
+ * Finds source files inspected as test data instead of imported as modules.
+ * Safety-contract tests use this pattern to scan implementation text for
+ * forbidden runtime surfaces.
+ */
+export function readSourceFileReferences(source, fileName = "source.test.ts") {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  const references = new Set();
+  const collectText = (value) => {
+    const normalized = normalizeRepoPath(value);
+    if (isSourceImplementationPath(normalized)) {
+      references.add(normalized);
+    } else if (
+      (value.startsWith("./") || value.startsWith("../")) &&
+      isSourceImplementationPath(
+        normalizeRepoPath(join(dirname(fileName), value))
+      )
+    ) {
+      references.add(normalizeRepoPath(join(dirname(fileName), value)));
+    }
+  };
+  const visit = (node) => {
+    if (ts.isStringLiteralLike(node)) {
+      collectText(node.text);
+    }
+    if (ts.isCallExpression(node)) {
+      const literalArguments = node.arguments.map((argument) =>
+        ts.isStringLiteralLike(argument) ? argument.text : undefined
+      );
+      const sourceIndex = literalArguments.findIndex(
+        (argument) => argument === "src"
+      );
+      if (
+        sourceIndex >= 0 &&
+        literalArguments
+          .slice(sourceIndex)
+          .every((argument) => argument !== undefined)
+      ) {
+        collectText(literalArguments.slice(sourceIndex).join("/"));
       }
     }
     ts.forEachChild(node, visit);
@@ -321,6 +375,13 @@ function normalizeSourceFiles(values) {
 
 function isTestSourcePath(path) {
   return path.startsWith("src/") && path.endsWith(".test.ts");
+}
+
+function isSourceImplementationPath(path) {
+  return (
+    path.startsWith("src/") &&
+    (path.endsWith(".ts") || path.endsWith(".mts") || path.endsWith(".cts"))
+  );
 }
 
 function isDocumentationPath(path) {

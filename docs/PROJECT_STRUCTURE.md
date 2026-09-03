@@ -586,8 +586,8 @@ npm test
 ```
 
 반복 개발에서는 `npm run check:changed`가 `origin/main` 대비 변경 module의 transitive reverse
-dependency와 compiled CLI를 실행하는 subprocess/worker test만 실행한다. 영향 범위를 안전하게
-계산할 수 없으면 전체 suite로 자동 fallback한다.
+dependency, compiled CLI를 실행하는 subprocess/worker test, source text를 직접 검사하는 안전성
+test만 실행한다. 영향 범위를 안전하게 계산할 수 없으면 전체 suite로 자동 fallback한다.
 이 명령은 최종 gate를 대체하지 않으며 PR 출하 전에는 `npm run check`를 실행한다.
 
 `npm run check`는 `quality:gate`와 전체 test suite를 순서대로 실행한다. `quality:gate`는 build 후 `scripts/qualityGate.mjs`를 실행한다. 이 스크립트는 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision provider safe default, 관련 문서 drift를 검사한다.

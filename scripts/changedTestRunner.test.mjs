@@ -5,7 +5,8 @@ import {
   normalizeRepoPath,
   planChangedTests,
   readModuleSpecifiers,
-  readRuntimeEntrypointReferences
+  readRuntimeEntrypointReferences,
+  readSourceFileReferences
 } from "./changedTestRunner.mjs";
 
 test("selects tests that directly import a changed module", () => {
@@ -86,6 +87,39 @@ test("detects compiled entry points embedded in worker source", () => {
       \`;
     `),
     ["src/portfolio/repository.ts"]
+  );
+});
+
+test("selects safety tests that inspect source files as data", () => {
+  const plan = planChangedTests({
+    changedPaths: ["src/api/server.ts"],
+    sourceFiles: {
+      "src/api/server.ts": "export const methods = ['GET'];",
+      "src/api/server.test.ts": 'import "./server.js";',
+      "src/replay/safety.test.ts": `
+        import { readFile } from "node:fs/promises";
+        for (const path of ["src/api/server.ts"]) await readFile(path, "utf8");
+      `
+    }
+  });
+
+  assert.equal(plan.mode, "selected");
+  assert.deepEqual(plan.testFiles, [
+    "src/api/server.test.ts",
+    "src/replay/safety.test.ts"
+  ]);
+});
+
+test("resolves repository-root and relative source-file references", () => {
+  assert.deepEqual(
+    readSourceFileReferences(
+      `
+        const root = "src/api/server.ts";
+        const relative = "../portfolio/policy.ts";
+      `,
+      "src/replay/safety.test.ts"
+    ),
+    ["src/api/server.ts", "src/portfolio/policy.ts"]
   );
 });
 

@@ -563,7 +563,8 @@ npm test
 
 `npm run check:changed`는 build와 `quality:gate`를 실행한 뒤 `origin/main`과 현재 HEAD/worktree의
 변경 파일을 합산한다. 변경된 TypeScript module을 직접 또는 간접 import하거나 compiled CLI를
-subprocess/worker로 참조하는 test file만 실행한다. 설정, tooling, non-TypeScript source, 역의존성을 증명할 수 없는 source 또는 선택된
+subprocess/worker로 참조하거나 source file 자체를 검사하는 test file만 실행한다. 설정, tooling,
+non-TypeScript source, 역의존성을 증명할 수 없는 source 또는 선택된
 test file이 120개를 넘는 변경은 자동으로 전체 suite로 fallback한다. 기준 ref가 다르면
 `CHANGED_TEST_BASE_REF` 또는 `--base-ref`로 명시한다. `--plan`은 실행할 test plan만 출력한다.
 
