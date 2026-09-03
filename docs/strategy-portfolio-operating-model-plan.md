@@ -3189,6 +3189,15 @@ trigger와 exact-match해야 하며 관련 없는 손상 event도 무시하지 �
 active mandate와 evidence artifact 해소 및 selection request 연결은 후속 분할 전까지 구현 완료로 간주하지
 않는다.
 
+열여섯 번째 분할은 `PortfolioRiskStateUpdateRecord`의 strict immutable contract를 구현한다. market
+mark, fill, fee, cash flow와 risk-state variant는 portfolio/policy scope 및 offset-qualified as-of를
+공유하고 각 variant의 immutable origin ID/hash를 complete payload에 보존한다. fill accounting scope는
+bucket과 legacy portfolio의 strict union으로 분리해 혼합을 거절한다. state-update hash는
+ID/hash/createdAt을 제외한 payload에서 계산하고 record ID는 update kind와 hash에서 파생한다.
+createdAt-only retry는 같은 identity로 수렴하며 payload/hash/ID drift와 미래 as-of를 fail-closed한다.
+Append-only repository와 origin/state replay 및 risk-breach trigger 연결은 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
