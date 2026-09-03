@@ -159,6 +159,48 @@ test("raw history parsing rejects negative zero before packet hashing", () => {
   assert.equal(parsed.corruptLineCount, 1);
 });
 
+test("raw history parsing rejects duplicate decoded JSON member names", () => {
+  const packet = marketPacket();
+  const raw = JSON.stringify(packet).replace(
+    '"cashKrw":1000000',
+    '"cashKrw":0,"cash\\u004brw":1000000'
+  );
+  const parsed = parseCanonicalMarketPacketHistoryText(`${raw}\n`);
+
+  assert.equal(parsed.records.length, 0);
+  assert.equal(parsed.corruptLineCount, 1);
+});
+
+test("raw history parsing ignores member-like text inside JSON strings", () => {
+  const packet = {
+    ...marketPacket(),
+    packetId: 'packet with "cashKrw":0 text'
+  };
+  const parsed = history(packet);
+
+  assert.equal(parsed.records.length, 1);
+  assert.equal(parsed.corruptLineCount, 0);
+});
+
+test("raw history parsing rejects noncanonical lexical hash collisions", () => {
+  const packet = marketPacket();
+  const raw = JSON.stringify(packet);
+  const unsafeInteger = raw.replace(
+    '"cashKrw":1000000',
+    '"cashKrw":9007199254740993'
+  );
+  const escapedString = raw.replace(
+    '"packetId":"packet_mock_001"',
+    '"packetId":"\\u0070acket_mock_001"'
+  );
+
+  for (const line of [unsafeInteger, escapedString]) {
+    const parsed = parseCanonicalMarketPacketHistoryText(`${line}\n`);
+    assert.equal(parsed.records.length, 0);
+    assert.equal(parsed.corruptLineCount, 1);
+  }
+});
+
 function marketPacket(): MarketPacket {
   return createMockMarketPacket({
     now: new Date(AS_OF),

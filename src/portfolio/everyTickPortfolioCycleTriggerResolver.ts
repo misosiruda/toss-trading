@@ -23,6 +23,7 @@ export interface ResolvedEveryTickPortfolioCycleTrigger
 const canonicalMarketPacketHistoryBrand = Symbol(
   "canonicalMarketPacketHistory"
 );
+const MAXIMUM_MARKET_PACKET_JSON_NESTING_DEPTH = 32;
 
 export interface CanonicalMarketPacketHistory {
   records: readonly MarketPacket[];
@@ -120,7 +121,12 @@ export function parseCanonicalMarketPacketHistoryText(
       continue;
     }
     try {
+      assertNoDuplicateJsonMemberNames(line);
       const value: unknown = JSON.parse(line);
+      if (JSON.stringify(value) !== line) {
+        corruptLineCount += 1;
+        continue;
+      }
       if (containsNegativeZero(value)) {
         corruptLineCount += 1;
         continue;
@@ -141,6 +147,139 @@ export function parseCanonicalMarketPacketHistoryText(
     corruptLineCount,
     [canonicalMarketPacketHistoryBrand]: true as const
   });
+}
+
+function assertNoDuplicateJsonMemberNames(text: string): void {
+  const finalIndex = skipJsonWhitespace(text, scanJsonValue(text, 0, 0));
+  if (finalIndex !== text.length) {
+    throw new Error("market packet history line must be valid JSON");
+  }
+}
+
+function scanJsonValue(text: string, startIndex: number, depth: number): number {
+  if (depth > MAXIMUM_MARKET_PACKET_JSON_NESTING_DEPTH) {
+    throw new Error("market packet history line exceeds JSON nesting boundary");
+  }
+  const index = skipJsonWhitespace(text, startIndex);
+  const character = text[index];
+  if (character === "{") {
+    return scanJsonObject(text, index, depth);
+  }
+  if (character === "[") {
+    return scanJsonArray(text, index, depth);
+  }
+  if (character === '"') {
+    return scanJsonString(text, index).nextIndex;
+  }
+  for (const literal of ["true", "false", "null"] as const) {
+    if (text.startsWith(literal, index)) {
+      return index + literal.length;
+    }
+  }
+  const numberPattern = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  numberPattern.lastIndex = index;
+  const number = numberPattern.exec(text);
+  if (number !== null) {
+    return numberPattern.lastIndex;
+  }
+  throw new Error("market packet history line must be valid JSON");
+}
+
+function scanJsonObject(text: string, startIndex: number, depth: number): number {
+  let index = skipJsonWhitespace(text, startIndex + 1);
+  if (text[index] === "}") {
+    return index + 1;
+  }
+
+  const memberNames = new Set<string>();
+  while (index < text.length) {
+    if (text[index] !== '"') {
+      throw new Error("market packet history line must be valid JSON");
+    }
+    const key = scanJsonString(text, index);
+    if (memberNames.has(key.value)) {
+      throw new Error(
+        "market packet history line contains duplicate JSON member names"
+      );
+    }
+    memberNames.add(key.value);
+
+    index = skipJsonWhitespace(text, key.nextIndex);
+    if (text[index] !== ":") {
+      throw new Error("market packet history line must be valid JSON");
+    }
+    index = skipJsonWhitespace(
+      text,
+      scanJsonValue(text, index + 1, depth + 1)
+    );
+    if (text[index] === "}") {
+      return index + 1;
+    }
+    if (text[index] !== ",") {
+      throw new Error("market packet history line must be valid JSON");
+    }
+    index = skipJsonWhitespace(text, index + 1);
+  }
+  throw new Error("market packet history line must be valid JSON");
+}
+
+function scanJsonArray(text: string, startIndex: number, depth: number): number {
+  let index = skipJsonWhitespace(text, startIndex + 1);
+  if (text[index] === "]") {
+    return index + 1;
+  }
+  while (index < text.length) {
+    index = skipJsonWhitespace(text, scanJsonValue(text, index, depth + 1));
+    if (text[index] === "]") {
+      return index + 1;
+    }
+    if (text[index] !== ",") {
+      throw new Error("market packet history line must be valid JSON");
+    }
+    index = skipJsonWhitespace(text, index + 1);
+  }
+  throw new Error("market packet history line must be valid JSON");
+}
+
+function scanJsonString(
+  text: string,
+  startIndex: number
+): { value: string; nextIndex: number } {
+  let index = startIndex + 1;
+  while (index < text.length) {
+    if (text[index] === '"') {
+      const nextIndex = index + 1;
+      let value: unknown;
+      try {
+        value = JSON.parse(text.slice(startIndex, nextIndex)) as unknown;
+      } catch {
+        throw new Error("market packet history line must be valid JSON");
+      }
+      if (typeof value !== "string") {
+        throw new Error("market packet history line must be valid JSON");
+      }
+      return { value, nextIndex };
+    }
+    if (text[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  throw new Error("market packet history line must be valid JSON");
+}
+
+function skipJsonWhitespace(text: string, startIndex: number): number {
+  let index = startIndex;
+  while (
+    text[index] === " " ||
+    text[index] === "\t" ||
+    text[index] === "\r" ||
+    text[index] === "\n"
+  ) {
+    index += 1;
+  }
+  return index;
 }
 
 function containsNegativeZero(value: unknown): boolean {
