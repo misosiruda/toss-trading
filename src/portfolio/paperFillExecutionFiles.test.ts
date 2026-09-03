@@ -84,6 +84,31 @@ test("paper fill repository preserves distinct immutable records", async () => {
   });
 });
 
+test("paper fill repository enforces portfolio-wide fill ID uniqueness", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const paths = createPaperFillExecutionPaths(baseDir);
+    const repository = new PaperFillExecutionFileRepository(baseDir);
+    const first = paperFill();
+    const repeatedFill = paperFill({ rebalancePlanId: "plan-2" });
+
+    await repository.append(first);
+    await assert.rejects(
+      () => repository.append(repeatedFill),
+      /duplicate portfolio fill ID/
+    );
+
+    await writeFile(
+      paths.recordsPath,
+      `${JSON.stringify(first)}\n${JSON.stringify(repeatedFill)}\n`,
+      "utf8"
+    );
+    await assert.rejects(
+      () => repository.readAll(),
+      /duplicate portfolio fill ID/
+    );
+  });
+});
+
 test("paper fill repository fails closed for corrupt and torn history", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const paths = createPaperFillExecutionPaths(baseDir);
@@ -151,11 +176,16 @@ test("paper fill repository rejects unverified history and abandoned locks", asy
 });
 
 function paperFill(
-  overrides: Partial<{ createdAt: string; fillId: string }> = {}
+  overrides: Partial<{
+    createdAt: string;
+    fillId: string;
+    rebalancePlanId: string;
+  }> = {}
 ) {
   return createPaperFillExecutionRecord({
     ...validInput(),
     fillId: overrides.fillId ?? "fill-1",
+    rebalancePlanId: overrides.rebalancePlanId ?? "plan-1",
     createdAt: overrides.createdAt ?? "2026-09-03T00:00:01.000Z"
   });
 }

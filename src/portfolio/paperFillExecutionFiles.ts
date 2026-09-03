@@ -97,6 +97,15 @@ export class PaperFillExecutionFileRepository {
       ) {
         throw new Error("paper fill execution hash collision");
       }
+      if (
+        records.some(
+          (record) =>
+            record.portfolioId === candidate.portfolioId &&
+            record.fillId === candidate.fillId
+        )
+      ) {
+        throw new Error("paper fill execution has a duplicate portfolio fill ID");
+      }
       await appendDurableJsonLine(this.recordsPath, candidate);
       return candidate;
     });
@@ -150,6 +159,7 @@ export function parseVerifiedPaperFillExecutionHistory(
   const records: PaperFillExecutionRecord[] = [];
   const ids = new Set<string>();
   const hashes = new Set<string>();
+  const portfolioFillIds = new Set<string>();
   for (const [index, line] of lines.entries()) {
     if (line.length === 0) {
       throw new Error(
@@ -171,8 +181,15 @@ export function parseVerifiedPaperFillExecutionHistory(
     if (hashes.has(record.paperFillHash)) {
       throw new Error("paper fill execution file contains a duplicate hash");
     }
+    const portfolioFillId = JSON.stringify([record.portfolioId, record.fillId]);
+    if (portfolioFillIds.has(portfolioFillId)) {
+      throw new Error(
+        "paper fill execution file contains a duplicate portfolio fill ID"
+      );
+    }
     ids.add(record.paperFillRecordId);
     hashes.add(record.paperFillHash);
+    portfolioFillIds.add(portfolioFillId);
     records.push(record);
   }
   const history = Object.freeze({ records: Object.freeze(records) });

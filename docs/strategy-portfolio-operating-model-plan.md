@@ -3323,7 +3323,8 @@ risk-state update 연결은 후속 분할 전까지 구현 완료로 간주하�
 
 서른두 번째 분할은 `PaperFillExecutionRecord`를 strict append-only JSONL repository에 보존한다. Repository는
 append 전 입력과 complete history의 각 line을 strict record parser로 독립 검증하고, torn/blank/corrupt
-line과 duplicate ID/hash를 fail-closed한다. 동일 payload의 `createdAt`만 다른 재시도는 최초 durable record로
+line, duplicate record ID/hash, duplicate `(portfolioId, fillId)`를 fail-closed한다. 동일 payload의
+`createdAt`만 다른 재시도는 최초 durable record로
 수렴시키며 thread/process 간 exclusive lock, file/directory sync, lock ownership token으로 append durability와
 직렬화를 보장한다. Verified complete history는 module-private provenance를 통과한 opaque wrapper로만 제공한다.
 Typed source-price evidence exact resolver, plan execution event/accounting origin과 fill risk-state update 연결은
