@@ -4,7 +4,8 @@ import test from "node:test";
 import {
   normalizeRepoPath,
   planChangedTests,
-  readModuleSpecifiers
+  readModuleSpecifiers,
+  readRuntimeEntrypointReferences
 } from "./changedTestRunner.mjs";
 
 test("selects tests that directly import a changed module", () => {
@@ -53,6 +54,39 @@ test("supports re-exports and dynamic imports", () => {
 
   assert.equal(plan.mode, "selected");
   assert.deepEqual(plan.testFiles, ["src/lazy.test.ts"]);
+});
+
+test("selects tests that launch a dependent compiled CLI", () => {
+  const plan = planChangedTests({
+    changedPaths: ["src/config/loadEnv.ts"],
+    sourceFiles: {
+      "src/config/loadEnv.ts": "export const loadEnv = () => ({});",
+      "src/config/loadEnv.test.ts": 'import "./loadEnv.js";',
+      "src/cli/tool.ts": 'import "../config/loadEnv.js";',
+      "src/cli/toolCli.test.ts": `
+        import { join } from "node:path";
+        import { spawnSync } from "node:child_process";
+        spawnSync(process.execPath, [join("dist", "cli", "tool.js")]);
+      `
+    }
+  });
+
+  assert.equal(plan.mode, "selected");
+  assert.deepEqual(plan.testFiles, [
+    "src/cli/toolCli.test.ts",
+    "src/config/loadEnv.test.ts"
+  ]);
+});
+
+test("detects compiled entry points embedded in worker source", () => {
+  assert.deepEqual(
+    readRuntimeEntrypointReferences(`
+      const worker = \`
+        import { Repository } from "./dist/portfolio/repository.js";
+      \`;
+    `),
+    ["src/portfolio/repository.ts"]
+  );
 });
 
 test("resolves dependents of a deleted source module", () => {

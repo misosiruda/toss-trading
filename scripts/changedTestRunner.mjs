@@ -120,6 +120,16 @@ export function buildReverseDependencyGraph(sourceFilesInput) {
       dependents.add(importer);
       reverse.set(dependency, dependents);
     }
+    if (isTestSourcePath(importer)) {
+      for (const dependency of readRuntimeEntrypointReferences(
+        source,
+        importer
+      )) {
+        const dependents = reverse.get(dependency) ?? new Set();
+        dependents.add(importer);
+        reverse.set(dependency, dependents);
+      }
+    }
   }
   return reverse;
 }
@@ -152,6 +162,62 @@ export function readModuleSpecifiers(source, fileName = "source.ts") {
   };
   visit(parsed);
   return Object.freeze(specifiers);
+}
+
+/**
+ * Finds compiled internal entry points launched or imported by a test at
+ * runtime. These references do not appear in the TypeScript import graph, but
+ * the test still depends on the corresponding source module.
+ */
+export function readRuntimeEntrypointReferences(
+  source,
+  fileName = "source.test.ts"
+) {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  const references = new Set();
+  const collectText = (value) => {
+    for (const match of value.matchAll(
+      /(?:^|[.][/\\])dist[/\\]([A-Za-z0-9_./\\-]+\.(?:js|mjs|cjs))/g
+    )) {
+      const sourcePath = compiledPathToSourcePath(`dist/${match[1]}`);
+      if (sourcePath !== undefined) {
+        references.add(sourcePath);
+      }
+    }
+  };
+  const visit = (node) => {
+    if (ts.isStringLiteralLike(node)) {
+      collectText(node.text);
+    }
+    if (ts.isCallExpression(node)) {
+      const literalArguments = node.arguments.map((argument) =>
+        ts.isStringLiteralLike(argument) ? argument.text : undefined
+      );
+      const distIndex = literalArguments.findIndex(
+        (argument) => argument === "dist"
+      );
+      if (
+        distIndex >= 0 &&
+        literalArguments.slice(distIndex).every((argument) => argument !== undefined)
+      ) {
+        const sourcePath = compiledPathToSourcePath(
+          literalArguments.slice(distIndex).join("/")
+        );
+        if (sourcePath !== undefined) {
+          references.add(sourcePath);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return Object.freeze([...references].sort(compareText));
 }
 
 export function normalizeRepoPath(value) {
@@ -222,6 +288,23 @@ function resolveInternalModule(importer, specifier, sourcePaths) {
   }
   const existing = candidates.find((path) => sourcePaths.has(path));
   return existing ?? candidates[0];
+}
+
+function compiledPathToSourcePath(value) {
+  const normalized = normalizeRepoPath(value);
+  if (!normalized.startsWith("dist/")) {
+    return undefined;
+  }
+  if (normalized.endsWith(".mjs")) {
+    return `src/${normalized.slice(5, -4)}.mts`;
+  }
+  if (normalized.endsWith(".cjs")) {
+    return `src/${normalized.slice(5, -4)}.cts`;
+  }
+  if (normalized.endsWith(".js")) {
+    return `src/${normalized.slice(5, -3)}.ts`;
+  }
+  return undefined;
 }
 
 function normalizeSourceFiles(values) {
