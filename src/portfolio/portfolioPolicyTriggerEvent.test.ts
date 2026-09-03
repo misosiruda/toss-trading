@@ -75,6 +75,16 @@ test("policy trigger event identity ignores createdAt for exact semantic retry",
   assert.notEqual(retry.createdAt, first.createdAt);
 });
 
+test("policy trigger event uses shared UTF-8 evidence ordering", () => {
+  const event = createPortfolioPolicyTriggerEvent({
+    ...regimeInput(),
+    evidenceRefs: ["😀", "\uE000"]
+  });
+
+  assert.deepEqual(event.evidenceRefs, ["\uE000", "😀"]);
+  assert.deepEqual(parsePortfolioPolicyTriggerEvent(event), event);
+});
+
 test("policy trigger event rejects no-op transitions and invalid chronology", () => {
   assert.throws(
     () =>

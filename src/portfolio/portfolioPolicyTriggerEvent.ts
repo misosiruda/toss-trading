@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { marketSchema, sha256HashSchema } from "../domain/schemas.js";
 import {
+  compareText,
   hashCanonicalPayload,
   hashDerivedId,
   offsetQualifiedIsoDateTimeSchema
@@ -175,10 +176,6 @@ function assertNoDuplicateEvidenceRefs(values: readonly string[]): void {
   if (new Set(values).size !== values.length) {
     throw new Error("policy trigger evidenceRefs must not contain duplicates");
   }
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function containsLoneSurrogate(value: string): boolean {
