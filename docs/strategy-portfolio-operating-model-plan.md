@@ -3312,6 +3312,15 @@ portfolio/policy scope와 `asOf`를 update에 exact-match하고 다른 update ki
 누락을 fail-closed한다. Complete bucket equity event history의 predecessor/state replay, fill update origin과
 Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+서른한 번째 분할은 accepted paper fill을 complete immutable `PaperFillExecutionRecord`로 보존하는 strict
+contract를 구현한다. Record는 plan/action/fill, market/symbol/side, source-price evidence projection,
+execution policy와 liquidity input, requested/filled quantity·notional, gross/net amount 및 cost breakdown을
+complete payload에 포함한다. Stored output은 기존 deterministic paper execution model로 다시 계산하고
+accepted `filled`/`partial`과 non-rejected liquidity result만 허용한다. Evidence ref canonical order와 source
+scope/chronology를 검증하고 record hash는 ID/hash/createdAt을 제외한 payload, ID는 hash에서 파생한다.
+Append-only repository, typed source-price evidence exact resolver, plan execution event/accounting origin과 fill
+risk-state update 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
