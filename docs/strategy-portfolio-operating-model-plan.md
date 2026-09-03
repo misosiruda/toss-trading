@@ -3353,6 +3353,15 @@ resulting portfolio state는 pre-state를 반드시 전진시킨다. Filled quan
 plan/action/risk/fill resolver와 accounting/risk-state mutation 연결은 후속 분할 전까지 구현 완료로 간주하지
 않는다.
 
+서른다섯 번째 분할은 plan action 실행 직전 Risk Engine 결과를 immutable
+`PortfolioActionRiskDecision`으로 보존하는 strict contract를 구현한다. Decision은 exact rule-set, plan/action,
+portfolio snapshot, action target, bucket 또는 legacy scope, turnover/cash assessment, prior cumulative와
+requested/worst-case/approved maximum, canonical rule results와 evidence refs를 complete payload에 포함한다.
+Required rule ID 집합과 result ID 집합을 exact-match하고 모든 result에서 approved/rejected를 파생하며 bucket
+turnover ratio를 저장된 분모·prior·requested notional로 재계산한다. Decision hash는 ID/hash를 제외한 complete
+payload, ID는 hash에서 파생한다. Rule-set/plan/action/snapshot/evidence deterministic resolver와
+`execution_applied` actual fill cap 검증은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
