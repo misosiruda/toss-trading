@@ -3160,8 +3160,9 @@ request는 raw canonical packet history와 bucket policy가 exact-ref한 immutab
 반드시 제공해야 한다. resolver는 `verified-market-packet.v1` source/evidence contract, policy chronology,
 packet portfolio ID, `maximumAgeSeconds`, packet expiry와 candidate market의 bucket `enabledMarkets` 포함을
 검증하고 source packet/policy를 결과에 보존한다. 다른 trigger에 every-tick source를 제공하거나 source를
-누락·무시하는 경로도 fail-closed한다. Schedule slot, policy event와 risk-state update source resolution은
-후속 분할 전까지 구현 완료로 간주하지 않는다.
+누락·무시하는 경로도 fail-closed한다. 현재 packet contract가 observation count를 증명하지 않으므로
+`minimumObservationCount`를 요구하는 market evidence policy도 추정 없이 거절한다. Schedule slot, policy
+event와 risk-state update source resolution은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 

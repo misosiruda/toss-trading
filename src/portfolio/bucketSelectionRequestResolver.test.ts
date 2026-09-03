@@ -431,6 +431,14 @@ test("selection request resolver requires every-tick source and rejects stale pa
     /does not bind the verified packet contract/
   );
 
+  const unprovenObservationCount = everyTickFixture({
+    minimumObservationCount: 20
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(unprovenObservationCount),
+    /cannot prove the minimum market observation count/
+  );
+
   const futureDependency = everyTickFixture({
     selectionPolicyCreatedAt: "2026-09-01T12:00:00.000Z"
   });
@@ -512,6 +520,7 @@ function everyTickFixture(
     evidenceMaximumAgeSeconds?: number;
     candidateCollectedAt?: string;
     candidateStaleAfter?: string;
+    minimumObservationCount?: number;
   } = {}
 ) {
   const sourceContractId =
@@ -523,7 +532,10 @@ function everyTickFixture(
       {
         evidenceClass: "market_technical",
         sourceContractId,
-        maximumAgeSeconds: options.evidenceMaximumAgeSeconds ?? 60
+        maximumAgeSeconds: options.evidenceMaximumAgeSeconds ?? 60,
+        ...(options.minimumObservationCount === undefined
+          ? {}
+          : { minimumObservationCount: options.minimumObservationCount })
       }
     ],
     everyTickSourceRequirement: {

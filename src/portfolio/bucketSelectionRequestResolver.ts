@@ -250,6 +250,19 @@ function assertEveryTickSelectionPolicyBinding(
       "every_tick selection policy does not bind the verified packet contract"
     );
   }
+  if (
+    selectionPolicy.requiredEvidence.some(
+      (requirement) =>
+        requirement.evidenceClass === "market_technical" &&
+        requirement.sourceContractId ===
+          EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID &&
+        requirement.minimumObservationCount !== undefined
+    )
+  ) {
+    throw new Error(
+      "every_tick packet cannot prove the minimum market observation count"
+    );
+  }
   if (Date.parse(selectionPolicy.createdAt) > Date.parse(policy.createdAt)) {
     throw new Error(
       "every_tick selection policy postdates the runtime policy"
