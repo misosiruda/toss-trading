@@ -3236,6 +3236,16 @@ boundary ID/version/hash/lineage가 exact-match해야 한다. Boundary market은
 주입하거나 source를 생략하면 fail-closed한다. Policy-event source와 evidence/mandate 연결은 후속 분할
 전까지 구현 완료로 간주하지 않는다.
 
+스물두 번째 분할은 policy event의 raw evidence ref를 그대로 신뢰하지 않도록
+`PortfolioPolicyTriggerEvidenceRecord` strict immutable contract를 구현한다. Regime/thesis variant는
+upstream source contract와 immutable artifact ID/hash, portfolio/policy/market, 관측 시각 및 transition
+값을 complete payload에 보존하고 thesis variant는 mandate/symbol scope도 필수로 가진다. Evidence hash는
+ref/hash/createdAt을 제외한 payload에서 계산하고 ref는 hash-derived identity로 만들며, createdAt-only
+retry는 같은 semantic identity로 수렴한다. Unknown field, identity drift, offset 없는 시각, observation보다
+이른 생성 시각, 같은 previous/current 값과 noncanonical identifier는 fail-closed한다. Append-only
+repository, contract-specific source artifact 검증 adapter, event evidence ref 해소, active mandate 및
+selection request 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
