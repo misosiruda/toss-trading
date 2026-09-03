@@ -3246,6 +3246,16 @@ retry는 같은 semantic identity로 수렴한다. Unknown field, identity drift
 repository, contract-specific source artifact 검증 adapter, event evidence ref 해소, active mandate 및
 selection request 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+스물세 번째 분할은 검증된 `PortfolioPolicyTriggerEvidenceRecord`만
+`portfolio-policy-trigger-evidence-records.jsonl`에 저장하는 strict append-only repository를 구현한다.
+모든 read와 append는 complete history의 schema와 evidence hash/hash-derived ref를 다시 검증하고,
+동일 semantic evidence의 createdAt-only retry는 최초 record로 수렴한다. Duplicate ref/hash,
+torn/blank/corrupt line을 fail-closed하며 thread/process writer는 exclusive lock과 file/directory sync로
+직렬화하고 abandoned lock은 자동 제거하지 않는다. Downstream resolver가 raw array를 verified history로
+위조하지 못하도록 opaque history wrapper만 노출한다. Contract-specific source artifact 검증 adapter,
+event evidence ref 해소, active mandate 및 selection request 연결은 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
