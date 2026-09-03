@@ -20,15 +20,13 @@ export interface ResolvedEveryTickPortfolioCycleTrigger
   marketPacket: MarketPacket;
 }
 
-const canonicalMarketPacketHistoryBrand = Symbol(
-  "canonicalMarketPacketHistory"
-);
+const canonicalMarketPacketHistories =
+  new WeakSet<CanonicalMarketPacketHistory>();
 const MAXIMUM_MARKET_PACKET_JSON_NESTING_DEPTH = 32;
 
 export interface CanonicalMarketPacketHistory {
   records: readonly MarketPacket[];
   corruptLineCount: number;
-  readonly [canonicalMarketPacketHistoryBrand]: true;
 }
 
 /**
@@ -50,7 +48,7 @@ export function resolveEveryTickPortfolioCycleTrigger(input: {
   const trigger = resolved.trigger;
 
   if (
-    input.marketPacketHistory[canonicalMarketPacketHistoryBrand] !== true ||
+    !canonicalMarketPacketHistories.has(input.marketPacketHistory) ||
     !Number.isSafeInteger(input.marketPacketHistory.corruptLineCount) ||
     input.marketPacketHistory.corruptLineCount !== 0
   ) {
@@ -98,10 +96,9 @@ export function parseCanonicalMarketPacketHistoryText(
   raw: string
 ): CanonicalMarketPacketHistory {
   if (raw.length === 0) {
-    return deepFreeze({
+    return createCanonicalMarketPacketHistory({
       records: [],
-      corruptLineCount: 0,
-      [canonicalMarketPacketHistoryBrand]: true as const
+      corruptLineCount: 0
     });
   }
   const lines = raw.split("\n");
@@ -142,11 +139,22 @@ export function parseCanonicalMarketPacketHistoryText(
     }
   }
 
-  return deepFreeze({
+  return createCanonicalMarketPacketHistory({
     records,
-    corruptLineCount,
-    [canonicalMarketPacketHistoryBrand]: true as const
+    corruptLineCount
   });
+}
+
+function createCanonicalMarketPacketHistory(input: {
+  records: readonly MarketPacket[];
+  corruptLineCount: number;
+}): CanonicalMarketPacketHistory {
+  const history = deepFreeze({
+    records: [...input.records],
+    corruptLineCount: input.corruptLineCount
+  });
+  canonicalMarketPacketHistories.add(history);
+  return history;
 }
 
 function assertNoDuplicateJsonMemberNames(text: string): void {

@@ -16,13 +16,11 @@ export interface PortfolioPolicyTriggerEventFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
-const verifiedPolicyTriggerEventHistoryBrand = Symbol(
-  "verifiedPolicyTriggerEventHistory"
-);
+const verifiedPolicyTriggerEventHistories =
+  new WeakSet<VerifiedPortfolioPolicyTriggerEventHistory>();
 
 export interface VerifiedPortfolioPolicyTriggerEventHistory {
   records: readonly PortfolioPolicyTriggerEvent[];
-  readonly [verifiedPolicyTriggerEventHistoryBrand]: true;
 }
 
 export function createPortfolioPolicyTriggerEventPaths(baseDir: string): {
@@ -185,16 +183,15 @@ export function parseVerifiedPortfolioPolicyTriggerEventHistory(
     hashes.add(event.eventHash);
     events.push(event);
   }
-  return Object.freeze({
-    records: Object.freeze(events),
-    [verifiedPolicyTriggerEventHistoryBrand]: true as const
-  });
+  const history = Object.freeze({ records: Object.freeze(events) });
+  verifiedPolicyTriggerEventHistories.add(history);
+  return history;
 }
 
 export function getVerifiedPortfolioPolicyTriggerEventRecords(
   history: VerifiedPortfolioPolicyTriggerEventHistory
 ): readonly PortfolioPolicyTriggerEvent[] {
-  if (history[verifiedPolicyTriggerEventHistoryBrand] !== true) {
+  if (!verifiedPolicyTriggerEventHistories.has(history)) {
     throw new Error("portfolio policy trigger event history is not verified");
   }
   return history.records;

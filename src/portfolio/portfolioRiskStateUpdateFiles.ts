@@ -16,13 +16,11 @@ export interface PortfolioRiskStateUpdateFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
-const verifiedRiskStateUpdateHistoryBrand = Symbol(
-  "verifiedRiskStateUpdateHistory"
-);
+const verifiedRiskStateUpdateHistories =
+  new WeakSet<VerifiedPortfolioRiskStateUpdateHistory>();
 
 export interface VerifiedPortfolioRiskStateUpdateHistory {
   records: readonly PortfolioRiskStateUpdateRecord[];
-  readonly [verifiedRiskStateUpdateHistoryBrand]: true;
 }
 
 export function createPortfolioRiskStateUpdatePaths(baseDir: string): {
@@ -186,16 +184,15 @@ export function parseVerifiedPortfolioRiskStateUpdateHistory(
     hashes.add(record.stateUpdateHash);
     records.push(record);
   }
-  return Object.freeze({
-    records: Object.freeze(records),
-    [verifiedRiskStateUpdateHistoryBrand]: true as const
-  });
+  const history = Object.freeze({ records: Object.freeze(records) });
+  verifiedRiskStateUpdateHistories.add(history);
+  return history;
 }
 
 export function getVerifiedPortfolioRiskStateUpdateRecords(
   history: VerifiedPortfolioRiskStateUpdateHistory
 ): readonly PortfolioRiskStateUpdateRecord[] {
-  if (history[verifiedRiskStateUpdateHistoryBrand] !== true) {
+  if (!verifiedRiskStateUpdateHistories.has(history)) {
     throw new Error("portfolio risk state update history is not verified");
   }
   return history.records;

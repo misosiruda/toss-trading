@@ -10,7 +10,8 @@ import {
   PortfolioRiskStateUpdateFileRepository,
   createPortfolioRiskStateUpdatePaths,
   getVerifiedPortfolioRiskStateUpdateRecords,
-  parseVerifiedPortfolioRiskStateUpdateHistory
+  parseVerifiedPortfolioRiskStateUpdateHistory,
+  type VerifiedPortfolioRiskStateUpdateHistory
 } from "./portfolioRiskStateUpdateFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
@@ -129,6 +130,20 @@ test("risk state update repository rejects unverified history and abandoned lock
     );
     const parsed = parseVerifiedPortfolioRiskStateUpdateHistory("");
     assert.deepEqual(getVerifiedPortfolioRiskStateUpdateRecords(parsed), []);
+    const forged = Object.create(parsed) as {
+      records: readonly ReturnType<typeof riskStateUpdate>[];
+    };
+    Object.defineProperty(forged, "records", {
+      value: Object.freeze([riskStateUpdate()]),
+      enumerable: true
+    });
+    assert.throws(
+      () =>
+        getVerifiedPortfolioRiskStateUpdateRecords(
+          forged as VerifiedPortfolioRiskStateUpdateHistory
+        ),
+      /history is not verified/
+    );
 
     const paths = createPortfolioRiskStateUpdatePaths(baseDir);
     await writeFile(paths.lockPath, "abandoned\n", "utf8");
