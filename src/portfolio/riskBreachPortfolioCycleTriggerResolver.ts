@@ -1,0 +1,92 @@
+import {
+  parsePortfolioRiskStateUpdateRecord,
+  type PortfolioRiskStateUpdateRecord
+} from "./portfolioRiskStateUpdate.js";
+import {
+  getVerifiedPortfolioRiskStateUpdateRecords,
+  type VerifiedPortfolioRiskStateUpdateHistory
+} from "./portfolioRiskStateUpdateFiles.js";
+import {
+  resolvePortfolioCycleTrigger,
+  type ResolvedPortfolioCycleTrigger
+} from "./portfolioCycleTrigger.js";
+
+export interface ResolvedRiskBreachPortfolioCycleTrigger
+  extends ResolvedPortfolioCycleTrigger {
+  trigger: Extract<
+    ResolvedPortfolioCycleTrigger["trigger"],
+    { triggerKind: "risk_breach" }
+  >;
+  riskStateUpdate: PortfolioRiskStateUpdateRecord;
+}
+
+/** Resolves a risk-breach trigger against a complete immutable update history. */
+export function resolveRiskBreachPortfolioCycleTrigger(input: {
+  value: unknown;
+  riskStateUpdateHistory: VerifiedPortfolioRiskStateUpdateHistory;
+}): ResolvedRiskBreachPortfolioCycleTrigger {
+  const resolved = resolvePortfolioCycleTrigger(input.value);
+  if (resolved.trigger.triggerKind !== "risk_breach") {
+    throw new Error(
+      "risk-breach trigger resolver requires a risk_breach trigger"
+    );
+  }
+  const trigger = resolved.trigger;
+  const records = getVerifiedPortfolioRiskStateUpdateRecords(
+    input.riskStateUpdateHistory
+  ).map((record) => parsePortfolioRiskStateUpdateRecord(record));
+  assertUniqueUpdateHistory(records);
+  const matches = records.filter(
+    (record) =>
+      record.riskStateUpdateRecordId === trigger.riskStateUpdateRecordId
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `risk-breach trigger update must resolve exactly once; resolved ${matches.length}`
+    );
+  }
+
+  const riskStateUpdate = matches[0] as PortfolioRiskStateUpdateRecord;
+  if (
+    riskStateUpdate.stateUpdateHash !== trigger.stateUpdateHash ||
+    riskStateUpdate.stateUpdateKind !== trigger.stateUpdateKind ||
+    riskStateUpdate.asOf !== trigger.stateUpdateAsOf
+  ) {
+    throw new Error(
+      "risk-breach trigger does not match its immutable state update"
+    );
+  }
+
+  return deepFreeze({
+    ...resolved,
+    trigger,
+    riskStateUpdate
+  });
+}
+
+function assertUniqueUpdateHistory(
+  records: readonly PortfolioRiskStateUpdateRecord[]
+): void {
+  const ids = new Set<string>();
+  const hashes = new Set<string>();
+  for (const record of records) {
+    if (ids.has(record.riskStateUpdateRecordId)) {
+      throw new Error("risk state update history contains a duplicate ID");
+    }
+    if (hashes.has(record.stateUpdateHash)) {
+      throw new Error("risk state update history contains a duplicate hash");
+    }
+    ids.add(record.riskStateUpdateRecordId);
+    hashes.add(record.stateUpdateHash);
+  }
+}
+
+function deepFreeze<Value>(value: Value): Value {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) {
+      deepFreeze(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}

@@ -3206,6 +3206,13 @@ file/directory sync로 직렬화한다. repository/full-log parser만 opaque ver
 abandoned lock은 자동 제거하지 않는다. 각 update kind의 immutable origin/state replay와 risk-breach cycle
 trigger 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열여덟 번째 분할은 `risk_breach` cycle trigger를 complete immutable risk-state update history에
+exact-bind하는 source resolver를 구현한다. repository/full-log parser가 만든 opaque verified history만
+입력으로 받고 모든 record를 strict parse·rehash하며 duplicate ID/hash를 거절한다. trigger의 update ID는
+정확히 하나의 record로 해소되어야 하고 update hash/kind/as-of가 exact-match해야 한다. 관련 없는 손상
+record도 무시하지 않는다. 각 update kind의 portfolio/policy scope와 immutable origin/state replay 및
+Risk Engine breach 판정 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
