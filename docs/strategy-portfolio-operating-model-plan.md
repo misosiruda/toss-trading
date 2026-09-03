@@ -3173,6 +3173,14 @@ previous/current 값이 반드시 달라야 한다. event hash는 ID/hash/create
 Append-only repository, active mandate/evidence source 해소 및 cycle trigger 연결은 후속 분할 전까지 구현
 완료로 간주하지 않는다.
 
+열네 번째 분할은 검증된 `PortfolioPolicyTriggerEvent`만
+`portfolio-policy-trigger-events.jsonl`에 저장하는 strict append-only repository를 구현한다. append와
+read는 complete history의 strict schema와 payload hash/hash-derived ID를 다시 검증한다. 동일 semantic
+event의 createdAt-only retry는 최초 record로 수렴하고, duplicate ID/hash, torn/blank/corrupt line을
+fail-closed한다. thread/process writer는 exclusive lock과 file/directory sync로 직렬화하며 abandoned
+lock은 자동 제거하지 않는다. Active mandate/evidence source 해소 및 cycle trigger 연결은 후속 분할 전까지
+구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
