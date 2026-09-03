@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { marketSchema, sha256HashSchema } from "../domain/schemas.js";
+import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import {
   buildPaperFill,
   type PaperExecutionPolicy
@@ -50,7 +51,7 @@ const sourcePriceEvidenceSchema = z
 
 const executionPolicySchema = z
   .object({
-    modelVersion: identifierSchema,
+    modelVersion: z.literal(PAPER_EXECUTION_MODEL_VERSION),
     fillPriceRule: z.literal("current_candidate_last_price"),
     slippageBps: nonNegativeNumberSchema,
     feeBps: nonNegativeNumberSchema,

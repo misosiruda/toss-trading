@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import { buildPaperFill } from "../paper/executionModel.js";
 import {
   createPaperFillExecutionRecord,
@@ -135,6 +136,17 @@ test("paper fill execution record rejects noncanonical and rejected shapes", () 
     () =>
       createPaperFillExecutionRecord({
         ...input,
+        executionPolicy: {
+          ...input.executionPolicy,
+          modelVersion: "execution_simulator.v999"
+        }
+      } as unknown as Parameters<typeof createPaperFillExecutionRecord>[0]),
+    /Invalid input/
+  );
+  assert.throws(
+    () =>
+      createPaperFillExecutionRecord({
+        ...input,
         fillStatus: "rejected" as "filled"
       }),
     /Invalid option/
@@ -151,7 +163,7 @@ test("paper fill execution record rejects noncanonical and rejected shapes", () 
 
 function validInput() {
   const executionPolicy = {
-    modelVersion: "paper-execution-v1",
+    modelVersion: PAPER_EXECUTION_MODEL_VERSION as typeof PAPER_EXECUTION_MODEL_VERSION,
     fillPriceRule: "current_candidate_last_price" as const,
     slippageBps: 0,
     feeBps: 0,
