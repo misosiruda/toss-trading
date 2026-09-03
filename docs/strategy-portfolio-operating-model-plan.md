@@ -3360,6 +3360,8 @@ requested/worst-case/approved maximum, canonical rule results와 evidence refs�
 Required rule ID 집합과 result ID 집합을 exact-match하고 모든 result에서 approved/rejected를 파생하며 bucket
 turnover contribution을 `worstCaseFillNotionalKrw`와 exact-match한 뒤 저장된 분모·prior로 ratio를 재계산한다.
 Approved decision은 worst-case gross fill과 BUY net debit가 각각 저장된 approved maximum 이하일 때만 허용한다.
+`riskInputHash`는 caller에게 받지 않고 canonical rule-set/plan/action/snapshot/scope/turnover basis/prior/request와
+evidence ref projection에서 계산하며 parse 시 독립 재계산한다.
 Decision hash는 ID/hash를 제외한 complete
 payload, ID는 hash에서 파생한다. Rule-set/plan/action/snapshot/evidence deterministic resolver와
 `execution_applied` actual fill cap 검증은 후속 분할 전까지 구현 완료로 간주하지 않는다.

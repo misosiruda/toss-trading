@@ -122,6 +122,9 @@ const portfolioActionRiskDecisionPayloadSchema = z
   })
   .strict();
 
+const portfolioActionRiskDecisionInputSchema =
+  portfolioActionRiskDecisionPayloadSchema.omit({ riskInputHash: true });
+
 export const portfolioActionRiskDecisionSchema =
   portfolioActionRiskDecisionPayloadSchema.safeExtend({
     riskDecisionId: identifierSchema,
@@ -133,11 +136,15 @@ export type PortfolioActionRiskDecision = z.infer<
 >;
 
 export function createPortfolioActionRiskDecision(
-  input: z.input<typeof portfolioActionRiskDecisionPayloadSchema>
+  input: z.input<typeof portfolioActionRiskDecisionInputSchema>
 ): PortfolioActionRiskDecision {
-  const payload = portfolioActionRiskDecisionPayloadSchema.parse(
+  const parsedInput = portfolioActionRiskDecisionInputSchema.parse(
     canonicalizeLists(input)
   );
+  const payload = portfolioActionRiskDecisionPayloadSchema.parse({
+    ...parsedInput,
+    riskInputHash: calculateRiskInputHash(parsedInput)
+  });
   assertPayload(payload);
   const riskDecisionHash = hashCanonicalPayload(payload);
   return deepFreeze(
@@ -234,6 +241,9 @@ function assertPayload(
   if (payload.decision !== derivedDecision) {
     throw new Error("risk decision does not match rule results");
   }
+  if (payload.riskInputHash !== calculateRiskInputHash(payload)) {
+    throw new Error("risk decision input hash mismatch");
+  }
   if (
     payload.decision === "approved" &&
     payload.worstCaseFillNotionalKrw >
@@ -275,6 +285,48 @@ function assertPayload(
       throw new Error("risk decision turnover ratio mismatch");
     }
   }
+}
+
+function calculateRiskInputHash(
+  payload: z.infer<typeof portfolioActionRiskDecisionInputSchema>
+): string {
+  const turnoverInput =
+    payload.turnoverAssessment.scopeKind === "bucket"
+      ? {
+          scopeKind: payload.turnoverAssessment.scopeKind,
+          turnoverStateId: payload.turnoverAssessment.turnoverStateId,
+          turnoverStateHash: payload.turnoverAssessment.turnoverStateHash,
+          turnoverWindowOpenPortfolioNetWorthKrw:
+            payload.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw,
+          priorBucketTurnoverNotionalKrw:
+            payload.turnoverAssessment.priorBucketTurnoverNotionalKrw,
+          requestedBucketTurnoverNotionalKrw:
+            payload.turnoverAssessment.requestedBucketTurnoverNotionalKrw
+        }
+      : payload.turnoverAssessment;
+  return hashCanonicalPayload({
+    riskRuleSetRecordId: payload.riskRuleSetRecordId,
+    riskRuleSetVersion: payload.riskRuleSetVersion,
+    riskRuleSetHash: payload.riskRuleSetHash,
+    planId: payload.planId,
+    actionId: payload.actionId,
+    portfolioId: payload.portfolioId,
+    policyHash: payload.policyHash,
+    expectedPortfolioVersion: payload.expectedPortfolioVersion,
+    expectedPortfolioSnapshotHash: payload.expectedPortfolioSnapshotHash,
+    market: payload.market,
+    symbol: payload.symbol,
+    side: payload.side,
+    riskRuleScope: payload.riskRuleScope,
+    actionExecutionTargetHash: payload.actionExecutionTargetHash,
+    turnoverInput,
+    priorCumulativeFilledNotionalKrw:
+      payload.priorCumulativeFilledNotionalKrw,
+    priorCumulativeFilledQuantity: payload.priorCumulativeFilledQuantity,
+    requestedNotionalKrw: payload.requestedNotionalKrw,
+    requestedQuantity: payload.requestedQuantity,
+    riskEvidenceRefs: payload.riskEvidenceRefs
+  });
 }
 
 function ruleIdOf(value: unknown): string {

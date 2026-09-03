@@ -167,6 +167,14 @@ test("portfolio action risk decision rejects tampered identity", () => {
     () =>
       parsePortfolioActionRiskDecision({
         ...decision,
+        riskInputHash: HASH_A
+      }),
+    /input hash mismatch/
+  );
+  assert.throws(
+    () =>
+      parsePortfolioActionRiskDecision({
+        ...decision,
         approvedMaximumFillNotionalKrw: 109
       }),
     /identity mismatch/
@@ -223,7 +231,6 @@ function bucketInput() {
       { ruleId: "turnover", result: "pass" as const, reasonCode: "within_limit" },
       { ruleId: "cash", result: "pass" as const, reasonCode: "within_limit" }
     ],
-    riskInputHash: HASH_C,
     riskEvidenceRefs: ["evidence-b", "evidence-a"],
     decidedAt: "2026-09-03T00:00:00.000Z"
   };
