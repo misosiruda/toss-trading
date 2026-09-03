@@ -3,9 +3,16 @@ import test from "node:test";
 
 import {
   createPortfolioPolicyTriggerEvent,
+  type CreatePortfolioPolicyTriggerEventInput,
   type PortfolioPolicyTriggerEvent
 } from "./portfolioPolicyTriggerEvent.js";
 import { parseVerifiedPortfolioPolicyTriggerEventHistory } from "./portfolioPolicyTriggerEventFiles.js";
+import {
+  createPortfolioPolicyTriggerEvidenceRecord,
+  type CreatePortfolioPolicyTriggerEvidenceRecordInput,
+  type PortfolioPolicyTriggerEvidenceRecord
+} from "./portfolioPolicyTriggerEvidence.js";
+import { parseVerifiedPortfolioPolicyTriggerEvidenceHistory } from "./portfolioPolicyTriggerEvidenceFiles.js";
 import { resolvePolicyEventPortfolioCycleTrigger as resolvePolicyEventPortfolioCycleTriggerRaw } from "./policyEventPortfolioCycleTriggerResolver.js";
 
 const POLICY_HASH = `sha256:${"a".repeat(64)}`;
@@ -18,11 +25,127 @@ test("policy-event trigger resolves one exact immutable event", () => {
   });
 
   assert.deepEqual(resolved.policyTriggerEvent, event);
+  assert.deepEqual(resolved.policyTriggerEvidenceRecords, [regimeEvidence()]);
   assert.equal(resolved.triggerIdentity, "event:regime_change");
   assert.equal(resolved.triggerRef, event.eventHash);
   assert.equal(resolved.evidenceCutoffAt, event.asOf);
   assert.equal(Object.isFrozen(resolved), true);
   assert.equal(Object.isFrozen(resolved.policyTriggerEvent), true);
+  assert.equal(Object.isFrozen(resolved.policyTriggerEvidenceRecords), true);
+});
+
+test("policy-event trigger resolves every referenced evidence record in order", () => {
+  const first = regimeEvidence({ sourceArtifactId: "regime-source-a" });
+  const second = regimeEvidence({ sourceArtifactId: "regime-source-b" });
+  const event = regimeEvent({
+    evidenceRefs: [first.evidenceRef, second.evidenceRef]
+  });
+  const resolved = resolvePolicyEventPortfolioCycleTrigger({
+    value: trigger(event),
+    policyTriggerEventHistory: history(event),
+    policyTriggerEvidenceHistory: evidenceHistory(second, first)
+  });
+
+  assert.deepEqual(
+    resolved.policyTriggerEvidenceRecords.map((record) => record.evidenceRef),
+    event.evidenceRefs
+  );
+});
+
+test("policy-event trigger rejects missing and unverified evidence histories", () => {
+  const evidence = regimeEvidence();
+  const event = regimeEvent();
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTrigger({
+        value: trigger(event),
+        policyTriggerEventHistory: history(event),
+        policyTriggerEvidenceHistory: evidenceHistory()
+      }),
+    /resolved 0/
+  );
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTrigger({
+        value: trigger(event),
+        policyTriggerEventHistory: history(event),
+        policyTriggerEvidenceHistory: { records: [evidence] } as never
+      }),
+    /history is not verified/
+  );
+});
+
+test("policy-event trigger rejects evidence scope and type drift", () => {
+  const drifts = [
+    regimeEvidence({ portfolioId: "portfolio-2" }),
+    regimeEvidence({ policyHash: `sha256:${"b".repeat(64)}` }),
+    regimeEvidence({ market: "US" }),
+    thesisEvidence()
+  ];
+  for (const evidence of drifts) {
+    const event = regimeEvent({ evidenceRefs: [evidence.evidenceRef] });
+    assert.throws(
+      () =>
+        resolvePolicyEventPortfolioCycleTrigger({
+          value: trigger(event),
+          policyTriggerEventHistory: history(event),
+          policyTriggerEvidenceHistory: evidenceHistory(evidence)
+        }),
+      /scope mismatch|type mismatch/
+    );
+  }
+});
+
+test("policy-event trigger rejects transition and chronology drift", () => {
+  const transition = regimeEvidence({ previousRegime: "bull" });
+  const futureObservation = regimeEvidence({
+    observedAt: "2026-09-03T00:00:00.750Z",
+    createdAt: "2026-09-03T00:00:00.900Z"
+  });
+  const lateCreation = regimeEvidence({
+    createdAt: "2026-09-03T00:00:02.000Z"
+  });
+  for (const [evidence, message] of [
+    [transition, /transition mismatch/],
+    [futureObservation, /observation postdates/],
+    [lateCreation, /created after/]
+  ] as const) {
+    const event = regimeEvent({ evidenceRefs: [evidence.evidenceRef] });
+    assert.throws(
+      () =>
+        resolvePolicyEventPortfolioCycleTrigger({
+          value: trigger(event),
+          policyTriggerEventHistory: history(event),
+          policyTriggerEvidenceHistory: evidenceHistory(evidence)
+        }),
+      message
+    );
+  }
+});
+
+test("policy-event trigger exact-binds thesis evidence scope and transition", () => {
+  const evidence = thesisEvidence();
+  const event = thesisEvent();
+  const resolved = resolvePolicyEventPortfolioCycleTrigger({
+    value: trigger(event),
+    policyTriggerEventHistory: history(event),
+    policyTriggerEvidenceHistory: evidenceHistory(evidence)
+  });
+  assert.deepEqual(resolved.policyTriggerEvidenceRecords, [evidence]);
+
+  const wrongMandate = thesisEvidence({ mandateId: "mandate-2" });
+  const mismatchedEvent = thesisEvent({
+    evidenceRefs: [wrongMandate.evidenceRef]
+  });
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTrigger({
+        value: trigger(mismatchedEvent),
+        policyTriggerEventHistory: history(mismatchedEvent),
+        policyTriggerEvidenceHistory: evidenceHistory(wrongMandate)
+      }),
+    /thesis evidence transition mismatch/
+  );
 });
 
 test("policy-event trigger rejects missing and duplicate event IDs", () => {
@@ -84,6 +207,7 @@ test("policy-event trigger rejects portfolio and policy scope drift", () => {
       resolvePolicyEventPortfolioCycleTriggerRaw({
         value: trigger(event),
         policyTriggerEventHistory: history(event),
+        policyTriggerEvidenceHistory: evidenceHistory(regimeEvidence()),
         expectedPortfolioId: "portfolio-2",
         expectedPolicyHash: POLICY_HASH
       }),
@@ -94,6 +218,7 @@ test("policy-event trigger rejects portfolio and policy scope drift", () => {
       resolvePolicyEventPortfolioCycleTriggerRaw({
         value: trigger(event),
         policyTriggerEventHistory: history(event),
+        policyTriggerEvidenceHistory: evidenceHistory(regimeEvidence()),
         expectedPortfolioId: event.portfolioId,
         expectedPolicyHash: `sha256:${"b".repeat(64)}`
       }),
@@ -158,9 +283,12 @@ function trigger(event: PortfolioPolicyTriggerEvent) {
 function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: ReturnType<typeof history>;
+  policyTriggerEvidenceHistory?: ReturnType<typeof evidenceHistory>;
 }) {
   return resolvePolicyEventPortfolioCycleTriggerRaw({
     ...input,
+    policyTriggerEvidenceHistory:
+      input.policyTriggerEvidenceHistory ?? evidenceHistory(regimeEvidence()),
     expectedPortfolioId: "portfolio-1",
     expectedPolicyHash: POLICY_HASH
   });
@@ -173,25 +301,55 @@ function history(...events: readonly PortfolioPolicyTriggerEvent[]) {
   );
 }
 
-function regimeEvent() {
+function evidenceHistory(
+  ...records: readonly PortfolioPolicyTriggerEvidenceRecord[]
+) {
+  return parseVerifiedPortfolioPolicyTriggerEvidenceHistory(
+    records.map((record) => JSON.stringify(record)).join("\n") +
+      (records.length === 0 ? "" : "\n")
+  );
+}
+
+function regimeEvent(
+  override: Partial<
+    Omit<
+      Extract<
+        CreatePortfolioPolicyTriggerEventInput,
+        { eventType: "regime_change" }
+      >,
+      "eventType"
+    >
+  > = {}
+) {
   return createPortfolioPolicyTriggerEvent({
     portfolioId: "portfolio-1",
     policyHash: POLICY_HASH,
-    evidenceRefs: ["regime-a"],
+    evidenceRefs: [regimeEvidence().evidenceRef],
     asOf: "2026-09-03T00:00:00.000Z",
     eventType: "regime_change",
     market: "KR",
     previousRegime: "sideways",
     currentRegime: "bear",
-    createdAt: "2026-09-03T00:00:01.000Z"
+    createdAt: "2026-09-03T00:00:01.000Z",
+    ...override
   });
 }
 
-function thesisEvent() {
+function thesisEvent(
+  override: Partial<
+    Omit<
+      Extract<
+        CreatePortfolioPolicyTriggerEventInput,
+        { eventType: "thesis_evidence_change" }
+      >,
+      "eventType"
+    >
+  > = {}
+) {
   return createPortfolioPolicyTriggerEvent({
     portfolioId: "portfolio-1",
     policyHash: POLICY_HASH,
-    evidenceRefs: ["thesis-a"],
+    evidenceRefs: [thesisEvidence().evidenceRef],
     asOf: "2026-09-03T00:00:00.000Z",
     eventType: "thesis_evidence_change",
     mandateId: "mandate-1",
@@ -199,6 +357,63 @@ function thesisEvent() {
     symbol: "005930",
     previousThesisStatus: "intact",
     currentThesisStatus: "watch",
-    createdAt: "2026-09-03T00:00:01.000Z"
+    createdAt: "2026-09-03T00:00:01.000Z",
+    ...override
+  });
+}
+
+function regimeEvidence(
+  override: Partial<
+    Omit<
+      Extract<
+        CreatePortfolioPolicyTriggerEvidenceRecordInput,
+        { evidenceType: "regime_change" }
+      >,
+      "evidenceType"
+    >
+  > = {}
+) {
+  return createPortfolioPolicyTriggerEvidenceRecord({
+    portfolioId: "portfolio-1",
+    policyHash: POLICY_HASH,
+    market: "KR",
+    evidenceType: "regime_change",
+    sourceContractId: "market-regime-evidence.v1",
+    sourceArtifactId: "regime-source-1",
+    sourceArtifactHash: `sha256:${"c".repeat(64)}`,
+    observedAt: "2026-09-03T00:00:00.000Z",
+    previousRegime: "sideways",
+    currentRegime: "bear",
+    createdAt: "2026-09-03T00:00:00.500Z",
+    ...override
+  });
+}
+
+function thesisEvidence(
+  override: Partial<
+    Omit<
+      Extract<
+        CreatePortfolioPolicyTriggerEvidenceRecordInput,
+        { evidenceType: "thesis_evidence_change" }
+      >,
+      "evidenceType"
+    >
+  > = {}
+) {
+  return createPortfolioPolicyTriggerEvidenceRecord({
+    portfolioId: "portfolio-1",
+    policyHash: POLICY_HASH,
+    market: "KR",
+    evidenceType: "thesis_evidence_change",
+    sourceContractId: "thesis-evidence.v1",
+    sourceArtifactId: "thesis-source-1",
+    sourceArtifactHash: `sha256:${"d".repeat(64)}`,
+    observedAt: "2026-09-03T00:00:00.000Z",
+    mandateId: "mandate-1",
+    symbol: "005930",
+    previousThesisStatus: "intact",
+    currentThesisStatus: "watch",
+    createdAt: "2026-09-03T00:00:00.500Z",
+    ...override
   });
 }

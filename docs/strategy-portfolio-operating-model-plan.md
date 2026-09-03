@@ -3263,6 +3263,15 @@ event evidence ref 해소, active mandate 및 selection request 연결은 후속
 instance만 source resolver에 전달할 수 있다. Policy-event evidence/active mandate와 risk-state kind별
 origin/state replay 및 selection request 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+스물다섯 번째 분할은 `policy_event` cycle trigger의 event `evidenceRefs`를 complete immutable
+`PortfolioPolicyTriggerEvidenceRecord` history에 exact-bind한다. Opaque verified history의 모든 record를
+strict parse·rehash하고 duplicate ref/hash를 거절한 뒤 event의 각 ref가 정확히 하나의 record로 해소되어야
+한다. Resolved evidence의 portfolio/policy/market/type과 regime 또는 thesis transition은 event와
+exact-match해야 하며 observation은 event `asOf` 이후일 수 없고 evidence `createdAt`은 event
+`createdAt` 이후일 수 없다. 관련 없는 손상 record도 무시하지 않는다. Contract-specific source artifact
+검증 adapter, thesis event의 as-of active mandate 및 selection request 연결은 후속 분할 전까지 구현 완료로
+간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
