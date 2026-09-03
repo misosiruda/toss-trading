@@ -454,6 +454,33 @@ test("selection request resolver rejects every-tick portfolio and market scope d
   );
 });
 
+test("selection request resolver rejects stale and future candidate evidence", () => {
+  const oldEvidence = everyTickFixture({
+    candidateCollectedAt: "2026-09-01T23:58:59.000Z"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(oldEvidence),
+    /candidate evidence is stale/
+  );
+
+  const expiredEvidence = everyTickFixture({
+    candidateStaleAfter: AS_OF
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(expiredEvidence),
+    /candidate evidence is stale/
+  );
+
+  const futureEvidence = everyTickFixture({
+    candidateCollectedAt: "2026-09-02T00:00:01.000Z",
+    candidateStaleAfter: "2026-09-02T00:01:00.000Z"
+  });
+  assert.throws(
+    () => resolveEveryTickFixture(futureEvidence),
+    /candidate evidence postdates the market packet/
+  );
+});
+
 test("selection request resolver rejects ignored every-tick source input", () => {
   const fixture = selectionFixture();
   const everyTick = everyTickFixture();
@@ -483,6 +510,8 @@ function everyTickFixture(
     selectionPolicyCreatedAt?: string;
     sourceMaximumAgeSeconds?: number;
     evidenceMaximumAgeSeconds?: number;
+    candidateCollectedAt?: string;
+    candidateStaleAfter?: string;
   } = {}
 ) {
   const sourceContractId =
@@ -516,7 +545,7 @@ function everyTickFixture(
   });
   const snapshot = emptySizingSnapshot(policy.policyHash);
   const generatedAt = options.packetGeneratedAt ?? AS_OF;
-  const packet = createMockMarketPacket({
+  const basePacket = createMockMarketPacket({
     now: new Date(generatedAt),
     portfolio: {
       portfolioId: options.packetPortfolioId ?? snapshot.portfolioId,
@@ -525,6 +554,14 @@ function everyTickFixture(
       updatedAt: "2026-09-01T23:30:00.000Z"
     }
   }).packet;
+  const packet = {
+    ...basePacket,
+    candidates: basePacket.candidates.map((candidate) => ({
+      ...candidate,
+      collectedAt: options.candidateCollectedAt ?? candidate.collectedAt,
+      staleAfter: options.candidateStaleAfter ?? candidate.staleAfter
+    }))
+  };
   const packetHash = createMarketPacketHash(packet);
   const trigger = {
     triggerKind: "every_tick" as const,

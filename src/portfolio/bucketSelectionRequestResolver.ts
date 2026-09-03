@@ -276,23 +276,47 @@ function assertEveryTickMarketPacketBinding(
     throw new Error("every_tick packet postdates the selection request");
   }
   const requirement = selectionPolicy.everyTickSourceRequirement;
-  const evidenceMaximumAgeSeconds = Math.min(
-    ...selectionPolicy.requiredEvidence
-      .filter(
-        (evidence) =>
-          evidence.evidenceClass === "market_technical" &&
-          evidence.sourceContractId ===
-            EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID
-      )
-      .map((evidence) => evidence.maximumAgeSeconds)
-  );
+  if (requirement === undefined) {
+    throw new Error("every_tick packet source requirement is missing");
+  }
+  const maximumAgeSeconds = selectionPolicy.requiredEvidence
+    .filter(
+      (evidence) =>
+        evidence.evidenceClass === "market_technical" &&
+        evidence.sourceContractId ===
+          EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID
+    )
+    .reduce(
+      (maximumAge, evidence) =>
+        Math.min(maximumAge, evidence.maximumAgeSeconds),
+      requirement.maximumAgeSeconds
+    );
   if (
-    requirement === undefined ||
-    ageMilliseconds / 1_000 >
-      Math.min(requirement.maximumAgeSeconds, evidenceMaximumAgeSeconds) ||
+    ageMilliseconds / 1_000 > maximumAgeSeconds ||
     Date.parse(request.asOf) >= Date.parse(packet.expiresAt)
   ) {
     throw new Error("every_tick packet is stale for the selection request");
+  }
+
+  const packetGeneratedAt = Date.parse(packet.generatedAt);
+  const requestAsOf = Date.parse(request.asOf);
+  for (const candidate of packet.candidates) {
+    const collectedAt = Date.parse(candidate.collectedAt);
+    const staleAfter = Date.parse(candidate.staleAfter);
+    if (collectedAt > packetGeneratedAt) {
+      throw new Error(
+        "every_tick packet candidate evidence postdates the market packet"
+      );
+    }
+    if (
+      staleAfter <= collectedAt ||
+      requestAsOf - collectedAt > maximumAgeSeconds * 1_000 ||
+      requestAsOf >= staleAfter
+    ) {
+      throw new Error(
+        "every_tick packet candidate evidence is stale for the selection request"
+      );
+    }
   }
   if (
     packet.candidates.some(
