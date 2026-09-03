@@ -3,10 +3,17 @@ import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
+import { z } from "zod";
+
+import { sha256HashSchema } from "../domain/schemas.js";
 import {
   type SourcePriceEvidenceRecord,
   parseSourcePriceEvidenceRecord
 } from "./sourcePriceEvidence.js";
+import {
+  hashCanonicalPayload,
+  offsetQualifiedIsoDateTimeSchema
+} from "./runtimePolicyContracts.js";
 
 export const SOURCE_PRICE_EVIDENCE_RECORDS_FILE_NAME =
   "source-price-evidence-records.jsonl";
@@ -14,6 +21,41 @@ export const SOURCE_PRICE_EVIDENCE_RECORDS_FILE_NAME =
 export interface SourcePriceEvidenceFileRepositoryOptions {
   lockTimeoutMs?: number;
   lockRetryDelayMs?: number;
+}
+
+const verifiedSourcePriceEvidenceHistories =
+  new WeakSet<VerifiedSourcePriceEvidenceHistory>();
+const verifiedSourcePriceEvidenceMetadata =
+  new WeakMap<VerifiedSourcePriceEvidenceHistory, VerifiedHistoryMetadata>();
+
+export interface VerifiedSourcePriceEvidenceHistory {
+  records: readonly SourcePriceEvidenceRecord[];
+}
+
+export interface VerifiedSourcePriceEvidenceOrigin {
+  record: SourcePriceEvidenceRecord;
+  appendedAt: string;
+}
+
+interface VerifiedHistoryMetadata {
+  appendedAtByRef: ReadonlyMap<string, string>;
+  lastEntryHash: string | null;
+}
+
+const sourcePriceEvidenceFileEntrySchema = z
+  .object({
+    record: z.unknown(),
+    appendedAt: offsetQualifiedIsoDateTimeSchema,
+    previousEntryHash: sha256HashSchema.nullable(),
+    entryHash: sha256HashSchema
+  })
+  .strict();
+
+interface SourcePriceEvidenceFileEntry {
+  record: SourcePriceEvidenceRecord;
+  appendedAt: string;
+  previousEntryHash: string | null;
+  entryHash: string;
 }
 
 export function createSourcePriceEvidencePaths(baseDir: string): {
@@ -54,7 +96,11 @@ export class SourcePriceEvidenceFileRepository {
   }
 
   async readAll(): Promise<readonly SourcePriceEvidenceRecord[]> {
-    return this.withLock(async () => this.readAllUnderLock());
+    return this.withLock(async () => (await this.readHistoryUnderLock()).records);
+  }
+
+  async readVerifiedHistory(): Promise<VerifiedSourcePriceEvidenceHistory> {
+    return this.withLock(async () => this.readHistoryUnderLock());
   }
 
   async resolveByRef(evidenceRef: string): Promise<SourcePriceEvidenceRecord> {
@@ -71,7 +117,8 @@ export class SourcePriceEvidenceFileRepository {
   async append(value: unknown): Promise<SourcePriceEvidenceRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
-      const records = await this.readAllUnderLock();
+      const history = await this.readHistoryUnderLock();
+      const records = history.records;
       const existing = records.find(
         (record) => record.evidenceRef === candidate.evidenceRef
       );
@@ -86,24 +133,30 @@ export class SourcePriceEvidenceFileRepository {
       if (records.some((record) => originKey(record) === candidateOrigin)) {
         throw new Error("source price evidence origin collision");
       }
-      await appendDurableJsonLine(this.recordsPath, candidate);
+      const metadata = getVerifiedHistoryMetadata(history);
+      const entry = createSourcePriceEvidenceFileEntry({
+        record: candidate,
+        appendedAt: new Date().toISOString(),
+        previousEntryHash: metadata.lastEntryHash
+      });
+      await appendDurableJsonLine(this.recordsPath, entry);
       return candidate;
     });
   }
 
-  private async readAllUnderLock(): Promise<
-    readonly SourcePriceEvidenceRecord[]
-  > {
+  private async readHistoryUnderLock(): Promise<VerifiedSourcePriceEvidenceHistory> {
     let raw: string;
     try {
       raw = await readFile(this.recordsPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return Object.freeze([]);
+        return createVerifiedSourcePriceEvidenceHistory([]);
       }
       throw error;
     }
-    return parseSourcePriceEvidenceRecords(raw);
+    return createVerifiedSourcePriceEvidenceHistory(
+      parseSourcePriceEvidenceEntries(raw)
+    );
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -127,29 +180,42 @@ export class SourcePriceEvidenceFileRepository {
 export function parseSourcePriceEvidenceRecords(
   raw: string
 ): readonly SourcePriceEvidenceRecord[] {
+  return Object.freeze(
+    parseSourcePriceEvidenceEntries(raw).map((entry) => entry.record)
+  );
+}
+
+function parseSourcePriceEvidenceEntries(
+  raw: string
+): readonly SourcePriceEvidenceFileEntry[] {
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error("source price evidence file has a torn final line");
   }
   const lines = raw.split(/\r?\n/);
   lines.pop();
-  const records: SourcePriceEvidenceRecord[] = [];
+  const entries: SourcePriceEvidenceFileEntry[] = [];
   const refs = new Set<string>();
   const origins = new Set<string>();
+  let previousEntryHash: string | null = null;
   for (const [index, line] of lines.entries()) {
     if (line.length === 0) {
       throw new Error(
         `source price evidence file contains corrupt line ${index + 1}`
       );
     }
-    let record: SourcePriceEvidenceRecord;
+    let entry: SourcePriceEvidenceFileEntry;
     try {
-      record = parseSourcePriceEvidenceRecord(JSON.parse(line));
+      entry = parseSourcePriceEvidenceFileEntry(
+        JSON.parse(line),
+        previousEntryHash
+      );
     } catch (error) {
       throw new Error(
         `source price evidence file contains corrupt line ${index + 1}`,
         { cause: error }
       );
     }
+    const record = entry.record;
     if (refs.has(record.evidenceRef)) {
       throw new Error("source price evidence file contains a duplicate ref");
     }
@@ -161,9 +227,115 @@ export function parseSourcePriceEvidenceRecords(
     }
     refs.add(record.evidenceRef);
     origins.add(origin);
-    records.push(record);
+    entries.push(entry);
+    previousEntryHash = entry.entryHash;
   }
-  return Object.freeze(records);
+  return Object.freeze(entries);
+}
+
+export function getVerifiedSourcePriceEvidenceRecords(
+  history: VerifiedSourcePriceEvidenceHistory
+): readonly SourcePriceEvidenceRecord[] {
+  if (!verifiedSourcePriceEvidenceHistories.has(history)) {
+    throw new Error("source price evidence history is not verified");
+  }
+  return history.records;
+}
+
+export function resolveVerifiedSourcePriceEvidenceOrigin(
+  history: VerifiedSourcePriceEvidenceHistory,
+  evidenceRef: string
+): VerifiedSourcePriceEvidenceOrigin {
+  const records = getVerifiedSourcePriceEvidenceRecords(history);
+  const matches = records.filter((record) => record.evidenceRef === evidenceRef);
+  if (matches.length !== 1) {
+    throw new Error("source price evidence does not resolve exactly once");
+  }
+  const metadata = getVerifiedHistoryMetadata(history);
+  const appendedAt = metadata.appendedAtByRef.get(evidenceRef);
+  if (appendedAt === undefined) {
+    throw new Error("source price evidence append origin is unavailable");
+  }
+  return deepFreeze({
+    record: matches[0] as SourcePriceEvidenceRecord,
+    appendedAt
+  });
+}
+
+function createVerifiedSourcePriceEvidenceHistory(
+  entries: readonly SourcePriceEvidenceFileEntry[]
+): VerifiedSourcePriceEvidenceHistory {
+  const records = entries.map((entry) => entry.record);
+  const history = Object.freeze({ records: Object.freeze([...records]) });
+  verifiedSourcePriceEvidenceHistories.add(history);
+  verifiedSourcePriceEvidenceMetadata.set(history, {
+    appendedAtByRef: new Map(
+      entries.map((entry) => [entry.record.evidenceRef, entry.appendedAt])
+    ),
+    lastEntryHash: entries.at(-1)?.entryHash ?? null
+  });
+  return history;
+}
+
+function getVerifiedHistoryMetadata(
+  history: VerifiedSourcePriceEvidenceHistory
+): VerifiedHistoryMetadata {
+  const metadata = verifiedSourcePriceEvidenceMetadata.get(history);
+  if (metadata === undefined) {
+    throw new Error("source price evidence history is not verified");
+  }
+  return metadata;
+}
+
+function createSourcePriceEvidenceFileEntry(input: {
+  record: SourcePriceEvidenceRecord;
+  appendedAt: string;
+  previousEntryHash: string | null;
+}): SourcePriceEvidenceFileEntry {
+  if (Date.parse(input.appendedAt) < Date.parse(input.record.createdAt)) {
+    throw new Error("source price evidence cannot be appended before creation");
+  }
+  const payload = {
+    record: input.record,
+    appendedAt: input.appendedAt,
+    previousEntryHash: input.previousEntryHash
+  };
+  return deepFreeze({
+    ...payload,
+    entryHash: hashCanonicalPayload(payload)
+  });
+}
+
+function parseSourcePriceEvidenceFileEntry(
+  value: unknown,
+  expectedPreviousEntryHash: string | null
+): SourcePriceEvidenceFileEntry {
+  const parsed = sourcePriceEvidenceFileEntrySchema.parse(value);
+  const record = parseSourcePriceEvidenceRecord(parsed.record);
+  const canonical = {
+    record,
+    appendedAt: parsed.appendedAt,
+    previousEntryHash: parsed.previousEntryHash,
+    entryHash: parsed.entryHash
+  };
+  if (!isDeepStrictEqual(value, canonical)) {
+    throw new Error("source price evidence file entry must already be canonical");
+  }
+  if (canonical.previousEntryHash !== expectedPreviousEntryHash) {
+    throw new Error("source price evidence file predecessor mismatch");
+  }
+  if (Date.parse(canonical.appendedAt) < Date.parse(record.createdAt)) {
+    throw new Error("source price evidence cannot be appended before creation");
+  }
+  const expectedEntryHash = hashCanonicalPayload({
+    record,
+    appendedAt: canonical.appendedAt,
+    previousEntryHash: canonical.previousEntryHash
+  });
+  if (canonical.entryHash !== expectedEntryHash) {
+    throw new Error("source price evidence file entry hash mismatch");
+  }
+  return deepFreeze(canonical);
 }
 
 function originKey(record: SourcePriceEvidenceRecord): string {
@@ -183,7 +355,7 @@ function cloneRecord(value: unknown): SourcePriceEvidenceRecord {
 
 async function appendDurableJsonLine(
   path: string,
-  value: SourcePriceEvidenceRecord
+  value: SourcePriceEvidenceFileEntry
 ): Promise<void> {
   const handle = await open(path, "a");
   try {
@@ -304,6 +476,16 @@ function delay(milliseconds: number): Promise<void> {
 function positiveInteger(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new Error(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    Object.freeze(value);
+    for (const child of Object.values(value)) {
+      deepFreeze(child);
+    }
   }
   return value;
 }

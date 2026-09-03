@@ -6,9 +6,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import {
   SourcePriceEvidenceFileRepository,
-  createSourcePriceEvidencePaths
+  createSourcePriceEvidencePaths,
+  getVerifiedSourcePriceEvidenceRecords,
+  type VerifiedSourcePriceEvidenceHistory
 } from "./sourcePriceEvidenceFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}` as const;
@@ -17,16 +20,47 @@ test("source price evidence repository appends, resolves, and converges retries"
   await withTemporaryDirectory(async (baseDir) => {
     const repository = new SourcePriceEvidenceFileRepository(baseDir);
     const record = sourcePriceEvidence();
+    const beforeAppend = Date.now();
 
     assert.deepEqual(await repository.append(record), record);
     assert.deepEqual(await repository.append(record), record);
     assert.deepEqual(await repository.resolveByRef(record.evidenceRef), record);
     assert.deepEqual(await repository.readAll(), [record]);
+    const history = await repository.readVerifiedHistory();
+    assert.deepEqual(getVerifiedSourcePriceEvidenceRecords(history), [record]);
+    const forged = Object.create(history) as VerifiedSourcePriceEvidenceHistory;
+    Object.defineProperty(forged, "records", {
+      value: Object.freeze([
+        { ...record, createdAt: "2026-09-01T01:00:00.000Z" }
+      ]),
+      enumerable: true
+    });
+    assert.throws(
+      () => getVerifiedSourcePriceEvidenceRecords(forged),
+      /history is not verified/
+    );
     const raw = await readFile(
       createSourcePriceEvidencePaths(baseDir).recordsPath,
       "utf8"
     );
-    assert.equal(raw, `${JSON.stringify(record)}\n`);
+    const entry = JSON.parse(raw) as {
+      record: unknown;
+      appendedAt: string;
+      previousEntryHash: string | null;
+      entryHash: string;
+    };
+    assert.deepEqual(entry.record, record);
+    assert.equal(entry.previousEntryHash, null);
+    assert.ok(Date.parse(entry.appendedAt) >= beforeAppend);
+    assert.ok(Date.parse(entry.appendedAt) <= Date.now());
+    assert.equal(
+      entry.entryHash,
+      hashCanonicalPayload({
+        record,
+        appendedAt: entry.appendedAt,
+        previousEntryHash: null
+      })
+    );
   });
 });
 
@@ -101,26 +135,39 @@ test("source price evidence repository fails closed for corrupt and torn history
     const paths = createSourcePriceEvidencePaths(baseDir);
     const record = sourcePriceEvidence();
     const repository = new SourcePriceEvidenceFileRepository(baseDir);
+    await repository.append(record);
+    const validRaw = await readFile(paths.recordsPath, "utf8");
+    const firstEntry = JSON.parse(validRaw) as {
+      appendedAt: string;
+      entryHash: string;
+    };
 
-    await writeFile(paths.recordsPath, `${JSON.stringify(record)}\n{`, "utf8");
+    await writeFile(paths.recordsPath, `${validRaw}{`, "utf8");
     await assert.rejects(() => repository.readAll(), /torn final line/);
 
-    await writeFile(paths.recordsPath, `${JSON.stringify(record)}\n\n`, "utf8");
+    await writeFile(paths.recordsPath, `${validRaw}\n`, "utf8");
     await assert.rejects(() => repository.readAll(), /corrupt line 2/);
 
+    const corruptEntry = durableEntry(
+      { ...record, evidenceHash: HASH_A },
+      firstEntry.appendedAt,
+      firstEntry.entryHash
+    );
     await writeFile(
       paths.recordsPath,
-      `${JSON.stringify(record)}\n${JSON.stringify({
-        ...record,
-        evidenceHash: HASH_A
-      })}\n`,
+      `${validRaw}${JSON.stringify(corruptEntry)}\n`,
       "utf8"
     );
     await assert.rejects(() => repository.readAll(), /corrupt line 2/);
 
+    const duplicateEntry = durableEntry(
+      record,
+      firstEntry.appendedAt,
+      firstEntry.entryHash
+    );
     await writeFile(
       paths.recordsPath,
-      `${JSON.stringify(record)}\n${JSON.stringify(record)}\n`,
+      `${validRaw}${JSON.stringify(duplicateEntry)}\n`,
       "utf8"
     );
     await assert.rejects(() => repository.readAll(), /duplicate ref/);
@@ -129,9 +176,14 @@ test("source price evidence repository fails closed for corrupt and torn history
       priceKrw: 101,
       sourceRefs: ["different-raw-source"]
     });
+    const collisionEntry = durableEntry(
+      originCollision,
+      firstEntry.appendedAt,
+      firstEntry.entryHash
+    );
     await writeFile(
       paths.recordsPath,
-      `${JSON.stringify(record)}\n${JSON.stringify(originCollision)}\n`,
+      `${validRaw}${JSON.stringify(collisionEntry)}\n`,
       "utf8"
     );
     await assert.rejects(() => repository.readAll(), /duplicate origin/);
@@ -140,6 +192,13 @@ test("source price evidence repository fails closed for corrupt and torn history
 
 test("source price evidence repository leaves abandoned locks fail-closed", async () => {
   await withTemporaryDirectory(async (baseDir) => {
+    assert.throws(
+      () =>
+        getVerifiedSourcePriceEvidenceRecords({
+          records: []
+        } as VerifiedSourcePriceEvidenceHistory),
+      /history is not verified/
+    );
     const paths = createSourcePriceEvidencePaths(baseDir);
     await writeFile(paths.lockPath, "abandoned\n", "utf8");
     const repository = new SourcePriceEvidenceFileRepository(baseDir, {
@@ -150,6 +209,15 @@ test("source price evidence repository leaves abandoned locks fail-closed", asyn
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
   });
 });
+
+function durableEntry(
+  record: unknown,
+  appendedAt: string,
+  previousEntryHash: string | null
+) {
+  const payload = { record, appendedAt, previousEntryHash };
+  return { ...payload, entryHash: hashCanonicalPayload(payload) };
+}
 
 function sourcePriceEvidence(
   overrides: Partial<{
