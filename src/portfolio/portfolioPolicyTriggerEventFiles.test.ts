@@ -8,7 +8,10 @@ import test from "node:test";
 import { createPortfolioPolicyTriggerEvent } from "./portfolioPolicyTriggerEvent.js";
 import {
   PortfolioPolicyTriggerEventFileRepository,
-  createPortfolioPolicyTriggerEventPaths
+  createPortfolioPolicyTriggerEventPaths,
+  getVerifiedPortfolioPolicyTriggerEventRecords,
+  parseVerifiedPortfolioPolicyTriggerEventHistory,
+  type VerifiedPortfolioPolicyTriggerEventHistory
 } from "./portfolioPolicyTriggerEventFiles.js";
 
 const POLICY_HASH = `sha256:${"a".repeat(64)}`;
@@ -110,6 +113,31 @@ test("policy event repository fails closed for corrupt and torn history", async 
     );
     await assert.rejects(() => repository.readAll(), /duplicate ID/);
   });
+});
+
+test("policy event verified history rejects prototype forgery", () => {
+  const event = policyEvent();
+  const valid = parseVerifiedPortfolioPolicyTriggerEventHistory(
+    `${JSON.stringify(event)}\n`
+  );
+  const forged = Object.create(valid) as {
+    records: readonly ReturnType<typeof policyEvent>[];
+  };
+  Object.defineProperty(forged, "records", {
+    value: Object.freeze([]),
+    enumerable: true
+  });
+
+  assert.throws(
+    () =>
+      getVerifiedPortfolioPolicyTriggerEventRecords(
+        forged as VerifiedPortfolioPolicyTriggerEventHistory
+      ),
+    /history is not verified/
+  );
+  assert.deepEqual(getVerifiedPortfolioPolicyTriggerEventRecords(valid), [
+    event
+  ]);
 });
 
 test("policy event repository leaves abandoned locks fail-closed", async () => {

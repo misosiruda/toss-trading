@@ -3256,6 +3256,13 @@ torn/blank/corrupt line을 fail-closed하며 thread/process writer는 exclusive 
 event evidence ref 해소, active mandate 및 selection request 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+스물네 번째 분할은 every-tick packet, policy event와 risk-state update resolver가 complete history의
+검증 여부를 discoverable Symbol property가 아니라 module-private `WeakSet` identity로 판정하도록
+강화한다. 정상 history를 prototype으로 상속하거나 reflection으로 property를 복사해 임의 records를
+주입한 wrapper도 verified history로 사용할 수 없어야 하며, parser/repository가 실제 생성한 frozen
+instance만 source resolver에 전달할 수 있다. Policy-event evidence/active mandate와 risk-state kind별
+origin/state replay 및 selection request 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

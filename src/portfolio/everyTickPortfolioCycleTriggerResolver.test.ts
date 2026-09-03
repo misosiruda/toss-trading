@@ -5,6 +5,7 @@ import type { MarketPacket } from "../domain/schemas.js";
 import { createMockMarketPacket } from "../market/packetBuilder.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import {
+  type CanonicalMarketPacketHistory,
   parseCanonicalMarketPacketHistoryText,
   resolveEveryTickPortfolioCycleTrigger
 } from "./everyTickPortfolioCycleTriggerResolver.js";
@@ -109,6 +110,25 @@ test("every-tick trigger rejects a corrupt packet history before lookup", () => 
         marketPacketHistory: parseCanonicalMarketPacketHistoryText(
           `${JSON.stringify(packet)}\nnot-json\n`
         )
+      }),
+    /history is corrupt/
+  );
+});
+
+test("every-tick trigger rejects a prototype-forged packet history", () => {
+  const packet = marketPacket();
+  const valid = history(packet);
+  const forged = Object.create(valid) as CanonicalMarketPacketHistory;
+  Object.defineProperties(forged, {
+    records: { value: Object.freeze([packet]), enumerable: true },
+    corruptLineCount: { value: 0, enumerable: true }
+  });
+
+  assert.throws(
+    () =>
+      resolveEveryTickPortfolioCycleTrigger({
+        value: trigger(packet),
+        marketPacketHistory: forged
       }),
     /history is corrupt/
   );
