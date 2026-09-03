@@ -3118,6 +3118,14 @@ malformed Unicode, unknown field와 stored identity tamper를 거절한다. crea
 identity에서 제외한다. snapshot/policy/gap 재해소, trigger 종류별 cutoff 파생과 append-only request
 repository는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+여덟 번째 분할은 `bucket-selection-requests.jsonl` strict append-only repository를 구현한다.
+append/read는 stored request의 complete payload hash와 hash-derived ID를 다시 검증한다. createdAt만
+다른 동일 semantic request retry는 최초 record로 수렴하고, `(cycleId, bucket)` origin이 같은 다른
+payload는 거절한다. complete history의 duplicate ID/origin, torn/blank/corrupt line을 fail-closed하며
+thread/process writer는 exclusive lock과 file/directory sync로 직렬화한다. abandoned lock은 자동
+제거하지 않는다. snapshot/policy/gap 재해소와 trigger별 cutoff 검증은 후속 resolver 전까지 구현
+완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
