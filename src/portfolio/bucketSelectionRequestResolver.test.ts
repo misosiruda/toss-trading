@@ -26,10 +26,14 @@ import {
   hashCanonicalPayload,
   hashDerivedId,
   hashImmutableRecordLineage,
+  createScheduleBoundaryRecord,
+  createSessionCalendarRecord,
+  scheduleBoundaryRefFor,
   selectionPolicyRefFor,
   type BucketSelectionPolicyRef,
   type StrategyBucketRuntimePolicy
 } from "./runtimePolicyContracts.js";
+import { generateCanonicalScheduleSlots } from "./scheduledPortfolioCycleTriggerResolver.js";
 import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 
 const HASH = `sha256:${"a".repeat(64)}` as const;
@@ -63,12 +67,13 @@ test("selection request resolver binds snapshot, policy, and replayed gap", () =
 });
 
 test("selection request resolver replays entry-floor eligibility as due", () => {
-  const fixture = selectionFixture({ bucket: "short_term" });
+  const fixture = scheduledSelectionFixture();
   const resolved = resolveBucketSelectionRequest({
     value: fixture.request,
     sizingSnapshot: fixture.snapshot,
     activePolicy: fixture.policy,
     cycleTrigger: fixture.trigger,
+    scheduledTriggerSource: fixture.scheduledTriggerSource,
     bucketOpeningCapacities: openingCapacities()
   });
 
@@ -77,6 +82,59 @@ test("selection request resolver replays entry-floor eligibility as due", () => 
   assert.equal(resolved.gap.gapBasis, "entry_floor");
   assert.equal(resolved.gap.gapKrw, 50_000);
   assert.equal(resolved.gap.maximumAdditionalExposureKrw, 50_000);
+  assert.equal(resolved.triggerSource?.sourceKind, "schedule_slot");
+});
+
+test("selection request resolver requires the exact scheduled slot source", () => {
+  const fixture = scheduledSelectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /requires its slot source/
+  );
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        scheduledTriggerSource: {
+          ...fixture.scheduledTriggerSource,
+          scheduleBoundary: createScheduleBoundaryRecord({
+            market: fixture.scheduledTriggerSource.scheduleBoundary.market,
+            version: "v2",
+            timeZone: fixture.scheduledTriggerSource.scheduleBoundary.timeZone,
+            sessionCalendarRecordId:
+              fixture.scheduledTriggerSource.scheduleBoundary
+                .sessionCalendarRecordId,
+            sessionCalendarVersion:
+              fixture.scheduledTriggerSource.scheduleBoundary
+                .sessionCalendarVersion,
+            sessionCalendarHash:
+              fixture.scheduledTriggerSource.scheduleBoundary
+                .sessionCalendarHash,
+            sessionCalendarLineageHash:
+              fixture.scheduledTriggerSource.scheduleBoundary
+                .sessionCalendarLineageHash,
+            interval: fixture.scheduledTriggerSource.scheduleBoundary.interval,
+            anchorLocalTime:
+              fixture.scheduledTriggerSource.scheduleBoundary.anchorLocalTime,
+            nonSessionDayRule:
+              fixture.scheduledTriggerSource.scheduleBoundary.nonSessionDayRule,
+            createdAt: "2026-09-01T00:00:00.000Z"
+          })
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /boundary hash mismatch|boundary ref mismatch/
+  );
 });
 
 test("selection request resolver rejects snapshot and policy lineage mismatch", () => {
@@ -661,6 +719,64 @@ function selectionFixture(
   };
 }
 
+function scheduledSelectionFixture() {
+  const calendar = createSessionCalendarRecord({
+    market: "KR",
+    version: "v1",
+    timeZone: "Asia/Seoul",
+    validFromExchangeDate: "2026-09-02",
+    validThroughExchangeDate: "2026-09-02",
+    sessions: [
+      {
+        exchangeDate: "2026-09-02",
+        sessionKind: "regular",
+        opensAt: "2026-09-02T09:00:00+09:00",
+        closesAt: "2026-09-02T15:30:00+09:00",
+        sourceEvidenceRefs: ["calendar-evidence-1"]
+      }
+    ],
+    createdAt: "2026-08-31T00:00:00.000Z"
+  });
+  const boundary = createScheduleBoundaryRecord({
+    market: "KR",
+    version: "v1",
+    timeZone: calendar.timeZone,
+    sessionCalendarRecordId: calendar.sessionCalendarRecordId,
+    sessionCalendarVersion: calendar.version,
+    sessionCalendarHash: calendar.hash,
+    sessionCalendarLineageHash: calendar.lineageHash,
+    interval: "daily",
+    anchorLocalTime: "09:00:00",
+    nonSessionDayRule: "previous_session",
+    createdAt: "2026-09-01T00:00:00.000Z"
+  });
+  const policy = runtimePolicy({ shortTermBoundaryRef: scheduleBoundaryRefFor(boundary) });
+  const snapshot = emptySizingSnapshot(policy.policyHash);
+  const slot = generateCanonicalScheduleSlots(boundary, calendar)[0]!;
+  const trigger = {
+    triggerKind: "scheduled" as const,
+    scheduleBoundaryHash: boundary.hash,
+    scheduleSlotId: slot.scheduleSlotId,
+    slotEndsAt: slot.slotEndsAt
+  };
+  const request = createBucketSelectionRequest({
+    ...requestInput(snapshot, "short_term"),
+    triggerIdentity: `scheduled:${boundary.hash}`,
+    triggerRef: slot.scheduleSlotId,
+    evidenceCutoffAt: slot.slotEndsAt
+  });
+  return {
+    policy,
+    snapshot,
+    request,
+    trigger,
+    scheduledTriggerSource: {
+      scheduleBoundary: boundary,
+      sessionCalendar: calendar
+    }
+  };
+}
+
 function requestInput(
   snapshot: PortfolioSizingSnapshot,
   bucket: "long_term" | "short_term"
@@ -763,6 +879,7 @@ function runtimePolicy(
     enabledLongTermEvents?: boolean;
     intradaySelectionPolicyRef?: BucketSelectionPolicyRef;
     intradayEnabledMarkets?: readonly ("KR" | "US")[];
+    shortTermBoundaryRef?: ReturnType<typeof scheduleBoundaryRefFor>;
   } = {}
 ): RuntimePortfolioPolicyRecord {
   const payload = {
@@ -782,7 +899,8 @@ function runtimePolicy(
         bucket === "intraday"
           ? overrides.intradaySelectionPolicyRef
           : undefined,
-        bucket === "intraday" ? overrides.intradayEnabledMarkets : undefined
+        bucket === "intraday" ? overrides.intradayEnabledMarkets : undefined,
+        bucket === "short_term" ? overrides.shortTermBoundaryRef : undefined
       )
     ),
     cashPolicy: {
@@ -829,7 +947,8 @@ function bucketPolicy(
   bucket: StrategyBucket,
   enabledLongTermEvents = true,
   selectionPolicyRef?: BucketSelectionPolicyRef,
-  enabledMarkets?: readonly ("KR" | "US")[]
+  enabledMarkets?: readonly ("KR" | "US")[],
+  scheduleBoundaryRef?: ReturnType<typeof scheduleBoundaryRefFor>
 ): StrategyBucketRuntimePolicy {
   const weights = {
     long_term: [0.35, 0.2, 0.5, "below_min", 0] as const,
@@ -863,7 +982,7 @@ function bucketPolicy(
         : {
             mode: "scheduled",
             boundaryRefs: [
-              {
+              scheduleBoundaryRef ?? {
                 scheduleBoundaryRecordId: `${bucket}-boundary`,
                 version: "v1",
                 hash: HASH,
