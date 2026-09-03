@@ -15,6 +15,11 @@ import {
   type VerifiedPortfolioPolicyTriggerEvidenceHistory
 } from "./portfolioPolicyTriggerEvidenceFiles.js";
 import {
+  resolveCurrentInvestmentMandateAsOf,
+  type InvestmentMandateHistorySnapshot,
+  type InvestmentMandateState
+} from "./investmentMandateState.js";
+import {
   resolvePortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
 } from "./portfolioCycleTrigger.js";
@@ -27,6 +32,7 @@ export interface ResolvedPolicyEventPortfolioCycleTrigger
   >;
   policyTriggerEvent: PortfolioPolicyTriggerEvent;
   policyTriggerEvidenceRecords: readonly PortfolioPolicyTriggerEvidenceRecord[];
+  activeMandate?: InvestmentMandateState;
 }
 
 /** Resolves a policy-event trigger against a complete immutable event history. */
@@ -34,6 +40,10 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: VerifiedPortfolioPolicyTriggerEventHistory;
   policyTriggerEvidenceHistory: VerifiedPortfolioPolicyTriggerEvidenceHistory;
+  investmentMandateHistory?: Pick<
+    InvestmentMandateHistorySnapshot,
+    "records" | "events"
+  >;
   expectedPortfolioId: string;
   expectedPolicyHash: string;
 }): ResolvedPolicyEventPortfolioCycleTrigger {
@@ -77,12 +87,47 @@ export function resolvePolicyEventPortfolioCycleTrigger(input: {
     policyTriggerEvent,
     input.policyTriggerEvidenceHistory
   );
+  const activeMandate = resolveEventMandate(
+    policyTriggerEvent,
+    input.investmentMandateHistory
+  );
 
   return deepFreeze({
     ...resolved,
     trigger,
     policyTriggerEvent,
-    policyTriggerEvidenceRecords
+    policyTriggerEvidenceRecords,
+    ...(activeMandate === undefined ? {} : { activeMandate })
+  });
+}
+
+function resolveEventMandate(
+  event: PortfolioPolicyTriggerEvent,
+  history:
+    | Pick<InvestmentMandateHistorySnapshot, "records" | "events">
+    | undefined
+): InvestmentMandateState | undefined {
+  if (event.eventType === "regime_change") {
+    if (history !== undefined) {
+      throw new Error(
+        "investment mandate history is allowed only for a thesis policy event"
+      );
+    }
+    return undefined;
+  }
+  if (history === undefined) {
+    throw new Error("thesis policy event requires investment mandate history");
+  }
+  return resolveCurrentInvestmentMandateAsOf({
+    mandateId: event.mandateId,
+    portfolioId: event.portfolioId,
+    policyHash: event.policyHash,
+    market: event.market,
+    symbol: event.symbol,
+    asOf: event.asOf,
+    knownAt: event.createdAt,
+    records: history.records,
+    events: history.events
   });
 }
 

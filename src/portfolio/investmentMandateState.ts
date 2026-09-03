@@ -4,6 +4,7 @@ import {
   parseInvestmentMandateEvent,
   parseInvestmentMandateRecord
 } from "./investmentMandate.js";
+import { offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 export type InvestmentMandateStatus =
   | "proposed"
@@ -135,6 +136,60 @@ export function resolveCurrentInvestmentMandate(input: {
   );
   if (matches.length !== 1) {
     throw new Error("exactly one current investment mandate is required");
+  }
+  return matches[0] as InvestmentMandateState;
+}
+
+/**
+ * Resolves the exact current mandate visible at an immutable event cutoff.
+ *
+ * The complete history is validated first so corrupt future records cannot be
+ * hidden by the cutoff. The replay prefix then excludes lifecycle events that
+ * were either effective after `asOf` or not yet durably known at `knownAt`.
+ */
+export function resolveCurrentInvestmentMandateAsOf(input: {
+  mandateId: string;
+  portfolioId: string;
+  policyHash: string;
+  market: InvestmentMandateRecord["market"];
+  symbol: string;
+  asOf: string;
+  knownAt: string;
+  records: readonly unknown[];
+  events: readonly unknown[];
+}): InvestmentMandateState {
+  const asOf = offsetQualifiedIsoDateTimeSchema.parse(input.asOf);
+  const knownAt = offsetQualifiedIsoDateTimeSchema.parse(input.knownAt);
+  assertNotAfter(asOf, knownAt, "mandate replay asOf");
+  const complete = validateInvestmentMandateHistory(input);
+  const prefix = validateInvestmentMandateHistory({
+    records: complete.records.filter(
+      (record) => Date.parse(record.createdAt) <= Date.parse(knownAt)
+    ),
+    events: complete.events.filter(
+      (event) =>
+        Date.parse(event.asOf) <= Date.parse(asOf) &&
+        Date.parse(event.createdAt) <= Date.parse(knownAt)
+    )
+  });
+  const matches = prefix.states.filter((state) => {
+    const record = state.record;
+    return (
+      record.mandateId === input.mandateId &&
+      record.portfolioId === input.portfolioId &&
+      record.policyHash === input.policyHash &&
+      record.market === input.market &&
+      record.symbol === input.symbol &&
+      (state.status === "active" || state.status === "review_required") &&
+      Date.parse(record.validFrom) <= Date.parse(asOf) &&
+      (record.expiresAt === undefined ||
+        Date.parse(asOf) <= Date.parse(record.expiresAt))
+    );
+  });
+  if (matches.length !== 1) {
+    throw new Error(
+      "exactly one active investment mandate is required at the event cutoff"
+    );
   }
   return matches[0] as InvestmentMandateState;
 }

@@ -9,6 +9,7 @@ import {
 } from "./investmentMandate.js";
 import {
   resolveCurrentInvestmentMandate,
+  resolveCurrentInvestmentMandateAsOf,
   validateInvestmentMandateHistory
 } from "./investmentMandateState.js";
 
@@ -68,6 +69,114 @@ test("mandate history folds an instrument chain across an explicit successor", (
       events: snapshot.events
     }).record.mandateId,
     successor.mandateId
+  );
+});
+
+test("as-of mandate replay resolves the historical current mandate", () => {
+  const mandate = mandateRecord("manual-event-as-of");
+  const activated = mandateEvent(mandate, {
+    eventType: "activated",
+    asOf: "2026-09-01T01:00:00.000Z",
+    createdAt: "2026-09-01T01:00:00.000Z"
+  });
+  const reviewRequired = mandateEvent(mandate, {
+    eventType: "review_required",
+    previousMandateEventId: activated.mandateEventId,
+    asOf: "2026-09-01T02:00:00.000Z",
+    createdAt: "2026-09-01T02:00:00.000Z"
+  });
+  const retired = mandateEvent(mandate, {
+    eventType: "retired",
+    previousMandateEventId: reviewRequired.mandateEventId,
+    asOf: "2026-09-01T03:00:00.000Z",
+    createdAt: "2026-09-01T03:00:00.000Z"
+  });
+
+  const resolved = resolveCurrentInvestmentMandateAsOf({
+    mandateId: mandate.mandateId,
+    portfolioId: mandate.portfolioId,
+    policyHash: mandate.policyHash,
+    market: mandate.market,
+    symbol: mandate.symbol,
+    asOf: "2026-09-01T02:30:00.000Z",
+    knownAt: "2026-09-01T03:30:00.000Z",
+    records: [mandate],
+    events: [activated, reviewRequired, retired]
+  });
+
+  assert.equal(resolved.status, "review_required");
+  assert.equal(resolved.currentEvent?.mandateEventId, reviewRequired.mandateEventId);
+});
+
+test("as-of mandate replay excludes late-known activation and expired mandates", () => {
+  const mandate = mandateRecord("manual-event-late");
+  const lateActivation = mandateEvent(mandate, {
+    eventType: "activated",
+    asOf: "2026-09-01T01:00:00.000Z",
+    createdAt: "2026-09-01T04:00:00.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveCurrentInvestmentMandateAsOf({
+        mandateId: mandate.mandateId,
+        portfolioId: mandate.portfolioId,
+        policyHash: mandate.policyHash,
+        market: mandate.market,
+        symbol: mandate.symbol,
+        asOf: "2026-09-01T02:00:00.000Z",
+        knownAt: "2026-09-01T03:00:00.000Z",
+        records: [mandate],
+        events: [lateActivation]
+      }),
+    /exactly one active/
+  );
+
+  const expired = mandateRecord("manual-event-expired", {
+    expiresAt: "2026-09-01T01:30:00.000Z"
+  });
+  const activated = mandateEvent(expired, {
+    eventType: "activated",
+    asOf: "2026-09-01T01:00:00.000Z",
+    createdAt: "2026-09-01T01:00:00.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveCurrentInvestmentMandateAsOf({
+        mandateId: expired.mandateId,
+        portfolioId: expired.portfolioId,
+        policyHash: expired.policyHash,
+        market: expired.market,
+        symbol: expired.symbol,
+        asOf: "2026-09-01T02:00:00.000Z",
+        knownAt: "2026-09-01T02:30:00.000Z",
+        records: [expired],
+        events: [activated]
+      }),
+    /exactly one active/
+  );
+});
+
+test("as-of mandate replay validates the complete future history", () => {
+  const mandate = mandateRecord("manual-event-complete");
+  const activated = mandateEvent(mandate, {
+    eventType: "activated",
+    asOf: "2026-09-01T01:00:00.000Z",
+    createdAt: "2026-09-01T01:00:00.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveCurrentInvestmentMandateAsOf({
+        mandateId: mandate.mandateId,
+        portfolioId: mandate.portfolioId,
+        policyHash: mandate.policyHash,
+        market: mandate.market,
+        symbol: mandate.symbol,
+        asOf: "2026-09-01T01:30:00.000Z",
+        knownAt: "2026-09-01T01:30:00.000Z",
+        records: [mandate],
+        events: [activated, activated]
+      }),
+    /duplicate event ID/
   );
 });
 
@@ -254,6 +363,7 @@ function mandateRecord(
   manualAssignmentEventId: string,
   overrides: Partial<{
     validFrom: string;
+    expiresAt: string;
     createdAt: string;
   }> = {}
 ): InvestmentMandateRecord {
@@ -273,7 +383,7 @@ function mandateRecord(
     evidenceAsOf: "2026-09-01T00:00:00.000Z",
     reviewCadence: { mode: "every_tick" },
     validFrom: overrides.validFrom ?? "2026-09-01T00:30:00.000Z",
-    expiresAt: "2026-10-01T00:30:00.000Z",
+    expiresAt: overrides.expiresAt ?? "2026-10-01T00:30:00.000Z",
     assignmentSource: "manual_policy",
     manualAuthorizationScope: "classify_existing_reduce_only",
     manualAssignmentEventId,

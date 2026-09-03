@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createInvestmentMandateEvent,
+  createInvestmentMandateRecord,
+  type InvestmentMandateEvent,
+  type InvestmentMandateRecord
+} from "./investmentMandate.js";
+import {
   createPortfolioPolicyTriggerEvent,
   type CreatePortfolioPolicyTriggerEventInput,
   type PortfolioPolicyTriggerEvent
@@ -126,12 +132,24 @@ test("policy-event trigger rejects transition and chronology drift", () => {
 test("policy-event trigger exact-binds thesis evidence scope and transition", () => {
   const evidence = thesisEvidence();
   const event = thesisEvent();
+  const mandate = thesisMandate();
+  const activated = mandateEvent(mandate, {
+    eventType: "activated",
+    asOf: "2026-09-02T00:00:00.000Z",
+    createdAt: "2026-09-02T00:00:01.000Z"
+  });
   const resolved = resolvePolicyEventPortfolioCycleTrigger({
     value: trigger(event),
     policyTriggerEventHistory: history(event),
-    policyTriggerEvidenceHistory: evidenceHistory(evidence)
+    policyTriggerEvidenceHistory: evidenceHistory(evidence),
+    investmentMandateHistory: {
+      records: [mandate],
+      events: [activated]
+    }
   });
   assert.deepEqual(resolved.policyTriggerEvidenceRecords, [evidence]);
+  assert.equal(resolved.activeMandate?.record.mandateId, mandate.mandateId);
+  assert.equal(resolved.activeMandate?.status, "active");
 
   const wrongMandate = thesisEvidence({ mandateId: "mandate-2" });
   const mismatchedEvent = thesisEvent({
@@ -142,9 +160,39 @@ test("policy-event trigger exact-binds thesis evidence scope and transition", ()
       resolvePolicyEventPortfolioCycleTrigger({
         value: trigger(mismatchedEvent),
         policyTriggerEventHistory: history(mismatchedEvent),
-        policyTriggerEvidenceHistory: evidenceHistory(wrongMandate)
+        policyTriggerEvidenceHistory: evidenceHistory(wrongMandate),
+        investmentMandateHistory: {
+          records: [mandate],
+          events: [activated]
+        }
       }),
     /thesis evidence transition mismatch/
+  );
+});
+
+test("policy-event trigger requires mandate history only for thesis events", () => {
+  const evidence = thesisEvidence();
+  const thesis = thesisEvent();
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTrigger({
+        value: trigger(thesis),
+        policyTriggerEventHistory: history(thesis),
+        policyTriggerEvidenceHistory: evidenceHistory(evidence)
+      }),
+    /requires investment mandate history/
+  );
+
+  const regime = regimeEvent();
+  assert.throws(
+    () =>
+      resolvePolicyEventPortfolioCycleTrigger({
+        value: trigger(regime),
+        policyTriggerEventHistory: history(regime),
+        policyTriggerEvidenceHistory: evidenceHistory(regimeEvidence()),
+        investmentMandateHistory: { records: [], events: [] }
+      }),
+    /allowed only for a thesis policy event/
   );
 });
 
@@ -284,6 +332,10 @@ function resolvePolicyEventPortfolioCycleTrigger(input: {
   value: unknown;
   policyTriggerEventHistory: ReturnType<typeof history>;
   policyTriggerEvidenceHistory?: ReturnType<typeof evidenceHistory>;
+  investmentMandateHistory?: {
+    records: readonly InvestmentMandateRecord[];
+    events: readonly InvestmentMandateEvent[];
+  };
 }) {
   return resolvePolicyEventPortfolioCycleTriggerRaw({
     ...input,
@@ -352,7 +404,7 @@ function thesisEvent(
     evidenceRefs: [thesisEvidence().evidenceRef],
     asOf: "2026-09-03T00:00:00.000Z",
     eventType: "thesis_evidence_change",
-    mandateId: "mandate-1",
+    mandateId: thesisMandate().mandateId,
     market: "KR",
     symbol: "005930",
     previousThesisStatus: "intact",
@@ -409,11 +461,90 @@ function thesisEvidence(
     sourceArtifactId: "thesis-source-1",
     sourceArtifactHash: `sha256:${"d".repeat(64)}`,
     observedAt: "2026-09-03T00:00:00.000Z",
-    mandateId: "mandate-1",
+    mandateId: thesisMandate().mandateId,
     symbol: "005930",
     previousThesisStatus: "intact",
     currentThesisStatus: "watch",
     createdAt: "2026-09-03T00:00:00.500Z",
     ...override
+  });
+}
+
+function thesisMandate(
+  override: Partial<{
+    policyHash: string;
+    symbol: string;
+    validFrom: string;
+    expiresAt: string;
+    createdAt: string;
+  }> = {}
+): InvestmentMandateRecord {
+  return createInvestmentMandateRecord({
+    portfolioId: "portfolio-1",
+    market: "KR",
+    symbol: override.symbol ?? "005930",
+    bucket: "long_term",
+    policyHash: override.policyHash ?? POLICY_HASH,
+    asOf: "2026-09-01T00:00:00.000Z",
+    targetWeightRatio: 0.2,
+    minWeightRatio: 0.1,
+    maxWeightRatio: 0.3,
+    maximumOpeningNotionalKrw: 0,
+    reasonCodes: ["manual-classification"],
+    evidenceRefs: ["classification-evidence"],
+    evidenceAsOf: "2026-09-01T00:00:00.000Z",
+    reviewCadence: {
+      mode: "scheduled",
+      boundaryRefs: [
+        {
+          scheduleBoundaryRecordId: "boundary-1",
+          version: "v1",
+          hash: `sha256:${"e".repeat(64)}`,
+          lineageHash: `sha256:${"f".repeat(64)}`
+        }
+      ]
+    },
+    validFrom: override.validFrom ?? "2026-09-02T00:00:00.000Z",
+    reviewAfter: "2026-09-04T00:00:00.000Z",
+    expiresAt: override.expiresAt ?? "2026-09-05T00:00:00.000Z",
+    assignmentSource: "manual_policy",
+    manualAuthorizationScope: "classify_existing_reduce_only",
+    manualAssignmentEventId: "manual-assignment-1",
+    createdAt: override.createdAt ?? "2026-09-01T00:00:01.000Z"
+  });
+}
+
+function mandateEvent(
+  mandate: InvestmentMandateRecord,
+  transition:
+    | {
+        eventType: "activated";
+        previousMandateEventId?: string;
+        asOf: string;
+        createdAt: string;
+      }
+    | {
+        eventType: "review_required";
+        previousMandateEventId: string;
+        asOf: string;
+        createdAt: string;
+      }
+    | {
+        eventType: "retired";
+        previousMandateEventId: string;
+        asOf: string;
+        createdAt: string;
+      }
+): InvestmentMandateEvent {
+  return createInvestmentMandateEvent({
+    mandateId: mandate.mandateId,
+    mandateHash: mandate.mandateHash,
+    portfolioId: mandate.portfolioId,
+    market: mandate.market,
+    symbol: mandate.symbol,
+    bucket: mandate.bucket,
+    policyHash: mandate.policyHash,
+    reasonCodes: ["lifecycle"],
+    ...transition
   });
 }
