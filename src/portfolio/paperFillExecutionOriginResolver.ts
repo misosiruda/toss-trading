@@ -9,7 +9,7 @@ import {
   type SourcePriceEvidenceRecord
 } from "./sourcePriceEvidence.js";
 import {
-  getVerifiedSourcePriceEvidenceRecords,
+  resolveVerifiedSourcePriceEvidenceOrigin,
   type VerifiedSourcePriceEvidenceHistory
 } from "./sourcePriceEvidenceFiles.js";
 
@@ -24,26 +24,23 @@ export function resolvePaperFillExecutionOrigins(input: {
   sourcePriceEvidenceHistory: VerifiedSourcePriceEvidenceHistory;
 }): ResolvedPaperFillExecutionOrigins {
   const record = parsePaperFillExecutionRecord(input.value);
-  const evidence = getVerifiedSourcePriceEvidenceRecords(
-    input.sourcePriceEvidenceHistory
-  ).map((value) => parseSourcePriceEvidenceRecord(value));
-  const matches = evidence.filter(
-    (candidate) =>
-      candidate.evidenceRef === record.sourcePriceEvidence.evidenceRef
+  const origin = resolveVerifiedSourcePriceEvidenceOrigin(
+    input.sourcePriceEvidenceHistory,
+    record.sourcePriceEvidence.evidenceRef
   );
-  if (matches.length !== 1) {
-    throw new Error(
-      "paper fill source price evidence does not resolve exactly once"
-    );
-  }
-  const sourcePriceEvidence = matches[0] as SourcePriceEvidenceRecord;
-  assertSourcePriceEvidenceMatches(record, sourcePriceEvidence);
+  const sourcePriceEvidence = parseSourcePriceEvidenceRecord(origin.record);
+  assertSourcePriceEvidenceMatches(
+    record,
+    sourcePriceEvidence,
+    origin.appendedAt
+  );
   return deepFreeze({ record, sourcePriceEvidence });
 }
 
 function assertSourcePriceEvidenceMatches(
   record: PaperFillExecutionRecord,
-  evidence: SourcePriceEvidenceRecord
+  evidence: SourcePriceEvidenceRecord,
+  appendedAt: string
 ): void {
   const projection = record.sourcePriceEvidence;
   const expectedProjection = {
@@ -64,7 +61,7 @@ function assertSourcePriceEvidenceMatches(
   if (evidence.priceKrw !== record.sourcePriceKrw) {
     throw new Error("paper fill source price evidence value mismatch");
   }
-  if (Date.parse(evidence.createdAt) > Date.parse(record.asOf)) {
+  if (Date.parse(appendedAt) > Date.parse(record.asOf)) {
     throw new Error("paper fill source price evidence postdates fill cutoff");
   }
 }

@@ -11,6 +11,7 @@ import { resolvePaperFillExecutionOrigins } from "./paperFillExecutionOriginReso
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import {
   SourcePriceEvidenceFileRepository,
+  resolveVerifiedSourcePriceEvidenceOrigin,
   type VerifiedSourcePriceEvidenceHistory
 } from "./sourcePriceEvidenceFiles.js";
 
@@ -134,14 +135,21 @@ test("paper fill rejects source price value and durable availability cutoff drif
     );
   });
 
-  const futureEvidence = priceEvidence({
-    createdAt: "2026-09-03T00:00:01.000Z"
-  });
+  const futureEvidence = priceEvidence();
   await withEvidenceHistory([futureEvidence], (history) => {
+    const origin = resolveVerifiedSourcePriceEvidenceOrigin(
+      history,
+      futureEvidence.evidenceRef
+    );
+    const asOf = new Date(Date.parse(origin.appendedAt) - 1).toISOString();
     assert.throws(
       () =>
         resolvePaperFillExecutionOrigins({
-          value: paperFill({ evidence: futureEvidence }),
+          value: paperFill({
+            evidence: futureEvidence,
+            asOf,
+            createdAt: origin.appendedAt
+          }),
           sourcePriceEvidenceHistory: history
         }),
       /postdates fill cutoff/
@@ -190,6 +198,8 @@ function priceEvidence(
 function paperFill(input: {
   evidence: ReturnType<typeof priceEvidence>;
   sourcePriceKrw?: number;
+  asOf?: string;
+  createdAt?: string;
   projectionOverrides?: Partial<{
     sourceContractId: string;
     market: "KR" | "US";
@@ -272,7 +282,7 @@ function paperFill(input: {
       totalCostKrw: replay.totalCostKrw
     },
     evidenceRefs: [input.evidence.evidenceRef, "fee-evidence-1"],
-    asOf: "2026-09-03T00:00:00.000Z",
-    createdAt: "2026-09-03T00:00:01.000Z"
+    asOf: input.asOf ?? "2026-09-04T00:00:00.000Z",
+    createdAt: input.createdAt ?? "2026-09-04T00:00:01.000Z"
   });
 }

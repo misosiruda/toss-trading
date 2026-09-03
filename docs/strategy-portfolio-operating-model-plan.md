@@ -3333,11 +3333,14 @@ Typed source-price evidence exact resolver, plan execution event/accounting orig
 서른세 번째 분할은 `PaperFillExecutionRecord.sourcePriceEvidence` projection을 immutable
 `SourcePriceEvidenceRecord`에 exact-resolve한다. Resolver는 supplied evidence를 strict parser로 독립 rehash하고
 evidence ref/hash, source contract, market/symbol, `last_price`, observation instant를 projection과 대조하며
-`priceKrw`를 fill의 `sourcePriceKrw`와 exact-match한다. Availability 판단에 쓰는 evidence `createdAt`은 arbitrary
-input이 아니라 strict append-only `SourcePriceEvidenceFileRepository`가 발급한 opaque verified complete
-history에서만 얻는다. 이 durable `createdAt`이 fill `asOf`를 초과하면 당시 이용할 수 없었던 근거로 간주해
-fail-closed하고 duplicate/unresolved evidence ref도 거절한다. Plan execution event/accounting origin과 fill
-risk-state update 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+`priceKrw`를 fill의 `sourcePriceKrw`와 exact-match한다. Availability 판단에는 caller-provided evidence
+`createdAt`을 사용하지 않고, strict append-only `SourcePriceEvidenceFileRepository`가 append 시 생성한
+`appendedAt`을 사용한다. Durable file line은 complete evidence record, `appendedAt`, predecessor entry hash를
+포함하고 이 complete payload를 entry hash로 인증한다. Resolver는 repository가 발급한 opaque verified complete
+history에서만 이 append origin을 얻으며 `appendedAt`이 fill `asOf`를 초과하면 fail-closed한다. 기존 raw-record
+line은 신뢰 가능한 append timestamp가 없으므로 자동 호환하지 않고 typed source evidence artifact를 새 envelope
+format으로 재생성해야 한다. Plan execution event/accounting origin과 fill risk-state update 연결은 후속 분할
+전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 
