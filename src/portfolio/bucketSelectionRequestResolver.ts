@@ -18,7 +18,17 @@ import {
   resolvePortfolioSizingSnapshot,
   type ResolvedPortfolioSizingSnapshot
 } from "./portfolioSizingSnapshotResolver.js";
-import type { StrategyBucketRuntimePolicy } from "./runtimePolicyContracts.js";
+import {
+  offsetQualifiedIsoDateTimeSchema,
+  parseBucketSelectionPolicyRecord,
+  type BucketSelectionPolicyRecord,
+  type StrategyBucketRuntimePolicy
+} from "./runtimePolicyContracts.js";
+import {
+  resolveEveryTickPortfolioCycleTrigger,
+  type CanonicalMarketPacketHistory,
+  type ResolvedEveryTickPortfolioCycleTrigger
+} from "./everyTickPortfolioCycleTriggerResolver.js";
 import {
   resolvePortfolioCycleTrigger,
   type PortfolioCycleTrigger,
@@ -32,6 +42,9 @@ import {
 export type BucketSelectionOpeningCapacity =
   PortfolioGapAnalysisInput["exposure"]["bucketOpeningCapacities"][number];
 
+export const EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID =
+  "verified-market-packet.v1";
+
 export interface ResolvedBucketSelectionRequest {
   request: BucketSelectionRequest;
   sizingSnapshot: ResolvedPortfolioSizingSnapshot["snapshot"];
@@ -39,8 +52,20 @@ export interface ResolvedBucketSelectionRequest {
   policy: RuntimePortfolioPolicyRecord;
   bucketPolicy: StrategyBucketRuntimePolicy;
   cycleTrigger: ResolvedPortfolioCycleTrigger;
+  triggerSource?: ResolvedEveryTickBucketSelectionTriggerSource;
   analysis: PortfolioGapAnalysis;
   gap: BucketPortfolioGap;
+}
+
+export interface EveryTickBucketSelectionTriggerSourceInput {
+  marketPacketHistory: CanonicalMarketPacketHistory;
+  selectionPolicy: unknown;
+}
+
+export interface ResolvedEveryTickBucketSelectionTriggerSource {
+  sourceKind: "market_packet";
+  cycleTrigger: ResolvedEveryTickPortfolioCycleTrigger;
+  selectionPolicy: BucketSelectionPolicyRecord;
 }
 
 /**
@@ -48,15 +73,16 @@ export interface ResolvedBucketSelectionRequest {
  *
  * `activePolicy` must be obtained by an activation-aware caller for the request
  * timestamp. Opening-capacity counts must come from the mandate/reservation
- * replay boundary. The trigger must already be resolved against its immutable
- * source artifact by the caller; this function independently derives and
- * compares its canonical identity, reference, and evidence cutoff.
+ * replay boundary. Every-tick requests additionally require the raw canonical
+ * packet history and exact immutable selection policy so this resolver can
+ * bind the source artifact, freshness, portfolio, and market scope.
  */
 export function resolveBucketSelectionRequest(input: {
   value: unknown;
   sizingSnapshot: unknown;
   activePolicy: unknown;
   cycleTrigger: unknown;
+  everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
   bucketOpeningCapacities: readonly BucketSelectionOpeningCapacity[];
 }): ResolvedBucketSelectionRequest {
   const request = parseBucketSelectionRequest(input.value);
@@ -70,6 +96,16 @@ export function resolveBucketSelectionRequest(input: {
 
   const bucketPolicy = resolveBucketPolicy(policy, request.bucket);
   assertTriggerBinding(request, bucketPolicy, cycleTrigger);
+  const triggerSource = resolveTriggerSource({
+    request,
+    policy,
+    bucketPolicy,
+    cycleTrigger,
+    cycleTriggerValue: input.cycleTrigger,
+    ...(input.everyTickTriggerSource === undefined
+      ? {}
+      : { everyTickTriggerSource: input.everyTickTriggerSource })
+  });
   const analysis = analyzePortfolioGaps({
     policy,
     exposure: {
@@ -127,9 +163,206 @@ export function resolveBucketSelectionRequest(input: {
     policy,
     bucketPolicy,
     cycleTrigger,
+    ...(triggerSource === undefined ? {} : { triggerSource }),
     analysis,
     gap
   });
+}
+
+function resolveTriggerSource(input: {
+  request: BucketSelectionRequest;
+  policy: RuntimePortfolioPolicyRecord;
+  bucketPolicy: StrategyBucketRuntimePolicy;
+  cycleTrigger: ResolvedPortfolioCycleTrigger;
+  cycleTriggerValue: unknown;
+  everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
+}): ResolvedEveryTickBucketSelectionTriggerSource | undefined {
+  if (input.cycleTrigger.trigger.triggerKind !== "every_tick") {
+    if (input.everyTickTriggerSource !== undefined) {
+      throw new Error(
+        "every-tick trigger source is allowed only for an every_tick trigger"
+      );
+    }
+    return undefined;
+  }
+  if (input.everyTickTriggerSource === undefined) {
+    throw new Error("every_tick selection request requires its packet source");
+  }
+
+  const cycleTrigger = resolveEveryTickPortfolioCycleTrigger({
+    value: input.cycleTriggerValue,
+    marketPacketHistory: input.everyTickTriggerSource.marketPacketHistory
+  });
+  const selectionPolicy = parseBucketSelectionPolicyRecord(
+    input.everyTickTriggerSource.selectionPolicy
+  );
+  assertEveryTickSelectionPolicyBinding(
+    input.request,
+    input.policy,
+    input.bucketPolicy,
+    selectionPolicy
+  );
+  assertEveryTickMarketPacketBinding(
+    input.request,
+    input.bucketPolicy,
+    selectionPolicy,
+    cycleTrigger
+  );
+  return deepFreeze({
+    sourceKind: "market_packet",
+    cycleTrigger,
+    selectionPolicy
+  });
+}
+
+function assertEveryTickSelectionPolicyBinding(
+  request: BucketSelectionRequest,
+  policy: RuntimePortfolioPolicyRecord,
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  selectionPolicy: BucketSelectionPolicyRecord
+): void {
+  const reference = bucketPolicy.selectionPolicyRef;
+  if (
+    selectionPolicy.bucket !== request.bucket ||
+    selectionPolicy.selectionPolicyRecordId !==
+      reference.selectionPolicyRecordId ||
+    selectionPolicy.version !== reference.version ||
+    selectionPolicy.hash !== reference.hash ||
+    selectionPolicy.lineageHash !== reference.lineageHash
+  ) {
+    throw new Error("every_tick selection policy binding mismatch");
+  }
+  if (selectionPolicy.everyTickSourceRequirement === undefined) {
+    throw new Error(
+      "every_tick selection policy requires a market packet source"
+    );
+  }
+  if (
+    selectionPolicy.everyTickSourceRequirement.sourceContractId !==
+      EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID ||
+    !selectionPolicy.requiredEvidence.some(
+      (requirement) =>
+        requirement.evidenceClass === "market_technical" &&
+        requirement.sourceContractId ===
+          EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID
+    )
+  ) {
+    throw new Error(
+      "every_tick selection policy does not bind the verified packet contract"
+    );
+  }
+  if (
+    selectionPolicy.requiredEvidence.some(
+      (requirement) =>
+        requirement.evidenceClass === "market_technical" &&
+        requirement.sourceContractId ===
+          EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID &&
+        requirement.minimumObservationCount !== undefined
+    )
+  ) {
+    throw new Error(
+      "every_tick packet cannot prove the minimum market observation count"
+    );
+  }
+  if (Date.parse(selectionPolicy.createdAt) > Date.parse(policy.createdAt)) {
+    throw new Error(
+      "every_tick selection policy postdates the runtime policy"
+    );
+  }
+  if (Date.parse(selectionPolicy.createdAt) > Date.parse(request.asOf)) {
+    throw new Error("every_tick selection policy postdates the request");
+  }
+}
+
+function assertEveryTickMarketPacketBinding(
+  request: BucketSelectionRequest,
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  selectionPolicy: BucketSelectionPolicyRecord,
+  source: ResolvedEveryTickPortfolioCycleTrigger
+): void {
+  const packet = source.marketPacket;
+  assertOffsetQualifiedPacketEvidenceTimestamp(
+    packet.generatedAt,
+    "generatedAt"
+  );
+  assertOffsetQualifiedPacketEvidenceTimestamp(packet.expiresAt, "expiresAt");
+  if (packet.virtualPortfolio.portfolioId !== request.portfolioId) {
+    throw new Error("every_tick packet portfolio mismatch");
+  }
+  const ageMilliseconds =
+    Date.parse(request.asOf) - Date.parse(packet.generatedAt);
+  if (ageMilliseconds < 0) {
+    throw new Error("every_tick packet postdates the selection request");
+  }
+  const requirement = selectionPolicy.everyTickSourceRequirement;
+  if (requirement === undefined) {
+    throw new Error("every_tick packet source requirement is missing");
+  }
+  const maximumAgeSeconds = selectionPolicy.requiredEvidence
+    .filter(
+      (evidence) =>
+        evidence.evidenceClass === "market_technical" &&
+        evidence.sourceContractId ===
+          EVERY_TICK_MARKET_PACKET_SOURCE_CONTRACT_ID
+    )
+    .reduce(
+      (maximumAge, evidence) =>
+        Math.min(maximumAge, evidence.maximumAgeSeconds),
+      requirement.maximumAgeSeconds
+    );
+  if (
+    ageMilliseconds / 1_000 > maximumAgeSeconds ||
+    Date.parse(request.asOf) >= Date.parse(packet.expiresAt)
+  ) {
+    throw new Error("every_tick packet is stale for the selection request");
+  }
+
+  const packetGeneratedAt = Date.parse(packet.generatedAt);
+  const requestAsOf = Date.parse(request.asOf);
+  for (const candidate of packet.candidates) {
+    assertOffsetQualifiedPacketEvidenceTimestamp(
+      candidate.collectedAt,
+      "candidate.collectedAt"
+    );
+    assertOffsetQualifiedPacketEvidenceTimestamp(
+      candidate.staleAfter,
+      "candidate.staleAfter"
+    );
+    const collectedAt = Date.parse(candidate.collectedAt);
+    const staleAfter = Date.parse(candidate.staleAfter);
+    if (collectedAt > packetGeneratedAt) {
+      throw new Error(
+        "every_tick packet candidate evidence postdates the market packet"
+      );
+    }
+    if (
+      staleAfter <= collectedAt ||
+      requestAsOf - collectedAt > maximumAgeSeconds * 1_000 ||
+      requestAsOf >= staleAfter
+    ) {
+      throw new Error(
+        "every_tick packet candidate evidence is stale for the selection request"
+      );
+    }
+  }
+  if (
+    packet.candidates.some(
+      (candidate) => !bucketPolicy.enabledMarkets.includes(candidate.market)
+    )
+  ) {
+    throw new Error("every_tick packet candidate market is disabled for bucket");
+  }
+}
+
+function assertOffsetQualifiedPacketEvidenceTimestamp(
+  value: string,
+  field: string
+): void {
+  if (!offsetQualifiedIsoDateTimeSchema.safeParse(value).success) {
+    throw new Error(
+      `every_tick packet ${field} must be an offset-qualified timestamp`
+    );
+  }
 }
 
 function assertTriggerBinding(

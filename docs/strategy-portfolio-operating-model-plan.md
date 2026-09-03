@@ -3155,6 +3155,16 @@ key collapse도 거절하고, raw line과 parse 후 compact JSON 재직렬화가
 string escape의 lexical hash collision으로 간주한다. Schedule slot, policy event와 risk-state update의 원본
 immutable record 해소는 각 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+열두 번째 분할은 `every_tick` source resolver를 `BucketSelectionRequest` resolver에 연결한다. every-tick
+request는 raw canonical packet history와 bucket policy가 exact-ref한 immutable selection policy를
+반드시 제공해야 한다. resolver는 `verified-market-packet.v1` source/evidence contract, policy chronology,
+packet portfolio ID, `maximumAgeSeconds`, packet expiry와 candidate market의 bucket `enabledMarkets` 포함을
+검증하고, freshness 계산에 쓰는 packet/candidate timestamp는 offset-qualified 형식만 허용하며 source
+packet/policy를 결과에 보존한다. 다른 trigger에 every-tick source를 제공하거나 source를
+누락·무시하는 경로도 fail-closed한다. 현재 packet contract가 observation count를 증명하지 않으므로
+`minimumObservationCount`를 요구하는 market evidence policy도 추정 없이 거절한다. Schedule slot, policy
+event와 risk-state update source resolution은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
