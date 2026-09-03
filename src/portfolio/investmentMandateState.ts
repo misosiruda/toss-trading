@@ -183,7 +183,7 @@ export function resolveCurrentInvestmentMandateAsOf(input: {
       (state.status === "active" || state.status === "review_required") &&
       Date.parse(record.validFrom) <= Date.parse(asOf) &&
       (record.expiresAt === undefined ||
-        Date.parse(asOf) <= Date.parse(record.expiresAt))
+        Date.parse(asOf) < Date.parse(record.expiresAt))
     );
   });
   if (matches.length !== 1) {

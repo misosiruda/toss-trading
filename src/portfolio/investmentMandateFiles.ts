@@ -79,8 +79,23 @@ export class InvestmentMandateFileRepository {
     return this.withConsistentSnapshot(async (snapshot) => snapshot);
   }
 
-  async readVerifiedHistory(): Promise<VerifiedInvestmentMandateHistory> {
-    return this.withLock(async () => this.readSnapshotUnderLock());
+  /**
+   * Leases a repository-verified generation only while the shared lock is held.
+   * The lease is revoked before the lock is released, so it cannot be reused
+   * after a later append advances the durable history.
+   */
+  async withVerifiedHistory<T>(
+    operation: (history: VerifiedInvestmentMandateHistory) => Promise<T> | T
+  ): Promise<T> {
+    return this.withLock(async () => {
+      const history = await this.readSnapshotUnderLock();
+      verifiedInvestmentMandateHistories.add(history);
+      try {
+        return await operation(history);
+      } finally {
+        verifiedInvestmentMandateHistories.delete(history);
+      }
+    });
   }
 
   /**
@@ -156,7 +171,7 @@ export class InvestmentMandateFileRepository {
     });
   }
 
-  private async readSnapshotUnderLock(): Promise<VerifiedInvestmentMandateHistory> {
+  private async readSnapshotUnderLock(): Promise<InvestmentMandateHistorySnapshot> {
     const records = await readJsonLines({
       path: this.recordsPath,
       label: "investment mandate record",
@@ -169,9 +184,7 @@ export class InvestmentMandateFileRepository {
       parse: parseInvestmentMandateEvent,
       id: (event) => event.mandateEventId
     });
-    const history = validateInvestmentMandateHistory({ records, events });
-    verifiedInvestmentMandateHistories.add(history);
-    return history;
+    return validateInvestmentMandateHistory({ records, events });
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {

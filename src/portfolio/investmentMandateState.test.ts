@@ -139,21 +139,26 @@ test("as-of mandate replay excludes late-known activation and expired mandates",
     asOf: "2026-09-01T01:00:00.000Z",
     createdAt: "2026-09-01T01:00:00.000Z"
   });
-  assert.throws(
-    () =>
-      resolveCurrentInvestmentMandateAsOf({
-        mandateId: expired.mandateId,
-        portfolioId: expired.portfolioId,
-        policyHash: expired.policyHash,
-        market: expired.market,
-        symbol: expired.symbol,
-        asOf: "2026-09-01T02:00:00.000Z",
-        knownAt: "2026-09-01T02:30:00.000Z",
-        records: [expired],
-        events: [activated]
-      }),
-    /exactly one active/
-  );
+  for (const asOf of [
+    "2026-09-01T01:30:00.000Z",
+    "2026-09-01T02:00:00.000Z"
+  ]) {
+    assert.throws(
+      () =>
+        resolveCurrentInvestmentMandateAsOf({
+          mandateId: expired.mandateId,
+          portfolioId: expired.portfolioId,
+          policyHash: expired.policyHash,
+          market: expired.market,
+          symbol: expired.symbol,
+          asOf,
+          knownAt: "2026-09-01T02:30:00.000Z",
+          records: [expired],
+          events: [activated]
+        }),
+      /exactly one active/
+    );
+  }
 });
 
 test("as-of mandate replay validates the complete future history", () => {

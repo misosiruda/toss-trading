@@ -209,19 +209,24 @@ test("mandate repository issues opaque verified histories", async () => {
     const repository = new InvestmentMandateFileRepository(baseDir);
     const record = mandateRecord("2026-09-01T01:00:00.000Z");
     await repository.appendRecord(record);
-    const verified = await repository.readVerifiedHistory();
-
-    assert.deepEqual(
-      getVerifiedInvestmentMandateHistorySnapshot(verified).records,
-      [record]
-    );
-    assert.throws(
-      () =>
-        getVerifiedInvestmentMandateHistorySnapshot({
-          records: verified.records,
-          events: verified.events,
-          states: verified.states
+    const expiredLease = await repository.withVerifiedHistory((verified) => {
+      assert.deepEqual(
+        getVerifiedInvestmentMandateHistorySnapshot(verified).records,
+        [record]
+      );
+      assert.throws(
+        () =>
+          getVerifiedInvestmentMandateHistorySnapshot({
+            records: verified.records,
+            events: verified.events,
+            states: verified.states
         } as VerifiedInvestmentMandateHistory),
+        /not repository verified/
+      );
+      return verified;
+    });
+    assert.throws(
+      () => getVerifiedInvestmentMandateHistorySnapshot(expiredLease),
       /not repository verified/
     );
   });

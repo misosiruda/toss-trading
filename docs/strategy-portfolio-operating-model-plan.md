@@ -3274,10 +3274,12 @@ exact-match해야 하며 observation은 event `asOf` 이후일 수 없고 eviden
 
 스물여섯 번째 분할은 thesis `policy_event`가 참조하는 mandate를 complete investment mandate
 record/event history에서 event `asOf` 기준으로 replay한다. Complete history를 먼저 strict 검증해 cutoff
-이후의 손상 record/event를 숨길 수 없게 하고, `asOf` 이후 effective event와 event `createdAt` 이후에
-알려진 record/event를 제외한 prefix를 다시 검증한다. Exact mandate ID와 portfolio/policy/market/symbol이
-일치하고 event cutoff에서 `active` 또는 `review_required`이며 validFrom/expiresAt 범위 안인 mandate가 정확히
-하나여야 한다. Regime event에 mandate history를 주입하거나 thesis event에서 생략하면 fail-closed한다.
+이후의 손상 record/event를 숨길 수 없게 하고, repository shared lock을 보유한 callback 안에서만 유효한
+opaque history lease로 stale generation 재사용을 차단한다. `asOf` 이후 effective event와 event `createdAt`
+이후에 알려진 record/event를 제외한 prefix를 다시 검증한다. Exact mandate ID와
+portfolio/policy/market/symbol이 일치하고 event cutoff에서 `active` 또는 `review_required`이며
+`validFrom <= asOf < expiresAt` 범위 안인 mandate가 정확히 하나여야 한다. Regime event에 mandate history를
+주입하거나 thesis event에서 생략하면 fail-closed한다.
 Contract-specific source artifact 검증 adapter와 selection request 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
