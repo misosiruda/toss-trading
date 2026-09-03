@@ -16,13 +16,11 @@ export interface PortfolioPolicyTriggerEvidenceFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
-const verifiedPolicyTriggerEvidenceHistoryBrand = Symbol(
-  "verifiedPolicyTriggerEvidenceHistory"
-);
+const verifiedPolicyTriggerEvidenceHistories =
+  new WeakSet<VerifiedPortfolioPolicyTriggerEvidenceHistory>();
 
 export interface VerifiedPortfolioPolicyTriggerEvidenceHistory {
   records: readonly PortfolioPolicyTriggerEvidenceRecord[];
-  readonly [verifiedPolicyTriggerEvidenceHistoryBrand]: true;
 }
 
 export function createPortfolioPolicyTriggerEvidencePaths(baseDir: string): {
@@ -195,16 +193,15 @@ export function parseVerifiedPortfolioPolicyTriggerEvidenceHistory(
     hashes.add(record.evidenceHash);
     records.push(record);
   }
-  return Object.freeze({
-    records: Object.freeze(records),
-    [verifiedPolicyTriggerEvidenceHistoryBrand]: true as const
-  });
+  const history = Object.freeze({ records: Object.freeze(records) });
+  verifiedPolicyTriggerEvidenceHistories.add(history);
+  return history;
 }
 
 export function getVerifiedPortfolioPolicyTriggerEvidenceRecords(
   history: VerifiedPortfolioPolicyTriggerEvidenceHistory
 ): readonly PortfolioPolicyTriggerEvidenceRecord[] {
-  if (history[verifiedPolicyTriggerEvidenceHistoryBrand] !== true) {
+  if (!verifiedPolicyTriggerEvidenceHistories.has(history)) {
     throw new Error("portfolio policy trigger evidence history is not verified");
   }
   return history.records;

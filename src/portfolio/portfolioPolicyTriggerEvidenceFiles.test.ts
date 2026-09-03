@@ -10,6 +10,7 @@ import {
   PortfolioPolicyTriggerEvidenceFileRepository,
   createPortfolioPolicyTriggerEvidencePaths,
   getVerifiedPortfolioPolicyTriggerEvidenceRecords,
+  parseVerifiedPortfolioPolicyTriggerEvidenceHistory,
   type VerifiedPortfolioPolicyTriggerEvidenceHistory
 } from "./portfolioPolicyTriggerEvidenceFiles.js";
 
@@ -116,7 +117,7 @@ test("policy trigger evidence repository fails closed for corrupt and torn histo
   });
 });
 
-test("policy trigger evidence verified history rejects a forged wrapper", () => {
+test("policy trigger evidence verified history rejects forged identities", () => {
   assert.throws(
     () =>
       getVerifiedPortfolioPolicyTriggerEvidenceRecords({
@@ -124,6 +125,28 @@ test("policy trigger evidence verified history rejects a forged wrapper", () => 
       } as unknown as VerifiedPortfolioPolicyTriggerEvidenceHistory),
     /history is not verified/
   );
+
+  const record = policyEvidence();
+  const valid = parseVerifiedPortfolioPolicyTriggerEvidenceHistory(
+    `${JSON.stringify(record)}\n`
+  );
+  const forged = Object.create(valid) as {
+    records: readonly ReturnType<typeof policyEvidence>[];
+  };
+  Object.defineProperty(forged, "records", {
+    value: Object.freeze([]),
+    enumerable: true
+  });
+  assert.throws(
+    () =>
+      getVerifiedPortfolioPolicyTriggerEvidenceRecords(
+        forged as VerifiedPortfolioPolicyTriggerEvidenceHistory
+      ),
+    /history is not verified/
+  );
+  assert.deepEqual(getVerifiedPortfolioPolicyTriggerEvidenceRecords(valid), [
+    record
+  ]);
 });
 
 test("policy trigger evidence repository leaves abandoned locks fail-closed", async () => {
