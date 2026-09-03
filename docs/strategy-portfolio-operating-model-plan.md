@@ -3198,6 +3198,14 @@ createdAt-only retry는 같은 identity로 수렴하며 payload/hash/ID drift와
 Append-only repository와 origin/state replay 및 risk-breach trigger 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+열일곱 번째 분할은 `PortfolioRiskStateUpdateRecord`를
+`portfolio-risk-state-updates.jsonl`에 보존하는 strict append-only repository를 구현한다. 모든 read와
+append는 전체 log를 strict parse·rehash하고 duplicate ID/hash, blank/corrupt line과 torn final line을
+fail-closed한다. createdAt-only retry는 최초 record로 수렴하고, thread/process writer는 exclusive lock과
+file/directory sync로 직렬화한다. repository/full-log parser만 opaque verified history를 만들 수 있으며
+abandoned lock은 자동 제거하지 않는다. 각 update kind의 immutable origin/state replay와 risk-breach cycle
+trigger 연결은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
