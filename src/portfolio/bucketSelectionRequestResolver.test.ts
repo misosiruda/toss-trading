@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import type { StrategyBucket } from "../domain/schemas.js";
@@ -16,6 +19,26 @@ import {
   type BucketSelectionOpeningCapacity
 } from "./bucketSelectionRequestResolver.js";
 import type { PortfolioCycleTrigger } from "./portfolioCycleTrigger.js";
+import {
+  createPortfolioPolicyTriggerEvent,
+  type PortfolioPolicyTriggerEvent
+} from "./portfolioPolicyTriggerEvent.js";
+import { parseVerifiedPortfolioPolicyTriggerEventHistory } from "./portfolioPolicyTriggerEventFiles.js";
+import {
+  createPortfolioPolicyTriggerEvidenceRecord,
+  type PortfolioPolicyTriggerEvidenceRecord
+} from "./portfolioPolicyTriggerEvidence.js";
+import { parseVerifiedPortfolioPolicyTriggerEvidenceHistory } from "./portfolioPolicyTriggerEvidenceFiles.js";
+import {
+  createInvestmentMandateEvent,
+  createInvestmentMandateRecord,
+  type InvestmentMandateEvent,
+  type InvestmentMandateRecord
+} from "./investmentMandate.js";
+import {
+  InvestmentMandateFileRepository,
+  type VerifiedInvestmentMandateHistory
+} from "./investmentMandateFiles.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import {
   createPortfolioSizingSnapshot,
@@ -54,6 +77,7 @@ test("selection request resolver binds snapshot, policy, and replayed gap", () =
     sizingSnapshot: fixture.snapshot,
     activePolicy: fixture.policy,
     cycleTrigger: fixture.trigger,
+    policyEventTriggerSource: fixture.policyEventTriggerSource,
     bucketOpeningCapacities: openingCapacities()
   });
 
@@ -63,6 +87,7 @@ test("selection request resolver binds snapshot, policy, and replayed gap", () =
   assert.equal(resolved.gap.gapKrw, 200_000);
   assert.equal(resolved.gap.availableSlots, 4);
   assert.equal(resolved.gap.maximumAdditionalExposureKrw, 200_000);
+  assert.equal(resolved.triggerSource?.sourceKind, "policy_event");
   assert.equal(Object.isFrozen(resolved), true);
 });
 
@@ -134,6 +159,148 @@ test("selection request resolver requires the exact scheduled slot source", () =
         bucketOpeningCapacities: openingCapacities()
       }),
     /boundary hash mismatch|boundary ref mismatch/
+  );
+});
+
+test("selection request resolver requires an exact policy-event source", () => {
+  const fixture = selectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /requires its event source/
+  );
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: {
+          ...fixture.policyEventTriggerSource,
+          policyTriggerEventHistory: {
+            records: [fixture.policyEventTriggerSource.event]
+          } as never
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /history is not verified/
+  );
+
+  const scheduled = scheduledSelectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: scheduled.request,
+        sizingSnapshot: scheduled.snapshot,
+        activePolicy: scheduled.policy,
+        cycleTrigger: scheduled.trigger,
+        scheduledTriggerSource: scheduled.scheduledTriggerSource,
+        policyEventTriggerSource: fixture.policyEventTriggerSource,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /non-scheduled trigger source/
+  );
+});
+
+test("selection request resolver rejects policy-event market and knowledge drift", () => {
+  const disabledMarket = selectionFixture({
+    longTermEnabledMarkets: ["US"]
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: disabledMarket.request,
+        sizingSnapshot: disabledMarket.snapshot,
+        activePolicy: disabledMarket.policy,
+        cycleTrigger: disabledMarket.trigger,
+        policyEventTriggerSource: disabledMarket.policyEventTriggerSource,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /source market is disabled/
+  );
+
+  const futureEvent = selectionFixture({
+    eventCreatedAt: "2026-09-02T00:00:02.000Z"
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: futureEvent.request,
+        sizingSnapshot: futureEvent.snapshot,
+        activePolicy: futureEvent.policy,
+        cycleTrigger: futureEvent.trigger,
+        policyEventTriggerSource: futureEvent.policyEventTriggerSource,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /source postdates the selection request/
+  );
+});
+
+test("selection request resolver binds thesis events to the active mandate", async () => {
+  const fixture = thesisSelectionFixture();
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: fixture.policyEventTriggerSource,
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /requires investment mandate history/
+  );
+  await withVerifiedMandateHistory(
+    [fixture.mandate],
+    [fixture.mandateActivation],
+    (investmentMandateHistory) => {
+      const resolved = resolveBucketSelectionRequest({
+        value: fixture.request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: {
+          ...fixture.policyEventTriggerSource,
+          investmentMandateHistory
+        },
+        bucketOpeningCapacities: openingCapacities()
+      });
+      assert.equal(resolved.triggerSource?.sourceKind, "policy_event");
+      assert.equal(
+        resolved.triggerSource?.cycleTrigger.activeMandate?.record.mandateId,
+        fixture.mandate.mandateId
+      );
+    }
+  );
+
+  const wrongBucket = thesisSelectionFixture({ mandateBucket: "swing" });
+  await withVerifiedMandateHistory(
+    [wrongBucket.mandate],
+    [wrongBucket.mandateActivation],
+    (investmentMandateHistory) => {
+      assert.throws(
+        () =>
+          resolveBucketSelectionRequest({
+            value: wrongBucket.request,
+            sizingSnapshot: wrongBucket.snapshot,
+            activePolicy: wrongBucket.policy,
+            cycleTrigger: wrongBucket.trigger,
+            policyEventTriggerSource: {
+              ...wrongBucket.policyEventTriggerSource,
+              investmentMandateHistory
+            },
+            bucketOpeningCapacities: openingCapacities()
+          }),
+        /mandate bucket binding mismatch/
+      );
+    }
   );
 });
 
@@ -246,6 +413,7 @@ test("selection request resolver rejects replayed gap, slot, and cap drift", () 
           sizingSnapshot: fixture.snapshot,
           activePolicy: fixture.policy,
           cycleTrigger: fixture.trigger,
+          policyEventTriggerSource: fixture.policyEventTriggerSource,
           bucketOpeningCapacities: openingCapacities()
         }),
       /does not match replay/
@@ -259,6 +427,7 @@ test("selection request resolver rejects replayed gap, slot, and cap drift", () 
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
         cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: fixture.policyEventTriggerSource,
         bucketOpeningCapacities: openingCapacities({
           bucket: "long_term",
           activePositionCount: 1
@@ -277,6 +446,7 @@ test("selection request resolver fails closed when replay removes eligibility", 
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
         cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: fixture.policyEventTriggerSource,
         bucketOpeningCapacities: openingCapacities({
           bucket: "long_term",
           maximumPositionCount: 1,
@@ -300,6 +470,7 @@ test("selection request resolver rejects trigger basis inconsistent with policy"
         sizingSnapshot: fixture.snapshot,
         activePolicy: fixture.policy,
         cycleTrigger: fixture.trigger,
+        policyEventTriggerSource: fixture.policyEventTriggerSource,
         bucketOpeningCapacities: openingCapacities()
       }),
     /does not match replay/
@@ -372,7 +543,7 @@ test("selection request resolver enforces cadence and policy-event declarations"
         value: request,
         sizingSnapshot: snapshot,
         activePolicy: policyWithoutEvent,
-        cycleTrigger: cycleTrigger("long_term"),
+        cycleTrigger: cycleTrigger("long_term", snapshot.policyHash),
         bucketOpeningCapacities: openingCapacities()
       }),
     /not enabled for bucket/
@@ -700,22 +871,244 @@ function resolveEveryTickFixture(fixture: ReturnType<typeof everyTickFixture>) {
   });
 }
 
+function regimePolicyEventSource(
+  policyHash: RuntimePortfolioPolicyRecord["policyHash"],
+  options: { eventCreatedAt?: string } = {}
+) {
+  const evidence = createPortfolioPolicyTriggerEvidenceRecord({
+    portfolioId: "portfolio-1",
+    policyHash,
+    market: "KR",
+    evidenceType: "regime_change",
+    sourceContractId: "fundamental-regime-evidence.v1",
+    sourceArtifactId: "regime-artifact-1",
+    sourceArtifactHash: `sha256:${"c".repeat(64)}`,
+    observedAt: "2026-09-01T23:58:00.000Z",
+    previousRegime: "neutral",
+    currentRegime: "risk_on",
+    createdAt: "2026-09-01T23:58:30.000Z"
+  });
+  if (evidence.evidenceType !== "regime_change") {
+    throw new Error("regime evidence fixture construction failed");
+  }
+  const event = createPortfolioPolicyTriggerEvent({
+    portfolioId: "portfolio-1",
+    policyHash,
+    evidenceRefs: [evidence.evidenceRef],
+    eventType: "regime_change",
+    market: "KR",
+    previousRegime: evidence.previousRegime,
+    currentRegime: evidence.currentRegime,
+    asOf: "2026-09-01T23:59:00.000Z",
+    createdAt: options.eventCreatedAt ?? "2026-09-01T23:59:30.000Z"
+  });
+  if (event.eventType !== "regime_change") {
+    throw new Error("regime event fixture construction failed");
+  }
+  return {
+    event,
+    evidence,
+    policyTriggerEventHistory: verifiedPolicyEventHistory(event),
+    policyTriggerEvidenceHistory: verifiedPolicyEvidenceHistory(evidence)
+  };
+}
+
+function thesisSelectionFixture(
+  options: { mandateBucket?: StrategyBucket } = {}
+) {
+  const policy = runtimePolicy();
+  const snapshot = emptySizingSnapshot(policy.policyHash);
+  const longTermPolicy = policy.strategyBuckets.find(
+    (bucket) => bucket.bucket === "long_term"
+  );
+  if (longTermPolicy === undefined) {
+    throw new Error("long-term policy fixture construction failed");
+  }
+  const mandate = createInvestmentMandateRecord({
+    portfolioId: snapshot.portfolioId,
+    market: "KR",
+    symbol: "005930",
+    bucket: options.mandateBucket ?? "long_term",
+    policyHash: policy.policyHash,
+    asOf: "2026-09-01T12:00:00.000Z",
+    targetWeightRatio: 0.35,
+    minWeightRatio: 0.2,
+    maxWeightRatio: 0.5,
+    maximumOpeningNotionalKrw: 0,
+    reasonCodes: ["manual-classification"],
+    evidenceRefs: ["classification-evidence"],
+    evidenceAsOf: "2026-09-01T11:59:00.000Z",
+    reviewCadence: longTermPolicy.reviewCadence,
+    validFrom: "2026-09-01T12:00:00.000Z",
+    reviewAfter: "2026-09-02T12:00:00.000Z",
+    expiresAt: "2026-09-03T00:00:00.000Z",
+    assignmentSource: "manual_policy",
+    manualAuthorizationScope: "classify_existing_reduce_only",
+    manualAssignmentEventId: "manual-assignment-1",
+    createdAt: "2026-09-01T12:00:00.000Z"
+  });
+  const mandateActivation = createInvestmentMandateEvent({
+    mandateId: mandate.mandateId,
+    mandateHash: mandate.mandateHash,
+    portfolioId: mandate.portfolioId,
+    market: mandate.market,
+    symbol: mandate.symbol,
+    bucket: mandate.bucket,
+    policyHash: mandate.policyHash,
+    eventType: "activated",
+    reasonCodes: ["lifecycle"],
+    asOf: "2026-09-01T12:00:00.000Z",
+    createdAt: "2026-09-01T12:00:01.000Z"
+  });
+  const evidence = createPortfolioPolicyTriggerEvidenceRecord({
+    portfolioId: snapshot.portfolioId,
+    policyHash: policy.policyHash,
+    market: mandate.market,
+    evidenceType: "thesis_evidence_change",
+    sourceContractId: "fundamental-thesis-evidence.v1",
+    sourceArtifactId: "thesis-artifact-1",
+    sourceArtifactHash: `sha256:${"d".repeat(64)}`,
+    observedAt: "2026-09-01T23:58:00.000Z",
+    mandateId: mandate.mandateId,
+    symbol: mandate.symbol,
+    previousThesisStatus: "intact",
+    currentThesisStatus: "watch",
+    createdAt: "2026-09-01T23:58:30.000Z"
+  });
+  if (evidence.evidenceType !== "thesis_evidence_change") {
+    throw new Error("thesis evidence fixture construction failed");
+  }
+  const event = createPortfolioPolicyTriggerEvent({
+    portfolioId: snapshot.portfolioId,
+    policyHash: policy.policyHash,
+    evidenceRefs: [evidence.evidenceRef],
+    eventType: "thesis_evidence_change",
+    mandateId: mandate.mandateId,
+    market: mandate.market,
+    symbol: mandate.symbol,
+    previousThesisStatus: evidence.previousThesisStatus,
+    currentThesisStatus: evidence.currentThesisStatus,
+    asOf: "2026-09-01T23:59:00.000Z",
+    createdAt: "2026-09-01T23:59:30.000Z"
+  });
+  if (event.eventType !== "thesis_evidence_change") {
+    throw new Error("thesis event fixture construction failed");
+  }
+  const request = createBucketSelectionRequest({
+    ...requestInput(snapshot, "long_term"),
+    triggerIdentity: "event:thesis_evidence_change",
+    triggerRef: event.eventHash,
+    evidenceCutoffAt: event.asOf
+  });
+  return {
+    policy,
+    snapshot,
+    mandate,
+    mandateActivation,
+    request,
+    trigger: {
+      triggerKind: "policy_event" as const,
+      eventType: event.eventType,
+      policyTriggerEventId: event.policyTriggerEventId,
+      eventHash: event.eventHash,
+      eventAsOf: event.asOf
+    },
+    policyEventTriggerSource: {
+      policyTriggerEventHistory: verifiedPolicyEventHistory(event),
+      policyTriggerEvidenceHistory: verifiedPolicyEvidenceHistory(evidence)
+    }
+  };
+}
+
+async function withVerifiedMandateHistory<T>(
+  records: readonly InvestmentMandateRecord[],
+  events: readonly InvestmentMandateEvent[],
+  operation: (history: VerifiedInvestmentMandateHistory) => Promise<T> | T
+): Promise<T> {
+  const baseDir = await mkdtemp(join(tmpdir(), "bucket-selection-mandate-"));
+  try {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    for (const record of records) {
+      await repository.appendRecord(record);
+    }
+    for (const event of events) {
+      await repository.appendEvent(event);
+    }
+    return await repository.withVerifiedHistory(operation);
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+}
+
+function verifiedPolicyEventHistory(
+  ...events: readonly PortfolioPolicyTriggerEvent[]
+) {
+  return parseVerifiedPortfolioPolicyTriggerEventHistory(
+    events.map((event) => JSON.stringify(event)).join("\n") +
+      (events.length === 0 ? "" : "\n")
+  );
+}
+
+function verifiedPolicyEvidenceHistory(
+  ...records: readonly PortfolioPolicyTriggerEvidenceRecord[]
+) {
+  return parseVerifiedPortfolioPolicyTriggerEvidenceHistory(
+    records.map((record) => JSON.stringify(record)).join("\n") +
+      (records.length === 0 ? "" : "\n")
+  );
+}
+
 function selectionFixture(
-  options: { bucket?: "long_term" | "short_term" } = {}
+  options: {
+    bucket?: "long_term" | "short_term";
+    longTermEnabledMarkets?: readonly ("KR" | "US")[];
+    eventCreatedAt?: string;
+  } = {}
 ): {
   policy: RuntimePortfolioPolicyRecord;
   snapshot: PortfolioSizingSnapshot;
   request: ReturnType<typeof createBucketSelectionRequest>;
   trigger: PortfolioCycleTrigger;
+  policyEventTriggerSource: ReturnType<typeof regimePolicyEventSource>;
 } {
-  const policy = runtimePolicy();
+  const policy = runtimePolicy({
+    ...(options.longTermEnabledMarkets === undefined
+      ? {}
+      : { longTermEnabledMarkets: options.longTermEnabledMarkets })
+  });
   const snapshot = emptySizingSnapshot(policy.policyHash);
   const bucket = options.bucket ?? "long_term";
+  const policyEventTriggerSource = regimePolicyEventSource(policy.policyHash, {
+    ...(options.eventCreatedAt === undefined
+      ? {}
+      : { eventCreatedAt: options.eventCreatedAt })
+  });
+  const request = createBucketSelectionRequest({
+    ...requestInput(snapshot, bucket),
+    ...(bucket === "long_term"
+      ? {
+          triggerRef: policyEventTriggerSource.event.eventHash,
+          evidenceCutoffAt: policyEventTriggerSource.event.asOf
+        }
+      : {})
+  });
+  const trigger: PortfolioCycleTrigger =
+    bucket === "long_term"
+      ? {
+          triggerKind: "policy_event",
+          eventType: policyEventTriggerSource.event.eventType,
+          policyTriggerEventId:
+            policyEventTriggerSource.event.policyTriggerEventId,
+          eventHash: policyEventTriggerSource.event.eventHash,
+          eventAsOf: policyEventTriggerSource.event.asOf
+        }
+      : cycleTrigger(bucket, policy.policyHash);
   return {
     policy,
     snapshot,
-    request: createBucketSelectionRequest(requestInput(snapshot, bucket)),
-    trigger: cycleTrigger(bucket)
+    request,
+    trigger,
+    policyEventTriggerSource
   };
 }
 
@@ -782,12 +1175,13 @@ function requestInput(
   bucket: "long_term" | "short_term"
 ): CreateBucketSelectionRequestInput {
   const entryFloor = bucket === "short_term";
+  const policyEvent = regimePolicyEventSource(snapshot.policyHash).event;
   return {
     cycleId: `cycle-${bucket}-2026-09-02`,
     triggerIdentity: entryFloor
       ? `scheduled:${HASH}`
       : "event:regime_change",
-    triggerRef: entryFloor ? "schedule-slot-1" : HASH,
+    triggerRef: entryFloor ? "schedule-slot-1" : policyEvent.eventHash,
     portfolioId: snapshot.portfolioId,
     portfolioSnapshotId: snapshot.portfolioSnapshotId,
     portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
@@ -798,14 +1192,18 @@ function requestInput(
     gapKrw: entryFloor ? 50_000 : 200_000,
     availableSlots: 4,
     maximumAdditionalExposureKrw: entryFloor ? 50_000 : 200_000,
-    evidenceCutoffAt: "2026-09-01T23:59:00.000Z",
+    evidenceCutoffAt: entryFloor
+      ? "2026-09-01T23:59:00.000Z"
+      : policyEvent.asOf,
     createdAt: "2026-09-02T00:00:01.000Z"
   };
 }
 
 function cycleTrigger(
-  bucket: "long_term" | "short_term"
+  bucket: "long_term" | "short_term",
+  policyHash: RuntimePortfolioPolicyRecord["policyHash"] = HASH
 ): PortfolioCycleTrigger {
+  const policyEvent = regimePolicyEventSource(policyHash).event;
   return bucket === "short_term"
     ? {
         triggerKind: "scheduled",
@@ -815,10 +1213,10 @@ function cycleTrigger(
       }
     : {
         triggerKind: "policy_event",
-        eventType: "regime_change",
-        policyTriggerEventId: "policy-trigger-event-1",
-        eventHash: HASH,
-        eventAsOf: "2026-09-01T23:59:00.000Z"
+        eventType: policyEvent.eventType,
+        policyTriggerEventId: policyEvent.policyTriggerEventId,
+        eventHash: policyEvent.eventHash,
+        eventAsOf: policyEvent.asOf
       };
 }
 
@@ -877,6 +1275,7 @@ function runtimePolicy(
   overrides: {
     minimumCashReserveKrw?: number;
     enabledLongTermEvents?: boolean;
+    longTermEnabledMarkets?: readonly ("KR" | "US")[];
     intradaySelectionPolicyRef?: BucketSelectionPolicyRef;
     intradayEnabledMarkets?: readonly ("KR" | "US")[];
     shortTermBoundaryRef?: ReturnType<typeof scheduleBoundaryRefFor>;
@@ -900,6 +1299,9 @@ function runtimePolicy(
           ? overrides.intradaySelectionPolicyRef
           : undefined,
         bucket === "intraday" ? overrides.intradayEnabledMarkets : undefined,
+        bucket === "long_term"
+          ? overrides.longTermEnabledMarkets
+          : undefined,
         bucket === "short_term" ? overrides.shortTermBoundaryRef : undefined
       )
     ),
@@ -948,6 +1350,7 @@ function bucketPolicy(
   enabledLongTermEvents = true,
   selectionPolicyRef?: BucketSelectionPolicyRef,
   enabledMarkets?: readonly ("KR" | "US")[],
+  longTermEnabledMarkets?: readonly ("KR" | "US")[],
   scheduleBoundaryRef?: ReturnType<typeof scheduleBoundaryRefFor>
 ): StrategyBucketRuntimePolicy {
   const weights = {
@@ -992,7 +1395,7 @@ function bucketPolicy(
           },
     eventTriggers:
       bucket === "long_term" && enabledLongTermEvents
-        ? ["regime_change"]
+        ? ["regime_change", "thesis_evidence_change"]
         : [],
     selectionTrigger:
       mode === "below_min"
@@ -1002,7 +1405,9 @@ function bucketPolicy(
       takeProfit: { mode: "disabled" },
       timeExpiryAction: "review_required"
     },
-    enabledMarkets: [...(enabledMarkets ?? ["KR", "US"])],
+    enabledMarkets: [
+      ...(longTermEnabledMarkets ?? enabledMarkets ?? ["KR", "US"])
+    ],
     enabledAssetClasses: ["equity"],
     selectionPolicyRef:
       selectionPolicyRef ??
