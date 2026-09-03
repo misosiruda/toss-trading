@@ -151,6 +151,11 @@ function assertTriggerCompatibility(
   bucketPolicy: StrategyBucketRuntimePolicy,
   trigger: PortfolioCycleTrigger
 ): void {
+  if (trigger.triggerKind === "risk_breach") {
+    throw new Error(
+      "risk-breach cycle cannot create a bucket selection request"
+    );
+  }
   if (trigger.triggerKind === "scheduled") {
     if (
       bucketPolicy.reviewCadence.mode !== "scheduled" ||

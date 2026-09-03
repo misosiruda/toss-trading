@@ -3140,8 +3140,9 @@ strict union으로 구현하고 complete trigger payload hash와 identity/ref/cu
 파생한다. scheduled는 boundary hash/slot ID/slot end, every-tick은 packet hash/as-of, policy event는
 event type/hash/as-of, risk breach는 state-update kind/hash/as-of를 사용한다. Selection request resolver는
 파생된 세 필드와 request를 exact-match하고 scheduled/every-tick cadence 및 선언된 policy event trigger
-호환성도 검증한다. Schedule slot, packet, policy event, risk-state update의 원본 immutable record 해소는
-각 source-specific resolver 후속 분할 전까지 구현 완료로 간주하지 않는다.
+호환성도 검증한다. `risk_breach` cycle은 sell-first reduce-only이므로 selection request에서는
+fail-closed한다. Schedule slot, packet, policy event, risk-state update의 원본 immutable record 해소는 각
+source-specific resolver 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
 완료 조건:
 

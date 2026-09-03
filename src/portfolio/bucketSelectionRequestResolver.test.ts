@@ -313,6 +313,32 @@ test("selection request resolver enforces cadence and policy-event declarations"
   );
 });
 
+test("selection request resolver rejects risk-breach candidate selection", () => {
+  const fixture = selectionFixture();
+  const request = createBucketSelectionRequest({
+    ...requestInput(fixture.snapshot, "long_term"),
+    triggerIdentity: "risk_breach:market_mark",
+    triggerRef: HASH
+  });
+  assert.throws(
+    () =>
+      resolveBucketSelectionRequest({
+        value: request,
+        sizingSnapshot: fixture.snapshot,
+        activePolicy: fixture.policy,
+        cycleTrigger: {
+          triggerKind: "risk_breach",
+          stateUpdateKind: "market_mark",
+          riskStateUpdateRecordId: "risk-state-update-1",
+          stateUpdateHash: HASH,
+          stateUpdateAsOf: "2026-09-01T23:59:00.000Z"
+        },
+        bucketOpeningCapacities: openingCapacities()
+      }),
+    /cannot create a bucket selection request/
+  );
+});
+
 function selectionFixture(
   options: { bucket?: "long_term" | "short_term" } = {}
 ): {
