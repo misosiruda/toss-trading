@@ -3219,6 +3219,16 @@ ID/hash/type 또는 kind/as-of만 일치해도 다른 portfolio나 policy epoch�
 drift는 cycle 생성 전에 fail-closed한다. Policy event의 market/evidence/active mandate 검증과 risk-state
 update kind별 origin/state replay는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+스무 번째 분할은 scheduled trigger를 immutable `ScheduleBoundaryRecord`와 versioned
+`SessionCalendarRecord`에서 재현하는 source resolver를 구현한다. boundary/calendar의
+ID/version/hash/lineage/market/timezone/createdAt 관계를 다시 검증하고 daily/weekly anchor는 open session
+안이면 그대로, session 밖이면 actual close로 정규화한다. hourly는 anchor grid에서 session open 이후의
+정시 boundary와 actual close를 생성한다. closed target date는 선언된 previous/next-session rule로 이동하고
+같은 actual session으로 모인 slot은 하나로 수렴한다. Canonical slot ID는 boundary/calendar
+ID/version/hash/lineage, market, exchange date, interval과 slot end의 complete hash에서 파생한다. Trigger의 boundary hash, slot ID와
+slot end가 모두 exact-match하지 않으면 fail-closed한다. Runtime policy/request 연결은 후속 분할 전까지
+구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
