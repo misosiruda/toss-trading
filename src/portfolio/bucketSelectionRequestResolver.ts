@@ -34,6 +34,13 @@ import {
   type ResolvedScheduledPortfolioCycleTrigger
 } from "./scheduledPortfolioCycleTriggerResolver.js";
 import {
+  resolvePolicyEventPortfolioCycleTrigger,
+  type ResolvedPolicyEventPortfolioCycleTrigger
+} from "./policyEventPortfolioCycleTriggerResolver.js";
+import type { VerifiedPortfolioPolicyTriggerEventHistory } from "./portfolioPolicyTriggerEventFiles.js";
+import type { VerifiedPortfolioPolicyTriggerEvidenceHistory } from "./portfolioPolicyTriggerEvidenceFiles.js";
+import type { VerifiedInvestmentMandateHistory } from "./investmentMandateFiles.js";
+import {
   resolvePortfolioCycleTrigger,
   type PortfolioCycleTrigger,
   type ResolvedPortfolioCycleTrigger
@@ -71,6 +78,12 @@ export interface EveryTickBucketSelectionTriggerSourceInput {
   selectionPolicy: unknown;
 }
 
+export interface PolicyEventBucketSelectionTriggerSourceInput {
+  policyTriggerEventHistory: VerifiedPortfolioPolicyTriggerEventHistory;
+  policyTriggerEvidenceHistory: VerifiedPortfolioPolicyTriggerEvidenceHistory;
+  investmentMandateHistory?: VerifiedInvestmentMandateHistory;
+}
+
 export interface ResolvedEveryTickBucketSelectionTriggerSource {
   sourceKind: "market_packet";
   cycleTrigger: ResolvedEveryTickPortfolioCycleTrigger;
@@ -82,9 +95,15 @@ export interface ResolvedScheduledBucketSelectionTriggerSource {
   cycleTrigger: ResolvedScheduledPortfolioCycleTrigger;
 }
 
+export interface ResolvedPolicyEventBucketSelectionTriggerSource {
+  sourceKind: "policy_event";
+  cycleTrigger: ResolvedPolicyEventPortfolioCycleTrigger;
+}
+
 export type ResolvedBucketSelectionTriggerSource =
   | ResolvedEveryTickBucketSelectionTriggerSource
-  | ResolvedScheduledBucketSelectionTriggerSource;
+  | ResolvedScheduledBucketSelectionTriggerSource
+  | ResolvedPolicyEventBucketSelectionTriggerSource;
 
 /**
  * Resolves a stored selection request against immutable sizing and policy data.
@@ -102,6 +121,7 @@ export function resolveBucketSelectionRequest(input: {
   cycleTrigger: unknown;
   scheduledTriggerSource?: ScheduledBucketSelectionTriggerSourceInput;
   everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
+  policyEventTriggerSource?: PolicyEventBucketSelectionTriggerSourceInput;
   bucketOpeningCapacities: readonly BucketSelectionOpeningCapacity[];
 }): ResolvedBucketSelectionRequest {
   const request = parseBucketSelectionRequest(input.value);
@@ -126,7 +146,10 @@ export function resolveBucketSelectionRequest(input: {
       : { scheduledTriggerSource: input.scheduledTriggerSource }),
     ...(input.everyTickTriggerSource === undefined
       ? {}
-      : { everyTickTriggerSource: input.everyTickTriggerSource })
+      : { everyTickTriggerSource: input.everyTickTriggerSource }),
+    ...(input.policyEventTriggerSource === undefined
+      ? {}
+      : { policyEventTriggerSource: input.policyEventTriggerSource })
   });
   const analysis = analyzePortfolioGaps({
     policy,
@@ -199,11 +222,15 @@ function resolveTriggerSource(input: {
   cycleTriggerValue: unknown;
   scheduledTriggerSource?: ScheduledBucketSelectionTriggerSourceInput;
   everyTickTriggerSource?: EveryTickBucketSelectionTriggerSourceInput;
+  policyEventTriggerSource?: PolicyEventBucketSelectionTriggerSourceInput;
 }): ResolvedBucketSelectionTriggerSource | undefined {
   if (input.cycleTrigger.trigger.triggerKind === "scheduled") {
-    if (input.everyTickTriggerSource !== undefined) {
+    if (
+      input.everyTickTriggerSource !== undefined ||
+      input.policyEventTriggerSource !== undefined
+    ) {
       throw new Error(
-        "every-tick trigger source is allowed only for an every_tick trigger"
+        "non-scheduled trigger source is not allowed for a scheduled trigger"
       );
     }
     if (input.scheduledTriggerSource === undefined) {
@@ -222,42 +249,104 @@ function resolveTriggerSource(input: {
       "scheduled trigger source is allowed only for a scheduled trigger"
     );
   }
-  if (input.cycleTrigger.trigger.triggerKind !== "every_tick") {
-    if (input.everyTickTriggerSource !== undefined) {
+  if (input.cycleTrigger.trigger.triggerKind === "every_tick") {
+    if (input.policyEventTriggerSource !== undefined) {
       throw new Error(
-        "every-tick trigger source is allowed only for an every_tick trigger"
+        "policy-event trigger source is allowed only for a policy_event trigger"
       );
     }
-    return undefined;
-  }
-  if (input.everyTickTriggerSource === undefined) {
-    throw new Error("every_tick selection request requires its packet source");
-  }
+    if (input.everyTickTriggerSource === undefined) {
+      throw new Error("every_tick selection request requires its packet source");
+    }
 
-  const cycleTrigger = resolveEveryTickPortfolioCycleTrigger({
-    value: input.cycleTriggerValue,
-    marketPacketHistory: input.everyTickTriggerSource.marketPacketHistory
-  });
-  const selectionPolicy = parseBucketSelectionPolicyRecord(
-    input.everyTickTriggerSource.selectionPolicy
-  );
-  assertEveryTickSelectionPolicyBinding(
-    input.request,
-    input.policy,
-    input.bucketPolicy,
-    selectionPolicy
-  );
-  assertEveryTickMarketPacketBinding(
-    input.request,
-    input.bucketPolicy,
-    selectionPolicy,
-    cycleTrigger
-  );
-  return deepFreeze({
-    sourceKind: "market_packet",
-    cycleTrigger,
-    selectionPolicy
-  });
+    const cycleTrigger = resolveEveryTickPortfolioCycleTrigger({
+      value: input.cycleTriggerValue,
+      marketPacketHistory: input.everyTickTriggerSource.marketPacketHistory
+    });
+    const selectionPolicy = parseBucketSelectionPolicyRecord(
+      input.everyTickTriggerSource.selectionPolicy
+    );
+    assertEveryTickSelectionPolicyBinding(
+      input.request,
+      input.policy,
+      input.bucketPolicy,
+      selectionPolicy
+    );
+    assertEveryTickMarketPacketBinding(
+      input.request,
+      input.bucketPolicy,
+      selectionPolicy,
+      cycleTrigger
+    );
+    return deepFreeze({
+      sourceKind: "market_packet",
+      cycleTrigger,
+      selectionPolicy
+    });
+  }
+  if (input.everyTickTriggerSource !== undefined) {
+    throw new Error(
+      "every-tick trigger source is allowed only for an every_tick trigger"
+    );
+  }
+  if (input.cycleTrigger.trigger.triggerKind === "policy_event") {
+    if (input.policyEventTriggerSource === undefined) {
+      throw new Error("policy_event selection request requires its event source");
+    }
+    const cycleTrigger = resolvePolicyEventPortfolioCycleTrigger({
+      value: input.cycleTriggerValue,
+      policyTriggerEventHistory:
+        input.policyEventTriggerSource.policyTriggerEventHistory,
+      policyTriggerEvidenceHistory:
+        input.policyEventTriggerSource.policyTriggerEvidenceHistory,
+      ...(input.policyEventTriggerSource.investmentMandateHistory === undefined
+        ? {}
+        : {
+            investmentMandateHistory:
+              input.policyEventTriggerSource.investmentMandateHistory
+          }),
+      expectedPortfolioId: input.request.portfolioId,
+      expectedPolicyHash: input.request.policyHash
+    });
+    assertPolicyEventSourceBinding(
+      input.request,
+      input.bucketPolicy,
+      cycleTrigger
+    );
+    return deepFreeze({ sourceKind: "policy_event", cycleTrigger });
+  }
+  if (input.policyEventTriggerSource !== undefined) {
+    throw new Error(
+      "policy-event trigger source is allowed only for a policy_event trigger"
+    );
+  }
+  return undefined;
+}
+
+function assertPolicyEventSourceBinding(
+  request: BucketSelectionRequest,
+  bucketPolicy: StrategyBucketRuntimePolicy,
+  source: ResolvedPolicyEventPortfolioCycleTrigger
+): void {
+  const event = source.policyTriggerEvent;
+  if (!bucketPolicy.enabledMarkets.includes(event.market)) {
+    throw new Error("policy_event source market is disabled for bucket");
+  }
+  if (Date.parse(event.createdAt) > Date.parse(request.createdAt)) {
+    throw new Error("policy_event source postdates the selection request");
+  }
+  if (event.eventType === "thesis_evidence_change") {
+    const mandate = source.activeMandate?.record;
+    if (mandate === undefined) {
+      throw new Error("thesis policy_event source requires an active mandate");
+    }
+    if (
+      mandate.bucket !== request.bucket ||
+      !isDeepStrictEqual(mandate.reviewCadence, bucketPolicy.reviewCadence)
+    ) {
+      throw new Error("thesis policy_event mandate bucket binding mismatch");
+    }
+  }
 }
 
 function assertScheduledSourceBinding(

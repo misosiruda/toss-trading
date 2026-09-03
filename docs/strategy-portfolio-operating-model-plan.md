@@ -3283,6 +3283,14 @@ portfolio/policy/market/symbol이 일치하고 event cutoff에서 `active` 또�
 Contract-specific source artifact 검증 adapter와 selection request 연결은 후속 분할 전까지 구현 완료로
 간주하지 않는다.
 
+스물일곱 번째 분할은 policy-event source resolver를 `BucketSelectionRequest` replay에 연결한다.
+`policy_event` request는 opaque verified event/evidence history를 반드시 제공해야 하며 thesis event는
+investment mandate repository의 shared-lock lease 안에서 active mandate를 함께 해소해야 한다. Resolved
+event market은 bucket enabled market이어야 하고 event `createdAt`은 request `createdAt` 이후일 수 없다.
+Thesis mandate의 bucket과 review cadence는 request bucket/runtime policy와 exact-match해야 한다. 다른 trigger
+variant에 policy-event source를 주입하거나 policy-event request에서 source를 생략하면 fail-closed한다.
+Contract-specific source artifact 검증 adapter는 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
