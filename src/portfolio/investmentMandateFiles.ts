@@ -26,6 +26,12 @@ export interface InvestmentMandateFileRepositoryOptions {
   lockRetryDelayMs?: number;
 }
 
+const verifiedInvestmentMandateHistories =
+  new WeakSet<VerifiedInvestmentMandateHistory>();
+
+export interface VerifiedInvestmentMandateHistory
+  extends InvestmentMandateHistorySnapshot {}
+
 export function createInvestmentMandatePaths(baseDir: string): {
   recordsPath: string;
   eventsPath: string;
@@ -71,6 +77,25 @@ export class InvestmentMandateFileRepository {
 
   async readSnapshot(): Promise<InvestmentMandateHistorySnapshot> {
     return this.withConsistentSnapshot(async (snapshot) => snapshot);
+  }
+
+  /**
+   * Leases a repository-verified generation only while the shared lock is held.
+   * The lease is revoked before the lock is released, so it cannot be reused
+   * after a later append advances the durable history.
+   */
+  async withVerifiedHistory<T>(
+    operation: (history: VerifiedInvestmentMandateHistory) => Promise<T> | T
+  ): Promise<T> {
+    return this.withLock(async () => {
+      const history = await this.readSnapshotUnderLock();
+      verifiedInvestmentMandateHistories.add(history);
+      try {
+        return await operation(history);
+      } finally {
+        verifiedInvestmentMandateHistories.delete(history);
+      }
+    });
   }
 
   /**
@@ -177,6 +202,15 @@ export class InvestmentMandateFileRepository {
       await release();
     }
   }
+}
+
+export function getVerifiedInvestmentMandateHistorySnapshot(
+  history: VerifiedInvestmentMandateHistory
+): InvestmentMandateHistorySnapshot {
+  if (!verifiedInvestmentMandateHistories.has(history)) {
+    throw new Error("investment mandate history is not repository verified");
+  }
+  return history;
 }
 
 function cloneRecord(value: unknown): InvestmentMandateRecord {

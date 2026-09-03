@@ -18,7 +18,9 @@ import {
 } from "./investmentMandate.js";
 import {
   createInvestmentMandatePaths,
-  InvestmentMandateFileRepository
+  getVerifiedInvestmentMandateHistorySnapshot,
+  InvestmentMandateFileRepository,
+  type VerifiedInvestmentMandateHistory
 } from "./investmentMandateFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
@@ -199,6 +201,34 @@ test("mandate repository leaves an abandoned shared lock fail-closed", async () 
     );
     assert.ok(Date.now() - startedAt < 250);
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
+  });
+});
+
+test("mandate repository issues opaque verified histories", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const record = mandateRecord("2026-09-01T01:00:00.000Z");
+    await repository.appendRecord(record);
+    const expiredLease = await repository.withVerifiedHistory((verified) => {
+      assert.deepEqual(
+        getVerifiedInvestmentMandateHistorySnapshot(verified).records,
+        [record]
+      );
+      assert.throws(
+        () =>
+          getVerifiedInvestmentMandateHistorySnapshot({
+            records: verified.records,
+            events: verified.events,
+            states: verified.states
+        } as VerifiedInvestmentMandateHistory),
+        /not repository verified/
+      );
+      return verified;
+    });
+    assert.throws(
+      () => getVerifiedInvestmentMandateHistorySnapshot(expiredLease),
+      /not repository verified/
+    );
   });
 });
 
