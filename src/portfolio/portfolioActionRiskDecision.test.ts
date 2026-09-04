@@ -38,6 +38,31 @@ test("portfolio action risk decision derives rejected result from rule failure",
   assert.equal(decision.decision, "rejected");
 });
 
+test("portfolio action risk decision preserves rejected zero caps but cannot approve them", () => {
+  const input = bucketInput();
+  const zeroCaps = {
+    ...input,
+    approvedMaximumFillNotionalKrw: 0,
+    cashAssessment: { ...input.cashAssessment, approvedMaximumNetCashDebitKrw: 0 }
+  };
+  const rejected = createPortfolioActionRiskDecision({
+    ...zeroCaps,
+    decision: "rejected",
+    ruleResults: input.ruleResults.map((rule) => ({ ...rule, result: "fail" as const }))
+  });
+  assert.deepEqual(parsePortfolioActionRiskDecision(rejected), rejected);
+  assert.throws(() => createPortfolioActionRiskDecision(zeroCaps), /fill notional cap/);
+  assert.throws(() => createPortfolioActionRiskDecision({
+    ...zeroCaps,
+    approvedMaximumFillNotionalKrw: input.approvedMaximumFillNotionalKrw
+  }), /net cash debit cap/);
+  assert.throws(() => createPortfolioActionRiskDecision({
+    ...zeroCaps,
+    decision: "rejected",
+    approvedMaximumFillNotionalKrw: -1
+  }));
+});
+
 test("portfolio action risk decision supports legacy SELL without bucket turnover", () => {
   const decision = createPortfolioActionRiskDecision({
     ...bucketInput(),

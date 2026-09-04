@@ -74,7 +74,7 @@ const cashAssessmentSchema = z.discriminatedUnion("side", [
     .object({
       side: z.literal("BUY"),
       worstCaseNetCashDebitKrw: positiveNumberSchema,
-      approvedMaximumNetCashDebitKrw: positiveNumberSchema
+      approvedMaximumNetCashDebitKrw: nonNegativeNumberSchema
     })
     .strict(),
   z
@@ -115,7 +115,7 @@ const portfolioActionRiskDecisionPayloadSchema = z
     requestedNotionalKrw: positiveNumberSchema,
     requestedQuantity: positiveNumberSchema,
     worstCaseFillNotionalKrw: positiveNumberSchema,
-    approvedMaximumFillNotionalKrw: positiveNumberSchema,
+    approvedMaximumFillNotionalKrw: nonNegativeNumberSchema,
     cashAssessment: cashAssessmentSchema,
     decision: z.enum(["approved", "rejected"]),
     requiredRuleIds: z.array(identifierSchema).min(1).max(128),
