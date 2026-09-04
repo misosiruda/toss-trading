@@ -33,6 +33,13 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
   const fillOrigin = resolvePersistedPaperFillExecutionOrigin(
     input.paperFillHistory, event.paperFillRecordId
   );
+  if (fillOrigin.riskOrigin === null ||
+    fillOrigin.riskOrigin.riskDecisionId !== riskDecision.riskDecisionId ||
+    fillOrigin.riskOrigin.riskDecisionHash !== riskDecision.riskDecisionHash ||
+    fillOrigin.riskOrigin.commitHash !== riskOrigin.commitHash ||
+    fillOrigin.riskOrigin.appendedAt !== riskOrigin.appendedAt) {
+    throw new Error("execution fill risk binding requires the risk origin persisted with the fill");
+  }
   const { record: paperFill, sourcePriceEvidence } = resolvePaperFillExecutionOrigins({
     value: fillOrigin.record,
     sourcePriceEvidenceHistory: input.sourcePriceEvidenceHistory

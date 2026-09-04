@@ -35,10 +35,12 @@ export interface VerifiedPortfolioActionRiskDecisionHistory {
 export interface VerifiedPortfolioActionRiskDecisionOrigin {
   record: PortfolioActionRiskDecision;
   appendedAt: string;
+  commitHash: string;
 }
 
 interface VerifiedHistoryMetadata {
   appendedAtById: ReadonlyMap<string, string>;
+  commitHashById: ReadonlyMap<string, string>;
   lastEntryHash: string | null;
   lastCommittedAt: string | null;
 }
@@ -336,7 +338,8 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
   }
   return deepFreeze({
     record: matches[0] as PortfolioActionRiskDecision,
-    appendedAt
+    appendedAt,
+    commitHash: metadata.commitHashById.get(riskDecisionId)!
   });
 }
 
@@ -351,6 +354,8 @@ function createVerifiedPortfolioActionRiskDecisionHistory(
       entries.filter((entry) => entry.committedAt !== null)
         .map((entry) => [entry.record.riskDecisionId, entry.committedAt!])
     ),
+    commitHashById: new Map(entries.filter((entry) => entry.committedAt !== null)
+      .map((entry) => [entry.record.riskDecisionId, entry.tailHash])),
     lastEntryHash: entries.at(-1)?.tailHash ?? null,
     lastCommittedAt: entries.at(-1)?.committedAt ?? null
   });

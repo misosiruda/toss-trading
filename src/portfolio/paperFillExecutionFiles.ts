@@ -6,6 +6,10 @@ import { z } from "zod";
 
 import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
+import {
+  resolveVerifiedPortfolioActionRiskDecisionOrigin,
+  type VerifiedPortfolioActionRiskDecisionHistory
+} from "./portfolioActionRiskDecisionFiles.js";
 
 import {
   parsePaperFillExecutionRecord,
@@ -26,6 +30,7 @@ const persistedPaperFillExecutionHistories =
   new WeakSet<VerifiedPaperFillExecutionHistory>();
 const persistedPaperFillMetadata = new WeakMap<VerifiedPaperFillExecutionHistory, {
   appendedAtById: ReadonlyMap<string, string>;
+  riskOriginById: ReadonlyMap<string, PersistedRiskOrigin>;
   lastEntryHash: string | null;
 }>();
 
@@ -35,6 +40,20 @@ const fileEntrySchema = z.object({
   appendStartedAt: offsetQualifiedIsoDateTimeSchema,
   previousEntryHash: sha256HashSchema.nullable(),
   entryHash: sha256HashSchema
+}).strict();
+
+const riskOriginSchema = z.object({
+  riskDecisionId: z.string().min(1).max(240),
+  riskDecisionHash: sha256HashSchema,
+  commitHash: sha256HashSchema,
+  appendedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+
+type PersistedRiskOrigin = Readonly<z.infer<typeof riskOriginSchema>>;
+
+const riskBoundFileEntrySchema = fileEntrySchema.extend({
+  schemaVersion: z.literal("paper_fill_execution_entry.v2"),
+  riskOrigin: riskOriginSchema
 }).strict();
 
 const commitMarkerSchema = z.object({
@@ -104,6 +123,28 @@ export class PaperFillExecutionFileRepository {
   }
 
   async append(value: unknown): Promise<PaperFillExecutionRecord> {
+    return this.#appendRecord(value, null);
+  }
+
+  /** Records causal persistence provenance only, not final execution approval. */
+  async appendWithRiskOrigin(
+    value: unknown,
+    riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory,
+    riskDecisionId: string
+  ): Promise<PaperFillExecutionRecord> {
+    // Only a history actually issued by the Risk repository can mint a receipt.
+    // Resolve it before the fill is persisted; never retrofit an existing fill.
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, riskDecisionId);
+    const riskOrigin = Object.freeze({
+      riskDecisionId: origin.record.riskDecisionId,
+      riskDecisionHash: origin.record.riskDecisionHash,
+      commitHash: origin.commitHash,
+      appendedAt: origin.appendedAt
+    });
+    return this.#appendRecord(value, riskOrigin);
+  }
+
+  async #appendRecord(value: unknown, riskOrigin: PersistedRiskOrigin | null): Promise<PaperFillExecutionRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -114,6 +155,11 @@ export class PaperFillExecutionFileRepository {
       if (existing !== undefined) {
         if (!sameSemanticRecord(existing, candidate)) {
           throw new Error("paper fill execution ID collision");
+        }
+        if (riskOrigin !== null && !isDeepStrictEqual(
+          persistedPaperFillMetadata.get(history)!.riskOriginById.get(existing.paperFillRecordId), riskOrigin
+        )) {
+          throw new Error("paper fill risk origin cannot be added or replaced after persistence");
         }
         await syncDurableJsonFile(this.recordsPath);
         return existing;
@@ -136,12 +182,14 @@ export class PaperFillExecutionFileRepository {
       if (Date.parse(appendStartedAt) < Date.parse(candidate.createdAt)) {
         throw new Error("paper fill cannot be appended before creation");
       }
-      const payload = {
-        schemaVersion: "paper_fill_execution_entry.v1" as const,
+      const commonPayload = {
         record: candidate,
         appendStartedAt,
         previousEntryHash: persistedPaperFillMetadata.get(history)!.lastEntryHash
       };
+      const payload = riskOrigin === null
+        ? { schemaVersion: "paper_fill_execution_entry.v1" as const, ...commonPayload }
+        : { schemaVersion: "paper_fill_execution_entry.v2" as const, ...commonPayload, riskOrigin };
       const entryHash = hashCanonicalPayload(payload);
       await appendDurableJsonLine(this.recordsPath, { ...payload, entryHash });
       // Sample only after the record and directory durability operations complete.
@@ -173,9 +221,9 @@ export class PaperFillExecutionFileRepository {
         throw error;
       }
     }
-    const { history, appendedAtById, lastEntryHash } = parsePaperFillExecutionLog(raw);
+    const { history, appendedAtById, riskOriginById, lastEntryHash } = parsePaperFillExecutionLog(raw);
     persistedPaperFillExecutionHistories.add(history);
-    persistedPaperFillMetadata.set(history, { appendedAtById, lastEntryHash });
+    persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, lastEntryHash });
     return history;
   }
 
@@ -220,6 +268,7 @@ function parsePaperFillExecutionLog(raw: string) {
   const hashes = new Set<string>();
   const portfolioFillIds = new Set<string>();
   const appendedAtById = new Map<string, string>();
+  const riskOriginById = new Map<string, PersistedRiskOrigin>();
   let lastEntryHash: string | null = null;
   let hasVersionedEntry = false;
   for (let index = 0; index < lines.length; index += 1) {
@@ -233,11 +282,13 @@ function parsePaperFillExecutionLog(raw: string) {
     try {
       const value: unknown = JSON.parse(line);
       if (value !== null && typeof value === "object" && "schemaVersion" in value) {
-        const entry = fileEntrySchema.parse(value);
+        const entry = value.schemaVersion === "paper_fill_execution_entry.v2"
+          ? riskBoundFileEntrySchema.parse(value) : fileEntrySchema.parse(value);
         record = parsePaperFillExecutionRecord(entry.record);
         const payload = {
           schemaVersion: entry.schemaVersion, record, appendStartedAt: entry.appendStartedAt,
-          previousEntryHash: entry.previousEntryHash
+          previousEntryHash: entry.previousEntryHash,
+          ...("riskOrigin" in entry ? { riskOrigin: entry.riskOrigin } : {})
         };
         if (entry.previousEntryHash !== lastEntryHash ||
           entry.entryHash !== hashCanonicalPayload(payload) ||
@@ -259,6 +310,7 @@ function parsePaperFillExecutionLog(raw: string) {
           throw new Error("paper fill durable commit origin mismatch");
         }
         appendedAtById.set(record.paperFillRecordId, marker.committedAt);
+        if ("riskOrigin" in entry) riskOriginById.set(record.paperFillRecordId, Object.freeze(entry.riskOrigin));
         lastEntryHash = marker.commitHash;
         hasVersionedEntry = true;
       } else {
@@ -295,7 +347,7 @@ function parsePaperFillExecutionLog(raw: string) {
   }
   const history = Object.freeze({ records: Object.freeze(records) });
   verifiedPaperFillExecutionHistories.add(history);
-  return { history, appendedAtById, lastEntryHash };
+  return { history, appendedAtById, riskOriginById, lastEntryHash };
 }
 
 export function getVerifiedPaperFillExecutionRecords(
@@ -320,7 +372,7 @@ export function getPersistedPaperFillExecutionRecords(
 export function resolvePersistedPaperFillExecutionOrigin(
   history: VerifiedPaperFillExecutionHistory,
   paperFillRecordId: string
-): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string }> {
+): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string; riskOrigin: PersistedRiskOrigin | null }> {
   const matches = getPersistedPaperFillExecutionRecords(history)
     .filter((record) => record.paperFillRecordId === paperFillRecordId);
   if (matches.length !== 1) {
@@ -330,7 +382,8 @@ export function resolvePersistedPaperFillExecutionOrigin(
   if (appendedAt === undefined) {
     throw new Error("paper fill append origin is unavailable; legacy record requires review");
   }
-  return Object.freeze({ record: matches[0]!, appendedAt });
+  const riskOrigin = persistedPaperFillMetadata.get(history)!.riskOriginById.get(paperFillRecordId) ?? null;
+  return Object.freeze({ record: matches[0]!, appendedAt, riskOrigin });
 }
 
 function sameSemanticRecord(
@@ -349,7 +402,7 @@ function cloneRecord(value: unknown): PaperFillExecutionRecord {
 
 async function appendDurableJsonLine(
   path: string,
-  value: z.infer<typeof fileEntrySchema> | z.infer<typeof commitMarkerSchema>
+  value: z.infer<typeof fileEntrySchema> | z.infer<typeof riskBoundFileEntrySchema> | z.infer<typeof commitMarkerSchema>
 ): Promise<void> {
   const handle = await open(path, "a");
   try {
