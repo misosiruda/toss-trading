@@ -555,23 +555,25 @@ order -> broker/api/mcp/cli/ai/paper/storage
 검증 명령:
 
 ```powershell
-npm run check:changed
+npm run check:review
 npm run check
-npm run build
-npm test
 ```
 
-`npm run check:changed`는 build와 `quality:gate`를 실행한 뒤 `origin/main`과 현재 HEAD/worktree의
+`npm run check:review`와 호환 alias `npm run check:changed`는 build와 `quality:gate`를 실행한 뒤 `origin/main`과 현재 HEAD/worktree의
 변경 파일을 합산한다. 변경된 TypeScript module을 직접 또는 간접 import하거나 compiled CLI를
 subprocess/worker로 참조하거나 source file 자체를 검사하는 test file만 실행한다. 설정, tooling,
 non-TypeScript source, 역의존성을 증명할 수 없는 source 또는 선택된
 test file이 120개를 넘는 변경은 자동으로 전체 suite로 fallback한다. 기준 ref가 다르면
 `CHANGED_TEST_BASE_REF` 또는 `--base-ref`로 명시한다. `--plan`은 실행할 test plan만 출력한다.
 
-개발 중 반복 수정에는 `npm run check:changed`를 사용하되 PR 출하 전에는 반드시
-`npm run check`를 한 번 실행한다.
+개발·PR 게시·review 수정 반복에는 `npm run check:review`를 사용한다. 최종 병합 후보에는 반드시
+`npm run check` 또는 동등한 `npm run check:merge` 전체 검증을 적용한다. 전체 검증에 포함되는
+focused test나 build를 앞뒤로 중복 실행할 필요는 없다. 최종 검증 뒤 입력이 바뀌면 다시 검증한다.
+`--plan` 결과는 테스트 실행 증거가 아니며 병합 profile에서는 허용하지 않는다.
+자세한 단계별 정책과 timing 해석은 [테스트 검증 절차](test-verification.md)를 따른다.
 
-`npm run check`는 `quality:gate`와 전체 Node.js test suite를 실행한다. `quality:gate`는 build 후 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, Toss Open API auth config safe default, 관련 문서 drift를 검사한다.
+`npm run check`는 build, `quality:gate`, tooling test와 전체 Node.js test suite를 각각 한 번 실행하고
+각 단계의 소요 시간과 종료 상태를 출력한다. `quality:gate`는 Local Operations API route, MCP enabled/disabled tool name, Codex decision provider safe default, Toss Open API auth config safe default, 관련 문서 drift를 검사한다.
 
 `npm test`는 build 후 `dist/**/*.test.js`를 실행한다.
 
