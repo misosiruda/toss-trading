@@ -164,6 +164,9 @@ bucket/legacy rule-set 선택, side별 required rule ID 해소를 담당하며, 
 mandate/legacy lineage와 full-payload hash를 검증한다. `rebalancePlan.test.ts`는 순서·cap·
 표시 notional 재계산 및 변조 거절을 다룬다. 저장소·event fold·원본 snapshot/mandate/price 해소와
 최종 실행 연결은 별도 후속이며 contract 생성만으로 주문이나 portfolio를 변경하지 않는다.
+`rebalancePlanFiles.ts`는 cycle당 unique plan artifact와 post-fsync origin을 저장·해소한다.
+`rebalancePlanFiles.test.ts`에서 concurrent retry, corrupt/torn history, durability와 clock rollback을
+검증한다. 이 저장소만으로 cycle claim이나 최초 preview event가 원자적으로 완료되지는 않는다.
 
 ### Live RiskEngine 변경
 
