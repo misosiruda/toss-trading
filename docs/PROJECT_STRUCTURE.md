@@ -171,6 +171,12 @@ mandate/legacy lineage와 full-payload hash를 검증한다. `rebalancePlan.test
 binding을 제공한다. `execution_applied`는 기존 전용 contract를 재사용한다. 같은 이름의 테스트가
 variant 필드·reason 정렬·ordered execution IDs·원본 preview scope와 변조 거절을 검증한다.
 이 content binding에는 event chain fold, durable origin과 Risk replay가 포함되지 않는다.
+`rebalancePlanEventReplay.ts`는 supplied event chain의 허용 전이·직전 predecessor·시간 순서,
+action/fill 순서·누계·target/cap·최종 applied event를 재생 검증한다. 같은 이름의 테스트가
+terminal 재진입, 누계/상태 drift, 부분 체결 및 수량/notional target 차이를 다룬다. 이 순수
+replay 결과만으로 저장 이력의 최신성·fill/Risk 출처나 실행 권한을 증명하지 않는다.
+`canonicalQuantity.ts`의 exact decimal 단위 계산은 plan replay와 Risk/fill binding에서 공용으로
+사용한다. Binary drift를 epsilon으로 덮지 않으며 표현 불가능한 누계는 거절한다.
 
 ### Live RiskEngine 변경
 

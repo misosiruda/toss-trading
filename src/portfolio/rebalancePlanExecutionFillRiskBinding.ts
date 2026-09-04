@@ -1,4 +1,5 @@
 import { parseRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
+import { addCanonicalQuantities } from "./canonicalQuantity.js";
 import {
   resolveVerifiedPortfolioActionRiskDecisionOrigin,
   type VerifiedPortfolioActionRiskDecisionHistory
@@ -86,7 +87,7 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
     event.cumulativeFilledNotionalKrw !==
       riskDecision.priorCumulativeFilledNotionalKrw + paperFill.filledNotionalKrw ||
     event.cumulativeFilledQuantity !==
-      riskDecision.priorCumulativeFilledQuantity + paperFill.quantity
+      addCanonicalQuantities(riskDecision.priorCumulativeFilledQuantity, paperFill.quantity)
   ) {
     throw new Error("execution fill risk binding cumulative amount mismatch");
   }

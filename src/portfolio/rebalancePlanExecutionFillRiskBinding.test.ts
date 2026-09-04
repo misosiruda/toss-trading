@@ -35,6 +35,21 @@ test("execution binding resolves persisted BUY and SELL fills without mutation",
   }
 });
 
+test("execution binding uses the same canonical fractional quantity sum as plan replay", async () => {
+  for (const side of ["BUY", "SELL"] as const) await withFixture({ side, targetNotionalKrw: 20, risk: {
+    priorCumulativeFilledNotionalKrw: 10, priorCumulativeFilledQuantity: 0.1
+  } }, (fixture) => {
+    const { planEventId: _id, planEventHash: _hash, ...payload } = fixture.event;
+    const event = createRebalancePlanExecutionAppliedEvent({ ...payload, fillSequence: 1,
+      cumulativeFilledNotionalKrw: 30, cumulativeFilledQuantity: 0.3 });
+    assert.equal(validateRebalancePlanExecutionFillRiskBinding({ ...fixture, event }).event.cumulativeFilledQuantity, 0.3);
+    const drift = createRebalancePlanExecutionAppliedEvent({ ...payload, fillSequence: 1,
+      cumulativeFilledNotionalKrw: 30, cumulativeFilledQuantity: 0.30000000000000004 });
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ ...fixture, event: drift }), /cumulative amount mismatch/);
+    return Promise.resolve();
+  });
+});
+
 test("execution binding rejects event identity, state, amount and cumulative mismatches", async () => {
   await withFixture({}, async (fixture) => {
     const { planEventId, planEventHash, ...payload } = fixture.event;
@@ -305,8 +320,11 @@ async function prepare(baseDir: string, options: {
   side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>;
   unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean; samePriceDecisionInstant?: boolean;
   unboundFill?: boolean;
+  targetNotionalKrw?: number;
 }) {
   const side = options.side ?? "BUY";
+  const targetNotionalKrw = options.targetNotionalKrw ?? 1_000;
+  const requestedQuantity = targetNotionalKrw / 100;
   const asOf = "2020-01-01T00:00:00.000Z";
   const evidence = createSourcePriceEvidenceRecord({
     sourceContractId: "source-price-v1", market: "KR", symbol: "KR:005930",
@@ -331,13 +349,13 @@ async function prepare(baseDir: string, options: {
     riskRuleScope: { scopeKind: "bucket", bucket: "swing" },
     turnoverAssessment: { scopeKind: "bucket", turnoverStateId: "turnover-1", turnoverStateHash: HASH_A,
       turnoverWindowOpenPortfolioNetWorthKrw: 10_000, priorBucketTurnoverNotionalKrw: 0,
-      requestedBucketTurnoverNotionalKrw: 1_000, resultingBucketTurnoverRatio: 0.1 },
+      requestedBucketTurnoverNotionalKrw: targetNotionalKrw, resultingBucketTurnoverRatio: targetNotionalKrw / 10_000 },
     priorCumulativeFilledNotionalKrw: 0, priorCumulativeFilledQuantity: 0,
-    requestedNotionalKrw: 1_000, requestedQuantity: 10,
-    worstCaseFillNotionalKrw: 1_000, approvedMaximumFillNotionalKrw: 1_000,
+    requestedNotionalKrw: targetNotionalKrw, requestedQuantity,
+    worstCaseFillNotionalKrw: targetNotionalKrw, approvedMaximumFillNotionalKrw: targetNotionalKrw,
     cashAssessment: side === "BUY"
-      ? { side, worstCaseNetCashDebitKrw: 1_000, approvedMaximumNetCashDebitKrw: 1_000 }
-      : { side, expectedMinimumNetCashCreditKrw: 1_000 },
+      ? { side, worstCaseNetCashDebitKrw: targetNotionalKrw, approvedMaximumNetCashDebitKrw: targetNotionalKrw }
+      : { side, expectedMinimumNetCashCreditKrw: targetNotionalKrw },
     decision: "approved", requiredRuleIds: ["cash"],
     ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "within_limit" }],
     riskEvidenceRefs: [riskPriceEvidence.evidenceRef],
@@ -356,11 +374,11 @@ async function prepare(baseDir: string, options: {
     rejectStaleLiquidity: true, marketImpactBpsPerParticipationRate: 0
   };
   const fill = buildPaperFill({ action: side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
-    targetNotionalKrw: 1_000, sourcePriceKrw: 100, liquidityStale: false, policy: executionPolicy,
+    targetNotionalKrw, sourcePriceKrw: 100, liquidityStale: false, policy: executionPolicy,
     ...(options.volume === undefined ? {} : { volume: options.volume }) });
   const fillInput: Parameters<PaperFillExecutionFileRepository["createAndAppendWithRiskOrigin"]>[0] = {
     portfolioId: "portfolio-1", rebalancePlanId: "plan-1", rebalanceActionId: "action-1", fillId: "fill-1",
-    market: "KR", symbol: "KR:005930", side, requestedNotionalKrw: 1_000, requestedQuantity: 10,
+    market: "KR", symbol: "KR:005930", side, requestedNotionalKrw: targetNotionalKrw, requestedQuantity,
     quantityOverride: null, sourcePriceKrw: 100, sourcePriceEvidence: {
       sourceContractId: evidence.sourceContractId, evidenceRef: evidence.evidenceRef,
       evidenceHash: evidence.evidenceHash, market: "KR", symbol: "KR:005930", priceField: "last_price", observedAt: asOf
@@ -388,7 +406,7 @@ async function prepare(baseDir: string, options: {
     portfolioVersion: "v1", portfolioSnapshotHash: HASH_A, policyHash: HASH_A, asOf: eventAsOf,
     actionId: "action-1", actionSequence: 0, fillSequence: 0, fillId: "fill-1",
     paperFillRecordId: paperFill.paperFillRecordId, paperFillHash: paperFill.paperFillHash,
-    requestedNotionalKrw: 1_000, requestedQuantity: 10, filledNotionalKrw: fill.filledNotionalKrw, filledQuantity: fill.quantity,
+    requestedNotionalKrw: targetNotionalKrw, requestedQuantity, filledNotionalKrw: fill.filledNotionalKrw, filledQuantity: fill.quantity,
     cumulativeFilledNotionalKrw: fill.filledNotionalKrw, cumulativeFilledQuantity: fill.quantity,
     riskDecisionId: riskDecision.riskDecisionId, expectedPrePortfolioVersion: "v1",
     expectedPrePortfolioSnapshotHash: HASH_A, resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: HASH_B
