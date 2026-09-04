@@ -158,6 +158,13 @@ bucket/legacy rule-set 선택, side별 required rule ID 해소를 담당하며, 
 확인과 generation 조합은 `runtimePortfolioPolicyActivationFiles.ts`에 있으며, 기존 기록을
 새 origin으로 자동 승격하지 않는다.
 
+### 전략 포트폴리오 rebalance plan 계약
+
+`src/portfolio/rebalancePlan.ts`는 immutable plan의 ordered action, 단일 side, 실행 target,
+mandate/legacy lineage와 full-payload hash를 검증한다. `rebalancePlan.test.ts`는 순서·cap·
+표시 notional 재계산 및 변조 거절을 다룬다. 저장소·event fold·원본 snapshot/mandate/price 해소와
+최종 실행 연결은 별도 후속이며 contract 생성만으로 주문이나 portfolio를 변경하지 않는다.
+
 ### Live RiskEngine 변경
 
 수정 후보:

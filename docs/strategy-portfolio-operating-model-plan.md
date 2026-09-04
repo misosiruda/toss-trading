@@ -1977,6 +1977,10 @@ type RebalancePlanEvent =
   reference price/evidence로 `plannedNotionalKrw`와 floor rounding 후 남은
   `residualNotionalKrw`를 기록한다. planned/target notional은 `maximumNotionalKrw` 이하이고
   SELL target은 snapshot의 가용 position도 넘을 수 없다. executor는 target을 재결정하지 않는다.
+  Plan의 KRW notional/cap/residual은 safe integer이며 양수 target과 cap, 비음수 residual을 사용한다.
+  Quantity target의 표시 notional은 기존 paper execution의 KRW gross convention과 동일하게
+  `Math.round(targetQuantity * referencePriceKrw)`로 검증한다. Residual의 원래 sizing budget과
+  floor 수량 선택의 정당성은 sizing/source resolver가 별도로 재구성해야 한다.
 - `actionExecutionTargetHash`는 plan에 저장된 complete `executionTarget`의 canonical hash이며
   Risk Engine과 execution event가 같은 target을 독립 검증할 때 사용한다.
 - 일반 action은 active mandate를 참조한다. `unassigned_legacy_reduce_only`는 mandate ID를
@@ -3536,6 +3540,21 @@ v3 저장 뒤 구 reader는 fail-closed하므로 rollback 시 새 reader를 유�
 - side별 chained plan과 fill별 risk decision/execution state lineage
 - action-scoped risk decision resolver와 partial-fill cumulative guard
 - read-only preview 및 artifact 저장
+
+첫 번째 분할은 Risk/partial-fill source 해소의 선행 계약인 `RebalancePlanRecord`를 구현한다.
+`rebalancePlan.ts`는 scope와 ordered action payload를 hash하고 `rebalance_plan` prefix로 ID를
+파생한다. `createdAt`은 semantic hash에서 제외하되 cutoff 이후인지 검증한다. Action sequence는
+0부터 연속이어야 하며 ID는 plan 안에서 unique, side는 phase와 일치해야 한다. Mandate와
+legacy reduce-only lineage는 strict union으로 분리하고 legacy BUY나 합성 mandate를 거절한다.
+Fractional BUY/SELL 및 whole-share target은 side·quantity·integer KRW cap과 표시 notional
+재계산을 검증하며 complete target hash를 별도로 제공한다. Reason은 canonical sort 후 중복을
+거절하고 read에서는 이미 canonical인 full record만 독립 rehash한다.
+
+이 분할은 immutable content contract만 제공한다. Cycle당 유일 저장, append-only repository,
+predecessor terminal event와 snapshot/mandate/price 원본 해소, residual sizing 재계산, execution
+fold와 Risk/fill binding 및 atomic transaction은 아직 후속이다. `applied` predecessor는 후속
+BUY shape만 허용하지만 실제 predecessor가 SELL applied였는지 이 contract만으로 승인하지 않는다.
+기존 live/order/MCP 경로는 연결하거나 변경하지 않는다.
 
 완료 조건:
 
