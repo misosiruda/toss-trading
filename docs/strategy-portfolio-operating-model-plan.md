@@ -2036,6 +2036,8 @@ type RebalancePlanEvent =
 - mandate action은 active mandate의 bucket rule set을 사용하고 legacy action은 root policy의
   `PortfolioLegacyReduceOnlyPolicy.riskRuleSetRef`만 사용한다. scope union이 action lineage와
   맞지 않거나 legacy decision이 bucket을 주장하면 거절한다.
+  `legacyPolicyHash`는 활성 root policy의 `legacyReduceOnlyPolicy` 전체 payload를
+  `hashCanonicalPayload`로 계산한 digest이며 riskRuleSetRef의 lineageHash도 포함한다.
 - decision resolver는 위 scope로 선택한 exact risk rule set에서 action side에 적용되는 canonical
   required rule ID 집합을 다시 계산한다. `requiredRuleIds`와 result의 unique rule ID 집합이
   정확히 같고 모든 result가 `pass`일 때만 `decision = approved`를 파생한다. 빈 결과,
@@ -3456,6 +3458,36 @@ marker, record/marker hash·시간·predecessor 변조, prefix 절단은 read/ap
 rollback은 새 reader 유지 또는 검증된 별도 호환 절차가 필요하다.
 이 변경은 Risk rule-set/evidence의 의미적 인증·독립 재평가, plan/action/state 연결이나 multi-artifact
 atomic execution을 구현하지 않는다. 해당 최종 승인·실행 연결은 후속이며 live 경로는 변경하지 않는다.
+
+마흔 번째 분할은 `resolvePortfolioActionRiskDecisionPolicy`로 저장된 Risk 결정의 정책·규칙
+참조를 해소한다. 설정된 단일 `baseDir`에서 Risk repository-issued history와 기존 consistent
+policy/activation/dependency generation을 직접 읽으며 외부 배열·snapshot·loader 입력은 허용하지
+않는다. 결정시각의 activation history를 fold한 뒤 exact policy hash를 대조한다. Bucket scope는 해당 bucket의 enabled market과
+risk rule set을, legacy SELL scope는 root legacy policy 전체 hash와 전용 rule-set ref를 검증한다.
+기존 immutable dependency resolver로 rule-set/parameter identity·version·hash·lineage 및 생성
+순서를 검증하고 action side에 해당하는 rule ID 집합을 다시 계산한다. 자체적으로 일관된
+decision이라도 policy-selected rule set 또는 required/result ID 집합이 다르면 fail-closed한다.
+
+이 resolver는 rejected decision도 설명 목적으로 반환하지만 이를 approved로 승격하지 않는다.
+결정 이후 retirement는 과거 결정시각 해소에 영향을 주지 않으므로 현재 실행 권한을 증명하지는
+않는다. 현재 active policy, mandate/action/plan/snapshot 원본과 수치 입력 복원, 각 규칙의 독립
+재평가·cap 계산, turnover/portfolio mutation 연결은 후속이다. 기존 fill binding과 최종 executor에는
+아직 연결하지 않았으며 이 resolver만으로 실행을 승인하면 안 된다.
+이 조회는 저장 경로와 파일 접근 제어를 신뢰하며 파일을 직접 재작성할 수 있는 공격자에 대한
+외부 인증이나 읽기 이후의 동시 변경까지 고정하는 실행 transaction을 제공하지 않는다.
+
+정책을 나중에 backfill하여 기존 결정을 소급 정당화하지 못하도록
+`PortfolioActionRiskDecisionFileRepository.createAndAppendWithPolicyOrigin`이 같은 경로의
+전체 정책 generation을 읽고 activation 파일을 cooperative lock 아래 fsync한 뒤에만
+Risk 레코드를 생성한다. `decidedAt`·완성 레코드 입력은 받지 않으며 activation ID/hash,
+runtime policy ID/hash/lineage와 관측 시각을 `portfolio_action_risk_decision_entry.v3`의
+`policyOrigin` receipt에 묶고 기존 commit marker와 함께 저장한다. resolver는 이 receipt와
+결정시각의 활성 정책이 일치하는지도 확인한다. 기존 bare/v2 query·exact retry는 유지하지만
+receipt 없는 결정은 새 policy resolver에서 legacy review 대상으로 거절하며 자동 승격하지 않는다.
+동일 생성 입력과 동일 activation identity의 factory retry는 원래 record·receipt·시각을 반환하고,
+기존 무근거 record에 receipt를 추가하거나 다른 activation으로 교체하지 않는다.
+이 factory도 caller의 규칙 결과를 독립 재계산하지 않으므로 최종 Risk 승인 API가 아니다.
+v3 저장 뒤 구 reader는 fail-closed하므로 rollback 시 새 reader를 유지해야 하며 자동 downgrade는 없다.
 
 완료 조건:
 
