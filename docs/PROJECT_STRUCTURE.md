@@ -167,6 +167,10 @@ mandate/legacy lineage와 full-payload hash를 검증한다. `rebalancePlan.test
 `rebalancePlanFiles.ts`는 cycle당 unique plan artifact와 post-fsync origin을 저장·해소한다.
 `rebalancePlanFiles.test.ts`에서 concurrent retry, corrupt/torn history, durability와 clock rollback을
 검증한다. 이 저장소만으로 cycle claim이나 최초 preview event가 원자적으로 완료되지는 않는다.
+`rebalancePlanEvent.ts`는 여섯 상태의 event union, full-payload identity와 plan record scope
+binding을 제공한다. `execution_applied`는 기존 전용 contract를 재사용한다. 같은 이름의 테스트가
+variant 필드·reason 정렬·ordered execution IDs·원본 preview scope와 변조 거절을 검증한다.
+이 content binding에는 event chain fold, durable origin과 Risk replay가 포함되지 않는다.
 
 ### Live RiskEngine 변경
 

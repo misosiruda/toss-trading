@@ -3576,6 +3576,20 @@ predecessor/mandate/snapshot/price source 해소, Risk 생성 전 plan availabil
 최종 execution fold는 아직 후속이다. 검증된 과거 read가 최신 generation 또는 실행 권한을
 뜻하지 않으며 저장 경로를 재작성할 수 있는 공격자에 대한 외부 인증도 제공하지 않는다.
 
+세 번째 분할은 `rebalancePlanEvent.ts`의 전체 event union content contract다. `previewed`,
+`approved`, `rejected`, `stale`, `execution_applied`, `applied`의 variant별 필드를 strict하게
+분리하고 event ID/hash를 제외한 full payload를 hash한다. `previewed`에는 predecessor를
+허용하지 않고 나머지는 필수로 보존한다. Reason은 비어 있지 않은 canonical unique 집합이고
+`applied.executionEventIds`는 비어 있지 않은 unique ordered 배열이며 정렬하지 않는다.
+기존 `execution_applied` 전용 creator/parser와 hash 의미는 그대로 재사용한다.
+
+`validateRebalancePlanEventRecordBinding`은 plan과 event를 각각 독립 rehash한 뒤 exact
+plan/cycle/portfolio/version/snapshot/policy scope, creation 이후 event 시각 및 execution action
+ID/sequence를 비교한다. Stale observed state와 execution pre/resulting state가 바뀌어도 공통
+scope는 최초 plan preview의 값을 유지한다. 이 helper는 content 대조이며 source authenticity,
+실제 predecessor/linear transition/terminal 여부, applied target 충족, cumulative fill/Risk replay,
+최신 portfolio state와 durable origin을 증명하지 않는다. Event repository/fold와 실행 연결은 후속이다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
