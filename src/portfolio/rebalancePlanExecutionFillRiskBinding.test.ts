@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,7 +7,7 @@ import test from "node:test";
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import { buildPaperFill } from "../paper/executionModel.js";
 import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
-import { PaperFillExecutionFileRepository, parseVerifiedPaperFillExecutionHistory, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
+import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths, parseVerifiedPaperFillExecutionHistory, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { createRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
@@ -79,6 +79,10 @@ test("execution binding rejects unrelated and rejected persisted decisions", asy
     { decision: "rejected", ruleResults: [{ ruleId: "cash", result: "fail", reasonCode: "cash_limit" }] }
   ];
   for (const risk of variants) {
+    if (risk.decision === "rejected") {
+      await assert.rejects(() => withFixture({ risk }, async () => assert.fail("rejected risk must not create a fill")), /requires an approved decision/);
+      continue;
+    }
     await withFixture({ risk }, async (fixture) => {
       assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /binding/);
     });
@@ -103,9 +107,6 @@ test("execution binding enforces actual gross cap, BUY debit cap and SELL credit
 });
 
 test("execution binding rejects decision availability after fill and event cutoff before fill", async () => {
-  await withFixture({ beforeRisk: true }, async (fixture) => {
-    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
-  });
   await withFixture({}, async (fixture) => {
     const { planEventId, planEventHash, ...payload } = fixture.event;
     const event = createRebalancePlanExecutionAppliedEvent({
@@ -152,7 +153,7 @@ test("execution binding rejects fill creation after the event cutoff", async () 
 
 test("execution binding rejects a backdated fill appended after its event cutoff", async () => {
   await withFixture({ lateFillAppend: true }, async (fixture) => {
-    assert.equal(fixture.paperFillHistory.records[0]!.createdAt, fixture.event.asOf);
+    assert.ok(Date.parse(fixture.paperFillHistory.records[0]!.createdAt) > Date.parse(fixture.event.asOf));
     assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
   });
 });
@@ -182,6 +183,118 @@ test("execution binding rejects a decision in the same millisecond as its source
   });
 });
 
+test("risk-bound creation rejects time before or equal to the risk origin", async (context) => {
+  await withFixture({}, async (fixture) => {
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(fixture.riskDecisionHistory, fixture.event.riskDecisionId);
+    const repository = new PaperFillExecutionFileRepository(join(fixture.baseDir, "fills"));
+    const path = createPaperFillExecutionPaths(join(fixture.baseDir, "fills")).recordsPath;
+    const before = await readFile(path, "utf8");
+    for (const offset of [-1, 0]) {
+      context.mock.timers.enable({ apis: ["Date"], now: Date.parse(origin.appendedAt) + offset });
+      try {
+        await assert.rejects(() => repository.createAndAppendWithRiskOrigin({
+          ...creationInput(fixture.paperFillHistory.records[0]!), fillId: `cutoff-${offset}`
+        }, fixture.riskDecisionHistory, fixture.event.riskDecisionId), /availability cutoff/);
+      } finally { context.mock.timers.reset(); }
+      assert.equal(await readFile(path, "utf8"), before);
+    }
+  });
+});
+
+test("execution binding preserves exact risk commit provenance across restart and concurrent retry", async () => {
+  await withFixture({}, async (fixture) => {
+    const record = fixture.paperFillHistory.records[0]!;
+    const paths = createPaperFillExecutionPaths(join(fixture.baseDir, "fills"));
+    const before = await readFile(paths.recordsPath, "utf8");
+    const restarted = new PaperFillExecutionFileRepository(join(fixture.baseDir, "fills"));
+    await Promise.all(Array.from({ length: 4 }, () => restarted.createAndAppendWithRiskOrigin(
+      creationInput(record), fixture.riskDecisionHistory, fixture.event.riskDecisionId
+    )));
+    assert.equal(await readFile(paths.recordsPath, "utf8"), before);
+    const history = await restarted.readVerifiedHistory();
+    const origin = resolvePersistedPaperFillExecutionOrigin(history, record.paperFillRecordId);
+    const risk = resolveVerifiedPortfolioActionRiskDecisionOrigin(fixture.riskDecisionHistory, fixture.event.riskDecisionId);
+    assert.equal(origin.riskOrigin?.commitHash, risk.commitHash);
+    assert.equal(validateRebalancePlanExecutionFillRiskBinding({ ...fixture, paperFillHistory: history }).paperFill.paperFillHash, record.paperFillHash);
+    await assert.rejects(() => restarted.createAndAppendWithRiskOrigin(creationInput(record), { records: fixture.riskDecisionHistory.records }, fixture.event.riskDecisionId), /not verified/);
+    const lines = before.trimEnd().split("\n");
+    const entry = JSON.parse(lines[0]!);
+    entry.riskOrigin.commitHash = HASH_C;
+    await writeFile(paths.recordsPath, JSON.stringify(entry) + "\n" + lines[1] + "\n");
+    await assert.rejects(() => restarted.readVerifiedHistory(), /corrupt/);
+  });
+});
+
+test("execution binding rejects a risk decision persisted after an unbound fill despite clock rollback", async (context) => {
+  await withFixture({ unboundFill: true }, async (fixture) => {
+    const fill = fixture.paperFillHistory.records[0]!;
+    const originalRisk = fixture.riskDecisionHistory.records[0]!;
+    const { riskDecisionId, riskDecisionHash, riskInputHash, ...riskPayload } = originalRisk;
+    const lateDecision = createPortfolioActionRiskDecision({
+      ...riskPayload, ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "rollback_fixture" }]
+    });
+    const lateRepository = new PortfolioActionRiskDecisionFileRepository(join(fixture.baseDir, "late-risk"));
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(fill.asOf) - 1 });
+    try { await lateRepository.append(lateDecision); }
+    finally { context.mock.timers.reset(); }
+    const riskDecisionHistory = await lateRepository.readVerifiedHistory();
+    const lateOrigin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, lateDecision.riskDecisionId);
+    assert.ok(Date.parse(lateOrigin.appendedAt) < Date.parse(fill.asOf));
+    const { planEventId, planEventHash, ...eventPayload } = fixture.event;
+    const event = createRebalancePlanExecutionAppliedEvent({ ...eventPayload, riskDecisionId: lateDecision.riskDecisionId });
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ ...fixture, riskDecisionHistory, event }), /risk origin persisted with the fill/);
+    const path = createPaperFillExecutionPaths(join(fixture.baseDir, "fills")).recordsPath;
+    const before = await readFile(path, "utf8");
+    const repository = new PaperFillExecutionFileRepository(join(fixture.baseDir, "fills"));
+    await assert.rejects(() => repository.createAndAppendWithRiskOrigin(creationInput(fill), riskDecisionHistory, lateDecision.riskDecisionId), /cannot be added or replaced/);
+    assert.equal(await readFile(path, "utf8"), before);
+  });
+});
+
+test("execution binding rejects substituting or replacing a different persisted risk receipt", async () => {
+  await withFixture({}, async (fixture) => {
+    const { riskDecisionId, riskDecisionHash, riskInputHash, ...payload } = fixture.riskDecisionHistory.records[0]!;
+    const other = createPortfolioActionRiskDecision({ ...payload, ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "other_fixture" }] });
+    const repository = new PortfolioActionRiskDecisionFileRepository(join(fixture.baseDir, "risk"));
+    await repository.append(other);
+    const riskDecisionHistory = await repository.readVerifiedHistory();
+    const { planEventId, planEventHash, ...eventPayload } = fixture.event;
+    const event = createRebalancePlanExecutionAppliedEvent({ ...eventPayload, riskDecisionId: other.riskDecisionId });
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ ...fixture, event, riskDecisionHistory }), /risk origin persisted with the fill/);
+    const fills = new PaperFillExecutionFileRepository(join(fixture.baseDir, "fills"));
+    await assert.rejects(() => fills.createAndAppendWithRiskOrigin(creationInput(fixture.paperFillHistory.records[0]!), riskDecisionHistory, other.riskDecisionId), /cannot be added or replaced/);
+  });
+});
+
+test("risk-bound creation refuses a precreated fill across clock rollback and creates a fresh record after risk", async (context) => {
+  await withFixture({}, async (fixture) => {
+    const old = fixture.paperFillHistory.records[0]!;
+    const precreated = createPaperFillExecutionRecord({ ...creationInput(old), fillId: "precreated", asOf: old.asOf, createdAt: old.createdAt });
+    const { riskDecisionId, riskDecisionHash, riskInputHash, ...payload } = fixture.riskDecisionHistory.records[0]!;
+    const late = createPortfolioActionRiskDecision({ ...payload, ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "after_creation" }] });
+    const riskRepository = new PortfolioActionRiskDecisionFileRepository(join(fixture.baseDir, "late-risk"));
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(old.asOf) - 1 });
+    try { await riskRepository.append(late); }
+    finally { context.mock.timers.reset(); }
+    const history = await riskRepository.readVerifiedHistory();
+    const repository = new PaperFillExecutionFileRepository(join(fixture.baseDir, "new-fills"));
+    await assert.rejects(() => repository.createAndAppendWithRiskOrigin(precreated, history, late.riskDecisionId), /cannot accept a record or timestamp/);
+    const { paperFillRecordId: _id, paperFillHash: _hash, ...timestamped } = precreated;
+    await assert.rejects(() => repository.createAndAppendWithRiskOrigin(timestamped, history, late.riskDecisionId), /cannot accept a record or timestamp/);
+    assert.deepEqual(await repository.readAll(), []);
+    const beforeCreation = Date.now();
+    const fresh = await repository.createAndAppendWithRiskOrigin(creationInput(precreated), history, late.riskDecisionId);
+    assert.ok(Date.parse(fresh.createdAt) >= beforeCreation);
+    assert.equal(fresh.asOf, fresh.createdAt);
+    assert.notEqual(fresh.paperFillRecordId, precreated.paperFillRecordId);
+  });
+});
+
+function creationInput(record: ReturnType<typeof createPaperFillExecutionRecord>) {
+  const { paperFillRecordId, paperFillHash, asOf, createdAt, ...input } = record;
+  return input;
+}
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -189,8 +302,9 @@ async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture
 }
 
 async function prepare(baseDir: string, options: {
-  side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>; beforeRisk?: boolean;
+  side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>;
   unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean; samePriceDecisionInstant?: boolean;
+  unboundFill?: boolean;
 }) {
   const side = options.side ?? "BUY";
   const asOf = "2020-01-01T00:00:00.000Z";
@@ -206,7 +320,6 @@ async function prepare(baseDir: string, options: {
   }) : evidence;
   if (options.unrelatedRiskPrice) await sourceRepository.append(riskPriceEvidence);
   const sourcePriceEvidenceHistory = await sourceRepository.readVerifiedHistory();
-  if (options.beforeRisk) await new Promise((resolve) => setTimeout(resolve, 5));
   const priceCommittedAt = resolveVerifiedSourcePriceEvidenceOrigin(sourcePriceEvidenceHistory, riskPriceEvidence.evidenceRef).appendedAt;
   // Fixtures create downstream decisions only after the source's timestamp bucket.
   await new Promise((resolve) => setTimeout(resolve, 2));
@@ -235,7 +348,7 @@ async function prepare(baseDir: string, options: {
   await riskRepository.append(riskDecision);
   const riskDecisionHistory = await riskRepository.readVerifiedHistory();
   const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, riskDecision.riskDecisionId);
-  const fillAsOf = new Date(Date.parse(origin.appendedAt) - (options.beforeRisk ? 1 : 0)).toISOString();
+  const fillAsOf = new Date().toISOString();
   const executionPolicy = {
     modelVersion: PAPER_EXECUTION_MODEL_VERSION as typeof PAPER_EXECUTION_MODEL_VERSION, fillPriceRule: "current_candidate_last_price" as const,
     slippageBps: 0, feeBps: options.feeBps ?? 0, taxBps: 0, halfSpreadBps: 0, fillRatio: 1,
@@ -245,7 +358,7 @@ async function prepare(baseDir: string, options: {
   const fill = buildPaperFill({ action: side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
     targetNotionalKrw: 1_000, sourcePriceKrw: 100, liquidityStale: false, policy: executionPolicy,
     ...(options.volume === undefined ? {} : { volume: options.volume }) });
-  const paperFill = createPaperFillExecutionRecord({
+  const fillInput: Parameters<PaperFillExecutionFileRepository["createAndAppendWithRiskOrigin"]>[0] = {
     portfolioId: "portfolio-1", rebalancePlanId: "plan-1", rebalanceActionId: "action-1", fillId: "fill-1",
     market: "KR", symbol: "KR:005930", side, requestedNotionalKrw: 1_000, requestedQuantity: 10,
     quantityOverride: null, sourcePriceKrw: 100, sourcePriceEvidence: {
@@ -258,14 +371,13 @@ async function prepare(baseDir: string, options: {
     fractionalShares: fill.fractionalShares, executionPolicy,
     costBreakdown: { feeKrw: fill.feeKrw, taxKrw: fill.taxKrw, slippageKrw: fill.slippageKrw,
       spreadCostKrw: fill.spreadCostKrw, impactCostKrw: fill.impactCostKrw, totalCostKrw: fill.totalCostKrw },
-    evidenceRefs: [evidence.evidenceRef], asOf: fillAsOf,
-    createdAt: new Date(Date.parse(fillAsOf) + (options.fillCreatedAtOffsetMs ?? 0)).toISOString()
-  });
+    evidenceRefs: [evidence.evidenceRef]
+  };
   const fillRepository = new PaperFillExecutionFileRepository(join(baseDir, "fills"));
-  if (options.lateFillAppend || options.fillCreatedAtOffsetMs) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  await fillRepository.append(paperFill);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const paperFill = options.unboundFill
+    ? await fillRepository.append(createPaperFillExecutionRecord({ ...fillInput, asOf: new Date().toISOString(), createdAt: new Date().toISOString() }))
+    : await fillRepository.createAndAppendWithRiskOrigin(fillInput, riskDecisionHistory, riskDecision.riskDecisionId);
   const paperFillHistory = await fillRepository.readVerifiedHistory();
   const fillOrigin = resolvePersistedPaperFillExecutionOrigin(paperFillHistory, paperFill.paperFillRecordId);
   const eventAsOf = options.lateFillAppend || options.fillCreatedAtOffsetMs
@@ -281,5 +393,5 @@ async function prepare(baseDir: string, options: {
     riskDecisionId: riskDecision.riskDecisionId, expectedPrePortfolioVersion: "v1",
     expectedPrePortfolioSnapshotHash: HASH_A, resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: HASH_B
   });
-  return { event, riskDecisionHistory, paperFillHistory, sourcePriceEvidenceHistory };
+  return { event, riskDecisionHistory, paperFillHistory, sourcePriceEvidenceHistory, baseDir };
 }
