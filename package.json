@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "quality:gate": "npm run build && node scripts/qualityGate.mjs",
-    "check": "npm run quality:gate && node --test scripts/changedTestRunner.test.mjs && node --test \"dist/**/*.test.js\"",
-    "check:changed": "npm run quality:gate && node --test scripts/changedTestRunner.test.mjs && node scripts/changedTestRunner.mjs",
+    "check": "node scripts/verificationRunner.mjs merge",
+    "check:merge": "node scripts/verificationRunner.mjs merge",
+    "check:review": "node scripts/verificationRunner.mjs review",
+    "check:changed": "node scripts/verificationRunner.mjs review",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "test:changed": "npm run build && node --test scripts/changedTestRunner.test.mjs && node scripts/changedTestRunner.mjs",
     "prepaper:run-once": "npm run build",

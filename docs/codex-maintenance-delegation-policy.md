@@ -131,7 +131,10 @@ fail-closed 중단할 수 있다. 추정만으로 실행 한계를 주장하지 
 4. 독립 검토 가능한 책임 하나만 구현하고 문서, 테스트, checklist와 PR 본문 범위를
    실제 diff에 맞춘다.
 5. 범위, safety boundary, 테스트·문서·PR 본문 일치를 각각 자체 검토한다.
-6. 최소 `git diff --check`, `npm run check`와 변경 표면의 focused test를 실행한다.
+6. 반복 구현과 review finding 수정에는 `git diff --check`와 `npm run check:review`를 실행한다.
+   이 명령은 build/quality/tooling gate와 변경 영향 테스트를 실행하며 영향이 불명확하면 전체
+   suite로 fallback한다. 같은 변경에 `check:review`와 `check`를 연속으로 필수 실행하지 않는다.
+   전체 검증을 선택했다면 그것이 포함하는 focused suite를 별도로 중복 실행할 필요가 없다.
    Frontend 변경이면 관련 build, E2E와 a11y도 실행한다.
 7. Korean Conventional Commit으로 commit하고 push한 뒤 ready PR을 만든다.
 8. 실제 repository label만 사용하고 `misosiruda`를 assignee로 설정한 뒤 title,
@@ -140,8 +143,12 @@ fail-closed 중단할 수 있다. 추정만으로 실행 한계를 주장하지 
    unresolved review threads를 함께 판독한다.
 10. actionable finding은 범위 안에서 수정, 검증, reply와 resolve한 뒤 새 head를
     다시 review한다.
-11. current-head finding 없음, unresolved thread 없음, 필수 check 성공을 확인하고
-    expected head SHA로 기존 merge 방식을 사용한다.
+11. current-head finding 없음과 unresolved thread 없음이 확인된 최종 병합 후보에
+    `npm run check` 또는 동등한 `npm run check:merge` 전체 검증을 실행한다. 전체 검증 후
+    코드·테스트·설정·의존성·base가 변경되면 새 후보를 다시 검증한다. 동일한 검증 입력의
+    통과 증거가 이미 있으면 중복 실행하지 않되 이전 HEAD나 불명확한 결과를 재사용하지 않는다.
+    실패한 검증은 수정·재검수로 돌아간다. 필수 check 성공과 검증 대상 HEAD의 일치를 확인하고
+    expected head SHA로 기존 merge 방식을 사용한다. 세부 절차는 `docs/test-verification.md`를 따른다.
 12. `MERGED`를 확인하고 `main`을 fast-forward한 뒤 병합 branch만 정리하고 다음 작업
     발견 절차로 돌아간다.
 

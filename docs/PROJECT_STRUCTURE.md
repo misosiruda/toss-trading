@@ -579,18 +579,20 @@ Artifact 역할:
 기본 검증:
 
 ```powershell
-npm run check:changed
+npm run check:review
 npm run check
-npm run build
-npm test
 ```
 
-반복 개발에서는 `npm run check:changed`가 `origin/main` 대비 변경 module의 transitive reverse
+반복 개발·review 수정에서는 `npm run check:review`(호환 alias `check:changed`)가 `origin/main` 대비 변경 module의 transitive reverse
 dependency, compiled CLI를 실행하는 subprocess/worker test, source text를 직접 검사하는 안전성
 test만 실행한다. 영향 범위를 안전하게 계산할 수 없으면 전체 suite로 자동 fallback한다.
-이 명령은 최종 gate를 대체하지 않으며 PR 출하 전에는 `npm run check`를 실행한다.
+이 명령은 최종 gate를 대체하지 않으며 검수 완료한 최종 병합 후보에는 `npm run check` 또는
+동등한 `npm run check:merge`를 실행한다. 동일 변경에 두 profile을 연속 필수 실행하지 않는다.
 
-`npm run check`는 `quality:gate`와 전체 test suite를 순서대로 실행한다. `quality:gate`는 build 후 `scripts/qualityGate.mjs`를 실행한다. 이 스크립트는 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision provider safe default, 관련 문서 drift를 검사한다.
+`scripts/verificationRunner.mjs`가 build → quality → tooling test → 영향/전체 test를 실행하고
+각 단계 timing과 실패 상태를 출력한다. 실패하면 이후 단계는 실행하지 않는다. `quality:gate`의
+Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision
+provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [test-verification.md](test-verification.md)를 따른다.
 
 리팩토링 범위가 좁더라도 `npm test`는 `npm run build`를 포함한다. risk, paper order, replay, storage contract를 바꾸면 해당 영역 테스트를 추가하거나 보강한다.
 
