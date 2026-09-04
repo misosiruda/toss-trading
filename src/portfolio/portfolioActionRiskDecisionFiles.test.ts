@@ -277,6 +277,52 @@ test("risk decision origin follows actual record fsync and incomplete append sta
   }
 });
 
+test("risk decision repository rejects cross-entry clock rollback before writing and after restart", async (context) => {
+  await withDirectory(async (baseDir) => {
+    const now = Date.parse("2026-09-04T00:00:00.000Z");
+    context.mock.timers.enable({ apis: ["Date"], now });
+    try {
+      const repository = new PortfolioActionRiskDecisionFileRepository(baseDir);
+      const first = createPortfolioActionRiskDecision(bucketInput());
+      const second = createPortfolioActionRiskDecision({ ...bucketInput(), actionId: "action-2" });
+      await repository.append(first);
+      const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+      const before = await readFile(path, "utf8");
+      context.mock.timers.setTime(now - 1);
+      await assert.rejects(() => new PortfolioActionRiskDecisionFileRepository(baseDir).append(second), /clock moved backwards since previous commit/);
+      assert.equal(await readFile(path, "utf8"), before);
+      // Retrying an existing record neither samples nor promotes its origin.
+      assert.deepEqual(await repository.append(first), first);
+      assert.equal(await readFile(path, "utf8"), before);
+      context.mock.timers.setTime(now + 2);
+      await repository.append(second);
+      const raw = await readFile(path, "utf8");
+      const lines = raw.trimEnd().split("\n");
+      const entry = JSON.parse(lines[2]!);
+      const marker = JSON.parse(lines[3]!);
+      const entryPayload = {
+        schemaVersion: entry.schemaVersion, record: second,
+        appendStartedAt: new Date(now - 1).toISOString(), previousEntryHash: entry.previousEntryHash
+      };
+      const changedEntry = { ...entryPayload, entryHash: hashCanonicalPayload(entryPayload) };
+      const markerPayload = {
+        schemaVersion: marker.schemaVersion, entryHash: changedEntry.entryHash,
+        committedAt: new Date(now - 1).toISOString()
+      };
+      const damaged = lines.slice(0, 2).join("\n") + "\n" + JSON.stringify(changedEntry) + "\n" +
+        JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) }) + "\n";
+      // Pair-local time and hashes are valid; only the cross-entry order is wrong.
+      assert.throws(() => parsePortfolioActionRiskDecisions(damaged), /corrupt/);
+      await writeFile(path, damaged);
+      await assert.rejects(() => repository.readVerifiedHistory(), /corrupt/);
+      await assert.rejects(() => repository.append(second), /corrupt/);
+      assert.equal(await readFile(path, "utf8"), damaged);
+    } finally {
+      context.mock.timers.reset();
+    }
+  });
+});
+
 function legacyEntry(record: unknown, appendedAt: string, previousEntryHash: string | null) {
   const payload = { record, appendedAt, previousEntryHash };
   return { ...payload, entryHash: hashCanonicalPayload(payload) };

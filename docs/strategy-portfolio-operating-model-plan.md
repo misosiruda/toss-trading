@@ -3431,6 +3431,8 @@ predecessor를 hash로 결합하고 record/file directory sync 완료 후 채집
 marker에 기록한다. 후속 entry의 predecessor는 직전 marker의 hash이다. 기존 origin API의
 `appendedAt`은 post-record-fsync 시각이며 marker 자체의 저장 완료시각을 뜻하지 않는다.
 Execution binding은 이 Risk origin보다 fill cutoff가 엄격히 늦어야 한다고 검증한다.
+새 append 시작시각이 직전 committed pair의 완료시각보다 이르면 쓰기 전에 거절하며, reader도
+동일한 cross-entry 순서를 검사한다. Pair 내부에서만 시계 역행을 검사하는 것으로는 충분하지 않다.
 
 Legacy envelope prefix의 조회·exact retry bytes는 유지하지만 승인 origin을 합성하거나 승격하지
 않는다. Legacy origin은 `review_required`로 거절한다. 새로운 pair 뒤 legacy, missing/torn/orphaned

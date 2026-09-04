@@ -40,6 +40,7 @@ export interface VerifiedPortfolioActionRiskDecisionOrigin {
 interface VerifiedHistoryMetadata {
   appendedAtById: ReadonlyMap<string, string>;
   lastEntryHash: string | null;
+  lastCommittedAt: string | null;
 }
 
 const portfolioActionRiskDecisionFileEntrySchema = z
@@ -155,9 +156,14 @@ export class PortfolioActionRiskDecisionFileRepository {
         throw new Error("portfolio action risk decision hash collision");
       }
       const metadata = getVerifiedHistoryMetadata(history);
+      const appendStartedAt = new Date().toISOString();
+      if (metadata.lastCommittedAt !== null &&
+        Date.parse(appendStartedAt) < Date.parse(metadata.lastCommittedAt)) {
+        throw new Error("portfolio action risk decision clock moved backwards since previous commit");
+      }
       const entry = createPortfolioActionRiskDecisionFileEntry({
         record: candidate,
-        appendStartedAt: new Date().toISOString(),
+        appendStartedAt,
         previousEntryHash: metadata.lastEntryHash
       });
       await appendDurableJsonLine(this.recordsPath, entry);
@@ -232,6 +238,7 @@ function parsePortfolioActionRiskDecisionEntries(
   const refs = new Set<string>();
   const origins = new Set<string>();
   let previousEntryHash: string | null = null;
+  let previousCommittedAt: string | null = null;
   let hasCommittedEntry = false;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
@@ -254,7 +261,8 @@ function parsePortfolioActionRiskDecisionEntries(
         if (parsed.previousEntryHash !== previousEntryHash ||
           parsed.entryHash !== hashCanonicalPayload(payload) ||
           !isDeepStrictEqual(value, { ...payload, entryHash: parsed.entryHash }) ||
-          Date.parse(parsed.appendStartedAt) < Date.parse(record.decidedAt)) {
+          Date.parse(parsed.appendStartedAt) < Date.parse(record.decidedAt) ||
+          (previousCommittedAt !== null && Date.parse(parsed.appendStartedAt) < Date.parse(previousCommittedAt))) {
           throw new Error("portfolio action risk decision entry origin mismatch");
         }
         const markerValue: unknown = JSON.parse(lines[++index] ?? "");
@@ -271,6 +279,7 @@ function parsePortfolioActionRiskDecisionEntries(
           throw new Error("portfolio action risk decision durable commit origin mismatch");
         }
         entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash };
+        previousCommittedAt = marker.committedAt;
         hasCommittedEntry = true;
       } else {
         if (hasCommittedEntry) throw new Error("legacy risk decision cannot follow committed entries");
@@ -342,7 +351,8 @@ function createVerifiedPortfolioActionRiskDecisionHistory(
       entries.filter((entry) => entry.committedAt !== null)
         .map((entry) => [entry.record.riskDecisionId, entry.committedAt!])
     ),
-    lastEntryHash: entries.at(-1)?.tailHash ?? null
+    lastEntryHash: entries.at(-1)?.tailHash ?? null,
+    lastCommittedAt: entries.at(-1)?.committedAt ?? null
   });
   return history;
 }
