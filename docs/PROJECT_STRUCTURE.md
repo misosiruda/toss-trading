@@ -175,6 +175,8 @@ variant 필드·reason 정렬·ordered execution IDs·원본 preview scope와 �
 action/fill 순서·누계·target/cap·최종 applied event를 재생 검증한다. 같은 이름의 테스트가
 terminal 재진입, 누계/상태 drift, 부분 체결 및 수량/notional target 차이를 다룬다. 이 순수
 replay 결과만으로 저장 이력의 최신성·fill/Risk 출처나 실행 권한을 증명하지 않는다.
+`canonicalQuantity.ts`의 exact decimal 단위 계산은 plan replay와 Risk/fill binding에서 공용으로
+사용한다. Binary drift를 epsilon으로 덮지 않으며 표현 불가능한 누계는 거절한다.
 
 ### Live RiskEngine 변경
 

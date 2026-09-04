@@ -4,6 +4,7 @@ import { createRebalancePlanRecord, rebalancePlanRecordSchema, type RebalanceExe
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
+import { addCanonicalQuantities } from "./canonicalQuantity.js";
 
 type Input = Parameters<typeof createRebalancePlanEvent>[0];
 const FIRST_TIME = Date.parse("2026-09-04T00:00:00.000Z");
@@ -132,6 +133,24 @@ test("quantity targets finish by quantity without waiting for reference-price no
   assert.throws(() => replayRebalancePlanEvents({ plan, events: replace(events, 2, { requestedQuantity: 1.6 }) }), /remaining target/);
 });
 
+test("fractional SELL partials use exact canonical decimal sums and remaining quantities", () => {
+  const plan = makePlan({ targetKind: "fractional_sell_quantity", targetQuantity: 0.3, referencePriceKrw: 1000, markedTargetNotionalKrw: 300, priceEvidenceRef: "price-1" }, "SELL");
+  const events = history(plan, [{ notional: 100, quantity: 0.1 }, { notional: 200, quantity: 0.2 }]);
+  assert.equal(replayRebalancePlanEvents({ plan, events }).status, "applied");
+  assert.equal(replayRebalancePlanEvents(JSON.parse(JSON.stringify({ plan, events }))).actions[0]!.cumulativeFilledQuantity, 0.3);
+  assert.throws(() => replayRebalancePlanEvents({ plan, events: replace(events, 3, { requestedQuantity: 0.20000000000000004 }) }), /remaining target/);
+  assert.throws(() => replayRebalancePlanEvents({ plan, events: replace(events, 3, { cumulativeFilledQuantity: 0.30000000000000004 }) }), /prior plus fill/);
+  assert.throws(() => replayRebalancePlanEvents({ plan, events: history(plan, [{ notional: 100, quantity: 0.1 }, { notional: 200, quantity: 0.19999999999999998 }]) }), /not exactly representable|every action target/);
+});
+
+test("fractional BUY quantity accumulation remains canonical across repeated fills", () => {
+  const plan = makePlan();
+  const events = history(plan, Array.from({ length: 10 }, () => ({ notional: 10, quantity: 0.1 })));
+  const result = replayRebalancePlanEvents({ plan, events });
+  assert.equal(result.status, "applied");
+  assert.equal(result.actions[0]!.cumulativeFilledQuantity, 1);
+});
+
 test("whole-share BUY and SELL allow gross slippage within cap but require integer quantities", () => {
   const target: RebalanceExecutionTarget = { targetKind: "whole_share_quantity", targetQuantity: 2, referencePriceKrw: 100, plannedNotionalKrw: 200, residualNotionalKrw: 0, priceEvidenceRef: "price-1" };
   for (const side of ["BUY", "SELL"] as const) {
@@ -183,7 +202,8 @@ function makePlan(target: RebalanceExecutionTarget = { targetKind: "fractional_b
     evidenceCutoffAt: new Date(FIRST_TIME).toISOString(), createdAt: new Date(FIRST_TIME).toISOString(), triggerRef: "trigger-1", phase: side === "BUY" ? "buy" : "sell",
     actions: Array.from({ length: count }, (_, index) => ({ actionId: `action-${index}`, actionSequence: index, market: "KR", symbol: `synthetic-${index}`,
       lineageKind: "mandate", side, mandateId: `mandate-${index}`, executionTarget: target,
-      maximumNotionalKrw: target.targetKind === "fractional_buy_notional" ? 110 : 250, reasonCodes: ["fixture"] })) });
+      maximumNotionalKrw: target.targetKind === "fractional_buy_notional" ? 110 : Math.max(250,
+        target.targetKind === "fractional_sell_quantity" ? target.markedTargetNotionalKrw : target.plannedNotionalKrw), reasonCodes: ["fixture"] })) });
 }
 function scope(plan: RebalancePlanRecord, index: number) {
   return { planId: plan.planId, planHash: plan.planHash, cycleId: plan.cycleId, portfolioId: plan.portfolioId, portfolioVersion: plan.portfolioVersion,
@@ -196,7 +216,7 @@ function history(plan: RebalancePlanRecord, fills = [{ notional: 100, quantity: 
   fills.forEach((fill, index) => {
     const action = fill.action ?? 0;
     const prior = progress[action]!;
-    prior.notional += fill.notional; prior.quantity += fill.quantity;
+    prior.notional += fill.notional; prior.quantity = addCanonicalQuantities(prior.quantity, fill.quantity);
     events.push(createRebalancePlanEvent({ ...scope(plan, index + 2), eventType: "execution_applied", previousPlanEventId: events.at(-1)!.planEventId,
       actionId: plan.actions[action]!.actionId, actionSequence: action, fillSequence: prior.count++, fillId: `fill-${index}`, paperFillRecordId: `paper-fill-${index}`,
       paperFillHash: H(`paper-fill-${index}`), requestedNotionalKrw: fill.notional, requestedQuantity: fill.quantity, filledNotionalKrw: fill.notional, filledQuantity: fill.quantity,

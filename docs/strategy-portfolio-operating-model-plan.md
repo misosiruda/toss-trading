@@ -3597,6 +3597,12 @@ Plan은 frozen binding을 만들 때 한 번만 parse/rehash하고 각 event는 
 Duplicate event, branch, terminal 이후 event를 거절하고 action이 target을 채워야 다음 action을
 시작한다. Fill sequence는 action마다 0부터 연속이며 notional/quantity 누계는 직전 값과 실제
 fill 합계여야 한다. 동일 plan 이력에서 fill/paper-fill/Risk decision ID 재사용을 거절한다.
+수량은 `canonicalQuantity.ts`에서 Number의 canonical decimal 표기를 BigInt 단위로 바꿔
+덧셈·remaining 비교한다. `0.1 + 0.2` 누계는 `0.3`이며 epsilon으로 target 초과를 허용하지 않는다.
+324자리 scale은 Number의 최소 양수까지 표현하기 위한 내부 단위일 뿐 broker lot-size 규칙이
+아니다. 정확한 십진 합계를 Number contract로 표현할 수 없으면 반올림하지 않고 fail-closed한다.
+저장 Risk/fill binding도 같은 수량 합계를 사용한다. 과거 binary-drift 누계는 자동 수정하거나
+승격하지 않으며 해당 이력은 재검토가 필요하다.
 
 Fractional BUY는 requested/filled/cumulative notional을, fractional SELL과 whole-share는
 requested/filled/cumulative quantity를 immutable target에 대조한다. 모든 실제 gross 누계는

@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { type RebalanceAction } from "./rebalancePlan.js";
 import { createRebalancePlanEventRecordBinding, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
+import { addCanonicalQuantities, canonicalQuantityUnits } from "./canonicalQuantity.js";
 
 const inputSchema = z.object({ plan: z.unknown(), events: z.array(z.unknown()).min(1).max(100_000) }).strict();
 const transitions: Record<RebalancePlanEvent["eventType"], readonly RebalancePlanEvent["eventType"][]> = {
@@ -102,7 +103,7 @@ function assertProgress(action: RebalanceAction, prior: ActionProgress, event: E
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error("rebalance execution KRW amounts must be positive safe integers");
   }
   const notional = prior.cumulativeFilledNotionalKrw + event.filledNotionalKrw;
-  const quantity = prior.cumulativeFilledQuantity + event.filledQuantity;
+  const quantity = addCanonicalQuantities(prior.cumulativeFilledQuantity, event.filledQuantity);
   if (!Number.isSafeInteger(notional) || !Number.isFinite(quantity) || quantity > Number.MAX_SAFE_INTEGER ||
     notional !== event.cumulativeFilledNotionalKrw || quantity !== event.cumulativeFilledQuantity) {
     throw new Error("rebalance execution cumulative amounts do not match prior plus fill");
@@ -115,8 +116,9 @@ function assertProgress(action: RebalanceAction, prior: ActionProgress, event: E
       throw new Error("rebalance fractional buy exceeds requested or remaining notional target");
     }
   } else {
-    const remaining = target.targetQuantity - prior.cumulativeFilledQuantity;
-    if (event.requestedQuantity > remaining || quantity > target.targetQuantity) {
+    const targetUnits = canonicalQuantityUnits(target.targetQuantity);
+    const remaining = targetUnits - canonicalQuantityUnits(prior.cumulativeFilledQuantity);
+    if (canonicalQuantityUnits(event.requestedQuantity) > remaining || canonicalQuantityUnits(quantity) > targetUnits) {
       throw new Error("rebalance quantity execution exceeds remaining target");
     }
     if (target.targetKind === "whole_share_quantity" &&
