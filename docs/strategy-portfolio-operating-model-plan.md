@@ -3353,6 +3353,24 @@ resulting portfolio state는 pre-state를 반드시 전진시킨다. Filled quan
 plan/action/risk/fill resolver와 accounting/risk-state mutation 연결은 후속 분할 전까지 구현 완료로 간주하지
 않는다.
 
+서른다섯 번째 분할은 plan action 실행 직전 Risk Engine 결과를 immutable
+`PortfolioActionRiskDecision`으로 보존하는 strict contract를 구현한다. Decision은 exact rule-set, plan/action,
+portfolio snapshot, action target, bucket 또는 legacy scope, turnover/cash assessment, prior cumulative와
+requested/worst-case/approved maximum, canonical rule results와 evidence refs를 complete payload에 포함한다.
+Required rule ID 집합과 result ID 집합을 exact-match하고 모든 result에서 approved/rejected를 파생하며 bucket
+turnover contribution을 `worstCaseFillNotionalKrw`와 exact-match한 뒤 저장된 분모·prior로 ratio를 재계산한다.
+Approved decision은 worst-case gross fill과 BUY net debit가 각각 저장된 approved maximum 이하일 때만 허용한다.
+Rejected decision은 가용 capacity가 없는 원인을 보존하도록 approved maximum 0을 허용하되 음수는 거절한다.
+BUY worst-case net debit는 비용이 음수가 아니므로 worst-case gross fill 이상이어야 한다.
+SELL minimum net credit는 worst-case gross fill 이하여야 하며, approved record는 이 gross 값이
+approved maximum 이하이므로 승인 상한보다 큰 수령 하한을 기록할 수 없다.
+`riskInputHash`는 caller에게 받지 않고 canonical rule-set/plan/action/snapshot/scope/turnover basis/prior/request와
+evidence ref projection에서 계산하며 parse 시 독립 재계산한다.
+모든 identifier는 lone surrogate를 거절하여 UTF-8 정렬 동률로 인한 canonical identity 분기를 차단한다.
+Decision hash는 ID/hash를 제외한 complete
+payload, ID는 hash에서 파생한다. Rule-set/plan/action/snapshot/evidence deterministic resolver와
+`execution_applied` actual fill cap 검증은 후속 분할 전까지 구현 완료로 간주하지 않는다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
