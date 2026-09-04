@@ -12,6 +12,7 @@ import {
   PaperFillExecutionFileRepository,
   createPaperFillExecutionPaths,
   getVerifiedPaperFillExecutionRecords,
+  getPersistedPaperFillExecutionRecords,
   parseVerifiedPaperFillExecutionHistory,
   type VerifiedPaperFillExecutionHistory
 } from "./paperFillExecutionFiles.js";
@@ -30,6 +31,7 @@ test("paper fill repository appends, resolves, and converges createdAt retries",
     assert.deepEqual(await repository.readAll(), [first]);
     const history = await repository.readVerifiedHistory();
     assert.deepEqual(getVerifiedPaperFillExecutionRecords(history), [first]);
+    assert.deepEqual(getPersistedPaperFillExecutionRecords(history), [first]);
     const raw = await readFile(
       createPaperFillExecutionPaths(baseDir).recordsPath,
       "utf8"
@@ -148,6 +150,7 @@ test("paper fill repository rejects unverified history and abandoned locks", asy
     );
     const parsed = parseVerifiedPaperFillExecutionHistory("");
     assert.deepEqual(getVerifiedPaperFillExecutionRecords(parsed), []);
+    assert.throws(() => getPersistedPaperFillExecutionRecords(parsed), /not repository verified/);
     const forged = Object.create(parsed) as {
       records: readonly ReturnType<typeof paperFill>[];
     };

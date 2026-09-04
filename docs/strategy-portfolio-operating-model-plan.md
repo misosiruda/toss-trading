@@ -3380,6 +3380,16 @@ Verified history는 실제 repository read에서만 발급하며 raw parser 결�
 이 검증은 저장 이력의 무결성 범위이며 Risk rule-set/plan/action/evidence의 의미적 인증과 독립 재평가,
 fill binding 및 multi-artifact transaction은 아직 후속 범위이다. 기존 파일의 migration이나 live 경로 변경은 없다.
 
+서른일곱 번째 분할은 `validateRebalancePlanExecutionFillRiskBinding`으로 execution event와
+저장된 decision/fill을 대조한다. Exact record ID/hash, portfolio/plan/action/policy와 market/symbol/side,
+requested/filled 금액·수량, expected pre-state 및 prior+fill cumulative를 검증한다.
+Paper-fill raw parser의 기존 구조 검증 API는 유지하되, 이 binding에서는 repository read에서만
+발급되는 추가 내부 brand를 요구하여 임의 JSONL에서 만든 history를 실제 저장 근거로 인정하지 않는다.
+Source-price origin과 availability도 다시 검증하며 decision 저장시각 <= fill cutoff <= event cutoff를
+요구한다. Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
+이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
+독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

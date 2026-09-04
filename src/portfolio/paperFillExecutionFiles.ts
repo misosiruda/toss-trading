@@ -18,6 +18,8 @@ export interface PaperFillExecutionFileRepositoryOptions {
 
 const verifiedPaperFillExecutionHistories =
   new WeakSet<VerifiedPaperFillExecutionHistory>();
+const persistedPaperFillExecutionHistories =
+  new WeakSet<VerifiedPaperFillExecutionHistory>();
 
 export interface VerifiedPaperFillExecutionHistory {
   records: readonly PaperFillExecutionRecord[];
@@ -117,11 +119,14 @@ export class PaperFillExecutionFileRepository {
       raw = await readFile(this.recordsPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return parseVerifiedPaperFillExecutionHistory("");
+        raw = "";
+      } else {
+        throw error;
       }
-      throw error;
     }
-    return parseVerifiedPaperFillExecutionHistory(raw);
+    const history = parseVerifiedPaperFillExecutionHistory(raw);
+    persistedPaperFillExecutionHistories.add(history);
+    return history;
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -204,6 +209,16 @@ export function getVerifiedPaperFillExecutionRecords(
     throw new Error("paper fill execution history is not verified");
   }
   return history.records;
+}
+
+/** Requires a history read through the repository, not merely parsed JSONL. */
+export function getPersistedPaperFillExecutionRecords(
+  history: VerifiedPaperFillExecutionHistory
+): readonly PaperFillExecutionRecord[] {
+  if (!persistedPaperFillExecutionHistories.has(history)) {
+    throw new Error("paper fill execution history is not repository verified");
+  }
+  return getVerifiedPaperFillExecutionRecords(history);
 }
 
 function sameSemanticRecord(
