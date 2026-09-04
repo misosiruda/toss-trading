@@ -3556,6 +3556,26 @@ fold와 Risk/fill binding 및 atomic transaction은 아직 후속이다. `applie
 BUY shape만 허용하지만 실제 predecessor가 SELL applied였는지 이 contract만으로 승인하지 않는다.
 기존 live/order/MCP 경로는 연결하거나 변경하지 않는다.
 
+두 번째 분할은 `RebalancePlanFileRepository`로 immutable plan artifact를 저장한다.
+`rebalance-plan-records.jsonl`에 `rebalance_plan_entry.v1`과 `rebalance_plan_commit.v1`을
+쌍으로 append하며 record와 directory sync 이후에만 관측한 committedAt을 marker에 남긴다.
+다음 entry는 직전 marker hash를 predecessor로 사용한다. 전체 read는 record/entry/marker
+hash, 시간 순서와 unique plan/cycle ID를 독립 검증하며 torn pair, duplicate, 순서 변경,
+미완성 write를 자동 복구하거나 무시하지 않는다.
+
+Cooperative process는 exclusive lock 아래 read/validate/append를 직렬화하며 같은 cycle의
+다른 scope/action/hash는 거절한다. 생성시각만 다른 semantic retry는 최초 record와 원래
+origin을 유지한다. Repository-issued history의 WeakMap provenance와 post-record-fsync origin을
+제공하지만 serialized copy나 순수 parser 결과를 repository origin으로 승격하지 않는다.
+Abandoned lock은 자동 삭제하지 않으며 lock 대기는 monotonic elapsed time으로 제한한다.
+Windows의 delete-pending lock 획득은 일시적 `EPERM`도 제한 시간까지 재시도하지만 lock 획득
+후의 write/fsync/ownership 오류는 재시도로 감추지 않고 전파한다.
+
+이 저장소는 plan artifact만 저장한다. Cycle claim completion·최초 preview event와의 원자 저장,
+predecessor/mandate/snapshot/price source 해소, Risk 생성 전 plan availability receipt와
+최종 execution fold는 아직 후속이다. 검증된 과거 read가 최신 generation 또는 실행 권한을
+뜻하지 않으며 저장 경로를 재작성할 수 있는 공격자에 대한 외부 인증도 제공하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
