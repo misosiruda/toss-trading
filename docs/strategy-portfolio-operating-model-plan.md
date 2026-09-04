@@ -3388,6 +3388,13 @@ Paper-fill raw parser의 기존 구조 검증 API는 유지하되, 이 binding�
 Source-price origin과 availability도 다시 검증하며 decision 저장시각 <= fill cutoff <= event cutoff를
 요구한다. Fill source-price evidence ID는 decision의 `riskEvidenceRefs`에도 포함돼야 하며
 fill record 생성시각이 event cutoff보다 늦으면 거절한다.
+신규 paper fill은 `paper_fill_execution_entry.v1` envelope에 repository `appendedAt`과 predecessor
+hash를 저장하고, binding은 실제 append 시각도 event cutoff 이하인지 검증한다. 기존 bare record의
+조회와 exact retry는 유지하지만 append 시각은 합성하지 않으며 execution binding은 이를
+`review_required` legacy로 거절한다. Versioned entry 뒤의 bare entry는 downgrade로 거절한다.
+새 reader는 legacy prefix와 versioned entry를 함께 읽지만 이전 reader는 versioned entry를 읽지
+못하므로 롤백 시 신규 실행을 중지하고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
+가격 근거의 실제 저장시각도 decision의 `decidedAt` 이하여야 한다.
 Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
 이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
 독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.

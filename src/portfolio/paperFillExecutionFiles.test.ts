@@ -13,6 +13,7 @@ import {
   createPaperFillExecutionPaths,
   getVerifiedPaperFillExecutionRecords,
   getPersistedPaperFillExecutionRecords,
+  resolvePersistedPaperFillExecutionOrigin,
   parseVerifiedPaperFillExecutionHistory,
   type VerifiedPaperFillExecutionHistory
 } from "./paperFillExecutionFiles.js";
@@ -36,7 +37,13 @@ test("paper fill repository appends, resolves, and converges createdAt retries",
       createPaperFillExecutionPaths(baseDir).recordsPath,
       "utf8"
     );
-    assert.equal(raw, `${JSON.stringify(first)}\n`);
+    const entry = JSON.parse(raw);
+    assert.deepEqual(entry.record, first);
+    assert.equal(entry.schemaVersion, "paper_fill_execution_entry.v1");
+    const restarted = await new PaperFillExecutionFileRepository(baseDir).readVerifiedHistory();
+    assert.equal(resolvePersistedPaperFillExecutionOrigin(restarted, first.paperFillRecordId).appendedAt, entry.appendedAt);
+    await repository.append(retry);
+    assert.equal(await readFile(createPaperFillExecutionPaths(baseDir).recordsPath, "utf8"), raw);
   });
 });
 
@@ -175,6 +182,50 @@ test("paper fill repository rejects unverified history and abandoned locks", asy
 
     await assert.rejects(() => repository.readAll(), /lock is unavailable/);
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
+  });
+});
+
+test("paper fill repository preserves legacy records without synthesizing append origins", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const paths = createPaperFillExecutionPaths(baseDir);
+    const first = paperFill();
+    const raw = `${JSON.stringify(first)}\n`;
+    await writeFile(paths.recordsPath, raw);
+    const repository = new PaperFillExecutionFileRepository(baseDir);
+    assert.deepEqual(await repository.append(first), first);
+    assert.equal(await readFile(paths.recordsPath, "utf8"), raw);
+    let history = await repository.readVerifiedHistory();
+    assert.deepEqual(getPersistedPaperFillExecutionRecords(history), [first]);
+    assert.throws(() => resolvePersistedPaperFillExecutionOrigin(history, first.paperFillRecordId), /legacy record requires review/);
+    const second = paperFill({ fillId: "fill-2" });
+    await repository.append(second);
+    history = await new PaperFillExecutionFileRepository(baseDir).readVerifiedHistory();
+    assert.deepEqual(history.records, [first, second]);
+    assert.equal(resolvePersistedPaperFillExecutionOrigin(history, second.paperFillRecordId).record.paperFillHash, second.paperFillHash);
+    const mixed = await readFile(paths.recordsPath, "utf8");
+    await writeFile(paths.recordsPath, mixed.slice(raw.length));
+    await assert.rejects(() => repository.readVerifiedHistory(), /corrupt line/);
+  });
+});
+
+test("paper fill repository authenticates append metadata and rejects entry downgrade", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PaperFillExecutionFileRepository(baseDir);
+    const first = paperFill();
+    await repository.append(first);
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const entry = JSON.parse(raw);
+    for (const damaged of [
+      `${JSON.stringify({ ...entry, appendedAt: "2000-01-01T00:00:00.000Z" })}\n`,
+      `${JSON.stringify({ ...entry, previousEntryHash: HASH_A })}\n`,
+      raw + JSON.stringify(paperFill({ fillId: "fill-2" })) + "\n"
+    ]) {
+      await writeFile(path, damaged);
+      await assert.rejects(() => repository.readVerifiedHistory(), /corrupt line/);
+      await assert.rejects(() => repository.append(first), /corrupt line/);
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
   });
 });
 

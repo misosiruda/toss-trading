@@ -7,7 +7,7 @@ import test from "node:test";
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import { buildPaperFill } from "../paper/executionModel.js";
 import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
-import { PaperFillExecutionFileRepository, parseVerifiedPaperFillExecutionHistory } from "./paperFillExecutionFiles.js";
+import { PaperFillExecutionFileRepository, parseVerifiedPaperFillExecutionHistory, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { createRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
@@ -150,6 +150,19 @@ test("execution binding rejects fill creation after the event cutoff", async () 
   });
 });
 
+test("execution binding rejects a backdated fill appended after its event cutoff", async () => {
+  await withFixture({ lateFillAppend: true }, async (fixture) => {
+    assert.equal(fixture.paperFillHistory.records[0]!.createdAt, fixture.event.asOf);
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
+  });
+});
+
+test("execution binding rejects price evidence unavailable at the recorded decision time", async () => {
+  await withFixture({ risk: { decidedAt: "2020-01-01T00:00:00.000Z" } }, async (fixture) => {
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
+  });
+});
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -158,7 +171,7 @@ async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture
 
 async function prepare(baseDir: string, options: {
   side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>; beforeRisk?: boolean;
-  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number;
+  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean;
 }) {
   const side = options.side ?? "BUY";
   const asOf = "2020-01-01T00:00:00.000Z";
@@ -192,7 +205,7 @@ async function prepare(baseDir: string, options: {
       : { side, expectedMinimumNetCashCreditKrw: 1_000 },
     decision: "approved", requiredRuleIds: ["cash"],
     ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "within_limit" }],
-    riskEvidenceRefs: [riskPriceEvidence.evidenceRef], decidedAt: asOf,
+    riskEvidenceRefs: [riskPriceEvidence.evidenceRef], decidedAt: new Date().toISOString(),
     ...options.risk
   });
   const riskRepository = new PortfolioActionRiskDecisionFileRepository(join(baseDir, "risk"));
@@ -226,11 +239,17 @@ async function prepare(baseDir: string, options: {
     createdAt: new Date(Date.parse(fillAsOf) + (options.fillCreatedAtOffsetMs ?? 0)).toISOString()
   });
   const fillRepository = new PaperFillExecutionFileRepository(join(baseDir, "fills"));
+  if (options.lateFillAppend || options.fillCreatedAtOffsetMs) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   await fillRepository.append(paperFill);
+  const paperFillHistory = await fillRepository.readVerifiedHistory();
+  const fillOrigin = resolvePersistedPaperFillExecutionOrigin(paperFillHistory, paperFill.paperFillRecordId);
+  const eventAsOf = options.lateFillAppend || options.fillCreatedAtOffsetMs ? fillAsOf : fillOrigin.appendedAt;
   const event = createRebalancePlanExecutionAppliedEvent({
     previousPlanEventId: "approved-event", eventType: "execution_applied",
     planId: "plan-1", planHash: HASH_A, cycleId: "cycle-1", portfolioId: "portfolio-1",
-    portfolioVersion: "v1", portfolioSnapshotHash: HASH_A, policyHash: HASH_A, asOf: fillAsOf,
+    portfolioVersion: "v1", portfolioSnapshotHash: HASH_A, policyHash: HASH_A, asOf: eventAsOf,
     actionId: "action-1", actionSequence: 0, fillSequence: 0, fillId: "fill-1",
     paperFillRecordId: paperFill.paperFillRecordId, paperFillHash: paperFill.paperFillHash,
     requestedNotionalKrw: 1_000, requestedQuantity: 10, filledNotionalKrw: fill.filledNotionalKrw, filledQuantity: fill.quantity,
@@ -238,5 +257,5 @@ async function prepare(baseDir: string, options: {
     riskDecisionId: riskDecision.riskDecisionId, expectedPrePortfolioVersion: "v1",
     expectedPrePortfolioSnapshotHash: HASH_A, resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: HASH_B
   });
-  return { event, riskDecisionHistory, paperFillHistory: await fillRepository.readVerifiedHistory(), sourcePriceEvidenceHistory };
+  return { event, riskDecisionHistory, paperFillHistory, sourcePriceEvidenceHistory };
 }

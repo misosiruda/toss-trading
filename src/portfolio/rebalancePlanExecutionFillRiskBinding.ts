@@ -4,11 +4,11 @@ import {
   type VerifiedPortfolioActionRiskDecisionHistory
 } from "./portfolioActionRiskDecisionFiles.js";
 import {
-  getPersistedPaperFillExecutionRecords,
+  resolvePersistedPaperFillExecutionOrigin,
   type VerifiedPaperFillExecutionHistory
 } from "./paperFillExecutionFiles.js";
 import { resolvePaperFillExecutionOrigins } from "./paperFillExecutionOriginResolver.js";
-import type { VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
+import { resolveVerifiedSourcePriceEvidenceOrigin, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 
 /**
  * Validates persisted fill/decision bindings only. This is not an execution
@@ -30,18 +30,19 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
   if (riskDecision.decision !== "approved") {
     throw new Error("execution fill risk binding requires an approved decision");
   }
-  const matches = getPersistedPaperFillExecutionRecords(input.paperFillHistory)
-    .filter((record) => record.paperFillRecordId === event.paperFillRecordId);
-  if (matches.length !== 1) {
-    throw new Error("execution fill risk binding cannot resolve exact paper fill");
-  }
+  const fillOrigin = resolvePersistedPaperFillExecutionOrigin(
+    input.paperFillHistory, event.paperFillRecordId
+  );
   const { record: paperFill, sourcePriceEvidence } = resolvePaperFillExecutionOrigins({
-    value: matches[0],
+    value: fillOrigin.record,
     sourcePriceEvidenceHistory: input.sourcePriceEvidenceHistory
   });
   if (!riskDecision.riskEvidenceRefs.includes(sourcePriceEvidence.evidenceRef)) {
     throw new Error("execution fill risk binding source evidence mismatch");
   }
+  const priceOrigin = resolveVerifiedSourcePriceEvidenceOrigin(
+    input.sourcePriceEvidenceHistory, sourcePriceEvidence.evidenceRef
+  );
   const identityMatches =
     event.paperFillHash === paperFill.paperFillHash &&
     event.fillId === paperFill.fillId &&
@@ -83,10 +84,12 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
     throw new Error("execution fill risk binding cumulative amount mismatch");
   }
   if (
+    Date.parse(priceOrigin.appendedAt) > Date.parse(riskDecision.decidedAt) ||
     Date.parse(riskOrigin.appendedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(riskDecision.decidedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(paperFill.asOf) > Date.parse(event.asOf) ||
-    Date.parse(paperFill.createdAt) > Date.parse(event.asOf)
+    Date.parse(paperFill.createdAt) > Date.parse(event.asOf) ||
+    Date.parse(fillOrigin.appendedAt) > Date.parse(event.asOf)
   ) {
     throw new Error("execution fill risk binding availability cutoff mismatch");
   }
