@@ -89,7 +89,8 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
     Date.parse(riskDecision.decidedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(paperFill.asOf) > Date.parse(event.asOf) ||
     Date.parse(paperFill.createdAt) > Date.parse(event.asOf) ||
-    Date.parse(fillOrigin.appendedAt) > Date.parse(event.asOf)
+    // Equal millisecond buckets do not prove that the record was durable first.
+    Date.parse(fillOrigin.appendedAt) >= Date.parse(event.asOf)
   ) {
     throw new Error("execution fill risk binding availability cutoff mismatch");
   }

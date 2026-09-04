@@ -3390,8 +3390,10 @@ Source-price origin과 availability도 다시 검증하며 decision 저장시각
 fill record 생성시각이 event cutoff보다 늦으면 거절한다.
 신규 paper fill은 `paper_fill_execution_entry.v1` envelope에 `appendStartedAt`과 predecessor hash를
 저장하고 record fsync가 완료된 뒤 `paper_fill_execution_commit.v1` marker의 `committedAt`을
-채집·저장한다. Origin의 `appendedAt`은 이 post-fsync 시각이며 binding은 event cutoff 이하인지
-검증한다. Marker는 해당 entry hash를 포함하고 후속 entry는 marker hash를 predecessor로 참조한다.
+채집·저장한다. Origin의 `appendedAt`은 이 post-fsync 시각이며 binding은 event cutoff보다 엄격히
+이전인지 검증한다. 같은 밀리초는 실제 선후관계를 증명하지 못하므로 거절하며, caller는 append
+완료 후 origin보다 늦은 cutoff에서 event를 생성해야 한다. Marker는 해당 entry hash를 포함하고
+후속 entry는 marker hash를 predecessor로 참조한다.
 Marker 누락·변조·torn pair는 읽기와 append를 모두 거절하며 자동 복구·timestamp 합성을 하지 않는다.
 기존 bare record의
 조회와 exact retry는 유지하지만 append 시각은 합성하지 않으며 execution binding은 이를

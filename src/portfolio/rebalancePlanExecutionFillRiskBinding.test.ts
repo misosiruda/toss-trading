@@ -163,6 +163,19 @@ test("execution binding rejects price evidence unavailable at the recorded decis
   });
 });
 
+test("execution binding rejects ambiguous same-millisecond durable origin and accepts the next millisecond", async () => {
+  await withFixture({}, async (fixture) => {
+    const origin = resolvePersistedPaperFillExecutionOrigin(fixture.paperFillHistory, fixture.event.paperFillRecordId);
+    const { planEventId, planEventHash, ...payload } = fixture.event;
+    const event = createRebalancePlanExecutionAppliedEvent({ ...payload, asOf: origin.appendedAt });
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ ...fixture, event }), /availability cutoff/);
+    const later = createRebalancePlanExecutionAppliedEvent({
+      ...payload, asOf: new Date(Date.parse(origin.appendedAt) + 1).toISOString()
+    });
+    assert.equal(validateRebalancePlanExecutionFillRiskBinding({ ...fixture, event: later }).event.planEventId, later.planEventId);
+  });
+});
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -245,7 +258,8 @@ async function prepare(baseDir: string, options: {
   await fillRepository.append(paperFill);
   const paperFillHistory = await fillRepository.readVerifiedHistory();
   const fillOrigin = resolvePersistedPaperFillExecutionOrigin(paperFillHistory, paperFill.paperFillRecordId);
-  const eventAsOf = options.lateFillAppend || options.fillCreatedAtOffsetMs ? fillAsOf : fillOrigin.appendedAt;
+  const eventAsOf = options.lateFillAppend || options.fillCreatedAtOffsetMs
+    ? fillAsOf : new Date(Date.parse(fillOrigin.appendedAt) + 1).toISOString();
   const event = createRebalancePlanExecutionAppliedEvent({
     previousPlanEventId: "approved-event", eventType: "execution_applied",
     planId: "plan-1", planHash: HASH_A, cycleId: "cycle-1", portfolioId: "portfolio-1",
