@@ -3460,8 +3460,9 @@ rollback은 새 reader 유지 또는 검증된 별도 호환 절차가 필요하
 atomic execution을 구현하지 않는다. 해당 최종 승인·실행 연결은 후속이며 live 경로는 변경하지 않는다.
 
 마흔 번째 분할은 `resolvePortfolioActionRiskDecisionPolicy`로 저장된 Risk 결정의 정책·규칙
-참조를 해소한다. Repository-issued decision history에서 origin을 얻고 결정시각의 activation
-history를 fold한 뒤 exact policy hash를 대조한다. Bucket scope는 해당 bucket의 enabled market과
+참조를 해소한다. 설정된 단일 `baseDir`에서 Risk repository-issued history와 기존 consistent
+policy/activation/dependency generation을 직접 읽으며 외부 배열·snapshot·loader 입력은 허용하지
+않는다. 결정시각의 activation history를 fold한 뒤 exact policy hash를 대조한다. Bucket scope는 해당 bucket의 enabled market과
 risk rule set을, legacy SELL scope는 root legacy policy 전체 hash와 전용 rule-set ref를 검증한다.
 기존 immutable dependency resolver로 rule-set/parameter identity·version·hash·lineage 및 생성
 순서를 검증하고 action side에 해당하는 rule ID 집합을 다시 계산한다. 자체적으로 일관된
@@ -3472,6 +3473,8 @@ decision이라도 policy-selected rule set 또는 required/result ID 집합이 �
 않는다. 현재 active policy, mandate/action/plan/snapshot 원본과 수치 입력 복원, 각 규칙의 독립
 재평가·cap 계산, turnover/portfolio mutation 연결은 후속이다. 기존 fill binding과 최종 executor에는
 아직 연결하지 않았으며 이 resolver만으로 실행을 승인하면 안 된다.
+이 조회는 저장 경로와 파일 접근 제어를 신뢰하며 파일을 직접 재작성할 수 있는 공격자에 대한
+외부 인증이나 읽기 이후의 동시 변경까지 고정하는 실행 transaction을 제공하지 않는다.
 
 완료 조건:
 

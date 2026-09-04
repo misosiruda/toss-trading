@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,8 +16,11 @@ import {
   type ImmutablePolicyDependencyRecords
 } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
+import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { parseRuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
-import { createPortfolioPolicyActivatedEvent, createPortfolioPolicyRetiredEvent } from "./runtimePortfolioPolicyActivation.js";
+import { createPortfolioPolicyActivatedEvent } from "./runtimePortfolioPolicyActivation.js";
 
 const CREATED_AT = "2026-09-01T00:00:00.000Z";
 const DECIDED_AT = "2026-09-03T00:00:00.000Z";
@@ -28,7 +31,7 @@ test("risk policy resolver selects exact bucket rules and parameter lineage by s
   for (const side of ["BUY", "SELL"] as const) {
     const fixture = policyFixture();
     await withDecision(fixture, decisionInput(fixture, side), async (input) => {
-      const result = resolvePortfolioActionRiskDecisionPolicy(input);
+      const result = await resolvePortfolioActionRiskDecisionPolicy(input);
       assert.equal(result.activePolicy.policy.policyHash, fixture.policy.policyHash);
       assert.equal(result.bucketPolicy?.bucket, "swing");
       assert.deepEqual(result.applicableRules.map(({ rule }) => rule.ruleId), side === "BUY" ? ["cash", "exposure"] : ["exposure", "sell"]);
@@ -46,13 +49,13 @@ test("risk policy resolver uses only the root legacy SELL rule set and full lega
   const fixture = policyFixture();
   const candidate = decisionInput(fixture, "SELL", true);
   await withDecision(fixture, candidate, async (input) => {
-    const result = resolvePortfolioActionRiskDecisionPolicy(input);
+    const result = await resolvePortfolioActionRiskDecisionPolicy(input);
     assert.equal(result.bucketPolicy, null);
     assert.equal(result.riskRuleSet.hash, fixture.legacySet.hash);
     assert.deepEqual(result.applicableRules.map(({ rule }) => rule.ruleId), ["legacy"]);
   });
   await withDecision(fixture, { ...candidate, riskRuleScope: { scopeKind: "legacy_reduce_only", legacyPolicyHash: HASH } }, async (input) => {
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy(input), /legacy reduce-only policy mismatch/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /legacy reduce-only policy mismatch/);
   });
 });
 
@@ -65,7 +68,7 @@ test("risk policy resolver rejects a claimed rule set or policy that differs fro
     { riskRuleSetRecordId: fixture.legacySet.riskRuleSetRecordId, riskRuleSetVersion: fixture.legacySet.version, riskRuleSetHash: fixture.legacySet.hash }
   ]) {
     await withDecision(fixture, { ...decisionInput(fixture, "BUY"), ...overrides }, async (input) => {
-      assert.throws(() => resolvePortfolioActionRiskDecisionPolicy(input), /mismatch/);
+      await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /mismatch/);
     });
   }
 });
@@ -77,38 +80,62 @@ test("risk policy resolver independently derives required side rules rather than
       ...decisionInput(fixture, "BUY"), requiredRuleIds,
       ruleResults: requiredRuleIds.map((ruleId) => ({ ruleId, result: "pass", reasonCode: "fixture" }))
     }, async (input) => {
-      assert.throws(() => resolvePortfolioActionRiskDecisionPolicy(input), /policy-selected side rules/);
+      await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /policy-selected side rules/);
     });
   }
 });
 
-test("risk policy resolver replays activation at decision time and rejects missing or retired policy", async () => {
+test("risk policy resolver reloads complete stored activation history and rejects retired policy", async () => {
   const fixture = policyFixture();
   await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, activationEvents: [] }), /active runtime portfolio policy is required/);
-    const retired = createPortfolioPolicyRetiredEvent({
-      portfolioId: fixture.policy.portfolioId, activationSequence: 2,
+    const repository = new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy], fixture.dependencies);
+    assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).activePolicy.activation.activationId, fixture.activation.activationId);
+    await repository.appendRetired({
+      portfolioId: fixture.policy.portfolioId,
       retiredActivationId: fixture.activation.activationId, reasonCode: "fixture",
       createdAt: "2026-09-02T00:00:00.000Z"
     });
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, activationEvents: [fixture.activation, retired] }), /active runtime portfolio policy is required/);
-    const later = createPortfolioPolicyRetiredEvent({
-      portfolioId: fixture.policy.portfolioId, activationSequence: 2,
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /active runtime portfolio policy is required/);
+    // Even a valid contiguous prefix cannot be substituted for the disk history.
+    const truncated = { ...input, activationEvents: [fixture.activation], policies: [fixture.policy], dependencies: fixture.dependencies };
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(truncated), /unrecognized_keys/);
+  });
+  await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+    await new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy], fixture.dependencies).appendRetired({
+      portfolioId: fixture.policy.portfolioId,
       retiredActivationId: fixture.activation.activationId, reasonCode: "fixture",
       createdAt: "2026-09-04T00:00:00.000Z"
     });
-    assert.equal(resolvePortfolioActionRiskDecisionPolicy({ ...input, activationEvents: [fixture.activation, later] }).activePolicy.activation.activationId, fixture.activation.activationId);
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, activationEvents: [{ ...fixture.activation, activationEventHash: HASH }] }), /hash mismatch/);
+    assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).activePolicy.activation.activationId, fixture.activation.activationId);
+    const path = createRuntimePortfolioPolicyActivationPaths(input.baseDir).eventsPath;
+    const lines = (await readFile(path, "utf8")).trim().split("\n");
+    const event = JSON.parse(lines[0]!);
+    await writeFile(path, `${JSON.stringify({ ...event, activationEventHash: HASH })}\n`, "utf8");
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /corrupt line/);
+    await writeFile(path, "", "utf8");
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /active runtime portfolio policy is required/);
+  });
+});
+
+test("risk policy resolver reloads a replacement activation before decision time", async () => {
+  const fixture = policyFixture();
+  const replacement = policyFixture("v2").policy;
+  await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+    await new RuntimePortfolioPolicyFileRepository(input.baseDir, fixture.dependencies).append(replacement);
+    await new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy, replacement], fixture.dependencies)
+      .appendActivated({ policy: replacement, supersedesActivationId: fixture.activation.activationId, createdAt: "2026-09-02T00:00:00.000Z" });
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /active policy hash mismatch/);
   });
 });
 
 test("risk policy resolver rejects fabricated histories and incomplete parameter dependencies", async () => {
   const fixture = policyFixture();
   await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, riskDecisionHistory: { records: input.riskDecisionHistory.records } }), /not verified/);
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, riskDecisionId: "missing" }), /does not resolve exactly once/);
-    const dependencies = new ImmutablePolicyDependencyRepository({ ...fixture.records, riskParameters: [] });
-    assert.throws(() => resolvePortfolioActionRiskDecisionPolicy({ ...input, dependencies }), /risk parameter ref does not resolve/);
+    const fabricated = { ...input, riskDecisionHistory: { records: [] } };
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(fabricated), /unrecognized_keys/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy({ ...input, riskDecisionId: "missing" }), /does not resolve exactly once/);
+    await writeFile(createImmutablePolicyDependencyPaths(input.baseDir).riskParameters, "", "utf8");
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /corrupt line/);
   });
 });
 
@@ -116,7 +143,7 @@ test("risk policy resolver can explain a rejected record without promoting it to
   const fixture = policyFixture();
   const candidate = decisionInput(fixture, "BUY");
   await withDecision(fixture, { ...candidate, decision: "rejected", ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) }, async (input) => {
-    assert.equal(resolvePortfolioActionRiskDecisionPolicy(input).decision.decision, "rejected");
+    assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).decision.decision, "rejected");
   });
 });
 
@@ -126,11 +153,17 @@ async function withDecision(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "toss-risk-policy-"));
   try {
+    const paths = createImmutablePolicyDependencyPaths(directory);
+    for (const key of Object.keys(paths) as Array<keyof typeof paths>) {
+      await writeFile(paths[key], `${fixture.records[key].map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+    }
+    await new RuntimePortfolioPolicyFileRepository(directory, fixture.dependencies).append(fixture.policy);
+    await new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies)
+      .appendActivated({ policy: fixture.policy, createdAt: CREATED_AT });
     const repository = new PortfolioActionRiskDecisionFileRepository(directory);
     const decision = createPortfolioActionRiskDecision(candidate);
     await repository.append(decision);
-    await run({ riskDecisionId: decision.riskDecisionId, riskDecisionHistory: await repository.readVerifiedHistory(),
-      activationEvents: [fixture.activation], policies: [fixture.policy], dependencies: fixture.dependencies });
+    await run({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -158,7 +191,7 @@ function decisionInput(fixture: ReturnType<typeof policyFixture>, side: "BUY" | 
   };
 }
 
-function policyFixture() {
+function policyFixture(version = "v1") {
   const buckets = ["long_term", "swing", "short_term", "intraday", "hedge"] as const;
   const parameters = ["cash", "exposure", "sell", "legacy"].map((ruleId) => createPortfolioRiskRuleParameterRecord({
     ruleId, ruleVersion: "v1", version: "v1", parameters: { fixtureLimit: 1 }, createdAt: CREATED_AT
@@ -197,7 +230,7 @@ function policyFixture() {
   const payload = {
     mode: "paper_only", recordType: "runtime_portfolio_policy_record", portfolioId: "paper-main",
     sourcePolicyRecordId: "fixture-source", sourcePolicyRecordHash: HASH, sourcePolicyHash: "b".repeat(64),
-    policyId: "fixture", version: "v1", name: "Fixture policy",
+    policyId: "fixture", version, name: "Fixture policy",
     strategyBuckets: buckets.map((bucket, index) => ({
       bucket, targetWeightRatio: targets[index]!, minWeightRatio: 0, maxWeightRatio: 0.5, maxTurnoverRatio: 0.5, maxDrawdownRatio: 0.1,
       turnoverWindow: { mode: "fixed_utc", durationSeconds: 86_400, anchor: "unix_epoch", denominator: "window_open_portfolio_net_worth_krw" },

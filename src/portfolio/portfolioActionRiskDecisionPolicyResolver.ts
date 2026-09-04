@@ -1,34 +1,47 @@
 import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 
 import {
   resolveVerifiedPortfolioActionRiskDecisionOrigin,
-  type VerifiedPortfolioActionRiskDecisionHistory
+  PortfolioActionRiskDecisionFileRepository
 } from "./portfolioActionRiskDecisionFiles.js";
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
-import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import { ImmutablePolicyDependencyFileLoader } from "./runtimePolicyDependencyFiles.js";
+import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import {
+  readConsistentRuntimePortfolioPolicyActivationSnapshot,
+  RuntimePortfolioPolicyActivationFileRepository
+} from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
+
+const inputSchema = z.object({ baseDir: z.string().min(1), riskDecisionId: z.string().min(1) }).strict();
 
 /**
  * Resolves the policy-selected rule set and required rule identities at decision
- * time. This does not replay rule outputs or authorize portfolio execution.
+ * time from one configured storage root, without accepting caller-selected
+ * history prefixes. This does not authorize execution or authenticate disk
+ * against an actor who can rewrite the configured storage root.
  */
-export function resolvePortfolioActionRiskDecisionPolicy(input: {
+export async function resolvePortfolioActionRiskDecisionPolicy(input: {
+  baseDir: string;
   riskDecisionId: string;
-  riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory;
-  activationEvents: readonly unknown[];
-  policies: readonly unknown[];
-  dependencies: ImmutablePolicyDependencyRepository;
 }) {
+  const { baseDir, riskDecisionId } = inputSchema.parse(input);
   const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(
-    input.riskDecisionHistory, input.riskDecisionId
+    await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory(), riskDecisionId
   );
   const decision = origin.record;
+  const snapshot = await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+    loadDependencies: () => new ImmutablePolicyDependencyFileLoader(baseDir).load(),
+    readPolicies: (dependencies) => new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository).readGeneration(),
+    readEvents: (policies, dependencies) => new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository).readGeneration()
+  });
   const active = resolveActiveRuntimePortfolioPolicyAsOf({
     portfolioId: decision.portfolioId,
     asOf: decision.decidedAt,
-    events: input.activationEvents,
-    policies: input.policies,
-    dependencies: input.dependencies
+    events: snapshot.events,
+    policies: snapshot.policies,
+    dependencies: snapshot.dependencies.repository
   });
   if (active.policy.policyHash !== decision.policyHash) {
     throw new Error("risk decision active policy hash mismatch");
@@ -47,7 +60,7 @@ export function resolvePortfolioActionRiskDecisionPolicy(input: {
     throw new Error("risk decision legacy reduce-only policy mismatch");
   }
   const ref = bucketPolicy?.riskRuleSetRef ?? active.policy.legacyReduceOnlyPolicy.riskRuleSetRef;
-  const resolved = input.dependencies.resolveRiskRuleSetDependencies(ref);
+  const resolved = snapshot.dependencies.repository.resolveRiskRuleSetDependencies(ref);
   if (decision.riskRuleSetRecordId !== resolved.riskRuleSet.riskRuleSetRecordId ||
     decision.riskRuleSetVersion !== resolved.riskRuleSet.version ||
     decision.riskRuleSetHash !== resolved.riskRuleSet.hash) {

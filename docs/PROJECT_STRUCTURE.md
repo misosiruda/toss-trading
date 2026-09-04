@@ -148,7 +148,8 @@ flowchart TD
 ### 전략 포트폴리오 Risk 결정 정책 해소
 
 전략 포트폴리오의 저장된 Risk 결정과 활성 정책·규칙 참조를 대조하는 코드는
-`src/portfolio/portfolioActionRiskDecisionPolicyResolver.ts`에 있다. 결정시각의 activation fold와
+`src/portfolio/portfolioActionRiskDecisionPolicyResolver.ts`에 있다. 설정된 단일 저장 경로에서
+Risk history와 정책·activation·의존성 generation을 직접 읽은 뒤 결정시각의 activation fold와
 bucket/legacy rule-set 선택, side별 required rule ID 해소를 담당하며, 개별 규칙 수치 재평가나
 최종 실행 승인은 제공하지 않는다. 관련 회귀 테스트는 같은 이름의 `*.test.ts`와 운용 모델
 계획 문서를 함께 확인한다.
