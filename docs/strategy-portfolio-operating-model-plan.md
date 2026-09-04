@@ -3371,6 +3371,15 @@ Decision hash는 ID/hash를 제외한 complete
 payload, ID는 hash에서 파생한다. Rule-set/plan/action/snapshot/evidence deterministic resolver와
 `execution_applied` actual fill cap 검증은 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+서른여섯 번째 분할은 `PortfolioActionRiskDecisionFileRepository`의 append-only JSONL 저장소를
+구현한다. Complete decision을 독립 parse/rehash하고 정확한 retry만 기존 record와 저장시각으로 수렴한다.
+Repository가 생성한 `appendedAt`, complete record와 predecessor hash를 entry hash에 결합하며
+decision time 이전 append, torn/corrupt line, duplicate identity와 chain mismatch를 fail-closed한다.
+Read와 append는 동일한 exclusive lock을 사용하고 record/lock 및 가능한 directory fsync를 수행한다.
+Verified history는 실제 repository read에서만 발급하며 raw parser 결과나 prototype 복제로 대체할 수 없다.
+이 검증은 저장 이력의 무결성 범위이며 Risk rule-set/plan/action/evidence의 의미적 인증과 독립 재평가,
+fill binding 및 multi-artifact transaction은 아직 후속 범위이다. 기존 파일의 migration이나 live 경로 변경은 없다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.
