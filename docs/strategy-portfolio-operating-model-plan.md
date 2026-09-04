@@ -3590,6 +3590,24 @@ scope는 최초 plan preview의 값을 유지한다. 이 helper는 content 대�
 실제 predecessor/linear transition/terminal 여부, applied target 충족, cumulative fill/Risk replay,
 최신 portfolio state와 durable origin을 증명하지 않는다. Event repository/fold와 실행 연결은 후속이다.
 
+네 번째 분할은 `replayRebalancePlanEvents`의 순수 상태 재생이다. 입력 plan/event를 독립 검증한
+뒤 첫 preview, 즉시 predecessor, nondecreasing event time과 허용 선형 전이를 검사한다.
+Duplicate event, branch, terminal 이후 event를 거절하고 action이 target을 채워야 다음 action을
+시작한다. Fill sequence는 action마다 0부터 연속이며 notional/quantity 누계는 직전 값과 실제
+fill 합계여야 한다. 동일 plan 이력에서 fill/paper-fill/Risk decision ID 재사용을 거절한다.
+
+Fractional BUY는 requested/filled/cumulative notional을, fractional SELL과 whole-share는
+requested/filled/cumulative quantity를 immutable target에 대조한다. 모든 실제 gross 누계는
+action notional cap 이하이며 KRW는 positive safe integer, whole-share quantity는 정수여야 한다.
+Quantity target은 reference-price notional 미달만으로 완료를 지연하지 않는다. 첫 fill의 pre-state는
+plan preview, 이후는 직전 fill resulting state와 같아야 한다. Applied는 모든 action 완료,
+정확한 ordered execution IDs 및 마지막 resulting state가 일치해야만 재생된다.
+
+이 결과는 supplied content의 replay이며 valid prefix도 허용한다. Repository가 발급한 최신 이력,
+실제 fill/Risk/price 원본, plan-before-Risk availability, policy/rule 수치 replay, portfolio-wide fill
+uniqueness 및 cross-artifact atomic commit을 대신하지 않는다. Stale observed state와 마지막
+execution state도 구분하며 외부 상태를 변경하지 않는다. 해당 저장·해소·실행 연결은 후속이다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
