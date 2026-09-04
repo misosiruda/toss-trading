@@ -17,8 +17,9 @@ import {
 
 test("paper fill resolves its source price from verified durable history", async () => {
   const evidence = priceEvidence();
-  const record = paperFill({ evidence });
   await withEvidenceHistory([evidence], (history) => {
+    const { appendedAt } = resolveVerifiedSourcePriceEvidenceOrigin(history, evidence.evidenceRef);
+    const record = paperFill({ evidence, asOf: appendedAt, createdAt: appendedAt });
     const resolved = resolvePaperFillExecutionOrigins({
       value: record,
       sourcePriceEvidenceHistory: history
@@ -36,14 +37,16 @@ test("paper fill accepts equivalent offset notation for source observation", asy
     observedAt: "2026-09-03T08:59:59+09:00",
     createdAt: "2026-09-03T08:59:59+09:00"
   });
-  const record = paperFill({
-    evidence,
-    projectionOverrides: {
-      observedAt: "2026-09-02T23:59:59.000Z"
-    }
-  });
-
   await withEvidenceHistory([evidence], (history) => {
+    const { appendedAt } = resolveVerifiedSourcePriceEvidenceOrigin(history, evidence.evidenceRef);
+    const record = paperFill({
+      evidence,
+      asOf: appendedAt,
+      createdAt: appendedAt,
+      projectionOverrides: {
+        observedAt: "2026-09-02T23:59:59.000Z"
+      }
+    });
     const resolved = resolvePaperFillExecutionOrigins({
       value: record,
       sourcePriceEvidenceHistory: history
