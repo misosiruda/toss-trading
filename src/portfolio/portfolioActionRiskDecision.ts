@@ -18,7 +18,11 @@ const identifierSchema = z
   .string()
   .min(1)
   .max(240)
-  .refine((value) => value === value.trim(), "identifier must be canonical");
+  .refine((value) => value === value.trim(), "identifier must be canonical")
+  .refine(
+    (value) => !/[\uD800-\uDFFF]/u.test(value),
+    "identifier must use well-formed Unicode"
+  );
 const nonNegativeNumberSchema = z
   .number()
   .finite()

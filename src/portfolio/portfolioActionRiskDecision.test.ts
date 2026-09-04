@@ -189,6 +189,48 @@ test("portfolio action risk decision rejects tampered identity", () => {
   );
 });
 
+test("portfolio action risk decision rejects lone surrogates at create and parse", () => {
+  const input = bucketInput();
+  const decision = createPortfolioActionRiskDecision(input);
+  for (const invalid of ["\uD800", "\uD801", "\uDC00", "prefix\uD800suffix"]) {
+    for (const patch of [
+      { planId: invalid },
+      { requiredRuleIds: [invalid, "cash"] },
+      { ruleResults: [{ ruleId: invalid, result: "pass" as const, reasonCode: "ok" }] },
+      { riskEvidenceRefs: [invalid, "evidence-a"] }
+    ]) {
+      assert.throws(
+        () => createPortfolioActionRiskDecision({ ...input, ...patch }),
+        /well-formed Unicode/
+      );
+      assert.throws(
+        () => parsePortfolioActionRiskDecision({ ...decision, ...patch }),
+        /well-formed Unicode/
+      );
+    }
+  }
+});
+
+test("portfolio action risk decision canonicalizes valid supplementary Unicode", () => {
+  const input = {
+    ...bucketInput(),
+    requiredRuleIds: ["rule-\u{1F600}", "rule-\u{1F601}"],
+    ruleResults: [
+      { ruleId: "rule-\u{1F600}", result: "pass" as const, reasonCode: "ok" },
+      { ruleId: "rule-\u{1F601}", result: "pass" as const, reasonCode: "ok" }
+    ],
+    riskEvidenceRefs: ["ref-\u{1F600}", "ref-\u{1F601}"]
+  };
+  const decision = createPortfolioActionRiskDecision(input);
+  assert.deepEqual(parsePortfolioActionRiskDecision(decision), decision);
+  assert.deepEqual(createPortfolioActionRiskDecision({
+    ...input,
+    requiredRuleIds: [...input.requiredRuleIds].reverse(),
+    ruleResults: [...input.ruleResults].reverse(),
+    riskEvidenceRefs: [...input.riskEvidenceRefs].reverse()
+  }), decision);
+});
+
 function bucketInput() {
   return {
     riskRuleSetRecordId: "risk-set-1",
