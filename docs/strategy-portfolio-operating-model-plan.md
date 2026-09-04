@@ -3610,6 +3610,8 @@ action notional cap 이하이며 KRW는 positive safe integer, whole-share quant
 Quantity target은 reference-price notional 미달만으로 완료를 지연하지 않는다. 첫 fill의 pre-state는
 plan preview, 이후는 직전 fill resulting state와 같아야 한다. Applied는 모든 action 완료,
 정확한 ordered execution IDs 및 마지막 resulting state가 일치해야만 재생된다.
+Execution resulting version은 최초 plan version이나 이전 fill의 version을 재사용할 수 없다.
+이 검사는 action 경계 및 incomplete prefix에도 적용하며 opaque version의 정렬은 가정하지 않는다.
 
 이 결과는 supplied content의 replay이며 valid prefix도 허용한다. Repository가 발급한 최신 이력,
 실제 fill/Risk/price 원본, plan-before-Risk availability, policy/rule 수치 replay, portfolio-wide fill

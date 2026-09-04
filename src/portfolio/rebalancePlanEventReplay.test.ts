@@ -103,6 +103,20 @@ test("rebalance replay rejects cumulative tampering and independently checks bot
   }
 });
 
+test("rebalance replay rejects initial and intermediate portfolio version reuse across actions", () => {
+  const plan = makePlan(undefined, "BUY", 2);
+  const events = history(plan, [{ notional: 60, quantity: 0.6 }, { notional: 40, quantity: 0.4 }, { action: 1, notional: 100, quantity: 1 }]);
+  assert.equal(replayRebalancePlanEvents({ plan, events }).status, "applied");
+  for (const resultingPortfolioVersion of ["v1", "v2"]) {
+    // Keep a fresh hash: version uniqueness must not depend on snapshot equality.
+    const rollback = replace(events, 4, { resultingPortfolioVersion });
+    const complete = replace(rollback, 5, { resultingPortfolioVersion });
+    for (const invalid of [complete.slice(0, 5), complete]) {
+      assert.throws(() => replayRebalancePlanEvents({ plan, events: invalid }), /reuses an earlier portfolio version/);
+    }
+  }
+});
+
 test("rebalance replay rejects reuse of fill, immutable paper fill and risk decision IDs", () => {
   const plan = makePlan();
   const events = history(plan, [{ notional: 60, quantity: 0.6 }, { notional: 40, quantity: 0.4 }]);

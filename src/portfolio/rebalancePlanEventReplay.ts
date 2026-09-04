@@ -37,6 +37,7 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
   const fillIds = new Set<string>();
   const paperFillIds = new Set<string>();
   const riskIds = new Set<string>();
+  const portfolioVersions = new Set([plan.portfolioVersion]);
   const executionEventIds: string[] = [];
   let executionPortfolioVersion = plan.portfolioVersion;
   let executionPortfolioSnapshotHash = plan.portfolioSnapshotHash;
@@ -68,6 +69,9 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
       if (event.expectedPrePortfolioVersion !== executionPortfolioVersion || event.expectedPrePortfolioSnapshotHash !== executionPortfolioSnapshotHash) {
         throw new Error("rebalance execution pre-state does not follow prior resulting state");
       }
+      if (portfolioVersions.has(event.resultingPortfolioVersion)) {
+        throw new Error("rebalance execution reuses an earlier portfolio version");
+      }
       assertProgress(plan.actions[event.actionSequence]!, nextAction, event);
       nextAction.fillCount += 1;
       nextAction.cumulativeFilledNotionalKrw = event.cumulativeFilledNotionalKrw;
@@ -79,6 +83,7 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
       if (nextAction.complete) nextActionSequence += 1;
       fillIds.add(event.fillId); paperFillIds.add(event.paperFillRecordId); riskIds.add(event.riskDecisionId);
       executionEventIds.push(event.planEventId);
+      portfolioVersions.add(event.resultingPortfolioVersion);
       executionPortfolioVersion = event.resultingPortfolioVersion;
       executionPortfolioSnapshotHash = event.resultingPortfolioSnapshotHash;
     } else if (event.eventType === "applied") {
