@@ -3380,6 +3380,34 @@ Verified history는 실제 repository read에서만 발급하며 raw parser 결�
 이 검증은 저장 이력의 무결성 범위이며 Risk rule-set/plan/action/evidence의 의미적 인증과 독립 재평가,
 fill binding 및 multi-artifact transaction은 아직 후속 범위이다. 기존 파일의 migration이나 live 경로 변경은 없다.
 
+서른일곱 번째 분할은 `validateRebalancePlanExecutionFillRiskBinding`으로 execution event와
+저장된 decision/fill을 대조한다. Exact record ID/hash, portfolio/plan/action/policy와 market/symbol/side,
+requested/filled 금액·수량, expected pre-state 및 prior+fill cumulative를 검증한다.
+Paper-fill raw parser의 기존 구조 검증 API는 유지하되, 이 binding에서는 repository read에서만
+발급되는 추가 내부 brand를 요구하여 임의 JSONL에서 만든 history를 실제 저장 근거로 인정하지 않는다.
+Source-price origin과 availability도 다시 검증하며 decision 저장시각 <= fill cutoff <= event cutoff를
+요구한다. Fill source-price evidence ID는 decision의 `riskEvidenceRefs`에도 포함돼야 하며
+fill record 생성시각이 event cutoff보다 늦으면 거절한다.
+신규 paper fill은 `paper_fill_execution_entry.v1` envelope에 `appendStartedAt`과 predecessor hash를
+저장하고 record fsync가 완료된 뒤 `paper_fill_execution_commit.v1` marker의 `committedAt`을
+채집·저장한다. Origin의 `appendedAt`은 이 post-fsync 시각이며 binding은 event cutoff보다 엄격히
+이전인지 검증한다. 같은 밀리초는 실제 선후관계를 증명하지 못하므로 거절하며, caller는 append
+완료 후 origin보다 늦은 cutoff에서 event를 생성해야 한다. Marker는 해당 entry hash를 포함하고
+후속 entry는 marker hash를 predecessor로 참조한다.
+Marker 누락·변조·torn pair는 읽기와 append를 모두 거절하며 자동 복구·timestamp 합성을 하지 않는다.
+기존 bare record의
+조회와 exact retry는 유지하지만 append 시각은 합성하지 않으며 execution binding은 이를
+`review_required` legacy로 거절한다. Versioned entry 뒤의 bare entry는 downgrade로 거절한다.
+새 reader는 legacy prefix와 versioned entry를 함께 읽지만 이전 reader는 versioned entry를 읽지
+못하므로 롤백 시 신규 실행을 중지하고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
+가격 근거의 저장소 기록시각도 decision의 `decidedAt` 이하여야 한다.
+현재 source-price와 Risk decision 저장소의 `appendedAt`은 fsync 전 채집 시각이므로 위 cutoff 검사는
+그 두 저장소의 durable completion까지 증명하지 않는다. 최종 execution 연결 전에 두 저장소에도
+post-fsync origin과 중간 실패 검증을 추가해야 하며, 이 binding만으로 최종 실행을 승인하면 안 된다.
+Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
+이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
+독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

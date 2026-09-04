@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
+
+import { sha256HashSchema } from "../domain/schemas.js";
+import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 import {
   parsePaperFillExecutionRecord,
@@ -18,6 +22,27 @@ export interface PaperFillExecutionFileRepositoryOptions {
 
 const verifiedPaperFillExecutionHistories =
   new WeakSet<VerifiedPaperFillExecutionHistory>();
+const persistedPaperFillExecutionHistories =
+  new WeakSet<VerifiedPaperFillExecutionHistory>();
+const persistedPaperFillMetadata = new WeakMap<VerifiedPaperFillExecutionHistory, {
+  appendedAtById: ReadonlyMap<string, string>;
+  lastEntryHash: string | null;
+}>();
+
+const fileEntrySchema = z.object({
+  schemaVersion: z.literal("paper_fill_execution_entry.v1"),
+  record: z.unknown(),
+  appendStartedAt: offsetQualifiedIsoDateTimeSchema,
+  previousEntryHash: sha256HashSchema.nullable(),
+  entryHash: sha256HashSchema
+}).strict();
+
+const commitMarkerSchema = z.object({
+  schemaVersion: z.literal("paper_fill_execution_commit.v1"),
+  entryHash: sha256HashSchema,
+  committedAt: offsetQualifiedIsoDateTimeSchema,
+  commitHash: sha256HashSchema
+}).strict();
 
 export interface VerifiedPaperFillExecutionHistory {
   records: readonly PaperFillExecutionRecord[];
@@ -81,7 +106,8 @@ export class PaperFillExecutionFileRepository {
   async append(value: unknown): Promise<PaperFillExecutionRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
-      const records = (await this.readHistoryUnderLock()).records;
+      const history = await this.readHistoryUnderLock();
+      const records = history.records;
       const existing = records.find(
         (record) => record.paperFillRecordId === candidate.paperFillRecordId
       );
@@ -106,7 +132,32 @@ export class PaperFillExecutionFileRepository {
       ) {
         throw new Error("paper fill execution has a duplicate portfolio fill ID");
       }
-      await appendDurableJsonLine(this.recordsPath, candidate);
+      const appendStartedAt = new Date().toISOString();
+      if (Date.parse(appendStartedAt) < Date.parse(candidate.createdAt)) {
+        throw new Error("paper fill cannot be appended before creation");
+      }
+      const payload = {
+        schemaVersion: "paper_fill_execution_entry.v1" as const,
+        record: candidate,
+        appendStartedAt,
+        previousEntryHash: persistedPaperFillMetadata.get(history)!.lastEntryHash
+      };
+      const entryHash = hashCanonicalPayload(payload);
+      await appendDurableJsonLine(this.recordsPath, { ...payload, entryHash });
+      // Sample only after the record and directory durability operations complete.
+      // A crash before the marker leaves an incomplete pair, never an origin.
+      const committedAt = new Date().toISOString();
+      if (Date.parse(committedAt) < Date.parse(appendStartedAt)) {
+        throw new Error("paper fill clock moved backwards during append");
+      }
+      const marker = {
+        schemaVersion: "paper_fill_execution_commit.v1" as const,
+        entryHash,
+        committedAt
+      };
+      await appendDurableJsonLine(this.recordsPath, {
+        ...marker, commitHash: hashCanonicalPayload(marker)
+      });
       return candidate;
     });
   }
@@ -117,11 +168,15 @@ export class PaperFillExecutionFileRepository {
       raw = await readFile(this.recordsPath, "utf8");
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        return parseVerifiedPaperFillExecutionHistory("");
+        raw = "";
+      } else {
+        throw error;
       }
-      throw error;
     }
-    return parseVerifiedPaperFillExecutionHistory(raw);
+    const { history, appendedAtById, lastEntryHash } = parsePaperFillExecutionLog(raw);
+    persistedPaperFillExecutionHistories.add(history);
+    persistedPaperFillMetadata.set(history, { appendedAtById, lastEntryHash });
+    return history;
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -151,6 +206,10 @@ export function parsePaperFillExecutions(
 export function parseVerifiedPaperFillExecutionHistory(
   raw: string
 ): VerifiedPaperFillExecutionHistory {
+  return parsePaperFillExecutionLog(raw).history;
+}
+
+function parsePaperFillExecutionLog(raw: string) {
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error("paper fill execution file has a torn final line");
   }
@@ -160,7 +219,11 @@ export function parseVerifiedPaperFillExecutionHistory(
   const ids = new Set<string>();
   const hashes = new Set<string>();
   const portfolioFillIds = new Set<string>();
-  for (const [index, line] of lines.entries()) {
+  const appendedAtById = new Map<string, string>();
+  let lastEntryHash: string | null = null;
+  let hasVersionedEntry = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
     if (line.length === 0) {
       throw new Error(
         `paper fill execution file contains corrupt line ${index + 1}`
@@ -168,7 +231,45 @@ export function parseVerifiedPaperFillExecutionHistory(
     }
     let record: PaperFillExecutionRecord;
     try {
-      record = parsePaperFillExecutionRecord(JSON.parse(line));
+      const value: unknown = JSON.parse(line);
+      if (value !== null && typeof value === "object" && "schemaVersion" in value) {
+        const entry = fileEntrySchema.parse(value);
+        record = parsePaperFillExecutionRecord(entry.record);
+        const payload = {
+          schemaVersion: entry.schemaVersion, record, appendStartedAt: entry.appendStartedAt,
+          previousEntryHash: entry.previousEntryHash
+        };
+        if (entry.previousEntryHash !== lastEntryHash ||
+          entry.entryHash !== hashCanonicalPayload(payload) ||
+          !isDeepStrictEqual(value, { ...payload, entryHash: entry.entryHash }) ||
+          Date.parse(entry.appendStartedAt) < Date.parse(record.createdAt)) {
+          throw new Error("paper fill append origin mismatch");
+        }
+        const markerValue: unknown = JSON.parse(lines[++index] ?? "");
+        const marker = commitMarkerSchema.parse(markerValue);
+        const commitPayload = {
+          schemaVersion: marker.schemaVersion,
+          entryHash: marker.entryHash,
+          committedAt: marker.committedAt
+        };
+        if (marker.entryHash !== entry.entryHash ||
+          marker.commitHash !== hashCanonicalPayload(commitPayload) ||
+          !isDeepStrictEqual(markerValue, { ...commitPayload, commitHash: marker.commitHash }) ||
+          Date.parse(marker.committedAt) < Date.parse(entry.appendStartedAt)) {
+          throw new Error("paper fill durable commit origin mismatch");
+        }
+        appendedAtById.set(record.paperFillRecordId, marker.committedAt);
+        lastEntryHash = marker.commitHash;
+        hasVersionedEntry = true;
+      } else {
+        if (hasVersionedEntry) throw new Error("legacy fill cannot follow versioned entry");
+        record = parsePaperFillExecutionRecord(value);
+        // A legacy prefix participates in the chain, but gains no invented timestamp.
+        lastEntryHash = hashCanonicalPayload({
+          schemaVersion: "paper_fill_execution_legacy_prefix.v1",
+          record, previousEntryHash: lastEntryHash
+        });
+      }
     } catch (error) {
       throw new Error(
         `paper fill execution file contains corrupt line ${index + 1}`,
@@ -194,7 +295,7 @@ export function parseVerifiedPaperFillExecutionHistory(
   }
   const history = Object.freeze({ records: Object.freeze(records) });
   verifiedPaperFillExecutionHistories.add(history);
-  return history;
+  return { history, appendedAtById, lastEntryHash };
 }
 
 export function getVerifiedPaperFillExecutionRecords(
@@ -204,6 +305,32 @@ export function getVerifiedPaperFillExecutionRecords(
     throw new Error("paper fill execution history is not verified");
   }
   return history.records;
+}
+
+/** Requires a history read through the repository, not merely parsed JSONL. */
+export function getPersistedPaperFillExecutionRecords(
+  history: VerifiedPaperFillExecutionHistory
+): readonly PaperFillExecutionRecord[] {
+  if (!persistedPaperFillExecutionHistories.has(history)) {
+    throw new Error("paper fill execution history is not repository verified");
+  }
+  return getVerifiedPaperFillExecutionRecords(history);
+}
+
+export function resolvePersistedPaperFillExecutionOrigin(
+  history: VerifiedPaperFillExecutionHistory,
+  paperFillRecordId: string
+): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string }> {
+  const matches = getPersistedPaperFillExecutionRecords(history)
+    .filter((record) => record.paperFillRecordId === paperFillRecordId);
+  if (matches.length !== 1) {
+    throw new Error("paper fill execution does not resolve exactly once");
+  }
+  const appendedAt = persistedPaperFillMetadata.get(history)?.appendedAtById.get(paperFillRecordId);
+  if (appendedAt === undefined) {
+    throw new Error("paper fill append origin is unavailable; legacy record requires review");
+  }
+  return Object.freeze({ record: matches[0]!, appendedAt });
 }
 
 function sameSemanticRecord(
@@ -222,7 +349,7 @@ function cloneRecord(value: unknown): PaperFillExecutionRecord {
 
 async function appendDurableJsonLine(
   path: string,
-  value: PaperFillExecutionRecord
+  value: z.infer<typeof fileEntrySchema> | z.infer<typeof commitMarkerSchema>
 ): Promise<void> {
   const handle = await open(path, "a");
   try {
