@@ -3386,7 +3386,9 @@ requested/filled 금액·수량, expected pre-state 및 prior+fill cumulative를
 Paper-fill raw parser의 기존 구조 검증 API는 유지하되, 이 binding에서는 repository read에서만
 발급되는 추가 내부 brand를 요구하여 임의 JSONL에서 만든 history를 실제 저장 근거로 인정하지 않는다.
 Source-price origin과 availability도 다시 검증하며 decision 저장시각 <= fill cutoff <= event cutoff를
-요구한다. Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
+요구한다. Fill source-price evidence ID는 decision의 `riskEvidenceRefs`에도 포함돼야 하며
+fill record 생성시각이 event cutoff보다 늦으면 거절한다.
+Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
 이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
 독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.
 

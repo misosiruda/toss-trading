@@ -137,6 +137,19 @@ test("execution binding requires verified histories and revalidates source evide
   });
 });
 
+test("execution binding rejects a price observation unrelated to the approved risk evidence", async () => {
+  await withFixture({ unrelatedRiskPrice: true }, async (fixture) => {
+    assert.equal(fixture.sourcePriceEvidenceHistory.records.length, 2);
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /source evidence mismatch/);
+  });
+});
+
+test("execution binding rejects fill creation after the event cutoff", async () => {
+  await withFixture({ fillCreatedAtOffsetMs: 1 }, async (fixture) => {
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
+  });
+});
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -145,6 +158,7 @@ async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture
 
 async function prepare(baseDir: string, options: {
   side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>; beforeRisk?: boolean;
+  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number;
 }) {
   const side = options.side ?? "BUY";
   const asOf = "2020-01-01T00:00:00.000Z";
@@ -154,6 +168,11 @@ async function prepare(baseDir: string, options: {
   });
   const sourceRepository = new SourcePriceEvidenceFileRepository(join(baseDir, "prices"));
   await sourceRepository.append(evidence);
+  const riskPriceEvidence = options.unrelatedRiskPrice ? createSourcePriceEvidenceRecord({
+    sourceContractId: "alternative-source-v1", market: "KR", symbol: "KR:005930",
+    priceField: "last_price", priceKrw: 100, observedAt: asOf, sourceRefs: ["alternative-fixture"], createdAt: asOf
+  }) : evidence;
+  if (options.unrelatedRiskPrice) await sourceRepository.append(riskPriceEvidence);
   const sourcePriceEvidenceHistory = await sourceRepository.readVerifiedHistory();
   if (options.beforeRisk) await new Promise((resolve) => setTimeout(resolve, 5));
   const riskDecision = createPortfolioActionRiskDecision({
@@ -173,7 +192,7 @@ async function prepare(baseDir: string, options: {
       : { side, expectedMinimumNetCashCreditKrw: 1_000 },
     decision: "approved", requiredRuleIds: ["cash"],
     ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "within_limit" }],
-    riskEvidenceRefs: [evidence.evidenceRef], decidedAt: asOf,
+    riskEvidenceRefs: [riskPriceEvidence.evidenceRef], decidedAt: asOf,
     ...options.risk
   });
   const riskRepository = new PortfolioActionRiskDecisionFileRepository(join(baseDir, "risk"));
@@ -203,7 +222,8 @@ async function prepare(baseDir: string, options: {
     fractionalShares: fill.fractionalShares, executionPolicy,
     costBreakdown: { feeKrw: fill.feeKrw, taxKrw: fill.taxKrw, slippageKrw: fill.slippageKrw,
       spreadCostKrw: fill.spreadCostKrw, impactCostKrw: fill.impactCostKrw, totalCostKrw: fill.totalCostKrw },
-    evidenceRefs: [evidence.evidenceRef], asOf: fillAsOf, createdAt: fillAsOf
+    evidenceRefs: [evidence.evidenceRef], asOf: fillAsOf,
+    createdAt: new Date(Date.parse(fillAsOf) + (options.fillCreatedAtOffsetMs ?? 0)).toISOString()
   });
   const fillRepository = new PaperFillExecutionFileRepository(join(baseDir, "fills"));
   await fillRepository.append(paperFill);
