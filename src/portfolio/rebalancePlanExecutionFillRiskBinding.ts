@@ -84,7 +84,7 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
     throw new Error("execution fill risk binding cumulative amount mismatch");
   }
   if (
-    Date.parse(priceOrigin.appendedAt) > Date.parse(riskDecision.decidedAt) ||
+    Date.parse(priceOrigin.appendedAt) >= Date.parse(riskDecision.decidedAt) ||
     Date.parse(riskOrigin.appendedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(riskDecision.decidedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(paperFill.asOf) > Date.parse(event.asOf) ||

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readFile, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +11,8 @@ import {
   SourcePriceEvidenceFileRepository,
   createSourcePriceEvidencePaths,
   getVerifiedSourcePriceEvidenceRecords,
+  parseSourcePriceEvidenceRecords,
+  resolveVerifiedSourcePriceEvidenceOrigin,
   type VerifiedSourcePriceEvidenceHistory
 } from "./sourcePriceEvidenceFiles.js";
 
@@ -43,24 +45,28 @@ test("source price evidence repository appends, resolves, and converges retries"
       createSourcePriceEvidencePaths(baseDir).recordsPath,
       "utf8"
     );
-    const entry = JSON.parse(raw) as {
-      record: unknown;
-      appendedAt: string;
-      previousEntryHash: string | null;
-      entryHash: string;
-    };
+    const [entry, marker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
     assert.deepEqual(entry.record, record);
     assert.equal(entry.previousEntryHash, null);
-    assert.ok(Date.parse(entry.appendedAt) >= beforeAppend);
-    assert.ok(Date.parse(entry.appendedAt) <= Date.now());
+    assert.equal(entry.schemaVersion, "source_price_evidence_entry.v2");
+    assert.equal(marker.schemaVersion, "source_price_evidence_commit.v1");
+    assert.ok(Date.parse(marker.committedAt) >= beforeAppend);
+    assert.ok(Date.parse(marker.committedAt) <= Date.now());
     assert.equal(
       entry.entryHash,
       hashCanonicalPayload({
+        schemaVersion: entry.schemaVersion,
         record,
-        appendedAt: entry.appendedAt,
+        appendStartedAt: entry.appendStartedAt,
         previousEntryHash: null
       })
     );
+    assert.equal(marker.entryHash, entry.entryHash);
+    const restarted = await new SourcePriceEvidenceFileRepository(baseDir).readVerifiedHistory();
+    assert.equal(resolveVerifiedSourcePriceEvidenceOrigin(restarted, record.evidenceRef).appendedAt, marker.committedAt);
+    assert.deepEqual(parseSourcePriceEvidenceRecords(raw), [record]);
+    await repository.append(record);
+    assert.equal(await readFile(createSourcePriceEvidencePaths(baseDir).recordsPath, "utf8"), raw);
   });
 });
 
@@ -130,13 +136,12 @@ test("source price evidence repository rejects ref and semantic origin collision
   });
 });
 
-test("source price evidence repository fails closed for corrupt and torn history", async () => {
+test("source price evidence repository preserves legacy corruption and duplicate detection", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const paths = createSourcePriceEvidencePaths(baseDir);
     const record = sourcePriceEvidence();
     const repository = new SourcePriceEvidenceFileRepository(baseDir);
-    await repository.append(record);
-    const validRaw = await readFile(paths.recordsPath, "utf8");
+    const validRaw = JSON.stringify(durableEntry(record, record.createdAt, null)) + "\n";
     const firstEntry = JSON.parse(validRaw) as {
       appendedAt: string;
       entryHash: string;
@@ -207,6 +212,103 @@ test("source price evidence repository leaves abandoned locks fail-closed", asyn
     });
     await assert.rejects(() => repository.readAll(), /lock is unavailable/);
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
+  });
+});
+
+test("source price evidence preserves legacy query and retry without promoting an origin", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const first = sourcePriceEvidence();
+    const legacyEntry = durableEntry(first, first.createdAt, null);
+    const raw = JSON.stringify(legacyEntry) + "\n";
+    const paths = createSourcePriceEvidencePaths(baseDir);
+    await writeFile(paths.recordsPath, raw);
+    const repository = new SourcePriceEvidenceFileRepository(baseDir);
+    assert.deepEqual(await repository.append(first), first);
+    assert.equal(await readFile(paths.recordsPath, "utf8"), raw);
+    const legacyHistory = await repository.readVerifiedHistory();
+    assert.deepEqual(legacyHistory.records, [first]);
+    assert.throws(() => resolveVerifiedSourcePriceEvidenceOrigin(legacyHistory, first.evidenceRef), /legacy record requires review/);
+    const second = sourcePriceEvidence({ observedAt: "2026-09-01T01:00:01.000Z" });
+    await repository.append(second);
+    const history = await new SourcePriceEvidenceFileRepository(baseDir).readVerifiedHistory();
+    assert.deepEqual(history.records, [first, second]);
+    assert.equal(resolveVerifiedSourcePriceEvidenceOrigin(history, second.evidenceRef).record.evidenceRef, second.evidenceRef);
+    assert.throws(() => resolveVerifiedSourcePriceEvidenceOrigin(history, first.evidenceRef), /legacy record requires review/);
+    const mixed = await readFile(paths.recordsPath, "utf8");
+    assert.equal(JSON.parse(mixed.split("\n")[1]!).previousEntryHash, legacyEntry.entryHash);
+    for (const damaged of [mixed.slice(raw.length), mixed + raw]) {
+      await writeFile(paths.recordsPath, damaged);
+      await assert.rejects(() => repository.readAll(), /corrupt line/);
+      await assert.rejects(() => repository.append(second), /corrupt line/);
+    }
+  });
+});
+
+test("source price evidence requires complete paired markers and authenticates the commit chain", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new SourcePriceEvidenceFileRepository(baseDir);
+    const first = sourcePriceEvidence();
+    const second = sourcePriceEvidence({ observedAt: "2026-09-01T01:00:01.000Z" });
+    await repository.append(first);
+    await repository.append(second);
+    const path = createSourcePriceEvidencePaths(baseDir).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const lines = raw.trimEnd().split("\n");
+    const [entry, marker, nextEntry, nextMarker] = lines.map((line) => JSON.parse(line));
+    assert.equal(nextEntry.previousEntryHash, marker.commitHash);
+    assert.deepEqual(await repository.readAll(), [first, second]);
+    for (const damaged of [
+      `${lines[0]}\n`, `${lines[0]}\n{`, `${lines[1]}\n`,
+      `${lines[0]}\n${lines[3]}\n`,
+      JSON.stringify({ ...entry, previousEntryHash: HASH_A }) + "\n" + lines[1] + "\n",
+      lines[0] + "\n" + JSON.stringify({ ...marker, committedAt: "2000-01-01T00:00:00.000Z" }) + "\n",
+      lines.slice(2).join("\n") + "\n",
+      lines.slice(0, 2).join("\n") + "\n" + JSON.stringify({ ...nextEntry, previousEntryHash: entry.entryHash }) + "\n" + JSON.stringify(nextMarker) + "\n",
+      raw + lines[1] + "\n"
+    ]) {
+      await writeFile(path, damaged);
+      await assert.rejects(() => repository.readVerifiedHistory(), /corrupt|torn/);
+      await assert.rejects(() => repository.append(first), /corrupt|torn/);
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
+  });
+});
+
+test("source price evidence origin is sampled after delayed record fsync", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const path = createSourcePriceEvidencePaths(baseDir).recordsPath;
+    const probe = await open(join(baseDir, "probe"), "a");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let duringWrite = 0;
+    let afterRecordSync = 0;
+    const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const ownStat = await this.stat();
+      const targetStat = await stat(path).catch(() => undefined);
+      const isRecord = afterRecordSync === 0 && targetStat !== undefined &&
+        ownStat.isFile() && ownStat.ino === targetStat.ino &&
+        (process.platform === "win32" || ownStat.dev === targetStat.dev);
+      if (isRecord) {
+        duringWrite = Date.now();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await originalSync.call(this);
+      if (isRecord) afterRecordSync = Date.now();
+    });
+    try {
+      const record = sourcePriceEvidence();
+      const repository = new SourcePriceEvidenceFileRepository(baseDir);
+      await repository.append(record);
+      const history = await new SourcePriceEvidenceFileRepository(baseDir).readVerifiedHistory();
+      const origin = resolveVerifiedSourcePriceEvidenceOrigin(history, record.evidenceRef);
+      assert.ok(duringWrite > 0);
+      assert.ok(afterRecordSync > duringWrite);
+      assert.ok(Date.parse(origin.appendedAt) >= afterRecordSync);
+      assert.ok(Date.parse(origin.appendedAt) > duringWrite);
+    } finally {
+      syncMock.mock.restore();
+    }
   });
 });
 

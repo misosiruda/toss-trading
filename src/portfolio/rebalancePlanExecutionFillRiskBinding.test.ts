@@ -13,7 +13,7 @@ import { PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActi
 import { createRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
 import { validateRebalancePlanExecutionFillRiskBinding } from "./rebalancePlanExecutionFillRiskBinding.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
-import { SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js";
+import { SourcePriceEvidenceFileRepository, resolveVerifiedSourcePriceEvidenceOrigin } from "./sourcePriceEvidenceFiles.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
@@ -176,6 +176,12 @@ test("execution binding rejects ambiguous same-millisecond durable origin and ac
   });
 });
 
+test("execution binding rejects a decision in the same millisecond as its source commit", async () => {
+  await withFixture({ samePriceDecisionInstant: true }, async (fixture) => {
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
+  });
+});
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -184,7 +190,7 @@ async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture
 
 async function prepare(baseDir: string, options: {
   side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>; beforeRisk?: boolean;
-  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean;
+  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean; samePriceDecisionInstant?: boolean;
 }) {
   const side = options.side ?? "BUY";
   const asOf = "2020-01-01T00:00:00.000Z";
@@ -201,6 +207,9 @@ async function prepare(baseDir: string, options: {
   if (options.unrelatedRiskPrice) await sourceRepository.append(riskPriceEvidence);
   const sourcePriceEvidenceHistory = await sourceRepository.readVerifiedHistory();
   if (options.beforeRisk) await new Promise((resolve) => setTimeout(resolve, 5));
+  const priceCommittedAt = resolveVerifiedSourcePriceEvidenceOrigin(sourcePriceEvidenceHistory, riskPriceEvidence.evidenceRef).appendedAt;
+  // Fixtures create downstream decisions only after the source's timestamp bucket.
+  await new Promise((resolve) => setTimeout(resolve, 2));
   const riskDecision = createPortfolioActionRiskDecision({
     riskRuleSetRecordId: "rules-1", riskRuleSetVersion: "v1", riskRuleSetHash: HASH_A,
     planId: "plan-1", actionId: "action-1", portfolioId: "portfolio-1", policyHash: HASH_A,
@@ -218,7 +227,8 @@ async function prepare(baseDir: string, options: {
       : { side, expectedMinimumNetCashCreditKrw: 1_000 },
     decision: "approved", requiredRuleIds: ["cash"],
     ruleResults: [{ ruleId: "cash", result: "pass", reasonCode: "within_limit" }],
-    riskEvidenceRefs: [riskPriceEvidence.evidenceRef], decidedAt: new Date().toISOString(),
+    riskEvidenceRefs: [riskPriceEvidence.evidenceRef],
+    decidedAt: options.samePriceDecisionInstant ? priceCommittedAt : new Date().toISOString(),
     ...options.risk
   });
   const riskRepository = new PortfolioActionRiskDecisionFileRepository(join(baseDir, "risk"));

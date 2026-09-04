@@ -61,7 +61,8 @@ function assertSourcePriceEvidenceMatches(
   if (evidence.priceKrw !== record.sourcePriceKrw) {
     throw new Error("paper fill source price evidence value mismatch");
   }
-  if (Date.parse(appendedAt) > Date.parse(record.asOf)) {
+  // A same-millisecond bucket cannot prove that fsync preceded the cutoff.
+  if (Date.parse(appendedAt) >= Date.parse(record.asOf)) {
     throw new Error("paper fill source price evidence postdates fill cutoff");
   }
 }

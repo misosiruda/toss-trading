@@ -3335,9 +3335,10 @@ Typed source-price evidence exact resolver, plan execution event/accounting orig
 evidence ref/hash, source contract, market/symbol, `last_price`, observation instant를 projection과 대조하며
 `priceKrw`를 fill의 `sourcePriceKrw`와 exact-match한다. Availability 판단에는 caller-provided evidence
 `createdAt`을 사용하지 않고, strict append-only `SourcePriceEvidenceFileRepository`가 append 시 생성한
-`appendedAt`을 사용한다. Durable file line은 complete evidence record, `appendedAt`, predecessor entry hash를
-포함하고 이 complete payload를 entry hash로 인증한다. Resolver는 repository가 발급한 opaque verified complete
-history에서만 이 append origin을 얻으며 `appendedAt`이 fill `asOf`를 초과하면 fail-closed한다. 기존 raw-record
+`appendedAt`을 사용한다. 초기 durable envelope은 complete evidence record, 쓰기 전 `appendedAt`, predecessor
+entry hash를 포함한다. 아래 서른여덟 번째 분할은 이를 post-fsync commit origin으로 강화한다.
+Resolver는 repository가 발급한 opaque verified complete history에서만 origin을 얻으며 현재는
+`appendedAt`이 fill `asOf` 이상이면 fail-closed한다. 기존 raw-record
 line은 신뢰 가능한 append timestamp가 없으므로 자동 호환하지 않고 typed source evidence artifact를 새 envelope
 format으로 재생성해야 한다. Plan execution event/accounting origin과 fill risk-state update 연결은 후속 분할
 전까지 구현 완료로 간주하지 않는다.
@@ -3400,13 +3401,30 @@ Marker 누락·변조·torn pair는 읽기와 append를 모두 거절하며 자�
 `review_required` legacy로 거절한다. Versioned entry 뒤의 bare entry는 downgrade로 거절한다.
 새 reader는 legacy prefix와 versioned entry를 함께 읽지만 이전 reader는 versioned entry를 읽지
 못하므로 롤백 시 신규 실행을 중지하고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
-가격 근거의 저장소 기록시각도 decision의 `decidedAt` 이하여야 한다.
-현재 source-price와 Risk decision 저장소의 `appendedAt`은 fsync 전 채집 시각이므로 위 cutoff 검사는
-그 두 저장소의 durable completion까지 증명하지 않는다. 최종 execution 연결 전에 두 저장소에도
-post-fsync origin과 중간 실패 검증을 추가해야 하며, 이 binding만으로 최종 실행을 승인하면 안 된다.
+가격 근거의 post-fsync origin도 decision의 `decidedAt`보다 엄격히 이전이어야 한다.
+현재 Risk decision 저장소의 `appendedAt`은 fsync 전 채집 시각이므로 위 cutoff 검사는 그 저장소의
+durable completion까지 증명하지 않는다. 최종 execution 연결 전에 Risk 저장소에도 post-fsync origin과
+중간 실패 검증을 추가해야 하며, 이 binding만으로 최종 실행을 승인하면 안 된다.
 Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
 이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
 독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.
+
+서른여덟 번째 분할은 가격 근거의 실제 record durability를 `source_price_evidence_entry.v2`와
+`source_price_evidence_commit.v1` marker 쌍으로 보존한다. Entry는 complete record, `appendStartedAt`,
+predecessor hash를 포함하고 file/directory sync를 마친 뒤 채집한 `committedAt`을 별도 marker에 저장한다.
+Marker는 entry hash에 결합하며 다음 entry는 marker hash를 predecessor로 참조한다. Origin API의
+`appendedAt`은 marker의 post-record-fsync `committedAt`으로 해소한다. Marker 자체의 저장 완료시각을
+의미하지 않는다. Marker 누락·torn pair·변조·orphan·chain 절단은 read/append 모두 fail-closed하며
+자동 marker 보충이나 기록 삭제를 하지 않는다.
+
+기존 unversioned envelope prefix는 조회와 exact retry bytes를 유지하지만 post-fsync 시각을 합성하지
+않는다. Legacy source origin은 `review_required` 오류로 거절하고 versioned pair 뒤의 legacy append도
+거절한다. 기존 raw record parser의 조회 계약과 bucket valuation read 경로는 유지한다. 실제 fsync를
+지연시키는 회귀 테스트와 mixed legacy/new prefix, source→fill 및 source→decision 동일 밀리초 거절을
+검증한다. 같은 밀리초는 선후관계가 불명확하므로 downstream cutoff는 origin보다 늦어야 한다.
+이전 reader는 새 pair를 읽지 못하므로 새 기록이 생긴 후에는 reader를 유지하거나 검증된 별도 호환
+절차가 필요하다. Runtime 자동 migration이나 외부 호출은 없으며 Risk decision post-fsync 보강과 최종
+plan/action/transaction 연결은 여전히 후속이다.
 
 완료 조건:
 
