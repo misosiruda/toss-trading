@@ -3476,6 +3476,19 @@ decision이라도 policy-selected rule set 또는 required/result ID 집합이 �
 이 조회는 저장 경로와 파일 접근 제어를 신뢰하며 파일을 직접 재작성할 수 있는 공격자에 대한
 외부 인증이나 읽기 이후의 동시 변경까지 고정하는 실행 transaction을 제공하지 않는다.
 
+정책을 나중에 backfill하여 기존 결정을 소급 정당화하지 못하도록
+`PortfolioActionRiskDecisionFileRepository.createAndAppendWithPolicyOrigin`이 같은 경로의
+전체 정책 generation을 읽고 activation 파일을 cooperative lock 아래 fsync한 뒤에만
+Risk 레코드를 생성한다. `decidedAt`·완성 레코드 입력은 받지 않으며 activation ID/hash,
+runtime policy ID/hash/lineage와 관측 시각을 `portfolio_action_risk_decision_entry.v3`의
+`policyOrigin` receipt에 묶고 기존 commit marker와 함께 저장한다. resolver는 이 receipt와
+결정시각의 활성 정책이 일치하는지도 확인한다. 기존 bare/v2 query·exact retry는 유지하지만
+receipt 없는 결정은 새 policy resolver에서 legacy review 대상으로 거절하며 자동 승격하지 않는다.
+동일 생성 입력과 동일 activation identity의 factory retry는 원래 record·receipt·시각을 반환하고,
+기존 무근거 record에 receipt를 추가하거나 다른 activation으로 교체하지 않는다.
+이 factory도 caller의 규칙 결과를 독립 재계산하지 않으므로 최종 Risk 승인 API가 아니다.
+v3 저장 뒤 구 reader는 fail-closed하므로 rollback 시 새 reader를 유지해야 하며 자동 downgrade는 없다.
+
 완료 조건:
 
 - overweight bucket은 신규 candidate request를 만들지 않는다.

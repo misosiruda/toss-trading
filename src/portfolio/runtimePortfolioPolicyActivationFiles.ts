@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import type { ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
-import type { LoadedImmutablePolicyDependencies } from "./runtimePolicyDependencyFiles.js";
+import { ImmutablePolicyDependencyFileLoader, type LoadedImmutablePolicyDependencies } from "./runtimePolicyDependencyFiles.js";
+import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import type { RuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 import {
@@ -44,6 +45,17 @@ export interface RuntimePortfolioPolicyActivationSnapshot {
   dependencies: LoadedImmutablePolicyDependencies;
   policies: readonly RuntimePortfolioPolicyRecord[];
   events: readonly PortfolioPolicyActivationEvent[];
+}
+
+/** Concrete storage composition; callers cannot substitute a history prefix. */
+export async function readStoredRuntimePortfolioPolicyActivationSnapshot(
+  baseDir: string
+): Promise<RuntimePortfolioPolicyActivationSnapshot> {
+  return readConsistentRuntimePortfolioPolicyActivationSnapshot({
+    loadDependencies: () => new ImmutablePolicyDependencyFileLoader(baseDir).load(),
+    readPolicies: (dependencies) => new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository).readGeneration(),
+    readEvents: (policies, dependencies) => new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository).readDurableGeneration()
+  });
 }
 
 export type RuntimePortfolioPolicyActivationGenerationRead =
@@ -272,6 +284,17 @@ export class RuntimePortfolioPolicyActivationFileRepository {
 
   async readGeneration(): Promise<RuntimePortfolioPolicyActivationGenerationRead> {
     return this.withLock(async () => this.readGenerationUnderLock());
+  }
+
+  /** Acknowledges the validated event bytes under the cooperative writer lock. */
+  async readDurableGeneration(): Promise<RuntimePortfolioPolicyActivationGenerationRead> {
+    return this.withLock(async () => {
+      const generation = await this.readGenerationUnderLock();
+      if (generation.status === "ok" && generation.records.length > 0) {
+        await syncDurableJsonFile(this.eventsPath);
+      }
+      return generation;
+    });
   }
 
   async resolveActiveAsOf(

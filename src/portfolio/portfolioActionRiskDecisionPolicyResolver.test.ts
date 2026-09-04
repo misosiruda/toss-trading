@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
-import { PortfolioActionRiskDecisionFileRepository } from "./portfolioActionRiskDecisionFiles.js";
+import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { resolvePortfolioActionRiskDecisionPolicy } from "./portfolioActionRiskDecisionPolicyResolver.js";
 import {
   createBucketDrawdownSemanticsRecord, createBucketSelectionPolicyRecord,
@@ -101,10 +101,11 @@ test("risk policy resolver reloads complete stored activation history and reject
     await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(truncated), /unrecognized_keys/);
   });
   await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+    const stored = await new PortfolioActionRiskDecisionFileRepository(input.baseDir).resolveById(input.riskDecisionId);
     await new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy], fixture.dependencies).appendRetired({
       portfolioId: fixture.policy.portfolioId,
       retiredActivationId: fixture.activation.activationId, reasonCode: "fixture",
-      createdAt: "2026-09-04T00:00:00.000Z"
+      createdAt: new Date(Date.parse(stored.decidedAt) + 60_000).toISOString()
     });
     assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).activePolicy.activation.activationId, fixture.activation.activationId);
     const path = createRuntimePortfolioPolicyActivationPaths(input.baseDir).eventsPath;
@@ -124,7 +125,7 @@ test("risk policy resolver reloads a replacement activation before decision time
     await new RuntimePortfolioPolicyFileRepository(input.baseDir, fixture.dependencies).append(replacement);
     await new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy, replacement], fixture.dependencies)
       .appendActivated({ policy: replacement, supersedesActivationId: fixture.activation.activationId, createdAt: "2026-09-02T00:00:00.000Z" });
-    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /active policy hash mismatch/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /policy origin does not match active policy/);
   });
 });
 
@@ -147,24 +148,134 @@ test("risk policy resolver can explain a rejected record without promoting it to
   });
 });
 
+test("risk policy binding cannot backfill an already-created or stored decision", async () => {
+  const fixture = policyFixture();
+  const directory = await mkdtemp(join(tmpdir(), "toss-risk-policy-backfill-"));
+  try {
+    const repository = new PortfolioActionRiskDecisionFileRepository(directory);
+    const candidate = decisionInput(fixture, "BUY");
+    const precreated = createPortfolioActionRiskDecision(candidate);
+    const { decidedAt: _decidedAt, ...creationInput } = candidate;
+    await assert.rejects(repository.createAndAppendWithPolicyOrigin(creationInput), /active runtime portfolio policy is required/);
+    assert.deepEqual(await repository.readAll(), []);
+    await repository.append(precreated);
+    // All activation timestamps predate the decision, but the bytes are appended later.
+    await storePolicyFixture(directory, fixture);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy({ baseDir: directory, riskDecisionId: precreated.riskDecisionId }), /policy-before-creation provenance/);
+    const before = await readFile(createPortfolioActionRiskDecisionPaths(directory).recordsPath, "utf8");
+    await assert.rejects(repository.createAndAppendWithPolicyOrigin(precreated), /cannot accept a record or timestamp/);
+    await assert.rejects(repository.createAndAppendWithPolicyOrigin(candidate), /cannot accept a record or timestamp/);
+    await assert.rejects(repository.createAndAppendWithPolicyOrigin(creationInput), /cannot be added or replaced/);
+    assert.equal(await readFile(createPortfolioActionRiskDecisionPaths(directory).recordsPath, "utf8"), before);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("policy-bound risk origin survives restart and idempotent retries without timestamp rebinding", async () => {
+  const fixture = policyFixture();
+  await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+    const repository = new PortfolioActionRiskDecisionFileRepository(input.baseDir);
+    const record = await repository.resolveById(input.riskDecisionId);
+    const history = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, input.riskDecisionId);
+    assert.ok(origin.policyOrigin);
+    assert.equal(origin.policyOrigin.activationId, fixture.activation.activationId);
+    assert.ok(Date.parse(origin.policyOrigin.observedAt) <= Date.parse(record.decidedAt));
+    assert.ok(Object.isFrozen(origin.policyOrigin));
+    const { decidedAt: _decidedAt, ...creationInput } = decisionInput(fixture, "BUY");
+    const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
+    const before = await readFile(path, "utf8");
+    const results = await Promise.all([repository.createAndAppendWithPolicyOrigin(creationInput), repository.createAndAppendWithPolicyOrigin(creationInput)]);
+    assert.deepEqual(results, [record, record]);
+    assert.deepEqual(await repository.append(record), record);
+    assert.equal(await readFile(path, "utf8"), before);
+    assert.deepEqual(resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), input.riskDecisionId), origin);
+    assert.equal(JSON.parse(before.split("\n")[0]!).schemaVersion, "portfolio_action_risk_decision_entry.v3");
+  });
+});
+
+test("risk policy origin rejects tampered receipts and rehashed future observations", async () => {
+  const fixture = policyFixture();
+  await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+    const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const [entry, marker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
+    await writeFile(path, `${JSON.stringify({ ...entry, policyOrigin: { ...entry.policyOrigin, activationId: "other" } })}\n${JSON.stringify(marker)}\n`);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /corrupt line/);
+    for (const [policyOrigin, error] of [
+      [{ ...entry.policyOrigin, observedAt: new Date(Date.parse(entry.record.decidedAt) + 1).toISOString() }, /corrupt line/],
+      [{ ...entry.policyOrigin, activationId: "other" }, /policy origin does not match/]
+    ] as const) {
+      const { entryHash: _entryHash, ...payload } = { ...entry, policyOrigin };
+      const entryHash = hashCanonicalPayload(payload);
+      const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+      await writeFile(path, `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`);
+      await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), error);
+    }
+  });
+});
+
+test("policy-bound risk creation waits for activation fsync and fails without a decision on sync error", async (context) => {
+  const fixture = policyFixture();
+  const directory = await mkdtemp(join(tmpdir(), "toss-risk-policy-sync-"));
+  try {
+    await storePolicyFixture(directory, fixture);
+    const eventPath = createRuntimePortfolioPolicyActivationPaths(directory).eventsPath;
+    const eventStat = await stat(eventPath);
+    const probe = await open(eventPath, "r+");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let syncedAt: number | null = null;
+    let failSync = true;
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const metadata = await this.stat();
+      if (metadata.isFile() && metadata.ino === eventStat.ino &&
+        (process.platform === "win32" || metadata.dev === eventStat.dev)) {
+        if (failSync) throw new Error("injected activation fsync failure");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await originalSync.call(this);
+        syncedAt = Date.now();
+        return;
+      }
+      return originalSync.call(this);
+    });
+    try {
+      const repository = new PortfolioActionRiskDecisionFileRepository(directory);
+      const { decidedAt: _decidedAt, ...creationInput } = decisionInput(fixture, "BUY");
+      await assert.rejects(repository.createAndAppendWithPolicyOrigin(creationInput), /injected activation fsync failure/);
+      assert.deepEqual(await repository.readAll(), []);
+      failSync = false;
+      const record = await repository.createAndAppendWithPolicyOrigin(creationInput);
+      const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), record.riskDecisionId);
+      assert.ok(syncedAt !== null);
+      assert.ok(Date.parse(origin.policyOrigin!.observedAt) >= syncedAt);
+      assert.ok(Date.parse(record.decidedAt) >= syncedAt);
+    } finally { mock.mock.restore(); }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 async function withDecision(
   fixture: ReturnType<typeof policyFixture>, candidate: DecisionInput,
   run: (input: Parameters<typeof resolvePortfolioActionRiskDecisionPolicy>[0]) => Promise<void>
 ) {
   const directory = await mkdtemp(join(tmpdir(), "toss-risk-policy-"));
   try {
-    const paths = createImmutablePolicyDependencyPaths(directory);
-    for (const key of Object.keys(paths) as Array<keyof typeof paths>) {
-      await writeFile(paths[key], `${fixture.records[key].map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
-    }
-    await new RuntimePortfolioPolicyFileRepository(directory, fixture.dependencies).append(fixture.policy);
-    await new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies)
-      .appendActivated({ policy: fixture.policy, createdAt: CREATED_AT });
+    await storePolicyFixture(directory, fixture);
     const repository = new PortfolioActionRiskDecisionFileRepository(directory);
-    const decision = createPortfolioActionRiskDecision(candidate);
-    await repository.append(decision);
+    const { decidedAt: _decidedAt, ...creationInput } = candidate;
+    const decision = await repository.createAndAppendWithPolicyOrigin(creationInput);
     await run({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
   } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+async function storePolicyFixture(directory: string, fixture: ReturnType<typeof policyFixture>) {
+  const paths = createImmutablePolicyDependencyPaths(directory);
+  for (const key of Object.keys(paths) as Array<keyof typeof paths>) {
+    await writeFile(paths[key], `${fixture.records[key].map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+  }
+  await new RuntimePortfolioPolicyFileRepository(directory, fixture.dependencies).append(fixture.policy);
+  await new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies)
+    .appendActivated({ policy: fixture.policy, createdAt: CREATED_AT });
 }
 
 function decisionInput(fixture: ReturnType<typeof policyFixture>, side: "BUY" | "SELL", legacy = false): DecisionInput {

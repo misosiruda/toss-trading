@@ -6,12 +6,7 @@ import {
   PortfolioActionRiskDecisionFileRepository
 } from "./portfolioActionRiskDecisionFiles.js";
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
-import { ImmutablePolicyDependencyFileLoader } from "./runtimePolicyDependencyFiles.js";
-import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
-import {
-  readConsistentRuntimePortfolioPolicyActivationSnapshot,
-  RuntimePortfolioPolicyActivationFileRepository
-} from "./runtimePortfolioPolicyActivationFiles.js";
+import { readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
 
 const inputSchema = z.object({ baseDir: z.string().min(1), riskDecisionId: z.string().min(1) }).strict();
@@ -31,11 +26,9 @@ export async function resolvePortfolioActionRiskDecisionPolicy(input: {
     await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory(), riskDecisionId
   );
   const decision = origin.record;
-  const snapshot = await readConsistentRuntimePortfolioPolicyActivationSnapshot({
-    loadDependencies: () => new ImmutablePolicyDependencyFileLoader(baseDir).load(),
-    readPolicies: (dependencies) => new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository).readGeneration(),
-    readEvents: (policies, dependencies) => new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository).readGeneration()
-  });
+  const receipt = origin.policyOrigin;
+  if (receipt === null) throw new Error("risk decision lacks policy-before-creation provenance; legacy record requires review");
+  const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir);
   const active = resolveActiveRuntimePortfolioPolicyAsOf({
     portfolioId: decision.portfolioId,
     asOf: decision.decidedAt,
@@ -43,6 +36,13 @@ export async function resolvePortfolioActionRiskDecisionPolicy(input: {
     policies: snapshot.policies,
     dependencies: snapshot.dependencies.repository
   });
+  if (receipt.activationId !== active.activation.activationId ||
+    receipt.activationEventHash !== active.activation.activationEventHash ||
+    receipt.runtimePolicyRecordId !== active.policy.runtimePolicyRecordId ||
+    receipt.policyHash !== active.policy.policyHash ||
+    receipt.policyLineageHash !== active.policy.lineageHash) {
+    throw new Error("risk decision policy origin does not match active policy");
+  }
   if (active.policy.policyHash !== decision.policyHash) {
     throw new Error("risk decision active policy hash mismatch");
   }

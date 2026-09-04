@@ -153,6 +153,10 @@ Risk history와 정책·activation·의존성 generation을 직접 읽은 뒤 �
 bucket/legacy rule-set 선택, side별 required rule ID 해소를 담당하며, 개별 규칙 수치 재평가나
 최종 실행 승인은 제공하지 않는다. 관련 회귀 테스트는 같은 이름의 `*.test.ts`와 운용 모델
 계획 문서를 함께 확인한다.
+정책 확인 후 Risk 생성 순서는 `portfolioActionRiskDecisionFiles.ts`의
+`createAndAppendWithPolicyOrigin`과 v3 entry receipt가 보장한다. 저장된 activation의 내구성
+확인과 generation 조합은 `runtimePortfolioPolicyActivationFiles.ts`에 있으며, 기존 기록을
+새 origin으로 자동 승격하지 않는다.
 
 ### Live RiskEngine 변경
 
