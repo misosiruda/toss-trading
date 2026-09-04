@@ -3624,6 +3624,27 @@ monotonic deadline 안에서 재시도하며 token 쓰기/fsync, ownership 오�
 영구 획득 오류는 원인을 보존한 timeout으로 실패하고 abandoned lock은 삭제하지 않는다.
 실제 동시 읽기, 일시·영구 오류 주입 및 frozen wall clock 테스트로 이 경계를 검증한다.
 
+다섯 번째 분할은 `RebalancePlanEventFileRepository`의 append-only event 저장과 read replay다.
+`rebalance-plan-events.jsonl`의 `rebalance_plan_event_entry.v1`은 full event, plan 저장 원본의
+`planCommitHash`, append 시작시각과 직전 global commit hash를 결합한다. Record와 directory
+sync 뒤 채집한 시각을 `rebalance_plan_event_commit.v1`에 저장하며 불완전한 쌍은 거절한다.
+Plan과 event는 별도 lock을 가지며 event lock 안에서 plan repository의 검증된 history를 읽는다.
+이 순서는 cooperative writer 사이의 event append를 직렬화하지만 두 파일의 원자 commit은 아니다.
+
+모든 read에서 plan origin과 event/entry/marker hash, 저장 시각과 global chain을 검증하고,
+plan별 event를 모아 순수 replay로 scope/transition/partial fill/applied 상태를 다시 검증한다.
+최초 event의 `asOf`는 저장된 plan availability 이후, successor의 `asOf`는 저장된 이전 event
+availability 이후여야 한다. Exact event retry는 전체 기존 파일을 먼저 검증하고 최초 원본·bytes를
+유지하며 다른 predecessor/terminal 이후 append는 거절한다. Torn line/pair, 중복, 분기 또는
+재해시된 잘못된 plan origin을 자동 복구하거나 무시하지 않는다. 저장소가 발급한 frozen history만
+WeakMap 기반 origin/replay 해소에 사용할 수 있다.
+
+`generationHash`는 해당 read가 관측한 global tail이며 이후 append에도 과거 token은 historical
+observation으로만 유효하다. 유효한 suffix 전체를 삭제하거나 파일을 통째로 재작성할 권한이 있는
+공격자를 외부 anchor 없이 탐지한다고 주장하지 않는다. 저장된 execution/approval event 자체가
+실제 fill/Risk/price provenance 또는 최종 Risk 승인을 뜻하지 않는다. Cycle claim+plan+preview,
+portfolio-wide fill uniqueness 및 accounting/state와의 cross-artifact transaction은 아직 후속이다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

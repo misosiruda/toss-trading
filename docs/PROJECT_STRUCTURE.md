@@ -177,6 +177,11 @@ terminal 재진입, 누계/상태 drift, 부분 체결 및 수량/notional targe
 replay 결과만으로 저장 이력의 최신성·fill/Risk 출처나 실행 권한을 증명하지 않는다.
 `canonicalQuantity.ts`의 exact decimal 단위 계산은 plan replay와 Risk/fill binding에서 공용으로
 사용한다. Binary drift를 epsilon으로 덮지 않으며 표현 불가능한 누계는 거절한다.
+`rebalancePlanEventFiles.ts`는 plan 저장 원본에 결속한 이벤트 entry/commit 쌍을 append하고,
+읽을 때 전체 hash chain과 plan별 replay를 독립 검증한다. 같은 이름의 테스트에서 재시작,
+동시 retry/경쟁 predecessor, 손상·시간 역전·fsync 실패와 historical provenance를 검증한다.
+과거 read의 generation hash는 최신성 보증이 아니며 cycle claim/preview와 체결 accounting을
+함께 commit하는 coordinator는 후속이다.
 
 ### Live RiskEngine 변경
 
