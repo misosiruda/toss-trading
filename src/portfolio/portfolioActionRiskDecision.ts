@@ -269,6 +269,12 @@ function assertPayload(
   if (payload.cashAssessment.side !== payload.side) {
     throw new Error("risk decision side does not match cash assessment");
   }
+  if (
+    payload.cashAssessment.side === "BUY" &&
+    payload.cashAssessment.worstCaseNetCashDebitKrw < payload.worstCaseFillNotionalKrw
+  ) {
+    throw new Error("risk decision net cash debit is below gross worst-case fill");
+  }
   if (payload.side === "BUY" && payload.riskRuleScope.scopeKind === "legacy_reduce_only") {
     throw new Error("legacy reduce-only risk decision must be SELL");
   }

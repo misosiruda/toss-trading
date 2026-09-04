@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
 
 import {
   createPortfolioActionRiskDecision,
@@ -184,6 +185,25 @@ test("portfolio action risk decision rejects approved cap breaches", () => {
       }),
     /exceeds net cash debit cap/
   );
+});
+
+test("portfolio action risk decision rejects BUY net worst case below gross at create and parse", () => {
+  const input = bucketInput();
+  const cashAssessment = { ...input.cashAssessment, worstCaseNetCashDebitKrw: 104 };
+  assert.throws(() => createPortfolioActionRiskDecision({ ...input, cashAssessment }), /below gross worst-case/);
+  const { riskDecisionId, riskDecisionHash, ...payload } = createPortfolioActionRiskDecision(input);
+  const tamperedPayload = { ...payload, cashAssessment };
+  const tamperedHash = hashCanonicalPayload(tamperedPayload);
+  assert.throws(() => parsePortfolioActionRiskDecision({
+    ...tamperedPayload,
+    riskDecisionHash: tamperedHash,
+    riskDecisionId: hashDerivedId("portfolio_action_risk_decision", tamperedHash)
+  }), /below gross worst-case/);
+  const noCost = createPortfolioActionRiskDecision({
+    ...input,
+    cashAssessment: { ...input.cashAssessment, worstCaseNetCashDebitKrw: input.worstCaseFillNotionalKrw }
+  });
+  assert.deepEqual(parsePortfolioActionRiskDecision(noCost), noCost);
 });
 
 test("portfolio action risk decision rejects tampered identity", () => {
