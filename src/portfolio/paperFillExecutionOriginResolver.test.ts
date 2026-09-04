@@ -19,7 +19,8 @@ test("paper fill resolves its source price from verified durable history", async
   const evidence = priceEvidence();
   await withEvidenceHistory([evidence], (history) => {
     const { appendedAt } = resolveVerifiedSourcePriceEvidenceOrigin(history, evidence.evidenceRef);
-    const record = paperFill({ evidence, asOf: appendedAt, createdAt: appendedAt });
+    const afterCommit = new Date(Date.parse(appendedAt) + 1).toISOString();
+    const record = paperFill({ evidence, asOf: afterCommit, createdAt: afterCommit });
     const resolved = resolvePaperFillExecutionOrigins({
       value: record,
       sourcePriceEvidenceHistory: history
@@ -39,10 +40,11 @@ test("paper fill accepts equivalent offset notation for source observation", asy
   });
   await withEvidenceHistory([evidence], (history) => {
     const { appendedAt } = resolveVerifiedSourcePriceEvidenceOrigin(history, evidence.evidenceRef);
+    const afterCommit = new Date(Date.parse(appendedAt) + 1).toISOString();
     const record = paperFill({
       evidence,
-      asOf: appendedAt,
-      createdAt: appendedAt,
+      asOf: afterCommit,
+      createdAt: afterCommit,
       projectionOverrides: {
         observedAt: "2026-09-02T23:59:59.000Z"
       }
@@ -52,6 +54,17 @@ test("paper fill accepts equivalent offset notation for source observation", asy
       sourcePriceEvidenceHistory: history
     });
     assert.deepEqual(resolved.sourcePriceEvidence, evidence);
+  });
+});
+
+test("paper fill rejects source durability in the same millisecond as its cutoff", async () => {
+  const evidence = priceEvidence();
+  await withEvidenceHistory([evidence], (history) => {
+    const { appendedAt } = resolveVerifiedSourcePriceEvidenceOrigin(history, evidence.evidenceRef);
+    assert.throws(() => resolvePaperFillExecutionOrigins({
+      value: paperFill({ evidence, asOf: appendedAt, createdAt: appendedAt }),
+      sourcePriceEvidenceHistory: history
+    }), /postdates fill cutoff/);
   });
 });
 

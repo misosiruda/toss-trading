@@ -58,6 +58,27 @@ interface SourcePriceEvidenceFileEntry {
   entryHash: string;
 }
 
+const committedEntrySchema = z.object({
+  schemaVersion: z.literal("source_price_evidence_entry.v2"),
+  record: z.unknown(),
+  appendStartedAt: offsetQualifiedIsoDateTimeSchema,
+  previousEntryHash: sha256HashSchema.nullable(),
+  entryHash: sha256HashSchema
+}).strict();
+
+const commitMarkerSchema = z.object({
+  schemaVersion: z.literal("source_price_evidence_commit.v1"),
+  entryHash: sha256HashSchema,
+  committedAt: offsetQualifiedIsoDateTimeSchema,
+  commitHash: sha256HashSchema
+}).strict();
+
+interface ParsedSourcePriceEvidenceEntry {
+  record: SourcePriceEvidenceRecord;
+  committedAt: string | null;
+  tailHash: string;
+}
+
 export function createSourcePriceEvidencePaths(baseDir: string): {
   recordsPath: string;
   lockPath: string;
@@ -136,10 +157,24 @@ export class SourcePriceEvidenceFileRepository {
       const metadata = getVerifiedHistoryMetadata(history);
       const entry = createSourcePriceEvidenceFileEntry({
         record: candidate,
-        appendedAt: new Date().toISOString(),
+        appendStartedAt: new Date().toISOString(),
         previousEntryHash: metadata.lastEntryHash
       });
       await appendDurableJsonLine(this.recordsPath, entry);
+      // The record is durable before this time is sampled; the marker proves
+      // completion without treating the pre-write timestamp as availability.
+      const committedAt = new Date().toISOString();
+      if (Date.parse(committedAt) < Date.parse(entry.appendStartedAt)) {
+        throw new Error("source price evidence clock moved backwards during append");
+      }
+      const marker = {
+        schemaVersion: "source_price_evidence_commit.v1" as const,
+        entryHash: entry.entryHash,
+        committedAt
+      };
+      await appendDurableJsonLine(this.recordsPath, {
+        ...marker, commitHash: hashCanonicalPayload(marker)
+      });
       return candidate;
     });
   }
@@ -187,28 +222,63 @@ export function parseSourcePriceEvidenceRecords(
 
 function parseSourcePriceEvidenceEntries(
   raw: string
-): readonly SourcePriceEvidenceFileEntry[] {
+): readonly ParsedSourcePriceEvidenceEntry[] {
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error("source price evidence file has a torn final line");
   }
   const lines = raw.split(/\r?\n/);
   lines.pop();
-  const entries: SourcePriceEvidenceFileEntry[] = [];
+  const entries: ParsedSourcePriceEvidenceEntry[] = [];
   const refs = new Set<string>();
   const origins = new Set<string>();
   let previousEntryHash: string | null = null;
-  for (const [index, line] of lines.entries()) {
+  let hasCommittedEntry = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
     if (line.length === 0) {
       throw new Error(
         `source price evidence file contains corrupt line ${index + 1}`
       );
     }
-    let entry: SourcePriceEvidenceFileEntry;
+    let entry: ParsedSourcePriceEvidenceEntry;
     try {
-      entry = parseSourcePriceEvidenceFileEntry(
-        JSON.parse(line),
-        previousEntryHash
-      );
+      const value: unknown = JSON.parse(line);
+      if (value !== null && typeof value === "object" && "schemaVersion" in value) {
+        const parsed = committedEntrySchema.parse(value);
+        const record = parseSourcePriceEvidenceRecord(parsed.record);
+        const payload = {
+          schemaVersion: parsed.schemaVersion, record,
+          appendStartedAt: parsed.appendStartedAt,
+          previousEntryHash: parsed.previousEntryHash
+        };
+        if (parsed.previousEntryHash !== previousEntryHash ||
+          parsed.entryHash !== hashCanonicalPayload(payload) ||
+          !isDeepStrictEqual(value, { ...payload, entryHash: parsed.entryHash }) ||
+          Date.parse(parsed.appendStartedAt) < Date.parse(record.createdAt)) {
+          throw new Error("source price evidence entry origin mismatch");
+        }
+        const markerValue: unknown = JSON.parse(lines[++index] ?? "");
+        const marker = commitMarkerSchema.parse(markerValue);
+        const markerPayload = {
+          schemaVersion: marker.schemaVersion,
+          entryHash: marker.entryHash,
+          committedAt: marker.committedAt
+        };
+        if (marker.entryHash !== parsed.entryHash ||
+          marker.commitHash !== hashCanonicalPayload(markerPayload) ||
+          !isDeepStrictEqual(markerValue, { ...markerPayload, commitHash: marker.commitHash }) ||
+          Date.parse(marker.committedAt) < Date.parse(parsed.appendStartedAt)) {
+          throw new Error("source price evidence durable commit origin mismatch");
+        }
+        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash };
+        hasCommittedEntry = true;
+      } else {
+        if (hasCommittedEntry) throw new Error("legacy evidence cannot follow committed entries");
+        const legacy = parseSourcePriceEvidenceFileEntry(value, previousEntryHash);
+        // Legacy records remain queryable, but their pre-write timestamps are
+        // never promoted to post-fsync origins, even on an exact retry.
+        entry = { record: legacy.record, committedAt: null, tailHash: legacy.entryHash };
+      }
     } catch (error) {
       throw new Error(
         `source price evidence file contains corrupt line ${index + 1}`,
@@ -228,7 +298,7 @@ function parseSourcePriceEvidenceEntries(
     refs.add(record.evidenceRef);
     origins.add(origin);
     entries.push(entry);
-    previousEntryHash = entry.entryHash;
+    previousEntryHash = entry.tailHash;
   }
   return Object.freeze(entries);
 }
@@ -254,7 +324,7 @@ export function resolveVerifiedSourcePriceEvidenceOrigin(
   const metadata = getVerifiedHistoryMetadata(history);
   const appendedAt = metadata.appendedAtByRef.get(evidenceRef);
   if (appendedAt === undefined) {
-    throw new Error("source price evidence append origin is unavailable");
+    throw new Error("source price evidence durable origin is unavailable; legacy record requires review");
   }
   return deepFreeze({
     record: matches[0] as SourcePriceEvidenceRecord,
@@ -263,16 +333,17 @@ export function resolveVerifiedSourcePriceEvidenceOrigin(
 }
 
 function createVerifiedSourcePriceEvidenceHistory(
-  entries: readonly SourcePriceEvidenceFileEntry[]
+  entries: readonly ParsedSourcePriceEvidenceEntry[]
 ): VerifiedSourcePriceEvidenceHistory {
   const records = entries.map((entry) => entry.record);
   const history = Object.freeze({ records: Object.freeze([...records]) });
   verifiedSourcePriceEvidenceHistories.add(history);
   verifiedSourcePriceEvidenceMetadata.set(history, {
     appendedAtByRef: new Map(
-      entries.map((entry) => [entry.record.evidenceRef, entry.appendedAt])
+      entries.filter((entry) => entry.committedAt !== null)
+        .map((entry) => [entry.record.evidenceRef, entry.committedAt!])
     ),
-    lastEntryHash: entries.at(-1)?.entryHash ?? null
+    lastEntryHash: entries.at(-1)?.tailHash ?? null
   });
   return history;
 }
@@ -289,15 +360,16 @@ function getVerifiedHistoryMetadata(
 
 function createSourcePriceEvidenceFileEntry(input: {
   record: SourcePriceEvidenceRecord;
-  appendedAt: string;
+  appendStartedAt: string;
   previousEntryHash: string | null;
-}): SourcePriceEvidenceFileEntry {
-  if (Date.parse(input.appendedAt) < Date.parse(input.record.createdAt)) {
+}): z.infer<typeof committedEntrySchema> {
+  if (Date.parse(input.appendStartedAt) < Date.parse(input.record.createdAt)) {
     throw new Error("source price evidence cannot be appended before creation");
   }
   const payload = {
+    schemaVersion: "source_price_evidence_entry.v2" as const,
     record: input.record,
-    appendedAt: input.appendedAt,
+    appendStartedAt: input.appendStartedAt,
     previousEntryHash: input.previousEntryHash
   };
   return deepFreeze({
@@ -355,7 +427,7 @@ function cloneRecord(value: unknown): SourcePriceEvidenceRecord {
 
 async function appendDurableJsonLine(
   path: string,
-  value: SourcePriceEvidenceFileEntry
+  value: z.infer<typeof committedEntrySchema> | z.infer<typeof commitMarkerSchema>
 ): Promise<void> {
   const handle = await open(path, "a");
   try {
