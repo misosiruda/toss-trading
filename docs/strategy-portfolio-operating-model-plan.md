@@ -3435,15 +3435,18 @@ Execution binding은 이 Risk origin보다 fill cutoff가 엄격히 늦어야 �
 동일한 cross-entry 순서를 검사한다. Pair 내부에서만 시계 역행을 검사하는 것으로는 충분하지 않다.
 
 저장소 간 시계 역행은 timestamp 비교만으로 증명할 수 없으므로, 체결의
-`appendWithRiskOrigin`은 Risk repository-issued history에서 origin을 먼저 해소한 후
-`paper_fill_execution_entry.v2`에 Risk decision ID/hash와 commit hash/시각을 결합한다.
-이 receipt는 체결 저장 전에 해당 Risk 원본이 이미 존재했음을 기록한다. 기존 unbound 체결에
+`createAndAppendWithRiskOrigin`은 Risk repository-issued history에서 approved origin을 먼저
+해소한 후 내부 factory로 체결을 생성한다. 이미 생성된 record/ID/hash 및 caller가 제공한
+asOf/createdAt은 거절하고 내부에서 시각을 채집한다. 신규 생성시각은 Risk origin보다 늦어야 한다.
+`paper_fill_execution_entry.v2`에 Risk decision ID/hash와 commit hash/시각을 결합하여
+체결 생성 전에 해당 Risk 원본이 이미 존재했음을 기록한다. 기존 unbound 체결에
 나중에 receipt를 붙이거나 다른 Risk 원본으로 교체하는 retry는 bytes 변경 없이 거절한다.
 Execution binding은 receipt와 현재 verified Risk origin이 정확히 일치해야 하며, 기존 bare/v1
 체결의 조회·일반 retry는 유지하되 최종 binding에는 사용할 수 없다. Raw parser는 receipt 발급
 권한을 얻지 않는다. 재시작·동시 retry·receipt 변조·Risk 교체 및 체결 저장 후 시계를 되돌려
 Risk를 append하는 경우를 검증한다. 새 v2 체결도 이전 reader와 호환되지 않는다.
-`appendWithRiskOrigin`은 저장 provenance만 제공하며 Risk rule-set 재평가나 최종 실행 승인이 아니다.
+같은 portfolio/fill ID의 생성 입력과 Risk receipt가 모두 같은 retry는 최초 record·시각·bytes로
+수렴한다. 이 API는 생성 순서와 provenance를 검증하지만 Risk rule-set 재평가나 최종 실행 승인이 아니다.
 
 Legacy envelope prefix의 조회·exact retry bytes는 유지하지만 승인 origin을 합성하거나 승격하지
 않는다. Legacy origin은 `review_required`로 거절한다. 새로운 pair 뒤 legacy, missing/torn/orphaned

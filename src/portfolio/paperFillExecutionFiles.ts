@@ -12,6 +12,7 @@ import {
 } from "./portfolioActionRiskDecisionFiles.js";
 
 import {
+  createPaperFillExecutionRecord,
   parsePaperFillExecutionRecord,
   type PaperFillExecutionRecord
 } from "./paperFillExecution.js";
@@ -126,22 +127,30 @@ export class PaperFillExecutionFileRepository {
     return this.#appendRecord(value, null);
   }
 
-  /** Records causal persistence provenance only, not final execution approval. */
-  async appendWithRiskOrigin(
-    value: unknown,
+  /** Creates a new paper fill after resolving Risk; rule-set replay remains separate. */
+  async createAndAppendWithRiskOrigin(
+    input: Omit<Parameters<typeof createPaperFillExecutionRecord>[0], "asOf" | "createdAt">,
     riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory,
     riskDecisionId: string
   ): Promise<PaperFillExecutionRecord> {
-    // Only a history actually issued by the Risk repository can mint a receipt.
-    // Resolve it before the fill is persisted; never retrofit an existing fill.
+    // Do not accept an already-created fill or caller-controlled creation times.
+    // The pure record factory independently rebuilds and validates fill economics.
+    for (const key of ["asOf", "createdAt", "paperFillRecordId", "paperFillHash"]) {
+      if (key in input) throw new Error("risk-bound fill creation cannot accept a record or timestamp");
+    }
     const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, riskDecisionId);
+    if (origin.record.decision !== "approved") {
+      throw new Error("risk-bound fill creation requires an approved decision");
+    }
     const riskOrigin = Object.freeze({
       riskDecisionId: origin.record.riskDecisionId,
       riskDecisionHash: origin.record.riskDecisionHash,
       commitHash: origin.commitHash,
       appendedAt: origin.appendedAt
     });
-    return this.#appendRecord(value, riskOrigin);
+    const createdAt = new Date().toISOString();
+    const record = createPaperFillExecutionRecord({ ...input, asOf: createdAt, createdAt });
+    return this.#appendRecord(record, riskOrigin);
   }
 
   async #appendRecord(value: unknown, riskOrigin: PersistedRiskOrigin | null): Promise<PaperFillExecutionRecord> {
@@ -150,10 +159,11 @@ export class PaperFillExecutionFileRepository {
       const history = await this.readHistoryUnderLock();
       const records = history.records;
       const existing = records.find(
-        (record) => record.paperFillRecordId === candidate.paperFillRecordId
+        (record) => record.paperFillRecordId === candidate.paperFillRecordId ||
+          (riskOrigin !== null && record.portfolioId === candidate.portfolioId && record.fillId === candidate.fillId)
       );
       if (existing !== undefined) {
-        if (!sameSemanticRecord(existing, candidate)) {
+        if (!(riskOrigin === null ? sameSemanticRecord(existing, candidate) : sameCreationInput(existing, candidate))) {
           throw new Error("paper fill execution ID collision");
         }
         if (riskOrigin !== null && !isDeepStrictEqual(
@@ -179,6 +189,9 @@ export class PaperFillExecutionFileRepository {
         throw new Error("paper fill execution has a duplicate portfolio fill ID");
       }
       const appendStartedAt = new Date().toISOString();
+      if (riskOrigin !== null && Date.parse(candidate.asOf) <= Date.parse(riskOrigin.appendedAt)) {
+        throw new Error("risk-bound fill creation must follow risk origin availability cutoff");
+      }
       if (Date.parse(appendStartedAt) < Date.parse(candidate.createdAt)) {
         throw new Error("paper fill cannot be appended before creation");
       }
@@ -393,6 +406,12 @@ function sameSemanticRecord(
   const { createdAt: _leftCreatedAt, ...leftSemantic } = left;
   const { createdAt: _rightCreatedAt, ...rightSemantic } = right;
   return isDeepStrictEqual(leftSemantic, rightSemantic);
+}
+
+function sameCreationInput(left: PaperFillExecutionRecord, right: PaperFillExecutionRecord): boolean {
+  const { paperFillRecordId: _leftId, paperFillHash: _leftHash, createdAt: _leftCreated, asOf: _leftAsOf, ...leftInput } = left;
+  const { paperFillRecordId: _rightId, paperFillHash: _rightHash, createdAt: _rightCreated, asOf: _rightAsOf, ...rightInput } = right;
+  return isDeepStrictEqual(leftInput, rightInput);
 }
 
 function cloneRecord(value: unknown): PaperFillExecutionRecord {
