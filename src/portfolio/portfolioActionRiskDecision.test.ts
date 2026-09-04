@@ -206,6 +206,28 @@ test("portfolio action risk decision rejects BUY net worst case below gross at c
   assert.deepEqual(parsePortfolioActionRiskDecision(noCost), noCost);
 });
 
+test("portfolio action risk decision rejects infeasible SELL credit floors", () => {
+  const input = {
+    ...bucketInput(),
+    side: "SELL" as const,
+    cashAssessment: { side: "SELL" as const, expectedMinimumNetCashCreditKrw: 105 }
+  };
+  const decision = createPortfolioActionRiskDecision(input);
+  assert.deepEqual(parsePortfolioActionRiskDecision(decision), decision);
+  for (const floor of [106, 111]) {
+    const cashAssessment = { ...input.cashAssessment, expectedMinimumNetCashCreditKrw: floor };
+    assert.throws(() => createPortfolioActionRiskDecision({ ...input, cashAssessment }), /credit floor exceeds/);
+    const { riskDecisionId, riskDecisionHash, ...payload } = decision;
+    const tamperedPayload = { ...payload, cashAssessment };
+    const tamperedHash = hashCanonicalPayload(tamperedPayload);
+    assert.throws(() => parsePortfolioActionRiskDecision({
+      ...tamperedPayload,
+      riskDecisionHash: tamperedHash,
+      riskDecisionId: hashDerivedId("portfolio_action_risk_decision", tamperedHash)
+    }), /credit floor exceeds/);
+  }
+});
+
 test("portfolio action risk decision rejects tampered identity", () => {
   const decision = createPortfolioActionRiskDecision(bucketInput());
   assert.throws(

@@ -275,6 +275,12 @@ function assertPayload(
   ) {
     throw new Error("risk decision net cash debit is below gross worst-case fill");
   }
+  if (
+    payload.cashAssessment.side === "SELL" &&
+    payload.cashAssessment.expectedMinimumNetCashCreditKrw > payload.worstCaseFillNotionalKrw
+  ) {
+    throw new Error("risk decision net cash credit floor exceeds gross worst-case fill");
+  }
   if (payload.side === "BUY" && payload.riskRuleScope.scopeKind === "legacy_reduce_only") {
     throw new Error("legacy reduce-only risk decision must be SELL");
   }
