@@ -284,44 +284,41 @@ async function acquireExclusiveLock(input: {
   timeoutMs: number;
   retryDelayMs: number;
 }): Promise<() => Promise<void>> {
-  const deadline = Date.now() + input.timeoutMs;
+  const deadline = performance.now() + input.timeoutMs;
+  let lastContention: unknown;
   while (true) {
-    if (Date.now() >= deadline) {
-      throw new Error("runtime portfolio policy repository lock is unavailable");
+    if (performance.now() >= deadline) {
+      throw new Error("runtime portfolio policy repository lock is unavailable", { cause: lastContention });
     }
+    let handle: Awaited<ReturnType<typeof open>>;
     try {
-      const handle = await open(input.lockPath, "wx");
-      const token = randomUUID();
-      try {
-        await handle.writeFile(`${token}\n`, "utf8");
-        await handle.sync();
-      } catch (error) {
-        await handle.close();
-        await unlink(input.lockPath).catch(() => undefined);
-        throw error;
-      }
-      return async () => {
-        try {
-          const storedToken = await readFile(input.lockPath, "utf8");
-          if (storedToken !== `${token}\n`) {
-            throw new Error("runtime portfolio policy lock ownership changed");
-          }
-        } finally {
-          await handle.close();
-        }
-        await unlink(input.lockPath);
-        await syncOutputDirectory(dirname(input.lockPath));
-      };
+      handle = await open(input.lockPath, "wx");
     } catch (error) {
-      if (!isNodeError(error) || error.code !== "EEXIST") {
+      // Retry acquisition only, never lock-token write/fsync or ownership errors.
+      if (!isNodeError(error) || !(error.code === "EEXIST" || (process.platform === "win32" && error.code === "EPERM"))) {
         throw error;
       }
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 0) {
-        throw new Error("runtime portfolio policy repository lock is unavailable");
-      }
-      await delay(Math.min(input.retryDelayMs, remainingMs));
+      lastContention = error;
+      await delay(Math.max(1, Math.min(input.retryDelayMs, deadline - performance.now())));
+      continue;
     }
+    const token = randomUUID();
+    try {
+      await handle.writeFile(`${token}\n`, "utf8");
+      await handle.sync();
+    } catch (error) {
+      await handle.close();
+      await unlink(input.lockPath).catch(() => undefined);
+      throw error;
+    }
+    return async () => {
+      try {
+        const storedToken = await readFile(input.lockPath, "utf8");
+        if (storedToken !== `${token}\n`) throw new Error("runtime portfolio policy lock ownership changed");
+      } finally { await handle.close(); }
+      await unlink(input.lockPath);
+      await syncOutputDirectory(dirname(input.lockPath));
+    };
   }
 }
 

@@ -3616,6 +3616,12 @@ plan preview, 이후는 직전 fill resulting state와 같아야 한다. Applied
 uniqueness 및 cross-artifact atomic commit을 대신하지 않는다. Stale observed state와 마지막
 execution state도 구분하며 외부 상태를 변경하지 않는다. 해당 저장·해소·실행 연결은 후속이다.
 
+이 분할의 전체 회귀 검증에서 runtime policy 저장소의 동시 exclusive lock 획득이 Windows
+`EPERM`으로 실패한 경계를 보강한다. `open("wx")`의 `EEXIST`와 Windows `EPERM`만
+monotonic deadline 안에서 재시도하며 token 쓰기/fsync, ownership 오류는 재시도하지 않는다.
+영구 획득 오류는 원인을 보존한 timeout으로 실패하고 abandoned lock은 삭제하지 않는다.
+실제 동시 읽기, 일시·영구 오류 주입 및 frozen wall clock 테스트로 이 경계를 검증한다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
