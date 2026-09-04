@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,6 +34,11 @@ test("risk decision repository durably preserves approvals, rejections, and exac
     await repository.append(rejected);
     const paths = createPortfolioActionRiskDecisionPaths(baseDir);
     const beforeRetry = await readFile(paths.recordsPath, "utf8");
+    const [entry, marker, nextEntry] = beforeRetry.trimEnd().split("\n").map((line) => JSON.parse(line));
+    assert.equal(entry.schemaVersion, "portfolio_action_risk_decision_entry.v2");
+    assert.equal(marker.schemaVersion, "portfolio_action_risk_decision_commit.v1");
+    assert.equal(marker.entryHash, entry.entryHash);
+    assert.equal(nextEntry.previousEntryHash, marker.commitHash);
     assert.deepEqual(await repository.append(approved), approved);
     assert.equal(await readFile(paths.recordsPath, "utf8"), beforeRetry);
     const restarted = new PortfolioActionRiskDecisionFileRepository(baseDir);
@@ -42,6 +47,7 @@ test("risk decision repository durably preserves approvals, rejections, and exac
     const history = await restarted.readVerifiedHistory();
     const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, approved.riskDecisionId);
     assert.deepEqual(origin.record, approved);
+    assert.equal(origin.appendedAt, marker.committedAt);
     assert.ok(Date.parse(origin.appendedAt) >= beforeAppend);
     assert.ok(Date.parse(origin.appendedAt) <= Date.now());
     assert.ok(Object.isFrozen(history.records));
@@ -112,9 +118,12 @@ test("risk decision repository fails closed on torn, corrupt, reordered, and dup
     await repository.append(first);
     await repository.append(second);
     const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
-    const raw = await readFile(path, "utf8");
-    const entries = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
-    const entry = entries[0];
+    // Preserve the old envelope's strict parser tests independently of v2 pairs.
+    const firstEntry = legacyEntry(first, first.decidedAt, null);
+    const secondEntry = legacyEntry(second, second.decidedAt, firstEntry.entryHash);
+    const entries = [firstEntry, secondEntry];
+    const raw = entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+    const entry = firstEntry;
     const duplicatePayload = { record: first, appendedAt: entry.appendedAt, previousEntryHash: entry.entryHash };
     const duplicate = { ...duplicatePayload, entryHash: hashCanonicalPayload(duplicatePayload) };
     const cases = [
@@ -148,6 +157,130 @@ test("risk decision repository preserves abandoned locks and validates options",
     assert.equal(await readFile(paths.lockPath, "utf8"), "abandoned\n");
   });
 });
+
+test("risk decision repository retains legacy queries and retries without promoting approval origin", async () => {
+  await withDirectory(async (baseDir) => {
+    const first = createPortfolioActionRiskDecision(bucketInput());
+    const entry = legacyEntry(first, first.decidedAt, null);
+    const raw = JSON.stringify(entry) + "\n";
+    const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    await writeFile(path, raw);
+    const repository = new PortfolioActionRiskDecisionFileRepository(baseDir);
+    assert.deepEqual(await repository.resolveById(first.riskDecisionId), first);
+    assert.deepEqual(await repository.append(first), first);
+    assert.equal(await readFile(path, "utf8"), raw);
+    assert.deepEqual(parsePortfolioActionRiskDecisions(raw), [first]);
+    const history = await repository.readVerifiedHistory();
+    assert.throws(() => resolveVerifiedPortfolioActionRiskDecisionOrigin(history, first.riskDecisionId), /legacy record requires review/);
+    const second = createPortfolioActionRiskDecision({ ...bucketInput(), actionId: "action-2" });
+    await repository.append(second);
+    const mixed = await readFile(path, "utf8");
+    assert.equal(JSON.parse(mixed.split("\n")[1]!).previousEntryHash, entry.entryHash);
+    const restarted = await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory();
+    assert.deepEqual(restarted.records, [first, second]);
+    assert.equal(resolveVerifiedPortfolioActionRiskDecisionOrigin(restarted, second.riskDecisionId).record.riskDecisionId, second.riskDecisionId);
+    assert.throws(() => resolveVerifiedPortfolioActionRiskDecisionOrigin(restarted, first.riskDecisionId), /legacy record requires review/);
+    for (const damaged of [mixed.slice(raw.length), mixed + raw]) {
+      await writeFile(path, damaged);
+      await assert.rejects(() => repository.readAll(), /corrupt/);
+      await assert.rejects(() => repository.append(second), /corrupt/);
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
+  });
+});
+
+test("risk decision repository requires complete markers and independently validates pair hashes and time", async () => {
+  await withDirectory(async (baseDir) => {
+    const repository = new PortfolioActionRiskDecisionFileRepository(baseDir);
+    const first = createPortfolioActionRiskDecision(bucketInput());
+    const second = createPortfolioActionRiskDecision({ ...bucketInput(), actionId: "action-2" });
+    await repository.append(first);
+    await repository.append(second);
+    const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const lines = raw.trimEnd().split("\n");
+    const [entry, marker, nextEntry] = lines.map((line) => JSON.parse(line));
+    const oldMarkerPayload = { schemaVersion: marker.schemaVersion, entryHash: marker.entryHash, committedAt: "2000-01-01T00:00:00.000Z" };
+    const oldMarker = { ...oldMarkerPayload, commitHash: hashCanonicalPayload(oldMarkerPayload) };
+    const duplicatePayload = { schemaVersion: entry.schemaVersion, record: first, appendStartedAt: entry.appendStartedAt, previousEntryHash: marker.commitHash };
+    const duplicate = { ...duplicatePayload, entryHash: hashCanonicalPayload(duplicatePayload) };
+    const duplicateMarkerPayload = { schemaVersion: marker.schemaVersion, entryHash: duplicate.entryHash, committedAt: marker.committedAt };
+    const duplicateMarker = { ...duplicateMarkerPayload, commitHash: hashCanonicalPayload(duplicateMarkerPayload) };
+    for (const damaged of [
+      `${lines[0]}\n`, `${lines[0]}\n{`, `${lines[1]}\n`,
+      `${lines[0]}\n${lines[3]}\n`,
+      JSON.stringify({ ...entry, previousEntryHash: HASH_A }) + "\n" + lines[1] + "\n",
+      JSON.stringify({ ...entry, record: { ...first, requestedQuantity: 99 } }) + "\n" + lines[1] + "\n",
+      lines[0] + "\n" + JSON.stringify({ ...marker, commitHash: HASH_A }) + "\n",
+      lines[0] + "\n" + JSON.stringify(oldMarker) + "\n",
+      lines.slice(2).join("\n") + "\n",
+      lines.slice(0, 2).join("\n") + "\n" + JSON.stringify({ ...nextEntry, previousEntryHash: entry.entryHash }) + "\n" + lines[3] + "\n",
+      lines.slice(0, 2).join("\n") + "\n" + JSON.stringify(duplicate) + "\n" + JSON.stringify(duplicateMarker) + "\n",
+      raw + lines[1] + "\n"
+    ]) {
+      await writeFile(path, damaged);
+      assert.throws(() => parsePortfolioActionRiskDecisions(damaged), /corrupt|torn|duplicate/);
+      await assert.rejects(() => repository.readVerifiedHistory(), /corrupt|torn|duplicate/);
+      await assert.rejects(() => repository.append(first), /corrupt|torn|duplicate/);
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
+  });
+});
+
+test("risk decision origin follows actual record fsync and incomplete append stays fail-closed", async (context) => {
+  for (const failSync of [false, true]) {
+    await withDirectory(async (baseDir) => {
+      const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+      const probe = await open(join(baseDir, "probe"), "a");
+      const prototype = Object.getPrototypeOf(probe) as FileHandle;
+      const originalSync = prototype.sync;
+      await probe.close();
+      let duringWrite = 0;
+      let afterRecordSync = 0;
+      const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+        const ownStat = await this.stat();
+        const targetStat = await stat(path).catch(() => undefined);
+        const isRecord = afterRecordSync === 0 && targetStat !== undefined &&
+          ownStat.isFile() && ownStat.ino === targetStat.ino &&
+          (process.platform === "win32" || ownStat.dev === targetStat.dev);
+        if (isRecord) {
+          duringWrite = Date.now();
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          if (failSync) throw new Error("injected record fsync failure");
+        }
+        await originalSync.call(this);
+        if (isRecord) afterRecordSync = Date.now();
+      });
+      const record = createPortfolioActionRiskDecision(bucketInput());
+      const repository = new PortfolioActionRiskDecisionFileRepository(baseDir);
+      try {
+        if (failSync) await assert.rejects(() => repository.append(record), /injected record fsync failure/);
+        else await repository.append(record);
+      } finally {
+        syncMock.mock.restore();
+      }
+      const restarted = new PortfolioActionRiskDecisionFileRepository(baseDir);
+      assert.ok(duringWrite > 0);
+      if (failSync) {
+        const incomplete = await readFile(path, "utf8");
+        assert.equal(incomplete.trimEnd().split("\n").length, 1);
+        await assert.rejects(() => restarted.readVerifiedHistory(), /corrupt/);
+        await assert.rejects(() => restarted.append(record), /corrupt/);
+        assert.equal(await readFile(path, "utf8"), incomplete);
+      } else {
+        const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await restarted.readVerifiedHistory(), record.riskDecisionId);
+        assert.ok(afterRecordSync > duringWrite);
+        assert.ok(Date.parse(origin.appendedAt) >= afterRecordSync);
+        assert.ok(Date.parse(origin.appendedAt) > duringWrite);
+      }
+    });
+  }
+});
+
+function legacyEntry(record: unknown, appendedAt: string, previousEntryHash: string | null) {
+  const payload = { record, appendedAt, previousEntryHash };
+  return { ...payload, entryHash: hashCanonicalPayload(payload) };
+}
 
 async function withDirectory(run: (baseDir: string) => Promise<void>): Promise<void> {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-risk-decision-"));

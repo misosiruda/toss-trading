@@ -3386,7 +3386,7 @@ fill binding 및 multi-artifact transaction은 아직 후속 범위이다. 기�
 requested/filled 금액·수량, expected pre-state 및 prior+fill cumulative를 검증한다.
 Paper-fill raw parser의 기존 구조 검증 API는 유지하되, 이 binding에서는 repository read에서만
 발급되는 추가 내부 brand를 요구하여 임의 JSONL에서 만든 history를 실제 저장 근거로 인정하지 않는다.
-Source-price origin과 availability도 다시 검증하며 decision 저장시각 <= fill cutoff <= event cutoff를
+Source-price origin과 availability도 다시 검증하며 decision 저장시각 < fill cutoff <= event cutoff를
 요구한다. Fill source-price evidence ID는 decision의 `riskEvidenceRefs`에도 포함돼야 하며
 fill record 생성시각이 event cutoff보다 늦으면 거절한다.
 신규 paper fill은 `paper_fill_execution_entry.v1` envelope에 `appendStartedAt`과 predecessor hash를
@@ -3402,9 +3402,8 @@ Marker 누락·변조·torn pair는 읽기와 append를 모두 거절하며 자�
 새 reader는 legacy prefix와 versioned entry를 함께 읽지만 이전 reader는 versioned entry를 읽지
 못하므로 롤백 시 신규 실행을 중지하고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
 가격 근거의 post-fsync origin도 decision의 `decidedAt`보다 엄격히 이전이어야 한다.
-현재 Risk decision 저장소의 `appendedAt`은 fsync 전 채집 시각이므로 위 cutoff 검사는 그 저장소의
-durable completion까지 증명하지 않는다. 최종 execution 연결 전에 Risk 저장소에도 post-fsync origin과
-중간 실패 검증을 추가해야 하며, 이 binding만으로 최종 실행을 승인하면 안 된다.
+Risk decision 저장소의 기존 fsync 전 `appendedAt` 한계는 아래 서른아홉 번째 분할에서
+post-fsync origin과 중간 실패 검증으로 보강한다. 이 binding만으로 최종 실행을 승인하면 안 된다.
 Actual gross approved cap, BUY net debit cap 및 SELL net credit floor를 넘으면 거절한다.
 이 순수 validator는 mutation이나 최종 실행 승인을 하지 않는다. Plan/action 원본, rule-set/evidence
 독립 재평가, action sequence/target, current state/capacity 및 multi-artifact transaction 검증은 후속 범위이다.
@@ -3423,8 +3422,24 @@ Marker는 entry hash에 결합하며 다음 entry는 marker hash를 predecessor�
 지연시키는 회귀 테스트와 mixed legacy/new prefix, source→fill 및 source→decision 동일 밀리초 거절을
 검증한다. 같은 밀리초는 선후관계가 불명확하므로 downstream cutoff는 origin보다 늦어야 한다.
 이전 reader는 새 pair를 읽지 못하므로 새 기록이 생긴 후에는 reader를 유지하거나 검증된 별도 호환
-절차가 필요하다. Runtime 자동 migration이나 외부 호출은 없으며 Risk decision post-fsync 보강과 최종
-plan/action/transaction 연결은 여전히 후속이다.
+절차가 필요하다. Runtime 자동 migration이나 외부 호출은 없으며 최종 plan/action/transaction
+연결은 여전히 후속이다.
+
+서른아홉 번째 분할은 Risk 결정 저장소에도 `portfolio_action_risk_decision_entry.v2`와
+`portfolio_action_risk_decision_commit.v1` 쌍을 적용한다. 결정 record와 append 시작시각,
+predecessor를 hash로 결합하고 record/file directory sync 완료 후 채집한 `committedAt`을 별도
+marker에 기록한다. 후속 entry의 predecessor는 직전 marker의 hash이다. 기존 origin API의
+`appendedAt`은 post-record-fsync 시각이며 marker 자체의 저장 완료시각을 뜻하지 않는다.
+Execution binding은 이 Risk origin보다 fill cutoff가 엄격히 늦어야 한다고 검증한다.
+
+Legacy envelope prefix의 조회·exact retry bytes는 유지하지만 승인 origin을 합성하거나 승격하지
+않는다. Legacy origin은 `review_required`로 거절한다. 새로운 pair 뒤 legacy, missing/torn/orphaned
+marker, record/marker hash·시간·predecessor 변조, prefix 절단은 read/append에서 fail-closed이다.
+실제 record fsync 지연 및 fsync 오류를 주입해 완료시각 채집과 incomplete pair 재시도 차단을
+검증한다. 자동 복구·삭제·backfill은 없으며 이전 reader는 새 pair와 호환되지 않는다. 새 기록 이후
+rollback은 새 reader 유지 또는 검증된 별도 호환 절차가 필요하다.
+이 변경은 Risk rule-set/evidence의 의미적 인증·독립 재평가, plan/action/state 연결이나 multi-artifact
+atomic execution을 구현하지 않는다. 해당 최종 승인·실행 연결은 후속이며 live 경로는 변경하지 않는다.
 
 완료 조건:
 

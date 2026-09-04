@@ -58,6 +58,27 @@ interface PortfolioActionRiskDecisionFileEntry {
   entryHash: string;
 }
 
+const committedEntrySchema = z.object({
+  schemaVersion: z.literal("portfolio_action_risk_decision_entry.v2"),
+  record: z.unknown(),
+  appendStartedAt: offsetQualifiedIsoDateTimeSchema,
+  previousEntryHash: sha256HashSchema.nullable(),
+  entryHash: sha256HashSchema
+}).strict();
+
+const commitMarkerSchema = z.object({
+  schemaVersion: z.literal("portfolio_action_risk_decision_commit.v1"),
+  entryHash: sha256HashSchema,
+  committedAt: offsetQualifiedIsoDateTimeSchema,
+  commitHash: sha256HashSchema
+}).strict();
+
+interface ParsedRiskDecisionEntry {
+  record: PortfolioActionRiskDecision;
+  committedAt: string | null;
+  tailHash: string;
+}
+
 export function createPortfolioActionRiskDecisionPaths(baseDir: string): {
   recordsPath: string;
   lockPath: string;
@@ -136,10 +157,24 @@ export class PortfolioActionRiskDecisionFileRepository {
       const metadata = getVerifiedHistoryMetadata(history);
       const entry = createPortfolioActionRiskDecisionFileEntry({
         record: candidate,
-        appendedAt: new Date().toISOString(),
+        appendStartedAt: new Date().toISOString(),
         previousEntryHash: metadata.lastEntryHash
       });
       await appendDurableJsonLine(this.recordsPath, entry);
+      // Sample availability only after the record and directory sync complete.
+      // The second append binds that post-record-fsync time to this exact entry.
+      const committedAt = new Date().toISOString();
+      if (Date.parse(committedAt) < Date.parse(entry.appendStartedAt)) {
+        throw new Error("portfolio action risk decision clock moved backwards during append");
+      }
+      const marker = {
+        schemaVersion: "portfolio_action_risk_decision_commit.v1" as const,
+        entryHash: entry.entryHash,
+        committedAt
+      };
+      await appendDurableJsonLine(this.recordsPath, {
+        ...marker, commitHash: hashCanonicalPayload(marker)
+      });
       return candidate;
     });
   }
@@ -187,28 +222,62 @@ export function parsePortfolioActionRiskDecisions(
 
 function parsePortfolioActionRiskDecisionEntries(
   raw: string
-): readonly PortfolioActionRiskDecisionFileEntry[] {
+): readonly ParsedRiskDecisionEntry[] {
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error("portfolio action risk decision file has a torn final line");
   }
   const lines = raw.split(/\r?\n/);
   lines.pop();
-  const entries: PortfolioActionRiskDecisionFileEntry[] = [];
+  const entries: ParsedRiskDecisionEntry[] = [];
   const refs = new Set<string>();
   const origins = new Set<string>();
   let previousEntryHash: string | null = null;
-  for (const [index, line] of lines.entries()) {
+  let hasCommittedEntry = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
     if (line.length === 0) {
       throw new Error(
         `portfolio action risk decision file contains corrupt line ${index + 1}`
       );
     }
-    let entry: PortfolioActionRiskDecisionFileEntry;
+    let entry: ParsedRiskDecisionEntry;
     try {
-      entry = parsePortfolioActionRiskDecisionFileEntry(
-        JSON.parse(line),
-        previousEntryHash
-      );
+      const value: unknown = JSON.parse(line);
+      if (value !== null && typeof value === "object" && "schemaVersion" in value) {
+        const parsed = committedEntrySchema.parse(value);
+        const record = parsePortfolioActionRiskDecision(parsed.record);
+        const payload = {
+          schemaVersion: parsed.schemaVersion, record,
+          appendStartedAt: parsed.appendStartedAt,
+          previousEntryHash: parsed.previousEntryHash
+        };
+        if (parsed.previousEntryHash !== previousEntryHash ||
+          parsed.entryHash !== hashCanonicalPayload(payload) ||
+          !isDeepStrictEqual(value, { ...payload, entryHash: parsed.entryHash }) ||
+          Date.parse(parsed.appendStartedAt) < Date.parse(record.decidedAt)) {
+          throw new Error("portfolio action risk decision entry origin mismatch");
+        }
+        const markerValue: unknown = JSON.parse(lines[++index] ?? "");
+        const marker = commitMarkerSchema.parse(markerValue);
+        const markerPayload = {
+          schemaVersion: marker.schemaVersion,
+          entryHash: marker.entryHash,
+          committedAt: marker.committedAt
+        };
+        if (marker.entryHash !== parsed.entryHash ||
+          marker.commitHash !== hashCanonicalPayload(markerPayload) ||
+          !isDeepStrictEqual(markerValue, { ...markerPayload, commitHash: marker.commitHash }) ||
+          Date.parse(marker.committedAt) < Date.parse(parsed.appendStartedAt)) {
+          throw new Error("portfolio action risk decision durable commit origin mismatch");
+        }
+        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash };
+        hasCommittedEntry = true;
+      } else {
+        if (hasCommittedEntry) throw new Error("legacy risk decision cannot follow committed entries");
+        const legacy = parsePortfolioActionRiskDecisionFileEntry(value, previousEntryHash);
+        // Legacy pre-write timestamps cannot prove durability, including on retry.
+        entry = { record: legacy.record, committedAt: null, tailHash: legacy.entryHash };
+      }
     } catch (error) {
       throw new Error(
         `portfolio action risk decision file contains corrupt line ${index + 1}`,
@@ -228,7 +297,7 @@ function parsePortfolioActionRiskDecisionEntries(
     refs.add(record.riskDecisionId);
     origins.add(origin);
     entries.push(entry);
-    previousEntryHash = entry.entryHash;
+    previousEntryHash = entry.tailHash;
   }
   return Object.freeze(entries);
 }
@@ -254,7 +323,7 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
   const metadata = getVerifiedHistoryMetadata(history);
   const appendedAt = metadata.appendedAtById.get(riskDecisionId);
   if (appendedAt === undefined) {
-    throw new Error("portfolio action risk decision append origin is unavailable");
+    throw new Error("portfolio action risk decision durable origin is unavailable; legacy record requires review");
   }
   return deepFreeze({
     record: matches[0] as PortfolioActionRiskDecision,
@@ -263,16 +332,17 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
 }
 
 function createVerifiedPortfolioActionRiskDecisionHistory(
-  entries: readonly PortfolioActionRiskDecisionFileEntry[]
+  entries: readonly ParsedRiskDecisionEntry[]
 ): VerifiedPortfolioActionRiskDecisionHistory {
   const records = entries.map((entry) => entry.record);
   const history = Object.freeze({ records: Object.freeze([...records]) });
   verifiedPortfolioActionRiskDecisionHistories.add(history);
   verifiedPortfolioActionRiskDecisionMetadata.set(history, {
     appendedAtById: new Map(
-      entries.map((entry) => [entry.record.riskDecisionId, entry.appendedAt])
+      entries.filter((entry) => entry.committedAt !== null)
+        .map((entry) => [entry.record.riskDecisionId, entry.committedAt!])
     ),
-    lastEntryHash: entries.at(-1)?.entryHash ?? null
+    lastEntryHash: entries.at(-1)?.tailHash ?? null
   });
   return history;
 }
@@ -289,15 +359,16 @@ function getVerifiedHistoryMetadata(
 
 function createPortfolioActionRiskDecisionFileEntry(input: {
   record: PortfolioActionRiskDecision;
-  appendedAt: string;
+  appendStartedAt: string;
   previousEntryHash: string | null;
-}): PortfolioActionRiskDecisionFileEntry {
-  if (Date.parse(input.appendedAt) < Date.parse(input.record.decidedAt)) {
+}): z.infer<typeof committedEntrySchema> {
+  if (Date.parse(input.appendStartedAt) < Date.parse(input.record.decidedAt)) {
     throw new Error("portfolio action risk decision cannot be appended before decision time");
   }
   const payload = {
+    schemaVersion: "portfolio_action_risk_decision_entry.v2" as const,
     record: input.record,
-    appendedAt: input.appendedAt,
+    appendStartedAt: input.appendStartedAt,
     previousEntryHash: input.previousEntryHash
   };
   return deepFreeze({
@@ -349,7 +420,7 @@ function cloneRecord(value: unknown): PortfolioActionRiskDecision {
 
 async function appendDurableJsonLine(
   path: string,
-  value: PortfolioActionRiskDecisionFileEntry
+  value: unknown
 ): Promise<void> {
   const handle = await open(path, "a");
   try {

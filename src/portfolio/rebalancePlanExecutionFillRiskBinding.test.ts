@@ -182,6 +182,12 @@ test("execution binding rejects a decision in the same millisecond as its source
   });
 });
 
+test("execution binding rejects a fill in the same millisecond as its risk decision commit", async () => {
+  await withFixture({ sameRiskFillInstant: true }, async (fixture) => {
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding(fixture), /availability cutoff/);
+  });
+});
+
 async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture: Fixture) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-fill-risk-binding-"));
   try { await run(await prepare(baseDir, options)); }
@@ -190,7 +196,7 @@ async function withFixture(options: Parameters<typeof prepare>[1], run: (fixture
 
 async function prepare(baseDir: string, options: {
   side?: "BUY" | "SELL"; feeBps?: number; volume?: number; evidencePriceKrw?: number; risk?: Partial<RiskInput>; beforeRisk?: boolean;
-  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean; samePriceDecisionInstant?: boolean;
+  unrelatedRiskPrice?: boolean; fillCreatedAtOffsetMs?: number; lateFillAppend?: boolean; samePriceDecisionInstant?: boolean; sameRiskFillInstant?: boolean;
 }) {
   const side = options.side ?? "BUY";
   const asOf = "2020-01-01T00:00:00.000Z";
@@ -235,7 +241,7 @@ async function prepare(baseDir: string, options: {
   await riskRepository.append(riskDecision);
   const riskDecisionHistory = await riskRepository.readVerifiedHistory();
   const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, riskDecision.riskDecisionId);
-  const fillAsOf = new Date(Date.parse(origin.appendedAt) - (options.beforeRisk ? 1 : 0)).toISOString();
+  const fillAsOf = new Date(Date.parse(origin.appendedAt) + (options.beforeRisk ? -1 : options.sameRiskFillInstant ? 0 : 1)).toISOString();
   const executionPolicy = {
     modelVersion: PAPER_EXECUTION_MODEL_VERSION as typeof PAPER_EXECUTION_MODEL_VERSION, fillPriceRule: "current_candidate_last_price" as const,
     slippageBps: 0, feeBps: options.feeBps ?? 0, taxBps: 0, halfSpreadBps: 0, fillRatio: 1,

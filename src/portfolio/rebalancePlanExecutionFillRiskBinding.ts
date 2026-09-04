@@ -85,7 +85,7 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
   }
   if (
     Date.parse(priceOrigin.appendedAt) >= Date.parse(riskDecision.decidedAt) ||
-    Date.parse(riskOrigin.appendedAt) > Date.parse(paperFill.asOf) ||
+    Date.parse(riskOrigin.appendedAt) >= Date.parse(paperFill.asOf) ||
     Date.parse(riskDecision.decidedAt) > Date.parse(paperFill.asOf) ||
     Date.parse(paperFill.asOf) > Date.parse(event.asOf) ||
     Date.parse(paperFill.createdAt) > Date.parse(event.asOf) ||
