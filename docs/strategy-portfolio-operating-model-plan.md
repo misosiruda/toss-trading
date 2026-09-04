@@ -3592,6 +3592,8 @@ scope는 최초 plan preview의 값을 유지한다. 이 helper는 content 대�
 
 네 번째 분할은 `replayRebalancePlanEvents`의 순수 상태 재생이다. 입력 plan/event를 독립 검증한
 뒤 첫 preview, 즉시 predecessor, nondecreasing event time과 허용 선형 전이를 검사한다.
+Plan은 frozen binding을 만들 때 한 번만 parse/rehash하고 각 event는 그 원본에 대조한다.
+다음 미완료 action은 단조 증가 cursor로 추적해 event마다 전체 action 배열을 재탐색하지 않는다.
 Duplicate event, branch, terminal 이후 event를 거절하고 action이 target을 채워야 다음 action을
 시작한다. Fill sequence는 action마다 0부터 연속이며 notional/quantity 누계는 직전 값과 실제
 fill 합계여야 한다. 동일 plan 이력에서 fill/paper-fill/Risk decision ID 재사용을 거절한다.

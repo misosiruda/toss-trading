@@ -68,8 +68,18 @@ export function parseRebalancePlanEvent(value: unknown): RebalancePlanEvent {
 /** Content binding only: no repository origin, linear history or Risk replay. */
 export function validateRebalancePlanEventRecordBinding(input: { plan: unknown; event: unknown }) {
   const parsed = z.object({ plan: z.unknown(), event: z.unknown() }).strict().parse(input);
-  const plan = parseRebalancePlanRecord(parsed.plan);
-  const event = parseRebalancePlanEvent(parsed.event);
+  const binding = createRebalancePlanEventRecordBinding(parsed.plan);
+  return Object.freeze({ plan: binding.plan, event: binding.parseEvent(parsed.event) });
+}
+
+/** Parses once and retains a frozen plan; callers cannot supply a trusted flag. */
+export function createRebalancePlanEventRecordBinding(value: unknown) {
+  const plan = parseRebalancePlanRecord(value);
+  return Object.freeze({ plan, parseEvent: (event: unknown) => bindEvent(plan, event) });
+}
+
+function bindEvent(plan: ReturnType<typeof parseRebalancePlanRecord>, value: unknown): RebalancePlanEvent {
+  const event = parseRebalancePlanEvent(value);
   for (const field of ["planId", "planHash", "cycleId", "portfolioId", "portfolioVersion", "portfolioSnapshotHash", "policyHash"] as const) {
     if (plan[field] !== event[field]) throw new Error(`rebalance plan event record ${field} mismatch`);
   }
@@ -77,7 +87,7 @@ export function validateRebalancePlanEventRecordBinding(input: { plan: unknown; 
   if (event.eventType === "execution_applied" && plan.actions[event.actionSequence]?.actionId !== event.actionId) {
     throw new Error("rebalance plan execution event action identity or sequence mismatch");
   }
-  return Object.freeze({ plan, event });
+  return event;
 }
 
 function assertLists(payload: z.infer<typeof inputSchema>): void {

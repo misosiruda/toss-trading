@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRebalancePlanRecord } from "./rebalancePlan.js";
-import { createRebalancePlanEvent, parseRebalancePlanEvent, validateRebalancePlanEventRecordBinding } from "./rebalancePlanEvent.js";
+import { createRebalancePlanEvent, createRebalancePlanEventRecordBinding, parseRebalancePlanEvent, validateRebalancePlanEventRecordBinding } from "./rebalancePlanEvent.js";
 import { createRebalancePlanExecutionAppliedEvent, parseRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
 import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
 
@@ -131,6 +131,19 @@ test("new variants reject noncanonical identifiers and invalid offset timestamps
       assert.throws(() => parseRebalancePlanEvent(rehash({ ...input, ...patch })));
     }
   }
+});
+
+test("reusable record binding validates once and retains a frozen clone, not caller trust", () => {
+  const plan = planFixture();
+  const mutable = JSON.parse(JSON.stringify(plan));
+  const binding = createRebalancePlanEventRecordBinding(mutable);
+  mutable.actions[0].actionId = "changed-after-binding";
+  mutable.policyHash = C;
+  assert.ok(Object.isFrozen(binding));
+  assert.deepEqual(binding.plan, plan);
+  assert.equal(binding.parseEvent(createRebalancePlanEvent(executionInput())).eventType, "execution_applied");
+  assert.throws(() => createRebalancePlanEventRecordBinding(mutable), /identity/);
+  assert.throws(() => binding.parseEvent(createRebalancePlanEvent({ ...executionInput(), policyHash: C })), /policyHash mismatch/);
 });
 
 function planFixture() {

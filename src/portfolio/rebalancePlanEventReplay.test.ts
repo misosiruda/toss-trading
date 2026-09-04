@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRebalancePlanRecord, type RebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
+import { createRebalancePlanRecord, rebalancePlanRecordSchema, type RebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
@@ -24,6 +24,16 @@ test("rebalance replay restores ordered partial fills and immutable complete sta
   assert.ok(Object.isFrozen(result.actions[0]));
   assert.ok(Object.isFrozen(result.events));
   assert.deepEqual(replayRebalancePlanEvents(JSON.parse(JSON.stringify({ plan, events }))), result);
+});
+
+test("replay parses the entire plan once regardless of event and action count", (context) => {
+  const plan = makePlan(undefined, "BUY", 100);
+  const events = history(plan, Array.from({ length: 100 }, (_, action) => ({ action, notional: 100, quantity: 1 })));
+  const parser = context.mock.method(rebalancePlanRecordSchema, "parse");
+  const result = replayRebalancePlanEvents({ plan, events });
+  assert.equal(result.status, "applied");
+  assert.equal(result.actions.length, 100);
+  assert.equal(parser.mock.callCount(), 1);
 });
 
 test("rebalance replay handles preview, approved, rejected and stale prefixes without claiming completion", () => {

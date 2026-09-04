@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
-import { parseRebalancePlanRecord, type RebalanceAction } from "./rebalancePlan.js";
-import { validateRebalancePlanEventRecordBinding, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
+import { type RebalanceAction } from "./rebalancePlan.js";
+import { createRebalancePlanEventRecordBinding, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 
 const inputSchema = z.object({ plan: z.unknown(), events: z.array(z.unknown()).min(1).max(100_000) }).strict();
 const transitions: Record<RebalancePlanEvent["eventType"], readonly RebalancePlanEvent["eventType"][]> = {
@@ -25,8 +25,9 @@ interface ActionProgress {
  */
 export function replayRebalancePlanEvents(input: { plan: unknown; events: readonly unknown[] }) {
   const parsed = inputSchema.parse(input);
-  const plan = parseRebalancePlanRecord(parsed.plan);
-  const events = parsed.events.map((event) => validateRebalancePlanEventRecordBinding({ plan, event }).event);
+  const binding = createRebalancePlanEventRecordBinding(parsed.plan);
+  const plan = binding.plan;
+  const events = parsed.events.map(binding.parseEvent);
   const actions: ActionProgress[] = plan.actions.map((action) => ({
     actionId: action.actionId, actionSequence: action.actionSequence, fillCount: 0,
     cumulativeFilledNotionalKrw: 0, cumulativeFilledQuantity: 0, complete: false
@@ -38,6 +39,7 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
   const executionEventIds: string[] = [];
   let executionPortfolioVersion = plan.portfolioVersion;
   let executionPortfolioSnapshotHash = plan.portfolioSnapshotHash;
+  let nextActionSequence = 0;
   let previous: RebalancePlanEvent | undefined;
   for (const event of events) {
     if (eventIds.has(event.planEventId)) throw new Error("rebalance event replay contains a duplicate event ID");
@@ -52,7 +54,7 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
       if (Date.parse(event.asOf) < Date.parse(previous.asOf)) throw new Error("rebalance event replay time moved backwards");
     }
     if (event.eventType === "execution_applied") {
-      const nextAction = actions.find((progress) => !progress.complete);
+      const nextAction = actions[nextActionSequence];
       if (nextAction === undefined || nextAction.actionSequence !== event.actionSequence) {
         throw new Error("rebalance execution must complete each action in sequence");
       }
@@ -73,6 +75,7 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
       nextAction.complete = target.targetKind === "fractional_buy_notional"
         ? nextAction.cumulativeFilledNotionalKrw === target.targetNotionalKrw
         : nextAction.cumulativeFilledQuantity === target.targetQuantity;
+      if (nextAction.complete) nextActionSequence += 1;
       fillIds.add(event.fillId); paperFillIds.add(event.paperFillRecordId); riskIds.add(event.riskDecisionId);
       executionEventIds.push(event.planEventId);
       executionPortfolioVersion = event.resultingPortfolioVersion;
