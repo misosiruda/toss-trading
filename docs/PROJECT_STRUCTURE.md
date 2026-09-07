@@ -208,6 +208,13 @@ Risk 순서로 source lease를 유지하며 v6 entry에 snapshot ID/hash, exposu
 미분류 보유분이 있으면 approved BUY를 거절하고 legacy reduce-only SELL에는 mandate를 합성하지 않는다.
 이 경로는 과거 평가 입력의 원본 결속이며 전체 Risk 수치 규칙·가격/turnover 근거·실행 transaction은 후속이다.
 
+`portfolioActionRiskDecisionCashCapacity.ts`는 Snapshot-bound BUY의 필요조건인 현금 상한을 실제
+평가 원본과 활성 정책에서 재계산한다. 준비금은 absolute minimum과 반올림한 NAV × target ratio 중
+큰 값이며 pending BUY gross exposure도 차감한다. Worst-case net debit과 approved net cap 모두
+이 상한 이하여야 한다. 생성·retry·과거 resolver에 연결하며 rejected BUY 설명과 SELL은 차단하지 않는다.
+Pending SELL의 예상 대금을 더하거나 caller ID로 pending BUY를 해제하지 않는다. Pending 비용과
+reservation origin을 포함한 최종 spendable cash·실행 승인 검증을 대체하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

@@ -10,6 +10,8 @@ import { resolvePortfolioActionRiskDecisionPolicy } from "./portfolioActionRiskD
 import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDecisionPlanResolver.js";
 import { resolvePortfolioActionRiskDecisionMandate } from "./portfolioActionRiskDecisionMandateResolver.js";
 import { resolvePortfolioActionRiskDecisionSnapshot } from "./portfolioActionRiskDecisionSnapshotResolver.js";
+import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
+import { pendingActionExposureTotals, type PendingPortfolioActionInput } from "./portfolioSizingInputs.js";
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import { PortfolioSizingSnapshotFileRepository, createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
@@ -987,10 +989,131 @@ test("snapshot-bound Risk fails closed on source fsync and holds the Snapshot le
   });
 });
 
+test("snapshot cash capacity applies the larger absolute or target-ratio reserve before BUY approval", async () => {
+  for (const [cashKrw, quantity, reserve, capacity, approved] of [
+    [0, 2, 100, 0, false], [99, 2, 100, 0, false], [100, 2, 100, 0, false],
+    [209, 2, 100, 109, false], [210, 2, 100, 110, true],
+    [1_000, 50, 900, 100, false], [1_012, 50, 902, 110, true]
+  ] as const) {
+    await withSnapshotFixture("BUY", false, async ({ repository, candidate, directory }) => {
+      if (!approved) {
+        await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds snapshot cash capacity/);
+        assert.deepEqual(await repository.readAll(), []);
+        return;
+      }
+      const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+      const resolved = await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+      assert.deepEqual(resolved.cashCapacity, { cashKrw, requiredCashReserveKrw: reserve, pendingBuyExposureKrw: 0, maximumNetCashDebitKrw: capacity });
+      assert.ok(Object.isFrozen(resolved.cashCapacity));
+      const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+      const raw = await readFile(path, "utf8");
+      assert.deepEqual(await new PortfolioActionRiskDecisionFileRepository(directory).createAndAppendWithSnapshotOrigin(candidate), decision);
+      assert.equal(await readFile(path, "utf8"), raw);
+    }, { cashKrw, quantity });
+  }
+});
+
+test("snapshot cash capacity bounds net debit including costs and the full approved cap", async () => {
+  await withSnapshotFixture("BUY", false, async ({ repository, candidate }) => {
+    // Gross 100 fits, but the requested net approval cap 110 exceeds cash capacity 105.
+    await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds snapshot cash capacity/);
+    await assert.rejects(repository.createAndAppendWithSnapshotOrigin({ ...candidate,
+      cashAssessment: { side: "BUY", worstCaseNetCashDebitKrw: 106, approvedMaximumNetCashDebitKrw: 106 }
+    }), /exceeds snapshot cash capacity/);
+    const decision = await repository.createAndAppendWithSnapshotOrigin({ ...candidate,
+      cashAssessment: { side: "BUY", worstCaseNetCashDebitKrw: 105, approvedMaximumNetCashDebitKrw: 105 }
+    });
+    assert.equal(decision.decision, "approved");
+  }, { cashKrw: 205 });
+});
+
+test("snapshot cash capacity subtracts pending BUY and never credits pending SELL proceeds", async () => {
+  for (const [side, pending, approved] of [["BUY", 20, true], ["BUY", 21, false], ["SELL", 200, true]] as const) {
+    await withSnapshotFixture("BUY", false, async ({ repository, candidate, directory }) => {
+      if (!approved) {
+        await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds snapshot cash capacity/);
+        assert.deepEqual(await repository.readAll(), []);
+        return;
+      }
+      const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+      const result = await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+      assert.equal(result.cashCapacity?.maximumNetCashDebitKrw, side === "BUY" ? 110 : 130);
+    }, { cashKrw: 230, pendingActionInputs: [pendingCashFixture(side, pending)] });
+  }
+  await withSnapshotFixture("BUY", false, async ({ repository, candidate }) => {
+    await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds snapshot cash capacity/);
+  }, { cashKrw: 209, pendingActionInputs: [pendingCashFixture("SELL", 200)] });
+});
+
+test("snapshot cash capacity preserves rejected BUY explanations and reduce-only SELL at zero cash", async () => {
+  await withSnapshotFixture("BUY", false, async ({ repository, candidate, directory }) => {
+    const decision = await repository.createAndAppendWithSnapshotOrigin({ ...candidate, decision: "rejected",
+      ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) });
+    const result = await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+    assert.equal(result.cashCapacity?.maximumNetCashDebitKrw, 0);
+    assert.equal(result.decision.decision, "rejected");
+  }, { cashKrw: 0 });
+  for (const legacy of [false, true]) {
+    await withSnapshotFixture("SELL", legacy, async ({ repository, candidate, directory }) => {
+      const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+      assert.equal((await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId })).cashCapacity, null);
+    }, { cashKrw: 0 });
+  }
+});
+
+test("snapshot cash capacity rejects fractional or unsafe approved net amounts", async () => {
+  await withSnapshotFixture("BUY", false, async ({ repository, candidate }) => {
+    for (const amount of [100.5, Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(repository.createAndAppendWithSnapshotOrigin({ ...candidate,
+        cashAssessment: { side: "BUY", worstCaseNetCashDebitKrw: amount, approvedMaximumNetCashDebitKrw: amount }
+      }), /requires safe integer net cash amounts/);
+      assert.deepEqual(await repository.readAll(), []);
+    }
+  });
+});
+
+test("snapshot cash capacity historical replay rejects fully rehashed over-cash approval without rewriting bytes", async () => {
+  await withSnapshotFixture("BUY", false, async ({ repository, candidate, directory }) => {
+    const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+    const { riskDecisionId: _id, riskDecisionHash: _hash, riskInputHash: _inputHash, ...payload } = decision;
+    const altered = createPortfolioActionRiskDecision({ ...payload,
+      cashAssessment: { side: "BUY", worstCaseNetCashDebitKrw: 100, approvedMaximumNetCashDebitKrw: 111 } });
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const { entryHash: _entryHash, ...entryPayload } = entry;
+    const entryHash = hashCanonicalPayload({ ...entryPayload, record: altered });
+    const { commitHash: _commitHash, ...markerPayload } = marker;
+    const updatedMarker = { ...markerPayload, entryHash };
+    const raw = `${JSON.stringify({ ...entryPayload, record: altered, entryHash })}\n${JSON.stringify({ ...updatedMarker, commitHash: hashCanonicalPayload(updatedMarker) })}\n`;
+    await writeFile(path, raw);
+    assert.deepEqual(await repository.readAll(), [altered]);
+    await assert.rejects(resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: altered.riskDecisionId }), /exceeds snapshot cash capacity/);
+    assert.equal(await readFile(path, "utf8"), raw);
+  }, { cashKrw: 210 });
+});
+
+test("cash capacity independently replays source hashes and safely saturates large pending commitments", () => {
+  const { policy } = policyFixture();
+  const candidate = decisionInput(policyFixture(), "BUY");
+  const snapshot = snapshotFixture(candidate, false, { cashKrw: 100, pendingActionInputs: [pendingCashFixture("BUY", Number.MAX_SAFE_INTEGER)] });
+  const decision = createPortfolioActionRiskDecision({ ...candidate, expectedPortfolioSnapshotHash: snapshot.portfolioSnapshotHash,
+    decision: "rejected", ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) });
+  assert.equal(validateRiskDecisionCashCapacity({ decision, snapshot, policy })?.maximumNetCashDebitKrw, 0);
+  assert.throws(() => validateRiskDecisionCashCapacity({ decision, snapshot: { ...snapshot, portfolioSnapshotHash: HASH }, policy }), /identity|hash/);
+  assert.throws(() => validateRiskDecisionCashCapacity({ decision, snapshot, policy: policyFixture("v2").policy }), /scope/);
+});
+
+function pendingCashFixture(side: "BUY" | "SELL", remainingNotionalKrw: number): PendingPortfolioActionInput {
+  const common = { planId: "pending-plan", planHash: HASH, planEventId: "pending-event", planEventHash: HASH,
+    actionId: "action-1", actionExecutionTargetHash: HASH, market: "KR" as const, symbol: "KR:005930", remainingNotionalKrw, asOf: CREATED_AT };
+  return side === "BUY" ? { ...common, side, openingCapacityReservationId: "pending-reservation", openingCapacityReservationHash: HASH }
+    : { ...common, side, remainingQuantity: 2, priceEvidenceRef: "snapshot-price" };
+}
+
 function snapshotFixture(candidate: Omit<DecisionInput, "decidedAt">, legacy: boolean,
-  overrides: Partial<{ portfolioId: string; portfolioVersion: string; policyHash: string; asOf: string; unassigned: boolean; quantity: number; cashKrw: number }> = {}) {
+  overrides: Partial<{ portfolioId: string; portfolioVersion: string; policyHash: string; asOf: string; unassigned: boolean; quantity: number; cashKrw: number; pendingActionInputs: PendingPortfolioActionInput[] }> = {}) {
   const portfolioId = overrides.portfolioId ?? candidate.portfolioId;
-  const { unassigned = legacy, quantity = 2, cashKrw = 1_000, ...scopeOverrides } = overrides;
+  const { unassigned = legacy, quantity = 2, cashKrw = 1_000, pendingActionInputs = [], ...scopeOverrides } = overrides;
   const positionValue = Math.round(quantity * 100);
   return createPortfolioSizingSnapshot({
     portfolioId, portfolioVersion: "v1", policyHash: candidate.policyHash, asOf: CREATED_AT, ...scopeOverrides,
@@ -998,13 +1121,13 @@ function snapshotFixture(candidate: Omit<DecisionInput, "decidedAt">, legacy: bo
       positions: [{ market: candidate.market, symbol: candidate.symbol, quantity, averagePriceKrw: 100,
         ...(unassigned ? {} : { strategyBucket: "swing" as const }), sector: "Electronics", region: "KR", updatedAt: CREATED_AT }] },
     valuationInputs: [{ kind: "mark_price", market: candidate.market, symbol: candidate.symbol, priceKrw: 100,
-      evidenceRef: "snapshot-price", evidenceAsOf: CREATED_AT }], pendingActionInputs: [],
+      evidenceRef: "snapshot-price", evidenceAsOf: CREATED_AT }], pendingActionInputs,
     ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: cashKrw + positionValue, cashKrw,
       bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: unassigned ? 0 : positionValue },
       symbolExposureKrw: [{ market: candidate.market, symbol: candidate.symbol, exposureKrw: positionValue }],
       ...(unassigned ? { unassignedExposureKrw: positionValue } : {}),
       marketExposureKrw: { KR: positionValue, US: 0 }, sectorExposureKrw: { Electronics: positionValue }, countryExposureKrw: { KR: positionValue }, currencyExposureKrw: { KRW: positionValue },
-      pendingBuyExposureKrw: 0, pendingSellExposureKrw: 0 })
+      ...pendingActionExposureTotals(pendingActionInputs) })
   });
 }
 

@@ -5,6 +5,7 @@ import { InvestmentMandateFileRepository, resolveObservedInvestmentMandateHistor
 import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDecisionPlanResolver.js";
 import { riskDecisionMandateIdentity, validateRiskDecisionMandateState } from "./portfolioActionRiskDecisionMandateContext.js";
 import { riskDecisionSnapshotIdentity, validateRiskDecisionSnapshotState } from "./portfolioActionRiskDecisionSnapshotContext.js";
+import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
 
 /** Replays stored pre-state inputs, not current execution authority or numeric rule results. */
 export async function resolvePortfolioActionRiskDecisionSnapshot(input: { baseDir: string; riskDecisionId: string }) {
@@ -18,7 +19,8 @@ export async function resolvePortfolioActionRiskDecisionSnapshot(input: { baseDi
     const { observation: _observation, ...identity } = receipt;
     if (!isDeepStrictEqual(identity, riskDecisionSnapshotIdentity(sizing))) throw new Error("risk decision snapshot origin does not match stored source");
     const mandateReceipt = plan.origin.mandateOrigin;
-    const result = { ...plan, sizing, snapshotOrigin: receipt };
+    const cashCapacity = validateRiskDecisionCashCapacity({ decision: plan.decision, snapshot: sizing.snapshot, policy: plan.activePolicy.policy });
+    const result = { ...plan, sizing, snapshotOrigin: receipt, cashCapacity };
     if (plan.action.lineageKind === "unassigned_legacy_reduce_only") {
       if (mandateReceipt !== null) throw new Error("legacy snapshot risk decision cannot carry a mandate origin");
       return Object.freeze({ ...result, mandate: null });
