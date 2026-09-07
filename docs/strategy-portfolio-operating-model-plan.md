@@ -3663,9 +3663,11 @@ Caller가 완성 record나 결정시각을 전달하는 입력은 거절하며 �
 관측한 이력은 approved 또는 execution_applied여야 하며 다음 미완료 action만 결정 대상으로
 허용한다. Plan/policy/portfolio, market/symbol/side, execution target hash와 mandate/legacy scope
 종류를 대조하고 expected portfolio version/snapshot 및 prior cumulative를 replay 결과와 비교한다.
-Approved decision의 gross 상한은 action 잔여 cap 이하여야 하고 fractional BUY의 요청·승인 상한은
+Approved decision의 요청 금액과 gross 상한은 action 잔여 cap 이하여야 하고 fractional BUY의 요청·승인 상한은
 잔여 notional target 이하, 수량 target은 canonical decimal remaining 이하이며 whole-share 요청은
 정수여야 한다. Rejected decision은 초과 요청을 설명할 수 있으나 scope/pre-state 검증은 동일하다.
+Event replay도 각 체결 요청 금액을 직전 누적 체결 금액을 차감한 action 잔여 cap과 대조한다.
+이미 저장된 초과 요청 이력도 fail-closed하며 원본을 자동 수정하거나 한도를 확대하지 않는다.
 
 Resolver는 저장된 v4 receipt가 가리키는 predecessor까지의 이력을 전체 저장 파일에서 복원하고
 원본 및 policy-selected rule 집합을 다시 대조한다. 이후 새 event가 생겨도 과거 결정을 설명할 수

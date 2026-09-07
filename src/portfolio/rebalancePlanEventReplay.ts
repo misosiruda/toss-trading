@@ -114,6 +114,9 @@ function assertProgress(action: RebalanceAction, prior: ActionProgress, event: E
     throw new Error("rebalance execution cumulative amounts do not match prior plus fill");
   }
   if (notional > action.maximumNotionalKrw) throw new Error("rebalance execution cumulative notional exceeds action cap");
+  if (event.requestedNotionalKrw > action.maximumNotionalKrw - prior.cumulativeFilledNotionalKrw) {
+    throw new Error("rebalance execution request exceeds remaining action cap");
+  }
   const target = action.executionTarget;
   if (target.targetKind === "fractional_buy_notional") {
     const remaining = target.targetNotionalKrw - prior.cumulativeFilledNotionalKrw;

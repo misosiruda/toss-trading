@@ -302,6 +302,20 @@ test("plan-bound risk rejects mismatched action, prior state, lineage and approv
   });
 });
 
+test("plan-bound quantity approvals reject requested notional above cap even when approved maxima fit", async () => {
+  for (const { side, wholeShares } of [
+    { side: "SELL", wholeShares: false }, { side: "SELL", wholeShares: true }, { side: "BUY", wholeShares: true }
+  ] as const) await withPlanFixture(side, false, async ({ directory, repository, candidate }) => {
+    const request = { ...candidate, requestedQuantity: wholeShares ? 1 : 0.3 };
+    for (const requestedNotionalKrw of [101, 1000]) {
+      await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...request, requestedNotionalKrw }), /remaining action notional cap/);
+      assert.deepEqual(await repository.readAll(), []);
+    }
+    const record = await repository.createAndAppendWithPlanOrigin(request);
+    assert.equal((await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId })).decision.requestedNotionalKrw, 100);
+  }, wholeShares);
+});
+
 test("plan-bound risk derives fractional remaining quantities from stored partial fills", async () => {
   await withPlanFixture("SELL", false, async ({ directory, repository, candidate, plan, events }) => {
     const approval = (await events.readAll()).at(-1)!;
@@ -319,6 +333,8 @@ test("plan-bound risk derives fractional remaining quantities from stored partia
       turnoverAssessment: { scopeKind: "bucket" as const, turnoverStateId: "turnover-2", turnoverStateHash: HASH,
         turnoverWindowOpenPortfolioNetWorthKrw: 1000, priorBucketTurnoverNotionalKrw: 10, requestedBucketTurnoverNotionalKrw: 20, resultingBucketTurnoverRatio: 0.03 }
     };
+    await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...remaining, requestedNotionalKrw: 91 }), /remaining action notional cap/);
+    assert.deepEqual(await repository.readAll(), []);
     const record = await repository.createAndAppendWithPlanOrigin(remaining);
     const resolved = await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId });
     assert.equal(resolved.progress.cumulativeFilledQuantity, 0.1);

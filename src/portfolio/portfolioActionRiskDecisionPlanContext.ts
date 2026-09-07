@@ -62,7 +62,8 @@ export function validateRiskDecisionPlanState(value: unknown, state: ReturnType<
   if (decision.decision === "approved") {
     const remainingCap = action.maximumNotionalKrw - progress.cumulativeFilledNotionalKrw;
     if (![decision.requestedNotionalKrw, decision.worstCaseFillNotionalKrw, decision.approvedMaximumFillNotionalKrw].every(Number.isSafeInteger) ||
-      decision.worstCaseFillNotionalKrw > remainingCap || decision.approvedMaximumFillNotionalKrw > remainingCap) throw new Error("risk approval exceeds remaining action notional cap");
+      decision.requestedNotionalKrw > remainingCap || decision.worstCaseFillNotionalKrw > remainingCap ||
+      decision.approvedMaximumFillNotionalKrw > remainingCap) throw new Error("risk approval exceeds remaining action notional cap");
     const target = action.executionTarget;
     if (target.targetKind === "fractional_buy_notional") {
       const remaining = target.targetNotionalKrw - progress.cumulativeFilledNotionalKrw;
