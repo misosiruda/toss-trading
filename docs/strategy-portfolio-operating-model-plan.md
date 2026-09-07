@@ -1341,6 +1341,7 @@ interface PortfolioExposureSnapshot {
   virtualNetWorthKrw: number;
   cashKrw: number;
   bucketExposureKrw: Record<StrategyBucket, number>;
+  unassignedExposureKrw?: number; // positive only; omit when no unassigned holdings
   symbolExposureKrw: Array<{
     market: Market;
     symbol: string;
@@ -3065,7 +3066,10 @@ selection request 저장은 후속 분할 전까지 구현 완료로 간주하�
 두 번째 분할은 `PortfolioExposureSnapshot` strict payload와 독립
 `exposureSnapshotHash` 검증을 구현한다. bucket map은 complete lexical key set, symbol exposure는
 canonical `(market, symbol)` 순서와 unique tuple을 강제하고 market/sector/country/currency map도
-lexical key 순서로 보존한다. cash를 제외한 position exposure와 모든 dimension 합계가 같아야 하며
+lexical key 순서로 보존한다. cash를 제외한 position exposure와 모든 dimension 합계가 같아야 한다.
+bucket 차원은 bucket 합계와 별도 `unassignedExposureKrw`의 합으로 대조한다. 이 optional 필드는
+미분류 보유분의 양수 노출이 있을 때만 기록하며 0, -0, undefined, 비정수·unsafe 값은 거절한다.
+기존 분류 완료 snapshot에는 필드를 추가하지 않아 기존 payload hash/ID와 bytes를 유지한다.
 market 합계는 symbol tuple에서 다시 집계한 값과 exact-match해야 한다. JavaScript object enumeration이
 lexical order를 보존할 수 없는 integer-index 형태의 동적 classification key는 거절하고 `GICS:10`처럼
 명시적인 비정수 namespace를 사용한다. 동적 classification map의 0 entry,
@@ -3101,8 +3105,17 @@ hash 전에 거절한다. exact mark/FX coverage와 virtual NAV/dimension
 공유한다. KR 보유는 KRW, US 보유는 USD로 분류하고 US exposure가 있으면 exact `USD/KRW` FX
 provenance를 요구하며 unused mark/FX도 거절한다. resolver는 mark와 quantity에서 virtual NAV 및
 bucket/symbol/market/sector/country/currency exposure를 safe-integer로 재계산하고 저장 exposure
-payload/hash와 exact-match한다. strategy bucket, sector, region이 없는 position과 embedded
-market price/value/PnL 불일치는 fail-closed한다. FX rate는 이미 KRW로 정규화된 `priceKrw`의
+payload/hash와 exact-match한다. strategy bucket이 없는 보유분은 bucket을 합성하지 않고 별도
+unassigned exposure로 재생하며 symbol/market/sector/country/currency 및 전체 NAV에는 포함한다.
+같은 종목의 assigned/unassigned lot은 각 bucket 여부를 유지하고 하나의 mark를 공유한다.
+sector 또는 region이 없는 position과 embedded market price/value/PnL 불일치는 계속 fail-closed한다.
+unassigned 필드 누락·잘못된 금액·가짜 bucket 집계는 valuation replay와 다르면 거절한다.
+이 표현은 관측된 미분류 보유분의 평가일 뿐 mandate, legacy position-state 원본, BUY 권한이나
+실행 승인을 합성하지 않는다. 신규 필드가 있는 artifact를 쓰기 전에 호환 reader를 배포해야 하며,
+이후 rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 파일 삭제·자동 변환은 없다.
+`resolveBucketSelectionRequest`는 미분류 노출이 있는 snapshot을 gap/slot/capacity 계산 전에 거절한다.
+평가·조회 표현을 허용해도 미분류 보유분이 하나라도 있을 때 portfolio 신규 매수를 차단하는 경계는 유지한다.
+FX rate는 이미 KRW로 정규화된 `priceKrw`의
 conversion provenance이므로 이 분할에서 mark에 다시 곱하지 않는다. plan/fill/reservation chain
 replay와 append-only snapshot/request persistence는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 

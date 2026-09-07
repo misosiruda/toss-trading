@@ -81,6 +81,26 @@ test("portfolio exposure snapshot rejects duplicate and noncanonical symbols", (
   );
 });
 
+test("unassigned exposure remains outside buckets but participates in complete portfolio totals and hashing", () => {
+  const input = snapshotInput();
+  const old = createPortfolioExposureSnapshot(input);
+  assert.equal("unassignedExposureKrw" in old.exposureSnapshot, false);
+  assert.equal(old.exposureSnapshotHash, hashCanonicalPayload(input));
+  const payload = { ...input, bucketExposureKrw: { ...input.bucketExposureKrw, long_term: 0 }, unassignedExposureKrw: 200_000 };
+  const verified = createPortfolioExposureSnapshot(payload);
+  assert.equal(verified.exposureSnapshot.bucketExposureKrw.long_term, 0);
+  assert.equal(verified.exposureSnapshot.unassignedExposureKrw, 200_000);
+  assert.notEqual(verified.exposureSnapshotHash, old.exposureSnapshotHash);
+  assert.deepEqual(parseVerifiedPortfolioExposureSnapshot(JSON.parse(JSON.stringify(verified))), verified);
+  for (const amount of [0, -0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, undefined, 199_999, 200_001]) {
+    assert.throws(() => createPortfolioExposureSnapshot({ ...payload, unassignedExposureKrw: amount }));
+  }
+  assert.throws(() => createPortfolioExposureSnapshot({ ...input, unassignedExposureKrw: 200_000 }), /bucket exposure total/);
+  const changed = { ...verified, exposureSnapshot: { ...verified.exposureSnapshot, unassignedExposureKrw: 100_000,
+    bucketExposureKrw: { ...verified.exposureSnapshot.bucketExposureKrw, long_term: 100_000 } } };
+  assert.throws(() => parseVerifiedPortfolioExposureSnapshot(changed), /hash mismatch/);
+});
+
 test("portfolio exposure snapshot verifies all dimension totals", () => {
   const cases: Array<[keyof PortfolioExposureSnapshot, unknown]> = [
     [

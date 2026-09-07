@@ -201,6 +201,11 @@ Risk 저장소의 `createAndAppendWithMandateOrigin`은 mandate → activation �
 과거 원본 재생, retry, source fsync 실패와 저장 중 잠금을 검증한다. 실제 Risk 계산·reservation 원본과
 fill/accounting transaction은 후속이다.
 
+`portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
+별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
+root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
+hash/ID는 유지하며 신규 필드를 기록한 뒤 rollback할 때는 호환 reader가 필요하다.
+`bucketSelectionRequestResolver.ts`는 이 미분류 노출이 있으면 신규 selection replay를 거절한다.
 `portfolioSizingSnapshotFiles.ts`의 `withDurableVerifiedHistory`는 전체 snapshot의 valuation replay와
 fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장소 lock을 유지한다.
 읽기·검증·fsync는 같은 file handle에 결속하고 bytes 및 handle/path metadata 재검증으로 관측 도중

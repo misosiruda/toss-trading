@@ -53,6 +53,46 @@ test("sizing resolver requires exact held-position mark coverage", () => {
   );
 });
 
+test("sizing resolver replays mixed assigned and unassigned holdings without inventing bucket lineage", () => {
+  const input = snapshotInput();
+  const portfolio = input.virtualPortfolio as { positions: Array<Record<string, unknown>> };
+  delete portfolio.positions[0]!.strategyBucket;
+  const exposure = createPortfolioExposureSnapshot({ ...verifiedExposure().exposureSnapshot,
+    bucketExposureKrw: { ...verifiedExposure().exposureSnapshot.bucketExposureKrw, long_term: 0 }, unassignedExposureKrw: 200_000 });
+  const snapshot = createPortfolioSizingSnapshot({ ...input, ...exposure });
+  const resolved = resolvePortfolioSizingSnapshot(snapshot);
+  assert.deepEqual(resolved.verifiedExposure, exposure);
+  assert.equal(resolved.snapshot.virtualPortfolio.positions.find((position) => position.quantity === 2 && position.market === "KR")!.strategyBucket, undefined);
+  assert.equal(resolved.verifiedExposure.exposureSnapshot.symbolExposureKrw[0]!.exposureKrw, 300_000);
+  assert.equal(resolved.verifiedExposure.exposureSnapshot.virtualNetWorthKrw, 900_000);
+  assert.throws(() => resolvePortfolioSizingSnapshot(createPortfolioSizingSnapshot(input)), /does not match valuation replay/);
+  const reassigned = snapshotInput();
+  assert.throws(() => resolvePortfolioSizingSnapshot(createPortfolioSizingSnapshot({ ...reassigned, ...exposure })), /does not match valuation replay/);
+  for (const metadata of ["sector", "region"]) {
+    const missing = JSON.parse(JSON.stringify({ ...input, ...exposure })) as CreatePortfolioSizingSnapshotInput;
+    delete (missing.virtualPortfolio as { positions: Array<Record<string, unknown>> }).positions[0]![metadata];
+    assert.throws(() => resolvePortfolioSizingSnapshot(createPortfolioSizingSnapshot(missing)), /missing sector|missing country/);
+  }
+});
+
+test("sizing resolver accounts an entirely unassigned portfolio in root exposures only", () => {
+  const input = snapshotInput();
+  const portfolio = input.virtualPortfolio as { positions: Array<Record<string, unknown>> };
+  // Distinct symbols avoid duplicate unassigned identities after removing both KR buckets.
+  portfolio.positions.splice(1, 1);
+  for (const position of portfolio.positions) delete position.strategyBucket;
+  const exposure = createPortfolioExposureSnapshot({ ...verifiedExposure().exposureSnapshot,
+    virtualNetWorthKrw: 800_000, unassignedExposureKrw: 400_000,
+    bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: 0 },
+    symbolExposureKrw: [{ market: "KR", symbol: "005930", exposureKrw: 200_000 }, { market: "US", symbol: "AAPL", exposureKrw: 200_000 }],
+    marketExposureKrw: { KR: 200_000, US: 200_000 }, sectorExposureKrw: { Electronics: 200_000, Technology: 200_000 },
+    countryExposureKrw: { KR: 200_000, US: 200_000 }, currencyExposureKrw: { KRW: 200_000, USD: 200_000 } });
+  const resolved = resolvePortfolioSizingSnapshot(createPortfolioSizingSnapshot({ ...input, ...exposure }));
+  assert.equal(resolved.verifiedExposure.exposureSnapshot.unassignedExposureKrw, 400_000);
+  assert.ok(resolved.snapshot.virtualPortfolio.positions.every((position) => position.strategyBucket === undefined));
+  assert.ok(Object.values(resolved.verifiedExposure.exposureSnapshot.bucketExposureKrw).every((amount) => amount === 0));
+});
+
 test("sizing resolver requires exact market FX coverage", () => {
   const missingFx = snapshotInput();
   missingFx.valuationInputs = missingFx.valuationInputs.filter(
