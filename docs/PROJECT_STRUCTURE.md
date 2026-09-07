@@ -226,7 +226,13 @@ position-state/Mandate 소유권 원본을 증명하는 최종 execution gate는
 Receipt의 `entriesHash`는 record뿐 아니라 commit 시각과 tail hash를 포함한 complete parsed entry
 prefix에 결속된다. 정상 append 뒤 원래 prefix를 해소할 수 있지만 축소·교체·commit provenance 변조는
 거절한다. Legacy의 durable append origin 부재는 그대로 보존하며 lease로 과거 시각을 승격하지 않는다.
-Risk receipt에 가격을 연결하고 가격/비용 수치를 재계산하는 소비 경로는 후속이다.
+`portfolioActionRiskDecisionPriceContext.ts`와 `portfolioActionRiskDecisionPriceResolver.ts`는
+실제 typed quote의 market/symbol, evidence ref/hash와 판단 이전의 관측·생성·durable commit을 검증한다.
+Risk 저장소의 `createAndAppendWithPriceOrigin`은 price → snapshot → mandate(assigned만) → activation →
+Risk 순서로 source lock을 유지하고 v7 entry에 가격 identity와 complete source prefix 관측을 기록한다.
+재시도·과거 재생은 최초 prefix를 다시 검증하며 기존 v6 이하 Risk에 가격 origin을 사후 추가하지 않는다.
+`portfolioActionRiskDecisionPolicyResolver.test.ts`에서 실제 저장·재생, legacy, 변조, retry, fsync 실패 및
+Risk commit 동안 경쟁 price writer 차단을 검사한다. 가격 freshness·완전한 비용 bound·최종 실행 승인은 후속이다.
 
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
@@ -241,7 +247,8 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 관측시각은 sync 이후 최종 원본 재확인 이전에 고정하며 descriptor close 이후에 늦춰 채집하지 않는다.
 `resolveObservedPortfolioSizingSnapshotHistory`는 새 durable lease 안에서 과거 prefix를 재검증한다.
 복사/만료 lease, fsync 실패, source 축소·교체 및 손상은 같은 이름의 저장소 테스트에서 검증한다.
-이는 최신 portfolio 상태나 외부 가격·pending action 진위가 아니며 Risk pre-state receipt 연결은 후속이다.
+이는 최신 portfolio 상태나 외부 가격·pending action 진위가 아니다. Risk pre-state receipt는 위 v6/v7 경로에
+연결되어 있으며 현재 실행의 capacity reservation과 원자적 fill/accounting 검증은 후속이다.
 
 ### Live RiskEngine 변경
 
