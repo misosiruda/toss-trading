@@ -3838,7 +3838,34 @@ Callback 동안만 repository가 발급한 WeakMap lease가 유효하고 완료/
 기존 파일 bytes와 read/append/retry 형식은 변경하지 않는다. Rollback은 코드만으로 가능하며
 artifact 삭제·변환은 없다. 이 분할은 durable source observation 제공이며 아직 Risk 생성 receipt나
 가격/비용 계산에 연결된 것은 아니다. 관측한 파일을 외부 가격 진위나 최신 실행 승인으로 승격하지
-않는다. Consumer 쪽 Risk receipt 결속과 pending/cost/turnover·최종 실행 검증은 후속이다.
+않는다. Consumer 쪽 Risk receipt 결속은 다음 분할에서 연결하며 pending/cost/turnover·최종 실행 검증은 후속이다.
+
+열네 번째 분할은 `createAndAppendWithPriceOrigin(input, evidenceRef)`와
+`resolvePortfolioActionRiskDecisionPrice`를 연결한다. Caller는 typed price reference만 선택하며
+가격 숫자·history·receipt·decidedAt를 주입하지 않는다. 입력은 첫 비동기 조회 전에 복사한다.
+실제 가격 저장소의 durable lease를 획득한 뒤 snapshot → mandate(assigned만) → activation → Risk
+순서로 lock을 획득하고 Risk commit까지 유지한다. Legacy reduce-only SELL에는 mandate를 합성하지 않는다.
+선택한 가격은 Risk의 evidence list에 존재하고 market/symbol이 같아야 하며 observedAt, createdAt 및
+durable committedAt가 모두 decidedAt 이하여야 한다. Plan preview의 reference quote와 Risk의 quote는
+서로 다른 시점일 수 있으므로 두 ref의 동일성을 강제하지 않는다.
+
+신규 `portfolio_action_risk_decision_entry.v7`은 v6의 정책·plan·mandate·snapshot 원본과 필수
+`priceOrigin = { evidenceRef, evidenceHash, observation: { recordCount, entriesHash, observedAt } }`를
+entry hash에 포함한다. Decision payload/hash와 기존 commit marker 형식은 변경하지 않는다.
+Exact retry는 최초 receipt와 record를 반환하고 bytes를 변경하지 않는다. 정상 source append 뒤에는
+원래 prefix를 재생하지만 source 소실·축소·commit metadata 교체·corrupt suffix와 identity 변경은
+실패한다. 과거 resolver는 policy/plan/snapshot/mandate를 해소한 뒤 원래 가격 prefix와 identity를 대조한다.
+Legacy 가격의 durable origin 부재 및 v6 이하 Risk의 price origin 부재는 자동 승격하지 않는다.
+
+`portfolioActionRiskDecisionPolicyResolver.test.ts`는 assigned BUY/SELL과 legacy SELL의 실제 저장소
+연결, 입력 변형·잘못된 source scope·과거 availability, restart/retry, rehashed receipt와 source 변조,
+source fsync 실패 및 Risk commit 중 경쟁 price writer 차단을 검증한다.
+기존 entry는 기존 reader 의미로 계속 읽고 origin 조회의 `priceOrigin`은 null이다. v7 writer 활성화 전에
+모든 consumer reader를 갱신해야 한다. v7 기록 후 구버전 reader로 단순 rollback하면 unknown schema로
+fail-closed하므로 신규 생성·실행을 중지하고 v7 호환 reader를 유지한다. 파일을 v6로 낮추거나 기록을
+삭제·재해시하지 않는다. DB migration, live 거래 설정 및 외부 API 변경은 없다.
+이 분할은 판단 당시 가격 입력의 원본 결속이며 외부 가격 진위·현재 freshness·수치 Risk rule 재계산·
+complete cost bound 또는 현재 execution authority를 증명하지 않는다. 해당 계산과 실행 연결은 후속이다.
 
 완료 조건:
 
