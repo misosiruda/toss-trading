@@ -91,10 +91,10 @@ export class PortfolioSizingSnapshotFileRepository {
   /** Holds the source lock through the consumer; failure never promotes an unflushed generation. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
     return this.withLock(async () => {
-      const snapshots = await readDurableBoundSnapshotSource(this.recordsPath);
+      const { snapshots, observedAt } = await readDurableBoundSnapshotSource(this.recordsPath);
       const history = Object.freeze({ snapshots });
       const observation = Object.freeze({
-        recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt: new Date().toISOString()
+        recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt
       });
       durableSnapshotObservations.set(history, observation);
       try {
@@ -218,17 +218,18 @@ export function parsePortfolioSizingSnapshots(
 }
 
 /** Detects source rewrites/replacement during observation, including non-cooperative recovery. */
-async function readDurableBoundSnapshotSource(path: string): Promise<readonly PortfolioSizingSnapshot[]> {
+async function readDurableBoundSnapshotSource(path: string): Promise<{ snapshots: readonly PortfolioSizingSnapshot[]; observedAt: string }> {
   let handle: Awaited<ReturnType<typeof open>>;
   try {
     handle = await open(path, "r+");
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
       await syncOutputDirectory(dirname(path));
+      const observedAt = new Date().toISOString();
       try {
         await lstat(path);
       } catch (recheckError) {
-        if (isNodeError(recheckError) && recheckError.code === "ENOENT") return Object.freeze([]);
+        if (isNodeError(recheckError) && recheckError.code === "ENOENT") return { snapshots: Object.freeze([]), observedAt };
         throw recheckError;
       }
       throw new Error("portfolio sizing snapshot source appeared during durable observation");
@@ -241,6 +242,8 @@ async function readDurableBoundSnapshotSource(path: string): Promise<readonly Po
     const snapshots = parsePortfolioSizingSnapshots(bytes.toString("utf8"));
     await handle.sync();
     await syncOutputDirectory(dirname(path));
+    // Date the flushed generation before the final verification, never after descriptor close.
+    const observedAt = new Date().toISOString();
     // Explicit offsets reread the same descriptor, not the possibly replaced pathname.
     const verified = Buffer.alloc(bytes.length);
     let offset = 0;
@@ -265,7 +268,7 @@ async function readDurableBoundSnapshotSource(path: string): Promise<readonly Po
       after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
       throw new Error("portfolio sizing snapshot source changed during durable observation");
     }
-    return snapshots;
+    return { snapshots, observedAt };
   } finally {
     await handle.close();
   }

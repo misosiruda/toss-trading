@@ -277,6 +277,63 @@ test("snapshot observation rejects non-cooperative rewrites and pathname replace
   });
 });
 
+test("snapshot receipt time precedes post-validation replacement or creation", async (context) => {
+  for (const initiallyPresent of [true, false]) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+    const first = sizingSnapshot();
+    const replacement = sizingSnapshot({ priceKrw: 101 });
+    if (initiallyPresent) await repository.append(first);
+    const start = Date.parse("2026-09-07T00:00:00.000Z");
+    context.mock.timers.enable({ apis: ["Date"], now: start });
+    let changed = false;
+    let restore: () => void;
+    if (initiallyPresent) {
+      const originalOpen = fs.open;
+      const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args);
+        if (args[0] === path && args[1] === "r+") {
+          const originalClose = handle.close;
+          context.mock.method(handle, "close", async () => {
+            await originalClose.call(handle);
+            context.mock.timers.tick(10);
+            await writeFile(path, `${JSON.stringify(replacement)}\n`, "utf8");
+            changed = true;
+          });
+        }
+        return handle;
+      });
+      syncBuiltinESMExports();
+      restore = () => { mock.mock.restore(); syncBuiltinESMExports(); };
+    } else {
+      const originalLstat = fs.lstat;
+      const mock = context.mock.method(fs, "lstat", async (...args: Parameters<typeof fs.lstat>) => {
+        try { return await originalLstat(...args); }
+        catch (error) {
+          if (args[0] === path && (error as NodeJS.ErrnoException).code === "ENOENT") {
+            context.mock.timers.tick(10);
+            await writeFile(path, `${JSON.stringify(replacement)}\n`, "utf8");
+            changed = true;
+          }
+          throw error;
+        }
+      });
+      syncBuiltinESMExports();
+      restore = () => { mock.mock.restore(); syncBuiltinESMExports(); };
+    }
+    try {
+      await repository.withDurableVerifiedHistory(async (history) => {
+        assert.equal(changed, true);
+        const observation = getDurablePortfolioSizingSnapshotObservation(history);
+        assert.equal(Date.parse(observation.observedAt), start);
+        assert.ok(Date.parse(observation.observedAt) < Date.now());
+        assert.deepEqual(history.snapshots, initiallyPresent ? [first] : []);
+      });
+    } finally { restore(); context.mock.timers.reset(); }
+    assert.deepEqual(await repository.readAll(), [replacement]);
+  });
+});
+
 test("snapshot consumer holds writer lock and releases failed callbacks without leaking leases", async () => {
   await withTemporaryDirectory(async (baseDir) => {
     const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
