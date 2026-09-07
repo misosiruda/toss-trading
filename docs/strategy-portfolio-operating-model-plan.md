@@ -3730,8 +3730,9 @@ live/broker/실제 portfolio mutation을 추가하지 않는다.
 
 아홉 번째 분할은 Risk 현금·노출 입력 연결 전에 저장된 `PortfolioSizingSnapshot` 원본 세대를
 관측하는 경로다. `PortfolioSizingSnapshotFileRepository.withDurableVerifiedHistory`는 기존 전체
-parse/valuation replay를 수행한 후 snapshot 파일을 fsync하고, 같은 lock 아래 배열 count/hash와
-관측시각을 제공한다. Consumer 종료 시 성공·실패 모두 lease가 만료되며 fsync 실패에서는 consumer를
+parse/valuation replay를 수행한 후 동일 file handle을 fsync하고 원본 bytes를 같은 handle에서 다시 읽는다.
+Handle의 dev/ino/size/mtime/ctime과 경로의 identity까지 대조해 관측 도중 덮어쓰기·교체를 거절한 뒤,
+같은 lock 아래 배열 count/hash와 관측시각을 제공한다. Consumer 종료 시 성공·실패 모두 lease가 만료되며 fsync 실패에서는 consumer를
 호출하지 않는다. 빈 저장소는 count 0/빈 배열 hash로 관측하되 파일이나 가짜 snapshot을 만들지 않는다.
 `resolveObservedPortfolioSizingSnapshotHistory`는 현재 durable lease에서 과거 관측 prefix의 개수·hash를
 대조한다. 정상 append 뒤에는 당시 내용을 복원하며 source 축소·교체와 전체 이력의 손상은 거절한다.

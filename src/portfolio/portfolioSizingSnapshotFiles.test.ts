@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -201,6 +201,40 @@ test("snapshot observation follows source fsync and refuses to invoke consumers 
       });
       assert.equal(await readFile(path, "utf8"), before);
     } finally { mock.mock.restore(); context.mock.timers.reset(); }
+  });
+});
+
+test("snapshot observation rejects non-cooperative rewrites and pathname replacement during sync", async (context) => {
+  for (const mode of ["rewrite", "replace"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const first = sizingSnapshot();
+    const replacement = sizingSnapshot({ priceKrw: 101 });
+    await repository.append(first);
+    const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+    const source = await stat(path);
+    const probe = await open(path, "r+");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let changed = false;
+    let called = false;
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (!changed && own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) {
+        changed = true;
+        if (mode === "replace") await rename(path, join(baseDir, "displaced-snapshots.jsonl"));
+        await writeFile(path, `${JSON.stringify(replacement)}\n`, "utf8");
+      }
+      return originalSync.call(this);
+    });
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => { called = true; }), /source changed during durable observation/);
+      assert.equal(changed, true);
+      assert.equal(called, false);
+    } finally { mock.mock.restore(); }
+    // The observer must not repair the externally changed source or strand the lock.
+    assert.deepEqual(await repository.readAll(), [replacement]);
+    await repository.withDurableVerifiedHistory(async (history) => assert.deepEqual(history.snapshots, [replacement]));
   });
 });
 

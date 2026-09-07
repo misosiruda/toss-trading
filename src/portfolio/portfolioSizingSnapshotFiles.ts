@@ -91,8 +91,7 @@ export class PortfolioSizingSnapshotFileRepository {
   /** Holds the source lock through the consumer; failure never promotes an unflushed generation. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
     return this.withLock(async () => {
-      const snapshots = await this.readAllUnderLock();
-      if (snapshots.length > 0) await syncDurableJsonFile(this.recordsPath);
+      const snapshots = await readDurableBoundSnapshotSource(this.recordsPath);
       const history = Object.freeze({ snapshots });
       const observation = Object.freeze({
         recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt: new Date().toISOString()
@@ -216,6 +215,51 @@ export function parsePortfolioSizingSnapshots(
     snapshots.push(snapshot);
   }
   return Object.freeze(snapshots);
+}
+
+/** Detects source rewrites/replacement during observation, including non-cooperative recovery. */
+async function readDurableBoundSnapshotSource(path: string): Promise<readonly PortfolioSizingSnapshot[]> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r+");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return Object.freeze([]);
+    throw error;
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    const snapshots = parsePortfolioSizingSnapshots(bytes.toString("utf8"));
+    await handle.sync();
+    await syncOutputDirectory(dirname(path));
+    // Explicit offsets reread the same descriptor, not the possibly replaced pathname.
+    const verified = Buffer.alloc(bytes.length);
+    let offset = 0;
+    while (offset < verified.length) {
+      const { bytesRead } = await handle.read(verified, offset, verified.length - offset, offset);
+      if (bytesRead === 0) throw new Error("portfolio sizing snapshot source changed during durable observation");
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    // Windows pathname stat can report dev=0; compare descriptor identities on both sides.
+    const namedHandle = await open(path, "r");
+    let named;
+    try {
+      named = await namedHandle.stat({ bigint: true });
+    } finally {
+      await namedHandle.close();
+    }
+    if (!bytes.equals(verified) || before.size !== BigInt(bytes.length) ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs ||
+      after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size ||
+      after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
+      throw new Error("portfolio sizing snapshot source changed during durable observation");
+    }
+    return snapshots;
+  } finally {
+    await handle.close();
+  }
 }
 
 function snapshotOrigin(snapshot: PortfolioSizingSnapshot): string {

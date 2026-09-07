@@ -200,6 +200,8 @@ fill/accounting transaction은 후속이다.
 
 `portfolioSizingSnapshotFiles.ts`의 `withDurableVerifiedHistory`는 전체 snapshot의 valuation replay와
 fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장소 lock을 유지한다.
+읽기·검증·fsync는 같은 file handle에 결속하고 bytes 및 handle/path metadata 재검증으로 관측 도중
+경로 교체·덮어쓰기를 거절한다.
 `resolveObservedPortfolioSizingSnapshotHistory`는 새 durable lease 안에서 과거 prefix를 재검증한다.
 복사/만료 lease, fsync 실패, source 축소·교체 및 손상은 같은 이름의 저장소 테스트에서 검증한다.
 이는 최신 portfolio 상태나 외부 가격·pending action 진위가 아니며 Risk pre-state receipt 연결은 후속이다.
