@@ -49,7 +49,7 @@ const sourcePriceEvidenceSchema = z
   })
   .strict();
 
-const executionPolicySchema = z
+export const paperFillExecutionPolicySchema = z
   .object({
     modelVersion: z.literal(PAPER_EXECUTION_MODEL_VERSION),
     fillPriceRule: z.literal("current_candidate_last_price"),
@@ -105,7 +105,7 @@ const paperFillExecutionPayloadSchema = z
     liquidityStatus: z.enum(["not_modeled", "sufficient", "partial"]),
     liquidityRejectReason: z.null(),
     fractionalShares: z.boolean(),
-    executionPolicy: executionPolicySchema,
+    executionPolicy: paperFillExecutionPolicySchema,
     costBreakdown: costBreakdownSchema,
     evidenceRefs: z.array(identifierSchema).min(1).max(128),
     asOf: offsetQualifiedIsoDateTimeSchema

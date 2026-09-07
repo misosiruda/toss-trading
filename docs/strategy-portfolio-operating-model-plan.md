@@ -3884,6 +3884,34 @@ raw read 가능하더라도 새 binding을 통과할 수 없다. Rollback은 코
 진행해야 하며 불일치 artifact를 자동 수정·삭제하지 않는다. 이 identity gate만으로 가격 원본 prefix 재생,
 freshness, complete cost bound, 전체 Risk 재평가 또는 최종 execution transaction을 대체하지 않는다.
 
+열여섯 번째 분할은 `PortfolioActionExecutionPreview` 순수 계산 계약을 구현한다. Risk가 비용 계산을
+위해 선행 fill record를 요구하고 fill record가 다시 Risk origin을 요구하는 순환을 피하도록, fill ID나
+파일 저장 없이 기존 `buildPaperFill`의 실행 수량·gross/net·fee/tax/slippage/spread/impact를 계산한다.
+기존 fill의 full policy schema를 공유하고 side, typed source-price record, post-fillRatio requested notional,
+nullable quantity override, nullable volume/averageVolume, liquidityStale와 asOf를 strict input으로 받는다.
+정책 누락을 simulator 기본값으로 채우지 않으며 모델 버전과 모든 정책 값을 명시해야 한다.
+
+`executionInputHash`는 complete input에, `executionPreviewHash`와 hash-derived ID는 schema version,
+input/hash, requested quantity 및 모든 execution output에 결속된다. Parser는 가격 payload를 재해시하고
+전체 모델을 다시 실행해 저장 값/identity와 대조한다. 정상·partial뿐 아니라 modeled liquidity rejected/stale
+결과도 별도로 재생하며 이러한 결과를 accepted fill로 승격하지 않는다. Missing volume은 명시적인
+`not_modeled`로 보존하되 stale을 거절하는 정책에서 missing volume과 stale=true가 같이 들어오면,
+기존 simulator의 not-modeled 성공 fallback을 사용하지 않고 fail-closed한다.
+
+Requested notional은 기존 fill record와 같이 fillRatio 적용 후 기준이다. Quantity override와 반올림한
+source-price notional이 다르면 거절한다. Whole-share override와 부분 체결 결과 모두 정수만 허용하고 모델 계산 금액은
+safe integer, fill price는 양의 safe integer, 수량은 canonical decimal 범위를 확인한다. 0으로 반올림된
+체결 가격·성공 금액, 비정상 participation, target division overflow와 비정상 비용 결과는 거절한다.
+Slippage는 fill price에 이미 반영되므로 BUY net에 다시 더하지 않으며 total cost의 설명 항목에는 포함한다.
+
+`portfolioActionExecutionPreview.test.ts`는 모든 BUY/SELL 비용의 명시적 기대값과 기존 fill record parser
+parity, partial/insufficient/stale/missing liquidity, fillRatio·whole share, 정책 누락·미래/변조 가격·unsafe
+금액 및 complete rehash로도 숨길 수 없는 output 변조를 검증한다. 기존 fill record 형식/기본값은
+변경하지 않는다. 이 계약은 로컬 순수 계산이며 artifact persistence, actual policy/liquidity source origin,
+가격 freshness, Risk worst-case/approval 상한과 최종 execution transaction 연결은 후속이다.
+따라서 `filled` 계산 결과나 preview hash를 Risk 승인 또는 실제 체결로 사용하지 않는다. DB migration과
+자동 artifact 변경은 없고 아직 writer/consumer가 없으므로 이번 코드 rollback에 저장 데이터 변환은 없다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
