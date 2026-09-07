@@ -3687,8 +3687,8 @@ Retry는 activation lock을 유지한 현재 이력에 최초 receipt의 개수�
 기존 bare/v2/v3 조회·exact retry는 유지하지만 plan receipt 없는 결정은 새 resolver에서
 review_required로 거절하며 자동 승격하지 않는다. v4 저장 후 이전 reader는 호환되지 않으므로
 rollback 시 신규 생성을 멈추고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
-Mandate 원본의 bucket 일치, 가격·snapshot·turnover 원본과 실제 Risk 수치 규칙의 독립 재평가,
-관측 이후 변경을 막는 실행 transaction은 후속이다. 이 변경은 Risk 결과를 실제로 계산하거나
+여섯 번째 분할에는 Mandate 원본의 bucket 일치가 포함되지 않는다. 가격·snapshot·turnover 원본과
+실제 Risk 수치 규칙의 독립 재평가, 관측 이후 변경을 막는 실행 transaction은 후속이다. 이 변경은 Risk 결과를 실제로 계산하거나
 최종 실행을 승인하지 않으며 live 경로를 추가하지 않는다.
 
 일곱 번째 분할은 Risk 생성 전에 mandate 원본을 관측하기 위한 저장소 경로다.
@@ -3701,8 +3701,32 @@ Consumer 성공/실패 시 lease를 폐기하고 잠금을 해제하며 source f
 개수·hash로 독립 검증하고 유효한 record/event 조합만 재생한다. 전체 현재 이력의 손상은 먼저
 거절하고 prefix를 새 verified lease로 승격하지 않는다. 정상 append 이후에도 과거 상태를 재생할 수
 있지만 truncation·replacement는 거절한다. 관측은 bytes의 내구성 확인일 뿐 payload 생성 시각의
-진위나 현재 실행 권한을 보증하지 않는다. Risk receipt 저장, mandate bucket/권한·유효기간 검사와
-Risk 생성 연결은 다음 분할이며 기존 파일 형식 및 일반 조회·append 계약은 유지한다.
+진위나 현재 실행 권한을 보증하지 않는다. 이 저장소 분할 자체는 Risk receipt를 저장하지 않으며
+기존 mandate 파일 형식 및 일반 조회·append 계약은 유지한다.
+
+여덟 번째 분할은 `createAndAppendWithMandateOrigin`으로 실제 mandate 원본을 Risk 생성에 연결한다.
+저장된 plan/event를 확인한 다음 mandate shared lock → activation lock → Risk lock 순서로 획득하고
+Risk commit까지 두 원본 lease를 유지한다. 신규 v5 entry는 v4 policy/plan receipt에 mandate
+ID/hash, 결정시점 current event ID/hash와 두 원본 배열의 관측 count/hash/time을 추가한다.
+Plan action의 mandateId가 가리키는 원본은 portfolio/policy/market/symbol/bucket과 일치해야 하고,
+결정시각에 active 또는 review_required이며 `validFrom <= decidedAt < expiresAt`이어야 한다.
+expiresAt이 없으면 상한은 적용하지 않는다. Approved BUY는 active mandate가 필요하며 manual
+`classify_existing_reduce_only`를 거절한다. Review-required/reduce-only mandate의 SELL과
+review-required BUY의 rejected 설명은 허용하지만 source/scope/유효기간 검증은 동일하다.
+Legacy reduce-only action은 mandate를 합성하지 않고 기존 plan-bound 경로를 유지한다.
+
+`resolvePortfolioActionRiskDecisionMandate`는 policy/plan을 재검증하고 저장된 관측 prefix를
+현재 durable mandate 이력에서 해소해 당시 event와 상태를 독립 대조한다. 나중에 소급 retirement가
+append되어도 기존 결정은 최초 generation 기준으로 설명하며 신규 생성은 최신 이력으로 거절한다.
+생성 retry는 최초 receipt를 보존하고 그 prefix가 축소·교체되지 않았는지 같은 source lock 아래 확인한다.
+v4 이하 record에 mandate receipt를 사후 추가하거나 자동 승격하지 않는다. 두 원본 fsync 실패와
+mandate identity·상태·scope 불일치에서는 신규 Risk record를 남기지 않는다.
+
+이 경로는 caller가 제공한 Risk 결과의 원본 결속이지 Risk 수치 규칙의 계산이나 현재 실행 허가가 아니다.
+Manual/selector assignment와 reservation 원본, review cadence/holding expiry 판단, 가격·snapshot·turnover,
+최종 fill/accounting transaction 연결은 후속이다. v5 reader를 먼저 배포하고 새 factory를 사용해야 하며,
+v5 저장 후 rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 기존 파일을 삭제·변환하거나
+live/broker/실제 portfolio mutation을 추가하지 않는다.
 
 완료 조건:
 

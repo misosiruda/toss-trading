@@ -8,6 +8,9 @@ import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { resolvePortfolioActionRiskDecisionPolicy } from "./portfolioActionRiskDecisionPolicyResolver.js";
 import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDecisionPlanResolver.js";
+import { resolvePortfolioActionRiskDecisionMandate } from "./portfolioActionRiskDecisionMandateResolver.js";
+import { createInvestmentMandateEvent, createInvestmentMandateRecord, type InvestmentMandateRecord } from "./investmentMandate.js";
+import { createInvestmentMandatePaths, InvestmentMandateFileRepository } from "./investmentMandateFiles.js";
 import { readStoredRiskDecisionPlanContext } from "./portfolioActionRiskDecisionPlanContext.js";
 import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
@@ -614,6 +617,233 @@ test("risk plan observation retains the locked read time when a new event arrive
   } finally { context.mock.timers.reset(); }
 });
 
+test("mandate-bound risk factory persists exact source and restart resolver verifies both sides", async () => {
+  for (const side of ["BUY", "SELL"] as const) await withMandateFixture(side, async ({ directory, repository, candidate, mandate }) => {
+    const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+    const resolved = await resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+    assert.equal(resolved.mandate.record.mandateId, mandate.mandateId);
+    assert.equal(resolved.mandateOrigin.mandateHash, mandate.mandateHash);
+    assert.equal(resolved.mandateOrigin.observation.recordCount, 1);
+    assert.equal(resolved.mandateOrigin.observation.eventCount, 1);
+    assert.ok(Date.parse(decision.decidedAt) >= Date.parse(resolved.mandateOrigin.observation.observedAt));
+    assert.ok(Object.isFrozen(resolved.mandateOrigin.observation));
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const before = await readFile(path, "utf8");
+    assert.equal(JSON.parse(before.split("\n")[0]!).schemaVersion, "portfolio_action_risk_decision_entry.v5");
+    assert.deepEqual(await new PortfolioActionRiskDecisionFileRepository(directory).createAndAppendWithMandateOrigin(candidate), decision);
+    assert.equal(await readFile(path, "utf8"), before);
+  });
+});
+
+test("mandate-bound risk rejects missing source, legacy actions and receipt upgrades", async () => {
+  for (const legacy of [false, true]) await withPlanFixture(legacy ? "SELL" : "BUY", legacy, async ({ repository, candidate }) => {
+    await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /active investment mandate|requires a mandate action/);
+    assert.equal((await repository.readAll()).length, 0);
+  });
+  await withMandateFixture("BUY", async ({ directory, repository, candidate }) => {
+    const old = await repository.createAndAppendWithPlanOrigin(candidate);
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const before = await readFile(path, "utf8");
+    await assert.rejects(() => resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: old.riskDecisionId }), /lacks mandate-before-creation/);
+    await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /cannot be added or replaced/);
+    assert.equal(await readFile(path, "utf8"), before);
+  });
+});
+
+test("mandate-bound risk rejects scope and validity mismatches without persisting", async () => {
+  for (const overrides of [
+    { bucket: "long_term" as const }, { portfolioId: "other-portfolio" }, { market: "US" as const, symbol: "US:TEST" },
+    { symbol: "KR:000660" }, { policyHash: HASH }, { validFrom: "2099-01-01T00:00:00.000Z", reviewAfter: "2099-02-01T00:00:00.000Z" },
+    { expiresAt: DECIDED_AT, reviewAfter: "2026-09-02T00:00:00.000Z" }
+  ]) await withMandateFixture("BUY", async ({ repository, candidate }) => {
+    await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /active investment mandate|mandate bucket/);
+    assert.equal((await repository.readAll()).length, 0);
+  }, { overrides });
+});
+
+test("mandate risk approval obeys lifecycle and manual reduce-only authority", async () => {
+  for (const state of ["proposed", "retired", "review_required"] as const) {
+    await withMandateFixture("BUY", async ({ repository, candidate }) => {
+      await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /active investment mandate|active open-or-increase/);
+      assert.equal((await repository.readAll()).length, 0);
+    }, { state });
+  }
+  await withMandateFixture("BUY", async ({ repository, candidate }) => {
+    await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /active open-or-increase/);
+    assert.equal((await repository.readAll()).length, 0);
+  }, { reduceOnly: true });
+  await withMandateFixture("SELL", async ({ directory, repository, candidate }) => {
+    const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+    assert.equal((await resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId })).mandate.status, "review_required");
+  }, { state: "review_required", reduceOnly: true });
+});
+
+test("mandate historical receipt survives later backdated retirement but new creation fails", async () => {
+  await withMandateFixture("BUY", async ({ directory, repository, candidate, mandate, mandates }) => {
+    const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+    const activation = (await mandates.readSnapshot()).events[0]!;
+    await mandates.appendEvent(mandateTransition(mandate, "retired", activation.mandateEventId));
+    const result = await resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+    assert.equal(result.mandate.status, "active");
+    assert.equal(result.mandateOrigin.observation.eventCount, 1);
+    await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /active investment mandate/);
+    assert.equal((await repository.readAll()).length, 1);
+  });
+});
+
+test("mandate retry preserves original generation and rejects lost or replaced observed suffix", async () => {
+  await withMandateFixture("BUY", async ({ directory, repository, candidate, mandate, mandates }) => {
+    const activation = (await mandates.readSnapshot()).events[0]!;
+    const { mandateEventId: _id, mandateEventHash: _hash, ...retiredPayload } = mandateTransition(mandate, "retired", activation.mandateEventId);
+    const futurePayload = { ...retiredPayload, asOf: "2099-01-01T00:00:00.000Z", createdAt: "2099-01-01T00:00:00.000Z" };
+    const canonicalFuture = createInvestmentMandateEvent(futurePayload);
+    await mandates.appendEvent(canonicalFuture);
+    const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+    const riskPath = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const before = await readFile(riskPath, "utf8");
+    const extra = createInvestmentMandateRecord({ ...mandatePayload(candidate), symbol: "KR:000660" });
+    await mandates.appendRecord(extra);
+    assert.deepEqual(await repository.createAndAppendWithMandateOrigin(candidate), decision);
+    assert.equal(await readFile(riskPath, "utf8"), before);
+    const eventsPath = createInvestmentMandatePaths(directory).eventsPath;
+    const original = await readFile(eventsPath, "utf8");
+    for (const replacement of ["", `${JSON.stringify(createInvestmentMandateEvent({ ...futurePayload, reasonCodes: ["changed"] }))}\n`]) {
+      await writeFile(eventsPath, `${JSON.stringify(activation)}\n${replacement}`, "utf8");
+      await assert.rejects(() => repository.createAndAppendWithMandateOrigin(candidate), /source prefixes/);
+      await assert.rejects(() => resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId }), /source prefixes/);
+      assert.equal(await readFile(riskPath, "utf8"), before);
+    }
+    await writeFile(eventsPath, original, "utf8");
+  });
+});
+
+test("mandate-bound creation waits for both source syncs and holds source lock through Risk commit", async (context) => {
+  await withMandateFixture("BUY", async ({ directory, repository, candidate, mandate, mandates }) => {
+    const paths = createInvestmentMandatePaths(directory);
+    const metadata = await Promise.all([stat(paths.recordsPath), stat(paths.eventsPath)]);
+    const probe = await open(paths.recordsPath, "r+");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    const originalWrite = prototype.writeFile;
+    await probe.close();
+    const activation = (await mandates.readSnapshot()).events[0]!;
+    const retirement = mandateTransition(mandate, "retired", activation.mandateEventId);
+    let failingIndex = 0;
+    const synced = new Map<number, number>();
+    let commitProbed = false;
+    const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      const sourceIndex = metadata.findIndex((source) => own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev));
+      if (sourceIndex >= 0) {
+        if (failingIndex === sourceIndex) throw new Error("injected mandate fsync failure");
+        await originalSync.call(this);
+        synced.set(sourceIndex, Date.now());
+        return;
+      }
+      return originalSync.call(this);
+    });
+    const writeMock = context.mock.method(prototype, "writeFile", async function (this: FileHandle, ...args: Parameters<FileHandle["writeFile"]>) {
+      if (typeof args[0] === "string" && args[0].includes('"schemaVersion":"portfolio_action_risk_decision_commit.v1"')) {
+        await assert.rejects(new InvestmentMandateFileRepository(directory, { lockTimeoutMs: 30, lockRetryDelayMs: 5 }).appendEvent(retirement), /lock is unavailable/);
+        commitProbed = true;
+      }
+      return originalWrite.apply(this, args);
+    });
+    try {
+      for (failingIndex of [0, 1]) {
+        await assert.rejects(repository.createAndAppendWithMandateOrigin(candidate), /injected mandate fsync failure/);
+        assert.equal((await repository.readAll()).length, 0);
+      }
+      failingIndex = -1;
+      const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+      assert.equal(commitProbed, true);
+      assert.equal(synced.size, 2);
+      for (const at of synced.values()) assert.ok(Date.parse(decision.decidedAt) >= at);
+      await mandates.appendEvent(retirement);
+    } finally { writeMock.mock.restore(); syncMock.mock.restore(); }
+  });
+});
+
+test("mandate receipts reject rehashed identity, prefix, future time and unknown field mutations", async () => {
+  await withMandateFixture("BUY", async ({ directory, repository, candidate }) => {
+    const decision = await repository.createAndAppendWithMandateOrigin(candidate);
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const [entry, marker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const receipt = entry.mandateOrigin;
+    for (const [mandateOrigin, error] of [
+      [{ ...receipt, mandateId: "other" }, /mandate origin does not match/],
+      [{ ...receipt, mandateEventHash: HASH }, /mandate origin does not match/],
+      [{ ...receipt, observation: { ...receipt.observation, eventsHash: HASH } }, /source prefixes/],
+      [{ ...receipt, observation: { ...receipt.observation, observedAt: "2099-01-01T00:00:00.000Z" } }, /corrupt line/],
+      [{ ...receipt, unexpected: true }, /corrupt line/]
+    ] as const) {
+      const { entryHash: _hash, ...payload } = { ...entry, mandateOrigin };
+      const entryHash = hashCanonicalPayload(payload);
+      const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+      await writeFile(path, `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`);
+      await assert.rejects(resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId }), error);
+    }
+  });
+});
+
+test("mandate validity expiry is exclusive and rejected BUY can explain review-required state", async (context) => {
+  const expiresAt = "2026-09-10T00:00:00.000Z";
+  context.mock.timers.enable({ apis: ["Date"], now: Date.parse(expiresAt) });
+  try {
+    await withMandateFixture("SELL", async ({ repository, candidate }) => {
+      await assert.rejects(repository.createAndAppendWithMandateOrigin(candidate), /active investment mandate/);
+      assert.equal((await repository.readAll()).length, 0);
+    }, { overrides: { expiresAt } });
+    await withMandateFixture("BUY", async ({ directory, repository, candidate }) => {
+      const decision = await repository.createAndAppendWithMandateOrigin({ ...candidate, decision: "rejected",
+        ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) });
+      assert.equal((await resolvePortfolioActionRiskDecisionMandate({ baseDir: directory, riskDecisionId: decision.riskDecisionId })).mandate.status, "review_required");
+    }, { state: "review_required" });
+  } finally { context.mock.timers.reset(); }
+});
+
+function mandatePayload(candidate: Omit<DecisionInput, "decidedAt">) {
+  return { portfolioId: candidate.portfolioId, policyHash: candidate.policyHash, market: candidate.market, symbol: candidate.symbol,
+    bucket: "swing" as const, asOf: CREATED_AT, createdAt: CREATED_AT, targetWeightRatio: 0.1, minWeightRatio: 0.05, maxWeightRatio: 0.2,
+    maximumOpeningNotionalKrw: 100, reasonCodes: ["fixture"], evidenceRefs: ["fixture"], evidenceAsOf: CREATED_AT,
+    reviewCadence: { mode: "scheduled" as const, boundaryRefs: [scheduleBoundaryRefFor(policyFixture().records.scheduleBoundaries[0]!)] },
+    validFrom: CREATED_AT, reviewAfter: "2099-01-01T00:00:00.000Z",
+    assignmentSource: "manual_policy" as const, manualAuthorizationScope: "open_or_increase" as const, manualAssignmentEventId: "manual-1",
+    capacityReservation: { manualCapacityReservationId: "reservation-1", manualCapacityReservationHash: HASH, reservedMaximumNotionalKrw: 100, reservationKind: "new_position" as const, reservedSlotOrdinal: 0 }
+  };
+}
+
+function mandateTransition(mandate: InvestmentMandateRecord, eventType: "review_required" | "retired", previousMandateEventId: string) {
+  return createInvestmentMandateEvent({ mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
+    portfolioId: mandate.portfolioId, policyHash: mandate.policyHash, market: mandate.market, symbol: mandate.symbol, bucket: mandate.bucket,
+    eventType, previousMandateEventId, asOf: CREATED_AT, createdAt: CREATED_AT, reasonCodes: ["fixture"] });
+}
+
+async function withMandateFixture(side: "BUY" | "SELL", run: (input: Parameters<Parameters<typeof withPlanFixture>[2]>[0] & {
+  mandate: InvestmentMandateRecord; mandates: InvestmentMandateFileRepository
+}) => Promise<void>, options: { reduceOnly?: boolean; state?: "proposed" | "retired" | "review_required";
+  overrides?: Partial<Pick<InvestmentMandateRecord, "bucket" | "portfolioId" | "market" | "symbol" | "policyHash" | "validFrom" | "reviewAfter" | "expiresAt">> } = {}) {
+  let mandate: InvestmentMandateRecord;
+  let mandates: InvestmentMandateFileRepository;
+  await withPlanFixture(side, false, async (input) => run({ ...input, mandate, mandates }), false, async (directory, candidate) => {
+    const { capacityReservation, ...payload } = mandatePayload(candidate);
+    mandate = createInvestmentMandateRecord({ ...payload, ...options.overrides, ...(options.reduceOnly
+      ? { manualAuthorizationScope: "classify_existing_reduce_only" as const, maximumOpeningNotionalKrw: 0 }
+      : { capacityReservation }) });
+    mandates = new InvestmentMandateFileRepository(directory);
+    await mandates.appendRecord(mandate);
+    if (options.state !== "proposed") {
+      const { eventType: _type, previousMandateEventId: _previous, ...activationPayload } = mandateTransition(mandate, "retired", "placeholder");
+      const { mandateEventId: _id, mandateEventHash: _hash, ...scope } = activationPayload;
+      const activation = createInvestmentMandateEvent({ ...scope, eventType: "activated", asOf: mandate.validFrom, createdAt: mandate.validFrom });
+      await mandates.appendEvent(activation);
+      if (options.state !== undefined) await mandates.appendEvent(mandateTransition(mandate, options.state, activation.mandateEventId));
+    }
+    return mandate.mandateId;
+  });
+}
+
 function planScope(plan: RebalancePlanRecord) {
   return { planId: plan.planId, planHash: plan.planHash, cycleId: plan.cycleId, portfolioId: plan.portfolioId,
     portfolioVersion: plan.portfolioVersion, portfolioSnapshotHash: plan.portfolioSnapshotHash, policyHash: plan.policyHash };
@@ -626,12 +856,13 @@ function planEvent(plan: RebalancePlanRecord, kind: "previewed" | "approved" | "
 async function withPlanFixture(side: "BUY" | "SELL", legacy: boolean, run: (input: {
   directory: string; repository: PortfolioActionRiskDecisionFileRepository; plan: RebalancePlanRecord;
   events: RebalancePlanEventFileRepository; candidate: Omit<DecisionInput, "decidedAt">;
-}) => Promise<void>, wholeShares = false) {
+}) => Promise<void>, wholeShares = false, setupMandate?: (directory: string, candidate: Omit<DecisionInput, "decidedAt">) => Promise<string>) {
   const fixture = policyFixture();
   const directory = await mkdtemp(join(tmpdir(), "toss-risk-plan-"));
   try {
     await storePolicyFixture(directory, fixture);
     const { decidedAt: _time, ...original } = decisionInput(fixture, side, legacy);
+    const mandateId = await setupMandate?.(directory, original) ?? "mandate-1";
     const target = wholeShares ? { targetKind: "whole_share_quantity" as const, targetQuantity: 1, referencePriceKrw: 100, plannedNotionalKrw: 100, residualNotionalKrw: 0, priceEvidenceRef: "price-1" }
       : side === "BUY" ? { targetKind: "fractional_buy_notional" as const, targetNotionalKrw: 100 }
       : { targetKind: "fractional_sell_quantity" as const, targetQuantity: 0.3, referencePriceKrw: 100, markedTargetNotionalKrw: 30, priceEvidenceRef: "price-1" };
@@ -639,7 +870,7 @@ async function withPlanFixture(side: "BUY" | "SELL", legacy: boolean, run: (inpu
       policyHash: fixture.policy.policyHash, evidenceCutoffAt: CREATED_AT, createdAt: CREATED_AT, triggerRef: "trigger-1", phase: side === "BUY" ? "buy" : "sell",
       actions: [{ actionId: "action-1", actionSequence: 0, market: "KR", symbol: original.symbol, maximumNotionalKrw: 100, reasonCodes: ["fixture"], executionTarget: target,
         ...(legacy ? { lineageKind: "unassigned_legacy_reduce_only" as const, side: "SELL" as const, observedPositionRef: "legacy-1", legacyStateDetectedAt: CREATED_AT }
-          : { lineageKind: "mandate" as const, side, mandateId: "mandate-1" }) }] });
+          : { lineageKind: "mandate" as const, side, mandateId }) }] });
     const plans = new RebalancePlanFileRepository(directory);
     await plans.append(plan);
     const events = new RebalancePlanEventFileRepository(directory, plans);
