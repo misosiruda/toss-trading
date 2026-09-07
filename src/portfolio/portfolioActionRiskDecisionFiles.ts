@@ -18,6 +18,8 @@ import {
 import { readStoredRuntimePortfolioPolicyActivationSnapshot, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
 import { readStoredRiskDecisionPlanContext, riskDecisionPlanOriginSchema, validateRiskDecisionPlanState, type RiskDecisionPlanOrigin } from "./portfolioActionRiskDecisionPlanContext.js";
+import { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation, resolveObservedInvestmentMandateHistory, type VerifiedInvestmentMandateHistory } from "./investmentMandateFiles.js";
+import { riskDecisionMandateIdentity, riskDecisionMandateOriginSchema, validateRiskDecisionMandateState, type RiskDecisionMandateOrigin } from "./portfolioActionRiskDecisionMandateContext.js";
 
 export const PORTFOLIO_ACTION_RISK_DECISION_RECORDS_FILE_NAME =
   "portfolio-action-risk-decision-records.jsonl";
@@ -42,6 +44,7 @@ export interface VerifiedPortfolioActionRiskDecisionOrigin {
   commitHash: string;
   policyOrigin: PersistedPolicyOrigin | null;
   planOrigin: RiskDecisionPlanOrigin | null;
+  mandateOrigin: RiskDecisionMandateOrigin | null;
 }
 
 interface VerifiedHistoryMetadata {
@@ -49,6 +52,7 @@ interface VerifiedHistoryMetadata {
   commitHashById: ReadonlyMap<string, string>;
   policyOriginById: ReadonlyMap<string, PersistedPolicyOrigin>;
   planOriginById: ReadonlyMap<string, RiskDecisionPlanOrigin>;
+  mandateOriginById: ReadonlyMap<string, RiskDecisionMandateOrigin>;
   lastEntryHash: string | null;
   lastCommittedAt: string | null;
 }
@@ -100,6 +104,10 @@ const planBoundEntrySchema = policyBoundEntrySchema.extend({
   policyOrigin: generationBoundPolicyOriginSchema,
   planOrigin: riskDecisionPlanOriginSchema
 }).strict();
+const mandateBoundEntrySchema = planBoundEntrySchema.extend({
+  schemaVersion: z.literal("portfolio_action_risk_decision_entry.v5"),
+  mandateOrigin: riskDecisionMandateOriginSchema
+}).strict();
 
 const commitMarkerSchema = z.object({
   schemaVersion: z.literal("portfolio_action_risk_decision_commit.v1"),
@@ -114,6 +122,7 @@ interface ParsedRiskDecisionEntry {
   tailHash: string;
   policyOrigin: PersistedPolicyOrigin | null;
   planOrigin: RiskDecisionPlanOrigin | null;
+  mandateOrigin: RiskDecisionMandateOrigin | null;
 }
 
 export function createPortfolioActionRiskDecisionPaths(baseDir: string): {
@@ -190,8 +199,15 @@ export class PortfolioActionRiskDecisionFileRepository {
     return this.#createWithOrigins(input, true);
   }
 
+  /** Requires the actual mandate source, held under its shared lock through Risk persistence. */
+  async createAndAppendWithMandateOrigin(
+    input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">
+  ): Promise<PortfolioActionRiskDecision> {
+    return this.#createWithOrigins(input, true, true);
+  }
+
   async #createWithOrigins(
-    input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">, bindPlan: boolean
+    input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">, bindPlan: boolean, bindMandate = false
   ): Promise<PortfolioActionRiskDecision> {
     for (const key of ["decidedAt", "riskDecisionId", "riskDecisionHash", "riskInputHash"]) {
       if (key in input) throw new Error("policy-bound risk creation cannot accept a record or timestamp");
@@ -199,24 +215,38 @@ export class PortfolioActionRiskDecisionFileRepository {
     // Snapshot input as well; caller mutation during asynchronous reads is not allowed.
     const creationInput = JSON.parse(JSON.stringify(input));
     const context = bindPlan ? await readStoredRiskDecisionPlanContext({ baseDir: dirname(this.recordsPath), planId: creationInput.planId }) : null;
-    // Policy must be observed after the potentially slow plan/event read.
-    const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
     if (context !== null) {
-      const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
-      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory, verifyHistory) => {
-        const policyOrigin = Object.freeze({
-          activationId: active.activation.activationId, activationEventHash: active.activation.activationEventHash,
-          runtimePolicyRecordId: active.policy.runtimePolicyRecordId, policyHash: active.policy.policyHash,
-          policyLineageHash: active.policy.lineageHash, observedAt, activationHistory
+      const persist = async (mandateHistory?: VerifiedInvestmentMandateHistory) => {
+        // Lock order: mandate -> activation -> risk. Keep both source leases through persistence.
+        const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
+        const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
+        return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory, verifyHistory) => {
+          const policyOrigin = Object.freeze({
+            activationId: active.activation.activationId, activationEventHash: active.activation.activationEventHash,
+            runtimePolicyRecordId: active.policy.runtimePolicyRecordId, policyHash: active.policy.policyHash,
+            policyLineageHash: active.policy.lineageHash, observedAt, activationHistory
+          });
+          // Use the timestamp at which the locked activation generation was folded.
+          const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: observedAt });
+          if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
+          if (Date.parse(observedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
+          const binding = validateRiskDecisionPlanState(record, context.state);
+          if (mandateHistory === undefined) return this.#appendRecord(record, policyOrigin, context.origin, verifyHistory);
+          const observation = getDurableInvestmentMandateObservation(mandateHistory);
+          if (Date.parse(observedAt) < Date.parse(observation.observedAt)) throw new Error("mandate-bound risk creation clock moved backwards");
+          const mandate = validateRiskDecisionMandateState(binding, mandateHistory);
+          const mandateOrigin = { ...riskDecisionMandateIdentity(mandate), observation };
+          return this.#appendRecord(record, policyOrigin, context.origin, verifyHistory, mandateOrigin, (prior, existing) => {
+            const original = resolveObservedInvestmentMandateHistory(mandateHistory, prior.observation);
+            const previous = validateRiskDecisionMandateState({ ...binding, decision: existing }, original);
+            const { observation: _time, ...identity } = prior;
+            if (!isDeepStrictEqual(identity, riskDecisionMandateIdentity(previous))) throw new Error("risk decision retry mandate source mismatch");
+          });
         });
-        // Use the timestamp at which the locked activation generation was folded.
-        const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: observedAt });
-        if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
-        if (Date.parse(observedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
-        validateRiskDecisionPlanState(record, context.state);
-        return this.#appendRecord(record, policyOrigin, context.origin, verifyHistory);
-      });
+      };
+      return bindMandate ? new InvestmentMandateFileRepository(dirname(this.recordsPath)).withDurableVerifiedHistory(persist) : persist();
     }
+    const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
     const observedAt = new Date().toISOString();
     const active = resolveActiveRuntimePortfolioPolicyAsOf({
       portfolioId: creationInput.portfolioId, asOf: observedAt,
@@ -237,7 +267,9 @@ export class PortfolioActionRiskDecisionFileRepository {
   }
 
   async #appendRecord(value: unknown, policyOrigin: PersistedPolicyOrigin | null, planOrigin: RiskDecisionPlanOrigin | null = null,
-    verifyActivationHistory?: (boundary: NonNullable<PersistedPolicyOrigin["activationHistory"]>) => void): Promise<PortfolioActionRiskDecision> {
+    verifyActivationHistory?: (boundary: NonNullable<PersistedPolicyOrigin["activationHistory"]>) => void,
+    mandateOrigin: RiskDecisionMandateOrigin | null = null,
+    verifyMandateHistory?: (origin: RiskDecisionMandateOrigin, existing: PortfolioActionRiskDecision) => void): Promise<PortfolioActionRiskDecision> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -266,6 +298,15 @@ export class PortfolioActionRiskDecisionFileRepository {
           const prior = getVerifiedHistoryMetadata(history).planOriginById.get(existing.riskDecisionId);
           if (prior === undefined || !samePlanOriginIdentity(prior, planOrigin)) throw new Error("risk plan origin cannot be added or replaced after persistence");
         }
+        if (mandateOrigin !== null) {
+          const prior = getVerifiedHistoryMetadata(history).mandateOriginById.get(existing.riskDecisionId);
+          const { observation: _current, ...identity } = mandateOrigin;
+          const { observation: _prior, ...priorIdentity } = prior ?? {};
+          if (prior === undefined || verifyMandateHistory === undefined || !isDeepStrictEqual(identity, priorIdentity)) {
+            throw new Error("risk mandate origin cannot be added or replaced after persistence");
+          }
+          verifyMandateHistory(prior, existing);
+        }
         await syncDurableJsonFile(this.recordsPath);
         return existing;
       }
@@ -283,7 +324,7 @@ export class PortfolioActionRiskDecisionFileRepository {
         record: candidate,
         appendStartedAt,
         previousEntryHash: metadata.lastEntryHash,
-        policyOrigin, planOrigin
+        policyOrigin, planOrigin, mandateOrigin
       });
       await appendDurableJsonLine(this.recordsPath, entry);
       // Sample availability only after the record and directory sync complete.
@@ -370,23 +411,27 @@ function parsePortfolioActionRiskDecisionEntries(
     try {
       const value: unknown = JSON.parse(line);
       if (value !== null && typeof value === "object" && "schemaVersion" in value) {
-        const parsed = value.schemaVersion === "portfolio_action_risk_decision_entry.v4" ? planBoundEntrySchema.parse(value)
+        const parsed = value.schemaVersion === "portfolio_action_risk_decision_entry.v5" ? mandateBoundEntrySchema.parse(value)
+          : value.schemaVersion === "portfolio_action_risk_decision_entry.v4" ? planBoundEntrySchema.parse(value)
           : value.schemaVersion === "portfolio_action_risk_decision_entry.v3" ? policyBoundEntrySchema.parse(value) : committedEntrySchema.parse(value);
         const record = parsePortfolioActionRiskDecision(parsed.record);
         const policyOrigin = "policyOrigin" in parsed ? parsed.policyOrigin : null;
         const planOrigin = "planOrigin" in parsed ? parsed.planOrigin : null;
+        const mandateOrigin = "mandateOrigin" in parsed ? parsed.mandateOrigin : null;
         const payload = {
           schemaVersion: parsed.schemaVersion, record,
           appendStartedAt: parsed.appendStartedAt,
           previousEntryHash: parsed.previousEntryHash,
           ...(policyOrigin === null ? {} : { policyOrigin }),
-          ...(planOrigin === null ? {} : { planOrigin })
+          ...(planOrigin === null ? {} : { planOrigin }),
+          ...(mandateOrigin === null ? {} : { mandateOrigin })
         };
         if (parsed.previousEntryHash !== previousEntryHash ||
           parsed.entryHash !== hashCanonicalPayload(payload) ||
           !isDeepStrictEqual(value, { ...payload, entryHash: parsed.entryHash }) ||
           Date.parse(parsed.appendStartedAt) < Date.parse(record.decidedAt) ||
           (policyOrigin !== null && Date.parse(record.decidedAt) < Date.parse(policyOrigin.observedAt)) ||
+          (mandateOrigin !== null && Date.parse(record.decidedAt) < Date.parse(mandateOrigin.observation.observedAt)) ||
           (planOrigin !== null && (planOrigin.planId !== record.planId ||
             Date.parse(record.decidedAt) < Date.parse(planOrigin.observedAt) ||
             Date.parse(planOrigin.observedAt) < Date.parse(planOrigin.planAppendedAt) ||
@@ -407,14 +452,14 @@ function parsePortfolioActionRiskDecisionEntries(
           Date.parse(marker.committedAt) < Date.parse(parsed.appendStartedAt)) {
           throw new Error("portfolio action risk decision durable commit origin mismatch");
         }
-        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash, policyOrigin, planOrigin };
+        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash, policyOrigin, planOrigin, mandateOrigin };
         previousCommittedAt = marker.committedAt;
         hasCommittedEntry = true;
       } else {
         if (hasCommittedEntry) throw new Error("legacy risk decision cannot follow committed entries");
         const legacy = parsePortfolioActionRiskDecisionFileEntry(value, previousEntryHash);
         // Legacy pre-write timestamps cannot prove durability, including on retry.
-        entry = { record: legacy.record, committedAt: null, tailHash: legacy.entryHash, policyOrigin: null, planOrigin: null };
+        entry = { record: legacy.record, committedAt: null, tailHash: legacy.entryHash, policyOrigin: null, planOrigin: null, mandateOrigin: null };
       }
     } catch (error) {
       throw new Error(
@@ -468,7 +513,8 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
     appendedAt,
     commitHash: metadata.commitHashById.get(riskDecisionId)!,
     policyOrigin: metadata.policyOriginById.get(riskDecisionId) ?? null,
-    planOrigin: metadata.planOriginById.get(riskDecisionId) ?? null
+    planOrigin: metadata.planOriginById.get(riskDecisionId) ?? null,
+    mandateOrigin: metadata.mandateOriginById.get(riskDecisionId) ?? null
   });
 }
 
@@ -489,6 +535,8 @@ function createVerifiedPortfolioActionRiskDecisionHistory(
       .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.policyOrigin!)])),
     planOriginById: new Map(entries.filter((entry) => entry.planOrigin !== null)
       .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.planOrigin!)])),
+    mandateOriginById: new Map(entries.filter((entry) => entry.mandateOrigin !== null)
+      .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.mandateOrigin!)])),
     lastEntryHash: entries.at(-1)?.tailHash ?? null,
     lastCommittedAt: entries.at(-1)?.committedAt ?? null
   });
@@ -511,6 +559,7 @@ function createPortfolioActionRiskDecisionFileEntry(input: {
   previousEntryHash: string | null;
   policyOrigin: PersistedPolicyOrigin | null;
   planOrigin: RiskDecisionPlanOrigin | null;
+  mandateOrigin: RiskDecisionMandateOrigin | null;
 }) {
   if (Date.parse(input.appendStartedAt) < Date.parse(input.record.decidedAt)) {
     throw new Error("portfolio action risk decision cannot be appended before decision time");
@@ -520,7 +569,11 @@ function createPortfolioActionRiskDecisionFileEntry(input: {
     appendStartedAt: input.appendStartedAt,
     previousEntryHash: input.previousEntryHash
   };
-  const payload = input.planOrigin !== null
+  const payload = input.mandateOrigin !== null
+    ? { schemaVersion: "portfolio_action_risk_decision_entry.v5" as const, ...common,
+      policyOrigin: generationBoundPolicyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin),
+      mandateOrigin: riskDecisionMandateOriginSchema.parse(input.mandateOrigin) }
+    : input.planOrigin !== null
     ? { schemaVersion: "portfolio_action_risk_decision_entry.v4" as const, ...common,
       policyOrigin: generationBoundPolicyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin) }
     : input.policyOrigin === null

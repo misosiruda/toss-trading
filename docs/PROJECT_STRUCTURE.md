@@ -189,8 +189,14 @@ policy 및 plan/predecessor 원본을 v4 entry에 기록한다. `portfolioAction
 실제 정책·계획·부분 체결 파일을 조합해 재시작, retry, 변조·backfill·fsync 실패를 검증한다.
 `investmentMandateFiles.ts`의 `withDurableVerifiedHistory`는 mandate record/event 두 파일을
 shared lock 안에서 검증·fsync한 뒤 관측시각과 전체 배열 hash를 제공한다. 관측값의 prefix 재검증은
-새 durable lease 안에서만 가능하며 복사본·만료 lease와 손상/축소/교체 이력을 거절한다. Risk 생성
-시 mandate bucket을 대조하고 이 관측값을 저장하는 연결은 후속이다.
+새 durable lease 안에서만 가능하며 복사본·만료 lease와 손상/축소/교체 이력을 거절한다.
+`portfolioActionRiskDecisionMandateContext.ts`와 `portfolioActionRiskDecisionMandateResolver.ts`는
+실제 mandate 원본의 scope/bucket/상태/유효기간과 Risk 결정을 결속하고 저장된 관측 prefix를 재검증한다.
+Risk 저장소의 `createAndAppendWithMandateOrigin`은 mandate → activation → Risk lock 순서로
+원본 lease를 commit까지 유지하고 v5 receipt를 기록한다. 기존 v4 이하 원본은 자동 승격하지 않는다.
+`portfolioActionRiskDecisionPolicyResolver.test.ts`에서 실제 저장소 연결, 권한·유효기간 실패,
+과거 원본 재생, retry, source fsync 실패와 저장 중 잠금을 검증한다. 실제 Risk 계산·reservation 원본과
+fill/accounting transaction은 후속이다.
 
 ### Live RiskEngine 변경
 
