@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 
+import { sha256HashSchema } from "../domain/schemas.js";
+import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
 
@@ -12,6 +15,36 @@ export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
 export interface PortfolioSizingSnapshotFileRepositoryOptions {
   lockTimeoutMs?: number;
   lockRetryDelayMs?: number;
+}
+
+export const portfolioSizingSnapshotObservationSchema = z.object({
+  recordCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0)),
+  recordsHash: sha256HashSchema,
+  observedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+export type PortfolioSizingSnapshotObservation = Readonly<z.infer<typeof portfolioSizingSnapshotObservationSchema>>;
+export interface VerifiedPortfolioSizingSnapshotHistory {
+  snapshots: readonly PortfolioSizingSnapshot[];
+}
+const durableSnapshotObservations = new WeakMap<VerifiedPortfolioSizingSnapshotHistory, PortfolioSizingSnapshotObservation>();
+
+/** Only a live repository-issued lease proves this source observation. */
+export function getDurablePortfolioSizingSnapshotObservation(history: VerifiedPortfolioSizingSnapshotHistory): PortfolioSizingSnapshotObservation {
+  const observation = durableSnapshotObservations.get(history);
+  if (observation === undefined) throw new Error("portfolio sizing snapshot history lacks a durable observation lease");
+  return observation;
+}
+
+/** Revalidates a previously observed prefix; the returned content is not a new lease. */
+export function resolveObservedPortfolioSizingSnapshotHistory(history: VerifiedPortfolioSizingSnapshotHistory, value: unknown): readonly PortfolioSizingSnapshot[] {
+  const current = getDurablePortfolioSizingSnapshotObservation(history);
+  const observation = portfolioSizingSnapshotObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) throw new Error("portfolio sizing snapshot observation is in the future");
+  const prefix = history.snapshots.slice(0, observation.recordCount);
+  if (prefix.length !== observation.recordCount || hashCanonicalPayload(prefix) !== observation.recordsHash) {
+    throw new Error("portfolio sizing snapshot observation does not match durable source prefix");
+  }
+  return Object.freeze(prefix);
 }
 
 export function createPortfolioSizingSnapshotPaths(baseDir: string): {
@@ -53,6 +86,23 @@ export class PortfolioSizingSnapshotFileRepository {
 
   async readAll(): Promise<readonly PortfolioSizingSnapshot[]> {
     return this.withLock(async () => this.readAllUnderLock());
+  }
+
+  /** Holds the source lock through the consumer; failure never promotes an unflushed generation. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { snapshots, observedAt } = await readDurableBoundSnapshotSource(this.recordsPath);
+      const history = Object.freeze({ snapshots });
+      const observation = Object.freeze({
+        recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt
+      });
+      durableSnapshotObservations.set(history, observation);
+      try {
+        return await operation(history);
+      } finally {
+        durableSnapshotObservations.delete(history);
+      }
+    });
   }
 
   async resolveById(
@@ -165,6 +215,63 @@ export function parsePortfolioSizingSnapshots(
     snapshots.push(snapshot);
   }
   return Object.freeze(snapshots);
+}
+
+/** Detects source rewrites/replacement during observation, including non-cooperative recovery. */
+async function readDurableBoundSnapshotSource(path: string): Promise<{ snapshots: readonly PortfolioSizingSnapshot[]; observedAt: string }> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r+");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      await syncOutputDirectory(dirname(path));
+      const observedAt = new Date().toISOString();
+      try {
+        await lstat(path);
+      } catch (recheckError) {
+        if (isNodeError(recheckError) && recheckError.code === "ENOENT") return { snapshots: Object.freeze([]), observedAt };
+        throw recheckError;
+      }
+      throw new Error("portfolio sizing snapshot source appeared during durable observation");
+    }
+    throw error;
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    const snapshots = parsePortfolioSizingSnapshots(bytes.toString("utf8"));
+    await handle.sync();
+    await syncOutputDirectory(dirname(path));
+    // Date the flushed generation before the final verification, never after descriptor close.
+    const observedAt = new Date().toISOString();
+    // Explicit offsets reread the same descriptor, not the possibly replaced pathname.
+    const verified = Buffer.alloc(bytes.length);
+    let offset = 0;
+    while (offset < verified.length) {
+      const { bytesRead } = await handle.read(verified, offset, verified.length - offset, offset);
+      if (bytesRead === 0) throw new Error("portfolio sizing snapshot source changed during durable observation");
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    // Windows pathname stat can report dev=0; compare descriptor identities on both sides.
+    const namedHandle = await open(path, "r");
+    let named;
+    try {
+      named = await namedHandle.stat({ bigint: true });
+    } finally {
+      await namedHandle.close();
+    }
+    if (!bytes.equals(verified) || before.size !== BigInt(bytes.length) ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs ||
+      after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size ||
+      after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
+      throw new Error("portfolio sizing snapshot source changed during durable observation");
+    }
+    return { snapshots, observedAt };
+  } finally {
+    await handle.close();
+  }
 }
 
 function snapshotOrigin(snapshot: PortfolioSizingSnapshot): string {
