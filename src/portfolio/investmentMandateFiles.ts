@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { dirname, join } from "node:path";
+import { z } from "zod";
+import { sha256HashSchema } from "../domain/schemas.js";
+import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 import {
   type InvestmentMandateEvent,
@@ -28,6 +31,17 @@ export interface InvestmentMandateFileRepositoryOptions {
 
 const verifiedInvestmentMandateHistories =
   new WeakSet<VerifiedInvestmentMandateHistory>();
+const durableInvestmentMandateObservations = new WeakMap<VerifiedInvestmentMandateHistory, InvestmentMandateObservation>();
+
+const observationCountSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0));
+export const investmentMandateObservationSchema = z.object({
+  recordCount: observationCountSchema,
+  recordsHash: sha256HashSchema,
+  eventCount: observationCountSchema,
+  eventsHash: sha256HashSchema,
+  observedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+export type InvestmentMandateObservation = Readonly<z.infer<typeof investmentMandateObservationSchema>>;
 
 export interface VerifiedInvestmentMandateHistory
   extends InvestmentMandateHistorySnapshot {}
@@ -93,6 +107,30 @@ export class InvestmentMandateFileRepository {
       try {
         return await operation(history);
       } finally {
+        verifiedInvestmentMandateHistories.delete(history);
+      }
+    });
+  }
+
+  /** Syncs both validated files before issuing an observation under the shared lock. */
+  async withDurableVerifiedHistory<T>(
+    operation: (history: VerifiedInvestmentMandateHistory) => Promise<T> | T
+  ): Promise<T> {
+    return this.withLock(async () => {
+      const history = await this.readSnapshotUnderLock();
+      if (history.records.length > 0) await syncDurableJsonFile(this.recordsPath);
+      if (history.events.length > 0) await syncDurableJsonFile(this.eventsPath);
+      const observation: InvestmentMandateObservation = Object.freeze({
+        recordCount: history.records.length, recordsHash: hashCanonicalPayload(history.records),
+        eventCount: history.events.length, eventsHash: hashCanonicalPayload(history.events),
+        observedAt: new Date().toISOString()
+      });
+      verifiedInvestmentMandateHistories.add(history);
+      durableInvestmentMandateObservations.set(history, observation);
+      try {
+        return await operation(history);
+      } finally {
+        durableInvestmentMandateObservations.delete(history);
         verifiedInvestmentMandateHistories.delete(history);
       }
     });
@@ -211,6 +249,30 @@ export function getVerifiedInvestmentMandateHistorySnapshot(
     throw new Error("investment mandate history is not repository verified");
   }
   return history;
+}
+
+/** The receipt describes observed bytes, not event creation-time authenticity or execution permission. */
+export function getDurableInvestmentMandateObservation(history: VerifiedInvestmentMandateHistory): InvestmentMandateObservation {
+  getVerifiedInvestmentMandateHistorySnapshot(history);
+  const observation = durableInvestmentMandateObservations.get(history);
+  if (observation === undefined) throw new Error("investment mandate history lacks a durable observation lease");
+  return observation;
+}
+
+/** Revalidates a stored observation against a currently locked durable source; never grants a new lease to its prefix. */
+export function resolveObservedInvestmentMandateHistory(history: VerifiedInvestmentMandateHistory, value: unknown): InvestmentMandateHistorySnapshot {
+  const current = getDurableInvestmentMandateObservation(history);
+  const observation = investmentMandateObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) {
+    throw new Error("investment mandate observation clock moved backwards");
+  }
+  const records = history.records.slice(0, observation.recordCount);
+  const events = history.events.slice(0, observation.eventCount);
+  if (records.length !== observation.recordCount || events.length !== observation.eventCount ||
+    hashCanonicalPayload(records) !== observation.recordsHash || hashCanonicalPayload(events) !== observation.eventsHash) {
+    throw new Error("investment mandate observation does not match durable source prefixes");
+  }
+  return validateInvestmentMandateHistory({ records, events });
 }
 
 function cloneRecord(value: unknown): InvestmentMandateRecord {

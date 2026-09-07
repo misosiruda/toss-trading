@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {
   appendFile,
+  type FileHandle,
   mkdtemp,
+  open,
   readFile,
   rm,
+  stat,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,10 +21,13 @@ import {
 } from "./investmentMandate.js";
 import {
   createInvestmentMandatePaths,
+  getDurableInvestmentMandateObservation,
   getVerifiedInvestmentMandateHistorySnapshot,
   InvestmentMandateFileRepository,
+  resolveObservedInvestmentMandateHistory,
   type VerifiedInvestmentMandateHistory
 } from "./investmentMandateFiles.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 
@@ -231,6 +237,180 @@ test("mandate repository issues opaque verified histories", async () => {
     );
   });
 });
+
+test("durable mandate observations cover empty and complete generations and revoke copied or expired leases", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    await repository.withDurableVerifiedHistory((history) => {
+      const observation = getDurableInvestmentMandateObservation(history);
+      assert.equal(observation.recordCount, 0);
+      assert.equal(observation.eventCount, 0);
+      assert.equal(observation.recordsHash, hashCanonicalPayload([]));
+      assert.deepEqual(resolveObservedInvestmentMandateHistory(history, observation).records, []);
+    });
+    const { record, activated } = await seedActiveMandate(repository);
+    await repository.withVerifiedHistory((history) => {
+      assert.throws(() => getDurableInvestmentMandateObservation(history), /durable observation lease/);
+    });
+    const result = await repository.withDurableVerifiedHistory((history) => {
+      const observation = getDurableInvestmentMandateObservation(history);
+      assert.deepEqual({ ...observation, observedAt: "omitted" }, {
+        recordCount: 1, recordsHash: hashCanonicalPayload([record]), eventCount: 1,
+        eventsHash: hashCanonicalPayload([activated]), observedAt: "omitted"
+      });
+      assert.ok(Object.isFrozen(observation));
+      assert.throws(() => getDurableInvestmentMandateObservation({ ...history }), /not repository verified/);
+      assert.throws(() => getDurableInvestmentMandateObservation(JSON.parse(JSON.stringify(history))), /not repository verified/);
+      return { history, observation };
+    });
+    assert.throws(() => getDurableInvestmentMandateObservation(result.history), /not repository verified/);
+    await new InvestmentMandateFileRepository(baseDir).withDurableVerifiedHistory((history) => {
+      const prefix = resolveObservedInvestmentMandateHistory(history, JSON.parse(JSON.stringify(result.observation)));
+      assert.deepEqual(prefix, result.history);
+      assert.throws(() => getVerifiedInvestmentMandateHistorySnapshot(prefix), /not repository verified/);
+    });
+  });
+});
+
+test("durable mandate observation samples time only after both source file syncs", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    await seedActiveMandate(repository);
+    const paths = createInvestmentMandatePaths(baseDir);
+    const sources = await Promise.all([stat(paths.recordsPath), stat(paths.eventsPath)]);
+    const probe = await open(paths.recordsPath, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    const now = Date.now();
+    context.mock.timers.enable({ apis: ["Date"], now });
+    const synced = new Set<number>();
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      const index = sources.findIndex((source) => own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev));
+      const result = await originalSync.call(this);
+      if (index >= 0) { synced.add(index); context.mock.timers.tick(10); }
+      return result;
+    });
+    try {
+      await repository.withDurableVerifiedHistory((history) => {
+        assert.deepEqual([...synced].sort(), [0, 1]);
+        assert.equal(getDurableInvestmentMandateObservation(history).observedAt, new Date(now + 20).toISOString());
+      });
+    } finally { mock.mock.restore(); context.mock.timers.reset(); }
+  });
+});
+
+test("durable mandate sync failures never invoke consumers and release the shared lock", async (context) => {
+  for (const sourceKind of ["recordsPath", "eventsPath"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    await seedActiveMandate(repository);
+    const paths = createInvestmentMandatePaths(baseDir);
+    const before = await Promise.all([readFile(paths.recordsPath, "utf8"), readFile(paths.eventsPath, "utf8")]);
+    const source = await stat(paths[sourceKind]);
+    const probe = await open(paths[sourceKind], "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) throw new Error("injected mandate source sync failure");
+      return originalSync.call(this);
+    });
+    let invoked = false;
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(() => { invoked = true; }), /injected mandate source sync failure/);
+      assert.equal(invoked, false);
+    } finally { mock.mock.restore(); }
+    await repository.withDurableVerifiedHistory((history) => assert.equal(getDurableInvestmentMandateObservation(history).eventCount, 1));
+    assert.deepEqual(await Promise.all([readFile(paths.recordsPath, "utf8"), readFile(paths.eventsPath, "utf8")]), before);
+  });
+});
+
+test("durable mandate leases exclude competing appends and expire after consumer failure", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const { record, activated } = await seedActiveMandate(repository);
+    const contender = new InvestmentMandateFileRepository(baseDir, { lockTimeoutMs: 30, lockRetryDelayMs: 5 });
+    const retired = mandateEvent(record, { eventType: "retired", previousMandateEventId: activated.mandateEventId,
+      asOf: "2026-09-02T00:00:00.000Z", createdAt: "2026-09-02T00:00:00.000Z" });
+    let captured: VerifiedInvestmentMandateHistory | undefined;
+    await assert.rejects(repository.withDurableVerifiedHistory(async (history) => {
+      captured = history;
+      await assert.rejects(contender.appendEvent(retired), /lock is unavailable/);
+      assert.equal(getDurableInvestmentMandateObservation(history).eventCount, 1);
+      throw new Error("injected mandate consumer failure");
+    }), /injected mandate consumer failure/);
+    assert.ok(captured);
+    const expired = captured;
+    assert.throws(() => getDurableInvestmentMandateObservation(expired), /not repository verified/);
+    await contender.appendEvent(retired);
+    assert.equal((await repository.readSnapshot()).states[0]!.status, "retired");
+  });
+});
+
+test("durable observations reproduce earlier complete prefixes after append and reject inconsistent boundaries", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const { record, activated } = await seedActiveMandate(repository);
+    const observation = await repository.withDurableVerifiedHistory(getDurableInvestmentMandateObservation);
+    await repository.appendRecord(mandateRecord("2026-09-02T00:00:00.000Z", "manual-event-2"));
+    await repository.appendEvent(mandateEvent(record, { eventType: "retired", previousMandateEventId: activated.mandateEventId,
+      asOf: "2026-09-02T00:00:00.000Z", createdAt: "2026-09-02T00:00:00.000Z" }));
+    await repository.withDurableVerifiedHistory((history) => {
+      assert.equal(history.states[0]!.status, "retired");
+      const prefix = resolveObservedInvestmentMandateHistory(history, observation);
+      assert.equal(prefix.states[0]!.status, "active");
+      assert.deepEqual(prefix.records, [record]);
+      for (const patch of [{ recordCount: -0 }, { recordCount: 0.5 }, { eventCount: -1 }, { eventCount: Number.MAX_SAFE_INTEGER + 1 },
+        { trusted: true }, { recordsHash: HASH_A }, { eventsHash: HASH_A }, { eventCount: 3 },
+        { observedAt: new Date(Date.now() + 3_600_000).toISOString() }]) {
+        assert.throws(() => resolveObservedInvestmentMandateHistory(history, { ...observation, ...patch }));
+      }
+      assert.throws(() => resolveObservedInvestmentMandateHistory(history, { ...observation, recordCount: 0, recordsHash: hashCanonicalPayload([]) }), /unknown mandate/);
+    });
+  });
+});
+
+test("durable observations fail closed on valid source truncation or replacement and corrupt suffixes", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const { record, activated } = await seedActiveMandate(repository);
+    const extra = mandateRecord("2026-09-02T00:00:00.000Z", "manual-event-2");
+    await repository.appendRecord(extra);
+    const review = mandateEvent(record, { eventType: "review_required", previousMandateEventId: activated.mandateEventId,
+      asOf: "2026-09-02T00:00:00.000Z", createdAt: "2026-09-02T00:00:00.000Z" });
+    await repository.appendEvent(review);
+    const observation = await repository.withDurableVerifiedHistory(getDurableInvestmentMandateObservation);
+    const paths = createInvestmentMandatePaths(baseDir);
+    for (const sourceKind of ["recordsPath", "eventsPath"] as const) {
+      const path = paths[sourceKind];
+      const original = await readFile(path, "utf8");
+      const firstLine = `${original.split("\n")[0]}\n`;
+      const replacement = sourceKind === "recordsPath" ? mandateRecord("2026-09-02T00:01:00.000Z", "manual-event-2")
+        : mandateEvent(record, { eventType: "review_required", previousMandateEventId: activated.mandateEventId,
+          asOf: "2026-09-02T00:01:00.000Z", createdAt: "2026-09-02T00:01:00.000Z" });
+      for (const content of [firstLine, `${firstLine}${JSON.stringify(replacement)}\n`]) {
+        await writeFile(path, content);
+        await assert.rejects(repository.withDurableVerifiedHistory((history) => resolveObservedInvestmentMandateHistory(history, observation)), /source prefixes/);
+      }
+      for (const content of [`${original}{corrupt}\n`, original.trimEnd()]) {
+        await writeFile(path, content);
+        let invoked = false;
+        await assert.rejects(repository.withDurableVerifiedHistory(() => { invoked = true; }), /corrupt line|torn final line/);
+        assert.equal(invoked, false);
+      }
+      await writeFile(path, original);
+    }
+  });
+});
+
+async function seedActiveMandate(repository: InvestmentMandateFileRepository) {
+  const record = await repository.appendRecord(mandateRecord("2026-09-01T01:00:00.000Z"));
+  const activated = await repository.appendEvent(mandateEvent(record, { eventType: "activated",
+    asOf: "2026-09-01T01:00:00.000Z", createdAt: "2026-09-01T01:00:00.000Z" }));
+  return { record, activated };
+}
 
 function mandateRecord(
   createdAt: string,

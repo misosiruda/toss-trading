@@ -3691,6 +3691,19 @@ Mandate 원본의 bucket 일치, 가격·snapshot·turnover 원본과 실제 Ris
 관측 이후 변경을 막는 실행 transaction은 후속이다. 이 변경은 Risk 결과를 실제로 계산하거나
 최종 실행을 승인하지 않으며 live 경로를 추가하지 않는다.
 
+일곱 번째 분할은 Risk 생성 전에 mandate 원본을 관측하기 위한 저장소 경로다.
+`InvestmentMandateFileRepository.withDurableVerifiedHistory`는 두 JSONL의 전체 record/event를
+검증한 후 같은 shared lock 아래 비어 있지 않은 두 파일을 fsync하고 `observedAt`을 채집한다.
+`getDurableInvestmentMandateObservation`은 이 lease 안에서만 record/event 개수와 전체 payload
+배열 hash를 반환한다. 일반 verified read·복사본·만료 lease는 durable observation을 얻을 수 없다.
+Consumer 성공/실패 시 lease를 폐기하고 잠금을 해제하며 source fsync 실패 시 consumer를 호출하지
+않는다. `resolveObservedInvestmentMandateHistory`는 새 durable lease에서 이전 관측의 두 prefix를
+개수·hash로 독립 검증하고 유효한 record/event 조합만 재생한다. 전체 현재 이력의 손상은 먼저
+거절하고 prefix를 새 verified lease로 승격하지 않는다. 정상 append 이후에도 과거 상태를 재생할 수
+있지만 truncation·replacement는 거절한다. 관측은 bytes의 내구성 확인일 뿐 payload 생성 시각의
+진위나 현재 실행 권한을 보증하지 않는다. Risk receipt 저장, mandate bucket/권한·유효기간 검사와
+Risk 생성 연결은 다음 분할이며 기존 파일 형식 및 일반 조회·append 계약은 유지한다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
