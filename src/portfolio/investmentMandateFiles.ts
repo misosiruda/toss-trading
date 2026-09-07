@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -117,13 +117,11 @@ export class InvestmentMandateFileRepository {
     operation: (history: VerifiedInvestmentMandateHistory) => Promise<T> | T
   ): Promise<T> {
     return this.withLock(async () => {
-      const history = await this.readSnapshotUnderLock();
-      if (history.records.length > 0) await syncDurableJsonFile(this.recordsPath);
-      if (history.events.length > 0) await syncDurableJsonFile(this.eventsPath);
+      const { history, observedAt } = await this.readDurableSnapshotUnderLock();
       const observation: InvestmentMandateObservation = Object.freeze({
         recordCount: history.records.length, recordsHash: hashCanonicalPayload(history.records),
         eventCount: history.events.length, eventsHash: hashCanonicalPayload(history.events),
-        observedAt: new Date().toISOString()
+        observedAt
       });
       verifiedInvestmentMandateHistories.add(history);
       durableInvestmentMandateObservations.set(history, observation);
@@ -225,6 +223,29 @@ export class InvestmentMandateFileRepository {
     return validateInvestmentMandateHistory({ records, events });
   }
 
+  private async readDurableSnapshotUnderLock(): Promise<{ history: InvestmentMandateHistorySnapshot; observedAt: string }> {
+    const sources: Awaited<ReturnType<typeof openBoundMandateSource>>[] = [];
+    try {
+      const recordsSource = await openBoundMandateSource(this.recordsPath);
+      sources.push(recordsSource);
+      const eventsSource = await openBoundMandateSource(this.eventsPath);
+      sources.push(eventsSource);
+      const records = parseJsonLines({ raw: recordsSource.bytes.toString("utf8"), label: "investment mandate record",
+        parse: parseInvestmentMandateRecord, id: (record) => record.mandateId });
+      const events = parseJsonLines({ raw: eventsSource.bytes.toString("utf8"), label: "investment mandate event",
+        parse: parseInvestmentMandateEvent, id: (event) => event.mandateEventId });
+      const history = validateInvestmentMandateHistory({ records, events });
+      for (const source of sources) await source.handle?.sync();
+      await syncOutputDirectory(dirname(this.recordsPath));
+      // Date both flushed sources before final verification, never after descriptor close.
+      const observedAt = new Date().toISOString();
+      for (const source of sources) await verifyBoundMandateSource(source);
+      return { history, observedAt };
+    } finally {
+      await Promise.all(sources.map((source) => source.handle?.close()));
+    }
+  }
+
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
     const outputDirectory = dirname(this.recordsPath);
     await mkdir(outputDirectory, { recursive: true });
@@ -300,6 +321,16 @@ async function readJsonLines<T>(input: {
     }
     throw error;
   }
+  return parseJsonLines({ ...input, raw });
+}
+
+function parseJsonLines<T>(input: {
+  raw: string;
+  label: string;
+  parse: (value: unknown) => T;
+  id: (value: T) => string;
+}): readonly T[] {
+  const { raw } = input;
   if (raw.length > 0 && !raw.endsWith("\n")) {
     throw new Error(`${input.label} file has a torn final line`);
   }
@@ -328,6 +359,63 @@ async function readJsonLines<T>(input: {
     values.push(value);
   }
   return Object.freeze(values);
+}
+
+/** Keep the parsed bytes and fsync attached to one descriptor for each source. */
+async function openBoundMandateSource(path: string) {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r+");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return { path, handle: undefined, before: undefined, bytes: Buffer.alloc(0) };
+    }
+    throw error;
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    return { path, handle, before, bytes };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+async function verifyBoundMandateSource(source: Awaited<ReturnType<typeof openBoundMandateSource>>): Promise<void> {
+  const { path, handle, before, bytes } = source;
+  if (handle === undefined || before === undefined) {
+    try {
+      await lstat(path);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return;
+      throw error;
+    }
+    throw new Error("investment mandate source appeared during durable observation");
+  }
+  const verified = Buffer.alloc(bytes.length);
+  let offset = 0;
+  while (offset < verified.length) {
+    const { bytesRead } = await handle.read(verified, offset, verified.length - offset, offset);
+    if (bytesRead === 0) throw new Error("investment mandate source changed during durable observation");
+    offset += bytesRead;
+  }
+  const after = await handle.stat({ bigint: true });
+  // Windows pathname stat can report dev=0; compare descriptor identities on both sides.
+  const namedHandle = await open(path, "r");
+  let named;
+  try {
+    named = await namedHandle.stat({ bigint: true });
+  } finally {
+    await namedHandle.close();
+  }
+  if (!bytes.equals(verified) || before.size !== BigInt(bytes.length) ||
+    before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+    before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs ||
+    after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size ||
+    after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
+    throw new Error("investment mandate source changed during durable observation");
+  }
 }
 
 async function appendDurableJsonLine(

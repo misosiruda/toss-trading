@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import {
   appendFile,
   type FileHandle,
   mkdtemp,
   open,
   readFile,
+  rename,
   rm,
   stat,
   writeFile
@@ -346,6 +349,202 @@ test("durable mandate leases exclude competing appends and expire after consumer
     assert.throws(() => getDurableInvestmentMandateObservation(expired), /not repository verified/);
     await contender.appendEvent(retired);
     assert.equal((await repository.readSnapshot()).states[0]!.status, "retired");
+  });
+});
+
+test("durable mandate observations reject either source changing while the other source is synced", async (context) => {
+  for (const sourceKind of ["recordsPath", "eventsPath"] as const) {
+    for (const change of ["rewrite", "replace", "remove"] as const) await withTemporaryDirectory(async (baseDir) => {
+      const repository = new InvestmentMandateFileRepository(baseDir);
+      const { record, activated } = await seedActiveMandate(repository);
+      const paths = createInvestmentMandatePaths(baseDir);
+      const target = paths[sourceKind];
+      const original = await readFile(target, "utf8");
+      const extra = sourceKind === "recordsPath" ? mandateRecord("2026-09-02T00:00:00.000Z", "manual-event-2")
+        : mandateEvent(record, { eventType: "retired", previousMandateEventId: activated.mandateEventId,
+          asOf: "2026-09-02T00:00:00.000Z", createdAt: "2026-09-02T00:00:00.000Z" });
+      const otherPath = sourceKind === "recordsPath" ? paths.eventsPath : paths.recordsPath;
+      const originalOpen = fs.open;
+      let changed = false;
+      const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args);
+        if (args[0] === otherPath && args[1] === "r+") {
+          const originalSync = handle.sync.bind(handle);
+          context.mock.method(handle, "sync", async () => {
+            await originalSync();
+            if (change === "rewrite") await writeFile(target, `${original}${JSON.stringify(extra)}\n`);
+            else {
+              await rename(target, `${target}.previous`);
+              if (change === "replace") await writeFile(target, original);
+            }
+            changed = true;
+          });
+        }
+        return handle;
+      });
+      syncBuiltinESMExports();
+      let invoked = false;
+      try {
+        await assert.rejects(repository.withDurableVerifiedHistory(() => { invoked = true; }), /source changed|ENOENT/);
+        assert.equal(changed, true);
+        assert.equal(invoked, false);
+      } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+      await assert.rejects(stat(paths.lockPath), /ENOENT/);
+      if (change === "remove") await assert.rejects(stat(target), /ENOENT/);
+      else assert.equal(await readFile(target, "utf8"), change === "rewrite" ? `${original}${JSON.stringify(extra)}\n` : original);
+    });
+  }
+});
+
+test("durable mandate observations recheck missing sources and sync existing empty files", async (context) => {
+  for (const sourceKind of ["recordsPath", "eventsPath"] as const) {
+    for (const mode of ["appeared", "empty-sync-failure"] as const) await withTemporaryDirectory(async (baseDir) => {
+      const paths = createInvestmentMandatePaths(baseDir);
+      const target = paths[sourceKind];
+      if (mode === "empty-sync-failure") await writeFile(target, "");
+      const originalOpen = fs.open;
+      let exercised = false;
+      const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        try {
+          const handle = await originalOpen(...args);
+          if (args[0] === target && args[1] === "r+" && mode === "empty-sync-failure") {
+            context.mock.method(handle, "sync", async () => { exercised = true; throw new Error("injected empty source sync failure"); });
+          }
+          return handle;
+        } catch (error) {
+          if (args[0] === target && args[1] === "r+" && mode === "appeared" && (error as NodeJS.ErrnoException).code === "ENOENT") {
+            await writeFile(target, "");
+            exercised = true;
+          }
+          throw error;
+        }
+      });
+      syncBuiltinESMExports();
+      let invoked = false;
+      try {
+        await assert.rejects(new InvestmentMandateFileRepository(baseDir).withDurableVerifiedHistory(() => { invoked = true; }), /source appeared|empty source sync failure/);
+        assert.equal(exercised, true);
+        assert.equal(invoked, false);
+      } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal(await readFile(target, "utf8"), "");
+      await assert.rejects(stat(paths.lockPath), /ENOENT/);
+      await new InvestmentMandateFileRepository(baseDir).withDurableVerifiedHistory((history) => assert.equal(history.records.length, 0));
+    });
+  }
+});
+
+test("durable mandate observation time precedes post-validation source replacement", async (context) => {
+  for (const sourceKind of ["recordsPath", "eventsPath"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const seeded = await seedActiveMandate(repository);
+    const paths = createInvestmentMandatePaths(baseDir);
+    const target = paths[sourceKind];
+    const original = await readFile(target, "utf8");
+    const now = Date.now();
+    context.mock.timers.enable({ apis: ["Date"], now });
+    const originalOpen = fs.open;
+    let replaced = false;
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await originalOpen(...args);
+      if (args[0] === target && args[1] === "r+") {
+        const originalClose = handle.close.bind(handle);
+        context.mock.method(handle, "close", async () => {
+          await originalClose();
+          context.mock.timers.tick(10);
+          await rename(target, `${target}.previous`);
+          await writeFile(target, original);
+          replaced = true;
+        });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try {
+      await repository.withDurableVerifiedHistory((history) => {
+        assert.equal(replaced, true);
+        assert.deepEqual(history.records, [seeded.record]);
+        assert.deepEqual(history.events, [seeded.activated]);
+        assert.equal(getDurableInvestmentMandateObservation(history).observedAt, new Date(now).toISOString());
+        assert.ok(Date.now() > now);
+      });
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); context.mock.timers.reset(); }
+  });
+});
+
+test("durable mandate absence observations require directory sync and retain the pre-recheck timestamp", async (context) => {
+  for (const mode of ["directory-failure", "late-create"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    const paths = createInvestmentMandatePaths(baseDir);
+    const now = Date.now();
+    context.mock.timers.enable({ apis: ["Date"], now });
+    const originalOpen = fs.open;
+    const originalLstat = fs.lstat;
+    let missingObserved = false;
+    let exercised = false;
+    const openMock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (mode === "directory-failure" && missingObserved && args[0] === baseDir && args[1] === "r" && !exercised) {
+        exercised = true;
+        throw Object.assign(new Error("injected observation directory failure"), { code: "EIO" });
+      }
+      try { return await originalOpen(...args); } catch (error) {
+        if (args[0] === paths.eventsPath && args[1] === "r+" && (error as NodeJS.ErrnoException).code === "ENOENT") missingObserved = true;
+        throw error;
+      }
+    });
+    const lstatMock = context.mock.method(fs, "lstat", async (...args: Parameters<typeof fs.lstat>) => {
+      try { return await originalLstat(...args); } catch (error) {
+        if (mode === "late-create" && args[0] === paths.recordsPath && (error as NodeJS.ErrnoException).code === "ENOENT") {
+          context.mock.timers.tick(10);
+          await writeFile(paths.recordsPath, "");
+          exercised = true;
+        }
+        throw error;
+      }
+    });
+    syncBuiltinESMExports();
+    let invoked = false;
+    try {
+      const pending = repository.withDurableVerifiedHistory((history) => {
+        invoked = true;
+        assert.equal(history.records.length, 0);
+        assert.equal(getDurableInvestmentMandateObservation(history).observedAt, new Date(now).toISOString());
+        assert.ok(Date.now() > now);
+      });
+      if (mode === "directory-failure") await assert.rejects(pending, /observation directory failure/);
+      else await pending;
+      assert.equal(invoked, mode === "late-create");
+      assert.equal(exercised, true);
+    } finally { openMock.mock.restore(); lstatMock.mock.restore(); syncBuiltinESMExports(); context.mock.timers.reset(); }
+    await assert.rejects(stat(paths.lockPath), /ENOENT/);
+    await assert.rejects(stat(paths.eventsPath), /ENOENT/);
+  });
+});
+
+test("durable mandate partial source acquisition failures close earlier handles without consuming a lease", async (context) => {
+  for (const failure of ["open", "read"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new InvestmentMandateFileRepository(baseDir);
+    await seedActiveMandate(repository);
+    const paths = createInvestmentMandatePaths(baseDir);
+    const originalOpen = fs.open;
+    const acquired: FileHandle[] = [];
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (failure === "open" && args[0] === paths.eventsPath && args[1] === "r+") throw new Error("injected source acquisition failure");
+      const handle = await originalOpen(...args);
+      if ((args[0] === paths.recordsPath || args[0] === paths.eventsPath) && args[1] === "r+") {
+        acquired.push(handle);
+        if (failure === "read" && args[0] === paths.eventsPath) context.mock.method(handle, "readFile", async () => { throw new Error("injected source acquisition failure"); });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    let invoked = false;
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(() => { invoked = true; }), /source acquisition failure/);
+      assert.equal(invoked, false);
+      assert.equal(acquired.length, failure === "open" ? 1 : 2);
+      for (const handle of acquired) assert.equal(handle.fd, -1);
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    await repository.withDurableVerifiedHistory((history) => assert.equal(history.records.length, 1));
   });
 });
 

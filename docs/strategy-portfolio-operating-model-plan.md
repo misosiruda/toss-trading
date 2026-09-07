@@ -3693,7 +3693,12 @@ rollback 시 신규 생성을 멈추고 새 reader를 유지하거나 별도 검
 
 일곱 번째 분할은 Risk 생성 전에 mandate 원본을 관측하기 위한 저장소 경로다.
 `InvestmentMandateFileRepository.withDurableVerifiedHistory`는 두 JSONL의 전체 record/event를
-검증한 후 같은 shared lock 아래 비어 있지 않은 두 파일을 fsync하고 `observedAt`을 채집한다.
+같은 shared lock 아래 각각 동일 handle로 읽고 검증한 후 두 파일을 fsync하고 `observedAt`을 채집한다.
+존재하는 빈 파일도 fsync하며, 없는 파일은 디렉터리 동기화 이후 경로 부재를 다시 확인한다.
+관측시각은 두 원본의 동기화 이후이면서 최종 bytes/descriptor/path identity 재검증 이전에 고정한다.
+한 원본을 처리하는 동안 다른 원본이 교체·덮어쓰기·삭제되면 consumer를 호출하지 않는다.
+확보한 source handle은 성공과 부분 실패 모두 닫는다. 검증 뒤 비협력 writer가 변경해도 과거 원본에
+그 변경보다 늦은 관측시각을 붙이지 않으며, 이 관측을 현재 실행 권한으로 해석하지 않는다.
 `getDurableInvestmentMandateObservation`은 이 lease 안에서만 record/event 개수와 전체 payload
 배열 hash를 반환한다. 일반 verified read·복사본·만료 lease는 durable observation을 얻을 수 없다.
 Consumer 성공/실패 시 lease를 폐기하고 잠금을 해제하며 source fsync 실패 시 consumer를 호출하지

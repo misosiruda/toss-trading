@@ -188,7 +188,10 @@ Risk 저장소의 `createAndAppendWithPlanOrigin`은 plan/event fsync 확인 후
 policy 및 plan/predecessor 원본을 v4 entry에 기록한다. `portfolioActionRiskDecisionPolicyResolver.test.ts`가
 실제 정책·계획·부분 체결 파일을 조합해 재시작, retry, 변조·backfill·fsync 실패를 검증한다.
 `investmentMandateFiles.ts`의 `withDurableVerifiedHistory`는 mandate record/event 두 파일을
-shared lock 안에서 검증·fsync한 뒤 관측시각과 전체 배열 hash를 제공한다. 관측값의 prefix 재검증은
+shared lock 안에서 동일 handle로 읽고 검증·fsync한 뒤 관측시각과 전체 배열 hash를 제공한다.
+두 파일의 동기화 후이면서 최종 bytes/handle/path identity 재검증 이전에 하나의 관측시각을 고정한다.
+빈 파일도 fsync하며 없는 파일은 디렉터리 동기화 뒤 부재를 다시 확인한다. 관측 중 원본 교체·덮어쓰기·
+생성 또는 부분 읽기 실패에서는 consumer를 호출하지 않고 확보한 handle을 닫는다. 관측값의 prefix 재검증은
 새 durable lease 안에서만 가능하며 복사본·만료 lease와 손상/축소/교체 이력을 거절한다.
 `portfolioActionRiskDecisionMandateContext.ts`와 `portfolioActionRiskDecisionMandateResolver.ts`는
 실제 mandate 원본의 scope/bucket/상태/유효기간과 Risk 결정을 결속하고 저장된 관측 prefix를 재검증한다.
