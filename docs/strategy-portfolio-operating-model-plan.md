@@ -3647,8 +3647,11 @@ portfolio-wide fill uniqueness 및 accounting/state와의 cross-artifact transac
 
 여섯 번째 분할은 `PortfolioActionRiskDecisionFileRepository.createAndAppendWithPlanOrigin`과
 `resolvePortfolioActionRiskDecisionPlan`으로 Risk 결정의 plan/action/pre-state 입력을 연결한다.
-Factory는 같은 base directory에서 active policy를 읽고 plan/event repository의 검증 및 fsync를
-마친 뒤 결정시각을 채집한다. `portfolio_action_risk_decision_entry.v4`에는 기존 policy origin과 함께
+Factory는 같은 base directory에서 plan/event repository의 검증 및 fsync를 마치고 active policy를
+새로 읽은 뒤 결정시각을 채집한다. Plan/event 조회 중 retirement 또는 policy 교체가 발생하면
+그 변경을 반영한 정책으로 대조한다. Event 관측시각과 plan 원본은 동일 event lock 아래 보존하며
+반환 후 새 event가 생겨도 과거 이력에 새 관측시각을 붙이지 않는다.
+`portfolio_action_risk_decision_entry.v4`에는 기존 policy origin과 함께
 plan ID/hash/commit/availability, 직전 event ID/hash/commit/availability 및 관측 시각을 저장한다.
 Caller가 완성 record나 결정시각을 전달하는 입력은 거절하며 나중에 기존 record에 plan receipt를
 덧붙이거나 교체하는 retry도 허용하지 않는다.

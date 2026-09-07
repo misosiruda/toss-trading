@@ -419,6 +419,24 @@ test("plan-bound whole-share approvals reject fractional requests and completed 
   }, true);
 });
 
+test("plan-bound creation observes retirement committed during the plan read before deciding", async (context) => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const fixture = policyFixture();
+    const original = RebalancePlanEventFileRepository.prototype.readDurableVerifiedHistory;
+    const mock = context.mock.method(RebalancePlanEventFileRepository.prototype, "readDurableVerifiedHistory", async function (this: RebalancePlanEventFileRepository) {
+      const history = await original.call(this);
+      await new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies).appendRetired({
+        portfolioId: fixture.policy.portfolioId, retiredActivationId: fixture.activation.activationId, reasonCode: "retired_during_plan_read", createdAt: new Date().toISOString()
+      });
+      return history;
+    });
+    try {
+      await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /active runtime portfolio policy is required/);
+      assert.deepEqual(await repository.readAll(), []);
+    } finally { mock.mock.restore(); }
+  });
+});
+
 test("risk plan observation retains the locked read time when a new event arrives before return", async (context) => {
   const now = Date.parse("2026-09-07T00:00:00.000Z");
   context.mock.timers.enable({ apis: ["Date"], now });

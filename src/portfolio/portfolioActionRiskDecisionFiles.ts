@@ -192,6 +192,8 @@ export class PortfolioActionRiskDecisionFileRepository {
     }
     // Snapshot input as well; caller mutation during asynchronous reads is not allowed.
     const creationInput = JSON.parse(JSON.stringify(input));
+    const context = bindPlan ? await readStoredRiskDecisionPlanContext({ baseDir: dirname(this.recordsPath), planId: creationInput.planId }) : null;
+    // Policy must be observed after the potentially slow plan/event read.
     const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
     const observedAt = new Date().toISOString();
     const active = resolveActiveRuntimePortfolioPolicyAsOf({
@@ -206,7 +208,6 @@ export class PortfolioActionRiskDecisionFileRepository {
       policyLineageHash: active.policy.lineageHash,
       observedAt
     });
-    const context = bindPlan ? await readStoredRiskDecisionPlanContext({ baseDir: dirname(this.recordsPath), planId: creationInput.planId }) : null;
     const decidedAt = new Date().toISOString();
     if (Date.parse(decidedAt) < Date.parse(observedAt)) throw new Error("policy-bound risk creation clock moved backwards");
     const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt });
