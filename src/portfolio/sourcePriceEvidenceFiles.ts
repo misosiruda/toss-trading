@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -32,12 +32,41 @@ export interface VerifiedSourcePriceEvidenceHistory {
   records: readonly SourcePriceEvidenceRecord[];
 }
 
+export const sourcePriceEvidenceObservationSchema = z.object({
+  recordCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0)),
+  entriesHash: sha256HashSchema,
+  observedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+export type SourcePriceEvidenceObservation = Readonly<z.infer<typeof sourcePriceEvidenceObservationSchema>>;
+const durableEvidenceObservations = new WeakMap<VerifiedSourcePriceEvidenceHistory, SourcePriceEvidenceObservation>();
+
+/** Only the live repository callback can prove a newly fsynced observation. */
+export function getDurableSourcePriceEvidenceObservation(history: VerifiedSourcePriceEvidenceHistory): SourcePriceEvidenceObservation {
+  const observation = durableEvidenceObservations.get(history);
+  if (observation === undefined) throw new Error("source price evidence history lacks a durable observation lease");
+  return observation;
+}
+
+/** Replays an original prefix including append/commit provenance, without issuing a new lease. */
+export function resolveObservedSourcePriceEvidenceHistory(history: VerifiedSourcePriceEvidenceHistory, value: unknown): VerifiedSourcePriceEvidenceHistory {
+  const current = getDurableSourcePriceEvidenceObservation(history);
+  const observation = sourcePriceEvidenceObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) throw new Error("source price evidence observation is in the future");
+  const entries = getVerifiedHistoryMetadata(history).entries.slice(0, observation.recordCount);
+  if (entries.length !== observation.recordCount || hashCanonicalPayload(entries) !== observation.entriesHash) {
+    throw new Error("source price evidence observation does not match durable source prefix");
+  }
+  assertEvidenceObservationTime(entries, observation.observedAt);
+  return createVerifiedSourcePriceEvidenceHistory(entries);
+}
+
 export interface VerifiedSourcePriceEvidenceOrigin {
   record: SourcePriceEvidenceRecord;
   appendedAt: string;
 }
 
 interface VerifiedHistoryMetadata {
+  entries: readonly ParsedSourcePriceEvidenceEntry[];
   appendedAtByRef: ReadonlyMap<string, string>;
   lastEntryHash: string | null;
 }
@@ -122,6 +151,20 @@ export class SourcePriceEvidenceFileRepository {
 
   async readVerifiedHistory(): Promise<VerifiedSourcePriceEvidenceHistory> {
     return this.withLock(async () => this.readHistoryUnderLock());
+  }
+
+  /** Holds the same source lock until the consumer completes; existing origin timestamps are never upgraded. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedSourcePriceEvidenceHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { entries, observedAt } = await readDurableBoundEvidenceSource(this.recordsPath);
+      const history = createVerifiedSourcePriceEvidenceHistory(entries);
+      durableEvidenceObservations.set(history, Object.freeze({ recordCount: entries.length, entriesHash: hashCanonicalPayload(entries), observedAt }));
+      try {
+        return await operation(history);
+      } finally {
+        durableEvidenceObservations.delete(history);
+      }
+    });
   }
 
   async resolveByRef(evidenceRef: string): Promise<SourcePriceEvidenceRecord> {
@@ -339,6 +382,7 @@ function createVerifiedSourcePriceEvidenceHistory(
   const history = Object.freeze({ records: Object.freeze([...records]) });
   verifiedSourcePriceEvidenceHistories.add(history);
   verifiedSourcePriceEvidenceMetadata.set(history, {
+    entries: Object.freeze(entries.map((entry) => Object.freeze({ ...entry }))),
     appendedAtByRef: new Map(
       entries.filter((entry) => entry.committedAt !== null)
         .map((entry) => [entry.record.evidenceRef, entry.committedAt!])
@@ -423,6 +467,66 @@ function originKey(record: SourcePriceEvidenceRecord): string {
 function cloneRecord(value: unknown): SourcePriceEvidenceRecord {
   const record = parseSourcePriceEvidenceRecord(value);
   return parseSourcePriceEvidenceRecord(JSON.parse(JSON.stringify(record)));
+}
+
+/** Reads, validates and flushes one descriptor, then checks that its bytes and path generation still match. */
+async function readDurableBoundEvidenceSource(path: string): Promise<{ entries: readonly ParsedSourcePriceEvidenceEntry[]; observedAt: string }> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r+");
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+    await syncOutputDirectory(dirname(path));
+    const observedAt = new Date().toISOString();
+    try {
+      await lstat(path);
+    } catch (recheckError) {
+      if (isNodeError(recheckError) && recheckError.code === "ENOENT") return { entries: Object.freeze([]), observedAt };
+      throw recheckError;
+    }
+    throw new Error("source price evidence appeared during durable observation");
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    const entries = parseSourcePriceEvidenceEntries(bytes.toString("utf8"));
+    await handle.sync();
+    await syncOutputDirectory(dirname(path));
+    // Capture before the final recheck, not after descriptor close or consumer code.
+    const observedAt = new Date().toISOString();
+    assertEvidenceObservationTime(entries, observedAt);
+    const verified = Buffer.alloc(bytes.length);
+    let offset = 0;
+    while (offset < verified.length) {
+      const { bytesRead } = await handle.read(verified, offset, verified.length - offset, offset);
+      if (bytesRead === 0) throw new Error("source price evidence changed during durable observation");
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    // Windows path stat may have dev=0; compare descriptor identities on both sides.
+    const namedHandle = await open(path, "r");
+    let named;
+    try { named = await namedHandle.stat({ bigint: true }); }
+    finally { await namedHandle.close(); }
+    if (!bytes.equals(verified) || before.size !== BigInt(bytes.length) ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs ||
+      after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size ||
+      after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
+      throw new Error("source price evidence changed during durable observation");
+    }
+    return { entries, observedAt };
+  } finally {
+    await handle.close();
+  }
+}
+
+function assertEvidenceObservationTime(entries: readonly ParsedSourcePriceEvidenceEntry[], observedAt: string): void {
+  const time = Date.parse(observedAt);
+  if (entries.some((entry) => Date.parse(entry.record.createdAt) > time ||
+    (entry.committedAt !== null && Date.parse(entry.committedAt) > time))) {
+    throw new Error("source price evidence observation clock precedes stored origin");
+  }
 }
 
 async function appendDurableJsonLine(

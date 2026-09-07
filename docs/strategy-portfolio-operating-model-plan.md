@@ -3819,6 +3819,27 @@ position-state 및 legacy observedPositionRef 원본, Mandate 소유권 lineage�
 resolver에서 거절한다. 해당 기록을 삭제·자동 재작성하지 않는다. Rollback 시에도 신규 생성/실행을
 중단한 채 과거 raw 이력만 조회해야 하며, 이전 코드로 돌아가면 이 수량 gate가 사라진다.
 
+열세 번째 분할은 Risk의 가격 원본 연결을 위한 `SourcePriceEvidenceFileRepository`의
+`withDurableVerifiedHistory`를 구현한다. 저장된 complete source-price history를 같은 descriptor로
+읽기·검증·fsync하고 directory sync 후 관측시각을 찍는다. Consumer 전에 bytes, descriptor 및
+pathname의 파일 identity/size/mtime/ctime을 재확인한다. 빈 파일도 fsync하고 없는 파일은 directory
+sync와 absence 재확인으로 관측하되 source 파일을 만들지 않는다. 관측시각은 최종 검증/handle close
+이전 값이므로 그 이후 비협력 writer의 교체를 과거 원본에 더 늦은 시각으로 붙이지 않는다.
+
+관측 receipt는 `recordCount`, `entriesHash`, `observedAt`을 가지며 entries hash는 각 record와
+nullable durable commit 시각, 전체 entry/commit provenance를 포함한 tail hash에 결속된다.
+단순 record array뿐 아니라 commit metadata만 바뀐 경우도 원래 prefix 해소를 거절한다.
+새 관측과 직렬화된 과거 receipt 모두 해당 prefix의 record 생성·durable commit 시각보다 이를 수 없다.
+Callback 동안만 repository가 발급한 WeakMap lease가 유효하고 완료/예외 시 폐기한다. 일반 read,
+복제·상속 history, 직렬화 receipt 및 반환된 historical prefix에는 새 lease를 부여하지 않는다.
+원래 prefix 뒤 정상 append는 허용하되 source 축소·교체·전체 suffix 손상·시계 역행·fsync/directory
+실패는 fail-closed한다. 기존 legacy entry의 durable origin 부재를 새 관측으로 승격하지 않는다.
+
+기존 파일 bytes와 read/append/retry 형식은 변경하지 않는다. Rollback은 코드만으로 가능하며
+artifact 삭제·변환은 없다. 이 분할은 durable source observation 제공이며 아직 Risk 생성 receipt나
+가격/비용 계산에 연결된 것은 아니다. 관측한 파일을 외부 가격 진위나 최신 실행 승인으로 승격하지
+않는다. Consumer 쪽 Risk receipt 결속과 pending/cost/turnover·최종 실행 검증은 후속이다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

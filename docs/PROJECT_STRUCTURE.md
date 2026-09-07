@@ -221,6 +221,13 @@ reservation origin을 포함한 최종 spendable cash·실행 승인 검증을 �
 부분 체결 후 resulting snapshot에서 prior fill을 다시 차감하지 않는다. Pending SELL 예약 해소 및
 position-state/Mandate 소유권 원본을 증명하는 최종 execution gate는 별도 후속이다.
 
+`sourcePriceEvidenceFiles.ts`의 `withDurableVerifiedHistory`는 같은 descriptor로 읽기·전체 검증·fsync를
+수행한 뒤 bytes와 pathname 세대를 재확인하고 callback 동안 source lock과 관측 lease를 유지한다.
+Receipt의 `entriesHash`는 record뿐 아니라 commit 시각과 tail hash를 포함한 complete parsed entry
+prefix에 결속된다. 정상 append 뒤 원래 prefix를 해소할 수 있지만 축소·교체·commit provenance 변조는
+거절한다. Legacy의 durable append origin 부재는 그대로 보존하며 lease로 과거 시각을 승격하지 않는다.
+Risk receipt에 가격을 연결하고 가격/비용 수치를 재계산하는 소비 경로는 후속이다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
