@@ -248,6 +248,13 @@ post-fillRatio requested notional, nullable quantity override 및 명시적 liqu
 missing/stale liquidity와 integer/identity/hash 경계를 검사한다. 이는 순수 계산 결과이며 source availability,
 정책 선택, Risk 승인·worst-case bound, persistence와 최종 execution coordinator 연결은 후속이다.
 
+`portfolioPolicyExecutionPreview.ts`는 단일 storage root의 활성 bucket/legacy rule set에서
+`paper_execution v1`의 market별 complete policy, 가격 source allowlist와 최대 나이를 해소한다.
+Price durable lease와 activation lock 아래 실제 가격을 선택하고 backend 시각으로 비용 preview를 만든다.
+반환 context는 exact policy/parameter/price 관측을 설명하며 persistence나 실행 승인이 아니다.
+`portfolioActionRiskDecisionPolicyResolver.test.ts`의 실제 저장소 fixture로 정책·가격·재시작·오류 경계를
+검증한다. Liquidity 원본, plan/mandate 인증과 Risk·최종 execution transaction은 아직 연결하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
