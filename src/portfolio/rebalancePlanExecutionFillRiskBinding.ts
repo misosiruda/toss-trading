@@ -48,6 +48,11 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
   if (!riskDecision.riskEvidenceRefs.includes(sourcePriceEvidence.evidenceRef)) {
     throw new Error("execution fill risk binding source evidence mismatch");
   }
+  if (riskOrigin.priceOrigin !== null &&
+    (sourcePriceEvidence.evidenceRef !== riskOrigin.priceOrigin.evidenceRef ||
+      sourcePriceEvidence.evidenceHash !== riskOrigin.priceOrigin.evidenceHash)) {
+    throw new Error("execution fill must use the Risk decision's selected price origin");
+  }
   const priceOrigin = resolveVerifiedSourcePriceEvidenceOrigin(
     input.sourcePriceEvidenceHistory, sourcePriceEvidence.evidenceRef
   );

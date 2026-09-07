@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { type StrategyBucket } from "../domain/schemas.js";
+import { buildPaperFill } from "../paper/executionModel.js";
+import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
+import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
+import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
+import { createRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
+import { validateRebalancePlanExecutionFillRiskBinding } from "./rebalancePlanExecutionFillRiskBinding.js";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
@@ -1395,6 +1401,115 @@ test("price-bound Risk fails closed on price fsync and retains the source lock t
     await prices.append(extra);
   });
 });
+
+test("v7 Risk selected price is preserved through BUY/SELL/legacy fill creation, retry and event binding", async () => {
+  for (const [side, legacy] of [["BUY", false], ["SELL", false], ["SELL", true]] as const) {
+    await withPriceFixture(side, legacy, async ({ directory, repository, candidate, price, prices, plan }) => {
+      const requested = side === "BUY" ? 100 : 30;
+      const creation = { ...candidate, requestedNotionalKrw: requested, worstCaseFillNotionalKrw: requested,
+        approvedMaximumFillNotionalKrw: requested,
+        cashAssessment: side === "BUY" ? { side, worstCaseNetCashDebitKrw: requested, approvedMaximumNetCashDebitKrw: requested }
+          : { side, expectedMinimumNetCashCreditKrw: requested },
+        turnoverAssessment: candidate.turnoverAssessment.scopeKind === "legacy_reduce_only" ? candidate.turnoverAssessment
+          : { ...candidate.turnoverAssessment, requestedBucketTurnoverNotionalKrw: requested,
+            resultingBucketTurnoverRatio: (candidate.turnoverAssessment.priorBucketTurnoverNotionalKrw + requested) / candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw }
+      };
+      const decision = await repository.createAndAppendWithPriceOrigin(creation, price.evidenceRef);
+      const riskDecisionHistory = await repository.readVerifiedHistory();
+      const fills = new PaperFillExecutionFileRepository(directory);
+      const input = priceBoundFillInput(creation, price);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const fill = await fills.createAndAppendWithRiskOrigin(input, riskDecisionHistory, decision.riskDecisionId);
+      const path = createPaperFillExecutionPaths(directory).recordsPath;
+      const bytes = await readFile(path, "utf8");
+      assert.deepEqual(await new PaperFillExecutionFileRepository(directory).createAndAppendWithRiskOrigin(input, riskDecisionHistory, decision.riskDecisionId), fill);
+      assert.equal(await readFile(path, "utf8"), bytes);
+      const paperFillHistory = await fills.readVerifiedHistory();
+      const event = priceBoundFillEvent(plan, decision, fill, resolvePersistedPaperFillExecutionOrigin(paperFillHistory, fill.paperFillRecordId).appendedAt);
+      const bound = validateRebalancePlanExecutionFillRiskBinding({ event, riskDecisionHistory, paperFillHistory,
+        sourcePriceEvidenceHistory: await prices.readVerifiedHistory() });
+      assert.deepEqual(bound.sourcePriceEvidence, price);
+      assert.equal(await readFile(path, "utf8"), bytes);
+    });
+  }
+});
+
+test("v7 Risk fill creation rejects another listed price or altered selected hash without writes", async () => {
+  await withPriceFixture("BUY", false, async ({ directory, repository, candidate, price, prices }) => {
+    const other = createSourcePriceEvidenceRecord({ ...pricePayload(candidate), sourceContractId: "other-listed-price" });
+    await prices.append(other);
+    const decision = await repository.createAndAppendWithPriceOrigin({ ...candidate, riskEvidenceRefs: [...candidate.riskEvidenceRefs, other.evidenceRef] }, price.evidenceRef);
+    const history = await repository.readVerifiedHistory();
+    const fills = new PaperFillExecutionFileRepository(directory);
+    const input = priceBoundFillInput(candidate, price);
+    for (const bad of [priceBoundFillInput(candidate, other), { ...input, sourcePriceEvidence: { ...input.sourcePriceEvidence, evidenceHash: HASH } }]) {
+      await assert.rejects(fills.createAndAppendWithRiskOrigin(bad, history, decision.riskDecisionId), /selected price origin/);
+      assert.equal((await fills.readAll()).length, 0);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await fills.createAndAppendWithRiskOrigin(input, history, decision.riskDecisionId);
+    const path = createPaperFillExecutionPaths(directory).recordsPath;
+    const bytes = await readFile(path, "utf8");
+    await assert.rejects(fills.createAndAppendWithRiskOrigin(priceBoundFillInput(candidate, other), history, decision.riskDecisionId), /selected price origin/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  });
+});
+
+test("v7 event binding rejects a fully rehashed fill that substitutes another listed stored quote", async () => {
+  await withPriceFixture("BUY", false, async ({ directory, repository, candidate, price, prices, plan }) => {
+    const other = createSourcePriceEvidenceRecord({ ...pricePayload(candidate), sourceContractId: "other-listed-price" });
+    await prices.append(other);
+    const decision = await repository.createAndAppendWithPriceOrigin({ ...candidate, riskEvidenceRefs: [...candidate.riskEvidenceRefs, other.evidenceRef] }, price.evidenceRef);
+    const riskDecisionHistory = await repository.readVerifiedHistory();
+    const fills = new PaperFillExecutionFileRepository(directory);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const original = await fills.createAndAppendWithRiskOrigin(priceBoundFillInput(candidate, price), riskDecisionHistory, decision.riskDecisionId);
+    const path = createPaperFillExecutionPaths(directory).recordsPath;
+    const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const record = createPaperFillExecutionRecord({ ...priceBoundFillInput(candidate, other), asOf: original.asOf, createdAt: original.createdAt });
+    const { entryHash: _hash, ...payload } = { ...entry, record };
+    const entryHash = hashCanonicalPayload(payload);
+    const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+    const bytes = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+    await writeFile(path, bytes);
+    const paperFillHistory = await new PaperFillExecutionFileRepository(directory).readVerifiedHistory();
+    const event = priceBoundFillEvent(plan, decision, record, marker.committedAt);
+    const sourcePriceEvidenceHistory = await prices.readVerifiedHistory();
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ event, riskDecisionHistory, paperFillHistory,
+      sourcePriceEvidenceHistory }), /selected price origin/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  });
+});
+
+function priceBoundFillInput(candidate: Omit<DecisionInput, "decidedAt">, price: ReturnType<typeof createSourcePriceEvidenceRecord>) {
+  const executionPolicy: Parameters<typeof createPaperFillExecutionRecord>[0]["executionPolicy"] = {
+    modelVersion: PAPER_EXECUTION_MODEL_VERSION, fillPriceRule: "current_candidate_last_price",
+    slippageBps: 0, feeBps: 0, taxBps: 0, halfSpreadBps: 0, fillRatio: 1, allowFractionalShares: true,
+    maxVolumeParticipationRate: 0.1, minLiquidityFillRatio: 0.1, rejectStaleLiquidity: true, marketImpactBpsPerParticipationRate: 0 };
+  const fill = buildPaperFill({ action: candidate.side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
+    sourcePriceKrw: price.priceKrw, targetNotionalKrw: candidate.requestedNotionalKrw, policy: executionPolicy });
+  return { portfolioId: candidate.portfolioId, rebalancePlanId: candidate.planId, rebalanceActionId: candidate.actionId, fillId: "selected-price-fill",
+    market: candidate.market, symbol: candidate.symbol, side: candidate.side, requestedNotionalKrw: candidate.requestedNotionalKrw,
+    requestedQuantity: candidate.requestedQuantity, quantityOverride: null, sourcePriceKrw: price.priceKrw,
+    sourcePriceEvidence: { sourceContractId: price.sourceContractId, evidenceRef: price.evidenceRef, evidenceHash: price.evidenceHash,
+      market: price.market, symbol: price.symbol, priceField: price.priceField, observedAt: price.observedAt }, averagePriceKrw: null,
+    fillPriceKrw: fill.fillPriceKrw, quantity: fill.quantity, filledNotionalKrw: fill.filledNotionalKrw, grossAmountKrw: fill.grossAmountKrw,
+    netAmountKrw: fill.netAmountKrw, participationRate: null, volume: null, averageVolume: null, liquidityStale: false,
+    fillStatus: "filled" as const, liquidityStatus: "not_modeled" as const, liquidityRejectReason: null, fractionalShares: true, executionPolicy,
+    costBreakdown: { feeKrw: fill.feeKrw, taxKrw: fill.taxKrw, slippageKrw: fill.slippageKrw, spreadCostKrw: fill.spreadCostKrw,
+      impactCostKrw: fill.impactCostKrw, totalCostKrw: fill.totalCostKrw }, evidenceRefs: [price.evidenceRef] };
+}
+
+function priceBoundFillEvent(plan: RebalancePlanRecord, decision: ReturnType<typeof createPortfolioActionRiskDecision>,
+  fill: ReturnType<typeof createPaperFillExecutionRecord>, committedAt: string) {
+  return createRebalancePlanExecutionAppliedEvent({ ...planScope(plan), previousPlanEventId: "approved-event", eventType: "execution_applied",
+    asOf: new Date(Date.parse(committedAt) + 1).toISOString(), actionId: decision.actionId, actionSequence: 0, fillSequence: 0,
+    fillId: fill.fillId, paperFillRecordId: fill.paperFillRecordId, paperFillHash: fill.paperFillHash, requestedNotionalKrw: fill.requestedNotionalKrw,
+    requestedQuantity: fill.requestedQuantity, filledNotionalKrw: fill.filledNotionalKrw, filledQuantity: fill.quantity,
+    cumulativeFilledNotionalKrw: fill.filledNotionalKrw, cumulativeFilledQuantity: fill.quantity, riskDecisionId: decision.riskDecisionId,
+    expectedPrePortfolioVersion: decision.expectedPortfolioVersion, expectedPrePortfolioSnapshotHash: decision.expectedPortfolioSnapshotHash,
+    resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: HASH });
+}
 
 function pricePayload(candidate: Omit<DecisionInput, "decidedAt">) {
   return { sourceContractId: "fixture-price", market: candidate.market, symbol: candidate.symbol, priceField: "last_price" as const,

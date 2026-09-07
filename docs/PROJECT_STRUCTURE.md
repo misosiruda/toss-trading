@@ -234,6 +234,12 @@ Risk 순서로 source lock을 유지하고 v7 entry에 가격 identity와 comple
 `portfolioActionRiskDecisionPolicyResolver.test.ts`에서 실제 저장·재생, legacy, 변조, retry, fsync 실패 및
 Risk commit 동안 경쟁 price writer 차단을 검사한다. 가격 freshness·완전한 비용 bound·최종 실행 승인은 후속이다.
 
+`paperFillExecutionFiles.ts`의 Risk-bound factory와 `rebalancePlanExecutionFillRiskBinding.ts`는 v7 Risk의
+선택 가격 `evidenceRef/evidenceHash`를 체결의 source price에 대조한다. 다른 quote가 Risk evidence list에
+같이 들어 있어도 대체할 수 없다. 생성·retry 이전과 실제 저장 source를 해소한 event binding 양쪽에서
+검사하며 기존 v6 이하의 null price origin을 새 권한으로 승격하지 않는다. 별도 실행 권한이나 source prefix
+재생을 대신하지 않으며 전체 Risk 원본 resolver와 최종 transaction gate는 여전히 필요하다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

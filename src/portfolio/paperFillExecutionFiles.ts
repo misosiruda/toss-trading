@@ -150,6 +150,11 @@ export class PaperFillExecutionFileRepository {
     });
     const createdAt = new Date().toISOString();
     const record = createPaperFillExecutionRecord({ ...input, asOf: createdAt, createdAt });
+    if (origin.priceOrigin !== null &&
+      (record.sourcePriceEvidence.evidenceRef !== origin.priceOrigin.evidenceRef ||
+        record.sourcePriceEvidence.evidenceHash !== origin.priceOrigin.evidenceHash)) {
+      throw new Error("risk-bound fill must use the Risk decision's selected price origin");
+    }
     return this.#appendRecord(record, riskOrigin);
   }
 

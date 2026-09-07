@@ -3867,6 +3867,23 @@ fail-closed하므로 신규 생성·실행을 중지하고 v7 호환 reader를 �
 이 분할은 판단 당시 가격 입력의 원본 결속이며 외부 가격 진위·현재 freshness·수치 Risk rule 재계산·
 complete cost bound 또는 현재 execution authority를 증명하지 않는다. 해당 계산과 실행 연결은 후속이다.
 
+열다섯 번째 분할은 v7 Risk가 선택한 가격과 paper fill의 실제 source price identity를 연결한다.
+`PaperFillExecutionFileRepository.createAndAppendWithRiskOrigin`은 fill payload를 검증한 뒤
+`sourcePriceEvidence.evidenceRef/evidenceHash`가 Risk의 `priceOrigin`과 같은지 저장·retry 전에 검사한다.
+`validateRebalancePlanExecutionFillRiskBinding`도 실제 저장 가격을 해소한 뒤 동일 검사를 수행한다.
+Risk evidence list에 두 quote가 있어도 선택하지 않은 quote를 체결에 대입할 수 없다. 저장된 fill과
+event 및 entry/commit hash를 재계산해 quote를 교체한 경우도 binding 단계에서 거절한다.
+
+`portfolioActionRiskDecisionPolicyResolver.test.ts`는 실제 v7 생성부터 assigned BUY/SELL 및 legacy SELL의
+fill 저장·restart retry·event binding까지 연결한다. 다른 listed quote 또는 selected ref의 hash 교체는
+fill write 전에 거절하며, 이미 저장된 fill bytes를 완전히 rehash한 교체도 read-only binding에서 거절한다.
+이 테스트의 event는 binding 검증용이며 실제 portfolio mutation이나 execution event transaction을 기록하지 않는다.
+기존 v6 이하 Risk의 null price origin과 기존 fill/event bytes 형식은 그대로 유지한다. 그 경로는 여전히
+기존 수준의 부분 검증이며 v7 원본 검증 통과로 취급하지 않는다. V7 선택 가격과 불일치하는 기존 fill은
+raw read 가능하더라도 새 binding을 통과할 수 없다. Rollback은 코드로 가능하지만 신규 실행을 중지한 뒤
+진행해야 하며 불일치 artifact를 자동 수정·삭제하지 않는다. 이 identity gate만으로 가격 원본 prefix 재생,
+freshness, complete cost bound, 전체 Risk 재평가 또는 최종 execution transaction을 대체하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
