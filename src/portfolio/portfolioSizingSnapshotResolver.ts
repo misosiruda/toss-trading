@@ -4,7 +4,6 @@ import {
   marketSchema,
   strategyBucketSchema,
   type Market,
-  type StrategyBucket,
   type VirtualPosition
 } from "../domain/schemas.js";
 import {
@@ -121,9 +120,10 @@ function reconstructExposure(
   const countryExposureKrw: Record<string, number> = {};
   const currencyExposureKrw: Record<string, number> = {};
   let totalPositionExposureKrw = 0;
+  let unassignedExposureKrw = 0;
 
   for (const position of snapshot.virtualPortfolio.positions) {
-    const bucket = requireBucket(position);
+    const bucket = position.strategyBucket;
     const sector = requireClassification(position.sector, "sector");
     const country = requireClassification(position.region, "country");
     const currency = MARKET_CURRENCY[position.market];
@@ -138,11 +138,11 @@ function reconstructExposure(
       exposureKrw,
       "position exposure"
     );
-    bucketExposureKrw[bucket] = safeAdd(
-      bucketExposureKrw[bucket],
-      exposureKrw,
-      "bucket exposure"
-    );
+    if (bucket === undefined) {
+      unassignedExposureKrw = safeAdd(unassignedExposureKrw, exposureKrw, "unassigned exposure");
+    } else {
+      bucketExposureKrw[bucket] = safeAdd(bucketExposureKrw[bucket], exposureKrw, "bucket exposure");
+    }
     marketExposureKrw[position.market] = safeAdd(
       marketExposureKrw[position.market],
       exposureKrw,
@@ -178,6 +178,7 @@ function reconstructExposure(
     virtualNetWorthKrw,
     cashKrw: snapshot.virtualPortfolio.cashKrw,
     bucketExposureKrw,
+    ...(unassignedExposureKrw === 0 ? {} : { unassignedExposureKrw }),
     symbolExposureKrw: [...symbolExposure.values()],
     marketExposureKrw,
     sectorExposureKrw,
@@ -186,13 +187,6 @@ function reconstructExposure(
     pendingBuyExposureKrw: snapshot.exposureSnapshot.pendingBuyExposureKrw,
     pendingSellExposureKrw: snapshot.exposureSnapshot.pendingSellExposureKrw
   });
-}
-
-function requireBucket(position: VirtualPosition): StrategyBucket {
-  if (position.strategyBucket === undefined) {
-    throw new Error("portfolio sizing position is missing strategy bucket");
-  }
-  return position.strategyBucket;
 }
 
 function requireClassification(

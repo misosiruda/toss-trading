@@ -397,7 +397,31 @@ test("snapshot observation rejects valid truncation or replacement and never hid
   });
 });
 
-function sizingSnapshot(overrides: { priceKrw?: number; portfolioVersion?: string } = {}) {
+test("sizing repository preserves unassigned exposure without changing existing snapshot bytes or identities", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const assigned = sizingSnapshot();
+    const unassigned = sizingSnapshot({ portfolioVersion: "v2", unassigned: true });
+    await repository.append(assigned);
+    const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+    const original = await readFile(path, "utf8");
+    await repository.append(unassigned);
+    const stored = await readFile(path, "utf8");
+    assert.ok(stored.startsWith(original));
+    const reopened = new PortfolioSizingSnapshotFileRepository(baseDir);
+    assert.deepEqual(await reopened.readAll(), [assigned, unassigned]);
+    assert.deepEqual(await reopened.append(unassigned), unassigned);
+    assert.equal(await readFile(path, "utf8"), stored);
+    await reopened.withDurableVerifiedHistory(async (history) => {
+      const receipt = getDurablePortfolioSizingSnapshotObservation(history);
+      assert.deepEqual(resolveObservedPortfolioSizingSnapshotHistory(history, receipt), [assigned, unassigned]);
+      assert.equal(history.snapshots[1]!.virtualPortfolio.positions[0]!.strategyBucket, undefined);
+      assert.equal(history.snapshots[1]!.exposureSnapshot.unassignedExposureKrw, 200);
+    });
+  });
+});
+
+function sizingSnapshot(overrides: { priceKrw?: number; portfolioVersion?: string; unassigned?: boolean } = {}) {
   const priceKrw = overrides.priceKrw ?? 100;
   const positionExposureKrw = priceKrw * 2;
   const exposure = createPortfolioExposureSnapshot({
@@ -406,10 +430,11 @@ function sizingSnapshot(overrides: { priceKrw?: number; portfolioVersion?: strin
     bucketExposureKrw: {
       hedge: 0,
       intraday: 0,
-      long_term: positionExposureKrw,
+      long_term: overrides.unassigned ? 0 : positionExposureKrw,
       short_term: 0,
       swing: 0
     },
+    ...(overrides.unassigned ? { unassignedExposureKrw: positionExposureKrw } : {}),
     symbolExposureKrw: [
       { market: "KR", symbol: "005930", exposureKrw: positionExposureKrw }
     ],
@@ -436,7 +461,7 @@ function sizingSnapshot(overrides: { priceKrw?: number; portfolioVersion?: strin
           assetClass: "equity",
           region: "KR",
           riskTags: [],
-          strategyBucket: "long_term",
+          ...(overrides.unassigned ? {} : { strategyBucket: "long_term" as const }),
           sector: "Electronics",
           quantity: 2,
           averagePriceKrw: 100,

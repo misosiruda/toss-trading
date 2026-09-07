@@ -67,6 +67,7 @@ export const portfolioExposureSnapshotSchema = z
     virtualNetWorthKrw: nonNegativeAmountSchema,
     cashKrw: nonNegativeAmountSchema,
     bucketExposureKrw: bucketExposureSchema,
+    unassignedExposureKrw: positiveAmountSchema.optional(),
     symbolExposureKrw: z.array(portfolioSymbolExposureSchema).max(10_000),
     marketExposureKrw: marketExposureSchema,
     sectorExposureKrw: exposureMapSchema,
@@ -205,12 +206,15 @@ function assertPortfolioExposureSnapshot(
     throw new Error("portfolio cash cannot exceed virtual net worth");
   }
   const positionExposureKrw = snapshot.virtualNetWorthKrw - snapshot.cashKrw;
+  if ("unassignedExposureKrw" in snapshot && snapshot.unassignedExposureKrw === undefined) {
+    throw new Error("unassigned exposure must be omitted when absent");
+  }
   assertCanonicalSymbols(snapshot.symbolExposureKrw);
   assertCanonicalExposureMap(snapshot.sectorExposureKrw, "sector exposure");
   assertCanonicalExposureMap(snapshot.countryExposureKrw, "country exposure");
   assertCanonicalExposureMap(snapshot.currencyExposureKrw, "currency exposure");
   assertTotal(
-    Object.values(snapshot.bucketExposureKrw),
+    [...Object.values(snapshot.bucketExposureKrw), snapshot.unassignedExposureKrw ?? 0],
     positionExposureKrw,
     "bucket exposure"
   );
