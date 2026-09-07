@@ -128,6 +128,10 @@ export function resolveBucketSelectionRequest(input: {
   const resolvedSnapshot = resolvePortfolioSizingSnapshot(
     input.sizingSnapshot
   );
+  // Read-only valuation may represent legacy holdings; it must not unlock new selection.
+  if (resolvedSnapshot.snapshot.exposureSnapshot.unassignedExposureKrw !== undefined) {
+    throw new Error("bucket selection requires a portfolio without unassigned exposure");
+  }
   const policy = parseRuntimePortfolioPolicyRecord(input.activePolicy);
   const cycleTrigger = resolvePortfolioCycleTrigger(input.cycleTrigger);
   assertSnapshotBinding(request, resolvedSnapshot.snapshot);

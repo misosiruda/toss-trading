@@ -3113,6 +3113,8 @@ unassigned 필드 누락·잘못된 금액·가짜 bucket 집계는 valuation re
 이 표현은 관측된 미분류 보유분의 평가일 뿐 mandate, legacy position-state 원본, BUY 권한이나
 실행 승인을 합성하지 않는다. 신규 필드가 있는 artifact를 쓰기 전에 호환 reader를 배포해야 하며,
 이후 rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 파일 삭제·자동 변환은 없다.
+`resolveBucketSelectionRequest`는 미분류 노출이 있는 snapshot을 gap/slot/capacity 계산 전에 거절한다.
+평가·조회 표현을 허용해도 미분류 보유분이 하나라도 있을 때 portfolio 신규 매수를 차단하는 경계는 유지한다.
 FX rate는 이미 KRW로 정규화된 `priceKrw`의
 conversion provenance이므로 이 분할에서 mark에 다시 곱하지 않는다. plan/fill/reservation chain
 replay와 append-only snapshot/request persistence는 후속 분할 전까지 구현 완료로 간주하지 않는다.

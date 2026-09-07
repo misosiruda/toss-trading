@@ -91,6 +91,27 @@ test("selection request resolver binds snapshot, policy, and replayed gap", () =
   assert.equal(Object.isFrozen(resolved), true);
 });
 
+test("selection replay rejects unassigned holdings even when root cash and bucket capacity permit a request", () => {
+  const fixture = selectionFixture();
+  const { portfolioSnapshotId: _id, portfolioSnapshotHash: _hash, ...payload } = fixture.snapshot;
+  const exposure = createPortfolioExposureSnapshot({ ...payload.exposureSnapshot,
+    cashKrw: 999_800, unassignedExposureKrw: 200,
+    symbolExposureKrw: [{ market: "KR", symbol: "005930", exposureKrw: 200 }],
+    marketExposureKrw: { KR: 200, US: 0 }, sectorExposureKrw: { Electronics: 200 },
+    countryExposureKrw: { KR: 200 }, currencyExposureKrw: { KRW: 200 } });
+  const snapshot = createPortfolioSizingSnapshot({ ...payload, ...exposure,
+    virtualPortfolio: { ...payload.virtualPortfolio, cashKrw: 999_800,
+      positions: [{ market: "KR", symbol: "005930", quantity: 2, averagePriceKrw: 100,
+        sector: "Electronics", region: "KR", updatedAt: payload.virtualPortfolio.updatedAt }] },
+    valuationInputs: [{ kind: "mark_price", market: "KR", symbol: "005930", priceKrw: 100,
+      evidenceRef: "unassigned-mark", evidenceAsOf: payload.virtualPortfolio.updatedAt }] });
+  assert.throws(() => resolveBucketSelectionRequest({
+    value: createBucketSelectionRequest(requestInput(snapshot, "long_term")), sizingSnapshot: snapshot,
+    activePolicy: fixture.policy, cycleTrigger: fixture.trigger, policyEventTriggerSource: fixture.policyEventTriggerSource,
+    bucketOpeningCapacities: openingCapacities()
+  }), /without unassigned exposure/);
+});
+
 test("selection request resolver replays entry-floor eligibility as due", () => {
   const fixture = scheduledSelectionFixture();
   const resolved = resolveBucketSelectionRequest({
