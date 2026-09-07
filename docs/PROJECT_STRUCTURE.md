@@ -215,6 +215,12 @@ Risk 순서로 source lease를 유지하며 v6 entry에 snapshot ID/hash, exposu
 Pending SELL의 예상 대금을 더하거나 caller ID로 pending BUY를 해제하지 않는다. Pending 비용과
 reservation origin을 포함한 최종 spendable cash·실행 승인 검증을 대체하지 않는다.
 
+`portfolioActionRiskDecisionSnapshotContext.ts`는 approved SELL 수량을 실제 snapshot의
+동일 market/symbol/bucket lot에 대조한다. Legacy SELL은 bucket이 없는 lot만 사용하고 assigned SELL은
+다른 bucket이나 legacy 수량을 합산하지 않는다. Canonical decimal quantity로 정확히 비교하고
+부분 체결 후 resulting snapshot에서 prior fill을 다시 차감하지 않는다. Pending SELL 예약 해소 및
+position-state/Mandate 소유권 원본을 증명하는 최종 execution gate는 별도 후속이다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

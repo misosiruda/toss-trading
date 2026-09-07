@@ -3,6 +3,7 @@ import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { type StrategyBucket } from "../domain/schemas.js";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
@@ -896,7 +897,7 @@ test("snapshot-bound Risk preserves original prefixes after append and rejects s
 
 test("snapshot-bound Risk resolves the resulting pre-state after a partial SELL instead of the preview snapshot", async () => {
   await withSnapshotFixture("SELL", false, async ({ directory, repository, candidate, plan, events, snapshot }) => {
-    const resulting = snapshotFixture(candidate, false, { portfolioVersion: "v2", quantity: 1.9, cashKrw: 1_010 });
+    const resulting = snapshotFixture(candidate, false, { portfolioVersion: "v2", quantity: 0.2, cashKrw: 1_010 });
     await new PortfolioSizingSnapshotFileRepository(directory).append(resulting);
     const approval = (await events.readAll()).at(-1)!;
     await events.append(createRebalancePlanEvent({ ...planScope(plan), asOf: new Date().toISOString(), eventType: "execution_applied",
@@ -918,8 +919,8 @@ test("snapshot-bound Risk resolves the resulting pre-state after a partial SELL 
     const result = await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
     assert.deepEqual(result.sizing.snapshot, resulting);
     assert.equal(result.sizing.verifiedExposure.exposureSnapshot.cashKrw, 1_010);
-    assert.equal(result.sizing.snapshot.virtualPortfolio.positions[0]!.quantity, 1.9);
-  });
+    assert.equal(result.sizing.snapshot.virtualPortfolio.positions[0]!.quantity, 0.2);
+  }, { quantity: 0.3 });
 });
 
 test("snapshot provenance cannot be synthesized on older Risk records or accepted with rehashed receipt mutations", async () => {
@@ -1110,23 +1111,105 @@ function pendingCashFixture(side: "BUY" | "SELL", remainingNotionalKrw: number):
     : { ...common, side, remainingQuantity: 2, priceEvidenceRef: "snapshot-price" };
 }
 
+test("snapshot SELL approval requires the exact owned quantity without an epsilon", async () => {
+  for (const legacy of [false, true]) {
+    for (const quantity of [0.2, 0.29999999999999993, 0.3]) {
+      await withSnapshotFixture("SELL", legacy, async ({ repository, candidate, directory }) => {
+        if (quantity < 0.3) {
+          await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds owned snapshot quantity/);
+          assert.deepEqual(await repository.readAll(), []);
+          return;
+        }
+        const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+        const resolved = await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId });
+        assert.equal(resolved.sizing.snapshot.virtualPortfolio.positions[0]!.quantity, 0.3);
+        const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+        const bytes = await readFile(path, "utf8");
+        assert.deepEqual(await new PortfolioActionRiskDecisionFileRepository(directory).createAndAppendWithSnapshotOrigin(candidate), decision);
+        assert.equal(await readFile(path, "utf8"), bytes);
+      }, { quantity });
+    }
+  }
+});
+
+test("snapshot SELL cannot borrow another bucket or legacy lot even when total symbol holdings cover the request", async () => {
+  for (const [legacy, holdingLots] of [
+    [false, [{ bucket: "swing", quantity: 0.2 }, { bucket: "long_term", quantity: 5 }, { quantity: 5 }]],
+    [true, [{ bucket: "swing", quantity: 5 }, { quantity: 0.2 }]],
+    [false, [{ bucket: "long_term", quantity: 5 }]],
+    [false, [{ quantity: 5 }]],
+    [true, [{ bucket: "swing", quantity: 5 }]],
+    [false, []], [true, []]
+  ] as Array<[boolean, Array<{ bucket?: StrategyBucket; quantity: number }> ]>) {
+    await withSnapshotFixture("SELL", legacy, async ({ repository, candidate }) => {
+      await assert.rejects(repository.createAndAppendWithSnapshotOrigin(candidate), /exceeds owned snapshot quantity/);
+      assert.deepEqual(await repository.readAll(), []);
+    }, { holdingLots });
+  }
+  for (const legacy of [false, true]) {
+    await withSnapshotFixture("SELL", legacy, async ({ repository, candidate, directory }) => {
+      const decision = await repository.createAndAppendWithSnapshotOrigin(candidate);
+      assert.equal((await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId })).decision.decision, "approved");
+    }, { holdingLots: [{ bucket: "long_term", quantity: 5 }, { bucket: "swing", quantity: 0.3 }, { quantity: 0.3 }] });
+  }
+});
+
+test("snapshot SELL rejection remains inspectable when its owned lot is missing", async () => {
+  for (const legacy of [false, true]) {
+    await withSnapshotFixture("SELL", legacy, async ({ repository, candidate, directory }) => {
+      const decision = await repository.createAndAppendWithSnapshotOrigin({ ...candidate, decision: "rejected",
+        ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) });
+      assert.equal((await resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: decision.riskDecisionId })).decision.decision, "rejected");
+    }, { holdingLots: [] });
+  }
+});
+
+test("snapshot SELL historical replay rejects a rehashed over-owned request", async () => {
+  await withSnapshotFixture("SELL", false, async ({ repository, candidate, directory }) => {
+    const decision = await repository.createAndAppendWithSnapshotOrigin({ ...candidate, requestedQuantity: 0.2 });
+    const { riskDecisionId: _id, riskDecisionHash: _hash, riskInputHash: _inputHash, ...payload } = decision;
+    const altered = createPortfolioActionRiskDecision({ ...payload, requestedQuantity: 0.3 });
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const { entryHash: _entryHash, ...entryPayload } = entry;
+    const entryHash = hashCanonicalPayload({ ...entryPayload, record: altered });
+    const { commitHash: _commitHash, ...markerPayload } = marker;
+    const updatedMarker = { ...markerPayload, entryHash };
+    const bytes = `${JSON.stringify({ ...entryPayload, record: altered, entryHash })}\n${JSON.stringify({ ...updatedMarker, commitHash: hashCanonicalPayload(updatedMarker) })}\n`;
+    await writeFile(path, bytes);
+    assert.deepEqual(await repository.readAll(), [altered]);
+    await assert.rejects(resolvePortfolioActionRiskDecisionSnapshot({ baseDir: directory, riskDecisionId: altered.riskDecisionId }), /exceeds owned snapshot quantity/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  }, { quantity: 0.2 });
+});
+
 function snapshotFixture(candidate: Omit<DecisionInput, "decidedAt">, legacy: boolean,
-  overrides: Partial<{ portfolioId: string; portfolioVersion: string; policyHash: string; asOf: string; unassigned: boolean; quantity: number; cashKrw: number; pendingActionInputs: PendingPortfolioActionInput[] }> = {}) {
+  overrides: Partial<{ portfolioId: string; portfolioVersion: string; policyHash: string; asOf: string; unassigned: boolean; quantity: number; cashKrw: number; pendingActionInputs: PendingPortfolioActionInput[]; holdingLots: Array<{ bucket?: StrategyBucket; quantity: number }> }> = {}) {
   const portfolioId = overrides.portfolioId ?? candidate.portfolioId;
-  const { unassigned = legacy, quantity = 2, cashKrw = 1_000, pendingActionInputs = [], ...scopeOverrides } = overrides;
-  const positionValue = Math.round(quantity * 100);
+  const { unassigned = legacy, quantity = 2, cashKrw = 1_000, pendingActionInputs = [], holdingLots, ...scopeOverrides } = overrides;
+  const lots = holdingLots ?? [{ quantity, ...(unassigned ? {} : { bucket: "swing" as const }) }];
+  const bucketExposureKrw = { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: 0 };
+  let positionValue = 0;
+  let unassignedExposureKrw = 0;
+  for (const lot of lots) {
+    const value = Math.round(lot.quantity * 100);
+    positionValue += value;
+    if (lot.bucket === undefined) unassignedExposureKrw += value;
+    else bucketExposureKrw[lot.bucket] += value;
+  }
   return createPortfolioSizingSnapshot({
     portfolioId, portfolioVersion: "v1", policyHash: candidate.policyHash, asOf: CREATED_AT, ...scopeOverrides,
     virtualPortfolio: { portfolioId, cashKrw, updatedAt: CREATED_AT,
-      positions: [{ market: candidate.market, symbol: candidate.symbol, quantity, averagePriceKrw: 100,
-        ...(unassigned ? {} : { strategyBucket: "swing" as const }), sector: "Electronics", region: "KR", updatedAt: CREATED_AT }] },
-    valuationInputs: [{ kind: "mark_price", market: candidate.market, symbol: candidate.symbol, priceKrw: 100,
+      positions: lots.map((lot) => ({ market: candidate.market, symbol: candidate.symbol, quantity: lot.quantity, averagePriceKrw: 100,
+        ...(lot.bucket === undefined ? {} : { strategyBucket: lot.bucket }), sector: "Electronics", region: "KR", updatedAt: CREATED_AT })) },
+    valuationInputs: lots.length === 0 ? [] : [{ kind: "mark_price", market: candidate.market, symbol: candidate.symbol, priceKrw: 100,
       evidenceRef: "snapshot-price", evidenceAsOf: CREATED_AT }], pendingActionInputs,
     ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: cashKrw + positionValue, cashKrw,
-      bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: unassigned ? 0 : positionValue },
-      symbolExposureKrw: [{ market: candidate.market, symbol: candidate.symbol, exposureKrw: positionValue }],
-      ...(unassigned ? { unassignedExposureKrw: positionValue } : {}),
-      marketExposureKrw: { KR: positionValue, US: 0 }, sectorExposureKrw: { Electronics: positionValue }, countryExposureKrw: { KR: positionValue }, currencyExposureKrw: { KRW: positionValue },
+      bucketExposureKrw,
+      symbolExposureKrw: lots.length === 0 ? [] : [{ market: candidate.market, symbol: candidate.symbol, exposureKrw: positionValue }],
+      ...(unassignedExposureKrw === 0 ? {} : { unassignedExposureKrw }),
+      marketExposureKrw: { KR: positionValue, US: 0 }, sectorExposureKrw: positionValue === 0 ? {} : { Electronics: positionValue },
+      countryExposureKrw: positionValue === 0 ? {} : { KR: positionValue }, currencyExposureKrw: positionValue === 0 ? {} : { KRW: positionValue },
       ...pendingActionExposureTotals(pendingActionInputs) })
   });
 }
