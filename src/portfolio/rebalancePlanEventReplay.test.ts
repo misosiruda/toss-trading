@@ -177,6 +177,24 @@ test("whole-share BUY and SELL allow gross slippage within cap but require integ
   }
 });
 
+test("quantity replay rejects oversized requests against initial and partially consumed notional caps", () => {
+  for (const side of ["BUY", "SELL"] as const) for (const wholeShares of [true, false]) {
+    if (!wholeShares && side === "BUY") continue;
+    const target: RebalanceExecutionTarget = wholeShares
+      ? { targetKind: "whole_share_quantity", targetQuantity: 2, referencePriceKrw: 100, plannedNotionalKrw: 200, residualNotionalKrw: 0, priceEvidenceRef: "price-1" }
+      : { targetKind: "fractional_sell_quantity", targetQuantity: 0.2, referencePriceKrw: 1000, markedTargetNotionalKrw: 200, priceEvidenceRef: "price-1" };
+    const plan = makePlan(target, side);
+    const events = history(plan, [{ notional: 100, quantity: wholeShares ? 1 : 0.1 }, { notional: 100, quantity: wholeShares ? 1 : 0.1 }]);
+    for (const index of [2, 3]) {
+      const remainingCap = plan.actions[0]!.maximumNotionalKrw - (index === 2 ? 0 : 100);
+      assert.equal(replayRebalancePlanEvents({ plan, events: replace(events, index, { requestedNotionalKrw: remainingCap }) }).status, "applied");
+      for (const requestedNotionalKrw of [remainingCap + 1, 1000]) {
+        assert.throws(() => replayRebalancePlanEvents({ plan, events: replace(events, index, { requestedNotionalKrw }) }), /request exceeds remaining action cap/);
+      }
+    }
+  }
+});
+
 test("legacy reduce-only SELL replays quantity completion without fabricating a mandate", () => {
   const { planId: _id, planHash: _hash, ...payload } = makePlan({ targetKind: "fractional_sell_quantity", targetQuantity: 1.5,
     referencePriceKrw: 100, markedTargetNotionalKrw: 150, priceEvidenceRef: "legacy-price" }, "SELL");

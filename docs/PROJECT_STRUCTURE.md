@@ -182,6 +182,11 @@ replay 결과만으로 저장 이력의 최신성·fill/Risk 출처나 실행 �
 동시 retry/경쟁 predecessor, 손상·시간 역전·fsync 실패와 historical provenance를 검증한다.
 과거 read의 generation hash는 최신성 보증이 아니며 cycle claim/preview와 체결 accounting을
 함께 commit하는 coordinator는 후속이다.
+`portfolioActionRiskDecisionPlanContext.ts`와 `portfolioActionRiskDecisionPlanResolver.ts`는
+저장된 plan/event 이력의 다음 action·pre-state·누계·잔여 target과 Risk 결정 입력을 대조한다.
+Risk 저장소의 `createAndAppendWithPlanOrigin`은 plan/event fsync 확인 후 결정시각을 채집하고
+policy 및 plan/predecessor 원본을 v4 entry에 기록한다. `portfolioActionRiskDecisionPolicyResolver.test.ts`가
+실제 정책·계획·부분 체결 파일을 조합해 재시작, retry, 변조·backfill·fsync 실패를 검증한다.
 
 ### Live RiskEngine 변경
 

@@ -29,10 +29,18 @@ export async function resolvePortfolioActionRiskDecisionPolicy(input: {
   const receipt = origin.policyOrigin;
   if (receipt === null) throw new Error("risk decision lacks policy-before-creation provenance; legacy record requires review");
   const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir);
+  let events = snapshot.events;
+  if (receipt.activationHistory !== undefined) {
+    const boundary = receipt.activationHistory;
+    events = snapshot.events.slice(0, boundary.eventCount);
+    if (events.length !== boundary.eventCount || hashCanonicalPayload(events) !== boundary.eventsHash) {
+      throw new Error("risk decision activation history boundary does not match stored source");
+    }
+  }
   const active = resolveActiveRuntimePortfolioPolicyAsOf({
     portfolioId: decision.portfolioId,
     asOf: decision.decidedAt,
-    events: snapshot.events,
+    events,
     policies: snapshot.policies,
     dependencies: snapshot.dependencies.repository
   });

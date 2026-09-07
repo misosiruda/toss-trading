@@ -3,7 +3,7 @@ import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import type { ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
+import { hashCanonicalPayload, type ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyFileLoader, type LoadedImmutablePolicyDependencies } from "./runtimePolicyDependencyFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
@@ -308,6 +308,32 @@ export class RuntimePortfolioPolicyActivationFileRepository {
       events,
       policies: this.policies,
       dependencies: this.dependencies
+    });
+  }
+
+  /** Keeps activation writers excluded through the caller's decision persistence. */
+  async withDurableActivePolicy<T>(
+    portfolioId: string,
+    persist: (active: ActiveRuntimePortfolioPolicy, observedAt: string,
+      activationHistory: Readonly<{ eventCount: number; eventsHash: string }>,
+      verifyHistory: (boundary: Readonly<{ eventCount: number; eventsHash: string }>) => void) => Promise<T>
+  ): Promise<T> {
+    return this.withLock(async () => {
+      const events = await this.readAllUnderLock();
+      if (events.length > 0) await syncDurableJsonFile(this.eventsPath);
+      const observedAt = new Date().toISOString();
+      const active = resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId, asOf: observedAt, events, policies: this.policies, dependencies: this.dependencies
+      });
+      // Preserve the exact durable generation, including future-effective events.
+      const activationHistory = Object.freeze({ eventCount: events.length, eventsHash: hashCanonicalPayload(events) });
+      return persist(active, observedAt, activationHistory, (boundary) => {
+        const prefix = events.slice(0, boundary.eventCount);
+        if (!Number.isSafeInteger(boundary.eventCount) || boundary.eventCount <= 0 ||
+          prefix.length !== boundary.eventCount || hashCanonicalPayload(prefix) !== boundary.eventsHash) {
+          throw new Error("risk decision activation history boundary does not match locked source");
+        }
+      });
     });
   }
 

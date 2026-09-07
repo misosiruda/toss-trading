@@ -3645,6 +3645,52 @@ observation으로만 유효하다. 유효한 suffix 전체를 삭제하거나 �
 실제 fill/Risk/price provenance 또는 최종 Risk 승인을 뜻하지 않는다. Cycle claim+plan+preview,
 portfolio-wide fill uniqueness 및 accounting/state와의 cross-artifact transaction은 아직 후속이다.
 
+여섯 번째 분할은 `PortfolioActionRiskDecisionFileRepository.createAndAppendWithPlanOrigin`과
+`resolvePortfolioActionRiskDecisionPlan`으로 Risk 결정의 plan/action/pre-state 입력을 연결한다.
+Factory는 같은 base directory에서 plan/event repository의 검증 및 fsync를 마치고 active policy를
+새로 읽은 뒤 결정시각을 채집한다. Plan/event 조회 중 retirement 또는 policy 교체가 발생하면
+그 변경을 반영한 정책으로 대조한다. Event 관측시각과 plan 원본은 동일 event lock 아래 보존하며
+반환 후 새 event가 생겨도 과거 이력에 새 관측시각을 붙이지 않는다.
+마지막 activation read는 `withDurableActivePolicy`로 lock을 유지한 채 다시 검증·fsync하고,
+그 상태를 fold한 시각을 v4 `decidedAt`으로 사용한다. Risk entry/marker 저장이 끝날 때까지
+activation lock을 유지하여 중간 retirement/supersession을 차단한다. Lock 순서는 activation→Risk며
+실패해도 두 lock은 해제된다. 이미 미래 effectiveFrom이 있는 정책도 동일 결정시각에서 해소한다.
+v4 policy origin은 같은 lock 안에서 검증·fsync한 전체 activation event 배열의 `eventCount`와
+`eventsHash`를 `activationHistory`로 저장한다. 이후 과거 effectiveFrom을 가진 retirement가
+추가돼도 당시 결정의 정책 해소에는 저장된 개수의 prefix를 독립 rehash하여 사용한다. 전체 현재
+이력의 손상은 먼저 거절하며 prefix 누락·교체도 실패한다. 이는 당시 알려진 정책의 역사적 설명이지
+소급 변경 후의 현재 실행 허가가 아니며, 신규 생성은 최신 정책 이력을 다시 확인한다.
+`portfolio_action_risk_decision_entry.v4`에는 기존 policy origin과 함께
+plan ID/hash/commit/availability, 직전 event ID/hash/commit/availability 및 관측 시각을 저장한다.
+Caller가 완성 record나 결정시각을 전달하는 입력은 거절하며 나중에 기존 record에 plan receipt를
+덧붙이거나 교체하는 retry도 허용하지 않는다.
+
+관측한 이력은 approved 또는 execution_applied여야 하며 다음 미완료 action만 결정 대상으로
+허용한다. Plan/policy/portfolio, market/symbol/side, execution target hash와 mandate/legacy scope
+종류를 대조하고 expected portfolio version/snapshot 및 prior cumulative를 replay 결과와 비교한다.
+Approved decision의 요청 금액과 gross 상한은 action 잔여 cap 이하여야 하고 fractional BUY의 요청·승인 상한은
+잔여 notional target 이하, 수량 target은 canonical decimal remaining 이하이며 whole-share 요청은
+정수여야 한다. Rejected decision은 초과 요청을 설명할 수 있으나 scope/pre-state 검증은 동일하다.
+Event replay도 각 체결 요청 금액을 직전 누적 체결 금액을 차감한 action 잔여 cap과 대조한다.
+이미 저장된 초과 요청 이력도 fail-closed하며 원본을 자동 수정하거나 한도를 확대하지 않는다.
+
+Resolver는 저장된 v4 receipt가 가리키는 predecessor까지의 이력을 전체 저장 파일에서 복원하고
+원본 및 policy-selected rule 집합을 다시 대조한다. 이후 새 event가 생겨도 과거 결정을 설명할 수
+있으며 그 결과가 현재 실행 권한이나 최신 state 예약을 뜻하지는 않는다. Factory의 생성 retry는
+같은 입력·policy·plan·predecessor일 때 최초 record/receipt/bytes를 유지한다. 이력이 전진하면 새
+pre-state 입력이 필요하며 과거 record 자체의 일반 append retry는 그대로 보존한다.
+동일 생성 retry 중 정책의 미래 event가 추가되어도 최초 activation history receipt는 교체하지
+않는다. 다른 입력으로 새 결정을 만들면 미래 effective event까지 포함한 새 generation을 저장한다.
+Retry는 activation lock을 유지한 현재 이력에 최초 receipt의 개수·hash와 일치하는 prefix가
+남아 있는지도 검증한다. 활성 정책이 같더라도 최초 관측 suffix가 잘리거나 교체됐다면 실패한다.
+
+기존 bare/v2/v3 조회·exact retry는 유지하지만 plan receipt 없는 결정은 새 resolver에서
+review_required로 거절하며 자동 승격하지 않는다. v4 저장 후 이전 reader는 호환되지 않으므로
+rollback 시 신규 생성을 멈추고 새 reader를 유지하거나 별도 검증된 호환 절차가 필요하다.
+Mandate 원본의 bucket 일치, 가격·snapshot·turnover 원본과 실제 Risk 수치 규칙의 독립 재평가,
+관측 이후 변경을 막는 실행 transaction은 후속이다. 이 변경은 Risk 결과를 실제로 계산하거나
+최종 실행을 승인하지 않으며 live 경로를 추가하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
