@@ -349,7 +349,7 @@ test("plan-bound risk cannot add a plan receipt to preexisting policy-only or ra
       : await repository.append(createPortfolioActionRiskDecision({ ...candidate, decidedAt: new Date().toISOString() }));
     const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
     const before = await readFile(path, "utf8");
-    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /cannot be added or replaced/);
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /cannot be added or replaced|original activation history boundary/);
     await assert.rejects(repository.createAndAppendWithPlanOrigin(record), /cannot accept a record or timestamp/);
     await assert.rejects(resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId }), /before-creation provenance/);
     assert.equal(await readFile(path, "utf8"), before);
@@ -484,6 +484,33 @@ test("plan-bound retries preserve the original generation and new decisions incl
     const resolved = await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: next.riskDecisionId });
     assert.deepEqual(resolved.origin.policyOrigin!.activationHistory, { eventCount: 2, eventsHash: hashCanonicalPayload(await store.readAll()) });
     assert.equal(before.origin.policyOrigin!.activationHistory!.eventCount, 1);
+  });
+});
+
+test("plan-bound retry rejects truncated or replaced activation generations despite the same active policy", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const fixture = policyFixture();
+    const store = new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies);
+    const path = createRuntimePortfolioPolicyActivationPaths(directory).eventsPath;
+    const prefix = await readFile(path, "utf8");
+    const retirement = { portfolioId: candidate.portfolioId, retiredActivationId: fixture.activation.activationId,
+      reasonCode: "future_retirement", createdAt: new Date(Date.now() + 3_600_000).toISOString() };
+    await store.appendRetired(retirement);
+    const original = await readFile(path, "utf8");
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const riskPath = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const riskBytes = await readFile(riskPath, "utf8");
+    const restarted = new PortfolioActionRiskDecisionFileRepository(directory);
+    for (const replaced of [false, true]) {
+      await writeFile(path, prefix);
+      if (replaced) await store.appendRetired({ ...retirement, reasonCode: "replacement_retirement" });
+      assert.equal((await store.resolveActiveAsOf(candidate.portfolioId, new Date().toISOString())).policy.policyHash, candidate.policyHash);
+      await assert.rejects(restarted.createAndAppendWithPlanOrigin(candidate), /activation history boundary/);
+      assert.equal(await readFile(riskPath, "utf8"), riskBytes);
+    }
+    await writeFile(path, original);
+    assert.deepEqual(await restarted.createAndAppendWithPlanOrigin(candidate), record);
+    assert.equal(await readFile(riskPath, "utf8"), riskBytes);
   });
 });
 

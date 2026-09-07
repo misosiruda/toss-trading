@@ -315,7 +315,8 @@ export class RuntimePortfolioPolicyActivationFileRepository {
   async withDurableActivePolicy<T>(
     portfolioId: string,
     persist: (active: ActiveRuntimePortfolioPolicy, observedAt: string,
-      activationHistory: Readonly<{ eventCount: number; eventsHash: string }>) => Promise<T>
+      activationHistory: Readonly<{ eventCount: number; eventsHash: string }>,
+      verifyHistory: (boundary: Readonly<{ eventCount: number; eventsHash: string }>) => void) => Promise<T>
   ): Promise<T> {
     return this.withLock(async () => {
       const events = await this.readAllUnderLock();
@@ -326,7 +327,13 @@ export class RuntimePortfolioPolicyActivationFileRepository {
       });
       // Preserve the exact durable generation, including future-effective events.
       const activationHistory = Object.freeze({ eventCount: events.length, eventsHash: hashCanonicalPayload(events) });
-      return persist(active, observedAt, activationHistory);
+      return persist(active, observedAt, activationHistory, (boundary) => {
+        const prefix = events.slice(0, boundary.eventCount);
+        if (!Number.isSafeInteger(boundary.eventCount) || boundary.eventCount <= 0 ||
+          prefix.length !== boundary.eventCount || hashCanonicalPayload(prefix) !== boundary.eventsHash) {
+          throw new Error("risk decision activation history boundary does not match locked source");
+        }
+      });
     });
   }
 

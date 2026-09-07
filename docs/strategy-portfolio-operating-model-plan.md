@@ -3681,6 +3681,8 @@ Resolver는 저장된 v4 receipt가 가리키는 predecessor까지의 이력을 
 pre-state 입력이 필요하며 과거 record 자체의 일반 append retry는 그대로 보존한다.
 동일 생성 retry 중 정책의 미래 event가 추가되어도 최초 activation history receipt는 교체하지
 않는다. 다른 입력으로 새 결정을 만들면 미래 effective event까지 포함한 새 generation을 저장한다.
+Retry는 activation lock을 유지한 현재 이력에 최초 receipt의 개수·hash와 일치하는 prefix가
+남아 있는지도 검증한다. 활성 정책이 같더라도 최초 관측 suffix가 잘리거나 교체됐다면 실패한다.
 
 기존 bare/v2/v3 조회·exact retry는 유지하지만 plan receipt 없는 결정은 새 resolver에서
 review_required로 거절하며 자동 승격하지 않는다. v4 저장 후 이전 reader는 호환되지 않으므로

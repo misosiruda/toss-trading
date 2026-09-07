@@ -203,7 +203,7 @@ export class PortfolioActionRiskDecisionFileRepository {
     const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
     if (context !== null) {
       const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
-      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory) => {
+      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory, verifyHistory) => {
         const policyOrigin = Object.freeze({
           activationId: active.activation.activationId, activationEventHash: active.activation.activationEventHash,
           runtimePolicyRecordId: active.policy.runtimePolicyRecordId, policyHash: active.policy.policyHash,
@@ -214,7 +214,7 @@ export class PortfolioActionRiskDecisionFileRepository {
         if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
         if (Date.parse(observedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
         validateRiskDecisionPlanState(record, context.state);
-        return this.#appendRecord(record, policyOrigin, context.origin);
+        return this.#appendRecord(record, policyOrigin, context.origin, verifyHistory);
       });
     }
     const observedAt = new Date().toISOString();
@@ -236,7 +236,8 @@ export class PortfolioActionRiskDecisionFileRepository {
     return this.#appendRecord(record, policyOrigin);
   }
 
-  async #appendRecord(value: unknown, policyOrigin: PersistedPolicyOrigin | null, planOrigin: RiskDecisionPlanOrigin | null = null): Promise<PortfolioActionRiskDecision> {
+  async #appendRecord(value: unknown, policyOrigin: PersistedPolicyOrigin | null, planOrigin: RiskDecisionPlanOrigin | null = null,
+    verifyActivationHistory?: (boundary: NonNullable<PersistedPolicyOrigin["activationHistory"]>) => void): Promise<PortfolioActionRiskDecision> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -253,6 +254,12 @@ export class PortfolioActionRiskDecisionFileRepository {
           const prior = getVerifiedHistoryMetadata(history).policyOriginById.get(existing.riskDecisionId);
           if (prior === undefined || !samePolicyOriginIdentity(prior, policyOrigin)) {
             throw new Error("risk policy origin cannot be added or replaced after persistence");
+          }
+          if (planOrigin !== null) {
+            if (prior.activationHistory === undefined || verifyActivationHistory === undefined) {
+              throw new Error("risk decision retry requires its original activation history boundary");
+            }
+            verifyActivationHistory(prior.activationHistory);
           }
         }
         if (planOrigin !== null) {
