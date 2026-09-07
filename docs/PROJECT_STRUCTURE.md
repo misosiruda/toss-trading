@@ -255,6 +255,13 @@ Price durable lease와 activation lock 아래 실제 가격을 선택하고 back
 `portfolioActionRiskDecisionPolicyResolver.test.ts`의 실제 저장소 fixture로 정책·가격·재시작·오류 경계를
 검증한다. Liquidity 원본, plan/mandate 인증과 Risk·최종 execution transaction은 아직 연결하지 않는다.
 
+`portfolioPacketExecutionPreview.ts`는 실제 `market-packets.jsonl`의 canonical packet hash와
+portfolio/market/symbol을 해소해 candidate volume/averageVolume을 정책 기반 preview에 공급한다.
+Caller의 유동성 override, 누락/손상/중복 원본과 만료된 packet/candidate를 거절하고 I/O 후 cutoff도
+재검증한다. 반환 context의 로컬 packet projection은 durable availability 또는 execution authority가
+아니며, 정책별 liquidity source/기간 및 최종 Risk 연결은 후속이다. 실제 저장소 조합 테스트는
+`portfolioActionRiskDecisionPolicyResolver.test.ts`에 있다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

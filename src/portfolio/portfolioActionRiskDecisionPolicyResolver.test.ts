@@ -21,6 +21,10 @@ import { resolvePortfolioActionRiskDecisionPrice } from "./portfolioActionRiskDe
 import { validateRiskDecisionPriceState } from "./portfolioActionRiskDecisionPriceContext.js";
 import { createPortfolioPolicyExecutionPreview, portfolioExecutionRuleParametersSchema } from "./portfolioPolicyExecutionPreview.js";
 import { parsePortfolioActionExecutionPreview } from "./portfolioActionExecutionPreview.js";
+import { createPortfolioPacketExecutionPreview } from "./portfolioPacketExecutionPreview.js";
+import { MarketPacketBuilder } from "../market/packetBuilder.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
+import { createStoragePaths, FileMarketPacketStore } from "../storage/repositories.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import { SourcePriceEvidenceFileRepository, createSourcePriceEvidencePaths } from "./sourcePriceEvidenceFiles.js";
 import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
@@ -1814,6 +1818,144 @@ test("stored policy execution preview reloads retirement and rejects corrupt dep
     });
   }
 });
+
+test("packet execution preview derives partial BUY/SELL and legacy costs from the exact stored volume", async () => {
+  await withPolicyExecutionFixture(async ({ input }) => {
+    const packet = executionLiquidityPacket(input);
+    const path = createStoragePaths(input.baseDir).marketPacketsPath;
+    await new FileMarketPacketStore(path).append(packet);
+    const request = packetExecutionInput(input, packet);
+    for (const side of ["BUY", "SELL"] as const) {
+      const result = await createPortfolioPacketExecutionPreview({ ...request, side });
+      assert.equal(result.policyPreview.preview.input.volume, 50);
+      assert.equal(result.policyPreview.preview.input.averageVolume, 100);
+      assert.equal(result.policyPreview.preview.execution.quantity, 5);
+      assert.equal(result.policyPreview.preview.execution.fillStatus, "partial");
+      assert.equal(result.policyPreview.preview.execution.netAmountKrw, side === "BUY" ? 50_050 : 49_850);
+      assert.equal(result.liquidityContext.packetHash, createMarketPacketHash(packet));
+      assert.deepEqual(result.liquidityContext.sourceRefs, ["synthetic-liquidity"]);
+      assert.equal(result.observationHash, hashCanonicalPayload({ policyPreview: result.policyPreview, liquidityContext: result.liquidityContext }));
+      assert.ok(Object.isFrozen(result.liquidityContext.sourceRefs));
+      const restarted = await createPortfolioPacketExecutionPreview({ ...request, side });
+      assert.deepEqual(restarted.policyPreview.preview.execution, result.policyPreview.preview.execution);
+    }
+    const legacy = await createPortfolioPacketExecutionPreview({ ...request, side: "SELL", scope: { scopeKind: "legacy_reduce_only" } });
+    assert.equal(legacy.policyPreview.preview.execution.netAmountKrw, 49_800);
+    await assert.rejects(readFile(createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath), { code: "ENOENT" });
+    await assert.rejects(readFile(createPaperFillExecutionPaths(input.baseDir).recordsPath), { code: "ENOENT" });
+  });
+});
+
+test("packet execution preview rejects liquidity override, missing hashes and scope substitution", async () => {
+  await withPolicyExecutionFixture(async ({ input }) => {
+    const packet = executionLiquidityPacket(input);
+    await new FileMarketPacketStore(createStoragePaths(input.baseDir).marketPacketsPath).append(packet);
+    const request = packetExecutionInput(input, packet);
+    for (const extra of [{ volume: 1000 }, { averageVolume: 1000 }, { liquidityStale: false }, { marketPacketHistory: [] }, { asOf: CREATED_AT }]) {
+      await assert.rejects(createPortfolioPacketExecutionPreview({ ...request, ...extra }), /unrecognized_keys/);
+    }
+    await assert.rejects(createPortfolioPacketExecutionPreview({ ...request, liquidityPacketHash: HASH }), /resolve exactly once/);
+    await assert.rejects(createPortfolioPacketExecutionPreview({ ...request, portfolioId: "other" }), /portfolio mismatch/);
+    await assert.rejects(createPortfolioPacketExecutionPreview({ ...request, symbol: "KR:000660" }), /candidate must resolve exactly once/);
+    const pending = createPortfolioPacketExecutionPreview(request);
+    request.symbol = "mutated";
+    assert.equal((await pending).liquidityContext.symbol, input.symbol);
+  });
+});
+
+test("packet execution preview rejects corrupt, duplicate, reused-ID and ambiguous candidate history", async () => {
+  await withPolicyExecutionFixture(async ({ input }) => {
+    const packet = executionLiquidityPacket(input);
+    const request = packetExecutionInput(input, packet);
+    const path = createStoragePaths(input.baseDir).marketPacketsPath;
+    await assert.rejects(createPortfolioPacketExecutionPreview(request), /resolve exactly once/);
+    for (const raw of [
+      JSON.stringify(packet), `${JSON.stringify(packet)}\n{broken\n`, `${JSON.stringify(packet)}\n\n`,
+      `${JSON.stringify(packet)}\n${JSON.stringify(packet)}\n`,
+      `${JSON.stringify(packet)}\n${JSON.stringify({ ...packet, expiresAt: new Date(Date.now() + 60_000).toISOString() })}\n`
+    ]) {
+      await writeFile(path, raw, "utf8");
+      await assert.rejects(createPortfolioPacketExecutionPreview(request), /corrupt|resolve exactly once|ID was reused/);
+    }
+    const ambiguous = { ...packet, candidates: [packet.candidates[0]!, packet.candidates[0]!] };
+    await writeFile(path, `${JSON.stringify(ambiguous)}\n`, "utf8");
+    await assert.rejects(createPortfolioPacketExecutionPreview(packetExecutionInput(input, ambiguous)), /candidate must resolve exactly once/);
+  });
+});
+
+test("packet execution preview distinguishes missing, zero and average-only liquidity", async () => {
+  await withPolicyExecutionFixture(async ({ input }) => {
+    const packet = executionLiquidityPacket(input);
+    const path = createStoragePaths(input.baseDir).marketPacketsPath;
+    const { volume: _volume, averageVolume: _average, ...candidate } = packet.candidates[0]!;
+    for (const [candidateInput, expected] of [[candidate, "missing"], [{ ...candidate, volume: 0 }, "rejected"],
+      [{ ...candidate, averageVolume: 50 }, "partial"], [{ ...candidate, volume: Number.MAX_SAFE_INTEGER + 1 }, "unsafe"]] as const) {
+      const source = { ...packet, candidates: [candidateInput] };
+      await writeFile(path, `${JSON.stringify(source)}\n`, "utf8");
+      const pending = createPortfolioPacketExecutionPreview(packetExecutionInput(input, source));
+      if (expected === "missing") await assert.rejects(pending, /no volume evidence/);
+      else if (expected === "unsafe") await assert.rejects(pending, /supported range/);
+      else assert.equal((await pending).policyPreview.preview.execution.fillStatus, expected);
+    }
+  });
+});
+
+test("packet execution preview rejects expired or future packet and candidate timestamps at the exact boundary", async (context) => {
+  const now = Date.parse("2026-09-07T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  try {
+    await withPolicyExecutionFixture(async ({ input }) => {
+      const packet = executionLiquidityPacket(input);
+      const candidate = packet.candidates[0]!;
+      const at = new Date(now).toISOString();
+      const future = new Date(now + 1).toISOString();
+      for (const source of [
+        { ...packet, expiresAt: at }, { ...packet, generatedAt: future },
+        { ...packet, candidates: [{ ...candidate, staleAfter: at }] },
+        { ...packet, candidates: [{ ...candidate, collectedAt: future }] },
+        { ...packet, candidates: [{ ...candidate, collectedAt: "2026-09-07T00:00:00" }] }
+      ]) {
+        await writeFile(createStoragePaths(input.baseDir).marketPacketsPath, `${JSON.stringify(source)}\n`, "utf8");
+        await assert.rejects(createPortfolioPacketExecutionPreview(packetExecutionInput(input, source)));
+      }
+    });
+  } finally { context.mock.timers.reset(); }
+});
+
+test("packet execution preview rechecks liquidity expiry after policy and price I/O", async (context) => {
+  const now = Date.parse("2026-09-07T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  try {
+    await withPolicyExecutionFixture(async ({ input }) => {
+      const packet = executionLiquidityPacket(input);
+      packet.expiresAt = new Date(now + 1000).toISOString();
+      await new FileMarketPacketStore(createStoragePaths(input.baseDir).marketPacketsPath).append(packet);
+      const original = RuntimePortfolioPolicyActivationFileRepository.prototype.withDurableActivePolicy;
+      const mock = context.mock.method(RuntimePortfolioPolicyActivationFileRepository.prototype, "withDurableActivePolicy",
+        function (this: RuntimePortfolioPolicyActivationFileRepository, ...args: Parameters<typeof original>) {
+          context.mock.timers.setTime(now + 1000);
+          return original.apply(this, args);
+        });
+      try {
+        await assert.rejects(createPortfolioPacketExecutionPreview(packetExecutionInput(input, packet)), /stale or temporally inconsistent/);
+      } finally { mock.mock.restore(); }
+    });
+  } finally { context.mock.timers.reset(); }
+});
+
+function executionLiquidityPacket(input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0]) {
+  const now = new Date();
+  return new MarketPacketBuilder({ packetId: "synthetic-execution-liquidity", generatedAt: now, expiresInSeconds: 300,
+    maxCandidates: 1, constraints: { maxNewPositions: 1, maxBudgetPerSymbolKrw: 100_000, allowedActions: ["VIRTUAL_BUY", "VIRTUAL_SELL"] } })
+    .build({ portfolio: { portfolioId: input.portfolioId, cashKrw: 1_000_000, positions: [], updatedAt: now.toISOString() },
+      candidates: [{ market: input.market, symbol: input.symbol, lastPriceKrw: 10_000, volume: 50, averageVolume: 100,
+        sourceRefs: ["synthetic-liquidity"] }] }).packet;
+}
+
+function packetExecutionInput(input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0], packet: ReturnType<typeof executionLiquidityPacket>) {
+  const { volume: _volume, averageVolume: _average, liquidityStale: _stale, ...request } = input;
+  return { ...request, liquidityPacketHash: createMarketPacketHash(packet) };
+}
 
 function executionFixtureParameters(feeBps: number) {
   return portfolioExecutionRuleParametersSchema.parse({ schemaVersion: "portfolio_execution_rule.v1", markets: { KR: {
