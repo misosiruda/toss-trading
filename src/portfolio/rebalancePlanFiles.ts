@@ -50,6 +50,13 @@ export class RebalancePlanFileRepository {
   async readVerifiedHistory(): Promise<VerifiedRebalancePlanHistory> {
     return this.withLock(async () => this.readHistoryUnderLock());
   }
+  async readDurableVerifiedHistory(): Promise<VerifiedRebalancePlanHistory> {
+    return this.withLock(async () => {
+      const history = await this.readHistoryUnderLock();
+      if (history.records.length > 0) await syncFile(this.recordsPath);
+      return history;
+    });
+  }
   async resolveById(planId: string): Promise<RebalancePlanRecord> {
     return resolveVerifiedRebalancePlanOrigin(await this.readVerifiedHistory(), planId).record;
   }

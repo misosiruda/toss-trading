@@ -59,6 +59,13 @@ export class RebalancePlanEventFileRepository {
   async readVerifiedHistory(): Promise<VerifiedRebalancePlanEventHistory> {
     return this.withLock(async () => this.readHistoryUnderLock(await this.plans.readVerifiedHistory()));
   }
+  async readDurableVerifiedHistory(): Promise<VerifiedRebalancePlanEventHistory> {
+    return this.withLock(async () => {
+      const history = await this.readHistoryUnderLock(await this.plans.readDurableVerifiedHistory());
+      if (history.events.length > 0) await syncFile(this.eventsPath);
+      return history;
+    });
+  }
   async readPlanState(planId: string): Promise<Replay> {
     return replayVerifiedRebalancePlanEventHistory(await this.readVerifiedHistory(), planId);
   }

@@ -7,6 +7,11 @@ import test from "node:test";
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { resolvePortfolioActionRiskDecisionPolicy } from "./portfolioActionRiskDecisionPolicyResolver.js";
+import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDecisionPlanResolver.js";
+import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
+import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
+import { createRebalancePlanPaths, RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
+import { createRebalancePlanEventPaths, RebalancePlanEventFileRepository } from "./rebalancePlanEventFiles.js";
 import {
   createBucketDrawdownSemanticsRecord, createBucketSelectionPolicyRecord,
   createPortfolioRiskRuleParameterRecord, createPortfolioRiskRuleSetRecord,
@@ -253,6 +258,202 @@ test("policy-bound risk creation waits for activation fsync and fails without a 
     } finally { mock.mock.restore(); }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("plan-bound risk decision preserves causal sources through restart and exact retries", async () => {
+  for (const side of ["BUY", "SELL"] as const) await withPlanFixture(side, false, async ({ directory, repository, candidate, plan, events }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const before = await readFile(path, "utf8");
+    const restarted = new PortfolioActionRiskDecisionFileRepository(directory);
+    const results = await Promise.all([restarted.createAndAppendWithPlanOrigin(candidate), restarted.createAndAppendWithPlanOrigin(candidate)]);
+    assert.deepEqual(results, [record, record]);
+    assert.deepEqual(await restarted.append(record), record);
+    assert.equal(await readFile(path, "utf8"), before);
+    const resolved = await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId });
+    assert.equal(resolved.plan.planId, plan.planId);
+    assert.equal(resolved.priorState.status, "approved");
+    assert.ok(Object.isFrozen(resolved.planOrigin));
+    assert.ok(Date.parse(record.decidedAt) >= Date.parse(resolved.planOrigin.observedAt));
+    assert.equal(JSON.parse(before.split("\n")[0]!).schemaVersion, "portfolio_action_risk_decision_entry.v4");
+    const prior = (await events.readAll()).at(-1)!;
+    await events.append(planEvent(plan, "rejected", prior));
+    // Historical explanation remains bound to the pre-decision prefix.
+    assert.equal((await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId })).priorState.status, "approved");
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /approved unfinished/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId, predecessorEventId: prior.planEventId } as Parameters<typeof resolvePortfolioActionRiskDecisionPlan>[0]), /unrecognized_keys/);
+  });
+});
+
+test("plan-bound risk rejects mismatched action, prior state, lineage and approved target caps before persistence", async () => {
+  await withPlanFixture("BUY", false, async ({ repository, candidate }) => {
+    for (const patch of [
+      { actionId: "other" }, { expectedPortfolioVersion: "other" }, { expectedPortfolioSnapshotHash: hashCanonicalPayload({ other: true }) },
+      { priorCumulativeFilledNotionalKrw: 1 }, { priorCumulativeFilledQuantity: 0.1 },
+      { actionExecutionTargetHash: HASH }, { symbol: "KR:other" },
+      { approvedMaximumFillNotionalKrw: 101 }, { requestedNotionalKrw: 101 },
+      { riskRuleScope: { scopeKind: "legacy_reduce_only", legacyPolicyHash: HASH }, turnoverAssessment: { scopeKind: "legacy_reduce_only", countedInBucketTurnover: false } }
+    ]) await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...candidate, ...patch } as typeof candidate));
+    assert.deepEqual(await repository.readAll(), []);
+  });
+  await withPlanFixture("SELL", true, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    assert.equal((await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId })).action.lineageKind, "unassigned_legacy_reduce_only");
+  });
+});
+
+test("plan-bound risk derives fractional remaining quantities from stored partial fills", async () => {
+  await withPlanFixture("SELL", false, async ({ directory, repository, candidate, plan, events }) => {
+    const approval = (await events.readAll()).at(-1)!;
+    await events.append(createRebalancePlanEvent({
+      ...planScope(plan), asOf: new Date().toISOString(), eventType: "execution_applied", previousPlanEventId: approval.planEventId,
+      actionId: "action-1", actionSequence: 0, fillSequence: 0, fillId: "fill-1", paperFillRecordId: "paper-1", paperFillHash: HASH,
+      riskDecisionId: "prior-risk", requestedNotionalKrw: 10, requestedQuantity: 0.1, filledNotionalKrw: 10, filledQuantity: 0.1,
+      cumulativeFilledNotionalKrw: 10, cumulativeFilledQuantity: 0.1, expectedPrePortfolioVersion: "v1", expectedPrePortfolioSnapshotHash: HASH,
+      resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: hashCanonicalPayload({ version: 2 })
+    }));
+    const remaining = { ...candidate, expectedPortfolioVersion: "v2", expectedPortfolioSnapshotHash: hashCanonicalPayload({ version: 2 }),
+      priorCumulativeFilledNotionalKrw: 10, priorCumulativeFilledQuantity: 0.1, requestedQuantity: 0.2,
+      requestedNotionalKrw: 20, worstCaseFillNotionalKrw: 20, approvedMaximumFillNotionalKrw: 20,
+      cashAssessment: { side: "SELL" as const, expectedMinimumNetCashCreditKrw: 19 },
+      turnoverAssessment: { scopeKind: "bucket" as const, turnoverStateId: "turnover-2", turnoverStateHash: HASH,
+        turnoverWindowOpenPortfolioNetWorthKrw: 1000, priorBucketTurnoverNotionalKrw: 10, requestedBucketTurnoverNotionalKrw: 20, resultingBucketTurnoverRatio: 0.03 }
+    };
+    const record = await repository.createAndAppendWithPlanOrigin(remaining);
+    const resolved = await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId });
+    assert.equal(resolved.progress.cumulativeFilledQuantity, 0.1);
+    await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...remaining, requestedQuantity: 0.20000000000000004 }), /remaining quantity/);
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /pre-state/);
+  });
+});
+
+test("plan-bound risk cannot add a plan receipt to preexisting policy-only or raw decisions", async () => {
+  for (const policyOnly of [true, false]) await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = policyOnly ? await repository.createAndAppendWithPolicyOrigin(candidate)
+      : await repository.append(createPortfolioActionRiskDecision({ ...candidate, decidedAt: new Date().toISOString() }));
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const before = await readFile(path, "utf8");
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /cannot be added or replaced/);
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(record), /cannot accept a record or timestamp/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId }), /before-creation provenance/);
+    assert.equal(await readFile(path, "utf8"), before);
+    assert.deepEqual(await repository.readAll(), [record]);
+  });
+});
+
+test("plan-bound risk resolver rejects rehashed receipts and missing stored plan or events", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const input = { baseDir: directory, riskDecisionId: record.riskDecisionId };
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const [entry, marker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
+    for (const patch of [{ planCommitHash: HASH }, { predecessorCommitHash: HASH }, { predecessorEventId: "missing" },
+      { planHash: HASH }, { observedAt: new Date(Date.parse(record.decidedAt) + 1000).toISOString() }]) {
+      const { entryHash: _oldHash, ...payload } = { ...entry, planOrigin: { ...entry.planOrigin, ...patch } };
+      const entryHash = hashCanonicalPayload(payload);
+      const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+      await writeFile(path, `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`);
+      await assert.rejects(resolvePortfolioActionRiskDecisionPlan(input), /origin does not match|does not belong|corrupt line/);
+    }
+    await writeFile(path, raw);
+    for (const source of [createRebalancePlanPaths(directory).recordsPath, createRebalancePlanEventPaths(directory).eventsPath]) {
+      const content = await readFile(source, "utf8");
+      await writeFile(source, "");
+      await assert.rejects(resolvePortfolioActionRiskDecisionPlan(input));
+      await writeFile(source, content);
+    }
+  });
+});
+
+test("plan-bound risk waits for plan and event sync and preserves failures without a decision", async (context) => {
+  for (const sourceKind of ["plan", "events"] as const) await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const path = sourceKind === "plan" ? createRebalancePlanPaths(directory).recordsPath : createRebalancePlanEventPaths(directory).eventsPath;
+    const sourceStat = await stat(path);
+    const probe = await open(path, "r+");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let failSync = true;
+    let syncedAt = 0;
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (own.isFile() && own.ino === sourceStat.ino && (process.platform === "win32" || own.dev === sourceStat.dev)) {
+        if (failSync) throw new Error("injected plan source fsync failure");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await originalSync.call(this); syncedAt = Date.now(); return;
+      }
+      return originalSync.call(this);
+    });
+    try {
+      await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /injected plan source fsync failure/);
+      assert.deepEqual(await repository.readAll(), []);
+      failSync = false;
+      const record = await repository.createAndAppendWithPlanOrigin(candidate);
+      const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), record.riskDecisionId);
+      assert.ok(syncedAt > 0);
+      assert.ok(Date.parse(origin.planOrigin!.observedAt) >= syncedAt);
+      assert.ok(Date.parse(record.decidedAt) >= syncedAt);
+    } finally { mock.mock.restore(); }
+  });
+});
+
+test("plan-bound rejected decisions preserve an over-cap request for explanation", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin({ ...candidate, requestedNotionalKrw: 1000, decision: "rejected",
+      ruleResults: candidate.ruleResults.map((rule) => ({ ...rule, result: "fail" })) });
+    assert.equal((await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: record.riskDecisionId })).decision.decision, "rejected");
+  });
+});
+
+test("plan-bound whole-share approvals reject fractional requests and completed actions", async () => {
+  await withPlanFixture("BUY", false, async ({ repository, candidate, plan, events }) => {
+    await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...candidate, requestedQuantity: 0.5 }), /whole-share quantity/);
+    await repository.createAndAppendWithPlanOrigin(candidate);
+    const approval = (await events.readAll()).at(-1)!;
+    await events.append(createRebalancePlanEvent({ ...planScope(plan), asOf: new Date().toISOString(), eventType: "execution_applied", previousPlanEventId: approval.planEventId,
+      actionId: "action-1", actionSequence: 0, fillSequence: 0, fillId: "fill-1", paperFillRecordId: "paper-1", paperFillHash: HASH, riskDecisionId: "prior-risk",
+      requestedNotionalKrw: 100, requestedQuantity: 1, filledNotionalKrw: 100, filledQuantity: 1, cumulativeFilledNotionalKrw: 100, cumulativeFilledQuantity: 1,
+      expectedPrePortfolioVersion: "v1", expectedPrePortfolioSnapshotHash: HASH, resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: hashCanonicalPayload({ version: 2 }) }));
+    await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /next unfinished action/);
+  }, true);
+});
+
+function planScope(plan: RebalancePlanRecord) {
+  return { planId: plan.planId, planHash: plan.planHash, cycleId: plan.cycleId, portfolioId: plan.portfolioId,
+    portfolioVersion: plan.portfolioVersion, portfolioSnapshotHash: plan.portfolioSnapshotHash, policyHash: plan.policyHash };
+}
+function planEvent(plan: RebalancePlanRecord, kind: "previewed" | "approved" | "rejected", previous?: RebalancePlanEvent) {
+  const common = { ...planScope(plan), asOf: new Date().toISOString() };
+  return kind === "previewed" ? createRebalancePlanEvent({ ...common, eventType: kind })
+    : createRebalancePlanEvent({ ...common, eventType: kind, previousPlanEventId: previous!.planEventId, reasonCodes: ["fixture"] });
+}
+async function withPlanFixture(side: "BUY" | "SELL", legacy: boolean, run: (input: {
+  directory: string; repository: PortfolioActionRiskDecisionFileRepository; plan: RebalancePlanRecord;
+  events: RebalancePlanEventFileRepository; candidate: Omit<DecisionInput, "decidedAt">;
+}) => Promise<void>, wholeShares = false) {
+  const fixture = policyFixture();
+  const directory = await mkdtemp(join(tmpdir(), "toss-risk-plan-"));
+  try {
+    await storePolicyFixture(directory, fixture);
+    const { decidedAt: _time, ...original } = decisionInput(fixture, side, legacy);
+    const target = wholeShares ? { targetKind: "whole_share_quantity" as const, targetQuantity: 1, referencePriceKrw: 100, plannedNotionalKrw: 100, residualNotionalKrw: 0, priceEvidenceRef: "price-1" }
+      : side === "BUY" ? { targetKind: "fractional_buy_notional" as const, targetNotionalKrw: 100 }
+      : { targetKind: "fractional_sell_quantity" as const, targetQuantity: 0.3, referencePriceKrw: 100, markedTargetNotionalKrw: 30, priceEvidenceRef: "price-1" };
+    const plan = createRebalancePlanRecord({ cycleId: "cycle-1", portfolioId: original.portfolioId, portfolioVersion: "v1", portfolioSnapshotHash: HASH,
+      policyHash: fixture.policy.policyHash, evidenceCutoffAt: CREATED_AT, createdAt: CREATED_AT, triggerRef: "trigger-1", phase: side === "BUY" ? "buy" : "sell",
+      actions: [{ actionId: "action-1", actionSequence: 0, market: "KR", symbol: original.symbol, maximumNotionalKrw: 100, reasonCodes: ["fixture"], executionTarget: target,
+        ...(legacy ? { lineageKind: "unassigned_legacy_reduce_only" as const, side: "SELL" as const, observedPositionRef: "legacy-1", legacyStateDetectedAt: CREATED_AT }
+          : { lineageKind: "mandate" as const, side, mandateId: "mandate-1" }) }] });
+    const plans = new RebalancePlanFileRepository(directory);
+    await plans.append(plan);
+    const events = new RebalancePlanEventFileRepository(directory, plans);
+    const preview = await events.append(planEvent(plan, "previewed"));
+    await events.append(planEvent(plan, "approved", preview));
+    const candidate = { ...original, planId: plan.planId, actionExecutionTargetHash: hashRebalanceExecutionTarget(target),
+      requestedQuantity: side === "BUY" ? 1 : 0.3, approvedMaximumFillNotionalKrw: 100 };
+    await run({ directory, repository: new PortfolioActionRiskDecisionFileRepository(directory), plan, events, candidate });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
 
 async function withDecision(
   fixture: ReturnType<typeof policyFixture>, candidate: DecisionInput,

@@ -11,7 +11,7 @@ const transitions: Record<RebalancePlanEvent["eventType"], readonly RebalancePla
   execution_applied: ["execution_applied", "applied", "rejected", "stale"],
   rejected: [], stale: [], applied: []
 };
-interface ActionProgress {
+export interface ActionProgress {
   actionId: string;
   actionSequence: number;
   fillCount: number;
