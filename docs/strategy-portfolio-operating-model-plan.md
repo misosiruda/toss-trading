@@ -3912,6 +3912,45 @@ parity, partial/insufficient/stale/missing liquidity, fillRatio·whole share, �
 따라서 `filled` 계산 결과나 preview hash를 Risk 승인 또는 실제 체결로 사용하지 않는다. DB migration과
 자동 artifact 변경은 없고 아직 writer/consumer가 없으므로 이번 코드 rollback에 저장 데이터 변환은 없다.
 
+열일곱 번째 분할은 `createPortfolioPolicyExecutionPreview`로 실제 저장된 active policy와 typed 가격을
+위 순수 계산에 연결한다. 입력은 storage root, portfolio/expected policy hash, bucket 또는 legacy scope,
+market/symbol/price ref, side/request와 liquidity 값이다. Caller가 실행 정책, 가격 payload, 평가 시각이나
+activation history를 대체할 수 없다. Price durable lease 다음 activation lock을 잡고 backend 관측 시각을
+생성하며, 활성 bucket의 enabled market 및 risk rule set 또는 legacy root의 rule set을 선택한다.
+Legacy는 SELL만 허용한다. 이 경로는 scope 선택을 mandate나 plan 원본으로 인증하지 않는다.
+
+선택된 rule set에는 해당 side에 적용되는 `paper_execution`, `ruleVersion = v1`이 있어야 한다.
+해당 immutable parameter record의 `parameters`는 다음 opt-in strict 계약을 사용한다.
+
+```typescript
+{
+  schemaVersion: "portfolio_execution_rule.v1",
+  markets: {
+    KR?: { executionPolicy: CompletePaperExecutionPolicy,
+      maximumPriceAgeSeconds: number, allowedPriceSourceContractIds: string[] },
+    US?: { executionPolicy: CompletePaperExecutionPolicy,
+      maximumPriceAgeSeconds: number, allowedPriceSourceContractIds: string[] }
+  }
+}
+```
+
+적어도 한 market 설정이 필요하며 요청 market의 설정을 다른 시장에서 빌려오지 않는다. 가격 최대 나이는
+양의 safe integer 초이고 허용 source contract 목록은 비어 있지 않은 정렬·중복 없는 목록이다. 전체 실행
+정책에는 기본값을 채우지 않는다. 기존 policy에는 이 rule을 자동 추가하거나 활성화하지 않으며 누락된
+policy는 이 새 preview 진입점에서만 fail-closed한다. 기존 generic Risk 저장/해소 동작은 변경하지 않는다.
+
+저장 가격의 ref/hash, market/symbol, source contract allowlist, observed/created/저장 관측 시각을 검증하고
+backend cutoff 기준 나이가 최대값 이하인지 확인한다. 결과는 순수 preview와 exact activation generation,
+policy lineage, rule-set/parameter ref 및 가격 observation을 포함한 context와 complete observation hash다.
+재시작 후 다시 읽어 같은 모델 출력을 얻되 새 관측 시각이므로 hash의 retry 동일성을 보장하지 않는다.
+반환값은 저장 artifact 또는 재사용 가능한 실행 권한이 아니다. 유동성 값은 아직 caller 입력이며 원본
+검증을 주장하지 않는다. 가격의 외부 진위, mandate/plan 인증, Risk 수치 승인과 최종 원자 실행은 후속이다.
+
+기존 실제 policy 저장소 fixture를 확장해 BUY/SELL·legacy별 fee/tax 계산, 재시작, caller override와
+mutation, 정책 drift/retirement, 누락/버전/side/market 설정, source/freshness 및 corrupt 원본을 검사한다.
+Risk/fill 파일이 생성되지 않는 것도 검증한다. Artifact format이나 기본 거래 설정은 변경하지 않으므로
+새 진입점을 제거하는 코드 rollback이 가능하며 기존 policy의 rewrite/data migration은 없다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
