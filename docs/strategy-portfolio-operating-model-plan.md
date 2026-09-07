@@ -3783,6 +3783,26 @@ snapshot receipt를 사후 추가하거나 자동 승격하지 않는다. `resol
 기존 API/파일 경로와 v2~v5 읽기·생성 경로는 유지한다. v6를 쓰기 전에 호환 reader를 배포하며 v6 저장 후
 rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 기존 artifact 삭제·자동 변환은 없다.
 
+열한 번째 분할은 `validateRiskDecisionCashCapacity`를 snapshot-bound 생성·retry와 과거 resolver에
+연결한다. 실제 valuation replay의 cash/NAV/pending BUY 및 당시 활성 정책으로
+`max(0, cash - max(minimumCashReserveKrw, round(NAV * targetCashRatio)) - pendingBuyExposureKrw)`를
+재계산한다. Approved BUY의 worst-case net debit과 approved maximum net debit은 모두 정수 KRW이며
+이 상한을 넘을 수 없다. Gross notional만 현금과 비교해 비용을 빠뜨리거나, actual worst-case가 작다는
+이유로 더 큰 approval cap을 허용하지 않는다. 준비금·pending 차감은 각각 0에서 포화시켜 overflow를
+막는다. Pending SELL 대금은 현금에 더하지 않으며 caller plan/action ID만으로 pending BUY를 제외하지 않는다.
+
+`resolvePortfolioActionRiskDecisionSnapshot`은 BUY에 frozen `cashCapacity`를 반환하고 SELL에는 null을
+반환한다. Rejected BUY는 현금이 부족해도 과거 거절 근거를 재생한다. SELL/legacy reduce-only의
+현금 부족은 감축을 막지 않는다. 이 상한은 필요한 거절 조건이며 pending BUY의 추가 비용, reservation
+원본·소유권·해소, 가격 및 complete cost bound, exposure/turnover와 versioned rule result 전체의
+독립 재평가를 완료한 실행 승인이 아니다. 기존 pending exposure는 gross notional이므로 이 값으로
+최종 spendable cash를 확정하거나 approval authority를 발급하지 않는다.
+
+Risk payload/hash와 v2~v6 파일 bytes는 변경하지 않는다. 기존 provenance 없는 생성·raw read 경로도
+유지한다. 다만 기존 v6에 잘못된 over-cash approval이 있으면 강화된 historical resolver가 거절한다.
+해당 이력은 삭제·수정하지 않고 검토 대상으로 보존한다. 코드 rollback은 bytes 변환 없이 가능하지만
+이 현금 gate도 제거하므로 신규 생성/실행 경로를 중단한 상태에서 이전 reader로 과거 raw 이력만 읽는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

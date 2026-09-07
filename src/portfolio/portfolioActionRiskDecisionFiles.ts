@@ -22,6 +22,7 @@ import { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation
 import { riskDecisionMandateIdentity, riskDecisionMandateOriginSchema, validateRiskDecisionMandateState, type RiskDecisionMandateOrigin } from "./portfolioActionRiskDecisionMandateContext.js";
 import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation, resolveObservedPortfolioSizingSnapshotHistory, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import { riskDecisionSnapshotIdentity, riskDecisionSnapshotOriginSchema, validateRiskDecisionSnapshotState, type RiskDecisionSnapshotOrigin } from "./portfolioActionRiskDecisionSnapshotContext.js";
+import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
 
 export const PORTFOLIO_ACTION_RISK_DECISION_RECORDS_FILE_NAME =
   "portfolio-action-risk-decision-records.jsonl";
@@ -262,10 +263,12 @@ export class PortfolioActionRiskDecisionFileRepository {
             const observation = getDurablePortfolioSizingSnapshotObservation(snapshotHistory);
             if (Date.parse(observedAt) < Date.parse(observation.observedAt)) throw new Error("snapshot-bound risk creation clock moved backwards");
             const resolved = validateRiskDecisionSnapshotState(binding, snapshotHistory.snapshots);
+            validateRiskDecisionCashCapacity({ decision: record, snapshot: resolved.snapshot, policy: active.policy });
             snapshotOrigin = { ...riskDecisionSnapshotIdentity(resolved), observation };
             verifySnapshotHistory = (prior, existing) => {
               const original = resolveObservedPortfolioSizingSnapshotHistory(snapshotHistory, prior.observation);
               const previous = validateRiskDecisionSnapshotState({ ...binding, decision: existing }, original);
+              validateRiskDecisionCashCapacity({ decision: existing, snapshot: previous.snapshot, policy: active.policy });
               const { observation: _time, ...identity } = prior;
               if (!isDeepStrictEqual(identity, riskDecisionSnapshotIdentity(previous))) throw new Error("risk decision retry snapshot source mismatch");
             };
