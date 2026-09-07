@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,8 +9,13 @@ import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js"
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import {
   PortfolioSizingSnapshotFileRepository,
-  createPortfolioSizingSnapshotPaths
+  createPortfolioSizingSnapshotPaths,
+  getDurablePortfolioSizingSnapshotObservation,
+  resolveObservedPortfolioSizingSnapshotHistory,
+  type VerifiedPortfolioSizingSnapshotHistory,
+  type PortfolioSizingSnapshotObservation
 } from "./portfolioSizingSnapshotFiles.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 
 const HASH = `sha256:${"a".repeat(64)}` as const;
 
@@ -126,7 +131,143 @@ test("sizing snapshot repository leaves abandoned locks fail-closed", async () =
   });
 });
 
-function sizingSnapshot(overrides: { priceKrw?: number } = {}) {
+test("snapshot durable observation covers empty and complete sources and expires with its lease", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    let captured: VerifiedPortfolioSizingSnapshotHistory | undefined;
+    const empty = await repository.withDurableVerifiedHistory(async (history) => {
+      captured = history;
+      const observation = getDurablePortfolioSizingSnapshotObservation(history);
+      assert.equal(observation.recordCount, 0);
+      assert.equal(observation.recordsHash, hashCanonicalPayload([]));
+      assert.deepEqual(resolveObservedPortfolioSizingSnapshotHistory(history, observation), []);
+      assert.ok(Object.isFrozen(history));
+      assert.ok(Object.isFrozen(history.snapshots));
+      assert.ok(Object.isFrozen(observation));
+      for (const copied of [{ ...history }, JSON.parse(JSON.stringify(history))]) {
+        assert.throws(() => getDurablePortfolioSizingSnapshotObservation(copied), /durable observation lease/);
+      }
+      return observation;
+    });
+    assert.ok(captured);
+    const expired = captured;
+    assert.throws(() => getDurablePortfolioSizingSnapshotObservation(expired), /durable observation lease/);
+    await assert.rejects(readFile(createPortfolioSizingSnapshotPaths(baseDir).recordsPath), { code: "ENOENT" });
+    await repository.append(sizingSnapshot());
+    await repository.withDurableVerifiedHistory(async (history) => {
+      assert.equal(getDurablePortfolioSizingSnapshotObservation(history).recordCount, 1);
+      assert.deepEqual(resolveObservedPortfolioSizingSnapshotHistory(history, empty), []);
+      const content = resolveObservedPortfolioSizingSnapshotHistory(history, getDurablePortfolioSizingSnapshotObservation(history));
+      assert.deepEqual(content, [sizingSnapshot()]);
+      assert.throws(() => getDurablePortfolioSizingSnapshotObservation({ snapshots: content }), /durable observation lease/);
+    });
+  });
+});
+
+test("snapshot observation follows source fsync and refuses to invoke consumers on sync failure", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    await repository.append(sizingSnapshot());
+    const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+    const before = await readFile(path, "utf8");
+    const source = await stat(path);
+    const probe = await open(path, "r+");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let failing = true;
+    let called = false;
+    let syncedAt = 0;
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-09-07T00:00:00.000Z") });
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) {
+        if (failing) throw new Error("injected snapshot sync failure");
+        await originalSync.call(this);
+        context.mock.timers.tick(10);
+        syncedAt = Date.now();
+        return;
+      }
+      return originalSync.call(this);
+    });
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => { called = true; }), /injected snapshot sync failure/);
+      assert.equal(called, false);
+      assert.equal(await readFile(path, "utf8"), before);
+      failing = false;
+      await repository.withDurableVerifiedHistory(async (history) => {
+        assert.ok(syncedAt > 0);
+        assert.equal(Date.parse(getDurablePortfolioSizingSnapshotObservation(history).observedAt), syncedAt);
+      });
+      assert.equal(await readFile(path, "utf8"), before);
+    } finally { mock.mock.restore(); context.mock.timers.reset(); }
+  });
+});
+
+test("snapshot consumer holds writer lock and releases failed callbacks without leaking leases", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const other = new PortfolioSizingSnapshotFileRepository(baseDir, { lockTimeoutMs: 30, lockRetryDelayMs: 5 });
+    const second = sizingSnapshot({ portfolioVersion: "v2" });
+    await repository.append(sizingSnapshot());
+    let captured: VerifiedPortfolioSizingSnapshotHistory | undefined;
+    await assert.rejects(repository.withDurableVerifiedHistory(async (history) => {
+      captured = history;
+      await assert.rejects(other.append(second), /lock is unavailable/);
+      throw new Error("consumer failure");
+    }), /consumer failure/);
+    assert.ok(captured);
+    const expired = captured;
+    assert.throws(() => getDurablePortfolioSizingSnapshotObservation(expired), /durable observation lease/);
+    await other.append(second);
+    assert.equal((await repository.readAll()).length, 2);
+  });
+});
+
+test("snapshot observation replays its exact prefix after append and restart with strict receipt validation", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const first = sizingSnapshot();
+    await repository.append(first);
+    const receipt = await repository.withDurableVerifiedHistory(async (history) => getDurablePortfolioSizingSnapshotObservation(history));
+    await repository.append(sizingSnapshot({ portfolioVersion: "v2", priceKrw: 101 }));
+    await new PortfolioSizingSnapshotFileRepository(baseDir).withDurableVerifiedHistory(async (history) => {
+      const parsed: PortfolioSizingSnapshotObservation = JSON.parse(JSON.stringify(receipt));
+      assert.deepEqual(resolveObservedPortfolioSizingSnapshotHistory(history, parsed), [first]);
+      for (const bad of [
+        { ...parsed, recordCount: -1 }, { ...parsed, recordCount: -0 }, { ...parsed, recordCount: 0.5 },
+        { ...parsed, recordCount: Number.MAX_SAFE_INTEGER + 1 }, { ...parsed, recordCount: 3 },
+        { ...parsed, recordsHash: HASH }, { ...parsed, unexpected: true },
+        { ...parsed, observedAt: new Date(Date.parse(getDurablePortfolioSizingSnapshotObservation(history).observedAt) + 1).toISOString() }
+      ]) assert.throws(() => resolveObservedPortfolioSizingSnapshotHistory(history, bad));
+    });
+  });
+});
+
+test("snapshot observation rejects valid truncation or replacement and never hides corrupt suffixes", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const first = sizingSnapshot();
+    const second = sizingSnapshot({ portfolioVersion: "v2" });
+    await repository.append(first);
+    await repository.append(second);
+    const receipt = await repository.withDurableVerifiedHistory(async (history) => getDurablePortfolioSizingSnapshotObservation(history));
+    const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+    for (const records of [[first], [first, sizingSnapshot({ portfolioVersion: "v2", priceKrw: 102 })]]) {
+      await writeFile(path, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+      await assert.rejects(repository.withDurableVerifiedHistory(async (history) => resolveObservedPortfolioSizingSnapshotHistory(history, receipt)), /source prefix/);
+    }
+    const prefix = `${JSON.stringify(first)}\n${JSON.stringify(second)}\n`;
+    for (const suffix of ["{", "{}\n", `${JSON.stringify({ ...first, portfolioSnapshotHash: HASH })}\n`]) {
+      await writeFile(path, prefix + suffix, "utf8");
+      let called = false;
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => { called = true; }), /torn|corrupt/);
+      assert.equal(called, false);
+    }
+  });
+});
+
+function sizingSnapshot(overrides: { priceKrw?: number; portfolioVersion?: string } = {}) {
   const priceKrw = overrides.priceKrw ?? 100;
   const positionExposureKrw = priceKrw * 2;
   const exposure = createPortfolioExposureSnapshot({
@@ -151,7 +292,7 @@ function sizingSnapshot(overrides: { priceKrw?: number } = {}) {
   });
   return createPortfolioSizingSnapshot({
     portfolioId: "portfolio-1",
-    portfolioVersion: "portfolio-version-1",
+    portfolioVersion: overrides.portfolioVersion ?? "portfolio-version-1",
     policyHash: HASH,
     asOf: "2026-09-02T00:00:00.000Z",
     virtualPortfolio: {

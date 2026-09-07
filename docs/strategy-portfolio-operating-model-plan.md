@@ -3728,6 +3728,18 @@ Manual/selector assignment와 reservation 원본, review cadence/holding expiry 
 v5 저장 후 rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 기존 파일을 삭제·변환하거나
 live/broker/실제 portfolio mutation을 추가하지 않는다.
 
+아홉 번째 분할은 Risk 현금·노출 입력 연결 전에 저장된 `PortfolioSizingSnapshot` 원본 세대를
+관측하는 경로다. `PortfolioSizingSnapshotFileRepository.withDurableVerifiedHistory`는 기존 전체
+parse/valuation replay를 수행한 후 snapshot 파일을 fsync하고, 같은 lock 아래 배열 count/hash와
+관측시각을 제공한다. Consumer 종료 시 성공·실패 모두 lease가 만료되며 fsync 실패에서는 consumer를
+호출하지 않는다. 빈 저장소는 count 0/빈 배열 hash로 관측하되 파일이나 가짜 snapshot을 만들지 않는다.
+`resolveObservedPortfolioSizingSnapshotHistory`는 현재 durable lease에서 과거 관측 prefix의 개수·hash를
+대조한다. 정상 append 뒤에는 당시 내용을 복원하며 source 축소·교체와 전체 이력의 손상은 거절한다.
+직렬화된 receipt는 대조용 데이터일 뿐 새 lease가 아니다. 관측은 저장 bytes의 내구성 확인이며
+valuation의 외부 가격·FX 진위, pending action/reservation 원본, 최신 portfolio state 또는 실행 권한을
+보증하지 않는다. Risk에 snapshot receipt를 저장하고 plan pre-state와 결속하는 연결은 후속이다.
+Snapshot 파일 형식, 기존 read/append/retry 계약과 설정은 변경하지 않아 코드 롤백이 가능하다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

@@ -198,6 +198,12 @@ Risk 저장소의 `createAndAppendWithMandateOrigin`은 mandate → activation �
 과거 원본 재생, retry, source fsync 실패와 저장 중 잠금을 검증한다. 실제 Risk 계산·reservation 원본과
 fill/accounting transaction은 후속이다.
 
+`portfolioSizingSnapshotFiles.ts`의 `withDurableVerifiedHistory`는 전체 snapshot의 valuation replay와
+fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장소 lock을 유지한다.
+`resolveObservedPortfolioSizingSnapshotHistory`는 새 durable lease 안에서 과거 prefix를 재검증한다.
+복사/만료 lease, fsync 실패, source 축소·교체 및 손상은 같은 이름의 저장소 테스트에서 검증한다.
+이는 최신 portfolio 상태나 외부 가격·pending action 진위가 아니며 Risk pre-state receipt 연결은 후속이다.
+
 ### Live RiskEngine 변경
 
 수정 후보:

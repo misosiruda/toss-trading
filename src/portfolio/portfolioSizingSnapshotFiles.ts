@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 
+import { sha256HashSchema } from "../domain/schemas.js";
+import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
 
@@ -12,6 +15,36 @@ export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
 export interface PortfolioSizingSnapshotFileRepositoryOptions {
   lockTimeoutMs?: number;
   lockRetryDelayMs?: number;
+}
+
+export const portfolioSizingSnapshotObservationSchema = z.object({
+  recordCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0)),
+  recordsHash: sha256HashSchema,
+  observedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+export type PortfolioSizingSnapshotObservation = Readonly<z.infer<typeof portfolioSizingSnapshotObservationSchema>>;
+export interface VerifiedPortfolioSizingSnapshotHistory {
+  snapshots: readonly PortfolioSizingSnapshot[];
+}
+const durableSnapshotObservations = new WeakMap<VerifiedPortfolioSizingSnapshotHistory, PortfolioSizingSnapshotObservation>();
+
+/** Only a live repository-issued lease proves this source observation. */
+export function getDurablePortfolioSizingSnapshotObservation(history: VerifiedPortfolioSizingSnapshotHistory): PortfolioSizingSnapshotObservation {
+  const observation = durableSnapshotObservations.get(history);
+  if (observation === undefined) throw new Error("portfolio sizing snapshot history lacks a durable observation lease");
+  return observation;
+}
+
+/** Revalidates a previously observed prefix; the returned content is not a new lease. */
+export function resolveObservedPortfolioSizingSnapshotHistory(history: VerifiedPortfolioSizingSnapshotHistory, value: unknown): readonly PortfolioSizingSnapshot[] {
+  const current = getDurablePortfolioSizingSnapshotObservation(history);
+  const observation = portfolioSizingSnapshotObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) throw new Error("portfolio sizing snapshot observation is in the future");
+  const prefix = history.snapshots.slice(0, observation.recordCount);
+  if (prefix.length !== observation.recordCount || hashCanonicalPayload(prefix) !== observation.recordsHash) {
+    throw new Error("portfolio sizing snapshot observation does not match durable source prefix");
+  }
+  return Object.freeze(prefix);
 }
 
 export function createPortfolioSizingSnapshotPaths(baseDir: string): {
@@ -53,6 +86,24 @@ export class PortfolioSizingSnapshotFileRepository {
 
   async readAll(): Promise<readonly PortfolioSizingSnapshot[]> {
     return this.withLock(async () => this.readAllUnderLock());
+  }
+
+  /** Holds the source lock through the consumer; failure never promotes an unflushed generation. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const snapshots = await this.readAllUnderLock();
+      if (snapshots.length > 0) await syncDurableJsonFile(this.recordsPath);
+      const history = Object.freeze({ snapshots });
+      const observation = Object.freeze({
+        recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt: new Date().toISOString()
+      });
+      durableSnapshotObservations.set(history, observation);
+      try {
+        return await operation(history);
+      } finally {
+        durableSnapshotObservations.delete(history);
+      }
+    });
   }
 
   async resolveById(
