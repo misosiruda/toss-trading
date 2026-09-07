@@ -3803,6 +3803,22 @@ Risk payload/hash와 v2~v6 파일 bytes는 변경하지 않는다. 기존 proven
 해당 이력은 삭제·수정하지 않고 검토 대상으로 보존한다. 코드 rollback은 bytes 변환 없이 가능하지만
 이 현금 gate도 제거하므로 신규 생성/실행 경로를 중단한 상태에서 이전 reader로 과거 raw 이력만 읽는다.
 
+열두 번째 분할은 `validateRiskDecisionSnapshotState`의 approved SELL에 실제 보유 수량 상한을
+적용한다. Snapshot의 market/symbol과 Risk bucket이 같은 lot만 사용하며, legacy reduce-only는
+`strategyBucket`이 없는 lot만 사용한다. 다른 bucket·legacy의 같은 symbol 수량을 합산하거나
+존재하지 않는 lot을 합성하지 않는다. Requested quantity를 canonical decimal units로 비교하므로
+epsilon으로 보유 초과를 허용하지 않는다. Snapshot 자체가 per-market/symbol/bucket 중복 lot을
+거절하므로 정확히 하나의 lot 또는 0 수량 상한으로 해소된다.
+
+공통 snapshot validator를 사용하는 생성·retry·historical resolver에 동일하게 적용한다.
+Partial execution 후에는 replayed resulting snapshot의 수량을 쓰고 prior cumulative fill을 다시
+차감하지 않는다. Rejected SELL은 보유분이 없어도 거절 근거 조회를 유지한다. BUY 동작은 변경하지 않는다.
+이 검사는 snapshot에 기록된 물리적 수량의 필요조건이다. Pending SELL 예약과 충돌·dedupe,
+position-state 및 legacy observedPositionRef 원본, Mandate 소유권 lineage와 최종 실행 transaction을
+대체하지 않는다. 기존 v2~v6 bytes/hash 및 raw read는 유지하고 over-owned v6 승인만 강화된
+resolver에서 거절한다. 해당 기록을 삭제·자동 재작성하지 않는다. Rollback 시에도 신규 생성/실행을
+중단한 채 과거 raw 이력만 조회해야 하며, 이전 코드로 돌아가면 이 수량 gate가 사라진다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
