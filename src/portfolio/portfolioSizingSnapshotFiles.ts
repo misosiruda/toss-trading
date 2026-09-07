@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -223,7 +223,16 @@ async function readDurableBoundSnapshotSource(path: string): Promise<readonly Po
   try {
     handle = await open(path, "r+");
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return Object.freeze([]);
+    if (isNodeError(error) && error.code === "ENOENT") {
+      await syncOutputDirectory(dirname(path));
+      try {
+        await lstat(path);
+      } catch (recheckError) {
+        if (isNodeError(recheckError) && recheckError.code === "ENOENT") return Object.freeze([]);
+        throw recheckError;
+      }
+      throw new Error("portfolio sizing snapshot source appeared during durable observation");
+    }
     throw error;
   }
   try {

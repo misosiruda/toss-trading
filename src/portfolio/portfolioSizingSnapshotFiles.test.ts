@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { type FileHandle, mkdtemp, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -161,6 +163,43 @@ test("snapshot durable observation covers empty and complete sources and expires
       assert.deepEqual(content, [sizingSnapshot()]);
       assert.throws(() => getDurablePortfolioSizingSnapshotObservation({ snapshots: content }), /durable observation lease/);
     });
+  });
+});
+
+test("absent snapshot observation rechecks pathname after directory sync and rejects recovery races", async (context) => {
+  for (const mode of ["appearance", "directory_sync_failure"] as const) await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PortfolioSizingSnapshotFileRepository(baseDir);
+    const paths = createPortfolioSizingSnapshotPaths(baseDir);
+    const snapshot = sizingSnapshot();
+    const originalOpen = fs.open;
+    let absent = false;
+    let directoryFailed = false;
+    let called = false;
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (absent && !directoryFailed && mode === "directory_sync_failure" && args[0] === baseDir && args[1] === "r") {
+        directoryFailed = true;
+        throw Object.assign(new Error("injected absence directory sync failure"), { code: "EIO" });
+      }
+      try {
+        return await originalOpen(...args);
+      } catch (error) {
+        if (!absent && args[0] === paths.recordsPath && args[1] === "r+" && (error as NodeJS.ErrnoException).code === "ENOENT") {
+          absent = true;
+          if (mode === "appearance") await writeFile(paths.recordsPath, `${JSON.stringify(snapshot)}\n`, "utf8");
+        }
+        throw error;
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => { called = true; }),
+        mode === "appearance" ? /source appeared during durable observation/ : /injected absence directory sync failure/);
+      assert.equal(absent, true);
+      assert.equal(called, false);
+      if (mode === "directory_sync_failure") assert.equal(directoryFailed, true);
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.deepEqual(await repository.readAll(), mode === "appearance" ? [snapshot] : []);
+    await assert.rejects(readFile(paths.lockPath), { code: "ENOENT" });
   });
 });
 
