@@ -201,6 +201,13 @@ Risk 저장소의 `createAndAppendWithMandateOrigin`은 mandate → activation �
 과거 원본 재생, retry, source fsync 실패와 저장 중 잠금을 검증한다. 실제 Risk 계산·reservation 원본과
 fill/accounting transaction은 후속이다.
 
+`portfolioActionRiskDecisionSnapshotContext.ts`와 `portfolioActionRiskDecisionSnapshotResolver.ts`는
+Risk/plan의 expected version/hash에 해당하는 실제 sizing snapshot을 재생하고 관측된 원본 prefix를
+대조한다. `createAndAppendWithSnapshotOrigin`은 snapshot → mandate(assigned일 때) → activation →
+Risk 순서로 source lease를 유지하며 v6 entry에 snapshot ID/hash, exposure hash와 관측 receipt를 저장한다.
+미분류 보유분이 있으면 approved BUY를 거절하고 legacy reduce-only SELL에는 mandate를 합성하지 않는다.
+이 경로는 과거 평가 입력의 원본 결속이며 전체 Risk 수치 규칙·가격/turnover 근거·실행 transaction은 후속이다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

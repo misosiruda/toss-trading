@@ -3762,6 +3762,27 @@ valuation의 외부 가격·FX 진위, pending action/reservation 원본, 최신
 보증하지 않는다. Risk에 snapshot receipt를 저장하고 plan pre-state와 결속하는 연결은 후속이다.
 Snapshot 파일 형식, 기존 read/append/retry 계약과 설정은 변경하지 않아 코드 롤백이 가능하다.
 
+열 번째 분할은 `createAndAppendWithSnapshotOrigin`으로 저장된 valuation-resolved snapshot을 Risk
+결정 생성 전에 연결한다. Snapshot source lease를 획득하고 기존 plan/event를 재생한 다음,
+snapshot → mandate(assigned action만) → activation → Risk 순서로 source lease를 Risk commit까지
+유지한다. 원본은 expected portfolio version/hash, portfolio/policy scope와 일치해야 하고 snapshot
+as-of 및 각 관측시각은 decidedAt보다 늦을 수 없다. 최초 preview뿐 아니라 partial execution 후
+replayed pre-state가 가리키는 resulting snapshot도 동일하게 해소한다. 미분류 노출이 있으면 approved
+BUY를 거절하며 rejected BUY 설명과 legacy reduce-only SELL은 원본 검증을 거쳐 허용한다.
+Legacy action에는 mandate origin을 합성하지 않고 null로 저장한다.
+
+신규 v6 Risk entry는 기존 policy/plan origin에 snapshot ID/hash, exposure hash와 source 전체 배열의
+count/hash/time을 추가한다. Assigned action은 기존 mandate receipt도 필수다. Retry는 원래 record와
+receipt를 보존하며 최초 관측 prefix의 축소·교체를 같은 source lock 아래 거절한다. v5 이하에
+snapshot receipt를 사후 추가하거나 자동 승격하지 않는다. `resolvePortfolioActionRiskDecisionSnapshot`은
+저장된 policy/plan/mandate 및 snapshot prefix를 재검증하고 현금·보유 수량·각 exposure 차원의 실제
+평가 입력을 반환한다. 전체 source가 손상되면 유효한 prefix만 잘라서 진행하지 않는다.
+
+이 분할은 Risk 입력 원본의 결속이며 caller ruleResults의 실제 수치 계산, 가격/FX 및 turnover 원본의
+외부 진위, legacy position-state 원본, reservation 해소 또는 최신 실행 승인 증거는 아니다.
+기존 API/파일 경로와 v2~v5 읽기·생성 경로는 유지한다. v6를 쓰기 전에 호환 reader를 배포하며 v6 저장 후
+rollback은 신규 생성을 중단하고 호환 reader를 유지해야 한다. 기존 artifact 삭제·자동 변환은 없다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
