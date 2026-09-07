@@ -453,6 +453,62 @@ test("plan-bound creation observes retirement committed during the plan read bef
   });
 });
 
+test("plan-bound historical resolution preserves its durable generation after a backdated retirement", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const input = { baseDir: directory, riskDecisionId: record.riskDecisionId };
+    const before = await resolvePortfolioActionRiskDecisionPlan(input);
+    const fixture = policyFixture();
+    const store = new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies);
+    await store.appendRetired({ portfolioId: record.portfolioId, retiredActivationId: fixture.activation.activationId,
+      reasonCode: "timestamp_captured_before_lock", createdAt: record.decidedAt });
+    // Current policy sees the retirement, but it was not in the decision's durable generation.
+    await assert.rejects(store.resolveActiveAsOf(record.portfolioId, record.decidedAt), /active runtime portfolio policy is required/);
+    assert.deepEqual(await resolvePortfolioActionRiskDecisionPlan(input), before);
+    await assert.rejects(new PortfolioActionRiskDecisionFileRepository(directory).createAndAppendWithPlanOrigin(candidate), /active runtime portfolio policy is required/);
+  });
+});
+
+test("plan-bound retries preserve the original generation and new decisions include future-effective events", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const input = { baseDir: directory, riskDecisionId: record.riskDecisionId };
+    const before = await resolvePortfolioActionRiskDecisionPlan(input);
+    const fixture = policyFixture();
+    const store = new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies);
+    await store.appendRetired({ portfolioId: record.portfolioId, retiredActivationId: fixture.activation.activationId,
+      reasonCode: "future_retirement", createdAt: new Date(Date.now() + 3_600_000).toISOString() });
+    assert.deepEqual(await repository.createAndAppendWithPlanOrigin(candidate), record);
+    assert.deepEqual(await resolvePortfolioActionRiskDecisionPlan(input), before);
+    const next = await repository.createAndAppendWithPlanOrigin({ ...candidate, requestedNotionalKrw: 99 });
+    const resolved = await resolvePortfolioActionRiskDecisionPlan({ baseDir: directory, riskDecisionId: next.riskDecisionId });
+    assert.deepEqual(resolved.origin.policyOrigin!.activationHistory, { eventCount: 2, eventsHash: hashCanonicalPayload(await store.readAll()) });
+    assert.equal(before.origin.policyOrigin!.activationHistory!.eventCount, 1);
+  });
+});
+
+test("plan-bound policy generation boundaries reject missing, altered and truncated evidence", async () => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const record = await repository.createAndAppendWithPlanOrigin(candidate);
+    const input = { baseDir: directory, riskDecisionId: record.riskDecisionId };
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const raw = await readFile(path, "utf8");
+    const [entry, marker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
+    for (const activationHistory of [undefined, { ...entry.policyOrigin.activationHistory, eventCount: 0 },
+      { ...entry.policyOrigin.activationHistory, eventCount: 2 }, { ...entry.policyOrigin.activationHistory, eventsHash: HASH }]) {
+      const { entryHash: _oldHash, ...payload } = { ...entry, policyOrigin: { ...entry.policyOrigin, activationHistory } };
+      const entryHash = hashCanonicalPayload(payload);
+      const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+      await writeFile(path, `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`);
+      await assert.rejects(resolvePortfolioActionRiskDecisionPlan(input), /history boundary|corrupt line/);
+    }
+    await writeFile(path, raw);
+    const source = createRuntimePortfolioPolicyActivationPaths(directory).eventsPath;
+    await writeFile(source, "");
+    await assert.rejects(resolvePortfolioActionRiskDecisionPlan(input), /history boundary/);
+  });
+});
+
 test("plan-bound creation rechecks retirement after the initial activation snapshot unlocks", async (context) => {
   await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
     const fixture = policyFixture();

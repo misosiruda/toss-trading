@@ -85,13 +85,19 @@ const policyOriginSchema = z.object({
   policyLineageHash: sha256HashSchema,
   observedAt: offsetQualifiedIsoDateTimeSchema
 }).strict();
-type PersistedPolicyOrigin = Readonly<z.infer<typeof policyOriginSchema>>;
+const generationBoundPolicyOriginSchema = policyOriginSchema.extend({
+  activationHistory: z.object({ eventCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), eventsHash: sha256HashSchema }).strict()
+}).strict();
+type PersistedPolicyOrigin = Readonly<z.infer<typeof policyOriginSchema> & {
+  activationHistory?: Readonly<{ eventCount: number; eventsHash: string }>;
+}>;
 const policyBoundEntrySchema = committedEntrySchema.extend({
   schemaVersion: z.literal("portfolio_action_risk_decision_entry.v3"),
   policyOrigin: policyOriginSchema
 }).strict();
 const planBoundEntrySchema = policyBoundEntrySchema.extend({
   schemaVersion: z.literal("portfolio_action_risk_decision_entry.v4"),
+  policyOrigin: generationBoundPolicyOriginSchema,
   planOrigin: riskDecisionPlanOriginSchema
 }).strict();
 
@@ -197,11 +203,11 @@ export class PortfolioActionRiskDecisionFileRepository {
     const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
     if (context !== null) {
       const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
-      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt) => {
+      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory) => {
         const policyOrigin = Object.freeze({
           activationId: active.activation.activationId, activationEventHash: active.activation.activationEventHash,
           runtimePolicyRecordId: active.policy.runtimePolicyRecordId, policyHash: active.policy.policyHash,
-          policyLineageHash: active.policy.lineageHash, observedAt
+          policyLineageHash: active.policy.lineageHash, observedAt, activationHistory
         });
         // Use the timestamp at which the locked activation generation was folded.
         const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: observedAt });
@@ -509,7 +515,7 @@ function createPortfolioActionRiskDecisionFileEntry(input: {
   };
   const payload = input.planOrigin !== null
     ? { schemaVersion: "portfolio_action_risk_decision_entry.v4" as const, ...common,
-      policyOrigin: policyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin) }
+      policyOrigin: generationBoundPolicyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin) }
     : input.policyOrigin === null
     ? { schemaVersion: "portfolio_action_risk_decision_entry.v2" as const, ...common }
     : { schemaVersion: "portfolio_action_risk_decision_entry.v3" as const, ...common, policyOrigin: policyOriginSchema.parse(input.policyOrigin) };
@@ -562,8 +568,9 @@ function sameCreationInput(left: PortfolioActionRiskDecision, right: PortfolioAc
 }
 
 function samePolicyOriginIdentity(left: PersistedPolicyOrigin, right: PersistedPolicyOrigin): boolean {
-  const { observedAt: _a, ...leftIdentity } = left;
-  const { observedAt: _b, ...rightIdentity } = right;
+  // Retry keeps the original receipt; later unrelated/future events do not replace it.
+  const { observedAt: _a, activationHistory: _c, ...leftIdentity } = left;
+  const { observedAt: _b, activationHistory: _d, ...rightIdentity } = right;
   return isDeepStrictEqual(leftIdentity, rightIdentity);
 }
 

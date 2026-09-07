@@ -3,7 +3,7 @@ import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import type { ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
+import { hashCanonicalPayload, type ImmutablePolicyDependencyRecords } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyFileLoader, type LoadedImmutablePolicyDependencies } from "./runtimePolicyDependencyFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import type { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
@@ -314,7 +314,8 @@ export class RuntimePortfolioPolicyActivationFileRepository {
   /** Keeps activation writers excluded through the caller's decision persistence. */
   async withDurableActivePolicy<T>(
     portfolioId: string,
-    persist: (active: ActiveRuntimePortfolioPolicy, observedAt: string) => Promise<T>
+    persist: (active: ActiveRuntimePortfolioPolicy, observedAt: string,
+      activationHistory: Readonly<{ eventCount: number; eventsHash: string }>) => Promise<T>
   ): Promise<T> {
     return this.withLock(async () => {
       const events = await this.readAllUnderLock();
@@ -323,7 +324,9 @@ export class RuntimePortfolioPolicyActivationFileRepository {
       const active = resolveActiveRuntimePortfolioPolicyAsOf({
         portfolioId, asOf: observedAt, events, policies: this.policies, dependencies: this.dependencies
       });
-      return persist(active, observedAt);
+      // Preserve the exact durable generation, including future-effective events.
+      const activationHistory = Object.freeze({ eventCount: events.length, eventsHash: hashCanonicalPayload(events) });
+      return persist(active, observedAt, activationHistory);
     });
   }
 

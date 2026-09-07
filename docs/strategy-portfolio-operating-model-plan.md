@@ -3655,6 +3655,11 @@ Factory는 같은 base directory에서 plan/event repository의 검증 및 fsync
 그 상태를 fold한 시각을 v4 `decidedAt`으로 사용한다. Risk entry/marker 저장이 끝날 때까지
 activation lock을 유지하여 중간 retirement/supersession을 차단한다. Lock 순서는 activation→Risk며
 실패해도 두 lock은 해제된다. 이미 미래 effectiveFrom이 있는 정책도 동일 결정시각에서 해소한다.
+v4 policy origin은 같은 lock 안에서 검증·fsync한 전체 activation event 배열의 `eventCount`와
+`eventsHash`를 `activationHistory`로 저장한다. 이후 과거 effectiveFrom을 가진 retirement가
+추가돼도 당시 결정의 정책 해소에는 저장된 개수의 prefix를 독립 rehash하여 사용한다. 전체 현재
+이력의 손상은 먼저 거절하며 prefix 누락·교체도 실패한다. 이는 당시 알려진 정책의 역사적 설명이지
+소급 변경 후의 현재 실행 허가가 아니며, 신규 생성은 최신 정책 이력을 다시 확인한다.
 `portfolio_action_risk_decision_entry.v4`에는 기존 policy origin과 함께
 plan ID/hash/commit/availability, 직전 event ID/hash/commit/availability 및 관측 시각을 저장한다.
 Caller가 완성 record나 결정시각을 전달하는 입력은 거절하며 나중에 기존 record에 plan receipt를
@@ -3674,6 +3679,8 @@ Resolver는 저장된 v4 receipt가 가리키는 predecessor까지의 이력을 
 있으며 그 결과가 현재 실행 권한이나 최신 state 예약을 뜻하지는 않는다. Factory의 생성 retry는
 같은 입력·policy·plan·predecessor일 때 최초 record/receipt/bytes를 유지한다. 이력이 전진하면 새
 pre-state 입력이 필요하며 과거 record 자체의 일반 append retry는 그대로 보존한다.
+동일 생성 retry 중 정책의 미래 event가 추가되어도 최초 activation history receipt는 교체하지
+않는다. 다른 입력으로 새 결정을 만들면 미래 effective event까지 포함한 새 generation을 저장한다.
 
 기존 bare/v2/v3 조회·exact retry는 유지하지만 plan receipt 없는 결정은 새 resolver에서
 review_required로 거절하며 자동 승격하지 않는다. v4 저장 후 이전 reader는 호환되지 않으므로
