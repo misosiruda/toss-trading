@@ -240,6 +240,14 @@ Risk commit 동안 경쟁 price writer 차단을 검사한다. 가격 freshness�
 검사하며 기존 v6 이하의 null price origin을 새 권한으로 승격하지 않는다. 별도 실행 권한이나 source prefix
 재생을 대신하지 않으며 전체 Risk 원본 resolver와 최종 transaction gate는 여전히 필요하다.
 
+`portfolioActionExecutionPreview.ts`는 Risk 이전에 fill ID와 저장 없이 실행 수량·gross/net·비용을 계산한다.
+기존 `paperFillExecutionPolicySchema`와 `buildPaperFill`을 재사용하며 complete policy, typed 가격,
+post-fillRatio requested notional, nullable quantity override 및 명시적 liquidity input을 strict하게 받는다.
+성공·부분 체결·거절 결과를 input/output hash와 함께 보존하고 parser는 전체 모델을 재실행한다.
+`portfolioActionExecutionPreview.test.ts`에서 BUY/SELL의 전체 비용, fill record parity, 부분/거절,
+missing/stale liquidity와 integer/identity/hash 경계를 검사한다. 이는 순수 계산 결과이며 source availability,
+정책 선택, Risk 승인·worst-case bound, persistence와 최종 execution coordinator 연결은 후속이다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
