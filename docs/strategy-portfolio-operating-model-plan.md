@@ -3951,6 +3951,32 @@ mutation, 정책 drift/retirement, 누락/버전/side/market 설정, source/fres
 Risk/fill 파일이 생성되지 않는 것도 검증한다. Artifact format이나 기본 거래 설정은 변경하지 않으므로
 새 진입점을 제거하는 코드 rollback이 가능하며 기존 policy의 rewrite/data migration은 없다.
 
+열여덟 번째 분할은 `createPortfolioPacketExecutionPreview`로 `market-packets.jsonl`의 canonical
+packet/candidate 거래량을 정책 기반 preview에 연결한다. Caller는 `liquidityPacketHash`만 지정하며
+`volume`, `averageVolume`, `liquidityStale`, packet/history payload 또는 평가 시각을 덮어쓸 수 없다.
+기존 strict raw packet reader를 사용해 전체 파일의 corrupt/torn/blank/비canonical line을 거절하고,
+독립 rehash한 packet이 정확히 하나인지, 그 packet ID가 다른 payload에 재사용되지 않았는지 검사한다.
+선택 packet의 portfolio ID와 candidate의 market/symbol도 정확히 하나로 일치해야 한다.
+
+선택 candidate의 두 volume 필드는 명시적으로 null 또는 유한 nonnegative supported quantity로 매핑한다.
+둘 다 없으면 evidence 누락으로 거절하고 0은 보존해 기존 liquidity model이 rejected로 계산하게 한다.
+평균 거래량만 있으면 기존 모델의 average-only 계산을 보존한다. Packet 생성·만료 및 candidate 수집·만료
+시각은 offset-qualified ISO로 검사하며 collected <= generated <= cutoff, cutoff < expires/staleAfter를
+요구한다. Packet read 직후와 실제 policy/price I/O 뒤 preview cutoff 모두 검사해 도중 만료도 거절한다.
+
+반환은 policy preview, `stored-market-packet-liquidity.v1`의 packet/hash/sourceRefs/시각/전체 read history
+count/hash context 및 이 전체의 observation hash다. 위 source contract 명칭은 로컬 packet projection의
+종류이며 외부 source 진위나 policy-selected source trust를 뜻하지 않는다. 일반 packet 저장소는 price의
+durable lease와 다르므로 이 context를 fsync 관측 receipt, 역사적 availability 증명 또는 실행 권한으로
+사용하지 않는다. Packet의 portfolio balance/eligibility도 현재 Risk state나 plan 승인으로 사용하지 않는다.
+현재 adapter는 fresh volume 조회와 모델 계산 연결이며 원본의 durable 결속, 정책별 liquidity source/기간
+규칙, 모든 Risk 수치 재평가와 최종 실행 transaction은 후속이다.
+
+실제 packet writer와 policy/price 저장소를 조합한 6개 테스트에서 BUY/SELL·legacy 부분 체결 비용,
+재시작과 override 차단, scope/hash mismatch, corrupt/duplicate/reused ID, 모호한 candidate, missing/zero/
+average-only/unsafe volume, 정확한 만료 경계 및 I/O 중 만료를 검사한다. Risk/fill artifact는 생성하지
+않는다. 기존 packet·Risk·fill format과 기본 실행 경로는 변경하지 않으며 코드 rollback에 데이터 변환은 없다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
