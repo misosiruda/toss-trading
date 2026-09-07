@@ -2,8 +2,8 @@ import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import { hashRebalanceExecutionTarget } from "./rebalancePlan.js";
-import { RebalancePlanFileRepository, resolveVerifiedRebalancePlanOrigin } from "./rebalancePlanFiles.js";
-import { RebalancePlanEventFileRepository, replayVerifiedRebalancePlanEventHistory, resolveVerifiedRebalancePlanEventOrigin } from "./rebalancePlanEventFiles.js";
+import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
+import { RebalancePlanEventFileRepository, replayVerifiedRebalancePlanEventHistory, resolveVerifiedRebalancePlanEventOrigin, resolveDurableRebalancePlanEventObservation } from "./rebalancePlanEventFiles.js";
 import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
 import { parsePortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { canonicalQuantityUnits } from "./canonicalQuantity.js";
@@ -29,9 +29,8 @@ export async function readStoredRiskDecisionPlanContext(input: { baseDir: string
   if (index < 0) throw new Error("risk plan predecessor does not belong to stored plan history");
   const state = index === latest.events.length - 1 ? latest : replayRebalancePlanEvents({ plan: latest.plan, events: latest.events.slice(0, index + 1) });
   const predecessor = resolveVerifiedRebalancePlanEventOrigin(history, predecessorId);
-  const plan = resolveVerifiedRebalancePlanOrigin(await plans.readDurableVerifiedHistory(), parsed.planId);
+  const { plan, observedAt } = resolveDurableRebalancePlanEventObservation(history, parsed.planId);
   if (predecessor.planCommitHash !== plan.commitHash) throw new Error("risk plan origin changed during observation");
-  const observedAt = new Date().toISOString();
   if (Date.parse(observedAt) < Date.parse(plan.appendedAt) || Date.parse(observedAt) < Date.parse(predecessor.appendedAt)) {
     throw new Error("risk plan observation clock precedes stored availability");
   }

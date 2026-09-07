@@ -25,6 +25,8 @@ const histories = new WeakMap<VerifiedRebalancePlanEventHistory, {
   origins: ReadonlyMap<string, VerifiedRebalancePlanEventOrigin>;
   states: ReadonlyMap<string, Replay>;
   lastCommittedAt: string | null;
+  plans: VerifiedRebalancePlanHistory;
+  observedAt: string | null;
 }>();
 const entrySchema = z.object({
   schemaVersion: z.literal("rebalance_plan_event_entry.v1"), event: z.unknown(),
@@ -63,6 +65,7 @@ export class RebalancePlanEventFileRepository {
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock(await this.plans.readDurableVerifiedHistory());
       if (history.events.length > 0) await syncFile(this.eventsPath);
+      histories.get(history)!.observedAt = new Date().toISOString();
       return history;
     });
   }
@@ -147,7 +150,7 @@ export class RebalancePlanEventFileRepository {
     const states = new Map<string, Replay>();
     for (const [planId, events] of groups) states.set(planId, replayRebalancePlanEvents({ plan: resolveVerifiedRebalancePlanOrigin(plans, planId).record, events }));
     const history = Object.freeze({ events: Object.freeze([...origins.values()].map(({ event }) => event)), generationHash: previousHash });
-    histories.set(history, { origins, states, lastCommittedAt: previousTime });
+    histories.set(history, { origins, states, lastCommittedAt: previousTime, plans, observedAt: null });
     return history;
   }
 
@@ -174,6 +177,13 @@ export function replayVerifiedRebalancePlanEventHistory(history: VerifiedRebalan
   const state = metadata.states.get(planId);
   if (state === undefined) throw new Error("rebalance plan has no stored event history");
   return state;
+}
+
+/** Plan origin and observation time belong to the same locked, synced event read. */
+export function resolveDurableRebalancePlanEventObservation(history: VerifiedRebalancePlanEventHistory, planId: string) {
+  const metadata = histories.get(history);
+  if (metadata === undefined || metadata.observedAt === null) throw new Error("rebalance event history has no durable observation");
+  return Object.freeze({ plan: resolveVerifiedRebalancePlanOrigin(metadata.plans, planId), observedAt: metadata.observedAt });
 }
 
 async function appendLine(path: string, value: unknown): Promise<void> {

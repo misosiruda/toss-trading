@@ -8,10 +8,11 @@ import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { resolvePortfolioActionRiskDecisionPolicy } from "./portfolioActionRiskDecisionPolicyResolver.js";
 import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDecisionPlanResolver.js";
+import { readStoredRiskDecisionPlanContext } from "./portfolioActionRiskDecisionPlanContext.js";
 import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { createRebalancePlanPaths, RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
-import { createRebalancePlanEventPaths, RebalancePlanEventFileRepository } from "./rebalancePlanEventFiles.js";
+import { createRebalancePlanEventPaths, RebalancePlanEventFileRepository, resolveDurableRebalancePlanEventObservation } from "./rebalancePlanEventFiles.js";
 import {
   createBucketDrawdownSemanticsRecord, createBucketSelectionPolicyRecord,
   createPortfolioRiskRuleParameterRecord, createPortfolioRiskRuleSetRecord,
@@ -416,6 +417,30 @@ test("plan-bound whole-share approvals reject fractional requests and completed 
       expectedPrePortfolioVersion: "v1", expectedPrePortfolioSnapshotHash: HASH, resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: hashCanonicalPayload({ version: 2 }) }));
     await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /next unfinished action/);
   }, true);
+});
+
+test("risk plan observation retains the locked read time when a new event arrives before return", async (context) => {
+  const now = Date.parse("2026-09-07T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  try {
+    await withPlanFixture("BUY", false, async ({ directory, plan, events }) => {
+      const ordinary = await events.readVerifiedHistory();
+      assert.throws(() => resolveDurableRebalancePlanEventObservation(ordinary, plan.planId), /no durable observation/);
+      const original = RebalancePlanEventFileRepository.prototype.readDurableVerifiedHistory;
+      const mock = context.mock.method(RebalancePlanEventFileRepository.prototype, "readDurableVerifiedHistory", async function (this: RebalancePlanEventFileRepository) {
+        const history = await original.call(this);
+        context.mock.timers.setTime(now + 10);
+        await events.append(planEvent(plan, "rejected", history.events.at(-1)!));
+        return history;
+      });
+      try {
+        const result = await readStoredRiskDecisionPlanContext({ baseDir: directory, planId: plan.planId });
+        assert.equal(result.state.status, "approved");
+        assert.equal(result.origin.observedAt, new Date(now).toISOString());
+        assert.equal((await events.readPlanState(plan.planId)).status, "rejected");
+      } finally { mock.mock.restore(); }
+    });
+  } finally { context.mock.timers.reset(); }
 });
 
 function planScope(plan: RebalancePlanRecord) {
