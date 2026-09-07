@@ -311,6 +311,22 @@ export class RuntimePortfolioPolicyActivationFileRepository {
     });
   }
 
+  /** Keeps activation writers excluded through the caller's decision persistence. */
+  async withDurableActivePolicy<T>(
+    portfolioId: string,
+    persist: (active: ActiveRuntimePortfolioPolicy, observedAt: string) => Promise<T>
+  ): Promise<T> {
+    return this.withLock(async () => {
+      const events = await this.readAllUnderLock();
+      if (events.length > 0) await syncDurableJsonFile(this.eventsPath);
+      const observedAt = new Date().toISOString();
+      const active = resolveActiveRuntimePortfolioPolicyAsOf({
+        portfolioId, asOf: observedAt, events, policies: this.policies, dependencies: this.dependencies
+      });
+      return persist(active, observedAt);
+    });
+  }
+
   async appendActivated(
     input: AppendPortfolioPolicyActivatedInput
   ): Promise<PortfolioPolicyActivatedEvent> {

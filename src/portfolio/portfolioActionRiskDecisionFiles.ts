@@ -15,7 +15,7 @@ import {
   hashCanonicalPayload,
   offsetQualifiedIsoDateTimeSchema
 } from "./runtimePolicyContracts.js";
-import { readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
+import { readStoredRuntimePortfolioPolicyActivationSnapshot, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
 import { readStoredRiskDecisionPlanContext, riskDecisionPlanOriginSchema, validateRiskDecisionPlanState, type RiskDecisionPlanOrigin } from "./portfolioActionRiskDecisionPlanContext.js";
 
@@ -195,6 +195,22 @@ export class PortfolioActionRiskDecisionFileRepository {
     const context = bindPlan ? await readStoredRiskDecisionPlanContext({ baseDir: dirname(this.recordsPath), planId: creationInput.planId }) : null;
     // Policy must be observed after the potentially slow plan/event read.
     const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
+    if (context !== null) {
+      const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
+      return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt) => {
+        const policyOrigin = Object.freeze({
+          activationId: active.activation.activationId, activationEventHash: active.activation.activationEventHash,
+          runtimePolicyRecordId: active.policy.runtimePolicyRecordId, policyHash: active.policy.policyHash,
+          policyLineageHash: active.policy.lineageHash, observedAt
+        });
+        // Use the timestamp at which the locked activation generation was folded.
+        const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: observedAt });
+        if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
+        if (Date.parse(observedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
+        validateRiskDecisionPlanState(record, context.state);
+        return this.#appendRecord(record, policyOrigin, context.origin);
+      });
+    }
     const observedAt = new Date().toISOString();
     const active = resolveActiveRuntimePortfolioPolicyAsOf({
       portfolioId: creationInput.portfolioId, asOf: observedAt,
@@ -211,12 +227,7 @@ export class PortfolioActionRiskDecisionFileRepository {
     const decidedAt = new Date().toISOString();
     if (Date.parse(decidedAt) < Date.parse(observedAt)) throw new Error("policy-bound risk creation clock moved backwards");
     const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt });
-    if (context !== null) {
-      if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
-      if (Date.parse(decidedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
-      validateRiskDecisionPlanState(record, context.state);
-    }
-    return this.#appendRecord(record, policyOrigin, context?.origin ?? null);
+    return this.#appendRecord(record, policyOrigin);
   }
 
   async #appendRecord(value: unknown, policyOrigin: PersistedPolicyOrigin | null, planOrigin: RiskDecisionPlanOrigin | null = null): Promise<PortfolioActionRiskDecision> {

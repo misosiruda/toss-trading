@@ -437,6 +437,60 @@ test("plan-bound creation observes retirement committed during the plan read bef
   });
 });
 
+test("plan-bound creation rechecks retirement after the initial activation snapshot unlocks", async (context) => {
+  await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const fixture = policyFixture();
+    const original = RuntimePortfolioPolicyActivationFileRepository.prototype.readDurableGeneration;
+    let retired = false;
+    const mock = context.mock.method(RuntimePortfolioPolicyActivationFileRepository.prototype, "readDurableGeneration", async function (this: RuntimePortfolioPolicyActivationFileRepository) {
+      const generation = await original.call(this);
+      if (!retired) {
+        retired = true;
+        await this.appendRetired({ portfolioId: fixture.policy.portfolioId, retiredActivationId: fixture.activation.activationId,
+          reasonCode: "retired_after_snapshot_unlock", createdAt: new Date().toISOString() });
+      }
+      return generation;
+    });
+    try {
+      await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /active runtime portfolio policy is required/);
+      assert.ok(retired);
+      assert.deepEqual(await repository.readAll(), []);
+    } finally { mock.mock.restore(); }
+  });
+});
+
+test("plan-bound persistence holds the activation lock through Risk fsync and releases it on failure", async (context) => {
+  for (const failSync of [false, true]) await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
+    const fixture = policyFixture();
+    const activationStore = new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies,
+      { lockTimeoutMs: 30, lockRetryDelayMs: 5 });
+    const retire = () => activationStore.appendRetired({ portfolioId: fixture.policy.portfolioId, retiredActivationId: fixture.activation.activationId,
+      reasonCode: "concurrent_retirement", createdAt: new Date().toISOString() });
+    const path = createPortfolioActionRiskDecisionPaths(directory).recordsPath;
+    const probe = await open(join(directory, "sync-probe"), "a");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    let checked = false;
+    const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      const source = await stat(path).catch(() => undefined);
+      if (!checked && source !== undefined && own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) {
+        checked = true;
+        await assert.rejects(retire(), /lock is unavailable/);
+        if (failSync) throw new Error("injected Risk commit failure");
+      }
+      return originalSync.call(this);
+    });
+    try {
+      if (failSync) await assert.rejects(repository.createAndAppendWithPlanOrigin(candidate), /injected Risk commit failure/);
+      else await repository.createAndAppendWithPlanOrigin(candidate);
+      assert.ok(checked);
+    } finally { mock.mock.restore(); }
+    assert.equal((await retire()).eventType, "retired");
+  });
+});
+
 test("risk plan observation retains the locked read time when a new event arrives before return", async (context) => {
   const now = Date.parse("2026-09-07T00:00:00.000Z");
   context.mock.timers.enable({ apis: ["Date"], now });
