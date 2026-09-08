@@ -4044,6 +4044,8 @@ expiresAt/staleAfter는 Risk decidedAt 및 fill asOf에서 각각 검증한다. 
 liquidity readAt보다 늦을 수 없으며 독립 재해시한 과거 기록에도 이 순서를 강제한다. 평균 매입가 기반 손익은 이 비용
 미리보기의 입력·출력이 아니며 별도 accounting 검증 대상이다. 이 비용 경계는 고정된 동일 입력의
 모의 체결에 한정되며 일반적인 시장 worst-case, 모든 Risk 규칙의 승인 또는 최신 portfolio 권한이 아니다.
+Fill retry도 저장소 lock 안에서 동일 입력과 Risk origin을 확인하고 기존 fill의 원래 asOf로 검증한다.
+만료 후 재시도는 기존 bytes/시각을 보존하며 새로운 fill ID나 변경된 모델 입력으로 재사용하지 못한다.
 현재 capacity 예약, portfolio CAS 및 fill/accounting/valuation/event의 원자 실행은 후속이다.
 
 BUY/SELL/legacy/whole-share 저장·재시작, 비용 과소 기재, 불완전 rule set, caller override,

@@ -2284,6 +2284,32 @@ test("execution-bound Risk snapshots caller inputs before asynchronous reads", a
   });
 });
 
+test("v8 fill delayed retries preserve the stored fill and reject new or changed expired requests", async (context) => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const history = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!;
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    const input = executionBoundFillInput(candidate, origin.preview);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const original = await fills.createAndAppendWithRiskOrigin(input, history, decision.riskDecisionId);
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const bytes = await readFile(path, "utf8");
+    const cutoff = Math.max(Date.parse(origin.liquidity.expiresAt), Date.parse(origin.liquidity.staleAfter),
+      Date.parse(origin.preview.input.sourcePriceEvidence.observedAt) + origin.maximumPriceAgeSeconds * 1000) + 1;
+    context.mock.timers.enable({ apis: ["Date"], now: cutoff });
+    try {
+      const restarted = new PaperFillExecutionFileRepository(baseDir);
+      const results = await Promise.all([restarted, fills].map((store) => store.createAndAppendWithRiskOrigin(input, history, decision.riskDecisionId)));
+      assert.deepEqual(results, [original, original]);
+      await assert.rejects(restarted.createAndAppendWithRiskOrigin({ ...input, fillId: "new-expired-fill" }, history, decision.riskDecisionId), /stale/);
+      const cheaper = createPortfolioActionExecutionPreview({ ...origin.preview.input, executionPolicy: { ...origin.preview.input.executionPolicy, feeBps: 0 } });
+      await assert.rejects(restarted.createAndAppendWithRiskOrigin(executionBoundFillInput(candidate, cheaper), history, decision.riskDecisionId), /ID collision/);
+      assert.equal(await readFile(path, "utf8"), bytes);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
 test("v8 event binding rejects a fully rehashed fill with a cheaper execution policy", async () => {
   await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
     const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
