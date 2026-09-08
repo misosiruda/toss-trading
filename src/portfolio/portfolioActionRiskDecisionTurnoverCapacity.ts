@@ -33,6 +33,6 @@ export function validateRiskDecisionTurnoverCapacity(value: { decision: unknown;
   const withinTurnoverLimit = resulting <= maximum;
   if (decision.decision === "approved" && !withinTurnoverLimit) throw new Error("risk approval exceeds policy turnover capacity");
   return Object.freeze({ bucket, maxTurnoverRatio: selected.maxTurnoverRatio,
-    maximumCumulativeTurnoverNotionalKrw: Number(maximum), remainingTurnoverNotionalKrw: Math.max(0, Number(maximum) - prior),
+    maximumCumulativeTurnoverNotionalKrw: Number(maximum), remainingTurnoverNotionalKrw: Number(resulting < maximum ? maximum - resulting : 0n),
     resultingCumulativeTurnoverNotionalKrw: Number(resulting), withinTurnoverLimit });
 }

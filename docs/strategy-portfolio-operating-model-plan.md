@@ -4221,7 +4221,9 @@ Bucket의 maxTurnoverRatio는 canonical decimal units로 계산해 `floor(분모
 0.3333333333333333과 분모 3은 1원을 허용하지 않는다. 반올림한 division 값의 equality나 epsilon으로
 한도를 넓히지 않는다. 한도를 초과한 approved 결정은 저장 전에 실패하고, 같은 내용을 rehash한 과거
 approved 기록도 policy resolver에서 거절한다. Rejected 기록은 한도 평가를 설명하며 bucket 회전율에
-포함하지 않는 legacy reduce-only의 기존 경계를 유지한다.
+포함하지 않는 legacy reduce-only의 기존 경계를 유지한다. 반환된 `remainingTurnoverNotionalKrw`는
+요청 반영 후의 가정 잔여액 `max(0, 최대 누계 - prior - requested)`이다. 한도 도달·초과 시 0이며,
+rejected 결정의 반환값도 해당 요청을 가정한 설명이지 실제 차감·예약 결과가 아니다.
 
 정책이 변경되면 같은 입력 prior 누계에 새 정책 한도를 적용하며 누계를 0으로 바꾸지 않는다. 과거
 조회는 결정 당시의 검증된 정책으로 한도를 확인한다. 기존 generic record parser/저장 schema를 바꾸거나

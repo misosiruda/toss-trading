@@ -202,6 +202,11 @@ test("turnover policy capacity uses exact decimal limits and safe integer cumula
   const fixture = policyFixture("v1", undefined, 0.29);
   const atLimit = createPortfolioActionRiskDecision(turnoverCapacityCandidate(fixture, "BUY", 190));
   assert.equal(validateRiskDecisionTurnoverCapacity({ decision: atLimit, policy: fixture.policy })!.maximumCumulativeTurnoverNotionalKrw, 290);
+  assert.equal(validateRiskDecisionTurnoverCapacity({ decision: atLimit, policy: fixture.policy })!.remainingTurnoverNotionalKrw, 0);
+  for (const side of ["BUY", "SELL"] as const) {
+    const belowLimit = createPortfolioActionRiskDecision(turnoverCapacityCandidate(fixture, side, 189));
+    assert.equal(validateRiskDecisionTurnoverCapacity({ decision: belowLimit, policy: fixture.policy })!.remainingTurnoverNotionalKrw, 1);
+  }
   assert.throws(() => validateRiskDecisionTurnoverCapacity({
     decision: createPortfolioActionRiskDecision(turnoverCapacityCandidate(fixture, "BUY", 191)), policy: fixture.policy }), /exceeds policy turnover/);
   for (const max of [0, Number.MIN_VALUE, 0.3333333333333333]) {
@@ -229,6 +234,7 @@ test("policy and plan Risk creation reject approvals above the bucket turnover c
     await withDecision(fixture, turnoverCapacityCandidate(fixture, side, 400), async (input) => {
       const resolved = await resolvePortfolioActionRiskDecisionPolicy(input);
       assert.equal(resolved.turnoverCapacity!.resultingCumulativeTurnoverNotionalKrw, 500);
+      assert.equal(resolved.turnoverCapacity!.remainingTurnoverNotionalKrw, 0);
       assert.equal(resolved.turnoverCapacity!.withinTurnoverLimit, true);
       const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
       const bytes = await readFile(path, "utf8");
@@ -257,7 +263,9 @@ test("turnover cap explains rejected decisions but rejects rehashed historical a
   const fixture = policyFixture();
   const over = turnoverCapacityCandidate(fixture, "BUY", 401);
   await withDecision(fixture, { ...over, decision: "rejected", ruleResults: over.ruleResults.map((rule) => ({ ...rule, result: "fail" })) }, async (input) => {
-    assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).turnoverCapacity!.withinTurnoverLimit, false);
+    const capacity = (await resolvePortfolioActionRiskDecisionPolicy(input)).turnoverCapacity!;
+    assert.equal(capacity.withinTurnoverLimit, false);
+    assert.equal(capacity.remainingTurnoverNotionalKrw, 0);
     const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
     const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
     const record = createPortfolioActionRiskDecision({ ...over, decidedAt: entry.record.decidedAt });
