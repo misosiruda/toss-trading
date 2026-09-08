@@ -8,6 +8,7 @@ import {
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
+import { validateRiskDecisionTurnoverCapacity } from "./portfolioActionRiskDecisionTurnoverCapacity.js";
 
 const inputSchema = z.object({ baseDir: z.string().min(1), riskDecisionId: z.string().min(1) }).strict();
 
@@ -83,5 +84,6 @@ export async function resolvePortfolioActionRiskDecisionPolicy(input: {
     !isDeepStrictEqual(decision.ruleResults.map((rule) => rule.ruleId), requiredRuleIds)) {
     throw new Error("risk decision required rules do not match policy-selected side rules");
   }
-  return Object.freeze({ origin, decision, activePolicy: active, bucketPolicy, ...resolved, applicableRules });
+  const turnoverCapacity = validateRiskDecisionTurnoverCapacity({ decision, policy: active.policy });
+  return Object.freeze({ origin, decision, activePolicy: active, bucketPolicy, ...resolved, applicableRules, turnoverCapacity });
 }

@@ -23,6 +23,7 @@ import { riskDecisionMandateIdentity, riskDecisionMandateOriginSchema, validateR
 import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation, resolveObservedPortfolioSizingSnapshotHistory, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import { riskDecisionSnapshotIdentity, riskDecisionSnapshotOriginSchema, validateRiskDecisionSnapshotState, type RiskDecisionSnapshotOrigin } from "./portfolioActionRiskDecisionSnapshotContext.js";
 import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
+import { validateRiskDecisionTurnoverCapacity } from "./portfolioActionRiskDecisionTurnoverCapacity.js";
 import { SourcePriceEvidenceFileRepository, getDurableSourcePriceEvidenceObservation, resolveObservedSourcePriceEvidenceHistory, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 import { riskDecisionPriceIdentity, riskDecisionPriceOriginSchema, validateRiskDecisionPriceState, type RiskDecisionPriceOrigin } from "./portfolioActionRiskDecisionPriceContext.js";
 import { createPortfolioPlanExecutionPreview, portfolioPlanExecutionPreviewInputSchema } from "./portfolioPlanExecutionPreview.js";
@@ -334,6 +335,7 @@ export class PortfolioActionRiskDecisionFileRepository {
           // Use the timestamp at which the locked activation generation was folded.
           const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: observedAt });
           if (record.policyHash !== active.policy.policyHash) throw new Error("plan-bound risk decision active policy mismatch");
+          validateRiskDecisionTurnoverCapacity({ decision: record, policy: active.policy });
           if (Date.parse(observedAt) < Date.parse(context.origin.observedAt)) throw new Error("plan-bound risk creation clock moved backwards");
           const binding = validateRiskDecisionPlanState(record, context.state);
           let snapshotOrigin: RiskDecisionSnapshotOrigin | null = null;
@@ -436,6 +438,7 @@ export class PortfolioActionRiskDecisionFileRepository {
     const decidedAt = new Date().toISOString();
     if (Date.parse(decidedAt) < Date.parse(observedAt)) throw new Error("policy-bound risk creation clock moved backwards");
     const record = createPortfolioActionRiskDecision({ ...creationInput, decidedAt });
+    validateRiskDecisionTurnoverCapacity({ decision: record, policy: active.policy });
     return this.#appendRecord(record, policyOrigin);
   }
 

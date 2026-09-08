@@ -332,6 +332,12 @@ projection을 거절하며 refresh만 정상 historical prefix를 CAS로 전진�
 lock을 callback 동안 유지하고 파일 sync 후 관측 시각을 발급한다. 관측 권한은 clone·callback 종료·예외
 이후 사용할 수 없다. 현재 정책·Risk·reservation lock이나 fill/accounting transaction은 포함하지 않는다.
 
+`portfolioActionRiskDecisionTurnoverCapacity.ts`는 policy-bound Risk 생성과 historical policy resolver에서
+bucket의 `maxTurnoverRatio`를 수치 한도로 적용한다. Canonical decimal ratio와 정수 원화의 BigInt 계산으로
+최대 누계 금액을 내림하고, 한도 초과 approved 결정을 저장/해소하지 않는다. Rejected 결정은 평가 결과를
+설명할 수 있으며 legacy reduce-only는 bucket 회전율에서 제외한다. 입력된 assessment의 산술·정책 상한이며
+current projection state/hash/분모의 실제 원본 연결이나 전체 Risk rule 독립 평가를 대신하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
