@@ -16,6 +16,7 @@ import { BucketTurnoverWindowFileRepository, createBucketTurnoverWindowPaths } f
 import { createBucketTurnoverEvent, replayBucketTurnoverEvents, type BucketTurnoverState } from "./bucketTurnover.js";
 import { BucketTurnoverEventFileRepository, createBucketTurnoverEventPaths, resolveVerifiedBucketTurnoverEventOrigin } from "./bucketTurnoverEventFiles.js";
 import { BUCKET_TURNOVER_STATE_FILE_NAME, BucketTurnoverStateFileRepository, getDurableBucketTurnoverStateObservation } from "./bucketTurnoverStateFiles.js";
+import { validateRiskDecisionTurnoverCapacity } from "./portfolioActionRiskDecisionTurnoverCapacity.js";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
@@ -103,10 +104,25 @@ test("risk policy resolver uses only the root legacy SELL rule set and full lega
 
 test("risk policy resolver rejects a claimed rule set or policy that differs from activation", async () => {
   const fixture = policyFixture();
+  for (const patch of [{ policyHash: HASH }, { market: "US" as const, symbol: "US:AAPL" }]) {
+    await withDecision(fixture, decisionInput(fixture, "BUY"), async (input) => {
+      const repository = new PortfolioActionRiskDecisionFileRepository(input.baseDir);
+      const candidate = { ...decisionInput(fixture, "BUY"), ...patch };
+      const { decidedAt: _time, ...creationInput } = candidate;
+      const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
+      const original = await readFile(path, "utf8");
+      await assert.rejects(repository.createAndAppendWithPolicyOrigin(creationInput), /scope does not match|bucket or market mismatch/);
+      assert.equal(await readFile(path, "utf8"), original);
+      // Historical read still independently rejects a self-consistently rehashed invalid claim.
+      const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+      const record = createPortfolioActionRiskDecision({ ...candidate, decidedAt: entry.record.decidedAt });
+      await writeFile(path, rehashTurnoverFillPair({ ...entry, record }, marker));
+      await assert.rejects(resolvePortfolioActionRiskDecisionPolicy({ ...input, riskDecisionId: record.riskDecisionId }), /mismatch/);
+    });
+  }
   for (const overrides of [
-    { policyHash: HASH }, { riskRuleSetRecordId: "unrelated" },
+    { riskRuleSetRecordId: "unrelated" },
     { riskRuleSetVersion: "other" }, { riskRuleSetHash: HASH },
-    { market: "US" as const, symbol: "US:AAPL" },
     { riskRuleSetRecordId: fixture.legacySet.riskRuleSetRecordId, riskRuleSetVersion: fixture.legacySet.version, riskRuleSetHash: fixture.legacySet.hash }
   ]) {
     await withDecision(fixture, { ...decisionInput(fixture, "BUY"), ...overrides }, async (input) => {
@@ -181,6 +197,104 @@ test("risk policy resolver rejects fabricated histories and incomplete parameter
     await assert.rejects(resolvePortfolioActionRiskDecisionPolicy(input), /corrupt line/);
   });
 });
+
+test("turnover policy capacity uses exact decimal limits and safe integer cumulative amounts", () => {
+  const fixture = policyFixture("v1", undefined, 0.29);
+  const atLimit = createPortfolioActionRiskDecision(turnoverCapacityCandidate(fixture, "BUY", 190));
+  assert.equal(validateRiskDecisionTurnoverCapacity({ decision: atLimit, policy: fixture.policy })!.maximumCumulativeTurnoverNotionalKrw, 290);
+  assert.throws(() => validateRiskDecisionTurnoverCapacity({
+    decision: createPortfolioActionRiskDecision(turnoverCapacityCandidate(fixture, "BUY", 191)), policy: fixture.policy }), /exceeds policy turnover/);
+  for (const max of [0, Number.MIN_VALUE, 0.3333333333333333]) {
+    const limited = policyFixture("v1", undefined, max);
+    // The canonical decimal 0.3333333333333333 is strictly below 1/3, despite equal rounded division.
+    assert.throws(() => validateRiskDecisionTurnoverCapacity({ policy: limited.policy,
+      decision: createPortfolioActionRiskDecision(turnoverCapacityCandidate(limited, "SELL", 0, 3, 1)) }), /exceeds policy turnover/);
+  }
+  const all = policyFixture("v1", undefined, 1);
+  assert.equal(validateRiskDecisionTurnoverCapacity({ policy: all.policy,
+    decision: createPortfolioActionRiskDecision(turnoverCapacityCandidate(all, "SELL", 0, 100, 100)) })!.withinTurnoverLimit, true);
+  for (const candidate of [turnoverCapacityCandidate(all, "BUY", Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 1),
+    turnoverCapacityCandidate(all, "BUY", 0, 1000.5, 100), turnoverCapacityCandidate(all, "BUY", 0.5)]) {
+    assert.throws(() => validateRiskDecisionTurnoverCapacity({ policy: all.policy,
+      decision: createPortfolioActionRiskDecision(candidate) }), /safe integer/);
+  }
+  assert.throws(() => validateRiskDecisionTurnoverCapacity({ decision: atLimit, policy: all.policy }), /scope does not match/);
+  const legacy = createPortfolioActionRiskDecision(decisionInput(fixture, "SELL", true));
+  assert.equal(validateRiskDecisionTurnoverCapacity({ decision: legacy, policy: fixture.policy }), null);
+});
+
+test("policy and plan Risk creation reject approvals above the bucket turnover cap before persistence", async () => {
+  for (const side of ["BUY", "SELL"] as const) {
+    const fixture = policyFixture();
+    await withDecision(fixture, turnoverCapacityCandidate(fixture, side, 400), async (input) => {
+      const resolved = await resolvePortfolioActionRiskDecisionPolicy(input);
+      assert.equal(resolved.turnoverCapacity!.resultingCumulativeTurnoverNotionalKrw, 500);
+      assert.equal(resolved.turnoverCapacity!.withinTurnoverLimit, true);
+      const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
+      const bytes = await readFile(path, "utf8");
+      const { decidedAt: _time, ...creation } = turnoverCapacityCandidate(fixture, side, 401);
+      await assert.rejects(new PortfolioActionRiskDecisionFileRepository(input.baseDir).createAndAppendWithPolicyOrigin(creation), /exceeds policy turnover/);
+      assert.equal(await readFile(path, "utf8"), bytes);
+    });
+    await withPlanFixture(side, false, async ({ repository, candidate }) => {
+      if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket fixture required");
+      await assert.rejects(repository.createAndAppendWithPlanOrigin({ ...candidate, turnoverAssessment: {
+        ...candidate.turnoverAssessment, priorBucketTurnoverNotionalKrw: 401, resultingBucketTurnoverRatio: 0.501 } }), /exceeds policy turnover/);
+      assert.deepEqual(await repository.readAll(), []);
+    });
+  }
+  await withRiskExecutionFixture(async ({ repository, candidate, selection }) => {
+    if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket fixture required");
+    const prior = candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw / 2;
+    await assert.rejects(repository.createAndAppendWithExecutionOrigin({ ...candidate, turnoverAssessment: {
+      ...candidate.turnoverAssessment, priorBucketTurnoverNotionalKrw: prior,
+      resultingBucketTurnoverRatio: (prior + candidate.worstCaseFillNotionalKrw) / candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw } }, selection), /exceeds policy turnover/);
+    assert.deepEqual(await repository.readAll(), []);
+  });
+});
+
+test("turnover cap explains rejected decisions but rejects rehashed historical approvals over the limit", async () => {
+  const fixture = policyFixture();
+  const over = turnoverCapacityCandidate(fixture, "BUY", 401);
+  await withDecision(fixture, { ...over, decision: "rejected", ruleResults: over.ruleResults.map((rule) => ({ ...rule, result: "fail" })) }, async (input) => {
+    assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).turnoverCapacity!.withinTurnoverLimit, false);
+    const path = createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath;
+    const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const record = createPortfolioActionRiskDecision({ ...over, decidedAt: entry.record.decidedAt });
+    const bytes = rehashTurnoverFillPair({ ...entry, record }, marker);
+    await writeFile(path, bytes);
+    await assert.rejects(resolvePortfolioActionRiskDecisionPolicy({ ...input, riskDecisionId: record.riskDecisionId }), /exceeds policy turnover/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  });
+});
+
+test("replacement policy applies its lower turnover cap without resetting the supplied prior cumulative", async (context) => {
+  const fixture = policyFixture();
+  await withDecision(fixture, turnoverCapacityCandidate(fixture, "BUY", 300), async (input) => {
+    const original = await resolvePortfolioActionRiskDecisionPolicy(input);
+    const replacement = policyFixture("v2", undefined, 0.2);
+    await new RuntimePortfolioPolicyFileRepository(input.baseDir, fixture.dependencies).append(replacement.policy);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(original.decision.decidedAt) + 2000 });
+    try {
+      await new RuntimePortfolioPolicyActivationFileRepository(input.baseDir, [fixture.policy, replacement.policy], fixture.dependencies)
+        .appendActivated({ policy: replacement.policy, supersedesActivationId: fixture.activation.activationId, createdAt: new Date().toISOString() });
+      const { decidedAt: _time, ...candidate } = turnoverCapacityCandidate(replacement, "BUY", 300);
+      await assert.rejects(new PortfolioActionRiskDecisionFileRepository(input.baseDir).createAndAppendWithPolicyOrigin(candidate), /exceeds policy turnover/);
+      assert.equal((await resolvePortfolioActionRiskDecisionPolicy(input)).turnoverCapacity!.maxTurnoverRatio, 0.5);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+function turnoverCapacityCandidate(fixture: ReturnType<typeof policyFixture>, side: "BUY" | "SELL", prior: number,
+  denominator = 1000, requested = 100): DecisionInput {
+  const base = decisionInput(fixture, side);
+  if (base.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket fixture required");
+  return { ...base, requestedNotionalKrw: requested, worstCaseFillNotionalKrw: requested, approvedMaximumFillNotionalKrw: requested,
+    cashAssessment: side === "BUY" ? { side, worstCaseNetCashDebitKrw: requested, approvedMaximumNetCashDebitKrw: requested }
+      : { side, expectedMinimumNetCashCreditKrw: requested },
+    turnoverAssessment: { ...base.turnoverAssessment, turnoverWindowOpenPortfolioNetWorthKrw: denominator,
+      priorBucketTurnoverNotionalKrw: prior, requestedBucketTurnoverNotionalKrw: requested, resultingBucketTurnoverRatio: (prior + requested) / denominator } };
+}
 
 test("risk policy resolver can explain a rejected record without promoting it to approval", async () => {
   const fixture = policyFixture();
@@ -2949,7 +3063,8 @@ async function withRiskExecutionFixture(run: (value: { baseDir: string; reposito
       cashAssessment: preview.input.side === "BUY" ? { side: "BUY" as const, worstCaseNetCashDebitKrw: net, approvedMaximumNetCashDebitKrw: net }
         : { side: "SELL" as const, expectedMinimumNetCashCreditKrw: net },
       turnoverAssessment: candidate.turnoverAssessment.scopeKind === "bucket" ? { ...candidate.turnoverAssessment,
-        requestedBucketTurnoverNotionalKrw: gross, resultingBucketTurnoverRatio: gross / candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw }
+        turnoverWindowOpenPortfolioNetWorthKrw: 1_000_000,
+        requestedBucketTurnoverNotionalKrw: gross, resultingBucketTurnoverRatio: gross / 1_000_000 }
         : candidate.turnoverAssessment,
       riskEvidenceRefs: [...candidate.riskEvidenceRefs, request.priceEvidenceRef] };
     const { baseDir, planId: _planId, ...selection } = request;
@@ -3014,7 +3129,7 @@ type ExecutionFixtureOptions = {
   appliesTo?: Array<"BUY" | "SELL">;
 };
 
-function policyFixture(version = "v1", execution?: ExecutionFixtureOptions) {
+function policyFixture(version = "v1", execution?: ExecutionFixtureOptions, maxTurnoverRatio = 0.5) {
   const buckets = ["long_term", "swing", "short_term", "intraday", "hedge"] as const;
   const parameters = ["cash", "exposure", "sell", "legacy"].map((ruleId) => createPortfolioRiskRuleParameterRecord({
     ruleId, ruleVersion: "v1", version: "v1", parameters: { fixtureLimit: 1 }, createdAt: CREATED_AT
@@ -3062,7 +3177,7 @@ function policyFixture(version = "v1", execution?: ExecutionFixtureOptions) {
     sourcePolicyRecordId: "fixture-source", sourcePolicyRecordHash: HASH, sourcePolicyHash: "b".repeat(64),
     policyId: "fixture", version, name: "Fixture policy",
     strategyBuckets: buckets.map((bucket, index) => ({
-      bucket, targetWeightRatio: targets[index]!, minWeightRatio: 0, maxWeightRatio: 0.5, maxTurnoverRatio: 0.5, maxDrawdownRatio: 0.1,
+      bucket, targetWeightRatio: targets[index]!, minWeightRatio: 0, maxWeightRatio: 0.5, maxTurnoverRatio, maxDrawdownRatio: 0.1,
       turnoverWindow: { mode: "fixed_utc", durationSeconds: 86_400, anchor: "unix_epoch", denominator: "window_open_portfolio_net_worth_krw" },
       drawdownSemanticsRef: drawdownSemanticsRefFor(drawdown),
       reviewCadence: bucket === "intraday" ? { mode: "every_tick" } : { mode: "scheduled", boundaryRefs: [scheduleBoundaryRefFor(boundary)] }, eventTriggers: [],

@@ -4211,6 +4211,31 @@ callback writer 배제·권한 만료 및 temporary/snapshot fsync 실패를 검
 JSONL과 호환 reader를 보존한다. Projection 교체는 원본 event를 수정하거나 전체 회계 transaction을
 완성하지 않는다. 실제 전원 차단과 전체 portfolio E2E 검증은 후속이다.
 
+스물여덟 번째 분할은 `validateRiskDecisionTurnoverCapacity`를 policy-bound/plan-bound 및 그 상위
+snapshot/price/execution-bound Risk 생성 경로와 historical policy resolver에 연결한다. Parsed policy와
+decision의 portfolio/hash, bucket/market을 대조하고 입력 assessment의 고정 분모·prior·requested 금액을
+safe integer로 검증한다. 누계 합산은 BigInt로 수행하고 safe integer overflow는 거절한다.
+
+Bucket의 maxTurnoverRatio는 canonical decimal units로 계산해 `floor(분모 × 정책 비율)`을 정수
+원화 최대 누계로 사용한다. 예를 들어 십진 0.29와 분모 1,000은 290원까지 허용하지만 십진
+0.3333333333333333과 분모 3은 1원을 허용하지 않는다. 반올림한 division 값의 equality나 epsilon으로
+한도를 넓히지 않는다. 한도를 초과한 approved 결정은 저장 전에 실패하고, 같은 내용을 rehash한 과거
+approved 기록도 policy resolver에서 거절한다. Rejected 기록은 한도 평가를 설명하며 bucket 회전율에
+포함하지 않는 legacy reduce-only의 기존 경계를 유지한다.
+
+정책이 변경되면 같은 입력 prior 누계에 새 정책 한도를 적용하며 누계를 0으로 바꾸지 않는다. 과거
+조회는 결정 당시의 검증된 정책으로 한도를 확인한다. 기존 generic record parser/저장 schema를 바꾸거나
+기존 파일을 변환하지 않지만 정책 한도를 위반한 과거 approved 기록은 이제 policy/execution 해소가 실패한다.
+그 기록을 자동 삭제·수정하지 않고 operator review 대상으로 남긴다. Rollback으로 한도 초과 승인이 다시
+해소될 수 있으므로 관련 consumer를 중지한 상태에서 이전 코드로 되돌린다.
+
+이 단계는 입력된 turnover assessment의 정책 상한을 강제하는 필요조건이다. Current projection의 실제
+state/hash/분모를 Risk 생성 및 재시도에 연결하는 origin, 실행 시점의 window 만료·policy drift 검사,
+reservation·fill/accounting transaction 및 나머지 ruleResults의 독립 계산은 후속이다. Caller가 주장한
+prior를 현재 원본으로 인증했다고 간주하지 않는다. 통합 테스트는 BUY/SELL의 경계값/초과, plan/execution
+생성 전 무기록 실패, rejected 설명, rehash한 과거 승인 거절 및 하향 policy activation을 검증한다.
+기존 실행 비용 fixture의 turnover 분모는 해당 fixture 규모인 1,000,000원으로 맞춘다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
