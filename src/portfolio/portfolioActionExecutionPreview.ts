@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
-import { buildPaperFill } from "../paper/executionModel.js";
+import { buildVersionedPaperFill } from "../paper/versionedExecutionModel.js";
 import { canonicalQuantityUnits } from "./canonicalQuantity.js";
 import { paperFillExecutionPolicySchema } from "./paperFillExecution.js";
 import { parseSourcePriceEvidenceRecord, sourcePriceEvidenceRecordSchema } from "./sourcePriceEvidence.js";
@@ -34,11 +34,11 @@ export function createPortfolioActionExecutionPreview(value: z.input<typeof port
   const targetNotionalKrw = input.requestedNotionalKrw / input.executionPolicy.fillRatio;
   if (!Number.isFinite(targetNotionalKrw)) throw new Error("execution preview target is not representable");
   // requestedNotional is the post-fillRatio request, matching persisted fill replay.
-  const fill = buildPaperFill({ action: input.side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
+  const fill = buildVersionedPaperFill({ action: input.side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
     targetNotionalKrw, sourcePriceKrw: price.priceKrw, policy: input.executionPolicy,
     ...(input.quantityOverride === null ? {} : { quantityOverride: input.quantityOverride }),
     ...(input.volume === null ? {} : { volume: input.volume }),
-    ...(input.averageVolume === null ? {} : { averageVolume: input.averageVolume }), liquidityStale: input.liquidityStale });
+    ...(input.averageVolume === null ? {} : { averageVolume: input.averageVolume }), liquidityStale: input.liquidityStale }, input.executionPolicy.modelVersion);
   if (fill.requestedNotionalKrw !== input.requestedNotionalKrw) throw new Error("execution preview request notional differs from quantity input");
   if (!Number.isSafeInteger(fill.fillPriceKrw) || fill.fillPriceKrw <= 0) throw new Error("execution preview fill price is not a positive safe integer");
   const requestedQuantity = input.quantityOverride ?? input.requestedNotionalKrw / (input.side === "BUY" ? fill.fillPriceKrw : price.priceKrw);

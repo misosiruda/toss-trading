@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ZodError } from "zod";
 
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import { buildPaperFill } from "../paper/executionModel.js";
+import { buildVersionedPaperFill, WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION } from "../paper/versionedExecutionModel.js";
 import {
   createPaperFillExecutionRecord,
   parsePaperFillExecutionRecord
@@ -141,7 +143,8 @@ test("paper fill execution record rejects noncanonical and rejected shapes", () 
           modelVersion: "execution_simulator.v999"
         }
       } as unknown as Parameters<typeof createPaperFillExecutionRecord>[0]),
-    /Invalid input/
+    (error: unknown) => error instanceof ZodError && error.issues.some((issue) =>
+      issue.code === "invalid_value" && issue.path.join(".") === "executionPolicy.modelVersion")
   );
   assert.throws(
     () =>
@@ -160,6 +163,33 @@ test("paper fill execution record rejects noncanonical and rejected shapes", () 
     /Unrecognized key/
   );
 });
+
+test("paper fill parser dispatches whole-share replay by stored model version without upgrading v4", () => {
+  const legacyInput = versionedWholeShareInput(PAPER_EXECUTION_MODEL_VERSION);
+  const modernInput = versionedWholeShareInput(WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION);
+  const legacy = createPaperFillExecutionRecord(legacyInput);
+  const modern = createPaperFillExecutionRecord(modernInput);
+  assert.equal(legacy.quantity, 5.5);
+  assert.equal(modern.quantity, 5);
+  for (const record of [legacy, modern]) assert.deepEqual(parsePaperFillExecutionRecord(JSON.parse(JSON.stringify(record))), record);
+  assert.notEqual(legacy.paperFillHash, modern.paperFillHash);
+  assert.throws(() => createPaperFillExecutionRecord({ ...legacyInput, executionPolicy: modernInput.executionPolicy }));
+  assert.throws(() => createPaperFillExecutionRecord({ ...modernInput, executionPolicy: legacyInput.executionPolicy }));
+});
+
+function versionedWholeShareInput(modelVersion: typeof PAPER_EXECUTION_MODEL_VERSION | typeof WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION) {
+  const base = validInput();
+  const executionPolicy = { ...base.executionPolicy, modelVersion, allowFractionalShares: false };
+  const fill = buildVersionedPaperFill({ action: "VIRTUAL_BUY", targetNotionalKrw: 1000, sourcePriceKrw: 100,
+    quantityOverride: 10, volume: 55, liquidityStale: false, policy: executionPolicy }, modelVersion);
+  return { ...base, executionPolicy, requestedNotionalKrw: 1000, requestedQuantity: 10, quantityOverride: 10,
+    quantity: fill.quantity, fillPriceKrw: fill.fillPriceKrw, grossAmountKrw: fill.grossAmountKrw,
+    filledNotionalKrw: fill.filledNotionalKrw, netAmountKrw: fill.netAmountKrw,
+    participationRate: fill.participationRate ?? null, volume: 55, fractionalShares: false,
+    fillStatus: fill.fillStatus as "partial", liquidityStatus: fill.liquidityStatus as "partial",
+    costBreakdown: { feeKrw: fill.feeKrw, taxKrw: fill.taxKrw, slippageKrw: fill.slippageKrw,
+      spreadCostKrw: fill.spreadCostKrw, impactCostKrw: fill.impactCostKrw, totalCostKrw: fill.totalCostKrw } };
+}
 
 function validInput() {
   const executionPolicy = {

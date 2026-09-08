@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
+import { WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION } from "../paper/versionedExecutionModel.js";
 import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
 import { createPortfolioActionExecutionPreview, parsePortfolioActionExecutionPreview } from "./portfolioActionExecutionPreview.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
@@ -120,6 +121,30 @@ test("execution preview never adds slippage twice and charges SELL tax even when
   assert.equal(sell.execution.costBreakdown.totalCostKrw, 300);
   assertFillParity(buy);
   assertFillParity(sell);
+});
+
+test("v5 preview accepts modeled whole-share partial fills and replays all costs through the stored fill contract", () => {
+  for (const side of ["BUY", "SELL"] as const) {
+    const input = fixture({ side, volume: 55 });
+    const result = createPortfolioActionExecutionPreview({ ...input,
+      executionPolicy: { ...input.executionPolicy, modelVersion: WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION, allowFractionalShares: false } });
+    assert.equal(result.execution.quantity, 5);
+    assert.equal(result.execution.fillStatus, "partial");
+    assert.equal(result.execution.netAmountKrw, side === "BUY" ? 50_580 : 49_321);
+    assert.deepEqual(parsePortfolioActionExecutionPreview(JSON.parse(JSON.stringify(result))), result);
+    assertFillParity(result);
+    assert.throws(() => createPortfolioActionExecutionPreview({ ...input, executionPolicy: { ...input.executionPolicy, allowFractionalShares: false } }), /fractional fill/);
+  }
+});
+
+test("v5 preview preserves rejected minimum-fill output after rounding", () => {
+  const input = fixture({ volume: 55 });
+  const preview = createPortfolioActionExecutionPreview({ ...input,
+    executionPolicy: { ...input.executionPolicy, modelVersion: WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION,
+      allowFractionalShares: false, minLiquidityFillRatio: 0.55 } });
+  assert.equal(preview.execution.fillStatus, "rejected");
+  assert.equal(preview.execution.quantity, 0);
+  assert.deepEqual(parsePortfolioActionExecutionPreview(preview), preview);
 });
 
 function fixture(overrides: Partial<Input> = {}): Input {

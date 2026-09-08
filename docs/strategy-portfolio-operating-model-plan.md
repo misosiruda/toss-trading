@@ -3977,6 +3977,29 @@ durable lease와 다르므로 이 context를 fsync 관측 receipt, 역사적 ava
 average-only/unsafe volume, 정확한 만료 경계 및 I/O 중 만료를 검사한다. Risk/fill artifact는 생성하지
 않는다. 기존 packet·Risk·fill format과 기본 실행 경로는 변경하지 않으며 코드 rollback에 데이터 변환은 없다.
 
+열아홉 번째 분할은 whole-share 부분 체결 계산을 명시적인 `execution_simulator.v5`로 추가한다.
+기존 v4는 quantity override가 있으면 `allowFractionalShares=false`여도 유동성 cap이 만든 5.5주 같은
+소수 수량을 반환한다. 순수 preview가 이를 거절하던 경계를 해소하되 기존 v4 artifact의 재생 값을
+바꾸지 않도록 `buildVersionedPaperFill`이 저장된 modelVersion으로 v4/v5를 분기한다.
+기존 `buildPaperFill`, runner와 `PAPER_EXECUTION_MODEL_VERSION` 기본값은 v4로 유지한다.
+
+V5는 whole-share override가 양의 safe integer인지 확인하고, 수량 산출 뒤 override 유무와 관계없이
+내림한다. 유동성이 모델링된 경우 실제 내림 수량의 source-price notional/requested notional 비율이
+`minLiquidityFillRatio` 이상인지 다시 검사한다. 0주 또는 최소 비율 미달은 0 amount의
+`rejected/insufficient_liquidity` 결과이며, 정상 결과는 내림 수량에서 gross/net·fee/tax/spread/impact와
+participation을 다시 계산한다. Fractional share 계산은 기존 모델을 재사용한다.
+
+순수 preview와 `PaperFillExecutionRecord`의 complete execution policy는 v4/v5를 명시적으로 허용하고
+둘 다 저장된 버전으로 독립 replay한다. 기존 v4 record의 값과 identity를 유지하며 modelVersion만
+바꿔 v4 소수 부분 체결을 v5로 재해시하는 것은 replay mismatch로 거절한다. 활성 policy의 parameter가
+v5를 명시해야 새 계산을 사용하며 기존 정책이나 artifact를 자동 승격하지 않는다. V5 reader를 먼저
+배포한 뒤 새 parameter를 선택해야 한다. V5 artifact 생성 후 구 reader로 rollback하면 읽기가 실패하므로
+호환 reader를 유지하고 새 v5 선택을 중지해야 하며 기존 v5 데이터를 v4로 덮어쓰지 않는다.
+
+버전 dispatch, legacy default, BUY/SELL 정수 부분 체결 및 내림 후 최소 비율·0주 거절, fractional 경로
+동일성, preview의 전체 비용과 fill parser parity, v4/v5 round-trip 및 버전 바꿔치기 거절을 검증한다.
+이 변경은 모델 계산이며 Risk 승인·원본 durable 결속이나 최종 실행 transaction을 추가하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

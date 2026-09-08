@@ -262,6 +262,13 @@ Caller의 유동성 override, 누락/손상/중복 원본과 만료된 packet/ca
 아니며, 정책별 liquidity source/기간 및 최종 Risk 연결은 후속이다. 실제 저장소 조합 테스트는
 `portfolioActionRiskDecisionPolicyResolver.test.ts`에 있다.
 
+`src/paper/versionedExecutionModel.ts`는 저장된 실행 modelVersion으로 기존 v4와 opt-in v5를 분기한다.
+V5의 `buildWholeSharePaperFill`은 수량 override에도 whole-share 내림을 적용하고 유동성 모델의 실제
+내림 후 최소 체결 비율을 재검사한다. 기존 runner/cost-model 기본값과 v4 재생은 변경하지 않는다.
+Portfolio preview와 fill parser가 해당 dispatch를 공유하며 v5 reader-first 배포가 필요하다.
+`versionedExecutionModel.test.ts`, `portfolioActionExecutionPreview.test.ts`, `paperFillExecution.test.ts`가
+버전 호환성·비용·최소 수량 경계를 검증한다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

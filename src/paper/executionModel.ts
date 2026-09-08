@@ -81,7 +81,20 @@ export function createPaperExecutionPolicy(
 }
 
 export function buildPaperFill(input: PaperFillInput): PaperFill {
+  return buildPaperFillModel(input, false);
+}
+
+/** Opt-in whole-share semantics; legacy buildPaperFill replay remains unchanged. */
+export function buildWholeSharePaperFill(input: PaperFillInput): PaperFill {
+  return buildPaperFillModel(input, true);
+}
+
+function buildPaperFillModel(input: PaperFillInput, enforceWholeShareOverrides: boolean): PaperFill {
   const policy = createPaperExecutionPolicy(input.policy);
+  if (enforceWholeShareOverrides && !policy.allowFractionalShares && input.quantityOverride !== undefined &&
+    (!Number.isSafeInteger(input.quantityOverride) || input.quantityOverride <= 0)) {
+    throw new Error("whole-share execution requires a positive integer quantity override");
+  }
   const sourcePriceKrw = input.sourcePriceKrw;
   const fillPriceKrw = applySlippage(input.action, sourcePriceKrw, policy);
   const quantityPrice =
@@ -121,11 +134,14 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
             liquidityDecision.fillableNotionalKrw / sourcePriceKrw
           );
 
-  if (input.quantityOverride === undefined && !policy.allowFractionalShares) {
+  if (!policy.allowFractionalShares && (input.quantityOverride === undefined || enforceWholeShareOverrides)) {
     quantity = Math.floor(quantity);
   }
 
-  if (quantity <= 0) {
+  const belowWholeShareMinimum = enforceWholeShareOverrides && !policy.allowFractionalShares &&
+    liquidityDecision.liquidityStatus !== "not_modeled" &&
+    quantity * sourcePriceKrw / requestedNotionalKrw < policy.minLiquidityFillRatio;
+  if (quantity <= 0 || belowWholeShareMinimum) {
     return rejectedPaperFill({
       sourcePriceKrw,
       fillPriceKrw,
@@ -134,7 +150,7 @@ export function buildPaperFill(input: PaperFillInput): PaperFill {
         ...liquidityDecision,
         fillStatus: "rejected",
         liquidityStatus:
-          liquidityDecision.liquidityStatus === "not_modeled"
+          enforceWholeShareOverrides || liquidityDecision.liquidityStatus === "not_modeled"
             ? "rejected"
             : liquidityDecision.liquidityStatus,
         fillableNotionalKrw: 0,
