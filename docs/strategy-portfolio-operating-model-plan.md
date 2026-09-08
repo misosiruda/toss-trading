@@ -4000,6 +4000,26 @@ v5를 명시해야 새 계산을 사용하며 기존 정책이나 artifact를 �
 동일성, preview의 전체 비용과 fill parser parity, v4/v5 round-trip 및 버전 바꿔치기 거절을 검증한다.
 이 변경은 모델 계산이며 Risk 승인·원본 durable 결속이나 최종 실행 transaction을 추가하지 않는다.
 
+스무 번째 분할은 `createPortfolioPlanExecutionPreview`로 저장된 plan/event 진행 상태와
+policy/price/packet 실행 미리보기를 연결한다. 호출자는 plan ID, 예상 predecessor event hash,
+가격 ref와 packet hash만 전달하며 action, side, bucket, 수량·금액은 덮어쓸 수 없다.
+Approved 또는 execution_applied 상태의 다음 미완료 action을 고르고, fractional BUY는 남은 목표
+notional, quantity target은 canonical decimal 차감으로 남은 수량을 계산한다. 현재 source price로
+산출한 요청 또는 모델의 gross amount가 남은 action cap을 넘으면 목표를 임의로 축소하지 않고 거절한다.
+Whole-share/fractional target과 실제 선택된 실행 정책의 share mode도 일치해야 한다.
+
+Mandate action의 bucket은 실제 저장 mandate에서 해소하고 BUY는 active open-or-increase 상태만
+허용한다. Legacy action은 root reduce-only SELL scope를 사용한다. 계산 전후 plan commit/predecessor와
+mandate history를 다시 읽어 도중 변경을 거절하며 backend cutoff에서 mandate 유효성을 다시 평가한다.
+반환 context는 plan origin, 실행 전 portfolio version/hash, action/target hash, 누적 체결과 남은 cap 및
+mandate 관측 hash를 포함한다. 관측 시각이 달라지는 재호출은 새 observation이며 동일 실행값 재현만 보장한다.
+
+이는 순차 read의 미리보기이지 여러 파일을 묶은 lease나 최신 실제 portfolio 증명, capacity reservation,
+Risk 승인 또는 실행 transaction이 아니다. 저장 execution event의 Risk/fill 원본 검증 및 최종 portfolio
+CAS는 후속 실행 연결에서 필요하다. 기존 artifact와 runner는 변경하지 않으며 데이터 migration 없이
+코드 rollback이 가능하다. 실제 저장 fixture로 BUY/SELL/legacy, 정수 부분 체결, 0.3-0.1=0.2 잔량,
+predecessor drift, terminal/retired/reduce-only, source cap, caller override와 I/O 중 plan/mandate 변경을 검증한다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

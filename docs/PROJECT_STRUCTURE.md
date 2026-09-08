@@ -269,6 +269,12 @@ Portfolio preview와 fill parser가 해당 dispatch를 공유하며 v5 reader-fi
 `versionedExecutionModel.test.ts`, `portfolioActionExecutionPreview.test.ts`, `paperFillExecution.test.ts`가
 버전 호환성·비용·최소 수량 경계를 검증한다.
 
+`portfolioPlanExecutionPreview.ts`는 저장 plan의 다음 미완료 action에서 요청 수량·금액을 도출하고
+실제 mandate의 bucket 또는 legacy root scope로 packet 실행 미리보기를 호출한다. Canonical 수량 차감,
+남은 gross cap, share mode와 전후 plan/mandate 변경을 검증한다. 반환값은 읽기 관측이며 Risk 승인,
+최신 portfolio CAS, 다중 파일 lease나 실행 권한이 아니다. 실제 저장소 조합 테스트는
+`portfolioActionRiskDecisionPolicyResolver.test.ts`, 수량 차감 경계는 `canonicalQuantity.test.ts`에 있다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
