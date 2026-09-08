@@ -18,9 +18,11 @@ import { resolvePortfolioActionRiskDecisionPlan } from "./portfolioActionRiskDec
 import { resolvePortfolioActionRiskDecisionMandate } from "./portfolioActionRiskDecisionMandateResolver.js";
 import { resolvePortfolioActionRiskDecisionSnapshot } from "./portfolioActionRiskDecisionSnapshotResolver.js";
 import { resolvePortfolioActionRiskDecisionPrice } from "./portfolioActionRiskDecisionPriceResolver.js";
+import { resolvePortfolioActionRiskDecisionExecution } from "./portfolioActionRiskDecisionExecutionResolver.js";
+import { parseRiskDecisionExecutionOrigin, assertRiskExecutionFillBinding } from "./portfolioActionRiskDecisionExecutionContext.js";
 import { validateRiskDecisionPriceState } from "./portfolioActionRiskDecisionPriceContext.js";
 import { createPortfolioPolicyExecutionPreview, portfolioExecutionRuleParametersSchema } from "./portfolioPolicyExecutionPreview.js";
-import { parsePortfolioActionExecutionPreview } from "./portfolioActionExecutionPreview.js";
+import { createPortfolioActionExecutionPreview, parsePortfolioActionExecutionPreview } from "./portfolioActionExecutionPreview.js";
 import { createPortfolioPacketExecutionPreview } from "./portfolioPacketExecutionPreview.js";
 import { createPortfolioPlanExecutionPreview } from "./portfolioPlanExecutionPreview.js";
 import { WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION } from "../paper/versionedExecutionModel.js";
@@ -2051,7 +2053,8 @@ async function withPlanExecutionFixture(run: (value: {
   request: Parameters<typeof createPortfolioPlanExecutionPreview>[0]; input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0];
   plan: RebalancePlanRecord; events: RebalancePlanEventFileRepository; approval: RebalancePlanEvent;
   mandates: InvestmentMandateFileRepository; mandate: InvestmentMandateRecord | null; activation: ReturnType<typeof createInvestmentMandateEvent> | null;
-}) => Promise<void>, options: { side?: "BUY" | "SELL"; legacy?: boolean; whole?: boolean; fractionalPolicy?: boolean; reduceOnly?: boolean } = {}) {
+  candidate: Omit<DecisionInput, "decidedAt">;
+}) => Promise<void>, options: { side?: "BUY" | "SELL"; legacy?: boolean; whole?: boolean; fractionalPolicy?: boolean; reduceOnly?: boolean; riskSnapshot?: boolean } = {}) {
   const side = options.side ?? "BUY";
   const parameters = executionFixtureParameters(10);
   if (options.whole && !options.fractionalPolicy) {
@@ -2059,7 +2062,12 @@ async function withPlanExecutionFixture(run: (value: {
     parameters.markets.KR!.executionPolicy.allowFractionalShares = false;
   }
   await withPolicyExecutionFixture(async ({ input, fixture }) => {
-    const candidate = decisionInput(fixture, side, options.legacy);
+    const { decidedAt: _decidedAt, ...candidate } = decisionInput(fixture, side, options.legacy);
+    if (options.riskSnapshot) {
+      const snapshot = snapshotFixture(candidate, options.legacy ?? false, { cashKrw: 1_000_000, quantity: 10 });
+      await new PortfolioSizingSnapshotFileRepository(input.baseDir).append(snapshot);
+      candidate.expectedPortfolioSnapshotHash = snapshot.portfolioSnapshotHash;
+    }
     const { capacityReservation, ...payload } = mandatePayload(candidate);
     const mandate = options.legacy ? null : createInvestmentMandateRecord({ ...payload, ...(options.reduceOnly
       ? { manualAuthorizationScope: "classify_existing_reduce_only", maximumOpeningNotionalKrw: 0 } : { capacityReservation }) });
@@ -2078,7 +2086,7 @@ async function withPlanExecutionFixture(run: (value: {
       : { targetKind: "fractional_sell_quantity" as const, targetQuantity: 0.3, referencePriceKrw: 10_000,
         markedTargetNotionalKrw: 3000, priceEvidenceRef: input.priceEvidenceRef };
     const plan = createRebalancePlanRecord({ cycleId: "synthetic-cycle", portfolioId: input.portfolioId, portfolioVersion: "v1",
-      portfolioSnapshotHash: HASH, policyHash: input.expectedPolicyHash, evidenceCutoffAt: CREATED_AT, createdAt: CREATED_AT,
+      portfolioSnapshotHash: candidate.expectedPortfolioSnapshotHash, policyHash: input.expectedPolicyHash, evidenceCutoffAt: CREATED_AT, createdAt: CREATED_AT,
       triggerRef: "synthetic-trigger", phase: side === "BUY" ? "buy" : "sell", actions: [{ actionId: "action-1", actionSequence: 0,
         market: input.market, symbol: input.symbol, executionTarget: target, maximumNotionalKrw: 100_000, reasonCodes: ["fixture"],
         ...(options.legacy ? { lineageKind: "unassigned_legacy_reduce_only" as const, side: "SELL" as const,
@@ -2091,9 +2099,220 @@ async function withPlanExecutionFixture(run: (value: {
     const approval = await events.append(planEvent(plan, "approved", preview));
     const packet = executionLiquidityPacket(input);
     await new FileMarketPacketStore(createStoragePaths(input.baseDir).marketPacketsPath).append(packet);
-    await run({ input, plan, events, approval, mandate, mandates, activation, request: { baseDir: input.baseDir, planId: plan.planId,
+    await run({ input, plan, events, approval, mandate, mandates, activation, candidate, request: { baseDir: input.baseDir, planId: plan.planId,
       expectedPlanEventHash: approval.planEventHash, priceEvidenceRef: input.priceEvidenceRef, liquidityPacketHash: createMarketPacketHash(packet) } });
   }, policyFixture("v1", { bucket: parameters, legacy: executionFixtureParameters(20) }));
+}
+
+test("execution-bound Risk persists frozen model inputs for BUY, SELL, legacy and whole-share requests", async () => {
+  for (const options of [{}, { side: "SELL" as const }, { side: "SELL" as const, legacy: true }, { whole: true }]) {
+    await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+      const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+      const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), decision.riskDecisionId);
+      assert.ok(origin.executionOrigin);
+      assert.equal(origin.executionOrigin.preview.input.asOf, decision.decidedAt);
+      assert.equal(origin.executionOrigin.preview.requestedQuantity, decision.requestedQuantity);
+      const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+      const bytes = await readFile(path, "utf8");
+      assert.equal(JSON.parse(bytes.split("\n")[0]!).schemaVersion, "portfolio_action_risk_decision_entry.v8");
+      assert.deepEqual((await resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: decision.riskDecisionId })).executionOrigin, origin.executionOrigin);
+      assert.deepEqual(await new PortfolioActionRiskDecisionFileRepository(baseDir).createAndAppendWithExecutionOrigin(candidate, selection), decision);
+      assert.equal(await readFile(path, "utf8"), bytes);
+    }, options);
+  }
+});
+
+test("execution-bound Risk rejects understated costs, request drift, and incomplete policy-selected rules", async () => {
+  await withRiskExecutionFixture(async ({ repository, candidate, selection }) => {
+    const inputs = [
+      { ...candidate, requestedQuantity: candidate.requestedQuantity / 2 },
+      { ...candidate, requestedNotionalKrw: candidate.requestedNotionalKrw / 2 },
+      { ...candidate, cashAssessment: { side: "BUY" as const, worstCaseNetCashDebitKrw: candidate.worstCaseFillNotionalKrw,
+        approvedMaximumNetCashDebitKrw: candidate.worstCaseFillNotionalKrw } },
+      { ...candidate, requiredRuleIds: ["paper_execution"], ruleResults: candidate.ruleResults.filter((rule) => rule.ruleId === "paper_execution") }
+    ];
+    for (const input of inputs) await assert.rejects(repository.createAndAppendWithExecutionOrigin(input, selection));
+    assert.deepEqual(await repository.readAll(), []);
+    for (const extra of [{ volume: 1 }, { executionPolicy: {} }, { baseDir: "other" }, { planId: "other" }]) {
+      await assert.rejects(repository.createAndAppendWithExecutionOrigin(candidate, { ...selection, ...extra }));
+    }
+  });
+});
+
+test("execution-bound Risk cannot upgrade a previously stored price-only decision", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithPriceOrigin(candidate, selection.priceEvidenceRef);
+    assert.equal(resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), decision.riskDecisionId).executionOrigin, null);
+    const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const bytes = await readFile(path, "utf8");
+    await assert.rejects(repository.createAndAppendWithExecutionOrigin(candidate, selection), /cannot be added or replaced/);
+    await assert.rejects(resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: decision.riskDecisionId }), /lacks frozen/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  });
+});
+
+test("execution-bound Risk verifies original packet prefix and rejects model output drift", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), decision.riskDecisionId).executionOrigin!;
+    assert.throws(() => parseRiskDecisionExecutionOrigin({ ...origin, preview: { ...origin.preview,
+      execution: { ...origin.preview.execution, netAmountKrw: origin.preview.execution.netAmountKrw - 1 } } }), /deterministic replay/);
+    const packetPath = createStoragePaths(baseDir).marketPacketsPath;
+    const raw = await readFile(packetPath, "utf8");
+    const packet = JSON.parse(raw.trim());
+    await new FileMarketPacketStore(packetPath).append({ ...packet, packetId: "synthetic-later-packet" });
+    assert.deepEqual((await resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: decision.riskDecisionId })).executionOrigin, origin);
+    assert.deepEqual(await repository.createAndAppendWithExecutionOrigin(candidate, selection), decision);
+    const riskPath = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const riskBytes = await readFile(riskPath, "utf8");
+    await assert.rejects(repository.createAndAppendWithExecutionOrigin(candidate, { ...selection,
+      liquidityPacketHash: createMarketPacketHash({ ...packet, packetId: "synthetic-later-packet" }) }), /cannot be added or replaced/);
+    assert.equal(await readFile(riskPath, "utf8"), riskBytes);
+    packet.candidates[0].volume = 49;
+    await writeFile(packetPath, `${JSON.stringify(packet)}\n`);
+    await assert.rejects(resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: decision.riskDecisionId }), /liquidity prefix/);
+  });
+});
+
+test("risk-bound fill persistence requires the frozen model input even when altered costs fit the cash cap", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const history = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!;
+    const input = executionBoundFillInput(candidate, origin.preview);
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    const fill = await fills.createAndAppendWithRiskOrigin(input, history, decision.riskDecisionId);
+    assert.equal(fill.netAmountKrw, origin.preview.execution.netAmountKrw);
+    const cheaper = createPortfolioActionExecutionPreview({ ...origin.preview.input,
+      executionPolicy: { ...origin.preview.input.executionPolicy, feeBps: 0 } });
+    await assert.rejects(fills.createAndAppendWithRiskOrigin({ ...executionBoundFillInput(candidate, cheaper), fillId: "cheaper-fill" }, history, decision.riskDecisionId), /frozen execution input/);
+    await assert.rejects(fills.createAndAppendWithRiskOrigin({ ...input, rebalanceActionId: "other" }, history, decision.riskDecisionId), /plan or action mismatch/);
+    const { paperFillRecordId: _id, paperFillHash: _hash, ...payload } = fill;
+    const expired = createPaperFillExecutionRecord({ ...payload, asOf: origin.liquidity.expiresAt, createdAt: origin.liquidity.expiresAt });
+    assert.throws(() => assertRiskExecutionFillBinding(expired, origin), /stale/);
+  });
+});
+
+test("execution origin independently rejects fully rehashed cost, policy and freshness substitutions", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const riskPath = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const [entry, marker] = (await readFile(riskPath, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const origin = parseRiskDecisionExecutionOrigin(entry.executionOrigin);
+    const understated = createPortfolioActionRiskDecision({ ...candidate, decidedAt: decision.decidedAt,
+      cashAssessment: { side: "BUY", worstCaseNetCashDebitKrw: candidate.worstCaseFillNotionalKrw,
+        approvedMaximumNetCashDebitKrw: candidate.worstCaseFillNotionalKrw } });
+    const cheaper = createPortfolioActionExecutionPreview({ ...origin.preview.input,
+      executionPolicy: { ...origin.preview.input.executionPolicy, feeBps: 0 } });
+    const changes = [
+      { record: understated },
+      { executionOrigin: { ...origin, preview: cheaper } },
+      { executionOrigin: { ...origin, executionParameterRef: { ...origin.executionParameterRef, hash: HASH } } },
+      { executionOrigin: { ...origin, maximumPriceAgeSeconds: 1 } },
+      { executionOrigin: { ...origin, liquidity: { ...origin.liquidity, expiresAt: decision.decidedAt } } }
+    ];
+    for (const change of changes) {
+      const { entryHash: _hash, ...payload } = { ...entry, ...change };
+      const entryHash = hashCanonicalPayload(payload);
+      const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+      const bytes = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+      await writeFile(riskPath, bytes);
+      await assert.rejects(resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: (change.record ?? decision).riskDecisionId }),
+        /corrupt line|model or price|parameter origin/);
+      assert.equal(await readFile(riskPath, "utf8"), bytes);
+    }
+  });
+});
+
+test("risk-bound fills reject source price drift hidden by identical rounded execution amounts", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const history = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!;
+    const input = executionBoundFillInput(candidate, origin.preview);
+    const asOf = new Date().toISOString();
+    const altered = createPaperFillExecutionRecord({ ...input, sourcePriceKrw: input.sourcePriceKrw - 0.001, asOf, createdAt: asOf });
+    assert.equal(altered.netAmountKrw, origin.preview.execution.netAmountKrw);
+    assert.equal(altered.fillPriceKrw, origin.preview.execution.fillPriceKrw);
+    assert.throws(() => assertRiskExecutionFillBinding(altered, origin), /frozen execution input/);
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    await assert.rejects(fills.createAndAppendWithRiskOrigin({ ...input, sourcePriceKrw: altered.sourcePriceKrw }, history, decision.riskDecisionId), /frozen execution input/);
+    for (const change of [{ sourceContractId: "other-source" }, { observedAt: new Date(Date.parse(input.sourcePriceEvidence.observedAt) + 1).toISOString() }]) {
+      await assert.rejects(fills.createAndAppendWithRiskOrigin({ ...input, sourcePriceEvidence: { ...input.sourcePriceEvidence, ...change } }, history, decision.riskDecisionId), /frozen execution input/);
+    }
+    assert.deepEqual(await fills.readAll(), []);
+  }, { side: "SELL" });
+});
+
+test("execution-bound Risk snapshots caller inputs before asynchronous reads", async () => {
+  await withRiskExecutionFixture(async ({ repository, candidate, selection }) => {
+    const mutable = structuredClone(candidate);
+    const pending = repository.createAndAppendWithExecutionOrigin(mutable, selection);
+    mutable.requestedQuantity = 1;
+    const decision = await pending;
+    assert.equal(decision.requestedQuantity, candidate.requestedQuantity);
+  });
+});
+
+test("v8 event binding rejects a fully rehashed fill with a cheaper execution policy", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const riskDecisionHistory = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, decision.riskDecisionId).executionOrigin!;
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const original = await fills.createAndAppendWithRiskOrigin(executionBoundFillInput(candidate, origin.preview), riskDecisionHistory, decision.riskDecisionId);
+    const plan = await new RebalancePlanFileRepository(baseDir).resolveById(candidate.planId);
+    const sourcePriceEvidenceHistory = await new SourcePriceEvidenceFileRepository(baseDir).readVerifiedHistory();
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const [entry, marker] = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    const valid = validateRebalancePlanExecutionFillRiskBinding({ event: priceBoundFillEvent(plan, decision, original, marker.committedAt),
+      riskDecisionHistory, paperFillHistory: await fills.readVerifiedHistory(), sourcePriceEvidenceHistory });
+    assert.deepEqual(valid.paperFill, original);
+    const cheaper = createPortfolioActionExecutionPreview({ ...origin.preview.input, executionPolicy: { ...origin.preview.input.executionPolicy, feeBps: 0 } });
+    const record = createPaperFillExecutionRecord({ ...executionBoundFillInput(candidate, cheaper), asOf: original.asOf, createdAt: original.createdAt });
+    const { entryHash: _hash, ...payload } = { ...entry, record };
+    const entryHash = hashCanonicalPayload(payload);
+    const markerPayload = { schemaVersion: marker.schemaVersion, entryHash, committedAt: marker.committedAt };
+    const bytes = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+    await writeFile(path, bytes);
+    const paperFillHistory = await new PaperFillExecutionFileRepository(baseDir).readVerifiedHistory();
+    assert.throws(() => validateRebalancePlanExecutionFillRiskBinding({ event: priceBoundFillEvent(plan, decision, record, marker.committedAt),
+      riskDecisionHistory, paperFillHistory, sourcePriceEvidenceHistory }), /frozen execution input/);
+    assert.equal(await readFile(path, "utf8"), bytes);
+  });
+});
+
+async function withRiskExecutionFixture(run: (value: { baseDir: string; repository: PortfolioActionRiskDecisionFileRepository;
+  candidate: Omit<DecisionInput, "decidedAt">; selection: Parameters<PortfolioActionRiskDecisionFileRepository["createAndAppendWithExecutionOrigin"]>[1];
+}) => Promise<void>, options: { side?: "BUY" | "SELL"; legacy?: boolean; whole?: boolean } = {}) {
+  await withPlanExecutionFixture(async ({ request, candidate, plan }) => {
+    const preview = (await createPortfolioPlanExecutionPreview(request)).packetPreview.policyPreview.preview;
+    const gross = preview.execution.grossAmountKrw;
+    const net = preview.execution.netAmountKrw;
+    const derived = { ...candidate, planId: plan.planId, actionId: plan.actions[0]!.actionId,
+      actionExecutionTargetHash: hashRebalanceExecutionTarget(plan.actions[0]!.executionTarget),
+      requestedQuantity: preview.requestedQuantity, requestedNotionalKrw: preview.input.requestedNotionalKrw,
+      worstCaseFillNotionalKrw: gross, approvedMaximumFillNotionalKrw: 100_000,
+      cashAssessment: preview.input.side === "BUY" ? { side: "BUY" as const, worstCaseNetCashDebitKrw: net, approvedMaximumNetCashDebitKrw: net }
+        : { side: "SELL" as const, expectedMinimumNetCashCreditKrw: net },
+      turnoverAssessment: candidate.turnoverAssessment.scopeKind === "bucket" ? { ...candidate.turnoverAssessment,
+        requestedBucketTurnoverNotionalKrw: gross, resultingBucketTurnoverRatio: gross / candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw }
+        : candidate.turnoverAssessment,
+      riskEvidenceRefs: [...candidate.riskEvidenceRefs, request.priceEvidenceRef] };
+    const { baseDir, planId: _planId, ...selection } = request;
+    await run({ baseDir, repository: new PortfolioActionRiskDecisionFileRepository(baseDir), candidate: derived, selection });
+  }, { ...options, riskSnapshot: true });
+}
+
+function executionBoundFillInput(candidate: Omit<DecisionInput, "decidedAt">, preview: ReturnType<typeof parsePortfolioActionExecutionPreview>) {
+  const { input, execution } = preview;
+  return { ...priceBoundFillInput(candidate, input.sourcePriceEvidence), quantityOverride: input.quantityOverride,
+    executionPolicy: input.executionPolicy, volume: input.volume, averageVolume: input.averageVolume, liquidityStale: input.liquidityStale,
+    fractionalShares: input.executionPolicy.allowFractionalShares, fillStatus: execution.fillStatus as "filled" | "partial",
+    liquidityStatus: execution.liquidityStatus as "sufficient" | "partial", participationRate: execution.participationRate,
+    fillPriceKrw: execution.fillPriceKrw, quantity: execution.quantity, filledNotionalKrw: execution.filledNotionalKrw,
+    grossAmountKrw: execution.grossAmountKrw, netAmountKrw: execution.netAmountKrw, costBreakdown: execution.costBreakdown };
 }
 
 function executionLiquidityPacket(input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0]) {

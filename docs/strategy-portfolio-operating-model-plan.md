@@ -4020,6 +4020,35 @@ CAS는 후속 실행 연결에서 필요하다. 기존 artifact와 runner는 변
 코드 rollback이 가능하다. 실제 저장 fixture로 BUY/SELL/legacy, 정수 부분 체결, 0.3-0.1=0.2 잔량,
 predecessor drift, terminal/retired/reduce-only, source cap, caller override와 I/O 중 plan/mandate 변경을 검증한다.
 
+스물한 번째 분할은 `createAndAppendWithExecutionOrigin`으로 계획 기반 실행 미리보기를
+`portfolio_action_risk_decision_entry.v8`의 `executionOrigin`에 보존한다. 호출자는 예상 plan event,
+가격 ref와 packet hash를 선택할 뿐 모델 정책·유동성·시각을 주입하지 않는다. 기존 price → snapshot →
+mandate → activation → Risk 저장 순서를 유지하고 실제 선택된 전체 rule set/ID와 `paper_execution.v1`
+parameter ref를 검증한다. Plan에서 계산한 요청과 Risk 요청이 같아야 하며 modeled gross보다 작은
+worst-case gross, BUY modeled net보다 작은 worst-case debit, SELL modeled net보다 큰 minimum credit를
+거절한다. `paper_execution` 결과는 pass여야 한다. 다른 required Risk 결과의 수치 계산은 아직 별도다.
+
+저장된 preview는 전체 모델 입력과 출력·hash를 독립 재생한다. 과거 execution resolver는 실제
+policy parameter, source price, plan의 남은 목표 및 원래 packet history prefix까지 다시 해소한다.
+Packet 관측은 canonical 일반 read/prefix 비교이며 fsync receipt나 외부 데이터 진위 증명이 아니다.
+나중의 무관한 packet append는 과거 prefix를 대체하지 않고, retry는 기존 receipt와 bytes를 유지한다.
+다른 packet/model로 receipt를 교체하거나 v1–v7 기록에 receipt를 덧붙이지 않는다.
+
+Risk-bound fill writer와 plan execution fill binding은 동일한 source price 숫자/ref/hash, 요청,
+수량 override, volume/averageVolume, 전체 실행 정책과 수량·가격·비용 출력을 요구한다.
+반올림 결과만 같거나 더 저렴한 정책이어도 입력이 다르면 거절한다. 가격 maximum age와 packet의
+expiresAt/staleAfter는 Risk decidedAt 및 fill asOf에서 각각 검증한다. 평균 매입가 기반 손익은 이 비용
+미리보기의 입력·출력이 아니며 별도 accounting 검증 대상이다. 이 비용 경계는 고정된 동일 입력의
+모의 체결에 한정되며 일반적인 시장 worst-case, 모든 Risk 규칙의 승인 또는 최신 portfolio 권한이 아니다.
+현재 capacity 예약, portfolio CAS 및 fill/accounting/valuation/event의 원자 실행은 후속이다.
+
+BUY/SELL/legacy/whole-share 저장·재시작, 비용 과소 기재, 불완전 rule set, caller override,
+독립 재해시한 모델/parameter/freshness 변경, packet prefix 교체와 retry, 기존 v7 승격 거절,
+반올림에 가려진 가격 변경 및 더 저렴한 체결 모델 교체를 실제 저장 fixture로 검증한다.
+새 factory만 v8을 쓰며 기존 factory의 형식은 유지한다. V8 reader를 먼저 배포하고 새 쓰기를 활성화해야
+한다. V8 기록 후에는 호환 reader를 유지한 채 새 v8 쓰기를 중지해 rollback하며 기존 파일을 v7로
+재작성하지 않는다. Live 경로, API와 runner 기본값은 변경하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

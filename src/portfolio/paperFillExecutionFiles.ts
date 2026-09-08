@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { sha256HashSchema } from "../domain/schemas.js";
+import { assertRiskExecutionFillBinding } from "./portfolioActionRiskDecisionExecutionContext.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import {
   resolveVerifiedPortfolioActionRiskDecisionOrigin,
@@ -154,6 +155,12 @@ export class PaperFillExecutionFileRepository {
       (record.sourcePriceEvidence.evidenceRef !== origin.priceOrigin.evidenceRef ||
         record.sourcePriceEvidence.evidenceHash !== origin.priceOrigin.evidenceHash)) {
       throw new Error("risk-bound fill must use the Risk decision's selected price origin");
+    }
+    if (origin.executionOrigin !== null) {
+      if (record.rebalancePlanId !== origin.record.planId || record.rebalanceActionId !== origin.record.actionId) {
+        throw new Error("risk-bound fill execution plan or action mismatch");
+      }
+      assertRiskExecutionFillBinding(record, origin.executionOrigin);
     }
     return this.#appendRecord(record, riskOrigin);
   }

@@ -1,4 +1,5 @@
 import { parseRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
+import { assertRiskExecutionFillBinding } from "./portfolioActionRiskDecisionExecutionContext.js";
 import { addCanonicalQuantities } from "./canonicalQuantity.js";
 import {
   resolveVerifiedPortfolioActionRiskDecisionOrigin,
@@ -56,6 +57,7 @@ export function validateRebalancePlanExecutionFillRiskBinding(input: {
   const priceOrigin = resolveVerifiedSourcePriceEvidenceOrigin(
     input.sourcePriceEvidenceHistory, sourcePriceEvidence.evidenceRef
   );
+  if (riskOrigin.executionOrigin !== null) assertRiskExecutionFillBinding(paperFill, riskOrigin.executionOrigin);
   const identityMatches =
     event.paperFillHash === paperFill.paperFillHash &&
     event.fillId === paperFill.fillId &&

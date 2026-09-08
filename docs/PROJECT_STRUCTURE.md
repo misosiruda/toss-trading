@@ -275,6 +275,16 @@ Portfolio preview와 fill parser가 해당 dispatch를 공유하며 v5 reader-fi
 최신 portfolio CAS, 다중 파일 lease나 실행 권한이 아니다. 실제 저장소 조합 테스트는
 `portfolioActionRiskDecisionPolicyResolver.test.ts`, 수량 차감 경계는 `canonicalQuantity.test.ts`에 있다.
 
+`portfolioActionRiskDecisionExecutionContext.ts`는 계획에서 도출한 가격·수량·유동성·실행 정책과
+비용 미리보기를 Risk entry v8의 `executionOrigin`으로 고정하고 독립 재생한다.
+`createAndAppendWithExecutionOrigin`은 실제 policy/plan/mandate/snapshot/price와 packet prefix를
+해소하며 모델 gross/net의 Risk 경계와 전체 selected rule ID를 검증한다.
+`portfolioActionRiskDecisionExecutionResolver.ts`는 과거 원본 정책·가격·남은 목표·packet prefix를
+다시 확인한다. Fill writer와 execution event binding은 같은 가격 숫자와 모델 입력·출력 및 freshness를
+강제한다. 다른 Risk 규칙의 수치 평가, 현재 capacity 및 원자 실행은 별도이며 packet의 일반 read를
+durable market-source provenance로 승격하지 않는다. 기존 entry는 `executionOrigin = null`이고
+retry로 v8 승격하지 않는다. V8 reader-first 배포와 rollback 시 호환 reader 유지가 필요하다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
