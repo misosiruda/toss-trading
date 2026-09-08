@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -43,18 +43,20 @@ export interface VerifiedBucketTurnoverWindowHistory {
 const histories = new WeakSet<VerifiedBucketTurnoverWindowHistory>();
 
 export function createBucketTurnoverWindowPaths(baseDir: string) {
-  return { recordsPath: join(baseDir, BUCKET_TURNOVER_WINDOWS_FILE_NAME), lockPath: join(baseDir, `.${BUCKET_TURNOVER_WINDOWS_FILE_NAME}.lock`) };
+  return { recordsPath: join(baseDir, BUCKET_TURNOVER_WINDOWS_FILE_NAME), lockPath: join(baseDir, `.${BUCKET_TURNOVER_WINDOWS_FILE_NAME}.lock`),
+    pendingPath: join(baseDir, ".bucket-turnover-window-pending.json") };
 }
 
 /** One immutable origin per window. This is not turnover event storage, a Risk gate or a fill transaction. */
 export class BucketTurnoverWindowFileRepository {
   private readonly recordsPath: string;
   private readonly lockPath: string;
+  private readonly pendingPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryDelayMs: number;
   constructor(private readonly baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
     const paths = createBucketTurnoverWindowPaths(baseDir);
-    this.recordsPath = paths.recordsPath; this.lockPath = paths.lockPath;
+    this.recordsPath = paths.recordsPath; this.lockPath = paths.lockPath; this.pendingPath = paths.pendingPath;
     this.lockTimeoutMs = positiveInteger(options.lockTimeoutMs ?? 5_000);
     this.lockRetryDelayMs = positiveInteger(options.lockRetryDelayMs ?? 10);
   }
@@ -107,12 +109,28 @@ export class BucketTurnoverWindowFileRepository {
           const payload = { schemaVersion: "bucket_turnover_window_entry.v1" as const, snapshotOrigin, policyOrigin,
             appendStartedAt, previousEntryHash: history.generationHash };
           const entryHash = hashCanonicalPayload(payload);
+          // A retained barrier makes even a fully written but late marker unreadable after restart.
+          const pending = await open(this.pendingPath, "wx");
+          try {
+            await pending.writeFile(`${JSON.stringify({ schemaVersion: "bucket_turnover_window_pending.v1", entryHash,
+              turnoverStateId: window.turnoverStateId })}\n`, "utf8");
+            await pending.sync();
+          } finally { await pending.close(); }
+          await syncDirectory(dirname(this.pendingPath));
           await appendLine(this.recordsPath, { ...payload, entryHash });
           const committedAt = new Date().toISOString();
-          if (Date.parse(committedAt) < Date.parse(appendStartedAt)) throw new Error("turnover window clock moved backward during append");
+          if (Date.parse(committedAt) < Date.parse(appendStartedAt) || Date.parse(committedAt) >= Date.parse(window.windowEndsAt)) {
+            throw new Error("turnover window commit clock or boundary mismatch");
+          }
           const marker = { schemaVersion: "bucket_turnover_window_commit.v1" as const, entryHash, committedAt };
           const commitHash = hashCanonicalPayload(marker);
           await appendLine(this.recordsPath, { ...marker, commitHash });
+          const completedAt = Date.now();
+          if (completedAt < Date.parse(committedAt) || completedAt >= Date.parse(window.windowEndsAt)) {
+            throw new Error("turnover window fsync completion clock or boundary mismatch");
+          }
+          await unlink(this.pendingPath);
+          await syncDirectory(dirname(this.pendingPath));
           return deepFreeze({ snapshotOrigin, policyOrigin, appendedAt: committedAt, commitHash });
         });
       });
@@ -120,6 +138,12 @@ export class BucketTurnoverWindowFileRepository {
   }
 
   private async readUnderLock(snapshots: VerifiedPortfolioSizingSnapshotHistory, policies: RuntimePortfolioPolicyActivationSnapshot): Promise<VerifiedBucketTurnoverWindowHistory> {
+    try { await lstat(this.pendingPath); }
+    catch (error) { if (!isNodeError(error) || error.code !== "ENOENT") throw error; return this.readCommittedUnderLock(snapshots, policies); }
+    throw new Error("turnover window has a pending append; explicit recovery is required");
+  }
+
+  private async readCommittedUnderLock(snapshots: VerifiedPortfolioSizingSnapshotHistory, policies: RuntimePortfolioPolicyActivationSnapshot): Promise<VerifiedBucketTurnoverWindowHistory> {
     let raw: string;
     try { raw = await readFile(this.recordsPath, "utf8"); }
     catch (error) { if (!isNodeError(error) || error.code !== "ENOENT") throw error; raw = ""; }
@@ -146,6 +170,7 @@ export class BucketTurnoverWindowFileRepository {
         const { commitHash, ...markerPayload } = marker;
         if (!isDeepStrictEqual(markerValue, marker) || marker.entryHash !== entryHash || commitHash !== hashCanonicalPayload(markerPayload) ||
           Date.parse(marker.committedAt) < Date.parse(entry.appendStartedAt) ||
+          Date.parse(marker.committedAt) >= Date.parse(initial.windowEndsAt) ||
           Date.parse(marker.committedAt) > Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt)) {
           throw new Error("turnover window commit marker mismatch");
         }

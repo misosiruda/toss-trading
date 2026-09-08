@@ -153,11 +153,54 @@ test("turnover window commits only after entry fsync and preserves incomplete pa
     if (failSync) {
       const incomplete = await readFile(path, "utf8");
       assert.equal(incomplete.trimEnd().split("\n").length, 1);
-      await assert.rejects(repository.readVerifiedHistory(), /corrupt/);
-      await assert.rejects(repository.createOrResolve(input), /corrupt/);
+      await assert.rejects(repository.readVerifiedHistory(), /pending/);
+      await assert.rejects(repository.createOrResolve(input), /pending/);
       assert.equal(await readFile(path, "utf8"), incomplete);
     } else assert.ok(afterSync > duringSync);
   });
+});
+
+test("turnover window entry or marker fsync crossing the end leaves a durable pending barrier", async (context) => {
+  const end = Date.parse("2026-09-09T00:00:00.000Z");
+  for (const crossingSync of [0, 1, 2]) {
+    context.mock.timers.enable({ apis: ["Date"], now: end - 1 });
+    try {
+      await withFixture(async ({ baseDir, repository, input }) => {
+        const paths = createBucketTurnoverWindowPaths(baseDir);
+        const probe = await open(join(baseDir, "probe"), "a");
+        const prototype = Object.getPrototypeOf(probe) as FileHandle;
+        const originalSync = prototype.sync;
+        await probe.close();
+        let logSyncs = 0;
+        const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+          const own = await this.stat();
+          const target = await stat(paths.recordsPath).catch(() => undefined);
+          const matches = target !== undefined && own.isFile() && own.ino === target.ino && (process.platform === "win32" || own.dev === target.dev);
+          await originalSync.call(this);
+          if (matches && ++logSyncs === crossingSync) context.mock.timers.setTime(end);
+        });
+        try {
+          if (crossingSync === 0) await repository.createOrResolve(input);
+          else await assert.rejects(repository.createOrResolve(input), /commit clock or boundary|fsync completion clock or boundary/);
+        } finally { mock.mock.restore(); }
+        if (crossingSync === 0) {
+          await assert.rejects(stat(paths.pendingPath), { code: "ENOENT" });
+          const bytes = await readFile(paths.recordsPath, "utf8");
+          const [entry, marker] = bytes.trim().split("\n").map((line) => JSON.parse(line));
+          context.mock.timers.setTime(end + 1);
+          await writeFile(paths.recordsPath, rehash(entry, { ...marker, committedAt: new Date(end).toISOString() }), "utf8");
+          await assert.rejects(repository.readVerifiedHistory(), /corrupt/);
+        } else {
+          assert.ok((await stat(paths.pendingPath)).isFile());
+          const bytes = await readFile(paths.recordsPath, "utf8");
+          assert.equal(bytes.trim().split("\n").length, crossingSync);
+          await assert.rejects(new BucketTurnoverWindowFileRepository(baseDir).readVerifiedHistory(), /pending/);
+          await assert.rejects(repository.createOrResolve(input), /pending/);
+          assert.equal(await readFile(paths.recordsPath, "utf8"), bytes);
+        }
+      });
+    } finally { context.mock.timers.reset(); }
+  }
 });
 
 test("turnover windows roll forward at UTC boundary and reject a clock behind stored observations", async (context) => {

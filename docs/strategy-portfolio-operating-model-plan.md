@@ -4105,7 +4105,11 @@ UTC window에 있는지 확인한 후 정책이 선택한 duration으로 최초 
 Entry는 전체 snapshot/policy origin, appendStartedAt, previous commit hash를 결속하고 commit
 marker는 entry hash와 실제 entry fsync 후 채집한 committedAt을 결속한다. Reader는 원래 snapshot
 prefix와 활성 정책 prefix, exact policy/activation identity, duration, 초기 state hash, 전체 commit
-chain·시각과 window 유일성을 재검증한다. Snapshot 관측보다 미래의 commit도 거절한다.
+chain·시각과 window 유일성을 재검증한다. Snapshot 관측보다 미래이거나 window 끝 이상인 commit도
+거절한다. 신규 append 전 `.bucket-turnover-window-pending.json`을 durable하게 생성하고 entry
+fsync 후의 committedAt 및 marker fsync 완료 시각이 구간 안임을 확인한 뒤에만 pending을 제거한다.
+동기화 중 구간이 끝나거나 실패하면 pending을 남겨 완성된 pair가 있어도 이후 read/retry를 거절한다.
+Pending은 자동 수리·삭제하지 않으며 정상 기록과 함께 호환 reader가 계속 인식해야 한다.
 
 같은 window가 존재하면 원본을 먼저 검증하고 sync한 뒤 그대로 반환한다. 이후 snapshot 도착이나
 동일 duration의 정책 교체로 최초 분모·origin을 교체하지 않는다. 신규/재시도 요청은 현재 활성
