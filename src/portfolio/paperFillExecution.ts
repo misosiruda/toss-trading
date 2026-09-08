@@ -4,10 +4,8 @@ import { z } from "zod";
 
 import { marketSchema, sha256HashSchema } from "../domain/schemas.js";
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
-import {
-  buildPaperFill,
-  type PaperExecutionPolicy
-} from "../paper/executionModel.js";
+import { type PaperExecutionPolicy } from "../paper/executionModel.js";
+import { buildVersionedPaperFill, WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION } from "../paper/versionedExecutionModel.js";
 import {
   compareText,
   hashCanonicalPayload,
@@ -51,7 +49,7 @@ const sourcePriceEvidenceSchema = z
 
 export const paperFillExecutionPolicySchema = z
   .object({
-    modelVersion: z.literal(PAPER_EXECUTION_MODEL_VERSION),
+    modelVersion: z.enum([PAPER_EXECUTION_MODEL_VERSION, WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION]),
     fillPriceRule: z.literal("current_candidate_last_price"),
     slippageBps: nonNegativeNumberSchema,
     feeBps: nonNegativeNumberSchema,
@@ -205,7 +203,7 @@ function assertPaperFillExecutionPayload(
     marketImpactBpsPerParticipationRate:
       payload.executionPolicy.marketImpactBpsPerParticipationRate
   };
-  const replay = buildPaperFill({
+  const replay = buildVersionedPaperFill({
     action: payload.side === "BUY" ? "VIRTUAL_BUY" : "VIRTUAL_SELL",
     targetNotionalKrw:
       payload.requestedNotionalKrw / payload.executionPolicy.fillRatio,
@@ -222,7 +220,7 @@ function assertPaperFillExecutionPayload(
       : { averageVolume: payload.averageVolume }),
     liquidityStale: payload.liquidityStale,
     policy
-  });
+  }, payload.executionPolicy.modelVersion);
   const replayProjection = {
     requestedNotionalKrw: replay.requestedNotionalKrw,
     sourcePriceKrw: replay.sourcePriceKrw,
