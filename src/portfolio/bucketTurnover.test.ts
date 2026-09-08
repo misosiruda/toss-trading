@@ -86,6 +86,19 @@ test("turnover replay rejects fully rehashed duplicate, branch, scope, backward 
   assert.throws(() => replayBucketTurnoverEvents({ initialState: initial, events: [second, first] }), /predecessor/);
 });
 
+test("turnover replay rejects backward creation times even when hashes and asOf remain valid", () => {
+  const { initial, first, second } = fixture();
+  const delayedFirst = { ...first, createdAt: "2026-09-08T10:00:00.000Z" };
+  const backwardSecond = { ...second, createdAt: "2026-09-08T09:00:00.000Z" };
+  assert.deepEqual(parseBucketTurnoverEvent(delayedFirst), delayedFirst);
+  assert.deepEqual(parseBucketTurnoverEvent(backwardSecond), backwardSecond);
+  assert.throws(() => replayBucketTurnoverEvents({ initialState: initial, events: [delayedFirst, backwardSecond] }), /creation time moves backward/);
+  for (const createdAt of [delayedFirst.createdAt, "2026-09-08T11:00:00.000Z"]) {
+    assert.equal(replayBucketTurnoverEvents({ initialState: initial, events: [delayedFirst, { ...second, createdAt }] })
+      .cumulativeAbsoluteFilledNotionalKrw, 300);
+  }
+});
+
 test("turnover snapshot requires complete replay even when its amounts, policy and hash are self-consistent", () => {
   const { initial, first, second } = fixture();
   const state = replayBucketTurnoverEvents({ initialState: initial, events: [first, second] });

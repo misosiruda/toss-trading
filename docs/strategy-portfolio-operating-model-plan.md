@@ -4064,7 +4064,7 @@ State ID는 portfolio/bucket/start/end에서만 파생하므로 policy hash가 �
 snapshot 선택 및 원본 검증은 저장·해소 연결에서 반드시 수행해야 한다.
 
 Event는 complete payload에서 ID/hash/createdAt만 제외해 hash와 ID를 계산한다. Replay는 빈 root에서
-전체 event를 순서대로 검증하며 exact window scope/predecessor, event/fill 중복, 시각 역행, 구간 초과와
+전체 event를 순서대로 검증하며 exact window scope/predecessor, event/fill 중복, asOf/createdAt 역행, 구간 초과와
 safe-integer 합산 overflow를 거절한다. 누계와 ratio를 독립 계산하고 마지막 policy hash/event ID를
 반영한다. Policy 교체 event라도 분모를 바꾸거나 누계를 초기화하지 않는다. State hash는 자기 hash를
 제외한 complete payload에서 계산하며 `resolveBucketTurnoverState`는 자체 rehash가 유효한 snapshot도

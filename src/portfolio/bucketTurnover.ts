@@ -87,6 +87,7 @@ export function replayBucketTurnoverEvents(input: { initialState: unknown; event
   }
   const events = new Set<string>();
   const fills = new Set<string>();
+  let previousCreatedAt = Date.parse(state.windowStartedAt);
   for (const raw of parsed.events) {
     const event = parseBucketTurnoverEvent(raw);
     if (events.has(event.turnoverEventId) || fills.has(event.fillId)) throw new Error("bucket turnover history contains a duplicate event or fill");
@@ -94,6 +95,8 @@ export function replayBucketTurnoverEvents(input: { initialState: unknown; event
       event.previousTurnoverEventId !== state.lastTurnoverEventId) throw new Error("bucket turnover event scope or predecessor mismatch");
     const asOf = Date.parse(event.asOf);
     if (asOf < Date.parse(state.asOf) || asOf >= Date.parse(state.windowEndsAt)) throw new Error("bucket turnover event is outside its monotonic window");
+    const createdAt = Date.parse(event.createdAt);
+    if (createdAt < previousCreatedAt) throw new Error("bucket turnover event creation time moves backward");
     const cumulative = BigInt(state.cumulativeAbsoluteFilledNotionalKrw) + BigInt(event.absoluteFilledNotionalKrw);
     if (cumulative > BigInt(Number.MAX_SAFE_INTEGER) || Number(cumulative) !== event.resultingCumulativeAbsoluteFilledNotionalKrw) {
       throw new Error("bucket turnover cumulative amount differs from replay");
@@ -104,6 +107,7 @@ export function replayBucketTurnoverEvents(input: { initialState: unknown; event
       lastTurnoverEventId: event.turnoverEventId, asOf: event.asOf });
     events.add(event.turnoverEventId);
     fills.add(event.fillId);
+    previousCreatedAt = createdAt;
   }
   return state;
 }
