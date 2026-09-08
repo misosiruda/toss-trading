@@ -291,6 +291,11 @@ append-only turnover event/state 계약과 전체 window 재생을 제공한다.
 실제 fill/policy 출처와 file persistence, Risk cap 및 원자 실행은 이 순수 모듈의 증명 범위가 아니다.
 `bucketTurnover.test.ts`는 UTC 경계, 정책 변경 누계, 재시작 및 독립 재해시 실패 경계를 검사한다.
 
+`bucketTurnoverSnapshotOrigin.ts`는 sizing snapshot 저장소의 live durable lease에서 구간 시작 직전의
+최신 snapshot을 유일하게 선택해 회전율 분모와 origin receipt를 결속한다. 기존 origin은 원래 prefix로
+재생하므로 후속 append로 분모를 재설정하지 않는다. 정책 activation, 최초 window root 저장·유일성과
+Risk 권한은 후속 경계이며 `bucketTurnoverSnapshotOrigin.test.ts`가 실제 임시 파일 저장소로 검증한다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

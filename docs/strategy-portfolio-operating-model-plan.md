@@ -4077,6 +4077,25 @@ UTC 경계·epoch 이전 시각, 정책 교체 누계, 재시작 재생, complet
 safe-integer overflow를 synthetic unit fixture로 검증한다. 기존 artifact/API/default 변경 및 migration은
 없으므로 이 미연결 모듈을 되돌리는 데 데이터 변환은 필요 없다.
 
+스물세 번째 분할은 `bucketTurnoverSnapshotOrigin.ts`에서 실제 sizing snapshot 저장소의 live durable
+lease를 받아 window 시작 직전 snapshot과 분모를 결속한다. 같은 portfolio의 `asOf < windowStartedAt`
+중 가장 최신 시각을 선택하며 파일 append 순서나 policy hash로 후보를 좁히지 않는다. 최신 시각이
+동률이면 모호한 원본으로 거절하고, 없거나 NAV가 0 이하이면 과거 양수 snapshot으로 fallback하지
+않는다. 구간 시작과 같은 시각 및 구간 이후 snapshot은 분모 후보에서 제외한다.
+
+Origin은 initial state, 정확한 snapshot ID/hash·exposure hash와 전체 관측 prefix receipt를 포함한다.
+Historical resolver는 재시작 후에도 현재 durable source에서 원래 prefix를 재검증해 원래 분모를
+유지한다. 나중에 도착한 과거 시각 snapshot은 새 관측의 후보를 바꿀 수 있지만 기존 origin의
+분모를 바꾸지 않는다. 원본 prefix의 변경·절단과 corrupt/torn suffix는 fail-closed한다. 복제되거나
+만료된 history 객체는 lease로 인정하지 않으며, 신규 요청의 미래 asOf와 임의 분모 필드는 거절한다.
+
+이 연결은 snapshot 내용·출처 검증이며 policy/duration activation 인증, persisted window root의
+최초 유일성 또는 현재 Risk 권한은 아니다. 후속 window repository가 전체 origin을 hash-covered
+기록에 저장하고 동일 window의 최초 origin을 보존해야 한다. 임의로 구성한 receipt의 과거 발급을
+증명하거나 새 root로 기존 window를 대체하는 동작을 허용하는 API는 추가하지 않는다. 기존 snapshot
+파일 bytes/format과 runner는 유지한다. 실제 임시 저장소 기반 원본 선택·lease·재시작·prefix 변경
+테스트를 추가하며 외부 데이터, live order 또는 credential은 사용하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
