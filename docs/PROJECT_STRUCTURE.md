@@ -315,6 +315,14 @@ completion 세 줄을 기록한다. Completion 시각은 entry와 marker의 fsyn
 끝 이전이어야 한다. 기존 v1/v2 reader 경로는 보존하되 completion 증거로 승격하지 않는다.
 v3 기록 후 rollback에는 v3 호환 reader가 필요하며 completion line을 삭제해 변환하지 않는다.
 
+`bucketTurnoverEventFiles.ts`는 검증된 fill origin으로 `bucket-turnover-events.jsonl` entry/commit
+쌍을 생성한다. Caller의 expected state hash와 full prior replay 및 Risk assessment의 state hash/
+prior notional이 일치해야 한다. Portfolio fill ID는 전체 window에서 유일하며 retry는 원래 prior
+hash와 source로만 수렴한다. Reader는 매 entry의 실제 source·hash·global commit chain·window별
+event replay를 검증한다. `.bucket-turnover-event-pending.json`이 남으면 read/retry를 차단한다.
+`readWindowState`는 실제 최초 root와 전체 event에서 state를 계산하며 projection 파일은 아직
+쓰지 않는다. 현재 Risk cap 또는 fill/accounting 원자 transaction을 대신하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

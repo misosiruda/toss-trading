@@ -4155,6 +4155,33 @@ completion hash를 predecessor로 사용한다. Completion 기록 시점의 추�
 재생에 의한 assessment state hash/prior 검증, 현재 정책 cap, assignment/reservation 원본과
 fill/accounting 원자 반영은 후속이다. 역사적 조회를 현재 실행 권한으로 사용하지 않는다.
 
+스물여섯 번째 분할은 `BucketTurnoverEventFileRepository`가 저장된 paper fill ID와 expected
+turnover state hash만 받아 `bucket-turnover-events.jsonl`에 entry/commit 쌍을 생성한다. 실제
+source resolver가 제공하는 amount·bucket·policy·plan/action/fill·asOf를 사용하고 predecessor와
+resulting cumulative는 잠긴 전체 prior replay에서 계산한다. Risk assessment의 state hash와
+prior cumulative도 재생 결과와 같아야 하며 실제 fill이 Risk requested turnover를 초과할 수 없다.
+이는 과거 입력의 정합성 검사이고 현재 정책의 maxTurnoverRatio 평가나 실행 승인은 아니다.
+
+Entry는 complete event/source/prior-state hash/append timestamp/global predecessor를 결속하고
+marker는 entry hash와 commit timestamp를 결속한다. Reader는 매 source를 실제 저장소에서 다시
+해소하고 전체 canonical payload와 원본을 비교한 뒤 window별 event chain을 재생한다. 여러
+window에 걸쳐 portfolio/fill ID는 한 번만 나타나며 동일 retry는 최초 source와 prior hash로만
+기존 event를 반환한다. `readWindowState`는 실제 최초 root와 전체 events를 다시 재생하고 별도
+`bucket-turnover-state.json` projection 저장은 후속이다. Clone history는 발급 원본으로 인정하지 않는다.
+
+신규 event는 fill completion 관측 이후이면서 window 안에서만 생성한다. Pending barrier를
+먼저 sync하고 entry/marker를 각각 sync하며 marker fsync 완료까지 구간 안인지 확인한 뒤에만
+pending을 제거한다. Sync 실패, 구간 초과, torn/corrupt와 abandoned lock은 자동 복구하지 않는다.
+Event 저장소 lock 안에서 source resolver의 기존 source lock들을 획득하므로 source lease를
+이미 보유한 callback 안에서 이 API를 호출하지 않는다. 공용 transaction coordinator의 lock
+순서·fill/accounting 원자 적용 및 durable current Risk state 관측은 후속에서 명시적으로 연결한다.
+
+기존 Risk 통합 fixture에서 두 체결의 누계와 state 재생, 원래 hash 재시도, 서로 다른 process의
+동시 최초 저장, rehash한 event/source/chain 변조, 오래된 Risk prior, 실제 source 손상과 fsync
+실패·경계 초과를 검증한다. 이는 artifact 통합 테스트이며 전체 portfolio 실행 E2E는 아니다.
+기존 파일을 변환하는 migration이나 runner/API 변경은 없다. Rollback 시 신규 쓰기를 중지하고
+기록된 event/pending 및 호환 reader를 보존한다. 손상된 suffix를 삭제하거나 pending을 자동 제거하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.
