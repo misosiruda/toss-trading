@@ -17,8 +17,19 @@ export function canonicalQuantityUnits(value: number): bigint {
 /** Returns only an exactly representable canonical decimal sum. Never rounds a cap. */
 export function addCanonicalQuantities(left: number, right: number): number {
   const units = canonicalQuantityUnits(left) + canonicalQuantityUnits(right);
+  return quantityFromUnits(units);
+}
+
+/** Exact remaining quantity; never increases a target through binary rounding. */
+export function subtractCanonicalQuantities(target: number, filled: number): number {
+  const units = canonicalQuantityUnits(target) - canonicalQuantityUnits(filled);
+  if (units < 0n) throw new Error("filled quantity exceeds target");
+  return quantityFromUnits(units);
+}
+
+function quantityFromUnits(units: bigint): number {
   const digits = units.toString().padStart(SCALE + 1, "0");
   const result = Number(`${digits.slice(0, -SCALE)}.${digits.slice(-SCALE)}`);
-  if (canonicalQuantityUnits(result) !== units) throw new Error("canonical quantity sum is not exactly representable");
+  if (canonicalQuantityUnits(result) !== units) throw new Error("canonical quantity result is not exactly representable");
   return result;
 }

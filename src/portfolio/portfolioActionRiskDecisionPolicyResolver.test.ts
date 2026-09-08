@@ -22,6 +22,8 @@ import { validateRiskDecisionPriceState } from "./portfolioActionRiskDecisionPri
 import { createPortfolioPolicyExecutionPreview, portfolioExecutionRuleParametersSchema } from "./portfolioPolicyExecutionPreview.js";
 import { parsePortfolioActionExecutionPreview } from "./portfolioActionExecutionPreview.js";
 import { createPortfolioPacketExecutionPreview } from "./portfolioPacketExecutionPreview.js";
+import { createPortfolioPlanExecutionPreview } from "./portfolioPlanExecutionPreview.js";
+import { WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION } from "../paper/versionedExecutionModel.js";
 import { MarketPacketBuilder } from "../market/packetBuilder.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import { createStoragePaths, FileMarketPacketStore } from "../storage/repositories.js";
@@ -1942,6 +1944,157 @@ test("packet execution preview rechecks liquidity expiry after policy and price 
     });
   } finally { context.mock.timers.reset(); }
 });
+
+test("plan execution preview derives BUY, SELL and legacy scope from stored action and mandate", async () => {
+  for (const side of ["BUY", "SELL"] as const) for (const legacy of side === "SELL" ? [false, true] : [false]) {
+    await withPlanExecutionFixture(async ({ request, input, plan, approval }) => {
+      const before = await readFile(createRebalancePlanEventPaths(input.baseDir).eventsPath, "utf8");
+      const result = await createPortfolioPlanExecutionPreview(request);
+      const preview = result.packetPreview.policyPreview.preview;
+      assert.equal(preview.input.side, side);
+      assert.equal(preview.input.requestedNotionalKrw, side === "BUY" ? 100_000 : 3000);
+      assert.equal(preview.input.quantityOverride, side === "BUY" ? null : 0.3);
+      assert.equal(result.planContext.actionId, plan.actions[0]!.actionId);
+      assert.equal(result.planContext.origin.predecessorEventHash, approval.planEventHash);
+      assert.equal(result.planContext.mandate === null, legacy);
+      assert.equal(result.packetPreview.policyPreview.policyContext.scope.scopeKind, legacy ? "legacy_reduce_only" : "bucket");
+      assert.equal(result.observationHash, hashCanonicalPayload({ packetPreview: result.packetPreview, planContext: result.planContext }));
+      assert.ok(Object.isFrozen(result.planContext));
+      assert.deepEqual((await createPortfolioPlanExecutionPreview(request)).packetPreview.policyPreview.preview.execution, preview.execution);
+      assert.equal(await readFile(createRebalancePlanEventPaths(input.baseDir).eventsPath, "utf8"), before);
+      await assert.rejects(readFile(createPortfolioActionRiskDecisionPaths(input.baseDir).recordsPath), { code: "ENOENT" });
+      await assert.rejects(readFile(createPaperFillExecutionPaths(input.baseDir).recordsPath), { code: "ENOENT" });
+    }, { side, legacy });
+  }
+});
+
+test("plan execution preview computes exact remaining fractional SELL quantity after stored partial fill", async () => {
+  await withPlanExecutionFixture(async ({ request, input, plan, events, approval }) => {
+    const partial = await events.append(createRebalancePlanEvent({ ...planScope(plan), asOf: new Date().toISOString(),
+      eventType: "execution_applied", previousPlanEventId: approval.planEventId, actionId: "action-1", actionSequence: 0,
+      fillSequence: 0, fillId: "synthetic-fill", paperFillRecordId: "synthetic-paper", paperFillHash: HASH, riskDecisionId: "synthetic-risk",
+      requestedNotionalKrw: 1000, requestedQuantity: 0.1, filledNotionalKrw: 1000, filledQuantity: 0.1,
+      cumulativeFilledNotionalKrw: 1000, cumulativeFilledQuantity: 0.1,
+      expectedPrePortfolioVersion: "v1", expectedPrePortfolioSnapshotHash: HASH,
+      resultingPortfolioVersion: "v2", resultingPortfolioSnapshotHash: hashCanonicalPayload({ version: 2 }) }));
+    await assert.rejects(createPortfolioPlanExecutionPreview(request), /predecessor drift/);
+    const result = await createPortfolioPlanExecutionPreview({ ...request, expectedPlanEventHash: partial.planEventHash });
+    assert.equal(result.packetPreview.policyPreview.preview.input.quantityOverride, 0.2);
+    assert.equal(result.packetPreview.policyPreview.preview.input.requestedNotionalKrw, 2000);
+    assert.equal(result.planContext.portfolioVersion, "v2");
+    assert.equal(result.planContext.priorCumulativeFilledQuantity, 0.1);
+    assert.equal(result.planContext.remainingNotionalCapKrw, 99_000);
+    await assert.rejects(readFile(createPaperFillExecutionPaths(input.baseDir).recordsPath), { code: "ENOENT" });
+  }, { side: "SELL" });
+});
+
+test("plan execution preview keeps whole-share targets and rejects caller scope or amount overrides", async () => {
+  await withPlanExecutionFixture(async ({ request }) => {
+    const preview = (await createPortfolioPlanExecutionPreview(request)).packetPreview.policyPreview.preview;
+    assert.equal(preview.input.quantityOverride, 10);
+    assert.equal(preview.execution.quantity, 5);
+    assert.equal(preview.input.executionPolicy.modelVersion, WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION);
+    for (const extra of [{ requestedNotionalKrw: 1 }, { quantityOverride: 1 }, { side: "SELL" }, { scope: { scopeKind: "legacy_reduce_only" } },
+      { market: "US" }, { actionId: "other" }, { asOf: CREATED_AT }, { portfolioVersion: "other" }, { executionPolicy: {} }]) {
+      await assert.rejects(createPortfolioPlanExecutionPreview({ ...request, ...extra }));
+    }
+  }, { whole: true });
+});
+
+test("plan execution preview rejects terminal history, invalid source and share-mode mismatch", async () => {
+  await withPlanExecutionFixture(async ({ request, events, plan, approval }) => {
+    await assert.rejects(createPortfolioPlanExecutionPreview({ ...request, priceEvidenceRef: "missing" }), /does not resolve/);
+    await assert.rejects(createPortfolioPlanExecutionPreview({ ...request, liquidityPacketHash: HASH }), /exactly once/);
+    const rejected = await events.append(planEvent(plan, "rejected", approval));
+    await assert.rejects(createPortfolioPlanExecutionPreview({ ...request, expectedPlanEventHash: rejected.planEventHash }), /approved unfinished/);
+  });
+  await withPlanExecutionFixture(async ({ request }) => {
+    await assert.rejects(createPortfolioPlanExecutionPreview(request), /share mode differ/);
+  }, { whole: true, fractionalPolicy: true });
+});
+
+test("plan execution preview rejects reduce-only or retired BUY mandates and source-price cap excess", async () => {
+  await withPlanExecutionFixture(async ({ request, mandates, mandate, activation }) => {
+    await mandates.appendEvent(mandateTransition(mandate!, "retired", activation!.mandateEventId));
+    await assert.rejects(createPortfolioPlanExecutionPreview(request), /active investment mandate/);
+  });
+  await withPlanExecutionFixture(async ({ request }) => {
+    await assert.rejects(createPortfolioPlanExecutionPreview(request), /open-or-increase/);
+  }, { reduceOnly: true });
+  await withPlanExecutionFixture(async ({ request, input }) => {
+    const price = createSourcePriceEvidenceRecord({ sourceContractId: "fixture-execution", market: input.market, symbol: input.symbol,
+      priceField: "last_price", priceKrw: 1_000_000, observedAt: new Date().toISOString(), createdAt: new Date().toISOString(), sourceRefs: ["synthetic"] });
+    await new SourcePriceEvidenceFileRepository(input.baseDir).append(price);
+    await assert.rejects(createPortfolioPlanExecutionPreview({ ...request, priceEvidenceRef: price.evidenceRef }), /remaining request exceeds/);
+  }, { side: "SELL" });
+});
+
+test("plan execution preview detects plan or mandate changes during policy calculation", async (t) => {
+  for (const change of ["plan", "mandate"] as const) {
+    await withPlanExecutionFixture(async ({ request, plan, events, approval, mandate, mandates, activation }) => {
+      const original = RuntimePortfolioPolicyActivationFileRepository.prototype.withDurableActivePolicy;
+      t.mock.method(RuntimePortfolioPolicyActivationFileRepository.prototype, "withDurableActivePolicy", async function (
+        this: RuntimePortfolioPolicyActivationFileRepository, ...args: Parameters<typeof original>
+      ) {
+        const result = await original.apply(this, args);
+        if (change === "plan") await events.append(planEvent(plan, "rejected", approval));
+        else await mandates.appendEvent(mandateTransition(mandate!, "retired", activation!.mandateEventId));
+        return result;
+      });
+      try { await assert.rejects(createPortfolioPlanExecutionPreview(request), /changed during calculation/); }
+      finally { t.mock.restoreAll(); }
+    });
+  }
+});
+
+async function withPlanExecutionFixture(run: (value: {
+  request: Parameters<typeof createPortfolioPlanExecutionPreview>[0]; input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0];
+  plan: RebalancePlanRecord; events: RebalancePlanEventFileRepository; approval: RebalancePlanEvent;
+  mandates: InvestmentMandateFileRepository; mandate: InvestmentMandateRecord | null; activation: ReturnType<typeof createInvestmentMandateEvent> | null;
+}) => Promise<void>, options: { side?: "BUY" | "SELL"; legacy?: boolean; whole?: boolean; fractionalPolicy?: boolean; reduceOnly?: boolean } = {}) {
+  const side = options.side ?? "BUY";
+  const parameters = executionFixtureParameters(10);
+  if (options.whole && !options.fractionalPolicy) {
+    parameters.markets.KR!.executionPolicy.modelVersion = WHOLE_SHARE_PAPER_EXECUTION_MODEL_VERSION;
+    parameters.markets.KR!.executionPolicy.allowFractionalShares = false;
+  }
+  await withPolicyExecutionFixture(async ({ input, fixture }) => {
+    const candidate = decisionInput(fixture, side, options.legacy);
+    const { capacityReservation, ...payload } = mandatePayload(candidate);
+    const mandate = options.legacy ? null : createInvestmentMandateRecord({ ...payload, ...(options.reduceOnly
+      ? { manualAuthorizationScope: "classify_existing_reduce_only", maximumOpeningNotionalKrw: 0 } : { capacityReservation }) });
+    const mandates = new InvestmentMandateFileRepository(input.baseDir);
+    let activation: ReturnType<typeof createInvestmentMandateEvent> | null = null;
+    if (mandate !== null) {
+      await mandates.appendRecord(mandate);
+      activation = createInvestmentMandateEvent({ mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
+        portfolioId: mandate.portfolioId, policyHash: mandate.policyHash, market: mandate.market, symbol: mandate.symbol,
+        bucket: mandate.bucket, eventType: "activated", asOf: CREATED_AT, createdAt: CREATED_AT, reasonCodes: ["fixture"] });
+      await mandates.appendEvent(activation);
+    }
+    const target = options.whole ? { targetKind: "whole_share_quantity" as const, targetQuantity: 10, referencePriceKrw: 10_000,
+      plannedNotionalKrw: 100_000, residualNotionalKrw: 0, priceEvidenceRef: input.priceEvidenceRef }
+      : side === "BUY" ? { targetKind: "fractional_buy_notional" as const, targetNotionalKrw: 100_000 }
+      : { targetKind: "fractional_sell_quantity" as const, targetQuantity: 0.3, referencePriceKrw: 10_000,
+        markedTargetNotionalKrw: 3000, priceEvidenceRef: input.priceEvidenceRef };
+    const plan = createRebalancePlanRecord({ cycleId: "synthetic-cycle", portfolioId: input.portfolioId, portfolioVersion: "v1",
+      portfolioSnapshotHash: HASH, policyHash: input.expectedPolicyHash, evidenceCutoffAt: CREATED_AT, createdAt: CREATED_AT,
+      triggerRef: "synthetic-trigger", phase: side === "BUY" ? "buy" : "sell", actions: [{ actionId: "action-1", actionSequence: 0,
+        market: input.market, symbol: input.symbol, executionTarget: target, maximumNotionalKrw: 100_000, reasonCodes: ["fixture"],
+        ...(options.legacy ? { lineageKind: "unassigned_legacy_reduce_only" as const, side: "SELL" as const,
+          observedPositionRef: "synthetic-legacy", legacyStateDetectedAt: CREATED_AT }
+          : { lineageKind: "mandate" as const, side, mandateId: mandate!.mandateId }) }] });
+    const plans = new RebalancePlanFileRepository(input.baseDir);
+    await plans.append(plan);
+    const events = new RebalancePlanEventFileRepository(input.baseDir, plans);
+    const preview = await events.append(planEvent(plan, "previewed"));
+    const approval = await events.append(planEvent(plan, "approved", preview));
+    const packet = executionLiquidityPacket(input);
+    await new FileMarketPacketStore(createStoragePaths(input.baseDir).marketPacketsPath).append(packet);
+    await run({ input, plan, events, approval, mandate, mandates, activation, request: { baseDir: input.baseDir, planId: plan.planId,
+      expectedPlanEventHash: approval.planEventHash, priceEvidenceRef: input.priceEvidenceRef, liquidityPacketHash: createMarketPacketHash(packet) } });
+  }, policyFixture("v1", { bucket: parameters, legacy: executionFixtureParameters(20) }));
+}
 
 function executionLiquidityPacket(input: Parameters<typeof createPortfolioPolicyExecutionPreview>[0]) {
   const now = new Date();
