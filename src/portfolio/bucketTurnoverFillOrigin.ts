@@ -33,6 +33,7 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
     decision.riskRuleScope.scopeKind !== "bucket" || decision.turnoverAssessment.scopeKind !== "bucket") {
     throw new Error("legacy reduce-only fills must not create bucket turnover");
   }
+  if (fillOrigin.completion === null) throw new Error("turnover fill requires post-fsync completion proof");
   if (fill.portfolioId !== decision.portfolioId || fill.rebalancePlanId !== risk.plan.planId ||
     fill.rebalanceActionId !== risk.action.actionId || fill.market !== risk.action.market ||
     fill.symbol !== risk.action.symbol || fill.side !== risk.action.side ||
@@ -61,7 +62,7 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
     Date.parse(decision.decidedAt) < Date.parse(initial.windowStartedAt) ||
     Date.parse(risk.origin.appendedAt) >= Date.parse(fill.asOf) ||
     Date.parse(fill.asOf) > Date.parse(fill.createdAt) || Date.parse(fill.createdAt) > Date.parse(fillOrigin.appendedAt) ||
-    Date.parse(fillOrigin.appendedAt) > now || Date.parse(fillOrigin.appendedAt) >= Date.parse(initial.windowEndsAt)) {
+    Date.parse(fillOrigin.completion.completedAt) > now || Date.parse(fillOrigin.completion.completedAt) >= Date.parse(initial.windowEndsAt)) {
     throw new Error("turnover fill source chronology or window boundary mismatch");
   }
   // Amount and asOf come from the actual fill, never the requested amount, net cash or read time.
@@ -70,7 +71,8 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
     fillId: fill.fillId, absoluteFilledNotionalKrw: fill.filledNotionalKrw, asOf: new Date(fill.asOf).toISOString(),
     windowOrigin, planHash: risk.plan.planHash, mandateId: risk.mandate.record.mandateId,
     mandateHash: risk.mandate.record.mandateHash, riskOrigin: expectedRiskOrigin,
-    paperFillOrigin: { paperFillRecordId: fill.paperFillRecordId, paperFillHash: fill.paperFillHash, appendedAt: fillOrigin.appendedAt } });
+    paperFillOrigin: { paperFillRecordId: fill.paperFillRecordId, paperFillHash: fill.paperFillHash,
+      appendedAt: fillOrigin.appendedAt, completion: fillOrigin.completion } });
 }
 
 function deepFreeze<T>(value: T): T {

@@ -2371,14 +2371,14 @@ test("turnover fill origin rejects caller projections and independently rehashed
     }
     const path = createPaperFillExecutionPaths(baseDir).recordsPath;
     const original = await readFile(path, "utf8");
-    const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const [entry, marker, completion] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
     const { paperFillRecordId: _id, paperFillHash: _hash, ...payload } = fill;
     for (const patch of [{ rebalancePlanId: "other-plan" }, { rebalanceActionId: "other-action" }]) {
       const record = createPaperFillExecutionRecord({ ...payload, ...patch });
-      await writeFile(path, rehashTurnoverFillPair({ ...entry, record }, marker));
+      await writeFile(path, rehashTurnoverFillPair({ ...entry, record }, marker, completion));
       await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: record.paperFillRecordId }), /scope mismatch/);
     }
-    await writeFile(path, rehashTurnoverFillPair({ ...entry, riskOrigin: { ...entry.riskOrigin, commitHash: HASH } }, marker));
+    await writeFile(path, rehashTurnoverFillPair({ ...entry, riskOrigin: { ...entry.riskOrigin, commitHash: HASH } }, marker, completion));
     await assert.rejects(resolveBucketTurnoverFillOrigin(input), /persisted Risk origin/);
     await writeFile(path, original);
     assert.equal((await resolveBucketTurnoverFillOrigin(input)).fillId, fill.fillId);
@@ -2417,8 +2417,8 @@ test("turnover fill origin rejects late durable fill commits and source clock ro
   await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
     const path = createPaperFillExecutionPaths(baseDir).recordsPath;
     const original = await readFile(path, "utf8");
-    const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
-    await writeFile(path, rehashTurnoverFillPair(entry, { ...marker, committedAt: root.snapshotOrigin.initialState.windowEndsAt }));
+    const [entry, marker, completion] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    await writeFile(path, rehashTurnoverFillPair(entry, marker, { ...completion, completedAt: root.snapshotOrigin.initialState.windowEndsAt }));
     await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }), /chronology or window boundary/);
     await writeFile(path, original);
     context.mock.timers.enable({ apis: ["Date"], now: Date.parse(root.appendedAt) - 1 });
@@ -2441,12 +2441,112 @@ test("turnover fill origin rejects unbound fills and never assigns legacy reduce
   }, { side: "SELL", legacy: true });
 });
 
-function rehashTurnoverFillPair(entry: Record<string, unknown>, marker: Record<string, unknown>) {
+test("turnover fill completion proof survives retries and cannot be retrofitted to old pairs", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, fill }) => {
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    const history = await fills.readVerifiedHistory();
+    const origin = resolvePersistedPaperFillExecutionOrigin(history, fill.paperFillRecordId);
+    assert.ok(origin.completion);
+    assert.ok(Date.parse(origin.completion.completedAt) >= Date.parse(origin.appendedAt));
+    const risks = await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory();
+    const riskId = origin.riskOrigin!.riskDecisionId;
+    const input = turnoverRetryInput(fill);
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const original = await readFile(path, "utf8");
+    assert.equal(original.trimEnd().split("\n").length, 3);
+    assert.deepEqual(await fills.createAndAppendWithRiskCompletion(input, risks, riskId), fill);
+    assert.equal(await readFile(path, "utf8"), original);
+    const unbound = createPaperFillExecutionRecord({ ...input, fillId: "mixed-v1-fill", asOf: fill.asOf, createdAt: fill.createdAt });
+    await fills.append(unbound);
+    const mixed = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    assert.equal(mixed[3].previousEntryHash, origin.completion.completionHash);
+    assert.deepEqual(await fills.readAll(), [fill, unbound]);
+    const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const oldPair = rehashTurnoverFillPair({ ...entry, schemaVersion: "paper_fill_execution_entry.v2" }, marker);
+    await writeFile(path, oldPair);
+    assert.deepEqual(await fills.createAndAppendWithRiskOrigin(input, risks, riskId), fill);
+    await assert.rejects(fills.createAndAppendWithRiskCompletion(input, risks, riskId), /cannot be added after persistence/);
+    await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }), /post-fsync completion proof/);
+    assert.equal(await readFile(path, "utf8"), oldPair);
+  });
+});
+
+test("turnover fill completion rejects missing, torn, altered and backward completion records", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, fill }) => {
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const original = await readFile(path, "utf8");
+    const [entry, marker, completion] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    for (const bytes of [rehashTurnoverFillPair(entry, marker), original.trimEnd(),
+      rehashTurnoverFillPair(entry, marker, { ...completion, completedAt: new Date(Date.parse(marker.committedAt) - 1).toISOString() }),
+      `${original.split("\n").slice(0, 2).join("\n")}\n${JSON.stringify({ ...completion, commitHash: HASH })}\n`]) {
+      await writeFile(path, bytes);
+      await assert.rejects(new PaperFillExecutionFileRepository(baseDir).readVerifiedHistory(), /corrupt|torn/);
+      await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }));
+      assert.equal(await readFile(path, "utf8"), bytes);
+    }
+  });
+});
+
+test("turnover rejects a marker fsync that crosses the window even when committedAt is inside", async (context) => {
+  for (const failMarker of [false, true]) await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    const fillOrigin = resolvePersistedPaperFillExecutionOrigin(await fills.readVerifiedHistory(), fill.paperFillRecordId);
+    const risks = await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory();
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const probe = await open(path, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    const end = Date.parse(root.snapshotOrigin.initialState.windowEndsAt);
+    let crossed = false;
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const sync = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      const target = await stat(path);
+      await originalSync.call(this);
+      if (own.isFile() && own.ino === target.ino && (process.platform === "win32" || own.dev === target.dev) &&
+        (await readFile(path, "utf8")).trimEnd().split("\n").length === 5) {
+        crossed = true;
+        context.mock.timers.setTime(end);
+        if (failMarker) throw new Error("injected marker fsync failure");
+      }
+    });
+    let late: ReturnType<typeof createPaperFillExecutionRecord> | undefined;
+    try {
+      const operation = fills.createAndAppendWithRiskCompletion({ ...turnoverRetryInput(fill), fillId: "late-fill" }, risks, fillOrigin.riskOrigin!.riskDecisionId);
+      if (failMarker) await assert.rejects(operation, /injected marker fsync failure/);
+      else late = await operation;
+    } finally { sync.mock.restore(); }
+    try {
+      assert.equal(crossed, true);
+      if (failMarker) await assert.rejects(fills.readVerifiedHistory(), /corrupt/);
+      else {
+        assert.ok(late);
+        const lateOrigin = resolvePersistedPaperFillExecutionOrigin(await fills.readVerifiedHistory(), late.paperFillRecordId);
+        assert.ok(Date.parse(lateOrigin.appendedAt) < end);
+        assert.equal(Date.parse(lateOrigin.completion!.completedAt), end);
+        await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: late.paperFillRecordId }), /chronology or window boundary/);
+      }
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+function turnoverRetryInput(fill: ReturnType<typeof createPaperFillExecutionRecord>) {
+  const { paperFillRecordId: _id, paperFillHash: _hash, asOf: _asOf, createdAt: _createdAt, ...input } = fill;
+  return input;
+}
+
+function rehashTurnoverFillPair(entry: Record<string, unknown>, marker: Record<string, unknown>, completion?: Record<string, unknown>) {
   const { entryHash: _entryHash, ...payload } = entry;
   const entryHash = hashCanonicalPayload(payload);
   const { commitHash: _commitHash, ...commit } = marker;
   const markerPayload = { ...commit, entryHash };
-  return `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+  const commitHash = hashCanonicalPayload(markerPayload);
+  const pair = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash })}\n`;
+  if (completion === undefined) return pair;
+  const { completionHash: _completionHash, ...previousCompletion } = completion;
+  const proof = { ...previousCompletion, commitHash };
+  return `${pair}${JSON.stringify({ ...proof, completionHash: hashCanonicalPayload(proof) })}\n`;
 }
 
 async function withTurnoverFillFixture(run: (input: { baseDir: string; fill: ReturnType<typeof createPaperFillExecutionRecord>;
@@ -2466,7 +2566,7 @@ options: { side?: "BUY" | "SELL"; whole?: boolean; assessment?: { turnoverStateI
     const decision = await repository.createAndAppendWithExecutionOrigin(bound, selection);
     const history = await repository.readVerifiedHistory();
     const preview = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!.preview;
-    const fill = await new PaperFillExecutionFileRepository(baseDir).createAndAppendWithRiskOrigin(executionBoundFillInput(bound, preview), history, decision.riskDecisionId);
+    const fill = await new PaperFillExecutionFileRepository(baseDir).createAndAppendWithRiskCompletion(executionBoundFillInput(bound, preview), history, decision.riskDecisionId);
     await run({ baseDir, fill, root });
   }, options);
 }

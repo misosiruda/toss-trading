@@ -4135,14 +4135,23 @@ mandate bucket이 맞아야 하며 실제 fill economics가 동결된 실행 모
 
 Fill 시각과 원래 정책 duration으로 window identity를 계산해 실제 최초 window 저장소에서
 원본을 찾는다. Risk assessment의 window ID와 고정 분모가 같아야 하고 window commit은 Risk
-결정 이전, Risk commit은 fill 이전, fill commit은 window 끝 이전이어야 한다. 반환 금액은
+결정 이전, Risk commit은 fill 이전, fill의 post-fsync completion은 window 끝 이전이어야 한다. 반환 금액은
 requested notional이나 net cash가 아니라 실제 `filledNotionalKrw`이며 asOf도 fill 원본을 따른다.
 Plan/mandate/fill/Risk의 식별자·hash 및 최초 window 원본을 중첩 동결해 역사적 설명에 제공한다.
 
 기존 Risk 통합 fixture를 재사용해 partial BUY, SELL, whole-share fill, 독립 재해시한 plan/action
 치환, Risk receipt 변조, 원본 누락/손상/pending, 분모·window 불일치, 늦은 fill commit과 시계
-역행을 검증한다. 별도 runner/API 또는 파일 형식 변경은 없다. 신규 source resolver만 사용
-중지하면 rollback할 수 있고 migration은 없다. 이는 원본 결속이며 turnover event 저장·누계
+역행을 검증한다. 별도 runner/API 변경은 없다. `createAndAppendWithRiskCompletion`은 opt-in
+`paper_fill_execution_entry.v3`/commit/completion 세 줄을 기록하며 entry와 marker의 fsync 및
+directory sync 완료 후 채집한 시각을 completion hash에 결속한다. Reader는 세 줄의 hash와
+시간 순서를 재검증하고 completion 파일 sync 후에만 repository origin을 발급한다. 다음 entry는
+completion hash를 predecessor로 사용한다. Completion 기록 시점의 추가 sync가 늦더라도 이
+증거가 가리키는 것은 앞선 fill pair의 동기화 완료 시각이며 전체 회계 transaction 완료가 아니다.
+원본 resolver는 completion이 없는 v1/v2 fill을 거절하고 재시도로 proof를 소급 추가하지 않는다.
+구간 경계를 넘는 실제 FileHandle marker sync 지연과 marker sync 실패를 주입해 거절을 검증한다.
+기존 append/Risk-origin 생성 메서드의 v1/v2 동작은 유지한다. v3 쓰기는 명시적 opt-in이며 기존
+파일 변환 migration은 없다. Rollback 시 신규 쓰기를 중지하고 이미 기록한 v3 및 호환 reader를
+보존해야 한다. Completion line 삭제나 기존 기록 승격은 하지 않는다. 이는 원본 결속이며 turnover event 저장·누계
 재생에 의한 assessment state hash/prior 검증, 현재 정책 cap, assignment/reservation 원본과
 fill/accounting 원자 반영은 후속이다. 역사적 조회를 현재 실행 권한으로 사용하지 않는다.
 
