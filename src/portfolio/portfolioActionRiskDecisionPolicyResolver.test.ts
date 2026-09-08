@@ -2151,6 +2151,34 @@ test("execution-bound Risk cannot upgrade a previously stored price-only decisio
   });
 });
 
+test("execution-bound Risk delayed retries return the original decision without renewing expired inputs", async (context) => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const history = await repository.readVerifiedHistory();
+    const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!;
+    const riskPath = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const bytes = await readFile(riskPath, "utf8");
+    const cutoff = Math.max(Date.parse(origin.liquidity.expiresAt), Date.parse(origin.liquidity.staleAfter),
+      Date.parse(origin.preview.input.sourcePriceEvidence.observedAt) + origin.maximumPriceAgeSeconds * 1000) + 1;
+    context.mock.timers.enable({ apis: ["Date"], now: cutoff });
+    try {
+      const restarted = new PortfolioActionRiskDecisionFileRepository(baseDir);
+      assert.deepEqual(await restarted.createAndAppendWithExecutionOrigin(candidate, selection), decision);
+      assert.equal(await readFile(riskPath, "utf8"), bytes);
+      await assert.rejects(restarted.createAndAppendWithExecutionOrigin(candidate, { ...selection, expectedPlanEventHash: HASH }), /cannot be added or replaced/);
+      await assert.rejects(restarted.createAndAppendWithExecutionOrigin({ ...candidate, riskEvidenceRefs: [...candidate.riskEvidenceRefs, "new-input"] }, selection), /stale/);
+      await assert.rejects(new PaperFillExecutionFileRepository(baseDir).createAndAppendWithRiskOrigin(executionBoundFillInput(candidate, origin.preview),
+        history, decision.riskDecisionId), /stale/);
+      const packetPath = createStoragePaths(baseDir).marketPacketsPath;
+      const packet = JSON.parse((await readFile(packetPath, "utf8")).trim());
+      packet.candidates[0].volume = 49;
+      await writeFile(packetPath, `${JSON.stringify(packet)}\n`);
+      await assert.rejects(restarted.createAndAppendWithExecutionOrigin(candidate, selection), /liquidity prefix/);
+      assert.equal(await readFile(riskPath, "utf8"), bytes);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
 test("execution-bound Risk verifies original packet prefix and rejects model output drift", async () => {
   await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
     const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);

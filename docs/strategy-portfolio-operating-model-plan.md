@@ -4032,6 +4032,9 @@ worst-case gross, BUY modeled net보다 작은 worst-case debit, SELL modeled ne
 policy parameter, source price, plan의 남은 목표 및 원래 packet history prefix까지 다시 해소한다.
 Packet 관측은 canonical 일반 read/prefix 비교이며 fsync receipt나 외부 데이터 진위 증명이 아니다.
 나중의 무관한 packet append는 과거 prefix를 대체하지 않고, retry는 기존 receipt와 bytes를 유지한다.
+저장 identity를 먼저 확인하므로 packet/가격 만료 뒤의 지연 retry도 당시 cutoff와 실제 원본을 재해소해
+기존 결정을 반환한다. 이 반환은 만료를 연장하거나 새 체결 권한을 만들지 않는다. Selection identity 변경,
+원본 손상 및 새 요청은 이 과거 반환 경로로 우회하지 못하며 새 체결에는 현재 freshness 검증이 유지된다.
 다른 packet/model로 receipt를 교체하거나 v1–v7 기록에 receipt를 덧붙이지 않는다.
 
 Risk-bound fill writer와 plan execution fill binding은 동일한 source price 숫자/ref/hash, 요청,

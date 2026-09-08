@@ -280,6 +280,27 @@ export class PortfolioActionRiskDecisionFileRepository {
     const selected = portfolioPlanExecutionPreviewInputSchema.omit({ baseDir: true, planId: true }).parse(request);
     if (!isDeepStrictEqual(selected, request)) throw new Error("risk execution request must already be canonical");
     const baseDir = dirname(this.recordsPath);
+    const candidate = createPortfolioActionRiskDecision({ ...creationInput, decidedAt: new Date().toISOString() });
+    const history = await this.readVerifiedHistory();
+    const existing = history.records.find((record) => sameCreationInput(record, candidate));
+    if (existing !== undefined) {
+      const prior = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, existing.riskDecisionId);
+      if (prior.executionOrigin === null || prior.planOrigin?.predecessorEventHash !== selected.expectedPlanEventHash ||
+        prior.priceOrigin?.evidenceRef !== selected.priceEvidenceRef || prior.executionOrigin.liquidity.packetHash !== selected.liquidityPacketHash) {
+        throw new Error("risk execution origin cannot be added or replaced after persistence");
+      }
+      // A delayed retry explains the original decision, not fresh execution permission.
+      // Resolve outside the Risk lock to preserve the source -> Risk lock order.
+      const { resolvePortfolioActionRiskDecisionExecution } = await import("./portfolioActionRiskDecisionExecutionResolver.js");
+      const resolved = await resolvePortfolioActionRiskDecisionExecution({ baseDir, riskDecisionId: existing.riskDecisionId });
+      if (!isDeepStrictEqual(prior, resolved.origin)) throw new Error("risk execution retry origin changed during resolution");
+      return this.withLock(async () => {
+        const current = resolveVerifiedPortfolioActionRiskDecisionOrigin(await this.readHistoryUnderLock(), existing.riskDecisionId);
+        if (!isDeepStrictEqual(current, prior)) throw new Error("risk execution retry origin changed during resolution");
+        await syncDurableJsonFile(this.recordsPath);
+        return current.record;
+      });
+    }
     const execution = await createPortfolioPlanExecutionPreview({ ...selected, baseDir, planId: creationInput.planId });
     return new SourcePriceEvidenceFileRepository(baseDir).withDurableVerifiedHistory(async (history) =>
       new PortfolioSizingSnapshotFileRepository(baseDir).withDurableVerifiedHistory(async (snapshots) =>
