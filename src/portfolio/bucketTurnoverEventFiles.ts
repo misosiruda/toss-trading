@@ -7,7 +7,7 @@ import { sha256HashSchema } from "../domain/schemas.js";
 import { createBucketTurnoverEvent, parseBucketTurnoverEvent, replayBucketTurnoverEvents,
   type BucketTurnoverEvent, type BucketTurnoverState } from "./bucketTurnover.js";
 import { resolveBucketTurnoverFillOrigin } from "./bucketTurnoverFillOrigin.js";
-import { BucketTurnoverWindowFileRepository, resolveVerifiedBucketTurnoverWindowOrigin } from "./bucketTurnoverWindowFiles.js";
+import { BucketTurnoverWindowFileRepository, resolveVerifiedBucketTurnoverWindowOrigin, type VerifiedBucketTurnoverWindowHistory } from "./bucketTurnoverWindowFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 export const BUCKET_TURNOVER_EVENTS_FILE_NAME = "bucket-turnover-events.jsonl";
@@ -47,6 +47,14 @@ export class BucketTurnoverEventFileRepository {
   }
 
   async readVerifiedHistory(): Promise<VerifiedBucketTurnoverEventHistory> { return this.withLock(() => this.readUnderLock()); }
+  /** Event -> snapshot -> window locks remain held; do not re-enter those repositories in the callback. */
+  async withDurableStateSources<T>(operation: (events: VerifiedBucketTurnoverEventHistory,
+    windows: VerifiedBucketTurnoverWindowHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const events = await this.readUnderLock();
+      return new BucketTurnoverWindowFileRepository(this.baseDir).withDurableVerifiedHistory((windows) => operation(events, windows));
+    });
+  }
   async readWindowState(turnoverStateId: string): Promise<BucketTurnoverState> {
     identifier.parse(turnoverStateId);
     return this.withLock(async () => {

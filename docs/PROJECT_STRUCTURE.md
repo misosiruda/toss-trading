@@ -324,6 +324,14 @@ event replay를 검증한다. `.bucket-turnover-event-pending.json`이 남으면
 `readWindowState`는 실제 최초 root와 전체 event에서 state를 계산하며 projection 파일은 아직
 쓰지 않는다. 현재 Risk cap 또는 fill/accounting 원자 transaction을 대신하지 않는다.
 
+`bucketTurnoverStateFiles.ts`는 명시적 `refresh({ expectedProjectionHash })`에서 전체 실제 window와
+event 재생 결과를 `bucket-turnover-state.json`에 atomic rename으로 저장한다. Source별 prefix count와
+generation hash, 정렬된 전체 state 및 projection hash를 결속한다. 일반 조회는 원본이 전진한 stale
+projection을 거절하며 refresh만 정상 historical prefix를 CAS로 전진시킨다. Corrupt projection이나
+누락·손상·pending 원본은 자동 복구하지 않는다. `withDurableSnapshot`은 event → snapshot → window
+lock을 callback 동안 유지하고 파일 sync 후 관측 시각을 발급한다. 관측 권한은 clone·callback 종료·예외
+이후 사용할 수 없다. 현재 정책·Risk·reservation lock이나 fill/accounting transaction은 포함하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
