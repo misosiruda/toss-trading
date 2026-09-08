@@ -4096,6 +4096,35 @@ Historical resolver는 재시작 후에도 현재 durable source에서 원래 pr
 파일 bytes/format과 runner는 유지한다. 실제 임시 저장소 기반 원본 선택·lease·재시작·prefix 변경
 테스트를 추가하며 외부 데이터, live order 또는 credential은 사용하지 않는다.
 
+스물네 번째 분할은 `bucketTurnoverWindowFiles.ts`에서 최초 window의 분모·snapshot origin과
+실제 활성 정책 origin을 `bucket-turnover-windows.jsonl`의 entry/commit 쌍으로 저장한다. 요청은
+portfolio/bucket/expectedPolicyHash만 받고 시각·duration·분모·원본 receipt는 호출자가 주입하지
+못한다. Snapshot source → activation → window의 잠금 순서에서 source 관측과 policy 관측이 같은
+UTC window에 있는지 확인한 후 정책이 선택한 duration으로 최초 root를 생성한다.
+
+Entry는 전체 snapshot/policy origin, appendStartedAt, previous commit hash를 결속하고 commit
+marker는 entry hash와 실제 entry fsync 후 채집한 committedAt을 결속한다. Reader는 원래 snapshot
+prefix와 활성 정책 prefix, exact policy/activation identity, duration, 초기 state hash, 전체 commit
+chain·시각과 window 유일성을 재검증한다. Snapshot 관측보다 미래이거나 window 끝 이상인 commit도
+거절한다. 신규 append 전 `.bucket-turnover-window-pending.json`을 durable하게 생성하고 entry
+fsync 후의 committedAt 및 marker fsync 완료 시각이 구간 안임을 확인한 뒤에만 pending을 제거한다.
+동기화 중 구간이 끝나거나 실패하면 pending을 남겨 완성된 pair가 있어도 이후 read/retry를 거절한다.
+Pending은 자동 수리·삭제하지 않으며 정상 기록과 함께 호환 reader가 계속 인식해야 한다.
+
+같은 window가 존재하면 원본을 먼저 검증하고 sync한 뒤 그대로 반환한다. 이후 snapshot 도착이나
+동일 duration의 정책 교체로 최초 분모·origin을 교체하지 않는다. 신규/재시도 요청은 현재 활성
+정책과 expected hash의 일치를 요구하며 과거 origin 조회는 `readVerifiedHistory`로 분리한다.
+복제된 history는 repository-issued origin으로 인정하지 않는다. 불완전 entry/commit, torn/corrupt,
+중복 root, rehash된 분모·policy·predecessor·시각 변경과 abandoned lock은 자동 수리하지 않고
+fail-closed한다. 실제 임시 저장소, 다중 process 최초 생성, retry·reopen·정책 변경, UTC 경계,
+clock rollback과 fsync failure 테스트를 추가한다.
+
+이는 최초 window 저장 경계이며 turnover fill event 저장, 누계 projection, 현재 Risk 한도 검사나
+fill/accounting 원자 반영은 후속이다. 기존 파일·API·runner는 변경하지 않으며 새 파일은 이 명시적
+repository 호출에서만 생성한다. 기존 데이터 migration은 없고 rollback 시 신규 쓰기를 중지하며
+이미 쓴 origin 파일과 호환 reader를 보존한다. Corrupt/torn 파일을 삭제하거나 prefix로 자동 절단해
+복구하지 않는다. 설정된 storage root 전체를 일관되게 재작성하는 공격에 대한 외부 인증은 아니다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

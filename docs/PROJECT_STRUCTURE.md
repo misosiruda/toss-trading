@@ -296,6 +296,14 @@ append-only turnover event/state 계약과 전체 window 재생을 제공한다.
 재생하므로 후속 append로 분모를 재설정하지 않는다. 정책 activation, 최초 window root 저장·유일성과
 Risk 권한은 후속 경계이며 `bucketTurnoverSnapshotOrigin.test.ts`가 실제 임시 파일 저장소로 검증한다.
 
+`bucketTurnoverWindowFiles.ts`는 `bucket-turnover-windows.jsonl`에 최초 window origin을 entry/commit
+쌍으로 저장한다. Snapshot → activation → window 잠금 순서에서 현재 활성 정책의 duration과 실제
+분모를 결속하고, 같은 window의 retry는 정책 변경·후속 snapshot에도 최초 origin으로 수렴한다.
+Reader는 전체 snapshot/policy 원본, 관측 prefix, 선형 commit chain과 window 유일성을 검증한다.
+신규 append 전 `.bucket-turnover-window-pending.json`을 durable하게 기록하고 marker fsync 완료가
+구간 안에 있음을 확인한 뒤에만 제거한다. Pending이 남으면 완성된 pair도 재시작 시 거절한다.
+Turnover event 저장 및 Risk/fill/accounting 원자 반영은 아직 연결하지 않는다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
