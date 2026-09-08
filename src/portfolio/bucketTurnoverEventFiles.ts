@@ -77,7 +77,7 @@ export class BucketTurnoverEventFileRepository {
       if (prior.turnoverStateHash !== input.expectedTurnoverStateHash) throw new Error("turnover state CAS mismatch");
       assertRiskPrior(source, prior);
       const createdAt = new Date().toISOString();
-      if (Date.parse(createdAt) <= Date.parse(source.paperFillOrigin.completion!.completedAt) ||
+      if (Date.parse(createdAt) < Date.parse(source.paperFillOrigin.completion!.completedAt) ||
         Date.parse(createdAt) >= Date.parse(initial.windowEndsAt) ||
         (metadata.lastCommittedAt !== null && Date.parse(createdAt) < Date.parse(metadata.lastCommittedAt))) {
         throw new Error("turnover event source availability, clock or window boundary mismatch");
@@ -141,7 +141,7 @@ export class BucketTurnoverEventFileRepository {
           resultingCumulativeAbsoluteFilledNotionalKrw: event.resultingCumulativeAbsoluteFilledNotionalKrw, asOf: source.asOf, createdAt: entry.appendStartedAt,
           ...(prior.lastTurnoverEventId === undefined ? {} : { previousTurnoverEventId: prior.lastTurnoverEventId }) });
         if (!isDeepStrictEqual(event, expectedEvent) || !isDeepStrictEqual(value, { ...payload, entryHash: hashCanonicalPayload(payload) }) ||
-          Date.parse(event.createdAt) <= Date.parse(source.paperFillOrigin.completion!.completedAt) ||
+          Date.parse(event.createdAt) < Date.parse(source.paperFillOrigin.completion!.completedAt) ||
           (previousTime !== null && Date.parse(entry.appendStartedAt) < Date.parse(previousTime))) throw new Error("turnover event source, chain or chronology mismatch");
         const markerValue: unknown = JSON.parse(lines[index + 1] ?? "");
         const marker = markerSchema.parse(markerValue);

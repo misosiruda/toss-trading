@@ -320,6 +320,7 @@ v3 기록 후 rollback에는 v3 호환 reader가 필요하며 completion line을
 prior notional이 일치해야 한다. Portfolio fill ID는 전체 window에서 유일하며 retry는 원래 prior
 hash와 source로만 수렴한다. Reader는 매 entry의 실제 source·hash·global commit chain·window별
 event replay를 검증한다. `.bucket-turnover-event-pending.json`이 남으면 read/retry를 차단한다.
+실제 fill completion 원본을 먼저 해소하므로 같은 밀리초의 event 생성은 허용하고 이전 시각은 거절한다.
 `readWindowState`는 실제 최초 root와 전체 event에서 state를 계산하며 projection 파일은 아직
 쓰지 않는다. 현재 Risk cap 또는 fill/accounting 원자 transaction을 대신하지 않는다.
 

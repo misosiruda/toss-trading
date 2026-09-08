@@ -2571,6 +2571,37 @@ test("turnover event storage derives fills, preserves retry origins and replays 
   });
 });
 
+test("turnover event accepts the durable fill completion millisecond and rejects earlier creation", async (context) => {
+  await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
+    const source = await resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId });
+    const completedAt = source.paperFillOrigin.completion!.completedAt;
+    const before = new Date(Date.parse(completedAt) - 1).toISOString();
+    const repository = new BucketTurnoverEventFileRepository(baseDir);
+    const input = { paperFillRecordId: fill.paperFillRecordId, expectedTurnoverStateHash: root.snapshotOrigin.initialState.turnoverStateHash };
+    const paths = createBucketTurnoverEventPaths(baseDir);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(before) });
+    try {
+      await assert.rejects(repository.appendFill(input), /chronology|availability/);
+      await assert.rejects(stat(paths.eventsPath), { code: "ENOENT" });
+      await assert.rejects(stat(paths.pendingPath), { code: "ENOENT" });
+      context.mock.timers.setTime(Date.parse(completedAt));
+      const event = await repository.appendFill(input);
+      assert.equal(event.createdAt, completedAt);
+      const original = await readFile(paths.eventsPath, "utf8");
+      const reopened = new BucketTurnoverEventFileRepository(baseDir);
+      assert.deepEqual((await reopened.readVerifiedHistory()).events, [event]);
+      assert.deepEqual(await reopened.appendFill(input), event);
+      assert.equal(await readFile(paths.eventsPath, "utf8"), original);
+      const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+      const earlier = { ...entry, appendStartedAt: before, event: { ...entry.event, createdAt: before } };
+      const damaged = rehashTurnoverFillPair(earlier, marker);
+      await writeFile(paths.eventsPath, damaged);
+      await assert.rejects(reopened.readVerifiedHistory(), /corrupt/);
+      assert.equal(await readFile(paths.eventsPath, "utf8"), damaged);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
 test("turnover event concurrent first append across processes converges to one event", async () => {
   await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
     const request = { paperFillRecordId: fill.paperFillRecordId, expectedTurnoverStateHash: root.snapshotOrigin.initialState.turnoverStateHash };

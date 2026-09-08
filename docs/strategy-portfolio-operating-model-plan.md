@@ -4169,7 +4169,8 @@ window에 걸쳐 portfolio/fill ID는 한 번만 나타나며 동일 retry는 �
 기존 event를 반환한다. `readWindowState`는 실제 최초 root와 전체 events를 다시 재생하고 별도
 `bucket-turnover-state.json` projection 저장은 후속이다. Clone history는 발급 원본으로 인정하지 않는다.
 
-신규 event는 fill completion 관측 이후이면서 window 안에서만 생성한다. Pending barrier를
+신규 event는 fill completion 관측 시각 이상이면서 window 안에서만 생성한다. 실제 completion
+원본을 해소한 뒤 생성하므로 밀리초 단위 시계에서 동일 시각은 허용하고 이전 시각은 거절한다. Pending barrier를
 먼저 sync하고 entry/marker를 각각 sync하며 marker fsync 완료까지 구간 안인지 확인한 뒤에만
 pending을 제거한다. Sync 실패, 구간 초과, torn/corrupt와 abandoned lock은 자동 복구하지 않는다.
 Event 저장소 lock 안에서 source resolver의 기존 source lock들을 획득하므로 source lease를
