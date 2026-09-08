@@ -70,7 +70,7 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
     policyHash: decision.policyHash, rebalancePlanId: risk.plan.planId, rebalanceActionId: risk.action.actionId,
     fillId: fill.fillId, absoluteFilledNotionalKrw: fill.filledNotionalKrw, asOf: new Date(fill.asOf).toISOString(),
     windowOrigin, planHash: risk.plan.planHash, mandateId: risk.mandate.record.mandateId,
-    mandateHash: risk.mandate.record.mandateHash, riskOrigin: expectedRiskOrigin,
+    mandateHash: risk.mandate.record.mandateHash, riskOrigin: expectedRiskOrigin, turnoverAssessment: assessment,
     paperFillOrigin: { paperFillRecordId: fill.paperFillRecordId, paperFillHash: fill.paperFillHash,
       appendedAt: fillOrigin.appendedAt, completion: fillOrigin.completion } });
 }
