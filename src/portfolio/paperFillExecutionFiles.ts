@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { sha256HashSchema } from "../domain/schemas.js";
+import { assertRiskExecutionFillBinding, type RiskDecisionExecutionOrigin } from "./portfolioActionRiskDecisionExecutionContext.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import {
   resolveVerifiedPortfolioActionRiskDecisionOrigin,
@@ -155,10 +156,16 @@ export class PaperFillExecutionFileRepository {
         record.sourcePriceEvidence.evidenceHash !== origin.priceOrigin.evidenceHash)) {
       throw new Error("risk-bound fill must use the Risk decision's selected price origin");
     }
-    return this.#appendRecord(record, riskOrigin);
+    if (origin.executionOrigin !== null) {
+      if (record.rebalancePlanId !== origin.record.planId || record.rebalanceActionId !== origin.record.actionId) {
+        throw new Error("risk-bound fill execution plan or action mismatch");
+      }
+    }
+    return this.#appendRecord(record, riskOrigin, origin.executionOrigin);
   }
 
-  async #appendRecord(value: unknown, riskOrigin: PersistedRiskOrigin | null): Promise<PaperFillExecutionRecord> {
+  async #appendRecord(value: unknown, riskOrigin: PersistedRiskOrigin | null,
+    executionOrigin: RiskDecisionExecutionOrigin | null = null): Promise<PaperFillExecutionRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -176,6 +183,8 @@ export class PaperFillExecutionFileRepository {
         )) {
           throw new Error("paper fill risk origin cannot be added or replaced after persistence");
         }
+        // Returning an existing fill must not renew its asOf or require still-fresh inputs.
+        if (executionOrigin !== null) assertRiskExecutionFillBinding(existing, executionOrigin);
         await syncDurableJsonFile(this.recordsPath);
         return existing;
       }
@@ -193,6 +202,7 @@ export class PaperFillExecutionFileRepository {
       ) {
         throw new Error("paper fill execution has a duplicate portfolio fill ID");
       }
+      if (executionOrigin !== null) assertRiskExecutionFillBinding(candidate, executionOrigin);
       const appendStartedAt = new Date().toISOString();
       if (riskOrigin !== null && Date.parse(candidate.asOf) <= Date.parse(riskOrigin.appendedAt)) {
         throw new Error("risk-bound fill creation must follow risk origin availability cutoff");
