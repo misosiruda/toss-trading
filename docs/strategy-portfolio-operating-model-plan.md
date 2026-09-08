@@ -4055,6 +4055,28 @@ BUY/SELL/legacy/whole-share 저장·재시작, 비용 과소 기재, 불완전 r
 한다. V8 기록 후에는 호환 reader를 유지한 채 새 v8 쓰기를 중지해 rollback하며 기존 파일을 v7로
 재작성하지 않는다. Live 경로, API와 runner 기본값은 변경하지 않는다.
 
+스물두 번째 분할은 `bucketTurnover.ts`에서 고정 UTC window의 `BucketTurnoverEvent`와
+`BucketTurnoverState` 계약 및 전체 window 재생을 구현한다. Window는 Unix epoch 기준 floor로
+산출하며 시작 포함·끝 제외, 정수 초 duration과 canonical UTC milliseconds를 사용한다.
+State ID는 portfolio/bucket/start/end에서만 파생하므로 policy hash가 바뀌어도 동일 window ID를
+유지한다. 초기 root는 window 시작 시각, positive safe-integer KRW 분모와 0 누계를 갖는다.
+이 순수 factory의 분모는 아직 source-authenticated 값이 아니며 window 시작 직전 실제 immutable
+snapshot 선택 및 원본 검증은 저장·해소 연결에서 반드시 수행해야 한다.
+
+Event는 complete payload에서 ID/hash/createdAt만 제외해 hash와 ID를 계산한다. Replay는 빈 root에서
+전체 event를 순서대로 검증하며 exact window scope/predecessor, event/fill 중복, asOf/createdAt 역행, 구간 초과와
+safe-integer 합산 overflow를 거절한다. 누계와 ratio를 독립 계산하고 마지막 policy hash/event ID를
+반영한다. Policy 교체 event라도 분모를 바꾸거나 누계를 초기화하지 않는다. State hash는 자기 hash를
+제외한 complete payload에서 계산하며 `resolveBucketTurnoverState`는 자체 rehash가 유효한 snapshot도
+전체 event 재생 결과와 다르면 거절한다. 원본 이벤트 정책의 실제 activation 검증은 별도다.
+
+해당 분할은 순수 계약·재생이며 file repository, window root의 유일성·분모 원본, 실제 plan/action/fill
+source 해소, window 간 global fill uniqueness, retry 저장 수렴, current state CAS, Risk 회전율 cap 계산과
+fill/accounting 원자 반영은 후속이다. 기존 수동 Risk 입력이나 runner에 자동 연결하지 않는다.
+UTC 경계·epoch 이전 시각, 정책 교체 누계, 재시작 재생, complete rehash 변경, 중복·branch·scope·시각 및
+safe-integer overflow를 synthetic unit fixture로 검증한다. 기존 artifact/API/default 변경 및 migration은
+없으므로 이 미연결 모듈을 되돌리는 데 데이터 변환은 필요 없다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

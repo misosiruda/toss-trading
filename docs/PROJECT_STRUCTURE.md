@@ -285,6 +285,12 @@ Portfolio preview와 fill parser가 해당 dispatch를 공유하며 v5 reader-fi
 durable market-source provenance로 승격하지 않는다. 기존 entry는 `executionOrigin = null`이고
 retry로 v8 승격하지 않는다. V8 reader-first 배포와 rollback 시 호환 reader 유지가 필요하다.
 
+`bucketTurnover.ts`는 정책과 독립적인 고정 UTC window ID, positive integer KRW 분모,
+append-only turnover event/state 계약과 전체 window 재생을 제공한다. `resolveBucketTurnoverState`는
+저장 snapshot의 누계·ratio·마지막 event/policy/hash를 전체 event fold와 비교한다. 분모의 snapshot 원본,
+실제 fill/policy 출처와 file persistence, Risk cap 및 원자 실행은 이 순수 모듈의 증명 범위가 아니다.
+`bucketTurnover.test.ts`는 UTC 경계, 정책 변경 누계, 재시작 및 독립 재해시 실패 경계를 검사한다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
