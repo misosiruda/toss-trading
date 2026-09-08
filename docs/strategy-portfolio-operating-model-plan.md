@@ -4183,6 +4183,34 @@ Event 저장소 lock 안에서 source resolver의 기존 source lock들을 획�
 기존 파일을 변환하는 migration이나 runner/API 변경은 없다. Rollback 시 신규 쓰기를 중지하고
 기록된 event/pending 및 호환 reader를 보존한다. 손상된 suffix를 삭제하거나 pending을 자동 제거하지 않는다.
 
+스물일곱 번째 분할은 `BucketTurnoverStateFileRepository`가 실제 최초 window와 event의 전체
+재생 결과를 `bucket-turnover-state.json`에 저장한다. Document v1은 sourceWindowCount와
+sourceWindowGenerationHash, sourceEventCount와 sourceEventGenerationHash, turnoverStateId 순으로
+정렬된 전체 states 및 자신만 제외한 complete payload의 projectionHash를 가진다. Caller는
+expectedProjectionHash만 제공하며 state·분모·누계·시각을 지정하지 않는다.
+
+명시적 refresh는 기존 projection이 실제 append-only 원본의 정확한 historical prefix인지 먼저
+독립 검증하고, expected hash가 맞으면 현재 전체 재생 결과를 temporary file fsync → atomic rename
+→ directory sync로 교체한다. 이미 동일한 최신 projection이면 bytes/hash를 유지한 채 sync한다.
+일반 조회는 missing/stale projection을 자동 갱신하지 않는다. Corrupt projection, 원본 prefix 유실,
+손상 및 pending은 read/refresh 모두 fail-closed하며 기존 bytes를 보존한다. Snapshot 자체가 없으면
+명시적 null expected hash refresh로 실제 원본에서 최초 생성할 수 있지만 다른 source를 복구하지 않는다.
+
+Event 저장소의 `withDurableStateSources`와 window 저장소의 `withDurableVerifiedHistory`는
+event → snapshot → window lock 순서로 projection read/refresh callback까지 writer를 배제한다.
+`withDurableSnapshot`은 projection 파일 sync 후 backend 관측 시각을 발급하며 WeakMap 관측은
+callback 안에서만 유효하다. Clone 및 반환/예외 이후의 관측 사용을 거절한다. 이 callback 안에서
+동일 source 저장소를 재진입하지 않는다. 현재 policy/Risk/reservation lock, 선택 window의 유효기간과
+정책 cap 평가 및 fill/accounting 공용 transaction은 포함하지 않는다. Event append는 projection을
+자동 갱신하지 않으며 후속 coordinator가 명시적 refresh와 Risk 연결을 수행해야 한다.
+
+실제 저장 fixture에서 초기 root/두 fill 누계, 정상 historical prefix에서 current CAS 갱신, 두 window
+보존, rehash한 state/source 변조와 source prefix 유실, pending 차단, 3 process 최초 refresh 수렴,
+callback writer 배제·권한 만료 및 temporary/snapshot fsync 실패를 검증한다. Migration 명령은 없고
+최초 생성은 refresh API로 수행한다. Rollback은 projection consumer/writer를 함께 중지하고 원본
+JSONL과 호환 reader를 보존한다. Projection 교체는 원본 event를 수정하거나 전체 회계 transaction을
+완성하지 않는다. 실제 전원 차단과 전체 portfolio E2E 검증은 후속이다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

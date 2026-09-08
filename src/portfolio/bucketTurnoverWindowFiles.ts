@@ -62,9 +62,14 @@ export class BucketTurnoverWindowFileRepository {
   }
 
   async readVerifiedHistory(): Promise<VerifiedBucketTurnoverWindowHistory> {
+    return this.withDurableVerifiedHistory(async (history) => history);
+  }
+
+  /** Holds snapshot and window writers excluded through dependent projection persistence. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedBucketTurnoverWindowHistory) => Promise<T>): Promise<T> {
     const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir);
     return new PortfolioSizingSnapshotFileRepository(this.baseDir).withDurableVerifiedHistory((snapshots) =>
-      this.withLock(async () => this.readUnderLock(snapshots, policies)));
+      this.withLock(async () => operation(await this.readUnderLock(snapshots, policies))));
   }
 
   async createOrResolve(value: z.input<typeof inputSchema>): Promise<VerifiedBucketTurnoverWindowOrigin> {
