@@ -10,6 +10,8 @@ import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
 import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
 import { createRebalancePlanExecutionAppliedEvent } from "./rebalancePlanExecutionAppliedEvent.js";
 import { validateRebalancePlanExecutionFillRiskBinding } from "./rebalancePlanExecutionFillRiskBinding.js";
+import { resolveBucketTurnoverFillOrigin } from "./bucketTurnoverFillOrigin.js";
+import { BucketTurnoverWindowFileRepository, createBucketTurnoverWindowPaths } from "./bucketTurnoverWindowFiles.js";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
@@ -2338,6 +2340,136 @@ test("v8 event binding rejects a fully rehashed fill with a cheaper execution po
     assert.equal(await readFile(path, "utf8"), bytes);
   });
 });
+
+test("turnover fill origin resolves actual partial BUY, SELL and whole-share gross amounts without writes", async () => {
+  for (const options of [{}, { side: "SELL" as const }, { whole: true }]) {
+    await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
+      const input = { baseDir, paperFillRecordId: fill.paperFillRecordId };
+      const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+      const before = await readFile(path, "utf8");
+      const result = await resolveBucketTurnoverFillOrigin(input);
+      assert.equal(result.absoluteFilledNotionalKrw, fill.filledNotionalKrw);
+      assert.notEqual(result.absoluteFilledNotionalKrw, fill.netAmountKrw);
+      assert.equal(result.asOf, fill.asOf);
+      assert.equal(result.bucket, "swing");
+      assert.deepEqual(result.windowOrigin, root);
+      assert.equal(result.rebalancePlanId, fill.rebalancePlanId);
+      assert.equal(result.rebalanceActionId, fill.rebalanceActionId);
+      assert.ok(Object.isFrozen(result.windowOrigin.snapshotOrigin.initialState));
+      assert.deepEqual(await resolveBucketTurnoverFillOrigin(input), result);
+      assert.equal(await readFile(path, "utf8"), before);
+      if (fill.side === "BUY") assert.ok(result.absoluteFilledNotionalKrw < fill.requestedNotionalKrw);
+    }, options);
+  }
+});
+
+test("turnover fill origin rejects caller projections and independently rehashed plan/action substitutions", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, fill }) => {
+    const input = { baseDir, paperFillRecordId: fill.paperFillRecordId };
+    for (const patch of [{ bucket: "hedge" }, { absoluteFilledNotionalKrw: 1 }, { asOf: fill.asOf }, { riskOrigin: {} }]) {
+      await assert.rejects(resolveBucketTurnoverFillOrigin({ ...input, ...patch }));
+    }
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const original = await readFile(path, "utf8");
+    const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const { paperFillRecordId: _id, paperFillHash: _hash, ...payload } = fill;
+    for (const patch of [{ rebalancePlanId: "other-plan" }, { rebalanceActionId: "other-action" }]) {
+      const record = createPaperFillExecutionRecord({ ...payload, ...patch });
+      await writeFile(path, rehashTurnoverFillPair({ ...entry, record }, marker));
+      await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: record.paperFillRecordId }), /scope mismatch/);
+    }
+    await writeFile(path, rehashTurnoverFillPair({ ...entry, riskOrigin: { ...entry.riskOrigin, commitHash: HASH } }, marker));
+    await assert.rejects(resolveBucketTurnoverFillOrigin(input), /persisted Risk origin/);
+    await writeFile(path, original);
+    assert.equal((await resolveBucketTurnoverFillOrigin(input)).fillId, fill.fillId);
+  });
+});
+
+test("turnover fill origin rejects missing, corrupt and pending actual source histories", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, fill }) => {
+    const input = { baseDir, paperFillRecordId: fill.paperFillRecordId };
+    for (const path of [createRebalancePlanPaths(baseDir).recordsPath, createInvestmentMandatePaths(baseDir).recordsPath,
+      createSourcePriceEvidencePaths(baseDir).recordsPath, createStoragePaths(baseDir).marketPacketsPath,
+      createBucketTurnoverWindowPaths(baseDir).recordsPath]) {
+      const original = await readFile(path, "utf8");
+      for (const content of ["", `${original}{corrupt}\n`]) {
+        await writeFile(path, content);
+        await assert.rejects(resolveBucketTurnoverFillOrigin(input));
+        assert.equal(await readFile(path, "utf8"), content);
+      }
+      await writeFile(path, original);
+    }
+    const pending = createBucketTurnoverWindowPaths(baseDir).pendingPath;
+    await writeFile(pending, "unfinished");
+    await assert.rejects(resolveBucketTurnoverFillOrigin(input), /pending/);
+  });
+});
+
+test("turnover fill origin rejects mismatched Risk window identity and denominator", async () => {
+  for (const patch of [{ turnoverStateId: "other-window" }, { turnoverWindowOpenPortfolioNetWorthKrw: 2_000_000 }]) {
+    await withTurnoverFillFixture(async ({ baseDir, fill }) => {
+      await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }), /window identity or fixed denominator/);
+    }, { assessment: patch });
+  }
+});
+
+test("turnover fill origin rejects late durable fill commits and source clock rollback", async (context) => {
+  await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const original = await readFile(path, "utf8");
+    const [entry, marker] = original.trimEnd().split("\n").map((line) => JSON.parse(line));
+    await writeFile(path, rehashTurnoverFillPair(entry, { ...marker, committedAt: root.snapshotOrigin.initialState.windowEndsAt }));
+    await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }), /chronology or window boundary/);
+    await writeFile(path, original);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(root.appendedAt) - 1 });
+    try { await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId })); }
+    finally { context.mock.timers.reset(); }
+  });
+});
+
+test("turnover fill origin rejects unbound fills and never assigns legacy reduce-only fills to buckets", async () => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const decision = await repository.createAndAppendWithExecutionOrigin(candidate, selection);
+    const history = await repository.readVerifiedHistory();
+    const preview = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!.preview;
+    const fills = new PaperFillExecutionFileRepository(baseDir);
+    const fill = await fills.createAndAppendWithRiskOrigin(executionBoundFillInput(candidate, preview), history, decision.riskDecisionId);
+    await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir, paperFillRecordId: fill.paperFillRecordId }), /legacy reduce-only/);
+    const unboundDir = join(baseDir, "unbound");
+    await new PaperFillExecutionFileRepository(unboundDir).append(fill);
+    await assert.rejects(resolveBucketTurnoverFillOrigin({ baseDir: unboundDir, paperFillRecordId: fill.paperFillRecordId }), /requires a persisted Risk origin/);
+  }, { side: "SELL", legacy: true });
+});
+
+function rehashTurnoverFillPair(entry: Record<string, unknown>, marker: Record<string, unknown>) {
+  const { entryHash: _entryHash, ...payload } = entry;
+  const entryHash = hashCanonicalPayload(payload);
+  const { commitHash: _commitHash, ...commit } = marker;
+  const markerPayload = { ...commit, entryHash };
+  return `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+}
+
+async function withTurnoverFillFixture(run: (input: { baseDir: string; fill: ReturnType<typeof createPaperFillExecutionRecord>;
+  root: Awaited<ReturnType<BucketTurnoverWindowFileRepository["createOrResolve"]>> }) => Promise<void>,
+options: { side?: "BUY" | "SELL"; whole?: boolean; assessment?: { turnoverStateId?: string; turnoverWindowOpenPortfolioNetWorthKrw?: number } } = {}) {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const root = await new BucketTurnoverWindowFileRepository(baseDir).createOrResolve({ portfolioId: candidate.portfolioId,
+      bucket: "swing", expectedPolicyHash: candidate.policyHash });
+    assert.equal(candidate.turnoverAssessment.scopeKind, "bucket");
+    if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket fixture required");
+    const initial = root.snapshotOrigin.initialState;
+    const denominator = options.assessment?.turnoverWindowOpenPortfolioNetWorthKrw ?? initial.windowOpenPortfolioNetWorthKrw;
+    const bound = { ...candidate, turnoverAssessment: { ...candidate.turnoverAssessment,
+      turnoverStateId: options.assessment?.turnoverStateId ?? initial.turnoverStateId, turnoverStateHash: initial.turnoverStateHash,
+      turnoverWindowOpenPortfolioNetWorthKrw: denominator,
+      resultingBucketTurnoverRatio: candidate.turnoverAssessment.requestedBucketTurnoverNotionalKrw / denominator } };
+    const decision = await repository.createAndAppendWithExecutionOrigin(bound, selection);
+    const history = await repository.readVerifiedHistory();
+    const preview = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!.preview;
+    const fill = await new PaperFillExecutionFileRepository(baseDir).createAndAppendWithRiskOrigin(executionBoundFillInput(bound, preview), history, decision.riskDecisionId);
+    await run({ baseDir, fill, root });
+  }, options);
+}
 
 async function withRiskExecutionFixture(run: (value: { baseDir: string; repository: PortfolioActionRiskDecisionFileRepository;
   candidate: Omit<DecisionInput, "decidedAt">; selection: Parameters<PortfolioActionRiskDecisionFileRepository["createAndAppendWithExecutionOrigin"]>[1];

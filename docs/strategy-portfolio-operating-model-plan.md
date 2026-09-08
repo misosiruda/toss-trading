@@ -4125,6 +4125,27 @@ repository 호출에서만 생성한다. 기존 데이터 migration은 없고 ro
 이미 쓴 origin 파일과 호환 reader를 보존한다. Corrupt/torn 파일을 삭제하거나 prefix로 자동 절단해
 복구하지 않는다. 설정된 storage root 전체를 일관되게 재작성하는 공격에 대한 외부 인증은 아니다.
 
+스물다섯 번째 분할은 `bucketTurnoverFillOrigin.ts`의 `resolveBucketTurnoverFillOrigin`에서 실제
+저장된 paper fill ID를 회전율 입력 원본으로 해소한다. 요청은 baseDir/paperFillRecordId만 받고
+금액·bucket·시각·Risk receipt를 주입하지 못한다. 저장된 fill의 Risk receipt와 원래 결정의
+commit/hash/time을 비교하고 기존 execution resolver로 정책, plan predecessor, mandate 관측
+prefix, snapshot, 가격 및 liquidity/model 원본을 재검증한다. Plan/action/market/symbol/side와
+mandate bucket이 맞아야 하며 실제 fill economics가 동결된 실행 모델 및 승인된 gross/net
+한도를 만족해야 한다. Legacy reduce-only fill과 Risk origin 없는 기존 fill은 거절한다.
+
+Fill 시각과 원래 정책 duration으로 window identity를 계산해 실제 최초 window 저장소에서
+원본을 찾는다. Risk assessment의 window ID와 고정 분모가 같아야 하고 window commit은 Risk
+결정 이전, Risk commit은 fill 이전, fill commit은 window 끝 이전이어야 한다. 반환 금액은
+requested notional이나 net cash가 아니라 실제 `filledNotionalKrw`이며 asOf도 fill 원본을 따른다.
+Plan/mandate/fill/Risk의 식별자·hash 및 최초 window 원본을 중첩 동결해 역사적 설명에 제공한다.
+
+기존 Risk 통합 fixture를 재사용해 partial BUY, SELL, whole-share fill, 독립 재해시한 plan/action
+치환, Risk receipt 변조, 원본 누락/손상/pending, 분모·window 불일치, 늦은 fill commit과 시계
+역행을 검증한다. 별도 runner/API 또는 파일 형식 변경은 없다. 신규 source resolver만 사용
+중지하면 rollback할 수 있고 migration은 없다. 이는 원본 결속이며 turnover event 저장·누계
+재생에 의한 assessment state hash/prior 검증, 현재 정책 cap, assignment/reservation 원본과
+fill/accounting 원자 반영은 후속이다. 역사적 조회를 현재 실행 권한으로 사용하지 않는다.
+
 완료 조건:
 
 - preview는 portfolio와 trade를 변경하지 않는다.

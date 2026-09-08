@@ -304,6 +304,12 @@ Reader는 전체 snapshot/policy 원본, 관측 prefix, 선형 commit chain과 w
 구간 안에 있음을 확인한 뒤에만 제거한다. Pending이 남으면 완성된 pair도 재시작 시 거절한다.
 Turnover event 저장 및 Risk/fill/accounting 원자 반영은 아직 연결하지 않는다.
 
+`bucketTurnoverFillOrigin.ts`는 저장된 paper fill ID에서 Risk의 정책·계획·mandate·snapshot·가격·
+유동성/실행 모델 원본을 재생하고 실제 filled gross notional과 bucket을 최초 window에 결속한다.
+Risk receipt, action scope, 고정 분모, window 생성 → Risk → fill commit 순서를 검사하고 legacy
+reduce-only fill은 bucket 회전율에서 제외하기 위해 거절한다. 역사적 source resolver이며 누계·
+현재 Risk cap·event 저장·회계 transaction은 별도다. 기존 Risk 통합 fixture에서 검증한다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의
