@@ -2209,6 +2209,8 @@ test("execution origin independently rejects fully rehashed cost, policy and fre
       { executionOrigin: { ...origin, preview: cheaper } },
       { executionOrigin: { ...origin, executionParameterRef: { ...origin.executionParameterRef, hash: HASH } } },
       { executionOrigin: { ...origin, maximumPriceAgeSeconds: 1 } },
+      { executionOrigin: { ...origin, liquidity: { ...origin.liquidity,
+        readAt: new Date(Date.parse(origin.liquidity.generatedAt) - 1).toISOString() } } },
       { executionOrigin: { ...origin, liquidity: { ...origin.liquidity, expiresAt: decision.decidedAt } } }
     ];
     for (const change of changes) {

@@ -54,7 +54,7 @@ export function assertRiskExecutionFresh(origin: {
   const collectedAt = Date.parse(liquidity.collectedAt);
   const generatedAt = Date.parse(liquidity.generatedAt);
   const price = origin.preview.input.sourcePriceEvidence;
-  if (collectedAt > generatedAt || generatedAt > cutoff || Date.parse(liquidity.readAt) > cutoff ||
+  if (collectedAt > generatedAt || generatedAt > Date.parse(liquidity.readAt) || Date.parse(liquidity.readAt) > cutoff ||
     Date.parse(liquidity.expiresAt) <= cutoff || Date.parse(liquidity.staleAfter) <= cutoff ||
     collectedAt >= Date.parse(liquidity.staleAfter) || Date.parse(origin.preview.input.asOf) > cutoff ||
     Date.parse(price.observedAt) > cutoff || Date.parse(price.createdAt) > cutoff ||

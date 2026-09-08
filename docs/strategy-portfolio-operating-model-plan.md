@@ -4037,7 +4037,8 @@ Packet 관측은 canonical 일반 read/prefix 비교이며 fsync receipt나 외�
 Risk-bound fill writer와 plan execution fill binding은 동일한 source price 숫자/ref/hash, 요청,
 수량 override, volume/averageVolume, 전체 실행 정책과 수량·가격·비용 출력을 요구한다.
 반올림 결과만 같거나 더 저렴한 정책이어도 입력이 다르면 거절한다. 가격 maximum age와 packet의
-expiresAt/staleAfter는 Risk decidedAt 및 fill asOf에서 각각 검증한다. 평균 매입가 기반 손익은 이 비용
+expiresAt/staleAfter는 Risk decidedAt 및 fill asOf에서 각각 검증한다. 원래 packet의 생성 시각은
+liquidity readAt보다 늦을 수 없으며 독립 재해시한 과거 기록에도 이 순서를 강제한다. 평균 매입가 기반 손익은 이 비용
 미리보기의 입력·출력이 아니며 별도 accounting 검증 대상이다. 이 비용 경계는 고정된 동일 입력의
 모의 체결에 한정되며 일반적인 시장 worst-case, 모든 Risk 규칙의 승인 또는 최신 portfolio 권한이 아니다.
 현재 capacity 예약, portfolio CAS 및 fill/accounting/valuation/event의 원자 실행은 후속이다.
