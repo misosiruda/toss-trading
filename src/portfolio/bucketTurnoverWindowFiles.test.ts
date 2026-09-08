@@ -31,7 +31,7 @@ test("turnover window stores the first policy-selected root and converges concur
     assert.equal(root.snapshotOrigin.initialState.windowOpenPortfolioNetWorthKrw, 300);
     assert.equal(root.policyOrigin.policyHash, fixture.policy.policyHash);
     assert.ok(Object.isFrozen(root) && Object.isFrozen(root.policyOrigin.activationHistory));
-    const results = await Promise.all(Array.from({ length: 6 }, () => new BucketTurnoverWindowFileRepository(baseDir).createOrResolve(input)));
+    const results = await allCompleted(Array.from({ length: 6 }, () => new BucketTurnoverWindowFileRepository(baseDir).createOrResolve(input)));
     assert.deepEqual(results, Array.from({ length: 6 }, () => root));
     const start = Date.parse(root.snapshotOrigin.initialState.windowStartedAt);
     await snapshots.append(snapshot(fixture.policy.policyHash, "late", new Date(start - 1).toISOString(), 400));
@@ -54,7 +54,7 @@ test("turnover window concurrent first creation across processes persists exactl
     const script = `import { BucketTurnoverWindowFileRepository } from './dist/portfolio/bucketTurnoverWindowFiles.js';
       const value = await new BucketTurnoverWindowFileRepository(process.argv[1]).createOrResolve(JSON.parse(process.argv[2]));
       process.stdout.write(JSON.stringify(value));`;
-    const results = await Promise.all(Array.from({ length: 4 }, () => new Promise<unknown>((resolve, reject) => {
+    const results = await allCompleted(Array.from({ length: 4 }, () => new Promise<unknown>((resolve, reject) => {
       const child = spawn(process.execPath, ["--input-type=module", "--eval", script, baseDir, JSON.stringify(input)],
         { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
@@ -229,9 +229,28 @@ function rehash(entry: Record<string, unknown>, marker: Record<string, unknown>)
   return `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
 }
 
+test("turnover window concurrent fixture failures wait for every writer before cleanup", async () => {
+  let finished = false;
+  const failure = new Error("synthetic writer failure");
+  await assert.rejects(allCompleted([Promise.reject(failure), (async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    finished = true;
+  })()]), (error: unknown) => error instanceof AggregateError && error.errors[0] === failure);
+  assert.equal(finished, true);
+});
+
+async function allCompleted<T>(operations: Promise<T>[]): Promise<T[]> {
+  const results = await Promise.allSettled(operations);
+  const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason as unknown);
+  if (failures.length > 0) throw new AggregateError(failures, "concurrent window fixture operation failed", { cause: failures[0] });
+  return results.map((result) => { assert.equal(result.status, "fulfilled"); return result.value; });
+}
+
 async function withFixture(run: (value: { baseDir: string; fixture: ReturnType<typeof policyFixture>; snapshots: PortfolioSizingSnapshotFileRepository;
   repository: BucketTurnoverWindowFileRepository; input: { portfolioId: string; bucket: "swing"; expectedPolicyHash: string } }) => Promise<void>) {
   const baseDir = await mkdtemp(join(tmpdir(), "toss-turnover-window-"));
+  let failed = false;
+  let failure: unknown;
   try {
     const fixture = policyFixture();
     const paths = createImmutablePolicyDependencyPaths(baseDir);
@@ -245,7 +264,13 @@ async function withFixture(run: (value: { baseDir: string; fixture: ReturnType<t
     await snapshots.append(snapshot(fixture.policy.policyHash, "v1", new Date(start - 3_600_000).toISOString(), 300));
     await run({ baseDir, fixture, snapshots, repository: new BucketTurnoverWindowFileRepository(baseDir),
       input: { portfolioId: fixture.policy.portfolioId, bucket: "swing", expectedPolicyHash: fixture.policy.policyHash } });
-  } finally { await rm(baseDir, { recursive: true, force: true }); }
+  } catch (error) { failed = true; failure = error; }
+  try { await rm(baseDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); }
+  catch (error) {
+    if (failed) throw new AggregateError([failure, error], "window fixture and cleanup failed", { cause: failure });
+    throw error;
+  }
+  if (failed) throw failure;
 }
 
 function snapshot(policyHash: string, version: string, asOf: string, cashKrw: number) {

@@ -33,6 +33,7 @@ const persistedPaperFillExecutionHistories =
 const persistedPaperFillMetadata = new WeakMap<VerifiedPaperFillExecutionHistory, {
   appendedAtById: ReadonlyMap<string, string>;
   riskOriginById: ReadonlyMap<string, PersistedRiskOrigin>;
+  completionById: ReadonlyMap<string, FillCompletion>;
   lastEntryHash: string | null;
 }>();
 
@@ -57,6 +58,15 @@ const riskBoundFileEntrySchema = fileEntrySchema.extend({
   schemaVersion: z.literal("paper_fill_execution_entry.v2"),
   riskOrigin: riskOriginSchema
 }).strict();
+
+const completedFileEntrySchema = riskBoundFileEntrySchema.extend({
+  schemaVersion: z.literal("paper_fill_execution_entry.v3")
+}).strict();
+const completionSchema = z.object({
+  schemaVersion: z.literal("paper_fill_execution_completion.v1"), commitHash: sha256HashSchema,
+  completedAt: offsetQualifiedIsoDateTimeSchema, completionHash: sha256HashSchema
+}).strict();
+type FillCompletion = Readonly<z.infer<typeof completionSchema>>;
 
 const commitMarkerSchema = z.object({
   schemaVersion: z.literal("paper_fill_execution_commit.v1"),
@@ -134,6 +144,23 @@ export class PaperFillExecutionFileRepository {
     riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory,
     riskDecisionId: string
   ): Promise<PaperFillExecutionRecord> {
+    return this.#createRiskBound(input, riskDecisionHistory, riskDecisionId, false);
+  }
+
+  /** Records a post-marker-fsync observation; existing pairs cannot acquire this proof retrospectively. */
+  async createAndAppendWithRiskCompletion(
+    input: Omit<Parameters<typeof createPaperFillExecutionRecord>[0], "asOf" | "createdAt">,
+    riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory,
+    riskDecisionId: string
+  ): Promise<PaperFillExecutionRecord> {
+    return this.#createRiskBound(input, riskDecisionHistory, riskDecisionId, true);
+  }
+
+  async #createRiskBound(
+    input: Omit<Parameters<typeof createPaperFillExecutionRecord>[0], "asOf" | "createdAt">,
+    riskDecisionHistory: VerifiedPortfolioActionRiskDecisionHistory,
+    riskDecisionId: string, requireCompletion: boolean
+  ): Promise<PaperFillExecutionRecord> {
     // Do not accept an already-created fill or caller-controlled creation times.
     // The pure record factory independently rebuilds and validates fill economics.
     for (const key of ["asOf", "createdAt", "paperFillRecordId", "paperFillHash"]) {
@@ -161,11 +188,11 @@ export class PaperFillExecutionFileRepository {
         throw new Error("risk-bound fill execution plan or action mismatch");
       }
     }
-    return this.#appendRecord(record, riskOrigin, origin.executionOrigin);
+    return this.#appendRecord(record, riskOrigin, origin.executionOrigin, requireCompletion);
   }
 
   async #appendRecord(value: unknown, riskOrigin: PersistedRiskOrigin | null,
-    executionOrigin: RiskDecisionExecutionOrigin | null = null): Promise<PaperFillExecutionRecord> {
+    executionOrigin: RiskDecisionExecutionOrigin | null = null, requireCompletion = false): Promise<PaperFillExecutionRecord> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -175,6 +202,9 @@ export class PaperFillExecutionFileRepository {
           (riskOrigin !== null && record.portfolioId === candidate.portfolioId && record.fillId === candidate.fillId)
       );
       if (existing !== undefined) {
+        if (requireCompletion && !persistedPaperFillMetadata.get(history)!.completionById.has(existing.paperFillRecordId)) {
+          throw new Error("paper fill completion proof cannot be added after persistence");
+        }
         if (!(riskOrigin === null ? sameSemanticRecord(existing, candidate) : sameCreationInput(existing, candidate))) {
           throw new Error("paper fill execution ID collision");
         }
@@ -217,7 +247,7 @@ export class PaperFillExecutionFileRepository {
       };
       const payload = riskOrigin === null
         ? { schemaVersion: "paper_fill_execution_entry.v1" as const, ...commonPayload }
-        : { schemaVersion: "paper_fill_execution_entry.v2" as const, ...commonPayload, riskOrigin };
+        : { schemaVersion: requireCompletion ? "paper_fill_execution_entry.v3" as const : "paper_fill_execution_entry.v2" as const, ...commonPayload, riskOrigin };
       const entryHash = hashCanonicalPayload(payload);
       await appendDurableJsonLine(this.recordsPath, { ...payload, entryHash });
       // Sample only after the record and directory durability operations complete.
@@ -231,9 +261,15 @@ export class PaperFillExecutionFileRepository {
         entryHash,
         committedAt
       };
-      await appendDurableJsonLine(this.recordsPath, {
-        ...marker, commitHash: hashCanonicalPayload(marker)
-      });
+      const commitHash = hashCanonicalPayload(marker);
+      await appendDurableJsonLine(this.recordsPath, { ...marker, commitHash });
+      if (requireCompletion) {
+        // Both the entry and marker (including directory sync) are durable before this sample.
+        const completedAt = new Date().toISOString();
+        if (Date.parse(completedAt) < Date.parse(committedAt)) throw new Error("paper fill clock moved backwards after marker fsync");
+        const completion = { schemaVersion: "paper_fill_execution_completion.v1" as const, commitHash, completedAt };
+        await appendDurableJsonLine(this.recordsPath, { ...completion, completionHash: hashCanonicalPayload(completion) });
+      }
       return candidate;
     });
   }
@@ -249,9 +285,10 @@ export class PaperFillExecutionFileRepository {
         throw error;
       }
     }
-    const { history, appendedAtById, riskOriginById, lastEntryHash } = parsePaperFillExecutionLog(raw);
+    const { history, appendedAtById, riskOriginById, completionById, lastEntryHash } = parsePaperFillExecutionLog(raw);
+    if (completionById.size > 0) await syncDurableJsonFile(this.recordsPath);
     persistedPaperFillExecutionHistories.add(history);
-    persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, lastEntryHash });
+    persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, completionById, lastEntryHash });
     return history;
   }
 
@@ -297,6 +334,7 @@ function parsePaperFillExecutionLog(raw: string) {
   const portfolioFillIds = new Set<string>();
   const appendedAtById = new Map<string, string>();
   const riskOriginById = new Map<string, PersistedRiskOrigin>();
+  const completionById = new Map<string, FillCompletion>();
   let lastEntryHash: string | null = null;
   let hasVersionedEntry = false;
   for (let index = 0; index < lines.length; index += 1) {
@@ -310,8 +348,8 @@ function parsePaperFillExecutionLog(raw: string) {
     try {
       const value: unknown = JSON.parse(line);
       if (value !== null && typeof value === "object" && "schemaVersion" in value) {
-        const entry = value.schemaVersion === "paper_fill_execution_entry.v2"
-          ? riskBoundFileEntrySchema.parse(value) : fileEntrySchema.parse(value);
+        const entry = value.schemaVersion === "paper_fill_execution_entry.v3" ? completedFileEntrySchema.parse(value)
+          : value.schemaVersion === "paper_fill_execution_entry.v2" ? riskBoundFileEntrySchema.parse(value) : fileEntrySchema.parse(value);
         record = parsePaperFillExecutionRecord(entry.record);
         const payload = {
           schemaVersion: entry.schemaVersion, record, appendStartedAt: entry.appendStartedAt,
@@ -340,6 +378,17 @@ function parsePaperFillExecutionLog(raw: string) {
         appendedAtById.set(record.paperFillRecordId, marker.committedAt);
         if ("riskOrigin" in entry) riskOriginById.set(record.paperFillRecordId, Object.freeze(entry.riskOrigin));
         lastEntryHash = marker.commitHash;
+        if (entry.schemaVersion === "paper_fill_execution_entry.v3") {
+          const rawCompletion: unknown = JSON.parse(lines[++index] ?? "");
+          const completion = completionSchema.parse(rawCompletion);
+          const { completionHash, ...completionPayload } = completion;
+          if (!isDeepStrictEqual(rawCompletion, completion) || completion.commitHash !== marker.commitHash ||
+            completionHash !== hashCanonicalPayload(completionPayload) || Date.parse(completion.completedAt) < Date.parse(marker.committedAt)) {
+            throw new Error("paper fill completion proof mismatch");
+          }
+          completionById.set(record.paperFillRecordId, Object.freeze(completion));
+          lastEntryHash = completionHash;
+        }
         hasVersionedEntry = true;
       } else {
         if (hasVersionedEntry) throw new Error("legacy fill cannot follow versioned entry");
@@ -375,7 +424,7 @@ function parsePaperFillExecutionLog(raw: string) {
   }
   const history = Object.freeze({ records: Object.freeze(records) });
   verifiedPaperFillExecutionHistories.add(history);
-  return { history, appendedAtById, riskOriginById, lastEntryHash };
+  return { history, appendedAtById, riskOriginById, completionById, lastEntryHash };
 }
 
 export function getVerifiedPaperFillExecutionRecords(
@@ -400,7 +449,7 @@ export function getPersistedPaperFillExecutionRecords(
 export function resolvePersistedPaperFillExecutionOrigin(
   history: VerifiedPaperFillExecutionHistory,
   paperFillRecordId: string
-): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string; riskOrigin: PersistedRiskOrigin | null }> {
+): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string; riskOrigin: PersistedRiskOrigin | null; completion: FillCompletion | null }> {
   const matches = getPersistedPaperFillExecutionRecords(history)
     .filter((record) => record.paperFillRecordId === paperFillRecordId);
   if (matches.length !== 1) {
@@ -411,7 +460,8 @@ export function resolvePersistedPaperFillExecutionOrigin(
     throw new Error("paper fill append origin is unavailable; legacy record requires review");
   }
   const riskOrigin = persistedPaperFillMetadata.get(history)!.riskOriginById.get(paperFillRecordId) ?? null;
-  return Object.freeze({ record: matches[0]!, appendedAt, riskOrigin });
+  const completion = persistedPaperFillMetadata.get(history)!.completionById.get(paperFillRecordId) ?? null;
+  return Object.freeze({ record: matches[0]!, appendedAt, riskOrigin, completion });
 }
 
 function sameSemanticRecord(
@@ -436,7 +486,8 @@ function cloneRecord(value: unknown): PaperFillExecutionRecord {
 
 async function appendDurableJsonLine(
   path: string,
-  value: z.infer<typeof fileEntrySchema> | z.infer<typeof riskBoundFileEntrySchema> | z.infer<typeof commitMarkerSchema>
+  value: z.infer<typeof fileEntrySchema> | z.infer<typeof riskBoundFileEntrySchema> | z.infer<typeof completedFileEntrySchema>
+    | z.infer<typeof commitMarkerSchema> | FillCompletion
 ): Promise<void> {
   const handle = await open(path, "a");
   try {
